@@ -163,6 +163,120 @@
         </section>
     }
 
+    <section class="panel-card">
+        <div class="panel-card__header">
+            <div>
+                <h3 class="panel-card__title">Procesamiento de compras</h3>
+                <p class="panel-card__subtitle">Monitor de la cola del lector automático: pendientes, en ejecución y resultados recientes.</p>
+            </div>
+            <div class="actions">
+                <button type="button" class="btn btn--ghost" @onclick="CargarColaAsync" disabled="@_loadingQueue">
+                    <i class="bi bi-arrow-clockwise"></i> Actualizar cola
+                </button>
+            </div>
+        </div>
+
+        <div class="filters-grid">
+            <div class="context-card">
+                <span class="context-card__label">Pendientes</span>
+                <strong>@_queueSnapshot.Pendientes</strong>
+            </div>
+            <div class="context-card">
+                <span class="context-card__label">Procesando</span>
+                <strong>@_queueSnapshot.Procesando</strong>
+            </div>
+            <div class="context-card">
+                <span class="context-card__label">Procesados</span>
+                <strong>@_queueSnapshot.Procesados</strong>
+            </div>
+            <div class="context-card">
+                <span class="context-card__label">Con error</span>
+                <strong>@_queueSnapshot.ConError</strong>
+            </div>
+            <div class="context-card">
+                <span class="context-card__label">Cancelados</span>
+                <strong>@_queueSnapshot.Cancelados</strong>
+            </div>
+        </div>
+
+        @if (_loadingQueue)
+        {
+            <div class="usuarios-empty">Cargando cola de procesamiento...</div>
+        }
+        else if (_queueSnapshot.Items.Count == 0)
+        {
+            <div class="usuarios-empty">Todavía no hay lecturas automáticas registradas.</div>
+        }
+        else
+        {
+            <div class="usuarios-table-wrap">
+                <table class="data-table usuarios-table">
+                    <thead>
+                        <tr>
+                            <th>Documento</th>
+                            <th>Estado</th>
+                            <th>Proveedor</th>
+                            <th>Inicio</th>
+                            <th>Duración</th>
+                            <th>Intentos</th>
+                            <th>Detalle</th>
+                            <th class="interfaces-table__actions">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var job in _queueSnapshot.Items)
+                        {
+                            <tr class="usuarios-table__row">
+                                <td>
+                                    @if (job.IdComprobanteRecibido.HasValue)
+                                    {
+                                        <button type="button"
+                                                class="btn btn--ghost btn--sm"
+                                                @onclick="() => AbrirFicha(job.IdComprobanteRecibido.Value)">
+                                            #@job.IdComprobanteRecibido.Value
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <span>—</span>
+                                    }
+                                </td>
+                                <td><span class="interfaces-status-pill @GetStateCssClass(job.Estado, job.Estado)">@job.Estado</span></td>
+                                <td>@(string.IsNullOrWhiteSpace(job.ProveedorNombre) ? "—" : job.ProveedorNombre)</td>
+                                <td>@FormatQueueDate(job.FechaHoraInicio ?? job.FechaHoraProceso)</td>
+                                <td>@FormatQueueDuration(job)</td>
+                                <td>@job.Intentos</td>
+                                <td>@GetQueueDetail(job)</td>
+                                <td class="interfaces-table__actions">
+                                    @if (CanCancelQueueJob(job))
+                                    {
+                                        <button type="button"
+                                                class="btn btn--ghost btn--sm"
+                                                @onclick="() => CancelarColaAsync(job.Id)"
+                                                disabled="@_loadingQueue">
+                                            <i class="bi bi-stop-circle"></i>
+                                            <span>@(job.Estado == "PROCESANDO_LECTURA" ? "Solicitar cancelación" : "Cancelar")</span>
+                                        </button>
+                                    }
+                                    @if (CanRetryQueueJob(job))
+                                    {
+                                        <button type="button"
+                                                class="btn btn--ghost btn--sm interfaces-table__edit"
+                                                @onclick="() => ReintentarColaAsync(job.Id)"
+                                                disabled="@_loadingQueue">
+                                            <i class="bi bi-arrow-repeat"></i>
+                                            <span>Reintentar</span>
+                                        </button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+
     @{
         var visibleColumns = GetVisibleColumns();
         var groups = BuildGridGroups();
@@ -377,7 +491,9 @@
     private readonly HashSet<long> _selectedIds = [];
     private AppUiMessage? _feedback;
     private InterfacesViewSettingsDto _viewSettings = BuildDefaultViewSettings();
+    private InterfacesCompraIaQueueSnapshotDto _queueSnapshot = new();
     private bool _loadingList;
+    private bool _loadingQueue;
     private bool _showViewSettings;
     private bool _viewSettingsLoaded;
     private long _selectedId;
@@ -401,6 +517,7 @@
         await EnsureViewSettingsLoadedAsync();
         await CargarCatalogosAsync();
         await BuscarAsync();
+        await CargarColaAsync();
     }
 
     public void Dispose()
@@ -427,6 +544,7 @@
     {
         await CargarCatalogosAsync();
         await BuscarAsync();
+        await CargarColaAsync();
     }
 
     private async Task AplicarFiltrosAsync()
@@ -464,6 +582,26 @@
         finally
         {
             _loadingList = false;
+        }
+    }
+
+    private async Task CargarColaAsync()
+    {
+        _loadingQueue = true;
+        try
+        {
+            var result = await UiOps.RunAsync(() => InterfacesSvc.GetCompraIaQueueSnapshotAsync(), "No se pudo cargar la cola de procesamiento de compras.");
+            if (!result.Success || result.Value is null)
+            {
+                SetFeedback(result.Feedback);
+                return;
+            }
+
+            _queueSnapshot = result.Value;
+        }
+        finally
+        {
+            _loadingQueue = false;
         }
     }
 
@@ -569,8 +707,59 @@
         _ = InvokeAsync(async () =>
         {
             await EnsureViewSettingsLoadedAsync(force: true);
+            await CargarColaAsync();
             StateHasChanged();
         });
+    }
+
+    private async Task CancelarColaAsync(int id)
+    {
+        var confirm = await Js.InvokeAsync<bool>("confirm", "Se va a cancelar o solicitar la cancelación del procesamiento seleccionado. ¿Querés continuar?");
+        if (!confirm)
+            return;
+
+        var result = await UiOps.RunAsync(async () =>
+        {
+            await InterfacesSvc.CancelCompraDetectionAsync(new InterfacesCompraIaAccionRequest
+            {
+                Id = id,
+                UsuarioAccion = AppUserSession.GetCurrentUserName(Environment.UserName),
+                PcAccion = Environment.MachineName
+            });
+            return true;
+        }, "No se pudo cancelar el procesamiento seleccionado.");
+
+        if (!result.Success)
+        {
+            SetFeedback(result.Feedback);
+            return;
+        }
+
+        SetFeedback(AppUiMessage.Success("Cancelación registrada", "La cola de compras quedó actualizada con tu solicitud de cancelación."));
+        await CargarColaAsync();
+    }
+
+    private async Task ReintentarColaAsync(int id)
+    {
+        var result = await UiOps.RunAsync(async () =>
+        {
+            await InterfacesSvc.RetryCompraDetectionAsync(new InterfacesCompraIaAccionRequest
+            {
+                Id = id,
+                UsuarioAccion = AppUserSession.GetCurrentUserName(Environment.UserName),
+                PcAccion = Environment.MachineName
+            });
+            return true;
+        }, "No se pudo reencolar el procesamiento seleccionado.");
+
+        if (!result.Success)
+        {
+            SetFeedback(result.Feedback);
+            return;
+        }
+
+        SetFeedback(AppUiMessage.Success("Documento reencolado", "La lectura automática volvió a quedar pendiente para procesarse."));
+        await CargarColaAsync();
     }
 
     private async Task EnsureViewSettingsLoadedAsync(bool force = false)
@@ -736,6 +925,42 @@
         if (key.Contains("FINAL") || key.Contains("CERR") || key.Contains("APROB"))
             return "interfaces-status-pill--success";
         return "interfaces-status-pill--info";
+    }
+
+    private static bool CanCancelQueueJob(InterfacesCompraIaResultadoDto job)
+        => job.Estado is "PENDIENTE_LECTURA" or "PROCESANDO_LECTURA";
+
+    private static bool CanRetryQueueJob(InterfacesCompraIaResultadoDto job)
+        => job.Estado is "ERROR_LECTURA" or "CANCELADO" or "SIN_PROVEEDOR";
+
+    private static string FormatQueueDate(DateTime value)
+        => value.ToString("dd/MM/yyyy HH:mm");
+
+    private static string FormatQueueDuration(InterfacesCompraIaResultadoDto job)
+    {
+        var start = job.FechaHoraInicio ?? job.FechaHoraProceso;
+        var end = job.FechaHoraFin ?? (job.Estado == "PROCESANDO_LECTURA" ? DateTime.Now : (DateTime?)null);
+        if (!end.HasValue)
+            return "—";
+
+        var span = end.Value - start;
+        if (span.TotalSeconds < 60)
+            return $"{Math.Max(1, (int)span.TotalSeconds)} s";
+        if (span.TotalMinutes < 60)
+            return $"{(int)span.TotalMinutes} min";
+
+        return $"{(int)span.TotalHours} h {(span.Minutes)} min";
+    }
+
+    private static string GetQueueDetail(InterfacesCompraIaResultadoDto job)
+    {
+        if (!string.IsNullOrWhiteSpace(job.LectorError))
+            return job.LectorError;
+        if (!string.IsNullOrWhiteSpace(job.ObservacionesRevision))
+            return job.ObservacionesRevision;
+        if (!string.IsNullOrWhiteSpace(job.LectorObservaciones))
+            return job.LectorObservaciones;
+        return "—";
     }
 
     private void SetFeedback(AppUiMessage? message)

@@ -126,6 +126,74 @@
             </div>
         </section>
 
+        <section class="panel-card conv-config-form">
+            <div class="panel-card__header">
+                <div>
+                    <h3 class="panel-card__title">Lectura automática de compras</h3>
+                    <p class="panel-card__subtitle">Configurá el lector Python reutilizado por Interfaces para detectar proveedor, comprobante y totales.</p>
+                </div>
+                <span class="panel-card__tag">IA COMPRAS</span>
+            </div>
+
+            <div class="conv-config-fields">
+                <div class="field">
+                    <label>Habilitado</label>
+                    <select @bind="_compraIaEnabledText">
+                        <option value="SI">Sí</option>
+                        <option value="NO">No</option>
+                    </select>
+                </div>
+
+                <div class="field conv-config-fields__full">
+                    <label>Ejecutable Python</label>
+                    <input @bind="_compraIaConfig.PythonExe" placeholder="C:\Python311\python.exe" />
+                </div>
+
+                <div class="field conv-config-fields__full">
+                    <label>Script del lector</label>
+                    <input @bind="_compraIaConfig.ScriptPath" placeholder="C:\dev\IA_ProcesarDocumentos\lector_facturas_to_json_v5.py" />
+                </div>
+
+                <div class="field conv-config-fields__full">
+                    <label>Carpeta de trabajo</label>
+                    <input @bind="_compraIaConfig.WorkDir" placeholder="C:\dev\IA_ProcesarDocumentos" />
+                </div>
+
+                <div class="field">
+                    <label>Worker habilitado</label>
+                    <select @bind="_compraIaWorkerEnabledText">
+                        <option value="SI">Sí</option>
+                        <option value="NO">No</option>
+                    </select>
+                </div>
+
+                <div class="field">
+                    <label>Procesos simultáneos</label>
+                    <input type="number" min="1" max="4" @bind="_compraIaConfig.WorkerMaxParalelo" />
+                </div>
+
+                <div class="field">
+                    <label>Intervalo del worker (seg.)</label>
+                    <input type="number" min="3" max="300" @bind="_compraIaConfig.WorkerIntervaloSegundos" />
+                </div>
+            </div>
+
+            <div class="context-card">
+                <span class="context-card__label">Uso actual</span>
+                <strong>@GetCompraIaResumen()</strong>
+                <span class="context-card__muted">Si el script no está configurado, el botón <code>Detectar datos</code> va a fallar aunque el documento tenga adjuntos válidos.</span>
+            </div>
+
+            <div class="actions">
+                <button type="button" class="btn btn--ghost" @onclick="TestCompraIaAsync" disabled="@(Loading || Saving || TestingCompraIa)">
+                    <i class="bi bi-clipboard2-check"></i> Probar configuración
+                </button>
+                <button type="button" class="btn btn--primary" @onclick="SaveCompraIaAsync" disabled="@(Loading || Saving)">
+                    <i class="bi bi-cpu"></i> Guardar lector de compras
+                </button>
+            </div>
+        </section>
+
         <aside class="panel-card conv-config-help">
             <div class="panel-card__header">
                 <div>
@@ -158,11 +226,15 @@
 
 @code {
     private InterfacesUploadSettingsDto _config = new();
+    private InterfacesCompraIaSettingsDto _compraIaConfig = new();
     private bool Loading { get; set; }
     private bool Saving { get; set; }
+    private bool TestingCompraIa { get; set; }
     private AppUiMessage? _feedback;
     private string _extensionesTexto = string.Empty;
     private string _ftpPassiveText = "SI";
+    private string _compraIaEnabledText = "NO";
+    private string _compraIaWorkerEnabledText = "SI";
 
     protected override async Task OnInitializedAsync()
     {
@@ -174,13 +246,18 @@
         Loading = true;
         _feedback = null;
 
-        var result = await UiOps.RunAsync(
-            () => ConfigSvc.GetUploadSettingsAsync(),
-            "No se pudo cargar la configuración de Interfaces.");
-
-        if (result.Success && result.Value is not null)
+        var result = await UiOps.RunAsync(async () =>
         {
-            _config = result.Value;
+            var uploadTask = ConfigSvc.GetUploadSettingsAsync();
+            var iaTask = ConfigSvc.GetCompraIaSettingsAsync();
+            await Task.WhenAll(uploadTask, iaTask);
+            return (Upload: await uploadTask, Ia: await iaTask);
+        }, "No se pudo cargar la configuración de Interfaces.");
+
+        if (result.Success)
+        {
+            _config = result.Value.Upload;
+            _compraIaConfig = result.Value.Ia;
             SyncUi();
         }
         else
@@ -217,10 +294,86 @@
         Saving = false;
     }
 
+    private async Task SaveCompraIaAsync()
+    {
+        Saving = true;
+        _feedback = null;
+        _compraIaConfig.Habilitado = string.Equals(_compraIaEnabledText, "SI", StringComparison.OrdinalIgnoreCase);
+        _compraIaConfig.WorkerHabilitado = string.Equals(_compraIaWorkerEnabledText, "SI", StringComparison.OrdinalIgnoreCase);
+
+        var result = await UiOps.RunAsync(
+            () => ConfigSvc.SaveCompraIaSettingsAsync(_compraIaConfig),
+            "No se pudo guardar la configuración de lectura automática de compras.");
+
+        if (result.Success)
+        {
+            _feedback = AppUiMessage.Success(
+                "Configuración guardada",
+                "El lector automático de comprobantes de compra quedó configurado para la base activa.");
+        }
+        else
+        {
+            _feedback = result.Feedback;
+        }
+
+        Saving = false;
+    }
+
+    private async Task TestCompraIaAsync()
+    {
+        TestingCompraIa = true;
+        _feedback = null;
+        _compraIaConfig.Habilitado = string.Equals(_compraIaEnabledText, "SI", StringComparison.OrdinalIgnoreCase);
+        _compraIaConfig.WorkerHabilitado = string.Equals(_compraIaWorkerEnabledText, "SI", StringComparison.OrdinalIgnoreCase);
+
+        if (!_compraIaConfig.Habilitado)
+        {
+            _feedback = new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Warning,
+                Title = "Lectura deshabilitada",
+                Message = "Activá la detección automática de compras antes de probar la configuración."
+            };
+            TestingCompraIa = false;
+            return;
+        }
+
+        var result = await UiOps.RunAsync(
+            () => ConfigSvc.ProbeCompraIaSettingsAsync(_compraIaConfig),
+            "No se pudo probar la configuración de lectura automática de compras.");
+
+        if (result.Success && result.Value is not null)
+        {
+            _feedback = AppUiMessage.Success(
+                "Configuración válida",
+                $"Python respondió correctamente ({result.Value.PythonVersion}) y el lector quedó listo para usarse.");
+        }
+        else
+        {
+            _feedback = result.Feedback;
+        }
+
+        TestingCompraIa = false;
+    }
+
     private void SyncUi()
     {
         _ftpPassiveText = _config.FtpModoPasivo ? "SI" : "NO";
         _extensionesTexto = string.Join(",", _config.ExtensionesPermitidas);
+        _compraIaEnabledText = _compraIaConfig.Habilitado ? "SI" : "NO";
+        _compraIaWorkerEnabledText = _compraIaConfig.WorkerHabilitado ? "SI" : "NO";
+    }
+
+    private string GetCompraIaResumen()
+    {
+        if (!_compraIaConfig.Habilitado)
+            return "La detección automática está deshabilitada.";
+
+        var script = string.IsNullOrWhiteSpace(_compraIaConfig.ScriptPath)
+            ? "sin script configurado"
+            : _compraIaConfig.ScriptPath;
+
+        return $"Activo · {script} · worker {(_compraIaConfig.WorkerHabilitado ? "habilitado" : "deshabilitado")}";
     }
 
     private static IReadOnlyList<string> ParseExtensions(string? value)

@@ -79,6 +79,24 @@ public sealed class InterfacesUploadSettingsDto
     }
 }
 
+public sealed class InterfacesCompraIaSettingsDto
+{
+    public bool Habilitado { get; set; }
+    public string PythonExe { get; set; } = string.Empty;
+    public string ScriptPath { get; set; } = string.Empty;
+    public string WorkDir { get; set; } = string.Empty;
+    public bool WorkerHabilitado { get; set; } = true;
+    public int WorkerMaxParalelo { get; set; } = 1;
+    public int WorkerIntervaloSegundos { get; set; } = 10;
+}
+
+public sealed class InterfacesCompraIaProbeResultDto
+{
+    public string PythonVersion { get; set; } = string.Empty;
+    public string ScriptPath { get; set; } = string.Empty;
+    public string WorkDir { get; set; } = string.Empty;
+}
+
 public sealed class InterfacesInboxItemDto
 {
     public long IdComprobanteRecibido { get; set; }
@@ -185,8 +203,92 @@ public sealed class InterfacesDetalleDto
     public string RutaBase { get; set; } = string.Empty;
     public string ReferenciaExterna { get; set; } = string.Empty;
     public bool Eliminado { get; set; }
+    public InterfacesCompraIaResultadoDto? LecturaCompra { get; set; }
     public IReadOnlyList<InterfacesAdjuntoDto> Adjuntos { get; set; } = [];
     public IReadOnlyList<InterfacesHistorialDto> Historial { get; set; } = [];
+}
+
+public sealed class InterfacesCompraIaResultadoDto
+{
+    public int Id { get; set; }
+    public long? IdComprobanteRecibido { get; set; }
+    public long? IdAdjuntoFuente { get; set; }
+    public string Estado { get; set; } = string.Empty;
+    public DateTime FechaHoraProceso { get; set; }
+    public DateTime? FechaHoraInicio { get; set; }
+    public DateTime? FechaHoraFin { get; set; }
+    public DateTime? FechaHoraModificacion { get; set; }
+    public string UsuarioProceso { get; set; } = string.Empty;
+    public string ObservacionesRevision { get; set; } = string.Empty;
+    public bool SolicitarCancelacion { get; set; }
+    public int Intentos { get; set; }
+    public string ArchivoRutaOriginal { get; set; } = string.Empty;
+    public string ArchivoNombreOriginal { get; set; } = string.Empty;
+    public string ArchivoNombreRenombrado { get; set; } = string.Empty;
+    public string ProveedorNombre { get; set; } = string.Empty;
+    public string ProveedorCuit { get; set; } = string.Empty;
+    public string ProveedorDomicilio { get; set; } = string.Empty;
+    public string ProveedorCondIva { get; set; } = string.Empty;
+    public string CuentaContable { get; set; } = string.Empty;
+    public string MatchMetodo { get; set; } = string.Empty;
+    public string TipoComprobante { get; set; } = string.Empty;
+    public string Letra { get; set; } = string.Empty;
+    public string PuntoVenta { get; set; } = string.Empty;
+    public string Numero { get; set; } = string.Empty;
+    public DateTime? Fecha { get; set; }
+    public DateTime? Vencimiento { get; set; }
+    public string Cae { get; set; } = string.Empty;
+    public DateTime? VtoCae { get; set; }
+    public string Moneda { get; set; } = string.Empty;
+    public decimal? NetoGravado { get; set; }
+    public decimal? NetoNoGravado { get; set; }
+    public decimal? Exento { get; set; }
+    public decimal? Iva21 { get; set; }
+    public decimal? Iva105 { get; set; }
+    public decimal? Iva27 { get; set; }
+    public decimal? PercepcionIva { get; set; }
+    public decimal? PercepcionIibb { get; set; }
+    public decimal? PercepcionGanancias { get; set; }
+    public decimal? ImpuestosInternos { get; set; }
+    public decimal? OtrosImpuestos { get; set; }
+    public decimal? Total { get; set; }
+    public string LectorObservaciones { get; set; } = string.Empty;
+    public string LectorError { get; set; } = string.Empty;
+    public string JsonResultado { get; set; } = string.Empty;
+    public IReadOnlyList<InterfacesCompraIaDetalleItemDto> Items { get; set; } = [];
+}
+
+public sealed class InterfacesCompraIaQueueSnapshotDto
+{
+    public int Pendientes { get; set; }
+    public int Procesando { get; set; }
+    public int Procesados { get; set; }
+    public int ConError { get; set; }
+    public int Cancelados { get; set; }
+    public IReadOnlyList<InterfacesCompraIaResultadoDto> Items { get; set; } = [];
+}
+
+public sealed class InterfacesCompraIaDetalleItemDto
+{
+    public int Id { get; set; }
+    public int IdCab { get; set; }
+    public int NroRenglon { get; set; }
+    public string Cantidad { get; set; } = string.Empty;
+    public string CodigoArticulo { get; set; } = string.Empty;
+    public string Descripcion { get; set; } = string.Empty;
+    public string Ud { get; set; } = string.Empty;
+    public decimal? ImporteLista { get; set; }
+    public double? Dto1 { get; set; }
+    public double? Dto2 { get; set; }
+    public decimal? ImporteNeto { get; set; }
+    public double? Iva { get; set; }
+    public decimal? ImpuestosInternos { get; set; }
+    public decimal? Total { get; set; }
+    public string AuxNroLote { get; set; } = string.Empty;
+    public string AuxNroSerie { get; set; } = string.Empty;
+    public string BlPq { get; set; } = string.Empty;
+    public string Moneda { get; set; } = string.Empty;
+    public decimal? TotImpInt { get; set; }
 }
 
 public sealed class InterfacesCrearAdjuntoRequest
@@ -250,6 +352,20 @@ public sealed class InterfacesAdjuntoServeDto
 public sealed class InterfacesEliminarComprobantesRequest
 {
     public IReadOnlyList<long> IdsComprobanteRecibido { get; set; } = [];
+    public string UsuarioAccion { get; set; } = string.Empty;
+    public string PcAccion { get; set; } = string.Empty;
+}
+
+public sealed class InterfacesDetectarCompraRequest
+{
+    public long IdComprobanteRecibido { get; set; }
+    public string UsuarioAccion { get; set; } = string.Empty;
+    public string PcAccion { get; set; } = string.Empty;
+}
+
+public sealed class InterfacesCompraIaAccionRequest
+{
+    public int Id { get; set; }
     public string UsuarioAccion { get; set; } = string.Empty;
     public string PcAccion { get; set; } = string.Empty;
 }

@@ -189,23 +189,84 @@
                         </div>
                     }
 
+                    @if (CanDetectCompra)
+                    {
+                        <div class="interfaces-inline-note">
+                            <i class="bi bi-robot"></i>
+                            <div>
+                                <strong>Lectura automática de factura</strong>
+                                <span>Envía el documento a la cola del lector de compras para detectar proveedor, comprobante y totales desde los adjuntos activos.</span>
+                            </div>
+                            <button type="button" class="btn btn--secondary" @onclick="DetectarCompraAsync" disabled="@(_detectingCompra || IsSavingDetalle)">
+                                <i class="bi bi-search"></i>
+                                <span>@(_detectingCompra ? "Encolando..." : GetDetectCompraButtonLabel())</span>
+                            </button>
+                        </div>
+                    }
+
+                    @if (_detail.LecturaCompra is not null)
+                    {
+                        <div class="contactos-form__grid">
+                            <div class="field">
+                                <label>Lectura IA</label>
+                                <input value="@_detail.LecturaCompra.Estado" readonly />
+                            </div>
+                            <div class="field">
+                                <label>Proveedor</label>
+                                <input value="@_detail.LecturaCompra.ProveedorNombre" readonly />
+                            </div>
+                            <div class="field">
+                                <label>Cuenta proveedor</label>
+                                <input value="@_detail.LecturaCompra.CuentaContable" readonly />
+                            </div>
+                            <div class="field">
+                                <label>CUIT</label>
+                                <input value="@_detail.LecturaCompra.ProveedorCuit" readonly />
+                            </div>
+                            <div class="field">
+                                <label>Comprobante</label>
+                                <input value="@BuildComprobanteLecturaLabel(_detail.LecturaCompra)" readonly />
+                            </div>
+                            <div class="field">
+                                <label>Total</label>
+                                <input value="@FormatMoney(_detail.LecturaCompra.Total)" readonly />
+                            </div>
+                        </div>
+
+                        @if (!string.IsNullOrWhiteSpace(_detail.LecturaCompra.LectorObservaciones))
+                        {
+                            <div class="field">
+                                <label>Observaciones del lector</label>
+                                <textarea class="contactos-observaciones" readonly>@_detail.LecturaCompra.LectorObservaciones</textarea>
+                            </div>
+                        }
+
+                        @if (!string.IsNullOrWhiteSpace(_detail.LecturaCompra.LectorError))
+                        {
+                            <div class="field">
+                                <label>Error del lector</label>
+                                <textarea class="contactos-observaciones" readonly>@_detail.LecturaCompra.LectorError</textarea>
+                            </div>
+                        }
+                    }
+
                     <div class="field">
                         <label>Observación</label>
-                        <textarea class="contactos-observaciones" @bind="_editForm.Observacion" disabled="@_savingEdit"></textarea>
+                        <textarea class="contactos-observaciones" @bind="_editForm.Observacion" disabled="@IsSavingDetalle"></textarea>
                     </div>
 
                     <div class="field">
                         <label>@(_detail.PermiteEdicion ? "Motivo / nota de estado" : "Nueva nota para agregar")</label>
                         <textarea class="contactos-observaciones"
                                   @bind="_statusChange.Observacion"
-                                  disabled="@_changingState"
+                                  disabled="@IsSavingDetalle"
                                   placeholder="@(_detail.PermiteEdicion ? "Opcional: explicación del cambio de estado" : "Escribí la nota que querés agregar al documento")"></textarea>
                     </div>
 
                     <div class="contactos-form__grid">
                         <div class="field">
-                            <label>Cambiar estado a</label>
-                            <select @bind="_statusChange.IdEstadoNuevo" disabled="@_changingState">
+                            <label>Estado</label>
+                            <select @bind="_statusChange.IdEstadoNuevo" disabled="@IsSavingDetalle">
                                 @foreach (var item in _states)
                                 {
                                     <option value="@item.IdEstado">@item.Descripcion</option>
@@ -215,15 +276,11 @@
                     </div>
 
                     <div class="actions usuarios-editor__actions">
-                        <button type="button" class="btn btn--primary" @onclick="GuardarEdicionAsync" disabled="@_savingEdit">
+                        <button type="button" class="btn btn--primary" @onclick="GuardarEdicionAsync" disabled="@IsSavingDetalle">
                             <i class="bi bi-floppy"></i>
-                            <span>@(_savingEdit ? "Guardando..." : "Guardar")</span>
+                            <span>@(IsSavingDetalle ? "Guardando..." : "Guardar")</span>
                         </button>
-                        <button type="button" class="btn btn--ghost" @onclick="GuardarEstadoAsync" disabled="@(_changingState || _statusChange.IdEstadoNuevo == _detail.IdEstado)">
-                            <i class="bi bi-arrow-repeat"></i>
-                            <span>@(_changingState ? "Actualizando..." : "Cambiar estado")</span>
-                        </button>
-                        <button type="button" class="btn btn--ghost" @onclick="ResetEditarDetalle" disabled="@_savingEdit">
+                        <button type="button" class="btn btn--ghost" @onclick="ResetEditarDetalle" disabled="@IsSavingDetalle">
                             <i class="bi bi-eraser"></i>
                             <span>Revertir</span>
                         </button>
@@ -336,11 +393,17 @@
     private bool _savingEdit;
     private bool _changingState;
     private bool _savingExtraAttachments;
+    private bool _detectingCompra;
     private int _filePickerVersion;
     private int _extraPickerVersion;
     private InterfacesTab _activeTab = InterfacesTab.Datos;
 
     private bool _isNewMode => !IdComprobanteRecibido.HasValue;
+    private bool IsSavingDetalle => _savingEdit || _changingState;
+    private bool CanDetectCompra => _detail is not null
+        && !_isNewMode
+        && _detail.Adjuntos.Count > 0
+        && string.Equals(_detail.TipoDocumentoCodigo, "COMPROBANTE_COMPRA", StringComparison.OrdinalIgnoreCase);
 
     protected override async Task OnParametersSetAsync()
     {
@@ -455,6 +518,7 @@
         _savingEdit = true;
         try
         {
+            var shouldChangeState = _statusChange.IdEstadoNuevo > 0 && _statusChange.IdEstadoNuevo != _detail.IdEstado;
             var originalObservation = _editForm.Observacion;
             _editForm.IdComprobanteRecibido = IdComprobanteRecibido.Value;
             _editForm.UsuarioAccion = CurrentUserName;
@@ -489,9 +553,17 @@
                 return;
             }
 
-            SetFeedback(AppUiMessage.Success("Documento actualizado", _detail.PermiteEdicion
-                ? "La ficha se guardó correctamente."
-                : "La nota del bloque inferior se agregó a la observación del documento."));
+            if (shouldChangeState)
+            {
+                await GuardarEstadoAsync();
+                if (_feedback?.Severity != AppUiFeedbackSeverity.Success)
+                {
+                    _editForm.Observacion = originalObservation;
+                    return;
+                }
+            }
+
+            SetFeedback(BuildGuardarDetalleSuccessMessage(_detail.PermiteEdicion, shouldChangeState));
             await CargarDetalleAsync();
         }
         finally
@@ -533,6 +605,41 @@
         finally
         {
             _changingState = false;
+        }
+    }
+
+    private async Task DetectarCompraAsync()
+    {
+        if (_detail is null || !IdComprobanteRecibido.HasValue)
+            return;
+
+        _detectingCompra = true;
+        try
+        {
+            var result = await UiOps.RunAsync(async () =>
+            {
+                return await InterfacesSvc.QueueCompraDetectionAsync(new InterfacesDetectarCompraRequest
+                {
+                    IdComprobanteRecibido = IdComprobanteRecibido.Value,
+                    UsuarioAccion = CurrentUserName,
+                    PcAccion = Environment.MachineName
+                });
+            }, "No se pudo detectar la información del comprobante.");
+
+            if (!result.Success)
+            {
+                SetFeedback(result.Feedback);
+                return;
+            }
+
+            SetFeedback(AppUiMessage.Success(
+                "Documento en cola",
+                "La factura quedó encolada para procesamiento automático. Podés seguir trabajando y revisar el estado desde la ficha o el listado."));
+            await CargarDetalleAsync();
+        }
+        finally
+        {
+            _detectingCompra = false;
         }
     }
 
@@ -693,6 +800,27 @@
             : $"{cleanCurrent}{Environment.NewLine}{Environment.NewLine}------------------------------{Environment.NewLine}{header}{Environment.NewLine}{cleanNote}";
     }
 
+    private static AppUiMessage BuildGuardarDetalleSuccessMessage(bool permiteEdicion, bool cambioEstado)
+    {
+        if (!permiteEdicion)
+        {
+            return AppUiMessage.Success(
+                "Documento actualizado",
+                "La nota del bloque inferior se agregó a la observación del documento.");
+        }
+
+        if (cambioEstado)
+        {
+            return AppUiMessage.Success(
+                "Documento actualizado",
+                "La ficha y el estado del documento se guardaron correctamente.");
+        }
+
+        return AppUiMessage.Success(
+            "Documento actualizado",
+            "La ficha se guardó correctamente.");
+    }
+
     private string GetAttachmentDownloadUrl(long idAdjunto)
         => $"/api/interfaces/adjuntos/{idAdjunto}";
 
@@ -714,6 +842,39 @@
         if (bytes < 1024 * 1024) return $"{bytes / 1024d:N1} KB";
         return $"{bytes / 1024d / 1024d:N1} MB";
     }
+
+    private static string BuildComprobanteLecturaLabel(InterfacesCompraIaResultadoDto lectura)
+    {
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(lectura.TipoComprobante))
+            parts.Add(lectura.TipoComprobante.Trim());
+
+        var numero = string.Join("-",
+            new[] { lectura.PuntoVenta, lectura.Numero }
+                .Where(static x => !string.IsNullOrWhiteSpace(x))
+                .Select(static x => x.Trim()));
+
+        var suffix = string.Join(" ",
+            new[] { lectura.Letra, numero }
+                .Where(static x => !string.IsNullOrWhiteSpace(x))
+                .Select(static x => x.Trim()));
+
+        if (!string.IsNullOrWhiteSpace(suffix))
+            parts.Add(suffix);
+
+        return parts.Count == 0 ? "Sin dato" : string.Join(" · ", parts);
+    }
+
+    private static string FormatMoney(decimal? amount)
+        => amount.HasValue ? amount.Value.ToString("N2") : "Sin dato";
+
+    private string GetDetectCompraButtonLabel()
+        => _detail?.LecturaCompra?.Estado switch
+        {
+            "PENDIENTE_LECTURA" => "Reencolar lectura",
+            "PROCESANDO_LECTURA" => "Volver a encolar",
+            _ => "Enviar a procesar"
+        };
 
     private string CurrentUserName => AppUserSession.GetCurrentUserName(Environment.UserName);
 

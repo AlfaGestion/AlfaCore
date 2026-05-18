@@ -1,5 +1,6 @@
 using AlfaCore.Models;
 using Microsoft.Data.SqlClient;
+using System.Diagnostics;
 using System.Net;
 
 namespace AlfaCore.Services;
@@ -17,6 +18,8 @@ public sealed class InterfacesConfigService(
     private const int DefaultFtpPuerto = 21;
     private const string DefaultFtpUsuario = "ftpalfa";
     private const string DefaultFtpClave = "24681012";
+    private const string DefaultIaFolder = @"C:\dev\IA_ProcesarDocumentos";
+    private const string DefaultIaScriptName = "lector_facturas_to_json_v5.py";
 
     private string ConnectionString => sessionService.GetConnectionString().Length > 0
         ? sessionService.GetConnectionString()
@@ -159,6 +162,141 @@ public sealed class InterfacesConfigService(
         }, "No se pudo guardar la configuración de Interfaces.", ct);
     }
 
+    public Task<InterfacesCompraIaSettingsDto> GetCompraIaSettingsAsync(CancellationToken ct = default)
+        => ExecuteLoggedAsync("Interfaces", "GetCompraIaSettings", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            var detailColumn = await ResolveDetailColumnAsync(cn, token);
+
+            var sql = $"""
+                SELECT
+                    UPPER(LTRIM(RTRIM(CLAVE))),
+                    ISNULL(VALOR, ''),
+                    ISNULL({detailColumn}, '')
+                FROM dbo.TA_CONFIGURACION
+                WHERE UPPER(LTRIM(RTRIM(CLAVE))) IN
+                (
+                    'INTERFACESIACOMPRASHABILITADO',
+                    'INTERFACESIACOMPRASPYTHONEXE',
+                    'INTERFACESIACOMPRASSCRIPTPATH',
+                    'INTERFACESIACOMPRASWORKDIR',
+                    'INTERFACESIACOMPRASWORKERHABILITADO',
+                    'INTERFACESIACOMPRASWORKERMAXPARALELO',
+                    'INTERFACESIACOMPRASWORKERINTERVALOSEGUNDOS'
+                )
+                """;
+
+            var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            await using var cmd = new SqlCommand(sql, cn);
+            await using var rd = await cmd.ExecuteReaderAsync(token);
+            while (await rd.ReadAsync(token))
+            {
+                var key = GetString(rd, 0);
+                var value = ResolveStoredValue(GetString(rd, 1), GetString(rd, 2));
+                values[key] = value;
+            }
+
+            var defaultScriptPath = Path.Combine(DefaultIaFolder, DefaultIaScriptName);
+            var defaultWorkDir = Directory.Exists(DefaultIaFolder) ? DefaultIaFolder : string.Empty;
+
+            return new InterfacesCompraIaSettingsDto
+            {
+                Habilitado = string.Equals(ReadValue(values, "INTERFACESIACOMPRASHABILITADO", "NO"), "SI", StringComparison.OrdinalIgnoreCase),
+                PythonExe = ReadValue(values, "INTERFACESIACOMPRASPYTHONEXE", string.Empty).Trim(),
+                ScriptPath = ReadValue(values, "INTERFACESIACOMPRASSCRIPTPATH", File.Exists(defaultScriptPath) ? defaultScriptPath : string.Empty).Trim(),
+                WorkDir = ReadValue(values, "INTERFACESIACOMPRASWORKDIR", defaultWorkDir).Trim(),
+                WorkerHabilitado = !string.Equals(ReadValue(values, "INTERFACESIACOMPRASWORKERHABILITADO", "SI"), "NO", StringComparison.OrdinalIgnoreCase),
+                WorkerMaxParalelo = ParsePositiveInt(ReadValue(values, "INTERFACESIACOMPRASWORKERMAXPARALELO", "1"), 1),
+                WorkerIntervaloSegundos = ParsePositiveInt(ReadValue(values, "INTERFACESIACOMPRASWORKERINTERVALOSEGUNDOS", "10"), 10)
+            };
+        }, "No se pudo cargar la configuración de lectura automática de compras.", ct);
+
+    public async Task SaveCompraIaSettingsAsync(InterfacesCompraIaSettingsDto settings, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+
+        await ExecuteLoggedAsync("Interfaces", "SaveCompraIaSettings", async token =>
+        {
+            var normalized = Normalize(settings);
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            var detailColumn = await ResolveDetailColumnAsync(cn, token);
+            await using var tx = await cn.BeginTransactionAsync(token);
+
+            foreach (var item in BuildItems(normalized))
+            {
+                var stored = SplitStoredValue(item.Value);
+                var sql = $"""
+                    UPDATE dbo.TA_CONFIGURACION
+                    SET
+                        VALOR = @Valor,
+                        {detailColumn} = @ValorAux,
+                        GRUPO = @Grupo
+                    WHERE UPPER(LTRIM(RTRIM(CLAVE))) = @ClaveNormalizada;
+
+                    IF @@ROWCOUNT = 0
+                    BEGIN
+                        INSERT INTO dbo.TA_CONFIGURACION (CLAVE, VALOR, {detailColumn}, GRUPO)
+                        VALUES (@Clave, @Valor, @ValorAux, @Grupo);
+                    END;
+                    """;
+
+                await using var cmd = new SqlCommand(sql, cn, (SqlTransaction)tx);
+                cmd.Parameters.AddWithValue("@ClaveNormalizada", item.Key.ToUpperInvariant());
+                cmd.Parameters.AddWithValue("@Clave", item.Key);
+                cmd.Parameters.AddWithValue("@Valor", DbNullable(stored.Value));
+                cmd.Parameters.AddWithValue("@ValorAux", DbNullable(stored.AuxValue));
+                cmd.Parameters.AddWithValue("@Grupo", ConfigGroup);
+                await cmd.ExecuteNonQueryAsync(token);
+            }
+
+            await tx.CommitAsync(token);
+
+            await appEvents.LogAuditAsync(
+                "Interfaces",
+                "SaveCompraIaSettings",
+                "TA_CONFIGURACION",
+                ConfigGroup,
+                "Configuración de lectura automática de compras actualizada.",
+                new
+                {
+                    normalized.Habilitado,
+                    normalized.PythonExe,
+                    normalized.ScriptPath,
+                    normalized.WorkDir
+                },
+                token);
+
+            return true;
+        }, "No se pudo guardar la configuración de lectura automática de compras.", ct);
+    }
+
+    public Task<InterfacesCompraIaProbeResultDto> ProbeCompraIaSettingsAsync(InterfacesCompraIaSettingsDto settings, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Interfaces", "ProbeCompraIaSettings", async token =>
+        {
+            var normalized = Normalize(settings);
+
+            if (!normalized.Habilitado)
+                throw new InvalidOperationException("La detección automática de compras está deshabilitada. Activala antes de probar la configuración.");
+            if (string.IsNullOrWhiteSpace(normalized.PythonExe) || !File.Exists(normalized.PythonExe))
+                throw new InvalidOperationException("No se encontró el ejecutable Python configurado.");
+            if (string.IsNullOrWhiteSpace(normalized.ScriptPath) || !File.Exists(normalized.ScriptPath))
+                throw new InvalidOperationException("No se encontró el script configurado para la lectura automática.");
+            if (string.IsNullOrWhiteSpace(normalized.WorkDir) || !Directory.Exists(normalized.WorkDir))
+                throw new InvalidOperationException("No existe la carpeta de trabajo configurada para la lectura automática.");
+
+            var version = await GetPythonVersionAsync(normalized.PythonExe, normalized.WorkDir, token);
+
+            return new InterfacesCompraIaProbeResultDto
+            {
+                PythonVersion = version,
+                ScriptPath = normalized.ScriptPath,
+                WorkDir = normalized.WorkDir
+            };
+        }, "No se pudo probar la configuración de lectura automática de compras.", ct);
+
     private static async Task<string> ResolveDetailColumnAsync(SqlConnection cn, CancellationToken ct)
     {
         const string sql = """
@@ -199,6 +337,17 @@ public sealed class InterfacesConfigService(
         yield return ("InterfacesExtensionesPermitidas", string.Join(",", settings.ExtensionesPermitidas));
     }
 
+    private static IEnumerable<(string Key, string Value)> BuildItems(InterfacesCompraIaSettingsDto settings)
+    {
+        yield return ("InterfacesIaComprasHabilitado", settings.Habilitado ? "SI" : "NO");
+        yield return ("InterfacesIaComprasPythonExe", settings.PythonExe);
+        yield return ("InterfacesIaComprasScriptPath", settings.ScriptPath);
+        yield return ("InterfacesIaComprasWorkDir", settings.WorkDir);
+        yield return ("InterfacesIaComprasWorkerHabilitado", settings.WorkerHabilitado ? "SI" : "NO");
+        yield return ("InterfacesIaComprasWorkerMaxParalelo", settings.WorkerMaxParalelo.ToString());
+        yield return ("InterfacesIaComprasWorkerIntervaloSegundos", settings.WorkerIntervaloSegundos.ToString());
+    }
+
     private static InterfacesUploadSettingsDto Normalize(InterfacesUploadSettingsDto settings, SessionDto? activeSession)
     {
         var tipo = string.Equals(settings.DestinoTipo, "CARPETA", StringComparison.OrdinalIgnoreCase) ? "CARPETA" : "FTP";
@@ -223,6 +372,36 @@ public sealed class InterfacesConfigService(
             EstadoInicialCodigo = string.IsNullOrWhiteSpace(settings.EstadoInicialCodigo) ? "A_PROCESAR" : settings.EstadoInicialCodigo.Trim(),
             TamanoMaximoMb = settings.TamanoMaximoMb <= 0 ? 25 : settings.TamanoMaximoMb,
             ExtensionesPermitidas = extensiones
+        };
+    }
+
+    private static InterfacesCompraIaSettingsDto Normalize(InterfacesCompraIaSettingsDto settings)
+    {
+        var scriptPath = settings.ScriptPath?.Trim() ?? string.Empty;
+        var workDir = settings.WorkDir?.Trim() ?? string.Empty;
+
+        if (string.IsNullOrWhiteSpace(scriptPath))
+        {
+            var defaultScriptPath = Path.Combine(DefaultIaFolder, DefaultIaScriptName);
+            if (File.Exists(defaultScriptPath))
+                scriptPath = defaultScriptPath;
+        }
+
+        if (string.IsNullOrWhiteSpace(workDir) && !string.IsNullOrWhiteSpace(scriptPath))
+            workDir = Path.GetDirectoryName(scriptPath) ?? string.Empty;
+
+        if (string.IsNullOrWhiteSpace(workDir) && Directory.Exists(DefaultIaFolder))
+            workDir = DefaultIaFolder;
+
+        return new InterfacesCompraIaSettingsDto
+        {
+            Habilitado = settings.Habilitado,
+            PythonExe = settings.PythonExe?.Trim() ?? string.Empty,
+            ScriptPath = scriptPath,
+            WorkDir = workDir,
+            WorkerHabilitado = settings.WorkerHabilitado,
+            WorkerMaxParalelo = Math.Max(1, settings.WorkerMaxParalelo),
+            WorkerIntervaloSegundos = Math.Max(3, settings.WorkerIntervaloSegundos)
         };
     }
 
@@ -306,8 +485,48 @@ public sealed class InterfacesConfigService(
     private static string ResolveStoredValue(string value, string auxValue)
         => !string.IsNullOrWhiteSpace(value) ? value.Trim() : auxValue.Trim();
 
+    private static async Task<string> GetPythonVersionAsync(string pythonExe, string workDir, CancellationToken ct)
+    {
+        using var process = new Process
+        {
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = pythonExe,
+                Arguments = "--version",
+                WorkingDirectory = workDir,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true
+            }
+        };
+
+        if (!process.Start())
+            throw new InvalidOperationException("No se pudo iniciar el ejecutable Python configurado.");
+
+        var stdOutTask = process.StandardOutput.ReadToEndAsync(ct);
+        var stdErrTask = process.StandardError.ReadToEndAsync(ct);
+        await process.WaitForExitAsync(ct);
+        var stdOut = (await stdOutTask).Trim();
+        var stdErr = (await stdErrTask).Trim();
+
+        if (process.ExitCode != 0)
+        {
+            var detail = !string.IsNullOrWhiteSpace(stdErr) ? stdErr : stdOut;
+            throw new InvalidOperationException(string.IsNullOrWhiteSpace(detail)
+                ? "El ejecutable Python configurado terminó con error."
+                : $"El ejecutable Python configurado respondió con error: {detail}");
+        }
+
+        var version = !string.IsNullOrWhiteSpace(stdOut) ? stdOut : stdErr;
+        return string.IsNullOrWhiteSpace(version) ? "Python verificado" : version;
+    }
+
     private static string ReadValue(Dictionary<string, string> values, string key, string fallback = "")
         => values.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value) ? value : fallback;
+
+    private static int ParsePositiveInt(string? value, int fallback)
+        => int.TryParse(value, out var parsed) && parsed > 0 ? parsed : fallback;
 
     private static string GetString(SqlDataReader rd, int index)
         => rd.IsDBNull(index) ? string.Empty : Convert.ToString(rd.GetValue(index)) ?? string.Empty;

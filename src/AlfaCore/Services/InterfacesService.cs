@@ -1,10 +1,12 @@
 using AlfaCore.Models;
 using Microsoft.Data.SqlClient;
+using System.Diagnostics;
 using System.Globalization;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace AlfaCore.Services;
 
@@ -383,6 +385,7 @@ public sealed class InterfacesService(
 
             detail.Adjuntos = await GetAttachmentsInternalAsync(cn, idComprobanteRecibido, token);
             detail.Historial = await GetHistoryInternalAsync(cn, idComprobanteRecibido, token);
+            detail.LecturaCompra = await GetCompraDetectionInternalAsync(cn, idComprobanteRecibido, token);
             return detail;
         }, "No se pudo cargar el comprobante seleccionado.", ct);
 
@@ -878,6 +881,207 @@ public sealed class InterfacesService(
                 },
                 token);
         }, "No se pudo actualizar el estado del comprobante.", ct);
+
+    public Task<InterfacesCompraIaResultadoDto> DetectCompraAsync(InterfacesDetectarCompraRequest request, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Interfaces", "DetectCompra", async token =>
+        {
+            ArgumentNullException.ThrowIfNull(request);
+            if (request.IdComprobanteRecibido <= 0)
+                throw new InvalidOperationException("El comprobante es obligatorio.");
+
+            var user = NormalizeActor(request.UsuarioAccion, Environment.UserName, 50);
+            var pc = NormalizeActor(request.PcAccion, ResolvePc(), 100);
+            return await RunCompraDetectionAsync(request.IdComprobanteRecibido, user, pc, null, null, token);
+        }, "No se pudo detectar la información del comprobante.", ct);
+
+    public Task<InterfacesCompraIaResultadoDto> QueueCompraDetectionAsync(InterfacesDetectarCompraRequest request, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Interfaces", "QueueDetectCompra", async token =>
+        {
+            ArgumentNullException.ThrowIfNull(request);
+            if (request.IdComprobanteRecibido <= 0)
+                throw new InvalidOperationException("El comprobante es obligatorio.");
+
+            var user = NormalizeActor(request.UsuarioAccion, Environment.UserName, 50);
+            var pc = NormalizeActor(request.PcAccion, ResolvePc(), 100);
+            await EnsureCompraIaConfigurationReadyAsync(token);
+
+            var detail = await GetByIdAsync(request.IdComprobanteRecibido, token)
+                ?? throw new InvalidOperationException("El comprobante indicado no existe.");
+            var eligibleAttachments = GetEligibleCompraAttachments(detail);
+            if (eligibleAttachments.Count == 0)
+                throw new InvalidOperationException("El documento no tiene adjuntos PDF o imagen compatibles para ejecutar la detección.");
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            var queued = await EnqueueCompraDetectionInternalAsync(cn, detail, eligibleAttachments[0], user, pc, token);
+
+            await _appEvents.LogAuditAsync(
+                "Interfaces",
+                "QueueDetectCompra",
+                "IA_Compras_CAB",
+                queued.Id.ToString(CultureInfo.InvariantCulture),
+                "Documento encolado para detección automática de compra.",
+                new
+                {
+                    detail.IdComprobanteRecibido,
+                    queued.Estado
+                },
+                token);
+
+            return queued;
+        }, "No se pudo encolar la detección del comprobante.", ct);
+
+    public Task<InterfacesCompraIaQueueSnapshotDto> GetCompraIaQueueSnapshotAsync(CancellationToken ct = default)
+        => ExecuteLoggedAsync("Interfaces", "GetCompraIaQueueSnapshot", async token =>
+        {
+            const string summarySql = """
+                SELECT
+                    SUM(CASE WHEN Estado = 'PENDIENTE_LECTURA' THEN 1 ELSE 0 END),
+                    SUM(CASE WHEN Estado = 'PROCESANDO_LECTURA' THEN 1 ELSE 0 END),
+                    SUM(CASE WHEN Estado IN ('PROCESADO', 'SIN_PROVEEDOR') THEN 1 ELSE 0 END),
+                    SUM(CASE WHEN Estado = 'ERROR_LECTURA' THEN 1 ELSE 0 END),
+                    SUM(CASE WHEN Estado = 'CANCELADO' THEN 1 ELSE 0 END)
+                FROM dbo.IA_Compras_CAB;
+                """;
+
+            const string itemsSql = """
+                SELECT TOP (20)
+                    ID,
+                    IdComprobanteRecibido,
+                    IdAdjuntoFuente,
+                    ISNULL(Estado, ''),
+                    FechaHora_Proceso,
+                    FechaHora_Inicio,
+                    FechaHora_Fin,
+                    FechaHora_Modificacion,
+                    ISNULL(Usuario_Proceso, ''),
+                    ISNULL(Observaciones_Rev, ''),
+                    ISNULL(SolicitarCancelacion, 0),
+                    ISNULL(Intentos, 0),
+                    ISNULL(Archivo_RutaOriginal, ''),
+                    ISNULL(Archivo_NombreOriginal, ''),
+                    ISNULL(Archivo_NombreRenombrado, ''),
+                    ISNULL(Proveedor_Nombre, ''),
+                    ISNULL(Proveedor_CUIT, ''),
+                    ISNULL(Proveedor_Domicilio, ''),
+                    ISNULL(Proveedor_CondIVA, ''),
+                    ISNULL(Cuenta_Contable, ''),
+                    ISNULL(Match_Metodo, ''),
+                    ISNULL(TipoComprobante, ''),
+                    ISNULL(Letra, ''),
+                    ISNULL(PuntoVenta, ''),
+                    ISNULL(Numero, ''),
+                    Fecha,
+                    Vencimiento,
+                    ISNULL(CAE, ''),
+                    VtoCAE,
+                    ISNULL(Moneda, ''),
+                    NetoGravado,
+                    NetoNoGravado,
+                    Exento,
+                    IVA_21,
+                    IVA_105,
+                    IVA_27,
+                    Percepcion_IVA,
+                    Percepcion_IIBB,
+                    Percepcion_Ganancias,
+                    ImpuestosInternos,
+                    OtrosImpuestos,
+                    Total,
+                    ISNULL(Lector_Observaciones, ''),
+                    ISNULL(Lector_Error, ''),
+                    ISNULL(JsonResultado, '')
+                FROM dbo.IA_Compras_CAB
+                ORDER BY
+                    CASE Estado
+                        WHEN 'PROCESANDO_LECTURA' THEN 0
+                        WHEN 'PENDIENTE_LECTURA' THEN 1
+                        WHEN 'ERROR_LECTURA' THEN 2
+                        WHEN 'SIN_PROVEEDOR' THEN 3
+                        WHEN 'PROCESADO' THEN 4
+                        WHEN 'CANCELADO' THEN 5
+                        ELSE 6
+                    END,
+                    FechaHora_Proceso DESC,
+                    ID DESC;
+                """;
+
+            var snapshot = new InterfacesCompraIaQueueSnapshotDto();
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            await using (var cmd = new SqlCommand(summarySql, cn))
+            await using (var rd = await cmd.ExecuteReaderAsync(token))
+            {
+                if (await rd.ReadAsync(token))
+                {
+                    snapshot.Pendientes = rd.IsDBNull(0) ? 0 : Convert.ToInt32(rd.GetValue(0), CultureInfo.InvariantCulture);
+                    snapshot.Procesando = rd.IsDBNull(1) ? 0 : Convert.ToInt32(rd.GetValue(1), CultureInfo.InvariantCulture);
+                    snapshot.Procesados = rd.IsDBNull(2) ? 0 : Convert.ToInt32(rd.GetValue(2), CultureInfo.InvariantCulture);
+                    snapshot.ConError = rd.IsDBNull(3) ? 0 : Convert.ToInt32(rd.GetValue(3), CultureInfo.InvariantCulture);
+                    snapshot.Cancelados = rd.IsDBNull(4) ? 0 : Convert.ToInt32(rd.GetValue(4), CultureInfo.InvariantCulture);
+                }
+            }
+
+            var items = new List<InterfacesCompraIaResultadoDto>();
+            await using (var cmd = new SqlCommand(itemsSql, cn))
+            await using (var rd = await cmd.ExecuteReaderAsync(token))
+            {
+                while (await rd.ReadAsync(token))
+                {
+                    items.Add(MapCompraIaResult(rd));
+                }
+            }
+
+            snapshot.Items = items;
+            return snapshot;
+        }, "No se pudo cargar la cola de procesamiento de compras.", ct);
+
+    public Task CancelCompraDetectionAsync(InterfacesCompraIaAccionRequest request, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Interfaces", "CancelCompraDetection", async token =>
+        {
+            ArgumentNullException.ThrowIfNull(request);
+            if (request.Id <= 0)
+                throw new InvalidOperationException("El registro de cola es obligatorio.");
+
+            var user = NormalizeActor(request.UsuarioAccion, Environment.UserName, 50);
+            var pc = NormalizeActor(request.PcAccion, ResolvePc(), 100);
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await CancelCompraDetectionInternalAsync(cn, request.Id, user, pc, token);
+        }, "No se pudo cancelar el procesamiento de compra.", ct);
+
+    public Task RetryCompraDetectionAsync(InterfacesCompraIaAccionRequest request, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Interfaces", "RetryCompraDetection", async token =>
+        {
+            ArgumentNullException.ThrowIfNull(request);
+            if (request.Id <= 0)
+                throw new InvalidOperationException("El registro de cola es obligatorio.");
+
+            var user = NormalizeActor(request.UsuarioAccion, Environment.UserName, 50);
+            var pc = NormalizeActor(request.PcAccion, ResolvePc(), 100);
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await RetryCompraDetectionInternalAsync(cn, request.Id, user, pc, token);
+        }, "No se pudo reencolar el procesamiento de compra.", ct);
+
+    public Task<int> ProcessCompraIaQueueAsync(CancellationToken ct = default)
+        => ExecuteLoggedAsync("Interfaces", "ProcessCompraIaQueue", async token =>
+        {
+            var settings = await interfacesConfigService.GetCompraIaSettingsAsync(token);
+            if (!settings.WorkerHabilitado || !settings.Habilitado)
+                return 0;
+
+            var maxParallel = Math.Max(1, settings.WorkerMaxParalelo);
+            var tasks = Enumerable.Range(0, maxParallel)
+                .Select(_ => ProcessNextQueuedCompraDetectionAsync(token))
+                .ToArray();
+
+            var results = await Task.WhenAll(tasks);
+            return results.Sum();
+        }, "No se pudo procesar la cola de compras.", ct);
 
     public Task<int> DeleteAsync(InterfacesEliminarComprobantesRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync("Interfaces", "Delete", async token =>
@@ -1716,6 +1920,1546 @@ public sealed class InterfacesService(
     }
 #pragma warning restore SYSLIB0014
 
+    private async Task<InterfacesCompraIaResultadoDto?> GetCompraDetectionInternalAsync(SqlConnection cn, long idComprobanteRecibido, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT TOP (1)
+                ID,
+                IdComprobanteRecibido,
+                IdAdjuntoFuente,
+                ISNULL(Estado, ''),
+                FechaHora_Proceso,
+                FechaHora_Inicio,
+                FechaHora_Fin,
+                FechaHora_Modificacion,
+                ISNULL(Usuario_Proceso, ''),
+                ISNULL(Observaciones_Rev, ''),
+                ISNULL(SolicitarCancelacion, 0),
+                ISNULL(Intentos, 0),
+                ISNULL(Archivo_RutaOriginal, ''),
+                ISNULL(Archivo_NombreOriginal, ''),
+                ISNULL(Archivo_NombreRenombrado, ''),
+                ISNULL(Proveedor_Nombre, ''),
+                ISNULL(Proveedor_CUIT, ''),
+                ISNULL(Proveedor_Domicilio, ''),
+                ISNULL(Proveedor_CondIVA, ''),
+                ISNULL(Cuenta_Contable, ''),
+                ISNULL(Match_Metodo, ''),
+                ISNULL(TipoComprobante, ''),
+                ISNULL(Letra, ''),
+                ISNULL(PuntoVenta, ''),
+                ISNULL(Numero, ''),
+                Fecha,
+                Vencimiento,
+                ISNULL(CAE, ''),
+                VtoCAE,
+                ISNULL(Moneda, ''),
+                NetoGravado,
+                NetoNoGravado,
+                Exento,
+                IVA_21,
+                IVA_105,
+                IVA_27,
+                Percepcion_IVA,
+                Percepcion_IIBB,
+                Percepcion_Ganancias,
+                ImpuestosInternos,
+                OtrosImpuestos,
+                Total,
+                ISNULL(Lector_Observaciones, ''),
+                ISNULL(Lector_Error, ''),
+                ISNULL(JsonResultado, '')
+            FROM dbo.IA_Compras_CAB
+            WHERE IdComprobanteRecibido = @IdComprobanteRecibido
+            ORDER BY FechaHora_Proceso DESC, ID DESC
+            """;
+
+        InterfacesCompraIaResultadoDto? result = null;
+        await using (var cmd = new SqlCommand(sql, cn))
+        {
+            cmd.Parameters.AddWithValue("@IdComprobanteRecibido", idComprobanteRecibido);
+            await using var rd = await cmd.ExecuteReaderAsync(ct);
+            if (await rd.ReadAsync(ct))
+            {
+                result = MapCompraIaResult(rd);
+            }
+        }
+
+        if (result is null)
+            return null;
+
+        result.Items = await GetCompraDetectionItemsInternalAsync(cn, result.Id, ct);
+        return result;
+    }
+
+    private static InterfacesCompraIaResultadoDto MapCompraIaResult(SqlDataReader rd)
+        => new()
+        {
+            Id = GetInt(rd, 0),
+            IdComprobanteRecibido = rd.IsDBNull(1) ? null : rd.GetInt64(1),
+            IdAdjuntoFuente = rd.IsDBNull(2) ? null : rd.GetInt64(2),
+            Estado = GetString(rd, 3),
+            FechaHoraProceso = rd.GetDateTime(4),
+            FechaHoraInicio = rd.IsDBNull(5) ? null : rd.GetDateTime(5),
+            FechaHoraFin = rd.IsDBNull(6) ? null : rd.GetDateTime(6),
+            FechaHoraModificacion = rd.IsDBNull(7) ? null : rd.GetDateTime(7),
+            UsuarioProceso = GetString(rd, 8),
+            ObservacionesRevision = GetString(rd, 9),
+            SolicitarCancelacion = GetBool(rd, 10),
+            Intentos = GetInt(rd, 11),
+            ArchivoRutaOriginal = GetString(rd, 12),
+            ArchivoNombreOriginal = GetString(rd, 13),
+            ArchivoNombreRenombrado = GetString(rd, 14),
+            ProveedorNombre = GetString(rd, 15),
+            ProveedorCuit = GetString(rd, 16),
+            ProveedorDomicilio = GetString(rd, 17),
+            ProveedorCondIva = GetString(rd, 18),
+            CuentaContable = GetString(rd, 19),
+            MatchMetodo = GetString(rd, 20),
+            TipoComprobante = GetString(rd, 21),
+            Letra = GetString(rd, 22),
+            PuntoVenta = GetString(rd, 23),
+            Numero = GetString(rd, 24),
+            Fecha = rd.IsDBNull(25) ? null : rd.GetDateTime(25),
+            Vencimiento = rd.IsDBNull(26) ? null : rd.GetDateTime(26),
+            Cae = GetString(rd, 27),
+            VtoCae = rd.IsDBNull(28) ? null : rd.GetDateTime(28),
+            Moneda = GetString(rd, 29),
+            NetoGravado = GetNullableDecimal(rd, 30),
+            NetoNoGravado = GetNullableDecimal(rd, 31),
+            Exento = GetNullableDecimal(rd, 32),
+            Iva21 = GetNullableDecimal(rd, 33),
+            Iva105 = GetNullableDecimal(rd, 34),
+            Iva27 = GetNullableDecimal(rd, 35),
+            PercepcionIva = GetNullableDecimal(rd, 36),
+            PercepcionIibb = GetNullableDecimal(rd, 37),
+            PercepcionGanancias = GetNullableDecimal(rd, 38),
+            ImpuestosInternos = GetNullableDecimal(rd, 39),
+            OtrosImpuestos = GetNullableDecimal(rd, 40),
+            Total = GetNullableDecimal(rd, 41),
+            LectorObservaciones = GetString(rd, 42),
+            LectorError = GetString(rd, 43),
+            JsonResultado = GetString(rd, 44)
+        };
+
+    private static async Task<IReadOnlyList<InterfacesCompraIaDetalleItemDto>> GetCompraDetectionItemsInternalAsync(SqlConnection cn, int idCab, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT
+                ID,
+                ID_CAB,
+                NroRenglon,
+                ISNULL(Cantidad, ''),
+                ISNULL(Codigo_Articulo, ''),
+                ISNULL(Descripcion, ''),
+                ISNULL(UD, ''),
+                Importe_Lista,
+                Dto1,
+                Dto2,
+                Importe_Neto,
+                IVA,
+                ImpuestosInternos,
+                Total,
+                ISNULL(AuxNroLote, ''),
+                ISNULL(AuxNroSerie, ''),
+                ISNULL(BlPq, ''),
+                ISNULL(Moneda, ''),
+                TotImpInt
+            FROM dbo.IA_Compras_DET
+            WHERE ID_CAB = @ID_CAB
+            ORDER BY NroRenglon, ID
+            """;
+
+        var items = new List<InterfacesCompraIaDetalleItemDto>();
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@ID_CAB", idCab);
+        await using var rd = await cmd.ExecuteReaderAsync(ct);
+        while (await rd.ReadAsync(ct))
+        {
+            items.Add(new InterfacesCompraIaDetalleItemDto
+            {
+                Id = GetInt(rd, 0),
+                IdCab = GetInt(rd, 1),
+                NroRenglon = GetInt(rd, 2),
+                Cantidad = GetString(rd, 3),
+                CodigoArticulo = GetString(rd, 4),
+                Descripcion = GetString(rd, 5),
+                Ud = GetString(rd, 6),
+                ImporteLista = GetNullableDecimal(rd, 7),
+                Dto1 = GetNullableDouble(rd, 8),
+                Dto2 = GetNullableDouble(rd, 9),
+                ImporteNeto = GetNullableDecimal(rd, 10),
+                Iva = GetNullableDouble(rd, 11),
+                ImpuestosInternos = GetNullableDecimal(rd, 12),
+                Total = GetNullableDecimal(rd, 13),
+                AuxNroLote = GetString(rd, 14),
+                AuxNroSerie = GetString(rd, 15),
+                BlPq = GetString(rd, 16),
+                Moneda = GetString(rd, 17),
+                TotImpInt = GetNullableDecimal(rd, 18)
+            });
+        }
+
+        return items;
+    }
+
+    private async Task EnsureCompraIaConfigurationReadyAsync(CancellationToken ct)
+    {
+        _ = NormalizeCompraIaSettings(await interfacesConfigService.GetCompraIaSettingsAsync(ct));
+    }
+
+    private static List<InterfacesAdjuntoDto> GetEligibleCompraAttachments(InterfacesDetalleDto detail)
+    {
+        if (!string.Equals(detail.TipoDocumentoCodigo, "COMPROBANTE_COMPRA", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("La detección automática solo está disponible para comprobantes de compras.");
+
+        return detail.Adjuntos
+            .Where(static x => !x.Eliminado)
+            .Where(x => IsFacturaReaderSupportedExtension(x.Extension, x.NombreOriginal))
+            .OrderByDescending(static x => x.EsPrincipal)
+            .ThenBy(static x => x.Orden)
+            .ThenBy(static x => x.IdAdjunto)
+            .ToList();
+    }
+
+    private async Task<InterfacesCompraIaResultadoDto> RunCompraDetectionAsync(
+        long idComprobanteRecibido,
+        string user,
+        string pc,
+        int? queueId,
+        Func<CancellationToken, Task<bool>>? shouldCancelAsync,
+        CancellationToken ct)
+    {
+        var detail = await GetByIdAsync(idComprobanteRecibido, ct)
+            ?? throw new InvalidOperationException("El comprobante indicado no existe.");
+        var eligibleAttachments = GetEligibleCompraAttachments(detail);
+        if (eligibleAttachments.Count == 0)
+            throw new InvalidOperationException("El documento no tiene adjuntos PDF o imagen compatibles para ejecutar la detección.");
+
+        var uploadSettings = await interfacesConfigService.GetUploadSettingsAsync(ct);
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        var detectorSettings = NormalizeCompraIaSettings(await interfacesConfigService.GetCompraIaSettingsAsync(ct));
+
+        var tempRoot = Path.Combine(Path.GetTempPath(), "AlfaCore", "interfaces-ia", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+
+        var stagedFiles = new List<string>();
+        try
+        {
+            foreach (var attachment in eligibleAttachments)
+            {
+                if (shouldCancelAsync is not null && await shouldCancelAsync(ct))
+                    throw new OperationCanceledException("El procesamiento fue cancelado por solicitud del usuario.");
+
+                stagedFiles.Add(await StageAttachmentForIaAsync(uploadSettings, attachment, tempRoot, ct));
+            }
+
+            var jsonPath = await ExecuteFacturaReaderAsync(detectorSettings, stagedFiles, tempRoot, shouldCancelAsync, ct);
+            var jsonText = await File.ReadAllTextAsync(jsonPath, Encoding.UTF8, ct);
+            var payload = ParseCompraIaPayload(jsonText);
+            payload = await ResolveProviderDataAsync(cn, payload, ct);
+
+            await UpsertCompraDetectionAsync(
+                cn,
+                detail,
+                eligibleAttachments[0],
+                user,
+                payload,
+                jsonText,
+                null,
+                pc,
+                ct);
+
+            var saved = queueId.HasValue
+                ? await GetCompraDetectionByQueueIdInternalAsync(cn, queueId.Value, ct)
+                : await GetCompraDetectionInternalAsync(cn, idComprobanteRecibido, ct);
+
+            return saved ?? throw new InvalidOperationException("No se pudo recuperar la detección guardada.");
+        }
+        catch (OperationCanceledException)
+        {
+            if (queueId.HasValue)
+                await MarkCompraDetectionCancelledAsync(cn, queueId.Value, user, "Cancelado por el usuario.", ct);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            try
+            {
+                await UpsertCompraDetectionAsync(
+                    cn,
+                    detail,
+                    eligibleAttachments[0],
+                    user,
+                    null,
+                    string.Empty,
+                    Truncate(ex.Message, 1000),
+                    pc,
+                    ct);
+            }
+            catch
+            {
+            }
+
+            throw;
+        }
+        finally
+        {
+            try
+            {
+                if (Directory.Exists(tempRoot))
+                    Directory.Delete(tempRoot, recursive: true);
+            }
+            catch
+            {
+            }
+        }
+    }
+
+    private async Task<int> ProcessNextQueuedCompraDetectionAsync(CancellationToken ct)
+    {
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        var claimed = await TryClaimNextQueuedCompraDetectionAsync(cn, ct);
+        if (claimed is null || !claimed.IdComprobanteRecibido.HasValue)
+            return 0;
+
+        try
+        {
+            await RunCompraDetectionAsync(
+                claimed.IdComprobanteRecibido.Value,
+                string.IsNullOrWhiteSpace(claimed.UsuarioProceso) ? "WORKER" : claimed.UsuarioProceso,
+                ResolvePc(),
+                claimed.Id,
+                token => IsCancellationRequestedAsync(claimed.Id, token),
+                ct);
+
+            await _appEvents.LogAuditAsync(
+                "Interfaces",
+                "ProcessCompraIaQueue",
+                "IA_Compras_CAB",
+                claimed.Id.ToString(CultureInfo.InvariantCulture),
+                "Procesamiento automático de factura finalizado desde la cola.",
+                new
+                {
+                    claimed.IdComprobanteRecibido,
+                    claimed.Estado
+                },
+                ct);
+
+            return 1;
+        }
+        catch (OperationCanceledException)
+        {
+            return 1;
+        }
+    }
+
+    private static async Task<InterfacesCompraIaResultadoDto?> TryClaimNextQueuedCompraDetectionAsync(SqlConnection cn, CancellationToken ct)
+    {
+        const string sql = """
+            ;WITH next_job AS
+            (
+                SELECT TOP (1) ID
+                FROM dbo.IA_Compras_CAB WITH (UPDLOCK, READPAST, ROWLOCK)
+                WHERE Estado = 'PENDIENTE_LECTURA'
+                  AND ISNULL(SolicitarCancelacion, 0) = 0
+                ORDER BY FechaHora_Proceso, ID
+            )
+            UPDATE cab
+            SET
+                Estado = 'PROCESANDO_LECTURA',
+                FechaHora_Inicio = GETDATE(),
+                FechaHora_Fin = NULL,
+                FechaHora_Modificacion = GETDATE(),
+                SolicitarCancelacion = 0,
+                Intentos = ISNULL(Intentos, 0) + 1
+            OUTPUT
+                inserted.ID,
+                inserted.IdComprobanteRecibido,
+                inserted.IdAdjuntoFuente,
+                inserted.Estado,
+                inserted.FechaHora_Proceso,
+                inserted.FechaHora_Inicio,
+                inserted.FechaHora_Fin,
+                inserted.FechaHora_Modificacion,
+                ISNULL(inserted.Usuario_Proceso, ''),
+                ISNULL(inserted.Observaciones_Rev, ''),
+                ISNULL(inserted.SolicitarCancelacion, 0),
+                ISNULL(inserted.Intentos, 0),
+                ISNULL(inserted.Archivo_RutaOriginal, ''),
+                ISNULL(inserted.Archivo_NombreOriginal, ''),
+                ISNULL(inserted.Archivo_NombreRenombrado, ''),
+                ISNULL(inserted.Proveedor_Nombre, ''),
+                ISNULL(inserted.Proveedor_CUIT, ''),
+                ISNULL(inserted.Proveedor_Domicilio, ''),
+                ISNULL(inserted.Proveedor_CondIVA, ''),
+                ISNULL(inserted.Cuenta_Contable, ''),
+                ISNULL(inserted.Match_Metodo, ''),
+                ISNULL(inserted.TipoComprobante, ''),
+                ISNULL(inserted.Letra, ''),
+                ISNULL(inserted.PuntoVenta, ''),
+                ISNULL(inserted.Numero, ''),
+                inserted.Fecha,
+                inserted.Vencimiento,
+                ISNULL(inserted.CAE, ''),
+                inserted.VtoCAE,
+                ISNULL(inserted.Moneda, ''),
+                inserted.NetoGravado,
+                inserted.NetoNoGravado,
+                inserted.Exento,
+                inserted.IVA_21,
+                inserted.IVA_105,
+                inserted.IVA_27,
+                inserted.Percepcion_IVA,
+                inserted.Percepcion_IIBB,
+                inserted.Percepcion_Ganancias,
+                inserted.ImpuestosInternos,
+                inserted.OtrosImpuestos,
+                inserted.Total,
+                ISNULL(inserted.Lector_Observaciones, ''),
+                ISNULL(inserted.Lector_Error, ''),
+                ISNULL(inserted.JsonResultado, '')
+            FROM dbo.IA_Compras_CAB cab
+            INNER JOIN next_job next_job
+                ON next_job.ID = cab.ID;
+            """;
+
+        await using var cmd = new SqlCommand(sql, cn);
+        await using var rd = await cmd.ExecuteReaderAsync(ct);
+        if (!await rd.ReadAsync(ct))
+            return null;
+
+        return MapCompraIaResult(rd);
+    }
+
+    private async Task<InterfacesCompraIaResultadoDto> EnqueueCompraDetectionInternalAsync(
+        SqlConnection cn,
+        InterfacesDetalleDto detail,
+        InterfacesAdjuntoDto sourceAttachment,
+        string user,
+        string pc,
+        CancellationToken ct)
+    {
+        var settings = await interfacesConfigService.GetUploadSettingsAsync(ct);
+        var storedBase = ResolveStoredBase(settings);
+        var storedPath = BuildStoredFileReference(storedBase, sourceAttachment.RutaRelativa);
+
+        const string selectSql = """
+            SELECT TOP (1) ID
+            FROM dbo.IA_Compras_CAB
+            WHERE IdComprobanteRecibido = @IdComprobanteRecibido
+            ORDER BY FechaHora_Proceso DESC, ID DESC
+            """;
+
+        int? existingId = null;
+        await using (var selectCmd = new SqlCommand(selectSql, cn))
+        {
+            selectCmd.Parameters.AddWithValue("@IdComprobanteRecibido", detail.IdComprobanteRecibido);
+            var scalar = await selectCmd.ExecuteScalarAsync(ct);
+            if (scalar is not null && scalar != DBNull.Value)
+                existingId = Convert.ToInt32(scalar, CultureInfo.InvariantCulture);
+        }
+
+        const string pendingNote = "En cola para lectura automática.";
+        if (existingId.HasValue)
+        {
+            const string updateSql = """
+                UPDATE dbo.IA_Compras_CAB
+                SET
+                    IdAdjuntoFuente = @IdAdjuntoFuente,
+                    Estado = 'PENDIENTE_LECTURA',
+                    FechaHora_Proceso = GETDATE(),
+                    FechaHora_Inicio = NULL,
+                    FechaHora_Fin = NULL,
+                    FechaHora_Modificacion = GETDATE(),
+                    Usuario_Proceso = @Usuario_Proceso,
+                    Observaciones_Rev = @Observaciones_Rev,
+                    SolicitarCancelacion = 0,
+                    Archivo_RutaOriginal = @Archivo_RutaOriginal,
+                    Archivo_NombreOriginal = @Archivo_NombreOriginal,
+                    Archivo_NombreRenombrado = @Archivo_NombreRenombrado,
+                    Lector_Error = NULL,
+                    JsonResultado = NULL
+                WHERE ID = @ID;
+                """;
+
+            await using var updateCmd = new SqlCommand(updateSql, cn);
+            updateCmd.Parameters.AddWithValue("@ID", existingId.Value);
+            updateCmd.Parameters.AddWithValue("@IdAdjuntoFuente", sourceAttachment.IdAdjunto);
+            updateCmd.Parameters.AddWithValue("@Usuario_Proceso", DbNullable(user, 50));
+            updateCmd.Parameters.AddWithValue("@Observaciones_Rev", DbNullable(pendingNote, 500));
+            updateCmd.Parameters.AddWithValue("@Archivo_RutaOriginal", Truncate(storedPath, 500));
+            updateCmd.Parameters.AddWithValue("@Archivo_NombreOriginal", Truncate(sourceAttachment.NombreOriginal, 260));
+            updateCmd.Parameters.AddWithValue("@Archivo_NombreRenombrado", DbNullable(sourceAttachment.NombreGuardado, 260));
+            await updateCmd.ExecuteNonQueryAsync(ct);
+        }
+        else
+        {
+            const string insertSql = """
+                INSERT INTO dbo.IA_Compras_CAB
+                (
+                    IdComprobanteRecibido,
+                    IdAdjuntoFuente,
+                    Estado,
+                    Usuario_Proceso,
+                    Observaciones_Rev,
+                    Archivo_RutaOriginal,
+                    Archivo_NombreOriginal,
+                    Archivo_NombreRenombrado,
+                    SolicitarCancelacion,
+                    Intentos
+                )
+                VALUES
+                (
+                    @IdComprobanteRecibido,
+                    @IdAdjuntoFuente,
+                    'PENDIENTE_LECTURA',
+                    @Usuario_Proceso,
+                    @Observaciones_Rev,
+                    @Archivo_RutaOriginal,
+                    @Archivo_NombreOriginal,
+                    @Archivo_NombreRenombrado,
+                    0,
+                    0
+                );
+                SELECT CAST(SCOPE_IDENTITY() AS int);
+                """;
+
+            await using var insertCmd = new SqlCommand(insertSql, cn);
+            insertCmd.Parameters.AddWithValue("@IdComprobanteRecibido", detail.IdComprobanteRecibido);
+            insertCmd.Parameters.AddWithValue("@IdAdjuntoFuente", sourceAttachment.IdAdjunto);
+            insertCmd.Parameters.AddWithValue("@Usuario_Proceso", DbNullable(user, 50));
+            insertCmd.Parameters.AddWithValue("@Observaciones_Rev", DbNullable(pendingNote, 500));
+            insertCmd.Parameters.AddWithValue("@Archivo_RutaOriginal", Truncate(storedPath, 500));
+            insertCmd.Parameters.AddWithValue("@Archivo_NombreOriginal", Truncate(sourceAttachment.NombreOriginal, 260));
+            insertCmd.Parameters.AddWithValue("@Archivo_NombreRenombrado", DbNullable(sourceAttachment.NombreGuardado, 260));
+            existingId = Convert.ToInt32(await insertCmd.ExecuteScalarAsync(ct), CultureInfo.InvariantCulture);
+        }
+
+        return await GetCompraDetectionByQueueIdInternalAsync(cn, existingId!.Value, ct)
+            ?? throw new InvalidOperationException("No se pudo recuperar la cola de lectura encolada.");
+    }
+
+    private async Task CancelCompraDetectionInternalAsync(SqlConnection cn, int id, string user, string pc, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT TOP (1) Estado
+            FROM dbo.IA_Compras_CAB
+            WHERE ID = @ID;
+            """;
+
+        string currentState;
+        await using (var cmd = new SqlCommand(sql, cn))
+        {
+            cmd.Parameters.AddWithValue("@ID", id);
+            currentState = Convert.ToString(await cmd.ExecuteScalarAsync(ct), CultureInfo.InvariantCulture) ?? string.Empty;
+        }
+
+        if (string.IsNullOrWhiteSpace(currentState))
+            throw new InvalidOperationException("No se encontró el registro de procesamiento indicado.");
+
+        if (string.Equals(currentState, "PENDIENTE_LECTURA", StringComparison.OrdinalIgnoreCase))
+        {
+            await MarkCompraDetectionCancelledAsync(cn, id, user, "Cancelado antes de iniciar el procesamiento.", ct);
+        }
+        else if (string.Equals(currentState, "PROCESANDO_LECTURA", StringComparison.OrdinalIgnoreCase))
+        {
+            const string updateSql = """
+                UPDATE dbo.IA_Compras_CAB
+                SET
+                    SolicitarCancelacion = 1,
+                    FechaHora_Modificacion = GETDATE(),
+                    Observaciones_Rev = @Observaciones_Rev
+                WHERE ID = @ID;
+                """;
+
+            await using var cmd = new SqlCommand(updateSql, cn);
+            cmd.Parameters.AddWithValue("@ID", id);
+            cmd.Parameters.AddWithValue("@Observaciones_Rev", DbNullable("Cancelación solicitada por usuario.", 500));
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+        else
+        {
+            throw new InvalidOperationException("Solo se pueden cancelar procesos pendientes o en ejecución.");
+        }
+
+        await _appEvents.LogAuditAsync(
+            "Interfaces",
+            "CancelCompraDetection",
+            "IA_Compras_CAB",
+            id.ToString(CultureInfo.InvariantCulture),
+            "Cancelación de lectura automática solicitada.",
+            new { Estado = currentState, Usuario = user, Pc = pc },
+            ct);
+    }
+
+    private async Task RetryCompraDetectionInternalAsync(SqlConnection cn, int id, string user, string pc, CancellationToken ct)
+    {
+        const string updateSql = """
+            UPDATE dbo.IA_Compras_CAB
+            SET
+                Estado = 'PENDIENTE_LECTURA',
+                SolicitarCancelacion = 0,
+                FechaHora_Proceso = GETDATE(),
+                FechaHora_Inicio = NULL,
+                FechaHora_Fin = NULL,
+                FechaHora_Modificacion = GETDATE(),
+                Usuario_Proceso = @Usuario_Proceso,
+                Observaciones_Rev = @Observaciones_Rev,
+                Lector_Error = NULL
+            WHERE ID = @ID;
+
+            IF @@ROWCOUNT = 0
+                THROW 50000, 'No se encontró el registro de procesamiento indicado.', 1;
+            """;
+
+        await using var cmd = new SqlCommand(updateSql, cn);
+        cmd.Parameters.AddWithValue("@ID", id);
+        cmd.Parameters.AddWithValue("@Usuario_Proceso", DbNullable(user, 50));
+        cmd.Parameters.AddWithValue("@Observaciones_Rev", DbNullable("Reencolado manualmente.", 500));
+        await cmd.ExecuteNonQueryAsync(ct);
+
+        await _appEvents.LogAuditAsync(
+            "Interfaces",
+            "RetryCompraDetection",
+            "IA_Compras_CAB",
+            id.ToString(CultureInfo.InvariantCulture),
+            "Registro de lectura automática reencolado.",
+            new { Usuario = user, Pc = pc },
+            ct);
+    }
+
+    private async Task<bool> IsCancellationRequestedAsync(int id, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT ISNULL(SolicitarCancelacion, 0)
+            FROM dbo.IA_Compras_CAB
+            WHERE ID = @ID;
+            """;
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@ID", id);
+        var scalar = await cmd.ExecuteScalarAsync(ct);
+        return scalar is not null
+            && scalar != DBNull.Value
+            && Convert.ToInt32(scalar, CultureInfo.InvariantCulture) != 0;
+    }
+
+    private async Task<InterfacesCompraIaResultadoDto?> GetCompraDetectionByQueueIdInternalAsync(SqlConnection cn, int id, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT TOP (1)
+                ID,
+                IdComprobanteRecibido,
+                IdAdjuntoFuente,
+                ISNULL(Estado, ''),
+                FechaHora_Proceso,
+                FechaHora_Inicio,
+                FechaHora_Fin,
+                FechaHora_Modificacion,
+                ISNULL(Usuario_Proceso, ''),
+                ISNULL(Observaciones_Rev, ''),
+                ISNULL(SolicitarCancelacion, 0),
+                ISNULL(Intentos, 0),
+                ISNULL(Archivo_RutaOriginal, ''),
+                ISNULL(Archivo_NombreOriginal, ''),
+                ISNULL(Archivo_NombreRenombrado, ''),
+                ISNULL(Proveedor_Nombre, ''),
+                ISNULL(Proveedor_CUIT, ''),
+                ISNULL(Proveedor_Domicilio, ''),
+                ISNULL(Proveedor_CondIVA, ''),
+                ISNULL(Cuenta_Contable, ''),
+                ISNULL(Match_Metodo, ''),
+                ISNULL(TipoComprobante, ''),
+                ISNULL(Letra, ''),
+                ISNULL(PuntoVenta, ''),
+                ISNULL(Numero, ''),
+                Fecha,
+                Vencimiento,
+                ISNULL(CAE, ''),
+                VtoCAE,
+                ISNULL(Moneda, ''),
+                NetoGravado,
+                NetoNoGravado,
+                Exento,
+                IVA_21,
+                IVA_105,
+                IVA_27,
+                Percepcion_IVA,
+                Percepcion_IIBB,
+                Percepcion_Ganancias,
+                ImpuestosInternos,
+                OtrosImpuestos,
+                Total,
+                ISNULL(Lector_Observaciones, ''),
+                ISNULL(Lector_Error, ''),
+                ISNULL(JsonResultado, '')
+            FROM dbo.IA_Compras_CAB
+            WHERE ID = @ID;
+            """;
+
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@ID", id);
+        InterfacesCompraIaResultadoDto? result = null;
+        await using (var rd = await cmd.ExecuteReaderAsync(ct))
+        {
+            if (await rd.ReadAsync(ct))
+                result = MapCompraIaResult(rd);
+        }
+
+        if (result is null)
+            return null;
+
+        result.Items = await GetCompraDetectionItemsInternalAsync(cn, result.Id, ct);
+        return result;
+    }
+
+    private async Task MarkCompraDetectionCancelledAsync(SqlConnection cn, int id, string user, string note, CancellationToken ct)
+    {
+        const string sql = """
+            UPDATE dbo.IA_Compras_CAB
+            SET
+                Estado = 'CANCELADO',
+                SolicitarCancelacion = 0,
+                FechaHora_Fin = ISNULL(FechaHora_Fin, GETDATE()),
+                FechaHora_Modificacion = GETDATE(),
+                Usuario_Proceso = @Usuario_Proceso,
+                Observaciones_Rev = @Observaciones_Rev,
+                Lector_Error = NULL
+            WHERE ID = @ID;
+            """;
+
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@ID", id);
+        cmd.Parameters.AddWithValue("@Usuario_Proceso", DbNullable(user, 50));
+        cmd.Parameters.AddWithValue("@Observaciones_Rev", DbNullable(note, 500));
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    private static InterfacesCompraIaSettings NormalizeCompraIaSettings(InterfacesCompraIaSettingsDto settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+
+        if (!settings.Habilitado)
+            throw new InvalidOperationException("La detección automática de facturas de compras está deshabilitada en la base activa.");
+        if (string.IsNullOrWhiteSpace(settings.PythonExe) || !File.Exists(settings.PythonExe))
+            throw new InvalidOperationException("No se encontró el ejecutable Python configurado para la detección automática.");
+        if (string.IsNullOrWhiteSpace(settings.ScriptPath) || !File.Exists(settings.ScriptPath))
+            throw new InvalidOperationException("No se encontró el script configurado para la detección automática de facturas.");
+
+        var workDir = settings.WorkDir;
+        if (string.IsNullOrWhiteSpace(workDir))
+            workDir = Path.GetDirectoryName(settings.ScriptPath) ?? string.Empty;
+
+        if (string.IsNullOrWhiteSpace(workDir) || !Directory.Exists(workDir))
+            throw new InvalidOperationException("No existe la carpeta de trabajo configurada para la detección automática de facturas.");
+
+        return new InterfacesCompraIaSettings
+        {
+            PythonExe = settings.PythonExe,
+            ScriptPath = settings.ScriptPath,
+            WorkingDirectory = workDir
+        };
+    }
+
+    private static async Task<string> StageAttachmentForIaAsync(
+        InterfacesUploadSettingsDto settings,
+        InterfacesAdjuntoDto attachment,
+        string tempRoot,
+        CancellationToken ct)
+    {
+        var extension = NormalizeExtension(string.IsNullOrWhiteSpace(attachment.Extension)
+            ? Path.GetExtension(attachment.NombreOriginal)
+            : attachment.Extension);
+        var fileName = $"{attachment.Orden:0000}_{attachment.IdAdjunto}{extension}";
+        var outputPath = Path.Combine(tempRoot, fileName);
+
+        if (settings.UsaFtp)
+        {
+            var remoteUrl = BuildStoredFileReference(ResolveStoredBase(settings), attachment.RutaRelativa);
+            await DownloadFtpFileAsync(settings, remoteUrl, outputPath, ct);
+            return outputPath;
+        }
+
+        var sourcePath = BuildStoredFileReference(ResolveStoredBase(settings), attachment.RutaRelativa);
+        await using var source = File.OpenRead(sourcePath);
+        await using var target = File.Create(outputPath);
+        await source.CopyToAsync(target, ct);
+        return outputPath;
+    }
+
+    private static async Task<string> ExecuteFacturaReaderAsync(
+        InterfacesCompraIaSettings settings,
+        IReadOnlyList<string> stagedFiles,
+        string tempRoot,
+        Func<CancellationToken, Task<bool>>? shouldCancelAsync,
+        CancellationToken ct)
+    {
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = settings.PythonExe,
+            WorkingDirectory = settings.WorkingDirectory,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+
+        startInfo.ArgumentList.Add(settings.ScriptPath);
+        foreach (var file in stagedFiles)
+            startInfo.ArgumentList.Add(file);
+        startInfo.ArgumentList.Add("--outdir");
+        startInfo.ArgumentList.Add(tempRoot);
+        startInfo.ArgumentList.Add("--auto");
+
+        using var process = new Process { StartInfo = startInfo };
+        if (!process.Start())
+            throw new InvalidOperationException("No se pudo iniciar el lector automático de facturas.");
+
+        var stdoutTask = process.StandardOutput.ReadToEndAsync(ct);
+        var stderrTask = process.StandardError.ReadToEndAsync(ct);
+
+        while (!process.HasExited)
+        {
+            await Task.Delay(1000, ct);
+            if (shouldCancelAsync is not null && await shouldCancelAsync(ct))
+            {
+                try
+                {
+                    process.Kill(entireProcessTree: true);
+                }
+                catch
+                {
+                }
+
+                throw new OperationCanceledException("El procesamiento fue cancelado por solicitud del usuario.");
+            }
+        }
+
+        var stdout = (await stdoutTask).Trim();
+        var stderr = (await stderrTask).Trim();
+
+        if (process.ExitCode != 0)
+            throw new InvalidOperationException(string.IsNullOrWhiteSpace(stderr)
+                ? "El lector automático finalizó con error."
+                : stderr);
+
+        var jsonPath = stdout
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .LastOrDefault();
+
+        if (string.IsNullOrWhiteSpace(jsonPath) || !File.Exists(jsonPath))
+            throw new InvalidOperationException("El lector automático no devolvió un archivo JSON válido.");
+
+        return jsonPath;
+    }
+
+    private static InterfacesCompraIaPayload ParseCompraIaPayload(string jsonText)
+    {
+        var root = JsonNode.Parse(jsonText)?.AsObject()
+            ?? throw new InvalidOperationException("El lector devolvió un JSON inválido.");
+
+        var cab = root["CAB"]?.AsObject();
+        var totales = root["TOTALES"]?.AsObject();
+        var meta = root["meta"]?.AsObject();
+        var rows = root["ROWS"]?.AsArray();
+
+        var payload = new InterfacesCompraIaPayload
+        {
+            ProveedorNombre = ReadJsonString(cab, "Nombre"),
+            ProveedorCuit = Truncate(ReadJsonString(cab, "NUMERO_CUIT"), 13),
+            ProveedorDomicilio = ReadJsonString(cab, "DOMICILIO"),
+            ProveedorCondIva = ReadJsonString(cab, "CONDICIONIVA"),
+            CuentaContable = Truncate(ReadJsonString(cab, "CUENTA"), 15),
+            MatchMetodo = string.Empty,
+            TipoComprobante = FirstNonEmpty(
+                ReadJsonString(meta, "comprobante_raw"),
+                ReadJsonString(cab, "CONCEPTO")),
+            Letra = Truncate(ReadJsonString(cab, "LETRA"), 1),
+            PuntoVenta = Truncate(ReadJsonString(cab, "SUCURSAL"), 4),
+            Numero = Truncate(ReadJsonString(cab, "NUMERO"), 8),
+            Fecha = ParseFlexibleDate(ReadJsonString(cab, "Fecha")),
+            Vencimiento = ParseFlexibleDate(ReadJsonString(cab, "Vencimiento")),
+            Cae = Truncate(ReadJsonString(cab, "NROCAI"), 14),
+            VtoCae = ParseFlexibleDate(ReadJsonString(cab, "FHVToCAI")),
+            Moneda = FirstNonEmpty(ReadJsonString(totales, "Moneda"), ReadJsonString(meta, "moneda_detectada")),
+            NetoGravado = ReadJsonDecimal(totales, "Neto gravado"),
+            NetoNoGravado = FirstNonNull(ReadJsonDecimal(totales, "Neto no gravado"), ReadJsonDecimal(totales, "No gravado")),
+            Exento = ReadJsonDecimal(totales, "Exento"),
+            Iva21 = FirstNonNull(ReadJsonDecimal(totales, "IVA 21%"), ReadJsonDecimal(totales, "IVA 21")),
+            Iva105 = FirstNonNull(ReadJsonDecimal(totales, "IVA 10.5%"), ReadJsonDecimal(totales, "IVA 10.5")),
+            Iva27 = FirstNonNull(ReadJsonDecimal(totales, "IVA 27%"), ReadJsonDecimal(totales, "IVA 27")),
+            PercepcionIva = ReadJsonDecimal(totales, "Percepcion IVA"),
+            PercepcionIibb = ReadJsonDecimal(totales, "Percepcion IIBB"),
+            PercepcionGanancias = ReadJsonDecimal(totales, "Percepcion Ganancias"),
+            ImpuestosInternos = ReadJsonDecimal(totales, "Impuestos internos"),
+            OtrosImpuestos = ReadJsonDecimal(totales, "Otros impuestos"),
+            Total = FirstNonNull(ReadJsonDecimal(totales, "Total final"), ReadJsonDecimal(totales, "Total")),
+            LectorObservaciones = ReadJsonString(meta, "observaciones"),
+            LectorError = string.Empty,
+            Items = []
+        };
+
+        if (rows is not null)
+        {
+            var lineNumber = 1;
+            foreach (var node in rows)
+            {
+                if (node is not JsonObject row)
+                    continue;
+
+                payload.Items.Add(new InterfacesCompraIaPayloadItem
+                {
+                    NroRenglon = lineNumber++,
+                    Cantidad = ReadJsonString(row, "Cantidad"),
+                    CodigoArticulo = ReadJsonString(row, "Codigo_Articulo"),
+                    Descripcion = ReadJsonString(row, "Descripcion"),
+                    Ud = ReadJsonString(row, "UD"),
+                    ImporteLista = ReadJsonDecimal(row, "Importe_Lista"),
+                    Dto1 = ReadJsonDouble(row, "% Dto1"),
+                    Dto2 = ReadJsonDouble(row, "% Dto2"),
+                    ImporteNeto = ReadJsonDecimal(row, "Importe_Neto"),
+                    Iva = ReadJsonDouble(row, "IVA"),
+                    ImpuestosInternos = ReadJsonDecimal(row, "Impuestos internos"),
+                    Total = ReadJsonDecimal(row, "Total"),
+                    AuxNroLote = ReadJsonString(row, "AuxNroLote"),
+                    AuxNroSerie = ReadJsonString(row, "AuxNroSerie"),
+                    BlPq = ReadJsonString(row, "Bl/Pq"),
+                    Moneda = ReadJsonString(row, "Moneda"),
+                    TotImpInt = ReadJsonDecimal(row, "Tot.Imp.Int")
+                });
+            }
+        }
+
+        return payload;
+    }
+
+    private async Task<InterfacesCompraIaPayload> ResolveProviderDataAsync(SqlConnection cn, InterfacesCompraIaPayload payload, CancellationToken ct)
+    {
+        if (!string.IsNullOrWhiteSpace(payload.CuentaContable) && !LooksLikeCuit(payload.CuentaContable))
+        {
+            payload.MatchMetodo = "LECTOR";
+            return payload;
+        }
+
+        var providerMatch = await FindProveedorAsync(cn, payload.ProveedorCuit, payload.ProveedorNombre, ct);
+        if (providerMatch is null)
+        {
+            payload.CuentaContable = string.Empty;
+            payload.MatchMetodo = "SIN_MATCH";
+            return payload;
+        }
+
+        payload.CuentaContable = providerMatch.Codigo;
+        payload.MatchMetodo = providerMatch.MatchMetodo;
+        if (string.IsNullOrWhiteSpace(payload.ProveedorNombre))
+            payload.ProveedorNombre = providerMatch.Nombre;
+        if (string.IsNullOrWhiteSpace(payload.ProveedorCuit))
+            payload.ProveedorCuit = providerMatch.Cuit;
+        if (string.IsNullOrWhiteSpace(payload.ProveedorDomicilio))
+            payload.ProveedorDomicilio = providerMatch.Domicilio;
+        return payload;
+    }
+
+    private async Task<ProveedorMatchResult?> FindProveedorAsync(SqlConnection cn, string cuit, string nombre, CancellationToken ct)
+    {
+        var columns = await ResolveProveedorColumnsAsync(cn, ct);
+        if (string.IsNullOrWhiteSpace(columns.Code) || string.IsNullOrWhiteSpace(columns.Name))
+            return null;
+
+        if (!string.IsNullOrWhiteSpace(cuit))
+        {
+            var match = await SearchProveedorAsync(cn, columns, cuit, string.Empty, "CUIT", ct);
+            if (match is not null)
+                return match;
+        }
+
+        if (!string.IsNullOrWhiteSpace(nombre))
+            return await SearchProveedorAsync(cn, columns, string.Empty, nombre, "NOMBRE", ct);
+
+        return null;
+    }
+
+    private static async Task<ProveedorColumns> ResolveProveedorColumnsAsync(SqlConnection cn, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT name
+            FROM sys.columns
+            WHERE object_id = OBJECT_ID(N'dbo.VT_PROVEEDORES')
+            """;
+
+        var names = new List<string>();
+        await using var cmd = new SqlCommand(sql, cn);
+        await using var rd = await cmd.ExecuteReaderAsync(ct);
+        while (await rd.ReadAsync(ct))
+            names.Add(GetString(rd, 0));
+
+        var normalized = names.ToDictionary(NormalizeTextKey, static x => x, StringComparer.OrdinalIgnoreCase);
+        return new ProveedorColumns
+        {
+            Code = PickProviderColumn(normalized, ["CODIGO", "CUENTA", "IDPROVEEDOR", "ID", "COD_PROVEEDOR"]),
+            Name = PickProviderColumn(normalized, ["NOMBRE", "RAZON_SOCIAL", "RAZONSOCIAL", "DESCRIPCION"]),
+            Cuit = PickProviderColumn(normalized, ["CUIT", "NUMERO_CUIT", "NROCUIT", "DOCUMENTO", "NRODOCUMENTO", "NUMERO_DOCUMENTO"]),
+            Address = PickProviderColumn(normalized, ["DOMICILIO", "DIRECCION", "CALLE", "LOCALIDAD"])
+        };
+    }
+
+    private static async Task<ProveedorMatchResult?> SearchProveedorAsync(
+        SqlConnection cn,
+        ProveedorColumns columns,
+        string cuit,
+        string nombre,
+        string method,
+        CancellationToken ct)
+    {
+        var cuitColumn = string.IsNullOrWhiteSpace(columns.Cuit) ? columns.Name : columns.Cuit;
+        var addressColumn = string.IsNullOrWhiteSpace(columns.Address) ? columns.Name : columns.Address;
+        var sql = new StringBuilder($"""
+            SELECT TOP (1)
+                CAST([{columns.Code}] AS nvarchar(100)),
+                CAST([{columns.Name}] AS nvarchar(250)),
+                CAST([{cuitColumn}] AS nvarchar(100)),
+                CAST([{addressColumn}] AS nvarchar(250))
+            FROM dbo.VT_PROVEEDORES
+            WHERE 1 = 1
+            """);
+
+        await using var cmd = new SqlCommand();
+        cmd.Connection = cn;
+        if (!string.IsNullOrWhiteSpace(cuit))
+        {
+            sql.AppendLine()
+                .Append($" AND REPLACE(REPLACE(REPLACE(CAST([{cuitColumn}] AS nvarchar(100)), '-', ''), '.', ''), ' ', '') LIKE @Cuit");
+            cmd.Parameters.AddWithValue("@Cuit", "%" + OnlyDigits(cuit) + "%");
+        }
+
+        if (!string.IsNullOrWhiteSpace(nombre))
+        {
+            sql.AppendLine()
+                .Append($"""
+                     AND (
+                            CAST([{columns.Name}] AS nvarchar(250)) LIKE @Nombre
+                            OR CAST([{addressColumn}] AS nvarchar(250)) LIKE @Nombre
+                         )
+                    """);
+            cmd.Parameters.AddWithValue("@Nombre", "%" + nombre.Trim() + "%");
+        }
+
+        sql.AppendLine()
+            .Append($" ORDER BY CAST([{columns.Name}] AS nvarchar(250))");
+        cmd.CommandText = sql.ToString();
+
+        await using var rd = await cmd.ExecuteReaderAsync(ct);
+        if (!await rd.ReadAsync(ct))
+            return null;
+
+        return new ProveedorMatchResult
+        {
+            Codigo = Truncate(GetString(rd, 0), 15),
+            Nombre = GetString(rd, 1),
+            Cuit = Truncate(OnlyDigits(GetString(rd, 2)), 13),
+            Domicilio = GetString(rd, 3),
+            MatchMetodo = method
+        };
+    }
+
+    private async Task UpsertCompraDetectionAsync(
+        SqlConnection cn,
+        InterfacesDetalleDto detail,
+        InterfacesAdjuntoDto sourceAttachment,
+        string user,
+        InterfacesCompraIaPayload? payload,
+        string rawJson,
+        string? readerError,
+        string pc,
+        CancellationToken ct)
+    {
+        var settings = await interfacesConfigService.GetUploadSettingsAsync(ct);
+        var storedBase = ResolveStoredBase(settings);
+        var storedPath = BuildStoredFileReference(storedBase, sourceAttachment.RutaRelativa);
+        var state = readerError is not null
+            ? "ERROR_LECTURA"
+            : string.IsNullOrWhiteSpace(payload?.CuentaContable)
+                ? "SIN_PROVEEDOR"
+                : "PROCESADO";
+
+        const string selectSql = """
+            SELECT TOP (1) ID
+            FROM dbo.IA_Compras_CAB
+            WHERE IdComprobanteRecibido = @IdComprobanteRecibido
+            ORDER BY FechaHora_Proceso DESC, ID DESC
+            """;
+
+        int? existingId = null;
+        await using (var selectCmd = new SqlCommand(selectSql, cn))
+        {
+            selectCmd.Parameters.AddWithValue("@IdComprobanteRecibido", detail.IdComprobanteRecibido);
+            var scalar = await selectCmd.ExecuteScalarAsync(ct);
+            if (scalar is not null && scalar != DBNull.Value)
+                existingId = Convert.ToInt32(scalar, CultureInfo.InvariantCulture);
+        }
+
+        await using var tx = await cn.BeginTransactionAsync(ct);
+        try
+        {
+            var recordId = existingId ?? 0;
+            if (existingId.HasValue)
+            {
+                const string updateSql = """
+                    UPDATE dbo.IA_Compras_CAB
+                    SET
+                        IdAdjuntoFuente = @IdAdjuntoFuente,
+                        Estado = @Estado,
+                        FechaHora_Proceso = GETDATE(),
+                        FechaHora_Inicio = ISNULL(FechaHora_Inicio, GETDATE()),
+                        FechaHora_Fin = GETDATE(),
+                        FechaHora_Modificacion = GETDATE(),
+                        Usuario_Proceso = @Usuario_Proceso,
+                        Observaciones_Rev = @Observaciones_Rev,
+                        SolicitarCancelacion = 0,
+                        Archivo_RutaOriginal = @Archivo_RutaOriginal,
+                        Archivo_NombreOriginal = @Archivo_NombreOriginal,
+                        Archivo_NombreRenombrado = @Archivo_NombreRenombrado,
+                        Proveedor_Nombre = @Proveedor_Nombre,
+                        Proveedor_CUIT = @Proveedor_CUIT,
+                        Proveedor_Domicilio = @Proveedor_Domicilio,
+                        Proveedor_CondIVA = @Proveedor_CondIVA,
+                        Cuenta_Contable = @Cuenta_Contable,
+                        Match_Metodo = @Match_Metodo,
+                        TipoComprobante = @TipoComprobante,
+                        Letra = @Letra,
+                        PuntoVenta = @PuntoVenta,
+                        Numero = @Numero,
+                        Fecha = @Fecha,
+                        Vencimiento = @Vencimiento,
+                        CAE = @CAE,
+                        VtoCAE = @VtoCAE,
+                        Moneda = @Moneda,
+                        NetoGravado = @NetoGravado,
+                        NetoNoGravado = @NetoNoGravado,
+                        Exento = @Exento,
+                        IVA_21 = @IVA_21,
+                        IVA_105 = @IVA_105,
+                        IVA_27 = @IVA_27,
+                        Percepcion_IVA = @Percepcion_IVA,
+                        Percepcion_IIBB = @Percepcion_IIBB,
+                        Percepcion_Ganancias = @Percepcion_Ganancias,
+                        ImpuestosInternos = @ImpuestosInternos,
+                        OtrosImpuestos = @OtrosImpuestos,
+                        Total = @Total,
+                        Lector_Observaciones = @Lector_Observaciones,
+                        Lector_Error = @Lector_Error,
+                        JsonResultado = @JsonResultado
+                    WHERE ID = @ID
+                    """;
+
+                await using var updateCmd = new SqlCommand(updateSql, cn, (SqlTransaction)tx);
+                FillCompraCabParameters(updateCmd, detail, sourceAttachment, user, pc, storedPath, payload, rawJson, readerError, state);
+                updateCmd.Parameters.AddWithValue("@ID", existingId.Value);
+                await updateCmd.ExecuteNonQueryAsync(ct);
+                recordId = existingId.Value;
+
+                await using var deleteCmd = new SqlCommand("DELETE FROM dbo.IA_Compras_DET WHERE ID_CAB = @ID_CAB", cn, (SqlTransaction)tx);
+                deleteCmd.Parameters.AddWithValue("@ID_CAB", recordId);
+                await deleteCmd.ExecuteNonQueryAsync(ct);
+            }
+            else
+            {
+                const string insertSql = """
+                    INSERT INTO dbo.IA_Compras_CAB
+                    (
+                        IdComprobanteRecibido,
+                        IdAdjuntoFuente,
+                        Estado,
+                        FechaHora_Inicio,
+                        FechaHora_Fin,
+                        Usuario_Proceso,
+                        Observaciones_Rev,
+                        Archivo_RutaOriginal,
+                        Archivo_NombreOriginal,
+                        Archivo_NombreRenombrado,
+                        SolicitarCancelacion,
+                        Intentos,
+                        Proveedor_Nombre,
+                        Proveedor_CUIT,
+                        Proveedor_Domicilio,
+                        Proveedor_CondIVA,
+                        Cuenta_Contable,
+                        Match_Metodo,
+                        TipoComprobante,
+                        Letra,
+                        PuntoVenta,
+                        Numero,
+                        Fecha,
+                        Vencimiento,
+                        CAE,
+                        VtoCAE,
+                        Moneda,
+                        NetoGravado,
+                        NetoNoGravado,
+                        Exento,
+                        IVA_21,
+                        IVA_105,
+                        IVA_27,
+                        Percepcion_IVA,
+                        Percepcion_IIBB,
+                        Percepcion_Ganancias,
+                        ImpuestosInternos,
+                        OtrosImpuestos,
+                        Total,
+                        Lector_Observaciones,
+                        Lector_Error,
+                        JsonResultado
+                    )
+                    VALUES
+                    (
+                        @IdComprobanteRecibido,
+                        @IdAdjuntoFuente,
+                        @Estado,
+                        GETDATE(),
+                        GETDATE(),
+                        @Usuario_Proceso,
+                        @Observaciones_Rev,
+                        @Archivo_RutaOriginal,
+                        @Archivo_NombreOriginal,
+                        @Archivo_NombreRenombrado,
+                        0,
+                        1,
+                        @Proveedor_Nombre,
+                        @Proveedor_CUIT,
+                        @Proveedor_Domicilio,
+                        @Proveedor_CondIVA,
+                        @Cuenta_Contable,
+                        @Match_Metodo,
+                        @TipoComprobante,
+                        @Letra,
+                        @PuntoVenta,
+                        @Numero,
+                        @Fecha,
+                        @Vencimiento,
+                        @CAE,
+                        @VtoCAE,
+                        @Moneda,
+                        @NetoGravado,
+                        @NetoNoGravado,
+                        @Exento,
+                        @IVA_21,
+                        @IVA_105,
+                        @IVA_27,
+                        @Percepcion_IVA,
+                        @Percepcion_IIBB,
+                        @Percepcion_Ganancias,
+                        @ImpuestosInternos,
+                        @OtrosImpuestos,
+                        @Total,
+                        @Lector_Observaciones,
+                        @Lector_Error,
+                        @JsonResultado
+                    );
+                    SELECT CAST(SCOPE_IDENTITY() AS int);
+                    """;
+
+                await using var insertCmd = new SqlCommand(insertSql, cn, (SqlTransaction)tx);
+                FillCompraCabParameters(insertCmd, detail, sourceAttachment, user, pc, storedPath, payload, rawJson, readerError, state);
+                recordId = Convert.ToInt32(await insertCmd.ExecuteScalarAsync(ct), CultureInfo.InvariantCulture);
+            }
+
+            if (payload is not null)
+            {
+                const string insertDetSql = """
+                    INSERT INTO dbo.IA_Compras_DET
+                    (
+                        ID_CAB,
+                        NroRenglon,
+                        Cantidad,
+                        Codigo_Articulo,
+                        Descripcion,
+                        UD,
+                        Importe_Lista,
+                        Dto1,
+                        Dto2,
+                        Importe_Neto,
+                        IVA,
+                        ImpuestosInternos,
+                        Total,
+                        AuxNroLote,
+                        AuxNroSerie,
+                        BlPq,
+                        Moneda,
+                        TotImpInt
+                    )
+                    VALUES
+                    (
+                        @ID_CAB,
+                        @NroRenglon,
+                        @Cantidad,
+                        @Codigo_Articulo,
+                        @Descripcion,
+                        @UD,
+                        @Importe_Lista,
+                        @Dto1,
+                        @Dto2,
+                        @Importe_Neto,
+                        @IVA,
+                        @ImpuestosInternos,
+                        @Total,
+                        @AuxNroLote,
+                        @AuxNroSerie,
+                        @BlPq,
+                        @Moneda,
+                        @TotImpInt
+                    )
+                    """;
+
+                foreach (var item in payload.Items)
+                {
+                    await using var detCmd = new SqlCommand(insertDetSql, cn, (SqlTransaction)tx);
+                    detCmd.Parameters.AddWithValue("@ID_CAB", recordId);
+                    detCmd.Parameters.AddWithValue("@NroRenglon", item.NroRenglon);
+                    detCmd.Parameters.AddWithValue("@Cantidad", DbNullable(item.Cantidad, 20));
+                    detCmd.Parameters.AddWithValue("@Codigo_Articulo", DbNullable(item.CodigoArticulo, 50));
+                    detCmd.Parameters.AddWithValue("@Descripcion", DbNullable(item.Descripcion, 200));
+                    detCmd.Parameters.AddWithValue("@UD", DbNullable(item.Ud, 10));
+                    detCmd.Parameters.AddWithValue("@Importe_Lista", DbNullable(item.ImporteLista));
+                    detCmd.Parameters.AddWithValue("@Dto1", DbNullable(item.Dto1));
+                    detCmd.Parameters.AddWithValue("@Dto2", DbNullable(item.Dto2));
+                    detCmd.Parameters.AddWithValue("@Importe_Neto", DbNullable(item.ImporteNeto));
+                    detCmd.Parameters.AddWithValue("@IVA", DbNullable(item.Iva));
+                    detCmd.Parameters.AddWithValue("@ImpuestosInternos", DbNullable(item.ImpuestosInternos));
+                    detCmd.Parameters.AddWithValue("@Total", DbNullable(item.Total));
+                    detCmd.Parameters.AddWithValue("@AuxNroLote", DbNullable(item.AuxNroLote, 50));
+                    detCmd.Parameters.AddWithValue("@AuxNroSerie", DbNullable(item.AuxNroSerie, 50));
+                    detCmd.Parameters.AddWithValue("@BlPq", DbNullable(item.BlPq, 20));
+                    detCmd.Parameters.AddWithValue("@Moneda", DbNullable(item.Moneda, 10));
+                    detCmd.Parameters.AddWithValue("@TotImpInt", DbNullable(item.TotImpInt));
+                    await detCmd.ExecuteNonQueryAsync(ct);
+                }
+            }
+
+            await tx.CommitAsync(ct);
+        }
+        catch
+        {
+            try
+            {
+                await tx.RollbackAsync(ct);
+            }
+            catch
+            {
+            }
+
+            throw;
+        }
+    }
+
+    private static void FillCompraCabParameters(
+        SqlCommand cmd,
+        InterfacesDetalleDto detail,
+        InterfacesAdjuntoDto sourceAttachment,
+        string user,
+        string pc,
+        string storedPath,
+        InterfacesCompraIaPayload? payload,
+        string rawJson,
+        string? readerError,
+        string state)
+    {
+        cmd.Parameters.AddWithValue("@IdComprobanteRecibido", detail.IdComprobanteRecibido);
+        cmd.Parameters.AddWithValue("@IdAdjuntoFuente", sourceAttachment.IdAdjunto);
+        cmd.Parameters.AddWithValue("@Estado", state);
+        cmd.Parameters.AddWithValue("@Usuario_Proceso", DbNullable(user, 50));
+        cmd.Parameters.AddWithValue("@Observaciones_Rev", DbNullable(BuildCompraQueueNote(state, readerError), 500));
+        cmd.Parameters.AddWithValue("@Archivo_RutaOriginal", Truncate(storedPath, 500));
+        cmd.Parameters.AddWithValue("@Archivo_NombreOriginal", Truncate(sourceAttachment.NombreOriginal, 260));
+        cmd.Parameters.AddWithValue("@Archivo_NombreRenombrado", DbNullable(sourceAttachment.NombreGuardado, 260));
+        cmd.Parameters.AddWithValue("@Proveedor_Nombre", DbNullable(payload?.ProveedorNombre, 150));
+        cmd.Parameters.AddWithValue("@Proveedor_CUIT", DbNullable(payload?.ProveedorCuit, 13));
+        cmd.Parameters.AddWithValue("@Proveedor_Domicilio", DbNullable(payload?.ProveedorDomicilio, 150));
+        cmd.Parameters.AddWithValue("@Proveedor_CondIVA", DbNullable(payload?.ProveedorCondIva, 30));
+        cmd.Parameters.AddWithValue("@Cuenta_Contable", DbNullable(payload?.CuentaContable, 15));
+        cmd.Parameters.AddWithValue("@Match_Metodo", DbNullable(payload?.MatchMetodo, 50));
+        cmd.Parameters.AddWithValue("@TipoComprobante", DbNullable(payload?.TipoComprobante, 50));
+        cmd.Parameters.AddWithValue("@Letra", DbNullable(payload?.Letra, 1));
+        cmd.Parameters.AddWithValue("@PuntoVenta", DbNullable(payload?.PuntoVenta, 4));
+        cmd.Parameters.AddWithValue("@Numero", DbNullable(payload?.Numero, 8));
+        cmd.Parameters.AddWithValue("@Fecha", DbNullable(payload?.Fecha));
+        cmd.Parameters.AddWithValue("@Vencimiento", DbNullable(payload?.Vencimiento));
+        cmd.Parameters.AddWithValue("@CAE", DbNullable(payload?.Cae, 14));
+        cmd.Parameters.AddWithValue("@VtoCAE", DbNullable(payload?.VtoCae));
+        cmd.Parameters.AddWithValue("@Moneda", DbNullable(payload?.Moneda, 10));
+        cmd.Parameters.AddWithValue("@NetoGravado", DbNullable(payload?.NetoGravado));
+        cmd.Parameters.AddWithValue("@NetoNoGravado", DbNullable(payload?.NetoNoGravado));
+        cmd.Parameters.AddWithValue("@Exento", DbNullable(payload?.Exento));
+        cmd.Parameters.AddWithValue("@IVA_21", DbNullable(payload?.Iva21));
+        cmd.Parameters.AddWithValue("@IVA_105", DbNullable(payload?.Iva105));
+        cmd.Parameters.AddWithValue("@IVA_27", DbNullable(payload?.Iva27));
+        cmd.Parameters.AddWithValue("@Percepcion_IVA", DbNullable(payload?.PercepcionIva));
+        cmd.Parameters.AddWithValue("@Percepcion_IIBB", DbNullable(payload?.PercepcionIibb));
+        cmd.Parameters.AddWithValue("@Percepcion_Ganancias", DbNullable(payload?.PercepcionGanancias));
+        cmd.Parameters.AddWithValue("@ImpuestosInternos", DbNullable(payload?.ImpuestosInternos));
+        cmd.Parameters.AddWithValue("@OtrosImpuestos", DbNullable(payload?.OtrosImpuestos));
+        cmd.Parameters.AddWithValue("@Total", DbNullable(payload?.Total));
+        cmd.Parameters.AddWithValue("@Lector_Observaciones", DbNullable(payload?.LectorObservaciones, 1000));
+        cmd.Parameters.AddWithValue("@Lector_Error", DbNullable(readerError ?? payload?.LectorError, 1000));
+        cmd.Parameters.AddWithValue("@JsonResultado", string.IsNullOrWhiteSpace(rawJson) ? DBNull.Value : rawJson);
+    }
+
+    private static string BuildCompraQueueNote(string state, string? readerError)
+        => !string.IsNullOrWhiteSpace(readerError)
+            ? readerError.Trim()
+            : state switch
+            {
+                "PROCESADO" => "Procesamiento finalizado correctamente.",
+                "SIN_PROVEEDOR" => "Procesamiento finalizado sin match de proveedor.",
+                "ERROR_LECTURA" => "El lector automático devolvió un error.",
+                "CANCELADO" => "Procesamiento cancelado.",
+                _ => string.Empty
+            };
+
+    private static bool IsFacturaReaderSupportedExtension(string extension, string originalName)
+    {
+        var normalized = NormalizeExtension(string.IsNullOrWhiteSpace(extension) ? Path.GetExtension(originalName) : extension);
+        return normalized is ".pdf" or ".jpg" or ".jpeg" or ".png" or ".webp";
+    }
+
+    private static string ReadJsonString(JsonObject? obj, string key)
+        => obj?[key]?.GetValue<string>()?.Trim() ?? string.Empty;
+
+    private static decimal? ReadJsonDecimal(JsonObject? obj, string key)
+        => ParseFlexibleDecimal(ReadJsonString(obj, key));
+
+    private static double? ReadJsonDouble(JsonObject? obj, string key)
+    {
+        var value = ReadJsonString(obj, key);
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        var normalized = value.Replace("%", string.Empty).Trim().Replace(",", ".");
+        return double.TryParse(normalized, NumberStyles.Any, CultureInfo.InvariantCulture, out var parsed)
+            ? parsed
+            : null;
+    }
+
+    private static decimal? ParseFlexibleDecimal(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        var normalized = value.Trim().Replace(" ", string.Empty);
+        if (normalized.Contains(',') && normalized.Contains('.'))
+        {
+            normalized = normalized.Replace(".", string.Empty).Replace(",", ".");
+        }
+        else if (normalized.Contains(','))
+        {
+            normalized = normalized.Replace(",", ".");
+        }
+
+        return decimal.TryParse(normalized, NumberStyles.Any, CultureInfo.InvariantCulture, out var parsed)
+            ? parsed
+            : null;
+    }
+
+    private static DateTime? ParseFlexibleDate(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        var normalized = value.Trim();
+        var formats = new[] { "dd/MM/yyyy", "d/M/yyyy", "dd/MM/yy", "d/M/yy", "yyyy-MM-dd" };
+        if (DateTime.TryParseExact(normalized, formats, CultureInfo.InvariantCulture, DateTimeStyles.None, out var exact))
+            return exact;
+
+        return DateTime.TryParse(normalized, CultureInfo.GetCultureInfo("es-AR"), DateTimeStyles.None, out var parsed)
+            ? parsed
+            : null;
+    }
+
+    private static string ReadValue(IReadOnlyDictionary<string, string> values, string key, string fallback = "")
+        => values.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value) ? value.Trim() : fallback;
+
+    private static string NormalizeTextKey(string value)
+    {
+        var chars = value
+            .Trim()
+            .ToUpperInvariant()
+            .Where(char.IsLetterOrDigit)
+            .ToArray();
+        return new string(chars);
+    }
+
+    private static string PickProviderColumn(Dictionary<string, string> normalizedColumns, IReadOnlyList<string> candidates)
+    {
+        foreach (var candidate in candidates)
+        {
+            var key = NormalizeTextKey(candidate);
+            if (normalizedColumns.TryGetValue(key, out var exact))
+                return exact;
+        }
+
+        foreach (var pair in normalizedColumns)
+        {
+            foreach (var candidate in candidates)
+            {
+                var key = NormalizeTextKey(candidate);
+                if (pair.Key.StartsWith(key, StringComparison.OrdinalIgnoreCase) || pair.Key.Contains(key, StringComparison.OrdinalIgnoreCase))
+                    return pair.Value;
+            }
+        }
+
+        return string.Empty;
+    }
+
+    private static string OnlyDigits(string value)
+        => new(value.Where(char.IsDigit).ToArray());
+
+    private static bool LooksLikeCuit(string value)
+        => OnlyDigits(value).Length == 11;
+
+    private static string FirstNonEmpty(params string[] values)
+        => values.FirstOrDefault(static x => !string.IsNullOrWhiteSpace(x))?.Trim() ?? string.Empty;
+
+    private static decimal? FirstNonNull(params decimal?[] values)
+        => values.FirstOrDefault(static x => x.HasValue);
+
+    private static decimal? GetNullableDecimal(SqlDataReader rd, int index)
+        => rd.IsDBNull(index) ? null : Convert.ToDecimal(rd.GetValue(index), CultureInfo.InvariantCulture);
+
+    private static double? GetNullableDouble(SqlDataReader rd, int index)
+        => rd.IsDBNull(index) ? null : Convert.ToDouble(rd.GetValue(index), CultureInfo.InvariantCulture);
+
+    private static object DbNullable(decimal? value)
+        => value.HasValue ? value.Value : DBNull.Value;
+
+    private static object DbNullable(double? value)
+        => value.HasValue ? value.Value : DBNull.Value;
+
+    private static object DbNullable(DateTime? value)
+        => value.HasValue ? value.Value : DBNull.Value;
+
+#pragma warning disable SYSLIB0014
+    private static async Task DownloadFtpFileAsync(InterfacesUploadSettingsDto settings, string remoteUrl, string outputPath, CancellationToken ct)
+    {
+        var request = (FtpWebRequest)WebRequest.Create(remoteUrl);
+        request.Method = WebRequestMethods.Ftp.DownloadFile;
+        request.Credentials = new NetworkCredential(settings.FtpUsuario, settings.FtpClave);
+        request.UseBinary = true;
+        request.UsePassive = settings.FtpModoPasivo;
+        request.KeepAlive = false;
+
+        using var response = (FtpWebResponse)await request.GetResponseAsync();
+        await using var responseStream = response.GetResponseStream()
+            ?? throw new InvalidOperationException("No se pudo abrir el adjunto remoto para ejecutar la detección.");
+        await using var output = File.Create(outputPath);
+        await responseStream.CopyToAsync(output, ct);
+    }
+#pragma warning restore SYSLIB0014
+
     private static object DbNullable(string? value, int maxLength)
         => string.IsNullOrWhiteSpace(value) ? DBNull.Value : Truncate(value.Trim(), maxLength);
 
@@ -1782,5 +3526,84 @@ public sealed class InterfacesService(
         public long IdComprobanteRecibido { get; init; }
         public string RutaBase { get; init; } = string.Empty;
         public string RutaRelativa { get; init; } = string.Empty;
+    }
+
+    private sealed class InterfacesCompraIaSettings
+    {
+        public string PythonExe { get; init; } = string.Empty;
+        public string ScriptPath { get; init; } = string.Empty;
+        public string WorkingDirectory { get; init; } = string.Empty;
+    }
+
+    private sealed class InterfacesCompraIaPayload
+    {
+        public string ProveedorNombre { get; set; } = string.Empty;
+        public string ProveedorCuit { get; set; } = string.Empty;
+        public string ProveedorDomicilio { get; set; } = string.Empty;
+        public string ProveedorCondIva { get; set; } = string.Empty;
+        public string CuentaContable { get; set; } = string.Empty;
+        public string MatchMetodo { get; set; } = string.Empty;
+        public string TipoComprobante { get; set; } = string.Empty;
+        public string Letra { get; set; } = string.Empty;
+        public string PuntoVenta { get; set; } = string.Empty;
+        public string Numero { get; set; } = string.Empty;
+        public DateTime? Fecha { get; set; }
+        public DateTime? Vencimiento { get; set; }
+        public string Cae { get; set; } = string.Empty;
+        public DateTime? VtoCae { get; set; }
+        public string Moneda { get; set; } = string.Empty;
+        public decimal? NetoGravado { get; set; }
+        public decimal? NetoNoGravado { get; set; }
+        public decimal? Exento { get; set; }
+        public decimal? Iva21 { get; set; }
+        public decimal? Iva105 { get; set; }
+        public decimal? Iva27 { get; set; }
+        public decimal? PercepcionIva { get; set; }
+        public decimal? PercepcionIibb { get; set; }
+        public decimal? PercepcionGanancias { get; set; }
+        public decimal? ImpuestosInternos { get; set; }
+        public decimal? OtrosImpuestos { get; set; }
+        public decimal? Total { get; set; }
+        public string LectorObservaciones { get; set; } = string.Empty;
+        public string LectorError { get; set; } = string.Empty;
+        public List<InterfacesCompraIaPayloadItem> Items { get; set; } = [];
+    }
+
+    private sealed class InterfacesCompraIaPayloadItem
+    {
+        public int NroRenglon { get; set; }
+        public string Cantidad { get; set; } = string.Empty;
+        public string CodigoArticulo { get; set; } = string.Empty;
+        public string Descripcion { get; set; } = string.Empty;
+        public string Ud { get; set; } = string.Empty;
+        public decimal? ImporteLista { get; set; }
+        public double? Dto1 { get; set; }
+        public double? Dto2 { get; set; }
+        public decimal? ImporteNeto { get; set; }
+        public double? Iva { get; set; }
+        public decimal? ImpuestosInternos { get; set; }
+        public decimal? Total { get; set; }
+        public string AuxNroLote { get; set; } = string.Empty;
+        public string AuxNroSerie { get; set; } = string.Empty;
+        public string BlPq { get; set; } = string.Empty;
+        public string Moneda { get; set; } = string.Empty;
+        public decimal? TotImpInt { get; set; }
+    }
+
+    private sealed class ProveedorColumns
+    {
+        public string Code { get; init; } = string.Empty;
+        public string Name { get; init; } = string.Empty;
+        public string Cuit { get; init; } = string.Empty;
+        public string Address { get; init; } = string.Empty;
+    }
+
+    private sealed class ProveedorMatchResult
+    {
+        public string Codigo { get; init; } = string.Empty;
+        public string Nombre { get; init; } = string.Empty;
+        public string Cuit { get; init; } = string.Empty;
+        public string Domicilio { get; init; } = string.Empty;
+        public string MatchMetodo { get; init; } = string.Empty;
     }
 }

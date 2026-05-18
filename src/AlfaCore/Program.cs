@@ -81,6 +81,7 @@ public class Program
         builder.Services.Configure<WhatsAppOptions>(builder.Configuration.GetSection(WhatsAppOptions.SectionName));
         builder.Services.AddHostedService<ServerStartupHostedService>();
         builder.Services.AddHostedService<DatabaseUpdatesHostedService>();
+        builder.Services.AddHostedService<InterfacesCompraIaWorkerHostedService>();
 
         var app = builder.Build();
 
