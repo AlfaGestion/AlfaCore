@@ -156,6 +156,7 @@ public sealed class TicketRelatedMatchDto
     public TicketGridItemDto Ticket { get; set; } = new();
     public int Score { get; set; }
     public List<string> Terminos { get; set; } = [];
+    public string PrimerMensajeTexto { get; set; } = string.Empty;
     public bool MismaConversacion { get; set; }
     public bool MismoContacto { get; set; }
     public bool MismoCliente { get; set; }

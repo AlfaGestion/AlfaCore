@@ -250,9 +250,15 @@ public sealed class TicketsService(
             }
 
             await HydrateEtiquetasAsync(cn, candidates.Select(x => x.Ticket).ToList(), token);
+            var firstMessages = await GetFirstTicketMessagesAsync(cn, candidates.Select(x => x.Ticket.IdTicket).ToList(), token);
 
             var matches = candidates
-                .Select(candidate => BuildRelatedMatch(candidate.Ticket, candidate.Description, terms, request))
+                .Select(candidate => BuildRelatedMatch(
+                    candidate.Ticket,
+                    candidate.Description,
+                    terms,
+                    request,
+                    firstMessages.TryGetValue(candidate.Ticket.IdTicket, out var preview) ? preview : string.Empty))
                 .Where(match => match.Score >= 20)
                 .OrderByDescending(match => match.Score)
                 .ThenByDescending(match => match.Ticket.FechaHoraModificacion ?? match.Ticket.FechaHoraAlta)
@@ -785,7 +791,8 @@ public sealed class TicketsService(
         TicketGridItemDto ticket,
         string normalizedDescription,
         IReadOnlyList<string> terms,
-        TicketRelatedSearchRequest request)
+        TicketRelatedSearchRequest request,
+        string firstMessageText)
     {
         var normalizedTitle = NormalizeTextForSearch(ticket.Titulo);
         var matchedTerms = terms
@@ -819,10 +826,51 @@ public sealed class TicketsService(
             Ticket = ticket,
             Score = score,
             Terminos = matchedTerms,
+            PrimerMensajeTexto = firstMessageText,
             MismaConversacion = sameConversation,
             MismoContacto = sameContact,
             MismoCliente = sameClient
         };
+    }
+
+    private static async Task<Dictionary<long, string>> GetFirstTicketMessagesAsync(SqlConnection cn, IReadOnlyList<long> ticketIds, CancellationToken ct)
+    {
+        var ids = ticketIds.Where(id => id > 0).Distinct().ToList();
+        if (ids.Count == 0)
+            return [];
+
+        var parameterNames = ids.Select((_, index) => $"@FirstMsgTicket{index}").ToArray();
+        var sql = $"""
+            SELECT
+                t.IdTicket,
+                ISNULL(firstMsg.Texto, '')
+            FROM dbo.TICK_TICKETS t
+            OUTER APPLY (
+                SELECT TOP (1) NULLIF(LTRIM(RTRIM(ISNULL(m.Texto, ''))), '') AS Texto
+                FROM dbo.TICK_TICKET_MENSAJES tm
+                INNER JOIN dbo.CONV_MENSAJES m ON m.IdMensaje = tm.IdMensaje
+                WHERE tm.IdTicket = t.IdTicket
+                  AND NULLIF(LTRIM(RTRIM(ISNULL(m.Texto, ''))), '') IS NOT NULL
+                ORDER BY tm.Orden, m.FechaHora, m.IdMensaje
+            ) firstMsg
+            WHERE t.IdTicket IN ({string.Join(", ", parameterNames)});
+            """;
+
+        var result = new Dictionary<long, string>();
+        await using var cmd = new SqlCommand(sql, cn);
+        for (var i = 0; i < ids.Count; i++)
+            cmd.Parameters.AddWithValue(parameterNames[i], ids[i]);
+
+        await using var rd = await cmd.ExecuteReaderAsync(ct);
+        while (await rd.ReadAsync(ct))
+        {
+            var idTicket = rd.GetInt64(0);
+            var text = GetString(rd, 1);
+            if (!string.IsNullOrWhiteSpace(text))
+                result[idTicket] = text;
+        }
+
+        return result;
     }
 
     private static IReadOnlyList<string> ExtractRelevantTerms(string? text)

@@ -767,7 +767,7 @@
                                             <div>
                                                 <strong>@match.Ticket.CodigoVisible @match.Ticket.Titulo</strong>
                                                 <span>@match.Ticket.EstadoNombre · @RenderTicketPriority(match.Ticket.Prioridad) · @DisplayOrFallback(match.Ticket.TecnicoNombre, "Sin asignar")</span>
-                                                <small>@BuildRelatedReason(match)</small>
+                                                <small>@BuildContextTicketPreview(match)</small>
                                             </div>
                                             <button type="button" class="btn btn--ghost btn--sm" @onclick="() => OpenTicket(match.Ticket.IdTicket)">
                                                 <i class="bi bi-box-arrow-up-right"></i>
@@ -3218,6 +3218,15 @@
         if (match.MismoCliente) parts.Add("mismo cliente");
         if (match.Terminos.Count > 0) parts.Add($"coincide: {string.Join(", ", match.Terminos.Take(3))}");
         return parts.Count == 0 ? "posible relación por texto" : string.Join(" · ", parts);
+    }
+
+    private static string BuildContextTicketPreview(TicketRelatedMatchDto match)
+    {
+        var text = (match.PrimerMensajeTexto ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(text))
+            return BuildRelatedReason(match);
+
+        return text.Length <= 120 ? text : $"{text[..120]}...";
     }
 
     private void OpenTicket(long idTicket)
