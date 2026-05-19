@@ -11,7 +11,7 @@
 
 <PageTitle>Contactos | Alfa Gestión</PageTitle>
 
-<div class="page-grid contactos-page">
+<div class="page-grid contactos-page" @onclick="CloseSearchPanel">
     <section class="page-intro">
         <div>
             <h2 class="page-intro__title">Contactos</h2>
@@ -47,38 +47,93 @@
         </section>
     }
 
-    <section class="panel-card">
-        <div class="panel-card__header">
-            <div>
-                <h3 class="panel-card__title">Filtros</h3>
-                <p class="panel-card__subtitle">Buscá por nombre, localidad, email o teléfonos. La grilla muestra activos por defecto.</p>
-            </div>
-        </div>
-
-        <div class="filters-grid">
-            <div class="field field--wide">
-                <label>Buscar</label>
+    <section class="panel-card smart-search-card" @onclick:stopPropagation>
+        <div class="smart-search">
+            <div class="smart-search__bar">
+                <i class="bi bi-search"></i>
                 <input type="search"
-                       placeholder="Nombre, localidad, email o teléfono..."
-                       @bind="_filters.Texto"
-                       @bind:event="oninput" />
-            </div>
-            <div class="field">
-                <label>Estado</label>
-                <select @bind="_activoFiltro">
-                    <option value="1">Activos</option>
-                    <option value="">Todos</option>
-                    <option value="0">Inactivos</option>
-                </select>
-            </div>
-            <div class="actions">
-                <button type="button" class="btn btn--primary" @onclick="AplicarFiltrosAsync" disabled="@_loadingList">
-                    <i class="bi bi-funnel"></i> Aplicar
-                </button>
-                <button type="button" class="btn btn--ghost" @onclick="LimpiarFiltros" disabled="@_loadingList">
-                    <i class="bi bi-eraser"></i> Limpiar
+                       placeholder="Buscar contactos..."
+                       value="@_filters.Texto"
+                       @onfocus="OpenContactSearchPanel"
+                       @oninput="OnContactSearchInput" />
+                <button type="button" class="smart-search__toggle" @onclick="ToggleContactSearchPanel" aria-label="Mostrar filtros">
+                    <i class="bi @(_showSearchPanel ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
                 </button>
             </div>
+
+            <div class="smart-search__chips" aria-live="polite">
+                @foreach (var chip in BuildContactFilterChips())
+                {
+                    <button type="button" class="smart-chip" @onclick="() => RemoveContactChipAsync(chip.Key)">
+                        @chip.Label <i class="bi bi-x"></i>
+                    </button>
+                }
+                @if (BuildContactFilterChips().Count == 0)
+                {
+                    <span class="smart-search__hint">Click en el buscador para filtros, agrupaciones y favoritos.</span>
+                }
+            </div>
+
+            @if (_showSearchPanel)
+            {
+                <div class="smart-search__panel">
+                    <div class="smart-search__column">
+                        <h4><i class="bi bi-funnel-fill"></i> Filtros</h4>
+                        <button type="button" class='@GetSmartOptionClass(_activoFiltro == "1")' @onclick='() => SetContactStatusFilterAsync("1")'>Personas activas</button>
+                        <button type="button" class='@GetSmartOptionClass(_activoFiltro == "0")' @onclick='() => SetContactStatusFilterAsync("0")'>Inactivos</button>
+                        <button type="button" class="@GetSmartOptionClass(_filters.TieneEmail == true)" @onclick='() => ToggleContactBoolFilterAsync("email")'>Con email</button>
+                        <button type="button" class="@GetSmartOptionClass(_filters.TieneEmail == false)" @onclick='() => ToggleContactBoolFilterAsync("sin-email")'>Sin email</button>
+                        <button type="button" class="@GetSmartOptionClass(_filters.TieneTelefono == true)" @onclick='() => ToggleContactBoolFilterAsync("telefono")'>Con teléfono</button>
+                        <button type="button" class="@GetSmartOptionClass(_filters.TieneWhatsApp == true)" @onclick='() => ToggleContactBoolFilterAsync("whatsapp")'>Con conversación WhatsApp</button>
+                    </div>
+                    <div class="smart-search__column">
+                        <h4><i class="bi bi-stack"></i> Agrupar por</h4>
+                        <button type="button" class="@GetSmartOptionClass(_viewSettings.AgruparPor == ContactosViewGroupKeys.None)" @onclick='() => SetContactGroupAsync(ContactosViewGroupKeys.None)'>Sin agrupar</button>
+                        <button type="button" class="@GetSmartOptionClass(_viewSettings.AgruparPor == ContactosViewGroupKeys.Activo)" @onclick='() => SetContactGroupAsync(ContactosViewGroupKeys.Activo)'>Estado</button>
+                        <div class="smart-search__inline">
+                            <label>Provincia</label>
+                            <select value="@_filters.ProvinciaCodigo" @onchange="OnContactProvinciaChangedAsync">
+                                <option value="">Todas</option>
+                                @foreach (var provincia in _provincias)
+                                {
+                                    <option value="@provincia.Codigo">@provincia.Descripcion</option>
+                                }
+                            </select>
+                        </div>
+                    </div>
+                    <div class="smart-search__column">
+                        <h4><i class="bi bi-star-fill"></i> Favoritos</h4>
+                        <button type="button" @onclick='() => ApplyContactFavoriteAsync("contactables")'>Contactables</button>
+                        <button type="button" @onclick='() => ApplyContactFavoriteAsync("para-soporte")'>Para soporte</button>
+                        <button type="button" @onclick="SaveContactFavorite">Guardar búsqueda actual</button>
+                        @foreach (var favorite in _contactFavorites)
+                        {
+                            <button type="button" @onclick="() => ApplySavedContactFavoriteAsync(favorite)">@favorite.Label</button>
+                        }
+                    </div>
+                    <div class="smart-search__custom">
+                        <h4><i class="bi bi-sliders"></i> Filtro personalizado</h4>
+                        <select @bind="_contactRuleDraft.Campo">
+                            <option value="nombre">Nombre</option>
+                            <option value="email">Email</option>
+                            <option value="telefono">Teléfono</option>
+                            <option value="celular">Celular</option>
+                            <option value="localidad">Localidad</option>
+                            <option value="provincia">Provincia</option>
+                            <option value="cargo">Cargo</option>
+                        </select>
+                        <select @bind="_contactRuleDraft.Operador">
+                            <option value="contains">contiene</option>
+                            <option value="equals">es igual a</option>
+                            <option value="starts">empieza con</option>
+                            <option value="empty">está vacío</option>
+                            <option value="not-empty">no está vacío</option>
+                        </select>
+                        <input type="text" placeholder="Valor" @bind="_contactRuleDraft.Valor" disabled="@IsValueOptionalOperator(_contactRuleDraft.Operador)" />
+                        <button type="button" class="btn btn--primary btn--sm" @onclick="AddContactRuleAsync">Agregar regla</button>
+                    </div>
+                </div>
+            }
         </div>
     </section>
 
@@ -478,6 +533,10 @@
     private ContactoTab _activeTab = ContactoTab.Datos;
     private int? _startupEditId;
     private long? _selectedConversationId;
+    private bool _showSearchPanel;
+    private CancellationTokenSource? _searchDebounceCts;
+    private SearchRuleDto _contactRuleDraft = new() { Campo = "nombre", Operador = "contains" };
+    private readonly List<SavedContactSearch> _contactFavorites = [];
 
     protected override async Task OnInitializedAsync()
     {
@@ -491,7 +550,11 @@
     }
 
     public void Dispose()
-        => AppUserSession.StateChanged -= OnAppUserSessionChanged;
+    {
+        AppUserSession.StateChanged -= OnAppUserSessionChanged;
+        _searchDebounceCts?.Cancel();
+        _searchDebounceCts?.Dispose();
+    }
 
     private void OnAppUserSessionChanged()
     {
@@ -529,6 +592,176 @@
         await BuscarAsync();
         if (!_isNewMode && _selectedId > 0)
             await SeleccionarAsync(_selectedId);
+    }
+
+    private void OpenContactSearchPanel()
+        => _showSearchPanel = true;
+
+    private void ToggleContactSearchPanel()
+        => _showSearchPanel = !_showSearchPanel;
+
+    private void CloseSearchPanel()
+        => _showSearchPanel = false;
+
+    private void OnContactSearchInput(ChangeEventArgs e)
+    {
+        _filters.Texto = e.Value?.ToString() ?? string.Empty;
+        DebounceContactSearch();
+    }
+
+    private void DebounceContactSearch()
+    {
+        _searchDebounceCts?.Cancel();
+        _searchDebounceCts?.Dispose();
+        var cts = new CancellationTokenSource();
+        _searchDebounceCts = cts;
+        _ = InvokeAsync(async () =>
+        {
+            try
+            {
+                await Task.Delay(300, cts.Token);
+                if (cts.IsCancellationRequested)
+                    return;
+
+                _filters.PageNumber = 1;
+                await BuscarAsync();
+            }
+            catch (TaskCanceledException)
+            {
+            }
+        });
+    }
+
+    private async Task SetContactStatusFilterAsync(string value)
+    {
+        _activoFiltro = _activoFiltro == value ? string.Empty : value;
+        await AplicarFiltrosAsync();
+    }
+
+    private async Task ToggleContactBoolFilterAsync(string key)
+    {
+        switch (key)
+        {
+            case "email":
+                _filters.TieneEmail = _filters.TieneEmail == true ? null : true;
+                break;
+            case "sin-email":
+                _filters.TieneEmail = _filters.TieneEmail == false ? null : false;
+                break;
+            case "telefono":
+                _filters.TieneTelefono = _filters.TieneTelefono == true ? null : true;
+                break;
+            case "whatsapp":
+                _filters.TieneWhatsApp = _filters.TieneWhatsApp == true ? null : true;
+                break;
+        }
+
+        await AplicarFiltrosAsync();
+    }
+
+    private async Task OnContactProvinciaChangedAsync(ChangeEventArgs e)
+    {
+        _filters.ProvinciaCodigo = e.Value?.ToString() ?? string.Empty;
+        await AplicarFiltrosAsync();
+    }
+
+    private async Task SetContactGroupAsync(string group)
+    {
+        _viewSettings.AgruparPor = group;
+        await AplicarFiltrosAsync();
+    }
+
+    private async Task AddContactRuleAsync()
+    {
+        if (!IsValueOptionalOperator(_contactRuleDraft.Operador) && string.IsNullOrWhiteSpace(_contactRuleDraft.Valor))
+            return;
+
+        _filters.Reglas.Add(new SearchRuleDto
+        {
+            Campo = _contactRuleDraft.Campo,
+            Operador = _contactRuleDraft.Operador,
+            Valor = _contactRuleDraft.Valor
+        });
+        _contactRuleDraft = new SearchRuleDto { Campo = "nombre", Operador = "contains" };
+        await AplicarFiltrosAsync();
+    }
+
+    private async Task RemoveContactChipAsync(string key)
+    {
+        switch (key)
+        {
+            case "texto":
+                _filters.Texto = string.Empty;
+                break;
+            case "activo":
+                _activoFiltro = string.Empty;
+                break;
+            case "email":
+                _filters.TieneEmail = null;
+                break;
+            case "telefono":
+                _filters.TieneTelefono = null;
+                break;
+            case "whatsapp":
+                _filters.TieneWhatsApp = null;
+                break;
+            case "provincia":
+                _filters.ProvinciaCodigo = string.Empty;
+                break;
+            case "localidad":
+                _filters.Localidad = string.Empty;
+                break;
+            case "cargo":
+                _filters.Cargo = string.Empty;
+                break;
+            default:
+                if (key.StartsWith("rule:", StringComparison.OrdinalIgnoreCase)
+                    && int.TryParse(key[5..], out var index)
+                    && index >= 0
+                    && index < _filters.Reglas.Count)
+                {
+                    _filters.Reglas.RemoveAt(index);
+                }
+                break;
+        }
+
+        await AplicarFiltrosAsync();
+    }
+
+    private async Task ApplyContactFavoriteAsync(string key)
+    {
+        if (key == "contactables")
+        {
+            _activoFiltro = "1";
+            _filters.TieneTelefono = true;
+            _filters.TieneEmail = null;
+            _filters.TieneWhatsApp = null;
+        }
+        else if (key == "para-soporte")
+        {
+            _activoFiltro = "1";
+            _filters.TieneWhatsApp = true;
+            _filters.TieneTelefono = null;
+            _filters.TieneEmail = null;
+        }
+
+        await AplicarFiltrosAsync();
+    }
+
+    private void SaveContactFavorite()
+    {
+        var label = BuildContactFilterChips().Count == 0
+            ? "Búsqueda sin filtros"
+            : string.Join(" + ", BuildContactFilterChips().Take(2).Select(c => c.Label));
+        _contactFavorites.Add(new SavedContactSearch(label, CloneContactFilters(_filters), _activoFiltro, _viewSettings.AgruparPor));
+    }
+
+    private async Task ApplySavedContactFavoriteAsync(SavedContactSearch favorite)
+    {
+        CopyContactFilters(favorite.Filters, _filters);
+        _activoFiltro = favorite.ActivoFiltro;
+        _viewSettings.AgruparPor = favorite.GroupBy;
+        await AplicarFiltrosAsync();
     }
 
     private async Task AplicarFiltrosAsync()
@@ -760,6 +993,13 @@
     {
         _filters.Texto = string.Empty;
         _activoFiltro = "1";
+        _filters.TieneEmail = null;
+        _filters.TieneTelefono = null;
+        _filters.TieneWhatsApp = null;
+        _filters.ProvinciaCodigo = string.Empty;
+        _filters.Localidad = string.Empty;
+        _filters.Cargo = string.Empty;
+        _filters.Reglas.Clear();
     }
 
     private void SyncFilters()
@@ -1013,6 +1253,104 @@
     private static string GetGroupingLabel(string grouping)
         => grouping == ContactosViewGroupKeys.Activo ? "Estado" : "Sin agrupar";
 
+    private IReadOnlyList<SmartFilterChip> BuildContactFilterChips()
+    {
+        var chips = new List<SmartFilterChip>();
+        if (!string.IsNullOrWhiteSpace(_filters.Texto))
+            chips.Add(new("texto", $"Buscar: {_filters.Texto}"));
+        if (!string.IsNullOrWhiteSpace(_activoFiltro))
+            chips.Add(new("activo", _activoFiltro == "1" ? "Activos" : "Inactivos"));
+        if (_filters.TieneEmail.HasValue)
+            chips.Add(new("email", _filters.TieneEmail.Value ? "Con email" : "Sin email"));
+        if (_filters.TieneTelefono.HasValue)
+            chips.Add(new("telefono", _filters.TieneTelefono.Value ? "Con teléfono" : "Sin teléfono"));
+        if (_filters.TieneWhatsApp.HasValue)
+            chips.Add(new("whatsapp", _filters.TieneWhatsApp.Value ? "Con WhatsApp" : "Sin WhatsApp"));
+        if (!string.IsNullOrWhiteSpace(_filters.ProvinciaCodigo))
+        {
+            var label = _provincias.FirstOrDefault(p => string.Equals(p.Codigo, _filters.ProvinciaCodigo, StringComparison.OrdinalIgnoreCase))?.Descripcion ?? _filters.ProvinciaCodigo;
+            chips.Add(new("provincia", $"Provincia: {label}"));
+        }
+        if (!string.IsNullOrWhiteSpace(_filters.Localidad))
+            chips.Add(new("localidad", $"Localidad: {_filters.Localidad}"));
+        if (!string.IsNullOrWhiteSpace(_filters.Cargo))
+            chips.Add(new("cargo", $"Cargo: {_filters.Cargo}"));
+
+        for (var i = 0; i < _filters.Reglas.Count; i++)
+            chips.Add(new($"rule:{i}", $"{GetContactRuleFieldLabel(_filters.Reglas[i].Campo)} {GetRuleOperatorLabel(_filters.Reglas[i].Operador)} {_filters.Reglas[i].Valor}".Trim()));
+
+        return chips;
+    }
+
+    private static string GetSmartOptionClass(bool active)
+        => active ? "smart-option is-active" : "smart-option";
+
+    private static bool IsValueOptionalOperator(string? op)
+        => NormalizeRuleOperator(op) is "empty" or "not-empty";
+
+    private static string NormalizeRuleOperator(string? op)
+        => (op ?? string.Empty).Trim().ToLowerInvariant() switch
+        {
+            "equals" => "equals",
+            "starts" => "starts",
+            "empty" => "empty",
+            "not-empty" => "not-empty",
+            _ => "contains"
+        };
+
+    private static string GetRuleOperatorLabel(string? op)
+        => NormalizeRuleOperator(op) switch
+        {
+            "equals" => "es igual a",
+            "starts" => "empieza con",
+            "empty" => "está vacío",
+            "not-empty" => "no está vacío",
+            _ => "contiene"
+        };
+
+    private static string GetContactRuleFieldLabel(string? field)
+        => (field ?? string.Empty).Trim().ToLowerInvariant() switch
+        {
+            "email" => "Email",
+            "telefono" => "Teléfono",
+            "celular" => "Celular",
+            "localidad" => "Localidad",
+            "provincia" => "Provincia",
+            "cargo" => "Cargo",
+            _ => "Nombre"
+        };
+
+    private static ContactosFilters CloneContactFilters(ContactosFilters source)
+        => new()
+        {
+            Texto = source.Texto,
+            Activo = source.Activo,
+            TieneEmail = source.TieneEmail,
+            TieneTelefono = source.TieneTelefono,
+            TieneWhatsApp = source.TieneWhatsApp,
+            ProvinciaCodigo = source.ProvinciaCodigo,
+            Localidad = source.Localidad,
+            Cargo = source.Cargo,
+            PageNumber = 1,
+            PageSize = source.PageSize,
+            Reglas = source.Reglas.Select(r => new SearchRuleDto { Campo = r.Campo, Operador = r.Operador, Valor = r.Valor }).ToList()
+        };
+
+    private static void CopyContactFilters(ContactosFilters source, ContactosFilters target)
+    {
+        target.Texto = source.Texto;
+        target.Activo = source.Activo;
+        target.TieneEmail = source.TieneEmail;
+        target.TieneTelefono = source.TieneTelefono;
+        target.TieneWhatsApp = source.TieneWhatsApp;
+        target.ProvinciaCodigo = source.ProvinciaCodigo;
+        target.Localidad = source.Localidad;
+        target.Cargo = source.Cargo;
+        target.PageNumber = 1;
+        target.PageSize = source.PageSize;
+        target.Reglas = source.Reglas.Select(r => new SearchRuleDto { Campo = r.Campo, Operador = r.Operador, Valor = r.Valor }).ToList();
+    }
+
     private static ContactosViewSettingsDto BuildDefaultViewSettings()
         => new()
         {
@@ -1040,6 +1378,10 @@
         public bool ShowHeader { get; init; }
         public List<ContactoGridItemDto> Items { get; init; } = [];
     }
+
+    private sealed record SmartFilterChip(string Key, string Label);
+
+    private sealed record SavedContactSearch(string Label, ContactosFilters Filters, string ActivoFiltro, string GroupBy);
 
     private enum ContactoTab
     {

@@ -46,6 +46,8 @@ public sealed class ContactosService(
                 : "ISNULL(c.Nombre_y_Apellido, '') ASC";
 
             var conversationMatchSql = BuildConversationMatchSql("c");
+            var advancedFilterSql = BuildAdvancedFilterSql(conversationMatchSql);
+            var ruleFilterSql = BuildRuleFilterSql(filters.Reglas, GetContactosRuleFieldSql);
             var sql = $"""
                 SELECT
                     c.id,
@@ -79,8 +81,10 @@ public sealed class ContactosService(
                         OR ISNULL(c.Localidad, '') LIKE '%' + @Texto + '%'
                         OR ISNULL(c.Telefono, '') LIKE '%' + @Texto + '%'
                         OR ISNULL(c.Celular, '') LIKE '%' + @Texto + '%'
-                      )
+                  )
                   {activoFilterSql}
+                  {advancedFilterSql}
+                  {ruleFilterSql}
                 ORDER BY {orderBySql}
                 OFFSET @Skip ROWS FETCH NEXT @PageSize ROWS ONLY;
 
@@ -93,7 +97,9 @@ public sealed class ContactosService(
                         OR ISNULL(c.Localidad, '') LIKE '%' + @Texto + '%'
                         OR ISNULL(c.Telefono, '') LIKE '%' + @Texto + '%'
                         OR ISNULL(c.Celular, '') LIKE '%' + @Texto + '%'
-                      )
+                  )
+                  {advancedFilterSql}
+                  {ruleFilterSql}
                   {activoFilterSql};
                 """;
 
@@ -101,6 +107,8 @@ public sealed class ContactosService(
             await using var cmd = new SqlCommand(sql, cn);
             cmd.Parameters.AddWithValue("@Texto", filters.Texto?.Trim() ?? string.Empty);
             cmd.Parameters.AddWithValue("@Activo", filters.Activo.HasValue ? filters.Activo.Value : DBNull.Value);
+            AddAdvancedFilterParameters(cmd, filters);
+            AddRuleFilterParameters(cmd, filters.Reglas, GetContactosRuleFieldSql);
             cmd.Parameters.AddWithValue("@Skip", skip);
             cmd.Parameters.AddWithValue("@PageSize", pageSize);
 
@@ -652,6 +660,107 @@ public sealed class ContactosService(
     {
         var normalized = string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
         return normalized.Length > 150 ? (string.Empty, normalized) : (normalized, string.Empty);
+    }
+
+    private static string BuildAdvancedFilterSql(string conversationMatchSql)
+        => $"""
+              AND (@TieneEmail IS NULL OR CASE WHEN NULLIF(LTRIM(RTRIM(ISNULL(c.email, ''))), '') IS NULL THEN CAST(0 AS bit) ELSE CAST(1 AS bit) END = @TieneEmail)
+              AND (@TieneTelefono IS NULL OR CASE WHEN NULLIF(LTRIM(RTRIM(ISNULL(c.Telefono, '') + ISNULL(c.Celular, ''))), '') IS NULL THEN CAST(0 AS bit) ELSE CAST(1 AS bit) END = @TieneTelefono)
+              AND (@TieneWhatsApp IS NULL OR CASE WHEN EXISTS (
+                    SELECT 1
+                    FROM dbo.CONV_CONVERSACIONES ccFilter
+                    WHERE ccFilter.Canal = N'WHATSAPP'
+                      AND (ccFilter.IdContacto = c.id OR {conversationMatchSql.Replace("cc.", "ccFilter.")})
+                  ) THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END = @TieneWhatsApp)
+              AND (@ProvinciaCodigo = '' OR UPPER(LTRIM(RTRIM(ISNULL(c.Provincia, '')))) = @ProvinciaCodigo)
+              AND (@Localidad = '' OR ISNULL(c.Localidad, '') LIKE '%' + @Localidad + '%')
+              AND (@Cargo = '' OR ISNULL(c.Cargo, '') LIKE '%' + @Cargo + '%')
+            """;
+
+    private static void AddAdvancedFilterParameters(SqlCommand cmd, ContactosFilters filters)
+    {
+        cmd.Parameters.AddWithValue("@TieneEmail", filters.TieneEmail.HasValue ? filters.TieneEmail.Value : DBNull.Value);
+        cmd.Parameters.AddWithValue("@TieneTelefono", filters.TieneTelefono.HasValue ? filters.TieneTelefono.Value : DBNull.Value);
+        cmd.Parameters.AddWithValue("@TieneWhatsApp", filters.TieneWhatsApp.HasValue ? filters.TieneWhatsApp.Value : DBNull.Value);
+        cmd.Parameters.AddWithValue("@ProvinciaCodigo", (filters.ProvinciaCodigo ?? string.Empty).Trim().ToUpperInvariant());
+        cmd.Parameters.AddWithValue("@Localidad", (filters.Localidad ?? string.Empty).Trim());
+        cmd.Parameters.AddWithValue("@Cargo", (filters.Cargo ?? string.Empty).Trim());
+    }
+
+    private static string BuildRuleFilterSql(IEnumerable<SearchRuleDto>? rules, Func<string, string?> fieldResolver)
+    {
+        var clauses = new List<string>();
+        var index = 0;
+        foreach (var rule in (rules ?? []).Where(IsValidRule).Take(5))
+        {
+            var fieldSql = fieldResolver(rule.Campo);
+            if (fieldSql is null)
+                continue;
+
+            var valueParam = $"@Rule{index}";
+            var likeParam = $"@Rule{index}Like";
+            clauses.Add(NormalizeRuleOperator(rule.Operador) switch
+            {
+                "equals" => $"AND {fieldSql} = {valueParam}",
+                "starts" => $"AND {fieldSql} LIKE {likeParam}",
+                "empty" => $"AND NULLIF(LTRIM(RTRIM({fieldSql})), '') IS NULL",
+                "not-empty" => $"AND NULLIF(LTRIM(RTRIM({fieldSql})), '') IS NOT NULL",
+                _ => $"AND {fieldSql} LIKE {likeParam}"
+            });
+            index++;
+        }
+
+        return clauses.Count == 0 ? string.Empty : string.Join(Environment.NewLine, clauses);
+    }
+
+    private static void AddRuleFilterParameters(SqlCommand cmd, IEnumerable<SearchRuleDto>? rules, Func<string, string?> fieldResolver)
+    {
+        var index = 0;
+        foreach (var rule in (rules ?? []).Where(IsValidRule).Take(5))
+        {
+            if (fieldResolver(rule.Campo) is null)
+                continue;
+
+            var value = (rule.Valor ?? string.Empty).Trim();
+            var op = NormalizeRuleOperator(rule.Operador);
+            cmd.Parameters.AddWithValue($"@Rule{index}", value);
+            cmd.Parameters.AddWithValue($"@Rule{index}Like", op == "starts" ? $"{value}%" : $"%{value}%");
+            index++;
+        }
+    }
+
+    private static string? GetContactosRuleFieldSql(string field)
+        => (field ?? string.Empty).Trim().ToLowerInvariant() switch
+        {
+            "nombre" => "ISNULL(c.Nombre_y_Apellido, '')",
+            "email" => "ISNULL(c.email, '')",
+            "telefono" => "ISNULL(c.Telefono, '')",
+            "celular" => "ISNULL(c.Celular, '')",
+            "localidad" => "ISNULL(c.Localidad, '')",
+            "provincia" => "ISNULL(c.Provincia, '')",
+            "cargo" => "ISNULL(c.Cargo, '')",
+            _ => null
+        };
+
+    private static bool IsValidRule(SearchRuleDto? rule)
+        => rule is not null
+           && !string.IsNullOrWhiteSpace(rule.Campo)
+           && (IsValueOptionalOperator(rule.Operador) || !string.IsNullOrWhiteSpace(rule.Valor));
+
+    private static string NormalizeRuleOperator(string? op)
+        => (op ?? string.Empty).Trim().ToLowerInvariant() switch
+        {
+            "equals" => "equals",
+            "starts" => "starts",
+            "empty" => "empty",
+            "not-empty" => "not-empty",
+            _ => "contains"
+        };
+
+    private static bool IsValueOptionalOperator(string? op)
+    {
+        var normalized = NormalizeRuleOperator(op);
+        return normalized is "empty" or "not-empty";
     }
 
     private static async Task<bool> HasActivoColumnAsync(SqlConnection cn, CancellationToken ct)

@@ -4,8 +4,22 @@ public sealed class ContactosFilters
 {
     public string Texto      { get; set; } = string.Empty;
     public bool?  Activo     { get; set; } = true;
+    public bool?  TieneEmail { get; set; }
+    public bool?  TieneTelefono { get; set; }
+    public bool?  TieneWhatsApp { get; set; }
+    public string ProvinciaCodigo { get; set; } = string.Empty;
+    public string Localidad { get; set; } = string.Empty;
+    public string Cargo { get; set; } = string.Empty;
+    public List<SearchRuleDto> Reglas { get; set; } = [];
     public int    PageNumber { get; set; } = 1;
     public int    PageSize   { get; set; } = 50;
+}
+
+public sealed class SearchRuleDto
+{
+    public string Campo { get; set; } = string.Empty;
+    public string Operador { get; set; } = "contains";
+    public string Valor { get; set; } = string.Empty;
 }
 
 public sealed class ContactoGridItemDto

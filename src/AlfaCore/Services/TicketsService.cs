@@ -533,13 +533,20 @@ public sealed class TicketsService(
             """;
 
     private static string TicketWhereSql()
-        => """
+        => $"""
             WHERE
                 ISNULL(t.Baja, 0) = 0
                 AND (@CodigoEstado IS NULL OR t.CodigoEstado = @CodigoEstado)
                 AND (@IdTecnico IS NULL OR t.IdTecnico = @IdTecnico)
                 AND (@Prioridad IS NULL OR t.Prioridad = @Prioridad)
                 AND (@IncluirCerrados = 1 OR ISNULL(e.EsCerrado, 0) = 0)
+                AND (@TieneAsignado IS NULL OR CASE WHEN NULLIF(LTRIM(RTRIM(ISNULL(t.IdTecnico, ''))), '') IS NULL THEN CAST(0 AS bit) ELSE CAST(1 AS bit) END = @TieneAsignado)
+                AND (@TieneMensajes IS NULL OR CASE WHEN ISNULL(msg.CantidadMensajes, 0) > 0 THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END = @TieneMensajes)
+                AND (
+                    @FechaRapida = ''
+                    OR (@FechaRapida = 'hoy' AND CONVERT(date, t.FechaHoraAlta) = CONVERT(date, GETDATE()))
+                    OR (@FechaRapida = 'recientes' AND t.FechaHoraModificacion >= DATEADD(day, -7, GETDATE()))
+                )
                 AND (
                     @Texto = ''
                     OR t.Titulo LIKE '%' + @Texto + '%'
@@ -549,6 +556,7 @@ public sealed class TicketsService(
                     OR mc.Nombre_y_Apellido LIKE '%' + @Texto + '%'
                     OR tec.Nombre LIKE '%' + @Texto + '%'
                 )
+                {BuildRuleFilterSql()}
             """;
 
     private static TicketGridItemDto ReadTicketGridItem(SqlDataReader rd)
@@ -583,6 +591,112 @@ public sealed class TicketsService(
         cmd.Parameters.AddWithValue("@IdTecnico", DbNullable(filters.IdTecnico));
         cmd.Parameters.AddWithValue("@Prioridad", filters.Prioridad.HasValue ? filters.Prioridad.Value : DBNull.Value);
         cmd.Parameters.AddWithValue("@IncluirCerrados", filters.IncluirCerrados);
+        cmd.Parameters.AddWithValue("@TieneAsignado", filters.TieneAsignado.HasValue ? filters.TieneAsignado.Value : DBNull.Value);
+        cmd.Parameters.AddWithValue("@TieneMensajes", filters.TieneMensajes.HasValue ? filters.TieneMensajes.Value : DBNull.Value);
+        cmd.Parameters.AddWithValue("@FechaRapida", (filters.FechaRapida ?? string.Empty).Trim().ToLowerInvariant());
+        AddRuleFilterParameters(cmd, filters.Reglas);
+    }
+
+    private static string BuildRuleFilterSql()
+    {
+        var clauses = new List<string>();
+        for (var i = 0; i < 5; i++)
+        {
+            clauses.Add($"""
+                AND (
+                    @Rule{i}Campo = ''
+                    OR (
+                        @Rule{i}Campo = 'titulo'
+                        AND (
+                            (@Rule{i}Operador = 'equals' AND ISNULL(t.Titulo, '') = @Rule{i})
+                            OR (@Rule{i}Operador = 'starts' AND ISNULL(t.Titulo, '') LIKE @Rule{i}Like)
+                            OR (@Rule{i}Operador = 'empty' AND NULLIF(LTRIM(RTRIM(ISNULL(t.Titulo, ''))), '') IS NULL)
+                            OR (@Rule{i}Operador = 'not-empty' AND NULLIF(LTRIM(RTRIM(ISNULL(t.Titulo, ''))), '') IS NOT NULL)
+                            OR (@Rule{i}Operador = 'contains' AND ISNULL(t.Titulo, '') LIKE @Rule{i}Like)
+                        )
+                    )
+                    OR (
+                        @Rule{i}Campo = 'descripcion'
+                        AND (
+                            (@Rule{i}Operador = 'equals' AND ISNULL(CAST(t.Descripcion AS nvarchar(max)), '') = @Rule{i})
+                            OR (@Rule{i}Operador = 'starts' AND ISNULL(CAST(t.Descripcion AS nvarchar(max)), '') LIKE @Rule{i}Like)
+                            OR (@Rule{i}Operador = 'empty' AND NULLIF(LTRIM(RTRIM(ISNULL(CAST(t.Descripcion AS nvarchar(max)), ''))), '') IS NULL)
+                            OR (@Rule{i}Operador = 'not-empty' AND NULLIF(LTRIM(RTRIM(ISNULL(CAST(t.Descripcion AS nvarchar(max)), ''))), '') IS NOT NULL)
+                            OR (@Rule{i}Operador = 'contains' AND ISNULL(CAST(t.Descripcion AS nvarchar(max)), '') LIKE @Rule{i}Like)
+                        )
+                    )
+                    OR (
+                        @Rule{i}Campo = 'cliente'
+                        AND (
+                            (@Rule{i}Operador = 'equals' AND ISNULL(cli.RAZON_SOCIAL, '') = @Rule{i})
+                            OR (@Rule{i}Operador = 'starts' AND ISNULL(cli.RAZON_SOCIAL, '') LIKE @Rule{i}Like)
+                            OR (@Rule{i}Operador = 'empty' AND NULLIF(LTRIM(RTRIM(ISNULL(cli.RAZON_SOCIAL, ''))), '') IS NULL)
+                            OR (@Rule{i}Operador = 'not-empty' AND NULLIF(LTRIM(RTRIM(ISNULL(cli.RAZON_SOCIAL, ''))), '') IS NOT NULL)
+                            OR (@Rule{i}Operador = 'contains' AND ISNULL(cli.RAZON_SOCIAL, '') LIKE @Rule{i}Like)
+                        )
+                    )
+                    OR (
+                        @Rule{i}Campo = 'contacto'
+                        AND (
+                            (@Rule{i}Operador = 'equals' AND ISNULL(mc.Nombre_y_Apellido, '') = @Rule{i})
+                            OR (@Rule{i}Operador = 'starts' AND ISNULL(mc.Nombre_y_Apellido, '') LIKE @Rule{i}Like)
+                            OR (@Rule{i}Operador = 'empty' AND NULLIF(LTRIM(RTRIM(ISNULL(mc.Nombre_y_Apellido, ''))), '') IS NULL)
+                            OR (@Rule{i}Operador = 'not-empty' AND NULLIF(LTRIM(RTRIM(ISNULL(mc.Nombre_y_Apellido, ''))), '') IS NOT NULL)
+                            OR (@Rule{i}Operador = 'contains' AND ISNULL(mc.Nombre_y_Apellido, '') LIKE @Rule{i}Like)
+                        )
+                    )
+                    OR (
+                        @Rule{i}Campo = 'tecnico'
+                        AND (
+                            (@Rule{i}Operador = 'equals' AND ISNULL(tec.Nombre, '') = @Rule{i})
+                            OR (@Rule{i}Operador = 'starts' AND ISNULL(tec.Nombre, '') LIKE @Rule{i}Like)
+                            OR (@Rule{i}Operador = 'empty' AND NULLIF(LTRIM(RTRIM(ISNULL(tec.Nombre, ''))), '') IS NULL)
+                            OR (@Rule{i}Operador = 'not-empty' AND NULLIF(LTRIM(RTRIM(ISNULL(tec.Nombre, ''))), '') IS NOT NULL)
+                            OR (@Rule{i}Operador = 'contains' AND ISNULL(tec.Nombre, '') LIKE @Rule{i}Like)
+                        )
+                    )
+                )
+                """);
+        }
+
+        return string.Join(Environment.NewLine, clauses);
+    }
+
+    private static void AddRuleFilterParameters(SqlCommand cmd, IEnumerable<SearchRuleDto>? rules)
+    {
+        var allowed = new HashSet<string>(["titulo", "descripcion", "cliente", "contacto", "tecnico"], StringComparer.OrdinalIgnoreCase);
+        var normalized = (rules ?? [])
+            .Where(r => r is not null && allowed.Contains((r.Campo ?? string.Empty).Trim()) && (IsValueOptionalOperator(r.Operador) || !string.IsNullOrWhiteSpace(r.Valor)))
+            .Take(5)
+            .ToList();
+
+        for (var i = 0; i < 5; i++)
+        {
+            var rule = i < normalized.Count ? normalized[i] : null;
+            var field = rule?.Campo.Trim().ToLowerInvariant() ?? string.Empty;
+            var op = NormalizeRuleOperator(rule?.Operador);
+            var value = rule?.Valor.Trim() ?? string.Empty;
+            cmd.Parameters.AddWithValue($"@Rule{i}Campo", field);
+            cmd.Parameters.AddWithValue($"@Rule{i}Operador", op);
+            cmd.Parameters.AddWithValue($"@Rule{i}", value);
+            cmd.Parameters.AddWithValue($"@Rule{i}Like", op == "starts" ? $"{value}%" : $"%{value}%");
+        }
+    }
+
+    private static string NormalizeRuleOperator(string? op)
+        => (op ?? string.Empty).Trim().ToLowerInvariant() switch
+        {
+            "equals" => "equals",
+            "starts" => "starts",
+            "empty" => "empty",
+            "not-empty" => "not-empty",
+            _ => "contains"
+        };
+
+    private static bool IsValueOptionalOperator(string? op)
+    {
+        var normalized = NormalizeRuleOperator(op);
+        return normalized is "empty" or "not-empty";
     }
 
     private static async Task HydrateEtiquetasAsync(SqlConnection cn, IReadOnlyList<TicketGridItemDto> tickets, CancellationToken ct)

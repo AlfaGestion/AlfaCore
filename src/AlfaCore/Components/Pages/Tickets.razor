@@ -60,53 +60,108 @@
                     <i class="bi bi-list-ul"></i> Lista
                 </button>
             </div>
-            <div class="tickets-filters">
-                <div class="field field--wide">
-                    <label>Buscar</label>
-                    <input type="search" placeholder="Número, título, cliente, contacto o técnico..." @bind="_filters.Texto" @bind:event="oninput" />
-                </div>
-                <div class="field">
-                    <label>Etapa</label>
-                    <select @bind="_filters.CodigoEstado">
-                        <option value="">Todas</option>
-                        @foreach (var state in _lookups.Estados)
-                        {
-                            <option value="@state.CodigoEstado">@state.Nombre</option>
-                        }
-                    </select>
-                </div>
-                <div class="field">
-                    <label>Asignado</label>
-                    <select @bind="_filters.IdTecnico">
-                        <option value="">Todos</option>
-                        @foreach (var tech in _lookups.Tecnicos)
-                        {
-                            <option value="@tech.IdTecnico">@tech.Nombre</option>
-                        }
-                    </select>
-                </div>
-                <div class="field">
-                    <label>Prioridad</label>
-                    <select @bind="_prioridadFiltro">
-                        <option value="">Todas</option>
-                        <option value="3">Alta</option>
-                        <option value="2">Media</option>
-                        <option value="1">Baja</option>
-                        <option value="0">Sin prioridad</option>
-                    </select>
-                </div>
-                <label class="checkbox tickets-closed-filter">
-                    <input type="checkbox" @bind="_filters.IncluirCerrados" />
-                    <span>Incluir cerrados</span>
-                </label>
-                <div class="actions">
-                    <button type="button" class="btn btn--primary" @onclick="AplicarFiltrosAsync" disabled="@_loading">
-                        <i class="bi bi-funnel"></i> Aplicar
-                    </button>
-                    <button type="button" class="btn btn--ghost" @onclick="LimpiarFiltros" disabled="@_loading">
-                        <i class="bi bi-eraser"></i>
+            <div class="smart-search tickets-smart-search" @onclick:stopPropagation>
+                <div class="smart-search__bar">
+                    <i class="bi bi-search"></i>
+                    <input type="search"
+                           placeholder="Buscar tickets..."
+                           value="@_filters.Texto"
+                           @onfocus="OpenTicketSearchPanel"
+                           @oninput="OnTicketSearchInput" />
+                    <button type="button" class="smart-search__toggle" @onclick="ToggleTicketSearchPanel" aria-label="Mostrar filtros">
+                        <i class="bi @(_showSearchPanel ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
                     </button>
                 </div>
+
+                <div class="smart-search__chips" aria-live="polite">
+                    @foreach (var chip in BuildTicketFilterChips())
+                    {
+                        <button type="button" class="smart-chip" @onclick="() => RemoveTicketChipAsync(chip.Key)">
+                            @chip.Label <i class="bi bi-x"></i>
+                        </button>
+                    }
+                    @if (BuildTicketFilterChips().Count == 0)
+                    {
+                        <span class="smart-search__hint">Filtrá por etapa, prioridad, técnico o reglas personalizadas.</span>
+                    }
+                </div>
+
+                @if (_showSearchPanel)
+                {
+                    <div class="smart-search__panel">
+                        <div class="smart-search__column">
+                            <h4><i class="bi bi-funnel-fill"></i> Filtros</h4>
+                            <button type="button" class="@GetSmartOptionClass(!_filters.IncluirCerrados)" @onclick='() => ToggleTicketClosedAsync(false)'>Abiertos</button>
+                            <button type="button" class="@GetSmartOptionClass(_filters.IncluirCerrados)" @onclick='() => ToggleTicketClosedAsync(true)'>Incluir cerrados</button>
+                            <button type="button" class="@GetSmartOptionClass(_filters.TieneAsignado == false)" @onclick='() => ToggleTicketBoolFilterAsync("sin-asignar")'>Sin asignar</button>
+                            <button type="button" class="@GetSmartOptionClass(_filters.TieneMensajes == true)" @onclick='() => ToggleTicketBoolFilterAsync("mensajes")'>Con mensajes</button>
+                            <button type="button" class='@GetSmartOptionClass(_filters.FechaRapida == "hoy")' @onclick='() => SetTicketDateFilterAsync("hoy")'>Creados hoy</button>
+                            <button type="button" class='@GetSmartOptionClass(_filters.FechaRapida == "recientes")' @onclick='() => SetTicketDateFilterAsync("recientes")'>Actualizados 7 días</button>
+                        </div>
+                        <div class="smart-search__column">
+                            <h4><i class="bi bi-kanban"></i> Soporte</h4>
+                            <div class="smart-search__inline">
+                                <label>Etapa</label>
+                                <select value="@_filters.CodigoEstado" @onchange="OnTicketStateChangedAsync">
+                                    <option value="">Todas</option>
+                                    @foreach (var state in _lookups.Estados)
+                                    {
+                                        <option value="@state.CodigoEstado">@state.Nombre</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="smart-search__inline">
+                                <label>Asignado</label>
+                                <select value="@_filters.IdTecnico" @onchange="OnTicketTechChangedAsync">
+                                    <option value="">Todos</option>
+                                    @foreach (var tech in _lookups.Tecnicos)
+                                    {
+                                        <option value="@tech.IdTecnico">@tech.Nombre</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="smart-search__inline">
+                                <label>Prioridad</label>
+                                <select value="@_prioridadFiltro" @onchange="OnTicketPriorityChangedAsync">
+                                    <option value="">Todas</option>
+                                    <option value="3">Alta</option>
+                                    <option value="2">Media</option>
+                                    <option value="1">Baja</option>
+                                    <option value="0">Sin prioridad</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="smart-search__column">
+                            <h4><i class="bi bi-star-fill"></i> Favoritos</h4>
+                            <button type="button" @onclick='() => ApplyTicketFavoriteAsync("urgentes")'>Alta prioridad abiertos</button>
+                            <button type="button" @onclick='() => ApplyTicketFavoriteAsync("seguimiento")'>Seguimiento soporte</button>
+                            <button type="button" @onclick="SaveTicketFavorite">Guardar búsqueda actual</button>
+                            @foreach (var favorite in _ticketFavorites)
+                            {
+                                <button type="button" @onclick="() => ApplySavedTicketFavoriteAsync(favorite)">@favorite.Label</button>
+                            }
+                        </div>
+                        <div class="smart-search__custom">
+                            <h4><i class="bi bi-sliders"></i> Filtro personalizado</h4>
+                            <select @bind="_ticketRuleDraft.Campo">
+                                <option value="titulo">Título</option>
+                                <option value="descripcion">Descripción</option>
+                                <option value="cliente">Cliente</option>
+                                <option value="contacto">Contacto</option>
+                                <option value="tecnico">Técnico</option>
+                            </select>
+                            <select @bind="_ticketRuleDraft.Operador">
+                                <option value="contains">contiene</option>
+                                <option value="equals">es igual a</option>
+                                <option value="starts">empieza con</option>
+                                <option value="empty">está vacío</option>
+                                <option value="not-empty">no está vacío</option>
+                            </select>
+                            <input type="text" placeholder="Valor" @bind="_ticketRuleDraft.Valor" disabled="@IsValueOptionalOperator(_ticketRuleDraft.Operador)" />
+                            <button type="button" class="btn btn--primary btn--sm" @onclick="AddTicketRuleAsync">Agregar regla</button>
+                        </div>
+                    </div>
+                }
             </div>
         </section>
     }
@@ -541,6 +596,10 @@
     private IJSObjectReference? _ticketsKanbanJs;
     private DotNetObjectReference<Tickets>? _kanbanDotNetRef;
     private bool _descriptionEditorReady;
+    private bool _showSearchPanel;
+    private CancellationTokenSource? _searchDebounceCts;
+    private SearchRuleDto _ticketRuleDraft = new() { Campo = "titulo", Operador = "contains" };
+    private readonly List<SavedTicketSearch> _ticketFavorites = [];
 
     private static readonly IReadOnlyList<DescriptionCommandOption> DescriptionCommands =
     [
@@ -598,6 +657,8 @@
         Nav.LocationChanged -= OnLocationChanged;
         _ = DisposeEditorAsync();
         _kanbanDotNetRef?.Dispose();
+        _searchDebounceCts?.Cancel();
+        _searchDebounceCts?.Dispose();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -669,6 +730,176 @@
         _viewMode = view;
         _showEditor = false;
         await BuscarAsync();
+    }
+
+    private void OpenTicketSearchPanel()
+        => _showSearchPanel = true;
+
+    private void ToggleTicketSearchPanel()
+        => _showSearchPanel = !_showSearchPanel;
+
+    private void OnTicketSearchInput(ChangeEventArgs e)
+    {
+        _filters.Texto = e.Value?.ToString() ?? string.Empty;
+        DebounceTicketSearch();
+    }
+
+    private void DebounceTicketSearch()
+    {
+        _searchDebounceCts?.Cancel();
+        _searchDebounceCts?.Dispose();
+        var cts = new CancellationTokenSource();
+        _searchDebounceCts = cts;
+        _ = InvokeAsync(async () =>
+        {
+            try
+            {
+                await Task.Delay(300, cts.Token);
+                if (cts.IsCancellationRequested)
+                    return;
+                _filters.PageNumber = 1;
+                await BuscarAsync();
+            }
+            catch (TaskCanceledException)
+            {
+            }
+        });
+    }
+
+    private async Task ToggleTicketClosedAsync(bool includeClosed)
+    {
+        _filters.IncluirCerrados = includeClosed;
+        await AplicarFiltrosAsync();
+    }
+
+    private async Task ToggleTicketBoolFilterAsync(string key)
+    {
+        switch (key)
+        {
+            case "sin-asignar":
+                _filters.TieneAsignado = _filters.TieneAsignado == false ? null : false;
+                break;
+            case "mensajes":
+                _filters.TieneMensajes = _filters.TieneMensajes == true ? null : true;
+                break;
+        }
+
+        await AplicarFiltrosAsync();
+    }
+
+    private async Task SetTicketDateFilterAsync(string key)
+    {
+        _filters.FechaRapida = string.Equals(_filters.FechaRapida, key, StringComparison.OrdinalIgnoreCase) ? string.Empty : key;
+        await AplicarFiltrosAsync();
+    }
+
+    private async Task OnTicketStateChangedAsync(ChangeEventArgs e)
+    {
+        _filters.CodigoEstado = EmptyToNull(e.Value?.ToString());
+        await AplicarFiltrosAsync();
+    }
+
+    private async Task OnTicketTechChangedAsync(ChangeEventArgs e)
+    {
+        _filters.IdTecnico = EmptyToNull(e.Value?.ToString());
+        await AplicarFiltrosAsync();
+    }
+
+    private async Task OnTicketPriorityChangedAsync(ChangeEventArgs e)
+    {
+        _prioridadFiltro = e.Value?.ToString() ?? string.Empty;
+        await AplicarFiltrosAsync();
+    }
+
+    private async Task AddTicketRuleAsync()
+    {
+        if (!IsValueOptionalOperator(_ticketRuleDraft.Operador) && string.IsNullOrWhiteSpace(_ticketRuleDraft.Valor))
+            return;
+
+        _filters.Reglas.Add(new SearchRuleDto
+        {
+            Campo = _ticketRuleDraft.Campo,
+            Operador = _ticketRuleDraft.Operador,
+            Valor = _ticketRuleDraft.Valor
+        });
+        _ticketRuleDraft = new SearchRuleDto { Campo = "titulo", Operador = "contains" };
+        await AplicarFiltrosAsync();
+    }
+
+    private async Task RemoveTicketChipAsync(string key)
+    {
+        switch (key)
+        {
+            case "texto":
+                _filters.Texto = string.Empty;
+                break;
+            case "estado":
+                _filters.CodigoEstado = null;
+                break;
+            case "tecnico":
+                _filters.IdTecnico = null;
+                break;
+            case "prioridad":
+                _prioridadFiltro = string.Empty;
+                _filters.Prioridad = null;
+                break;
+            case "cerrados":
+                _filters.IncluirCerrados = false;
+                break;
+            case "asignado":
+                _filters.TieneAsignado = null;
+                break;
+            case "mensajes":
+                _filters.TieneMensajes = null;
+                break;
+            case "fecha":
+                _filters.FechaRapida = string.Empty;
+                break;
+            default:
+                if (key.StartsWith("rule:", StringComparison.OrdinalIgnoreCase)
+                    && int.TryParse(key[5..], out var index)
+                    && index >= 0
+                    && index < _filters.Reglas.Count)
+                {
+                    _filters.Reglas.RemoveAt(index);
+                }
+                break;
+        }
+
+        await AplicarFiltrosAsync();
+    }
+
+    private async Task ApplyTicketFavoriteAsync(string key)
+    {
+        if (key == "urgentes")
+        {
+            _filters.IncluirCerrados = false;
+            _prioridadFiltro = "3";
+            _filters.TieneMensajes = null;
+            _filters.TieneAsignado = null;
+        }
+        else if (key == "seguimiento")
+        {
+            _filters.IncluirCerrados = false;
+            _filters.TieneMensajes = true;
+            _filters.FechaRapida = "recientes";
+        }
+
+        await AplicarFiltrosAsync();
+    }
+
+    private void SaveTicketFavorite()
+    {
+        var chips = BuildTicketFilterChips();
+        var label = chips.Count == 0 ? "Tickets sin filtros" : string.Join(" + ", chips.Take(2).Select(c => c.Label));
+        _ticketFavorites.Add(new SavedTicketSearch(label, CloneTicketFilters(_filters), _prioridadFiltro));
+    }
+
+    private async Task ApplySavedTicketFavoriteAsync(SavedTicketSearch favorite)
+    {
+        _filters = CloneTicketFilters(favorite.Filters);
+        _prioridadFiltro = favorite.PrioridadFiltro;
+        await AplicarFiltrosAsync();
     }
 
     private async Task AplicarFiltrosAsync()
@@ -1111,6 +1342,87 @@
     private string BuildDetailSubtitle()
         => _detail is null ? string.Empty : $"{DisplayOrFallback(_detail.ClienteNombre, _detail.ContactoNombre, "Sin contacto")} · {_detail.EstadoNombre} · {RenderPriority(_detail.Prioridad)}";
 
+    private IReadOnlyList<SmartFilterChip> BuildTicketFilterChips()
+    {
+        var chips = new List<SmartFilterChip>();
+        if (!string.IsNullOrWhiteSpace(_filters.Texto))
+            chips.Add(new("texto", $"Buscar: {_filters.Texto}"));
+        if (!string.IsNullOrWhiteSpace(_filters.CodigoEstado))
+            chips.Add(new("estado", $"Etapa: {_lookups.Estados.FirstOrDefault(x => x.CodigoEstado == _filters.CodigoEstado)?.Nombre ?? _filters.CodigoEstado}"));
+        if (!string.IsNullOrWhiteSpace(_filters.IdTecnico))
+            chips.Add(new("tecnico", $"Asignado: {_lookups.Tecnicos.FirstOrDefault(x => x.IdTecnico == _filters.IdTecnico)?.Nombre ?? _filters.IdTecnico}"));
+        if (!string.IsNullOrWhiteSpace(_prioridadFiltro) && int.TryParse(_prioridadFiltro, out var priority))
+            chips.Add(new("prioridad", $"Prioridad: {RenderPriority(priority)}"));
+        if (_filters.IncluirCerrados)
+            chips.Add(new("cerrados", "Incluye cerrados"));
+        if (_filters.TieneAsignado.HasValue)
+            chips.Add(new("asignado", _filters.TieneAsignado.Value ? "Con asignado" : "Sin asignar"));
+        if (_filters.TieneMensajes.HasValue)
+            chips.Add(new("mensajes", _filters.TieneMensajes.Value ? "Con mensajes" : "Sin mensajes"));
+        if (!string.IsNullOrWhiteSpace(_filters.FechaRapida))
+            chips.Add(new("fecha", _filters.FechaRapida == "hoy" ? "Creados hoy" : "Actualizados 7 días"));
+
+        for (var i = 0; i < _filters.Reglas.Count; i++)
+            chips.Add(new($"rule:{i}", $"{GetTicketRuleFieldLabel(_filters.Reglas[i].Campo)} {GetRuleOperatorLabel(_filters.Reglas[i].Operador)} {_filters.Reglas[i].Valor}".Trim()));
+
+        return chips;
+    }
+
+    private static string GetSmartOptionClass(bool active)
+        => active ? "smart-option is-active" : "smart-option";
+
+    private static bool IsValueOptionalOperator(string? op)
+        => NormalizeRuleOperator(op) is "empty" or "not-empty";
+
+    private static string NormalizeRuleOperator(string? op)
+        => (op ?? string.Empty).Trim().ToLowerInvariant() switch
+        {
+            "equals" => "equals",
+            "starts" => "starts",
+            "empty" => "empty",
+            "not-empty" => "not-empty",
+            _ => "contains"
+        };
+
+    private static string GetRuleOperatorLabel(string? op)
+        => NormalizeRuleOperator(op) switch
+        {
+            "equals" => "es igual a",
+            "starts" => "empieza con",
+            "empty" => "está vacío",
+            "not-empty" => "no está vacío",
+            _ => "contiene"
+        };
+
+    private static string GetTicketRuleFieldLabel(string? field)
+        => (field ?? string.Empty).Trim().ToLowerInvariant() switch
+        {
+            "descripcion" => "Descripción",
+            "cliente" => "Cliente",
+            "contacto" => "Contacto",
+            "tecnico" => "Técnico",
+            _ => "Título"
+        };
+
+    private static string? EmptyToNull(string? value)
+        => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static TicketsFilters CloneTicketFilters(TicketsFilters source)
+        => new()
+        {
+            Texto = source.Texto,
+            CodigoEstado = source.CodigoEstado,
+            IdTecnico = source.IdTecnico,
+            Prioridad = source.Prioridad,
+            IncluirCerrados = source.IncluirCerrados,
+            TieneAsignado = source.TieneAsignado,
+            TieneMensajes = source.TieneMensajes,
+            FechaRapida = source.FechaRapida,
+            PageNumber = 1,
+            PageSize = source.PageSize,
+            Reglas = source.Reglas.Select(r => new SearchRuleDto { Campo = r.Campo, Operador = r.Operador, Valor = r.Valor }).ToList()
+        };
+
     private static TicketViewSettingsDto BuildDefaultViewSettings()
         => new()
         {
@@ -1165,6 +1477,8 @@
 
     private void DismissTransientFeedback()
     {
+        _showSearchPanel = false;
+
         if (!IsTransientFeedback())
             return;
 
@@ -1202,6 +1516,10 @@
         public bool ShowHeader { get; init; }
         public List<TicketGridItemDto> Items { get; init; } = [];
     }
+
+    private sealed record SmartFilterChip(string Key, string Label);
+
+    private sealed record SavedTicketSearch(string Label, TicketsFilters Filters, string PrioridadFiltro);
 
     private sealed record DescriptionCommandOption(
         string Group,
