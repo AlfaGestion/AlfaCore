@@ -9819,13 +9819,28 @@ html[data-theme="light"] .interfaces-bulkbar {
 .tickets-rich-editor__surface .ticket-editor-todo {
     list-style: none;
     padding-left: .1rem;
+    display: grid;
+    gap: .35rem;
 }
 
 .tickets-rich-editor__surface .ticket-editor-todo li {
-    display: flex;
+    display: grid;
+    grid-template-columns: 18px minmax(0, 1fr);
     gap: .5rem;
-    align-items: center;
-    min-height: 1.7rem;
+    align-items: start;
+    min-height: 1.5rem;
+    line-height: 1.45;
+}
+
+.tickets-rich-editor__surface .ticket-editor-todo input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    min-width: 16px;
+    min-height: 16px;
+    margin: .16rem 0 0;
+    padding: 0;
+    accent-color: var(--color-primary);
+    border-radius: 4px;
 }
 
 .tickets-rich-editor__surface blockquote {
