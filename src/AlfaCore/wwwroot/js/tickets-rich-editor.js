@@ -16,6 +16,7 @@ const allowedClasses = new Set([
     'ticket-editor-emoji-picker__grid',
     'ticket-editor-file',
     'ticket-editor-file--document',
+    'ticket-editor-file--has-preview',
     'ticket-editor-file--media',
     'ticket-editor-file--upload',
     'ticket-editor-file__button',
@@ -24,6 +25,7 @@ const allowedClasses = new Set([
     'ticket-editor-file__icon',
     'ticket-editor-file__preview',
     'ticket-editor-file__replace-hint',
+    'ticket-editor-file__resize',
     'ticket-editor-file__status',
     'ticket-editor-file--selected',
     'ticket-editor-index',
@@ -79,6 +81,7 @@ export function setHtml(editor, html) {
     editor.innerHTML = sanitizeHtml(html || '');
     ensureEditableBase(editor);
     wireFilePickers(editor);
+    hydrateMediaBlocks(editor);
 }
 
 export function getHtml(editor) {
@@ -373,6 +376,15 @@ function wireFilePickers(editor) {
         }
     });
 
+    editor.addEventListener('mousedown', (event) => {
+        const handle = event.target?.closest?.('.ticket-editor-file__resize');
+        if (!handle || !editor.contains(handle)) {
+            return;
+        }
+
+        startImageResize(editor, handle, event);
+    });
+
     editor.addEventListener('keydown', (event) => {
         if (!['Backspace', 'Delete'].includes(event.key)) {
             return;
@@ -409,6 +421,54 @@ function selectMediaBlock(editor, block) {
         selectedMediaBlock.classList.add('ticket-editor-file--selected');
         selectedMediaBlock.focus();
     }
+}
+
+function hydrateMediaBlocks(root) {
+    root.querySelectorAll('.ticket-editor-file--media').forEach((block) => {
+        const preview = block.querySelector('.ticket-editor-file__preview');
+        const image = preview?.querySelector('img');
+        block.classList.toggle('ticket-editor-file--has-preview', Boolean(image));
+        preview?.querySelectorAll('.ticket-editor-file__resize').forEach((handle) => handle.remove());
+
+        if (preview && image) {
+            const handle = document.createElement('span');
+            handle.className = 'ticket-editor-file__resize';
+            handle.setAttribute('contenteditable', 'false');
+            preview.appendChild(handle);
+        }
+    });
+}
+
+function startImageResize(editor, handle, event) {
+    const preview = handle.closest('.ticket-editor-file__preview');
+    const image = preview?.querySelector('img');
+    if (!preview || !image) {
+        return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const startX = event.clientX;
+    const startWidth = image.getBoundingClientRect().width;
+    const maxWidth = preview.parentElement?.getBoundingClientRect().width || editor.getBoundingClientRect().width;
+
+    const onMove = (moveEvent) => {
+        const nextWidth = Math.min(Math.max(120, startWidth + moveEvent.clientX - startX), maxWidth);
+        image.style.width = `${Math.round(nextWidth)}px`;
+        image.style.maxWidth = '100%';
+        image.style.height = 'auto';
+        image.style.maxHeight = 'none';
+    };
+
+    const onUp = () => {
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', onUp);
+        dispatchEditorInput(editor);
+    };
+
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
 }
 
 function getMediaBlockFromSelection(editor) {
@@ -517,6 +577,7 @@ function openTicketFilePicker(editor, button) {
                         image.alt = file.name;
                         preview.appendChild(image);
                     });
+                    hydrateMediaBlocks(editor);
                     dispatchEditorInput(editor);
                 });
         }
@@ -543,6 +604,9 @@ function readFileAsDataUrl(file) {
 function cleanupTransientEditorState(root) {
     root.querySelectorAll('.ticket-editor-file--selected').forEach((item) => {
         item.classList.remove('ticket-editor-file--selected');
+    });
+    root.querySelectorAll('.ticket-editor-file__resize').forEach((item) => {
+        item.remove();
     });
 }
 
@@ -627,9 +691,17 @@ function sanitizeNode(node) {
                 return;
             }
 
-            if (child.tagName === 'IMG' && ['src', 'alt'].includes(name)) {
+            if (child.tagName === 'IMG' && ['src', 'alt', 'style'].includes(name)) {
                 if (name === 'src' && !isAllowedImageUrl(attr.value)) {
                     child.removeAttribute(attr.name);
+                }
+                if (name === 'style') {
+                    const safeStyle = sanitizeImageStyle(attr.value);
+                    if (safeStyle) {
+                        child.setAttribute('style', safeStyle);
+                    } else {
+                        child.removeAttribute(attr.name);
+                    }
                 }
                 return;
             }
@@ -670,6 +742,39 @@ function isAllowedUrl(value) {
 
 function isAllowedImageUrl(value) {
     return /^(https?:\/\/|\/|data:image\/|blob:)/i.test(value || '');
+}
+
+function sanitizeImageStyle(value) {
+    const allowed = [];
+    String(value || '').split(';').forEach((part) => {
+        const [rawName, rawValue] = part.split(':');
+        const name = rawName?.trim().toLowerCase();
+        const styleValue = rawValue?.trim().toLowerCase();
+        if (!name || !styleValue) {
+            return;
+        }
+
+        if (name === 'width' && /^\d{2,4}px$/.test(styleValue)) {
+            allowed.push(`width: ${styleValue}`);
+            return;
+        }
+
+        if (name === 'max-width' && styleValue === '100%') {
+            allowed.push('max-width: 100%');
+            return;
+        }
+
+        if (name === 'height' && styleValue === 'auto') {
+            allowed.push('height: auto');
+            return;
+        }
+
+        if (name === 'max-height' && styleValue === 'none') {
+            allowed.push('max-height: none');
+        }
+    });
+
+    return allowed.join('; ');
 }
 
 function escapeHtml(value) {
