@@ -128,7 +128,7 @@ public sealed class ConversacionesService(
                     ISNULL(c.IdTecnico, ''),
                     ISNULL(t.Nombre, ''),
                     ISNULL(c.ResumenUltimoMensaje, ''),
-                    c.FechaHoraUltimoMensaje,
+                    ISNULL(ultMsg.FechaHoraVisible, c.FechaHoraUltimoMensaje),
                     ultCliente.FechaHoraUltimoMensajeCliente,
                     ISNULL(c.Archivada, 0),
                     ISNULL(c.Bloqueada, 0)
@@ -142,12 +142,20 @@ public sealed class ConversacionesService(
                 LEFT JOIN dbo.V_TA_Tecnicos t
                     ON t.IdTecnico = c.IdTecnico
                 OUTER APPLY (
-                    SELECT TOP (1) m.FechaHora AS FechaHoraUltimoMensajeCliente
+                    SELECT TOP (1) {ConversationMessageVisibleDateSql("m")} AS FechaHoraUltimoMensajeCliente
                     FROM dbo.CONV_MENSAJES m
                     WHERE m.IdConversacion = c.IdConversacion
                       AND m.Direction = N'ENTRANTE'
-                    ORDER BY m.FechaHora DESC, m.IdMensaje DESC
+                    ORDER BY m.IdMensaje DESC
                 ) ultCliente
+                OUTER APPLY (
+                    SELECT TOP (1)
+                        msg.IdMensaje,
+                        {ConversationMessageVisibleDateSql("msg")} AS FechaHoraVisible
+                    FROM dbo.CONV_MENSAJES msg
+                    WHERE msg.IdConversacion = c.IdConversacion
+                    ORDER BY msg.IdMensaje DESC
+                ) ultMsg
                 WHERE
                     (@Canal IS NULL OR c.Canal = @Canal)
                     AND (@CodigoEstado IS NULL OR c.CodigoEstado = @CodigoEstado)
@@ -185,7 +193,7 @@ public sealed class ConversacionesService(
                             WHERE msg.IdConversacion = c.IdConversacion
                         )
                     )
-                ORDER BY c.FechaHoraUltimoMensaje DESC
+                ORDER BY ISNULL(ultMsg.IdMensaje, 0) DESC, ISNULL(ultMsg.FechaHoraVisible, c.FechaHoraUltimoMensaje) DESC
                 OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY
                 """;
 
@@ -239,7 +247,7 @@ public sealed class ConversacionesService(
     public Task<ConversacionDetalleDto?> GetConversationAsync(long conversationId, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetConversation", async token =>
         {
-            const string sql = """
+            var sql = $"""
                 SELECT
                     c.IdConversacion,
                     ISNULL(c.Canal, ''),
@@ -262,7 +270,7 @@ public sealed class ConversacionesService(
                     ISNULL(c.Archivada, 0),
                     ISNULL(c.Bloqueada, 0),
                     c.FechaHoraPrimerMensaje,
-                    c.FechaHoraUltimoMensaje,
+                    ISNULL(ultMsg.FechaHoraVisible, c.FechaHoraUltimoMensaje),
                     ultCliente.FechaHoraUltimoMensajeCliente,
                     c.FechaHoraCierre
                 FROM dbo.CONV_CONVERSACIONES c
@@ -275,12 +283,19 @@ public sealed class ConversacionesService(
                 LEFT JOIN dbo.V_TA_Tecnicos t
                     ON t.IdTecnico = c.IdTecnico
                 OUTER APPLY (
-                    SELECT TOP (1) m.FechaHora AS FechaHoraUltimoMensajeCliente
+                    SELECT TOP (1) {ConversationMessageVisibleDateSql("m")} AS FechaHoraUltimoMensajeCliente
                     FROM dbo.CONV_MENSAJES m
                     WHERE m.IdConversacion = c.IdConversacion
                       AND m.Direction = N'ENTRANTE'
-                    ORDER BY m.FechaHora DESC, m.IdMensaje DESC
+                    ORDER BY m.IdMensaje DESC
                 ) ultCliente
+                OUTER APPLY (
+                    SELECT TOP (1)
+                        {ConversationMessageVisibleDateSql("msg")} AS FechaHoraVisible
+                    FROM dbo.CONV_MENSAJES msg
+                    WHERE msg.IdConversacion = c.IdConversacion
+                    ORDER BY msg.IdMensaje DESC
+                ) ultMsg
                 WHERE c.IdConversacion = @IdConversacion
                 """;
 
@@ -328,7 +343,7 @@ public sealed class ConversacionesService(
     public Task<IReadOnlyList<ConversacionMensajeDto>> GetMessagesAsync(long conversationId, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetMessages", async token =>
         {
-            const string sql = """
+            var sql = $"""
                 SELECT
                     m.IdMensaje,
                     m.IdConversacion,
@@ -339,7 +354,7 @@ public sealed class ConversacionesService(
                     ISNULL(m.Direction, ''),
                     ISNULL(m.EstadoEnvio, ''),
                     ISNULL(m.Texto, ''),
-                    m.FechaHora,
+                    {ConversationMessageVisibleDateSql("m")} AS FechaHora,
                     ISNULL(m.UsuarioAutor, ''),
                     ISNULL(m.SistemaAutor, ''),
                     ISNULL(m.IdTecnicoAutor, ''),
@@ -1060,7 +1075,7 @@ public sealed class ConversacionesService(
                     EstadoEnvio = "RECIBIDO",
                     Text = incoming.Text,
                     PayloadJson = incoming.RawJson,
-                    FechaHora = incoming.Timestamp,
+                    FechaHora = NormalizeIncomingTimestamp(incoming.Timestamp),
                     UsuarioAutor = string.Empty,
                     SistemaAutor = string.Empty,
                     IdTecnicoAutor = string.Empty,
@@ -1071,7 +1086,7 @@ public sealed class ConversacionesService(
                 if (incoming.Attachments.Count > 0 && whatsAppConfig is not null)
                     await StoreIncomingAttachmentsAsync(conversationId, messageId, incoming, whatsAppConfig, token);
 
-                await RefreshConversationAsync(conversationId, incoming.Timestamp, incoming.Text, token);
+                await RefreshConversationAsync(conversationId, NormalizeIncomingTimestamp(incoming.Timestamp), incoming.Text, token);
                 processed++;
             }
 
@@ -3526,12 +3541,29 @@ public sealed class ConversacionesService(
     private static DateTime ParseUnixTimestamp(string? value)
     {
         if (long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var unix))
-            return TimeZoneInfo.ConvertTimeFromUtc(
+            return NormalizeIncomingTimestamp(TimeZoneInfo.ConvertTimeFromUtc(
                 DateTimeOffset.FromUnixTimeSeconds(unix).UtcDateTime,
-                ResolveBusinessTimeZone());
+                ResolveBusinessTimeZone()));
 
         return DateTime.Now;
     }
+
+    private static DateTime NormalizeIncomingTimestamp(DateTime value)
+    {
+        var now = DateTime.Now;
+        return value > now.AddMinutes(10) ? now : value;
+    }
+
+    private static string ConversationMessageVisibleDateSql(string alias)
+        => $"""
+           CASE
+               WHEN {alias}.Direction = N'ENTRANTE'
+                    AND {alias}.FechaHora_Grabacion IS NOT NULL
+                    AND {alias}.FechaHora > DATEADD(minute, 10, {alias}.FechaHora_Grabacion)
+                   THEN {alias}.FechaHora_Grabacion
+               ELSE {alias}.FechaHora
+           END
+           """;
 
     private static TimeZoneInfo ResolveBusinessTimeZone()
     {
