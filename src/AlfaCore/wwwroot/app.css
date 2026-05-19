@@ -9834,6 +9834,15 @@ html[data-theme="light"] .interfaces-bulkbar {
     align-items: center;
 }
 
+.ticket-editor-file--media {
+    align-items: start;
+}
+
+.ticket-editor-file--selected {
+    border-color: rgba(34, 211, 238, .65);
+    box-shadow: 0 0 0 2px rgba(14, 165, 233, .18);
+}
+
 .ticket-editor-file__button {
     display: inline-flex;
     align-items: center;
@@ -9896,6 +9905,39 @@ html[data-theme="light"] .interfaces-bulkbar {
 
 .ticket-editor-file__files .bi {
     color: #6ee7b7;
+}
+
+.ticket-editor-file__preview {
+    display: grid;
+    gap: .45rem;
+    margin-top: .35rem;
+}
+
+.ticket-editor-file__preview:empty {
+    display: none;
+}
+
+.ticket-editor-file__preview img {
+    display: block;
+    width: 100%;
+    max-height: 520px;
+    object-fit: contain;
+    border: 1px solid rgba(148, 163, 184, .18);
+    border-radius: 8px;
+    background: rgba(2, 6, 23, .62);
+    cursor: pointer;
+}
+
+.ticket-editor-file__replace-hint {
+    display: none;
+    margin-top: .3rem;
+    color: var(--color-muted);
+    font-size: .76rem;
+}
+
+.ticket-editor-file--media:hover .ticket-editor-file__replace-hint,
+.ticket-editor-file--selected .ticket-editor-file__replace-hint {
+    display: inline-flex;
 }
 
 .ticket-editor-banner {

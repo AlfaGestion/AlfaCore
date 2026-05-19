@@ -1,6 +1,6 @@
 const allowedTags = new Set([
     'A', 'B', 'BLOCKQUOTE', 'BR', 'BUTTON', 'CODE', 'DETAILS', 'DIV', 'EM', 'H1', 'H2', 'H3',
-    'HR', 'I', 'INPUT', 'LI', 'OL', 'P', 'PRE', 'SMALL', 'SPAN', 'STRONG', 'SUMMARY', 'UL'
+    'HR', 'I', 'IMG', 'INPUT', 'LI', 'OL', 'P', 'PRE', 'SMALL', 'SPAN', 'STRONG', 'SUMMARY', 'UL'
 ]);
 
 const allowedClasses = new Set([
@@ -21,7 +21,10 @@ const allowedClasses = new Set([
     'ticket-editor-file__content',
     'ticket-editor-file__files',
     'ticket-editor-file__icon',
+    'ticket-editor-file__preview',
+    'ticket-editor-file__replace-hint',
     'ticket-editor-file__status',
+    'ticket-editor-file--selected',
     'ticket-editor-index',
     'ticket-editor-media',
     'ticket-editor-stars',
@@ -42,6 +45,7 @@ const allowedClasses = new Set([
 
 const wiredEditors = new WeakSet();
 const savedRanges = new WeakMap();
+let selectedMediaBlock = null;
 
 const emojiCodePoints = [
     0x1F600, 0x1F603, 0x1F604, 0x1F601, 0x1F606, 0x1F605, 0x1F602, 0x1F642,
@@ -81,7 +85,9 @@ export function getHtml(editor) {
         return '';
     }
 
-    return sanitizeHtml(editor.innerHTML || '');
+    const clone = editor.cloneNode(true);
+    cleanupTransientEditorState(clone);
+    return sanitizeHtml(clone.innerHTML || '');
 }
 
 export function shouldShowCommands(editor) {
@@ -340,6 +346,7 @@ function wireFilePickers(editor) {
     editor.addEventListener('click', (event) => {
         const button = event.target?.closest?.('[data-ticket-file-picker="true"]');
         if (!button || !editor.contains(button)) {
+            selectMediaBlock(editor, event.target?.closest?.('.ticket-editor-file--media'));
             return;
         }
 
@@ -348,13 +355,73 @@ function wireFilePickers(editor) {
         openTicketFilePicker(editor, button);
     });
 
+    editor.addEventListener('dblclick', (event) => {
+        const block = event.target?.closest?.('.ticket-editor-file--media');
+        if (!block || !editor.contains(block)) {
+            return;
+        }
+
+        const button = block.querySelector('[data-ticket-file-picker="true"]');
+        if (button) {
+            event.preventDefault();
+            openTicketFilePicker(editor, button);
+        }
+    });
+
+    editor.addEventListener('keydown', (event) => {
+        if (!['Backspace', 'Delete'].includes(event.key)) {
+            return;
+        }
+
+        const block = selectedMediaBlock && editor.contains(selectedMediaBlock)
+            ? selectedMediaBlock
+            : getMediaBlockFromSelection(editor);
+        if (!block) {
+            return;
+        }
+
+        event.preventDefault();
+        const next = block.nextElementSibling;
+        block.remove();
+        if (next?.matches('p') && next.textContent.trim() === '') {
+            next.remove();
+        }
+        selectedMediaBlock = null;
+        ensureEditableBase(editor);
+        dispatchEditorInput(editor);
+    });
+
     wiredEditors.add(editor);
+}
+
+function selectMediaBlock(editor, block) {
+    if (selectedMediaBlock && selectedMediaBlock !== block) {
+        selectedMediaBlock.classList.remove('ticket-editor-file--selected');
+    }
+
+    selectedMediaBlock = block && editor.contains(block) ? block : null;
+    if (selectedMediaBlock) {
+        selectedMediaBlock.classList.add('ticket-editor-file--selected');
+        selectedMediaBlock.focus();
+    }
+}
+
+function getMediaBlockFromSelection(editor) {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || !editor.contains(selection.anchorNode)) {
+        return null;
+    }
+
+    const node = selection.anchorNode.nodeType === Node.ELEMENT_NODE
+        ? selection.anchorNode
+        : selection.anchorNode.parentElement;
+    return node?.closest?.('.ticket-editor-file--media') ?? null;
 }
 
 function buildFilePickerBlock(kind) {
     const config = getFilePickerConfig(kind);
     return `
-        <div class="ticket-editor-file ticket-editor-file--${config.kind}" contenteditable="false">
+        <div class="ticket-editor-file ticket-editor-file--${config.kind}" contenteditable="false" tabindex="0" data-ticket-media-block="${config.kind === 'media'}">
             <button type="button" class="ticket-editor-file__button" data-ticket-file-picker="true" data-ticket-upload-kind="${config.kind}">
                 <i class="bi ${config.icon} ticket-editor-file__icon"></i>
                 <span>${escapeHtml(config.button)}</span>
@@ -363,6 +430,8 @@ function buildFilePickerBlock(kind) {
                 <strong>${escapeHtml(config.title)}</strong>
                 <span class="ticket-editor-file__status">${escapeHtml(config.status)}</span>
                 <div class="ticket-editor-file__files"></div>
+                <div class="ticket-editor-file__preview"></div>
+                ${config.kind === 'media' ? '<small class="ticket-editor-file__replace-hint">Doble click para reemplazar</small>' : ''}
             </div>
         </div>
         <p><br></p>`;
@@ -422,6 +491,7 @@ function openTicketFilePicker(editor, button) {
         const block = button.closest('.ticket-editor-file');
         const status = block?.querySelector('.ticket-editor-file__status');
         const list = block?.querySelector('.ticket-editor-file__files');
+        const preview = block?.querySelector('.ticket-editor-file__preview');
         if (status) {
             status.textContent = `${files.length} archivo(s) seleccionado(s)`;
         }
@@ -429,6 +499,21 @@ function openTicketFilePicker(editor, button) {
             list.innerHTML = files
                 .map((file) => `<span><i class="bi bi-check2-circle"></i>${escapeHtml(file.name)} <small>${formatFileSize(file.size)}</small></span>`)
                 .join('');
+        }
+        if (preview) {
+            preview.innerHTML = '';
+            Promise.all(files
+                .filter((file) => file.type.startsWith('image/'))
+                .map((file) => readFileAsDataUrl(file).then((src) => ({ file, src }))))
+                .then((images) => {
+                    images.forEach(({ file, src }) => {
+                        const image = document.createElement('img');
+                        image.src = src;
+                        image.alt = file.name;
+                        preview.appendChild(image);
+                    });
+                    dispatchEditorInput(editor);
+                });
         }
 
         dispatchEditorInput(editor);
@@ -439,6 +524,21 @@ function openTicketFilePicker(editor, button) {
 
 function dispatchEditorInput(editor) {
     editor.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+function readFileAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.addEventListener('load', () => resolve(reader.result));
+        reader.addEventListener('error', () => reject(reader.error));
+        reader.readAsDataURL(file);
+    });
+}
+
+function cleanupTransientEditorState(root) {
+    root.querySelectorAll('.ticket-editor-file--selected').forEach((item) => {
+        item.classList.remove('ticket-editor-file--selected');
+    });
 }
 
 function formatFileSize(bytes) {
@@ -522,6 +622,13 @@ function sanitizeNode(node) {
                 return;
             }
 
+            if (child.tagName === 'IMG' && ['src', 'alt'].includes(name)) {
+                if (name === 'src' && !isAllowedImageUrl(attr.value)) {
+                    child.removeAttribute(attr.name);
+                }
+                return;
+            }
+
             if (child.tagName === 'INPUT' && ['type', 'checked'].includes(name)) {
                 if (name === 'type' && attr.value !== 'checkbox') {
                     child.removeAttribute(attr.name);
@@ -533,11 +640,15 @@ function sanitizeNode(node) {
                 return;
             }
 
+            if (child.tagName === 'DIV' && name === 'data-ticket-media-block') {
+                return;
+            }
+
             if (child.tagName === 'DETAILS' && name === 'open') {
                 return;
             }
 
-            if (name === 'contenteditable') {
+            if (['contenteditable', 'tabindex'].includes(name)) {
                 return;
             }
 
@@ -550,6 +661,10 @@ function sanitizeNode(node) {
 
 function isAllowedUrl(value) {
     return /^(https?:\/\/|mailto:|tel:|#|\/)/i.test(value || '');
+}
+
+function isAllowedImageUrl(value) {
+    return /^(https?:\/\/|\/|data:image\/|blob:)/i.test(value || '');
 }
 
 function escapeHtml(value) {
