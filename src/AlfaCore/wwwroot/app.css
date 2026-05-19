@@ -9941,25 +9941,35 @@ html[data-theme="light"] .interfaces-bulkbar {
 }
 
 .ticket-editor-banner {
-    display: grid;
-    grid-template-columns: 24px 1fr;
-    gap: .65rem;
-    align-items: start;
+    position: relative;
+    display: block;
+    min-height: 42px;
+    padding-left: 2.65rem;
 }
 
 .ticket-editor-banner__icon {
-    display: inline-flex;
+    position: absolute;
+    left: .8rem;
+    top: .72rem;
+    display: flex;
     align-items: center;
     justify-content: center;
     width: 24px;
     height: 24px;
-    margin-top: .05rem;
     border-radius: 999px;
     font-size: .95rem;
+    pointer-events: none;
+    user-select: none;
 }
 
-.ticket-editor-banner p {
+.ticket-editor-banner__body {
+    min-width: 0;
+}
+
+.ticket-editor-banner p,
+.ticket-editor-banner__body p {
     margin: 0;
+    overflow-wrap: anywhere;
 }
 
 .ticket-editor-banner--info {

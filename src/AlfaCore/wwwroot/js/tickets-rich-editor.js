@@ -5,6 +5,7 @@ const allowedTags = new Set([
 
 const allowedClasses = new Set([
     'ticket-editor-banner',
+    'ticket-editor-banner__body',
     'ticket-editor-banner__icon',
     'ticket-editor-banner--info',
     'ticket-editor-banner--success',
@@ -145,16 +146,16 @@ export function runCommand(editor, command) {
             insertHtml('<details open><summary>Resumen</summary><p>Contenido del detalle...</p></details><p><br></p>');
             break;
         case 'infoBanner':
-            insertHtml('<div class="ticket-editor-banner ticket-editor-banner--info"><i class="bi bi-info-circle-fill ticket-editor-banner__icon"></i><p>Mensaje informativo...</p></div><p><br></p>');
+            insertHtml(buildBannerBlock('info', 'bi-info-circle-fill', 'Mensaje informativo...'));
             break;
         case 'successBanner':
-            insertHtml('<div class="ticket-editor-banner ticket-editor-banner--success"><i class="bi bi-check-circle-fill ticket-editor-banner__icon"></i><p>Resultado correcto...</p></div><p><br></p>');
+            insertHtml(buildBannerBlock('success', 'bi-check-circle-fill', 'Resultado correcto...'));
             break;
         case 'warningBanner':
-            insertHtml('<div class="ticket-editor-banner ticket-editor-banner--warning"><i class="bi bi-exclamation-triangle-fill ticket-editor-banner__icon"></i><p>Revisar este punto...</p></div><p><br></p>');
+            insertHtml(buildBannerBlock('warning', 'bi-exclamation-triangle-fill', 'Revisar este punto...'));
             break;
         case 'dangerBanner':
-            insertHtml('<div class="ticket-editor-banner ticket-editor-banner--danger"><i class="bi bi-x-octagon-fill ticket-editor-banner__icon"></i><p>Punto critico...</p></div><p><br></p>');
+            insertHtml(buildBannerBlock('danger', 'bi-x-octagon-fill', 'Punto critico...'));
             break;
         case 'codeBlock':
             insertHtml('<pre><code>Detalle tecnico</code></pre><p><br></p>');
@@ -200,6 +201,10 @@ export function runCommand(editor, command) {
 
 function insertHtml(html) {
     document.execCommand('insertHTML', false, html);
+}
+
+function buildBannerBlock(kind, icon, text) {
+    return `<div class="ticket-editor-banner ticket-editor-banner--${kind}"><i class="bi ${icon} ticket-editor-banner__icon" contenteditable="false"></i><div class="ticket-editor-banner__body"><p>${escapeHtml(text)}</p></div></div><p><br></p>`;
 }
 
 function ensureEditableBase(editor) {
