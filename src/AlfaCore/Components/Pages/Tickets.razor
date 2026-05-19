@@ -47,64 +47,67 @@
         </section>
     }
 
-    <section class="tickets-commandbar">
-        <div class="tickets-view-switch">
-            <button type="button" class="btn @(_viewMode == "kanban" ? "btn--primary" : "btn--ghost")" @onclick='() => CambiarVistaAsync("kanban")'>
-                <i class="bi bi-kanban"></i> Kanban
-            </button>
-            <button type="button" class="btn @(_viewMode == "lista" ? "btn--primary" : "btn--ghost")" @onclick='() => CambiarVistaAsync("lista")'>
-                <i class="bi bi-list-ul"></i> Lista
-            </button>
-        </div>
-        <div class="tickets-filters">
-            <div class="field field--wide">
-                <label>Buscar</label>
-                <input type="search" placeholder="Número, título, cliente, contacto o técnico..." @bind="_filters.Texto" @bind:event="oninput" />
-            </div>
-            <div class="field">
-                <label>Etapa</label>
-                <select @bind="_filters.CodigoEstado">
-                    <option value="">Todas</option>
-                    @foreach (var state in _lookups.Estados)
-                    {
-                        <option value="@state.CodigoEstado">@state.Nombre</option>
-                    }
-                </select>
-            </div>
-            <div class="field">
-                <label>Asignado</label>
-                <select @bind="_filters.IdTecnico">
-                    <option value="">Todos</option>
-                    @foreach (var tech in _lookups.Tecnicos)
-                    {
-                        <option value="@tech.IdTecnico">@tech.Nombre</option>
-                    }
-                </select>
-            </div>
-            <div class="field">
-                <label>Prioridad</label>
-                <select @bind="_prioridadFiltro">
-                    <option value="">Todas</option>
-                    <option value="3">Alta</option>
-                    <option value="2">Media</option>
-                    <option value="1">Baja</option>
-                    <option value="0">Sin prioridad</option>
-                </select>
-            </div>
-            <label class="checkbox tickets-closed-filter">
-                <input type="checkbox" @bind="_filters.IncluirCerrados" />
-                <span>Incluir cerrados</span>
-            </label>
-            <div class="actions">
-                <button type="button" class="btn btn--primary" @onclick="AplicarFiltrosAsync" disabled="@_loading">
-                    <i class="bi bi-funnel"></i> Aplicar
+    @if (!_showEditor)
+    {
+        <section class="tickets-commandbar">
+            <div class="tickets-view-switch">
+                <button type="button" class="btn @(_viewMode == "kanban" ? "btn--primary" : "btn--ghost")" @onclick='() => CambiarVistaAsync("kanban")'>
+                    <i class="bi bi-kanban"></i> Kanban
                 </button>
-                <button type="button" class="btn btn--ghost" @onclick="LimpiarFiltros" disabled="@_loading">
-                    <i class="bi bi-eraser"></i>
+                <button type="button" class="btn @(_viewMode == "lista" ? "btn--primary" : "btn--ghost")" @onclick='() => CambiarVistaAsync("lista")'>
+                    <i class="bi bi-list-ul"></i> Lista
                 </button>
             </div>
-        </div>
-    </section>
+            <div class="tickets-filters">
+                <div class="field field--wide">
+                    <label>Buscar</label>
+                    <input type="search" placeholder="Número, título, cliente, contacto o técnico..." @bind="_filters.Texto" @bind:event="oninput" />
+                </div>
+                <div class="field">
+                    <label>Etapa</label>
+                    <select @bind="_filters.CodigoEstado">
+                        <option value="">Todas</option>
+                        @foreach (var state in _lookups.Estados)
+                        {
+                            <option value="@state.CodigoEstado">@state.Nombre</option>
+                        }
+                    </select>
+                </div>
+                <div class="field">
+                    <label>Asignado</label>
+                    <select @bind="_filters.IdTecnico">
+                        <option value="">Todos</option>
+                        @foreach (var tech in _lookups.Tecnicos)
+                        {
+                            <option value="@tech.IdTecnico">@tech.Nombre</option>
+                        }
+                    </select>
+                </div>
+                <div class="field">
+                    <label>Prioridad</label>
+                    <select @bind="_prioridadFiltro">
+                        <option value="">Todas</option>
+                        <option value="3">Alta</option>
+                        <option value="2">Media</option>
+                        <option value="1">Baja</option>
+                        <option value="0">Sin prioridad</option>
+                    </select>
+                </div>
+                <label class="checkbox tickets-closed-filter">
+                    <input type="checkbox" @bind="_filters.IncluirCerrados" />
+                    <span>Incluir cerrados</span>
+                </label>
+                <div class="actions">
+                    <button type="button" class="btn btn--primary" @onclick="AplicarFiltrosAsync" disabled="@_loading">
+                        <i class="bi bi-funnel"></i> Aplicar
+                    </button>
+                    <button type="button" class="btn btn--ghost" @onclick="LimpiarFiltros" disabled="@_loading">
+                        <i class="bi bi-eraser"></i>
+                    </button>
+                </div>
+            </div>
+        </section>
+    }
 
     @if (_showViewSettings && _viewMode == "lista" && !_showEditor)
     {
