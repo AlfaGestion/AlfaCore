@@ -507,6 +507,7 @@
         }
 
         _lookups = result.Value;
+        ClearErrorFeedback();
         if (string.IsNullOrWhiteSpace(_form.CodigoEstado))
             _form.CodigoEstado = _lookups.Estados.FirstOrDefault()?.CodigoEstado ?? TicketEstadoKeys.Nuevo;
     }
@@ -544,6 +545,7 @@
                 var result = await UiOps.RunAsync(() => TicketsSvc.GetKanbanAsync(_filters), "No se pudo cargar la vista kanban.");
                 if (!result.Success || result.Value is null) { SetFeedback(result.Feedback); return; }
                 _kanbanItems = result.Value.ToList();
+                ClearErrorFeedback();
             }
             else
             {
@@ -555,6 +557,7 @@
                 _totalPages = result.Value.TotalPages;
                 _hasPrev = result.Value.HasPrev;
                 _hasNext = result.Value.HasNext;
+                ClearErrorFeedback();
             }
         }
         finally
@@ -579,10 +582,11 @@
         await BuscarAsync();
     }
 
-    private void LimpiarFiltros()
+    private async Task LimpiarFiltros()
     {
         _filters = new TicketsFilters();
         _prioridadFiltro = string.Empty;
+        await BuscarAsync();
     }
 
     private void SyncFilters()
@@ -860,6 +864,12 @@
 
     private void SetFeedback(AppUiMessage? message)
         => _feedback = message;
+
+    private void ClearErrorFeedback()
+    {
+        if (_feedback?.Severity is AppUiFeedbackSeverity.Error or AppUiFeedbackSeverity.Warning)
+            _feedback = null;
+    }
 
     private static bool IsTicketsInitializationPending(string? message)
         => !string.IsNullOrWhiteSpace(message)
