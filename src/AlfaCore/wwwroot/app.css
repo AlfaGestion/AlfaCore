@@ -9704,6 +9704,133 @@ html[data-theme="light"] .interfaces-bulkbar {
     gap: .65rem;
 }
 
+.tickets-rich-editor {
+    position: relative;
+    display: grid;
+    gap: .45rem;
+}
+
+.tickets-rich-editor textarea {
+    min-height: 190px;
+    font-family: inherit;
+}
+
+.tickets-rich-editor__bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .35rem;
+    align-items: center;
+    padding: .42rem;
+    border: 1px solid rgba(148, 163, 184, .14);
+    border-radius: 8px;
+    background: rgba(7, 17, 31, .62);
+}
+
+.tickets-rich-editor__tool {
+    width: 34px;
+    height: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--color-muted);
+    cursor: pointer;
+}
+
+.tickets-rich-editor__tool:hover,
+.tickets-rich-editor__tool:focus {
+    color: var(--color-text);
+    background: rgba(148, 163, 184, .12);
+    outline: none;
+}
+
+.tickets-rich-editor__tool:disabled {
+    cursor: not-allowed;
+    opacity: .55;
+}
+
+.tickets-slash-menu {
+    position: absolute;
+    left: .55rem;
+    bottom: 3.05rem;
+    z-index: 20;
+    width: min(360px, calc(100% - 1.1rem));
+    max-height: 360px;
+    overflow: auto;
+    padding: .55rem;
+    border: 1px solid rgba(148, 163, 184, .18);
+    border-radius: 10px;
+    background: #111827;
+    box-shadow: 0 18px 48px rgba(2, 6, 23, .52);
+}
+
+.tickets-slash-menu__group {
+    display: grid;
+    gap: .25rem;
+    padding: .25rem 0;
+}
+
+.tickets-slash-menu__group > span {
+    padding: .25rem .45rem;
+    color: var(--color-muted);
+    font-size: .72rem;
+    font-weight: 800;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+}
+
+.tickets-slash-menu button {
+    display: grid;
+    grid-template-columns: 38px 1fr;
+    gap: .65rem;
+    align-items: center;
+    width: 100%;
+    min-height: 52px;
+    padding: .45rem .55rem;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--color-text);
+    text-align: left;
+    cursor: pointer;
+}
+
+.tickets-slash-menu button:hover,
+.tickets-slash-menu button:focus {
+    background: rgba(14, 165, 233, .18);
+    outline: none;
+}
+
+.tickets-slash-menu button i {
+    width: 36px;
+    height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    background: rgba(2, 6, 23, .7);
+    color: #e2e8f0;
+    font-size: 1rem;
+}
+
+.tickets-slash-menu button span {
+    display: grid;
+    gap: .12rem;
+    min-width: 0;
+}
+
+.tickets-slash-menu button strong {
+    font-size: .86rem;
+}
+
+.tickets-slash-menu button small {
+    color: var(--color-muted);
+    font-size: .78rem;
+    line-height: 1.3;
+}
+
 .tickets-message,
 .tickets-activity__item {
     padding: .7rem;
