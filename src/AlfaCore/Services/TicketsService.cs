@@ -130,14 +130,16 @@ public sealed class TicketsService(
             AddFilterParameters(cmd, filters);
             cmd.Parameters.AddWithValue("@Skip", skip);
             cmd.Parameters.AddWithValue("@PageSize", pageSize);
-            await using var rd = await cmd.ExecuteReaderAsync(token);
-
-            while (await rd.ReadAsync(token))
-                rows.Add(ReadTicketGridItem(rd));
 
             var total = 0;
-            if (await rd.NextResultAsync(token) && await rd.ReadAsync(token))
-                total = GetInt(rd, 0);
+            await using (var rd = await cmd.ExecuteReaderAsync(token))
+            {
+                while (await rd.ReadAsync(token))
+                    rows.Add(ReadTicketGridItem(rd));
+
+                if (await rd.NextResultAsync(token) && await rd.ReadAsync(token))
+                    total = GetInt(rd, 0);
+            }
 
             await HydrateEtiquetasAsync(cn, rows, token);
 
@@ -168,9 +170,11 @@ public sealed class TicketsService(
             await using var cmd = new SqlCommand(sql, cn);
             AddFilterParameters(cmd, filters);
             cmd.Parameters.AddWithValue("@Limit", limit);
-            await using var rd = await cmd.ExecuteReaderAsync(token);
-            while (await rd.ReadAsync(token))
-                rows.Add(ReadTicketGridItem(rd));
+            await using (var rd = await cmd.ExecuteReaderAsync(token))
+            {
+                while (await rd.ReadAsync(token))
+                    rows.Add(ReadTicketGridItem(rd));
+            }
 
             await HydrateEtiquetasAsync(cn, rows, token);
             return (IReadOnlyList<TicketGridItemDto>)rows;
