@@ -411,6 +411,8 @@ select {
 }
 
 .smart-search-card {
+    position: relative;
+    z-index: 80;
     overflow: visible;
 }
 
@@ -496,7 +498,7 @@ select {
 
 .smart-search__panel {
     position: absolute;
-    z-index: 30;
+    z-index: 90;
     top: calc(100% + .55rem);
     left: 0;
     width: min(860px, calc(100vw - 3rem));
