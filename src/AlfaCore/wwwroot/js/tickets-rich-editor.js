@@ -1,5 +1,5 @@
 const allowedTags = new Set([
-    'A', 'B', 'BLOCKQUOTE', 'BR', 'CODE', 'DETAILS', 'DIV', 'EM', 'H1', 'H2', 'H3',
+    'A', 'B', 'BLOCKQUOTE', 'BR', 'BUTTON', 'CODE', 'DETAILS', 'DIV', 'EM', 'H1', 'H2', 'H3',
     'HR', 'I', 'INPUT', 'LI', 'OL', 'P', 'PRE', 'SMALL', 'SPAN', 'STRONG', 'SUMMARY', 'UL'
 ]);
 
@@ -12,16 +12,30 @@ const allowedClasses = new Set([
     'ticket-editor-banner--danger',
     'ticket-editor-button',
     'ticket-editor-file',
+    'ticket-editor-file--document',
+    'ticket-editor-file--media',
+    'ticket-editor-file--upload',
+    'ticket-editor-file__button',
+    'ticket-editor-file__content',
+    'ticket-editor-file__files',
+    'ticket-editor-file__icon',
+    'ticket-editor-file__status',
     'ticket-editor-index',
     'ticket-editor-media',
     'ticket-editor-stars',
     'ticket-editor-todo',
     'bi',
-    'bi-info-circle-fill',
     'bi-check-circle-fill',
+    'bi-check2-circle',
     'bi-exclamation-triangle-fill',
+    'bi-file-earmark-image',
+    'bi-files',
+    'bi-info-circle-fill',
+    'bi-upload',
     'bi-x-octagon-fill'
 ]);
+
+const wiredEditors = new WeakSet();
 
 export function setHtml(editor, html) {
     if (!editor) {
@@ -30,6 +44,7 @@ export function setHtml(editor, html) {
 
     editor.innerHTML = sanitizeHtml(html || '');
     ensureEditableBase(editor);
+    wireFilePickers(editor);
 }
 
 export function getHtml(editor) {
@@ -66,6 +81,7 @@ export function runCommand(editor, command) {
         return;
     }
 
+    wireFilePickers(editor);
     editor.focus();
     removeSlashTrigger(editor);
 
@@ -103,43 +119,43 @@ export function runCommand(editor, command) {
             insertHtml('<div class="ticket-editor-banner ticket-editor-banner--warning"><i class="bi bi-exclamation-triangle-fill ticket-editor-banner__icon"></i><p>Revisar este punto...</p></div><p><br></p>');
             break;
         case 'dangerBanner':
-            insertHtml('<div class="ticket-editor-banner ticket-editor-banner--danger"><i class="bi bi-x-octagon-fill ticket-editor-banner__icon"></i><p>Punto crítico...</p></div><p><br></p>');
+            insertHtml('<div class="ticket-editor-banner ticket-editor-banner--danger"><i class="bi bi-x-octagon-fill ticket-editor-banner__icon"></i><p>Punto critico...</p></div><p><br></p>');
             break;
         case 'codeBlock':
-            insertHtml('<pre><code>Detalle técnico</code></pre><p><br></p>');
+            insertHtml('<pre><code>Detalle tecnico</code></pre><p><br></p>');
             break;
         case 'media':
-            insertHtml('<div class="ticket-editor-media">Medio: pegá una URL de imagen, icono o video</div><p><br></p>');
+            insertHtml(buildFilePickerBlock('media'));
             break;
         case 'upload':
-            insertHtml('<div class="ticket-editor-file">Archivo para subir: adjuntar desde la conversación o indicar ruta/enlace</div><p><br></p>');
+            insertHtml(buildFilePickerBlock('upload'));
             break;
         case 'file':
-            insertHtml('<div class="ticket-editor-file">Documento: referencia o enlace</div><p><br></p>');
+            insertHtml(buildFilePickerBlock('document'));
             break;
         case 'link':
             createLink();
             break;
         case 'button':
-            insertHtml('<a class="ticket-editor-button" href="https://" target="_blank" rel="noopener">Botón</a><p><br></p>');
+            insertHtml('<a class="ticket-editor-button" href="https://" target="_blank" rel="noopener">Boton</a><p><br></p>');
             break;
         case 'article':
-            insertHtml('<div class="ticket-editor-file">Artículo: referencia interna</div><p><br></p>');
+            insertHtml('<div class="ticket-editor-file">Articulo: referencia interna</div><p><br></p>');
             break;
         case 'quote':
             insertHtml('<blockquote>Cita o referencia...</blockquote><p><br></p>');
             break;
         case 'index':
-            insertHtml('<div class="ticket-editor-index"><strong>Índice</strong><ol><li>Sección 1</li><li>Sección 2</li></ol></div><p><br></p>');
+            insertHtml('<div class="ticket-editor-index"><strong>Indice</strong><ol><li>Seccion 1</li><li>Seccion 2</li></ol></div><p><br></p>');
             break;
         case 'emoji':
-            insertHtml('🙂');
+            insertHtml('&#128578;');
             break;
         case 'stars3':
-            insertHtml('<span class="ticket-editor-stars">★★★☆☆</span>');
+            insertHtml('<span class="ticket-editor-stars">&#9733;&#9733;&#9733;&#9734;&#9734;</span>');
             break;
         case 'stars5':
-            insertHtml('<span class="ticket-editor-stars">★★★★★</span>');
+            insertHtml('<span class="ticket-editor-stars">&#9733;&#9733;&#9733;&#9733;&#9733;</span>');
             break;
         case 'aiDraft':
             insertHtml('<div class="ticket-editor-banner ticket-editor-banner--info"><strong>Borrador IA</strong><p>Redactar respuesta o resumen del caso.</p></div><p><br></p>');
@@ -147,6 +163,7 @@ export function runCommand(editor, command) {
     }
 
     ensureEditableBase(editor);
+    wireFilePickers(editor);
 }
 
 function insertHtml(html) {
@@ -168,6 +185,131 @@ function ensureEditableBase(editor) {
     if (!editor.innerHTML.trim()) {
         editor.innerHTML = '<p><br></p>';
     }
+}
+
+function wireFilePickers(editor) {
+    if (wiredEditors.has(editor)) {
+        return;
+    }
+
+    editor.addEventListener('click', (event) => {
+        const button = event.target?.closest?.('[data-ticket-file-picker="true"]');
+        if (!button || !editor.contains(button)) {
+            return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        openTicketFilePicker(editor, button);
+    });
+
+    wiredEditors.add(editor);
+}
+
+function buildFilePickerBlock(kind) {
+    const config = getFilePickerConfig(kind);
+    return `
+        <div class="ticket-editor-file ticket-editor-file--${config.kind}" contenteditable="false">
+            <button type="button" class="ticket-editor-file__button" data-ticket-file-picker="true" data-ticket-upload-kind="${config.kind}">
+                <i class="bi ${config.icon} ticket-editor-file__icon"></i>
+                <span>${escapeHtml(config.button)}</span>
+            </button>
+            <div class="ticket-editor-file__content">
+                <strong>${escapeHtml(config.title)}</strong>
+                <span class="ticket-editor-file__status">${escapeHtml(config.status)}</span>
+                <div class="ticket-editor-file__files"></div>
+            </div>
+        </div>
+        <p><br></p>`;
+}
+
+function getFilePickerConfig(kind) {
+    if (kind === 'media') {
+        return {
+            kind: 'media',
+            icon: 'bi-file-earmark-image',
+            title: 'Medio',
+            button: 'Elegir medio',
+            status: 'Imagen, audio o video',
+            accept: 'image/*,audio/*,video/*',
+            multiple: true
+        };
+    }
+
+    if (kind === 'upload') {
+        return {
+            kind: 'upload',
+            icon: 'bi-upload',
+            title: 'Archivo',
+            button: 'Elegir archivo',
+            status: 'Selecciona un archivo',
+            accept: '',
+            multiple: true
+        };
+    }
+
+    return {
+        kind: 'document',
+        icon: 'bi-files',
+        title: 'Documento',
+        button: 'Elegir documento',
+        status: 'Selecciona un documento',
+        accept: '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv',
+        multiple: true
+    };
+}
+
+function openTicketFilePicker(editor, button) {
+    const config = getFilePickerConfig(button.dataset.ticketUploadKind);
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.multiple = config.multiple;
+    if (config.accept) {
+        input.accept = config.accept;
+    }
+
+    input.addEventListener('change', () => {
+        const files = [...input.files];
+        if (files.length === 0) {
+            return;
+        }
+
+        const block = button.closest('.ticket-editor-file');
+        const status = block?.querySelector('.ticket-editor-file__status');
+        const list = block?.querySelector('.ticket-editor-file__files');
+        if (status) {
+            status.textContent = `${files.length} archivo(s) seleccionado(s)`;
+        }
+        if (list) {
+            list.innerHTML = files
+                .map((file) => `<span><i class="bi bi-check2-circle"></i>${escapeHtml(file.name)} <small>${formatFileSize(file.size)}</small></span>`)
+                .join('');
+        }
+
+        dispatchEditorInput(editor);
+    }, { once: true });
+
+    input.click();
+}
+
+function dispatchEditorInput(editor) {
+    editor.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+function formatFileSize(bytes) {
+    if (!Number.isFinite(bytes) || bytes <= 0) {
+        return '';
+    }
+
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let size = bytes;
+    let unit = 0;
+    while (size >= 1024 && unit < units.length - 1) {
+        size /= 1024;
+        unit += 1;
+    }
+
+    return `${size.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
 }
 
 function removeSlashTrigger(editor) {
@@ -242,7 +384,15 @@ function sanitizeNode(node) {
                 return;
             }
 
+            if (child.tagName === 'BUTTON' && ['type', 'data-ticket-file-picker', 'data-ticket-upload-kind'].includes(name)) {
+                return;
+            }
+
             if (child.tagName === 'DETAILS' && name === 'open') {
+                return;
+            }
+
+            if (name === 'contenteditable') {
                 return;
             }
 
