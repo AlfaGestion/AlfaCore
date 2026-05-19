@@ -8,11 +8,12 @@
 
 <PageTitle>Tickets de asistencia | Alfa Gestión</PageTitle>
 
-<section class="page-grid tickets-page">
-    <section class="page-intro tickets-hero">
+<section class="page-grid tickets-page tickets-page--odoo">
+    <section class="tickets-odoo-header">
         <div>
-            <h2 class="page-intro__title">Tickets de asistencia</h2>
-            <p class="page-intro__text">Seguimiento simple para soporte: kanban, prioridades, asignados y mensajes de conversaciones vinculados.</p>
+            <p class="tickets-odoo-header__eyebrow">Servicio de asistencia</p>
+            <h2 class="tickets-odoo-header__title">Tickets de asistencia</h2>
+            <p class="tickets-odoo-header__subtitle">Kanban operativo para soporte, conectado con conversaciones y contactos.</p>
         </div>
         <div class="actions">
             <button type="button" class="btn btn--primary" @onclick="NuevoTicket">
@@ -35,12 +36,20 @@
                     {
                         <small>Código: @_feedback.Code</small>
                     }
+                    @if (IsTicketsInitializationPending(_feedback.Message))
+                    {
+                        <div class="actions" style="margin-top: .75rem;">
+                            <a class="btn btn--primary btn--sm" href="/actualizaciones">
+                                <i class="bi bi-cloud-arrow-up"></i> Ir a Actualizaciones
+                            </a>
+                        </div>
+                    }
                 </div>
             </div>
         </section>
     }
 
-    <section class="panel-card tickets-toolbar">
+    <section class="tickets-commandbar">
         <div class="tickets-view-switch">
             <button type="button" class="btn @(_viewMode == "kanban" ? "btn--primary" : "btn--ghost")" @onclick='() => CambiarVistaAsync("kanban")'>
                 <i class="bi bi-kanban"></i> Kanban
@@ -851,6 +860,10 @@
 
     private void SetFeedback(AppUiMessage? message)
         => _feedback = message;
+
+    private static bool IsTicketsInitializationPending(string? message)
+        => !string.IsNullOrWhiteSpace(message)
+           && message.Contains("Tickets de asistencia todavía no está inicializado", StringComparison.OrdinalIgnoreCase);
 
     private static string GetFeedbackClass(AppUiMessage message)
         => message.Severity switch
