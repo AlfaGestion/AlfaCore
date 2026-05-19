@@ -802,7 +802,7 @@ public sealed class TicketsService(
         var score = 0;
         if (sameConversation) score += 55;
         if (sameContact) score += 30;
-        if (sameClient) score += 18;
+        if (sameClient) score += 20;
         foreach (var term in matchedTerms)
         {
             if (normalizedTitle.Contains(term, StringComparison.OrdinalIgnoreCase))

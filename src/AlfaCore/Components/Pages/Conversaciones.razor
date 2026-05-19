@@ -749,6 +749,35 @@
                             <span>Cliente y contacto se vinculan por teléfono al recibir mensajes. Para corregirlos manualmente hay que asociar esta conversación a un cliente/contacto existente.</span>
                         </div>
                         <div class="conversations-context__section">
+                            <h4 class="panel-card__title">Tickets</h4>
+                            <p class="panel-card__subtitle">@GetContextTicketsSubtitle()</p>
+                            <button type="button"
+                                    class="btn btn--ghost"
+                                    @onclick="ToggleContextTickets"
+                                    disabled="@(_loadingContextTickets || _contextTicketMatches.Count == 0)">
+                                <i class="bi bi-life-preserver"></i>
+                                @(_loadingContextTickets ? "Buscando..." : $"Ver tickets ({_contextTicketMatches.Count})")
+                            </button>
+                            @if (_showContextTickets)
+                            {
+                                <div class="conversations-context-tickets">
+                                    @foreach (var match in _contextTicketMatches.Take(6))
+                                    {
+                                        <article class="conversations-context-ticket">
+                                            <div>
+                                                <strong>@match.Ticket.CodigoVisible @match.Ticket.Titulo</strong>
+                                                <span>@match.Ticket.EstadoNombre · @RenderTicketPriority(match.Ticket.Prioridad) · @DisplayOrFallback(match.Ticket.TecnicoNombre, "Sin asignar")</span>
+                                                <small>@BuildRelatedReason(match)</small>
+                                            </div>
+                                            <button type="button" class="btn btn--ghost btn--sm" @onclick="() => OpenTicket(match.Ticket.IdTicket)">
+                                                <i class="bi bi-box-arrow-up-right"></i>
+                                            </button>
+                                        </article>
+                                    }
+                                </div>
+                            }
+                        </div>
+                        <div class="conversations-context__section">
                             <h4 class="panel-card__title">Plantillas</h4>
                             <p class="panel-card__subtitle">Mensajes aprobados por Meta</p>
                             <button type="button" class="btn btn--primary" @onclick="OpenTemplatePanel" disabled="@(!CanOpenTemplatePanel)">
@@ -1184,6 +1213,9 @@
     private bool _checkingRelatedTickets;
     private bool _allowCreateDespiteRelated;
     private List<TicketRelatedMatchDto> _relatedTicketMatches = [];
+    private bool _loadingContextTickets;
+    private bool _showContextTickets;
+    private List<TicketRelatedMatchDto> _contextTicketMatches = [];
 
     private static readonly TimeSpan PollingInterval = TimeSpan.FromSeconds(5);
     private static readonly string[] QuickReactionEmojis = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
@@ -1534,6 +1566,8 @@
             {
                 ClearTemplateSelection();
             }
+
+            await LoadContextTicketsAsync();
         }
         catch (Exception ex)
         {
@@ -1696,7 +1730,9 @@
                 Texto = $"{_ticketTitle} {selectedText}"
             });
 
-            _relatedTicketMatches = matches.ToList();
+            _relatedTicketMatches = matches
+                .Where(match => match.Terminos.Count > 0)
+                .ToList();
         }
         catch (Exception ex)
         {
@@ -1713,6 +1749,47 @@
             .Where(x => _selectedTicketMessageIds.Contains(x.IdMensaje))
             .Select(x => x.Texto)
             .Where(x => !string.IsNullOrWhiteSpace(x)));
+
+    private async Task LoadContextTicketsAsync()
+    {
+        _contextTicketMatches.Clear();
+        _showContextTickets = false;
+        if (_selectedConversation is null || _selectedConversation.Canal == "INTERNO")
+            return;
+
+        _loadingContextTickets = true;
+        try
+        {
+            var matches = await TicketsSvc.FindRelatedOpenTicketsAsync(new TicketRelatedSearchRequest
+            {
+                ClienteCodigo = _selectedConversation.ClienteCodigo,
+                IdContacto = _selectedConversation.IdContacto,
+                IdConversacion = _selectedConversation.IdConversacion
+            });
+
+            _contextTicketMatches = matches.ToList();
+        }
+        catch
+        {
+            _contextTicketMatches.Clear();
+        }
+        finally
+        {
+            _loadingContextTickets = false;
+        }
+    }
+
+    private void ToggleContextTickets()
+        => _showContextTickets = !_showContextTickets;
+
+    private string GetContextTicketsSubtitle()
+    {
+        if (_loadingContextTickets)
+            return "Buscando tickets abiertos relacionados.";
+        if (_contextTicketMatches.Count == 0)
+            return "Sin tickets abiertos relacionados.";
+        return $"{_contextTicketMatches.Count} ticket(s) abierto(s) relacionados.";
+    }
 
     private string BuildDefaultTicketTitle()
     {

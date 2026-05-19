@@ -3939,6 +3939,35 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
     min-width: 0;
 }
 
+.conversations-context-tickets {
+    display: grid;
+    gap: .5rem;
+    margin-top: .75rem;
+    animation: support-panel-in .18s ease-out both;
+}
+
+.conversations-context-ticket {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: .55rem;
+    padding: .62rem;
+    border: 1px solid rgba(148, 163, 184, .16);
+    border-radius: 8px;
+    background: rgba(2, 6, 23, .28);
+}
+
+.conversations-context-ticket > div {
+    display: grid;
+    gap: .18rem;
+    min-width: 0;
+}
+
+.conversations-context-ticket span,
+.conversations-context-ticket small {
+    color: var(--color-muted);
+}
+
 .conversations-page--odoo .conversations-thread-shell {
     position: relative;
     z-index: 1;
