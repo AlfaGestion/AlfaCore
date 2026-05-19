@@ -21,6 +21,7 @@ public sealed class ConversacionesService(
     private const string ManualWhatsAppConversationSummary = "Conversaci\u00f3n iniciada manualmente.";
     private const string ManualWhatsAppInitialState = "PENDIENTE";
     private static readonly ConcurrentDictionary<long, byte> MediaHydrationAttempts = new();
+    private static readonly ConcurrentDictionary<long, byte> AttachmentRecoveryFailures = new();
     private static readonly string[] DebtSourceCandidates =
     [
         "VE_CPTES_SALDOS_VENTAS",
@@ -1715,6 +1716,9 @@ public sealed class ConversacionesService(
 
     private async Task<string> TryRecoverAttachmentFileAsync(AttachmentServeRecord record, CancellationToken ct)
     {
+        if (AttachmentRecoveryFailures.ContainsKey(record.IdAdjunto))
+            return string.Empty;
+
         var mediaId = TryExtractMediaId(record.AdjuntoPayloadJson, record.TipoArchivo)
             ?? TryExtractMediaId(record.MensajePayloadJson, record.TipoArchivo);
         if (string.IsNullOrWhiteSpace(mediaId))
@@ -1750,6 +1754,8 @@ public sealed class ConversacionesService(
         }
         catch (Exception ex)
         {
+            AttachmentRecoveryFailures.TryAdd(record.IdAdjunto, 0);
+
             await _appEvents.LogErrorAsync(
                 "Conversaciones",
                 "RecoverAttachmentFile",
@@ -2147,7 +2153,7 @@ public sealed class ConversacionesService(
             return false;
 
         var lastClientMessage = Convert.ToDateTime(result, CultureInfo.InvariantCulture);
-        return DateTime.Now <= lastClientMessage.AddHours(24);
+        return BusinessNow() <= NormalizeStoredConversationTime(lastClientMessage).AddHours(24);
     }
 
     private async Task<long> InsertMessageAsync(PendingMessageInsert message, CancellationToken ct)
@@ -4019,21 +4025,16 @@ public sealed class ConversacionesService(
         var normalized = string.IsNullOrWhiteSpace(messageType) ? "TEXT" : messageType.Trim().ToUpperInvariant();
         return normalized switch
         {
-            "TEXT" => normalized,
-            "IMAGE" => normalized,
-            "DOCUMENT" => normalized,
-            "AUDIO" => normalized,
-            "VIDEO" => normalized,
-            "STICKER" => normalized,
-            "LOCATION" => normalized,
-            "CONTACT" => normalized,
-            "CONTACTS" => normalized,
-            "BUTTON" => normalized,
-            "INTERACTIVE" => normalized,
-            "REACTION" => normalized,
-            "ORDER" => normalized,
-            "SYSTEM" => normalized,
-            "UNSUPPORTED" => normalized,
+            "TEXT" => "TEXT",
+            "IMAGE" => "IMAGE",
+            "DOCUMENT" => "DOCUMENT",
+            "AUDIO" => "AUDIO",
+            "VIDEO" => "VIDEO",
+            "STICKER" => "STICKER",
+            "LOCATION" => "LOCATION",
+            "CONTACT" or "CONTACTS" => "CONTACT",
+            "BUTTON" or "INTERACTIVE" or "REACTION" => "TEXT",
+            "SYSTEM" => "SYSTEM",
             _ => "UNKNOWN"
         };
     }
