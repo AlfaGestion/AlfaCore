@@ -590,7 +590,7 @@
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
-            _ticketsEditorJs = await JS.InvokeAsync<IJSObjectReference>("import", "/js/tickets-rich-editor.js?v=20260519h");
+            _ticketsEditorJs = await JS.InvokeAsync<IJSObjectReference>("import", "/js/tickets-rich-editor.js?v=20260519i");
 
         if (_showEditor && !_descriptionEditorReady && _ticketsEditorJs is not null)
         {

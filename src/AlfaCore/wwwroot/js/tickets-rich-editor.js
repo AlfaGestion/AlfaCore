@@ -571,7 +571,7 @@ function openTicketFilePicker(editor, button) {
             preview.innerHTML = '';
             Promise.all(files
                 .filter((file) => file.type.startsWith('image/'))
-                .map((file) => readFileAsDataUrl(file).then((src) => ({ file, src }))))
+                .map((file) => readImageAsPreviewDataUrl(file).then((src) => ({ file, src }))))
                 .then((images) => {
                     images.forEach(({ file, src }) => {
                         const image = document.createElement('img');
@@ -594,13 +594,44 @@ function dispatchEditorInput(editor) {
     editor.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
-function readFileAsDataUrl(file) {
+function readImageAsPreviewDataUrl(file) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
-        reader.addEventListener('load', () => resolve(reader.result));
+        reader.addEventListener('load', () => {
+            const image = new Image();
+            image.addEventListener('load', () => resolve(compressImageForEditor(image)));
+            image.addEventListener('error', () => reject(new Error('No se pudo leer la imagen.')));
+            image.src = reader.result;
+        });
         reader.addEventListener('error', () => reject(reader.error));
         reader.readAsDataURL(file);
     });
+}
+
+function compressImageForEditor(image) {
+    const maxSide = 640;
+    const width = image.naturalWidth || image.width;
+    const height = image.naturalHeight || image.height;
+    const ratio = Math.min(1, maxSide / Math.max(width, height));
+    const targetWidth = Math.max(1, Math.round(width * ratio));
+    const targetHeight = Math.max(1, Math.round(height * ratio));
+    const canvas = document.createElement('canvas');
+    canvas.width = targetWidth;
+    canvas.height = targetHeight;
+
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, targetWidth, targetHeight);
+    ctx.drawImage(image, 0, 0, targetWidth, targetHeight);
+
+    let quality = 0.78;
+    let dataUrl = canvas.toDataURL('image/jpeg', quality);
+    while (dataUrl.length > 24000 && quality > 0.42) {
+        quality -= 0.08;
+        dataUrl = canvas.toDataURL('image/jpeg', quality);
+    }
+
+    return dataUrl;
 }
 
 function cleanupTransientEditorState(root) {
