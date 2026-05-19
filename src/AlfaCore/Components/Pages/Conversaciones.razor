@@ -47,13 +47,13 @@
             </div>
 
             <div class="conversations-module-actions">
-                <button type="button" class="btn btn--primary btn--sm" @onclick="StartTicketSelection" disabled="@(_selectedConversation is null || _messages.Count == 0)" title="Crear ticket desde mensajes">
-                    <i class="bi bi-life-preserver"></i>
-                    <span>Crear ticket</span>
-                </button>
                 <button type="button" class="btn btn--ghost btn--sm conversations-context-button" @onclick="ToggleContextPanel" disabled="@(_selectedConversation is null)" title="Contexto">
                     <i class="bi bi-layout-sidebar-inset-reverse"></i>
                     <span>Contexto</span>
+                </button>
+                <button type="button" class="btn btn--primary btn--sm conversations-ticket-button" @onclick="StartTicketSelection" disabled="@(_selectedConversation is null || _messages.Count == 0)" title="Crear ticket desde mensajes">
+                    <i class="bi bi-life-preserver"></i>
+                    <span>Crear ticket</span>
                 </button>
                 <button type="button" class="btn btn--ghost btn--sm" @onclick="RecargarAsync" disabled="@(_loadingInbox || _loadingConversation)" title="Recargar">
                     <i class="bi bi-arrow-clockwise"></i>

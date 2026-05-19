@@ -3374,6 +3374,15 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
     border-color: rgba(14, 165, 233, .52);
 }
 
+.conversations-module-actions .conversations-ticket-button {
+    width: auto;
+    min-width: 126px;
+    padding: 0 .82rem;
+    gap: .42rem;
+    white-space: nowrap;
+    font-weight: 800;
+}
+
 .conversations-page--odoo .conversations-layout {
     grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
     gap: 0;
