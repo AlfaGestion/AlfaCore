@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace AlfaCore.Services;
 
@@ -175,6 +176,91 @@ public sealed class TicketsService(
             await HydrateEtiquetasAsync(cn, rows, token);
             return (IReadOnlyList<TicketGridItemDto>)rows;
         }, "No se pudo cargar la vista kanban de tickets.", ct);
+
+    public Task<IReadOnlyList<TicketRelatedMatchDto>> FindRelatedOpenTicketsAsync(TicketRelatedSearchRequest request, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "FindRelatedOpenTickets", async token =>
+        {
+            ArgumentNullException.ThrowIfNull(request);
+            var terms = ExtractRelevantTerms(request.Texto);
+            if (terms.Count == 0
+                && string.IsNullOrWhiteSpace(request.ClienteCodigo)
+                && !request.IdContacto.HasValue
+                && !request.IdConversacion.HasValue)
+            {
+                return (IReadOnlyList<TicketRelatedMatchDto>)[];
+            }
+
+            var termClauses = terms.Select((_, index) =>
+                $"ISNULL(t.Titulo, '') LIKE @Term{index} OR ISNULL(CAST(t.Descripcion AS nvarchar(max)), '') LIKE @Term{index}").ToList();
+            var textSql = termClauses.Count == 0 ? "1 = 0" : string.Join(" OR ", termClauses);
+
+            var sql = $"""
+                SELECT TOP (60)
+                    t.IdTicket,
+                    t.Numero,
+                    RIGHT('0000' + CONVERT(varchar(10), t.Numero), 4),
+                    ISNULL(t.Titulo, ''),
+                    ISNULL(t.CodigoEstado, ''),
+                    ISNULL(e.Nombre, ''),
+                    ISNULL(e.Color, ''),
+                    ISNULL(e.Orden, 0),
+                    ISNULL(t.Prioridad, 0),
+                    ISNULL(t.IdTecnico, ''),
+                    ISNULL(tec.Nombre, ''),
+                    ISNULL(t.ClienteCodigo, ''),
+                    ISNULL(cli.RAZON_SOCIAL, ''),
+                    t.IdContacto,
+                    ISNULL(mc.Nombre_y_Apellido, ''),
+                    t.IdConversacion,
+                    ISNULL(msg.CantidadMensajes, 0),
+                    t.FechaHoraAlta,
+                    t.FechaHoraModificacion,
+                    t.FechaHoraCierre,
+                    ISNULL(t.UsuarioAlta, ''),
+                    ISNULL(CAST(t.Descripcion AS nvarchar(max)), '')
+                {TicketBaseFromSql()}
+                WHERE ISNULL(t.Baja, 0) = 0
+                  AND ISNULL(e.EsCerrado, 0) = 0
+                  AND (
+                        (@IdConversacion IS NOT NULL AND t.IdConversacion = @IdConversacion)
+                        OR (@IdContacto IS NOT NULL AND t.IdContacto = @IdContacto)
+                        OR (@ClienteCodigo <> '' AND t.ClienteCodigo = @ClienteCodigo)
+                        OR ({textSql})
+                      )
+                ORDER BY
+                    CASE WHEN @IdConversacion IS NOT NULL AND t.IdConversacion = @IdConversacion THEN 0 ELSE 1 END,
+                    t.FechaHoraModificacion DESC,
+                    t.FechaHoraAlta DESC;
+                """;
+
+            var candidates = new List<(TicketGridItemDto Ticket, string Description)>();
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var cmd = new SqlCommand(sql, cn);
+            cmd.Parameters.AddWithValue("@ClienteCodigo", (request.ClienteCodigo ?? string.Empty).Trim());
+            cmd.Parameters.AddWithValue("@IdContacto", request.IdContacto.HasValue ? request.IdContacto.Value : DBNull.Value);
+            cmd.Parameters.AddWithValue("@IdConversacion", request.IdConversacion.HasValue ? request.IdConversacion.Value : DBNull.Value);
+            for (var i = 0; i < terms.Count; i++)
+                cmd.Parameters.AddWithValue($"@Term{i}", $"%{terms[i]}%");
+
+            await using (var rd = await cmd.ExecuteReaderAsync(token))
+            {
+                while (await rd.ReadAsync(token))
+                    candidates.Add((ReadTicketGridItem(rd), NormalizeTextForSearch(GetString(rd, 21))));
+            }
+
+            await HydrateEtiquetasAsync(cn, candidates.Select(x => x.Ticket).ToList(), token);
+
+            var matches = candidates
+                .Select(candidate => BuildRelatedMatch(candidate.Ticket, candidate.Description, terms, request))
+                .Where(match => match.Score >= 20)
+                .OrderByDescending(match => match.Score)
+                .ThenByDescending(match => match.Ticket.FechaHoraModificacion ?? match.Ticket.FechaHoraAlta)
+                .Take(8)
+                .ToList();
+
+            return (IReadOnlyList<TicketRelatedMatchDto>)matches;
+        }, "No se pudieron buscar tickets relacionados.", ct);
 
     public Task<TicketDetailDto?> GetByIdAsync(long idTicket, CancellationToken ct = default)
         => GetDetailAsync("t.IdTicket = @IdTicket", cmd => cmd.Parameters.AddWithValue("@IdTicket", idTicket), ct);
@@ -694,6 +780,98 @@ public sealed class TicketsService(
         var normalized = NormalizeRuleOperator(op);
         return normalized is "empty" or "not-empty";
     }
+
+    private static TicketRelatedMatchDto BuildRelatedMatch(
+        TicketGridItemDto ticket,
+        string normalizedDescription,
+        IReadOnlyList<string> terms,
+        TicketRelatedSearchRequest request)
+    {
+        var normalizedTitle = NormalizeTextForSearch(ticket.Titulo);
+        var matchedTerms = terms
+            .Where(term => normalizedTitle.Contains(term, StringComparison.OrdinalIgnoreCase)
+                           || normalizedDescription.Contains(term, StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var sameConversation = request.IdConversacion.HasValue && ticket.IdConversacion == request.IdConversacion;
+        var sameContact = request.IdContacto.HasValue && ticket.IdContacto == request.IdContacto;
+        var sameClient = !string.IsNullOrWhiteSpace(request.ClienteCodigo)
+                         && string.Equals(ticket.ClienteCodigo?.Trim(), request.ClienteCodigo.Trim(), StringComparison.OrdinalIgnoreCase);
+
+        var score = 0;
+        if (sameConversation) score += 55;
+        if (sameContact) score += 30;
+        if (sameClient) score += 18;
+        foreach (var term in matchedTerms)
+        {
+            if (normalizedTitle.Contains(term, StringComparison.OrdinalIgnoreCase))
+                score += 22;
+            if (normalizedDescription.Contains(term, StringComparison.OrdinalIgnoreCase))
+                score += 12;
+        }
+
+        if (matchedTerms.Count >= 2)
+            score += 10;
+
+        return new TicketRelatedMatchDto
+        {
+            Ticket = ticket,
+            Score = score,
+            Terminos = matchedTerms,
+            MismaConversacion = sameConversation,
+            MismoContacto = sameContact,
+            MismoCliente = sameClient
+        };
+    }
+
+    private static IReadOnlyList<string> ExtractRelevantTerms(string? text)
+    {
+        var normalized = NormalizeTextForSearch(text);
+        if (string.IsNullOrWhiteSpace(normalized))
+            return [];
+
+        return WordRegex.Matches(normalized)
+            .Select(match => match.Value.Trim())
+            .Where(word => word.Length >= 3)
+            .Where(word => !TicketStopWords.Contains(word))
+            .GroupBy(word => word, StringComparer.OrdinalIgnoreCase)
+            .OrderByDescending(group => group.Key.Length <= 5 ? group.Count() : group.Count() + 1)
+            .ThenByDescending(group => group.Key.Length)
+            .Select(group => group.Key)
+            .Take(8)
+            .ToList();
+    }
+
+    private static string NormalizeTextForSearch(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return string.Empty;
+
+        var decomposed = text.Trim().ToLowerInvariant().Normalize(NormalizationForm.FormD);
+        var builder = new StringBuilder(decomposed.Length);
+        foreach (var ch in decomposed)
+        {
+            var category = CharUnicodeInfo.GetUnicodeCategory(ch);
+            if (category != UnicodeCategory.NonSpacingMark)
+                builder.Append(char.IsLetterOrDigit(ch) ? ch : ' ');
+        }
+
+        return WhitespaceRegex.Replace(builder.ToString().Normalize(NormalizationForm.FormC), " ").Trim();
+    }
+
+    private static readonly Regex WordRegex = new(@"\p{L}[\p{L}\p{N}_-]*|\p{N}[\p{L}\p{N}_-]*", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex WhitespaceRegex = new(@"\s+", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    private static readonly HashSet<string> TicketStopWords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "tengo", "tenemos", "tiene", "tienen", "tener", "un", "una", "unos", "unas", "el", "la", "los", "las",
+        "de", "del", "con", "sin", "por", "para", "que", "me", "mi", "mis", "se", "su", "sus", "es", "esta",
+        "este", "estos", "estas", "hay", "ahi", "aca", "aqui", "problema", "problemas", "consulta", "consultar",
+        "necesito", "necesitamos", "quiero", "queria", "puedo", "pueden", "favor", "hola", "buen", "buenas",
+        "buenos", "dia", "dias", "tarde", "noches", "anda", "funciona", "funcionar", "falla", "fallando",
+        "error", "tema", "algo", "esto", "eso", "como", "cuando", "donde", "nuevo", "nueva", "ticket"
+    };
 
     private static async Task HydrateEtiquetasAsync(SqlConnection cn, IReadOnlyList<TicketGridItemDto> tickets, CancellationToken ct)
     {

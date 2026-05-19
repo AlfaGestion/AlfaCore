@@ -1006,6 +1006,57 @@
         {
             <div class="conversations-error conversations-notice @GetConversationNoticeLeavingClass()">@_ticketError</div>
         }
+        @if (_checkingRelatedTickets)
+        {
+            <div class="conversations-ticket-duplicates conversations-ticket-duplicates--loading">
+                <i class="bi bi-search"></i>
+                <span>Revisando tickets abiertos relacionados...</span>
+            </div>
+        }
+        else if (_relatedTicketMatches.Count > 0 && !_allowCreateDespiteRelated)
+        {
+            <div class="conversations-ticket-duplicates">
+                <div class="conversations-ticket-duplicates__head">
+                    <i class="bi bi-exclamation-triangle-fill"></i>
+                    <div>
+                        <strong>Posible ticket existente</strong>
+                        <span>Encontramos @_relatedTicketMatches.Count ticket(s) abierto(s) que podrían ser la misma consulta.</span>
+                    </div>
+                </div>
+                @if (GetRelatedTerms().Count > 0)
+                {
+                    <div class="conversations-ticket-duplicates__terms">
+                    @foreach (var term in GetRelatedTerms())
+                    {
+                        <span>@term</span>
+                    }
+                    </div>
+                }
+                <div class="conversations-ticket-duplicates__list">
+                    @foreach (var match in _relatedTicketMatches.Take(4))
+                    {
+                        <article class="conversations-ticket-duplicate">
+                            <div>
+                                <strong>@match.Ticket.CodigoVisible @match.Ticket.Titulo</strong>
+                                <span>@match.Ticket.EstadoNombre · @RenderTicketPriority(match.Ticket.Prioridad) · @DisplayOrFallback(match.Ticket.TecnicoNombre, "Sin asignar")</span>
+                                <small>@BuildRelatedReason(match)</small>
+                            </div>
+                            <button type="button" class="btn btn--ghost btn--sm" @onclick="() => OpenTicket(match.Ticket.IdTicket)">
+                                <i class="bi bi-box-arrow-up-right"></i> Abrir
+                            </button>
+                        </article>
+                    }
+                </div>
+                <div class="actions">
+                    <button type="button" class="btn btn--primary btn--sm" @onclick="() => _allowCreateDespiteRelated = true">
+                        Crear igual
+                    </button>
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="CloseTicketDialog">
+                        Revisar antes
+                    </button>
+                </div>
+            </div>
+        }
         <div class="tickets-from-conversation-form">
             <div class="field">
                 <label>Nombre del ticket</label>
@@ -1032,7 +1083,7 @@
             </div>
         </div>
         <div class="actions usuarios-editor__actions">
-            <button type="button" class="btn btn--primary" @onclick="CreateTicketFromSelectionAsync" disabled="@_creatingTicket">
+            <button type="button" class="btn btn--primary" @onclick="CreateTicketFromSelectionAsync" disabled="@(_creatingTicket || _checkingRelatedTickets)">
                 <i class="bi bi-floppy"></i> @(_creatingTicket ? "Creando..." : "Guardar ticket")
             </button>
             <button type="button" class="btn btn--ghost" @onclick="CloseTicketDialog" disabled="@_creatingTicket">
@@ -1130,6 +1181,9 @@
     private string _ticketTechnicianId = string.Empty;
     private string? _ticketError;
     private bool _creatingTicket;
+    private bool _checkingRelatedTickets;
+    private bool _allowCreateDespiteRelated;
+    private List<TicketRelatedMatchDto> _relatedTicketMatches = [];
 
     private static readonly TimeSpan PollingInterval = TimeSpan.FromSeconds(5);
     private static readonly string[] QuickReactionEmojis = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
@@ -1506,6 +1560,8 @@
         _ticketTitle = BuildDefaultTicketTitle();
         _ticketPriority = 2;
         _ticketTechnicianId = _selectedConversation.IdTecnico;
+        _allowCreateDespiteRelated = false;
+        _relatedTicketMatches.Clear();
     }
 
     private void ToggleTicketMessageSelection(long idMensaje, ChangeEventArgs args)
@@ -1515,9 +1571,12 @@
             _selectedTicketMessageIds.Add(idMensaje);
         else
             _selectedTicketMessageIds.Remove(idMensaje);
+
+        _allowCreateDespiteRelated = false;
+        _relatedTicketMatches.Clear();
     }
 
-    private void OpenTicketDialog()
+    private async Task OpenTicketDialog()
     {
         if (_selectedTicketMessageIds.Count == 0)
             return;
@@ -1526,6 +1585,7 @@
         if (string.IsNullOrWhiteSpace(_ticketTitle))
             _ticketTitle = BuildDefaultTicketTitle();
         _showTicketDialog = true;
+        await CheckRelatedTicketsForSelectionAsync();
     }
 
     private void CloseTicketDialog()
@@ -1535,6 +1595,7 @@
 
         _showTicketDialog = false;
         _ticketError = null;
+        _allowCreateDespiteRelated = false;
     }
 
     private void CancelTicketSelection()
@@ -1546,6 +1607,8 @@
         _showTicketDialog = false;
         _selectedTicketMessageIds.Clear();
         _ticketError = null;
+        _allowCreateDespiteRelated = false;
+        _relatedTicketMatches.Clear();
     }
 
     private async Task CreateTicketFromSelectionAsync()
@@ -1560,6 +1623,12 @@
         if (string.IsNullOrWhiteSpace(_ticketTitle))
         {
             _ticketError = "Ingresá el nombre del ticket.";
+            return;
+        }
+
+        if (_relatedTicketMatches.Count > 0 && !_allowCreateDespiteRelated)
+        {
+            _ticketError = "Revisá los tickets relacionados o elegí Crear igual para continuar.";
             return;
         }
 
@@ -1588,6 +1657,8 @@
             _ticketSelectionMode = false;
             _showTicketDialog = false;
             _selectedTicketMessageIds.Clear();
+            _relatedTicketMatches.Clear();
+            _allowCreateDespiteRelated = false;
             _actionMessage = $"Ticket #{idTicket} creado correctamente.";
             Nav.NavigateTo($"/tickets?id={idTicket.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
         }
@@ -1602,6 +1673,46 @@
             _creatingTicket = false;
         }
     }
+
+    private async Task CheckRelatedTicketsForSelectionAsync()
+    {
+        if (_selectedConversation is null || _selectedTicketMessageIds.Count == 0)
+        {
+            _relatedTicketMatches.Clear();
+            return;
+        }
+
+        _checkingRelatedTickets = true;
+        _allowCreateDespiteRelated = false;
+        _relatedTicketMatches.Clear();
+        try
+        {
+            var selectedText = BuildSelectedTicketText();
+            var matches = await TicketsSvc.FindRelatedOpenTicketsAsync(new TicketRelatedSearchRequest
+            {
+                ClienteCodigo = _selectedConversation.ClienteCodigo,
+                IdContacto = _selectedConversation.IdContacto,
+                IdConversacion = _selectedConversation.IdConversacion,
+                Texto = $"{_ticketTitle} {selectedText}"
+            });
+
+            _relatedTicketMatches = matches.ToList();
+        }
+        catch (Exception ex)
+        {
+            _ticketError = $"No se pudieron revisar tickets relacionados: {ex.Message}";
+        }
+        finally
+        {
+            _checkingRelatedTickets = false;
+        }
+    }
+
+    private string BuildSelectedTicketText()
+        => string.Join(" ", VisibleMessages
+            .Where(x => _selectedTicketMessageIds.Contains(x.IdMensaje))
+            .Select(x => x.Texto)
+            .Where(x => !string.IsNullOrWhiteSpace(x)));
 
     private string BuildDefaultTicketTitle()
     {
@@ -3015,6 +3126,34 @@
 
     private static string FirstNonEmpty(params string?[] values)
         => values.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x))?.Trim() ?? string.Empty;
+
+    private IReadOnlyList<string> GetRelatedTerms()
+        => _relatedTicketMatches.SelectMany(x => x.Terminos)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(6)
+            .ToList();
+
+    private static string BuildRelatedReason(TicketRelatedMatchDto match)
+    {
+        var parts = new List<string>();
+        if (match.MismaConversacion) parts.Add("misma conversación");
+        if (match.MismoContacto) parts.Add("mismo contacto");
+        if (match.MismoCliente) parts.Add("mismo cliente");
+        if (match.Terminos.Count > 0) parts.Add($"coincide: {string.Join(", ", match.Terminos.Take(3))}");
+        return parts.Count == 0 ? "posible relación por texto" : string.Join(" · ", parts);
+    }
+
+    private void OpenTicket(long idTicket)
+        => Nav.NavigateTo($"/tickets?id={idTicket.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+
+    private static string RenderTicketPriority(int priority)
+        => priority switch
+        {
+            >= 3 => "Alta",
+            2 => "Media",
+            1 => "Baja",
+            _ => "Sin prioridad"
+        };
 
     private static string FormatShortDate(DateTime value)
         => value == DateTime.MinValue ? "--" : value.ToString("dd/MM HH:mm");

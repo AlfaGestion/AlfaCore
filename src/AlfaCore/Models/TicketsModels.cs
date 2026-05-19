@@ -143,6 +143,24 @@ public sealed class TicketLookupDto
     public List<TicketEtiquetaDto> Etiquetas { get; set; } = [];
 }
 
+public sealed class TicketRelatedSearchRequest
+{
+    public string? ClienteCodigo { get; set; }
+    public int? IdContacto { get; set; }
+    public long? IdConversacion { get; set; }
+    public string Texto { get; set; } = string.Empty;
+}
+
+public sealed class TicketRelatedMatchDto
+{
+    public TicketGridItemDto Ticket { get; set; } = new();
+    public int Score { get; set; }
+    public List<string> Terminos { get; set; } = [];
+    public bool MismaConversacion { get; set; }
+    public bool MismoContacto { get; set; }
+    public bool MismoCliente { get; set; }
+}
+
 public sealed class TicketViewSettingsDto
 {
     public string AgruparPor { get; set; } = TicketViewGroupKeys.Estado;
