@@ -1086,7 +1086,7 @@ public sealed class ConversacionesService(
                 if (incoming.Attachments.Count > 0 && whatsAppConfig is not null)
                     await StoreIncomingAttachmentsAsync(conversationId, messageId, incoming, whatsAppConfig, token);
 
-                await RefreshConversationAsync(conversationId, NormalizeIncomingTimestamp(incoming.Timestamp), incoming.Text, token);
+                await RefreshConversationAsync(conversationId, NormalizeIncomingTimestamp(incoming.Timestamp), incoming.Text, token, reopenIfClosed: true);
                 processed++;
             }
 
@@ -2051,7 +2051,7 @@ public sealed class ConversacionesService(
         cmd.Parameters.AddWithValue("@ClienteCodigo", DbNullable(contact.ClientCode));
         cmd.Parameters.AddWithValue("@IdContacto", contact.IdContact.HasValue ? contact.IdContact.Value : DBNull.Value);
         cmd.Parameters.AddWithValue("@ResumenUltimoMensaje", DbNullable(TrimForSummary(incoming.Text)));
-        cmd.Parameters.AddWithValue("@FechaHora", incoming.Timestamp);
+        cmd.Parameters.AddWithValue("@FechaHora", NormalizeIncomingTimestamp(incoming.Timestamp));
         var result = await cmd.ExecuteScalarAsync(ct);
         return Convert.ToInt64(result, CultureInfo.InvariantCulture);
     }
@@ -2248,7 +2248,7 @@ public sealed class ConversacionesService(
         return Convert.ToInt64(result, CultureInfo.InvariantCulture);
     }
 
-    private async Task RefreshConversationAsync(long idConversacion, DateTime fechaHora, string? text, CancellationToken ct)
+    private async Task RefreshConversationAsync(long idConversacion, DateTime fechaHora, string? text, CancellationToken ct, bool reopenIfClosed = false)
     {
         const string sql = """
             UPDATE dbo.CONV_CONVERSACIONES
@@ -2256,6 +2256,8 @@ public sealed class ConversacionesService(
                 ResumenUltimoMensaje = @ResumenUltimoMensaje,
                 FechaHoraPrimerMensaje = ISNULL(FechaHoraPrimerMensaje, @FechaHora),
                 FechaHoraUltimoMensaje = @FechaHora,
+                CodigoEstado = CASE WHEN @Reabrir = 1 THEN N'ABIERTA' ELSE CodigoEstado END,
+                FechaHoraCierre = CASE WHEN @Reabrir = 1 THEN NULL ELSE FechaHoraCierre END,
                 FechaHora_Modificacion = GETDATE()
             WHERE IdConversacion = @IdConversacion
             """;
@@ -2266,6 +2268,7 @@ public sealed class ConversacionesService(
         cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
         cmd.Parameters.AddWithValue("@ResumenUltimoMensaje", DbNullable(TrimForSummary(text)));
         cmd.Parameters.AddWithValue("@FechaHora", fechaHora);
+        cmd.Parameters.AddWithValue("@Reabrir", reopenIfClosed);
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
@@ -3557,6 +3560,9 @@ public sealed class ConversacionesService(
     private static string ConversationMessageVisibleDateSql(string alias)
         => $"""
            CASE
+               WHEN {alias}.Direction = N'ENTRANTE'
+                    AND {alias}.FechaHora > DATEADD(minute, 10, GETDATE())
+                   THEN DATEADD(hour, DATEDIFF(hour, {alias}.FechaHora, GETDATE()), {alias}.FechaHora)
                WHEN {alias}.Direction = N'ENTRANTE'
                     AND {alias}.FechaHora_Grabacion IS NOT NULL
                     AND {alias}.FechaHora > DATEADD(minute, 10, {alias}.FechaHora_Grabacion)
