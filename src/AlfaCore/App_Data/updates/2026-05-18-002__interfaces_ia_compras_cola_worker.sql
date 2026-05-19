@@ -58,20 +58,20 @@ GO
 IF NOT EXISTS (SELECT 1 FROM dbo.TA_CONFIGURACION WHERE UPPER(LTRIM(RTRIM(CLAVE))) = 'INTERFACESIACOMPRASWORKERHABILITADO')
 BEGIN
     INSERT INTO dbo.TA_CONFIGURACION (GRUPO, CLAVE, VALOR, DESCRIPCION, FechaHora_Grabacion, FechaHora_Modificacion)
-    VALUES ('INTERFACES', 'InterfacesIaComprasWorkerHabilitado', 'SI', 'Habilita el worker en segundo plano para lectura de compras.', GETDATE(), GETDATE());
+    VALUES ('INTERFACES', 'InterfacesIaComprasWorkerHabilitado', 'SI', 'Habilita worker de lectura de compras.', GETDATE(), GETDATE());
 END;
 GO
 
 IF NOT EXISTS (SELECT 1 FROM dbo.TA_CONFIGURACION WHERE UPPER(LTRIM(RTRIM(CLAVE))) = 'INTERFACESIACOMPRASWORKERMAXPARALELO')
 BEGIN
     INSERT INTO dbo.TA_CONFIGURACION (GRUPO, CLAVE, VALOR, DESCRIPCION, FechaHora_Grabacion, FechaHora_Modificacion)
-    VALUES ('INTERFACES', 'InterfacesIaComprasWorkerMaxParalelo', '1', 'Cantidad maxima de procesos simultaneos del worker de compras.', GETDATE(), GETDATE());
+    VALUES ('INTERFACES', 'InterfacesIaComprasWorkerMaxParalelo', '1', 'Maximo paralelo worker compras.', GETDATE(), GETDATE());
 END;
 GO
 
 IF NOT EXISTS (SELECT 1 FROM dbo.TA_CONFIGURACION WHERE UPPER(LTRIM(RTRIM(CLAVE))) = 'INTERFACESIACOMPRASWORKERINTERVALOSEGUNDOS')
 BEGIN
     INSERT INTO dbo.TA_CONFIGURACION (GRUPO, CLAVE, VALOR, DESCRIPCION, FechaHora_Grabacion, FechaHora_Modificacion)
-    VALUES ('INTERFACES', 'InterfacesIaComprasWorkerIntervaloSegundos', '10', 'Intervalo en segundos entre barridos del worker de compras.', GETDATE(), GETDATE());
+    VALUES ('INTERFACES', 'InterfacesIaComprasWorkerIntervaloSegundos', '10', 'Intervalo segundos worker compras.', GETDATE(), GETDATE());
 END;
 GO
