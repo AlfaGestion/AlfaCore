@@ -201,6 +201,7 @@ public sealed class ConversacionesService(
             await cn.OpenAsync(token);
             await LinkUnassociatedWhatsAppConversationsByPhoneAsync(cn, token);
             await ConsolidateExistingDuplicateWhatsAppConversationsAsync(cn, token);
+            await ReopenClosedConversationsWithIncomingAfterCloseAsync(cn, null, token);
 
             await using var cmd = new SqlCommand(sql, cn);
             cmd.Parameters.AddWithValue("@Canal", DbNullable(filters.Canal));
@@ -302,6 +303,7 @@ public sealed class ConversacionesService(
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
             await LinkUnassociatedWhatsAppConversationsByPhoneAsync(cn, token, conversationId);
+            await ReopenClosedConversationsWithIncomingAfterCloseAsync(cn, conversationId, token);
             await using var cmd = new SqlCommand(sql, cn);
             cmd.Parameters.AddWithValue("@IdConversacion", conversationId);
             await using var rd = await cmd.ExecuteReaderAsync(token);
@@ -2269,6 +2271,37 @@ public sealed class ConversacionesService(
         cmd.Parameters.AddWithValue("@ResumenUltimoMensaje", DbNullable(TrimForSummary(text)));
         cmd.Parameters.AddWithValue("@FechaHora", fechaHora);
         cmd.Parameters.AddWithValue("@Reabrir", reopenIfClosed);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    private static async Task ReopenClosedConversationsWithIncomingAfterCloseAsync(SqlConnection cn, long? idConversacion, CancellationToken ct)
+    {
+        const string sql = """
+            UPDATE c
+               SET CodigoEstado = N'ABIERTA',
+                   FechaHoraCierre = NULL,
+                   FechaHora_Modificacion = GETDATE()
+            FROM dbo.CONV_CONVERSACIONES c
+            INNER JOIN dbo.CONV_ESTADOS e
+                ON e.CodigoEstado = c.CodigoEstado
+            WHERE ISNULL(e.EsCerrado, 0) = 1
+              AND (@IdConversacion IS NULL OR c.IdConversacion = @IdConversacion)
+              AND EXISTS
+              (
+                  SELECT 1
+                  FROM dbo.CONV_MENSAJES m
+                  WHERE m.IdConversacion = c.IdConversacion
+                    AND m.Direction = N'ENTRANTE'
+                    AND (
+                        c.FechaHoraCierre IS NULL
+                        OR m.FechaHora_Grabacion > c.FechaHoraCierre
+                        OR m.FechaHora > c.FechaHoraCierre
+                    )
+              );
+            """;
+
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@IdConversacion", idConversacion.HasValue ? idConversacion.Value : DBNull.Value);
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
