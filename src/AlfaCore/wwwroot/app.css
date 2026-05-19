@@ -9847,10 +9847,13 @@ html[data-theme="light"] .interfaces-bulkbar {
 }
 
 .ticket-editor-file--media.ticket-editor-file--has-preview {
-    display: block;
+    display: inline-block;
+    width: fit-content;
+    max-width: 100%;
     padding: 0;
     border-color: transparent;
     background: transparent;
+    vertical-align: top;
 }
 
 .ticket-editor-file--has-preview > .ticket-editor-file__button,
@@ -9939,8 +9942,10 @@ html[data-theme="light"] .interfaces-bulkbar {
 
 .ticket-editor-file--has-preview .ticket-editor-file__preview {
     display: inline-block;
+    width: fit-content;
     max-width: 100%;
     margin-top: 0;
+    vertical-align: top;
 }
 
 .ticket-editor-file__preview:empty {

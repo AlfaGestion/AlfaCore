@@ -450,8 +450,10 @@ function startImageResize(editor, handle, event) {
     event.stopPropagation();
 
     const startX = event.clientX;
-    const startWidth = image.getBoundingClientRect().width;
-    const maxWidth = preview.parentElement?.getBoundingClientRect().width || editor.getBoundingClientRect().width;
+    const imageRect = image.getBoundingClientRect();
+    const editorRect = editor.getBoundingClientRect();
+    const startWidth = imageRect.width;
+    const maxWidth = Math.max(120, editorRect.right - imageRect.left - 16);
 
     const onMove = (moveEvent) => {
         const nextWidth = Math.min(Math.max(120, startWidth + moveEvent.clientX - startX), maxWidth);
