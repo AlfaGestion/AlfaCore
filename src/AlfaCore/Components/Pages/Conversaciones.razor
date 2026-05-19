@@ -933,8 +933,8 @@
 
 @if (_showNuevoHilo)
 {
-    <div class="modal-overlay" @onclick="CerrarNuevoHilo">
-        <div class="modal-card" @onclick:stopPropagation>
+    <div class="modal-overlay conversations-new-thread-modal" @onclick="CerrarNuevoHilo">
+        <div class="modal-card conversations-new-thread-modal__card" @onclick:stopPropagation>
             <h3 class="modal-card__title">Nuevo hilo interno</h3>
             <div class="field">
                 <label for="hilo-nombre">Nombre del hilo</label>
