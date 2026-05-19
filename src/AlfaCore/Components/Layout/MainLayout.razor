@@ -107,6 +107,28 @@
                     </NavLink>
                 </nav>
             }
+            else if (_currentModule == "tickets")
+            {
+                <a class="menu__back" href="/">
+                    <i class="bi bi-grid-3x3-gap-fill"></i>
+                    <span>Aplicaciones</span>
+                </a>
+                <p class="menu__section">Tickets de asistencia</p>
+                <nav class="menu__nav">
+                    <NavLink class="menu__link" href="/tickets" Match="NavLinkMatch.All">
+                        <span class="menu__icon"><i class="bi bi-life-preserver"></i></span>
+                        <span>Mesa de ayuda</span>
+                    </NavLink>
+                    <NavLink class="menu__link" href="/conversaciones" Match="NavLinkMatch.All">
+                        <span class="menu__icon"><i class="bi bi-chat-dots-fill"></i></span>
+                        <span>Conversaciones</span>
+                    </NavLink>
+                    <NavLink class="menu__link" href="/contactos" Match="NavLinkMatch.All">
+                        <span class="menu__icon"><i class="bi bi-person-lines-fill"></i></span>
+                        <span>Contactos</span>
+                    </NavLink>
+                </nav>
+            }
             else if (_currentModule == "interfaces")
             {
                 <a class="menu__back" href="/">
@@ -596,6 +618,7 @@
             "conversaciones" => "Conversaciones",
             "conversaciones/plantillas" => "Plantillas de WhatsApp",
             "conversaciones/configuracion" => "Configuración de WhatsApp",
+            "tickets" => "Tickets de asistencia",
             "interfaces" => "Recepción documental",
             "interfaces/configuracion" => "Configuración de Interfaces",
             "interfaces/nuevo" => "Nuevo documento",
@@ -634,6 +657,7 @@
         "costos" => "Actualización de Costos",
         "auditoria" => "Auditoría",
         "conversaciones" => "Conversaciones",
+        "tickets" => "Tickets de asistencia",
         "interfaces" => "Interfaces",
         "actualizaciones" => "Actualizaciones",
         "usuarios" => "Usuarios",

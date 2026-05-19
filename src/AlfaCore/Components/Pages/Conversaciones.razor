@@ -3,6 +3,8 @@
 @using Microsoft.AspNetCore.WebUtilities
 @inject AlfaCore.Services.IConversacionesService ConversacionesSvc
 @inject AlfaCore.Services.IContactosService ContactosSvc
+@inject AlfaCore.Services.ITicketsService TicketsSvc
+@inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject IJSRuntime JS
 @inject NavigationManager Nav
 @implements IAsyncDisposable
@@ -45,6 +47,10 @@
             </div>
 
             <div class="conversations-module-actions">
+                <button type="button" class="btn btn--primary btn--sm" @onclick="StartTicketSelection" disabled="@(_selectedConversation is null || _messages.Count == 0)" title="Crear ticket desde mensajes">
+                    <i class="bi bi-life-preserver"></i>
+                    <span>Crear ticket</span>
+                </button>
                 <button type="button" class="btn btn--ghost btn--sm conversations-context-button" @onclick="ToggleContextPanel" disabled="@(_selectedConversation is null)" title="Contexto">
                     <i class="bi bi-layout-sidebar-inset-reverse"></i>
                     <span>Contexto</span>
@@ -338,6 +344,21 @@
                         </div>
                     }
 
+                    @if (_ticketSelectionMode)
+                    {
+                        <div class="conversations-window-banner conversations-ticket-selection">
+                            <span>Seleccioná los mensajes que querés guardar dentro del ticket. Elegidos: @_selectedTicketMessageIds.Count</span>
+                            <div class="actions">
+                                <button type="button" class="btn btn--primary btn--sm" @onclick="OpenTicketDialog" disabled="@(_selectedTicketMessageIds.Count == 0)">
+                                    <i class="bi bi-check2-circle"></i> Continuar
+                                </button>
+                                <button type="button" class="btn btn--ghost btn--sm" @onclick="CancelTicketSelection">
+                                    <i class="bi bi-x-circle"></i> Cancelar
+                                </button>
+                            </div>
+                        </div>
+                    }
+
                     <div class="conversations-thread-shell">
                     <div class="conversations-thread" @ref="_threadElement">
                         @if (_messages.Count == 0)
@@ -358,8 +379,17 @@
                                 }
 
                                 <div class="message-row @(IsOutgoingMessage(message) ? "message-row--outgoing" : "message-row--incoming")">
+                                    @if (_ticketSelectionMode)
+                                    {
+                                        <label class="message-ticket-selector" title="Incluir mensaje en el ticket">
+                                            <input type="checkbox"
+                                                   checked="@_selectedTicketMessageIds.Contains(message.IdMensaje)"
+                                                   @onchange="args => ToggleTicketMessageSelection(message.IdMensaje, args)" />
+                                            <span></span>
+                                        </label>
+                                    }
                                     <div class="message-bubble-shell">
-                                <article class="message-card @GetMessageClass(message)">
+                                <article class="message-card @GetMessageClass(message) @(_selectedTicketMessageIds.Contains(message.IdMensaje) ? "message-card--ticket-selected" : string.Empty)">
                                     <div class="message-card__meta">
                                         <span>@GetMessageAuthor(message)</span>
                                         <span>@message.FechaHora.ToString("dd/MM HH:mm")</span>
@@ -959,6 +989,59 @@
     </div>
 }
 
+@if (_showTicketDialog)
+{
+    <div class="conversations-modal-backdrop" @onclick="CloseTicketDialog"></div>
+    <section class="panel-card conversations-modal conversations-ticket-dialog">
+        <div class="panel-card__header">
+            <div>
+                <h3 class="panel-card__title">Crear ticket</h3>
+                <p class="panel-card__subtitle">@_selectedTicketMessageIds.Count mensaje(s) quedarán vinculados al ticket.</p>
+            </div>
+            <button type="button" class="btn btn--ghost btn--sm" @onclick="CloseTicketDialog" disabled="@_creatingTicket">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        </div>
+        @if (!string.IsNullOrWhiteSpace(_ticketError))
+        {
+            <div class="conversations-error">@_ticketError</div>
+        }
+        <div class="tickets-from-conversation-form">
+            <div class="field">
+                <label>Nombre del ticket</label>
+                <input type="text" maxlength="180" @bind="_ticketTitle" disabled="@_creatingTicket" placeholder="Ej.: Problema con VPN" />
+            </div>
+            <div class="field">
+                <label>Prioridad</label>
+                <select @bind="_ticketPriority" disabled="@_creatingTicket">
+                    <option value="0">Sin prioridad</option>
+                    <option value="1">Baja</option>
+                    <option value="2">Media</option>
+                    <option value="3">Alta</option>
+                </select>
+            </div>
+            <div class="field">
+                <label>Asignado a</label>
+                <select @bind="_ticketTechnicianId" disabled="@_creatingTicket">
+                    <option value="">Usar asignado de la conversación</option>
+                    @foreach (var tech in _technicians)
+                    {
+                        <option value="@tech.IdTecnico">@tech.Nombre</option>
+                    }
+                </select>
+            </div>
+        </div>
+        <div class="actions usuarios-editor__actions">
+            <button type="button" class="btn btn--primary" @onclick="CreateTicketFromSelectionAsync" disabled="@_creatingTicket">
+                <i class="bi bi-floppy"></i> @(_creatingTicket ? "Creando..." : "Guardar ticket")
+            </button>
+            <button type="button" class="btn btn--ghost" @onclick="CloseTicketDialog" disabled="@_creatingTicket">
+                Cancelar
+            </button>
+        </div>
+    </section>
+}
+
 @code {
     private readonly (string Value, string Label)[] _modeOptions =
     [
@@ -1036,6 +1119,14 @@
     private bool _showContactSuggestions;
     private bool _loadingContactSuggestions;
     private long? _startupConversationId;
+    private bool _ticketSelectionMode;
+    private bool _showTicketDialog;
+    private readonly HashSet<long> _selectedTicketMessageIds = [];
+    private string _ticketTitle = string.Empty;
+    private int _ticketPriority = 2;
+    private string _ticketTechnicianId = string.Empty;
+    private string? _ticketError;
+    private bool _creatingTicket;
 
     private static readonly TimeSpan PollingInterval = TimeSpan.FromSeconds(5);
     private static readonly string[] QuickReactionEmojis = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
@@ -1324,6 +1415,7 @@
     private async Task SelectConversationAsync(long idConversacion)
     {
         _showTemplatePanel = false;
+        CancelTicketSelection();
         await LoadConversationAsync(idConversacion, showLoading: true, clearActionState: true);
     }
 
@@ -1397,6 +1489,127 @@
             if (showLoading)
                 _loadingConversation = false;
         }
+    }
+
+    private void StartTicketSelection()
+    {
+        if (_selectedConversation is null || _messages.Count == 0)
+            return;
+
+        _ticketSelectionMode = true;
+        _showTicketDialog = false;
+        _ticketError = null;
+        _selectedTicketMessageIds.Clear();
+        _ticketTitle = BuildDefaultTicketTitle();
+        _ticketPriority = 2;
+        _ticketTechnicianId = _selectedConversation.IdTecnico;
+    }
+
+    private void ToggleTicketMessageSelection(long idMensaje, ChangeEventArgs args)
+    {
+        var selected = args.Value is bool flag && flag;
+        if (selected)
+            _selectedTicketMessageIds.Add(idMensaje);
+        else
+            _selectedTicketMessageIds.Remove(idMensaje);
+    }
+
+    private void OpenTicketDialog()
+    {
+        if (_selectedTicketMessageIds.Count == 0)
+            return;
+
+        _ticketError = null;
+        if (string.IsNullOrWhiteSpace(_ticketTitle))
+            _ticketTitle = BuildDefaultTicketTitle();
+        _showTicketDialog = true;
+    }
+
+    private void CloseTicketDialog()
+    {
+        if (_creatingTicket)
+            return;
+
+        _showTicketDialog = false;
+        _ticketError = null;
+    }
+
+    private void CancelTicketSelection()
+    {
+        if (_creatingTicket)
+            return;
+
+        _ticketSelectionMode = false;
+        _showTicketDialog = false;
+        _selectedTicketMessageIds.Clear();
+        _ticketError = null;
+    }
+
+    private async Task CreateTicketFromSelectionAsync()
+    {
+        if (_selectedConversation is null)
+            return;
+        if (_selectedTicketMessageIds.Count == 0)
+        {
+            _ticketError = "Seleccioná al menos un mensaje para crear el ticket.";
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_ticketTitle))
+        {
+            _ticketError = "Ingresá el nombre del ticket.";
+            return;
+        }
+
+        _creatingTicket = true;
+        _ticketError = null;
+        try
+        {
+            var orderedMessageIds = VisibleMessages
+                .Where(x => _selectedTicketMessageIds.Contains(x.IdMensaje))
+                .Select(x => x.IdMensaje)
+                .ToList();
+
+            var idTicket = await TicketsSvc.CreateAsync(new TicketCreateRequest
+            {
+                Titulo = _ticketTitle,
+                CodigoEstado = TicketEstadoKeys.Nuevo,
+                Prioridad = _ticketPriority,
+                IdTecnico = string.IsNullOrWhiteSpace(_ticketTechnicianId) ? null : _ticketTechnicianId,
+                ClienteCodigo = _selectedConversation.ClienteCodigo,
+                IdContacto = _selectedConversation.IdContacto,
+                IdConversacion = _selectedConversation.IdConversacion,
+                IdMensajes = orderedMessageIds,
+                UsuarioAccion = AppUserSession.GetCurrentUserName(string.Empty)
+            });
+
+            _ticketSelectionMode = false;
+            _showTicketDialog = false;
+            _selectedTicketMessageIds.Clear();
+            _actionMessage = $"Ticket #{idTicket} creado correctamente.";
+            Nav.NavigateTo($"/tickets?id={idTicket.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+        }
+        catch (Exception ex)
+        {
+            _ticketError = ex is AlfaCore.Services.AppUserFacingException userFacing
+                ? userFacing.Message
+                : "No se pudo crear el ticket. Revisá la base activa y volvé a intentar.";
+        }
+        finally
+        {
+            _creatingTicket = false;
+        }
+    }
+
+    private string BuildDefaultTicketTitle()
+    {
+        var source = FirstNonEmpty(
+            _selectedConversation?.ResumenUltimoMensaje,
+            _selectedConversation?.ClienteNombre,
+            _selectedConversation?.ContactoNombre,
+            _selectedConversation?.NombreVisible,
+            "Nuevo ticket de asistencia");
+
+        return source.Length <= 80 ? source : source[..80];
     }
 
     private async Task DebounceContactSuggestionsAsync()

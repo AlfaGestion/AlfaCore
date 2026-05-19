@@ -1,0 +1,870 @@
+@page "/tickets"
+@using Microsoft.AspNetCore.WebUtilities
+@inject AlfaCore.Services.ITicketsService TicketsSvc
+@inject AlfaCore.Services.IAppUiOperationService UiOps
+@inject AlfaCore.Services.IAppUserSessionService AppUserSession
+@inject NavigationManager Nav
+@implements IDisposable
+
+<PageTitle>Tickets de asistencia | Alfa Gestión</PageTitle>
+
+<section class="page-grid tickets-page">
+    <section class="page-intro tickets-hero">
+        <div>
+            <h2 class="page-intro__title">Tickets de asistencia</h2>
+            <p class="page-intro__text">Seguimiento simple para soporte: kanban, prioridades, asignados y mensajes de conversaciones vinculados.</p>
+        </div>
+        <div class="actions">
+            <button type="button" class="btn btn--primary" @onclick="NuevoTicket">
+                <i class="bi bi-plus-circle"></i> Nuevo
+            </button>
+            <button type="button" class="btn btn--ghost" @onclick="RecargarAsync" disabled="@_loading">
+                <i class="bi bi-arrow-clockwise"></i> Recargar
+            </button>
+        </div>
+    </section>
+
+    @if (_feedback is not null)
+    {
+        <section class="panel-card">
+            <div class="editor-msg @GetFeedbackClass(_feedback)">
+                <div>
+                    <strong>@_feedback.Title</strong>
+                    <p>@_feedback.Message</p>
+                    @if (_feedback.HasCode)
+                    {
+                        <small>Código: @_feedback.Code</small>
+                    }
+                </div>
+            </div>
+        </section>
+    }
+
+    <section class="panel-card tickets-toolbar">
+        <div class="tickets-view-switch">
+            <button type="button" class="btn @(_viewMode == "kanban" ? "btn--primary" : "btn--ghost")" @onclick='() => CambiarVistaAsync("kanban")'>
+                <i class="bi bi-kanban"></i> Kanban
+            </button>
+            <button type="button" class="btn @(_viewMode == "lista" ? "btn--primary" : "btn--ghost")" @onclick='() => CambiarVistaAsync("lista")'>
+                <i class="bi bi-list-ul"></i> Lista
+            </button>
+        </div>
+        <div class="tickets-filters">
+            <div class="field field--wide">
+                <label>Buscar</label>
+                <input type="search" placeholder="Número, título, cliente, contacto o técnico..." @bind="_filters.Texto" @bind:event="oninput" />
+            </div>
+            <div class="field">
+                <label>Etapa</label>
+                <select @bind="_filters.CodigoEstado">
+                    <option value="">Todas</option>
+                    @foreach (var state in _lookups.Estados)
+                    {
+                        <option value="@state.CodigoEstado">@state.Nombre</option>
+                    }
+                </select>
+            </div>
+            <div class="field">
+                <label>Asignado</label>
+                <select @bind="_filters.IdTecnico">
+                    <option value="">Todos</option>
+                    @foreach (var tech in _lookups.Tecnicos)
+                    {
+                        <option value="@tech.IdTecnico">@tech.Nombre</option>
+                    }
+                </select>
+            </div>
+            <div class="field">
+                <label>Prioridad</label>
+                <select @bind="_prioridadFiltro">
+                    <option value="">Todas</option>
+                    <option value="3">Alta</option>
+                    <option value="2">Media</option>
+                    <option value="1">Baja</option>
+                    <option value="0">Sin prioridad</option>
+                </select>
+            </div>
+            <label class="checkbox tickets-closed-filter">
+                <input type="checkbox" @bind="_filters.IncluirCerrados" />
+                <span>Incluir cerrados</span>
+            </label>
+            <div class="actions">
+                <button type="button" class="btn btn--primary" @onclick="AplicarFiltrosAsync" disabled="@_loading">
+                    <i class="bi bi-funnel"></i> Aplicar
+                </button>
+                <button type="button" class="btn btn--ghost" @onclick="LimpiarFiltros" disabled="@_loading">
+                    <i class="bi bi-eraser"></i>
+                </button>
+            </div>
+        </div>
+    </section>
+
+    @if (_showViewSettings && _viewMode == "lista" && !_showEditor)
+    {
+        <section class="panel-card">
+            <div class="panel-card__header">
+                <div>
+                    <h3 class="panel-card__title">Configuración de vista</h3>
+                    <p class="panel-card__subtitle">Columnas visibles, orden y agrupación del listado.</p>
+                </div>
+            </div>
+            <div class="usuarios-view-settings">
+                <div class="field">
+                    <label>Agrupar por</label>
+                    <select @bind="_draftAgruparPor">
+                        <option value="@TicketViewGroupKeys.None">Sin agrupar</option>
+                        <option value="@TicketViewGroupKeys.Estado">Etapa</option>
+                        <option value="@TicketViewGroupKeys.Prioridad">Prioridad</option>
+                        <option value="@TicketViewGroupKeys.Tecnico">Asignado</option>
+                    </select>
+                </div>
+                <div class="usuarios-view-settings__list">
+                    @foreach (var col in _viewSettingsDraft.OrderBy(c => c.Order))
+                    {
+                        <div class="usuarios-view-settings__item">
+                            <label class="checkbox">
+                                <input type="checkbox" checked="@col.Visible" @onchange="args => ToggleViewColumn(col.Key, args)" />
+                                <span>@col.Label</span>
+                            </label>
+                            <div class="actions">
+                                <button type="button" class="btn btn--ghost btn--sm" @onclick="() => MoveViewColumn(col.Key, -1)"><i class="bi bi-arrow-up"></i></button>
+                                <button type="button" class="btn btn--ghost btn--sm" @onclick="() => MoveViewColumn(col.Key, 1)"><i class="bi bi-arrow-down"></i></button>
+                            </div>
+                        </div>
+                    }
+                </div>
+                <div class="actions">
+                    <button type="button" class="btn btn--primary" @onclick="GuardarConfiguracionVistaAsync">
+                        <i class="bi bi-floppy"></i> Guardar vista
+                    </button>
+                    <button type="button" class="btn btn--ghost" @onclick="() => _showViewSettings = false">
+                        <i class="bi bi-x-circle"></i> Cancelar
+                    </button>
+                </div>
+            </div>
+        </section>
+    }
+
+    @if (_showEditor)
+    {
+        <section class="panel-card tickets-editor">
+            <div class="panel-card__header">
+                <div>
+                    <h3 class="panel-card__title">@(_isNew ? "Nuevo ticket" : $"{_detail?.CodigoVisible} {_form.Titulo}")</h3>
+                    <p class="panel-card__subtitle">@(_isNew ? "Cargá lo mínimo para que soporte lo tome rápido." : BuildDetailSubtitle())</p>
+                </div>
+                <div class="actions">
+                    @if (!_isNew && _detail?.IdConversacion is long idConv)
+                    {
+                        <a class="btn btn--ghost" href="@($"/conversaciones?id={idConv}")">
+                            <i class="bi bi-chat-dots"></i> Ver chat
+                        </a>
+                    }
+                    @if (!_isNew && _detail?.IdContacto is int idContacto)
+                    {
+                        <a class="btn btn--ghost" href="@($"/contactos?editar={idContacto}")">
+                            <i class="bi bi-person-lines-fill"></i> Ver contacto
+                        </a>
+                    }
+                    <button type="button" class="btn btn--ghost" @onclick="CerrarEditor">
+                        <i class="bi bi-arrow-left"></i> Volver
+                    </button>
+                </div>
+            </div>
+
+            <div class="tickets-editor-grid">
+                <div class="tickets-editor-main">
+                    <div class="field">
+                        <label>Nombre del ticket</label>
+                        <input type="text" maxlength="180" @bind="_form.Titulo" disabled="@_saving" />
+                    </div>
+                    <div class="field">
+                        <label>Descripción</label>
+                        <textarea rows="5" @bind="_form.Descripcion" disabled="@_saving"></textarea>
+                    </div>
+                </div>
+                <aside class="tickets-editor-side">
+                    <div class="field">
+                        <label>Etapa</label>
+                        <select @bind="_form.CodigoEstado" disabled="@_saving">
+                            @foreach (var state in _lookups.Estados)
+                            {
+                                <option value="@state.CodigoEstado">@state.Nombre</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label>Prioridad</label>
+                        <select @bind="_form.Prioridad" disabled="@_saving">
+                            <option value="0">Sin prioridad</option>
+                            <option value="1">Baja</option>
+                            <option value="2">Media</option>
+                            <option value="3">Alta</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label>Asignado a</label>
+                        <select @bind="_form.IdTecnico" disabled="@_saving">
+                            <option value="">Sin asignar</option>
+                            @foreach (var tech in _lookups.Tecnicos)
+                            {
+                                <option value="@tech.IdTecnico">@tech.Nombre</option>
+                            }
+                        </select>
+                    </div>
+                </aside>
+            </div>
+
+            <div class="actions usuarios-editor__actions">
+                <button type="button" class="btn btn--primary" @onclick="GuardarAsync" disabled="@_saving">
+                    <i class="bi bi-floppy"></i> @(_saving ? "Guardando..." : "Guardar ticket")
+                </button>
+                <button type="button" class="btn btn--ghost" @onclick="ResetForm" disabled="@_saving">
+                    <i class="bi bi-eraser"></i> Revertir
+                </button>
+            </div>
+        </section>
+
+        @if (!_isNew && _detail is not null)
+        {
+            <section class="tickets-detail-layout">
+                <div class="panel-card">
+                    <div class="panel-card__header">
+                        <div>
+                            <h3 class="panel-card__title">Mensajes incluidos</h3>
+                            <p class="panel-card__subtitle">@_detail.MensajesOrigenDetalle.Count mensaje(s) guardados como contexto.</p>
+                        </div>
+                    </div>
+                    @if (_detail.MensajesOrigenDetalle.Count == 0)
+                    {
+                        <div class="usuarios-empty">Este ticket no tiene mensajes de conversación vinculados.</div>
+                    }
+                    else
+                    {
+                        <div class="tickets-message-list">
+                            @foreach (var message in _detail.MensajesOrigenDetalle)
+                            {
+                                <article class="tickets-message">
+                                    <div class="tickets-message__meta">
+                                        <strong>@message.Autor</strong>
+                                        <span>@message.FechaHora.ToString("dd/MM/yyyy HH:mm")</span>
+                                    </div>
+                                    @if (!string.IsNullOrWhiteSpace(message.Texto))
+                                    {
+                                        <p>@message.Texto</p>
+                                    }
+                                    @if (message.Adjuntos.Count > 0)
+                                    {
+                                        <div class="tickets-attachments">
+                                            @foreach (var adj in message.Adjuntos)
+                                            {
+                                                @if (IsImageAttachment(adj))
+                                                {
+                                                    <a href="@GetAttachmentUrl(adj.IdAdjunto)" target="_blank" class="tickets-attachment tickets-attachment--image">
+                                                        <img src="@GetAttachmentUrl(adj.IdAdjunto)" alt="@adj.NombreArchivo" loading="lazy" />
+                                                        <span>@GetAttachmentLabel(adj)</span>
+                                                    </a>
+                                                }
+                                                else
+                                                {
+                                                    <a href="@GetAttachmentDownloadUrl(adj.IdAdjunto)" class="tickets-attachment">
+                                                        <i class="bi bi-file-earmark-arrow-down"></i>
+                                                        <span>@GetAttachmentLabel(adj)</span>
+                                                    </a>
+                                                }
+                                            }
+                                        </div>
+                                    }
+                                </article>
+                            }
+                        </div>
+                    }
+                </div>
+                <div class="panel-card">
+                    <div class="panel-card__header">
+                        <div>
+                            <h3 class="panel-card__title">Actividad</h3>
+                            <p class="panel-card__subtitle">Notas e historial del ticket.</p>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label>Nueva nota</label>
+                        <textarea rows="3" @bind="_newNote"></textarea>
+                    </div>
+                    <div class="actions">
+                        <button type="button" class="btn btn--primary" @onclick="AgregarNotaAsync" disabled="@(_saving || string.IsNullOrWhiteSpace(_newNote))">
+                            <i class="bi bi-chat-left-text"></i> Registrar nota
+                        </button>
+                    </div>
+                    <div class="tickets-activity">
+                        @foreach (var activity in _detail.Actividad)
+                        {
+                            <div class="tickets-activity__item">
+                                <strong>@activity.TipoActividad</strong>
+                                <p>@activity.Descripcion</p>
+                                <span>@activity.Usuario · @activity.FechaHora.ToString("dd/MM/yyyy HH:mm")</span>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </section>
+        }
+    }
+    else if (_loading)
+    {
+        <section class="panel-card"><div class="loading">Cargando tickets...</div></section>
+    }
+    else if (_viewMode == "kanban")
+    {
+        <section class="tickets-kanban">
+            @foreach (var state in _lookups.Estados.OrderBy(x => x.Orden))
+            {
+                var items = _kanbanItems.Where(x => x.CodigoEstado == state.CodigoEstado).ToList();
+                <div class="tickets-kanban-column">
+                    <div class="tickets-kanban-column__head">
+                        <span class="tickets-state-dot" style="background:@state.Color"></span>
+                        <strong>@state.Nombre</strong>
+                        <small>@items.Count</small>
+                    </div>
+                    <div class="tickets-kanban-column__body">
+                        @foreach (var item in items)
+                        {
+                            <article class="tickets-card" @onclick="() => AbrirTicketAsync(item.IdTicket)">
+                                <div class="tickets-card__head">
+                                    <strong>@item.CodigoVisible @item.Titulo</strong>
+                                    <span>@RenderPriority(item.Prioridad)</span>
+                                </div>
+                                <div class="tickets-card__meta">
+                                    <span><i class="bi bi-person"></i> @DisplayOrFallback(item.TecnicoNombre, "Sin asignar")</span>
+                                    <span><i class="bi bi-building"></i> @DisplayOrFallback(item.ClienteNombre, item.ContactoNombre, "Sin contacto")</span>
+                                </div>
+                                @if (item.Etiquetas.Count > 0)
+                                {
+                                    <div class="tickets-tags">
+                                        @foreach (var tag in item.Etiquetas)
+                                        {
+                                            <span style="border-color:@tag.Color;color:@tag.Color">@tag.Nombre</span>
+                                        }
+                                    </div>
+                                }
+                                <div class="tickets-card__footer">
+                                    <span>@item.MensajesOrigen mensaje(s)</span>
+                                    <span>@item.FechaHoraAlta.ToString("dd/MM HH:mm")</span>
+                                </div>
+                            </article>
+                        }
+                    </div>
+                </div>
+            }
+        </section>
+    }
+    else
+    {
+        var visibleColumns = GetVisibleColumns();
+        var groups = BuildListGroups();
+        <section class="panel-card">
+            <div class="panel-card__header">
+                <div>
+                    <h3 class="panel-card__title">Listado</h3>
+                    <p class="panel-card__subtitle">@_pagedTotal registro(s) · Página @_pageNumber de @_totalPages</p>
+                </div>
+                <div class="actions">
+                    <button type="button" class="btn btn--ghost" @onclick="AbrirConfiguracionVista">
+                        <i class="bi bi-sliders"></i> Configurar vista
+                    </button>
+                </div>
+            </div>
+            @if (_listItems.Count == 0)
+            {
+                <div class="usuarios-empty">No hay tickets para los filtros seleccionados.</div>
+            }
+            else
+            {
+                <div class="usuarios-table-wrap">
+                    <table class="data-table usuarios-table tickets-table">
+                        <thead>
+                            <tr>
+                                @foreach (var col in visibleColumns)
+                                {
+                                    <th>@col.Label</th>
+                                }
+                            </tr>
+                        </thead>
+                        @foreach (var group in groups)
+                        {
+                            <tbody>
+                                @if (group.ShowHeader)
+                                {
+                                    <tr class="usuarios-group-row"><td colspan="@visibleColumns.Count">@group.Label</td></tr>
+                                }
+                                @foreach (var item in group.Items)
+                                {
+                                    <tr class="usuarios-table__row" @onclick="() => AbrirTicketAsync(item.IdTicket)">
+                                        @foreach (var col in visibleColumns)
+                                        {
+                                            <td>@RenderColumn(item, col.Key)</td>
+                                        }
+                                    </tr>
+                                }
+                            </tbody>
+                        }
+                    </table>
+                </div>
+                <div class="table-toolbar">
+                    <div class="pagination">
+                        <span>@_pagedTotal registro(s)</span>
+                        <select @onchange="OnPageSizeChangedAsync" value="@_filters.PageSize">
+                            <option value="25">25</option>
+                            <option value="50">50</option>
+                            <option value="100">100</option>
+                        </select>
+                    </div>
+                    <div class="pagination">
+                        <button type="button" class="btn btn--ghost btn--sm" @onclick="() => CambiarPaginaAsync(_pageNumber - 1)" disabled="@(!_hasPrev)">Anterior</button>
+                        <span>Página @_pageNumber / @_totalPages</span>
+                        <button type="button" class="btn btn--ghost btn--sm" @onclick="() => CambiarPaginaAsync(_pageNumber + 1)" disabled="@(!_hasNext)">Siguiente</button>
+                    </div>
+                </div>
+            }
+        </section>
+    }
+</section>
+
+@code {
+    private TicketLookupDto _lookups = new();
+    private TicketsFilters _filters = new();
+    private string _prioridadFiltro = string.Empty;
+    private string _viewMode = "kanban";
+    private bool _loading;
+    private bool _saving;
+    private bool _showEditor;
+    private bool _isNew;
+    private bool _showViewSettings;
+    private List<TicketGridItemDto> _kanbanItems = [];
+    private List<TicketGridItemDto> _listItems = [];
+    private TicketDetailDto? _detail;
+    private AppUiMessage? _feedback;
+    private TicketUpdateRequest _form = new();
+    private string _newNote = string.Empty;
+    private int _pagedTotal;
+    private int _pageNumber = 1;
+    private int _totalPages;
+    private bool _hasPrev;
+    private bool _hasNext;
+    private TicketViewSettingsDto _viewSettings = BuildDefaultViewSettings();
+    private readonly List<TicketViewColumnDto> _viewSettingsDraft = [];
+    private string _draftAgruparPor = TicketViewGroupKeys.Estado;
+    private bool _viewSettingsLoaded;
+    private string _viewSettingsUserName = string.Empty;
+    private long? _startupTicketId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        AppUserSession.StateChanged += OnAppUserSessionChanged;
+        ApplyStartupQuery();
+        await EnsureViewSettingsLoadedAsync();
+        await CargarLookupsAsync();
+        await BuscarAsync();
+        if (_startupTicketId.HasValue)
+            await AbrirTicketAsync(_startupTicketId.Value);
+    }
+
+    public void Dispose()
+        => AppUserSession.StateChanged -= OnAppUserSessionChanged;
+
+    private void OnAppUserSessionChanged()
+    {
+        _ = InvokeAsync(async () =>
+        {
+            await EnsureViewSettingsLoadedAsync(force: true);
+            StateHasChanged();
+        });
+    }
+
+    private void ApplyStartupQuery()
+    {
+        var query = QueryHelpers.ParseQuery(Nav.ToAbsoluteUri(Nav.Uri).Query);
+        if (query.TryGetValue("id", out var rawId) && long.TryParse(rawId.ToString(), out var id) && id > 0)
+            _startupTicketId = id;
+    }
+
+    private async Task CargarLookupsAsync()
+    {
+        var result = await UiOps.RunAsync(() => TicketsSvc.GetLookupsAsync(), "No se pudieron cargar los datos de tickets.");
+        if (!result.Success || result.Value is null)
+        {
+            SetFeedback(result.Feedback);
+            return;
+        }
+
+        _lookups = result.Value;
+        if (string.IsNullOrWhiteSpace(_form.CodigoEstado))
+            _form.CodigoEstado = _lookups.Estados.FirstOrDefault()?.CodigoEstado ?? TicketEstadoKeys.Nuevo;
+    }
+
+    private async Task RecargarAsync()
+    {
+        await CargarLookupsAsync();
+        await BuscarAsync();
+        if (_detail is not null)
+            await AbrirTicketAsync(_detail.IdTicket);
+    }
+
+    private async Task CambiarVistaAsync(string view)
+    {
+        _viewMode = view;
+        _showEditor = false;
+        await BuscarAsync();
+    }
+
+    private async Task AplicarFiltrosAsync()
+    {
+        SyncFilters();
+        _filters.PageNumber = 1;
+        await BuscarAsync();
+    }
+
+    private async Task BuscarAsync()
+    {
+        _loading = true;
+        SyncFilters();
+        try
+        {
+            if (_viewMode == "kanban")
+            {
+                var result = await UiOps.RunAsync(() => TicketsSvc.GetKanbanAsync(_filters), "No se pudo cargar la vista kanban.");
+                if (!result.Success || result.Value is null) { SetFeedback(result.Feedback); return; }
+                _kanbanItems = result.Value.ToList();
+            }
+            else
+            {
+                var result = await UiOps.RunAsync(() => TicketsSvc.SearchAsync(_filters), "No se pudo cargar el listado.");
+                if (!result.Success || result.Value is null) { SetFeedback(result.Feedback); return; }
+                _listItems = result.Value.Items.ToList();
+                _pagedTotal = result.Value.Total;
+                _pageNumber = result.Value.PageNumber;
+                _totalPages = result.Value.TotalPages;
+                _hasPrev = result.Value.HasPrev;
+                _hasNext = result.Value.HasNext;
+            }
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task CambiarPaginaAsync(int page)
+    {
+        if (page < 1 || page > _totalPages || _loading)
+            return;
+        _filters.PageNumber = page;
+        await BuscarAsync();
+    }
+
+    private async Task OnPageSizeChangedAsync(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var size) && size > 0)
+            _filters.PageSize = size;
+        _filters.PageNumber = 1;
+        await BuscarAsync();
+    }
+
+    private void LimpiarFiltros()
+    {
+        _filters = new TicketsFilters();
+        _prioridadFiltro = string.Empty;
+    }
+
+    private void SyncFilters()
+        => _filters.Prioridad = int.TryParse(_prioridadFiltro, out var priority) ? priority : null;
+
+    private void NuevoTicket()
+    {
+        _showEditor = true;
+        _isNew = true;
+        _detail = null;
+        _newNote = string.Empty;
+        _form = new TicketUpdateRequest
+        {
+            CodigoEstado = _lookups.Estados.FirstOrDefault()?.CodigoEstado ?? TicketEstadoKeys.Nuevo,
+            Prioridad = 1
+        };
+    }
+
+    private async Task AbrirTicketAsync(long idTicket)
+    {
+        var result = await UiOps.RunAsync(() => TicketsSvc.GetByIdAsync(idTicket), "No se pudo cargar el ticket.");
+        if (!result.Success)
+        {
+            SetFeedback(result.Feedback);
+            return;
+        }
+        if (result.Value is null)
+        {
+            SetFeedback(new AppUiMessage { Severity = AppUiFeedbackSeverity.Warning, Title = "Ticket no disponible", Message = "El ticket seleccionado ya no existe." });
+            await BuscarAsync();
+            return;
+        }
+
+        _detail = result.Value;
+        _form = new TicketUpdateRequest
+        {
+            IdTicket = _detail.IdTicket,
+            Titulo = _detail.Titulo,
+            Descripcion = _detail.Descripcion,
+            CodigoEstado = _detail.CodigoEstado,
+            Prioridad = _detail.Prioridad,
+            IdTecnico = _detail.IdTecnico
+        };
+        _isNew = false;
+        _showEditor = true;
+        _newNote = string.Empty;
+    }
+
+    private async Task GuardarAsync()
+    {
+        _saving = true;
+        try
+        {
+            if (_isNew)
+            {
+                var create = new TicketCreateRequest
+                {
+                    Titulo = _form.Titulo,
+                    Descripcion = _form.Descripcion,
+                    CodigoEstado = _form.CodigoEstado,
+                    Prioridad = _form.Prioridad,
+                    IdTecnico = _form.IdTecnico,
+                    UsuarioAccion = CurrentUserName
+                };
+                var result = await UiOps.RunAsync(() => TicketsSvc.CreateAsync(create), "No se pudo crear el ticket.");
+                if (!result.Success) { SetFeedback(result.Feedback); return; }
+                SetFeedback(AppUiMessage.Success("Ticket creado", "El ticket quedó listo para el equipo de soporte."));
+                await BuscarAsync();
+                await AbrirTicketAsync(result.Value);
+            }
+            else
+            {
+                _form.UsuarioAccion = CurrentUserName;
+                var result = await UiOps.RunAsync(async () => { await TicketsSvc.UpdateAsync(_form); return true; }, "No se pudo guardar el ticket.");
+                if (!result.Success) { SetFeedback(result.Feedback); return; }
+                SetFeedback(AppUiMessage.Success("Ticket guardado", "Los cambios quedaron registrados."));
+                await BuscarAsync();
+                await AbrirTicketAsync(_form.IdTicket);
+            }
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task AgregarNotaAsync()
+    {
+        if (_detail is null || string.IsNullOrWhiteSpace(_newNote))
+            return;
+
+        _saving = true;
+        try
+        {
+            var result = await UiOps.RunAsync(async () =>
+            {
+                await TicketsSvc.AddNoteAsync(new TicketNotaRequest { IdTicket = _detail.IdTicket, Texto = _newNote, UsuarioAccion = CurrentUserName });
+                return true;
+            }, "No se pudo registrar la nota.");
+            if (!result.Success) { SetFeedback(result.Feedback); return; }
+            _newNote = string.Empty;
+            await AbrirTicketAsync(_detail.IdTicket);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private void ResetForm()
+    {
+        if (_isNew) NuevoTicket();
+        else if (_detail is not null) _ = AbrirTicketAsync(_detail.IdTicket);
+    }
+
+    private void CerrarEditor()
+    {
+        _showEditor = false;
+        _detail = null;
+        _newNote = string.Empty;
+    }
+
+    private async Task EnsureViewSettingsLoadedAsync(bool force = false)
+    {
+        var currentUser = CurrentUserName;
+        if (!force && _viewSettingsLoaded && string.Equals(_viewSettingsUserName, currentUser, StringComparison.OrdinalIgnoreCase))
+            return;
+        if (string.IsNullOrWhiteSpace(currentUser))
+        {
+            ApplyViewSettings(BuildDefaultViewSettings(), string.Empty);
+            return;
+        }
+        var result = await UiOps.RunAsync(() => TicketsSvc.GetViewSettingsAsync(currentUser), "No se pudo cargar la configuración de vista.");
+        ApplyViewSettings(result.Success && result.Value is not null ? result.Value : BuildDefaultViewSettings(), currentUser);
+    }
+
+    private void ApplyViewSettings(TicketViewSettingsDto settings, string userName)
+    {
+        _viewSettings = settings;
+        _viewSettingsUserName = userName;
+        _viewSettingsLoaded = true;
+        _draftAgruparPor = settings.AgruparPor;
+        _viewSettingsDraft.Clear();
+        _viewSettingsDraft.AddRange(CloneColumns(settings.Columnas));
+    }
+
+    private void AbrirConfiguracionVista()
+    {
+        _showViewSettings = true;
+        _draftAgruparPor = _viewSettings.AgruparPor;
+        _viewSettingsDraft.Clear();
+        _viewSettingsDraft.AddRange(CloneColumns(_viewSettings.Columnas));
+    }
+
+    private void ToggleViewColumn(string key, ChangeEventArgs args)
+    {
+        var column = _viewSettingsDraft.FirstOrDefault(c => string.Equals(c.Key, key, StringComparison.OrdinalIgnoreCase));
+        if (column is null) return;
+        column.Visible = args.Value is bool flag && flag;
+        if (!_viewSettingsDraft.Any(c => c.Visible))
+            column.Visible = true;
+    }
+
+    private void MoveViewColumn(string key, int offset)
+    {
+        var ordered = _viewSettingsDraft.OrderBy(c => c.Order).ToList();
+        var index = ordered.FindIndex(c => string.Equals(c.Key, key, StringComparison.OrdinalIgnoreCase));
+        if (index < 0) return;
+        var target = index + offset;
+        if (target < 0 || target >= ordered.Count) return;
+        (ordered[index], ordered[target]) = (ordered[target], ordered[index]);
+        for (var i = 0; i < ordered.Count; i++) ordered[i].Order = i;
+        _viewSettingsDraft.Clear();
+        _viewSettingsDraft.AddRange(ordered);
+    }
+
+    private async Task GuardarConfiguracionVistaAsync()
+    {
+        if (string.IsNullOrWhiteSpace(CurrentUserName))
+        {
+            SetFeedback(new AppUiMessage { Severity = AppUiFeedbackSeverity.Warning, Title = "Sesión requerida", Message = "Necesitás iniciar sesión para guardar la configuración de vista." });
+            return;
+        }
+
+        var settings = new TicketViewSettingsDto { AgruparPor = _draftAgruparPor, Columnas = CloneColumns(_viewSettingsDraft) };
+        var result = await UiOps.RunAsync(async () => { await TicketsSvc.SaveViewSettingsAsync(CurrentUserName, settings); return true; }, "No se pudo guardar la configuración de vista.");
+        if (!result.Success) { SetFeedback(result.Feedback); return; }
+        ApplyViewSettings(settings, CurrentUserName);
+        _showViewSettings = false;
+        SetFeedback(AppUiMessage.Success("Vista guardada", "La configuración del listado quedó actualizada para tu usuario."));
+    }
+
+    private IReadOnlyList<TicketViewColumnDto> GetVisibleColumns()
+        => _viewSettings.Columnas.Where(c => c.Visible).OrderBy(c => c.Order).ToList();
+
+    private IReadOnlyList<TicketGridGroup> BuildListGroups()
+    {
+        return _viewSettings.AgruparPor switch
+        {
+            TicketViewGroupKeys.Prioridad => _listItems.GroupBy(x => RenderPriority(x.Prioridad)).Select(g => new TicketGridGroup { Label = g.Key, ShowHeader = true, Items = g.ToList() }).ToList(),
+            TicketViewGroupKeys.Tecnico => _listItems.GroupBy(x => DisplayOrFallback(x.TecnicoNombre, "Sin asignar")).Select(g => new TicketGridGroup { Label = g.Key, ShowHeader = true, Items = g.ToList() }).ToList(),
+            TicketViewGroupKeys.Estado => _listItems.GroupBy(x => x.EstadoNombre).Select(g => new TicketGridGroup { Label = g.Key, ShowHeader = true, Items = g.ToList() }).ToList(),
+            _ => [new TicketGridGroup { Label = string.Empty, ShowHeader = false, Items = _listItems.ToList() }]
+        };
+    }
+
+    private MarkupString RenderColumn(TicketGridItemDto item, string key)
+    {
+        var text = key switch
+        {
+            TicketViewColumnKeys.Numero => item.CodigoVisible,
+            TicketViewColumnKeys.Titulo => item.Titulo,
+            TicketViewColumnKeys.Prioridad => RenderPriority(item.Prioridad),
+            TicketViewColumnKeys.Estado => item.EstadoNombre,
+            TicketViewColumnKeys.Asignado => DisplayOrFallback(item.TecnicoNombre, "Sin asignar"),
+            TicketViewColumnKeys.Cliente => DisplayOrFallback(item.ClienteNombre, "-"),
+            TicketViewColumnKeys.Contacto => DisplayOrFallback(item.ContactoNombre, "-"),
+            TicketViewColumnKeys.Mensajes => item.MensajesOrigen.ToString(),
+            TicketViewColumnKeys.Fecha => item.FechaHoraAlta.ToString("dd/MM/yyyy HH:mm"),
+            _ => string.Empty
+        };
+        return new MarkupString(System.Net.WebUtility.HtmlEncode(text));
+    }
+
+    private string CurrentUserName => AppUserSession.GetCurrentUserName(string.Empty).Trim();
+
+    private string BuildDetailSubtitle()
+        => _detail is null ? string.Empty : $"{DisplayOrFallback(_detail.ClienteNombre, _detail.ContactoNombre, "Sin contacto")} · {_detail.EstadoNombre} · {RenderPriority(_detail.Prioridad)}";
+
+    private static TicketViewSettingsDto BuildDefaultViewSettings()
+        => new()
+        {
+            AgruparPor = TicketViewGroupKeys.Estado,
+            Columnas =
+            [
+                new() { Key = TicketViewColumnKeys.Numero, Label = "Nro.", Visible = true, Order = 0 },
+                new() { Key = TicketViewColumnKeys.Titulo, Label = "Ticket", Visible = true, Order = 1 },
+                new() { Key = TicketViewColumnKeys.Prioridad, Label = "Prioridad", Visible = true, Order = 2 },
+                new() { Key = TicketViewColumnKeys.Estado, Label = "Etapa", Visible = true, Order = 3 },
+                new() { Key = TicketViewColumnKeys.Asignado, Label = "Asignado", Visible = true, Order = 4 },
+                new() { Key = TicketViewColumnKeys.Cliente, Label = "Cliente", Visible = true, Order = 5 },
+                new() { Key = TicketViewColumnKeys.Contacto, Label = "Contacto", Visible = false, Order = 6 },
+                new() { Key = TicketViewColumnKeys.Mensajes, Label = "Mensajes", Visible = true, Order = 7 },
+                new() { Key = TicketViewColumnKeys.Fecha, Label = "Fecha", Visible = true, Order = 8 }
+            ]
+        };
+
+    private static List<TicketViewColumnDto> CloneColumns(IEnumerable<TicketViewColumnDto> columns)
+        => columns.OrderBy(c => c.Order).Select(c => new TicketViewColumnDto { Key = c.Key, Label = c.Label, Visible = c.Visible, Order = c.Order }).ToList();
+
+    private static string RenderPriority(int priority)
+        => priority switch
+        {
+            >= 3 => "Alta",
+            2 => "Media",
+            1 => "Baja",
+            _ => "Sin prioridad"
+        };
+
+    private static string DisplayOrFallback(params string?[] values)
+        => values.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x))?.Trim() ?? string.Empty;
+
+    private static string GetAttachmentUrl(long idAdjunto)
+        => $"/api/conversaciones/adjuntos/{idAdjunto}";
+
+    private static string GetAttachmentDownloadUrl(long idAdjunto)
+        => $"/api/conversaciones/adjuntos/{idAdjunto}?download=1";
+
+    private static bool IsImageAttachment(TicketAdjuntoOrigenDto adjunto)
+        => string.Equals(adjunto.TipoArchivo, "IMAGE", StringComparison.OrdinalIgnoreCase)
+           || adjunto.MimeType.StartsWith("image/", StringComparison.OrdinalIgnoreCase);
+
+    private static string GetAttachmentLabel(TicketAdjuntoOrigenDto adjunto)
+        => string.IsNullOrWhiteSpace(adjunto.NombreArchivo) ? "Adjunto" : adjunto.NombreArchivo;
+
+    private void SetFeedback(AppUiMessage? message)
+        => _feedback = message;
+
+    private static string GetFeedbackClass(AppUiMessage message)
+        => message.Severity switch
+        {
+            AppUiFeedbackSeverity.Success => "editor-msg--ok",
+            AppUiFeedbackSeverity.Info => "editor-msg--ok",
+            AppUiFeedbackSeverity.Warning => "editor-msg--warning",
+            _ => "editor-msg--error"
+        };
+
+    private sealed class TicketGridGroup
+    {
+        public string Label { get; init; } = string.Empty;
+        public bool ShowHeader { get; init; }
+        public List<TicketGridItemDto> Items { get; init; } = [];
+    }
+}

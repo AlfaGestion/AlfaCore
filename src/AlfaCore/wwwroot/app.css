@@ -3513,6 +3513,58 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
     z-index: 3;
 }
 
+.conversations-ticket-selection {
+    background: rgba(20, 184, 166, .12);
+    border-bottom-color: rgba(45, 212, 191, .28);
+    color: #99f6e4;
+}
+
+.message-ticket-selector {
+    align-self: center;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+    border: 1px solid rgba(45, 212, 191, .28);
+    background: rgba(15, 23, 42, .62);
+    cursor: pointer;
+}
+
+.message-ticket-selector input {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--color-secondary);
+}
+
+.message-card--ticket-selected {
+    border-color: rgba(45, 212, 191, .68) !important;
+    box-shadow: 0 0 0 2px rgba(45, 212, 191, .12);
+}
+
+.conversations-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 900;
+    background: rgba(2, 6, 23, .48);
+    backdrop-filter: blur(3px);
+}
+
+.conversations-modal {
+    position: fixed;
+    z-index: 901;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: min(560px, calc(100vw - 2rem));
+}
+
+.tickets-from-conversation-form {
+    display: grid;
+    gap: .8rem;
+}
+
 .conversations-page--odoo .conversations-thread-shell {
     position: relative;
     z-index: 1;
@@ -9408,6 +9460,250 @@ html[data-theme="light"] .interfaces-bulkbar {
     border: 2px solid rgba(15, 23, 42, .35);
     border-radius: 999px;
     background: linear-gradient(180deg, rgba(34, 211, 238, .88), rgba(14, 165, 233, .72));
+}
+
+.app-card__icon--tickets {
+    background: linear-gradient(135deg, #06b6d4, #10b981);
+}
+
+.tickets-page {
+    gap: .95rem;
+}
+
+.tickets-hero {
+    align-items: center;
+    margin-bottom: .25rem;
+}
+
+.tickets-page .panel-card {
+    border-radius: 16px;
+    padding: 1rem 1.05rem;
+}
+
+.tickets-toolbar {
+    display: grid;
+    gap: .9rem;
+}
+
+.tickets-view-switch {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .55rem;
+}
+
+.tickets-filters {
+    display: grid;
+    grid-template-columns: minmax(240px, 1fr) repeat(3, minmax(140px, .45fr)) auto auto;
+    gap: .75rem;
+    align-items: end;
+}
+
+.tickets-closed-filter {
+    align-self: center;
+    min-height: 42px;
+}
+
+.tickets-kanban {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(220px, 1fr));
+    gap: .85rem;
+    align-items: start;
+    overflow-x: auto;
+    padding-bottom: .25rem;
+}
+
+.tickets-kanban-column {
+    min-width: 220px;
+    border: 1px solid var(--color-border);
+    border-radius: 14px;
+    background: rgba(15, 23, 42, .26);
+}
+
+.tickets-kanban-column__head {
+    min-height: 46px;
+    display: flex;
+    align-items: center;
+    gap: .55rem;
+    padding: .75rem .85rem;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.tickets-kanban-column__head small {
+    margin-left: auto;
+    color: var(--color-muted);
+    font-weight: 700;
+}
+
+.tickets-state-dot {
+    width: .55rem;
+    height: .55rem;
+    border-radius: 999px;
+    flex: 0 0 auto;
+}
+
+.tickets-kanban-column__body {
+    display: grid;
+    gap: .65rem;
+    padding: .75rem;
+}
+
+.tickets-card {
+    display: grid;
+    gap: .65rem;
+    padding: .85rem;
+    border: 1px solid rgba(148, 163, 184, .14);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, .035);
+    cursor: pointer;
+    transition: border-color .18s ease, transform .18s ease, background .18s ease;
+}
+
+.tickets-card:hover {
+    transform: translateY(-1px);
+    border-color: rgba(45, 212, 191, .35);
+    background: rgba(20, 184, 166, .07);
+}
+
+.tickets-card__head,
+.tickets-card__footer,
+.tickets-message__meta {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: .75rem;
+}
+
+.tickets-card__head strong {
+    overflow-wrap: anywhere;
+}
+
+.tickets-card__head span {
+    color: #facc15;
+    font-size: .8rem;
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+.tickets-card__meta {
+    display: grid;
+    gap: .32rem;
+    color: var(--color-muted);
+    font-size: .82rem;
+}
+
+.tickets-tags,
+.tickets-attachments {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .4rem;
+}
+
+.tickets-tags span {
+    padding: .2rem .5rem;
+    border: 1px solid currentColor;
+    border-radius: 999px;
+    font-size: .72rem;
+    font-weight: 700;
+}
+
+.tickets-card__footer {
+    color: var(--color-muted);
+    font-size: .78rem;
+}
+
+.tickets-editor-grid,
+.tickets-detail-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(260px, .35fr);
+    gap: .9rem;
+}
+
+.tickets-editor-main,
+.tickets-editor-side,
+.tickets-message-list,
+.tickets-activity {
+    display: grid;
+    gap: .8rem;
+}
+
+.tickets-message,
+.tickets-activity__item {
+    padding: .85rem;
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, .025);
+}
+
+.tickets-message p,
+.tickets-activity__item p {
+    margin: .45rem 0 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.tickets-message__meta span,
+.tickets-activity__item span {
+    color: var(--color-muted);
+    font-size: .78rem;
+}
+
+.tickets-attachment {
+    display: inline-flex;
+    align-items: center;
+    gap: .45rem;
+    max-width: 100%;
+    padding: .4rem .55rem;
+    border: 1px solid var(--color-border);
+    border-radius: 10px;
+    color: var(--color-text);
+    text-decoration: none;
+}
+
+.tickets-attachment--image {
+    display: grid;
+    width: min(220px, 100%);
+}
+
+.tickets-attachment--image img {
+    width: 100%;
+    max-height: 160px;
+    object-fit: cover;
+    border-radius: 8px;
+}
+
+.tickets-table td {
+    cursor: pointer;
+}
+
+html[data-theme="light"] .tickets-kanban-column,
+html[data-theme="light"] .tickets-card,
+html[data-theme="light"] .tickets-message,
+html[data-theme="light"] .tickets-activity__item {
+    background: rgba(248, 250, 252, .9);
+}
+
+@media (max-width: 1100px) {
+    .tickets-filters,
+    .tickets-editor-grid,
+    .tickets-detail-layout {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 768px) {
+    .tickets-page .page-intro,
+    .tickets-card__head,
+    .tickets-card__footer,
+    .tickets-message__meta {
+        display: grid;
+        align-items: stretch;
+    }
+
+    .tickets-page .actions,
+    .tickets-page .btn {
+        width: 100%;
+        justify-content: center;
+    }
 }
 
 .contactos-page .usuarios-editor__actions {

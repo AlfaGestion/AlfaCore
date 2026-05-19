@@ -54,6 +54,7 @@ public class Program
         builder.Services.AddScoped<ICostosService, CostosService>();
         builder.Services.AddScoped<IConversacionesService, ConversacionesService>();
         builder.Services.AddScoped<IConversacionesConfigService, ConversacionesConfigService>();
+        builder.Services.AddScoped<ITicketsService, TicketsService>();
         builder.Services.AddScoped<IInterfacesService, InterfacesService>();
         builder.Services.AddScoped<IInterfacesConfigService, InterfacesConfigService>();
         builder.Services.AddScoped<IActualizacionesService, ActualizacionesService>();
