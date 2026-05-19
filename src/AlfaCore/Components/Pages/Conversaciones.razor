@@ -1307,14 +1307,14 @@
             }
         }
 
-        if (_selectedConversationId.HasValue && _replyEnterHandlerConversationId != _selectedConversationId)
+        if (_selectedConversationId.HasValue && _selectedConversation is not null && !IsWhatsAppWindowExpired)
         {
             _dotNetRef ??= DotNetObjectReference.Create(this);
-            _replyEnterHandlerConversationId = _selectedConversationId;
 
             try
             {
-                await JS.InvokeVoidAsync("conversacionesUi.bindReplyEnter", _replyTextArea, _dotNetRef);
+                var bound = await JS.InvokeAsync<bool>("conversacionesUi.bindReplyEnter", _replyTextArea, _dotNetRef);
+                _replyEnterHandlerConversationId = bound ? _selectedConversationId : null;
             }
             catch
             {
