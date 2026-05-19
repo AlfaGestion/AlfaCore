@@ -354,7 +354,7 @@ public sealed class ConversacionesService(
                 LEFT JOIN dbo.V_TA_Tecnicos t
                     ON t.IdTecnico = m.IdTecnicoAutor
                 WHERE m.IdConversacion = @IdConversacion
-                ORDER BY m.FechaHora ASC, m.IdMensaje ASC
+                ORDER BY m.IdMensaje ASC
             """;
 
             var items = new List<ConversacionMensajeDto>();
@@ -3526,9 +3526,27 @@ public sealed class ConversacionesService(
     private static DateTime ParseUnixTimestamp(string? value)
     {
         if (long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var unix))
-            return DateTimeOffset.FromUnixTimeSeconds(unix).LocalDateTime;
+            return TimeZoneInfo.ConvertTimeFromUtc(
+                DateTimeOffset.FromUnixTimeSeconds(unix).UtcDateTime,
+                ResolveBusinessTimeZone());
 
         return DateTime.Now;
+    }
+
+    private static TimeZoneInfo ResolveBusinessTimeZone()
+    {
+        try
+        {
+            return TimeZoneInfo.FindSystemTimeZoneById("Argentina Standard Time");
+        }
+        catch (TimeZoneNotFoundException)
+        {
+            return TimeZoneInfo.Local;
+        }
+        catch (InvalidTimeZoneException)
+        {
+            return TimeZoneInfo.Local;
+        }
     }
 
     private static void ApplyWhatsAppWindow(ConversacionInboxItemDto item)
