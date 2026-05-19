@@ -9,7 +9,7 @@
 
 <PageTitle>Tickets de asistencia | Alfa Gestión</PageTitle>
 
-<section class="page-grid tickets-page tickets-page--odoo">
+<section class="page-grid tickets-page tickets-page--odoo" @onclick="DismissTransientFeedback">
     <section class="tickets-odoo-header">
         <div>
             <h2 class="tickets-odoo-header__title">Servicio de soporte - Tickets de asistencia</h2>
@@ -514,6 +514,7 @@
     private List<TicketGridItemDto> _listItems = [];
     private TicketDetailDto? _detail;
     private AppUiMessage? _feedback;
+    private DateTime _feedbackSetAtUtc = DateTime.MinValue;
     private TicketUpdateRequest _form = new();
     private string _newNote = string.Empty;
     private int _pagedTotal;
@@ -576,6 +577,7 @@
     protected override async Task OnInitializedAsync()
     {
         AppUserSession.StateChanged += OnAppUserSessionChanged;
+        Nav.LocationChanged += OnLocationChanged;
         ApplyStartupQuery();
         await EnsureViewSettingsLoadedAsync();
         await CargarLookupsAsync();
@@ -587,6 +589,7 @@
     public void Dispose()
     {
         AppUserSession.StateChanged -= OnAppUserSessionChanged;
+        Nav.LocationChanged -= OnLocationChanged;
         _ = DisposeEditorAsync();
     }
 
@@ -609,6 +612,12 @@
             await EnsureViewSettingsLoadedAsync(force: true);
             StateHasChanged();
         });
+    }
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        if (IsTransientFeedback())
+            _feedback = null;
     }
 
     private void ApplyStartupQuery()
@@ -1116,7 +1125,24 @@
         => string.IsNullOrWhiteSpace(adjunto.NombreArchivo) ? "Adjunto" : adjunto.NombreArchivo;
 
     private void SetFeedback(AppUiMessage? message)
-        => _feedback = message;
+    {
+        _feedback = message;
+        _feedbackSetAtUtc = message is null ? DateTime.MinValue : DateTime.UtcNow;
+    }
+
+    private void DismissTransientFeedback()
+    {
+        if (!IsTransientFeedback())
+            return;
+
+        if (DateTime.UtcNow - _feedbackSetAtUtc < TimeSpan.FromMilliseconds(350))
+            return;
+
+        _feedback = null;
+    }
+
+    private bool IsTransientFeedback()
+        => _feedback?.Severity is AppUiFeedbackSeverity.Success or AppUiFeedbackSeverity.Info;
 
     private void ClearErrorFeedback()
     {
