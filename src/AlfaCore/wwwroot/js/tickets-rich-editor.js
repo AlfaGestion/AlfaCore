@@ -5,6 +5,7 @@ const allowedTags = new Set([
 
 const allowedClasses = new Set([
     'ticket-editor-banner',
+    'ticket-editor-banner__icon',
     'ticket-editor-banner--info',
     'ticket-editor-banner--success',
     'ticket-editor-banner--warning',
@@ -14,7 +15,12 @@ const allowedClasses = new Set([
     'ticket-editor-index',
     'ticket-editor-media',
     'ticket-editor-stars',
-    'ticket-editor-todo'
+    'ticket-editor-todo',
+    'bi',
+    'bi-info-circle-fill',
+    'bi-check-circle-fill',
+    'bi-exclamation-triangle-fill',
+    'bi-x-octagon-fill'
 ]);
 
 export function setHtml(editor, html) {
@@ -88,16 +94,16 @@ export function runCommand(editor, command) {
             insertHtml('<details open><summary>Resumen</summary><p>Contenido del detalle...</p></details><p><br></p>');
             break;
         case 'infoBanner':
-            insertHtml('<div class="ticket-editor-banner ticket-editor-banner--info"><strong>Información</strong><p>Mensaje informativo...</p></div><p><br></p>');
+            insertHtml('<div class="ticket-editor-banner ticket-editor-banner--info"><i class="bi bi-info-circle-fill ticket-editor-banner__icon"></i><p>Mensaje informativo...</p></div><p><br></p>');
             break;
         case 'successBanner':
-            insertHtml('<div class="ticket-editor-banner ticket-editor-banner--success"><strong>Éxito</strong><p>Resultado correcto...</p></div><p><br></p>');
+            insertHtml('<div class="ticket-editor-banner ticket-editor-banner--success"><i class="bi bi-check-circle-fill ticket-editor-banner__icon"></i><p>Resultado correcto...</p></div><p><br></p>');
             break;
         case 'warningBanner':
-            insertHtml('<div class="ticket-editor-banner ticket-editor-banner--warning"><strong>Advertencia</strong><p>Revisar este punto...</p></div><p><br></p>');
+            insertHtml('<div class="ticket-editor-banner ticket-editor-banner--warning"><i class="bi bi-exclamation-triangle-fill ticket-editor-banner__icon"></i><p>Revisar este punto...</p></div><p><br></p>');
             break;
         case 'dangerBanner':
-            insertHtml('<div class="ticket-editor-banner ticket-editor-banner--danger"><strong>Peligro</strong><p>Punto crítico...</p></div><p><br></p>');
+            insertHtml('<div class="ticket-editor-banner ticket-editor-banner--danger"><i class="bi bi-x-octagon-fill ticket-editor-banner__icon"></i><p>Punto crítico...</p></div><p><br></p>');
             break;
         case 'codeBlock':
             insertHtml('<pre><code>Detalle técnico</code></pre><p><br></p>');
