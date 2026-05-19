@@ -11,7 +11,7 @@
 
 <PageTitle>Conversaciones | Alfa Gestión</PageTitle>
 
-<section class="page-grid conversations-page conversations-page--odoo">
+<section class="page-grid conversations-page conversations-page--odoo" @onclick="DismissConversationNoticesAsync">
     @if (_loadError is not null)
     {
         <div class="panel-card empty-state">
@@ -331,7 +331,7 @@
 
                     @if (_conversationError is not null)
                     {
-                        <div class="conversations-error">@_conversationError</div>
+                        <div class="conversations-error conversations-notice @GetConversationNoticeLeavingClass()">@_conversationError</div>
                     }
 
                     @if (IsWhatsAppWindowExpired)
@@ -797,11 +797,11 @@
 
                     @if (_actionMessage is not null)
                     {
-                        <div class="conversations-inline conversations-inline--ok">@_actionMessage</div>
+                        <div class="conversations-inline conversations-inline--ok conversations-notice @GetConversationNoticeLeavingClass()">@_actionMessage</div>
                     }
                     @if (_actionError is not null)
                     {
-                        <div class="conversations-inline conversations-inline--error">@_actionError</div>
+                        <div class="conversations-inline conversations-inline--error conversations-notice @GetConversationNoticeLeavingClass()">@_actionError</div>
                     }
                 }
             </aside>
@@ -953,7 +953,7 @@
             </div>
             @if (_nuevoHiloError is not null)
             {
-                <div class="conversations-error">@_nuevoHiloError</div>
+                <div class="conversations-error conversations-notice @GetConversationNoticeLeavingClass()">@_nuevoHiloError</div>
             }
             <div class="modal-card__actions">
                 <button type="button" class="btn btn--primary" @onclick="CrearHiloInternoAsync" disabled="_busyAction">
@@ -1004,7 +1004,7 @@
         </div>
         @if (!string.IsNullOrWhiteSpace(_ticketError))
         {
-            <div class="conversations-error">@_ticketError</div>
+            <div class="conversations-error conversations-notice @GetConversationNoticeLeavingClass()">@_ticketError</div>
         }
         <div class="tickets-from-conversation-form">
             <div class="field">
@@ -1088,6 +1088,9 @@
     private string? _conversationError;
     private string? _actionMessage;
     private string? _actionError;
+    private bool _noticeLeaving;
+    private DateTime _noticeSetAtUtc = DateTime.MinValue;
+    private string _noticeSignature = string.Empty;
     private string _replyText = string.Empty;
     private string _internalNoteText = string.Empty;
     private string _assignmentTechnicianId = string.Empty;
@@ -3172,6 +3175,54 @@
 
     private void CloseAttachmentPreview()
         => _previewAttachment = null;
+
+    private async Task DismissConversationNoticesAsync()
+    {
+        var signature = BuildNoticeSignature();
+        if (string.IsNullOrWhiteSpace(signature))
+        {
+            _noticeLeaving = false;
+            _noticeSignature = string.Empty;
+            _noticeSetAtUtc = DateTime.MinValue;
+            return;
+        }
+
+        if (!string.Equals(signature, _noticeSignature, StringComparison.Ordinal))
+        {
+            _noticeSignature = signature;
+            _noticeSetAtUtc = DateTime.UtcNow;
+            _noticeLeaving = false;
+            return;
+        }
+
+        if (_noticeLeaving || DateTime.UtcNow - _noticeSetAtUtc < TimeSpan.FromMilliseconds(350))
+            return;
+
+        _noticeLeaving = true;
+        StateHasChanged();
+        await Task.Delay(180);
+        _conversationError = null;
+        _actionMessage = null;
+        _actionError = null;
+        _nuevoHiloError = null;
+        _ticketError = null;
+        _noticeLeaving = false;
+        _noticeSignature = string.Empty;
+        _noticeSetAtUtc = DateTime.MinValue;
+    }
+
+    private string GetConversationNoticeLeavingClass()
+        => _noticeLeaving ? "is-leaving" : string.Empty;
+
+    private string BuildNoticeSignature()
+        => string.Join("|", new[]
+        {
+            _conversationError,
+            _actionMessage,
+            _actionError,
+            _nuevoHiloError,
+            _ticketError
+        }.Where(x => !string.IsNullOrWhiteSpace(x)));
 
     private static string GetAttachmentUrl(ConversacionAdjuntoDto adjunto)
         => $"/api/conversaciones/adjuntos/{adjunto.IdAdjunto}";

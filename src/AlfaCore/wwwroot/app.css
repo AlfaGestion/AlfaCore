@@ -6040,6 +6040,16 @@ html[data-theme="light"] .consulta-table tr:hover td {
     transform: translateY(-4px);
 }
 
+.conversations-notice {
+    animation: editor-msg-fade-in .18s ease-out both;
+    transition: opacity .18s ease, transform .18s ease;
+}
+
+.conversations-notice.is-leaving {
+    opacity: 0;
+    transform: translateY(-4px);
+}
+
 @keyframes editor-msg-fade-in {
     from {
         opacity: 0;

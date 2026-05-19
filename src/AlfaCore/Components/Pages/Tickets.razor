@@ -10,7 +10,7 @@
 
 <PageTitle>Tickets de asistencia | Alfa Gestión</PageTitle>
 
-<section class="page-grid tickets-page tickets-page--odoo" @onclick="DismissTransientFeedback">
+<section class="page-grid tickets-page tickets-page--odoo" @onclick="DismissFeedbackAsync">
     <section class="tickets-odoo-header">
         <div>
             <h2 class="tickets-odoo-header__title">Servicio de soporte - Tickets de asistencia</h2>
@@ -28,7 +28,7 @@
     @if (_feedback is not null)
     {
         <section class="panel-card">
-            <div class="editor-msg @GetFeedbackClass(_feedback)">
+            <div class="editor-msg editor-msg--animated @GetFeedbackClass(_feedback) @(_feedbackLeaving ? "is-leaving" : string.Empty)">
                 <div>
                     <strong>@_feedback.Title</strong>
                     <p>@_feedback.Message</p>
@@ -572,6 +572,7 @@
     private List<TicketGridItemDto> _listItems = [];
     private TicketDetailDto? _detail;
     private AppUiMessage? _feedback;
+    private bool _feedbackLeaving;
     private DateTime _feedbackSetAtUtc = DateTime.MinValue;
     private TicketUpdateRequest _form = new();
     private string _newNote = string.Empty;
@@ -691,8 +692,7 @@
 
     private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
     {
-        if (IsTransientFeedback())
-            _feedback = null;
+        _ = InvokeAsync(DismissFeedbackAsync);
     }
 
     private void ApplyStartupQuery()
@@ -1472,24 +1472,26 @@
     private void SetFeedback(AppUiMessage? message)
     {
         _feedback = message;
+        _feedbackLeaving = false;
         _feedbackSetAtUtc = message is null ? DateTime.MinValue : DateTime.UtcNow;
     }
 
-    private void DismissTransientFeedback()
+    private async Task DismissFeedbackAsync()
     {
         _showSearchPanel = false;
 
-        if (!IsTransientFeedback())
+        if (_feedback is null || _feedbackLeaving)
             return;
 
         if (DateTime.UtcNow - _feedbackSetAtUtc < TimeSpan.FromMilliseconds(350))
             return;
 
+        _feedbackLeaving = true;
+        StateHasChanged();
+        await Task.Delay(180);
         _feedback = null;
+        _feedbackLeaving = false;
     }
-
-    private bool IsTransientFeedback()
-        => _feedback?.Severity is AppUiFeedbackSeverity.Success or AppUiFeedbackSeverity.Info;
 
     private void ClearErrorFeedback()
     {
