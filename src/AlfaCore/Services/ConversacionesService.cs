@@ -130,6 +130,8 @@ public sealed class ConversacionesService(
                     ISNULL(c.ResumenUltimoMensaje, ''),
                     ISNULL(ultMsg.FechaHoraVisible, c.FechaHoraUltimoMensaje),
                     ultCliente.FechaHoraUltimoMensajeCliente,
+                    ultCliente.IdUltimoMensajeCliente,
+                    ISNULL(clienteConteo.CantidadMensajesCliente, 0),
                     ISNULL(c.Archivada, 0),
                     ISNULL(c.Bloqueada, 0)
                 FROM dbo.CONV_CONVERSACIONES c
@@ -142,12 +144,20 @@ public sealed class ConversacionesService(
                 LEFT JOIN dbo.V_TA_Tecnicos t
                     ON t.IdTecnico = c.IdTecnico
                 OUTER APPLY (
-                    SELECT TOP (1) {ConversationMessageVisibleDateSql("m")} AS FechaHoraUltimoMensajeCliente
+                    SELECT TOP (1)
+                        m.IdMensaje AS IdUltimoMensajeCliente,
+                        {ConversationMessageVisibleDateSql("m")} AS FechaHoraUltimoMensajeCliente
                     FROM dbo.CONV_MENSAJES m
                     WHERE m.IdConversacion = c.IdConversacion
                       AND m.Direction = N'ENTRANTE'
                     ORDER BY m.IdMensaje DESC
                 ) ultCliente
+                OUTER APPLY (
+                    SELECT COUNT(1) AS CantidadMensajesCliente
+                    FROM dbo.CONV_MENSAJES m
+                    WHERE m.IdConversacion = c.IdConversacion
+                      AND m.Direction = N'ENTRANTE'
+                ) clienteConteo
                 OUTER APPLY (
                     SELECT TOP (1)
                         msg.IdMensaje,
@@ -232,10 +242,12 @@ public sealed class ConversacionesService(
                     IdTecnico = GetString(rd, 9),
                     TecnicoNombre = GetString(rd, 10),
                     ResumenUltimoMensaje = GetString(rd, 11),
-                    FechaHoraUltimoMensaje = rd.IsDBNull(12) ? DateTime.MinValue : rd.GetDateTime(12),
-                    FechaHoraUltimoMensajeCliente = rd.IsDBNull(13) ? null : rd.GetDateTime(13),
-                    Archivada = !rd.IsDBNull(14) && rd.GetBoolean(14),
-                    Bloqueada = !rd.IsDBNull(15) && rd.GetBoolean(15)
+                    FechaHoraUltimoMensaje = rd.IsDBNull(12) ? DateTime.MinValue : NormalizeStoredConversationTime(rd.GetDateTime(12)),
+                    FechaHoraUltimoMensajeCliente = rd.IsDBNull(13) ? null : NormalizeStoredConversationTime(rd.GetDateTime(13)),
+                    IdUltimoMensajeCliente = rd.IsDBNull(14) ? null : rd.GetInt64(14),
+                    CantidadMensajesCliente = rd.IsDBNull(15) ? 0 : rd.GetInt32(15),
+                    Archivada = !rd.IsDBNull(16) && rd.GetBoolean(16),
+                    Bloqueada = !rd.IsDBNull(17) && rd.GetBoolean(17)
                 });
             }
 
@@ -332,9 +344,9 @@ public sealed class ConversacionesService(
                 Prioridad = GetString(rd, 17),
                 Archivada = !rd.IsDBNull(18) && rd.GetBoolean(18),
                 Bloqueada = !rd.IsDBNull(19) && rd.GetBoolean(19),
-                FechaHoraPrimerMensaje = rd.IsDBNull(20) ? null : rd.GetDateTime(20),
-                FechaHoraUltimoMensaje = rd.IsDBNull(21) ? DateTime.MinValue : rd.GetDateTime(21),
-                FechaHoraUltimoMensajeCliente = rd.IsDBNull(22) ? null : rd.GetDateTime(22),
+                FechaHoraPrimerMensaje = rd.IsDBNull(20) ? null : NormalizeStoredConversationTime(rd.GetDateTime(20)),
+                FechaHoraUltimoMensaje = rd.IsDBNull(21) ? DateTime.MinValue : NormalizeStoredConversationTime(rd.GetDateTime(21)),
+                FechaHoraUltimoMensajeCliente = rd.IsDBNull(22) ? null : NormalizeStoredConversationTime(rd.GetDateTime(22)),
                 FechaHoraCierre = rd.IsDBNull(23) ? null : rd.GetDateTime(23)
             };
 
@@ -394,7 +406,7 @@ public sealed class ConversacionesService(
                     EstadoEnvio = GetString(rd, 7),
                     Texto = GetString(rd, 8),
                     PayloadJson = GetString(rd, 14),
-                    FechaHora = rd.IsDBNull(9) ? DateTime.MinValue : rd.GetDateTime(9),
+                    FechaHora = rd.IsDBNull(9) ? DateTime.MinValue : NormalizeStoredConversationTime(rd.GetDateTime(9)),
                     UsuarioAutor = GetString(rd, 10),
                     SistemaAutor = GetString(rd, 11),
                     IdTecnicoAutor = GetString(rd, 12),
@@ -415,7 +427,7 @@ public sealed class ConversacionesService(
 
             var conversation = await RequireConversationAsync(request.IdConversacion, token);
             var isInternal = string.Equals(conversation.Canal, "INTERNO", StringComparison.OrdinalIgnoreCase);
-            var now = DateTime.Now;
+            var now = BusinessNow();
 
             string initialState;
             ConversacionWhatsAppConfigDto? whatsAppConfig = null;
@@ -502,7 +514,7 @@ public sealed class ConversacionesService(
                 throw new InvalidOperationException("Este mensaje todavía no tiene ID de WhatsApp para reaccionar.");
 
             var config = await conversacionesConfigService.GetWhatsAppConfigAsync(token);
-            var now = DateTime.Now;
+            var now = BusinessNow();
             var text = $"Reacción enviada: {emoji}";
 
             var messageId = await InsertMessageAsync(new PendingMessageInsert
@@ -806,7 +818,7 @@ public sealed class ConversacionesService(
             if (!string.Equals(template.EstadoMeta, "APPROVED", StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException("Solo se pueden enviar plantillas aprobadas por Meta.");
 
-            var now = DateTime.Now;
+            var now = BusinessNow();
             var previewText = RenderTemplatePreview(template.CuerpoTexto, values);
 
             var messageId = await InsertMessageAsync(new PendingMessageInsert
@@ -904,7 +916,7 @@ public sealed class ConversacionesService(
 
             var conversation = await RequireConversationAsync(request.IdConversacion, token);
             var text = request.Texto.Trim();
-            var now = DateTime.Now;
+            var now = BusinessNow();
 
             var messageId = await InsertMessageAsync(new PendingMessageInsert
             {
@@ -1284,7 +1296,7 @@ public sealed class ConversacionesService(
             var isInternal = string.Equals(conversation.Canal, "INTERNO", StringComparison.OrdinalIgnoreCase);
             var messageType = NormalizeMessageType(request.TipoArchivo);
             var mimeType = NormalizeOutgoingMime(request.MimeType, request.NombreArchivo, messageType);
-            var now = DateTime.Now;
+            var now = BusinessNow();
             string initialState;
             ConversacionWhatsAppConfigDto? whatsAppConfig = null;
 
@@ -3216,7 +3228,7 @@ public sealed class ConversacionesService(
                     var type = message.TryGetProperty("type", out var typeProp) ? typeProp.GetString() ?? "unknown" : "unknown";
                     var messageId = message.TryGetProperty("id", out var idProp) ? idProp.GetString() ?? string.Empty : string.Empty;
                     var replyToMessageId = ExtractIncomingReplyToMessageId(message, type);
-                    var timestamp = message.TryGetProperty("timestamp", out var tsProp) ? ParseUnixTimestamp(tsProp.GetString()) : DateTime.Now;
+                    var timestamp = message.TryGetProperty("timestamp", out var tsProp) ? ParseUnixTimestamp(tsProp.GetString()) : BusinessNow();
                     var text = ExtractIncomingText(message, type);
                     var attachments = ExtractIncomingAttachments(message, type);
 
@@ -3581,21 +3593,49 @@ public sealed class ConversacionesService(
                 DateTimeOffset.FromUnixTimeSeconds(unix).UtcDateTime,
                 ResolveBusinessTimeZone()));
 
-        return DateTime.Now;
+        return BusinessNow();
     }
 
     private static DateTime NormalizeIncomingTimestamp(DateTime value)
     {
-        var now = DateTime.Now;
-        return value > now.AddMinutes(10) ? now : value;
+        var businessValue = ToBusinessTime(value);
+        var now = BusinessNow();
+        return businessValue > now.AddMinutes(10) ? now : businessValue;
     }
+
+    private static DateTime NormalizeStoredConversationTime(DateTime value)
+    {
+        if (value == DateTime.MinValue)
+            return value;
+
+        var businessValue = ToBusinessTime(value);
+        var now = BusinessNow();
+
+        return businessValue > now.AddMinutes(10) ? now : businessValue;
+    }
+
+    private static DateTime ToBusinessTime(DateTime value)
+    {
+        if (value.Kind == DateTimeKind.Utc)
+            return TimeZoneInfo.ConvertTimeFromUtc(value, ResolveBusinessTimeZone());
+
+        return DateTime.SpecifyKind(value, DateTimeKind.Unspecified);
+    }
+
+    private static DateTime BusinessNow()
+        => TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, ResolveBusinessTimeZone());
 
     private static string ConversationMessageVisibleDateSql(string alias)
         => $"""
            CASE
                WHEN {alias}.Direction = N'ENTRANTE'
-                    AND {alias}.FechaHora > DATEADD(minute, 10, GETDATE())
-                   THEN DATEADD(hour, DATEDIFF(hour, {alias}.FechaHora, GETDATE()), {alias}.FechaHora)
+                    AND {alias}.FechaHora > DATEADD(minute, 10, {BusinessNowSql})
+                   THEN CASE
+                       WHEN {alias}.FechaHora_Grabacion IS NOT NULL
+                            AND {alias}.FechaHora_Grabacion <= DATEADD(minute, 10, {BusinessNowSql})
+                           THEN {alias}.FechaHora_Grabacion
+                       ELSE {BusinessNowSql}
+                   END
                WHEN {alias}.Direction = N'ENTRANTE'
                     AND {alias}.FechaHora_Grabacion IS NOT NULL
                     AND {alias}.FechaHora > DATEADD(minute, 10, {alias}.FechaHora_Grabacion)
@@ -3603,6 +3643,8 @@ public sealed class ConversacionesService(
                ELSE {alias}.FechaHora
            END
            """;
+
+    private const string BusinessNowSql = "CAST(SYSDATETIMEOFFSET() AT TIME ZONE 'Argentina Standard Time' AS datetime)";
 
     private static TimeZoneInfo ResolveBusinessTimeZone()
     {
@@ -3630,7 +3672,7 @@ public sealed class ConversacionesService(
         }
 
         item.FechaHoraVencimientoVentanaWhatsApp = lastClientMessage.AddHours(24);
-        item.VentanaWhatsAppActiva = DateTime.Now <= item.FechaHoraVencimientoVentanaWhatsApp.Value;
+        item.VentanaWhatsAppActiva = BusinessNow() <= item.FechaHoraVencimientoVentanaWhatsApp.Value;
     }
 
     private static void ApplyWhatsAppWindow(ConversacionDetalleDto item)
@@ -3644,7 +3686,7 @@ public sealed class ConversacionesService(
         }
 
         item.FechaHoraVencimientoVentanaWhatsApp = lastClientMessage.AddHours(24);
-        item.VentanaWhatsAppActiva = DateTime.Now <= item.FechaHoraVencimientoVentanaWhatsApp.Value;
+        item.VentanaWhatsAppActiva = BusinessNow() <= item.FechaHoraVencimientoVentanaWhatsApp.Value;
     }
 
     private static ConversacionPlantillaDto ReadTemplate(SqlDataReader rd)

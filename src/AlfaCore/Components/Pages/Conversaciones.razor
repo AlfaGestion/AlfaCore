@@ -1491,13 +1491,17 @@
             if (!previousInbox.TryGetValue(item.IdConversacion, out var previous))
                 continue;
 
-            if (item.FechaHoraUltimoMensajeCliente is not DateTime currentClientMessage
-                || previous.FechaHoraUltimoMensajeCliente is not DateTime previousClientMessage
-                || currentClientMessage <= previousClientMessage)
+            if (item.IdUltimoMensajeCliente is not long currentClientMessageId
+                || previous.IdUltimoMensajeCliente is not long previousClientMessageId
+                || currentClientMessageId <= previousClientMessageId)
                 continue;
 
+            var difference = item.CantidadMensajesCliente > previous.CantidadMensajesCliente
+                ? item.CantidadMensajesCliente - previous.CantidadMensajesCliente
+                : 1;
+
             _newMessagesByConversation[item.IdConversacion] =
-                _newMessagesByConversation.TryGetValue(item.IdConversacion, out var count) ? count + 1 : 1;
+                _newMessagesByConversation.TryGetValue(item.IdConversacion, out var count) ? count + difference : difference;
         }
     }
 
