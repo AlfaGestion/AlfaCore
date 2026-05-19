@@ -468,10 +468,20 @@ public sealed class ConversacionesService(
 
             if (!isInternal && whatsAppConfig?.IsConfiguredForSend == true)
             {
-                var sendResult = await SendToWhatsAppAsync(whatsAppConfig, conversation.TelefonoWhatsApp, request.Texto.Trim(), request.WhatsAppReplyToMessageId, token);
-                whatsAppMessageId = sendResult.WhatsAppMessageId;
-                finalState = sendResult.EstadoEnvio;
-                payload = sendResult.PayloadJson;
+                try
+                {
+                    var sendResult = await SendToWhatsAppAsync(whatsAppConfig, conversation.TelefonoWhatsApp, request.Texto.Trim(), request.WhatsAppReplyToMessageId, token);
+                    whatsAppMessageId = sendResult.WhatsAppMessageId;
+                    finalState = sendResult.EstadoEnvio;
+                    payload = sendResult.PayloadJson;
+                }
+                catch (Exception ex)
+                {
+                    await UpdateMessageDeliveryAsync(messageId, "ERROR_ENVIO", string.Empty, BuildDeliveryErrorPayload(ex), token);
+                    await RefreshConversationAsync(request.IdConversacion, now, request.Texto.Trim(), token);
+
+                    throw new InvalidOperationException("No se pudo enviar el mensaje por WhatsApp. QuedÃ³ marcado con error en la conversaciÃ³n.", ex);
+                }
             }
 
             await UpdateMessageDeliveryAsync(messageId, finalState, whatsAppMessageId, payload, token);
@@ -1073,10 +1083,17 @@ public sealed class ConversacionesService(
 
             var webhookLogId = await InsertWebhookLogAsync(payloadJson, headerJson, token);
             var parsedMessages = ParseIncomingMessages(request.Payload.RootElement);
+            var parsedStatuses = ParseIncomingStatuses(request.Payload.RootElement);
             var whatsAppConfig = parsedMessages.Any(x => x.Attachments.Count > 0)
                 ? await conversacionesConfigService.GetWhatsAppConfigAsync(token)
                 : null;
             var processed = 0;
+
+            foreach (var status in parsedStatuses)
+            {
+                await UpdateWhatsAppMessageStatusAsync(status, token);
+                processed++;
+            }
 
             foreach (var incoming in parsedMessages)
             {
@@ -1119,7 +1136,7 @@ public sealed class ConversacionesService(
             return new ConversacionWebhookResultDto
             {
                 IdWebhookLog = webhookLogId,
-                MensajesDetectados = parsedMessages.Count,
+                MensajesDetectados = parsedMessages.Count + parsedStatuses.Count,
                 MensajesProcesados = processed
             };
         }, "No se pudo procesar el webhook de WhatsApp.", ct);
@@ -2348,6 +2365,36 @@ public sealed class ConversacionesService(
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
+    private async Task UpdateWhatsAppMessageStatusAsync(IncomingWhatsAppStatus status, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(status.WhatsAppMessageId))
+            return;
+
+        const string sql = """
+            UPDATE dbo.CONV_MENSAJES
+            SET
+                EstadoEnvio = CASE
+                    WHEN EstadoEnvio = N'LEIDO' THEN EstadoEnvio
+                    WHEN EstadoEnvio = N'ENTREGADO' AND @EstadoEnvio IN (N'ENVIADO_META') THEN EstadoEnvio
+                    ELSE @EstadoEnvio
+                END,
+                PayloadJson = CASE
+                    WHEN @PayloadJson IS NULL OR LTRIM(RTRIM(@PayloadJson)) = '' THEN PayloadJson
+                    ELSE @PayloadJson
+                END,
+                FechaHora_Modificacion = GETDATE()
+            WHERE WhatsAppMessageId = @WhatsAppMessageId
+            """;
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@WhatsAppMessageId", status.WhatsAppMessageId);
+        cmd.Parameters.AddWithValue("@EstadoEnvio", status.EstadoEnvio);
+        cmd.Parameters.AddWithValue("@PayloadJson", DbNullable(status.RawJson));
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
     private async Task UpdateTemplateMetaStateAsync(
         long idPlantilla,
         string estadoLocal,
@@ -2488,10 +2535,10 @@ public sealed class ConversacionesService(
         if (!response.IsSuccessStatusCode)
             throw new HttpRequestException($"Meta devolvio {(int)response.StatusCode}: {responseBody}");
 
-        var messageId = ExtractSentMessageId(responseBody);
+        var messageId = RequireSentMessageId(responseBody, "enviar plantilla");
         return new WhatsAppSendResult
         {
-            EstadoEnvio = string.IsNullOrWhiteSpace(messageId) ? "ENVIADO" : "ENVIADO_META",
+            EstadoEnvio = "ENVIADO_META",
             WhatsAppMessageId = messageId,
             PayloadJson = responseBody
         };
@@ -2522,10 +2569,10 @@ public sealed class ConversacionesService(
         if (!response.IsSuccessStatusCode)
             throw new InvalidOperationException($"Meta devolvió {(int)response.StatusCode}: {responseBody}");
 
-        var messageId = ExtractSentMessageId(responseBody);
+        var messageId = RequireSentMessageId(responseBody, "enviar mensaje");
         return new WhatsAppSendResult
         {
-            EstadoEnvio = string.IsNullOrWhiteSpace(messageId) ? "ENVIADO" : "ENVIADO_META",
+            EstadoEnvio = "ENVIADO_META",
             WhatsAppMessageId = messageId,
             PayloadJson = responseBody
         };
@@ -2557,10 +2604,10 @@ public sealed class ConversacionesService(
         if (!response.IsSuccessStatusCode)
             throw new InvalidOperationException($"Meta devolvio {(int)response.StatusCode} al enviar reacción: {responseBody}");
 
-        var messageId = ExtractSentMessageId(responseBody);
+        var messageId = RequireSentMessageId(responseBody, "enviar reacciÃ³n");
         return new WhatsAppSendResult
         {
-            EstadoEnvio = string.IsNullOrWhiteSpace(messageId) ? "ENVIADO" : "ENVIADO_META",
+            EstadoEnvio = "ENVIADO_META",
             WhatsAppMessageId = messageId,
             PayloadJson = responseBody
         };
@@ -2604,10 +2651,10 @@ public sealed class ConversacionesService(
         if (!response.IsSuccessStatusCode)
             throw new InvalidOperationException($"Meta devolvio {(int)response.StatusCode} al enviar adjunto: {responseBody}");
 
-        var messageId = ExtractSentMessageId(responseBody);
+        var messageId = RequireSentMessageId(responseBody, "enviar adjunto");
         return new WhatsAppSendResult
         {
-            EstadoEnvio = string.IsNullOrWhiteSpace(messageId) ? "ENVIADO" : "ENVIADO_META",
+            EstadoEnvio = "ENVIADO_META",
             WhatsAppMessageId = messageId,
             PayloadJson = JsonSerializer.Serialize(new
             {
@@ -3257,6 +3304,63 @@ public sealed class ConversacionesService(
         return items;
     }
 
+    private static List<IncomingWhatsAppStatus> ParseIncomingStatuses(JsonElement root)
+    {
+        var items = new List<IncomingWhatsAppStatus>();
+
+        if (!root.TryGetProperty("entry", out var entries) || entries.ValueKind != JsonValueKind.Array)
+            return items;
+
+        foreach (var entry in entries.EnumerateArray())
+        {
+            if (!entry.TryGetProperty("changes", out var changes) || changes.ValueKind != JsonValueKind.Array)
+                continue;
+
+            foreach (var change in changes.EnumerateArray())
+            {
+                if (!change.TryGetProperty("value", out var value))
+                    continue;
+
+                if (!value.TryGetProperty("statuses", out var statuses) || statuses.ValueKind != JsonValueKind.Array)
+                    continue;
+
+                foreach (var status in statuses.EnumerateArray())
+                {
+                    var messageId = status.TryGetProperty("id", out var idProp) ? idProp.GetString() ?? string.Empty : string.Empty;
+                    var rawStatus = status.TryGetProperty("status", out var statusProp) ? statusProp.GetString() ?? string.Empty : string.Empty;
+                    if (string.IsNullOrWhiteSpace(messageId))
+                        continue;
+
+                    items.Add(new IncomingWhatsAppStatus
+                    {
+                        WhatsAppMessageId = messageId,
+                        EstadoEnvio = NormalizeWhatsAppDeliveryStatus(rawStatus, status),
+                        RawJson = status.GetRawText()
+                    });
+                }
+            }
+        }
+
+        return items;
+    }
+
+    private static string NormalizeWhatsAppDeliveryStatus(string status, JsonElement payload)
+    {
+        if (payload.TryGetProperty("errors", out var errors)
+            && errors.ValueKind == JsonValueKind.Array
+            && errors.GetArrayLength() > 0)
+            return "ERROR_ENVIO";
+
+        return status.Trim().ToLowerInvariant() switch
+        {
+            "sent" => "ENVIADO_META",
+            "delivered" => "ENTREGADO",
+            "read" => "LEIDO",
+            "failed" => "ERROR_ENVIO",
+            _ => "ENVIADO_META"
+        };
+    }
+
     private static List<IncomingWhatsAppAttachment> ExtractIncomingAttachments(JsonElement message, string type)
     {
         var normalizedType = NormalizeMessageType(type);
@@ -3591,6 +3695,23 @@ public sealed class ConversacionesService(
 
         return string.Empty;
     }
+
+    private static string RequireSentMessageId(string responseBody, string operation)
+    {
+        var messageId = ExtractSentMessageId(responseBody);
+        if (!string.IsNullOrWhiteSpace(messageId))
+            return messageId;
+
+        throw new InvalidOperationException($"Meta aceptÃ³ la solicitud de {operation}, pero no devolviÃ³ id de mensaje. Respuesta: {responseBody}");
+    }
+
+    private static string BuildDeliveryErrorPayload(Exception ex)
+        => JsonSerializer.Serialize(new
+        {
+            Error = ex.GetBaseException().Message,
+            Type = ex.GetBaseException().GetType().FullName,
+            FechaHora = BusinessNow()
+        });
 
     private static DateTime ParseUnixTimestamp(string? value)
     {
@@ -4272,6 +4393,13 @@ public sealed class ConversacionesService(
         public string Text { get; init; } = string.Empty;
         public string RawJson { get; init; } = string.Empty;
         public List<IncomingWhatsAppAttachment> Attachments { get; init; } = [];
+    }
+
+    private sealed class IncomingWhatsAppStatus
+    {
+        public string WhatsAppMessageId { get; init; } = string.Empty;
+        public string EstadoEnvio { get; init; } = string.Empty;
+        public string RawJson { get; init; } = string.Empty;
     }
 
     private sealed class PendingMediaHydration
