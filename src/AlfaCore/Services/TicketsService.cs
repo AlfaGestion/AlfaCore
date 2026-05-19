@@ -191,7 +191,17 @@ public sealed class TicketsService(
             }
 
             var termClauses = terms.Select((_, index) =>
-                $"ISNULL(t.Titulo, '') LIKE @Term{index} OR ISNULL(CAST(t.Descripcion AS nvarchar(max)), '') LIKE @Term{index}").ToList();
+                $"""
+                ISNULL(t.Titulo, '') LIKE @Term{index}
+                OR ISNULL(CAST(t.Descripcion AS nvarchar(max)), '') LIKE @Term{index}
+                OR EXISTS (
+                    SELECT 1
+                    FROM dbo.TICK_TICKET_MENSAJES tmTerm
+                    INNER JOIN dbo.CONV_MENSAJES mTerm ON mTerm.IdMensaje = tmTerm.IdMensaje
+                    WHERE tmTerm.IdTicket = t.IdTicket
+                      AND ISNULL(mTerm.Texto, '') LIKE @Term{index}
+                )
+                """).ToList();
             var textSql = termClauses.Count == 0 ? "1 = 0" : string.Join(" OR ", termClauses);
 
             var sql = $"""
@@ -251,11 +261,13 @@ public sealed class TicketsService(
 
             await HydrateEtiquetasAsync(cn, candidates.Select(x => x.Ticket).ToList(), token);
             var firstMessages = await GetFirstTicketMessagesAsync(cn, candidates.Select(x => x.Ticket.IdTicket).ToList(), token);
+            var sourceTexts = await GetTicketSourceTextsAsync(cn, candidates.Select(x => x.Ticket.IdTicket).ToList(), token);
 
             var matches = candidates
                 .Select(candidate => BuildRelatedMatch(
                     candidate.Ticket,
                     candidate.Description,
+                    sourceTexts.TryGetValue(candidate.Ticket.IdTicket, out var sourceText) ? sourceText : string.Empty,
                     terms,
                     request,
                     firstMessages.TryGetValue(candidate.Ticket.IdTicket, out var preview) ? preview : string.Empty))
@@ -790,6 +802,7 @@ public sealed class TicketsService(
     private static TicketRelatedMatchDto BuildRelatedMatch(
         TicketGridItemDto ticket,
         string normalizedDescription,
+        string normalizedSourceText,
         IReadOnlyList<string> terms,
         TicketRelatedSearchRequest request,
         string firstMessageText)
@@ -797,7 +810,8 @@ public sealed class TicketsService(
         var normalizedTitle = NormalizeTextForSearch(ticket.Titulo);
         var matchedTerms = terms
             .Where(term => normalizedTitle.Contains(term, StringComparison.OrdinalIgnoreCase)
-                           || normalizedDescription.Contains(term, StringComparison.OrdinalIgnoreCase))
+                           || normalizedDescription.Contains(term, StringComparison.OrdinalIgnoreCase)
+                           || normalizedSourceText.Contains(term, StringComparison.OrdinalIgnoreCase))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
@@ -816,6 +830,8 @@ public sealed class TicketsService(
                 score += 22;
             if (normalizedDescription.Contains(term, StringComparison.OrdinalIgnoreCase))
                 score += 12;
+            if (normalizedSourceText.Contains(term, StringComparison.OrdinalIgnoreCase))
+                score += 26;
         }
 
         if (matchedTerms.Count >= 2)
@@ -871,6 +887,48 @@ public sealed class TicketsService(
         }
 
         return result;
+    }
+
+    private static async Task<Dictionary<long, string>> GetTicketSourceTextsAsync(SqlConnection cn, IReadOnlyList<long> ticketIds, CancellationToken ct)
+    {
+        var ids = ticketIds.Where(id => id > 0).Distinct().ToList();
+        if (ids.Count == 0)
+            return [];
+
+        var parameterNames = ids.Select((_, index) => $"@SourceTextTicket{index}").ToArray();
+        var sql = $"""
+            SELECT
+                tm.IdTicket,
+                ISNULL(m.Texto, '')
+            FROM dbo.TICK_TICKET_MENSAJES tm
+            INNER JOIN dbo.CONV_MENSAJES m ON m.IdMensaje = tm.IdMensaje
+            WHERE tm.IdTicket IN ({string.Join(", ", parameterNames)})
+              AND NULLIF(LTRIM(RTRIM(ISNULL(m.Texto, ''))), '') IS NOT NULL
+            ORDER BY tm.IdTicket, tm.Orden, m.FechaHora, m.IdMensaje;
+            """;
+
+        var grouped = new Dictionary<long, List<string>>();
+        await using var cmd = new SqlCommand(sql, cn);
+        for (var i = 0; i < ids.Count; i++)
+            cmd.Parameters.AddWithValue(parameterNames[i], ids[i]);
+
+        await using var rd = await cmd.ExecuteReaderAsync(ct);
+        while (await rd.ReadAsync(ct))
+        {
+            var idTicket = rd.GetInt64(0);
+            var text = GetString(rd, 1);
+            if (!grouped.TryGetValue(idTicket, out var list))
+            {
+                list = [];
+                grouped[idTicket] = list;
+            }
+
+            list.Add(text);
+        }
+
+        return grouped.ToDictionary(
+            pair => pair.Key,
+            pair => NormalizeTextForSearch(string.Join(" ", pair.Value)));
     }
 
     private static IReadOnlyList<string> ExtractRelevantTerms(string? text)
