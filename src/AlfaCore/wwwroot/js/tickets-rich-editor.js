@@ -11,6 +11,8 @@ const allowedClasses = new Set([
     'ticket-editor-banner--warning',
     'ticket-editor-banner--danger',
     'ticket-editor-button',
+    'ticket-editor-emoji-picker',
+    'ticket-editor-emoji-picker__grid',
     'ticket-editor-file',
     'ticket-editor-file--document',
     'ticket-editor-file--media',
@@ -24,6 +26,9 @@ const allowedClasses = new Set([
     'ticket-editor-media',
     'ticket-editor-stars',
     'ticket-editor-todo',
+    'ticket-link-popover',
+    'ticket-link-popover__actions',
+    'ticket-link-popover__fields',
     'bi',
     'bi-check-circle-fill',
     'bi-check2-circle',
@@ -36,6 +41,30 @@ const allowedClasses = new Set([
 ]);
 
 const wiredEditors = new WeakSet();
+const savedRanges = new WeakMap();
+
+const emojiCodePoints = [
+    0x1F600, 0x1F603, 0x1F604, 0x1F601, 0x1F606, 0x1F605, 0x1F602, 0x1F642,
+    0x1F643, 0x1F609, 0x1F60A, 0x1F607, 0x1F970, 0x1F60D, 0x1F929, 0x1F618,
+    0x1F617, 0x1F61A, 0x1F619, 0x1F972, 0x1F60B, 0x1F61B, 0x1F61C, 0x1F92A,
+    0x1F61D, 0x1F911, 0x1F917, 0x1F92D, 0x1F92B, 0x1F914, 0x1F910, 0x1F928,
+    0x1F610, 0x1F611, 0x1F636, 0x1F60F, 0x1F612, 0x1F644, 0x1F62C, 0x1F62E,
+    0x1F925, 0x1F60C, 0x1F614, 0x1F62A, 0x1F924, 0x1F634, 0x1F637, 0x1F912,
+    0x1F915, 0x1F922, 0x1F92E, 0x1F927, 0x1F975, 0x1F976, 0x1F974, 0x1F635,
+    0x1F92F, 0x1F920, 0x1F973, 0x1F978, 0x1F60E, 0x1F913, 0x1F9D0, 0x1F615,
+    0x1F61F, 0x1F641, 0x2639, 0x1F62F, 0x1F632, 0x1F633, 0x1F97A, 0x1F626,
+    0x1F627, 0x1F628, 0x1F630, 0x1F625, 0x1F622, 0x1F62D, 0x1F631, 0x1F616,
+    0x1F623, 0x1F61E, 0x1F613, 0x1F629, 0x1F62B, 0x1F971, 0x1F624, 0x1F621,
+    0x1F620, 0x1F92C, 0x1F608, 0x1F47F, 0x1F480, 0x1F44B, 0x1F91A, 0x1F590,
+    0x270B, 0x1F596, 0x1F44C, 0x1F90C, 0x1F90F, 0x270C, 0x1F91E, 0x1F91F,
+    0x1F918, 0x1F919, 0x1F448, 0x1F449, 0x1F446, 0x1F447, 0x261D, 0x1F44D,
+    0x1F44E, 0x270A, 0x1F44A, 0x1F91B, 0x1F91C, 0x1F44F, 0x1F64C, 0x1F450,
+    0x1F932, 0x1F91D, 0x1F64F, 0x270D, 0x1F485, 0x1F4AA, 0x1F9E0, 0x1F9D1,
+    0x1F468, 0x1F469, 0x1F4BB, 0x1F527, 0x1F4A1, 0x1F4CC, 0x1F4CE, 0x1F4C4,
+    0x1F4C1, 0x1F4E7, 0x1F4DE, 0x1F4AC, 0x1F4A5, 0x1F4AF, 0x2705, 0x274C,
+    0x26A0, 0x2757, 0x2753, 0x2139, 0x2B50, 0x1F525, 0x1F680, 0x1F6E0,
+    0x1F4B0, 0x1F4C8, 0x1F4C9, 0x1F512, 0x1F513, 0x1F50D, 0x1F514, 0x23F0
+];
 
 export function setHtml(editor, html) {
     if (!editor) {
@@ -134,10 +163,10 @@ export function runCommand(editor, command) {
             insertHtml(buildFilePickerBlock('document'));
             break;
         case 'link':
-            createLink();
+            showLinkPopover(editor, 'link');
             break;
         case 'button':
-            insertHtml('<a class="ticket-editor-button" href="https://" target="_blank" rel="noopener">Boton</a><p><br></p>');
+            showLinkPopover(editor, 'button');
             break;
         case 'article':
             insertHtml('<div class="ticket-editor-file">Articulo: referencia interna</div><p><br></p>');
@@ -149,7 +178,7 @@ export function runCommand(editor, command) {
             insertHtml('<div class="ticket-editor-index"><strong>Indice</strong><ol><li>Seccion 1</li><li>Seccion 2</li></ol></div><p><br></p>');
             break;
         case 'emoji':
-            insertHtml('&#128578;');
+            showEmojiPicker(editor);
             break;
         case 'stars3':
             insertHtml('<span class="ticket-editor-stars">&#9733;&#9733;&#9733;&#9734;&#9734;</span>');
@@ -170,27 +199,146 @@ function insertHtml(html) {
     document.execCommand('insertHTML', false, html);
 }
 
-function createLink() {
-    const selection = window.getSelection();
-    const selectedText = selection && selection.toString() ? selection.toString() : 'Texto del enlace';
-    const url = window.prompt('URL del enlace', 'https://');
-    if (!url) {
-        return;
-    }
-
-    insertHtml(`<a href="${escapeAttribute(url)}" target="_blank" rel="noopener">${escapeHtml(selectedText)}</a>`);
-}
-
 function ensureEditableBase(editor) {
     if (!editor.innerHTML.trim()) {
         editor.innerHTML = '<p><br></p>';
     }
 }
 
+function saveCurrentRange(editor) {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || !editor.contains(selection.anchorNode)) {
+        return;
+    }
+
+    savedRanges.set(editor, selection.getRangeAt(0).cloneRange());
+}
+
+function restoreSavedRange(editor) {
+    const range = savedRanges.get(editor);
+    if (!range) {
+        editor.focus();
+        return;
+    }
+
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+    editor.focus();
+}
+
+function showLinkPopover(editor, mode) {
+    saveCurrentRange(editor);
+    closeEditorPopup(editor);
+
+    const selectedText = getSelectedText(editor) || getSavedRangeText(editor);
+    const config = mode === 'button'
+        ? { title: 'Boton', textLabel: 'Texto del boton', defaultText: selectedText || 'Abrir enlace' }
+        : { title: 'Enlace', textLabel: 'Texto del enlace', defaultText: selectedText || 'Texto del enlace' };
+
+    const popup = document.createElement('div');
+    popup.className = 'ticket-link-popover';
+    popup.innerHTML = `
+        <strong>${config.title}</strong>
+        <div class="ticket-link-popover__fields">
+            <label>${config.textLabel}<input type="text" data-ticket-link-text value="${escapeAttribute(config.defaultText)}"></label>
+            <label>URL<input type="url" data-ticket-link-url value="https://"></label>
+        </div>
+        <div class="ticket-link-popover__actions">
+            <button type="button" class="btn btn--ghost btn--sm" data-ticket-popup-cancel>Cancelar</button>
+            <button type="button" class="btn btn--primary btn--sm" data-ticket-popup-apply>Insertar</button>
+        </div>`;
+
+    editor.parentElement.appendChild(popup);
+
+    const textInput = popup.querySelector('[data-ticket-link-text]');
+    const urlInput = popup.querySelector('[data-ticket-link-url]');
+    popup.querySelector('[data-ticket-popup-cancel]').addEventListener('click', () => popup.remove());
+    popup.querySelector('[data-ticket-popup-apply]').addEventListener('click', () => {
+        const text = textInput.value.trim() || config.defaultText;
+        const url = normalizeUrl(urlInput.value.trim());
+        if (!url) {
+            urlInput.focus();
+            return;
+        }
+
+        restoreSavedRange(editor);
+        const className = mode === 'button' ? ' class="ticket-editor-button"' : '';
+        insertHtml(`<a${className} href="${escapeAttribute(url)}" target="_blank" rel="noopener">${escapeHtml(text)}</a>`);
+        if (mode === 'button') {
+            insertHtml('<p><br></p>');
+        }
+        popup.remove();
+        dispatchEditorInput(editor);
+    });
+
+    urlInput.focus();
+    urlInput.select();
+}
+
+function showEmojiPicker(editor) {
+    saveCurrentRange(editor);
+    closeEditorPopup(editor);
+
+    const popup = document.createElement('div');
+    popup.className = 'ticket-editor-emoji-picker';
+    popup.innerHTML = `
+        <strong>Emoji</strong>
+        <div class="ticket-editor-emoji-picker__grid">
+            ${emojiCodePoints.map((codePoint) => `<button type="button" data-ticket-emoji="${codePoint}">${String.fromCodePoint(codePoint)}</button>`).join('')}
+        </div>`;
+
+    editor.parentElement.appendChild(popup);
+    popup.querySelectorAll('[data-ticket-emoji]').forEach((button) => {
+        button.addEventListener('click', () => {
+            restoreSavedRange(editor);
+            insertHtml(String.fromCodePoint(Number(button.dataset.ticketEmoji)));
+            popup.remove();
+            dispatchEditorInput(editor);
+        });
+    });
+}
+
+function closeEditorPopup(editor) {
+    editor.parentElement
+        ?.querySelectorAll('.ticket-link-popover, .ticket-editor-emoji-picker')
+        .forEach((popup) => popup.remove());
+}
+
+function getSelectedText(editor) {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || !editor.contains(selection.anchorNode)) {
+        return '';
+    }
+
+    return selection.toString().trim();
+}
+
+function getSavedRangeText(editor) {
+    const range = savedRanges.get(editor);
+    return range ? range.toString().trim() : '';
+}
+
+function normalizeUrl(value) {
+    if (!value) {
+        return '';
+    }
+
+    if (/^(https?:\/\/|mailto:|tel:|#|\/)/i.test(value)) {
+        return value;
+    }
+
+    return `https://${value}`;
+}
+
 function wireFilePickers(editor) {
     if (wiredEditors.has(editor)) {
         return;
     }
+
+    ['keyup', 'mouseup', 'focus', 'input'].forEach((eventName) => {
+        editor.addEventListener(eventName, () => saveCurrentRange(editor));
+    });
 
     editor.addEventListener('click', (event) => {
         const button = event.target?.closest?.('[data-ticket-file-picker="true"]');
