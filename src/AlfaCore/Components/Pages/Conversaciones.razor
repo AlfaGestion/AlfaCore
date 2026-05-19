@@ -1217,7 +1217,7 @@
     private bool _showContextTickets;
     private List<TicketRelatedMatchDto> _contextTicketMatches = [];
 
-    private static readonly TimeSpan PollingInterval = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan PollingInterval = TimeSpan.FromSeconds(3);
     private static readonly string[] QuickReactionEmojis = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
     private static readonly IReadOnlyList<EmojiGroup> EmojiGroups =
     [
@@ -1452,7 +1452,7 @@
         {
             var previousInbox = _inbox.ToDictionary(x => x.IdConversacion);
             var refreshedInbox = (await ConversacionesSvc.GetInboxAsync(_filters)).ToList();
-            TrackInboxNewMessages(previousInbox, refreshedInbox, showLoading);
+            TrackInboxNewMessages(previousInbox, refreshedInbox);
             _inbox = refreshedInbox;
             StoreChannelCache(_canalActivo);
 
@@ -1477,10 +1477,9 @@
 
     private void TrackInboxNewMessages(
         IReadOnlyDictionary<long, ConversacionInboxItemDto> previousInbox,
-        IReadOnlyList<ConversacionInboxItemDto> refreshedInbox,
-        bool showLoading)
+        IReadOnlyList<ConversacionInboxItemDto> refreshedInbox)
     {
-        if (showLoading || previousInbox.Count == 0)
+        if (previousInbox.Count == 0)
             return;
 
         foreach (var item in refreshedInbox)
@@ -1489,7 +1488,12 @@
                 continue;
 
             if (!previousInbox.TryGetValue(item.IdConversacion, out var previous))
+            {
+                if (item.IdUltimoMensajeCliente is not null && item.CantidadMensajesCliente > 0)
+                    _newMessagesByConversation[item.IdConversacion] = Math.Max(1, item.CantidadMensajesCliente);
+
                 continue;
+            }
 
             if (item.IdUltimoMensajeCliente is not long currentClientMessageId
                 || previous.IdUltimoMensajeCliente is not long previousClientMessageId
@@ -2021,8 +2025,7 @@
            || _uploadingAudio
            || _recording
            || _showNuevoHilo
-           || _showTemplatePanel
-           || IsWhatsAppWindowExpired;
+           || _showTemplatePanel;
 
     private async Task<bool> IsThreadNearBottomAsync()
     {
