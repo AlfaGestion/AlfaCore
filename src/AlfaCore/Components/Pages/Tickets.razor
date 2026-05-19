@@ -1,5 +1,6 @@
 @page "/tickets"
 @using Microsoft.AspNetCore.WebUtilities
+@inject IJSRuntime JS
 @inject AlfaCore.Services.ITicketsService TicketsSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
@@ -191,12 +192,13 @@
                     <div class="field">
                         <label>Descripción</label>
                         <div class="tickets-rich-editor">
-                            <textarea rows="8"
-                                      value="@_form.Descripcion"
-                                      disabled="@_saving"
-                                      placeholder="Escribí / para comandos"
-                                      @oninput="OnDescripcionInput"
-                                      @onfocus="OnDescripcionFocus"></textarea>
+                            <div class="tickets-rich-editor__surface"
+                                 @ref="_descriptionEditor"
+                                 contenteditable="@(!_saving)"
+                                 data-placeholder="Escribí / para comandos"
+                                 @oninput="OnDescripcionChangedAsync"
+                                 @onkeyup="OnDescripcionChangedAsync"
+                                 @onfocus="OnDescripcionFocusAsync"></div>
                             <div class="tickets-rich-editor__bar">
                                 @foreach (var option in ToolbarDescriptionCommands)
                                 {
@@ -204,7 +206,7 @@
                                             class="tickets-rich-editor__tool"
                                             title="@option.Title"
                                             disabled="@_saving"
-                                            @onclick="() => InsertDescriptionCommand(option)">
+                                            @onclick="() => RunDescriptionCommandAsync(option)">
                                         <i class="bi @option.Icon"></i>
                                     </button>
                                 }
@@ -225,7 +227,7 @@
                                             <span>@group.Key</span>
                                             @foreach (var option in group)
                                             {
-                                                <button type="button" @onclick="() => InsertDescriptionCommand(option)">
+                                                <button type="button" @onclick="() => RunDescriptionCommandAsync(option)">
                                                     <i class="bi @option.Icon"></i>
                                                     <span>
                                                         <strong>@option.Title</strong>
@@ -526,35 +528,38 @@
     private TicketGridItemDto? _draggingTicket;
     private bool _ignoreNextKanbanClick;
     private bool _showDescriptionCommands;
+    private ElementReference _descriptionEditor;
+    private IJSObjectReference? _ticketsEditorJs;
+    private bool _descriptionEditorReady;
 
     private static readonly IReadOnlyList<DescriptionCommandOption> DescriptionCommands =
     [
-        new("FORMATEAR", "Título 1", "Título de sección grande", "bi-type-h1", "# Título\n\n"),
-        new("FORMATEAR", "Título 2", "Título de sección mediano", "bi-type-h2", "## Título\n\n"),
-        new("FORMATEAR", "Título 3", "Título de sección pequeño", "bi-type-h3", "### Título\n\n"),
-        new("FORMATEAR", "Texto", "Bloque de párrafo", "bi-paragraph", "Texto del párrafo...\n\n"),
-        new("ESTRUCTURA", "Separador", "Insertar un separador horizontal", "bi-dash-lg", "\n---\n\n"),
-        new("ESTRUCTURA", "Lista de viñetas", "Crear una lista simple", "bi-list-ul", "- Item\n- Item\n- Item\n"),
-        new("ESTRUCTURA", "Lista numerada", "Crear una lista numerada", "bi-list-ol", "1. Item\n2. Item\n3. Item\n"),
-        new("ESTRUCTURA", "Lista de comprobación", "Llevar seguimiento de tareas", "bi-check2-square", "- [ ] Tarea pendiente\n- [ ] Tarea pendiente\n"),
-        new("ESTRUCTURA", "Alternar lista", "Ocultar texto en secciones plegables", "bi-caret-right-square", "> Detalle plegable: resumen\n> - contenido\n"),
-        new("BANNER", "Banner de información", "Insertar un aviso informativo", "bi-info-circle-fill", "[INFO] Mensaje informativo\n\n"),
-        new("BANNER", "Banner de éxito", "Insertar un aviso de éxito", "bi-check-circle-fill", "[OK] Resultado correcto\n\n"),
-        new("BANNER", "Banner de advertencia", "Insertar un aviso de advertencia", "bi-exclamation-triangle-fill", "[ATENCIÓN] Revisar este punto\n\n"),
-        new("BANNER", "Banner de peligro", "Insertar un aviso de peligro", "bi-x-octagon-fill", "[ERROR] Punto crítico\n\n"),
-        new("BANNER", "Monoespaciado", "Insertar bloque técnico", "bi-terminal", "```\nDetalle técnico\n```\n\n"),
-        new("MEDIOS", "Medios", "Insertar imagen, icono o video", "bi-file-earmark-image", "[Medio: descripción o enlace]\n\n"),
-        new("MEDIOS", "Subir archivo", "Añadir una casilla de descarga", "bi-upload", "[Archivo: nombre - enlace]\n\n"),
-        new("MEDIOS", "Archivo", "Insertar un archivo desde Documentos", "bi-files", "[Documento: nombre]\n\n"),
-        new("NAVEGACIÓN", "Enlace", "Añadir un enlace", "bi-link-45deg", "[Texto del enlace](https://)\n\n"),
-        new("NAVEGACIÓN", "Botón", "Añadir un botón", "bi-link", "[Botón: texto -> https://]\n\n"),
-        new("NAVEGACIÓN", "Artículo", "Insertar un atajo a un artículo", "bi-newspaper", "[Artículo: referencia]\n\n"),
-        new("NAVEGACIÓN", "Cita", "Añadir una cita específica", "bi-quote", "> Cita o referencia\n\n"),
-        new("NAVEGACIÓN", "Índice", "Resaltar estructura de títulos", "bi-bookmark-fill", "[Índice]\n- Sección 1\n- Sección 2\n\n"),
-        new("WIDGET", "Emoji", "Añadir un emoji", "bi-emoji-smile", ":emoji:\n"),
-        new("WIDGET", "3 estrellas", "Insertar calificación mayor que 3", "bi-star-fill", "★★★☆☆\n"),
-        new("WIDGET", "5 estrellas", "Insertar calificación mayor que 5", "bi-star-fill", "★★★★★\n"),
-        new("HERRAMIENTAS DE IA", "Borrador IA", "Marcar texto para completar con IA", "bi-stars", "[IA: redactar respuesta]\n\n")
+        new("FORMATEAR", "Título 1", "Título de sección grande", "bi-type-h1", "h1"),
+        new("FORMATEAR", "Título 2", "Título de sección mediano", "bi-type-h2", "h2"),
+        new("FORMATEAR", "Título 3", "Título de sección pequeño", "bi-type-h3", "h3"),
+        new("FORMATEAR", "Texto", "Bloque de párrafo", "bi-paragraph", "paragraph"),
+        new("ESTRUCTURA", "Separador", "Insertar un separador horizontal", "bi-dash-lg", "separator"),
+        new("ESTRUCTURA", "Lista de viñetas", "Crear una lista simple", "bi-list-ul", "bulletList"),
+        new("ESTRUCTURA", "Lista numerada", "Crear una lista numerada", "bi-list-ol", "numberedList"),
+        new("ESTRUCTURA", "Lista de comprobación", "Llevar seguimiento de tareas", "bi-check2-square", "checkList"),
+        new("ESTRUCTURA", "Alternar lista", "Ocultar texto en secciones plegables", "bi-caret-right-square", "toggle"),
+        new("BANNER", "Banner de información", "Insertar un aviso informativo", "bi-info-circle-fill", "infoBanner"),
+        new("BANNER", "Banner de éxito", "Insertar un aviso de éxito", "bi-check-circle-fill", "successBanner"),
+        new("BANNER", "Banner de advertencia", "Insertar un aviso de advertencia", "bi-exclamation-triangle-fill", "warningBanner"),
+        new("BANNER", "Banner de peligro", "Insertar un aviso de peligro", "bi-x-octagon-fill", "dangerBanner"),
+        new("BANNER", "Monoespaciado", "Insertar bloque técnico", "bi-terminal", "codeBlock"),
+        new("MEDIOS", "Medios", "Insertar imagen, icono o video", "bi-file-earmark-image", "media"),
+        new("MEDIOS", "Subir archivo", "Añadir una casilla de descarga", "bi-upload", "upload"),
+        new("MEDIOS", "Archivo", "Insertar un archivo desde Documentos", "bi-files", "file"),
+        new("NAVEGACIÓN", "Enlace", "Añadir un enlace", "bi-link-45deg", "link"),
+        new("NAVEGACIÓN", "Botón", "Añadir un botón", "bi-link", "button"),
+        new("NAVEGACIÓN", "Artículo", "Insertar un atajo a un artículo", "bi-newspaper", "article"),
+        new("NAVEGACIÓN", "Cita", "Añadir una cita específica", "bi-quote", "quote"),
+        new("NAVEGACIÓN", "Índice", "Resaltar estructura de títulos", "bi-bookmark-fill", "index"),
+        new("WIDGET", "Emoji", "Añadir un emoji", "bi-emoji-smile", "emoji"),
+        new("WIDGET", "3 estrellas", "Insertar calificación mayor que 3", "bi-star-fill", "stars3"),
+        new("WIDGET", "5 estrellas", "Insertar calificación mayor que 5", "bi-star-fill", "stars5"),
+        new("HERRAMIENTAS DE IA", "Borrador IA", "Marcar texto para completar con IA", "bi-stars", "aiDraft")
     ];
 
     private static readonly IReadOnlyList<DescriptionCommandOption> ToolbarDescriptionCommands =
@@ -579,7 +584,22 @@
     }
 
     public void Dispose()
-        => AppUserSession.StateChanged -= OnAppUserSessionChanged;
+    {
+        AppUserSession.StateChanged -= OnAppUserSessionChanged;
+        _ = DisposeEditorAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+            _ticketsEditorJs = await JS.InvokeAsync<IJSObjectReference>("import", "/js/tickets-rich-editor.js?v=20260519");
+
+        if (_showEditor && !_descriptionEditorReady && _ticketsEditorJs is not null)
+        {
+            await _ticketsEditorJs.InvokeVoidAsync("setHtml", _descriptionEditor, _form.Descripcion ?? string.Empty);
+            _descriptionEditorReady = true;
+        }
+    }
 
     private void OnAppUserSessionChanged()
     {
@@ -698,6 +718,7 @@
         _isNew = true;
         _detail = null;
         _newNote = string.Empty;
+        _descriptionEditorReady = false;
         _form = new TicketUpdateRequest
         {
             CodigoEstado = _lookups.Estados.FirstOrDefault()?.CodigoEstado ?? TicketEstadoKeys.Nuevo,
@@ -733,6 +754,7 @@
         _isNew = false;
         _showEditor = true;
         _newNote = string.Empty;
+        _descriptionEditorReady = false;
     }
 
     private async Task AbrirTicketDesdeKanbanAsync(long idTicket)
@@ -796,45 +818,46 @@
         await BuscarAsync();
     }
 
-    private void OnDescripcionInput(ChangeEventArgs args)
+    private async Task OnDescripcionChangedAsync()
     {
-        _form.Descripcion = args.Value?.ToString() ?? string.Empty;
-        _showDescriptionCommands = ShouldShowDescriptionCommands(_form.Descripcion);
+        await SyncDescriptionFromEditorAsync();
+        if (_ticketsEditorJs is null)
+            return;
+
+        _showDescriptionCommands = await _ticketsEditorJs.InvokeAsync<bool>("shouldShowCommands", _descriptionEditor);
     }
 
-    private void OnDescripcionFocus()
-        => _showDescriptionCommands = ShouldShowDescriptionCommands(_form.Descripcion);
+    private async Task OnDescripcionFocusAsync()
+    {
+        if (_ticketsEditorJs is not null)
+            _showDescriptionCommands = await _ticketsEditorJs.InvokeAsync<bool>("shouldShowCommands", _descriptionEditor);
+    }
 
     private void ToggleDescriptionCommands()
         => _showDescriptionCommands = !_showDescriptionCommands;
 
-    private void InsertDescriptionCommand(DescriptionCommandOption option)
+    private async Task RunDescriptionCommandAsync(DescriptionCommandOption option)
     {
-        var current = _form.Descripcion ?? string.Empty;
-        var slashIndex = current.LastIndexOf('/');
-        var replaceSlash = slashIndex >= 0 && (slashIndex == 0 || char.IsWhiteSpace(current[slashIndex - 1]));
-        var prefix = replaceSlash ? current[..slashIndex] : EnsureTrailingLineBreak(current);
-        _form.Descripcion = $"{prefix}{option.Snippet}";
+        if (_ticketsEditorJs is null)
+            return;
+
+        await _ticketsEditorJs.InvokeVoidAsync("runCommand", _descriptionEditor, option.Command);
+        await SyncDescriptionFromEditorAsync();
         _showDescriptionCommands = false;
     }
 
-    private static bool ShouldShowDescriptionCommands(string? value)
+    private async Task SyncDescriptionFromEditorAsync()
     {
-        if (string.IsNullOrEmpty(value))
-            return false;
+        if (_ticketsEditorJs is null || !_descriptionEditorReady)
+            return;
 
-        var slashIndex = value.LastIndexOf('/');
-        return slashIndex >= 0
-            && (slashIndex == 0 || char.IsWhiteSpace(value[slashIndex - 1]))
-            && value[(slashIndex + 1)..].All(ch => !char.IsWhiteSpace(ch));
+        _form.Descripcion = await _ticketsEditorJs.InvokeAsync<string>("getHtml", _descriptionEditor);
     }
 
-    private static string EnsureTrailingLineBreak(string value)
+    private async Task DisposeEditorAsync()
     {
-        if (string.IsNullOrWhiteSpace(value))
-            return string.Empty;
-
-        return value.EndsWith("\n", StringComparison.Ordinal) ? value : $"{value}\n";
+        if (_ticketsEditorJs is not null)
+            await _ticketsEditorJs.DisposeAsync();
     }
 
     private async Task GuardarAsync()
@@ -842,6 +865,7 @@
         _saving = true;
         try
         {
+            await SyncDescriptionFromEditorAsync();
             if (_isNew)
             {
                 var create = new TicketCreateRequest
@@ -900,6 +924,7 @@
 
     private void ResetForm()
     {
+        _showDescriptionCommands = false;
         if (_isNew) NuevoTicket();
         else if (_detail is not null) _ = AbrirTicketAsync(_detail.IdTicket);
     }
@@ -909,6 +934,8 @@
         _showEditor = false;
         _detail = null;
         _newNote = string.Empty;
+        _showDescriptionCommands = false;
+        _descriptionEditorReady = false;
     }
 
     private async Task EnsureViewSettingsLoadedAsync(bool force = false)
@@ -1098,5 +1125,5 @@
         string Title,
         string Description,
         string Icon,
-        string Snippet);
+        string Command);
 }

@@ -9710,9 +9710,160 @@ html[data-theme="light"] .interfaces-bulkbar {
     gap: .45rem;
 }
 
-.tickets-rich-editor textarea {
+.tickets-rich-editor__surface {
     min-height: 190px;
+    width: 100%;
+    padding: .75rem .85rem;
+    border: 1px solid rgba(148, 163, 184, .18);
+    border-radius: 8px;
+    background: rgba(7, 17, 31, .72);
+    color: var(--color-text);
     font-family: inherit;
+    font-size: .95rem;
+    line-height: 1.5;
+    overflow: auto;
+}
+
+.tickets-rich-editor__surface:empty::before {
+    content: attr(data-placeholder);
+    color: rgba(148, 163, 184, .7);
+}
+
+.tickets-rich-editor__surface:focus {
+    outline: 2px solid rgba(14, 165, 233, 0.24);
+    border-color: rgba(14, 165, 233, 0.4);
+}
+
+.tickets-rich-editor__surface h1,
+.tickets-rich-editor__surface h2,
+.tickets-rich-editor__surface h3,
+.tickets-rich-editor__surface p,
+.tickets-rich-editor__surface ul,
+.tickets-rich-editor__surface ol,
+.tickets-rich-editor__surface blockquote,
+.tickets-rich-editor__surface pre,
+.tickets-rich-editor__surface details,
+.tickets-rich-editor__surface .ticket-editor-banner,
+.tickets-rich-editor__surface .ticket-editor-file,
+.tickets-rich-editor__surface .ticket-editor-media,
+.tickets-rich-editor__surface .ticket-editor-index {
+    margin: .45rem 0;
+}
+
+.tickets-rich-editor__surface h1 {
+    font-size: 1.35rem;
+    font-weight: 850;
+}
+
+.tickets-rich-editor__surface h2 {
+    font-size: 1.12rem;
+    font-weight: 800;
+}
+
+.tickets-rich-editor__surface h3 {
+    font-size: .98rem;
+    font-weight: 800;
+}
+
+.tickets-rich-editor__surface hr {
+    border: 0;
+    border-top: 1px solid rgba(148, 163, 184, .32);
+    margin: .8rem 0;
+}
+
+.tickets-rich-editor__surface ul,
+.tickets-rich-editor__surface ol {
+    padding-left: 1.25rem;
+}
+
+.tickets-rich-editor__surface .ticket-editor-todo {
+    list-style: none;
+    padding-left: .1rem;
+}
+
+.tickets-rich-editor__surface .ticket-editor-todo li {
+    display: flex;
+    gap: .5rem;
+    align-items: center;
+    min-height: 1.7rem;
+}
+
+.tickets-rich-editor__surface blockquote {
+    padding: .65rem .8rem;
+    border-left: 3px solid rgba(14, 165, 233, .65);
+    background: rgba(14, 165, 233, .08);
+    border-radius: 0 8px 8px 0;
+}
+
+.tickets-rich-editor__surface pre {
+    padding: .7rem .8rem;
+    border-radius: 8px;
+    background: rgba(2, 6, 23, .78);
+    color: #c4f1ff;
+    white-space: pre-wrap;
+}
+
+.tickets-rich-editor__surface details {
+    padding: .65rem .8rem;
+    border: 1px solid rgba(148, 163, 184, .16);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, .03);
+}
+
+.tickets-rich-editor__surface summary {
+    cursor: pointer;
+    font-weight: 800;
+}
+
+.ticket-editor-banner,
+.ticket-editor-file,
+.ticket-editor-media,
+.ticket-editor-index {
+    padding: .7rem .8rem;
+    border: 1px solid rgba(148, 163, 184, .16);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, .035);
+}
+
+.ticket-editor-banner p {
+    margin: .25rem 0 0;
+}
+
+.ticket-editor-banner--info {
+    border-color: rgba(14, 165, 233, .35);
+    background: rgba(14, 165, 233, .10);
+}
+
+.ticket-editor-banner--success {
+    border-color: rgba(16, 185, 129, .38);
+    background: rgba(16, 185, 129, .10);
+}
+
+.ticket-editor-banner--warning {
+    border-color: rgba(245, 158, 11, .42);
+    background: rgba(245, 158, 11, .11);
+}
+
+.ticket-editor-banner--danger {
+    border-color: rgba(239, 68, 68, .42);
+    background: rgba(239, 68, 68, .11);
+}
+
+.ticket-editor-button {
+    display: inline-flex;
+    align-items: center;
+    min-height: 32px;
+    padding: .38rem .7rem;
+    border-radius: 7px;
+    background: linear-gradient(135deg, var(--color-primary), var(--color-secondary));
+    color: #fff;
+    font-weight: 800;
+    text-decoration: none;
+}
+
+.ticket-editor-stars {
+    color: #facc15;
+    letter-spacing: .06em;
 }
 
 .tickets-rich-editor__bar {
