@@ -329,16 +329,25 @@
             @foreach (var state in _lookups.Estados.OrderBy(x => x.Orden))
             {
                 var items = _kanbanItems.Where(x => x.CodigoEstado == state.CodigoEstado).ToList();
-                <div class="tickets-kanban-column">
+                <div class="tickets-kanban-column"
+                     @ondragover:preventDefault="true"
+                     @ondrop="() => SoltarTicketAsync(state.CodigoEstado)">
                     <div class="tickets-kanban-column__head">
                         <span class="tickets-state-dot" style="background:@state.Color"></span>
                         <strong>@state.Nombre</strong>
                         <small>@items.Count</small>
                     </div>
-                    <div class="tickets-kanban-column__body">
+                    <div class="tickets-kanban-column__body"
+                         @ondragover:preventDefault="true"
+                         @ondrop="() => SoltarTicketAsync(state.CodigoEstado)">
                         @foreach (var item in items)
                         {
-                            <article class="tickets-card" @onclick="() => AbrirTicketAsync(item.IdTicket)">
+                            <article class="tickets-card"
+                                     draggable="true"
+                                     title="Arrastrá para cambiar de etapa"
+                                     @ondragstart="() => IniciarArrastreTicket(item)"
+                                     @ondragend="FinalizarArrastreTicket"
+                                     @onclick="() => AbrirTicketDesdeKanbanAsync(item.IdTicket)">
                                 <div class="tickets-card__head">
                                     <strong>@item.CodigoVisible @item.Titulo</strong>
                                     <span>@RenderPriority(item.Prioridad)</span>
@@ -466,6 +475,8 @@
     private bool _viewSettingsLoaded;
     private string _viewSettingsUserName = string.Empty;
     private long? _startupTicketId;
+    private TicketGridItemDto? _draggingTicket;
+    private bool _ignoreNextKanbanClick;
 
     protected override async Task OnInitializedAsync()
     {
@@ -633,6 +644,67 @@
         _isNew = false;
         _showEditor = true;
         _newNote = string.Empty;
+    }
+
+    private async Task AbrirTicketDesdeKanbanAsync(long idTicket)
+    {
+        if (_ignoreNextKanbanClick)
+        {
+            _ignoreNextKanbanClick = false;
+            return;
+        }
+
+        await AbrirTicketAsync(idTicket);
+    }
+
+    private void IniciarArrastreTicket(TicketGridItemDto item)
+    {
+        _draggingTicket = item;
+        _ignoreNextKanbanClick = false;
+    }
+
+    private void FinalizarArrastreTicket()
+    {
+        _draggingTicket = null;
+    }
+
+    private async Task SoltarTicketAsync(string codigoEstadoDestino)
+    {
+        if (_draggingTicket is null || string.IsNullOrWhiteSpace(codigoEstadoDestino))
+            return;
+
+        var ticket = _draggingTicket;
+        _draggingTicket = null;
+        _ignoreNextKanbanClick = true;
+
+        if (string.Equals(ticket.CodigoEstado, codigoEstadoDestino, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        var estadoAnterior = ticket.CodigoEstado;
+        ticket.CodigoEstado = codigoEstadoDestino;
+        ticket.EstadoNombre = _lookups.Estados.FirstOrDefault(x => string.Equals(x.CodigoEstado, codigoEstadoDestino, StringComparison.OrdinalIgnoreCase))?.Nombre ?? ticket.EstadoNombre;
+
+        var result = await UiOps.RunAsync(async () =>
+        {
+            await TicketsSvc.QuickUpdateAsync(new TicketQuickUpdateRequest
+            {
+                IdTicket = ticket.IdTicket,
+                CodigoEstado = codigoEstadoDestino,
+                UsuarioAccion = CurrentUserName
+            });
+            return true;
+        }, "No se pudo cambiar la etapa del ticket.");
+
+        if (!result.Success)
+        {
+            ticket.CodigoEstado = estadoAnterior;
+            ticket.EstadoNombre = _lookups.Estados.FirstOrDefault(x => string.Equals(x.CodigoEstado, estadoAnterior, StringComparison.OrdinalIgnoreCase))?.Nombre ?? ticket.EstadoNombre;
+            SetFeedback(result.Feedback);
+            return;
+        }
+
+        SetFeedback(AppUiMessage.Success("Etapa actualizada", "El ticket se movió correctamente."));
+        await BuscarAsync();
     }
 
     private async Task GuardarAsync()
