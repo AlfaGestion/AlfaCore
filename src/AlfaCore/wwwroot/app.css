@@ -9694,6 +9694,7 @@ html[data-theme="light"] .interfaces-bulkbar {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(260px, .35fr);
     gap: .9rem;
+    align-items: start;
 }
 
 .tickets-editor-main,
@@ -9702,6 +9703,13 @@ html[data-theme="light"] .interfaces-bulkbar {
 .tickets-activity {
     display: grid;
     gap: .65rem;
+}
+
+.tickets-editor-side {
+    align-self: start;
+    height: max-content;
+    position: sticky;
+    top: .75rem;
 }
 
 .tickets-rich-editor {
@@ -10293,6 +10301,10 @@ html[data-theme="light"] .tickets-activity__item {
     .tickets-editor-grid,
     .tickets-detail-layout {
         grid-template-columns: 1fr;
+    }
+
+    .tickets-editor-side {
+        position: static;
     }
 }
 
