@@ -5,7 +5,7 @@ public sealed class ContactosFilters
     public string Texto      { get; set; } = string.Empty;
     public bool?  Activo     { get; set; } = true;
     public bool?  TieneEmail { get; set; }
-    public bool?  TieneTelefono { get; set; }
+    public bool?  TieneCelular { get; set; }
     public bool?  TieneWhatsApp { get; set; }
     public string ProvinciaCodigo { get; set; } = string.Empty;
     public string Localidad { get; set; } = string.Empty;

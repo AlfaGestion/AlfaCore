@@ -665,7 +665,7 @@ public sealed class ContactosService(
     private static string BuildAdvancedFilterSql(string conversationMatchSql)
         => $"""
               AND (@TieneEmail IS NULL OR CASE WHEN NULLIF(LTRIM(RTRIM(ISNULL(c.email, ''))), '') IS NULL THEN CAST(0 AS bit) ELSE CAST(1 AS bit) END = @TieneEmail)
-              AND (@TieneTelefono IS NULL OR CASE WHEN NULLIF(LTRIM(RTRIM(ISNULL(c.Telefono, '') + ISNULL(c.Celular, ''))), '') IS NULL THEN CAST(0 AS bit) ELSE CAST(1 AS bit) END = @TieneTelefono)
+              AND (@TieneCelular IS NULL OR CASE WHEN NULLIF(LTRIM(RTRIM(ISNULL(c.Celular, ''))), '') IS NULL THEN CAST(0 AS bit) ELSE CAST(1 AS bit) END = @TieneCelular)
               AND (@TieneWhatsApp IS NULL OR CASE WHEN EXISTS (
                     SELECT 1
                     FROM dbo.CONV_CONVERSACIONES ccFilter
@@ -680,7 +680,7 @@ public sealed class ContactosService(
     private static void AddAdvancedFilterParameters(SqlCommand cmd, ContactosFilters filters)
     {
         cmd.Parameters.AddWithValue("@TieneEmail", filters.TieneEmail.HasValue ? filters.TieneEmail.Value : DBNull.Value);
-        cmd.Parameters.AddWithValue("@TieneTelefono", filters.TieneTelefono.HasValue ? filters.TieneTelefono.Value : DBNull.Value);
+        cmd.Parameters.AddWithValue("@TieneCelular", filters.TieneCelular.HasValue ? filters.TieneCelular.Value : DBNull.Value);
         cmd.Parameters.AddWithValue("@TieneWhatsApp", filters.TieneWhatsApp.HasValue ? filters.TieneWhatsApp.Value : DBNull.Value);
         cmd.Parameters.AddWithValue("@ProvinciaCodigo", (filters.ProvinciaCodigo ?? string.Empty).Trim().ToUpperInvariant());
         cmd.Parameters.AddWithValue("@Localidad", (filters.Localidad ?? string.Empty).Trim());

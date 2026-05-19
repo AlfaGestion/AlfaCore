@@ -83,7 +83,7 @@
                         <button type="button" class='@GetSmartOptionClass(_activoFiltro == "0")' @onclick='() => SetContactStatusFilterAsync("0")'>Inactivos</button>
                         <button type="button" class="@GetSmartOptionClass(_filters.TieneEmail == true)" @onclick='() => ToggleContactBoolFilterAsync("email")'>Con email</button>
                         <button type="button" class="@GetSmartOptionClass(_filters.TieneEmail == false)" @onclick='() => ToggleContactBoolFilterAsync("sin-email")'>Sin email</button>
-                        <button type="button" class="@GetSmartOptionClass(_filters.TieneTelefono == true)" @onclick='() => ToggleContactBoolFilterAsync("telefono")'>Con teléfono</button>
+                        <button type="button" class="@GetSmartOptionClass(_filters.TieneCelular == true)" @onclick='() => ToggleContactBoolFilterAsync("celular")'>Con celular</button>
                         <button type="button" class="@GetSmartOptionClass(_filters.TieneWhatsApp == true)" @onclick='() => ToggleContactBoolFilterAsync("whatsapp")'>Con conversación WhatsApp</button>
                     </div>
                     <div class="smart-search__column">
@@ -648,8 +648,8 @@
             case "sin-email":
                 _filters.TieneEmail = _filters.TieneEmail == false ? null : false;
                 break;
-            case "telefono":
-                _filters.TieneTelefono = _filters.TieneTelefono == true ? null : true;
+            case "celular":
+                _filters.TieneCelular = _filters.TieneCelular == true ? null : true;
                 break;
             case "whatsapp":
                 _filters.TieneWhatsApp = _filters.TieneWhatsApp == true ? null : true;
@@ -699,8 +699,8 @@
             case "email":
                 _filters.TieneEmail = null;
                 break;
-            case "telefono":
-                _filters.TieneTelefono = null;
+            case "celular":
+                _filters.TieneCelular = null;
                 break;
             case "whatsapp":
                 _filters.TieneWhatsApp = null;
@@ -733,7 +733,7 @@
         if (key == "contactables")
         {
             _activoFiltro = "1";
-            _filters.TieneTelefono = true;
+            _filters.TieneCelular = true;
             _filters.TieneEmail = null;
             _filters.TieneWhatsApp = null;
         }
@@ -741,7 +741,7 @@
         {
             _activoFiltro = "1";
             _filters.TieneWhatsApp = true;
-            _filters.TieneTelefono = null;
+            _filters.TieneCelular = null;
             _filters.TieneEmail = null;
         }
 
@@ -994,7 +994,7 @@
         _filters.Texto = string.Empty;
         _activoFiltro = "1";
         _filters.TieneEmail = null;
-        _filters.TieneTelefono = null;
+        _filters.TieneCelular = null;
         _filters.TieneWhatsApp = null;
         _filters.ProvinciaCodigo = string.Empty;
         _filters.Localidad = string.Empty;
@@ -1262,8 +1262,8 @@
             chips.Add(new("activo", _activoFiltro == "1" ? "Activos" : "Inactivos"));
         if (_filters.TieneEmail.HasValue)
             chips.Add(new("email", _filters.TieneEmail.Value ? "Con email" : "Sin email"));
-        if (_filters.TieneTelefono.HasValue)
-            chips.Add(new("telefono", _filters.TieneTelefono.Value ? "Con teléfono" : "Sin teléfono"));
+        if (_filters.TieneCelular.HasValue)
+            chips.Add(new("celular", _filters.TieneCelular.Value ? "Con celular" : "Sin celular"));
         if (_filters.TieneWhatsApp.HasValue)
             chips.Add(new("whatsapp", _filters.TieneWhatsApp.Value ? "Con WhatsApp" : "Sin WhatsApp"));
         if (!string.IsNullOrWhiteSpace(_filters.ProvinciaCodigo))
@@ -1326,7 +1326,7 @@
             Texto = source.Texto,
             Activo = source.Activo,
             TieneEmail = source.TieneEmail,
-            TieneTelefono = source.TieneTelefono,
+            TieneCelular = source.TieneCelular,
             TieneWhatsApp = source.TieneWhatsApp,
             ProvinciaCodigo = source.ProvinciaCodigo,
             Localidad = source.Localidad,
@@ -1341,7 +1341,7 @@
         target.Texto = source.Texto;
         target.Activo = source.Activo;
         target.TieneEmail = source.TieneEmail;
-        target.TieneTelefono = source.TieneTelefono;
+        target.TieneCelular = source.TieneCelular;
         target.TieneWhatsApp = source.TieneWhatsApp;
         target.ProvinciaCodigo = source.ProvinciaCodigo;
         target.Localidad = source.Localidad;
