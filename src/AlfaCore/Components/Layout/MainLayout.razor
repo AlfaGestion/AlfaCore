@@ -123,6 +123,20 @@
                     </NavLink>
                 </nav>
             }
+            else if (_currentModule == "calendario")
+            {
+                <a class="menu__back" href="/">
+                    <i class="bi bi-grid-3x3-gap-fill"></i>
+                    <span>Aplicaciones</span>
+                </a>
+                <p class="menu__section">Calendario</p>
+                <nav class="menu__nav">
+                    <NavLink class="menu__link" href="/calendario" Match="NavLinkMatch.All">
+                        <span class="menu__icon"><i class="bi bi-calendar3"></i></span>
+                        <span>Guardias</span>
+                    </NavLink>
+                </nav>
+            }
             else if (_currentModule == "interfaces")
             {
                 <a class="menu__back" href="/">
@@ -616,6 +630,7 @@
             "conversaciones/plantillas" => "Plantillas de WhatsApp",
             "conversaciones/configuracion" => "Configuración de WhatsApp",
             "tickets" => "Tickets de asistencia",
+            "calendario" => "Calendario",
             "interfaces" => "Recepción documental",
             "interfaces/configuracion" => "Configuración de Interfaces",
             "interfaces/nuevo" => "Nuevo documento",
@@ -655,6 +670,7 @@
         "auditoria" => "Auditoría",
         "conversaciones" => "Conversaciones",
         "tickets" => "Tickets de asistencia",
+        "calendario" => "Calendario",
         "interfaces" => "Interfaces",
         "actualizaciones" => "Actualizaciones",
         "usuarios" => "Usuarios",

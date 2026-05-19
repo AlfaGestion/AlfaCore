@@ -1,0 +1,612 @@
+@page "/calendario"
+@using System.Globalization
+@inject AlfaCore.Services.ICalendarioService CalendarioSvc
+@inject AlfaCore.Services.IAppUiOperationService UiOps
+@inject AlfaCore.Services.IAppUserSessionService AppUserSession
+
+<PageTitle>Calendario | Alfa Gestion</PageTitle>
+
+<section class="calendario-page" @onclick="DismissFeedbackAsync">
+    <header class="calendario-topbar">
+        <div>
+            <p class="calendario-eyebrow">Soporte</p>
+            <h2>Calendario</h2>
+        </div>
+        <div class="calendario-actions" @onclick:stopPropagation>
+            <button type="button" class="btn btn--primary" @onclick="() => OpenNewEvent(DateTime.Today)">
+                <i class="bi bi-plus-circle"></i>
+                <span>Nuevo</span>
+            </button>
+            <button type="button" class="btn btn--ghost" @onclick="LoadAsync" disabled="@_loading">
+                <i class="bi bi-arrow-clockwise"></i>
+                <span>Recargar</span>
+            </button>
+        </div>
+    </header>
+
+    @if (!string.IsNullOrWhiteSpace(_feedbackText))
+    {
+        <div class="calendario-feedback calendario-feedback--@_feedbackKind">
+            <strong>@_feedbackTitle</strong>
+            <span>@_feedbackText</span>
+        </div>
+    }
+
+    <section class="calendario-toolbar" @onclick:stopPropagation>
+        <div class="calendario-nav">
+            <button type="button" class="btn btn--ghost btn--icon" title="Mes anterior" @onclick="PreviousMonth">
+                <i class="bi bi-chevron-left"></i>
+            </button>
+            <button type="button" class="btn btn--ghost btn--icon" title="Mes siguiente" @onclick="NextMonth">
+                <i class="bi bi-chevron-right"></i>
+            </button>
+            <button type="button" class="btn btn--ghost" @onclick="GoToday">Hoy</button>
+            <strong>@MonthLabel</strong>
+        </div>
+
+        <div class="calendario-filters">
+            <div class="field">
+                <label>Buscar</label>
+                <input value="@_request.Search" @oninput="OnSearchInput" placeholder="Evento, tecnico o descripcion..." />
+            </div>
+            <div class="field">
+                <label>Tecnico</label>
+                <select @bind="_request.IdTecnico" @bind:after="LoadAsync">
+                    <option value="">Todos</option>
+                    @foreach (var tecnico in _tecnicos)
+                    {
+                        <option value="@tecnico.IdTecnico">@tecnico.Nombre</option>
+                    }
+                </select>
+            </div>
+            <div class="field">
+                <label>Tipo</label>
+                <select @bind="_request.Tipo" @bind:after="LoadAsync">
+                    <option value="@CalendarioEventoTipos.Todos">Todos</option>
+                    <option value="@CalendarioEventoTipos.Guardia">Guardias</option>
+                    <option value="@CalendarioEventoTipos.Reunion">Reuniones</option>
+                    <option value="@CalendarioEventoTipos.Capacitacion">Capacitaciones</option>
+                    <option value="@CalendarioEventoTipos.Otro">Otros</option>
+                </select>
+            </div>
+        </div>
+    </section>
+
+    <section class="calendario-shell">
+        <div class="calendario-grid">
+            @foreach (var dayName in _dayNames)
+            {
+                <div class="calendario-weekday">@dayName</div>
+            }
+
+            @foreach (var day in Days)
+            {
+                var dayEvents = EventsFor(day).ToList();
+                <button type="button"
+                        class="@DayCellClass(day)"
+                        @onclick="() => OpenNewEvent(day)">
+                    <span class="calendario-day-number">@day.Day</span>
+                    <span class="calendario-day-events">
+                        @foreach (var item in dayEvents.Take(4))
+                        {
+                            <span class="calendario-event-chip"
+                                  style="--event-color:@EventColor(item)"
+                                  title="@item.Titulo"
+                                  @onclick:stopPropagation
+                                  @onclick="() => OpenEvent(item.IdEvento)">
+                                <span>@item.Titulo</span>
+                                @if (!string.IsNullOrWhiteSpace(item.TecnicoNombre))
+                                {
+                                    <small>@item.TecnicoNombre</small>
+                                }
+                            </span>
+                        }
+                        @if (dayEvents.Count > 4)
+                        {
+                            <span class="calendario-more">+@(dayEvents.Count - 4) mas</span>
+                        }
+                    </span>
+                </button>
+            }
+        </div>
+
+        <aside class="calendario-side">
+            <div class="calendario-mini">
+                <strong>@DateTime.Today.ToString("dddd dd", Culture)</strong>
+                <span>@DateTime.Today.ToString("MMMM yyyy", Culture)</span>
+            </div>
+
+            <section class="calendario-side-section">
+                <div class="calendario-side-head">
+                    <span>Guardias activas</span>
+                    <small>@ActiveGuards.Count</small>
+                </div>
+                @if (ActiveGuards.Count == 0)
+                {
+                    <p class="calendario-empty">Sin guardias para este rango.</p>
+                }
+                else
+                {
+                    @foreach (var guardia in ActiveGuards)
+                    {
+                        <button type="button" class="calendario-side-event" @onclick="() => OpenEvent(guardia.IdEvento)">
+                            <span class="calendario-dot" style="background:@EventColor(guardia)"></span>
+                            <span>
+                                <strong>@guardia.Titulo</strong>
+                                <small>@guardia.FechaInicio.ToString("dd/MM", Culture) - @guardia.FechaFin.ToString("dd/MM", Culture)</small>
+                            </span>
+                        </button>
+                    }
+                }
+            </section>
+
+            <section class="calendario-side-section">
+                <div class="calendario-side-head">
+                    <span>Tecnicos</span>
+                    <small>@_tecnicos.Count</small>
+                </div>
+                <div class="calendario-technicians">
+                    @foreach (var tecnico in _tecnicos)
+                    {
+                        <button type="button"
+                                class="@(_request.IdTecnico == tecnico.IdTecnico ? "is-active" : string.Empty)"
+                                @onclick="() => FilterTechnicianAsync(tecnico.IdTecnico)">
+                            <span class="calendario-dot" style="background:@TechnicianColor(tecnico.IdTecnico)"></span>
+                            <span>@tecnico.Nombre</span>
+                        </button>
+                    }
+                </div>
+            </section>
+        </aside>
+    </section>
+
+    @if (_loading)
+    {
+        <div class="calendario-loading">
+            <span class="spinner-border spinner-border-sm"></span>
+            <span>Cargando calendario...</span>
+        </div>
+    }
+</section>
+
+@if (_showEditor)
+{
+    <div class="calendario-modal-backdrop" @onclick="CloseEditor"></div>
+    <section class="calendario-modal" @onclick:stopPropagation>
+        <header>
+            <div>
+                <span>@(_form.IdEvento > 0 ? "Editar evento" : "Nuevo evento")</span>
+                <strong>@(_form.IdEvento > 0 ? _form.Titulo : "Guardia / reunion")</strong>
+            </div>
+            <button type="button" class="btn btn--ghost btn--icon" @onclick="CloseEditor" title="Cerrar">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        </header>
+
+        <div class="calendario-form">
+            <div class="field field--wide">
+                <label>Titulo</label>
+                <input @bind="_form.Titulo" disabled="@_saving" />
+            </div>
+
+            <div class="field">
+                <label>Tipo</label>
+                <select @bind="_form.Tipo" @bind:after="ApplyTypeDefaults" disabled="@_saving">
+                    <option value="@CalendarioEventoTipos.Guardia">Guardia</option>
+                    <option value="@CalendarioEventoTipos.Reunion">Reunion</option>
+                    <option value="@CalendarioEventoTipos.Capacitacion">Capacitacion</option>
+                    <option value="@CalendarioEventoTipos.Otro">Otro</option>
+                </select>
+            </div>
+
+            <div class="field">
+                <label>Estado</label>
+                <select @bind="_form.Estado" disabled="@_saving">
+                    <option value="@CalendarioEventoEstados.Borrador">Borrador</option>
+                    <option value="@CalendarioEventoEstados.Confirmado">Confirmado</option>
+                    <option value="@CalendarioEventoEstados.Cancelado">Cancelado</option>
+                    <option value="@CalendarioEventoEstados.Finalizado">Finalizado</option>
+                </select>
+            </div>
+
+            <div class="field">
+                <label>Inicio</label>
+                <InputDate Type="InputDateType.DateTimeLocal" @bind-Value="_form.FechaInicio" disabled="@_saving" />
+            </div>
+
+            <div class="field">
+                <label>Fin</label>
+                <InputDate Type="InputDateType.DateTimeLocal" @bind-Value="_form.FechaFin" disabled="@_saving" />
+            </div>
+
+            <label class="checkbox calendario-checkbox">
+                <input type="checkbox" @bind="_form.TodoElDia" disabled="@_saving" />
+                <span>Todo el dia</span>
+            </label>
+
+            <div class="field">
+                <label>Tecnico responsable</label>
+                <select value="@_form.IdTecnico" @onchange="OnTechnicianChanged" disabled="@_saving">
+                    <option value="">Sin asignar</option>
+                    @foreach (var tecnico in _tecnicos)
+                    {
+                        <option value="@tecnico.IdTecnico">@tecnico.Nombre</option>
+                    }
+                </select>
+            </div>
+
+            <div class="field">
+                <label>WhatsApp del tecnico</label>
+                <input @bind="_form.TelefonoWhatsApp" disabled="@_saving" placeholder="549..." />
+            </div>
+
+            <div class="field">
+                <label>Color</label>
+                <input type="color" @bind="_form.Color" disabled="@_saving" />
+            </div>
+
+            <div class="field field--wide">
+                <label>Descripcion</label>
+                <textarea @bind="_form.Descripcion" disabled="@_saving"></textarea>
+            </div>
+
+            <section class="calendario-reminder">
+                <label class="checkbox calendario-checkbox">
+                    <input type="checkbox" @bind="_form.CrearRecordatorioWhatsApp" disabled="@_saving" />
+                    <span>Recordatorio por WhatsApp</span>
+                </label>
+
+                <div class="field">
+                    <label>Recordar antes</label>
+                    <select @bind="_form.MinutosAntesRecordatorio" disabled="@(!_form.CrearRecordatorioWhatsApp || _saving)">
+                        <option value="60">1 hora</option>
+                        <option value="720">12 horas</option>
+                        <option value="1440">1 dia</option>
+                        <option value="2880">2 dias</option>
+                    </select>
+                </div>
+
+                <div class="field">
+                    <label>Plantilla WhatsApp</label>
+                    <select @bind="_form.IdPlantillaWhatsApp" disabled="@(!_form.CrearRecordatorioWhatsApp || _saving)">
+                        <option value="">Sin plantilla</option>
+                        @foreach (var plantilla in _plantillas)
+                        {
+                            <option value="@plantilla.IdPlantilla">@plantilla.NombreVisible</option>
+                        }
+                    </select>
+                </div>
+
+                @if (_selectedEvent?.Recordatorio is not null)
+                {
+                    <div class="calendario-reminder-state">
+                        <span>@ReminderLabel(_selectedEvent.Recordatorio)</span>
+                        <button type="button"
+                                class="btn btn--ghost"
+                                disabled="@_saving"
+                                @onclick="SendReminderAsync">
+                            <i class="bi bi-whatsapp"></i>
+                            <span>Enviar ahora</span>
+                        </button>
+                    </div>
+                }
+            </section>
+        </div>
+
+        <footer>
+            @if (_form.IdEvento > 0)
+            {
+                <button type="button" class="btn btn--ghost" @onclick="DeleteAsync" disabled="@_saving">
+                    <i class="bi bi-trash"></i>
+                    <span>Eliminar</span>
+                </button>
+            }
+            <span></span>
+            <button type="button" class="btn btn--ghost" @onclick="CloseEditor" disabled="@_saving">Cancelar</button>
+            <button type="button" class="btn btn--primary" @onclick="SaveAsync" disabled="@_saving">
+                <i class="bi bi-save"></i>
+                <span>@(_saving ? "Guardando..." : "Guardar")</span>
+            </button>
+        </footer>
+    </section>
+}
+
+@code {
+    private static readonly CultureInfo Culture = CultureInfo.GetCultureInfo("es-AR");
+    private readonly string[] _dayNames = ["Lun", "Mar", "Mie", "Jue", "Vie", "Sab", "Dom"];
+    private CalendarioMonthRequest _request = new();
+    private List<CalendarioEventoDto> _events = [];
+    private List<ConversacionTecnicoOptionDto> _tecnicos = [];
+    private List<ConversacionPlantillaDto> _plantillas = [];
+    private CalendarioEventoDto? _selectedEvent;
+    private CalendarioEventoSaveRequest _form = NewForm(DateTime.Today);
+    private bool _loading;
+    private bool _saving;
+    private bool _showEditor;
+    private string _feedbackTitle = string.Empty;
+    private string _feedbackText = string.Empty;
+    private string _feedbackKind = "success";
+    private CancellationTokenSource? _searchCts;
+
+    private string MonthLabel => new DateTime(_request.Year, _request.Month, 1).ToString("MMMM yyyy", Culture);
+    private IEnumerable<DateTime> Days => Enumerable.Range(0, 42).Select(i => GridStart.AddDays(i));
+    private DateTime GridStart
+    {
+        get
+        {
+            var monthStart = new DateTime(_request.Year, _request.Month, 1);
+            return monthStart.AddDays(-(((int)monthStart.DayOfWeek + 6) % 7));
+        }
+    }
+    private List<CalendarioEventoDto> ActiveGuards => _events
+        .Where(x => x.Tipo == CalendarioEventoTipos.Guardia && x.Estado != CalendarioEventoEstados.Cancelado)
+        .OrderBy(x => x.FechaInicio)
+        .Take(8)
+        .ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        var result = await UiOps.RunAsync(() => CalendarioSvc.GetMonthAsync(_request), "No se pudo cargar el calendario.");
+        if (result.Success && result.Value is not null)
+        {
+            _events = result.Value.Eventos;
+            _tecnicos = result.Value.Tecnicos;
+            _plantillas = result.Value.PlantillasWhatsApp;
+        }
+        else
+        {
+            SetFeedback("No se pudo cargar el calendario", FeedbackText(result.Feedback), "error");
+        }
+
+        _loading = false;
+    }
+
+    private async Task PreviousMonth()
+    {
+        var current = new DateTime(_request.Year, _request.Month, 1).AddMonths(-1);
+        _request.Year = current.Year;
+        _request.Month = current.Month;
+        await LoadAsync();
+    }
+
+    private async Task NextMonth()
+    {
+        var current = new DateTime(_request.Year, _request.Month, 1).AddMonths(1);
+        _request.Year = current.Year;
+        _request.Month = current.Month;
+        await LoadAsync();
+    }
+
+    private async Task GoToday()
+    {
+        _request.Year = DateTime.Today.Year;
+        _request.Month = DateTime.Today.Month;
+        await LoadAsync();
+    }
+
+    private async Task FilterTechnicianAsync(string idTecnico)
+    {
+        _request.IdTecnico = _request.IdTecnico == idTecnico ? null : idTecnico;
+        await LoadAsync();
+    }
+
+    private async Task OnSearchInput(ChangeEventArgs args)
+    {
+        _request.Search = args.Value?.ToString() ?? string.Empty;
+        _searchCts?.Cancel();
+        _searchCts = new CancellationTokenSource();
+        var token = _searchCts.Token;
+        try
+        {
+            await Task.Delay(260, token);
+            if (!token.IsCancellationRequested)
+                await LoadAsync();
+        }
+        catch (TaskCanceledException) { }
+    }
+
+    private IEnumerable<CalendarioEventoDto> EventsFor(DateTime day)
+        => _events.Where(x => x.FechaInicio.Date <= day.Date && x.FechaFin.Date >= day.Date);
+
+    private string DayCellClass(DateTime day)
+    {
+        var classes = "calendario-day";
+        if (day.Month != _request.Month) classes += " is-muted";
+        if (day.Date == DateTime.Today) classes += " is-today";
+        return classes;
+    }
+
+    private void OpenNewEvent(DateTime day)
+    {
+        _selectedEvent = null;
+        _form = NewForm(day);
+        _showEditor = true;
+    }
+
+    private async Task OpenEvent(long idEvento)
+    {
+        var result = await UiOps.RunAsync(() => CalendarioSvc.GetByIdAsync(idEvento), "No se pudo cargar el evento.");
+        if (!result.Success || result.Value is null)
+        {
+            SetFeedback("No se pudo cargar el evento", FeedbackText(result.Feedback), "error");
+            return;
+        }
+
+        _selectedEvent = result.Value;
+        _form = new CalendarioEventoSaveRequest
+        {
+            IdEvento = result.Value.IdEvento,
+            Titulo = result.Value.Titulo,
+            Tipo = result.Value.Tipo,
+            FechaInicio = result.Value.FechaInicio,
+            FechaFin = result.Value.FechaFin,
+            TodoElDia = result.Value.TodoElDia,
+            IdTecnico = result.Value.IdTecnico,
+            TecnicoNombre = result.Value.TecnicoNombre,
+            TelefonoWhatsApp = result.Value.TelefonoWhatsApp,
+            Estado = result.Value.Estado,
+            Color = EventColor(result.Value),
+            Descripcion = result.Value.Descripcion,
+            CrearRecordatorioWhatsApp = result.Value.Recordatorio is not null,
+            MinutosAntesRecordatorio = result.Value.Recordatorio?.MinutosAntes ?? 1440,
+            IdPlantillaWhatsApp = result.Value.Recordatorio?.IdPlantillaWhatsApp
+        };
+        _showEditor = true;
+    }
+
+    private void CloseEditor()
+    {
+        if (_saving)
+            return;
+        _showEditor = false;
+        _selectedEvent = null;
+    }
+
+    private async Task SaveAsync()
+    {
+        _saving = true;
+        _form.UsuarioAccion = CurrentUserName;
+        _form.SistemaAccion = "Calendario";
+        var result = await UiOps.RunAsync(() => CalendarioSvc.SaveAsync(_form), "No se pudo guardar el evento.");
+        if (result.Success)
+        {
+            SetFeedback("Evento guardado", "Los cambios quedaron registrados.", "success");
+            _showEditor = false;
+            await LoadAsync();
+        }
+        else
+        {
+            SetFeedback("No se pudo guardar", FeedbackText(result.Feedback), "error");
+        }
+
+        _saving = false;
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (_form.IdEvento <= 0)
+            return;
+
+        _saving = true;
+        var result = await UiOps.RunAsync(() => CalendarioSvc.DeleteAsync(_form.IdEvento, CurrentUserName), "No se pudo eliminar el evento.");
+        if (result.Success)
+        {
+            SetFeedback("Evento eliminado", "El evento fue dado de baja.", "success");
+            _showEditor = false;
+            await LoadAsync();
+        }
+        else
+        {
+            SetFeedback("No se pudo eliminar", FeedbackText(result.Feedback), "error");
+        }
+
+        _saving = false;
+    }
+
+    private async Task SendReminderAsync()
+    {
+        var reminderId = _selectedEvent?.Recordatorio?.IdRecordatorio ?? 0;
+        if (reminderId <= 0)
+            return;
+
+        _saving = true;
+        var result = await UiOps.RunAsync(() => CalendarioSvc.SendWhatsAppReminderAsync(reminderId, CurrentUserName), "No se pudo enviar el recordatorio.");
+        if (result.Success)
+        {
+            SetFeedback("Recordatorio enviado", "Se envio la plantilla de WhatsApp al tecnico.", "success");
+            _showEditor = false;
+            await LoadAsync();
+        }
+        else
+        {
+            SetFeedback("No se pudo enviar", FeedbackText(result.Feedback), "error");
+        }
+
+        _saving = false;
+    }
+
+    private void OnTechnicianChanged(ChangeEventArgs args)
+    {
+        var id = args.Value?.ToString() ?? string.Empty;
+        _form.IdTecnico = id;
+        var tecnico = _tecnicos.FirstOrDefault(x => x.IdTecnico == id);
+        _form.TecnicoNombre = tecnico?.Nombre;
+        if (_form.Tipo == CalendarioEventoTipos.Guardia && tecnico is not null)
+            _form.Titulo = $"GUARDIA {tecnico.Nombre}".Trim();
+        _form.Color = TechnicianColor(id);
+    }
+
+    private void ApplyTypeDefaults()
+    {
+        if (_form.Tipo == CalendarioEventoTipos.Guardia)
+        {
+            _form.TodoElDia = true;
+            if (_form.FechaFin <= _form.FechaInicio)
+                _form.FechaFin = _form.FechaInicio.AddDays(7);
+        }
+    }
+
+    private void SetFeedback(string title, string text, string kind)
+    {
+        _feedbackTitle = title;
+        _feedbackText = text;
+        _feedbackKind = kind;
+    }
+
+    private Task DismissFeedbackAsync()
+    {
+        _feedbackTitle = string.Empty;
+        _feedbackText = string.Empty;
+        return Task.CompletedTask;
+    }
+
+    private string CurrentUserName => AppUserSession.CurrentUser?.UserName ?? Environment.UserName;
+
+    private static CalendarioEventoSaveRequest NewForm(DateTime day)
+        => new()
+        {
+            Titulo = "GUARDIA",
+            Tipo = CalendarioEventoTipos.Guardia,
+            FechaInicio = day.Date.AddHours(9),
+            FechaFin = day.Date.AddDays(7).AddHours(9),
+            TodoElDia = true,
+            Estado = CalendarioEventoEstados.Confirmado,
+            Color = "#14b8a6",
+            CrearRecordatorioWhatsApp = true,
+            MinutosAntesRecordatorio = 1440
+        };
+
+    private static string EventColor(CalendarioEventoDto item)
+        => string.IsNullOrWhiteSpace(item.Color) ? "#14b8a6" : item.Color;
+
+    private static string ReminderLabel(CalendarioRecordatorioDto reminder)
+    {
+        var when = reminder.FechaHoraProgramada?.ToString("dd/MM HH:mm", Culture) ?? "sin fecha";
+        return $"{reminder.EstadoEnvio} - {when}";
+    }
+
+    private static string FeedbackText(AppUiMessage? message)
+    {
+        if (message is null)
+            return "Ocurrio un problema inesperado.";
+
+        var parts = new[] { message.Message, message.Suggestion, string.IsNullOrWhiteSpace(message.Code) ? string.Empty : $"Codigo: {message.Code}" }
+            .Where(x => !string.IsNullOrWhiteSpace(x));
+        return string.Join(" ", parts);
+    }
+
+    private string TechnicianColor(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return "#14b8a6";
+        var hash = value.Aggregate(0, (current, ch) => (current * 31) + ch);
+        var colors = new[] { "#14b8a6", "#38bdf8", "#f472b6", "#f59e0b", "#a78bfa", "#22c55e" };
+        return colors[Math.Abs(hash) % colors.Length];
+    }
+}
