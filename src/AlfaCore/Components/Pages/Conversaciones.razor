@@ -2149,6 +2149,15 @@
         _actionMessage = null;
         _actionError = null;
 
+        var quotedMessageId = _quotedMessage?.WhatsAppMessageId;
+        if (!string.IsNullOrWhiteSpace(textToSend))
+        {
+            _replyText = string.Empty;
+            _quotedMessage = null;
+        }
+
+        await InvokeAsync(StateHasChanged);
+
         try
         {
             if (!string.IsNullOrWhiteSpace(textToSend))
@@ -2158,12 +2167,9 @@
                     IdConversacion = _selectedConversation.IdConversacion,
                     Texto = textToSend,
                     MessageType = "TEXT",
-                    WhatsAppReplyToMessageId = _quotedMessage?.WhatsAppMessageId,
+                    WhatsAppReplyToMessageId = quotedMessageId,
                     IdTecnicoAutor = _assignmentTechnicianId
                 });
-
-                _replyText = string.Empty;
-                _quotedMessage = null;
             }
 
             await UploadPendingAttachmentsAsync(attachmentsToSend, RemovePendingAttachment);
@@ -2175,6 +2181,9 @@
         catch (Exception ex)
         {
             _actionError = ex.Message;
+            if (!string.IsNullOrWhiteSpace(textToSend) && !_messages.Any(x => x.Texto == textToSend && IsOutgoingMessage(x)))
+                _replyText = textToSend;
+
             foreach (var pending in _pendingAttachments)
                 pending.Error ??= "No se pudo enviar. Reintentá con el botón de enviar.";
 
