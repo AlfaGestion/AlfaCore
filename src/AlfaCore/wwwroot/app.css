@@ -6030,6 +6030,27 @@ html[data-theme="light"] .consulta-table tr:hover td {
     gap: .5rem;
 }
 
+.editor-msg--animated {
+    animation: editor-msg-fade-in .18s ease-out both;
+    transition: opacity .18s ease, transform .18s ease;
+}
+
+.editor-msg--animated.is-leaving {
+    opacity: 0;
+    transform: translateY(-4px);
+}
+
+@keyframes editor-msg-fade-in {
+    from {
+        opacity: 0;
+        transform: translateY(-4px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
 .editor-msg--error {
     background: color-mix(in srgb, #ef4444 12%, transparent);
     color: #ef4444;

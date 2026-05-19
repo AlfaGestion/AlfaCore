@@ -11,7 +11,7 @@
 
 <PageTitle>Contactos | Alfa Gestión</PageTitle>
 
-<div class="page-grid contactos-page" @onclick="CloseSearchPanel">
+<div class="page-grid contactos-page" @onclick="HandlePageClickAsync">
     <section class="page-intro">
         <div>
             <h2 class="page-intro__title">Contactos</h2>
@@ -30,7 +30,7 @@
     @if (_feedback is not null)
     {
         <section class="panel-card">
-            <div class="editor-msg @GetFeedbackClass(_feedback)">
+            <div class="editor-msg editor-msg--animated @GetFeedbackClass(_feedback) @(_feedbackLeaving ? "is-leaving" : string.Empty)">
                 <div>
                     <strong>@_feedback.Title</strong>
                     <p>@_feedback.Message</p>
@@ -511,6 +511,8 @@
     private readonly List<ContactoViewColumnDto> _viewSettingsDraft = [];
     private readonly Dictionary<string, string> _fieldErrors = new(StringComparer.OrdinalIgnoreCase);
     private AppUiMessage? _feedback;
+    private bool _feedbackLeaving;
+    private DateTime _feedbackSetAtUtc = DateTime.MinValue;
     private ContactosViewSettingsDto _viewSettings = BuildDefaultViewSettings();
     private bool _loadingList;
     private bool _loadingProvincias;
@@ -541,6 +543,7 @@
     protected override async Task OnInitializedAsync()
     {
         AppUserSession.StateChanged += OnAppUserSessionChanged;
+        Nav.LocationChanged += OnLocationChanged;
         await EnsureViewSettingsLoadedAsync();
         await CargarProvinciasAsync();
         ApplyStartupQuery();
@@ -552,9 +555,13 @@
     public void Dispose()
     {
         AppUserSession.StateChanged -= OnAppUserSessionChanged;
+        Nav.LocationChanged -= OnLocationChanged;
         _searchDebounceCts?.Cancel();
         _searchDebounceCts?.Dispose();
     }
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+        => _ = InvokeAsync(DismissFeedbackAsync);
 
     private void OnAppUserSessionChanged()
     {
@@ -602,6 +609,12 @@
 
     private void CloseSearchPanel()
         => _showSearchPanel = false;
+
+    private async Task HandlePageClickAsync()
+    {
+        CloseSearchPanel();
+        await DismissFeedbackAsync();
+    }
 
     private void OnContactSearchInput(ChangeEventArgs e)
     {
@@ -1139,7 +1152,26 @@
         => HasFieldError(key) ? "usuarios-input usuarios-input--invalid" : "usuarios-input";
 
     private void SetFeedback(AppUiMessage? message)
-        => _feedback = message;
+    {
+        _feedback = message;
+        _feedbackLeaving = false;
+        _feedbackSetAtUtc = message is null ? DateTime.MinValue : DateTime.UtcNow;
+    }
+
+    private async Task DismissFeedbackAsync()
+    {
+        if (_feedback is null || _feedbackLeaving)
+            return;
+
+        if (DateTime.UtcNow - _feedbackSetAtUtc < TimeSpan.FromMilliseconds(350))
+            return;
+
+        _feedbackLeaving = true;
+        StateHasChanged();
+        await Task.Delay(180);
+        _feedback = null;
+        _feedbackLeaving = false;
+    }
 
     private static string GetFeedbackClass(AppUiMessage message)
         => message.Severity switch
