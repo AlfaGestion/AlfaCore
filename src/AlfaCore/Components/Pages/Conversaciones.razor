@@ -1191,6 +1191,7 @@
     private long? _openAttachmentMenuId;
     private long? _openReactionMessageId;
     private ConversacionMensajeDto? _quotedMessage;
+    private long _nextOptimisticMessageId = -1;
     private ConversacionAdjuntoDto? _previewAttachment;
     private ElementReference _replyTextArea;
     private long? _replyEnterHandlerConversationId;
@@ -2150,10 +2151,12 @@
         _actionError = null;
 
         var quotedMessageId = _quotedMessage?.WhatsAppMessageId;
+        long? optimisticMessageId = null;
         if (!string.IsNullOrWhiteSpace(textToSend))
         {
             _replyText = string.Empty;
             _quotedMessage = null;
+            optimisticMessageId = AddOptimisticOutgoingMessage(textToSend);
         }
 
         await InvokeAsync(StateHasChanged);
@@ -2181,14 +2184,17 @@
         catch (Exception ex)
         {
             _actionError = ex.Message;
-            if (!string.IsNullOrWhiteSpace(textToSend) && !_messages.Any(x => x.Texto == textToSend && IsOutgoingMessage(x)))
-                _replyText = textToSend;
+            if (optimisticMessageId.HasValue)
+                RemoveOptimisticMessage(optimisticMessageId.Value);
+
+            if (_selectedConversation is not null)
+                await SelectConversationAsync(_selectedConversation.IdConversacion);
 
             foreach (var pending in _pendingAttachments)
                 pending.Error ??= "No se pudo enviar. Reintentá con el botón de enviar.";
 
-            if (_selectedConversation is not null)
-                await SelectConversationAsync(_selectedConversation.IdConversacion);
+            if (!string.IsNullOrWhiteSpace(textToSend) && !_messages.Any(x => x.Texto == textToSend && IsOutgoingMessage(x)))
+                _replyText = textToSend;
         }
         finally
         {
@@ -2199,6 +2205,32 @@
     [JSInvokable]
     public Task SendComposerFromEnter()
         => InvokeAsync(SendReplyAsync);
+
+    private long AddOptimisticOutgoingMessage(string text)
+    {
+        if (_selectedConversation is null)
+            return 0;
+
+        var id = _nextOptimisticMessageId--;
+        _messages.Add(new ConversacionMensajeDto
+        {
+            IdMensaje = id,
+            IdConversacion = _selectedConversation.IdConversacion,
+            TelefonoWhatsApp = _selectedConversation.TelefonoWhatsApp,
+            MessageType = "TEXT",
+            Direction = "SALIENTE",
+            EstadoEnvio = "PENDIENTE",
+            Texto = text,
+            FechaHora = DateTime.Now,
+            IdTecnicoAutor = _assignmentTechnicianId
+        });
+
+        _scrollThreadToBottomAfterRender = true;
+        return id;
+    }
+
+    private void RemoveOptimisticMessage(long idMensaje)
+        => _messages.RemoveAll(x => x.IdMensaje == idMensaje);
 
     private async Task LoadTemplatesForConversationAsync()
     {
