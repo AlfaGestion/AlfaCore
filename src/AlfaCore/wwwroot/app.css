@@ -9668,6 +9668,11 @@ html[data-theme="light"] .interfaces-bulkbar {
     background: rgba(20, 184, 166, .07);
 }
 
+.tickets-card--dragging {
+    opacity: .58;
+    border-color: rgba(34, 211, 238, .55);
+}
+
 .tickets-card__head,
 .tickets-card__footer,
 .tickets-message__meta {

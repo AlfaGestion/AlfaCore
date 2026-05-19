@@ -1,5 +1,6 @@
 @page "/tickets"
 @using Microsoft.AspNetCore.WebUtilities
+@using Microsoft.JSInterop
 @inject IJSRuntime JS
 @inject AlfaCore.Services.ITicketsService TicketsSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
@@ -375,11 +376,12 @@
     }
     else if (_viewMode == "kanban")
     {
-        <section class="tickets-kanban">
+        <section class="tickets-kanban" @ref="_kanbanRoot">
             @foreach (var state in _lookups.Estados.OrderBy(x => x.Orden))
             {
                 var items = _kanbanItems.Where(x => x.CodigoEstado == state.CodigoEstado).ToList();
                 <div class="@GetKanbanColumnClass(state.CodigoEstado)"
+                     data-ticket-state="@state.CodigoEstado"
                      @ondragenter="() => MarcarDestinoArrastre(state.CodigoEstado)"
                      @ondragover:preventDefault="true"
                      @ondrop="() => SoltarTicketAsync(state.CodigoEstado)">
@@ -396,6 +398,7 @@
                         {
                             <article class="tickets-card"
                                      draggable="true"
+                                     data-ticket-id="@item.IdTicket"
                                      title="Arrastrá para cambiar de etapa"
                                      @ondragstart="() => IniciarArrastreTicket(item)"
                                      @ondragend="FinalizarArrastreTicketAsync"
@@ -532,8 +535,11 @@
     private string? _dragTargetEstado;
     private bool _ignoreNextKanbanClick;
     private bool _showDescriptionCommands;
+    private ElementReference _kanbanRoot;
     private ElementReference _descriptionEditor;
     private IJSObjectReference? _ticketsEditorJs;
+    private IJSObjectReference? _ticketsKanbanJs;
+    private DotNetObjectReference<Tickets>? _kanbanDotNetRef;
     private bool _descriptionEditorReady;
 
     private static readonly IReadOnlyList<DescriptionCommandOption> DescriptionCommands =
@@ -591,18 +597,26 @@
         AppUserSession.StateChanged -= OnAppUserSessionChanged;
         Nav.LocationChanged -= OnLocationChanged;
         _ = DisposeEditorAsync();
+        _kanbanDotNetRef?.Dispose();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
+        {
             _ticketsEditorJs = await JS.InvokeAsync<IJSObjectReference>("import", "/js/tickets-rich-editor.js?v=20260519i");
+            _ticketsKanbanJs = await JS.InvokeAsync<IJSObjectReference>("import", "/js/tickets-kanban.js?v=20260519a");
+            _kanbanDotNetRef = DotNetObjectReference.Create(this);
+        }
 
         if (_showEditor && !_descriptionEditorReady && _ticketsEditorJs is not null)
         {
             await _ticketsEditorJs.InvokeVoidAsync("setHtml", _descriptionEditor, _form.Descripcion ?? string.Empty);
             _descriptionEditorReady = true;
         }
+
+        if (!_showEditor && _viewMode == "kanban" && !_loading && _ticketsKanbanJs is not null && _kanbanDotNetRef is not null)
+            await _ticketsKanbanJs.InvokeVoidAsync("wireKanban", _kanbanRoot, _kanbanDotNetRef);
     }
 
     private void OnAppUserSessionChanged()
@@ -811,6 +825,23 @@
         return classes;
     }
 
+    [JSInvokable]
+    public async Task MoveTicketFromKanbanAsync(long idTicket, string codigoEstadoDestino)
+    {
+        if (idTicket <= 0 || string.IsNullOrWhiteSpace(codigoEstadoDestino))
+            return;
+
+        var ticket = _kanbanItems.FirstOrDefault(x => x.IdTicket == idTicket);
+        if (ticket is null)
+        {
+            await BuscarAsync();
+            return;
+        }
+
+        _draggingTicket = ticket;
+        await SoltarTicketAsync(codigoEstadoDestino);
+    }
+
     private async Task SoltarTicketAsync(string codigoEstadoDestino)
     {
         if (_draggingTicket is null || string.IsNullOrWhiteSpace(codigoEstadoDestino))
@@ -891,6 +922,8 @@
     {
         if (_ticketsEditorJs is not null)
             await _ticketsEditorJs.DisposeAsync();
+        if (_ticketsKanbanJs is not null)
+            await _ticketsKanbanJs.DisposeAsync();
     }
 
     private async Task GuardarAsync()
