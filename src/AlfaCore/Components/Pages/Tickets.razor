@@ -558,8 +558,7 @@
         new("NAVEGACIÓN", "Índice", "Resaltar estructura de títulos", "bi-bookmark-fill", "index"),
         new("WIDGET", "Emoji", "Añadir un emoji", "bi-emoji-smile", "emoji"),
         new("WIDGET", "3 estrellas", "Insertar calificación mayor que 3", "bi-star-fill", "stars3"),
-        new("WIDGET", "5 estrellas", "Insertar calificación mayor que 5", "bi-star-fill", "stars5"),
-        new("HERRAMIENTAS DE IA", "Borrador IA", "Marcar texto para completar con IA", "bi-stars", "aiDraft")
+        new("WIDGET", "5 estrellas", "Insertar calificación mayor que 5", "bi-star-fill", "stars5")
     ];
 
     private static readonly IReadOnlyList<DescriptionCommandOption> ToolbarDescriptionCommands =
@@ -568,8 +567,7 @@
         DescriptionCommands[5],
         DescriptionCommands[6],
         DescriptionCommands[7],
-        DescriptionCommands[17],
-        DescriptionCommands[25]
+        DescriptionCommands[17]
     ];
 
     protected override async Task OnInitializedAsync()
@@ -592,7 +590,7 @@
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
-            _ticketsEditorJs = await JS.InvokeAsync<IJSObjectReference>("import", "/js/tickets-rich-editor.js?v=20260519c");
+            _ticketsEditorJs = await JS.InvokeAsync<IJSObjectReference>("import", "/js/tickets-rich-editor.js?v=20260519d");
 
         if (_showEditor && !_descriptionEditorReady && _ticketsEditorJs is not null)
         {

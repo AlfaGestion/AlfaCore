@@ -186,9 +186,6 @@ export function runCommand(editor, command) {
         case 'stars5':
             insertHtml('<span class="ticket-editor-stars">&#9733;&#9733;&#9733;&#9733;&#9733;</span>');
             break;
-        case 'aiDraft':
-            insertHtml('<div class="ticket-editor-banner ticket-editor-banner--info"><strong>Borrador IA</strong><p>Redactar respuesta o resumen del caso.</p></div><p><br></p>');
-            break;
     }
 
     ensureEditableBase(editor);
