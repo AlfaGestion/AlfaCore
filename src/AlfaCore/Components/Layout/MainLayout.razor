@@ -8,7 +8,9 @@
 <div class="shell @(_sidebarCollapsed ? "shell--collapsed" : string.Empty)">
     <aside class="shell__sidebar">
         <div class="brand">
-            <img class="brand__logo" src="logo.png" alt="Alfa Gestión" />
+            <a class="brand__logo-link" href="/" title="Volver al menú principal" aria-label="Volver al menú principal">
+                <img class="brand__logo" src="logo.png" alt="Alfa Gestión" />
+            </a>
             <div class="brand__content">
                 <p class="brand__eyebrow">Business Intelligence</p>
                 <a class="brand__title" href="/">Alfa Gestión</a>
@@ -118,14 +120,6 @@
                     <NavLink class="menu__link" href="/tickets" Match="NavLinkMatch.All">
                         <span class="menu__icon"><i class="bi bi-life-preserver"></i></span>
                         <span>Mesa de ayuda</span>
-                    </NavLink>
-                    <NavLink class="menu__link" href="/conversaciones" Match="NavLinkMatch.All">
-                        <span class="menu__icon"><i class="bi bi-chat-dots-fill"></i></span>
-                        <span>Conversaciones</span>
-                    </NavLink>
-                    <NavLink class="menu__link" href="/contactos" Match="NavLinkMatch.All">
-                        <span class="menu__icon"><i class="bi bi-person-lines-fill"></i></span>
-                        <span>Contactos</span>
                     </NavLink>
                 </nav>
             }
