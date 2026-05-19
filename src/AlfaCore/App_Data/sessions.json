@@ -8,7 +8,7 @@
       "Usuario": "FERNANDEZF2",
       "Password": "FERNANDEZF2",
       "TrustServerCertificate": true,
-      "Activa": true
+      "Activa": false
     },
     {
       "Id": "7926143d-f89c-45d4-a812-2032bbd2c906",
@@ -38,7 +38,7 @@
       "Usuario": "ALFANET2007",
       "Password": "ALFANET2007",
       "TrustServerCertificate": true,
-      "Activa": false
+      "Activa": true
     },
     {
       "Id": "1e868fa4-a06b-47c6-9eab-2afd5165470c",
