@@ -9592,6 +9592,18 @@ html[data-theme="light"] .interfaces-bulkbar {
     border: 1px solid var(--color-border);
     border-radius: 8px;
     background: rgba(15, 23, 42, .22);
+    transition: border-color .16s ease, background .16s ease, box-shadow .16s ease;
+}
+
+.tickets-kanban-column--drag-target {
+    border-color: rgba(34, 211, 238, .72);
+    background: rgba(14, 165, 233, .10);
+    box-shadow: inset 0 0 0 1px rgba(34, 211, 238, .24);
+}
+
+.tickets-kanban-column--drag-current {
+    border-color: rgba(148, 163, 184, .32);
+    background: rgba(148, 163, 184, .08);
 }
 
 .tickets-kanban-column__head {
@@ -9621,6 +9633,7 @@ html[data-theme="light"] .interfaces-bulkbar {
     display: grid;
     gap: .45rem;
     padding: .55rem;
+    min-height: 88px;
 }
 
 .tickets-card {
@@ -9632,6 +9645,7 @@ html[data-theme="light"] .interfaces-bulkbar {
     background: rgba(255, 255, 255, .03);
     cursor: pointer;
     transition: border-color .18s ease, transform .18s ease, background .18s ease;
+    user-select: none;
 }
 
 .tickets-card:hover {

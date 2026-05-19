@@ -379,7 +379,8 @@
             @foreach (var state in _lookups.Estados.OrderBy(x => x.Orden))
             {
                 var items = _kanbanItems.Where(x => x.CodigoEstado == state.CodigoEstado).ToList();
-                <div class="tickets-kanban-column"
+                <div class="@GetKanbanColumnClass(state.CodigoEstado)"
+                     @ondragenter="() => MarcarDestinoArrastre(state.CodigoEstado)"
                      @ondragover:preventDefault="true"
                      @ondrop="() => SoltarTicketAsync(state.CodigoEstado)">
                     <div class="tickets-kanban-column__head">
@@ -388,6 +389,7 @@
                         <small>@items.Count</small>
                     </div>
                     <div class="tickets-kanban-column__body"
+                         @ondragenter="() => MarcarDestinoArrastre(state.CodigoEstado)"
                          @ondragover:preventDefault="true"
                          @ondrop="() => SoltarTicketAsync(state.CodigoEstado)">
                         @foreach (var item in items)
@@ -396,7 +398,7 @@
                                      draggable="true"
                                      title="Arrastrá para cambiar de etapa"
                                      @ondragstart="() => IniciarArrastreTicket(item)"
-                                     @ondragend="FinalizarArrastreTicket"
+                                     @ondragend="FinalizarArrastreTicketAsync"
                                      @onclick="() => AbrirTicketDesdeKanbanAsync(item.IdTicket)">
                                 <div class="tickets-card__head">
                                     <strong>@item.CodigoVisible @item.Titulo</strong>
@@ -526,6 +528,7 @@
     private string _viewSettingsUserName = string.Empty;
     private long? _startupTicketId;
     private TicketGridItemDto? _draggingTicket;
+    private string? _dragTargetEstado;
     private bool _ignoreNextKanbanClick;
     private bool _showDescriptionCommands;
     private ElementReference _descriptionEditor;
@@ -769,12 +772,34 @@
     private void IniciarArrastreTicket(TicketGridItemDto item)
     {
         _draggingTicket = item;
+        _dragTargetEstado = null;
         _ignoreNextKanbanClick = false;
     }
 
-    private void FinalizarArrastreTicket()
+    private async Task FinalizarArrastreTicketAsync()
     {
+        await Task.Delay(300);
         _draggingTicket = null;
+        _dragTargetEstado = null;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void MarcarDestinoArrastre(string codigoEstado)
+    {
+        if (_draggingTicket is null || string.IsNullOrWhiteSpace(codigoEstado))
+            return;
+
+        _dragTargetEstado = codigoEstado;
+    }
+
+    private string GetKanbanColumnClass(string codigoEstado)
+    {
+        var classes = "tickets-kanban-column";
+        if (_draggingTicket is not null && string.Equals(_dragTargetEstado, codigoEstado, StringComparison.OrdinalIgnoreCase))
+            classes += string.Equals(_draggingTicket.CodigoEstado, codigoEstado, StringComparison.OrdinalIgnoreCase)
+                ? " tickets-kanban-column--drag-current"
+                : " tickets-kanban-column--drag-target";
+        return classes;
     }
 
     private async Task SoltarTicketAsync(string codigoEstadoDestino)
@@ -784,6 +809,7 @@
 
         var ticket = _draggingTicket;
         _draggingTicket = null;
+        _dragTargetEstado = null;
         _ignoreNextKanbanClick = true;
 
         if (string.Equals(ticket.CodigoEstado, codigoEstadoDestino, StringComparison.OrdinalIgnoreCase))
