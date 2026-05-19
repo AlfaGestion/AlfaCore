@@ -8,12 +8,12 @@
 <div class="shell @(_sidebarCollapsed ? "shell--collapsed" : string.Empty)">
     <aside class="shell__sidebar">
         <div class="brand">
-            <a class="brand__logo-link" href="/" title="Volver al menú principal" aria-label="Volver al menú principal">
+            <a class="brand__logo-link" href="/" title="Volver al menú principal" aria-label="Volver al menú principal" @onclick="GoToLauncher">
                 <img class="brand__logo" src="logo.png" alt="Alfa Gestión" />
             </a>
             <div class="brand__content">
                 <p class="brand__eyebrow">Business Intelligence</p>
-                <a class="brand__title" href="/">Alfa Gestión</a>
+                <a class="brand__title" href="/" @onclick="GoToLauncher">Alfa Gestión</a>
             </div>
             <button type="button"
                     class="sidebar-toggle"
@@ -464,6 +464,9 @@
         var path = Nav.ToBaseRelativePath(Nav.Uri).Split('?')[0].Split('#')[0].Trim('/');
         _currentModule = path.Split('/').FirstOrDefault()?.ToLowerInvariant() ?? string.Empty;
     }
+
+    private void GoToLauncher()
+        => Nav.NavigateTo("/");
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {

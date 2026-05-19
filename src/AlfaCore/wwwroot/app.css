@@ -1371,6 +1371,9 @@ html[data-theme="light"] .costos-lote__table th {
     display: inline-flex;
     flex-shrink: 0;
     border-radius: 50%;
+    position: relative;
+    z-index: 2;
+    cursor: pointer;
 }
 
 .brand__logo-link:focus-visible {
