@@ -115,11 +115,7 @@ public sealed class TicketsService(
                 OFFSET @Skip ROWS FETCH NEXT @PageSize ROWS ONLY;
 
                 SELECT COUNT(*)
-                FROM dbo.TICK_TICKETS t
-                INNER JOIN dbo.TICK_ESTADOS e ON e.CodigoEstado = t.CodigoEstado
-                LEFT JOIN dbo.VT_CLIENTES cli ON cli.CODIGO = t.ClienteCodigo
-                LEFT JOIN dbo.MA_CONTACTOS mc ON mc.id = t.IdContacto
-                LEFT JOIN dbo.V_TA_Tecnicos tec ON tec.IdTecnico = t.IdTecnico
+                {TicketBaseFromSql()}
                 {TicketWhereSql()};
                 """;
 
