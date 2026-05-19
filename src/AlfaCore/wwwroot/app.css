@@ -414,6 +414,7 @@ select {
 .calendario-page {
     --calendar-border: rgba(148, 163, 184, .16);
     --calendar-panel: rgba(15, 23, 42, .44);
+    position: relative;
     display: grid;
     grid-template-rows: auto auto minmax(0, 1fr);
     gap: .7rem;
@@ -455,6 +456,7 @@ select {
 
 .calendario-actions,
 .calendario-nav,
+.calendario-active-guard,
 .calendario-filters,
 .calendario-toolbar {
     display: flex;
@@ -494,11 +496,67 @@ select {
 }
 
 .calendario-toolbar {
+    display: grid;
+    grid-template-columns: auto minmax(210px, .55fr) minmax(420px, 1fr);
+    align-items: end;
     justify-content: space-between;
     padding: .55rem .65rem;
     border: 1px solid var(--calendar-border);
     border-radius: 8px;
     background: var(--calendar-panel);
+}
+
+.calendario-active-guard {
+    align-self: stretch;
+    align-items: center;
+    min-width: 0;
+    padding: .42rem .62rem;
+    border: 1px solid color-mix(in srgb, var(--event-color) 55%, transparent);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--event-color) 18%, transparent);
+    color: var(--color-text);
+    text-align: left;
+    transition: transform .16s ease, border-color .16s ease, background .16s ease;
+}
+
+.calendario-active-guard:hover {
+    transform: translateY(-1px);
+    border-color: color-mix(in srgb, var(--event-color) 76%, transparent);
+    background: color-mix(in srgb, var(--event-color) 26%, transparent);
+}
+
+.calendario-active-guard.is-empty {
+    cursor: default;
+}
+
+.calendario-active-guard::before {
+    content: "";
+    flex: 0 0 auto;
+    width: .72rem;
+    height: .72rem;
+    border-radius: 999px;
+    background: var(--event-color);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--event-color) 14%, transparent);
+}
+
+.calendario-active-guard span,
+.calendario-active-guard strong {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.calendario-active-guard span {
+    color: #bfdbfe;
+    font-size: .68rem;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.calendario-active-guard strong {
+    color: color-mix(in srgb, var(--event-color) 34%, #ffffff);
+    font-size: .9rem;
 }
 
 .calendario-nav strong {
@@ -552,8 +610,8 @@ select {
 
 .calendario-shell {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 260px;
-    gap: .75rem;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
     min-height: 0;
 }
 
@@ -667,10 +725,64 @@ select {
 }
 
 .calendario-side {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 42;
     display: grid;
     align-content: start;
     gap: .7rem;
+    width: min(310px, 88vw);
     min-height: 0;
+    padding: .8rem;
+    overflow: auto;
+    border-left: 1px solid rgba(56, 189, 248, .2);
+    background: #0b1628;
+    box-shadow: -24px 0 48px rgba(0, 0, 0, .34);
+    transform: translateX(104%);
+    opacity: 0;
+    transition: transform .22s cubic-bezier(.2, .8, .2, 1), opacity .18s ease;
+}
+
+.calendario-side.is-open {
+    transform: translateX(0);
+    opacity: 1;
+}
+
+.calendario-panel-backdrop {
+    position: absolute;
+    inset: 0;
+    z-index: 41;
+    border: 0;
+    background: rgba(2, 6, 23, .28);
+    animation: support-modal-backdrop-in .16s ease-out both;
+}
+
+.calendario-side-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .75rem;
+    padding-bottom: .55rem;
+    border-bottom: 1px solid var(--calendar-border);
+}
+
+.calendario-side-title div {
+    display: grid;
+    gap: .08rem;
+}
+
+.calendario-side-title span {
+    color: #22d3ee;
+    font-size: .68rem;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+}
+
+.calendario-side-title strong {
+    font-size: 1rem;
 }
 
 .calendario-mini,
@@ -902,12 +1014,9 @@ select {
 }
 
 @media (max-width: 1100px) {
-    .calendario-shell {
+    .calendario-toolbar {
         grid-template-columns: 1fr;
-    }
-
-    .calendario-side {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        align-items: stretch;
     }
 }
 
@@ -917,7 +1026,6 @@ select {
         overflow: auto;
     }
 
-    .calendario-toolbar,
     .calendario-topbar,
     .calendario-filters {
         align-items: stretch;

@@ -21,6 +21,10 @@
                 <i class="bi bi-arrow-clockwise"></i>
                 <span>Recargar</span>
             </button>
+            <button type="button" class="btn btn--ghost" @onclick="ToggleSidePanel">
+                <i class="bi bi-layout-sidebar-inset-reverse"></i>
+                <span>Panel</span>
+            </button>
         </div>
     </header>
 
@@ -43,6 +47,14 @@
             <button type="button" class="btn btn--ghost" @onclick="GoToday">Hoy</button>
             <strong>@MonthLabel</strong>
         </div>
+
+        <button type="button"
+                class="@ActiveGuardClass"
+                style="--event-color:@ActiveGuardColor"
+                @onclick="OpenActiveGuardAsync">
+            <span>Guardia activa</span>
+            <strong>@ActiveGuardTitle</strong>
+        </button>
 
         <div class="calendario-filters">
             <div class="field">
@@ -110,7 +122,22 @@
             }
         </div>
 
-        <aside class="calendario-side">
+    </section>
+
+    @if (_showSidePanel)
+    {
+        <button type="button" class="calendario-panel-backdrop" @onclick="CloseSidePanel" aria-label="Cerrar panel lateral"></button>
+        <aside class="calendario-side is-open" @onclick:stopPropagation>
+            <header class="calendario-side-title">
+                <div>
+                    <span>Calendario</span>
+                    <strong>Contexto</strong>
+                </div>
+                <button type="button" class="btn btn--ghost btn--icon" @onclick="CloseSidePanel" title="Cerrar">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </header>
+
             <div class="calendario-mini">
                 <strong>@DateTime.Today.ToString("dddd dd", Culture)</strong>
                 <span>@DateTime.Today.ToString("MMMM yyyy", Culture)</span>
@@ -118,7 +145,7 @@
 
             <section class="calendario-side-section">
                 <div class="calendario-side-head">
-                    <span>Guardias activas</span>
+                    <span>Guardias del rango</span>
                     <small>@ActiveGuards.Count</small>
                 </div>
                 @if (ActiveGuards.Count == 0)
@@ -129,7 +156,7 @@
                 {
                     @foreach (var guardia in ActiveGuards)
                     {
-                        <button type="button" class="calendario-side-event" @onclick="() => OpenEvent(guardia.IdEvento)">
+                        <button type="button" class="calendario-side-event" @onclick="() => OpenEventFromPanel(guardia.IdEvento)">
                             <span class="calendario-dot" style="background:@EventColor(guardia)"></span>
                             <span>
                                 <strong>@guardia.Titulo</strong>
@@ -150,7 +177,7 @@
                     {
                         <button type="button"
                                 class="@(_request.IdTecnico == tecnico.IdTecnico ? "is-active" : string.Empty)"
-                                @onclick="() => FilterTechnicianAsync(tecnico.IdTecnico)">
+                                @onclick="() => FilterTechnicianFromPanelAsync(tecnico.IdTecnico)">
                             <span class="calendario-dot" style="background:@TechnicianColor(tecnico.IdTecnico)"></span>
                             <span>@tecnico.Nombre</span>
                         </button>
@@ -158,7 +185,7 @@
                 </div>
             </section>
         </aside>
-    </section>
+    }
 
     @if (_loading)
     {
@@ -323,6 +350,7 @@
     private bool _loading;
     private bool _saving;
     private bool _showEditor;
+    private bool _showSidePanel;
     private string _feedbackTitle = string.Empty;
     private string _feedbackText = string.Empty;
     private string _feedbackKind = "success";
@@ -343,6 +371,20 @@
         .OrderBy(x => x.FechaInicio)
         .Take(8)
         .ToList();
+    private CalendarioEventoDto? CurrentGuard => _events
+        .Where(x => x.Tipo == CalendarioEventoTipos.Guardia
+                    && x.Estado != CalendarioEventoEstados.Cancelado
+                    && x.FechaInicio.Date <= DateTime.Today
+                    && x.FechaFin.Date >= DateTime.Today)
+        .OrderBy(x => x.FechaInicio)
+        .FirstOrDefault();
+    private string ActiveGuardTitle => CurrentGuard is null
+        ? "Sin guardia activa"
+        : FirstNonEmpty(CurrentGuard.TecnicoNombre, CurrentGuard.Titulo);
+    private string ActiveGuardColor => CurrentGuard is null ? "rgba(148, 163, 184, .7)" : EventColor(CurrentGuard);
+    private string ActiveGuardClass => CurrentGuard is null
+        ? "calendario-active-guard is-empty"
+        : "calendario-active-guard";
 
     protected override async Task OnInitializedAsync()
     {
@@ -396,6 +438,18 @@
         await LoadAsync();
     }
 
+    private async Task FilterTechnicianFromPanelAsync(string idTecnico)
+    {
+        await FilterTechnicianAsync(idTecnico);
+        _showSidePanel = false;
+    }
+
+    private void ToggleSidePanel()
+        => _showSidePanel = !_showSidePanel;
+
+    private void CloseSidePanel()
+        => _showSidePanel = false;
+
     private async Task OnSearchInput(ChangeEventArgs args)
     {
         _request.Search = args.Value?.ToString() ?? string.Empty;
@@ -431,6 +485,7 @@
 
     private async Task OpenEvent(long idEvento)
     {
+        _showSidePanel = false;
         var result = await UiOps.RunAsync(() => CalendarioSvc.GetByIdAsync(idEvento), "No se pudo cargar el evento.");
         if (!result.Success || result.Value is null)
         {
@@ -458,6 +513,20 @@
             IdPlantillaWhatsApp = result.Value.Recordatorio?.IdPlantillaWhatsApp
         };
         _showEditor = true;
+    }
+
+    private async Task OpenEventFromPanel(long idEvento)
+    {
+        _showSidePanel = false;
+        await OpenEvent(idEvento);
+    }
+
+    private async Task OpenActiveGuardAsync()
+    {
+        if (CurrentGuard is null)
+            return;
+
+        await OpenEvent(CurrentGuard.IdEvento);
     }
 
     private void CloseEditor()
@@ -584,6 +653,9 @@
 
     private static string EventColor(CalendarioEventoDto item)
         => string.IsNullOrWhiteSpace(item.Color) ? "#14b8a6" : item.Color;
+
+    private static string FirstNonEmpty(params string?[] values)
+        => values.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x))?.Trim() ?? string.Empty;
 
     private static string ReminderLabel(CalendarioRecordatorioDto reminder)
     {
