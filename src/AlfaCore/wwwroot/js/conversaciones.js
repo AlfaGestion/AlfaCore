@@ -135,23 +135,28 @@ window.conversacionesUi = {
 
             if (context.state !== 'running') return;
 
-            const oscillator = context.createOscillator();
-            const gain = context.createGain();
-            oscillator.type = 'sine';
-            oscillator.frequency.setValueAtTime(660, context.currentTime);
-            oscillator.frequency.exponentialRampToValueAtTime(920, context.currentTime + 0.07);
-            gain.gain.setValueAtTime(0.0001, context.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.11, context.currentTime + 0.012);
-            gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.16);
+            const playTone = (start, frequency, duration, volume) => {
+                const oscillator = context.createOscillator();
+                const gain = context.createGain();
+                oscillator.type = 'triangle';
+                oscillator.frequency.setValueAtTime(frequency, start);
+                gain.gain.setValueAtTime(0.0001, start);
+                gain.gain.exponentialRampToValueAtTime(volume, start + 0.014);
+                gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
 
-            oscillator.connect(gain);
-            gain.connect(context.destination);
-            oscillator.start();
-            oscillator.stop(context.currentTime + 0.18);
-            oscillator.onended = () => {
-                oscillator.disconnect();
-                gain.disconnect();
+                oscillator.connect(gain);
+                gain.connect(context.destination);
+                oscillator.start(start);
+                oscillator.stop(start + duration + 0.02);
+                oscillator.onended = () => {
+                    oscillator.disconnect();
+                    gain.disconnect();
+                };
             };
+
+            const now = context.currentTime;
+            playTone(now, 880, 0.12, 0.18);
+            playTone(now + 0.13, 1175, 0.18, 0.16);
         } catch {
         }
     },
