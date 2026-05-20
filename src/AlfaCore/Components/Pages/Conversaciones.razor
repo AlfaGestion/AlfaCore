@@ -3620,7 +3620,9 @@
         => string.Equals(message.Direction, "ENTRANTE", StringComparison.OrdinalIgnoreCase);
 
     private static bool IsInternalEventMessage(ConversacionMensajeDto message)
-        => string.Equals(message.Direction, "EVENTO_INTERNO", StringComparison.OrdinalIgnoreCase);
+        => string.Equals(message.Direction, "EVENTO_INTERNO", StringComparison.OrdinalIgnoreCase)
+           || (string.Equals(message.Direction, "NOTA_INTERNA", StringComparison.OrdinalIgnoreCase)
+               && string.Equals(message.MessageType, "SYSTEM", StringComparison.OrdinalIgnoreCase));
 
     private bool CanReactToMessage(ConversacionMensajeDto message)
         => IsWhatsAppConversation

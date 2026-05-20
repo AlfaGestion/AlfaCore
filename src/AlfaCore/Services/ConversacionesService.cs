@@ -20,7 +20,7 @@ public sealed class ConversacionesService(
     private readonly IAppEventService _appEvents = appEvents;
     private const string ManualWhatsAppConversationSummary = "Conversaci\u00f3n iniciada manualmente.";
     private const string ManualWhatsAppInitialState = "PENDIENTE";
-    private const string InternalEventDirection = "EVENTO_INTERNO";
+    private const string InternalEventDirection = "NOTA_INTERNA";
     private const string InternalEventMessageType = "SYSTEM";
     private static readonly TimeSpan TypingTtl = TimeSpan.FromSeconds(8);
     private static readonly ConcurrentDictionary<long, byte> MediaHydrationAttempts = new();
