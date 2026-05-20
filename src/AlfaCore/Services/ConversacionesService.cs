@@ -323,7 +323,7 @@ public sealed class ConversacionesService(
 
                 SELECT TOP (8)
                     c.IdConversacion,
-                    ISNULL(NULLIF(c.NombreVisible, N''), NULLIF(c.TelefonoWhatsApp, N''), N'Sin nombre'),
+                    COALESCE(NULLIF(c.NombreVisible, N''), NULLIF(c.TelefonoWhatsApp, N''), N'Sin nombre'),
                     ISNULL(c.TelefonoWhatsApp, N''),
                     ISNULL(t.Nombre, N'Sin asignar'),
                     SUM(CASE WHEN m.Direction = N'ENTRANTE' THEN 1 ELSE 0 END),
@@ -333,7 +333,7 @@ public sealed class ConversacionesService(
                 FROM #MensajesRango m
                 INNER JOIN dbo.CONV_CONVERSACIONES c ON c.IdConversacion = m.IdConversacion
                 LEFT JOIN dbo.V_TA_Tecnicos t ON t.IdTecnico = c.IdTecnico
-                GROUP BY c.IdConversacion, ISNULL(NULLIF(c.NombreVisible, N''), NULLIF(c.TelefonoWhatsApp, N''), N'Sin nombre'), ISNULL(c.TelefonoWhatsApp, N''), ISNULL(t.Nombre, N'Sin asignar')
+                GROUP BY c.IdConversacion, COALESCE(NULLIF(c.NombreVisible, N''), NULLIF(c.TelefonoWhatsApp, N''), N'Sin nombre'), ISNULL(c.TelefonoWhatsApp, N''), ISNULL(t.Nombre, N'Sin asignar')
                 ORDER BY COUNT(1) DESC, MAX(m.FechaHora) DESC;
                 """;
 
