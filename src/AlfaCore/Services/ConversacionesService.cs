@@ -112,6 +112,259 @@ public sealed class ConversacionesService(
             return (IReadOnlyList<ConversacionEstadoOptionDto>)items;
         }, "No se pudieron cargar los estados de conversación.", ct);
 
+    public Task<ConversacionesEstadisticasDto> GetEstadisticasAsync(ConversacionesEstadisticasFilters filters, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "GetEstadisticas", async token =>
+        {
+            ArgumentNullException.ThrowIfNull(filters);
+
+            var desde = filters.Desde.Date;
+            var hastaInclusive = filters.Hasta.Date;
+            if (hastaInclusive < desde)
+                (desde, hastaInclusive) = (hastaInclusive, desde);
+
+            var hastaExclusive = hastaInclusive.AddDays(1);
+            var technicianId = NormalizeTechnicianId(filters.IdTecnico);
+
+            const string sql = """
+                WITH MensajesRango AS
+                (
+                    SELECT m.*
+                    FROM dbo.CONV_MENSAJES m
+                    INNER JOIN dbo.CONV_CONVERSACIONES c ON c.IdConversacion = m.IdConversacion
+                    WHERE m.FechaHora >= @Desde
+                      AND m.FechaHora < @HastaExclusive
+                      AND (@IdTecnico IS NULL OR c.IdTecnico = @IdTecnico OR m.IdTecnicoAutor = @IdTecnico)
+                ),
+                EntrantesRango AS
+                (
+                    SELECT IdConversacion, MIN(FechaHora) AS PrimerEntrante
+                    FROM MensajesRango
+                    WHERE Direction = N'ENTRANTE'
+                    GROUP BY IdConversacion
+                ),
+                PrimerasRespuestas AS
+                (
+                    SELECT e.IdConversacion, e.PrimerEntrante, MIN(m.FechaHora) AS PrimeraRespuesta
+                    FROM EntrantesRango e
+                    INNER JOIN dbo.CONV_MENSAJES m
+                        ON m.IdConversacion = e.IdConversacion
+                       AND m.Direction = N'SALIENTE'
+                       AND m.FechaHora >= e.PrimerEntrante
+                    GROUP BY e.IdConversacion, e.PrimerEntrante
+                ),
+                CierresRango AS
+                (
+                    SELECT c.IdConversacion, c.FechaHoraPrimerMensaje, c.FechaHora_Grabacion, c.FechaHoraCierre
+                    FROM dbo.CONV_CONVERSACIONES c
+                    WHERE c.FechaHoraCierre >= @Desde
+                      AND c.FechaHoraCierre < @HastaExclusive
+                      AND (@IdTecnico IS NULL OR c.IdTecnico = @IdTecnico)
+                ),
+                EventosRango AS
+                (
+                    SELECT m.*
+                    FROM MensajesRango m
+                    WHERE m.Direction = N'NOTA_INTERNA'
+                      AND m.MessageType = N'SYSTEM'
+                )
+                SELECT
+                    (SELECT COUNT(1) FROM dbo.CONV_CONVERSACIONES c WHERE @IdTecnico IS NULL OR c.IdTecnico = @IdTecnico),
+                    (SELECT COUNT(1) FROM dbo.CONV_CONVERSACIONES c WHERE c.CodigoEstado = N'ABIERTA' AND (@IdTecnico IS NULL OR c.IdTecnico = @IdTecnico)),
+                    (SELECT COUNT(1) FROM dbo.CONV_CONVERSACIONES c WHERE c.CodigoEstado = N'PENDIENTE' AND (@IdTecnico IS NULL OR c.IdTecnico = @IdTecnico)),
+                    (SELECT COUNT(1) FROM dbo.CONV_CONVERSACIONES c WHERE c.CodigoEstado = N'EN_GESTION' AND (@IdTecnico IS NULL OR c.IdTecnico = @IdTecnico)),
+                    (SELECT COUNT(1) FROM dbo.CONV_CONVERSACIONES c INNER JOIN dbo.CONV_ESTADOS e ON e.CodigoEstado = c.CodigoEstado WHERE e.EsCerrado = 1 AND (@IdTecnico IS NULL OR c.IdTecnico = @IdTecnico)),
+                    (SELECT COUNT(1) FROM dbo.CONV_CONVERSACIONES c WHERE (ISNULL(c.Archivada, 0) = 1 OR c.CodigoEstado = N'ARCHIVADA') AND (@IdTecnico IS NULL OR c.IdTecnico = @IdTecnico)),
+                    (SELECT COUNT(1) FROM dbo.CONV_CONVERSACIONES c WHERE NULLIF(LTRIM(RTRIM(ISNULL(c.IdTecnico, N''))), N'') IS NULL),
+                    (SELECT COUNT(1) FROM dbo.CONV_CONVERSACIONES c WHERE NULLIF(LTRIM(RTRIM(ISNULL(c.IdTecnico, N''))), N'') IS NOT NULL AND (@IdTecnico IS NULL OR c.IdTecnico = @IdTecnico)),
+                    (SELECT COUNT(1) FROM dbo.CONV_CONVERSACIONES c WHERE c.FechaHora_Grabacion >= @Desde AND c.FechaHora_Grabacion < @HastaExclusive AND (@IdTecnico IS NULL OR c.IdTecnico = @IdTecnico)),
+                    (SELECT COUNT(1) FROM EventosRango WHERE Texto LIKE N'%cambió el estado de Cerrada a%' OR Texto LIKE N'%cambio el estado de Cerrada a%'),
+                    (SELECT COUNT(1) FROM MensajesRango WHERE Direction = N'ENTRANTE'),
+                    (SELECT COUNT(1) FROM MensajesRango WHERE Direction = N'SALIENTE'),
+                    (SELECT COUNT(1) FROM MensajesRango WHERE Direction = N'NOTA_INTERNA'),
+                    (SELECT COUNT(1) FROM PrimerasRespuestas WHERE PrimeraRespuesta IS NOT NULL),
+                    (SELECT COUNT(1) FROM EntrantesRango e WHERE NOT EXISTS (SELECT 1 FROM PrimerasRespuestas r WHERE r.IdConversacion = e.IdConversacion AND r.PrimeraRespuesta IS NOT NULL)),
+                    (SELECT COUNT(1) FROM CierresRango),
+                    (SELECT COUNT(1) FROM dbo.TICK_TICKETS t LEFT JOIN dbo.CONV_CONVERSACIONES c ON c.IdConversacion = t.IdConversacion WHERE ISNULL(t.Baja, 0) = 0 AND t.FechaHoraAlta >= @Desde AND t.FechaHoraAlta < @HastaExclusive AND (@IdTecnico IS NULL OR t.IdTecnico = @IdTecnico OR c.IdTecnico = @IdTecnico)),
+                    (SELECT COUNT(1) FROM dbo.CONV_ASIGNACIONES a WHERE a.FechaHora >= @Desde AND a.FechaHora < @HastaExclusive AND (@IdTecnico IS NULL OR a.IdTecnico = @IdTecnico)),
+                    (SELECT COUNT(1) FROM EventosRango WHERE Texto LIKE N'%cambió el estado%' OR Texto LIKE N'%cambio el estado%' OR Texto LIKE N'%cerró la conversación%' OR Texto LIKE N'%cerro la conversacion%'),
+                    (SELECT AVG(CAST(DATEDIFF(second, PrimerEntrante, PrimeraRespuesta) AS bigint)) FROM PrimerasRespuestas WHERE PrimeraRespuesta IS NOT NULL),
+                    (SELECT AVG(CAST(DATEDIFF(second, ISNULL(FechaHoraPrimerMensaje, FechaHora_Grabacion), FechaHoraCierre) AS bigint)) FROM CierresRango WHERE FechaHoraCierre IS NOT NULL);
+
+                SELECT ISNULL(c.CodigoEstado, N''), ISNULL(e.Descripcion, c.CodigoEstado), COUNT(1), ISNULL(e.EsCerrado, 0)
+                FROM dbo.CONV_CONVERSACIONES c
+                LEFT JOIN dbo.CONV_ESTADOS e ON e.CodigoEstado = c.CodigoEstado
+                WHERE @IdTecnico IS NULL OR c.IdTecnico = @IdTecnico
+                GROUP BY ISNULL(c.CodigoEstado, N''), ISNULL(e.Descripcion, c.CodigoEstado), ISNULL(e.EsCerrado, 0), ISNULL(e.Orden, 999)
+                ORDER BY ISNULL(e.Orden, 999), ISNULL(e.Descripcion, c.CodigoEstado);
+
+                SELECT
+                    ISNULL(t.IdTecnico, N''),
+                    ISNULL(t.Nombre, N'Sin asignar'),
+                    ISNULL(asig.ConversacionesAsignadas, 0),
+                    ISNULL(msg.MensajesEnviados, 0),
+                    ISNULL(cierres.Cierres, 0),
+                    ISNULL(tickets.TicketsCreados, 0)
+                FROM dbo.V_TA_Tecnicos t
+                OUTER APPLY (SELECT COUNT(1) AS ConversacionesAsignadas FROM dbo.CONV_CONVERSACIONES c WHERE c.IdTecnico = t.IdTecnico) asig
+                OUTER APPLY (SELECT COUNT(1) AS MensajesEnviados FROM dbo.CONV_MENSAJES m WHERE m.IdTecnicoAutor = t.IdTecnico AND m.Direction = N'SALIENTE' AND m.FechaHora >= @Desde AND m.FechaHora < @HastaExclusive) msg
+                OUTER APPLY (SELECT COUNT(1) AS Cierres FROM dbo.CONV_CONVERSACIONES c WHERE c.IdTecnico = t.IdTecnico AND c.FechaHoraCierre >= @Desde AND c.FechaHoraCierre < @HastaExclusive) cierres
+                OUTER APPLY (SELECT COUNT(1) AS TicketsCreados FROM dbo.TICK_TICKETS tk LEFT JOIN dbo.CONV_CONVERSACIONES c ON c.IdConversacion = tk.IdConversacion WHERE ISNULL(tk.Baja, 0) = 0 AND tk.FechaHoraAlta >= @Desde AND tk.FechaHoraAlta < @HastaExclusive AND (tk.IdTecnico = t.IdTecnico OR c.IdTecnico = t.IdTecnico)) tickets
+                WHERE ISNULL(t.Baja, 0) = 0
+                  AND (@IdTecnico IS NULL OR t.IdTecnico = @IdTecnico)
+                  AND (ISNULL(asig.ConversacionesAsignadas, 0) > 0 OR ISNULL(msg.MensajesEnviados, 0) > 0 OR ISNULL(cierres.Cierres, 0) > 0 OR ISNULL(tickets.TicketsCreados, 0) > 0)
+                ORDER BY ISNULL(msg.MensajesEnviados, 0) DESC, ISNULL(asig.ConversacionesAsignadas, 0) DESC, t.Nombre;
+
+                WITH ActividadDia AS
+                (
+                    SELECT CAST(m.FechaHora AS date) AS Fecha, COUNT(1) AS Entrantes, 0 AS Salientes, 0 AS Cerradas, 0 AS Tickets
+                    FROM dbo.CONV_MENSAJES m
+                    INNER JOIN dbo.CONV_CONVERSACIONES c ON c.IdConversacion = m.IdConversacion
+                    WHERE m.Direction = N'ENTRANTE' AND m.FechaHora >= @Desde AND m.FechaHora < @HastaExclusive AND (@IdTecnico IS NULL OR c.IdTecnico = @IdTecnico)
+                    GROUP BY CAST(m.FechaHora AS date)
+                    UNION ALL
+                    SELECT CAST(m.FechaHora AS date), 0, COUNT(1), 0, 0
+                    FROM dbo.CONV_MENSAJES m
+                    WHERE m.Direction = N'SALIENTE' AND m.FechaHora >= @Desde AND m.FechaHora < @HastaExclusive AND (@IdTecnico IS NULL OR m.IdTecnicoAutor = @IdTecnico)
+                    GROUP BY CAST(m.FechaHora AS date)
+                    UNION ALL
+                    SELECT CAST(c.FechaHoraCierre AS date), 0, 0, COUNT(1), 0
+                    FROM dbo.CONV_CONVERSACIONES c
+                    WHERE c.FechaHoraCierre >= @Desde AND c.FechaHoraCierre < @HastaExclusive AND (@IdTecnico IS NULL OR c.IdTecnico = @IdTecnico)
+                    GROUP BY CAST(c.FechaHoraCierre AS date)
+                    UNION ALL
+                    SELECT CAST(t.FechaHoraAlta AS date), 0, 0, 0, COUNT(1)
+                    FROM dbo.TICK_TICKETS t
+                    LEFT JOIN dbo.CONV_CONVERSACIONES c ON c.IdConversacion = t.IdConversacion
+                    WHERE ISNULL(t.Baja, 0) = 0 AND t.FechaHoraAlta >= @Desde AND t.FechaHoraAlta < @HastaExclusive AND (@IdTecnico IS NULL OR t.IdTecnico = @IdTecnico OR c.IdTecnico = @IdTecnico)
+                    GROUP BY CAST(t.FechaHoraAlta AS date)
+                )
+                SELECT Fecha, SUM(Entrantes), SUM(Salientes), SUM(Cerradas), SUM(Tickets)
+                FROM ActividadDia
+                GROUP BY Fecha
+                ORDER BY Fecha DESC;
+
+                WITH EventosRango AS
+                (
+                    SELECT m.Texto
+                    FROM dbo.CONV_MENSAJES m
+                    INNER JOIN dbo.CONV_CONVERSACIONES c ON c.IdConversacion = m.IdConversacion
+                    WHERE m.Direction = N'NOTA_INTERNA'
+                      AND m.MessageType = N'SYSTEM'
+                      AND m.FechaHora >= @Desde
+                      AND m.FechaHora < @HastaExclusive
+                      AND (@IdTecnico IS NULL OR c.IdTecnico = @IdTecnico OR m.IdTecnicoAutor = @IdTecnico)
+                )
+                SELECT Tipo, COUNT(1)
+                FROM
+                (
+                    SELECT CASE
+                        WHEN Texto LIKE N'%asignó la conversación%' OR Texto LIKE N'%asigno la conversacion%' THEN N'Asignaciones'
+                        WHEN Texto LIKE N'%creó un ticket%' OR Texto LIKE N'%creo un ticket%' THEN N'Tickets'
+                        WHEN Texto LIKE N'%cerró la conversación%' OR Texto LIKE N'%cerro la conversacion%' THEN N'Cierres'
+                        WHEN Texto LIKE N'%cambió el estado%' OR Texto LIKE N'%cambio el estado%' THEN N'Cambios de estado'
+                        ELSE N'Otras acciones'
+                    END AS Tipo
+                    FROM EventosRango
+                ) x
+                GROUP BY Tipo
+                ORDER BY COUNT(1) DESC, Tipo;
+                """;
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var cmd = new SqlCommand(sql, cn);
+            cmd.Parameters.AddWithValue("@Desde", desde);
+            cmd.Parameters.AddWithValue("@HastaExclusive", hastaExclusive);
+            cmd.Parameters.AddWithValue("@IdTecnico", string.IsNullOrWhiteSpace(technicianId) ? DBNull.Value : technicianId);
+
+            var stats = new ConversacionesEstadisticasDto { Desde = desde, Hasta = hastaInclusive };
+
+            await using var rd = await cmd.ExecuteReaderAsync(token);
+            if (await rd.ReadAsync(token))
+            {
+                stats.ConversacionesTotales = GetInt(rd, 0);
+                stats.ConversacionesAbiertas = GetInt(rd, 1);
+                stats.ConversacionesPendientes = GetInt(rd, 2);
+                stats.ConversacionesEnGestion = GetInt(rd, 3);
+                stats.ConversacionesCerradas = GetInt(rd, 4);
+                stats.ConversacionesArchivadas = GetInt(rd, 5);
+                stats.ConversacionesSinAsignar = GetInt(rd, 6);
+                stats.ConversacionesAsignadas = GetInt(rd, 7);
+                stats.ConversacionesNuevas = GetInt(rd, 8);
+                stats.ConversacionesReabiertas = GetInt(rd, 9);
+                stats.MensajesEntrantes = GetInt(rd, 10);
+                stats.MensajesSalientes = GetInt(rd, 11);
+                stats.MensajesInternos = GetInt(rd, 12);
+                stats.ConversacionesConRespuesta = GetInt(rd, 13);
+                stats.ConversacionesSinRespuesta = GetInt(rd, 14);
+                stats.ConversacionesCerradasEnRango = GetInt(rd, 15);
+                stats.TicketsCreados = GetInt(rd, 16);
+                stats.Asignaciones = GetInt(rd, 17);
+                stats.CambiosEstado = GetInt(rd, 18);
+                stats.PromedioPrimeraRespuesta = GetNullableTimeSpan(rd, 19);
+                stats.PromedioCierre = GetNullableTimeSpan(rd, 20);
+            }
+
+            if (await rd.NextResultAsync(token))
+            {
+                while (await rd.ReadAsync(token))
+                {
+                    stats.PorEstado.Add(new ConversacionesEstadisticaEstadoDto
+                    {
+                        CodigoEstado = GetString(rd, 0),
+                        Descripcion = GetString(rd, 1),
+                        Cantidad = GetInt(rd, 2),
+                        EsCerrado = GetInt(rd, 3) == 1
+                    });
+                }
+            }
+
+            if (await rd.NextResultAsync(token))
+            {
+                while (await rd.ReadAsync(token))
+                {
+                    stats.PorTecnico.Add(new ConversacionesEstadisticaTecnicoDto
+                    {
+                        IdTecnico = GetString(rd, 0),
+                        Nombre = GetString(rd, 1),
+                        ConversacionesAsignadas = GetInt(rd, 2),
+                        MensajesEnviados = GetInt(rd, 3),
+                        Cierres = GetInt(rd, 4),
+                        TicketsCreados = GetInt(rd, 5)
+                    });
+                }
+            }
+
+            if (await rd.NextResultAsync(token))
+            {
+                while (await rd.ReadAsync(token))
+                {
+                    stats.PorDia.Add(new ConversacionesEstadisticaDiaDto
+                    {
+                        Fecha = rd.GetDateTime(0),
+                        Entrantes = GetInt(rd, 1),
+                        Salientes = GetInt(rd, 2),
+                        Cerradas = GetInt(rd, 3),
+                        Tickets = GetInt(rd, 4)
+                    });
+                }
+            }
+
+            if (await rd.NextResultAsync(token))
+            {
+                while (await rd.ReadAsync(token))
+                {
+                    stats.Actividad.Add(new ConversacionesEstadisticaActividadDto
+                    {
+                        Tipo = GetString(rd, 0),
+                        Cantidad = GetInt(rd, 1)
+                    });
+                }
+            }
+
+            return stats;
+        }, "No se pudieron cargar las estad\u00edsticas de conversaciones.", ct);
+
     public Task<IReadOnlyList<ConversacionInboxItemDto>> GetInboxAsync(ConversacionesInboxFilters filters, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetInbox", async token =>
         {
@@ -4590,6 +4843,15 @@ public sealed class ConversacionesService(
 
     private static int GetInt(SqlDataReader rd, int index)
         => rd.IsDBNull(index) ? 0 : Convert.ToInt32(rd.GetValue(index), CultureInfo.InvariantCulture);
+
+    private static TimeSpan? GetNullableTimeSpan(SqlDataReader rd, int index)
+    {
+        if (rd.IsDBNull(index))
+            return null;
+
+        var seconds = Convert.ToDouble(rd.GetValue(index), CultureInfo.InvariantCulture);
+        return TimeSpan.FromSeconds(seconds);
+    }
 
     private static string TrimForSummary(string? value)
     {

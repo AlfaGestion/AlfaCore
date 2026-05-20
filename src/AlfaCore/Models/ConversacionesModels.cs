@@ -14,6 +14,77 @@ public sealed class ConversacionesInboxFilters
     public int Offset { get; set; }
 }
 
+public sealed class ConversacionesEstadisticasFilters
+{
+    public DateTime Desde { get; set; } = DateTime.Today;
+    public DateTime Hasta { get; set; } = DateTime.Today;
+    public string? IdTecnico { get; set; }
+}
+
+public sealed class ConversacionesEstadisticasDto
+{
+    public DateTime Desde { get; set; }
+    public DateTime Hasta { get; set; }
+    public int ConversacionesTotales { get; set; }
+    public int ConversacionesAbiertas { get; set; }
+    public int ConversacionesPendientes { get; set; }
+    public int ConversacionesEnGestion { get; set; }
+    public int ConversacionesCerradas { get; set; }
+    public int ConversacionesArchivadas { get; set; }
+    public int ConversacionesSinAsignar { get; set; }
+    public int ConversacionesAsignadas { get; set; }
+    public int ConversacionesNuevas { get; set; }
+    public int ConversacionesReabiertas { get; set; }
+    public int MensajesEntrantes { get; set; }
+    public int MensajesSalientes { get; set; }
+    public int MensajesInternos { get; set; }
+    public int ConversacionesConRespuesta { get; set; }
+    public int ConversacionesSinRespuesta { get; set; }
+    public int ConversacionesCerradasEnRango { get; set; }
+    public int TicketsCreados { get; set; }
+    public int Asignaciones { get; set; }
+    public int CambiosEstado { get; set; }
+    public TimeSpan? PromedioPrimeraRespuesta { get; set; }
+    public TimeSpan? PromedioCierre { get; set; }
+    public List<ConversacionesEstadisticaEstadoDto> PorEstado { get; set; } = [];
+    public List<ConversacionesEstadisticaTecnicoDto> PorTecnico { get; set; } = [];
+    public List<ConversacionesEstadisticaDiaDto> PorDia { get; set; } = [];
+    public List<ConversacionesEstadisticaActividadDto> Actividad { get; set; } = [];
+}
+
+public sealed class ConversacionesEstadisticaEstadoDto
+{
+    public string CodigoEstado { get; set; } = string.Empty;
+    public string Descripcion { get; set; } = string.Empty;
+    public int Cantidad { get; set; }
+    public bool EsCerrado { get; set; }
+}
+
+public sealed class ConversacionesEstadisticaTecnicoDto
+{
+    public string IdTecnico { get; set; } = string.Empty;
+    public string Nombre { get; set; } = string.Empty;
+    public int ConversacionesAsignadas { get; set; }
+    public int MensajesEnviados { get; set; }
+    public int Cierres { get; set; }
+    public int TicketsCreados { get; set; }
+}
+
+public sealed class ConversacionesEstadisticaDiaDto
+{
+    public DateTime Fecha { get; set; }
+    public int Entrantes { get; set; }
+    public int Salientes { get; set; }
+    public int Cerradas { get; set; }
+    public int Tickets { get; set; }
+}
+
+public sealed class ConversacionesEstadisticaActividadDto
+{
+    public string Tipo { get; set; } = string.Empty;
+    public int Cantidad { get; set; }
+}
+
 public sealed class ConversacionInboxItemDto
 {
     public long IdConversacion { get; set; }

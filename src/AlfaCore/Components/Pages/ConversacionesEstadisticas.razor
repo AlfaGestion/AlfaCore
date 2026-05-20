@@ -1,0 +1,338 @@
+@page "/conversaciones/estadisticas"
+@inject AlfaCore.Services.IConversacionesService ConversacionesSvc
+
+<PageTitle>Estadisticas de conversaciones | Alfa Gestion</PageTitle>
+
+<section class="page-grid conv-stats-page templates-page--odoo">
+    <div class="page-intro conversations-topbar conv-stats-hero">
+        <div>
+            <h2 class="page-intro__title">Estadisticas</h2>
+            <p class="page-intro__text">Panel rapido para ver volumen, respuestas, cierres, tickets y actividad del equipo.</p>
+        </div>
+        <div class="actions">
+            <a class="btn btn--ghost" href="/conversaciones">
+                <i class="bi bi-inbox-fill"></i> Inbox
+            </a>
+        </div>
+    </div>
+
+    <section class="panel-card conv-stats-filters">
+        <div class="conversations-filters__fields">
+            <div class="field">
+                <label for="stats-desde">Desde</label>
+                <input id="stats-desde" type="date" value="@_desdeText" @onchange="HandleDesdeChanged" />
+            </div>
+            <div class="field">
+                <label for="stats-hasta">Hasta</label>
+                <input id="stats-hasta" type="date" value="@_hastaText" @onchange="HandleHastaChanged" />
+            </div>
+            <div class="field">
+                <label for="stats-tecnico">Tecnico</label>
+                <select id="stats-tecnico" @bind="_idTecnico">
+                    <option value="">Todos</option>
+                    @foreach (var tecnico in _technicians)
+                    {
+                        <option value="@tecnico.IdTecnico">@tecnico.Nombre</option>
+                    }
+                </select>
+            </div>
+            <button type="button" class="btn btn--primary" @onclick="LoadStatsAsync" disabled="@_loading">
+                <i class="bi bi-funnel"></i> Aplicar
+            </button>
+            <button type="button" class="btn btn--ghost" @onclick="SetTodayAsync" disabled="@_loading">
+                Hoy
+            </button>
+            <button type="button" class="btn btn--ghost" @onclick="SetWeekAsync" disabled="@_loading">
+                7 dias
+            </button>
+        </div>
+    </section>
+
+    @if (_error is not null)
+    {
+        <div class="panel-card empty-state">
+            <span class="empty-state__eyebrow">Estadisticas</span>
+            <h3>No fue posible cargar el panel</h3>
+            <p>@_error</p>
+        </div>
+    }
+    else if (_loading || _stats is null)
+    {
+        <div class="panel-card loading">Cargando estadisticas...</div>
+    }
+    else
+    {
+        <section class="conv-stats-summary">
+            <article class="panel-card conv-stat-card conv-stat-card--primary">
+                <span>Mensajes entrantes</span>
+                <strong>@FormatNumber(_stats.MensajesEntrantes)</strong>
+                <small>@_stats.ConversacionesConRespuesta con respuesta</small>
+            </article>
+            <article class="panel-card conv-stat-card">
+                <span>Mensajes enviados</span>
+                <strong>@FormatNumber(_stats.MensajesSalientes)</strong>
+                <small>@ResponseRateText</small>
+            </article>
+            <article class="panel-card conv-stat-card">
+                <span>Cerradas</span>
+                <strong>@FormatNumber(_stats.ConversacionesCerradasEnRango)</strong>
+                <small>@FormatDuration(_stats.PromedioCierre) promedio de cierre</small>
+            </article>
+            <article class="panel-card conv-stat-card">
+                <span>Tickets creados</span>
+                <strong>@FormatNumber(_stats.TicketsCreados)</strong>
+                <small>@FormatNumber(_stats.Asignaciones) asignaciones</small>
+            </article>
+            <article class="panel-card conv-stat-card">
+                <span>Primera respuesta</span>
+                <strong>@FormatDuration(_stats.PromedioPrimeraRespuesta)</strong>
+                <small>@FormatNumber(_stats.ConversacionesSinRespuesta) sin respuesta</small>
+            </article>
+            <article class="panel-card conv-stat-card">
+                <span>Reabiertas</span>
+                <strong>@FormatNumber(_stats.ConversacionesReabiertas)</strong>
+                <small>@FormatNumber(_stats.CambiosEstado) cambios de estado</small>
+            </article>
+        </section>
+
+        <section class="conv-stats-grid">
+            <article class="panel-card conv-stats-panel">
+                <div class="conv-stats-panel__head">
+                    <div>
+                        <h3 class="panel-card__title">Estado actual</h3>
+                        <p class="panel-card__subtitle">@FormatNumber(_stats.ConversacionesTotales) conversaciones totales</p>
+                    </div>
+                    <span class="conversation-badge conversation-badge--state">@FormatNumber(_stats.ConversacionesSinAsignar) sin asignar</span>
+                </div>
+                <div class="conv-stats-state-list">
+                    @foreach (var item in _stats.PorEstado)
+                    {
+                        <div class="conv-stats-bar-row">
+                            <div class="conv-stats-bar-row__label">
+                                <span>@DisplayOrFallback(item.Descripcion)</span>
+                                <strong>@FormatNumber(item.Cantidad)</strong>
+                            </div>
+                            <div class="conv-stats-bar">
+                                <span style="width:@GetPercent(item.Cantidad, MaxStateCount)%"></span>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </article>
+
+            <article class="panel-card conv-stats-panel">
+                <div class="conv-stats-panel__head">
+                    <div>
+                        <h3 class="panel-card__title">Flujo del rango</h3>
+                        <p class="panel-card__subtitle">@RangeLabel</p>
+                    </div>
+                </div>
+                <div class="conv-stats-flow">
+                    <div>
+                        <span>Nuevas</span>
+                        <strong>@FormatNumber(_stats.ConversacionesNuevas)</strong>
+                    </div>
+                    <div>
+                        <span>Respondidas</span>
+                        <strong>@FormatNumber(_stats.ConversacionesConRespuesta)</strong>
+                    </div>
+                    <div>
+                        <span>Pendientes de respuesta</span>
+                        <strong>@FormatNumber(_stats.ConversacionesSinRespuesta)</strong>
+                    </div>
+                    <div>
+                        <span>Internos</span>
+                        <strong>@FormatNumber(_stats.MensajesInternos)</strong>
+                    </div>
+                </div>
+                <div class="conv-stats-activity-list">
+                    @foreach (var item in _stats.Actividad)
+                    {
+                        <div class="conv-stats-activity-item">
+                            <span>@item.Tipo</span>
+                            <strong>@FormatNumber(item.Cantidad)</strong>
+                        </div>
+                    }
+                </div>
+            </article>
+        </section>
+
+        <section class="conv-stats-grid conv-stats-grid--wide">
+            <article class="panel-card conv-stats-panel">
+                <div class="conv-stats-panel__head">
+                    <div>
+                        <h3 class="panel-card__title">Equipo</h3>
+                        <p class="panel-card__subtitle">Actividad por tecnico en el rango seleccionado.</p>
+                    </div>
+                </div>
+                <div class="conv-stats-table">
+                    <div class="conv-stats-table__head">
+                        <span>Tecnico</span>
+                        <span>Asignadas</span>
+                        <span>Enviados</span>
+                        <span>Cierres</span>
+                        <span>Tickets</span>
+                    </div>
+                    @foreach (var item in _stats.PorTecnico)
+                    {
+                        <div class="conv-stats-table__row">
+                            <span>@DisplayOrFallback(item.Nombre)</span>
+                            <strong>@FormatNumber(item.ConversacionesAsignadas)</strong>
+                            <strong>@FormatNumber(item.MensajesEnviados)</strong>
+                            <strong>@FormatNumber(item.Cierres)</strong>
+                            <strong>@FormatNumber(item.TicketsCreados)</strong>
+                        </div>
+                    }
+                    @if (_stats.PorTecnico.Count == 0)
+                    {
+                        <div class="conversations-empty">No hay actividad de tecnicos para este rango.</div>
+                    }
+                </div>
+            </article>
+
+            <article class="panel-card conv-stats-panel">
+                <div class="conv-stats-panel__head">
+                    <div>
+                        <h3 class="panel-card__title">Actividad diaria</h3>
+                        <p class="panel-card__subtitle">Entrantes, salientes, cierres y tickets.</p>
+                    </div>
+                </div>
+                <div class="conv-stats-days">
+                    @foreach (var item in _stats.PorDia)
+                    {
+                        <div class="conv-stats-day">
+                            <div class="conv-stats-day__date">
+                                <strong>@item.Fecha.ToString("dd/MM")</strong>
+                                <span>@item.Fecha.ToString("ddd")</span>
+                            </div>
+                            <div class="conv-stats-day__bars">
+                                <span class="is-in" style="width:@GetPercent(item.Entrantes, MaxDailyCount)%"></span>
+                                <span class="is-out" style="width:@GetPercent(item.Salientes, MaxDailyCount)%"></span>
+                                <span class="is-close" style="width:@GetPercent(item.Cerradas + item.Tickets, MaxDailyCount)%"></span>
+                            </div>
+                            <div class="conv-stats-day__values">
+                                <span>@item.Entrantes</span>
+                                <span>@item.Salientes</span>
+                                <span>@(item.Cerradas + item.Tickets)</span>
+                            </div>
+                        </div>
+                    }
+                    @if (_stats.PorDia.Count == 0)
+                    {
+                        <div class="conversations-empty">No hay movimiento diario para mostrar.</div>
+                    }
+                </div>
+            </article>
+        </section>
+    }
+</section>
+
+@code {
+    private List<ConversacionTecnicoOptionDto> _technicians = [];
+    private ConversacionesEstadisticasDto? _stats;
+    private bool _loading;
+    private string? _error;
+    private string _desdeText = DateTime.Today.ToString("yyyy-MM-dd");
+    private string _hastaText = DateTime.Today.ToString("yyyy-MM-dd");
+    private string _idTecnico = string.Empty;
+
+    private string RangeLabel
+        => _stats is null ? string.Empty : $"{_stats.Desde:dd/MM/yyyy} - {_stats.Hasta:dd/MM/yyyy}";
+
+    private string ResponseRateText
+    {
+        get
+        {
+            if (_stats is null || _stats.ConversacionesConRespuesta + _stats.ConversacionesSinRespuesta == 0)
+                return "Sin entrantes en el rango";
+
+            var total = _stats.ConversacionesConRespuesta + _stats.ConversacionesSinRespuesta;
+            var rate = (double)_stats.ConversacionesConRespuesta / total;
+            return $"{rate:P0} de conversaciones respondidas";
+        }
+    }
+
+    private int MaxStateCount => Math.Max(1, _stats?.PorEstado.Select(x => x.Cantidad).DefaultIfEmpty(0).Max() ?? 1);
+    private int MaxDailyCount => Math.Max(1, _stats?.PorDia.Select(x => Math.Max(Math.Max(x.Entrantes, x.Salientes), x.Cerradas + x.Tickets)).DefaultIfEmpty(0).Max() ?? 1);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _technicians = (await ConversacionesSvc.GetTechniciansAsync()).ToList();
+        await LoadStatsAsync();
+    }
+
+    private async Task SetTodayAsync()
+    {
+        _desdeText = DateTime.Today.ToString("yyyy-MM-dd");
+        _hastaText = DateTime.Today.ToString("yyyy-MM-dd");
+        await LoadStatsAsync();
+    }
+
+    private async Task SetWeekAsync()
+    {
+        _desdeText = DateTime.Today.AddDays(-6).ToString("yyyy-MM-dd");
+        _hastaText = DateTime.Today.ToString("yyyy-MM-dd");
+        await LoadStatsAsync();
+    }
+
+    private void HandleDesdeChanged(ChangeEventArgs args)
+        => _desdeText = Convert.ToString(args.Value) ?? _desdeText;
+
+    private void HandleHastaChanged(ChangeEventArgs args)
+        => _hastaText = Convert.ToString(args.Value) ?? _hastaText;
+
+    private async Task LoadStatsAsync()
+    {
+        _loading = true;
+        _error = null;
+
+        try
+        {
+            var desde = ParseDate(_desdeText, DateTime.Today);
+            var hasta = ParseDate(_hastaText, DateTime.Today);
+            _stats = await ConversacionesSvc.GetEstadisticasAsync(new ConversacionesEstadisticasFilters
+            {
+                Desde = desde,
+                Hasta = hasta,
+                IdTecnico = _idTecnico
+            });
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private static DateTime ParseDate(string? value, DateTime fallback)
+        => DateTime.TryParse(value, out var result) ? result.Date : fallback.Date;
+
+    private static double GetPercent(int value, int max)
+        => max <= 0 || value <= 0 ? 0 : Math.Clamp((double)value / max * 100, 4, 100);
+
+    private static string FormatNumber(int value)
+        => value.ToString("N0");
+
+    private static string FormatDuration(TimeSpan? value)
+    {
+        if (value is null)
+            return "Sin datos";
+
+        if (value.Value.TotalDays >= 1)
+            return $"{value.Value.TotalDays:0.0} dias";
+
+        if (value.Value.TotalHours >= 1)
+            return $"{value.Value.TotalHours:0.0} h";
+
+        if (value.Value.TotalMinutes >= 1)
+            return $"{value.Value.TotalMinutes:0} min";
+
+        return $"{Math.Max(1, value.Value.TotalSeconds):0} seg";
+    }
+
+    private static string DisplayOrFallback(string? value)
+        => string.IsNullOrWhiteSpace(value) ? "Sin dato" : value.Trim();
+}
