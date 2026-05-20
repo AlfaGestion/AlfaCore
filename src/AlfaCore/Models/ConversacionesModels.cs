@@ -4,6 +4,7 @@ namespace AlfaCore.Models;
 
 public sealed class ConversacionesInboxFilters
 {
+    public const string EstadoSinFinalizar = "__SIN_FINALIZAR__";
     public string Modo { get; set; } = "pendientes";
     public string Search { get; set; } = string.Empty;
     public string? IdTecnicoActual { get; set; }

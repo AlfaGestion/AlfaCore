@@ -215,6 +215,7 @@
                     <label for="conv-state-filter">Estado</label>
                     <select id="conv-state-filter" @bind="_filters.CodigoEstado">
                         <option value="">Todos</option>
+                        <option value="@ConversacionesInboxFilters.EstadoSinFinalizar">Sin finalizar</option>
                         @foreach (var state in _states)
                         {
                             <option value="@state.CodigoEstado">@state.Descripcion</option>

@@ -173,7 +173,11 @@ public sealed class ConversacionesService(
                 ) ultMsg
                 WHERE
                     (@Canal IS NULL OR c.Canal = @Canal)
-                    AND (@CodigoEstado IS NULL OR c.CodigoEstado = @CodigoEstado)
+                    AND (
+                        @CodigoEstado IS NULL
+                        OR (@CodigoEstado = @EstadoSinFinalizar AND ISNULL(e.EsCerrado, 0) = 0 AND ISNULL(c.Archivada, 0) = 0)
+                        OR (@CodigoEstado <> @EstadoSinFinalizar AND c.CodigoEstado = @CodigoEstado)
+                    )
                     AND (
                         @Search IS NULL
                         OR c.TelefonoWhatsApp LIKE @Search
@@ -221,6 +225,7 @@ public sealed class ConversacionesService(
             await using var cmd = new SqlCommand(sql, cn);
             cmd.Parameters.AddWithValue("@Canal", DbNullable(filters.Canal));
             cmd.Parameters.AddWithValue("@CodigoEstado", DbNullable(filters.CodigoEstado));
+            cmd.Parameters.AddWithValue("@EstadoSinFinalizar", ConversacionesInboxFilters.EstadoSinFinalizar);
             cmd.Parameters.AddWithValue("@Search", DbNullable(Like(filters.Search)));
             cmd.Parameters.AddWithValue("@SearchPhone", DbNullable(searchPhone));
             cmd.Parameters.AddWithValue("@SearchPhoneTail", DbNullable(searchPhoneTail));
