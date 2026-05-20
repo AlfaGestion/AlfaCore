@@ -126,19 +126,19 @@ public sealed class ConversacionesService(
             var technicianId = NormalizeTechnicianId(filters.IdTecnico);
 
             const string sql = """
-                WITH MensajesRango AS
-                (
-                    SELECT m.*
-                    FROM dbo.CONV_MENSAJES m
-                    INNER JOIN dbo.CONV_CONVERSACIONES c ON c.IdConversacion = m.IdConversacion
-                    WHERE m.FechaHora >= @Desde
-                      AND m.FechaHora < @HastaExclusive
-                      AND (@IdTecnico IS NULL OR c.IdTecnico = @IdTecnico OR m.IdTecnicoAutor = @IdTecnico)
-                ),
+                SELECT m.*
+                INTO #MensajesRango
+                FROM dbo.CONV_MENSAJES m
+                INNER JOIN dbo.CONV_CONVERSACIONES c ON c.IdConversacion = m.IdConversacion
+                WHERE m.FechaHora >= @Desde
+                  AND m.FechaHora < @HastaExclusive
+                  AND (@IdTecnico IS NULL OR c.IdTecnico = @IdTecnico OR m.IdTecnicoAutor = @IdTecnico);
+
+                WITH
                 EntrantesRango AS
                 (
                     SELECT IdConversacion, MIN(FechaHora) AS PrimerEntrante
-                    FROM MensajesRango
+                    FROM #MensajesRango
                     WHERE Direction = N'ENTRANTE'
                     GROUP BY IdConversacion
                 ),
@@ -163,7 +163,7 @@ public sealed class ConversacionesService(
                 EventosRango AS
                 (
                     SELECT m.*
-                    FROM MensajesRango m
+                    FROM #MensajesRango m
                     WHERE m.Direction = N'NOTA_INTERNA'
                       AND m.MessageType = N'SYSTEM'
                 )
@@ -177,10 +177,15 @@ public sealed class ConversacionesService(
                     (SELECT COUNT(1) FROM dbo.CONV_CONVERSACIONES c WHERE NULLIF(LTRIM(RTRIM(ISNULL(c.IdTecnico, N''))), N'') IS NULL),
                     (SELECT COUNT(1) FROM dbo.CONV_CONVERSACIONES c WHERE NULLIF(LTRIM(RTRIM(ISNULL(c.IdTecnico, N''))), N'') IS NOT NULL AND (@IdTecnico IS NULL OR c.IdTecnico = @IdTecnico)),
                     (SELECT COUNT(1) FROM dbo.CONV_CONVERSACIONES c WHERE c.FechaHora_Grabacion >= @Desde AND c.FechaHora_Grabacion < @HastaExclusive AND (@IdTecnico IS NULL OR c.IdTecnico = @IdTecnico)),
+                    (SELECT COUNT(DISTINCT IdConversacion) FROM #MensajesRango),
+                    (SELECT COUNT(DISTINCT COALESCE(NULLIF(c.ClienteCodigo, N''), NULLIF(c.TelefonoWhatsApp, N''), CONVERT(nvarchar(30), c.IdConversacion)))
+                     FROM dbo.CONV_CONVERSACIONES c
+                     WHERE EXISTS (SELECT 1 FROM #MensajesRango m WHERE m.IdConversacion = c.IdConversacion)),
                     (SELECT COUNT(1) FROM EventosRango WHERE Texto LIKE N'%cambió el estado de Cerrada a%' OR Texto LIKE N'%cambio el estado de Cerrada a%'),
-                    (SELECT COUNT(1) FROM MensajesRango WHERE Direction = N'ENTRANTE'),
-                    (SELECT COUNT(1) FROM MensajesRango WHERE Direction = N'SALIENTE'),
-                    (SELECT COUNT(1) FROM MensajesRango WHERE Direction = N'NOTA_INTERNA'),
+                    (SELECT COUNT(1) FROM #MensajesRango WHERE Direction = N'ENTRANTE'),
+                    (SELECT COUNT(1) FROM #MensajesRango WHERE Direction = N'SALIENTE'),
+                    (SELECT COUNT(1) FROM #MensajesRango WHERE Direction = N'NOTA_INTERNA'),
+                    (SELECT COUNT(DISTINCT a.IdMensaje) FROM dbo.CONV_ADJUNTOS a INNER JOIN #MensajesRango m ON m.IdMensaje = a.IdMensaje),
                     (SELECT COUNT(1) FROM PrimerasRespuestas WHERE PrimeraRespuesta IS NOT NULL),
                     (SELECT COUNT(1) FROM EntrantesRango e WHERE NOT EXISTS (SELECT 1 FROM PrimerasRespuestas r WHERE r.IdConversacion = e.IdConversacion AND r.PrimeraRespuesta IS NOT NULL)),
                     (SELECT COUNT(1) FROM CierresRango),
@@ -268,6 +273,46 @@ public sealed class ConversacionesService(
                 ) x
                 GROUP BY Tipo
                 ORDER BY COUNT(1) DESC, Tipo;
+
+                SELECT
+                    CASE UPPER(ISNULL(MessageType, N''))
+                        WHEN N'TEXT' THEN N'Texto'
+                        WHEN N'IMAGE' THEN N'Imagenes'
+                        WHEN N'DOCUMENT' THEN N'Documentos'
+                        WHEN N'AUDIO' THEN N'Audio'
+                        WHEN N'VIDEO' THEN N'Videos'
+                        WHEN N'STICKER' THEN N'Stickers'
+                        WHEN N'SYSTEM' THEN N'Sistema'
+                        ELSE N'Otros'
+                    END,
+                    COUNT(1)
+                FROM #MensajesRango
+                GROUP BY CASE UPPER(ISNULL(MessageType, N''))
+                        WHEN N'TEXT' THEN N'Texto'
+                        WHEN N'IMAGE' THEN N'Imagenes'
+                        WHEN N'DOCUMENT' THEN N'Documentos'
+                        WHEN N'AUDIO' THEN N'Audio'
+                        WHEN N'VIDEO' THEN N'Videos'
+                        WHEN N'STICKER' THEN N'Stickers'
+                        WHEN N'SYSTEM' THEN N'Sistema'
+                        ELSE N'Otros'
+                    END
+                ORDER BY COUNT(1) DESC;
+
+                SELECT TOP (8)
+                    c.IdConversacion,
+                    ISNULL(NULLIF(c.NombreVisible, N''), NULLIF(c.TelefonoWhatsApp, N''), N'Sin nombre'),
+                    ISNULL(c.TelefonoWhatsApp, N''),
+                    ISNULL(t.Nombre, N'Sin asignar'),
+                    SUM(CASE WHEN m.Direction = N'ENTRANTE' THEN 1 ELSE 0 END),
+                    SUM(CASE WHEN m.Direction = N'SALIENTE' THEN 1 ELSE 0 END),
+                    COUNT(1),
+                    MAX(m.FechaHora)
+                FROM #MensajesRango m
+                INNER JOIN dbo.CONV_CONVERSACIONES c ON c.IdConversacion = m.IdConversacion
+                LEFT JOIN dbo.V_TA_Tecnicos t ON t.IdTecnico = c.IdTecnico
+                GROUP BY c.IdConversacion, ISNULL(NULLIF(c.NombreVisible, N''), NULLIF(c.TelefonoWhatsApp, N''), N'Sin nombre'), ISNULL(c.TelefonoWhatsApp, N''), ISNULL(t.Nombre, N'Sin asignar')
+                ORDER BY COUNT(1) DESC, MAX(m.FechaHora) DESC;
                 """;
 
             await using var cn = new SqlConnection(ConnectionString);
@@ -291,18 +336,21 @@ public sealed class ConversacionesService(
                 stats.ConversacionesSinAsignar = GetInt(rd, 6);
                 stats.ConversacionesAsignadas = GetInt(rd, 7);
                 stats.ConversacionesNuevas = GetInt(rd, 8);
-                stats.ConversacionesReabiertas = GetInt(rd, 9);
-                stats.MensajesEntrantes = GetInt(rd, 10);
-                stats.MensajesSalientes = GetInt(rd, 11);
-                stats.MensajesInternos = GetInt(rd, 12);
-                stats.ConversacionesConRespuesta = GetInt(rd, 13);
-                stats.ConversacionesSinRespuesta = GetInt(rd, 14);
-                stats.ConversacionesCerradasEnRango = GetInt(rd, 15);
-                stats.TicketsCreados = GetInt(rd, 16);
-                stats.Asignaciones = GetInt(rd, 17);
-                stats.CambiosEstado = GetInt(rd, 18);
-                stats.PromedioPrimeraRespuesta = GetNullableTimeSpan(rd, 19);
-                stats.PromedioCierre = GetNullableTimeSpan(rd, 20);
+                stats.ConversacionesActivasEnRango = GetInt(rd, 9);
+                stats.ClientesUnicos = GetInt(rd, 10);
+                stats.ConversacionesReabiertas = GetInt(rd, 11);
+                stats.MensajesEntrantes = GetInt(rd, 12);
+                stats.MensajesSalientes = GetInt(rd, 13);
+                stats.MensajesInternos = GetInt(rd, 14);
+                stats.MensajesConAdjuntos = GetInt(rd, 15);
+                stats.ConversacionesConRespuesta = GetInt(rd, 16);
+                stats.ConversacionesSinRespuesta = GetInt(rd, 17);
+                stats.ConversacionesCerradasEnRango = GetInt(rd, 18);
+                stats.TicketsCreados = GetInt(rd, 19);
+                stats.Asignaciones = GetInt(rd, 20);
+                stats.CambiosEstado = GetInt(rd, 21);
+                stats.PromedioPrimeraRespuesta = GetNullableTimeSpan(rd, 22);
+                stats.PromedioCierre = GetNullableTimeSpan(rd, 23);
             }
 
             if (await rd.NextResultAsync(token))
@@ -358,6 +406,36 @@ public sealed class ConversacionesService(
                     {
                         Tipo = GetString(rd, 0),
                         Cantidad = GetInt(rd, 1)
+                    });
+                }
+            }
+
+            if (await rd.NextResultAsync(token))
+            {
+                while (await rd.ReadAsync(token))
+                {
+                    stats.PorTipoMensaje.Add(new ConversacionesEstadisticaTipoMensajeDto
+                    {
+                        Tipo = GetString(rd, 0),
+                        Cantidad = GetInt(rd, 1)
+                    });
+                }
+            }
+
+            if (await rd.NextResultAsync(token))
+            {
+                while (await rd.ReadAsync(token))
+                {
+                    stats.TopConversaciones.Add(new ConversacionesEstadisticaConversacionDto
+                    {
+                        IdConversacion = rd.GetInt64(0),
+                        Nombre = GetString(rd, 1),
+                        Telefono = GetString(rd, 2),
+                        Tecnico = GetString(rd, 3),
+                        Entrantes = GetInt(rd, 4),
+                        Salientes = GetInt(rd, 5),
+                        Total = GetInt(rd, 6),
+                        UltimoMovimiento = rd.GetDateTime(7)
                     });
                 }
             }

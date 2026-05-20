@@ -34,10 +34,13 @@ public sealed class ConversacionesEstadisticasDto
     public int ConversacionesSinAsignar { get; set; }
     public int ConversacionesAsignadas { get; set; }
     public int ConversacionesNuevas { get; set; }
+    public int ConversacionesActivasEnRango { get; set; }
+    public int ClientesUnicos { get; set; }
     public int ConversacionesReabiertas { get; set; }
     public int MensajesEntrantes { get; set; }
     public int MensajesSalientes { get; set; }
     public int MensajesInternos { get; set; }
+    public int MensajesConAdjuntos { get; set; }
     public int ConversacionesConRespuesta { get; set; }
     public int ConversacionesSinRespuesta { get; set; }
     public int ConversacionesCerradasEnRango { get; set; }
@@ -50,6 +53,8 @@ public sealed class ConversacionesEstadisticasDto
     public List<ConversacionesEstadisticaTecnicoDto> PorTecnico { get; set; } = [];
     public List<ConversacionesEstadisticaDiaDto> PorDia { get; set; } = [];
     public List<ConversacionesEstadisticaActividadDto> Actividad { get; set; } = [];
+    public List<ConversacionesEstadisticaTipoMensajeDto> PorTipoMensaje { get; set; } = [];
+    public List<ConversacionesEstadisticaConversacionDto> TopConversaciones { get; set; } = [];
 }
 
 public sealed class ConversacionesEstadisticaEstadoDto
@@ -83,6 +88,24 @@ public sealed class ConversacionesEstadisticaActividadDto
 {
     public string Tipo { get; set; } = string.Empty;
     public int Cantidad { get; set; }
+}
+
+public sealed class ConversacionesEstadisticaTipoMensajeDto
+{
+    public string Tipo { get; set; } = string.Empty;
+    public int Cantidad { get; set; }
+}
+
+public sealed class ConversacionesEstadisticaConversacionDto
+{
+    public long IdConversacion { get; set; }
+    public string Nombre { get; set; } = string.Empty;
+    public string Telefono { get; set; } = string.Empty;
+    public string Tecnico { get; set; } = string.Empty;
+    public int Entrantes { get; set; }
+    public int Salientes { get; set; }
+    public int Total { get; set; }
+    public DateTime UltimoMovimiento { get; set; }
 }
 
 public sealed class ConversacionInboxItemDto

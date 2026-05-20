@@ -17,7 +17,7 @@
     </div>
 
     <section class="panel-card conv-stats-filters">
-        <div class="conversations-filters__fields">
+        <div class="conv-stats-filter-grid">
             <div class="field">
                 <label for="stats-desde">Desde</label>
                 <input id="stats-desde" type="date" value="@_desdeText" @onchange="HandleDesdeChanged" />
@@ -39,12 +39,14 @@
             <button type="button" class="btn btn--primary" @onclick="LoadStatsAsync" disabled="@_loading">
                 <i class="bi bi-funnel"></i> Aplicar
             </button>
-            <button type="button" class="btn btn--ghost" @onclick="SetTodayAsync" disabled="@_loading">
-                Hoy
-            </button>
-            <button type="button" class="btn btn--ghost" @onclick="SetWeekAsync" disabled="@_loading">
-                7 dias
-            </button>
+        </div>
+        <div class="conv-stats-range-tabs" aria-label="Rangos rapidos">
+            <button type="button" class="@GetRangeButtonClass(StatsRange.Today)" @onclick="() => SetRangeAsync(StatsRange.Today)" disabled="@_loading">Hoy</button>
+            <button type="button" class="@GetRangeButtonClass(StatsRange.TwoDays)" @onclick="() => SetRangeAsync(StatsRange.TwoDays)" disabled="@_loading">2 dias</button>
+            <button type="button" class="@GetRangeButtonClass(StatsRange.Week)" @onclick="() => SetRangeAsync(StatsRange.Week)" disabled="@_loading">7 dias</button>
+            <button type="button" class="@GetRangeButtonClass(StatsRange.Month)" @onclick="() => SetRangeAsync(StatsRange.Month)" disabled="@_loading">1 mes</button>
+            <button type="button" class="@GetRangeButtonClass(StatsRange.ThreeMonths)" @onclick="() => SetRangeAsync(StatsRange.ThreeMonths)" disabled="@_loading">3 meses</button>
+            <button type="button" class="@GetRangeButtonClass(StatsRange.Year)" @onclick="() => SetRangeAsync(StatsRange.Year)" disabled="@_loading">1 año</button>
         </div>
     </section>
 
@@ -69,6 +71,11 @@
                 <small>@_stats.ConversacionesConRespuesta con respuesta</small>
             </article>
             <article class="panel-card conv-stat-card">
+                <span>Conversaciones activas</span>
+                <strong>@FormatNumber(_stats.ConversacionesActivasEnRango)</strong>
+                <small>@FormatNumber(_stats.ClientesUnicos) clientes/contactos</small>
+            </article>
+            <article class="panel-card conv-stat-card">
                 <span>Mensajes enviados</span>
                 <strong>@FormatNumber(_stats.MensajesSalientes)</strong>
                 <small>@ResponseRateText</small>
@@ -87,6 +94,11 @@
                 <span>Primera respuesta</span>
                 <strong>@FormatDuration(_stats.PromedioPrimeraRespuesta)</strong>
                 <small>@FormatNumber(_stats.ConversacionesSinRespuesta) sin respuesta</small>
+            </article>
+            <article class="panel-card conv-stat-card">
+                <span>Adjuntos</span>
+                <strong>@FormatNumber(_stats.MensajesConAdjuntos)</strong>
+                <small>@TotalMessagesText</small>
             </article>
             <article class="panel-card conv-stat-card">
                 <span>Reabiertas</span>
@@ -152,6 +164,58 @@
                             <span>@item.Tipo</span>
                             <strong>@FormatNumber(item.Cantidad)</strong>
                         </div>
+                    }
+                </div>
+            </article>
+        </section>
+
+        <section class="conv-stats-grid">
+            <article class="panel-card conv-stats-panel">
+                <div class="conv-stats-panel__head">
+                    <div>
+                        <h3 class="panel-card__title">Tipos de mensaje</h3>
+                        <p class="panel-card__subtitle">Formato de lo que se movio en el rango.</p>
+                    </div>
+                </div>
+                <div class="conv-stats-chip-grid">
+                    @foreach (var item in _stats.PorTipoMensaje)
+                    {
+                        <div class="conv-stats-metric-chip">
+                            <span>@item.Tipo</span>
+                            <strong>@FormatNumber(item.Cantidad)</strong>
+                        </div>
+                    }
+                    @if (_stats.PorTipoMensaje.Count == 0)
+                    {
+                        <div class="conversations-empty">No hay mensajes para clasificar.</div>
+                    }
+                </div>
+            </article>
+
+            <article class="panel-card conv-stats-panel">
+                <div class="conv-stats-panel__head">
+                    <div>
+                        <h3 class="panel-card__title">Conversaciones con mas movimiento</h3>
+                        <p class="panel-card__subtitle">Top 8 por cantidad de mensajes.</p>
+                    </div>
+                </div>
+                <div class="conv-stats-top-list">
+                    @foreach (var item in _stats.TopConversaciones)
+                    {
+                        <article class="conv-stats-top-item">
+                            <div>
+                                <strong>@DisplayOrFallback(item.Nombre)</strong>
+                                <span>@DisplayOrFallback(item.Telefono) · @DisplayOrFallback(item.Tecnico)</span>
+                            </div>
+                            <div class="conv-stats-top-item__numbers">
+                                <strong>@FormatNumber(item.Total)</strong>
+                                <span>@item.Entrantes in / @item.Salientes out</span>
+                            </div>
+                        </article>
+                    }
+                    @if (_stats.TopConversaciones.Count == 0)
+                    {
+                        <div class="conversations-empty">No hay conversaciones con movimiento en este rango.</div>
                     }
                 </div>
             </article>
@@ -235,6 +299,7 @@
     private string _desdeText = DateTime.Today.ToString("yyyy-MM-dd");
     private string _hastaText = DateTime.Today.ToString("yyyy-MM-dd");
     private string _idTecnico = string.Empty;
+    private string _activeRange = StatsRange.Today;
 
     private string RangeLabel
         => _stats is null ? string.Empty : $"{_stats.Desde:dd/MM/yyyy} - {_stats.Hasta:dd/MM/yyyy}";
@@ -252,6 +317,15 @@
         }
     }
 
+    private string TotalMessagesText
+    {
+        get
+        {
+            var total = (_stats?.MensajesEntrantes ?? 0) + (_stats?.MensajesSalientes ?? 0) + (_stats?.MensajesInternos ?? 0);
+            return $"{FormatNumber(total)} mensajes totales";
+        }
+    }
+
     private int MaxStateCount => Math.Max(1, _stats?.PorEstado.Select(x => x.Cantidad).DefaultIfEmpty(0).Max() ?? 1);
     private int MaxDailyCount => Math.Max(1, _stats?.PorDia.Select(x => Math.Max(Math.Max(x.Entrantes, x.Salientes), x.Cerradas + x.Tickets)).DefaultIfEmpty(0).Max() ?? 1);
 
@@ -261,25 +335,37 @@
         await LoadStatsAsync();
     }
 
-    private async Task SetTodayAsync()
+    private async Task SetRangeAsync(string range)
     {
-        _desdeText = DateTime.Today.ToString("yyyy-MM-dd");
-        _hastaText = DateTime.Today.ToString("yyyy-MM-dd");
-        await LoadStatsAsync();
-    }
-
-    private async Task SetWeekAsync()
-    {
-        _desdeText = DateTime.Today.AddDays(-6).ToString("yyyy-MM-dd");
-        _hastaText = DateTime.Today.ToString("yyyy-MM-dd");
+        var today = DateTime.Today;
+        _activeRange = range;
+        _hastaText = today.ToString("yyyy-MM-dd");
+        _desdeText = range switch
+        {
+            StatsRange.TwoDays => today.AddDays(-1).ToString("yyyy-MM-dd"),
+            StatsRange.Week => today.AddDays(-6).ToString("yyyy-MM-dd"),
+            StatsRange.Month => today.AddMonths(-1).AddDays(1).ToString("yyyy-MM-dd"),
+            StatsRange.ThreeMonths => today.AddMonths(-3).AddDays(1).ToString("yyyy-MM-dd"),
+            StatsRange.Year => today.AddYears(-1).AddDays(1).ToString("yyyy-MM-dd"),
+            _ => today.ToString("yyyy-MM-dd")
+        };
         await LoadStatsAsync();
     }
 
     private void HandleDesdeChanged(ChangeEventArgs args)
-        => _desdeText = Convert.ToString(args.Value) ?? _desdeText;
+    {
+        _activeRange = string.Empty;
+        _desdeText = Convert.ToString(args.Value) ?? _desdeText;
+    }
 
     private void HandleHastaChanged(ChangeEventArgs args)
-        => _hastaText = Convert.ToString(args.Value) ?? _hastaText;
+    {
+        _activeRange = string.Empty;
+        _hastaText = Convert.ToString(args.Value) ?? _hastaText;
+    }
+
+    private string GetRangeButtonClass(string range)
+        => $"conv-stats-range-tab {(string.Equals(_activeRange, range, StringComparison.Ordinal) ? "is-active" : string.Empty)}";
 
     private async Task LoadStatsAsync()
     {
@@ -335,4 +421,14 @@
 
     private static string DisplayOrFallback(string? value)
         => string.IsNullOrWhiteSpace(value) ? "Sin dato" : value.Trim();
+
+    private static class StatsRange
+    {
+        public const string Today = "today";
+        public const string TwoDays = "two-days";
+        public const string Week = "week";
+        public const string Month = "month";
+        public const string ThreeMonths = "three-months";
+        public const string Year = "year";
+    }
 }
