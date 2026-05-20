@@ -61,6 +61,7 @@ window.conversacionesAudio = (function () {
 
 window.conversacionesUi = {
     _threadWatchers: new WeakMap(),
+    _fileDropWatchers: new WeakMap(),
     _notificationBaseTitle: 'AlfaCore - Alfa Gestión',
     _notificationSoundUrl: '/audio/conversaciones/mixkit-alert-quick-chime-766.mp3',
     _notificationAudio: null,
@@ -226,5 +227,82 @@ window.conversacionesUi = {
         element.addEventListener('keydown', handler);
         element._conversacionesReplyEnterHandler = handler;
         return true;
+    },
+
+    bindFileDrop: function (element, inputId) {
+        if (!element || !inputId) return false;
+
+        const previous = this._fileDropWatchers.get(element);
+        if (previous) {
+            previous.events.forEach(item => element.removeEventListener(item.name, item.handler));
+            element.classList.remove('is-file-dragging');
+        }
+
+        let dragDepth = 0;
+        const getInput = () => document.getElementById(inputId);
+        const hasFiles = event => event.dataTransfer && Array.from(event.dataTransfer.types || []).includes('Files');
+
+        const prevent = event => {
+            if (!hasFiles(event)) return false;
+            event.preventDefault();
+            event.stopPropagation();
+            event.dataTransfer.dropEffect = 'copy';
+            return true;
+        };
+
+        const dragEnter = event => {
+            if (!prevent(event)) return;
+            dragDepth += 1;
+            element.classList.add('is-file-dragging');
+        };
+
+        const dragOver = event => {
+            prevent(event);
+        };
+
+        const dragLeave = event => {
+            if (!hasFiles(event)) return;
+            event.preventDefault();
+            event.stopPropagation();
+            dragDepth = Math.max(0, dragDepth - 1);
+            if (dragDepth === 0) {
+                element.classList.remove('is-file-dragging');
+            }
+        };
+
+        const drop = event => {
+            if (!prevent(event)) return;
+            dragDepth = 0;
+            element.classList.remove('is-file-dragging');
+
+            const input = getInput();
+            if (!input || !event.dataTransfer.files || event.dataTransfer.files.length === 0) return;
+
+            const transfer = new DataTransfer();
+            Array.from(event.dataTransfer.files).forEach(file => transfer.items.add(file));
+            input.files = transfer.files;
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+        };
+
+        const events = [
+            { name: 'dragenter', handler: dragEnter },
+            { name: 'dragover', handler: dragOver },
+            { name: 'dragleave', handler: dragLeave },
+            { name: 'drop', handler: drop }
+        ];
+
+        events.forEach(item => element.addEventListener(item.name, item.handler));
+        this._fileDropWatchers.set(element, { events: events });
+        return true;
+    },
+
+    unbindFileDrop: function (element) {
+        if (!element) return;
+        const previous = this._fileDropWatchers.get(element);
+        if (!previous) return;
+
+        previous.events.forEach(item => element.removeEventListener(item.name, item.handler));
+        element.classList.remove('is-file-dragging');
+        this._fileDropWatchers.delete(element);
     }
 };
