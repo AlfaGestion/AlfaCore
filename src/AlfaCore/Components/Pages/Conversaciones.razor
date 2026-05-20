@@ -1492,8 +1492,12 @@
 
             if (!previousInbox.TryGetValue(item.IdConversacion, out var previous))
             {
-                if (item.IdUltimoMensajeCliente is not null && item.CantidadMensajesCliente > 0)
+                if (!IsClosedConversationState(item.CodigoEstado)
+                    && item.IdUltimoMensajeCliente is not null
+                    && item.CantidadMensajesCliente > 0)
+                {
                     _newMessagesByConversation[item.IdConversacion] = Math.Max(1, item.CantidadMensajesCliente);
+                }
 
                 continue;
             }
@@ -2458,6 +2462,7 @@
                 CodigoEstado = _statusCode
             });
 
+            MarkSelectedConversationAsRead();
             _actionMessage = "Estado actualizado.";
             await SelectConversationAsync(_selectedConversation.IdConversacion);
             await LoadInboxAsync();
@@ -2478,6 +2483,9 @@
         _statusCode = closedState;
         await SaveStatusAsync();
     }
+
+    private bool IsClosedConversationState(string? codigoEstado)
+        => _states.Any(x => x.EsCerrado && string.Equals(x.CodigoEstado, codigoEstado, StringComparison.OrdinalIgnoreCase));
 
     private async Task ChangeCanalAsync(string canal)
     {
