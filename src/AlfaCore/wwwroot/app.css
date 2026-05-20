@@ -3950,14 +3950,17 @@ tr.row--critical td {
 }
 
 .conversations-pending-attachment .btn {
-    display: inline-grid;
+    display: inline-grid !important;
     place-items: center;
-    width: 28px;
-    min-width: 28px;
-    height: 28px;
-    padding: 0;
+    width: 28px !important;
+    min-width: 28px !important;
+    max-width: 28px;
+    height: 28px !important;
+    min-height: 28px !important;
+    padding: 0 !important;
     border-radius: 50%;
     line-height: 1;
+    flex: 0 0 28px;
 }
 
 .conversations-pending-attachment .btn .bi,
