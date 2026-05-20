@@ -1207,6 +1207,7 @@
     private int _lastSyncedBrowserNewCount = -1;
     private readonly string _typingClientId = Guid.NewGuid().ToString("N");
     private DateTime _lastTypingSentUtc = DateTime.MinValue;
+    private bool _focusReplyAfterRender;
     private List<PendingAttachment> _pendingAttachments = [];
     private List<PendingAttachment> _templatePendingAttachments = [];
     private List<ConversacionStickerFavoritoDto> _favoriteStickers = [];
@@ -1377,6 +1378,12 @@
         {
             _scrollThreadToBottomAfterRender = false;
             await ScrollThreadToBottomAsync();
+        }
+
+        if (_focusReplyAfterRender)
+        {
+            _focusReplyAfterRender = false;
+            await FocusReplyAsync();
         }
     }
 
@@ -1630,6 +1637,7 @@
                 ClearNewMessageState();
                 _showReturnToLatest = false;
                 _scrollThreadToBottomAfterRender = true;
+                _focusReplyAfterRender = true;
                 _scrollHandlerConversationId = null;
                 RestoreSelectedNewMessageMarker(idConversacion);
                 MarkSelectedConversationAsRead();
@@ -1980,6 +1988,7 @@
         _statusCode = _selectedConversation.CodigoEstado;
         _conversationError = null;
         _scrollThreadToBottomAfterRender = scrollToBottom;
+        _focusReplyAfterRender = scrollToBottom;
         _scrollHandlerConversationId = null;
         RestoreSelectedNewMessageMarker(idConversacion);
     }
@@ -2131,6 +2140,21 @@
             await Task.Yield();
             await JS.InvokeVoidAsync("conversacionesUi.scrollToBottom", _threadElement);
             _showReturnToLatest = false;
+        }
+        catch
+        {
+        }
+    }
+
+    private async Task FocusReplyAsync()
+    {
+        if (_selectedConversation is null || IsWhatsAppWindowExpired)
+            return;
+
+        try
+        {
+            await Task.Yield();
+            await _replyTextArea.FocusAsync(preventScroll: true);
         }
         catch
         {
