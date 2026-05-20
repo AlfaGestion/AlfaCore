@@ -4230,6 +4230,56 @@ tr.row--critical td {
     vertical-align: 0;
 }
 
+.message-contact-list {
+    display: grid;
+    gap: .45rem;
+    margin-top: .35rem;
+}
+
+.message-contact-card {
+    display: grid;
+    grid-template-columns: 2rem minmax(0, 1fr) auto;
+    align-items: center;
+    gap: .65rem;
+    min-width: min(280px, 100%);
+    padding: .62rem;
+    border: 1px solid rgba(56, 189, 248, .24);
+    border-radius: 8px;
+    background: rgba(15, 23, 42, .32);
+}
+
+.message-contact-card__icon {
+    display: inline-grid;
+    place-items: center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 50%;
+    background: rgba(14, 165, 233, .14);
+    color: var(--color-primary);
+}
+
+.message-contact-card__body {
+    display: grid;
+    gap: .12rem;
+    min-width: 0;
+}
+
+.message-contact-card__body strong,
+.message-contact-card__body span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.message-contact-card__body span {
+    color: var(--color-muted);
+    font-size: .82rem;
+}
+
+.message-contact-card .btn {
+    white-space: nowrap;
+}
+
 .conversations-composer.conversations-composer--support > .conversations-composer__actions {
     grid-column: 2;
     align-self: end;

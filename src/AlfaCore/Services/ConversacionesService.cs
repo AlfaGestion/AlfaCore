@@ -4422,22 +4422,53 @@ public sealed class ConversacionesService(
         if (!message.TryGetProperty("contacts", out var contacts) || contacts.ValueKind != JsonValueKind.Array)
             return "Contacto compartido.";
 
-        var names = new List<string>();
+        var items = new List<string>();
         foreach (var contact in contacts.EnumerateArray())
         {
-            if (contact.TryGetProperty("name", out var name) &&
-                name.TryGetProperty("formatted_name", out var formattedName))
-            {
-                var value = formattedName.GetString();
-                if (!string.IsNullOrWhiteSpace(value))
-                    names.Add(value);
-            }
+            var name = ExtractContactName(contact);
+            var phone = ExtractContactPhone(contact);
+            var label = string.IsNullOrWhiteSpace(phone)
+                ? name
+                : $"{FirstNonEmpty(name, "Sin nombre")} - {phone}";
+            if (!string.IsNullOrWhiteSpace(label))
+                items.Add(label);
         }
 
-        return names.Count == 0
+        return items.Count == 0
             ? "Contacto compartido."
-            : $"Contacto compartido: {string.Join(", ", names)}";
+            : $"Contacto compartido: {string.Join(", ", items)}";
     }
+
+    private static string ExtractContactName(JsonElement contact)
+    {
+        if (!contact.TryGetProperty("name", out var name))
+            return string.Empty;
+
+        return FirstNonEmpty(
+            TryGetString(name, "formatted_name"),
+            TryGetString(name, "first_name"),
+            TryGetString(name, "last_name"));
+    }
+
+    private static string ExtractContactPhone(JsonElement contact)
+    {
+        if (!contact.TryGetProperty("phones", out var phones) || phones.ValueKind != JsonValueKind.Array)
+            return string.Empty;
+
+        foreach (var phone in phones.EnumerateArray())
+        {
+            var value = FirstNonEmpty(TryGetString(phone, "phone"), TryGetString(phone, "wa_id"));
+            if (!string.IsNullOrWhiteSpace(value))
+                return value;
+        }
+
+        return string.Empty;
+    }
+
+    private static string TryGetString(JsonElement element, string propertyName)
+        => element.ValueKind == JsonValueKind.Object && element.TryGetProperty(propertyName, out var property)
+            ? property.GetString() ?? string.Empty
+            : string.Empty;
 
     private static string ExtractButtonText(JsonElement message)
     {

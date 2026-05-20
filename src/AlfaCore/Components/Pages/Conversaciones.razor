@@ -503,6 +503,35 @@
                                             </div>
                                         }
                                     }
+                                    @if (IsContactMessage(message))
+                                    {
+                                        var sharedContacts = GetSharedContacts(message);
+                                        if (sharedContacts.Count > 0)
+                                        {
+                                            <div class="message-contact-list">
+                                                @foreach (var sharedContact in sharedContacts)
+                                                {
+                                                    <div class="message-contact-card">
+                                                        <div class="message-contact-card__icon">
+                                                            <i class="bi bi-person-lines-fill"></i>
+                                                        </div>
+                                                        <div class="message-contact-card__body">
+                                                            <strong>@DisplayOrFallback(sharedContact.Nombre, "Contacto compartido")</strong>
+                                                            <span>@DisplayOrFallback(sharedContact.Telefono, sharedContact.Email)</span>
+                                                        </div>
+                                                        <button type="button"
+                                                                class="btn btn--ghost btn--sm"
+                                                                title="Agendar contacto"
+                                                                disabled="@(!sharedContact.CanBeScheduled)"
+                                                                @onclick="() => OpenNewContactFromSharedContact(sharedContact)">
+                                                            <i class="bi bi-person-plus-fill"></i>
+                                                            <span>Agendar</span>
+                                                        </button>
+                                                    </div>
+                                                }
+                                            </div>
+                                        }
+                                    }
                                     @if (message.TieneAdjuntos && _adjuntosPorMensaje.TryGetValue(message.IdMensaje, out var adjuntos))
                                     {
                                         <div class="message-attachments">
@@ -3261,6 +3290,20 @@
         Nav.NavigateTo($"/contactos?{string.Join("&", query)}");
     }
 
+    private void OpenNewContactFromSharedContact(SharedContactPayload contact)
+    {
+        var query = new List<string> { "nuevo=1" };
+
+        if (!string.IsNullOrWhiteSpace(contact.Nombre))
+            query.Add($"nombre={Uri.EscapeDataString(contact.Nombre)}");
+        if (!string.IsNullOrWhiteSpace(contact.Telefono))
+            query.Add($"celular={Uri.EscapeDataString(contact.Telefono)}");
+        if (!string.IsNullOrWhiteSpace(contact.Email))
+            query.Add($"email={Uri.EscapeDataString(contact.Email)}");
+
+        Nav.NavigateTo($"/contactos?{string.Join("&", query)}");
+    }
+
     private async Task SelectConversationFromSuggestionAsync(long idConversacion)
     {
         _showContactSuggestions = false;
@@ -4013,6 +4056,9 @@
         if (string.IsNullOrWhiteSpace(message.Texto))
             return false;
 
+        if (IsContactMessage(message) && GetSharedContacts(message).Count > 0)
+            return false;
+
         if (message.MessageType is "IMAGE" or "AUDIO" or "VIDEO" or "DOCUMENT" or "STICKER")
         {
             if (message.TieneAdjuntos)
@@ -4039,6 +4085,86 @@
         => IsUnsupportedMessage(message)
             ? "WhatsApp envió un tipo de mensaje que todavía no es compatible con el módulo."
             : message.Texto;
+
+    private static bool IsContactMessage(ConversacionMensajeDto message)
+        => string.Equals(message.MessageType, "CONTACT", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(message.MessageType, "CONTACTS", StringComparison.OrdinalIgnoreCase);
+
+    private static IReadOnlyList<SharedContactPayload> GetSharedContacts(ConversacionMensajeDto message)
+    {
+        if (string.IsNullOrWhiteSpace(message.PayloadJson))
+            return [];
+
+        try
+        {
+            using var doc = JsonDocument.Parse(message.PayloadJson);
+            if (!doc.RootElement.TryGetProperty("contacts", out var contacts) || contacts.ValueKind != JsonValueKind.Array)
+                return [];
+
+            var parsed = new List<SharedContactPayload>();
+            foreach (var contact in contacts.EnumerateArray())
+            {
+                var name = ExtractSharedContactName(contact);
+                var phone = ExtractSharedContactPhone(contact);
+                var email = ExtractSharedContactEmail(contact);
+
+                if (!string.IsNullOrWhiteSpace(name) || !string.IsNullOrWhiteSpace(phone) || !string.IsNullOrWhiteSpace(email))
+                    parsed.Add(new SharedContactPayload(name, phone, email));
+            }
+
+            return parsed;
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
+
+    private static string ExtractSharedContactName(JsonElement contact)
+    {
+        if (!contact.TryGetProperty("name", out var name))
+            return string.Empty;
+
+        return FirstNonEmpty(
+            ExtractJsonString(name, "formatted_name"),
+            ExtractJsonString(name, "first_name"),
+            ExtractJsonString(name, "last_name"));
+    }
+
+    private static string ExtractSharedContactPhone(JsonElement contact)
+    {
+        if (!contact.TryGetProperty("phones", out var phones) || phones.ValueKind != JsonValueKind.Array)
+            return string.Empty;
+
+        foreach (var phone in phones.EnumerateArray())
+        {
+            var value = FirstNonEmpty(ExtractJsonString(phone, "phone"), ExtractJsonString(phone, "wa_id"));
+            if (!string.IsNullOrWhiteSpace(value))
+                return value;
+        }
+
+        return string.Empty;
+    }
+
+    private static string ExtractSharedContactEmail(JsonElement contact)
+    {
+        if (!contact.TryGetProperty("emails", out var emails) || emails.ValueKind != JsonValueKind.Array)
+            return string.Empty;
+
+        foreach (var email in emails.EnumerateArray())
+        {
+            var value = ExtractJsonString(email, "email");
+            if (!string.IsNullOrWhiteSpace(value))
+                return value;
+        }
+
+        return string.Empty;
+    }
+
+    private static string ExtractJsonString(JsonElement element, string propertyName)
+        => element.ValueKind == JsonValueKind.Object && element.TryGetProperty(propertyName, out var property)
+            ? property.GetString() ?? string.Empty
+            : string.Empty;
 
     private static string GetQuotePreview(ConversacionMensajeDto message)
     {
@@ -4415,6 +4541,13 @@
     }
 
     private sealed record EmojiGroup(string Nombre, IReadOnlyList<string> Emojis);
+
+    private sealed record SharedContactPayload(string Nombre, string Telefono, string Email)
+    {
+        public bool CanBeScheduled => !string.IsNullOrWhiteSpace(Nombre)
+                                      || !string.IsNullOrWhiteSpace(Telefono)
+                                      || !string.IsNullOrWhiteSpace(Email);
+    }
 
     private sealed record ConversationViewCache(
         ConversacionDetalleDto Conversation,
