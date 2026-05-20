@@ -4,6 +4,7 @@ Este proyecto utiliza reglas obligatorias definidas en:
 
 ## Lectura obligatoria (siempre)
 
+
 - /docs/CODEX_RULES.md
 - /docs/DATABASE_OBJETOS_SQL_PRIORITARIOS.md
 - /docs/CONFIGURACION_GLOBAL.md
