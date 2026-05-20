@@ -42,7 +42,7 @@ public sealed class ConversacionesService(
         {
             const string sql = """
                 SELECT
-                    ISNULL(IdTecnico, ''),
+                    LTRIM(RTRIM(ISNULL(IdTecnico, ''))),
                     ISNULL(Nombre, ''),
                     ISNULL(Cargo, ''),
                     ISNULL(UsuarioAsociado, ''),
@@ -126,7 +126,7 @@ public sealed class ConversacionesService(
                     ISNULL(mc.Nombre_y_Apellido, ''),
                     ISNULL(c.CodigoEstado, ''),
                     ISNULL(e.Descripcion, ''),
-                    ISNULL(c.IdTecnico, ''),
+                    LTRIM(RTRIM(ISNULL(c.IdTecnico, ''))),
                     ISNULL(t.Nombre, ''),
                     ISNULL(c.ResumenUltimoMensaje, ''),
                     ISNULL(ultMsg.FechaHoraVisible, c.FechaHoraUltimoMensaje),
@@ -143,7 +143,7 @@ public sealed class ConversacionesService(
                 LEFT JOIN dbo.MA_CONTACTOS mc
                     ON mc.id = c.IdContacto
                 LEFT JOIN dbo.V_TA_Tecnicos t
-                    ON t.IdTecnico = c.IdTecnico
+                    ON LTRIM(RTRIM(t.IdTecnico)) = LTRIM(RTRIM(c.IdTecnico))
                 OUTER APPLY (
                     SELECT TOP (1)
                         m.IdMensaje AS IdUltimoMensajeCliente,
@@ -191,7 +191,7 @@ public sealed class ConversacionesService(
                     AND (
                         @Modo = 'todas'
                         OR (@Modo = 'sin_asignar' AND (c.IdTecnico IS NULL OR LTRIM(RTRIM(c.IdTecnico)) = ''))
-                        OR (@Modo = 'asignadas_a_mi' AND c.IdTecnico = @IdTecnicoActual)
+                        OR (@Modo = 'asignadas_a_mi' AND LTRIM(RTRIM(c.IdTecnico)) = @IdTecnicoActual)
                         OR (@Modo = 'pendientes' AND ISNULL(e.EsCerrado, 0) = 0)
                         OR (@Modo = 'cerradas' AND ISNULL(e.EsCerrado, 0) = 1)
                     )
@@ -221,7 +221,7 @@ public sealed class ConversacionesService(
             cmd.Parameters.AddWithValue("@SearchPhone", DbNullable(searchPhone));
             cmd.Parameters.AddWithValue("@SearchPhoneTail", DbNullable(searchPhoneTail));
             cmd.Parameters.AddWithValue("@Modo", NormalizeMode(filters.Modo));
-            cmd.Parameters.AddWithValue("@IdTecnicoActual", DbNullable(filters.IdTecnicoActual));
+            cmd.Parameters.AddWithValue("@IdTecnicoActual", DbNullable(NormalizeTechnicianId(filters.IdTecnicoActual)));
             cmd.Parameters.AddWithValue("@ManualWhatsAppConversationSummary", ManualWhatsAppConversationSummary);
             cmd.Parameters.AddWithValue("@Offset", Math.Max(0, filters.Offset));
             cmd.Parameters.AddWithValue("@Limit", Math.Clamp(filters.Limit, 1, 200));
@@ -277,7 +277,7 @@ public sealed class ConversacionesService(
                     ISNULL(mc.Cargo, ''),
                     ISNULL(c.CodigoEstado, ''),
                     ISNULL(e.Descripcion, ''),
-                    ISNULL(c.IdTecnico, ''),
+                    LTRIM(RTRIM(ISNULL(c.IdTecnico, ''))),
                     ISNULL(t.Nombre, ''),
                     ISNULL(c.ResumenUltimoMensaje, ''),
                     ISNULL(c.Prioridad, ''),
@@ -295,7 +295,7 @@ public sealed class ConversacionesService(
                 LEFT JOIN dbo.MA_CONTACTOS mc
                     ON mc.id = c.IdContacto
                 LEFT JOIN dbo.V_TA_Tecnicos t
-                    ON t.IdTecnico = c.IdTecnico
+                    ON LTRIM(RTRIM(t.IdTecnico)) = LTRIM(RTRIM(c.IdTecnico))
                 OUTER APPLY (
                     SELECT TOP (1) {ConversationMessageVisibleDateSql("m")} AS FechaHoraUltimoMensajeCliente
                     FROM dbo.CONV_MENSAJES m
@@ -964,8 +964,7 @@ public sealed class ConversacionesService(
             if (request.IdConversacion <= 0)
                 throw new InvalidOperationException("La conversación es obligatoria.");
 
-            if (!string.IsNullOrWhiteSpace(request.IdTecnico))
-                await ValidateTechnicianExistsAsync(request.IdTecnico, token);
+            var technicianId = await ResolveTechnicianIdOrNullAsync(request.IdTecnico, token);
 
             const string updateSql = """
                 UPDATE dbo.CONV_CONVERSACIONES
@@ -1003,14 +1002,14 @@ public sealed class ConversacionesService(
             await using (var cmd = new SqlCommand(updateSql, cn, (SqlTransaction)tx))
             {
                 cmd.Parameters.AddWithValue("@IdConversacion", request.IdConversacion);
-                cmd.Parameters.AddWithValue("@IdTecnico", DbNullable(request.IdTecnico));
+                cmd.Parameters.AddWithValue("@IdTecnico", DbNullablePreserve(technicianId));
                 await cmd.ExecuteNonQueryAsync(token);
             }
 
             await using (var cmd = new SqlCommand(historySql, cn, (SqlTransaction)tx))
             {
                 cmd.Parameters.AddWithValue("@IdConversacion", request.IdConversacion);
-                cmd.Parameters.AddWithValue("@IdTecnico", DbNullable(request.IdTecnico));
+                cmd.Parameters.AddWithValue("@IdTecnico", DbNullablePreserve(technicianId));
                 cmd.Parameters.AddWithValue("@UsuarioAccion", DbNullable(request.UsuarioAccion));
                 cmd.Parameters.AddWithValue("@SistemaAccion", DbNullable(request.SistemaAccion));
                 cmd.Parameters.AddWithValue("@Observaciones", DbNullable(request.Observaciones));
@@ -1025,7 +1024,7 @@ public sealed class ConversacionesService(
                 "CONV_CONVERSACIONES",
                 request.IdConversacion.ToString(CultureInfo.InvariantCulture),
                 "Asignación de conversación actualizada.",
-                new { request.IdTecnico },
+                new { IdTecnico = technicianId },
                 token);
 
             return true;
@@ -1147,8 +1146,7 @@ public sealed class ConversacionesService(
             if (string.IsNullOrWhiteSpace(request.NombreHilo))
                 throw new InvalidOperationException("El nombre del hilo es obligatorio.");
 
-            if (!string.IsNullOrWhiteSpace(request.IdTecnico))
-                await ValidateTechnicianExistsAsync(request.IdTecnico, token);
+            var technicianId = await ResolveTechnicianIdOrNullAsync(request.IdTecnico, token);
 
             const string sql = """
                 INSERT INTO dbo.CONV_CONVERSACIONES
@@ -1177,7 +1175,7 @@ public sealed class ConversacionesService(
             await cn.OpenAsync(token);
             await using var cmd = new SqlCommand(sql, cn);
             cmd.Parameters.AddWithValue("@NombreVisible", request.NombreHilo.Trim());
-            cmd.Parameters.AddWithValue("@IdTecnico", DbNullable(request.IdTecnico));
+            cmd.Parameters.AddWithValue("@IdTecnico", DbNullablePreserve(technicianId));
             var result = await cmd.ExecuteScalarAsync(token);
             var id = Convert.ToInt64(result, CultureInfo.InvariantCulture);
 
@@ -1187,7 +1185,7 @@ public sealed class ConversacionesService(
                 "CONV_CONVERSACIONES",
                 id.ToString(CultureInfo.InvariantCulture),
                 "Hilo interno creado.",
-                new { request.NombreHilo, request.IdTecnico },
+                new { request.NombreHilo, IdTecnico = technicianId },
                 token);
 
             return id;
@@ -1202,8 +1200,7 @@ public sealed class ConversacionesService(
             if (phone.Length < 8)
                 throw new InvalidOperationException("El número de celular parece incompleto.");
 
-            if (!string.IsNullOrWhiteSpace(request.IdTecnico))
-                await ValidateTechnicianExistsAsync(request.IdTecnico, token);
+            var technicianId = await ResolveTechnicianIdOrNullAsync(request.IdTecnico, token);
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
@@ -1276,7 +1273,7 @@ public sealed class ConversacionesService(
             cmd.Parameters.AddWithValue("@ClienteCodigo", DbNullable(contact.ClientCode));
             cmd.Parameters.AddWithValue("@IdContacto", contact.IdContact.HasValue ? contact.IdContact.Value : DBNull.Value);
             cmd.Parameters.AddWithValue("@CodigoEstadoInicial", ManualWhatsAppInitialState);
-            cmd.Parameters.AddWithValue("@IdTecnico", DbNullable(request.IdTecnico));
+            cmd.Parameters.AddWithValue("@IdTecnico", DbNullablePreserve(technicianId));
             cmd.Parameters.AddWithValue("@ResumenInicial", ManualWhatsAppConversationSummary);
             var result = await cmd.ExecuteScalarAsync(token);
             var id = Convert.ToInt64(result, CultureInfo.InvariantCulture);
@@ -1287,7 +1284,7 @@ public sealed class ConversacionesService(
                 "CONV_CONVERSACIONES",
                 id.ToString(CultureInfo.InvariantCulture),
                 "Conversación de WhatsApp creada manualmente.",
-                new { TelefonoWhatsApp = phone, ContactoAsociado = contact.IdContact.HasValue, contact.ClientCode, request.IdTecnico },
+                new { TelefonoWhatsApp = phone, ContactoAsociado = contact.IdContact.HasValue, contact.ClientCode, IdTecnico = technicianId },
                 token);
 
             return new ConversacionCrearWhatsAppResultDto
@@ -3147,12 +3144,12 @@ public sealed class ConversacionesService(
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
-    private async Task ValidateTechnicianExistsAsync(string idTecnico, CancellationToken ct)
+    private async Task<string> ResolveTechnicianIdAsync(string idTecnico, CancellationToken ct)
     {
         const string sql = """
-            SELECT TOP (1) 1
+            SELECT TOP (1) IdTecnico
             FROM dbo.V_TA_Tecnicos
-            WHERE IdTecnico = @IdTecnico
+            WHERE LTRIM(RTRIM(IdTecnico)) = @IdTecnico
               AND ISNULL(Baja, 0) = 0
             """;
 
@@ -3163,6 +3160,15 @@ public sealed class ConversacionesService(
         var result = await cmd.ExecuteScalarAsync(ct);
         if (result is null || result is DBNull)
             throw new InvalidOperationException("El técnico indicado no existe o está dado de baja.");
+        return Convert.ToString(result, CultureInfo.InvariantCulture) ?? string.Empty;
+    }
+
+    private async Task<string> ResolveTechnicianIdOrNullAsync(string? idTecnico, CancellationToken ct)
+    {
+        var normalized = NormalizeTechnicianId(idTecnico);
+        return string.IsNullOrWhiteSpace(normalized)
+            ? string.Empty
+            : await ResolveTechnicianIdAsync(normalized, ct);
     }
 
     private static async Task EnsureFavoriteStickersTableAsync(SqlConnection cn, CancellationToken ct)
@@ -4252,6 +4258,12 @@ public sealed class ConversacionesService(
 
     private static object DbNullable(string? value)
         => string.IsNullOrWhiteSpace(value) ? DBNull.Value : value.Trim();
+
+    private static object DbNullablePreserve(string? value)
+        => string.IsNullOrWhiteSpace(value) ? DBNull.Value : value;
+
+    private static string NormalizeTechnicianId(string? value)
+        => string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
 
     private static string GetString(SqlDataReader rd, int index)
         => rd.IsDBNull(index) ? string.Empty : Convert.ToString(rd.GetValue(index), CultureInfo.InvariantCulture) ?? string.Empty;
