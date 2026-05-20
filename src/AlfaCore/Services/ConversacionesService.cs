@@ -613,15 +613,15 @@ public sealed class ConversacionesService(
                     AND (
                         @Search IS NULL
                         OR c.TelefonoWhatsApp LIKE @Search
-                        OR c.NombreVisible LIKE @Search
-                        OR cli.RAZON_SOCIAL LIKE @Search
-                        OR mc.Nombre_y_Apellido LIKE @Search
-                        OR c.ResumenUltimoMensaje LIKE @Search
+                        OR c.NombreVisible COLLATE Latin1_General_CI_AI LIKE @Search
+                        OR cli.RAZON_SOCIAL COLLATE Latin1_General_CI_AI LIKE @Search
+                        OR mc.Nombre_y_Apellido COLLATE Latin1_General_CI_AI LIKE @Search
+                        OR c.ResumenUltimoMensaje COLLATE Latin1_General_CI_AI LIKE @Search
                         OR EXISTS (
                             SELECT 1
                             FROM dbo.CONV_MENSAJES buscarMsg
                             WHERE buscarMsg.IdConversacion = c.IdConversacion
-                              AND buscarMsg.Texto LIKE @Search
+                              AND buscarMsg.Texto COLLATE Latin1_General_CI_AI LIKE @Search
                               AND (@Desde IS NULL OR buscarMsg.FechaHora >= @Desde)
                               AND (@HastaExclusive IS NULL OR buscarMsg.FechaHora < @HastaExclusive)
                         )
@@ -835,11 +835,11 @@ public sealed class ConversacionesService(
                     AND (@HastaExclusive IS NULL OR {ConversationMessageVisibleDateSql("m")} < @HastaExclusive)
                     AND (
                         @Search IS NULL
-                        OR m.Texto LIKE @Search
+                        OR m.Texto COLLATE Latin1_General_CI_AI LIKE @Search
                         OR c.TelefonoWhatsApp LIKE @Search
-                        OR c.NombreVisible LIKE @Search
-                        OR cli.RAZON_SOCIAL LIKE @Search
-                        OR mc.Nombre_y_Apellido LIKE @Search
+                        OR c.NombreVisible COLLATE Latin1_General_CI_AI LIKE @Search
+                        OR cli.RAZON_SOCIAL COLLATE Latin1_General_CI_AI LIKE @Search
+                        OR mc.Nombre_y_Apellido COLLATE Latin1_General_CI_AI LIKE @Search
                         OR (
                             @SearchPhone IS NOT NULL
                             AND (
@@ -5116,7 +5116,7 @@ public sealed class ConversacionesService(
 
         return texts
             .SelectMany(text => Regex.Split(text.ToLowerInvariant(), @"[^\p{L}\p{Nd}]+"))
-            .Select(x => x.Trim())
+            .Select(NormalizeFrequentTerm)
             .Where(x => x.Length >= 4 && !stopWords.Contains(x))
             .GroupBy(x => x, StringComparer.OrdinalIgnoreCase)
             .Select(g => new ConversacionesEstadisticaTemaDto { Texto = g.Key, Cantidad = g.Count() })
@@ -5124,6 +5124,53 @@ public sealed class ConversacionesService(
             .ThenBy(x => x.Texto, StringComparer.OrdinalIgnoreCase)
             .Take(12)
             .ToList();
+    }
+
+    private static string NormalizeFrequentTerm(string? value)
+    {
+        var normalized = RemoveDiacritics(value).Trim().ToLowerInvariant();
+        if (normalized.Length <= 4)
+            return normalized;
+
+        if (normalized.EndsWith("ciones", StringComparison.Ordinal) && normalized.Length > 8)
+            return normalized[..^2];
+
+        if (normalized.EndsWith("ces", StringComparison.Ordinal) && normalized.Length > 5)
+            return normalized[..^3] + "z";
+
+        if (normalized.EndsWith("es", StringComparison.Ordinal) && normalized.Length > 5)
+        {
+            var singular = normalized[..^2];
+            if (singular.EndsWith("r", StringComparison.Ordinal)
+                || singular.EndsWith("l", StringComparison.Ordinal)
+                || singular.EndsWith("n", StringComparison.Ordinal)
+                || singular.EndsWith("d", StringComparison.Ordinal)
+                || singular.EndsWith("z", StringComparison.Ordinal))
+            {
+                return singular;
+            }
+        }
+
+        if (normalized.EndsWith("s", StringComparison.Ordinal) && normalized.Length > 4)
+            return normalized[..^1];
+
+        return normalized;
+    }
+
+    private static string RemoveDiacritics(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return string.Empty;
+
+        var normalized = value.Normalize(NormalizationForm.FormD);
+        var builder = new StringBuilder(normalized.Length);
+        foreach (var ch in normalized)
+        {
+            if (CharUnicodeInfo.GetUnicodeCategory(ch) != UnicodeCategory.NonSpacingMark)
+                builder.Append(ch);
+        }
+
+        return builder.ToString().Normalize(NormalizationForm.FormC);
     }
 
     private static List<ConversacionesEstadisticaTemaDto> BuildFrequentPhrases(IEnumerable<string> texts)
