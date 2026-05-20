@@ -1196,6 +1196,7 @@
     private ConversacionAdjuntoDto? _previewAttachment;
     private ElementReference _replyTextArea;
     private long? _replyEnterHandlerConversationId;
+    private int _lastSyncedBrowserNewCount = -1;
     private List<PendingAttachment> _pendingAttachments = [];
     private List<PendingAttachment> _templatePendingAttachments = [];
     private List<ConversacionStickerFavoritoDto> _favoriteStickers = [];
@@ -1299,6 +1300,19 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (firstRender)
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("conversacionesUi.initNotifications", "AlfaCore - Alfa Gestión");
+            }
+            catch
+            {
+            }
+        }
+
+        await SyncBrowserUnreadCountAsync();
+
         if (_selectedConversationId.HasValue && _scrollHandlerConversationId != _selectedConversationId)
         {
             _dotNetRef ??= DotNetObjectReference.Create(this);
@@ -2039,13 +2053,13 @@
             }
         }
 
-        StateHasChanged();
-
         if (shouldKeepAtBottom)
         {
             await ScrollThreadToBottomAsync();
             MarkSelectedConversationAsRead();
         }
+
+        StateHasChanged();
 
         if (newMessagesDetected > 0)
             await PlayNewMessageSoundAsync();
@@ -2104,6 +2118,23 @@
         }
         catch
         {
+        }
+    }
+
+    private async Task SyncBrowserUnreadCountAsync()
+    {
+        var count = TotalNewMessagesCount;
+        if (_lastSyncedBrowserNewCount == count)
+            return;
+
+        try
+        {
+            await JS.InvokeVoidAsync("conversacionesUi.setUnreadCount", count);
+            _lastSyncedBrowserNewCount = count;
+        }
+        catch
+        {
+            _lastSyncedBrowserNewCount = -1;
         }
     }
 
@@ -3671,6 +3702,14 @@
 
         _pollingCts.Dispose();
         _dotNetRef?.Dispose();
+
+        try
+        {
+            await JS.InvokeVoidAsync("conversacionesUi.setUnreadCount", 0);
+        }
+        catch
+        {
+        }
     }
 
     private sealed class PendingAttachment

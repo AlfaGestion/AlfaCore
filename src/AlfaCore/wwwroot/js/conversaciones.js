@@ -61,6 +61,9 @@ window.conversacionesAudio = (function () {
 
 window.conversacionesUi = {
     _threadWatchers: new WeakMap(),
+    _notificationBaseTitle: 'AlfaCore - Alfa Gestión',
+    _audioContext: null,
+    _audioUnlocked: false,
 
     isNearBottom: function (element) {
         if (!element) return false;
@@ -73,30 +76,82 @@ window.conversacionesUi = {
         element.scrollTop = element.scrollHeight;
     },
 
-    playNewMessageSound: async function () {
-        try {
-            const AudioContext = window.AudioContext || window.webkitAudioContext;
-            if (!AudioContext) return;
+    initNotifications: function (baseTitle) {
+        this._notificationBaseTitle = baseTitle || document.title || this._notificationBaseTitle;
+        this.setUnreadCount(0);
 
-            const context = new AudioContext();
+        const unlock = () => {
+            window.conversacionesUi.unlockNotificationSound();
+        };
+
+        window.addEventListener('pointerdown', unlock, { once: true, passive: true });
+        window.addEventListener('keydown', unlock, { once: true });
+    },
+
+    setUnreadCount: function (count) {
+        const unread = Number.isFinite(count) ? Math.max(0, Math.trunc(count)) : 0;
+        document.title = unread > 0
+            ? `(${unread}) ${this._notificationBaseTitle}`
+            : this._notificationBaseTitle;
+    },
+
+    unlockNotificationSound: async function () {
+        try {
+            const context = this._getAudioContext();
+            if (!context) return;
+
             if (context.state === 'suspended') {
                 await context.resume();
             }
 
+            const gain = context.createGain();
+            gain.gain.setValueAtTime(0.0001, context.currentTime);
+            gain.connect(context.destination);
+            gain.disconnect();
+            this._audioUnlocked = true;
+        } catch {
+        }
+    },
+
+    _getAudioContext: function () {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContext) return null;
+
+        if (!this._audioContext || this._audioContext.state === 'closed') {
+            this._audioContext = new AudioContext();
+        }
+
+        return this._audioContext;
+    },
+
+    playNewMessageSound: async function () {
+        try {
+            const context = this._getAudioContext();
+            if (!context) return;
+
+            if (context.state === 'suspended') {
+                await context.resume();
+            }
+
+            if (context.state !== 'running') return;
+
             const oscillator = context.createOscillator();
             const gain = context.createGain();
             oscillator.type = 'sine';
-            oscillator.frequency.setValueAtTime(740, context.currentTime);
-            oscillator.frequency.exponentialRampToValueAtTime(980, context.currentTime + 0.08);
+            oscillator.frequency.setValueAtTime(660, context.currentTime);
+            oscillator.frequency.exponentialRampToValueAtTime(920, context.currentTime + 0.07);
             gain.gain.setValueAtTime(0.0001, context.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.08, context.currentTime + 0.015);
-            gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.18);
+            gain.gain.exponentialRampToValueAtTime(0.11, context.currentTime + 0.012);
+            gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.16);
 
             oscillator.connect(gain);
             gain.connect(context.destination);
             oscillator.start();
-            oscillator.stop(context.currentTime + 0.2);
-            oscillator.onended = () => context.close();
+            oscillator.stop(context.currentTime + 0.18);
+            oscillator.onended = () => {
+                oscillator.disconnect();
+                gain.disconnect();
+            };
         } catch {
         }
     },
