@@ -1189,6 +1189,8 @@
     private DotNetObjectReference<Conversaciones>? _dotNetRef;
     private CancellationTokenSource? _pollingCts;
     private Task? _pollingTask;
+    private CancellationTokenSource? _typingPollingCts;
+    private Task? _typingPollingTask;
     private CancellationTokenSource? _searchDebounceCts;
     private CancellationTokenSource? _contactSearchCts;
     private long? _scrollHandlerConversationId;
@@ -1233,6 +1235,7 @@
     private List<TicketRelatedMatchDto> _contextTicketMatches = [];
 
     private static readonly TimeSpan PollingInterval = TimeSpan.FromSeconds(3);
+    private static readonly TimeSpan TypingPollingInterval = TimeSpan.FromMilliseconds(650);
     private static readonly string[] QuickReactionEmojis = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
     private static readonly IReadOnlyList<EmojiGroup> EmojiGroups =
     [
@@ -1268,9 +1271,9 @@
             return names.Count switch
             {
                 0 => string.Empty,
-                1 => $"{names[0]} estÃ¡ escribiendo...",
-                2 => $"{names[0]} y {names[1]} estÃ¡n escribiendo...",
-                _ => $"{names[0]}, {names[1]} y alguien mÃ¡s estÃ¡n escribiendo..."
+                1 => $"{names[0]} est\u00e1 escribiendo...",
+                2 => $"{names[0]} y {names[1]} est\u00e1n escribiendo...",
+                _ => $"{names[0]}, {names[1]} y alguien m\u00e1s est\u00e1n escribiendo..."
             };
         }
     }
@@ -1316,6 +1319,7 @@
         }
 
         StartPolling();
+        StartTypingPolling();
     }
 
     private void ApplyStartupQuery()
@@ -2045,6 +2049,15 @@
         _pollingTask = RunPollingAsync(_pollingCts.Token);
     }
 
+    private void StartTypingPolling()
+    {
+        if (_typingPollingTask is not null)
+            return;
+
+        _typingPollingCts = new CancellationTokenSource();
+        _typingPollingTask = RunTypingPollingAsync(_typingPollingCts.Token);
+    }
+
     private async Task RunPollingAsync(CancellationToken cancellationToken)
     {
         using var timer = new PeriodicTimer(PollingInterval);
@@ -2058,6 +2071,65 @@
         {
         }
     }
+
+    private async Task RunTypingPollingAsync(CancellationToken cancellationToken)
+    {
+        using var timer = new PeriodicTimer(TypingPollingInterval);
+
+        try
+        {
+            while (await timer.WaitForNextTickAsync(cancellationToken))
+                await InvokeAsync(RefreshTypingAsync);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task RefreshTypingAsync()
+    {
+        if (_selectedConversationId is not { } idConversacion)
+        {
+            if (_typingUsers.Count > 0)
+            {
+                _typingUsers = [];
+                StateHasChanged();
+            }
+
+            return;
+        }
+
+        try
+        {
+            var typing = (await ConversacionesSvc.GetTypingAsync(idConversacion, _typingClientId)).ToList();
+            if (AreSameTypingUsers(_typingUsers, typing))
+                return;
+
+            _typingUsers = typing;
+            StateHasChanged();
+        }
+        catch
+        {
+        }
+    }
+
+    private static bool AreSameTypingUsers(IReadOnlyList<ConversacionTypingDto> current, IReadOnlyList<ConversacionTypingDto> next)
+    {
+        if (current.Count != next.Count)
+            return false;
+
+        var currentKeys = current
+            .Select(BuildTypingDisplayKey)
+            .OrderBy(x => x, StringComparer.OrdinalIgnoreCase);
+        var nextKeys = next
+            .Select(BuildTypingDisplayKey)
+            .OrderBy(x => x, StringComparer.OrdinalIgnoreCase);
+
+        return currentKeys.SequenceEqual(nextKeys, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static string BuildTypingDisplayKey(ConversacionTypingDto item)
+        => FirstNonEmpty(item.ClienteId, item.Usuario, item.IdTecnico, item.NombreTecnico);
 
     private async Task AutoRefreshAsync()
     {
@@ -3840,10 +3912,22 @@
         CancelSearchDebounce();
         CancelContactSearch();
 
-        if (_pollingCts is null)
-            return;
+        if (_typingPollingCts is not null)
+            await _typingPollingCts.CancelAsync();
 
-        await _pollingCts.CancelAsync();
+        if (_pollingCts is not null)
+            await _pollingCts.CancelAsync();
+
+        if (_typingPollingTask is not null)
+        {
+            try
+            {
+                await _typingPollingTask;
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }
 
         if (_pollingTask is not null)
         {
@@ -3856,7 +3940,8 @@
             }
         }
 
-        _pollingCts.Dispose();
+        _typingPollingCts?.Dispose();
+        _pollingCts?.Dispose();
         _dotNetRef?.Dispose();
 
         try
