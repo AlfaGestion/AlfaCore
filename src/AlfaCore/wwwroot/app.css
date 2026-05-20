@@ -3773,7 +3773,7 @@ tr.row--critical td {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: end;
-    gap: .42rem .65rem;
+    gap: .5rem .65rem;
     border-top: 1px solid var(--color-border);
     margin-top: .42rem;
     padding-top: .42rem;
@@ -3788,8 +3788,7 @@ tr.row--critical td {
 }
 
 .conversations-composer--support > .conversations-inline,
-.conversations-composer--support > .context-card,
-.conversations-composer--support > .conversations-pending-list {
+.conversations-composer--support > .context-card {
     grid-column: 1 / -1;
 }
 
@@ -3861,18 +3860,22 @@ tr.row--critical td {
 .conversations-pending-list {
     display: flex;
     align-items: center;
-    gap: .45rem;
+    gap: .5rem;
     flex-wrap: wrap;
+    grid-column: 1;
+    grid-row: 2;
     min-width: 0;
+    max-width: 100%;
 }
 
 .conversations-pending-attachment {
     display: inline-grid;
-    grid-template-columns: auto minmax(0, auto) auto auto;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
     align-items: center;
     gap: .35rem;
-    max-width: min(280px, 100%);
-    padding: .34rem .42rem;
+    min-width: 0;
+    max-width: min(300px, 100%);
+    padding: .38rem .45rem;
     border: 1px solid rgba(14, 165, 233, .26);
     border-radius: 7px;
     background: rgba(14, 165, 233, .08);
@@ -3910,7 +3913,8 @@ tr.row--critical td {
 
 .conversations-composer.conversations-composer--support > .conversations-composer__actions {
     grid-column: 2;
-    grid-row: auto;
+    grid-row: 1 / span 2;
+    align-self: end;
 }
 
 .conversations-composer--support .conversations-inline--error {
