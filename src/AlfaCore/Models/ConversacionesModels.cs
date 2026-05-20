@@ -4,7 +4,7 @@ namespace AlfaCore.Models;
 
 public sealed class ConversacionesInboxFilters
 {
-    public string Modo { get; set; } = "todas";
+    public string Modo { get; set; } = "pendientes";
     public string Search { get; set; } = string.Empty;
     public string? IdTecnicoActual { get; set; }
     public string? CodigoEstado { get; set; }
