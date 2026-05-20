@@ -195,6 +195,21 @@ public sealed class ConversacionMensajeDto
     public bool TieneAdjuntos { get; set; }
 }
 
+public sealed class ConversacionAuditoriaMensajeDto
+{
+    public long IdMensaje { get; set; }
+    public long IdConversacion { get; set; }
+    public string NombreConversacion { get; set; } = string.Empty;
+    public string TelefonoWhatsApp { get; set; } = string.Empty;
+    public string EstadoDescripcion { get; set; } = string.Empty;
+    public string TecnicoNombre { get; set; } = string.Empty;
+    public string MessageType { get; set; } = string.Empty;
+    public string Direction { get; set; } = string.Empty;
+    public string Texto { get; set; } = string.Empty;
+    public DateTime FechaHora { get; set; }
+    public bool TieneAdjuntos { get; set; }
+}
+
 public sealed class ConversacionTypingRequest
 {
     public long IdConversacion { get; set; }

@@ -748,6 +748,126 @@ public sealed class ConversacionesService(
             return DeduplicateInboxItems(items);
         }, "No se pudieron cargar las conversaciones.", ct);
 
+    public Task<IReadOnlyList<ConversacionAuditoriaMensajeDto>> GetAuditMessagesAsync(ConversacionesInboxFilters filters, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "GetAuditMessages", async token =>
+        {
+            filters ??= new();
+            var searchPhone = NormalizePhone(filters.Search);
+            var searchPhoneTail = GetPhoneComparableTail(searchPhone);
+            var desde = filters.Desde?.Date;
+            var hastaExclusive = filters.Hasta?.Date.AddDays(1);
+            var auditoria = NormalizeAuditFilter(filters.Auditoria);
+            var tipoMensaje = NormalizeMessageType(filters.TipoMensaje);
+
+            var sql = $"""
+                SELECT TOP (200)
+                    m.IdMensaje,
+                    m.IdConversacion,
+                    COALESCE(NULLIF(c.NombreVisible, N''), NULLIF(mc.Nombre_y_Apellido, N''), NULLIF(cli.RAZON_SOCIAL, N''), NULLIF(c.TelefonoWhatsApp, N''), N'Sin nombre'),
+                    ISNULL(c.TelefonoWhatsApp, N''),
+                    ISNULL(e.Descripcion, N''),
+                    ISNULL(t.Nombre, N''),
+                    ISNULL(m.MessageType, N''),
+                    ISNULL(m.Direction, N''),
+                    ISNULL(m.Texto, N''),
+                    {ConversationMessageVisibleDateSql("m")} AS FechaHora,
+                    CASE WHEN EXISTS (SELECT 1 FROM dbo.CONV_ADJUNTOS a WHERE a.IdMensaje = m.IdMensaje) THEN 1 ELSE 0 END
+                FROM dbo.CONV_MENSAJES m
+                INNER JOIN dbo.CONV_CONVERSACIONES c ON c.IdConversacion = m.IdConversacion
+                INNER JOIN dbo.CONV_ESTADOS e ON e.CodigoEstado = c.CodigoEstado
+                LEFT JOIN dbo.VT_CLIENTES cli ON cli.CODIGO = c.ClienteCodigo
+                LEFT JOIN dbo.MA_CONTACTOS mc ON mc.id = c.IdContacto
+                LEFT JOIN dbo.V_TA_Tecnicos t ON LTRIM(RTRIM(t.IdTecnico)) = LTRIM(RTRIM(c.IdTecnico))
+                WHERE
+                    (@Canal IS NULL OR c.Canal = @Canal)
+                    AND (@IdTecnicoActual IS NULL OR LTRIM(RTRIM(c.IdTecnico)) = @IdTecnicoActual OR LTRIM(RTRIM(m.IdTecnicoAutor)) = @IdTecnicoActual)
+                    AND (
+                        @CodigoEstado IS NULL
+                        OR (@CodigoEstado = @EstadoSinFinalizar AND ISNULL(e.EsCerrado, 0) = 0 AND ISNULL(c.Archivada, 0) = 0)
+                        OR (@CodigoEstado <> @EstadoSinFinalizar AND c.CodigoEstado = @CodigoEstado)
+                    )
+                    AND (
+                        @Modo = 'todas'
+                        OR (@Modo = 'sin_asignar' AND (c.IdTecnico IS NULL OR LTRIM(RTRIM(c.IdTecnico)) = ''))
+                        OR (@Modo = 'asignadas_a_mi' AND LTRIM(RTRIM(c.IdTecnico)) = @IdTecnicoActual)
+                        OR (@Modo = 'pendientes' AND ISNULL(e.EsCerrado, 0) = 0)
+                        OR (@Modo = 'cerradas' AND ISNULL(e.EsCerrado, 0) = 1)
+                    )
+                    AND (@Desde IS NULL OR {ConversationMessageVisibleDateSql("m")} >= @Desde)
+                    AND (@HastaExclusive IS NULL OR {ConversationMessageVisibleDateSql("m")} < @HastaExclusive)
+                    AND (
+                        @Search IS NULL
+                        OR m.Texto LIKE @Search
+                        OR c.TelefonoWhatsApp LIKE @Search
+                        OR c.NombreVisible LIKE @Search
+                        OR cli.RAZON_SOCIAL LIKE @Search
+                        OR mc.Nombre_y_Apellido LIKE @Search
+                        OR (
+                            @SearchPhone IS NOT NULL
+                            AND (
+                                {SqlPhoneEquivalentPredicate("c.TelefonoWhatsApp", "@SearchPhone", "@SearchPhoneTail")}
+                                OR {SqlPhoneEquivalentPredicate("mc.Telefono", "@SearchPhone", "@SearchPhoneTail")}
+                                OR {SqlPhoneEquivalentPredicate("mc.Celular", "@SearchPhone", "@SearchPhoneTail")}
+                            )
+                        )
+                    )
+                    AND (
+                        @Auditoria IS NULL
+                        OR (@Auditoria = N'entrantes' AND m.Direction = N'ENTRANTE')
+                        OR (@Auditoria = N'salientes' AND m.Direction = N'SALIENTE')
+                        OR (@Auditoria = N'internos' AND m.Direction = N'NOTA_INTERNA')
+                        OR (@Auditoria = N'adjuntos' AND EXISTS (SELECT 1 FROM dbo.CONV_ADJUNTOS a WHERE a.IdMensaje = m.IdMensaje))
+                        OR (@Auditoria = N'activas')
+                        OR (@Auditoria = N'nuevas' AND c.FechaHora_Grabacion >= @Desde AND c.FechaHora_Grabacion < @HastaExclusive)
+                        OR (@Auditoria = N'cerradas_rango' AND c.FechaHoraCierre >= @Desde AND c.FechaHoraCierre < @HastaExclusive)
+                        OR (@Auditoria = N'asignaciones' AND EXISTS (SELECT 1 FROM dbo.CONV_ASIGNACIONES a WHERE a.IdConversacion = c.IdConversacion AND (@Desde IS NULL OR a.FechaHora >= @Desde) AND (@HastaExclusive IS NULL OR a.FechaHora < @HastaExclusive)))
+                        OR (@Auditoria = N'reabiertas' AND m.Direction = N'NOTA_INTERNA' AND m.MessageType = N'SYSTEM' AND (m.Texto LIKE N'%cambió el estado de Cerrada a%' OR m.Texto LIKE N'%cambio el estado de Cerrada a%'))
+                        OR (@Auditoria = N'cambios_estado' AND m.Direction = N'NOTA_INTERNA' AND m.MessageType = N'SYSTEM' AND (m.Texto LIKE N'%cambió el estado%' OR m.Texto LIKE N'%cambio el estado%' OR m.Texto LIKE N'%cerró la conversación%' OR m.Texto LIKE N'%cerro la conversacion%'))
+                        OR (@Auditoria = N'tipo_mensaje' AND UPPER(ISNULL(m.MessageType, N'')) = @TipoMensaje)
+                        OR (@Auditoria = N'tickets' AND m.Direction = N'NOTA_INTERNA' AND m.MessageType = N'SYSTEM' AND (m.Texto LIKE N'%creó un ticket%' OR m.Texto LIKE N'%creo un ticket%'))
+                    )
+                ORDER BY {ConversationMessageVisibleDateSql("m")} DESC, m.IdMensaje DESC
+                """;
+
+            var items = new List<ConversacionAuditoriaMensajeDto>();
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var cmd = new SqlCommand(sql, cn);
+            cmd.Parameters.AddWithValue("@Canal", DbNullable(filters.Canal));
+            cmd.Parameters.AddWithValue("@CodigoEstado", DbNullable(filters.CodigoEstado));
+            cmd.Parameters.AddWithValue("@EstadoSinFinalizar", ConversacionesInboxFilters.EstadoSinFinalizar);
+            cmd.Parameters.AddWithValue("@Search", DbNullable(Like(filters.Search)));
+            cmd.Parameters.AddWithValue("@SearchPhone", DbNullable(searchPhone));
+            cmd.Parameters.AddWithValue("@SearchPhoneTail", DbNullable(searchPhoneTail));
+            cmd.Parameters.AddWithValue("@Modo", NormalizeMode(filters.Modo));
+            cmd.Parameters.AddWithValue("@IdTecnicoActual", DbNullable(NormalizeTechnicianId(filters.IdTecnicoActual)));
+            cmd.Parameters.AddWithValue("@Desde", desde.HasValue ? desde.Value : DBNull.Value);
+            cmd.Parameters.AddWithValue("@HastaExclusive", hastaExclusive.HasValue ? hastaExclusive.Value : DBNull.Value);
+            cmd.Parameters.AddWithValue("@Auditoria", DbNullable(auditoria));
+            cmd.Parameters.AddWithValue("@TipoMensaje", DbNullable(tipoMensaje));
+
+            await using var rd = await cmd.ExecuteReaderAsync(token);
+            while (await rd.ReadAsync(token))
+            {
+                items.Add(new ConversacionAuditoriaMensajeDto
+                {
+                    IdMensaje = rd.GetInt64(0),
+                    IdConversacion = rd.GetInt64(1),
+                    NombreConversacion = GetString(rd, 2),
+                    TelefonoWhatsApp = GetString(rd, 3),
+                    EstadoDescripcion = GetString(rd, 4),
+                    TecnicoNombre = GetString(rd, 5),
+                    MessageType = GetString(rd, 6),
+                    Direction = GetString(rd, 7),
+                    Texto = GetString(rd, 8),
+                    FechaHora = rd.IsDBNull(9) ? DateTime.MinValue : NormalizeStoredConversationTime(rd.GetDateTime(9)),
+                    TieneAdjuntos = GetInt(rd, 10) == 1
+                });
+            }
+
+            return (IReadOnlyList<ConversacionAuditoriaMensajeDto>)items;
+        }, "No se pudieron cargar los mensajes de auditoría.", ct);
+
     public Task<ConversacionDetalleDto?> GetConversationAsync(long conversationId, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetConversation", async token =>
         {

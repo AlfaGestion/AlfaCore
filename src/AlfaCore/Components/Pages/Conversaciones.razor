@@ -301,6 +301,51 @@
                 {
                     <div class="loading">Cargando conversación…</div>
                 }
+                else if (_selectedConversation is null && IsAuditResultsMode)
+                {
+                    <div class="conversation-audit-results">
+                        <div class="conversation-audit-results__head">
+                            <div>
+                                <h3 class="panel-card__title">Mensajes encontrados</h3>
+                                <p class="panel-card__subtitle">@_auditMessages.Count coincidencia(s) para los filtros actuales.</p>
+                            </div>
+                        </div>
+                        @if (_loadingAuditMessages)
+                        {
+                            <div class="loading">Buscando mensajes...</div>
+                        }
+                        else if (_auditMessages.Count == 0)
+                        {
+                            <div class="conversations-empty conversations-empty--center">
+                                No encontramos mensajes para esos filtros.
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="conversation-audit-results__list">
+                                @foreach (var item in _auditMessages)
+                                {
+                                    <button type="button" class="conversation-audit-result" @onclick="() => SelectConversationAsync(item.IdConversacion)">
+                                        <div class="conversation-audit-result__top">
+                                            <strong>@DisplayOrFallback(item.NombreConversacion)</strong>
+                                            <span>@item.FechaHora.ToString("dd/MM HH:mm")</span>
+                                        </div>
+                                        <div class="conversation-audit-result__meta">
+                                            <span>@DisplayOrFallback(item.TelefonoWhatsApp)</span>
+                                            <span>@DisplayOrFallback(item.EstadoDescripcion)</span>
+                                            @if (!string.IsNullOrWhiteSpace(item.TecnicoNombre))
+                                            {
+                                                <span>@item.TecnicoNombre</span>
+                                            }
+                                            <span>@GetAuditMessageTypeLabel(item)</span>
+                                        </div>
+                                        <p>@GetAuditMessageText(item)</p>
+                                    </button>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
                 else if (_selectedConversation is null)
                 {
                     <div class="conversations-empty conversations-empty--center">
@@ -1229,6 +1274,7 @@
     private List<ConversacionEstadoOptionDto> _states = [];
     private List<ConversacionInboxItemDto> _inbox = [];
     private List<ConversacionMensajeDto> _messages = [];
+    private List<ConversacionAuditoriaMensajeDto> _auditMessages = [];
     private List<ConversacionTypingDto> _typingUsers = [];
     private List<ContactoGridItemDto> _contactSuggestions = [];
     private List<ConversacionInboxItemDto> _conversationSuggestions = [];
@@ -1237,6 +1283,7 @@
     private ConversacionDetalleDto? _selectedConversation;
     private long? _selectedConversationId;
     private bool _loadingInbox;
+    private bool _loadingAuditMessages;
     private bool _loadingConversation;
     private bool _busyAction;
     private string? _loadError;
@@ -1384,6 +1431,12 @@
            && _selectedConversation is not null
            && SelectedTemplate is not null
            && HasRequiredTemplateValues(SelectedTemplate, TemplateValues);
+    private bool IsAuditResultsMode
+        => _selectedConversation is null && ShouldKeepAuditResultsOpen;
+    private bool ShouldKeepAuditResultsOpen
+        => !string.IsNullOrWhiteSpace(_filters.Search)
+           || !string.IsNullOrWhiteSpace(_filters.Auditoria)
+           || !string.IsNullOrWhiteSpace(_filters.TipoMensaje);
 
     private string GetCurrentStatusDescription()
         => FirstNonEmpty(
@@ -1658,6 +1711,7 @@
     private async Task LoadInboxAsync()
     {
         await RefreshInboxAsync(showLoading: true, allowSelectionChange: true, trackNewMessages: false);
+        await LoadAuditMessagesIfNeededAsync();
     }
 
     private async Task<int> RefreshInboxAsync(bool showLoading, bool allowSelectionChange, bool trackNewMessages = false)
@@ -1680,7 +1734,7 @@
             if (_selectedConversationId.HasValue && _inbox.Any(x => x.IdConversacion == _selectedConversationId.Value))
                 return newMessagesDetected;
 
-            if (allowSelectionChange && _inbox.Count > 0)
+            if (allowSelectionChange && _inbox.Count > 0 && !ShouldKeepAuditResultsOpen)
                 await SelectConversationAsync(_inbox[0].IdConversacion);
             else if (allowSelectionChange)
                 ClearSelection();
@@ -1696,6 +1750,30 @@
         }
 
         return newMessagesDetected;
+    }
+
+    private async Task LoadAuditMessagesIfNeededAsync()
+    {
+        if (!ShouldKeepAuditResultsOpen)
+        {
+            _auditMessages = [];
+            return;
+        }
+
+        _loadingAuditMessages = true;
+        try
+        {
+            _auditMessages = (await ConversacionesSvc.GetAuditMessagesAsync(_filters)).ToList();
+        }
+        catch (Exception ex)
+        {
+            _actionError = ex.Message;
+            _auditMessages = [];
+        }
+        finally
+        {
+            _loadingAuditMessages = false;
+        }
     }
 
     private int TrackInboxNewMessages(
@@ -3782,6 +3860,25 @@
             _ when IsUnsupportedMessage(message) => "No compatible",
             _ => message.MessageType
         };
+
+    private static string GetAuditMessageTypeLabel(ConversacionAuditoriaMensajeDto message)
+        => message.Direction switch
+        {
+            "ENTRANTE" => "Entrante",
+            "SALIENTE" => "Saliente",
+            "NOTA_INTERNA" => string.Equals(message.MessageType, "SYSTEM", StringComparison.OrdinalIgnoreCase) ? "Sistema" : "Nota interna",
+            _ => string.IsNullOrWhiteSpace(message.MessageType) ? "Mensaje" : message.MessageType
+        };
+
+    private static string GetAuditMessageText(ConversacionAuditoriaMensajeDto message)
+    {
+        if (!string.IsNullOrWhiteSpace(message.Texto))
+            return message.Texto.Trim();
+
+        return message.TieneAdjuntos
+            ? $"[{GetAuditMessageTypeLabel(message)} con adjunto]"
+            : $"[{GetAuditMessageTypeLabel(message)}]";
+    }
 
     private static string GetMessageClass(ConversacionMensajeDto message)
         => message.Direction switch
