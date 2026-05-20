@@ -3856,8 +3856,21 @@
         if (message.MessageType is "IMAGE" or "AUDIO" or "VIDEO" or "DOCUMENT" or "STICKER")
         {
             if (message.TieneAdjuntos)
-                return false;
+                return HasHumanAttachmentText(message);
         }
+
+        return true;
+    }
+
+    private bool HasHumanAttachmentText(ConversacionMensajeDto message)
+    {
+        var text = message.Texto.Trim();
+        if (text.StartsWith("[", StringComparison.Ordinal))
+            return false;
+
+        if (_adjuntosPorMensaje.TryGetValue(message.IdMensaje, out var adjuntos)
+            && adjuntos.Any(x => string.Equals(x.NombreArchivo, text, StringComparison.OrdinalIgnoreCase)))
+            return false;
 
         return true;
     }
