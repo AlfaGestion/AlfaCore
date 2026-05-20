@@ -2060,6 +2060,7 @@
     private async Task ScrollToLatestAsync()
     {
         await ScrollThreadToBottomAsync();
+        MarkSelectedConversationAsRead();
         StateHasChanged();
     }
 
