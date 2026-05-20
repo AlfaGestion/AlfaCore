@@ -160,28 +160,6 @@
                     <article class="conv-stats-panel">
                         <div class="conv-stats-panel__head">
                             <div>
-                                <h3 class="panel-card__title">Palabras y problemas frecuentes</h3>
-                                <p class="panel-card__subtitle">Terminos repetidos en mensajes entrantes.</p>
-                            </div>
-                        </div>
-                        <div class="conv-stats-topic-list">
-                            @foreach (var item in _stats.TemasFrecuentes)
-                            {
-                                <a class="conv-stats-topic conv-stats-row-link" href="@GetSearchUrl(item.Texto)">
-                                    <span>@item.Texto</span>
-                                    <strong>@FormatNumber(item.Cantidad)</strong>
-                                </a>
-                            }
-                            @if (_stats.TemasFrecuentes.Count == 0)
-                            {
-                                <div class="conversations-empty">No hay terminos frecuentes para mostrar.</div>
-                            }
-                        </div>
-                    </article>
-
-                    <article class="conv-stats-panel">
-                        <div class="conv-stats-panel__head">
-                            <div>
                                 <h3 class="panel-card__title">Equipo</h3>
                                 <p class="panel-card__subtitle">Actividad por tecnico en el rango seleccionado.</p>
                             </div>
@@ -207,6 +185,28 @@
                             @if (_stats.PorTecnico.Count == 0)
                             {
                                 <div class="conversations-empty">No hay actividad de tecnicos para este rango.</div>
+                            }
+                        </div>
+                    </article>
+
+                    <article class="conv-stats-panel">
+                        <div class="conv-stats-panel__head">
+                            <div>
+                                <h3 class="panel-card__title">Palabras y problemas frecuentes</h3>
+                                <p class="panel-card__subtitle">Terminos repetidos en mensajes entrantes.</p>
+                            </div>
+                        </div>
+                        <div class="conv-stats-topic-list">
+                            @foreach (var item in _stats.TemasFrecuentes)
+                            {
+                                <a class="conv-stats-topic conv-stats-row-link" href="@GetSearchUrl(item.Texto)">
+                                    <span>@item.Texto</span>
+                                    <strong>@FormatNumber(item.Cantidad)</strong>
+                                </a>
+                            }
+                            @if (_stats.TemasFrecuentes.Count == 0)
+                            {
+                                <div class="conversations-empty">No hay terminos frecuentes para mostrar.</div>
                             }
                         </div>
                     </article>
