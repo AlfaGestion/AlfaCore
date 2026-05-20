@@ -625,13 +625,14 @@
                                 <button type="button"
                                         class="btn btn--ghost"
                                         title="Más opciones"
-                                        @onclick="ToggleComposerTools">
+                                        @onclick="ToggleComposerTools"
+                                        @onclick:stopPropagation>
                                     <i class="bi bi-plus-lg"></i>
                                 </button>
                             </div>
                             @if (_showComposerTools)
                             {
-                                <div class="panel-card conversations-tools-panel">
+                                <div class="panel-card conversations-tools-panel" @onclick:stopPropagation>
                                     <div class="conversations-composer__actions conversations-tools-panel__tabs">
                                         <button type="button" class="conversations-filter-pill @(_composerToolTab == ComposerToolTabs.Emojis ? "is-active" : string.Empty)" @onclick='() => _composerToolTab = ComposerToolTabs.Emojis'><i class="bi bi-emoji-smile"></i> Emojis</button>
                                         <button type="button" class="conversations-filter-pill @(_composerToolTab == ComposerToolTabs.Stickers ? "is-active" : string.Empty)" @onclick='() => _composerToolTab = ComposerToolTabs.Stickers'><i class="bi bi-star-fill"></i> Stickers</button>
@@ -639,15 +640,15 @@
                                     </div>
                                     @if (_composerToolTab == ComposerToolTabs.Emojis)
                                     {
-                                        <input type="search" placeholder="Buscar emoji" value="@_emojiSearch" @oninput="HandleEmojiSearchInput" style="margin-bottom:.8rem;" />
+                                        <input class="conversations-tools-panel__search" type="search" placeholder="Buscar emoji" value="@_emojiSearch" @oninput="HandleEmojiSearchInput" />
                                         @foreach (var group in FilteredEmojiGroups)
                                         {
-                                            <div style="margin-bottom:.8rem;">
+                                            <div class="conversations-tools-panel__group">
                                                 <strong class="context-card__label">@group.Nombre</strong>
-                                                <div class="conversations-composer__actions" style="justify-content:flex-start; flex-wrap:wrap; gap:.35rem; margin-top:.35rem;">
+                                                <div class="conversations-tools-panel__grid">
                                                     @foreach (var emoji in group.Emojis)
                                                     {
-                                                        <button type="button" class="btn btn--ghost btn--sm" style="min-width:2.1rem; padding-inline:.45rem;" title="Agregar @emoji" @onclick="() => AddEmojiToReply(emoji)">@emoji</button>
+                                                        <button type="button" class="btn btn--ghost btn--sm conversations-tools-panel__emoji" title="Agregar @emoji" @onclick="() => AddEmojiToReply(emoji)">@emoji</button>
                                                     }
                                                 </div>
                                             </div>
@@ -655,8 +656,8 @@
                                     }
                                     else if (_composerToolTab == ComposerToolTabs.Stickers)
                                     {
-                                        <div class="conversations-composer__actions" style="justify-content:flex-start; flex-wrap:wrap; gap:.55rem;">
-                                            <label class="btn btn--ghost" title="Cargar sticker WebP" style="cursor:pointer; min-height:62px;">
+                                        <div class="conversations-tools-panel__actions">
+                                            <label class="btn btn--ghost conversations-tools-panel__tool" title="Cargar sticker WebP">
                                                 <i class="bi bi-plus-lg"></i> Crear
                                                 <InputFile OnChange="HandleStickerSelectedAsync" style="display:none" multiple accept="image/webp,.webp" />
                                             </label>
@@ -667,24 +668,26 @@
                                     @foreach (var sticker in _favoriteStickers)
                                     {
                                         <button type="button"
-                                                class="btn btn--ghost"
+                                                class="btn btn--ghost conversations-tools-panel__sticker"
                                                 title="@sticker.Nombre"
                                                 @onclick="() => SendFavoriteStickerAsync(sticker.IdFavorito)"
                                                 disabled="@_busyAction">
-                                            <img src="@GetFavoriteStickerUrl(sticker)" alt="@sticker.Nombre" style="width:42px;height:42px;object-fit:contain;" />
+                                            <img src="@GetFavoriteStickerUrl(sticker)" alt="@sticker.Nombre" />
                                         </button>
                                     }
                                         </div>
                                     }
                                     else
                                     {
-                                        <div class="conversations-composer__actions" style="justify-content:flex-start; flex-wrap:wrap;">
-                                            <label class="btn btn--ghost" title="Adjuntar archivo" style="cursor:pointer">
-                                                <i class="bi @(_uploadingFile ? "bi-hourglass-split" : "bi-paperclip")"></i> Archivo
+                                        <div class="conversations-tools-panel__actions">
+                                            <label class="btn btn--ghost conversations-tools-panel__tool" title="Adjuntar archivo">
+                                                <i class="bi @(_uploadingFile ? "bi-hourglass-split" : "bi-paperclip")"></i>
+                                                <span>Archivo</span>
                                                 <InputFile OnChange="HandleFileSelectedAsync" style="display:none" multiple accept="image/*,audio/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.zip,.rar" />
                                             </label>
-                                            <button type="button" class="btn btn--ghost @(_recording ? "is-recording" : string.Empty)" @onclick="ToggleRecordingAsync" title="@(_recording ? "Detener grabación" : "Grabar mensaje de voz")" disabled="@_uploadingAudio">
-                                                <i class="bi @(_recording ? "bi-stop-circle-fill" : "bi-mic-fill")"></i> Audio
+                                            <button type="button" class="btn btn--ghost conversations-tools-panel__tool @(_recording ? "is-recording" : string.Empty)" @onclick="ToggleRecordingAsync" title="@(_recording ? "Detener grabación" : "Grabar mensaje de voz")" disabled="@_uploadingAudio">
+                                                <i class="bi @(_recording ? "bi-stop-circle-fill" : "bi-mic-fill")"></i>
+                                                <span>Audio</span>
                                             </button>
                                         </div>
                                     }
@@ -2998,6 +3001,7 @@
         try
         {
             await AddFilesToPendingAttachmentsAsync(e, _pendingAttachments);
+            MinimizeComposerTools();
 
             _actionMessage = _pendingAttachments.Count == 1
                 ? "Adjunto listo para enviar."
@@ -3024,6 +3028,7 @@
         try
         {
             await AddFilesToPendingAttachmentsAsync(e, _pendingAttachments, forcedType: "STICKER");
+            MinimizeComposerTools();
 
             _actionMessage = _pendingAttachments.Count == 1
                 ? "Sticker listo para enviar."
@@ -3134,6 +3139,7 @@
             });
 
             _actionMessage = "Audio listo para enviar.";
+            MinimizeComposerTools();
         }
         catch (Exception ex)
         {
@@ -3159,6 +3165,7 @@
         _replyText = string.IsNullOrWhiteSpace(_replyText)
             ? emoji
             : $"{_replyText}{emoji}";
+        MinimizeComposerTools();
     }
 
     private async Task SendReactionAsync(ConversacionMensajeDto message, string emoji)
@@ -3200,6 +3207,9 @@
     private void ToggleComposerTools()
         => _showComposerTools = !_showComposerTools;
 
+    private void MinimizeComposerTools()
+        => _showComposerTools = false;
+
     private void HandleEmojiSearchInput(ChangeEventArgs args)
         => _emojiSearch = Convert.ToString(args.Value, System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
 
@@ -3240,6 +3250,7 @@
             await SelectConversationAsync(_selectedConversation.IdConversacion);
             await LoadInboxAsync();
             _actionMessage = "Sticker enviado.";
+            MinimizeComposerTools();
         }
         catch (Exception ex)
         {
@@ -3758,6 +3769,12 @@
 
     private async Task DismissConversationNoticesAsync()
     {
+        if (_showComposerTools)
+        {
+            _showComposerTools = false;
+            StateHasChanged();
+        }
+
         var signature = BuildNoticeSignature();
         if (string.IsNullOrWhiteSpace(signature))
         {

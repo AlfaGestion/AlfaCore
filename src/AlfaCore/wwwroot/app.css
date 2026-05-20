@@ -5146,10 +5146,10 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
     right: 1rem;
     bottom: 7.5rem;
     z-index: 45;
-    width: min(560px, calc(100vw - 2rem));
-    max-height: 420px;
+    width: min(600px, calc(100vw - 2rem));
+    max-height: min(460px, calc(100vh - 12rem));
     overflow: auto;
-    padding: 1rem;
+    padding: 1.15rem;
     border: 1px solid rgba(148, 163, 184, .28);
     background: #111827;
     box-shadow: 0 18px 42px rgba(0, 0, 0, .35);
@@ -5161,8 +5161,83 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
 
 .conversations-tools-panel__tabs {
     justify-content: flex-start;
-    gap: .45rem;
-    margin-bottom: .85rem;
+    gap: .55rem;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+}
+
+.conversations-tools-panel__search {
+    width: min(240px, 100%);
+    margin-bottom: 1rem;
+}
+
+.conversations-tools-panel__group {
+    margin-bottom: 1rem;
+}
+
+.conversations-tools-panel__grid,
+.conversations-tools-panel__actions {
+    display: flex;
+    justify-content: flex-start;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: .55rem;
+    margin-top: .45rem;
+}
+
+.conversations-tools-panel__emoji {
+    display: inline-grid;
+    place-items: center;
+    min-width: 2.25rem;
+    width: 2.25rem;
+    height: 2.25rem;
+    padding: 0;
+    font-size: 1rem;
+}
+
+.conversations-tools-panel__tool {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: .38rem;
+    min-width: 5.75rem;
+    min-height: 2.45rem;
+    padding-inline: .75rem;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.conversations-tools-panel__sticker {
+    display: inline-grid;
+    place-items: center;
+    width: 3.75rem;
+    min-width: 3.75rem;
+    height: 3.75rem;
+    padding: .35rem;
+}
+
+.conversations-tools-panel__sticker img {
+    width: 2.65rem;
+    height: 2.65rem;
+    object-fit: contain;
+}
+
+@media (max-width: 520px) {
+    .conversations-tools-panel {
+        right: .65rem;
+        width: min(420px, calc(100vw - 1.3rem));
+        padding: .9rem;
+    }
+
+    .conversations-tools-panel__tool {
+        min-width: 2.65rem;
+        width: 2.65rem;
+        padding-inline: 0;
+    }
+
+    .conversations-tools-panel__tool span {
+        display: none;
+    }
 }
 
 @keyframes message-enter {
