@@ -1020,12 +1020,25 @@
                        download="@_previewAttachment.NombreArchivo">
                         <i class="bi bi-download"></i> Descargar
                     </a>
+                    <button type="button" class="btn btn--ghost btn--sm attachment-preview-zoom-button" @onclick="ZoomPreviewOut" title="Alejar">
+                        <i class="bi bi-zoom-out"></i>
+                    </button>
+                    <button type="button" class="btn btn--ghost btn--sm attachment-preview-zoom-button" @onclick="ResetPreviewZoom" title="Restablecer zoom">
+                        @PreviewZoomPercent
+                    </button>
+                    <button type="button" class="btn btn--ghost btn--sm attachment-preview-zoom-button" @onclick="ZoomPreviewIn" title="Acercar">
+                        <i class="bi bi-zoom-in"></i>
+                    </button>
                     <button type="button" class="btn btn--ghost btn--sm" @onclick="CloseAttachmentPreview">
                         <i class="bi bi-x-lg"></i>
                     </button>
                 </div>
             </header>
-            <img src="@GetAttachmentUrl(_previewAttachment)" alt="@GetAttachmentLabel(_previewAttachment)" />
+            <div class="attachment-preview-canvas" @onwheel="HandlePreviewWheel" @onwheel:preventDefault>
+                <img src="@GetAttachmentUrl(_previewAttachment)"
+                     alt="@GetAttachmentLabel(_previewAttachment)"
+                     style="@PreviewImageStyle" />
+            </div>
         </div>
     </div>
 }
@@ -1213,6 +1226,7 @@
     private readonly string _typingClientId = Guid.NewGuid().ToString("N");
     private DateTime _lastTypingSentUtc = DateTime.MinValue;
     private bool _focusReplyAfterRender;
+    private double _previewZoom = 1d;
     private List<PendingAttachment> _pendingAttachments = [];
     private List<PendingAttachment> _templatePendingAttachments = [];
     private List<ConversacionStickerFavoritoDto> _favoriteStickers = [];
@@ -3762,10 +3776,32 @@
     {
         _openAttachmentMenuId = null;
         _previewAttachment = adjunto;
+        ResetPreviewZoom();
     }
 
     private void CloseAttachmentPreview()
         => _previewAttachment = null;
+
+    private string PreviewImageStyle
+        => $"width: {Math.Round(_previewZoom * 100, 0).ToString(System.Globalization.CultureInfo.InvariantCulture)}%;";
+
+    private string PreviewZoomPercent
+        => $"{Math.Round(_previewZoom * 100, 0).ToString(System.Globalization.CultureInfo.InvariantCulture)}%";
+
+    private void ZoomPreviewIn()
+        => SetPreviewZoom(_previewZoom + .25d);
+
+    private void ZoomPreviewOut()
+        => SetPreviewZoom(_previewZoom - .25d);
+
+    private void ResetPreviewZoom()
+        => SetPreviewZoom(1d);
+
+    private void HandlePreviewWheel(WheelEventArgs args)
+        => SetPreviewZoom(_previewZoom + (args.DeltaY < 0 ? .15d : -.15d));
+
+    private void SetPreviewZoom(double value)
+        => _previewZoom = Math.Clamp(value, .5d, 4d);
 
     private async Task DismissConversationNoticesAsync()
     {

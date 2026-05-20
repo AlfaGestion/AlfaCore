@@ -9127,14 +9127,30 @@ html[data-theme="light"] .balance-row--detalle td {
     flex: 0 0 auto;
 }
 
-.attachment-preview-modal img {
-    max-width: 100%;
-    max-height: calc(92vh - 6rem);
+.attachment-preview-zoom-button {
+    min-width: 2.35rem;
+}
+
+.attachment-preview-canvas {
+    display: grid;
+    place-items: start center;
     min-height: 0;
-    justify-self: center;
-    align-self: center;
+    max-height: calc(92vh - 6rem);
+    overflow: auto;
+    border-radius: var(--radius-md);
+    overscroll-behavior: contain;
+    cursor: zoom-in;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(14, 165, 233, .55) rgba(15, 23, 42, .35);
+}
+
+.attachment-preview-canvas img {
+    max-width: none;
+    min-height: 0;
+    height: auto;
     object-fit: contain;
     border-radius: var(--radius-md);
+    transform-origin: top center;
 }
 
 /* Adjuntos en mensajes */
