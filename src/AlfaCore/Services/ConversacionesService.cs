@@ -423,7 +423,7 @@ public sealed class ConversacionesService(
             return (IReadOnlyList<ConversacionMensajeDto>)items;
         }, "No se pudieron cargar los mensajes.", ct);
 
-    public Task<IReadOnlyList<ConversacionTypingDto>> GetTypingAsync(long conversationId, string? usuarioActual = null, string? sistemaActual = null, CancellationToken ct = default)
+    public Task<IReadOnlyList<ConversacionTypingDto>> GetTypingAsync(long conversationId, string? clienteIdActual = null, CancellationToken ct = default)
     {
         if (conversationId <= 0)
             return Task.FromResult<IReadOnlyList<ConversacionTypingDto>>([]);
@@ -431,15 +431,16 @@ public sealed class ConversacionesService(
         var now = DateTime.UtcNow;
         PurgeExpiredTyping(now);
 
-        var currentKey = BuildTypingActorKey(conversationId, usuarioActual, sistemaActual, string.Empty);
+        var currentClientId = clienteIdActual?.Trim() ?? string.Empty;
         var items = TypingPresences.Values
             .Where(x => x.IdConversacion == conversationId
                         && now - x.LastSeenUtc <= TypingTtl
-                        && !string.Equals(x.ActorKey, currentKey, StringComparison.OrdinalIgnoreCase))
+                        && !string.Equals(x.ClienteId, currentClientId, StringComparison.OrdinalIgnoreCase))
             .OrderBy(x => x.NombreTecnico)
             .ThenBy(x => x.Usuario)
             .Select(x => new ConversacionTypingDto
             {
+                ClienteId = x.ClienteId,
                 IdTecnico = x.IdTecnico,
                 NombreTecnico = x.NombreTecnico,
                 Usuario = x.Usuario,
@@ -457,10 +458,11 @@ public sealed class ConversacionesService(
             return Task.CompletedTask;
 
         var idTecnico = NormalizeTechnicianId(request.IdTecnico);
+        var clienteId = request.ClienteId?.Trim() ?? string.Empty;
         var usuario = request.Usuario?.Trim() ?? string.Empty;
         var sistema = request.Sistema?.Trim() ?? string.Empty;
         var nombreTecnico = FirstNonEmpty(request.NombreTecnico, usuario, idTecnico);
-        var actorKey = BuildTypingActorKey(request.IdConversacion, usuario, sistema, idTecnico);
+        var actorKey = BuildTypingActorKey(request.IdConversacion, clienteId, usuario, sistema, idTecnico);
         if (string.IsNullOrWhiteSpace(actorKey))
             return Task.CompletedTask;
 
@@ -474,6 +476,7 @@ public sealed class ConversacionesService(
         TypingPresences[actorKey] = new TypingPresence(
             ActorKey: actorKey,
             IdConversacion: request.IdConversacion,
+            ClienteId: clienteId,
             IdTecnico: idTecnico,
             NombreTecnico: nombreTecnico,
             Usuario: usuario,
@@ -4332,8 +4335,12 @@ public sealed class ConversacionesService(
     private static string NormalizeTechnicianId(string? value)
         => string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
 
-    private static string BuildTypingActorKey(long idConversacion, string? usuario, string? sistema, string? idTecnico)
+    private static string BuildTypingActorKey(long idConversacion, string? clienteId, string? usuario, string? sistema, string? idTecnico)
     {
+        var client = clienteId?.Trim() ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(client))
+            return $"{idConversacion}:client:{client}".ToUpperInvariant();
+
         var user = usuario?.Trim() ?? string.Empty;
         var system = sistema?.Trim() ?? string.Empty;
         if (!string.IsNullOrWhiteSpace(user))
@@ -4570,6 +4577,7 @@ public sealed class ConversacionesService(
     private sealed record TypingPresence(
         string ActorKey,
         long IdConversacion,
+        string ClienteId,
         string IdTecnico,
         string NombreTecnico,
         string Usuario,

@@ -90,6 +90,7 @@ public sealed class ConversacionMensajeDto
 public sealed class ConversacionTypingRequest
 {
     public long IdConversacion { get; set; }
+    public string? ClienteId { get; set; }
     public string? IdTecnico { get; set; }
     public string? NombreTecnico { get; set; }
     public string? Usuario { get; set; }
@@ -99,6 +100,7 @@ public sealed class ConversacionTypingRequest
 
 public sealed class ConversacionTypingDto
 {
+    public string ClienteId { get; set; } = string.Empty;
     public string IdTecnico { get; set; } = string.Empty;
     public string NombreTecnico { get; set; } = string.Empty;
     public string Usuario { get; set; } = string.Empty;

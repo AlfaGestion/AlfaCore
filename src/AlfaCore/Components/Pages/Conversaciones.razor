@@ -1205,6 +1205,7 @@
     private ElementReference _replyTextArea;
     private long? _replyEnterHandlerConversationId;
     private int _lastSyncedBrowserNewCount = -1;
+    private readonly string _typingClientId = Guid.NewGuid().ToString("N");
     private DateTime _lastTypingSentUtc = DateTime.MinValue;
     private List<PendingAttachment> _pendingAttachments = [];
     private List<PendingAttachment> _templatePendingAttachments = [];
@@ -1609,7 +1610,7 @@
             var conversationTask = ConversacionesSvc.GetConversationAsync(idConversacion);
             var messagesTask = ConversacionesSvc.GetMessagesAsync(idConversacion);
             var attachmentsTask = ConversacionesSvc.GetConversationAttachmentsAsync(idConversacion);
-            var typingTask = ConversacionesSvc.GetTypingAsync(idConversacion, CurrentUserNameForAudit, CurrentUserSystemForAudit);
+            var typingTask = ConversacionesSvc.GetTypingAsync(idConversacion, _typingClientId);
 
             await Task.WhenAll(conversationTask, messagesTask, attachmentsTask, typingTask);
 
@@ -2262,6 +2263,7 @@
         await ConversacionesSvc.SetTypingAsync(new ConversacionTypingRequest
         {
             IdConversacion = idConversacion,
+            ClienteId = _typingClientId,
             IdTecnico = CurrentMessageTechnicianId,
             NombreTecnico = CurrentMessageTechnicianName,
             Usuario = CurrentUserNameForAudit,
