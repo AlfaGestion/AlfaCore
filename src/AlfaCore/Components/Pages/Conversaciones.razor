@@ -1526,7 +1526,7 @@
 
         if (hasWarmCache && cachedConversation is not null)
         {
-            ApplyConversationCache(idConversacion, cachedConversation);
+            ApplyConversationCache(idConversacion, cachedConversation, showLoading || clearActionState || conversationChanged);
             showLoading = false;
         }
 
@@ -1902,7 +1902,7 @@
             _conversationCache.Remove(firstKey);
     }
 
-    private void ApplyConversationCache(long idConversacion, ConversationViewCache cache)
+    private void ApplyConversationCache(long idConversacion, ConversationViewCache cache, bool scrollToBottom)
     {
         _selectedConversation = cache.Conversation;
         _messages = cache.Messages.ToList();
@@ -1910,7 +1910,7 @@
         _assignmentTechnicianId = _selectedConversation.IdTecnico;
         _statusCode = _selectedConversation.CodigoEstado;
         _conversationError = null;
-        _scrollThreadToBottomAfterRender = true;
+        _scrollThreadToBottomAfterRender = scrollToBottom;
         _scrollHandlerConversationId = null;
         RestoreSelectedNewMessageMarker(idConversacion);
     }
@@ -1936,7 +1936,7 @@
             && _conversationCache.TryGetValue(selectedId, out var conversationCache))
         {
             _selectedConversationId = selectedId;
-            ApplyConversationCache(selectedId, conversationCache);
+            ApplyConversationCache(selectedId, conversationCache, scrollToBottom: true);
         }
         else
         {
