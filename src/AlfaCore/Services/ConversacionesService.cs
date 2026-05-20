@@ -148,10 +148,50 @@ public sealed class ConversacionesService(
                         @HastaExclusive = @HastaExclusive;
                 END;
 
+                WITH BaseRaw AS
+                (
+                    SELECT
+                        c.*,
+                        ISNULL(e.Descripcion, c.CodigoEstado) AS EstadoDescripcion,
+                        ISNULL(e.EsCerrado, 0) AS EsCerrado,
+                        ISNULL(e.Orden, 999) AS EstadoOrden,
+                        CASE
+                            WHEN c.IdContacto IS NOT NULL THEN N'CONTACTO:' + CONVERT(nvarchar(30), c.IdContacto)
+                            WHEN NULLIF(LTRIM(RTRIM(ISNULL(c.TelefonoWhatsApp, N''))), N'') IS NOT NULL THEN N'TEL:' + LTRIM(RTRIM(c.TelefonoWhatsApp))
+                            ELSE N'CONV:' + CONVERT(nvarchar(30), c.IdConversacion)
+                        END AS DedupeKey
+                    FROM dbo.CONV_CONVERSACIONES c
+                    LEFT JOIN dbo.CONV_ESTADOS e ON e.CodigoEstado = c.CodigoEstado
+                    WHERE c.Canal = N'WHATSAPP'
+                      AND (@IdTecnico IS NULL OR c.IdTecnico = @IdTecnico)
+                      AND NOT (
+                          ISNULL(c.ResumenUltimoMensaje, N'') = @ManualWhatsAppConversationSummary
+                          AND NOT EXISTS (
+                              SELECT 1
+                              FROM dbo.CONV_MENSAJES msg
+                              WHERE msg.IdConversacion = c.IdConversacion
+                          )
+                      )
+                ),
+                BaseRanked AS
+                (
+                    SELECT
+                        *,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY DedupeKey
+                            ORDER BY ISNULL(FechaHoraUltimoMensaje, FechaHora_Grabacion) DESC, IdConversacion DESC
+                        ) AS DedupeRank
+                    FROM BaseRaw
+                )
+                SELECT *
+                INTO #BaseConversaciones
+                FROM BaseRanked
+                WHERE DedupeRank = 1;
+
                 SELECT m.*
                 INTO #MensajesRango
                 FROM dbo.CONV_MENSAJES m
-                INNER JOIN dbo.CONV_CONVERSACIONES c ON c.IdConversacion = m.IdConversacion
+                INNER JOIN #BaseConversaciones c ON c.IdConversacion = m.IdConversacion
                 WHERE m.FechaHora >= @Desde
                   AND m.FechaHora < @HastaExclusive
                   AND (@IdTecnico IS NULL OR c.IdTecnico = @IdTecnico OR m.IdTecnicoAutor = @IdTecnico);
@@ -177,10 +217,9 @@ public sealed class ConversacionesService(
                 CierresRango AS
                 (
                     SELECT c.IdConversacion, c.FechaHoraPrimerMensaje, c.FechaHora_Grabacion, c.FechaHoraCierre
-                    FROM dbo.CONV_CONVERSACIONES c
+                    FROM #BaseConversaciones c
                     WHERE c.FechaHoraCierre >= @Desde
                       AND c.FechaHoraCierre < @HastaExclusive
-                      AND (@IdTecnico IS NULL OR c.IdTecnico = @IdTecnico)
                 ),
                 EventosRango AS
                 (
@@ -190,18 +229,18 @@ public sealed class ConversacionesService(
                       AND m.MessageType = N'SYSTEM'
                 )
                 SELECT
-                    (SELECT COUNT(1) FROM dbo.CONV_CONVERSACIONES c WHERE @IdTecnico IS NULL OR c.IdTecnico = @IdTecnico),
-                    (SELECT COUNT(1) FROM dbo.CONV_CONVERSACIONES c WHERE c.CodigoEstado = N'ABIERTA' AND (@IdTecnico IS NULL OR c.IdTecnico = @IdTecnico)),
-                    (SELECT COUNT(1) FROM dbo.CONV_CONVERSACIONES c WHERE c.CodigoEstado = N'PENDIENTE' AND (@IdTecnico IS NULL OR c.IdTecnico = @IdTecnico)),
-                    (SELECT COUNT(1) FROM dbo.CONV_CONVERSACIONES c WHERE c.CodigoEstado = N'EN_GESTION' AND (@IdTecnico IS NULL OR c.IdTecnico = @IdTecnico)),
-                    (SELECT COUNT(1) FROM dbo.CONV_CONVERSACIONES c INNER JOIN dbo.CONV_ESTADOS e ON e.CodigoEstado = c.CodigoEstado WHERE e.EsCerrado = 1 AND (@IdTecnico IS NULL OR c.IdTecnico = @IdTecnico)),
-                    (SELECT COUNT(1) FROM dbo.CONV_CONVERSACIONES c WHERE (ISNULL(c.Archivada, 0) = 1 OR c.CodigoEstado = N'ARCHIVADA') AND (@IdTecnico IS NULL OR c.IdTecnico = @IdTecnico)),
-                    (SELECT COUNT(1) FROM dbo.CONV_CONVERSACIONES c WHERE NULLIF(LTRIM(RTRIM(ISNULL(c.IdTecnico, N''))), N'') IS NULL),
-                    (SELECT COUNT(1) FROM dbo.CONV_CONVERSACIONES c WHERE NULLIF(LTRIM(RTRIM(ISNULL(c.IdTecnico, N''))), N'') IS NOT NULL AND (@IdTecnico IS NULL OR c.IdTecnico = @IdTecnico)),
-                    (SELECT COUNT(1) FROM dbo.CONV_CONVERSACIONES c WHERE c.FechaHora_Grabacion >= @Desde AND c.FechaHora_Grabacion < @HastaExclusive AND (@IdTecnico IS NULL OR c.IdTecnico = @IdTecnico)),
+                    (SELECT COUNT(1) FROM #BaseConversaciones c),
+                    (SELECT COUNT(1) FROM #BaseConversaciones c WHERE c.CodigoEstado = N'ABIERTA'),
+                    (SELECT COUNT(1) FROM #BaseConversaciones c WHERE c.CodigoEstado = N'PENDIENTE'),
+                    (SELECT COUNT(1) FROM #BaseConversaciones c WHERE c.CodigoEstado = N'EN_GESTION'),
+                    (SELECT COUNT(1) FROM #BaseConversaciones c WHERE c.EsCerrado = 1),
+                    (SELECT COUNT(1) FROM #BaseConversaciones c WHERE (ISNULL(c.Archivada, 0) = 1 OR c.CodigoEstado = N'ARCHIVADA')),
+                    (SELECT COUNT(1) FROM #BaseConversaciones c WHERE NULLIF(LTRIM(RTRIM(ISNULL(c.IdTecnico, N''))), N'') IS NULL),
+                    (SELECT COUNT(1) FROM #BaseConversaciones c WHERE NULLIF(LTRIM(RTRIM(ISNULL(c.IdTecnico, N''))), N'') IS NOT NULL),
+                    (SELECT COUNT(1) FROM #BaseConversaciones c WHERE c.FechaHora_Grabacion >= @Desde AND c.FechaHora_Grabacion < @HastaExclusive),
                     (SELECT COUNT(DISTINCT IdConversacion) FROM #MensajesRango),
                     (SELECT COUNT(DISTINCT COALESCE(NULLIF(c.ClienteCodigo, N''), NULLIF(c.TelefonoWhatsApp, N''), CONVERT(nvarchar(30), c.IdConversacion)))
-                     FROM dbo.CONV_CONVERSACIONES c
+                     FROM #BaseConversaciones c
                      WHERE EXISTS (SELECT 1 FROM #MensajesRango m WHERE m.IdConversacion = c.IdConversacion)),
                     (SELECT COUNT(1) FROM EventosRango WHERE Texto LIKE N'%cambió el estado de Cerrada a%' OR Texto LIKE N'%cambio el estado de Cerrada a%'),
                     (SELECT COUNT(1) FROM #MensajesRango WHERE Direction = N'ENTRANTE'),
@@ -211,18 +250,16 @@ public sealed class ConversacionesService(
                     (SELECT COUNT(1) FROM PrimerasRespuestas WHERE PrimeraRespuesta IS NOT NULL),
                     (SELECT COUNT(1) FROM EntrantesRango e WHERE NOT EXISTS (SELECT 1 FROM PrimerasRespuestas r WHERE r.IdConversacion = e.IdConversacion AND r.PrimeraRespuesta IS NOT NULL)),
                     (SELECT COUNT(1) FROM CierresRango),
-                    (SELECT COUNT(1) FROM @Tickets t LEFT JOIN dbo.CONV_CONVERSACIONES c ON c.IdConversacion = t.IdConversacion WHERE @IdTecnico IS NULL OR t.IdTecnico = @IdTecnico OR c.IdTecnico = @IdTecnico),
-                    (SELECT COUNT(1) FROM dbo.CONV_ASIGNACIONES a WHERE a.FechaHora >= @Desde AND a.FechaHora < @HastaExclusive AND (@IdTecnico IS NULL OR a.IdTecnico = @IdTecnico)),
+                    (SELECT COUNT(1) FROM @Tickets t LEFT JOIN #BaseConversaciones c ON c.IdConversacion = t.IdConversacion WHERE c.IdConversacion IS NOT NULL AND (@IdTecnico IS NULL OR t.IdTecnico = @IdTecnico OR c.IdTecnico = @IdTecnico)),
+                    (SELECT COUNT(1) FROM dbo.CONV_ASIGNACIONES a INNER JOIN #BaseConversaciones c ON c.IdConversacion = a.IdConversacion WHERE a.FechaHora >= @Desde AND a.FechaHora < @HastaExclusive AND (@IdTecnico IS NULL OR a.IdTecnico = @IdTecnico)),
                     (SELECT COUNT(1) FROM EventosRango WHERE Texto LIKE N'%cambió el estado%' OR Texto LIKE N'%cambio el estado%' OR Texto LIKE N'%cerró la conversación%' OR Texto LIKE N'%cerro la conversacion%'),
                     (SELECT AVG(CAST(DATEDIFF(second, PrimerEntrante, PrimeraRespuesta) AS bigint)) FROM PrimerasRespuestas WHERE PrimeraRespuesta IS NOT NULL),
                     (SELECT AVG(CAST(DATEDIFF(second, ISNULL(FechaHoraPrimerMensaje, FechaHora_Grabacion), FechaHoraCierre) AS bigint)) FROM CierresRango WHERE FechaHoraCierre IS NOT NULL);
 
-                SELECT ISNULL(c.CodigoEstado, N''), ISNULL(e.Descripcion, c.CodigoEstado), COUNT(1), ISNULL(e.EsCerrado, 0)
-                FROM dbo.CONV_CONVERSACIONES c
-                LEFT JOIN dbo.CONV_ESTADOS e ON e.CodigoEstado = c.CodigoEstado
-                WHERE @IdTecnico IS NULL OR c.IdTecnico = @IdTecnico
-                GROUP BY ISNULL(c.CodigoEstado, N''), ISNULL(e.Descripcion, c.CodigoEstado), ISNULL(e.EsCerrado, 0), ISNULL(e.Orden, 999)
-                ORDER BY ISNULL(e.Orden, 999), ISNULL(e.Descripcion, c.CodigoEstado);
+                SELECT ISNULL(c.CodigoEstado, N''), ISNULL(c.EstadoDescripcion, c.CodigoEstado), COUNT(1), ISNULL(c.EsCerrado, 0)
+                FROM #BaseConversaciones c
+                GROUP BY ISNULL(c.CodigoEstado, N''), ISNULL(c.EstadoDescripcion, c.CodigoEstado), ISNULL(c.EsCerrado, 0), ISNULL(c.EstadoOrden, 999)
+                ORDER BY ISNULL(c.EstadoOrden, 999), ISNULL(c.EstadoDescripcion, c.CodigoEstado);
 
                 SELECT
                     ISNULL(t.IdTecnico, N''),
@@ -352,6 +389,7 @@ public sealed class ConversacionesService(
             cmd.Parameters.AddWithValue("@Desde", desde);
             cmd.Parameters.AddWithValue("@HastaExclusive", hastaExclusive);
             cmd.Parameters.AddWithValue("@IdTecnico", string.IsNullOrWhiteSpace(technicianId) ? DBNull.Value : technicianId);
+            cmd.Parameters.AddWithValue("@ManualWhatsAppConversationSummary", ManualWhatsAppConversationSummary);
 
             var stats = new ConversacionesEstadisticasDto { Desde = desde, Hasta = hastaInclusive };
 
