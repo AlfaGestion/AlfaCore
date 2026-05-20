@@ -155,7 +155,7 @@ public sealed class ConversacionesService(
                     FROM dbo.CONV_MENSAJES m
                     WHERE m.IdConversacion = c.IdConversacion
                       AND m.Direction = N'ENTRANTE'
-                    ORDER BY m.IdMensaje DESC
+                    ORDER BY {ConversationMessageVisibleDateSql("m")} DESC, m.IdMensaje DESC
                 ) ultCliente
                 OUTER APPLY (
                     SELECT COUNT(1) AS CantidadMensajesCliente
@@ -169,7 +169,7 @@ public sealed class ConversacionesService(
                         {ConversationMessageVisibleDateSql("msg")} AS FechaHoraVisible
                     FROM dbo.CONV_MENSAJES msg
                     WHERE msg.IdConversacion = c.IdConversacion
-                    ORDER BY msg.IdMensaje DESC
+                    ORDER BY {ConversationMessageVisibleDateSql("msg")} DESC, msg.IdMensaje DESC
                 ) ultMsg
                 WHERE
                     (@Canal IS NULL OR c.Canal = @Canal)
@@ -208,7 +208,7 @@ public sealed class ConversacionesService(
                             WHERE msg.IdConversacion = c.IdConversacion
                         )
                     )
-                ORDER BY ISNULL(ultMsg.IdMensaje, 0) DESC, ISNULL(ultMsg.FechaHoraVisible, c.FechaHoraUltimoMensaje) DESC
+                ORDER BY ISNULL(c.FechaHoraUltimoMensaje, ultMsg.FechaHoraVisible) DESC, c.IdConversacion DESC
                 OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY
                 """;
 
@@ -305,14 +305,14 @@ public sealed class ConversacionesService(
                     FROM dbo.CONV_MENSAJES m
                     WHERE m.IdConversacion = c.IdConversacion
                       AND m.Direction = N'ENTRANTE'
-                    ORDER BY m.IdMensaje DESC
+                    ORDER BY {ConversationMessageVisibleDateSql("m")} DESC, m.IdMensaje DESC
                 ) ultCliente
                 OUTER APPLY (
                     SELECT TOP (1)
                         {ConversationMessageVisibleDateSql("msg")} AS FechaHoraVisible
                     FROM dbo.CONV_MENSAJES msg
                     WHERE msg.IdConversacion = c.IdConversacion
-                    ORDER BY msg.IdMensaje DESC
+                    ORDER BY {ConversationMessageVisibleDateSql("msg")} DESC, msg.IdMensaje DESC
                 ) ultMsg
                 WHERE c.IdConversacion = @IdConversacion
                 """;
@@ -2461,11 +2461,23 @@ public sealed class ConversacionesService(
         const string sql = """
             UPDATE dbo.CONV_CONVERSACIONES
             SET
-                ResumenUltimoMensaje = @ResumenUltimoMensaje,
+                ResumenUltimoMensaje = CASE
+                    WHEN @FechaHora >= ISNULL(FechaHoraUltimoMensaje, CONVERT(datetime, '19000101', 112)) THEN @ResumenUltimoMensaje
+                    ELSE ResumenUltimoMensaje
+                END,
                 FechaHoraPrimerMensaje = ISNULL(FechaHoraPrimerMensaje, @FechaHora),
-                FechaHoraUltimoMensaje = @FechaHora,
-                CodigoEstado = CASE WHEN @Reabrir = 1 THEN N'ABIERTA' ELSE CodigoEstado END,
-                FechaHoraCierre = CASE WHEN @Reabrir = 1 THEN NULL ELSE FechaHoraCierre END,
+                FechaHoraUltimoMensaje = CASE
+                    WHEN @FechaHora >= ISNULL(FechaHoraUltimoMensaje, CONVERT(datetime, '19000101', 112)) THEN @FechaHora
+                    ELSE FechaHoraUltimoMensaje
+                END,
+                CodigoEstado = CASE
+                    WHEN @Reabrir = 1 AND (FechaHoraCierre IS NULL OR @FechaHora > FechaHoraCierre) THEN N'ABIERTA'
+                    ELSE CodigoEstado
+                END,
+                FechaHoraCierre = CASE
+                    WHEN @Reabrir = 1 AND (FechaHoraCierre IS NULL OR @FechaHora > FechaHoraCierre) THEN NULL
+                    ELSE FechaHoraCierre
+                END,
                 FechaHora_Modificacion = GETDATE()
             WHERE IdConversacion = @IdConversacion
             """;
@@ -2498,11 +2510,7 @@ public sealed class ConversacionesService(
                   FROM dbo.CONV_MENSAJES m
                   WHERE m.IdConversacion = c.IdConversacion
                     AND m.Direction = N'ENTRANTE'
-                    AND (
-                        c.FechaHoraCierre IS NULL
-                        OR m.FechaHora_Grabacion > c.FechaHoraCierre
-                        OR m.FechaHora > c.FechaHoraCierre
-                    )
+                    AND (c.FechaHoraCierre IS NULL OR m.FechaHora > c.FechaHoraCierre)
               );
             """;
 

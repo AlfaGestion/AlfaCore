@@ -1203,6 +1203,7 @@
         ("pendientes", "Pendientes"),
         ("cerradas", "Cerradas")
     ];
+    private static readonly TimeSpan LateIncomingNotificationWindow = TimeSpan.FromMinutes(10);
 
     private string _canalActivo = "WHATSAPP";
     private bool _showNuevoHilo;
@@ -1667,7 +1668,9 @@
 
             if (!previousInbox.TryGetValue(item.IdConversacion, out var previous))
             {
-                if (item.IdUltimoMensajeCliente is not null && item.CantidadMensajesCliente > 0)
+                if (item.IdUltimoMensajeCliente is not null
+                    && item.CantidadMensajesCliente > 0
+                    && IsFreshInboxClientMessage(item))
                 {
                     _newMessagesByConversation[item.IdConversacion] =
                         _newMessagesByConversation.TryGetValue(item.IdConversacion, out var existingCount) ? existingCount + 1 : 1;
@@ -1679,7 +1682,11 @@
 
             if (item.IdUltimoMensajeCliente is not long currentClientMessageId
                 || previous.IdUltimoMensajeCliente is not long previousClientMessageId
-                || currentClientMessageId <= previousClientMessageId)
+                || currentClientMessageId <= previousClientMessageId
+                || item.FechaHoraUltimoMensajeCliente is not DateTime currentClientDate
+                || previous.FechaHoraUltimoMensajeCliente is not DateTime previousClientDate
+                || currentClientDate <= previousClientDate
+                || !IsFreshInboxClientMessage(item))
                 continue;
 
             var difference = item.CantidadMensajesCliente > previous.CantidadMensajesCliente
@@ -1693,6 +1700,11 @@
 
         return newMessagesDetected;
     }
+
+    private static bool IsFreshInboxClientMessage(ConversacionInboxItemDto item)
+        => item.FechaHoraUltimoMensajeCliente is DateTime value
+           && DateTime.Now - value <= LateIncomingNotificationWindow
+           && value <= DateTime.Now.AddMinutes(2);
 
     private async Task SelectConversationAsync(long idConversacion)
     {
