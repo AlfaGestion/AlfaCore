@@ -5934,6 +5934,20 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
     padding: 0;
 }
 
+.conv-stats-columns {
+    display: grid;
+    grid-template-columns: minmax(0, 1.02fr) minmax(0, .98fr);
+    gap: .85rem;
+    align-items: start;
+}
+
+.conv-stats-column {
+    display: grid;
+    gap: .85rem;
+    align-content: start;
+    min-width: 0;
+}
+
 .conv-stat-card {
     min-height: 112px;
     padding: .95rem;
@@ -5986,6 +6000,38 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
     border: 1px solid rgba(148, 163, 184, .14);
     border-radius: 8px;
     background: rgba(15, 23, 42, .32);
+}
+
+.conv-stats-link,
+.conv-stats-row-link {
+    color: inherit;
+    text-decoration: none;
+}
+
+.conv-stats-row-link {
+    cursor: pointer;
+    transition: border-color .16s ease, background .16s ease, transform .16s ease;
+}
+
+.conv-stats-row-link:hover {
+    border-color: rgba(56, 189, 248, .32);
+    background: rgba(14, 165, 233, .12);
+    transform: translateY(-1px);
+}
+
+.conv-stats-inline-link,
+.conv-stats-inline-link a {
+    display: inline;
+}
+
+.conv-stats-inline-link a {
+    color: #7dd3fc;
+    font-weight: 800;
+    text-decoration: none;
+}
+
+.conv-stats-inline-link a:hover {
+    color: #bae6fd;
 }
 
 .conv-stats-panel__head {
@@ -6213,6 +6259,7 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
+    .conv-stats-columns,
     .conv-stats-grid,
     .conv-stats-grid--wide {
         grid-template-columns: 1fr;

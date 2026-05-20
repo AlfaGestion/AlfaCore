@@ -99,6 +99,7 @@ public sealed class ConversacionesEstadisticaTipoMensajeDto
 public sealed class ConversacionesEstadisticaConversacionDto
 {
     public long IdConversacion { get; set; }
+    public int? IdContacto { get; set; }
     public string Nombre { get; set; } = string.Empty;
     public string Telefono { get; set; } = string.Empty;
     public string Tecnico { get; set; } = string.Empty;

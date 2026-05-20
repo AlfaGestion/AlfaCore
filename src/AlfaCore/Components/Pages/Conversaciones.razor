@@ -1410,6 +1410,26 @@
     private void ApplyStartupQuery()
     {
         var query = QueryHelpers.ParseQuery(Nav.ToAbsoluteUri(Nav.Uri).Query);
+        if (query.TryGetValue("modo", out var modoRaw))
+        {
+            var modo = modoRaw.ToString();
+            if (_modeOptions.Any(x => string.Equals(x.Value, modo, StringComparison.OrdinalIgnoreCase)))
+                _filters.Modo = modo;
+        }
+
+        if (query.TryGetValue("estado", out var estadoRaw))
+        {
+            _filters.CodigoEstado = estadoRaw.ToString();
+            if (!query.ContainsKey("modo"))
+                _filters.Modo = "todas";
+        }
+
+        if (query.TryGetValue("tecnico", out var tecnicoRaw))
+            _filters.IdTecnicoActual = tecnicoRaw.ToString();
+
+        if (query.TryGetValue("buscar", out var buscarRaw))
+            _filters.Search = buscarRaw.ToString();
+
         if (query.TryGetValue("id", out var idRaw)
             && long.TryParse(idRaw.ToString(), out var id)
             && id > 0)

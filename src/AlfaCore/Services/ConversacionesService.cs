@@ -323,6 +323,7 @@ public sealed class ConversacionesService(
 
                 SELECT TOP (8)
                     c.IdConversacion,
+                    c.IdContacto,
                     COALESCE(NULLIF(c.NombreVisible, N''), NULLIF(c.TelefonoWhatsApp, N''), N'Sin nombre'),
                     ISNULL(c.TelefonoWhatsApp, N''),
                     ISNULL(t.Nombre, N'Sin asignar'),
@@ -333,7 +334,7 @@ public sealed class ConversacionesService(
                 FROM #MensajesRango m
                 INNER JOIN dbo.CONV_CONVERSACIONES c ON c.IdConversacion = m.IdConversacion
                 LEFT JOIN dbo.V_TA_Tecnicos t ON t.IdTecnico = c.IdTecnico
-                GROUP BY c.IdConversacion, COALESCE(NULLIF(c.NombreVisible, N''), NULLIF(c.TelefonoWhatsApp, N''), N'Sin nombre'), ISNULL(c.TelefonoWhatsApp, N''), ISNULL(t.Nombre, N'Sin asignar')
+                GROUP BY c.IdConversacion, c.IdContacto, COALESCE(NULLIF(c.NombreVisible, N''), NULLIF(c.TelefonoWhatsApp, N''), N'Sin nombre'), ISNULL(c.TelefonoWhatsApp, N''), ISNULL(t.Nombre, N'Sin asignar')
                 ORDER BY COUNT(1) DESC, MAX(m.FechaHora) DESC;
                 """;
 
@@ -451,13 +452,14 @@ public sealed class ConversacionesService(
                     stats.TopConversaciones.Add(new ConversacionesEstadisticaConversacionDto
                     {
                         IdConversacion = rd.GetInt64(0),
-                        Nombre = GetString(rd, 1),
-                        Telefono = GetString(rd, 2),
-                        Tecnico = GetString(rd, 3),
-                        Entrantes = GetInt(rd, 4),
-                        Salientes = GetInt(rd, 5),
-                        Total = GetInt(rd, 6),
-                        UltimoMovimiento = rd.GetDateTime(7)
+                        IdContacto = rd.IsDBNull(1) ? null : rd.GetInt32(1),
+                        Nombre = GetString(rd, 2),
+                        Telefono = GetString(rd, 3),
+                        Tecnico = GetString(rd, 4),
+                        Entrantes = GetInt(rd, 5),
+                        Salientes = GetInt(rd, 6),
+                        Total = GetInt(rd, 7),
+                        UltimoMovimiento = rd.GetDateTime(8)
                     });
                 }
             }
