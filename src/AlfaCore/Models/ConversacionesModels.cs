@@ -10,6 +10,10 @@ public sealed class ConversacionesInboxFilters
     public string? IdTecnicoActual { get; set; }
     public string? CodigoEstado { get; set; }
     public string? Canal { get; set; }
+    public DateTime? Desde { get; set; }
+    public DateTime? Hasta { get; set; }
+    public string? Auditoria { get; set; }
+    public string? TipoMensaje { get; set; }
     public int Limit { get; set; } = 50;
     public int Offset { get; set; }
 }
@@ -55,6 +59,8 @@ public sealed class ConversacionesEstadisticasDto
     public List<ConversacionesEstadisticaActividadDto> Actividad { get; set; } = [];
     public List<ConversacionesEstadisticaTipoMensajeDto> PorTipoMensaje { get; set; } = [];
     public List<ConversacionesEstadisticaConversacionDto> TopConversaciones { get; set; } = [];
+    public List<ConversacionesEstadisticaTemaDto> TemasFrecuentes { get; set; } = [];
+    public List<ConversacionesEstadisticaTemaDto> FrasesFrecuentes { get; set; } = [];
 }
 
 public sealed class ConversacionesEstadisticaEstadoDto
@@ -93,6 +99,12 @@ public sealed class ConversacionesEstadisticaActividadDto
 public sealed class ConversacionesEstadisticaTipoMensajeDto
 {
     public string Tipo { get; set; } = string.Empty;
+    public int Cantidad { get; set; }
+}
+
+public sealed class ConversacionesEstadisticaTemaDto
+{
+    public string Texto { get; set; } = string.Empty;
     public int Cantidad { get; set; }
 }
 

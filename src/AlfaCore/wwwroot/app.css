@@ -5949,6 +5949,7 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
 }
 
 .conv-stat-card {
+    display: block;
     min-height: 112px;
     padding: .95rem;
     border: 1px solid rgba(148, 163, 184, .14);
@@ -6051,7 +6052,9 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
 }
 
 .conv-stats-chip-grid,
-.conv-stats-top-list {
+.conv-stats-top-list,
+.conv-stats-topic-list,
+.conv-stats-phrase-list {
     display: grid;
     gap: .55rem;
 }
@@ -6104,13 +6107,15 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
     margin-bottom: .85rem;
 }
 
-.conv-stats-flow div,
+.conv-stats-flow a,
 .conv-stats-activity-item {
     min-width: 0;
     padding: .7rem;
     border: 1px solid rgba(148, 163, 184, .16);
     border-radius: 8px;
     background: rgba(15, 23, 42, .34);
+    color: inherit;
+    text-decoration: none;
 }
 
 .conv-stats-flow span {
@@ -6177,6 +6182,37 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
 .conv-stats-top-item__numbers strong {
     display: block;
     font-size: 1.1rem;
+}
+
+.conv-stats-topic-list {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.conv-stats-topic,
+.conv-stats-phrase {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: .65rem;
+    padding: .66rem .72rem;
+    border: 1px solid rgba(148, 163, 184, .13);
+    border-radius: 8px;
+    background: rgba(15, 23, 42, .24);
+}
+
+.conv-stats-topic span,
+.conv-stats-phrase span {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--color-muted);
+    font-size: .78rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.conv-stats-topic strong,
+.conv-stats-phrase strong {
+    color: var(--color-text);
 }
 
 .conv-stats-table__head,
@@ -6266,7 +6302,8 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
     }
 
     .conv-stats-filter-grid,
-    .conv-stats-chip-grid {
+    .conv-stats-chip-grid,
+    .conv-stats-topic-list {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
@@ -6286,7 +6323,8 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
     }
 
     .conv-stats-filter-grid,
-    .conv-stats-chip-grid {
+    .conv-stats-chip-grid,
+    .conv-stats-topic-list {
         grid-template-columns: 1fr;
     }
 }

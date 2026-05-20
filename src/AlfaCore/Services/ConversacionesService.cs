@@ -336,6 +336,35 @@ public sealed class ConversacionesService(
                 LEFT JOIN dbo.V_TA_Tecnicos t ON t.IdTecnico = c.IdTecnico
                 GROUP BY c.IdConversacion, c.IdContacto, COALESCE(NULLIF(c.NombreVisible, N''), NULLIF(c.TelefonoWhatsApp, N''), N'Sin nombre'), ISNULL(c.TelefonoWhatsApp, N''), ISNULL(t.Nombre, N'Sin asignar')
                 ORDER BY COUNT(1) DESC, MAX(m.FechaHora) DESC;
+
+                SELECT TOP (12)
+                    palabra,
+                    COUNT(1)
+                FROM
+                (
+                    SELECT LOWER(LTRIM(RTRIM(value))) AS palabra
+                    FROM #MensajesRango
+                    CROSS APPLY STRING_SPLIT(
+                        REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(ISNULL(Texto, N''), CHAR(13), N' '), CHAR(10), N' '), N'.', N' '), N',', N' '), N';', N' '), N':', N' '), N'?', N' '), N'¿', N' '), N'!', N' '), N'¡', N' '),
+                        N' ')
+                    WHERE Direction = N'ENTRANTE'
+                      AND UPPER(ISNULL(MessageType, N'')) = N'TEXT'
+                ) tokens
+                WHERE LEN(palabra) >= 4
+                  AND palabra NOT IN (N'para', N'como', N'pero', N'porque', N'cuando', N'donde', N'dónde', N'hola', N'buen', N'buenas', N'buenos', N'dias', N'días', N'gracias', N'este', N'esta', N'esto', N'tengo', N'tiene', N'tienen', N'puede', N'puedo', N'quiero', N'necesito', N'favor')
+                GROUP BY palabra
+                ORDER BY COUNT(1) DESC, palabra;
+
+                SELECT TOP (8)
+                    LEFT(LTRIM(RTRIM(Texto)), 160),
+                    COUNT(1)
+                FROM #MensajesRango
+                WHERE Direction = N'ENTRANTE'
+                  AND UPPER(ISNULL(MessageType, N'')) = N'TEXT'
+                  AND LEN(LTRIM(RTRIM(ISNULL(Texto, N'')))) >= 12
+                GROUP BY LEFT(LTRIM(RTRIM(Texto)), 160)
+                HAVING COUNT(1) > 1
+                ORDER BY COUNT(1) DESC, LEFT(LTRIM(RTRIM(Texto)), 160);
                 """;
 
             await using var cn = new SqlConnection(ConnectionString);
@@ -464,6 +493,30 @@ public sealed class ConversacionesService(
                 }
             }
 
+            if (await rd.NextResultAsync(token))
+            {
+                while (await rd.ReadAsync(token))
+                {
+                    stats.TemasFrecuentes.Add(new ConversacionesEstadisticaTemaDto
+                    {
+                        Texto = GetString(rd, 0),
+                        Cantidad = GetInt(rd, 1)
+                    });
+                }
+            }
+
+            if (await rd.NextResultAsync(token))
+            {
+                while (await rd.ReadAsync(token))
+                {
+                    stats.FrasesFrecuentes.Add(new ConversacionesEstadisticaTemaDto
+                    {
+                        Texto = GetString(rd, 0),
+                        Cantidad = GetInt(rd, 1)
+                    });
+                }
+            }
+
             return stats;
         }, "No se pudieron cargar las estad\u00edsticas de conversaciones.", ct);
 
@@ -474,7 +527,28 @@ public sealed class ConversacionesService(
             var items = new List<ConversacionInboxItemDto>();
             var searchPhone = NormalizePhone(filters.Search);
             var searchPhoneTail = GetPhoneComparableTail(searchPhone);
+            var desde = filters.Desde?.Date;
+            var hastaExclusive = filters.Hasta?.Date.AddDays(1);
+            var auditoria = NormalizeAuditFilter(filters.Auditoria);
+            var tipoMensaje = NormalizeMessageType(filters.TipoMensaje);
             var sql = $"""
+                DECLARE @TicketsFiltro TABLE (IdConversacion bigint NOT NULL PRIMARY KEY);
+
+                IF @Auditoria = N'tickets' AND OBJECT_ID(N'dbo.TICK_TICKETS', N'U') IS NOT NULL
+                BEGIN
+                    INSERT INTO @TicketsFiltro (IdConversacion)
+                    EXEC sp_executesql
+                        N'SELECT DISTINCT IdConversacion
+                          FROM dbo.TICK_TICKETS
+                          WHERE IdConversacion IS NOT NULL
+                            AND ISNULL(Baja, 0) = 0
+                            AND (@Desde IS NULL OR FechaHoraAlta >= @Desde)
+                            AND (@HastaExclusive IS NULL OR FechaHoraAlta < @HastaExclusive)',
+                        N'@Desde datetime, @HastaExclusive datetime',
+                        @Desde = @Desde,
+                        @HastaExclusive = @HastaExclusive;
+                END;
+
                 SELECT
                     c.IdConversacion,
                     ISNULL(c.TelefonoWhatsApp, ''),
@@ -540,6 +614,14 @@ public sealed class ConversacionesService(
                         OR cli.RAZON_SOCIAL LIKE @Search
                         OR mc.Nombre_y_Apellido LIKE @Search
                         OR c.ResumenUltimoMensaje LIKE @Search
+                        OR EXISTS (
+                            SELECT 1
+                            FROM dbo.CONV_MENSAJES buscarMsg
+                            WHERE buscarMsg.IdConversacion = c.IdConversacion
+                              AND buscarMsg.Texto LIKE @Search
+                              AND (@Desde IS NULL OR buscarMsg.FechaHora >= @Desde)
+                              AND (@HastaExclusive IS NULL OR buscarMsg.FechaHora < @HastaExclusive)
+                        )
                         OR (
                             @SearchPhone IS NOT NULL
                             AND (
@@ -551,12 +633,87 @@ public sealed class ConversacionesService(
                             )
                         )
                     )
+                    AND (@IdTecnicoActual IS NULL OR LTRIM(RTRIM(c.IdTecnico)) = @IdTecnicoActual)
                     AND (
                         @Modo = 'todas'
                         OR (@Modo = 'sin_asignar' AND (c.IdTecnico IS NULL OR LTRIM(RTRIM(c.IdTecnico)) = ''))
                         OR (@Modo = 'asignadas_a_mi' AND LTRIM(RTRIM(c.IdTecnico)) = @IdTecnicoActual)
                         OR (@Modo = 'pendientes' AND ISNULL(e.EsCerrado, 0) = 0)
                         OR (@Modo = 'cerradas' AND ISNULL(e.EsCerrado, 0) = 1)
+                    )
+                    AND (
+                        @Auditoria IS NULL
+                        OR (@Auditoria = N'entrantes' AND EXISTS (
+                            SELECT 1 FROM dbo.CONV_MENSAJES m
+                            WHERE m.IdConversacion = c.IdConversacion
+                              AND m.Direction = N'ENTRANTE'
+                              AND (@Desde IS NULL OR m.FechaHora >= @Desde)
+                              AND (@HastaExclusive IS NULL OR m.FechaHora < @HastaExclusive)
+                        ))
+                        OR (@Auditoria = N'salientes' AND EXISTS (
+                            SELECT 1 FROM dbo.CONV_MENSAJES m
+                            WHERE m.IdConversacion = c.IdConversacion
+                              AND m.Direction = N'SALIENTE'
+                              AND (@Desde IS NULL OR m.FechaHora >= @Desde)
+                              AND (@HastaExclusive IS NULL OR m.FechaHora < @HastaExclusive)
+                        ))
+                        OR (@Auditoria = N'internos' AND EXISTS (
+                            SELECT 1 FROM dbo.CONV_MENSAJES m
+                            WHERE m.IdConversacion = c.IdConversacion
+                              AND m.Direction = N'NOTA_INTERNA'
+                              AND (@Desde IS NULL OR m.FechaHora >= @Desde)
+                              AND (@HastaExclusive IS NULL OR m.FechaHora < @HastaExclusive)
+                        ))
+                        OR (@Auditoria = N'adjuntos' AND EXISTS (
+                            SELECT 1
+                            FROM dbo.CONV_ADJUNTOS a
+                            INNER JOIN dbo.CONV_MENSAJES m ON m.IdMensaje = a.IdMensaje
+                            WHERE m.IdConversacion = c.IdConversacion
+                              AND (@Desde IS NULL OR m.FechaHora >= @Desde)
+                              AND (@HastaExclusive IS NULL OR m.FechaHora < @HastaExclusive)
+                        ))
+                        OR (@Auditoria = N'activas' AND EXISTS (
+                            SELECT 1 FROM dbo.CONV_MENSAJES m
+                            WHERE m.IdConversacion = c.IdConversacion
+                              AND (@Desde IS NULL OR m.FechaHora >= @Desde)
+                              AND (@HastaExclusive IS NULL OR m.FechaHora < @HastaExclusive)
+                        ))
+                        OR (@Auditoria = N'nuevas' AND c.FechaHora_Grabacion >= @Desde AND c.FechaHora_Grabacion < @HastaExclusive)
+                        OR (@Auditoria = N'cerradas_rango' AND c.FechaHoraCierre >= @Desde AND c.FechaHoraCierre < @HastaExclusive)
+                        OR (@Auditoria = N'asignaciones' AND EXISTS (
+                            SELECT 1 FROM dbo.CONV_ASIGNACIONES a
+                            WHERE a.IdConversacion = c.IdConversacion
+                              AND (@Desde IS NULL OR a.FechaHora >= @Desde)
+                              AND (@HastaExclusive IS NULL OR a.FechaHora < @HastaExclusive)
+                        ))
+                        OR (@Auditoria = N'reabiertas' AND EXISTS (
+                            SELECT 1 FROM dbo.CONV_MENSAJES m
+                            WHERE m.IdConversacion = c.IdConversacion
+                              AND m.Direction = N'NOTA_INTERNA'
+                              AND m.MessageType = N'SYSTEM'
+                              AND (m.Texto LIKE N'%cambió el estado de Cerrada a%' OR m.Texto LIKE N'%cambio el estado de Cerrada a%')
+                              AND (@Desde IS NULL OR m.FechaHora >= @Desde)
+                              AND (@HastaExclusive IS NULL OR m.FechaHora < @HastaExclusive)
+                        ))
+                        OR (@Auditoria = N'cambios_estado' AND EXISTS (
+                            SELECT 1 FROM dbo.CONV_MENSAJES m
+                            WHERE m.IdConversacion = c.IdConversacion
+                              AND m.Direction = N'NOTA_INTERNA'
+                              AND m.MessageType = N'SYSTEM'
+                              AND (m.Texto LIKE N'%cambió el estado%' OR m.Texto LIKE N'%cambio el estado%' OR m.Texto LIKE N'%cerró la conversación%' OR m.Texto LIKE N'%cerro la conversacion%')
+                              AND (@Desde IS NULL OR m.FechaHora >= @Desde)
+                              AND (@HastaExclusive IS NULL OR m.FechaHora < @HastaExclusive)
+                        ))
+                        OR (@Auditoria = N'tipo_mensaje' AND EXISTS (
+                            SELECT 1 FROM dbo.CONV_MENSAJES m
+                            WHERE m.IdConversacion = c.IdConversacion
+                              AND UPPER(ISNULL(m.MessageType, N'')) = @TipoMensaje
+                              AND (@Desde IS NULL OR m.FechaHora >= @Desde)
+                              AND (@HastaExclusive IS NULL OR m.FechaHora < @HastaExclusive)
+                        ))
+                        OR (@Auditoria = N'tickets' AND EXISTS (
+                            SELECT 1 FROM @TicketsFiltro tk WHERE tk.IdConversacion = c.IdConversacion
+                        ))
                     )
                     AND NOT (
                         c.Canal = N'WHATSAPP'
@@ -586,6 +743,10 @@ public sealed class ConversacionesService(
             cmd.Parameters.AddWithValue("@SearchPhoneTail", DbNullable(searchPhoneTail));
             cmd.Parameters.AddWithValue("@Modo", NormalizeMode(filters.Modo));
             cmd.Parameters.AddWithValue("@IdTecnicoActual", DbNullable(NormalizeTechnicianId(filters.IdTecnicoActual)));
+            cmd.Parameters.AddWithValue("@Desde", desde.HasValue ? desde.Value : DBNull.Value);
+            cmd.Parameters.AddWithValue("@HastaExclusive", hastaExclusive.HasValue ? hastaExclusive.Value : DBNull.Value);
+            cmd.Parameters.AddWithValue("@Auditoria", DbNullable(auditoria));
+            cmd.Parameters.AddWithValue("@TipoMensaje", DbNullable(tipoMensaje));
             cmd.Parameters.AddWithValue("@ManualWhatsAppConversationSummary", ManualWhatsAppConversationSummary);
             cmd.Parameters.AddWithValue("@Offset", Math.Max(0, filters.Offset));
             cmd.Parameters.AddWithValue("@Limit", Math.Clamp(filters.Limit, 1, 200));
@@ -4767,6 +4928,30 @@ public sealed class ConversacionesService(
             "pendientes" => normalized,
             "cerradas" => normalized,
             _ => "todas"
+        };
+    }
+
+    private static string? NormalizeAuditFilter(string? auditoria)
+    {
+        if (string.IsNullOrWhiteSpace(auditoria))
+            return null;
+
+        var normalized = auditoria.Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "entrantes" => normalized,
+            "salientes" => normalized,
+            "internos" => normalized,
+            "adjuntos" => normalized,
+            "activas" => normalized,
+            "nuevas" => normalized,
+            "cerradas_rango" => normalized,
+            "asignaciones" => normalized,
+            "reabiertas" => normalized,
+            "cambios_estado" => normalized,
+            "tipo_mensaje" => normalized,
+            "tickets" => normalized,
+            _ => null
         };
     }
 

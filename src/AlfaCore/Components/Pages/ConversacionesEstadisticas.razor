@@ -67,46 +67,46 @@
     {
         <section class="panel-card conv-stats-board">
             <section class="conv-stats-summary">
-                <article class="conv-stat-card conv-stat-card--primary">
+                <a class="conv-stat-card conv-stat-card--primary conv-stats-row-link" href="@GetAuditUrl("entrantes")">
                     <span>Mensajes entrantes</span>
                     <strong>@FormatNumber(_stats.MensajesEntrantes)</strong>
                     <small>@_stats.ConversacionesConRespuesta con respuesta</small>
-                </article>
-                <article class="conv-stat-card">
+                </a>
+                <a class="conv-stat-card conv-stats-row-link" href="@GetAuditUrl("activas")">
                     <span>Conversaciones activas</span>
                     <strong>@FormatNumber(_stats.ConversacionesActivasEnRango)</strong>
                     <small>@FormatNumber(_stats.ClientesUnicos) clientes/contactos</small>
-                </article>
-                <article class="conv-stat-card">
+                </a>
+                <a class="conv-stat-card conv-stats-row-link" href="@GetAuditUrl("salientes")">
                     <span>Mensajes enviados</span>
                     <strong>@FormatNumber(_stats.MensajesSalientes)</strong>
                     <small>@ResponseRateText</small>
-                </article>
-                <article class="conv-stat-card">
+                </a>
+                <a class="conv-stat-card conv-stats-row-link" href="@GetAuditUrl("cerradas_rango", "cerradas")">
                     <span>Cerradas</span>
                     <strong>@FormatNumber(_stats.ConversacionesCerradasEnRango)</strong>
                     <small>@FormatDuration(_stats.PromedioCierre) promedio de cierre</small>
-                </article>
-                <article class="conv-stat-card">
+                </a>
+                <a class="conv-stat-card conv-stats-row-link" href="@GetAuditUrl("tickets")">
                     <span>Tickets creados</span>
                     <strong>@FormatNumber(_stats.TicketsCreados)</strong>
                     <small>@FormatNumber(_stats.Asignaciones) asignaciones</small>
-                </article>
-                <article class="conv-stat-card">
+                </a>
+                <a class="conv-stat-card conv-stats-row-link" href="@GetAuditUrl("entrantes")">
                     <span>Primera respuesta</span>
                     <strong>@FormatDuration(_stats.PromedioPrimeraRespuesta)</strong>
                     <small>@FormatNumber(_stats.ConversacionesSinRespuesta) sin respuesta</small>
-                </article>
-                <article class="conv-stat-card">
+                </a>
+                <a class="conv-stat-card conv-stats-row-link" href="@GetAuditUrl("adjuntos")">
                     <span>Adjuntos</span>
                     <strong>@FormatNumber(_stats.MensajesConAdjuntos)</strong>
                     <small>@TotalMessagesText</small>
-                </article>
-                <article class="conv-stat-card">
+                </a>
+                <a class="conv-stat-card conv-stats-row-link" href="@GetAuditUrl("reabiertas")">
                     <span>Reabiertas</span>
                     <strong>@FormatNumber(_stats.ConversacionesReabiertas)</strong>
                     <small>@FormatNumber(_stats.CambiosEstado) cambios de estado</small>
-                </article>
+                </a>
             </section>
 
             <section class="conv-stats-columns">
@@ -145,14 +145,36 @@
                         <div class="conv-stats-chip-grid">
                             @foreach (var item in _stats.PorTipoMensaje)
                             {
-                                <div class="conv-stats-metric-chip">
+                                <a class="conv-stats-metric-chip conv-stats-row-link" href="@GetMessageTypeUrl(item.Tipo)">
                                     <span>@item.Tipo</span>
                                     <strong>@FormatNumber(item.Cantidad)</strong>
-                                </div>
+                                </a>
                             }
                             @if (_stats.PorTipoMensaje.Count == 0)
                             {
                                 <div class="conversations-empty">No hay mensajes para clasificar.</div>
+                            }
+                        </div>
+                    </article>
+
+                    <article class="conv-stats-panel">
+                        <div class="conv-stats-panel__head">
+                            <div>
+                                <h3 class="panel-card__title">Palabras y problemas frecuentes</h3>
+                                <p class="panel-card__subtitle">Terminos repetidos en mensajes entrantes.</p>
+                            </div>
+                        </div>
+                        <div class="conv-stats-topic-list">
+                            @foreach (var item in _stats.TemasFrecuentes)
+                            {
+                                <a class="conv-stats-topic conv-stats-row-link" href="@GetSearchUrl(item.Texto)">
+                                    <span>@item.Texto</span>
+                                    <strong>@FormatNumber(item.Cantidad)</strong>
+                                </a>
+                            }
+                            @if (_stats.TemasFrecuentes.Count == 0)
+                            {
+                                <div class="conversations-empty">No hay terminos frecuentes para mostrar.</div>
                             }
                         </div>
                     </article>
@@ -199,30 +221,30 @@
                             </div>
                         </div>
                         <div class="conv-stats-flow">
-                            <div>
+                            <a href="@GetAuditUrl("nuevas")">
                                 <span>Nuevas</span>
                                 <strong>@FormatNumber(_stats.ConversacionesNuevas)</strong>
-                            </div>
-                            <div>
+                            </a>
+                            <a href="@GetAuditUrl("salientes")">
                                 <span>Respondidas</span>
                                 <strong>@FormatNumber(_stats.ConversacionesConRespuesta)</strong>
-                            </div>
-                            <div>
+                            </a>
+                            <a href="@GetAuditUrl("entrantes")">
                                 <span>Pendientes de respuesta</span>
                                 <strong>@FormatNumber(_stats.ConversacionesSinRespuesta)</strong>
-                            </div>
-                            <div>
+                            </a>
+                            <a href="@GetAuditUrl("internos")">
                                 <span>Internos</span>
                                 <strong>@FormatNumber(_stats.MensajesInternos)</strong>
-                            </div>
+                            </a>
                         </div>
                         <div class="conv-stats-activity-list">
                             @foreach (var item in _stats.Actividad)
                             {
-                                <div class="conv-stats-activity-item">
+                                <a class="conv-stats-activity-item conv-stats-row-link" href="@GetActivityUrl(item.Tipo)">
                                     <span>@item.Tipo</span>
                                     <strong>@FormatNumber(item.Cantidad)</strong>
-                                </div>
+                                </a>
                             }
                         </div>
                     </article>
@@ -261,6 +283,28 @@
                             @if (_stats.TopConversaciones.Count == 0)
                             {
                                 <div class="conversations-empty">No hay conversaciones con movimiento en este rango.</div>
+                            }
+                        </div>
+                    </article>
+
+                    <article class="conv-stats-panel">
+                        <div class="conv-stats-panel__head">
+                            <div>
+                                <h3 class="panel-card__title">Frases repetidas</h3>
+                                <p class="panel-card__subtitle">Mensajes entrantes repetidos por clientes/contactos.</p>
+                            </div>
+                        </div>
+                        <div class="conv-stats-phrase-list">
+                            @foreach (var item in _stats.FrasesFrecuentes)
+                            {
+                                <a class="conv-stats-phrase conv-stats-row-link" href="@GetSearchUrl(item.Texto)">
+                                    <span>@item.Texto</span>
+                                    <strong>@FormatNumber(item.Cantidad)</strong>
+                                </a>
+                            }
+                            @if (_stats.FrasesFrecuentes.Count == 0)
+                            {
+                                <div class="conversations-empty">No hay frases repetidas en este rango.</div>
                             }
                         </div>
                     </article>
@@ -428,6 +472,80 @@
 
     private static string GetStateUrl(ConversacionesEstadisticaEstadoDto estado)
         => $"/conversaciones?modo=todas&estado={Uri.EscapeDataString(estado.CodigoEstado)}";
+
+    private string GetAuditUrl(string auditoria, string? modo = "todas")
+    {
+        var query = new List<string>
+        {
+            $"modo={Uri.EscapeDataString(modo ?? "todas")}",
+            $"desde={Uri.EscapeDataString(_desdeText)}",
+            $"hasta={Uri.EscapeDataString(_hastaText)}",
+            $"auditoria={Uri.EscapeDataString(auditoria)}"
+        };
+
+        if (!string.IsNullOrWhiteSpace(_idTecnico))
+            query.Add($"tecnico={Uri.EscapeDataString(_idTecnico)}");
+
+        return $"/conversaciones?{string.Join("&", query)}";
+    }
+
+    private string GetMessageTypeUrl(string label)
+    {
+        var query = new List<string>
+        {
+            "modo=todas",
+            $"desde={Uri.EscapeDataString(_desdeText)}",
+            $"hasta={Uri.EscapeDataString(_hastaText)}",
+            "auditoria=tipo_mensaje",
+            $"tipoMensaje={Uri.EscapeDataString(GetMessageTypeCode(label))}"
+        };
+
+        if (!string.IsNullOrWhiteSpace(_idTecnico))
+            query.Add($"tecnico={Uri.EscapeDataString(_idTecnico)}");
+
+        return $"/conversaciones?{string.Join("&", query)}";
+    }
+
+    private string GetActivityUrl(string tipo)
+        => tipo.Trim().ToLowerInvariant() switch
+        {
+            "asignaciones" => GetAuditUrl("asignaciones"),
+            "cierres" => GetAuditUrl("cerradas_rango", "cerradas"),
+            "cambios de estado" => GetAuditUrl("cambios_estado"),
+            "tickets" => GetAuditUrl("tickets"),
+            _ => GetAuditUrl("internos")
+        };
+
+    private string GetSearchUrl(string text)
+    {
+        var query = new List<string>
+        {
+            "modo=todas",
+            $"desde={Uri.EscapeDataString(_desdeText)}",
+            $"hasta={Uri.EscapeDataString(_hastaText)}",
+            "auditoria=entrantes",
+            $"buscar={Uri.EscapeDataString(text)}"
+        };
+
+        if (!string.IsNullOrWhiteSpace(_idTecnico))
+            query.Add($"tecnico={Uri.EscapeDataString(_idTecnico)}");
+
+        return $"/conversaciones?{string.Join("&", query)}";
+    }
+
+    private static string GetMessageTypeCode(string label)
+        => label.Trim().ToLowerInvariant() switch
+        {
+            "texto" => "TEXT",
+            "imagenes" => "IMAGE",
+            "imágenes" => "IMAGE",
+            "documentos" => "DOCUMENT",
+            "audio" => "AUDIO",
+            "videos" => "VIDEO",
+            "stickers" => "STICKER",
+            "sistema" => "SYSTEM",
+            _ => "TEXT"
+        };
 
     private static string FormatNumber(int value)
         => value.ToString("N0");

@@ -1430,6 +1430,28 @@
         if (query.TryGetValue("buscar", out var buscarRaw))
             _filters.Search = buscarRaw.ToString();
 
+        if (query.TryGetValue("desde", out var desdeRaw)
+            && DateTime.TryParse(desdeRaw.ToString(), out var desde))
+        {
+            _filters.Desde = desde.Date;
+        }
+
+        if (query.TryGetValue("hasta", out var hastaRaw)
+            && DateTime.TryParse(hastaRaw.ToString(), out var hasta))
+        {
+            _filters.Hasta = hasta.Date;
+        }
+
+        if (query.TryGetValue("auditoria", out var auditoriaRaw))
+        {
+            _filters.Auditoria = auditoriaRaw.ToString();
+            if (!query.ContainsKey("modo"))
+                _filters.Modo = "todas";
+        }
+
+        if (query.TryGetValue("tipoMensaje", out var tipoMensajeRaw))
+            _filters.TipoMensaje = tipoMensajeRaw.ToString();
+
         if (query.TryGetValue("id", out var idRaw)
             && long.TryParse(idRaw.ToString(), out var id)
             && id > 0)
@@ -2192,6 +2214,10 @@
             IdTecnicoActual = filters.IdTecnicoActual,
             CodigoEstado = filters.CodigoEstado,
             Canal = filters.Canal,
+            Desde = filters.Desde,
+            Hasta = filters.Hasta,
+            Auditoria = filters.Auditoria,
+            TipoMensaje = filters.TipoMensaje,
             Limit = filters.Limit,
             Offset = filters.Offset
         };
