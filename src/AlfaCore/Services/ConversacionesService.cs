@@ -126,6 +126,28 @@ public sealed class ConversacionesService(
             var technicianId = NormalizeTechnicianId(filters.IdTecnico);
 
             const string sql = """
+                DECLARE @Tickets TABLE
+                (
+                    IdTicket bigint NOT NULL,
+                    IdConversacion bigint NULL,
+                    FechaHoraAlta datetime NOT NULL,
+                    IdTecnico nvarchar(20) NULL
+                );
+
+                IF OBJECT_ID(N'dbo.TICK_TICKETS', N'U') IS NOT NULL
+                BEGIN
+                    INSERT INTO @Tickets (IdTicket, IdConversacion, FechaHoraAlta, IdTecnico)
+                    EXEC sp_executesql
+                        N'SELECT IdTicket, IdConversacion, FechaHoraAlta, IdTecnico
+                          FROM dbo.TICK_TICKETS
+                          WHERE ISNULL(Baja, 0) = 0
+                            AND FechaHoraAlta >= @Desde
+                            AND FechaHoraAlta < @HastaExclusive',
+                        N'@Desde datetime, @HastaExclusive datetime',
+                        @Desde = @Desde,
+                        @HastaExclusive = @HastaExclusive;
+                END;
+
                 SELECT m.*
                 INTO #MensajesRango
                 FROM dbo.CONV_MENSAJES m
@@ -189,7 +211,7 @@ public sealed class ConversacionesService(
                     (SELECT COUNT(1) FROM PrimerasRespuestas WHERE PrimeraRespuesta IS NOT NULL),
                     (SELECT COUNT(1) FROM EntrantesRango e WHERE NOT EXISTS (SELECT 1 FROM PrimerasRespuestas r WHERE r.IdConversacion = e.IdConversacion AND r.PrimeraRespuesta IS NOT NULL)),
                     (SELECT COUNT(1) FROM CierresRango),
-                    (SELECT COUNT(1) FROM dbo.TICK_TICKETS t LEFT JOIN dbo.CONV_CONVERSACIONES c ON c.IdConversacion = t.IdConversacion WHERE ISNULL(t.Baja, 0) = 0 AND t.FechaHoraAlta >= @Desde AND t.FechaHoraAlta < @HastaExclusive AND (@IdTecnico IS NULL OR t.IdTecnico = @IdTecnico OR c.IdTecnico = @IdTecnico)),
+                    (SELECT COUNT(1) FROM @Tickets t LEFT JOIN dbo.CONV_CONVERSACIONES c ON c.IdConversacion = t.IdConversacion WHERE @IdTecnico IS NULL OR t.IdTecnico = @IdTecnico OR c.IdTecnico = @IdTecnico),
                     (SELECT COUNT(1) FROM dbo.CONV_ASIGNACIONES a WHERE a.FechaHora >= @Desde AND a.FechaHora < @HastaExclusive AND (@IdTecnico IS NULL OR a.IdTecnico = @IdTecnico)),
                     (SELECT COUNT(1) FROM EventosRango WHERE Texto LIKE N'%cambió el estado%' OR Texto LIKE N'%cambio el estado%' OR Texto LIKE N'%cerró la conversación%' OR Texto LIKE N'%cerro la conversacion%'),
                     (SELECT AVG(CAST(DATEDIFF(second, PrimerEntrante, PrimeraRespuesta) AS bigint)) FROM PrimerasRespuestas WHERE PrimeraRespuesta IS NOT NULL),
@@ -213,7 +235,7 @@ public sealed class ConversacionesService(
                 OUTER APPLY (SELECT COUNT(1) AS ConversacionesAsignadas FROM dbo.CONV_CONVERSACIONES c WHERE c.IdTecnico = t.IdTecnico) asig
                 OUTER APPLY (SELECT COUNT(1) AS MensajesEnviados FROM dbo.CONV_MENSAJES m WHERE m.IdTecnicoAutor = t.IdTecnico AND m.Direction = N'SALIENTE' AND m.FechaHora >= @Desde AND m.FechaHora < @HastaExclusive) msg
                 OUTER APPLY (SELECT COUNT(1) AS Cierres FROM dbo.CONV_CONVERSACIONES c WHERE c.IdTecnico = t.IdTecnico AND c.FechaHoraCierre >= @Desde AND c.FechaHoraCierre < @HastaExclusive) cierres
-                OUTER APPLY (SELECT COUNT(1) AS TicketsCreados FROM dbo.TICK_TICKETS tk LEFT JOIN dbo.CONV_CONVERSACIONES c ON c.IdConversacion = tk.IdConversacion WHERE ISNULL(tk.Baja, 0) = 0 AND tk.FechaHoraAlta >= @Desde AND tk.FechaHoraAlta < @HastaExclusive AND (tk.IdTecnico = t.IdTecnico OR c.IdTecnico = t.IdTecnico)) tickets
+                OUTER APPLY (SELECT COUNT(1) AS TicketsCreados FROM @Tickets tk LEFT JOIN dbo.CONV_CONVERSACIONES c ON c.IdConversacion = tk.IdConversacion WHERE tk.IdTecnico = t.IdTecnico OR c.IdTecnico = t.IdTecnico) tickets
                 WHERE ISNULL(t.Baja, 0) = 0
                   AND (@IdTecnico IS NULL OR t.IdTecnico = @IdTecnico)
                   AND (ISNULL(asig.ConversacionesAsignadas, 0) > 0 OR ISNULL(msg.MensajesEnviados, 0) > 0 OR ISNULL(cierres.Cierres, 0) > 0 OR ISNULL(tickets.TicketsCreados, 0) > 0)
@@ -238,9 +260,9 @@ public sealed class ConversacionesService(
                     GROUP BY CAST(c.FechaHoraCierre AS date)
                     UNION ALL
                     SELECT CAST(t.FechaHoraAlta AS date), 0, 0, 0, COUNT(1)
-                    FROM dbo.TICK_TICKETS t
+                    FROM @Tickets t
                     LEFT JOIN dbo.CONV_CONVERSACIONES c ON c.IdConversacion = t.IdConversacion
-                    WHERE ISNULL(t.Baja, 0) = 0 AND t.FechaHoraAlta >= @Desde AND t.FechaHoraAlta < @HastaExclusive AND (@IdTecnico IS NULL OR t.IdTecnico = @IdTecnico OR c.IdTecnico = @IdTecnico)
+                    WHERE @IdTecnico IS NULL OR t.IdTecnico = @IdTecnico OR c.IdTecnico = @IdTecnico
                     GROUP BY CAST(t.FechaHoraAlta AS date)
                 )
                 SELECT Fecha, SUM(Entrantes), SUM(Salientes), SUM(Cerradas), SUM(Tickets)
