@@ -64,43 +64,44 @@
     }
     else
     {
+        <section class="panel-card conv-stats-board">
         <section class="conv-stats-summary">
-            <article class="panel-card conv-stat-card conv-stat-card--primary">
+            <article class="conv-stat-card conv-stat-card--primary">
                 <span>Mensajes entrantes</span>
                 <strong>@FormatNumber(_stats.MensajesEntrantes)</strong>
                 <small>@_stats.ConversacionesConRespuesta con respuesta</small>
             </article>
-            <article class="panel-card conv-stat-card">
+            <article class="conv-stat-card">
                 <span>Conversaciones activas</span>
                 <strong>@FormatNumber(_stats.ConversacionesActivasEnRango)</strong>
                 <small>@FormatNumber(_stats.ClientesUnicos) clientes/contactos</small>
             </article>
-            <article class="panel-card conv-stat-card">
+            <article class="conv-stat-card">
                 <span>Mensajes enviados</span>
                 <strong>@FormatNumber(_stats.MensajesSalientes)</strong>
                 <small>@ResponseRateText</small>
             </article>
-            <article class="panel-card conv-stat-card">
+            <article class="conv-stat-card">
                 <span>Cerradas</span>
                 <strong>@FormatNumber(_stats.ConversacionesCerradasEnRango)</strong>
                 <small>@FormatDuration(_stats.PromedioCierre) promedio de cierre</small>
             </article>
-            <article class="panel-card conv-stat-card">
+            <article class="conv-stat-card">
                 <span>Tickets creados</span>
                 <strong>@FormatNumber(_stats.TicketsCreados)</strong>
                 <small>@FormatNumber(_stats.Asignaciones) asignaciones</small>
             </article>
-            <article class="panel-card conv-stat-card">
+            <article class="conv-stat-card">
                 <span>Primera respuesta</span>
                 <strong>@FormatDuration(_stats.PromedioPrimeraRespuesta)</strong>
                 <small>@FormatNumber(_stats.ConversacionesSinRespuesta) sin respuesta</small>
             </article>
-            <article class="panel-card conv-stat-card">
+            <article class="conv-stat-card">
                 <span>Adjuntos</span>
                 <strong>@FormatNumber(_stats.MensajesConAdjuntos)</strong>
                 <small>@TotalMessagesText</small>
             </article>
-            <article class="panel-card conv-stat-card">
+            <article class="conv-stat-card">
                 <span>Reabiertas</span>
                 <strong>@FormatNumber(_stats.ConversacionesReabiertas)</strong>
                 <small>@FormatNumber(_stats.CambiosEstado) cambios de estado</small>
@@ -108,7 +109,7 @@
         </section>
 
         <section class="conv-stats-grid">
-            <article class="panel-card conv-stats-panel">
+            <article class="conv-stats-panel">
                 <div class="conv-stats-panel__head">
                     <div>
                         <h3 class="panel-card__title">Estado actual</h3>
@@ -132,7 +133,7 @@
                 </div>
             </article>
 
-            <article class="panel-card conv-stats-panel">
+            <article class="conv-stats-panel">
                 <div class="conv-stats-panel__head">
                     <div>
                         <h3 class="panel-card__title">Flujo del rango</h3>
@@ -170,7 +171,7 @@
         </section>
 
         <section class="conv-stats-grid">
-            <article class="panel-card conv-stats-panel">
+            <article class="conv-stats-panel">
                 <div class="conv-stats-panel__head">
                     <div>
                         <h3 class="panel-card__title">Tipos de mensaje</h3>
@@ -192,7 +193,7 @@
                 </div>
             </article>
 
-            <article class="panel-card conv-stats-panel">
+            <article class="conv-stats-panel">
                 <div class="conv-stats-panel__head">
                     <div>
                         <h3 class="panel-card__title">Conversaciones con mas movimiento</h3>
@@ -222,7 +223,7 @@
         </section>
 
         <section class="conv-stats-grid conv-stats-grid--wide">
-            <article class="panel-card conv-stats-panel">
+            <article class="conv-stats-panel">
                 <div class="conv-stats-panel__head">
                     <div>
                         <h3 class="panel-card__title">Equipo</h3>
@@ -254,7 +255,7 @@
                 </div>
             </article>
 
-            <article class="panel-card conv-stats-panel">
+            <article class="conv-stats-panel">
                 <div class="conv-stats-panel__head">
                     <div>
                         <h3 class="panel-card__title">Actividad diaria</h3>
@@ -287,6 +288,7 @@
                     }
                 </div>
             </article>
+        </section>
         </section>
     }
 </section>
