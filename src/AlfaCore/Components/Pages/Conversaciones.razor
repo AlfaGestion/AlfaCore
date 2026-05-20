@@ -1507,6 +1507,7 @@
             _technicians = (await ConversacionesSvc.GetTechniciansAsync()).ToList();
             _states = (await ConversacionesSvc.GetStatesAsync()).ToList();
             _statusCode = _states.FirstOrDefault()?.CodigoEstado ?? "ABIERTA";
+            EnsureCurrentTechnicianFilter();
         }
         catch (Exception ex)
         {
@@ -1526,6 +1527,8 @@
     private async Task ChangeModeAsync(string mode)
     {
         _filters.Modo = mode;
+        if (string.Equals(mode, "asignadas_a_mi", StringComparison.OrdinalIgnoreCase))
+            EnsureCurrentTechnicianFilter();
         await LoadInboxAsync();
     }
 
@@ -3708,6 +3711,14 @@
 
     private string CurrentMessageTechnicianName
         => FirstNonEmpty(CurrentUserTechnician?.Nombre, CurrentUserNameForAudit);
+
+    private void EnsureCurrentTechnicianFilter()
+    {
+        if (!string.IsNullOrWhiteSpace(_filters.IdTecnicoActual))
+            return;
+
+        _filters.IdTecnicoActual = CurrentUserTechnician?.IdTecnico ?? string.Empty;
+    }
 
     private static string NormalizeComparable(string? value)
         => string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim().ToUpperInvariant();
