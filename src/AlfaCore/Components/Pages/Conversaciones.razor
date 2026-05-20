@@ -566,6 +566,7 @@
                     <div class="conversations-composer conversations-composer--support" @ref="_composerDropZone">
                         @if (!IsWhatsAppWindowExpired)
                         {
+                            <InputFile id="conv-file-drop-input" OnChange="HandleFileSelectedAsync" class="conversations-drop-input" multiple accept="image/*,audio/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.zip,.rar" />
                             <div class="field conversations-composer__reply">
                                 <label for="conv-message">
                                     @(_selectedConversation.Canal == "INTERNO" ? "Mensaje al equipo" : "Responder")
@@ -683,7 +684,7 @@
                                             <label class="btn btn--ghost conversations-tools-panel__tool" title="Adjuntar archivo">
                                                 <i class="bi @(_uploadingFile ? "bi-hourglass-split" : "bi-paperclip")"></i>
                                                 <span>Archivo</span>
-                                                <InputFile id="conv-file-drop-input" OnChange="HandleFileSelectedAsync" style="display:none" multiple accept="image/*,audio/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.zip,.rar" />
+                                                <InputFile OnChange="HandleFileSelectedAsync" style="display:none" multiple accept="image/*,audio/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.zip,.rar" />
                                             </label>
                                             <button type="button" class="btn btn--ghost conversations-tools-panel__tool @(_recording ? "is-recording" : string.Empty)" @onclick="ToggleRecordingAsync" title="@(_recording ? "Detener grabación" : "Grabar mensaje de voz")" disabled="@_uploadingAudio">
                                                 <i class="bi @(_recording ? "bi-stop-circle-fill" : "bi-mic-fill")"></i>

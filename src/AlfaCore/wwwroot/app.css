@@ -3788,6 +3788,14 @@ tr.row--critical td {
     scrollbar-width: thin;
 }
 
+.conversations-drop-input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+}
+
 .conversations-composer--support.is-file-dragging {
     outline: 2px dashed rgba(14, 165, 233, .85);
     outline-offset: -7px;
