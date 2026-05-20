@@ -1492,13 +1492,6 @@
 
             if (!previousInbox.TryGetValue(item.IdConversacion, out var previous))
             {
-                if (!IsClosedConversationState(item.CodigoEstado)
-                    && item.IdUltimoMensajeCliente is not null
-                    && item.CantidadMensajesCliente > 0)
-                {
-                    _newMessagesByConversation[item.IdConversacion] = Math.Max(1, item.CantidadMensajesCliente);
-                }
-
                 continue;
             }
 
@@ -1570,6 +1563,7 @@
                 _scrollThreadToBottomAfterRender = true;
                 _scrollHandlerConversationId = null;
                 RestoreSelectedNewMessageMarker(idConversacion);
+                MarkSelectedConversationAsRead();
             }
 
             if (IsWhatsAppConversation)
@@ -2483,9 +2477,6 @@
         _statusCode = closedState;
         await SaveStatusAsync();
     }
-
-    private bool IsClosedConversationState(string? codigoEstado)
-        => _states.Any(x => x.EsCerrado && string.Equals(x.CodigoEstado, codigoEstado, StringComparison.OrdinalIgnoreCase));
 
     private async Task ChangeCanalAsync(string canal)
     {
