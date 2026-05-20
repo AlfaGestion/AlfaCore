@@ -570,6 +570,13 @@
                                 <label for="conv-message">
                                     @(_selectedConversation.Canal == "INTERNO" ? "Mensaje al equipo" : "Responder")
                                 </label>
+                                @if (!string.IsNullOrWhiteSpace(TypingIndicatorText))
+                                {
+                                    <div class="conversation-typing-indicator" aria-live="polite">
+                                        <span class="conversation-typing-indicator__dots"><i></i><i></i><i></i></span>
+                                        <span>@TypingIndicatorText</span>
+                                    </div>
+                                }
                                 @if (_quotedMessage is not null)
                                 {
                                     <div class="quoted-reply">
@@ -589,8 +596,8 @@
                                           style="resize: vertical; min-height: 38px; max-height: 180px; overflow: auto;"
                                           placeholder="@(_selectedConversation.Canal == "INTERNO" ? "Escribí un mensaje para el equipo…" : "Escribí una respuesta para WhatsApp…")"
                                           @onfocus="MarkSelectedConversationAsRead"
-                                          @bind="_replyText"
-                                          @bind:event="oninput"></textarea>
+                                          value="@_replyText"
+                                          @oninput="HandleReplyInputAsync"></textarea>
                             </div>
                             @if (_pendingAttachments.Count > 0)
                             {
@@ -1157,6 +1164,7 @@
     private List<ConversacionEstadoOptionDto> _states = [];
     private List<ConversacionInboxItemDto> _inbox = [];
     private List<ConversacionMensajeDto> _messages = [];
+    private List<ConversacionTypingDto> _typingUsers = [];
     private List<ContactoGridItemDto> _contactSuggestions = [];
     private List<ConversacionInboxItemDto> _conversationSuggestions = [];
     private readonly Dictionary<long, ConversationViewCache> _conversationCache = [];
@@ -1197,6 +1205,7 @@
     private ElementReference _replyTextArea;
     private long? _replyEnterHandlerConversationId;
     private int _lastSyncedBrowserNewCount = -1;
+    private DateTime _lastTypingSentUtc = DateTime.MinValue;
     private List<PendingAttachment> _pendingAttachments = [];
     private List<PendingAttachment> _templatePendingAttachments = [];
     private List<ConversacionStickerFavoritoDto> _favoriteStickers = [];
@@ -1243,6 +1252,26 @@
 
     private bool _canSendReply => !_busyAction && _selectedConversation is not null && !IsWhatsAppWindowExpired && (HasReplyText || _pendingAttachments.Count > 0);
     private bool HasReplyText => !string.IsNullOrWhiteSpace(_replyText);
+    private string TypingIndicatorText
+    {
+        get
+        {
+            var names = _typingUsers
+                .Select(x => FirstNonEmpty(x.NombreTecnico, x.Usuario))
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Take(3)
+                .ToList();
+
+            return names.Count switch
+            {
+                0 => string.Empty,
+                1 => $"{names[0]} estÃ¡ escribiendo...",
+                2 => $"{names[0]} y {names[1]} estÃ¡n escribiendo...",
+                _ => $"{names[0]}, {names[1]} y alguien mÃ¡s estÃ¡n escribiendo..."
+            };
+        }
+    }
     private bool HasPendingAttachmentError => _pendingAttachments.Any(x => x.HasError);
     private bool _canAddNote => !_busyAction && _selectedConversation is not null && !string.IsNullOrWhiteSpace(_internalNoteText);
     private bool CanCreateWhatsAppFromSearch => _canalActivo == "WHATSAPP" && !_busyAction && IsPotentialPhone(_filters.Search);
@@ -1547,6 +1576,7 @@
 
     private async Task SelectConversationAsync(long idConversacion)
     {
+        await ClearTypingAsync();
         _showTemplatePanel = false;
         CancelTicketSelection();
         await LoadConversationAsync(idConversacion, showLoading: true, clearActionState: true);
@@ -1579,11 +1609,13 @@
             var conversationTask = ConversacionesSvc.GetConversationAsync(idConversacion);
             var messagesTask = ConversacionesSvc.GetMessagesAsync(idConversacion);
             var attachmentsTask = ConversacionesSvc.GetConversationAttachmentsAsync(idConversacion);
+            var typingTask = ConversacionesSvc.GetTypingAsync(idConversacion, CurrentUserNameForAudit, CurrentUserSystemForAudit);
 
-            await Task.WhenAll(conversationTask, messagesTask, attachmentsTask);
+            await Task.WhenAll(conversationTask, messagesTask, attachmentsTask, typingTask);
 
             _selectedConversation = await conversationTask;
             _messages = (await messagesTask).ToList();
+            _typingUsers = (await typingTask).ToList();
             var adjuntos = await attachmentsTask;
             _adjuntosPorMensaje = adjuntos
                 .GroupBy(a => a.IdMensaje)
@@ -1619,6 +1651,7 @@
             _conversationError = ex.Message;
             _selectedConversation = null;
             _messages = [];
+            _typingUsers = [];
         }
         finally
         {
@@ -2211,6 +2244,40 @@
     private void ClearQuotedMessage()
         => _quotedMessage = null;
 
+    private async Task HandleReplyInputAsync(ChangeEventArgs args)
+    {
+        _replyText = Convert.ToString(args.Value, System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
+        await NotifyTypingAsync(HasReplyText);
+    }
+
+    private async Task NotifyTypingAsync(bool escribiendo, bool force = false)
+    {
+        if (_selectedConversationId is not { } idConversacion)
+            return;
+
+        if (escribiendo && !force && DateTime.UtcNow - _lastTypingSentUtc < TimeSpan.FromSeconds(2))
+            return;
+
+        _lastTypingSentUtc = escribiendo ? DateTime.UtcNow : DateTime.MinValue;
+        await ConversacionesSvc.SetTypingAsync(new ConversacionTypingRequest
+        {
+            IdConversacion = idConversacion,
+            IdTecnico = CurrentMessageTechnicianId,
+            NombreTecnico = CurrentMessageTechnicianName,
+            Usuario = CurrentUserNameForAudit,
+            Sistema = CurrentUserSystemForAudit,
+            Escribiendo = escribiendo
+        });
+    }
+
+    private async Task ClearTypingAsync()
+    {
+        if (_selectedConversationId is null)
+            return;
+
+        await NotifyTypingAsync(escribiendo: false, force: true);
+    }
+
     private async Task SendReplyAsync()
     {
         if (_selectedConversation is null)
@@ -2276,6 +2343,7 @@
         finally
         {
             _busyAction = false;
+            await ClearTypingAsync();
         }
     }
 
@@ -3128,6 +3196,7 @@
         _selectedConversationId = null;
         _selectedConversation = null;
         _messages = [];
+        _typingUsers = [];
         _adjuntosPorMensaje = [];
         _replyText = string.Empty;
         _internalNoteText = string.Empty;
@@ -3741,6 +3810,7 @@
 
     public async ValueTask DisposeAsync()
     {
+        await ClearTypingAsync();
         CancelSearchDebounce();
         CancelContactSearch();
 

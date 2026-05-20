@@ -9,6 +9,8 @@ public interface IConversacionesService
     Task<IReadOnlyList<ConversacionInboxItemDto>> GetInboxAsync(ConversacionesInboxFilters filters, CancellationToken ct = default);
     Task<ConversacionDetalleDto?> GetConversationAsync(long conversationId, CancellationToken ct = default);
     Task<IReadOnlyList<ConversacionMensajeDto>> GetMessagesAsync(long conversationId, CancellationToken ct = default);
+    Task<IReadOnlyList<ConversacionTypingDto>> GetTypingAsync(long conversationId, string? usuarioActual = null, string? sistemaActual = null, CancellationToken ct = default);
+    Task SetTypingAsync(ConversacionTypingRequest request, CancellationToken ct = default);
     Task<ConversacionMessageResultDto> SendMessageAsync(ConversacionSendMessageRequest request, CancellationToken ct = default);
     Task<ConversacionMessageResultDto> SendReactionAsync(ConversacionReaccionRequest request, CancellationToken ct = default);
     Task<IReadOnlyList<ConversacionPlantillaDto>> GetTemplatesAsync(ConversacionPlantillaFilters filters, CancellationToken ct = default);

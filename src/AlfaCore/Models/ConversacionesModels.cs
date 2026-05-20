@@ -87,6 +87,25 @@ public sealed class ConversacionMensajeDto
     public bool TieneAdjuntos { get; set; }
 }
 
+public sealed class ConversacionTypingRequest
+{
+    public long IdConversacion { get; set; }
+    public string? IdTecnico { get; set; }
+    public string? NombreTecnico { get; set; }
+    public string? Usuario { get; set; }
+    public string? Sistema { get; set; }
+    public bool Escribiendo { get; set; }
+}
+
+public sealed class ConversacionTypingDto
+{
+    public string IdTecnico { get; set; } = string.Empty;
+    public string NombreTecnico { get; set; } = string.Empty;
+    public string Usuario { get; set; } = string.Empty;
+    public string Sistema { get; set; } = string.Empty;
+    public DateTime FechaHora { get; set; }
+}
+
 public sealed class ConversacionAdjuntoDto
 {
     public long IdAdjunto { get; set; }

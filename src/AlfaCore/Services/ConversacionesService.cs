@@ -20,8 +20,10 @@ public sealed class ConversacionesService(
     private readonly IAppEventService _appEvents = appEvents;
     private const string ManualWhatsAppConversationSummary = "Conversaci\u00f3n iniciada manualmente.";
     private const string ManualWhatsAppInitialState = "PENDIENTE";
+    private static readonly TimeSpan TypingTtl = TimeSpan.FromSeconds(8);
     private static readonly ConcurrentDictionary<long, byte> MediaHydrationAttempts = new();
     private static readonly ConcurrentDictionary<long, byte> AttachmentRecoveryFailures = new();
+    private static readonly ConcurrentDictionary<string, TypingPresence> TypingPresences = new(StringComparer.OrdinalIgnoreCase);
     private static readonly string[] DebtSourceCandidates =
     [
         "VE_CPTES_SALDOS_VENTAS",
@@ -420,6 +422,68 @@ public sealed class ConversacionesService(
 
             return (IReadOnlyList<ConversacionMensajeDto>)items;
         }, "No se pudieron cargar los mensajes.", ct);
+
+    public Task<IReadOnlyList<ConversacionTypingDto>> GetTypingAsync(long conversationId, string? usuarioActual = null, string? sistemaActual = null, CancellationToken ct = default)
+    {
+        if (conversationId <= 0)
+            return Task.FromResult<IReadOnlyList<ConversacionTypingDto>>([]);
+
+        var now = DateTime.UtcNow;
+        PurgeExpiredTyping(now);
+
+        var currentKey = BuildTypingActorKey(conversationId, usuarioActual, sistemaActual, string.Empty);
+        var items = TypingPresences.Values
+            .Where(x => x.IdConversacion == conversationId
+                        && now - x.LastSeenUtc <= TypingTtl
+                        && !string.Equals(x.ActorKey, currentKey, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(x => x.NombreTecnico)
+            .ThenBy(x => x.Usuario)
+            .Select(x => new ConversacionTypingDto
+            {
+                IdTecnico = x.IdTecnico,
+                NombreTecnico = x.NombreTecnico,
+                Usuario = x.Usuario,
+                Sistema = x.Sistema,
+                FechaHora = x.LastSeenLocal
+            })
+            .ToList();
+
+        return Task.FromResult<IReadOnlyList<ConversacionTypingDto>>(items);
+    }
+
+    public Task SetTypingAsync(ConversacionTypingRequest request, CancellationToken ct = default)
+    {
+        if (request.IdConversacion <= 0)
+            return Task.CompletedTask;
+
+        var idTecnico = NormalizeTechnicianId(request.IdTecnico);
+        var usuario = request.Usuario?.Trim() ?? string.Empty;
+        var sistema = request.Sistema?.Trim() ?? string.Empty;
+        var nombreTecnico = FirstNonEmpty(request.NombreTecnico, usuario, idTecnico);
+        var actorKey = BuildTypingActorKey(request.IdConversacion, usuario, sistema, idTecnico);
+        if (string.IsNullOrWhiteSpace(actorKey))
+            return Task.CompletedTask;
+
+        if (!request.Escribiendo)
+        {
+            TypingPresences.TryRemove(actorKey, out _);
+            return Task.CompletedTask;
+        }
+
+        var nowUtc = DateTime.UtcNow;
+        TypingPresences[actorKey] = new TypingPresence(
+            ActorKey: actorKey,
+            IdConversacion: request.IdConversacion,
+            IdTecnico: idTecnico,
+            NombreTecnico: nombreTecnico,
+            Usuario: usuario,
+            Sistema: sistema,
+            LastSeenUtc: nowUtc,
+            LastSeenLocal: DateTime.Now);
+
+        PurgeExpiredTyping(nowUtc);
+        return Task.CompletedTask;
+    }
 
     public Task<ConversacionMessageResultDto> SendMessageAsync(ConversacionSendMessageRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "SendMessage", async token =>
@@ -4268,6 +4332,28 @@ public sealed class ConversacionesService(
     private static string NormalizeTechnicianId(string? value)
         => string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
 
+    private static string BuildTypingActorKey(long idConversacion, string? usuario, string? sistema, string? idTecnico)
+    {
+        var user = usuario?.Trim() ?? string.Empty;
+        var system = sistema?.Trim() ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(user))
+            return $"{idConversacion}:user:{system}:{user}".ToUpperInvariant();
+
+        var technician = NormalizeTechnicianId(idTecnico);
+        return string.IsNullOrWhiteSpace(technician)
+            ? string.Empty
+            : $"{idConversacion}:tech:{technician}".ToUpperInvariant();
+    }
+
+    private static void PurgeExpiredTyping(DateTime nowUtc)
+    {
+        foreach (var item in TypingPresences)
+        {
+            if (nowUtc - item.Value.LastSeenUtc > TypingTtl)
+                TypingPresences.TryRemove(item.Key, out _);
+        }
+    }
+
     private static string GetString(SqlDataReader rd, int index)
         => rd.IsDBNull(index) ? string.Empty : Convert.ToString(rd.GetValue(index), CultureInfo.InvariantCulture) ?? string.Empty;
 
@@ -4480,4 +4566,14 @@ public sealed class ConversacionesService(
         public string RechazoMotivo { get; init; } = string.Empty;
         public string PayloadJson { get; init; } = string.Empty;
     }
+
+    private sealed record TypingPresence(
+        string ActorKey,
+        long IdConversacion,
+        string IdTecnico,
+        string NombreTecnico,
+        string Usuario,
+        string Sistema,
+        DateTime LastSeenUtc,
+        DateTime LastSeenLocal);
 }
