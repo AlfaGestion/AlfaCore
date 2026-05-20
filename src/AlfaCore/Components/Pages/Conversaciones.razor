@@ -329,20 +329,27 @@
                             </div>
                         </div>
                         <div class="conversation-header-state">
-                            <label for="conv-state" class="conversation-header-state__label">Estado</label>
-                            <select id="conv-state" class="conversation-header-state__select" value="@_statusCode" @onchange="OnStatusChangedAsync" disabled="@(_busyAction || IsSelectedConversationClosed)">
-                                @if (IsSelectedConversationClosed)
-                                {
-                                    <option value="@_statusCode">@GetSelectedConversationStateLabel()</option>
-                                }
-                                @foreach (var state in _states.Where(x => !x.EsCerrado))
-                                {
-                                    <option value="@state.CodigoEstado">Estado = @state.Descripcion</option>
-                                }
-                            </select>
-                            <button type="button" class="btn btn--ghost btn--sm conversation-header-state__close" @onclick="CloseConversationAsync" disabled="@(_busyAction || IsSelectedConversationClosed)">
-                                <i class="bi bi-lock-fill"></i> Cerrar conversación
-                            </button>
+                            <div class="conversation-header-state__row">
+                                <span class="conversation-header-state__caption">Estado:</span>
+                                <select id="conv-state" class="conversation-header-state__select" value="@_statusCode" @onchange="OnStatusChangedAsync" disabled="@_busyAction" aria-label="Estado actual">
+                                    @foreach (var state in _states)
+                                    {
+                                        <option value="@state.CodigoEstado">@state.Descripcion</option>
+                                    }
+                                </select>
+                            </div>
+                            @if (!IsSelectedConversationClosed)
+                            {
+                                <button type="button" class="btn btn--ghost btn--sm conversation-header-state__close" @onclick="CloseConversationAsync" disabled="@_busyAction">
+                                    <i class="bi bi-lock-fill"></i> Cerrar conversación
+                                </button>
+                            }
+                            else
+                            {
+                                <span class="conversation-header-state__closed">
+                                    <i class="bi bi-lock-fill"></i> Conversación cerrada
+                                </span>
+                            }
                         </div>
                     </header>
 
@@ -1331,17 +1338,6 @@
            && _selectedConversation is not null
            && SelectedTemplate is not null
            && HasRequiredTemplateValues(SelectedTemplate, TemplateValues);
-
-    private string GetSelectedConversationStateLabel()
-    {
-        var stateName = FirstNonEmpty(
-            _states.FirstOrDefault(x => string.Equals(x.CodigoEstado, _statusCode, StringComparison.OrdinalIgnoreCase))?.Descripcion,
-            _selectedConversation?.EstadoDescripcion,
-            _statusCode,
-            "Sin estado");
-
-        return $"Estado = {stateName}";
-    }
 
     protected override async Task OnInitializedAsync()
     {
