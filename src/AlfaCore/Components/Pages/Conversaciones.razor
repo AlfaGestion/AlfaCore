@@ -378,6 +378,15 @@
                                     </div>
                                 }
 
+                                @if (IsInternalEventMessage(message))
+                                {
+                                    <div class="conversation-event-divider">
+                                        <span>@message.Texto</span>
+                                        <time>@message.FechaHora.ToString("dd/MM HH:mm")</time>
+                                    </div>
+                                    continue;
+                                }
+
                                 <div class="message-row @(IsOutgoingMessage(message) ? "message-row--outgoing" : "message-row--incoming")">
                                     @if (_ticketSelectionMode)
                                     {
@@ -1812,6 +1821,16 @@
                 UsuarioAccion = AppUserSession.GetCurrentUserName(string.Empty)
             });
 
+            await ConversacionesSvc.AddInternalEventAsync(new ConversacionEventoInternoRequest
+            {
+                IdConversacion = _selectedConversation.IdConversacion,
+                Texto = $"{CurrentMessageTechnicianName} cre\u00f3 el ticket #{idTicket.ToString(System.Globalization.CultureInfo.InvariantCulture)}.",
+                IdTecnicoAutor = CurrentMessageTechnicianId,
+                NombreTecnicoAccion = CurrentMessageTechnicianName,
+                UsuarioAccion = CurrentUserNameForAudit,
+                SistemaAccion = CurrentUserSystemForAudit
+            });
+
             _ticketSelectionMode = false;
             _showTicketDialog = false;
             _selectedTicketMessageIds.Clear();
@@ -2706,7 +2725,11 @@
             await ConversacionesSvc.AssignConversationAsync(new ConversacionAsignacionRequest
             {
                 IdConversacion = _selectedConversation.IdConversacion,
-                IdTecnico = _assignmentTechnicianId
+                IdTecnico = _assignmentTechnicianId,
+                IdTecnicoAutor = CurrentMessageTechnicianId,
+                NombreTecnicoAccion = CurrentMessageTechnicianName,
+                UsuarioAccion = CurrentUserNameForAudit,
+                SistemaAccion = CurrentUserSystemForAudit
             });
 
             _actionMessage = "Asignación actualizada.";
@@ -3563,6 +3586,9 @@
 
     private static bool IsIncomingMessage(ConversacionMensajeDto message)
         => string.Equals(message.Direction, "ENTRANTE", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsInternalEventMessage(ConversacionMensajeDto message)
+        => string.Equals(message.Direction, "EVENTO_INTERNO", StringComparison.OrdinalIgnoreCase);
 
     private bool CanReactToMessage(ConversacionMensajeDto message)
         => IsWhatsAppConversation

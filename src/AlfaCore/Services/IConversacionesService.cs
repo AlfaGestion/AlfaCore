@@ -21,6 +21,7 @@ public interface IConversacionesService
     Task<ConversacionPlantillaAutoValuesDto> GetTemplateAutoValuesAsync(long idConversacion, int variableCount, CancellationToken ct = default);
     Task<ConversacionPlantillaMessageResultDto> SendTemplateMessageAsync(ConversacionPlantillaSendRequest request, CancellationToken ct = default);
     Task<long> AddInternalNoteAsync(ConversacionNotaInternaRequest request, CancellationToken ct = default);
+    Task<long> AddInternalEventAsync(ConversacionEventoInternoRequest request, CancellationToken ct = default);
     Task AssignConversationAsync(ConversacionAsignacionRequest request, CancellationToken ct = default);
     Task ChangeStatusAsync(ConversacionEstadoRequest request, CancellationToken ct = default);
     Task<ConversacionWebhookResultDto> RegisterIncomingWebhookAsync(ConversacionWebhookRequest request, CancellationToken ct = default);

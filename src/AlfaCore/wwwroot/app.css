@@ -3740,6 +3740,39 @@ tr.row--critical td {
     background: var(--color-panel);
 }
 
+.conversation-event-divider {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: .6rem;
+    max-width: min(680px, 92%);
+    margin: .25rem auto;
+    padding: .38rem .75rem;
+    border: 1px solid rgba(148, 163, 184, .18);
+    border-radius: 999px;
+    background: rgba(15, 23, 42, .62);
+    color: #cbd5e1;
+    font-size: .78rem;
+    font-weight: 700;
+    line-height: 1.25;
+    text-align: center;
+    box-shadow: 0 8px 22px rgba(2, 6, 23, .16);
+}
+
+.conversation-event-divider span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.conversation-event-divider time {
+    flex: 0 0 auto;
+    color: #7dd3fc;
+    font-size: .72rem;
+    font-weight: 800;
+}
+
 .conversations-latest-button {
     position: absolute;
     right: 1.1rem;

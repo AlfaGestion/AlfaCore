@@ -158,10 +158,22 @@ public sealed class ConversacionNotaInternaRequest
     public string? SistemaAccion { get; set; }
 }
 
+public sealed class ConversacionEventoInternoRequest
+{
+    public long IdConversacion { get; set; }
+    public string Texto { get; set; } = string.Empty;
+    public string? IdTecnicoAutor { get; set; }
+    public string? NombreTecnicoAccion { get; set; }
+    public string? UsuarioAccion { get; set; }
+    public string? SistemaAccion { get; set; }
+}
+
 public sealed class ConversacionAsignacionRequest
 {
     public long IdConversacion { get; set; }
     public string? IdTecnico { get; set; }
+    public string? IdTecnicoAutor { get; set; }
+    public string? NombreTecnicoAccion { get; set; }
     public string? UsuarioAccion { get; set; }
     public string? SistemaAccion { get; set; }
     public string? Observaciones { get; set; }

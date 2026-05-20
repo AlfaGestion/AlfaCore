@@ -20,6 +20,8 @@ public sealed class ConversacionesService(
     private readonly IAppEventService _appEvents = appEvents;
     private const string ManualWhatsAppConversationSummary = "Conversaci\u00f3n iniciada manualmente.";
     private const string ManualWhatsAppInitialState = "PENDIENTE";
+    private const string InternalEventDirection = "EVENTO_INTERNO";
+    private const string InternalEventMessageType = "SYSTEM";
     private static readonly TimeSpan TypingTtl = TimeSpan.FromSeconds(8);
     private static readonly ConcurrentDictionary<long, byte> MediaHydrationAttempts = new();
     private static readonly ConcurrentDictionary<long, byte> AttachmentRecoveryFailures = new();
@@ -1024,6 +1026,24 @@ public sealed class ConversacionesService(
             return messageId;
         }, "No se pudo agregar la nota interna.", ct);
 
+    public Task<long> AddInternalEventAsync(ConversacionEventoInternoRequest request, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "AddInternalEvent", async token =>
+        {
+            if (request.IdConversacion <= 0)
+                throw new InvalidOperationException("La conversaci\u00f3n es obligatoria.");
+            if (string.IsNullOrWhiteSpace(request.Texto))
+                throw new InvalidOperationException("El evento interno no puede estar vac\u00edo.");
+
+            return await AddInternalEventCoreAsync(
+                request.IdConversacion,
+                request.Texto,
+                request.IdTecnicoAutor,
+                request.NombreTecnicoAccion,
+                request.UsuarioAccion,
+                request.SistemaAccion,
+                token);
+        }, "No se pudo registrar el evento interno.", ct);
+
     public async Task AssignConversationAsync(ConversacionAsignacionRequest request, CancellationToken ct = default)
     {
         await ExecuteLoggedAsync("Conversaciones", "AssignConversation", async token =>
@@ -1032,6 +1052,7 @@ public sealed class ConversacionesService(
                 throw new InvalidOperationException("La conversación es obligatoria.");
 
             var technicianId = await ResolveTechnicianIdOrNullAsync(request.IdTecnico, token);
+            var previousTechnicianId = await GetConversationTechnicianIdAsync(request.IdConversacion, token);
 
             const string updateSql = """
                 UPDATE dbo.CONV_CONVERSACIONES
@@ -1085,6 +1106,26 @@ public sealed class ConversacionesService(
 
             await tx.CommitAsync(token);
 
+            if (!string.Equals(NormalizeTechnicianId(previousTechnicianId), NormalizeTechnicianId(technicianId), StringComparison.OrdinalIgnoreCase))
+            {
+                var actorName = await BuildActionActorNameAsync(request.IdTecnicoAutor, request.NombreTecnicoAccion, request.UsuarioAccion, token);
+                var targetName = string.IsNullOrWhiteSpace(technicianId)
+                    ? string.Empty
+                    : FirstNonEmpty(await TryGetTechnicianNameAsync(technicianId, token), technicianId);
+                var eventText = string.IsNullOrWhiteSpace(targetName)
+                    ? $"{actorName} dej\u00f3 la conversaci\u00f3n sin asignar."
+                    : $"{actorName} asign\u00f3 la conversaci\u00f3n a {targetName}.";
+
+                await AddInternalEventCoreAsync(
+                    request.IdConversacion,
+                    eventText,
+                    request.IdTecnicoAutor,
+                    request.NombreTecnicoAccion,
+                    request.UsuarioAccion,
+                    request.SistemaAccion,
+                    token);
+            }
+
             await _appEvents.LogAuditAsync(
                 "Conversaciones",
                 "AssignConversation",
@@ -1110,6 +1151,7 @@ public sealed class ConversacionesService(
             var state = request.CodigoEstado.Trim().ToUpperInvariant();
             var isClosed = await GetStateClosedFlagAsync(state, token);
             var wasClosed = await GetConversationClosedFlagAsync(request.IdConversacion, token);
+            var previousState = await GetConversationStateAsync(request.IdConversacion, token);
 
             const string sql = """
                 UPDATE dbo.CONV_CONVERSACIONES
@@ -1128,8 +1170,23 @@ public sealed class ConversacionesService(
             cmd.Parameters.AddWithValue("@EsCerrado", isClosed);
             await cmd.ExecuteNonQueryAsync(token);
 
-            if (isClosed && !wasClosed)
-                await AddConversationClosedInternalNoticeAsync(request, token);
+            if (!string.Equals(previousState.CodigoEstado, state, StringComparison.OrdinalIgnoreCase))
+            {
+                var actorName = await BuildActionActorNameAsync(request.IdTecnicoAutor, request.NombreTecnicoAccion, request.UsuarioAccion, token);
+                var nextStateName = FirstNonEmpty(await TryGetStateNameAsync(state, token), state);
+                var eventText = isClosed && !wasClosed
+                    ? $"{actorName} cerr\u00f3 la conversaci\u00f3n."
+                    : $"{actorName} cambi\u00f3 el estado de {FirstNonEmpty(previousState.Descripcion, previousState.CodigoEstado, "Sin estado")} a {nextStateName}.";
+
+                await AddInternalEventCoreAsync(
+                    request.IdConversacion,
+                    eventText,
+                    request.IdTecnicoAutor,
+                    request.NombreTecnicoAccion,
+                    request.UsuarioAccion,
+                    request.SistemaAccion,
+                    token);
+            }
 
             await _appEvents.LogAuditAsync(
                 "Conversaciones",
@@ -2356,6 +2413,49 @@ public sealed class ConversacionesService(
         return Convert.ToInt64(result, CultureInfo.InvariantCulture);
     }
 
+    private async Task<long> AddInternalEventCoreAsync(
+        long idConversacion,
+        string text,
+        string? idTecnicoAutor,
+        string? nombreTecnicoAccion,
+        string? usuarioAccion,
+        string? sistemaAccion,
+        CancellationToken ct)
+    {
+        var cleanText = text.Trim();
+        var now = BusinessNow();
+        var technicianId = await ResolveTechnicianIdOrNullAsync(idTecnicoAutor, ct);
+        var conversation = await RequireConversationAsync(idConversacion, ct);
+
+        var messageId = await InsertMessageAsync(new PendingMessageInsert
+        {
+            ConversationId = idConversacion,
+            Phone = conversation.TelefonoWhatsApp,
+            MessageType = InternalEventMessageType,
+            Direction = InternalEventDirection,
+            EstadoEnvio = string.Empty,
+            Text = cleanText,
+            PayloadJson = string.Empty,
+            FechaHora = now,
+            UsuarioAutor = usuarioAccion,
+            SistemaAutor = sistemaAccion,
+            IdTecnicoAutor = technicianId
+        }, ct);
+
+        await RefreshConversationAsync(idConversacion, now, cleanText, ct);
+
+        await _appEvents.LogAuditAsync(
+            "Conversaciones",
+            "AddInternalEvent",
+            "CONV_MENSAJES",
+            messageId.ToString(CultureInfo.InvariantCulture),
+            "Evento interno agregado a la conversaci\u00f3n.",
+            new { IdConversacion = idConversacion, Texto = cleanText, IdTecnicoAutor = technicianId, NombreTecnicoAccion = nombreTecnicoAccion, UsuarioAccion = usuarioAccion, SistemaAccion = sistemaAccion },
+            ct);
+
+        return messageId;
+    }
+
     private async Task RefreshConversationAsync(long idConversacion, DateTime fechaHora, string? text, CancellationToken ct, bool reopenIfClosed = false)
     {
         const string sql = """
@@ -3339,39 +3439,71 @@ public sealed class ConversacionesService(
         return result is not null && result is not DBNull && Convert.ToBoolean(result, CultureInfo.InvariantCulture);
     }
 
-    private async Task AddConversationClosedInternalNoticeAsync(ConversacionEstadoRequest request, CancellationToken ct)
+    private async Task<string> GetConversationTechnicianIdAsync(long idConversacion, CancellationToken ct)
     {
-        var now = BusinessNow();
-        var technicianId = await ResolveTechnicianIdOrNullAsync(request.IdTecnicoAutor, ct);
-        var authorName = FirstNonEmpty(request.NombreTecnicoAccion, await TryGetTechnicianNameAsync(technicianId, ct), request.UsuarioAccion, "un t\u00e9cnico");
-        var text = $"- Conversaci\u00f3n cerrada por {authorName} -";
-        var conversation = await RequireConversationAsync(request.IdConversacion, ct);
+        const string sql = """
+            SELECT TOP (1) ISNULL(IdTecnico, '')
+            FROM dbo.CONV_CONVERSACIONES
+            WHERE IdConversacion = @IdConversacion
+            """;
 
-        var messageId = await InsertMessageAsync(new PendingMessageInsert
-        {
-            ConversationId = request.IdConversacion,
-            Phone = conversation.TelefonoWhatsApp,
-            MessageType = "TEXT",
-            Direction = "NOTA_INTERNA",
-            EstadoEnvio = string.Empty,
-            Text = text,
-            PayloadJson = string.Empty,
-            FechaHora = now,
-            UsuarioAutor = request.UsuarioAccion,
-            SistemaAutor = request.SistemaAccion,
-            IdTecnicoAutor = technicianId
-        }, ct);
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
+        var result = await cmd.ExecuteScalarAsync(ct);
+        return result is null || result is DBNull
+            ? string.Empty
+            : Convert.ToString(result, CultureInfo.InvariantCulture) ?? string.Empty;
+    }
 
-        await RefreshConversationAsync(request.IdConversacion, now, text, ct);
+    private async Task<ConversationStateSummary> GetConversationStateAsync(long idConversacion, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT TOP (1)
+                ISNULL(c.CodigoEstado, ''),
+                ISNULL(e.Descripcion, '')
+            FROM dbo.CONV_CONVERSACIONES c
+            LEFT JOIN dbo.CONV_ESTADOS e
+                ON e.CodigoEstado = c.CodigoEstado
+            WHERE c.IdConversacion = @IdConversacion
+            """;
 
-        await _appEvents.LogAuditAsync(
-            "Conversaciones",
-            "AddCloseNotice",
-            "CONV_MENSAJES",
-            messageId.ToString(CultureInfo.InvariantCulture),
-            "Aviso interno de cierre agregado a la conversacion.",
-            new { request.IdConversacion, request.UsuarioAccion, request.SistemaAccion, IdTecnicoAutor = technicianId },
-            ct);
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
+        await using var rd = await cmd.ExecuteReaderAsync(ct);
+        return await rd.ReadAsync(ct)
+            ? new ConversationStateSummary(GetString(rd, 0), GetString(rd, 1))
+            : new ConversationStateSummary(string.Empty, string.Empty);
+    }
+
+    private async Task<string> TryGetStateNameAsync(string codigoEstado, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(codigoEstado))
+            return string.Empty;
+
+        const string sql = """
+            SELECT TOP (1) ISNULL(Descripcion, '')
+            FROM dbo.CONV_ESTADOS
+            WHERE CodigoEstado = @CodigoEstado
+            """;
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@CodigoEstado", codigoEstado.Trim().ToUpperInvariant());
+        var result = await cmd.ExecuteScalarAsync(ct);
+        return result is null || result is DBNull
+            ? string.Empty
+            : Convert.ToString(result, CultureInfo.InvariantCulture) ?? string.Empty;
+    }
+
+    private async Task<string> BuildActionActorNameAsync(string? idTecnico, string? nombreTecnico, string? usuario, CancellationToken ct)
+    {
+        var technicianId = await ResolveTechnicianIdOrNullAsync(idTecnico, ct);
+        return FirstNonEmpty(nombreTecnico, await TryGetTechnicianNameAsync(technicianId, ct), usuario, "Un t\u00e9cnico");
     }
 
     private async Task<string> TryGetTechnicianNameAsync(string? idTecnico, CancellationToken ct)
@@ -4652,6 +4784,8 @@ public sealed class ConversacionesService(
         public string RechazoMotivo { get; init; } = string.Empty;
         public string PayloadJson { get; init; } = string.Empty;
     }
+
+    private sealed record ConversationStateSummary(string CodigoEstado, string Descripcion);
 
     private sealed record TypingPresence(
         string ActorKey,
