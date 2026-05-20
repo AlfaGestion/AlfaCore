@@ -73,6 +73,34 @@ window.conversacionesUi = {
         element.scrollTop = element.scrollHeight;
     },
 
+    playNewMessageSound: async function () {
+        try {
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            if (!AudioContext) return;
+
+            const context = new AudioContext();
+            if (context.state === 'suspended') {
+                await context.resume();
+            }
+
+            const oscillator = context.createOscillator();
+            const gain = context.createGain();
+            oscillator.type = 'sine';
+            oscillator.frequency.setValueAtTime(740, context.currentTime);
+            oscillator.frequency.exponentialRampToValueAtTime(980, context.currentTime + 0.08);
+            gain.gain.setValueAtTime(0.0001, context.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.08, context.currentTime + 0.015);
+            gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.18);
+
+            oscillator.connect(gain);
+            gain.connect(context.destination);
+            oscillator.start();
+            oscillator.stop(context.currentTime + 0.2);
+            oscillator.onended = () => context.close();
+        } catch {
+        }
+    },
+
     watchThreadScroll: function (element, dotNetRef) {
         if (!element || !dotNetRef) return false;
 

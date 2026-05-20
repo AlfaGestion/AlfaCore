@@ -9,7 +9,7 @@
 @inject NavigationManager Nav
 @implements IAsyncDisposable
 
-<PageTitle>Conversaciones | Alfa Gestión</PageTitle>
+<PageTitle>@ConversationPageTitle</PageTitle>
 
 <section class="page-grid conversations-page conversations-page--odoo" @onclick="DismissConversationNoticesAsync">
     @if (_loadError is not null)
@@ -1247,6 +1247,11 @@
     private bool CanCreateWhatsAppFromSearch => _canalActivo == "WHATSAPP" && !_busyAction && IsPotentialPhone(_filters.Search);
     private bool ShouldShowContactSuggestions => _canalActivo == "WHATSAPP" && _filters.Search.Trim().Length >= 2;
     private bool ShouldShowLatestButton => _showReturnToLatest || _newMessagesCount > 0;
+    private int TotalNewMessagesCount => _newMessagesByConversation.Values.Sum() + _newMessagesCount;
+    private string ConversationPageTitle
+        => TotalNewMessagesCount > 0
+            ? $"({TotalNewMessagesCount}) Conversaciones | Alfa Gestión"
+            : "Conversaciones | Alfa Gestión";
     private bool IsWhatsAppConversation
         => _selectedConversation is not null
            && _selectedConversation.Canal == "WHATSAPP";
@@ -1442,25 +1447,28 @@
     }
 
     private async Task LoadInboxAsync()
-        => await RefreshInboxAsync(showLoading: true, allowSelectionChange: true);
+    {
+        await RefreshInboxAsync(showLoading: true, allowSelectionChange: true);
+    }
 
-    private async Task RefreshInboxAsync(bool showLoading, bool allowSelectionChange)
+    private async Task<int> RefreshInboxAsync(bool showLoading, bool allowSelectionChange)
     {
         if (showLoading)
             _loadingInbox = true;
 
         _loadError = null;
+        var newMessagesDetected = 0;
 
         try
         {
             var previousInbox = _inbox.ToDictionary(x => x.IdConversacion);
             var refreshedInbox = (await ConversacionesSvc.GetInboxAsync(_filters)).ToList();
-            TrackInboxNewMessages(previousInbox, refreshedInbox);
+            newMessagesDetected = TrackInboxNewMessages(previousInbox, refreshedInbox);
             _inbox = refreshedInbox;
             StoreChannelCache(_canalActivo);
 
             if (_selectedConversationId.HasValue && _inbox.Any(x => x.IdConversacion == _selectedConversationId.Value))
-                return;
+                return newMessagesDetected;
 
             if (allowSelectionChange && _inbox.Count > 0)
                 await SelectConversationAsync(_inbox[0].IdConversacion);
@@ -1476,15 +1484,18 @@
             if (showLoading)
                 _loadingInbox = false;
         }
+
+        return newMessagesDetected;
     }
 
-    private void TrackInboxNewMessages(
+    private int TrackInboxNewMessages(
         IReadOnlyDictionary<long, ConversacionInboxItemDto> previousInbox,
         IReadOnlyList<ConversacionInboxItemDto> refreshedInbox)
     {
         if (previousInbox.Count == 0)
-            return;
+            return 0;
 
+        var newMessagesDetected = 0;
         foreach (var item in refreshedInbox)
         {
             if (item.IdConversacion == _selectedConversationId)
@@ -1506,7 +1517,10 @@
 
             _newMessagesByConversation[item.IdConversacion] =
                 _newMessagesByConversation.TryGetValue(item.IdConversacion, out var count) ? count + difference : difference;
+            newMessagesDetected += difference;
         }
+
+        return newMessagesDetected;
     }
 
     private async Task SelectConversationAsync(long idConversacion)
@@ -1989,7 +2003,7 @@
         var shouldKeepAtBottom = await IsThreadNearBottomAsync();
         var previousLastMessageId = GetLastMessageId();
 
-        await RefreshInboxAsync(showLoading: false, allowSelectionChange: false);
+        var newMessagesDetected = await RefreshInboxAsync(showLoading: false, allowSelectionChange: false);
 
         if (selectedId.HasValue && _selectedConversationId == selectedId)
             await LoadConversationAsync(selectedId.Value, showLoading: false, clearActionState: false);
@@ -2006,16 +2020,27 @@
                 .ToList();
             if (newMessages.Count > 0)
             {
-                _firstNewMessageId ??= newMessages.FirstOrDefault()?.IdMensaje;
-                _newMessagesCount += newMessages.Count;
-                _showReturnToLatest = true;
+                newMessagesDetected += newMessages.Count;
+
+                if (!shouldKeepAtBottom)
+                {
+                    _firstNewMessageId ??= newMessages.FirstOrDefault()?.IdMensaje;
+                    _newMessagesCount += newMessages.Count;
+                    _showReturnToLatest = true;
+                }
             }
         }
 
         StateHasChanged();
 
         if (shouldKeepAtBottom)
+        {
             await ScrollThreadToBottomAsync();
+            MarkSelectedConversationAsRead();
+        }
+
+        if (newMessagesDetected > 0)
+            await PlayNewMessageSoundAsync();
     }
 
     private bool ShouldSkipAutoRefresh()
@@ -2061,6 +2086,17 @@
         await ScrollThreadToBottomAsync();
         MarkSelectedConversationAsRead();
         StateHasChanged();
+    }
+
+    private async Task PlayNewMessageSoundAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("conversacionesUi.playNewMessageSound");
+        }
+        catch
+        {
+        }
     }
 
     [JSInvokable]
