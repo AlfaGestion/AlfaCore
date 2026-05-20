@@ -171,6 +171,8 @@ public sealed class ConversacionEstadoRequest
 {
     public long IdConversacion { get; set; }
     public string CodigoEstado { get; set; } = string.Empty;
+    public string? IdTecnicoAutor { get; set; }
+    public string? NombreTecnicoAccion { get; set; }
     public string? UsuarioAccion { get; set; }
     public string? SistemaAccion { get; set; }
     public string? Observaciones { get; set; }

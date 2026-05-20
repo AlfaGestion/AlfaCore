@@ -2737,7 +2737,11 @@
             await ConversacionesSvc.ChangeStatusAsync(new ConversacionEstadoRequest
             {
                 IdConversacion = _selectedConversation.IdConversacion,
-                CodigoEstado = _statusCode
+                CodigoEstado = _statusCode,
+                IdTecnicoAutor = CurrentMessageTechnicianId,
+                NombreTecnicoAccion = CurrentMessageTechnicianName,
+                UsuarioAccion = CurrentUserNameForAudit,
+                SistemaAccion = CurrentUserSystemForAudit
             });
 
             MarkSelectedConversationAsRead();

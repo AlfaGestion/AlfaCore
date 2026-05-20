@@ -1109,6 +1109,7 @@ public sealed class ConversacionesService(
 
             var state = request.CodigoEstado.Trim().ToUpperInvariant();
             var isClosed = await GetStateClosedFlagAsync(state, token);
+            var wasClosed = await GetConversationClosedFlagAsync(request.IdConversacion, token);
 
             const string sql = """
                 UPDATE dbo.CONV_CONVERSACIONES
@@ -1126,6 +1127,9 @@ public sealed class ConversacionesService(
             cmd.Parameters.AddWithValue("@CodigoEstado", state);
             cmd.Parameters.AddWithValue("@EsCerrado", isClosed);
             await cmd.ExecuteNonQueryAsync(token);
+
+            if (isClosed && !wasClosed)
+                await AddConversationClosedInternalNoticeAsync(request, token);
 
             await _appEvents.LogAuditAsync(
                 "Conversaciones",
@@ -3315,6 +3319,81 @@ public sealed class ConversacionesService(
             throw new InvalidOperationException("El estado indicado no existe.");
 
         return Convert.ToBoolean(result, CultureInfo.InvariantCulture);
+    }
+
+    private async Task<bool> GetConversationClosedFlagAsync(long idConversacion, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT TOP (1) ISNULL(e.EsCerrado, 0)
+            FROM dbo.CONV_CONVERSACIONES c
+            LEFT JOIN dbo.CONV_ESTADOS e
+                ON e.CodigoEstado = c.CodigoEstado
+            WHERE c.IdConversacion = @IdConversacion
+            """;
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
+        var result = await cmd.ExecuteScalarAsync(ct);
+        return result is not null && result is not DBNull && Convert.ToBoolean(result, CultureInfo.InvariantCulture);
+    }
+
+    private async Task AddConversationClosedInternalNoticeAsync(ConversacionEstadoRequest request, CancellationToken ct)
+    {
+        var now = BusinessNow();
+        var technicianId = await ResolveTechnicianIdOrNullAsync(request.IdTecnicoAutor, ct);
+        var authorName = FirstNonEmpty(request.NombreTecnicoAccion, await TryGetTechnicianNameAsync(technicianId, ct), request.UsuarioAccion, "un t\u00e9cnico");
+        var text = $"- Conversaci\u00f3n cerrada por {authorName} -";
+        var conversation = await RequireConversationAsync(request.IdConversacion, ct);
+
+        var messageId = await InsertMessageAsync(new PendingMessageInsert
+        {
+            ConversationId = request.IdConversacion,
+            Phone = conversation.TelefonoWhatsApp,
+            MessageType = "TEXT",
+            Direction = "NOTA_INTERNA",
+            EstadoEnvio = string.Empty,
+            Text = text,
+            PayloadJson = string.Empty,
+            FechaHora = now,
+            UsuarioAutor = request.UsuarioAccion,
+            SistemaAutor = request.SistemaAccion,
+            IdTecnicoAutor = technicianId
+        }, ct);
+
+        await RefreshConversationAsync(request.IdConversacion, now, text, ct);
+
+        await _appEvents.LogAuditAsync(
+            "Conversaciones",
+            "AddCloseNotice",
+            "CONV_MENSAJES",
+            messageId.ToString(CultureInfo.InvariantCulture),
+            "Aviso interno de cierre agregado a la conversacion.",
+            new { request.IdConversacion, request.UsuarioAccion, request.SistemaAccion, IdTecnicoAutor = technicianId },
+            ct);
+    }
+
+    private async Task<string> TryGetTechnicianNameAsync(string? idTecnico, CancellationToken ct)
+    {
+        var normalized = NormalizeTechnicianId(idTecnico);
+        if (string.IsNullOrWhiteSpace(normalized))
+            return string.Empty;
+
+        const string sql = """
+            SELECT TOP (1) ISNULL(Nombre, '')
+            FROM dbo.V_TA_Tecnicos
+            WHERE LTRIM(RTRIM(IdTecnico)) = @IdTecnico
+            """;
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@IdTecnico", normalized);
+        var result = await cmd.ExecuteScalarAsync(ct);
+        return result is null || result is DBNull
+            ? string.Empty
+            : Convert.ToString(result, CultureInfo.InvariantCulture) ?? string.Empty;
     }
 
     private static List<IncomingWhatsAppMessage> ParseIncomingMessages(JsonElement root)
