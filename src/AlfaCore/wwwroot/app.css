@@ -3857,6 +3857,16 @@ tr.row--critical td {
     grid-row: auto;
 }
 
+.conversations-composer--support > .conversations-composer__reply {
+    grid-column: 1;
+    grid-row: 1;
+}
+
+.conversations-composer--support > .conversations-composer__note {
+    grid-column: 1;
+    grid-row: 3;
+}
+
 .conversations-pending-list {
     display: flex;
     align-items: center;
@@ -3866,6 +3876,11 @@ tr.row--critical td {
     grid-row: 2;
     min-width: 0;
     max-width: 100%;
+}
+
+.conversations-pending-list--reply {
+    grid-column: 1;
+    grid-row: 2;
 }
 
 .conversations-pending-attachment {
@@ -3913,8 +3928,15 @@ tr.row--critical td {
 
 .conversations-composer.conversations-composer--support > .conversations-composer__actions {
     grid-column: 2;
-    grid-row: 1 / span 2;
     align-self: end;
+}
+
+.conversations-composer.conversations-composer--support > .conversations-composer__actions--reply {
+    grid-row: 1;
+}
+
+.conversations-composer.conversations-composer--support > .conversations-composer__actions--note {
+    grid-row: 3;
 }
 
 .conversations-composer--support .conversations-inline--error {
@@ -3953,16 +3975,6 @@ tr.row--critical td {
 
 .conversations-composer__actions {
     justify-content: flex-start;
-}
-
-.conversations-composer > .conversations-composer__actions:nth-of-type(2) {
-    grid-column: 2;
-    grid-row: 1;
-}
-
-.conversations-composer > .conversations-composer__actions:nth-of-type(4) {
-    grid-column: 2;
-    grid-row: 2;
 }
 
 .templates-page .page-intro__text {

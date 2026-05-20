@@ -566,7 +566,7 @@
                     <div class="conversations-composer conversations-composer--support">
                         @if (!IsWhatsAppWindowExpired)
                         {
-                            <div class="field">
+                            <div class="field conversations-composer__reply">
                                 <label for="conv-message">
                                     @(_selectedConversation.Canal == "INTERNO" ? "Mensaje al equipo" : "Responder")
                                 </label>
@@ -601,7 +601,7 @@
                             </div>
                             @if (_pendingAttachments.Count > 0)
                             {
-                                <div class="conversations-pending-list">
+                                <div class="conversations-pending-list conversations-pending-list--reply">
                                     @foreach (var pending in _pendingAttachments)
                                     {
                                         <div class="conversations-pending-attachment @(pending.HasError ? "has-error" : string.Empty)">
@@ -618,7 +618,7 @@
                                     }
                                 </div>
                             }
-                            <div class="conversations-composer__actions">
+                            <div class="conversations-composer__actions conversations-composer__actions--reply">
                                 <button type="button" class="btn btn--primary" @onclick="SendReplyAsync" disabled="@(!_canSendReply)" title="@(HasPendingAttachmentError ? "Reintentar envio" : (_selectedConversation.Canal == "INTERNO" ? "Enviar" : "Enviar mensaje"))">
                                     <i class="bi @(HasPendingAttachmentError ? "bi-arrow-clockwise" : "bi-send-fill")"></i>
                                 </button>
@@ -695,14 +695,14 @@
                             }
                         }
 
-                        <div class="field">
+                        <div class="field conversations-composer__note">
                             <label for="conv-note">Nota interna</label>
                             <textarea id="conv-note"
                                       rows="1"
                                       placeholder="Escribí una nota interna visible solo para el equipo…"
                                       @bind="_internalNoteText"></textarea>
                         </div>
-                        <div class="conversations-composer__actions">
+                        <div class="conversations-composer__actions conversations-composer__actions--note">
                             <button type="button" class="btn btn--ghost" @onclick="AddInternalNoteAsync" disabled="@(!_canAddNote)" title="Guardar nota interna">
                                 <i class="bi bi-journal-text"></i>
                             </button>
