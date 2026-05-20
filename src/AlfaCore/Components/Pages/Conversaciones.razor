@@ -425,8 +425,8 @@
                                 @if (IsInternalEventMessage(message))
                                 {
                                     <div class="conversation-event-divider">
-                                        <span>@message.Texto</span>
-                                        <time>@message.FechaHora.ToString("dd/MM HH:mm")</time>
+                                        <span class="conversation-event-divider__text">@message.Texto</span>
+                                        <time class="conversation-event-divider__time">@message.FechaHora.ToString("dd/MM HH:mm")</time>
                                     </div>
                                     continue;
                                 }
@@ -505,6 +505,22 @@
                                                                 <a href="@GetAttachmentDownloadUrl(adj)" download="@adj.NombreArchivo">Descargar audio</a>
                                                             </div>
                                                         }
+                                                    </div>
+                                                }
+                                                else if (IsVideoAttachment(adj))
+                                                {
+                                                    <div class="message-attachment message-attachment--video">
+                                                        <video controls preload="metadata">
+                                                            <source src="@GetAttachmentUrl(adj)" type="@GetAttachmentMime(adj)" />
+                                                            Tu navegador no puede reproducir este video.
+                                                        </video>
+                                                        <div class="attachment-video-meta">
+                                                            <span>@adj.NombreArchivo</span>
+                                                            @if (adj.TamanoBytes > 0)
+                                                            {
+                                                                <span>@FormatFileSize(adj.TamanoBytes)</span>
+                                                            }
+                                                        </div>
                                                     </div>
                                                 }
                                                 else
@@ -1064,9 +1080,10 @@
                     </button>
                 </div>
             </header>
-            <div class="attachment-preview-canvas" @onwheel="HandlePreviewWheel" @onwheel:preventDefault>
+            <div class="attachment-preview-canvas" @ref="_previewCanvas" @onwheel="HandlePreviewWheel" @onwheel:preventDefault>
                 <img src="@GetAttachmentUrl(_previewAttachment)"
                      alt="@GetAttachmentLabel(_previewAttachment)"
+                     draggable="false"
                      style="@PreviewImageStyle" />
             </div>
         </div>
@@ -1253,6 +1270,8 @@
     private ConversacionMensajeDto? _quotedMessage;
     private long _nextOptimisticMessageId = -1;
     private ConversacionAdjuntoDto? _previewAttachment;
+    private ElementReference _previewCanvas;
+    private bool _bindPreviewPanAfterRender;
     private ElementReference _replyTextArea;
     private long? _replyEnterHandlerConversationId;
     private int _lastSyncedBrowserNewCount = -1;
@@ -1465,6 +1484,18 @@
         {
             _focusReplyAfterRender = false;
             await FocusReplyAsync();
+        }
+
+        if (_bindPreviewPanAfterRender && _previewAttachment is not null)
+        {
+            _bindPreviewPanAfterRender = false;
+            try
+            {
+                await JS.InvokeVoidAsync("conversacionesUi.bindAttachmentPreviewPan", _previewCanvas);
+            }
+            catch
+            {
+            }
         }
     }
 
@@ -3801,6 +3832,10 @@
         => string.Equals(adjunto.TipoArchivo, "AUDIO", StringComparison.OrdinalIgnoreCase)
            || adjunto.MimeType.StartsWith("audio/", StringComparison.OrdinalIgnoreCase);
 
+    private static bool IsVideoAttachment(ConversacionAdjuntoDto adjunto)
+        => string.Equals(adjunto.TipoArchivo, "VIDEO", StringComparison.OrdinalIgnoreCase)
+           || adjunto.MimeType.StartsWith("video/", StringComparison.OrdinalIgnoreCase);
+
     private bool ShouldShowMessageText(ConversacionMensajeDto message)
     {
         if (string.IsNullOrWhiteSpace(message.Texto))
@@ -3927,11 +3962,15 @@
     {
         _openAttachmentMenuId = null;
         _previewAttachment = adjunto;
+        _bindPreviewPanAfterRender = true;
         ResetPreviewZoom();
     }
 
     private void CloseAttachmentPreview()
-        => _previewAttachment = null;
+    {
+        _previewAttachment = null;
+        _bindPreviewPanAfterRender = false;
+    }
 
     private string PreviewImageStyle
         => $"width: {Math.Round(_previewZoom * 100, 0).ToString(System.Globalization.CultureInfo.InvariantCulture)}%;";

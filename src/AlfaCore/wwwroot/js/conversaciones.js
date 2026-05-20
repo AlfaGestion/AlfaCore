@@ -62,6 +62,7 @@ window.conversacionesAudio = (function () {
 window.conversacionesUi = {
     _threadWatchers: new WeakMap(),
     _fileDropWatchers: new WeakMap(),
+    _previewPanWatchers: new WeakMap(),
     _notificationBaseTitle: 'AlfaCore - Alfa Gestión',
     _notificationSoundUrl: '/audio/conversaciones/mixkit-alert-quick-chime-766.mp3',
     _notificationAudio: null,
@@ -304,5 +305,59 @@ window.conversacionesUi = {
         previous.events.forEach(item => element.removeEventListener(item.name, item.handler));
         element.classList.remove('is-file-dragging');
         this._fileDropWatchers.delete(element);
+    },
+
+    bindAttachmentPreviewPan: function (element) {
+        if (!element) return false;
+
+        const previous = this._previewPanWatchers.get(element);
+        if (previous) {
+            previous.events.forEach(item => element.removeEventListener(item.name, item.handler));
+            element.classList.remove('is-dragging');
+        }
+
+        let dragging = false;
+        let startX = 0;
+        let startY = 0;
+        let startLeft = 0;
+        let startTop = 0;
+
+        const pointerDown = event => {
+            if (event.button !== 0) return;
+            dragging = true;
+            startX = event.clientX;
+            startY = event.clientY;
+            startLeft = element.scrollLeft;
+            startTop = element.scrollTop;
+            element.classList.add('is-dragging');
+            element.setPointerCapture?.(event.pointerId);
+            event.preventDefault();
+        };
+
+        const pointerMove = event => {
+            if (!dragging) return;
+            element.scrollLeft = startLeft - (event.clientX - startX);
+            element.scrollTop = startTop - (event.clientY - startY);
+            event.preventDefault();
+        };
+
+        const endDrag = event => {
+            if (!dragging) return;
+            dragging = false;
+            element.classList.remove('is-dragging');
+            element.releasePointerCapture?.(event.pointerId);
+        };
+
+        const events = [
+            { name: 'pointerdown', handler: pointerDown },
+            { name: 'pointermove', handler: pointerMove },
+            { name: 'pointerup', handler: endDrag },
+            { name: 'pointercancel', handler: endDrag },
+            { name: 'pointerleave', handler: endDrag }
+        ];
+
+        events.forEach(item => element.addEventListener(item.name, item.handler));
+        this._previewPanWatchers.set(element, { events: events });
+        return true;
     }
 };
