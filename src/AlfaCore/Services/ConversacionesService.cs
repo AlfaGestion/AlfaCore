@@ -382,7 +382,7 @@ public sealed class ConversacionesService(
                     ) THEN 1 ELSE 0 END
                 FROM dbo.CONV_MENSAJES m
                 LEFT JOIN dbo.V_TA_Tecnicos t
-                    ON t.IdTecnico = m.IdTecnicoAutor
+                    ON LTRIM(RTRIM(t.IdTecnico)) = LTRIM(RTRIM(m.IdTecnicoAutor))
                 WHERE m.IdConversacion = @IdConversacion
                 ORDER BY m.IdMensaje ASC
             """;
@@ -1500,7 +1500,7 @@ public sealed class ConversacionesService(
         }, "No se pudo guardar el sticker favorito.", ct);
     }
 
-    public Task<ConversacionAdjuntoDto> SendFavoriteStickerAsync(long idConversacion, long idFavorito, string? idTecnicoAutor = null, CancellationToken ct = default)
+    public Task<ConversacionAdjuntoDto> SendFavoriteStickerAsync(long idConversacion, long idFavorito, string? idTecnicoAutor = null, string? usuarioAccion = null, string? sistemaAccion = null, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "SendFavoriteSticker", async token =>
         {
             var sticker = await GetFavoriteStickerFileAsync(idFavorito, token);
@@ -1513,7 +1513,9 @@ public sealed class ConversacionesService(
                 TipoArchivo = "STICKER",
                 Contenido = stream,
                 TamanoBytes = new FileInfo(sticker.RutaLocal).Length,
-                IdTecnicoAutor = idTecnicoAutor
+                IdTecnicoAutor = idTecnicoAutor,
+                UsuarioAccion = usuarioAccion,
+                SistemaAccion = sistemaAccion
             }, token);
         }, "No se pudo enviar el sticker favorito.", ct);
 
@@ -2214,6 +2216,7 @@ public sealed class ConversacionesService(
         await using var cn = new SqlConnection(ConnectionString);
         await cn.OpenAsync(ct);
         await using var cmd = new SqlCommand(sql, cn);
+        var idTecnicoAutor = await ResolveTechnicianIdOrNullAsync(message.IdTecnicoAutor, ct);
         cmd.Parameters.AddWithValue("@IdConversacion", message.ConversationId);
         cmd.Parameters.AddWithValue("@TelefonoWhatsApp", DbNullable(message.Phone));
         cmd.Parameters.AddWithValue("@WhatsAppMessageId", DbNullable(message.WhatsAppMessageId));
@@ -2226,7 +2229,7 @@ public sealed class ConversacionesService(
         cmd.Parameters.AddWithValue("@FechaHora", message.FechaHora);
         cmd.Parameters.AddWithValue("@UsuarioAutor", DbNullable(message.UsuarioAutor));
         cmd.Parameters.AddWithValue("@SistemaAutor", DbNullable(message.SistemaAutor));
-        cmd.Parameters.AddWithValue("@IdTecnicoAutor", DbNullable(message.IdTecnicoAutor));
+        cmd.Parameters.AddWithValue("@IdTecnicoAutor", DbNullablePreserve(idTecnicoAutor));
         var result = await cmd.ExecuteScalarAsync(ct);
         return Convert.ToInt64(result, CultureInfo.InvariantCulture);
     }

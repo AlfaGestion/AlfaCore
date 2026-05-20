@@ -2246,7 +2246,9 @@
                     Texto = textToSend,
                     MessageType = "TEXT",
                     WhatsAppReplyToMessageId = quotedMessageId,
-                    IdTecnicoAutor = _assignmentTechnicianId
+                    IdTecnicoAutor = CurrentMessageTechnicianId,
+                    UsuarioAccion = CurrentUserNameForAudit,
+                    SistemaAccion = CurrentUserSystemForAudit
                 });
             }
 
@@ -2297,7 +2299,10 @@
             EstadoEnvio = "PENDIENTE",
             Texto = text,
             FechaHora = DateTime.Now,
-            IdTecnicoAutor = _assignmentTechnicianId
+            IdTecnicoAutor = CurrentMessageTechnicianId,
+            TecnicoAutorNombre = CurrentMessageTechnicianName,
+            UsuarioAutor = CurrentUserNameForAudit,
+            SistemaAutor = CurrentUserSystemForAudit
         });
 
         _scrollThreadToBottomAfterRender = true;
@@ -2414,7 +2419,9 @@
                 IdConversacion = _selectedConversation.IdConversacion,
                 IdPlantilla = SelectedTemplate.IdPlantilla,
                 ValoresVariables = TemplateValues.ToList(),
-                IdTecnicoAutor = _assignmentTechnicianId
+                IdTecnicoAutor = CurrentMessageTechnicianId,
+                UsuarioAccion = CurrentUserNameForAudit,
+                SistemaAccion = CurrentUserSystemForAudit
             });
 
             var templateAttachmentsToSend = _templatePendingAttachments.ToList();
@@ -2465,7 +2472,9 @@
             {
                 IdConversacion = _selectedConversation.IdConversacion,
                 Texto = _internalNoteText.Trim(),
-                IdTecnicoAutor = _assignmentTechnicianId
+                IdTecnicoAutor = CurrentMessageTechnicianId,
+                UsuarioAccion = CurrentUserNameForAudit,
+                SistemaAccion = CurrentUserSystemForAudit
             });
 
             _internalNoteText = string.Empty;
@@ -3002,7 +3011,9 @@
                 IdConversacion = _selectedConversation.IdConversacion,
                 IdMensaje = message.IdMensaje,
                 Emoji = emoji,
-                IdTecnicoAutor = _assignmentTechnicianId
+                IdTecnicoAutor = CurrentMessageTechnicianId,
+                UsuarioAccion = CurrentUserNameForAudit,
+                SistemaAccion = CurrentUserSystemForAudit
             });
 
             _openReactionMessageId = null;
@@ -3054,7 +3065,12 @@
 
         try
         {
-            await ConversacionesSvc.SendFavoriteStickerAsync(_selectedConversation.IdConversacion, idFavorito, _assignmentTechnicianId);
+            await ConversacionesSvc.SendFavoriteStickerAsync(
+                _selectedConversation.IdConversacion,
+                idFavorito,
+                CurrentMessageTechnicianId,
+                CurrentUserNameForAudit,
+                CurrentUserSystemForAudit);
             await SelectConversationAsync(_selectedConversation.IdConversacion);
             await LoadInboxAsync();
             _actionMessage = "Sticker enviado.";
@@ -3089,7 +3105,9 @@
                 TipoArchivo = attachmentToSend.TipoArchivo,
                 Contenido = stream,
                 TamanoBytes = attachmentToSend.TamanoBytes,
-                IdTecnicoAutor = string.IsNullOrWhiteSpace(_assignmentTechnicianId) ? null : _assignmentTechnicianId,
+                IdTecnicoAutor = string.IsNullOrWhiteSpace(CurrentMessageTechnicianId) ? null : CurrentMessageTechnicianId,
+                UsuarioAccion = CurrentUserNameForAudit,
+                SistemaAccion = CurrentUserSystemForAudit,
                 PermitirEnvioConVentanaVencida = allowExpiredWhatsAppWindow
             });
 
@@ -3263,13 +3281,55 @@
         return result;
     }
 
-    private static string GetMessageAuthor(ConversacionMensajeDto message)
+    private string GetMessageAuthor(ConversacionMensajeDto message)
         => message.Direction switch
         {
-            "ENTRANTE" => "Cliente / Contacto",
+            "ENTRANTE" => CurrentConversationContactName,
             "NOTA_INTERNA" => FirstNonEmpty(message.TecnicoAutorNombre, message.UsuarioAutor, "Nota interna"),
             _ => FirstNonEmpty(message.TecnicoAutorNombre, message.UsuarioAutor, "Equipo Alfa")
         };
+
+    private string CurrentConversationContactName
+        => FirstNonEmpty(
+            _selectedConversation?.ContactoNombre,
+            _selectedConversation?.NombreVisible,
+            _selectedConversation?.ClienteNombre,
+            _selectedConversation?.TelefonoWhatsApp,
+            "Cliente / Contacto");
+
+    private string CurrentUserNameForAudit
+        => AppUserSession.GetCurrentUserName(string.Empty).Trim();
+
+    private string CurrentUserSystemForAudit
+        => AppUserSession.CurrentUser?.SystemCode?.Trim() ?? string.Empty;
+
+    private ConversacionTecnicoOptionDto? CurrentUserTechnician
+    {
+        get
+        {
+            var userName = NormalizeComparable(CurrentUserNameForAudit);
+            if (string.IsNullOrWhiteSpace(userName))
+                return null;
+
+            var systemCode = NormalizeComparable(CurrentUserSystemForAudit);
+            return _technicians.FirstOrDefault(tech =>
+                NormalizeComparable(tech.UsuarioAsociado) == userName
+                && (string.IsNullOrWhiteSpace(systemCode)
+                    || string.IsNullOrWhiteSpace(NormalizeComparable(tech.SistemaAsociado))
+                    || NormalizeComparable(tech.SistemaAsociado) == systemCode))
+                ?? _technicians.FirstOrDefault(tech => NormalizeComparable(tech.UsuarioAsociado) == userName)
+                ?? _technicians.FirstOrDefault(tech => NormalizeComparable(tech.Nombre) == userName);
+        }
+    }
+
+    private string CurrentMessageTechnicianId
+        => CurrentUserTechnician?.IdTecnico ?? string.Empty;
+
+    private string CurrentMessageTechnicianName
+        => FirstNonEmpty(CurrentUserTechnician?.Nombre, CurrentUserNameForAudit);
+
+    private static string NormalizeComparable(string? value)
+        => string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim().ToUpperInvariant();
 
     private static string GetMessageTypeLabel(ConversacionMensajeDto message)
         => message.Direction switch
