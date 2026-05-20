@@ -6076,10 +6076,7 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
 }
 
 .conv-stats-column {
-    display: grid;
-    gap: .85rem;
-    align-content: start;
-    min-width: 0;
+    display: contents;
 }
 
 .conv-stat-card {
