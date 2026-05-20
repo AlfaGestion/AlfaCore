@@ -3,6 +3,7 @@
 @inject NavigationManager Nav
 @inject AlfaCore.Services.ISessionService SessionSvc
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
+@inject AlfaCore.Services.IConversacionesService ConversacionesSvc
 @implements IDisposable
 
 <div class="shell @(_sidebarCollapsed ? "shell--collapsed" : string.Empty)">
@@ -400,6 +401,23 @@
     </main>
 </div>
 
+@if (ShouldShowConversationNotice)
+{
+    <button type="button"
+            class="global-message-notice no-print"
+            @onclick="OpenGlobalConversationNotice"
+            title="Abrir conversación">
+        <span class="global-message-notice__icon">
+            <i class="bi bi-whatsapp"></i>
+        </span>
+        <span class="global-message-notice__body">
+            <strong>@GlobalConversationNoticeTitle</strong>
+            <span>@GlobalConversationNoticeText</span>
+        </span>
+        <span class="global-message-notice__count">@_globalConversationUnreadCount</span>
+    </button>
+}
+
 <SessionDrawer Open="_drawerOpen" OnClose="() => _drawerOpen = false" />
 <AppLoginOverlay Open="@(!AppUserSession.IsAuthenticated)"
                  SqlSessionLabel="@GetSqlSessionLabel()"
@@ -427,14 +445,32 @@
     private bool _loginShowPassword;
     private string CurrentPageTitle => GetCurrentPageTitle();
     private bool ShowShellContext => string.IsNullOrWhiteSpace(_currentModule);
+    private bool ShouldShowConversationNotice
+        => _globalConversationUnreadCount > 0
+           && !string.Equals(_currentModule, "conversaciones", StringComparison.OrdinalIgnoreCase);
+    private string GlobalConversationNoticeTitle
+        => _globalConversationUnreadCount == 1 ? "Nuevo mensaje" : $"{_globalConversationUnreadCount} mensajes nuevos";
+    private string GlobalConversationNoticeText
+        => string.IsNullOrWhiteSpace(_globalConversationLatestName)
+            ? "Abrir conversaciones"
+            : $"{_globalConversationLatestName}: {_globalConversationLatestSummary}";
 
     private string _currentModule = string.Empty;
+    private readonly Dictionary<long, long> _globalConversationLastIncomingById = [];
+    private CancellationTokenSource? _globalConversationPollingCts;
+    private Task? _globalConversationPollingTask;
+    private bool _globalConversationBaselineReady;
+    private int _globalConversationUnreadCount;
+    private long? _globalConversationLatestId;
+    private string _globalConversationLatestName = string.Empty;
+    private string _globalConversationLatestSummary = string.Empty;
 
     protected override void OnInitialized()
     {
         _activeSession = SessionSvc.GetActiveSession();
         SessionSvc.SessionChanged += OnSessionChanged;
         AppUserSession.StateChanged += OnAppUserStateChanged;
+        Nav.LocationChanged += OnLocationChanged;
     }
 
     private void OnSessionChanged()
@@ -453,6 +489,7 @@
         _loginPassword = string.Empty;
         _loginShowPassword = false;
         _loginError = string.Empty;
+        ResetGlobalConversationNotifications();
         InvokeAsync(StateHasChanged);
     }
 
@@ -471,12 +508,27 @@
     {
         SessionSvc.SessionChanged -= OnSessionChanged;
         AppUserSession.StateChanged -= OnAppUserStateChanged;
+        Nav.LocationChanged -= OnLocationChanged;
+        StopGlobalConversationPolling();
+        _ = InvokeAsync(async () =>
+        {
+            try { await JS.InvokeVoidAsync("conversacionesUi.setUnreadCount", 0); }
+            catch { }
+        });
+    }
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs args)
+    {
+        UpdateCurrentModule();
+        if (string.Equals(_currentModule, "conversaciones", StringComparison.OrdinalIgnoreCase))
+            ResetGlobalConversationNotifications();
+
+        InvokeAsync(StateHasChanged);
     }
 
     protected override void OnParametersSet()
     {
-        var path = Nav.ToBaseRelativePath(Nav.Uri).Split('?')[0].Split('#')[0].Trim('/');
-        _currentModule = path.Split('/').FirstOrDefault()?.ToLowerInvariant() ?? string.Empty;
+        UpdateCurrentModule();
     }
 
     private void GoToLauncher()
@@ -487,6 +539,8 @@
         if (!firstRender)
             return;
 
+        StartGlobalConversationPolling();
+
         try
         {
             var sidebar = await JS.InvokeAsync<string?>("localStorage.getItem", "dashboard.sidebar.collapsed");
@@ -495,6 +549,14 @@
         catch
         {
             _sidebarCollapsed = false;
+        }
+
+        try
+        {
+            await JS.InvokeVoidAsync("conversacionesUi.initNotifications", "AlfaCore - Alfa Gestión");
+        }
+        catch
+        {
         }
 
         try
@@ -521,6 +583,140 @@
         _sidebarInitialized = true;
         StateHasChanged();
     }
+
+    private void UpdateCurrentModule()
+    {
+        var path = Nav.ToBaseRelativePath(Nav.Uri).Split('?')[0].Split('#')[0].Trim('/');
+        _currentModule = path.Split('/').FirstOrDefault()?.ToLowerInvariant() ?? string.Empty;
+    }
+
+    private void StartGlobalConversationPolling()
+    {
+        if (_globalConversationPollingTask is not null)
+            return;
+
+        _globalConversationPollingCts = new CancellationTokenSource();
+        _globalConversationPollingTask = RunGlobalConversationPollingAsync(_globalConversationPollingCts.Token);
+    }
+
+    private void StopGlobalConversationPolling()
+    {
+        if (_globalConversationPollingCts is null)
+            return;
+
+        _globalConversationPollingCts.Cancel();
+        _globalConversationPollingCts.Dispose();
+        _globalConversationPollingCts = null;
+    }
+
+    private async Task RunGlobalConversationPollingAsync(CancellationToken cancellationToken)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(3));
+        await PollGlobalConversationNotificationsAsync(cancellationToken);
+
+        try
+        {
+            while (await timer.WaitForNextTickAsync(cancellationToken))
+                await InvokeAsync(() => PollGlobalConversationNotificationsAsync(cancellationToken));
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task PollGlobalConversationNotificationsAsync(CancellationToken cancellationToken)
+    {
+        if (!AppUserSession.IsAuthenticated
+            || string.Equals(_currentModule, "conversaciones", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        try
+        {
+            var inbox = await ConversacionesSvc.GetInboxAsync(new AlfaCore.Models.ConversacionesInboxFilters
+            {
+                Canal = "WHATSAPP",
+                Modo = "pendientes",
+                Limit = 50
+            }, cancellationToken);
+
+            var newCount = 0;
+            AlfaCore.Models.ConversacionInboxItemDto? latest = null;
+
+            foreach (var item in inbox)
+            {
+                if (item.IdUltimoMensajeCliente is not long currentIncomingId)
+                    continue;
+
+                if (!_globalConversationLastIncomingById.TryGetValue(item.IdConversacion, out var previousIncomingId))
+                {
+                    _globalConversationLastIncomingById[item.IdConversacion] = currentIncomingId;
+                    if (_globalConversationBaselineReady)
+                    {
+                        newCount++;
+                        latest = item;
+                    }
+                    continue;
+                }
+
+                if (currentIncomingId <= previousIncomingId)
+                    continue;
+
+                _globalConversationLastIncomingById[item.IdConversacion] = currentIncomingId;
+                newCount++;
+                latest = item;
+            }
+
+            _globalConversationBaselineReady = true;
+            if (newCount <= 0)
+                return;
+
+            _globalConversationUnreadCount += newCount;
+            if (latest is not null)
+            {
+                _globalConversationLatestId = latest.IdConversacion;
+                _globalConversationLatestName = FirstNonEmpty(
+                    latest.ContactoNombre,
+                    latest.NombreVisible,
+                    latest.ClienteNombre,
+                    latest.TelefonoWhatsApp,
+                    "Conversaciones");
+                _globalConversationLatestSummary = string.IsNullOrWhiteSpace(latest.ResumenUltimoMensaje)
+                    ? "Mensaje nuevo"
+                    : latest.ResumenUltimoMensaje;
+            }
+
+            await JS.InvokeVoidAsync("conversacionesUi.setUnreadCount", _globalConversationUnreadCount);
+            await JS.InvokeVoidAsync("conversacionesUi.playNewMessageSound");
+            StateHasChanged();
+        }
+        catch
+        {
+        }
+    }
+
+    private void OpenGlobalConversationNotice()
+    {
+        var idQuery = _globalConversationLatestId is long id ? $"?id={id}" : string.Empty;
+        ResetGlobalConversationNotifications();
+        Nav.NavigateTo($"/conversaciones{idQuery}");
+    }
+
+    private void ResetGlobalConversationNotifications()
+    {
+        _globalConversationUnreadCount = 0;
+        _globalConversationLatestId = null;
+        _globalConversationLatestName = string.Empty;
+        _globalConversationLatestSummary = string.Empty;
+
+        _ = InvokeAsync(async () =>
+        {
+            try { await JS.InvokeVoidAsync("conversacionesUi.setUnreadCount", 0); }
+            catch { }
+        });
+    }
+
+    private static string FirstNonEmpty(params string?[] values)
+        => values.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x))?.Trim() ?? string.Empty;
 
     private async Task ToggleSidebar()
     {
