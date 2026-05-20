@@ -812,7 +812,7 @@
                         <h4 class="panel-card__title">Asignación</h4>
                         <div class="field">
                             <label for="conv-tech">Técnico</label>
-                            <select id="conv-tech" @bind="_assignmentTechnicianId">
+                            <select id="conv-tech" value="@_assignmentTechnicianId" @onchange="OnAssignmentChangedAsync" disabled="@_busyAction">
                                 <option value="">Sin asignar</option>
                                 @foreach (var tech in _technicians)
                                 {
@@ -820,16 +820,13 @@
                                 }
                             </select>
                         </div>
-                        <button type="button" class="btn btn--ghost" @onclick="AssignAsync" disabled="@_busyAction">
-                            <i class="bi bi-person-check-fill"></i> Guardar asignación
-                        </button>
                     </div>
 
                     <div class="conversations-context__section">
                         <h4 class="panel-card__title">Estado</h4>
                         <div class="field">
                             <label for="conv-state">Estado actual</label>
-                            <select id="conv-state" @bind="_statusCode">
+                            <select id="conv-state" value="@_statusCode" @onchange="OnStatusChangedAsync" disabled="@_busyAction">
                                 @foreach (var state in _states)
                                 {
                                     <option value="@state.CodigoEstado">@state.Descripcion</option>
@@ -837,9 +834,6 @@
                             </select>
                         </div>
                         <div class="conversations-context__actions">
-                            <button type="button" class="btn btn--ghost" @onclick="SaveStatusAsync" disabled="@_busyAction">
-                                <i class="bi bi-check2-circle"></i> Guardar estado
-                            </button>
                             <button type="button" class="btn btn--ghost" @onclick="CloseConversationAsync" disabled="@_busyAction">
                                 <i class="bi bi-lock-fill"></i> Cerrar conversación
                             </button>
@@ -2711,10 +2705,27 @@
         }
     }
 
-    private async Task AssignAsync()
+    private async Task OnAssignmentChangedAsync(ChangeEventArgs e)
     {
         if (_selectedConversation is null)
             return;
+
+        var previousValue = _assignmentTechnicianId;
+        var nextValue = e.Value?.ToString() ?? string.Empty;
+        if (string.Equals(previousValue, nextValue, StringComparison.Ordinal))
+            return;
+
+        _assignmentTechnicianId = nextValue;
+        if (!await AssignAsync())
+        {
+            _assignmentTechnicianId = previousValue;
+        }
+    }
+
+    private async Task<bool> AssignAsync()
+    {
+        if (_selectedConversation is null)
+            return false;
 
         _busyAction = true;
         _actionMessage = null;
@@ -2735,10 +2746,12 @@
             _actionMessage = "Asignación actualizada.";
             await SelectConversationAsync(_selectedConversation.IdConversacion);
             await LoadInboxAsync();
+            return true;
         }
         catch (Exception ex)
         {
             _actionError = ex.Message;
+            return false;
         }
         finally
         {
@@ -2746,10 +2759,27 @@
         }
     }
 
-    private async Task SaveStatusAsync()
+    private async Task OnStatusChangedAsync(ChangeEventArgs e)
+    {
+        if (_selectedConversation is null)
+            return;
+
+        var previousValue = _statusCode;
+        var nextValue = e.Value?.ToString() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(nextValue) || string.Equals(previousValue, nextValue, StringComparison.Ordinal))
+            return;
+
+        _statusCode = nextValue;
+        if (!await SaveStatusAsync())
+        {
+            _statusCode = previousValue;
+        }
+    }
+
+    private async Task<bool> SaveStatusAsync()
     {
         if (_selectedConversation is null || string.IsNullOrWhiteSpace(_statusCode))
-            return;
+            return false;
 
         _busyAction = true;
         _actionMessage = null;
@@ -2771,10 +2801,12 @@
             _actionMessage = "Estado actualizado.";
             await SelectConversationAsync(_selectedConversation.IdConversacion);
             await LoadInboxAsync();
+            return true;
         }
         catch (Exception ex)
         {
             _actionError = ex.Message;
+            return false;
         }
         finally
         {
