@@ -329,14 +329,34 @@
                             </div>
                         </div>
                         <div class="conversation-header-state">
-                            <div class="conversation-header-state__row">
+                            <div class="conversation-header-state__row @(_showStatusMenu ? "is-open" : string.Empty)">
                                 <span class="conversation-header-state__caption">Estado:</span>
-                                <select id="conv-state" class="conversation-header-state__select" value="@_statusCode" @onchange="OnStatusChangedAsync" disabled="@_busyAction" aria-label="Estado actual">
-                                    @foreach (var state in _states)
-                                    {
-                                        <option value="@state.CodigoEstado">@state.Descripcion</option>
-                                    }
-                                </select>
+                                <button type="button"
+                                        class="conversation-header-state__trigger"
+                                        @onclick="ToggleStatusMenu"
+                                        disabled="@_busyAction"
+                                        aria-haspopup="listbox"
+                                        aria-expanded="@_showStatusMenu"
+                                        aria-label="Cambiar estado">
+                                    <span>@GetCurrentStatusDescription()</span>
+                                    <i class="bi bi-chevron-down"></i>
+                                </button>
+                                @if (_showStatusMenu)
+                                {
+                                    <div class="conversation-header-state__menu" role="listbox">
+                                        @foreach (var state in HeaderStatusOptions)
+                                        {
+                                            var isCurrent = string.Equals(state.CodigoEstado, _statusCode, StringComparison.OrdinalIgnoreCase);
+                                            <button type="button"
+                                                    class="conversation-header-state__option @(isCurrent ? "is-active" : string.Empty)"
+                                                    @onclick="() => SelectStatusAsync(state.CodigoEstado)"
+                                                    role="option"
+                                                    aria-selected="@isCurrent">
+                                                @state.Descripcion
+                                            </button>
+                                        }
+                                    </div>
+                                }
                             </div>
                             @if (!IsSelectedConversationClosed)
                             {
@@ -1211,6 +1231,7 @@
     private string _internalNoteText = string.Empty;
     private string _assignmentTechnicianId = string.Empty;
     private string _statusCode = "ABIERTA";
+    private bool _showStatusMenu;
     private ElementReference _threadElement;
     private ElementReference _composerDropZone;
     private DotNetObjectReference<Conversaciones>? _dotNetRef;
@@ -1330,6 +1351,10 @@
         => !_loadingTemplates && IsWhatsAppConversation;
     private IReadOnlyList<ConversacionMensajeDto> VisibleMessages
         => _messages.Where(x => !IsReactionMessage(x)).ToList();
+    private IReadOnlyList<ConversacionEstadoOptionDto> HeaderStatusOptions
+        => _states
+            .Where(x => !x.EsCerrado || string.Equals(x.CodigoEstado, _statusCode, StringComparison.OrdinalIgnoreCase))
+            .ToList();
     private ConversacionPlantillaDto? SelectedTemplate
         => _availableTemplates.FirstOrDefault(x => x.IdPlantilla == _selectedTemplateId);
     private IReadOnlyList<string> TemplateValues => ParseTemplateValues(_templateValuesText);
@@ -1338,6 +1363,13 @@
            && _selectedConversation is not null
            && SelectedTemplate is not null
            && HasRequiredTemplateValues(SelectedTemplate, TemplateValues);
+
+    private string GetCurrentStatusDescription()
+        => FirstNonEmpty(
+            _states.FirstOrDefault(x => string.Equals(x.CodigoEstado, _statusCode, StringComparison.OrdinalIgnoreCase))?.Descripcion,
+            _selectedConversation?.EstadoDescripcion,
+            _statusCode,
+            "Sin estado");
 
     protected override async Task OnInitializedAsync()
     {
@@ -1635,6 +1667,7 @@
     {
         await ClearTypingAsync();
         _showTemplatePanel = false;
+        _showStatusMenu = false;
         CancelTicketSelection();
         await LoadConversationAsync(idConversacion, showLoading: true, clearActionState: true);
     }
@@ -2776,6 +2809,33 @@
         var previousValue = _statusCode;
         var nextValue = e.Value?.ToString() ?? string.Empty;
         if (string.IsNullOrWhiteSpace(nextValue) || string.Equals(previousValue, nextValue, StringComparison.Ordinal))
+            return;
+
+        _statusCode = nextValue;
+        if (!await SaveStatusAsync())
+        {
+            _statusCode = previousValue;
+        }
+    }
+
+    private void ToggleStatusMenu()
+    {
+        if (_busyAction || _selectedConversation is null)
+            return;
+
+        _showStatusMenu = !_showStatusMenu;
+    }
+
+    private async Task SelectStatusAsync(string codigoEstado)
+    {
+        _showStatusMenu = false;
+
+        if (_selectedConversation is null || string.IsNullOrWhiteSpace(codigoEstado))
+            return;
+
+        var previousValue = _statusCode;
+        var nextValue = codigoEstado.Trim();
+        if (string.Equals(previousValue, nextValue, StringComparison.OrdinalIgnoreCase))
             return;
 
         _statusCode = nextValue;
