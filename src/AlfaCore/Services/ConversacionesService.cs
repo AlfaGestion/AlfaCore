@@ -337,34 +337,13 @@ public sealed class ConversacionesService(
                 GROUP BY c.IdConversacion, c.IdContacto, COALESCE(NULLIF(c.NombreVisible, N''), NULLIF(c.TelefonoWhatsApp, N''), N'Sin nombre'), ISNULL(c.TelefonoWhatsApp, N''), ISNULL(t.Nombre, N'Sin asignar')
                 ORDER BY COUNT(1) DESC, MAX(m.FechaHora) DESC;
 
-                SELECT TOP (12)
-                    palabra,
-                    COUNT(1)
-                FROM
-                (
-                    SELECT LOWER(LTRIM(RTRIM(value))) AS palabra
-                    FROM #MensajesRango
-                    CROSS APPLY STRING_SPLIT(
-                        REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(ISNULL(Texto, N''), CHAR(13), N' '), CHAR(10), N' '), N'.', N' '), N',', N' '), N';', N' '), N':', N' '), N'?', N' '), N'¿', N' '), N'!', N' '), N'¡', N' '),
-                        N' ')
-                    WHERE Direction = N'ENTRANTE'
-                      AND UPPER(ISNULL(MessageType, N'')) = N'TEXT'
-                ) tokens
-                WHERE LEN(palabra) >= 4
-                  AND palabra NOT IN (N'para', N'como', N'pero', N'porque', N'cuando', N'donde', N'dónde', N'hola', N'buen', N'buenas', N'buenos', N'dias', N'días', N'gracias', N'este', N'esta', N'esto', N'tengo', N'tiene', N'tienen', N'puede', N'puedo', N'quiero', N'necesito', N'favor')
-                GROUP BY palabra
-                ORDER BY COUNT(1) DESC, palabra;
-
-                SELECT TOP (8)
-                    LEFT(LTRIM(RTRIM(Texto)), 160),
-                    COUNT(1)
+                SELECT TOP (1000)
+                    ISNULL(Texto, N'')
                 FROM #MensajesRango
                 WHERE Direction = N'ENTRANTE'
                   AND UPPER(ISNULL(MessageType, N'')) = N'TEXT'
                   AND LEN(LTRIM(RTRIM(ISNULL(Texto, N'')))) >= 12
-                GROUP BY LEFT(LTRIM(RTRIM(Texto)), 160)
-                HAVING COUNT(1) > 1
-                ORDER BY COUNT(1) DESC, LEFT(LTRIM(RTRIM(Texto)), 160);
+                ORDER BY FechaHora DESC, IdMensaje DESC;
                 """;
 
             await using var cn = new SqlConnection(ConnectionString);
@@ -495,26 +474,12 @@ public sealed class ConversacionesService(
 
             if (await rd.NextResultAsync(token))
             {
+                var incomingTexts = new List<string>();
                 while (await rd.ReadAsync(token))
-                {
-                    stats.TemasFrecuentes.Add(new ConversacionesEstadisticaTemaDto
-                    {
-                        Texto = GetString(rd, 0),
-                        Cantidad = GetInt(rd, 1)
-                    });
-                }
-            }
+                    incomingTexts.Add(GetString(rd, 0));
 
-            if (await rd.NextResultAsync(token))
-            {
-                while (await rd.ReadAsync(token))
-                {
-                    stats.FrasesFrecuentes.Add(new ConversacionesEstadisticaTemaDto
-                    {
-                        Texto = GetString(rd, 0),
-                        Cantidad = GetInt(rd, 1)
-                    });
-                }
+                stats.TemasFrecuentes = BuildFrequentTerms(incomingTexts);
+                stats.FrasesFrecuentes = BuildFrequentPhrases(incomingTexts);
             }
 
             return stats;
@@ -4979,6 +4944,49 @@ public sealed class ConversacionesService(
 
         var phoneTail = GetPhoneComparableTail(item.TelefonoWhatsApp);
         return string.IsNullOrWhiteSpace(phoneTail) ? string.Empty : $"TEL:{phoneTail}";
+    }
+
+    private static List<ConversacionesEstadisticaTemaDto> BuildFrequentTerms(IEnumerable<string> texts)
+    {
+        var stopWords = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "para", "como", "pero", "porque", "cuando", "donde", "hola", "buen", "buenas",
+            "buenos", "dias", "gracias", "este", "esta", "esto", "tengo", "tiene", "tienen",
+            "puede", "puedo", "quiero", "necesito", "favor", "consulta", "consultar", "cliente",
+            "mensaje", "whatsapp", "sistema", "plataforma", "nombre", "razon", "social"
+        };
+
+        return texts
+            .SelectMany(text => Regex.Split(text.ToLowerInvariant(), @"[^\p{L}\p{Nd}]+"))
+            .Select(x => x.Trim())
+            .Where(x => x.Length >= 4 && !stopWords.Contains(x))
+            .GroupBy(x => x, StringComparer.OrdinalIgnoreCase)
+            .Select(g => new ConversacionesEstadisticaTemaDto { Texto = g.Key, Cantidad = g.Count() })
+            .OrderByDescending(x => x.Cantidad)
+            .ThenBy(x => x.Texto, StringComparer.OrdinalIgnoreCase)
+            .Take(12)
+            .ToList();
+    }
+
+    private static List<ConversacionesEstadisticaTemaDto> BuildFrequentPhrases(IEnumerable<string> texts)
+        => texts
+            .Select(NormalizeFrequentPhrase)
+            .Where(x => x.Length >= 12)
+            .GroupBy(x => x, StringComparer.OrdinalIgnoreCase)
+            .Select(g => new ConversacionesEstadisticaTemaDto { Texto = g.Key, Cantidad = g.Count() })
+            .Where(x => x.Cantidad > 1)
+            .OrderByDescending(x => x.Cantidad)
+            .ThenBy(x => x.Texto, StringComparer.OrdinalIgnoreCase)
+            .Take(8)
+            .ToList();
+
+    private static string NormalizeFrequentPhrase(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return string.Empty;
+
+        var normalized = Regex.Replace(text.Trim(), @"\s+", " ");
+        return normalized.Length <= 160 ? normalized : normalized[..160];
     }
 
     private static string NormalizeMessageType(string? messageType)
