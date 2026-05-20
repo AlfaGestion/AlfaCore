@@ -5860,10 +5860,16 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
 
 .conv-stats-page {
     gap: .85rem;
-    grid-template-rows: auto auto auto auto auto;
-    align-content: start;
-    overflow: auto;
-    padding: 0 0 1rem;
+    display: flex;
+    flex-direction: column;
+    align-content: stretch;
+    min-height: 100vh;
+    height: 100vh;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 0 0 1.25rem;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(14, 165, 233, .55) rgba(15, 23, 42, .35);
 }
 
 .conv-stats-hero {
@@ -5913,6 +5919,7 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: .75rem;
     min-height: 0;
+    padding: 0 1rem;
 }
 
 .conv-stat-card {
@@ -5951,6 +5958,8 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
     display: grid;
     grid-template-columns: minmax(0, 1.08fr) minmax(0, .92fr);
     gap: .75rem;
+    padding: 0 1rem;
+    align-items: start;
 }
 
 .conv-stats-grid--wide {
@@ -5959,6 +5968,7 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
 
 .conv-stats-panel {
     min-width: 0;
+    position: static;
     padding: 1rem;
 }
 
