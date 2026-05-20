@@ -62,6 +62,8 @@ window.conversacionesAudio = (function () {
 window.conversacionesUi = {
     _threadWatchers: new WeakMap(),
     _notificationBaseTitle: 'AlfaCore - Alfa Gestión',
+    _notificationSoundUrl: '/audio/conversaciones/mixkit-alert-quick-chime-766.mp3',
+    _notificationAudio: null,
     _audioContext: null,
     _audioUnlocked: false,
 
@@ -79,6 +81,9 @@ window.conversacionesUi = {
     initNotifications: function (baseTitle) {
         this._notificationBaseTitle = baseTitle || document.title || this._notificationBaseTitle;
         this.setUnreadCount(0);
+        this._notificationAudio = new Audio(this._notificationSoundUrl);
+        this._notificationAudio.preload = 'auto';
+        this._notificationAudio.volume = 0.8;
 
         const unlock = () => {
             window.conversacionesUi.unlockNotificationSound();
@@ -97,6 +102,10 @@ window.conversacionesUi = {
 
     unlockNotificationSound: async function () {
         try {
+            if (this._notificationAudio) {
+                this._notificationAudio.load();
+            }
+
             const context = this._getAudioContext();
             if (!context) return;
 
@@ -126,6 +135,14 @@ window.conversacionesUi = {
 
     playNewMessageSound: async function () {
         try {
+            if (this._notificationAudio) {
+                this._notificationAudio.pause();
+                this._notificationAudio.currentTime = 0;
+                this._notificationAudio.volume = 0.85;
+                await this._notificationAudio.play();
+                return;
+            }
+
             const context = this._getAudioContext();
             if (!context) return;
 
