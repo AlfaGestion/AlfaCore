@@ -1448,10 +1448,10 @@
 
     private async Task LoadInboxAsync()
     {
-        await RefreshInboxAsync(showLoading: true, allowSelectionChange: true);
+        await RefreshInboxAsync(showLoading: true, allowSelectionChange: true, trackNewMessages: false);
     }
 
-    private async Task<int> RefreshInboxAsync(bool showLoading, bool allowSelectionChange)
+    private async Task<int> RefreshInboxAsync(bool showLoading, bool allowSelectionChange, bool trackNewMessages = false)
     {
         if (showLoading)
             _loadingInbox = true;
@@ -1463,7 +1463,8 @@
         {
             var previousInbox = _inbox.ToDictionary(x => x.IdConversacion);
             var refreshedInbox = (await ConversacionesSvc.GetInboxAsync(_filters)).ToList();
-            newMessagesDetected = TrackInboxNewMessages(previousInbox, refreshedInbox);
+            if (trackNewMessages)
+                newMessagesDetected = TrackInboxNewMessages(previousInbox, refreshedInbox);
             _inbox = refreshedInbox;
             StoreChannelCache(_canalActivo);
 
@@ -1503,6 +1504,13 @@
 
             if (!previousInbox.TryGetValue(item.IdConversacion, out var previous))
             {
+                if (item.IdUltimoMensajeCliente is not null && item.CantidadMensajesCliente > 0)
+                {
+                    _newMessagesByConversation[item.IdConversacion] =
+                        _newMessagesByConversation.TryGetValue(item.IdConversacion, out var existingCount) ? existingCount + 1 : 1;
+                    newMessagesDetected++;
+                }
+
                 continue;
             }
 
@@ -2003,7 +2011,7 @@
         var shouldKeepAtBottom = await IsThreadNearBottomAsync();
         var previousLastMessageId = GetLastMessageId();
 
-        var newMessagesDetected = await RefreshInboxAsync(showLoading: false, allowSelectionChange: false);
+        var newMessagesDetected = await RefreshInboxAsync(showLoading: false, allowSelectionChange: false, trackNewMessages: true);
 
         if (selectedId.HasValue && _selectedConversationId == selectedId)
             await LoadConversationAsync(selectedId.Value, showLoading: false, clearActionState: false);
