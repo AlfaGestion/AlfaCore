@@ -586,6 +586,7 @@
                                 <textarea id="conv-message"
                                           @ref="_replyTextArea"
                                           rows="2"
+                                          style="resize: vertical; min-height: 38px; max-height: 180px; overflow: auto;"
                                           placeholder="@(_selectedConversation.Canal == "INTERNO" ? "Escribí un mensaje para el equipo…" : "Escribí una respuesta para WhatsApp…")"
                                           @onfocus="MarkSelectedConversationAsRead"
                                           @bind="_replyText"
