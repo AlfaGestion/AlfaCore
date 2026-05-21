@@ -5670,12 +5670,12 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
 
 .message-reaction-picker {
     position: absolute;
-    /* aparece a la izquierda de los botones de acción, centrado verticalmente */
-    left: calc(100% + .45rem);
+    /* Se abre hacia arriba para no taparse con el compositor. */
+    left: 50%;
     right: auto;
-    top: 50%;
-    transform: translateY(-50%);
-    bottom: auto;
+    top: auto;
+    transform: translateX(-50%);
+    bottom: calc(100% + .45rem);
     z-index: 220;
     display: flex;
     align-items: center;
@@ -5690,12 +5690,13 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
     white-space: nowrap;
 }
 
-/* para mensajes salientes: el picker aparece a la derecha de los botones */
+/* En mensajes salientes se alinea desde el lado opuesto del botón. */
 .message-row--outgoing .message-reaction-picker {
-    right: calc(100% + .45rem);
+    right: 50%;
     left: auto;
-    top: 50%;
-    transform: translateY(-50%);
+    top: auto;
+    bottom: calc(100% + .45rem);
+    transform: translateX(50%);
 }
 
 .message-reaction-picker__emoji {
@@ -5940,11 +5941,9 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
 @keyframes reaction-picker-slide {
     from {
         opacity: 0;
-        transform: translateY(-50%) scale(.9);
     }
     to {
         opacity: 1;
-        transform: translateY(-50%) scale(1);
     }
 }
 
