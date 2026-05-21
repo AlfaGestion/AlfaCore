@@ -1,5 +1,6 @@
 using AlfaCore.Models;
 using Microsoft.Data.SqlClient;
+using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Globalization;
 using System.Net.Http.Headers;
@@ -2210,6 +2211,7 @@ public sealed class ConversacionesService(
             var isInternal = string.Equals(conversation.Canal, "INTERNO", StringComparison.OrdinalIgnoreCase);
             var messageType = NormalizeMessageType(request.TipoArchivo);
             var mimeType = NormalizeOutgoingMime(request.MimeType, request.NombreArchivo, messageType);
+            var nombreArchivo = request.NombreArchivo.Trim();
             var now = BusinessNow();
             string initialState;
             ConversacionWhatsAppConfigDto? whatsAppConfig = null;
@@ -2231,12 +2233,27 @@ public sealed class ConversacionesService(
             var folder = Path.Combine(UploadsBasePath, request.IdConversacion.ToString(CultureInfo.InvariantCulture));
             Directory.CreateDirectory(folder);
 
-            var ext = Path.GetExtension(request.NombreArchivo).ToLowerInvariant();
+            var ext = Path.GetExtension(nombreArchivo).ToLowerInvariant();
             var safeFileName = $"{Guid.NewGuid():N}{ext}";
             var rutaLocal = Path.Combine(folder, safeFileName);
 
             await using (var fs = File.Create(rutaLocal))
                 await request.Contenido.CopyToAsync(fs, token);
+
+            if (!isInternal && ShouldConvertWebmOpusForWhatsApp(rutaLocal, mimeType, nombreArchivo))
+            {
+                var oggBytes = ConvertWebmOpusFileToOgg(rutaLocal);
+                var oggPath = Path.ChangeExtension(rutaLocal, ".ogg");
+                await File.WriteAllBytesAsync(oggPath, oggBytes, token);
+                TryDeleteFile(rutaLocal);
+
+                rutaLocal = oggPath;
+                nombreArchivo = Path.ChangeExtension(nombreArchivo, ".ogg");
+                mimeType = "audio/ogg";
+                messageType = "AUDIO";
+            }
+
+            var tamanoBytes = new FileInfo(rutaLocal).Length;
 
             string whatsAppMessageId = string.Empty;
             string finalState = initialState;
@@ -2248,7 +2265,7 @@ public sealed class ConversacionesService(
                     whatsAppConfig,
                     conversation.TelefonoWhatsApp,
                     rutaLocal,
-                    request.NombreArchivo,
+                    nombreArchivo,
                     mimeType,
                     messageType,
                     token);
@@ -2266,7 +2283,7 @@ public sealed class ConversacionesService(
                 MessageType = messageType,
                 Direction = "SALIENTE",
                 EstadoEnvio = finalState,
-                Text = request.NombreArchivo,
+                Text = nombreArchivo,
                 PayloadJson = payload,
                 FechaHora = now,
                 IdTecnicoAutor = request.IdTecnicoAutor,
@@ -2277,24 +2294,24 @@ public sealed class ConversacionesService(
             var adjuntoId = await InsertAttachmentRecordAsync(
                 messageId,
                 messageType,
-                request.NombreArchivo,
+                nombreArchivo,
                 mimeType,
                 rutaLocal,
-                request.TamanoBytes,
+                tamanoBytes,
                 payload,
                 token);
 
-            await RefreshConversationAsync(request.IdConversacion, now, $"[{messageType}] {request.NombreArchivo}", token);
+            await RefreshConversationAsync(request.IdConversacion, now, $"[{messageType}] {nombreArchivo}", token);
 
             return new ConversacionAdjuntoDto
             {
                 IdAdjunto = adjuntoId,
                 IdMensaje = messageId,
                 TipoArchivo = messageType,
-                NombreArchivo = request.NombreArchivo,
+                NombreArchivo = nombreArchivo,
                 MimeType = mimeType,
                 RutaLocal = rutaLocal,
-                TamanoBytes = request.TamanoBytes
+                TamanoBytes = tamanoBytes
             };
         }, "No se pudo guardar el adjunto.", ct);
 
@@ -4889,6 +4906,268 @@ public sealed class ConversacionesService(
             Type = ex.GetBaseException().GetType().FullName,
             FechaHora = BusinessNow()
         });
+
+    private static bool ShouldConvertWebmOpusForWhatsApp(string path, string mimeType, string nombreArchivo)
+        => LooksLikeWebm(path)
+           || mimeType.StartsWith("audio/webm", StringComparison.OrdinalIgnoreCase)
+           || Path.GetExtension(nombreArchivo).Equals(".webm", StringComparison.OrdinalIgnoreCase);
+
+    private static bool LooksLikeWebm(string path)
+    {
+        Span<byte> header = stackalloc byte[4];
+        using var fs = File.OpenRead(path);
+        return fs.Read(header) == 4
+               && header[0] == 0x1A
+               && header[1] == 0x45
+               && header[2] == 0xDF
+               && header[3] == 0xA3;
+    }
+
+    private static byte[] ConvertWebmOpusFileToOgg(string path)
+    {
+        var webm = File.ReadAllBytes(path);
+        var packets = ExtractWebmOpusPackets(webm);
+        if (packets.Count == 0)
+            throw new InvalidOperationException("No se pudo convertir el audio WebM a OGG para WhatsApp.");
+
+        var opusHead = ExtractWebmCodecPrivate(webm);
+        if (opusHead.Length == 0 || !Encoding.ASCII.GetString(opusHead, 0, Math.Min(opusHead.Length, 8)).Equals("OpusHead", StringComparison.Ordinal))
+            opusHead = [.. Encoding.ASCII.GetBytes("OpusHead"), 1, 1, 0, 0, 0x80, 0xbb, 0, 0, 0, 0, 0, 0];
+
+        using var output = new MemoryStream();
+        var serial = BitConverter.ToUInt32(Guid.NewGuid().ToByteArray(), 0);
+        var sequence = 0;
+        WriteOggPacket(output, opusHead, 0, serial, ref sequence, 2);
+        WriteOggPacket(output, Encoding.ASCII.GetBytes("OpusTags\0\0\0\0\0\0\0\0"), 0, serial, ref sequence, 0);
+
+        long granule = 0;
+        foreach (var packet in packets)
+        {
+            granule += GetOpusPacketSampleCount(packet);
+            WriteOggPacket(output, packet, granule, serial, ref sequence, 0);
+        }
+
+        return output.ToArray();
+    }
+
+    private static List<byte[]> ExtractWebmOpusPackets(byte[] webm)
+    {
+        var packets = new List<byte[]>();
+        ScanEbmlElements(webm, 0, webm.Length, (id, payloadStart, payloadSize) =>
+        {
+            if (id is 0xA3 or 0xA1)
+            {
+                var packet = ExtractWebmBlockPayload(webm.AsSpan(payloadStart, payloadSize).ToArray());
+                if (packet.Length > 0)
+                    packets.Add(packet);
+            }
+        });
+
+        return packets;
+    }
+
+    private static byte[] ExtractWebmCodecPrivate(byte[] webm)
+    {
+        byte[] result = [];
+        ScanEbmlElements(webm, 0, webm.Length, (id, payloadStart, payloadSize) =>
+        {
+            if (id == 0x63A2 && result.Length == 0)
+                result = webm.AsSpan(payloadStart, payloadSize).ToArray();
+        });
+
+        return result;
+    }
+
+    private static void ScanEbmlElements(byte[] data, int start, int end, Action<ulong, int, int> visit)
+    {
+        var offset = start;
+        while (offset < end)
+        {
+            if (!TryReadEbmlId(data, offset, end, out var id, out var idLength))
+                break;
+
+            offset += idLength;
+            if (!TryReadEbmlSize(data, offset, end, out var size, out var sizeLength))
+                break;
+
+            offset += sizeLength;
+            if (size < 0 || size > end - offset)
+                break;
+
+            var payloadStart = offset;
+            var payloadSize = (int)size;
+            visit(id, payloadStart, payloadSize);
+
+            if (IsEbmlContainer(id))
+                ScanEbmlElements(data, payloadStart, payloadStart + payloadSize, visit);
+
+            offset = payloadStart + payloadSize;
+        }
+    }
+
+    private static bool TryReadEbmlId(byte[] data, int offset, int end, out ulong value, out int length)
+    {
+        value = 0;
+        length = 0;
+        if (offset >= end)
+            return false;
+
+        var first = data[offset];
+        var mask = 0x80;
+        while (length < 4 && (first & mask) == 0)
+        {
+            mask >>= 1;
+            length++;
+        }
+
+        length++;
+        if (length is < 1 or > 4 || offset + length > end)
+            return false;
+
+        for (var i = 0; i < length; i++)
+            value = (value << 8) | data[offset + i];
+
+        return true;
+    }
+
+    private static bool TryReadEbmlSize(byte[] data, int offset, int end, out long value, out int length)
+    {
+        value = 0;
+        length = 0;
+        if (offset >= end)
+            return false;
+
+        var first = data[offset];
+        var mask = 0x80;
+        while (length < 8 && (first & mask) == 0)
+        {
+            mask >>= 1;
+            length++;
+        }
+
+        length++;
+        if (length is < 1 or > 8 || offset + length > end)
+            return false;
+
+        value = first & (mask - 1);
+        for (var i = 1; i < length; i++)
+            value = (value << 8) | data[offset + i];
+
+        return true;
+    }
+
+    private static bool IsEbmlContainer(ulong id)
+        => id is 0x1A45DFA3 or 0x18538067 or 0x1549A966 or 0x1654AE6B or 0xAE or 0x1F43B675 or 0xA0;
+
+    private static byte[] ExtractWebmBlockPayload(byte[] block)
+    {
+        if (block.Length < 4)
+            return [];
+
+        if (!TryReadEbmlSize(block, 0, block.Length, out _, out var trackLength))
+            return [];
+
+        var payloadStart = trackLength + 3;
+        if (payloadStart >= block.Length)
+            return [];
+
+        var flags = block[trackLength + 2];
+        if ((flags & 0x06) != 0)
+            return [];
+
+        return block[payloadStart..];
+    }
+
+    private static int GetOpusPacketSampleCount(byte[] packet)
+    {
+        if (packet.Length == 0)
+            return 960;
+
+        var toc = packet[0];
+        var config = toc >> 3;
+        var code = toc & 0x03;
+        var frameCount = code switch
+        {
+            0 => 1,
+            1 or 2 => 2,
+            3 when packet.Length > 1 => packet[1] & 0x3F,
+            _ => 1
+        };
+
+        var samplesPerFrame = config switch
+        {
+            < 12 => (config % 4) switch { 0 => 480, 1 => 960, 2 => 1920, _ => 2880 },
+            < 16 => (config % 2) == 0 ? 480 : 960,
+            _ => (config % 4) switch { 0 => 120, 1 => 240, 2 => 480, _ => 960 }
+        };
+
+        return Math.Max(120, frameCount * samplesPerFrame);
+    }
+
+    private static void WriteOggPacket(Stream output, byte[] packet, long granulePosition, uint serial, ref int sequence, byte headerType)
+    {
+        var segments = BuildOggSegments(packet.Length);
+        using var page = new MemoryStream();
+        page.Write(Encoding.ASCII.GetBytes("OggS"));
+        page.WriteByte(0);
+        page.WriteByte(headerType);
+        Span<byte> buffer8 = stackalloc byte[8];
+        BinaryPrimitives.WriteInt64LittleEndian(buffer8, granulePosition);
+        page.Write(buffer8);
+        Span<byte> buffer4 = stackalloc byte[4];
+        BinaryPrimitives.WriteUInt32LittleEndian(buffer4, serial);
+        page.Write(buffer4);
+        BinaryPrimitives.WriteInt32LittleEndian(buffer4, sequence++);
+        page.Write(buffer4);
+        page.Write(new byte[4]);
+        page.WriteByte((byte)segments.Count);
+        foreach (var segment in segments)
+            page.WriteByte((byte)segment);
+        page.Write(packet);
+
+        var pageBytes = page.ToArray();
+        BinaryPrimitives.WriteUInt32LittleEndian(pageBytes.AsSpan(22, 4), ComputeOggCrc(pageBytes));
+        output.Write(pageBytes);
+    }
+
+    private static List<int> BuildOggSegments(int packetLength)
+    {
+        var segments = new List<int>();
+        var remaining = packetLength;
+        while (remaining >= 255)
+        {
+            segments.Add(255);
+            remaining -= 255;
+        }
+
+        segments.Add(remaining);
+        return segments;
+    }
+
+    private static uint ComputeOggCrc(byte[] bytes)
+    {
+        uint crc = 0;
+        foreach (var b in bytes)
+        {
+            crc ^= (uint)b << 24;
+            for (var i = 0; i < 8; i++)
+                crc = (crc & 0x80000000) != 0 ? (crc << 1) ^ 0x04C11DB7 : crc << 1;
+        }
+
+        return crc;
+    }
+
+    private static void TryDeleteFile(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+        catch
+        {
+        }
+    }
 
     private static DateTime ParseUnixTimestamp(string? value)
     {

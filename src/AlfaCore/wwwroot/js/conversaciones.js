@@ -24,14 +24,6 @@ window.conversacionesAudio = (function () {
         return '.webm';
     };
 
-    const normalizeRecordedAudioMimeForUpload = mimeType => {
-        const normalized = (mimeType || '').toLowerCase();
-        if (normalized.includes('mp4')) return 'audio/mp4';
-        if (normalized.includes('mpeg')) return 'audio/mpeg';
-        if (normalized.includes('ogg')) return 'audio/ogg';
-        return 'audio/mp4';
-    };
-
     const normalizeFileName = (fileName, mimeType) => {
         const name = fileName || 'audio';
         return /\.[a-z0-9]{2,5}$/i.test(name)
@@ -97,7 +89,6 @@ window.conversacionesAudio = (function () {
 
                 _recorder.onstop = () => {
                     const mimeType = _recorder.mimeType || 'audio/webm';
-                    const uploadMimeType = normalizeRecordedAudioMimeForUpload(mimeType);
                     const blob = buildRecordingBlob();
                     stopTracks(_recorder);
                     resetRecorder();
@@ -109,16 +100,16 @@ window.conversacionesAudio = (function () {
                     }
 
                     try {
-                        const normalizedFileName = normalizeFileName(fileName, uploadMimeType);
+                        const normalizedFileName = normalizeFileName(fileName, mimeType);
                         const file = new File([blob], normalizedFileName, {
-                            type: uploadMimeType,
+                            type: mimeType,
                             lastModified: Date.now()
                         });
                         const transfer = new DataTransfer();
                         transfer.items.add(file);
                         input.files = transfer.files;
                         input.dispatchEvent(new Event('change', { bubbles: true }));
-                        resolve({ ok: true, mimeType: uploadMimeType, size: blob.size, fileName: normalizedFileName });
+                        resolve({ ok: true, mimeType: mimeType, size: blob.size, fileName: normalizedFileName });
                     } catch (error) {
                         resolve({
                             ok: false,
