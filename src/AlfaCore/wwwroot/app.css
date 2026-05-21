@@ -5248,6 +5248,25 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
     gap: .8rem;
 }
 
+.ticket-creator-assignment {
+    display: grid;
+    gap: .2rem;
+    min-height: 2.55rem;
+    padding: .65rem .75rem;
+    border: 1px solid rgba(34, 211, 238, .24);
+    border-radius: 10px;
+    background: rgba(34, 211, 238, .08);
+    color: #e5f6ff;
+}
+
+.ticket-creator-assignment span {
+    font-weight: 700;
+}
+
+.ticket-creator-assignment small {
+    color: #8fb4ca;
+}
+
 .conversations-ticket-duplicates {
     display: grid;
     gap: .75rem;

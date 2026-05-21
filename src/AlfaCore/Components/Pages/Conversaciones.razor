@@ -1444,13 +1444,10 @@
             </div>
             <div class="field">
                 <label>Asignado a</label>
-                <select @bind="_ticketTechnicianId" disabled="@_creatingTicket">
-                    <option value="">Usar asignado de la conversación</option>
-                    @foreach (var tech in _technicians)
-                    {
-                        <option value="@tech.IdTecnico">@tech.Nombre</option>
-                    }
-                </select>
+                <div class="ticket-creator-assignment">
+                    <span>@CurrentMessageTechnicianName</span>
+                    <small>Se asignará automáticamente al usuario que crea el ticket.</small>
+                </div>
             </div>
         </div>
         <div class="actions usuarios-editor__actions">
@@ -1568,7 +1565,6 @@
     private readonly HashSet<long> _selectedTicketMessageIds = [];
     private string _ticketTitle = string.Empty;
     private int _ticketPriority = 2;
-    private string _ticketTechnicianId = string.Empty;
     private string? _ticketError;
     private bool _creatingTicket;
     private bool _checkingRelatedTickets;
@@ -2243,7 +2239,6 @@
         _selectedTicketMessageIds.Clear();
         _ticketTitle = BuildDefaultTicketTitle();
         _ticketPriority = 2;
-        _ticketTechnicianId = _selectedConversation.IdTecnico;
         _allowCreateDespiteRelated = false;
         _relatedTicketMatches.Clear();
     }
@@ -2309,6 +2304,12 @@
             _ticketError = "Ingresá el nombre del ticket.";
             return;
         }
+        var creatorTechnicianId = CurrentMessageTechnicianId;
+        if (string.IsNullOrWhiteSpace(creatorTechnicianId))
+        {
+            _ticketError = "No se pudo crear el ticket porque tu usuario no tiene un técnico asociado.";
+            return;
+        }
 
         if (_relatedTicketMatches.Count > 0 && !_allowCreateDespiteRelated)
         {
@@ -2330,12 +2331,12 @@
                 Titulo = _ticketTitle,
                 CodigoEstado = TicketEstadoKeys.Nuevo,
                 Prioridad = _ticketPriority,
-                IdTecnico = string.IsNullOrWhiteSpace(_ticketTechnicianId) ? null : _ticketTechnicianId,
+                IdTecnico = creatorTechnicianId,
                 ClienteCodigo = _selectedConversation.ClienteCodigo,
                 IdContacto = _selectedConversation.IdContacto,
                 IdConversacion = _selectedConversation.IdConversacion,
                 IdMensajes = orderedMessageIds,
-                UsuarioAccion = AppUserSession.GetCurrentUserName(string.Empty)
+                UsuarioAccion = CurrentUserNameForAudit
             });
 
             await ConversacionesSvc.AddInternalEventAsync(new ConversacionEventoInternoRequest

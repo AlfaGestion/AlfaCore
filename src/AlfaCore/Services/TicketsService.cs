@@ -1124,8 +1124,7 @@ public sealed class TicketsService(
         const string sql = """
             SELECT TOP (1)
                 ISNULL(ClienteCodigo, ''),
-                IdContacto,
-                ISNULL(IdTecnico, '')
+                IdContacto
             FROM dbo.CONV_CONVERSACIONES
             WHERE IdConversacion = @IdConversacion;
             """;
@@ -1140,8 +1139,6 @@ public sealed class TicketsService(
             request.ClienteCodigo = GetString(rd, 0);
         if (!request.IdContacto.HasValue && !rd.IsDBNull(1))
             request.IdContacto = rd.GetInt32(1);
-        if (string.IsNullOrWhiteSpace(request.IdTecnico))
-            request.IdTecnico = GetString(rd, 2);
     }
 
     private static async Task InsertTicketMessagesAsync(SqlConnection cn, SqlTransaction tx, long idTicket, IReadOnlyList<long> idMensajes, CancellationToken ct)
