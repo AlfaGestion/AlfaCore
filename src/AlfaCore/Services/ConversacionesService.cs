@@ -580,10 +580,17 @@ public sealed class ConversacionesService(
                 FROM dbo.CONV_CONVERSACIONES c
                 INNER JOIN dbo.CONV_ESTADOS e
                     ON e.CodigoEstado = c.CodigoEstado
-                LEFT JOIN dbo.CONV_CONVERSACIONES_PIN_USUARIO pin
-                    ON pin.IdConversacion = c.IdConversacion
-                   AND pin.Usuario = @UsuarioActual
-                   AND pin.Sistema = @SistemaActual
+                OUTER APPLY (
+                    SELECT TOP (1)
+                        p.IdConversacion,
+                        p.FechaHora_Grabacion
+                    FROM dbo.CONV_CONVERSACIONES_PIN_USUARIO p
+                    WHERE p.IdConversacion = c.IdConversacion
+                      AND p.Usuario = @UsuarioActual
+                    ORDER BY
+                        CASE WHEN p.Sistema = @SistemaActual THEN 0 ELSE 1 END,
+                        p.FechaHora_Grabacion DESC
+                ) pin
                 LEFT JOIN dbo.VT_CLIENTES cli
                     ON cli.CODIGO = c.ClienteCodigo
                 LEFT JOIN dbo.MA_CONTACTOS mc
@@ -1916,43 +1923,29 @@ public sealed class ConversacionesService(
             var normalizedSystem = NormalizePinSystem(sistema);
 
             const string upsertSql = """
-                IF EXISTS (
-                    SELECT 1
-                    FROM dbo.CONV_CONVERSACIONES_PIN_USUARIO
-                    WHERE Usuario = @Usuario
-                      AND Sistema = @Sistema
-                      AND IdConversacion = @IdConversacion
+                DELETE FROM dbo.CONV_CONVERSACIONES_PIN_USUARIO
+                WHERE Usuario = @Usuario
+                  AND IdConversacion = @IdConversacion;
+
+                INSERT INTO dbo.CONV_CONVERSACIONES_PIN_USUARIO
+                (
+                    Usuario,
+                    Sistema,
+                    IdConversacion,
+                    FechaHora_Grabacion
                 )
-                BEGIN
-                    UPDATE dbo.CONV_CONVERSACIONES_PIN_USUARIO
-                       SET FechaHora_Grabacion = GETDATE()
-                     WHERE Usuario = @Usuario
-                       AND Sistema = @Sistema
-                       AND IdConversacion = @IdConversacion;
-                END
-                ELSE
-                BEGIN
-                    INSERT INTO dbo.CONV_CONVERSACIONES_PIN_USUARIO
-                    (
-                        Usuario,
-                        Sistema,
-                        IdConversacion,
-                        FechaHora_Grabacion
-                    )
-                    VALUES
-                    (
-                        @Usuario,
-                        @Sistema,
-                        @IdConversacion,
-                        GETDATE()
-                    );
-                END;
+                VALUES
+                (
+                    @Usuario,
+                    @Sistema,
+                    @IdConversacion,
+                    GETDATE()
+                );
                 """;
 
             const string deleteSql = """
                 DELETE FROM dbo.CONV_CONVERSACIONES_PIN_USUARIO
                 WHERE Usuario = @Usuario
-                  AND Sistema = @Sistema
                   AND IdConversacion = @IdConversacion;
                 """;
 
