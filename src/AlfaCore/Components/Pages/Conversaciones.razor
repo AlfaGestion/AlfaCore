@@ -891,7 +891,7 @@
                                                     <button type="button"
                                                             class="btn btn--ghost btn--sm message-reaction-picker__emoji"
                                                             title="Mas emojis"
-                                                            @onclick="OpenComposerEmojiPanel">
+                                                            @onclick="() => OpenReactionEmojiPanel(message.IdMensaje)">
                                                         <i class="bi bi-plus-lg"></i>
                                                     </button>
                                                 </div>
@@ -1005,7 +1005,7 @@
                                                 <div class="conversations-tools-panel__grid">
                                                     @foreach (var emoji in group.Emojis)
                                                     {
-                                                        <button type="button" class="btn btn--ghost btn--sm conversations-tools-panel__emoji" title="Agregar @emoji" @onclick="() => AddEmojiToReply(emoji)">@emoji</button>
+                                                        <button type="button" class="btn btn--ghost btn--sm conversations-tools-panel__emoji" title="@GetEmojiButtonTitle(emoji)" @onclick="() => SelectEmojiFromPanelAsync(emoji)">@emoji</button>
                                                     }
                                                 </div>
                                             </div>
@@ -1577,6 +1577,7 @@
     private List<ConversacionStickerFavoritoDto> _favoriteStickers = [];
     private bool _showComposerTools;
     private string _composerToolTab = ComposerToolTabs.Emojis;
+    private long? _reactionEmojiMessageId;
     private string _emojiSearch = string.Empty;
     private bool _showContactSuggestions;
     private bool _loadingContactSuggestions;
@@ -3886,6 +3887,22 @@
     private void RemoveTemplatePendingAttachment(Guid id)
         => _templatePendingAttachments.RemoveAll(x => x.Id == id);
 
+    private async Task SelectEmojiFromPanelAsync(string emoji)
+    {
+        if (_reactionEmojiMessageId.HasValue)
+        {
+            var message = _messages.FirstOrDefault(x => x.IdMensaje == _reactionEmojiMessageId.Value);
+            if (message is not null)
+                await SendReactionAsync(message, emoji);
+
+            _reactionEmojiMessageId = null;
+            MinimizeComposerTools();
+            return;
+        }
+
+        AddEmojiToReply(emoji);
+    }
+
     private void AddEmojiToReply(string emoji)
     {
         if (string.IsNullOrWhiteSpace(emoji))
@@ -3934,10 +3951,16 @@
     }
 
     private void ToggleComposerTools()
-        => _showComposerTools = !_showComposerTools;
+    {
+        _reactionEmojiMessageId = null;
+        _showComposerTools = !_showComposerTools;
+    }
 
     private void MinimizeComposerTools()
-        => _showComposerTools = false;
+    {
+        _showComposerTools = false;
+        _reactionEmojiMessageId = null;
+    }
 
     private void HandleEmojiSearchInput(ChangeEventArgs args)
         => _emojiSearch = Convert.ToString(args.Value, System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
@@ -4663,12 +4686,16 @@
     private void ToggleReactionPicker(long idMensaje)
         => _openReactionMessageId = _openReactionMessageId == idMensaje ? null : idMensaje;
 
-    private void OpenComposerEmojiPanel()
+    private void OpenReactionEmojiPanel(long idMensaje)
     {
+        _reactionEmojiMessageId = idMensaje;
         _showComposerTools = true;
         _composerToolTab = ComposerToolTabs.Emojis;
         _openReactionMessageId = null;
     }
+
+    private string GetEmojiButtonTitle(string emoji)
+        => _reactionEmojiMessageId.HasValue ? $"Reaccionar {emoji}" : $"Agregar {emoji}";
 
     private void OpenAttachmentPreview(ConversacionAdjuntoDto adjunto)
     {

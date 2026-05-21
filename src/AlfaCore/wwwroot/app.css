@@ -5576,6 +5576,7 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
 
 .message-actions {
     position: relative;
+    z-index: 40;
     display: flex;
     flex: 0 0 auto;
     flex-direction: column;
@@ -5675,7 +5676,7 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
     top: 50%;
     transform: translateY(-50%);
     bottom: auto;
-    z-index: 30;
+    z-index: 220;
     display: flex;
     align-items: center;
     gap: .25rem;
@@ -10714,6 +10715,10 @@ html[data-theme="light"] .balance-row--detalle td {
     display: block;
     width: min(370px, calc(100vw - 7rem));
     max-width: 100%;
+}
+
+.message-row:has(.message-reaction-picker) {
+    z-index: 60;
 }
 
 .wa-audio-player__media {
