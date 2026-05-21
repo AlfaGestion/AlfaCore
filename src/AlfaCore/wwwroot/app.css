@@ -4106,6 +4106,23 @@ tr.row--critical td {
     font-weight: 400;
 }
 
+.conversation-event-divider__link {
+    border: 0;
+    padding: 0;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    text-decoration: underline;
+    text-decoration-color: rgba(125, 211, 252, .55);
+    text-underline-offset: 3px;
+}
+
+.conversation-event-divider__link:hover,
+.conversation-event-divider__link:focus-visible {
+    color: #e0f2fe;
+    text-decoration-color: currentColor;
+}
+
 .conversation-event-divider__time {
     flex: 0 0 auto;
     color: #7dd3fc;

@@ -667,7 +667,16 @@
                                 @if (IsInternalEventMessage(message))
                                 {
                                     <div class="conversation-event-divider">
-                                        <span class="conversation-event-divider__text">@message.Texto</span>
+                                        @if (TryGetTicketIdFromEvent(message, out var eventTicketId))
+                                        {
+                                            <button type="button" class="conversation-event-divider__text conversation-event-divider__link" @onclick="() => OpenTicket(eventTicketId)">
+                                                @message.Texto
+                                            </button>
+                                        }
+                                        else
+                                        {
+                                            <span class="conversation-event-divider__text">@message.Texto</span>
+                                        }
                                         <time class="conversation-event-divider__time">@message.FechaHora.ToString("dd/MM HH:mm")</time>
                                     </div>
                                     continue;
@@ -1443,6 +1452,10 @@
                 </select>
             </div>
             <div class="field">
+                <label>Comentario / observaciÃ³n</label>
+                <textarea rows="4" maxlength="4000" @bind="_ticketDescription" disabled="@_creatingTicket" placeholder="Detalle adicional para el ticket..."></textarea>
+            </div>
+            <div class="field">
                 <label>Asignado a</label>
                 <div class="ticket-creator-assignment">
                     <span>@CurrentMessageTechnicianName</span>
@@ -1564,6 +1577,7 @@
     private bool _showTicketDialog;
     private readonly HashSet<long> _selectedTicketMessageIds = [];
     private string _ticketTitle = string.Empty;
+    private string _ticketDescription = string.Empty;
     private int _ticketPriority = 2;
     private string? _ticketError;
     private bool _creatingTicket;
@@ -2238,6 +2252,7 @@
         _ticketError = null;
         _selectedTicketMessageIds.Clear();
         _ticketTitle = BuildDefaultTicketTitle();
+        _ticketDescription = string.Empty;
         _ticketPriority = 2;
         _allowCreateDespiteRelated = false;
         _relatedTicketMatches.Clear();
@@ -2285,6 +2300,7 @@
         _ticketSelectionMode = false;
         _showTicketDialog = false;
         _selectedTicketMessageIds.Clear();
+        _ticketDescription = string.Empty;
         _ticketError = null;
         _allowCreateDespiteRelated = false;
         _relatedTicketMatches.Clear();
@@ -2329,6 +2345,7 @@
             var idTicket = await TicketsSvc.CreateAsync(new TicketCreateRequest
             {
                 Titulo = _ticketTitle,
+                Descripcion = _ticketDescription,
                 CodigoEstado = TicketEstadoKeys.Nuevo,
                 Prioridad = _ticketPriority,
                 IdTecnico = creatorTechnicianId,
@@ -2352,10 +2369,11 @@
             _ticketSelectionMode = false;
             _showTicketDialog = false;
             _selectedTicketMessageIds.Clear();
+            _ticketDescription = string.Empty;
             _relatedTicketMatches.Clear();
             _allowCreateDespiteRelated = false;
-            _actionMessage = $"Ticket #{idTicket} creado correctamente.";
-            Nav.NavigateTo($"/tickets?id={idTicket.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+            _actionMessage = $"Ticket #{idTicket.ToString(System.Globalization.CultureInfo.InvariantCulture)} creado correctamente.";
+            await LoadConversationAsync(_selectedConversation.IdConversacion, showLoading: false, clearActionState: false);
         }
         catch (Exception ex)
         {
@@ -4258,6 +4276,22 @@
         => string.Equals(message.Direction, "EVENTO_INTERNO", StringComparison.OrdinalIgnoreCase)
            || (string.Equals(message.Direction, "NOTA_INTERNA", StringComparison.OrdinalIgnoreCase)
                && string.Equals(message.MessageType, "SYSTEM", StringComparison.OrdinalIgnoreCase));
+
+    private static bool TryGetTicketIdFromEvent(ConversacionMensajeDto message, out long idTicket)
+    {
+        idTicket = 0;
+        if (!IsInternalEventMessage(message) || string.IsNullOrWhiteSpace(message.Texto))
+            return false;
+
+        var match = System.Text.RegularExpressions.Regex.Match(
+            message.Texto,
+            @"\bticket\s*#\s*(\d+)\b",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+        return match.Success
+               && long.TryParse(match.Groups[1].Value, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out idTicket)
+               && idTicket > 0;
+    }
 
     private bool CanReactToMessage(ConversacionMensajeDto message)
         => IsWhatsAppConversation
