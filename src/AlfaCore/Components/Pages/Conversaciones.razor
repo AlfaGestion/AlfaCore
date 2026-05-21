@@ -695,13 +695,14 @@
                                     <div class="message-bubble-shell">
                                         @if (_openReactionMessageId == message.IdMensaje)
                                         {
-                                            <div class="message-reaction-picker">
+                                            <div class="message-reaction-picker" @onclick:stopPropagation>
                                                 @foreach (var emoji in QuickReactionEmojis)
                                                 {
                                                     <button type="button"
                                                             class="btn btn--ghost btn--sm message-reaction-picker__emoji"
                                                             title="Reaccionar @emoji"
                                                             @onclick="() => SendReactionAsync(message, emoji)"
+                                                            @onclick:stopPropagation
                                                             disabled="@_busyAction">
                                                         @emoji
                                                     </button>
@@ -709,7 +710,8 @@
                                                 <button type="button"
                                                         class="btn btn--ghost btn--sm message-reaction-picker__emoji"
                                                         title="Mas emojis"
-                                                        @onclick="() => OpenReactionEmojiPanel(message.IdMensaje)">
+                                                        @onclick="() => OpenReactionEmojiPanel(message.IdMensaje)"
+                                                        @onclick:stopPropagation>
                                                     <i class="bi bi-plus-lg"></i>
                                                 </button>
                                             </div>
