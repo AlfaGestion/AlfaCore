@@ -739,6 +739,13 @@
                                         <span>@GetMessageAuthor(message)</span>
                                         <span>@message.FechaHora.ToString("dd/MM HH:mm")</span>
                                     </div>
+                                    @if (TryGetQuotedMessage(message, out var quotedMessage))
+                                    {
+                                        <div class="message-card__quote">
+                                            <span>@GetMessageAuthor(quotedMessage)</span>
+                                            <strong>@GetQuotePreview(quotedMessage)</strong>
+                                        </div>
+                                    }
                                     @if (ShouldShowMessageText(message))
                                     {
                                         <p class="message-card__text">@GetMessageDisplayText(message)</p>
@@ -4405,6 +4412,19 @@
         }
 
         return string.Empty;
+    }
+
+    private bool TryGetQuotedMessage(ConversacionMensajeDto message, out ConversacionMensajeDto quotedMessage)
+    {
+        quotedMessage = default!;
+        if (string.IsNullOrWhiteSpace(message.WhatsAppReplyToMessageId))
+            return false;
+
+        quotedMessage = _messages.FirstOrDefault(x =>
+            !string.IsNullOrWhiteSpace(x.WhatsAppMessageId)
+            && string.Equals(x.WhatsAppMessageId, message.WhatsAppReplyToMessageId, StringComparison.OrdinalIgnoreCase))!;
+
+        return quotedMessage is not null;
     }
 
     private static string DisplayOrFallback(params string?[] values)
