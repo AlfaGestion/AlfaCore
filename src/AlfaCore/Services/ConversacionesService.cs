@@ -577,7 +577,8 @@ public sealed class ConversacionesService(
                     ISNULL(c.Archivada, 0),
                     ISNULL(c.Bloqueada, 0),
                     CASE WHEN pin.IdConversacion IS NULL THEN CAST(0 AS bit) ELSE CAST(1 AS bit) END AS FijadaPorUsuario,
-                    pin.FechaHora_Grabacion AS FechaHoraFijada
+                    pin.FechaHora_Grabacion AS FechaHoraFijada,
+                    ISNULL(noLeidos.CantidadNoLeida, 0) AS MensajesNoLeidosUsuario
                 FROM dbo.CONV_CONVERSACIONES c
                 INNER JOIN dbo.CONV_ESTADOS e
                     ON e.CodigoEstado = c.CodigoEstado
@@ -613,6 +614,23 @@ public sealed class ConversacionesService(
                     WHERE m.IdConversacion = c.IdConversacion
                       AND m.Direction = N'ENTRANTE'
                 ) clienteConteo
+                OUTER APPLY (
+                    SELECT TOP (1)
+                        r.IdUltimoMensajeLeido
+                    FROM dbo.CONV_CONVERSACIONES_LECTURA_USUARIO r
+                    WHERE r.IdConversacion = c.IdConversacion
+                      AND r.Usuario = @UsuarioActual
+                    ORDER BY
+                        CASE WHEN r.Sistema = @SistemaActual THEN 0 ELSE 1 END,
+                        r.FechaHora_Modificacion DESC
+                ) lectura
+                OUTER APPLY (
+                    SELECT COUNT(1) AS CantidadNoLeida
+                    FROM dbo.CONV_MENSAJES m
+                    WHERE m.IdConversacion = c.IdConversacion
+                      AND m.Direction = N'ENTRANTE'
+                      AND m.IdMensaje > ISNULL(lectura.IdUltimoMensajeLeido, 0)
+                ) noLeidos
                 OUTER APPLY (
                     SELECT TOP (1)
                         msg.IdMensaje,
@@ -756,6 +774,8 @@ public sealed class ConversacionesService(
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
             await EnsureConversationPinsTableAsync(cn, token);
+            await EnsureConversationReadStateTableAsync(cn, token);
+            await EnsureConversationReadBaselinesAsync(cn, usuarioActual, sistemaActual, token);
             await LinkUnassociatedWhatsAppConversationsByPhoneAsync(cn, token);
             await ConsolidateExistingDuplicateWhatsAppConversationsAsync(cn, token);
             await ReopenClosedConversationsWithIncomingAfterCloseAsync(cn, null, token);
@@ -803,7 +823,8 @@ public sealed class ConversacionesService(
                     Archivada = !rd.IsDBNull(16) && rd.GetBoolean(16),
                     Bloqueada = !rd.IsDBNull(17) && rd.GetBoolean(17),
                     FijadaPorUsuario = !rd.IsDBNull(18) && rd.GetBoolean(18),
-                    FechaHoraFijada = rd.IsDBNull(19) ? null : rd.GetDateTime(19)
+                    FechaHoraFijada = rd.IsDBNull(19) ? null : rd.GetDateTime(19),
+                    MensajesNoLeidosUsuario = rd.IsDBNull(20) ? 0 : rd.GetInt32(20)
                 });
             }
 
@@ -1971,6 +1992,65 @@ public sealed class ConversacionesService(
 
             return true;
         }, "No se pudo actualizar el pin de la conversaciÃ³n.", ct);
+
+    public Task MarkConversationReadAsync(long idConversacion, string usuario, string? sistema, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "MarkConversationRead", async token =>
+        {
+            if (idConversacion <= 0)
+                throw new InvalidOperationException("La conversación es obligatoria.");
+
+            var normalizedUser = NormalizePinUser(usuario);
+            if (string.IsNullOrWhiteSpace(normalizedUser))
+                throw new InvalidOperationException("No se pudo identificar el usuario actual para marcar la conversación como leída.");
+
+            var normalizedSystem = NormalizePinSystem(sistema);
+
+            const string sql = """
+                DECLARE @IdUltimoMensajeLeido bigint;
+
+                SELECT @IdUltimoMensajeLeido = MAX(m.IdMensaje)
+                FROM dbo.CONV_MENSAJES m
+                WHERE m.IdConversacion = @IdConversacion
+                  AND m.Direction = N'ENTRANTE';
+
+                IF @IdUltimoMensajeLeido IS NULL
+                    SET @IdUltimoMensajeLeido = 0;
+
+                DELETE FROM dbo.CONV_CONVERSACIONES_LECTURA_USUARIO
+                WHERE Usuario = @Usuario
+                  AND IdConversacion = @IdConversacion;
+
+                INSERT INTO dbo.CONV_CONVERSACIONES_LECTURA_USUARIO
+                (
+                    Usuario,
+                    Sistema,
+                    IdConversacion,
+                    IdUltimoMensajeLeido,
+                    FechaHora_Grabacion,
+                    FechaHora_Modificacion
+                )
+                VALUES
+                (
+                    @Usuario,
+                    @Sistema,
+                    @IdConversacion,
+                    @IdUltimoMensajeLeido,
+                    GETDATE(),
+                    GETDATE()
+                );
+                """;
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await EnsureConversationReadStateTableAsync(cn, token);
+            await using var cmd = new SqlCommand(sql, cn);
+            cmd.Parameters.AddWithValue("@Usuario", normalizedUser);
+            cmd.Parameters.AddWithValue("@Sistema", normalizedSystem);
+            cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
+            await cmd.ExecuteNonQueryAsync(token);
+
+            return true;
+        }, "No se pudo marcar la conversación como leída.", ct);
 
     public Task<ConversacionWebhookResultDto> RegisterIncomingWebhookAsync(ConversacionWebhookRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "RegisterIncomingWebhook", async token =>
@@ -4241,6 +4321,85 @@ public sealed class ConversacionesService(
             """;
 
         await using var cmd = new SqlCommand(sql, cn);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    private static async Task EnsureConversationReadStateTableAsync(SqlConnection cn, CancellationToken ct)
+    {
+        const string sql = """
+            IF OBJECT_ID(N'dbo.CONV_CONVERSACIONES_LECTURA_USUARIO', N'U') IS NULL
+            BEGIN
+                CREATE TABLE dbo.CONV_CONVERSACIONES_LECTURA_USUARIO
+                (
+                    Usuario nvarchar(120) NOT NULL,
+                    Sistema nvarchar(50) NOT NULL CONSTRAINT DF_CONV_CONV_LECT_USU_Sistema DEFAULT (N''),
+                    IdConversacion bigint NOT NULL,
+                    IdUltimoMensajeLeido bigint NOT NULL CONSTRAINT DF_CONV_CONV_LECT_USU_UltMsg DEFAULT (0),
+                    FechaHora_Grabacion datetime NOT NULL CONSTRAINT DF_CONV_CONV_LECT_USU_FhGrab DEFAULT (GETDATE()),
+                    FechaHora_Modificacion datetime NOT NULL CONSTRAINT DF_CONV_CONV_LECT_USU_FhMod DEFAULT (GETDATE()),
+                    CONSTRAINT PK_CONV_CONVERSACIONES_LECTURA_USUARIO PRIMARY KEY CLUSTERED (Usuario, Sistema, IdConversacion),
+                    CONSTRAINT FK_CONV_CONV_LECT_USU_CONVERSACION FOREIGN KEY (IdConversacion)
+                        REFERENCES dbo.CONV_CONVERSACIONES (IdConversacion)
+                );
+            END;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM sys.indexes
+                WHERE name = N'IX_CONV_CONV_LECT_USU_Conversacion'
+                  AND object_id = OBJECT_ID(N'dbo.CONV_CONVERSACIONES_LECTURA_USUARIO')
+            )
+            BEGIN
+                CREATE NONCLUSTERED INDEX IX_CONV_CONV_LECT_USU_Conversacion
+                    ON dbo.CONV_CONVERSACIONES_LECTURA_USUARIO (IdConversacion, Usuario)
+                    INCLUDE (Sistema, IdUltimoMensajeLeido, FechaHora_Modificacion);
+            END;
+            """;
+
+        await using var cmd = new SqlCommand(sql, cn);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    private static async Task EnsureConversationReadBaselinesAsync(SqlConnection cn, string usuario, string sistema, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(usuario))
+            return;
+
+        const string sql = """
+            INSERT INTO dbo.CONV_CONVERSACIONES_LECTURA_USUARIO
+            (
+                Usuario,
+                Sistema,
+                IdConversacion,
+                IdUltimoMensajeLeido,
+                FechaHora_Grabacion,
+                FechaHora_Modificacion
+            )
+            SELECT
+                @Usuario,
+                @Sistema,
+                c.IdConversacion,
+                ISNULL(ult.IdUltimoMensajeCliente, 0),
+                GETDATE(),
+                GETDATE()
+            FROM dbo.CONV_CONVERSACIONES c
+            OUTER APPLY (
+                SELECT MAX(m.IdMensaje) AS IdUltimoMensajeCliente
+                FROM dbo.CONV_MENSAJES m
+                WHERE m.IdConversacion = c.IdConversacion
+                  AND m.Direction = N'ENTRANTE'
+            ) ult
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM dbo.CONV_CONVERSACIONES_LECTURA_USUARIO r
+                WHERE r.Usuario = @Usuario
+                  AND r.IdConversacion = c.IdConversacion
+            );
+            """;
+
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@Usuario", usuario);
+        cmd.Parameters.AddWithValue("@Sistema", sistema);
         await cmd.ExecuteNonQueryAsync(ct);
     }
 

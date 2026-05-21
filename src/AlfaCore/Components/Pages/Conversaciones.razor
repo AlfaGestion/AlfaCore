@@ -1677,7 +1677,7 @@
     private bool CanCreateWhatsAppFromSearch => _canalActivo == "WHATSAPP" && !_busyAction && IsPotentialPhone(_filters.Search);
     private bool ShouldShowContactSuggestions => _canalActivo == "WHATSAPP" && _filters.Search.Trim().Length >= 2;
     private bool ShouldShowLatestButton => _showReturnToLatest || _newMessagesCount > 0;
-    private int TotalNewMessagesCount => _newMessagesByConversation.Values.Sum() + _newMessagesCount;
+    private int TotalNewMessagesCount => _inbox.Sum(x => GetConversationNewCount(x.IdConversacion));
     private string ConversationPageTitle
         => TotalNewMessagesCount > 0
             ? $"({TotalNewMessagesCount}) Conversaciones | Alfa Gestión"
@@ -2968,7 +2968,17 @@
     private void MarkSelectedConversationAsRead()
     {
         if (_selectedConversationId is { } id)
-            _newMessagesByConversation.Remove(id);
+        {
+            var hadUnread = _newMessagesByConversation.Remove(id);
+            if (_inbox.FirstOrDefault(x => x.IdConversacion == id) is { } inboxItem)
+            {
+                hadUnread = hadUnread || inboxItem.MensajesNoLeidosUsuario > 0;
+                inboxItem.MensajesNoLeidosUsuario = 0;
+            }
+
+            if (hadUnread || _newMessagesCount > 0)
+                _ = InvokeAsync(() => PersistConversationReadAsync(id));
+        }
 
         ClearNewMessageState();
         _showReturnToLatest = false;
@@ -2977,10 +2987,27 @@
     private int GetConversationNewCount(long idConversacion)
     {
         var count = _newMessagesByConversation.TryGetValue(idConversacion, out var storedCount) ? storedCount : 0;
+        if (_inbox.FirstOrDefault(x => x.IdConversacion == idConversacion) is { } inboxItem)
+            count = Math.Max(count, inboxItem.MensajesNoLeidosUsuario);
+
         if (_selectedConversationId == idConversacion)
             count = Math.Max(count, _newMessagesCount);
 
         return count;
+    }
+
+    private async Task PersistConversationReadAsync(long idConversacion)
+    {
+        try
+        {
+            await ConversacionesSvc.MarkConversationReadAsync(
+                idConversacion,
+                CurrentUserNameForAudit,
+                CurrentUserSystemForAudit);
+        }
+        catch
+        {
+        }
     }
 
     private void RestoreSelectedNewMessageMarker(long idConversacion)

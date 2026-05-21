@@ -27,6 +27,7 @@ public interface IConversacionesService
     Task AssignConversationAsync(ConversacionAsignacionRequest request, CancellationToken ct = default);
     Task ChangeStatusAsync(ConversacionEstadoRequest request, CancellationToken ct = default);
     Task SetConversationPinAsync(long idConversacion, string usuario, string? sistema, bool fijada, CancellationToken ct = default);
+    Task MarkConversationReadAsync(long idConversacion, string usuario, string? sistema, CancellationToken ct = default);
     Task<ConversacionWebhookResultDto> RegisterIncomingWebhookAsync(ConversacionWebhookRequest request, CancellationToken ct = default);
     Task<long> CreateInternalThreadAsync(ConversacionCrearHiloInternoRequest request, CancellationToken ct = default);
     Task<ConversacionCrearWhatsAppResultDto> CreateOrGetWhatsAppConversationAsync(ConversacionCrearWhatsAppRequest request, CancellationToken ct = default);

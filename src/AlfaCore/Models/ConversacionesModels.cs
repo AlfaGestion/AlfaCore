@@ -141,6 +141,7 @@ public sealed class ConversacionInboxItemDto
     public DateTime? FechaHoraUltimoMensajeCliente { get; set; }
     public long? IdUltimoMensajeCliente { get; set; }
     public int CantidadMensajesCliente { get; set; }
+    public int MensajesNoLeidosUsuario { get; set; }
     public bool VentanaWhatsAppActiva { get; set; }
     public DateTime? FechaHoraVencimientoVentanaWhatsApp { get; set; }
     public bool Archivada { get; set; }
