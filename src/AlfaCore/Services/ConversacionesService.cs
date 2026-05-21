@@ -3125,7 +3125,7 @@ public sealed class ConversacionesService(
     private async Task RefreshConversationAsync(long idConversacion, DateTime fechaHora, string? text, CancellationToken ct, bool reopenIfClosed = false)
     {
         const string sql = """
-            UPDATE dbo.CONV_CONVERSACIONES
+            UPDATE c
             SET
                 ResumenUltimoMensaje = CASE
                     WHEN @FechaHora >= ISNULL(FechaHoraUltimoMensaje, CONVERT(datetime, '19000101', 112)) THEN @ResumenUltimoMensaje
@@ -3137,15 +3137,26 @@ public sealed class ConversacionesService(
                     ELSE FechaHoraUltimoMensaje
                 END,
                 CodigoEstado = CASE
-                    WHEN @Reabrir = 1 AND (FechaHoraCierre IS NULL OR @FechaHora > FechaHoraCierre) THEN N'ABIERTA'
+                    WHEN @Reabrir = 1 AND EXISTS (
+                        SELECT 1
+                        FROM dbo.CONV_ESTADOS e
+                        WHERE e.CodigoEstado = c.CodigoEstado
+                          AND ISNULL(e.EsCerrado, 0) = 1
+                    ) THEN N'ABIERTA'
                     ELSE CodigoEstado
                 END,
                 FechaHoraCierre = CASE
-                    WHEN @Reabrir = 1 AND (FechaHoraCierre IS NULL OR @FechaHora > FechaHoraCierre) THEN NULL
+                    WHEN @Reabrir = 1 AND EXISTS (
+                        SELECT 1
+                        FROM dbo.CONV_ESTADOS e
+                        WHERE e.CodigoEstado = c.CodigoEstado
+                          AND ISNULL(e.EsCerrado, 0) = 1
+                    ) THEN NULL
                     ELSE FechaHoraCierre
                 END,
                 FechaHora_Modificacion = GETDATE()
-            WHERE IdConversacion = @IdConversacion
+            FROM dbo.CONV_CONVERSACIONES c
+            WHERE c.IdConversacion = @IdConversacion
             """;
 
         await using var cn = new SqlConnection(ConnectionString);
