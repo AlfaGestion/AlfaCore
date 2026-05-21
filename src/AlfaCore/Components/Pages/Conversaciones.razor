@@ -434,14 +434,24 @@
                     <div class="conversations-list__items">
                         @foreach (var item in _inbox)
                         {
-                            <button type="button"
-                                    class="conversation-row @(item.IdConversacion == _selectedConversationId ? "is-selected" : string.Empty)"
-                                    @onclick="() => SelectConversationAsync(item.IdConversacion, showMobileChat: true)">
+                            <div role="button"
+                                 tabindex="0"
+                                 class="@ConversationRowClass(item)"
+                                 @onclick="() => SelectConversationAsync(item.IdConversacion, showMobileChat: true)"
+                                 @onkeydown="args => HandleConversationRowKeyDownAsync(args, item.IdConversacion)">
                                 <span class="conversation-row__avatar" aria-hidden="true">@GetConversationInitials(item)</span>
                                 <div class="conversation-row__content">
                                 <div class="conversation-row__top">
                                     <span class="conversation-row__name">@GetDisplayName(item)</span>
                                     <span class="conversation-row__side">
+                                        <button type="button"
+                                                class="conversation-pin @(item.FijadaPorUsuario ? "is-pinned" : string.Empty)"
+                                                title="@(item.FijadaPorUsuario ? "Desfijar para mi usuario" : "Fijar para mi usuario")"
+                                                aria-label="@(item.FijadaPorUsuario ? "Desfijar conversaciÃ³n" : "Fijar conversaciÃ³n")"
+                                                @onclick:stopPropagation
+                                                @onclick="() => ToggleConversationPinAsync(item)">
+                                            <i class="bi @(item.FijadaPorUsuario ? "bi-pin-angle-fill" : "bi-pin-angle")"></i>
+                                        </button>
                                         <span class="conversation-row__date">@FormatShortDate(item.FechaHoraUltimoMensaje)</span>
                                         @if (GetConversationNewCount(item.IdConversacion) > 0)
                                         {
@@ -469,7 +479,7 @@
                                 </div>
                                 <p class="conversation-row__summary">@item.ResumenUltimoMensaje</p>
                                 </div>
-                            </button>
+                            </div>
                         }
                     </div>
                 }
@@ -1980,6 +1990,7 @@
         try
         {
             var previousInbox = _inbox.ToDictionary(x => x.IdConversacion);
+            ApplyCurrentUserToFilters(_filters);
             var refreshedInbox = (await ConversacionesSvc.GetInboxAsync(_filters)).ToList();
             if (trackNewMessages)
                 newMessagesDetected = TrackInboxNewMessages(previousInbox, refreshedInbox);
@@ -2029,6 +2040,52 @@
         {
             _loadingAuditMessages = false;
         }
+    }
+
+    private async Task ToggleConversationPinAsync(ConversacionInboxItemDto item)
+    {
+        _actionError = null;
+        _actionMessage = null;
+
+        try
+        {
+            var nextPinned = !item.FijadaPorUsuario;
+            await ConversacionesSvc.SetConversationPinAsync(
+                item.IdConversacion,
+                CurrentUserNameForAudit,
+                CurrentUserSystemForAudit,
+                nextPinned);
+
+            item.FijadaPorUsuario = nextPinned;
+            item.FechaHoraFijada = nextPinned ? DateTime.Now : null;
+            await RefreshInboxAsync(showLoading: false, allowSelectionChange: false);
+        }
+        catch (Exception ex)
+        {
+            _actionError = ex.Message;
+        }
+    }
+
+    private async Task HandleConversationRowKeyDownAsync(KeyboardEventArgs args, long idConversacion)
+    {
+        if (args.Key is "Enter" or " ")
+            await SelectConversationAsync(idConversacion, showMobileChat: true);
+    }
+
+    private string ConversationRowClass(ConversacionInboxItemDto item)
+    {
+        var classes = "conversation-row";
+        if (item.IdConversacion == _selectedConversationId)
+            classes += " is-selected";
+        if (item.FijadaPorUsuario)
+            classes += " is-pinned";
+        return classes;
+    }
+
+    private void ApplyCurrentUserToFilters(ConversacionesInboxFilters filters)
+    {
+        filters.UsuarioActual = CurrentUserNameForAudit;
+        filters.SistemaActual = CurrentUserSystemForAudit;
     }
 
     private int TrackInboxNewMessages(
@@ -2440,6 +2497,8 @@
                 Search = _filters.Search.Trim(),
                 IdTecnicoActual = _filters.IdTecnicoActual,
                 CodigoEstado = _filters.CodigoEstado,
+                UsuarioActual = CurrentUserNameForAudit,
+                SistemaActual = CurrentUserSystemForAudit,
                 Limit = 6
             }, cts.Token);
 
@@ -2553,6 +2612,8 @@
             Hasta = filters.Hasta,
             Auditoria = filters.Auditoria,
             TipoMensaje = filters.TipoMensaje,
+            UsuarioActual = filters.UsuarioActual,
+            SistemaActual = filters.SistemaActual,
             Limit = filters.Limit,
             Offset = filters.Offset
         };

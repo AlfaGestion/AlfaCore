@@ -3679,6 +3679,7 @@ tr.row--critical td {
     padding: 1rem;
     display: grid;
     gap: .45rem;
+    cursor: pointer;
     transition: border-color .18s ease, transform .18s ease, background-color .18s ease;
 }
 
@@ -3700,6 +3701,11 @@ tr.row--critical td {
 .conversation-row.is-selected {
     background: linear-gradient(135deg, rgba(14, 165, 233, 0.16), rgba(20, 184, 166, 0.08));
     border-color: rgba(14, 165, 233, 0.28);
+}
+
+.conversation-row.is-pinned {
+    border-color: rgba(245, 158, 11, .34);
+    background: linear-gradient(135deg, rgba(245, 158, 11, .12), rgba(14, 165, 233, .05));
 }
 
 .conversation-row__top,
@@ -3738,6 +3744,32 @@ tr.row--critical td {
     font-size: .68rem;
     font-weight: 900;
     line-height: 1;
+}
+
+.conversation-pin {
+    display: inline-grid;
+    place-items: center;
+    width: 1.55rem;
+    height: 1.55rem;
+    border: 1px solid rgba(148, 163, 184, .18);
+    border-radius: 999px;
+    background: rgba(15, 23, 42, .44);
+    color: var(--color-muted);
+    cursor: pointer;
+    transition: color .16s ease, border-color .16s ease, background .16s ease, transform .16s ease;
+}
+
+.conversation-pin:hover {
+    color: #fbbf24;
+    border-color: rgba(245, 158, 11, .45);
+    background: rgba(245, 158, 11, .12);
+    transform: translateY(-1px);
+}
+
+.conversation-pin.is-pinned {
+    color: #fbbf24;
+    border-color: rgba(245, 158, 11, .55);
+    background: rgba(245, 158, 11, .18);
 }
 
 .conversation-row__date,

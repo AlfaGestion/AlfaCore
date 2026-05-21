@@ -536,6 +536,8 @@ public sealed class ConversacionesService(
             var hastaExclusive = filters.Hasta?.Date.AddDays(1);
             var auditoria = NormalizeAuditFilter(filters.Auditoria);
             var tipoMensaje = NormalizeMessageType(filters.TipoMensaje);
+            var usuarioActual = NormalizePinUser(filters.UsuarioActual);
+            var sistemaActual = NormalizePinSystem(filters.SistemaActual);
             var sql = $"""
                 DECLARE @TicketsFiltro TABLE (IdConversacion bigint NOT NULL PRIMARY KEY);
 
@@ -572,10 +574,16 @@ public sealed class ConversacionesService(
                     ultCliente.IdUltimoMensajeCliente,
                     ISNULL(clienteConteo.CantidadMensajesCliente, 0),
                     ISNULL(c.Archivada, 0),
-                    ISNULL(c.Bloqueada, 0)
+                    ISNULL(c.Bloqueada, 0),
+                    CASE WHEN pin.IdConversacion IS NULL THEN CAST(0 AS bit) ELSE CAST(1 AS bit) END AS FijadaPorUsuario,
+                    pin.FechaHora_Grabacion AS FechaHoraFijada
                 FROM dbo.CONV_CONVERSACIONES c
                 INNER JOIN dbo.CONV_ESTADOS e
                     ON e.CodigoEstado = c.CodigoEstado
+                LEFT JOIN dbo.CONV_CONVERSACIONES_PIN_USUARIO pin
+                    ON pin.IdConversacion = c.IdConversacion
+                   AND pin.Usuario = @UsuarioActual
+                   AND pin.Sistema = @SistemaActual
                 LEFT JOIN dbo.VT_CLIENTES cli
                     ON cli.CODIGO = c.ClienteCodigo
                 LEFT JOIN dbo.MA_CONTACTOS mc
@@ -729,12 +737,17 @@ public sealed class ConversacionesService(
                             WHERE msg.IdConversacion = c.IdConversacion
                         )
                     )
-                ORDER BY ISNULL(c.FechaHoraUltimoMensaje, ultMsg.FechaHoraVisible) DESC, c.IdConversacion DESC
+                ORDER BY
+                    CASE WHEN pin.IdConversacion IS NULL THEN 0 ELSE 1 END DESC,
+                    pin.FechaHora_Grabacion DESC,
+                    ISNULL(c.FechaHoraUltimoMensaje, ultMsg.FechaHoraVisible) DESC,
+                    c.IdConversacion DESC
                 OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY
                 """;
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
+            await EnsureConversationPinsTableAsync(cn, token);
             await LinkUnassociatedWhatsAppConversationsByPhoneAsync(cn, token);
             await ConsolidateExistingDuplicateWhatsAppConversationsAsync(cn, token);
             await ReopenClosedConversationsWithIncomingAfterCloseAsync(cn, null, token);
@@ -752,6 +765,8 @@ public sealed class ConversacionesService(
             cmd.Parameters.AddWithValue("@HastaExclusive", hastaExclusive.HasValue ? hastaExclusive.Value : DBNull.Value);
             cmd.Parameters.AddWithValue("@Auditoria", DbNullable(auditoria));
             cmd.Parameters.AddWithValue("@TipoMensaje", DbNullable(tipoMensaje));
+            cmd.Parameters.AddWithValue("@UsuarioActual", usuarioActual);
+            cmd.Parameters.AddWithValue("@SistemaActual", sistemaActual);
             cmd.Parameters.AddWithValue("@ManualWhatsAppConversationSummary", ManualWhatsAppConversationSummary);
             cmd.Parameters.AddWithValue("@Offset", Math.Max(0, filters.Offset));
             cmd.Parameters.AddWithValue("@Limit", Math.Clamp(filters.Limit, 1, 200));
@@ -778,7 +793,9 @@ public sealed class ConversacionesService(
                     IdUltimoMensajeCliente = rd.IsDBNull(14) ? null : rd.GetInt64(14),
                     CantidadMensajesCliente = rd.IsDBNull(15) ? 0 : rd.GetInt32(15),
                     Archivada = !rd.IsDBNull(16) && rd.GetBoolean(16),
-                    Bloqueada = !rd.IsDBNull(17) && rd.GetBoolean(17)
+                    Bloqueada = !rd.IsDBNull(17) && rd.GetBoolean(17),
+                    FijadaPorUsuario = !rd.IsDBNull(18) && rd.GetBoolean(18),
+                    FechaHoraFijada = rd.IsDBNull(19) ? null : rd.GetDateTime(19)
                 });
             }
 
@@ -1885,6 +1902,81 @@ public sealed class ConversacionesService(
             return true;
         }, "No se pudo cambiar el estado de la conversación.", ct);
     }
+
+    public Task SetConversationPinAsync(long idConversacion, string usuario, string? sistema, bool fijada, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "SetConversationPin", async token =>
+        {
+            if (idConversacion <= 0)
+                throw new InvalidOperationException("La conversaciÃ³n es obligatoria.");
+
+            var normalizedUser = NormalizePinUser(usuario);
+            if (string.IsNullOrWhiteSpace(normalizedUser))
+                throw new InvalidOperationException("No se pudo identificar el usuario actual para fijar la conversaciÃ³n.");
+
+            var normalizedSystem = NormalizePinSystem(sistema);
+
+            const string upsertSql = """
+                IF EXISTS (
+                    SELECT 1
+                    FROM dbo.CONV_CONVERSACIONES_PIN_USUARIO
+                    WHERE Usuario = @Usuario
+                      AND Sistema = @Sistema
+                      AND IdConversacion = @IdConversacion
+                )
+                BEGIN
+                    UPDATE dbo.CONV_CONVERSACIONES_PIN_USUARIO
+                       SET FechaHora_Grabacion = GETDATE()
+                     WHERE Usuario = @Usuario
+                       AND Sistema = @Sistema
+                       AND IdConversacion = @IdConversacion;
+                END
+                ELSE
+                BEGIN
+                    INSERT INTO dbo.CONV_CONVERSACIONES_PIN_USUARIO
+                    (
+                        Usuario,
+                        Sistema,
+                        IdConversacion,
+                        FechaHora_Grabacion
+                    )
+                    VALUES
+                    (
+                        @Usuario,
+                        @Sistema,
+                        @IdConversacion,
+                        GETDATE()
+                    );
+                END;
+                """;
+
+            const string deleteSql = """
+                DELETE FROM dbo.CONV_CONVERSACIONES_PIN_USUARIO
+                WHERE Usuario = @Usuario
+                  AND Sistema = @Sistema
+                  AND IdConversacion = @IdConversacion;
+                """;
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await EnsureConversationPinsTableAsync(cn, token);
+
+            await using var cmd = new SqlCommand(fijada ? upsertSql : deleteSql, cn);
+            cmd.Parameters.AddWithValue("@Usuario", normalizedUser);
+            cmd.Parameters.AddWithValue("@Sistema", normalizedSystem);
+            cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
+            await cmd.ExecuteNonQueryAsync(token);
+
+            await _appEvents.LogAuditAsync(
+                "Conversaciones",
+                "SetConversationPin",
+                "CONV_CONVERSACIONES_PIN_USUARIO",
+                idConversacion.ToString(CultureInfo.InvariantCulture),
+                fijada ? "ConversaciÃ³n fijada por usuario." : "ConversaciÃ³n desfijada por usuario.",
+                new { Usuario = normalizedUser, Sistema = normalizedSystem },
+                token);
+
+            return true;
+        }, "No se pudo actualizar el pin de la conversaciÃ³n.", ct);
 
     public Task<ConversacionWebhookResultDto> RegisterIncomingWebhookAsync(ConversacionWebhookRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "RegisterIncomingWebhook", async token =>
@@ -4092,6 +4184,40 @@ public sealed class ConversacionesService(
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
+    private static async Task EnsureConversationPinsTableAsync(SqlConnection cn, CancellationToken ct)
+    {
+        const string sql = """
+            IF OBJECT_ID(N'dbo.CONV_CONVERSACIONES_PIN_USUARIO', N'U') IS NULL
+            BEGIN
+                CREATE TABLE dbo.CONV_CONVERSACIONES_PIN_USUARIO
+                (
+                    Usuario nvarchar(120) NOT NULL,
+                    Sistema nvarchar(50) NOT NULL CONSTRAINT DF_CONV_CONV_PIN_USU_Sistema DEFAULT (N''),
+                    IdConversacion bigint NOT NULL,
+                    FechaHora_Grabacion datetime NOT NULL CONSTRAINT DF_CONV_CONV_PIN_USU_FhGrab DEFAULT (GETDATE()),
+                    CONSTRAINT PK_CONV_CONVERSACIONES_PIN_USUARIO PRIMARY KEY CLUSTERED (Usuario, Sistema, IdConversacion),
+                    CONSTRAINT FK_CONV_CONV_PIN_USU_CONVERSACION FOREIGN KEY (IdConversacion)
+                        REFERENCES dbo.CONV_CONVERSACIONES (IdConversacion)
+                );
+            END;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM sys.indexes
+                WHERE name = N'IX_CONV_CONV_PIN_USU_Orden'
+                  AND object_id = OBJECT_ID(N'dbo.CONV_CONVERSACIONES_PIN_USUARIO')
+            )
+            BEGIN
+                CREATE NONCLUSTERED INDEX IX_CONV_CONV_PIN_USU_Orden
+                    ON dbo.CONV_CONVERSACIONES_PIN_USUARIO (Usuario, Sistema, FechaHora_Grabacion DESC)
+                    INCLUDE (IdConversacion);
+            END;
+            """;
+
+        await using var cmd = new SqlCommand(sql, cn);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
     private async Task<ConversacionAdjuntoServeDto> GetFavoriteStickerFileAsync(long idFavorito, CancellationToken ct)
     {
         const string sql = """
@@ -5180,6 +5306,12 @@ public sealed class ConversacionesService(
             _ => null
         };
     }
+
+    private static string NormalizePinUser(string? usuario)
+        => (usuario ?? string.Empty).Trim().ToUpperInvariant();
+
+    private static string NormalizePinSystem(string? sistema)
+        => (sistema ?? string.Empty).Trim().ToUpperInvariant();
 
     private static IReadOnlyList<ConversacionInboxItemDto> DeduplicateInboxItems(IReadOnlyList<ConversacionInboxItemDto> items)
     {

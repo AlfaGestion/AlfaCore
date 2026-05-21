@@ -10,6 +10,8 @@ public sealed class ConversacionesInboxFilters
     public string? IdTecnicoActual { get; set; }
     public string? CodigoEstado { get; set; }
     public string? Canal { get; set; }
+    public string? UsuarioActual { get; set; }
+    public string? SistemaActual { get; set; }
     public DateTime? Desde { get; set; }
     public DateTime? Hasta { get; set; }
     public string? Auditoria { get; set; }
@@ -143,6 +145,8 @@ public sealed class ConversacionInboxItemDto
     public DateTime? FechaHoraVencimientoVentanaWhatsApp { get; set; }
     public bool Archivada { get; set; }
     public bool Bloqueada { get; set; }
+    public bool FijadaPorUsuario { get; set; }
+    public DateTime? FechaHoraFijada { get; set; }
 }
 
 public sealed class ConversacionDetalleDto
