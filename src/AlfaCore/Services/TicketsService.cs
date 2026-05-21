@@ -37,7 +37,7 @@ public sealed class TicketsService(
                 ORDER BY Orden, Nombre;
 
                 SELECT
-                    ISNULL(IdTecnico, ''),
+                    LTRIM(RTRIM(ISNULL(IdTecnico, ''))),
                     ISNULL(Nombre, ''),
                     ISNULL(Cargo, ''),
                     ISNULL(UsuarioAsociado, ''),
@@ -602,7 +602,7 @@ public sealed class TicketsService(
                 ISNULL(e.Color, ''),
                 ISNULL(e.Orden, 0),
                 ISNULL(t.Prioridad, 0),
-                ISNULL(t.IdTecnico, ''),
+                LTRIM(RTRIM(ISNULL(t.IdTecnico, ''))),
                 ISNULL(tec.Nombre, ''),
                 ISNULL(t.ClienteCodigo, ''),
                 ISNULL(cli.RAZON_SOCIAL, ''),
@@ -624,7 +624,7 @@ public sealed class TicketsService(
             INNER JOIN dbo.TICK_ESTADOS e ON e.CodigoEstado = t.CodigoEstado
             LEFT JOIN dbo.VT_CLIENTES cli ON cli.CODIGO = t.ClienteCodigo
             LEFT JOIN dbo.MA_CONTACTOS mc ON mc.id = t.IdContacto
-            LEFT JOIN dbo.V_TA_Tecnicos tec ON tec.IdTecnico = t.IdTecnico
+            LEFT JOIN dbo.V_TA_Tecnicos tec ON LTRIM(RTRIM(tec.IdTecnico)) = LTRIM(RTRIM(t.IdTecnico))
             OUTER APPLY (
                 SELECT COUNT(*) AS CantidadMensajes
                 FROM dbo.TICK_TICKET_MENSAJES tm
@@ -637,7 +637,7 @@ public sealed class TicketsService(
             WHERE
                 ISNULL(t.Baja, 0) = 0
                 AND (@CodigoEstado IS NULL OR t.CodigoEstado = @CodigoEstado)
-                AND (@IdTecnico IS NULL OR t.IdTecnico = @IdTecnico)
+                AND (@IdTecnico IS NULL OR LTRIM(RTRIM(t.IdTecnico)) = @IdTecnico)
                 AND (@Prioridad IS NULL OR t.Prioridad = @Prioridad)
                 AND (@IncluirCerrados = 1 OR ISNULL(e.EsCerrado, 0) = 0)
                 AND (@TieneAsignado IS NULL OR CASE WHEN NULLIF(LTRIM(RTRIM(ISNULL(t.IdTecnico, ''))), '') IS NULL THEN CAST(0 AS bit) ELSE CAST(1 AS bit) END = @TieneAsignado)
