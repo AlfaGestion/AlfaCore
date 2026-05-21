@@ -4481,6 +4481,7 @@
     private static string InferTipoArchivo(string mimeType)
     {
         if (mimeType.StartsWith("image/", StringComparison.OrdinalIgnoreCase)) return "IMAGE";
+        if (mimeType.StartsWith("audio/webm", StringComparison.OrdinalIgnoreCase)) return "DOCUMENT";
         if (mimeType.StartsWith("audio/", StringComparison.OrdinalIgnoreCase)) return "AUDIO";
         if (mimeType.StartsWith("video/", StringComparison.OrdinalIgnoreCase)) return "VIDEO";
         return "DOCUMENT";
@@ -4985,6 +4986,7 @@
         {
             "IMAGE" => "Imagen",
             "AUDIO" => "Audio",
+            "DOCUMENT" when MimeType.StartsWith("audio/", StringComparison.OrdinalIgnoreCase) => "Audio",
             "VIDEO" => "Video",
             _ => "Archivo"
         };
