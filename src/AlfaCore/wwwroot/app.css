@@ -5723,6 +5723,7 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
     max-width: min(100%, calc(100vw - 7rem));
     margin-bottom: .35rem;
     align-self: flex-start;
+    order: -1;
     overflow-x: auto;
 }
 
@@ -5858,6 +5859,39 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
     scrollbar-color: rgba(14, 165, 233, .55) rgba(15, 23, 42, .35);
     transform-origin: top left;
     animation: support-dropdown-in .16s cubic-bezier(.2, .8, .2, 1) both;
+}
+
+.message-bubble-shell > .conversations-tools-panel--reaction {
+    position: relative;
+    right: auto;
+    bottom: auto;
+    z-index: 90;
+    width: min(360px, calc(100vw - 7rem));
+    max-width: 100%;
+    max-height: min(260px, calc(100vh - 14rem));
+    margin-bottom: .45rem;
+    padding: .75rem;
+    align-self: flex-start;
+    order: -1;
+    transform-origin: bottom left;
+}
+
+.message-row--outgoing .message-bubble-shell > .conversations-tools-panel--reaction {
+    align-self: flex-end;
+    transform-origin: bottom right;
+}
+
+.conversations-tools-panel--reaction .conversations-tools-panel__search {
+    width: 100%;
+    margin-bottom: .7rem;
+}
+
+.conversations-tools-panel--reaction .conversations-tools-panel__group {
+    margin-bottom: .7rem;
+}
+
+.conversations-tools-panel--reaction .conversations-tools-panel__grid {
+    gap: .35rem;
 }
 
 .conversations-tools-panel__tabs {
@@ -15056,4 +15090,35 @@ textarea {
         width: auto;
         max-height: min(48dvh, 420px);
     }
+}
+
+.conversations-page--odoo .message-bubble-shell > .message-reaction-picker {
+    position: relative;
+    left: auto;
+    right: auto;
+    top: auto;
+    bottom: auto;
+    z-index: 90;
+    order: -1;
+    transform: none;
+    margin: 0 0 .35rem;
+}
+
+.conversations-page--odoo .message-bubble-shell > .conversations-tools-panel--reaction,
+.conversations-page--odoo.conversations-page--chat-active .message-bubble-shell > .conversations-tools-panel--reaction {
+    position: relative;
+    left: auto;
+    right: auto;
+    bottom: auto;
+    z-index: 90;
+    order: -1;
+    width: min(360px, calc(100vw - 7rem));
+    max-width: 100%;
+    max-height: min(260px, calc(100vh - 14rem));
+    margin: 0 0 .45rem;
+}
+
+.conversations-page--odoo .message-row--outgoing .message-bubble-shell > .message-reaction-picker,
+.conversations-page--odoo .message-row--outgoing .message-bubble-shell > .conversations-tools-panel--reaction {
+    align-self: flex-end;
 }

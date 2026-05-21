@@ -714,6 +714,24 @@
                                                 </button>
                                             </div>
                                         }
+                                        @if (_reactionEmojiMessageId == message.IdMensaje && _showComposerTools)
+                                        {
+                                            <div class="panel-card conversations-tools-panel conversations-tools-panel--reaction" @onclick:stopPropagation>
+                                                <input class="conversations-tools-panel__search" type="search" placeholder="Buscar emoji" value="@_emojiSearch" @oninput="HandleEmojiSearchInput" />
+                                                @foreach (var group in FilteredEmojiGroups)
+                                                {
+                                                    <div class="conversations-tools-panel__group">
+                                                        <strong class="context-card__label">@group.Nombre</strong>
+                                                        <div class="conversations-tools-panel__grid">
+                                                            @foreach (var emoji in group.Emojis)
+                                                            {
+                                                                <button type="button" class="btn btn--ghost btn--sm conversations-tools-panel__emoji" title="@GetEmojiButtonTitle(emoji)" @onclick="() => SelectEmojiFromPanelAsync(emoji)">@emoji</button>
+                                                            }
+                                                        </div>
+                                                    </div>
+                                                }
+                                            </div>
+                                        }
                                         <article class="message-card @GetMessageClass(message) @(_selectedTicketMessageIds.Contains(message.IdMensaje) ? "message-card--ticket-selected" : string.Empty)">
                                     <div class="message-card__meta">
                                         <span>@GetMessageAuthor(message)</span>
@@ -987,7 +1005,7 @@
                                     <i class="bi bi-plus-lg"></i>
                                 </button>
                             </div>
-                            @if (_showComposerTools)
+                            @if (_showComposerTools && !_reactionEmojiMessageId.HasValue)
                             {
                                 <div class="panel-card conversations-tools-panel" @onclick:stopPropagation>
                                     <div class="conversations-composer__actions conversations-tools-panel__tabs">
