@@ -428,6 +428,20 @@ window.conversacionesUi = {
         return true;
     },
 
+    scrollToMessage: function (messageId) {
+        if (!messageId) return false;
+
+        const element = document.getElementById(messageId);
+        if (!element) return false;
+
+        element.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+        element.classList.remove('message-row--jump-target');
+        void element.offsetWidth;
+        element.classList.add('message-row--jump-target');
+        window.setTimeout(() => element.classList.remove('message-row--jump-target'), 2400);
+        return true;
+    },
+
     bindFileDrop: function (element, inputId) {
         if (!element || !inputId) return false;
 

@@ -682,7 +682,7 @@
                                     continue;
                                 }
 
-                                <div class="message-row @(IsOutgoingMessage(message) ? "message-row--outgoing" : "message-row--incoming")">
+                                <div id="@GetMessageDomId(message.IdMensaje)" class="message-row @(IsOutgoingMessage(message) ? "message-row--outgoing" : "message-row--incoming")">
                                     @if (_ticketSelectionMode)
                                     {
                                         <label class="message-ticket-selector" title="Incluir mensaje en el ticket">
@@ -741,10 +741,14 @@
                                     </div>
                                     @if (TryGetQuotedMessage(message, out var quotedMessage))
                                     {
-                                        <div class="message-card__quote">
+                                        <button type="button"
+                                                class="message-card__quote"
+                                                title="Ir al mensaje citado"
+                                                @onclick="() => ScrollToQuotedMessageAsync(quotedMessage.IdMensaje)"
+                                                @onclick:stopPropagation>
                                             <span>@GetMessageAuthor(quotedMessage)</span>
                                             <strong>@GetQuotePreview(quotedMessage)</strong>
-                                        </div>
+                                        </button>
                                     }
                                     @if (ShouldShowMessageText(message))
                                     {
@@ -4440,6 +4444,24 @@
             && string.Equals(x.WhatsAppMessageId, message.WhatsAppReplyToMessageId, StringComparison.OrdinalIgnoreCase))!;
 
         return quotedMessage is not null;
+    }
+
+    private static string GetMessageDomId(long idMensaje)
+        => $"conversation-message-{idMensaje}";
+
+    private async Task ScrollToQuotedMessageAsync(long idMensaje)
+    {
+        if (idMensaje <= 0)
+            return;
+
+        try
+        {
+            await JS.InvokeVoidAsync("conversacionesUi.scrollToMessage", GetMessageDomId(idMensaje));
+        }
+        catch (Exception ex)
+        {
+            _actionError = $"No se pudo ubicar el mensaje citado: {ex.Message}";
+        }
     }
 
     private static string DisplayOrFallback(params string?[] values)
