@@ -3268,20 +3268,28 @@ public sealed class ConversacionesService(
                     ELSE FechaHoraUltimoMensaje
                 END,
                 CodigoEstado = CASE
-                    WHEN @Reabrir = 1 AND EXISTS (
-                        SELECT 1
-                        FROM dbo.CONV_ESTADOS e
-                        WHERE e.CodigoEstado = c.CodigoEstado
-                          AND ISNULL(e.EsCerrado, 0) = 1
+                    WHEN @Reabrir = 1 AND (
+                        c.FechaHoraCierre IS NOT NULL
+                        OR UPPER(LTRIM(RTRIM(ISNULL(c.CodigoEstado, N'')))) IN (N'CERRADA', N'CERRADO')
+                        OR EXISTS (
+                            SELECT 1
+                            FROM dbo.CONV_ESTADOS e
+                            WHERE e.CodigoEstado = c.CodigoEstado
+                              AND ISNULL(e.EsCerrado, 0) = 1
+                        )
                     ) THEN N'ABIERTA'
                     ELSE CodigoEstado
                 END,
                 FechaHoraCierre = CASE
-                    WHEN @Reabrir = 1 AND EXISTS (
-                        SELECT 1
-                        FROM dbo.CONV_ESTADOS e
-                        WHERE e.CodigoEstado = c.CodigoEstado
-                          AND ISNULL(e.EsCerrado, 0) = 1
+                    WHEN @Reabrir = 1 AND (
+                        c.FechaHoraCierre IS NOT NULL
+                        OR UPPER(LTRIM(RTRIM(ISNULL(c.CodigoEstado, N'')))) IN (N'CERRADA', N'CERRADO')
+                        OR EXISTS (
+                            SELECT 1
+                            FROM dbo.CONV_ESTADOS e
+                            WHERE e.CodigoEstado = c.CodigoEstado
+                              AND ISNULL(e.EsCerrado, 0) = 1
+                        )
                     ) THEN NULL
                     ELSE FechaHoraCierre
                 END,
@@ -3308,9 +3316,13 @@ public sealed class ConversacionesService(
                    FechaHoraCierre = NULL,
                    FechaHora_Modificacion = GETDATE()
             FROM dbo.CONV_CONVERSACIONES c
-            INNER JOIN dbo.CONV_ESTADOS e
+            LEFT JOIN dbo.CONV_ESTADOS e
                 ON e.CodigoEstado = c.CodigoEstado
-            WHERE ISNULL(e.EsCerrado, 0) = 1
+            WHERE (
+                  ISNULL(e.EsCerrado, 0) = 1
+                  OR c.FechaHoraCierre IS NOT NULL
+                  OR UPPER(LTRIM(RTRIM(ISNULL(c.CodigoEstado, N'')))) IN (N'CERRADA', N'CERRADO')
+              )
               AND (@IdConversacion IS NULL OR c.IdConversacion = @IdConversacion)
               AND EXISTS
               (
@@ -3318,7 +3330,11 @@ public sealed class ConversacionesService(
                   FROM dbo.CONV_MENSAJES m
                   WHERE m.IdConversacion = c.IdConversacion
                     AND m.Direction = N'ENTRANTE'
-                    AND (c.FechaHoraCierre IS NULL OR m.FechaHora > c.FechaHoraCierre)
+                    AND (
+                        c.FechaHoraCierre IS NULL
+                        OR m.FechaHora > c.FechaHoraCierre
+                        OR m.FechaHora_Grabacion > c.FechaHoraCierre
+                    )
               );
             """;
 
