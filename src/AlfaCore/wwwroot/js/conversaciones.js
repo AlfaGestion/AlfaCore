@@ -444,6 +444,18 @@ window.conversacionesUi = {
         let dragDepth = 0;
         const getInput = () => document.getElementById(inputId);
         const hasFiles = event => event.dataTransfer && Array.from(event.dataTransfer.types || []).includes('Files');
+        const addFilesToInput = files => {
+            const input = getInput();
+            if (!input || !files || files.length === 0) return false;
+
+            const transfer = new DataTransfer();
+            Array.from(files).forEach(file => transfer.items.add(file));
+            if (transfer.files.length === 0) return false;
+
+            input.files = transfer.files;
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+            return true;
+        };
 
         const prevent = event => {
             if (!hasFiles(event)) return false;
@@ -478,20 +490,39 @@ window.conversacionesUi = {
             dragDepth = 0;
             element.classList.remove('is-file-dragging');
 
-            const input = getInput();
-            if (!input || !event.dataTransfer.files || event.dataTransfer.files.length === 0) return;
+            addFilesToInput(event.dataTransfer.files);
+        };
 
-            const transfer = new DataTransfer();
-            Array.from(event.dataTransfer.files).forEach(file => transfer.items.add(file));
-            input.files = transfer.files;
-            input.dispatchEvent(new Event('change', { bubbles: true }));
+        const paste = event => {
+            const items = Array.from(event.clipboardData?.items || []);
+            const imageFiles = items
+                .filter(item => item.kind === 'file' && item.type?.startsWith('image/'))
+                .map(item => item.getAsFile())
+                .filter(file => file);
+
+            if (imageFiles.length === 0) return;
+
+            event.preventDefault();
+            event.stopPropagation();
+
+            const timestamp = new Date().toISOString().replace(/[-:T.Z]/g, '').slice(0, 14);
+            const files = imageFiles.map((file, index) => {
+                const extension = file.name && /\.[a-z0-9]{2,5}$/i.test(file.name)
+                    ? file.name.slice(file.name.lastIndexOf('.'))
+                    : (file.type === 'image/png' ? '.png' : file.type === 'image/webp' ? '.webp' : '.jpg');
+                const name = file.name || `imagen_${timestamp}_${index + 1}${extension}`;
+                return new File([file], name, { type: file.type || 'image/png', lastModified: Date.now() });
+            });
+
+            addFilesToInput(files);
         };
 
         const events = [
             { name: 'dragenter', handler: dragEnter },
             { name: 'dragover', handler: dragOver },
             { name: 'dragleave', handler: dragLeave },
-            { name: 'drop', handler: drop }
+            { name: 'drop', handler: drop },
+            { name: 'paste', handler: paste }
         ];
 
         events.forEach(item => element.addEventListener(item.name, item.handler));
