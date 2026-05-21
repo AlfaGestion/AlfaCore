@@ -4527,7 +4527,9 @@ tr.row--critical td {
 
 .conversations-composer--support > .field textarea {
     min-height: 38px;
-    max-height: 48px;
+    max-height: 180px;
+    resize: vertical;
+    overflow: auto;
 }
 
 .conversations-composer--support > .field label {
@@ -4540,7 +4542,9 @@ tr.row--critical td {
 
 .conversations-composer textarea {
     min-height: 42px;
-    max-height: 64px;
+    max-height: 180px;
+    resize: vertical;
+    overflow: auto;
 }
 
 .conversations-composer .field {
@@ -6056,6 +6060,11 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
 .conversations-page--odoo textarea,
 .templates-page--odoo textarea {
     resize: none;
+}
+
+.conversations-page--odoo .conversations-composer textarea {
+    resize: vertical;
+    overflow: auto;
 }
 
 .templates-variable-guide {
@@ -15071,8 +15080,9 @@ textarea {
 
     .conversations-page--odoo.conversations-page--chat-active .conversations-composer textarea {
         min-height: 42px;
-        max-height: 118px;
-        resize: none;
+        max-height: 180px;
+        resize: vertical;
+        overflow: auto;
         border-radius: 18px;
     }
 
