@@ -4450,6 +4450,13 @@ tr.row--critical td {
     font-weight: 700;
 }
 
+.conversations-pending-attachment__error {
+    max-width: min(360px, 48vw);
+    color: #fecaca;
+    font-size: .72rem;
+    font-weight: 700;
+}
+
 .conversations-pending-attachment .btn {
     display: inline-grid !important;
     place-items: center;

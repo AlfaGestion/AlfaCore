@@ -994,6 +994,7 @@
                                             @if (pending.HasError)
                                             {
                                                 <i class="bi bi-exclamation-circle-fill" title="@pending.Error"></i>
+                                                <span class="conversations-pending-attachment__error">@pending.Error</span>
                                             }
                                             <button type="button" class="btn btn--ghost btn--sm" @onclick="() => RemovePendingAttachment(pending.Id)" title="Quitar adjunto">
                                                 <i class="bi bi-x-lg"></i>
@@ -3098,6 +3099,7 @@
         catch (Exception ex)
         {
             _actionError = ex.Message;
+            MarkPendingAttachmentsError(ex.Message);
             if (optimisticMessageId.HasValue)
                 RemoveOptimisticMessage(optimisticMessageId.Value);
 
@@ -3758,6 +3760,9 @@
         try
         {
             await AddFilesToPendingAttachmentsAsync(e, _pendingAttachments);
+            foreach (var pending in _pendingAttachments)
+                pending.Error = null;
+
             MinimizeComposerTools();
 
             _actionMessage = _pendingAttachments.Count == 1
@@ -3898,6 +3903,16 @@
 
     private void RemovePendingAttachment(Guid id)
         => _pendingAttachments.RemoveAll(x => x.Id == id);
+
+    private void MarkPendingAttachmentsError(string? message)
+    {
+        var error = string.IsNullOrWhiteSpace(message)
+            ? "No se pudo enviar. Reintentá con el botón de enviar."
+            : message;
+
+        foreach (var pending in _pendingAttachments)
+            pending.Error = error;
+    }
 
     private void RemoveTemplatePendingAttachment(Guid id)
         => _templatePendingAttachments.RemoveAll(x => x.Id == id);
