@@ -378,7 +378,9 @@
         </div>
     </aside>
 
-    <main class="shell__main">
+    <main class="@MainClass">
+        @if (_currentModule != "calendario")
+        {
         <header class="shell__header">
             <button type="button"
                     class="shell__mobile-toggle no-print"
@@ -428,6 +430,7 @@
                 </div>
             }
         </header>
+        }
 
         @if (ShouldShowConversationMobilePwaActions)
         {
@@ -1292,6 +1295,10 @@
         "contactos" => "Contactos",
         _ => "Dashboard de Compras"
     };
+
+    private string MainClass => _currentModule == "calendario"
+        ? "shell__main shell__main--calendario"
+        : "shell__main";
 
     private sealed class PwaClientState
     {
