@@ -2,6 +2,35 @@ window.conversacionesAudio = (function () {
     let _recorder = null;
     let _chunks = [];
 
+    const stopTracks = recorder => {
+        try {
+            recorder?.stream?.getTracks?.().forEach(t => t.stop());
+        } catch {
+        }
+    };
+
+    const buildRecordingBlob = () => new Blob(_chunks, { type: _recorder?.mimeType || 'audio/webm' });
+
+    const resetRecorder = () => {
+        _recorder = null;
+        _chunks = [];
+    };
+
+    const extensionForMime = mimeType => {
+        const normalized = (mimeType || '').toLowerCase();
+        if (normalized.includes('ogg')) return '.ogg';
+        if (normalized.includes('mp4')) return '.m4a';
+        if (normalized.includes('mpeg')) return '.mp3';
+        return '.webm';
+    };
+
+    const normalizeFileName = (fileName, mimeType) => {
+        const name = fileName || 'audio';
+        return /\.[a-z0-9]{2,5}$/i.test(name)
+            ? name
+            : `${name}${extensionForMime(mimeType)}`;
+    };
+
     return {
         startRecording: async function () {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -22,13 +51,12 @@ window.conversacionesAudio = (function () {
         stopRecording: function () {
             return new Promise(resolve => {
                 _recorder.onstop = () => {
-                    const blob = new Blob(_chunks, { type: _recorder.mimeType || 'audio/webm' });
+                    const blob = buildRecordingBlob();
                     const reader = new FileReader();
                     reader.onloadend = () => resolve(reader.result.split(',')[1]);
                     reader.readAsDataURL(blob);
-                    _recorder.stream.getTracks().forEach(t => t.stop());
-                    _recorder = null;
-                    _chunks = [];
+                    stopTracks(_recorder);
+                    resetRecorder();
                 };
                 _recorder.stop();
             });
@@ -38,16 +66,56 @@ window.conversacionesAudio = (function () {
             return new Promise(resolve => {
                 _recorder.onstop = () => {
                     const mimeType = _recorder.mimeType || 'audio/webm';
-                    const blob = new Blob(_chunks, { type: mimeType });
+                    const blob = buildRecordingBlob();
                     const reader = new FileReader();
                     reader.onloadend = () => resolve({
                         base64: reader.result.split(',')[1],
                         mimeType: mimeType
                     });
                     reader.readAsDataURL(blob);
-                    _recorder.stream.getTracks().forEach(t => t.stop());
-                    _recorder = null;
-                    _chunks = [];
+                    stopTracks(_recorder);
+                    resetRecorder();
+                };
+                _recorder.stop();
+            });
+        },
+
+        stopRecordingToInput: function (inputId, fileName) {
+            return new Promise(resolve => {
+                if (!_recorder) {
+                    resolve({ ok: false, message: 'No hay una grabación activa.' });
+                    return;
+                }
+
+                _recorder.onstop = () => {
+                    const mimeType = _recorder.mimeType || 'audio/webm';
+                    const blob = buildRecordingBlob();
+                    stopTracks(_recorder);
+                    resetRecorder();
+
+                    const input = document.getElementById(inputId);
+                    if (!input) {
+                        resolve({ ok: false, message: 'No se encontró el selector de adjuntos.' });
+                        return;
+                    }
+
+                    try {
+                        const normalizedFileName = normalizeFileName(fileName, mimeType);
+                        const file = new File([blob], normalizedFileName, {
+                            type: mimeType,
+                            lastModified: Date.now()
+                        });
+                        const transfer = new DataTransfer();
+                        transfer.items.add(file);
+                        input.files = transfer.files;
+                        input.dispatchEvent(new Event('change', { bubbles: true }));
+                        resolve({ ok: true, mimeType: mimeType, size: blob.size, fileName: normalizedFileName });
+                    } catch (error) {
+                        resolve({
+                            ok: false,
+                            message: error?.message || 'No se pudo preparar el audio grabado.'
+                        });
+                    }
                 };
                 _recorder.stop();
             });

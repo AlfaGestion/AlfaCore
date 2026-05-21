@@ -3872,24 +3872,12 @@
 
         try
         {
-            var recording = await JS.InvokeAsync<RecordedAudioPayload>("conversacionesAudio.stopRecordingPayload");
-            if (string.IsNullOrWhiteSpace(recording.Base64)) return;
-
-            var bytes = Convert.FromBase64String(recording.Base64);
-            var mimeType = string.IsNullOrWhiteSpace(recording.MimeType) ? "audio/webm" : recording.MimeType;
-            var fileName = $"audio_{DateTime.Now:yyyyMMdd_HHmmss}{InferAudioExtension(mimeType)}";
-
-            _pendingAttachments.Add(new PendingAttachment
-            {
-                NombreArchivo = fileName,
-                MimeType = mimeType,
-                TipoArchivo = "AUDIO",
-                Contenido = bytes,
-                TamanoBytes = bytes.Length
-            });
-
-            _actionMessage = "Audio listo para enviar.";
-            MinimizeComposerTools();
+            var fileName = $"audio_{DateTime.Now:yyyyMMdd_HHmmss}";
+            var result = await JS.InvokeAsync<RecordedAudioFileResult>("conversacionesAudio.stopRecordingToInput", "conv-file-drop-input", fileName);
+            if (!result.Ok)
+                _actionError = string.IsNullOrWhiteSpace(result.Message)
+                    ? "No se pudo preparar el audio grabado."
+                    : result.Message;
         }
         catch (Exception ex)
         {
@@ -4982,10 +4970,13 @@
         };
     }
 
-    private sealed class RecordedAudioPayload
+    private sealed class RecordedAudioFileResult
     {
-        public string Base64 { get; set; } = string.Empty;
+        public bool Ok { get; set; }
         public string MimeType { get; set; } = string.Empty;
+        public string FileName { get; set; } = string.Empty;
+        public long Size { get; set; }
+        public string Message { get; set; } = string.Empty;
     }
 
     private sealed record EmojiGroup(string Nombre, IReadOnlyList<string> Emojis);
