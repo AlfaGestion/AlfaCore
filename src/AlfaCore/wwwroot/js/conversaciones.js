@@ -19,9 +19,17 @@ window.conversacionesAudio = (function () {
     const extensionForMime = mimeType => {
         const normalized = (mimeType || '').toLowerCase();
         if (normalized.includes('ogg')) return '.ogg';
-        if (normalized.includes('mp4')) return '.m4a';
+        if (normalized.includes('mp4')) return '.mp4';
         if (normalized.includes('mpeg')) return '.mp3';
         return '.webm';
+    };
+
+    const normalizeRecordedAudioMimeForUpload = mimeType => {
+        const normalized = (mimeType || '').toLowerCase();
+        if (normalized.includes('mp4')) return 'audio/mp4';
+        if (normalized.includes('mpeg')) return 'audio/mpeg';
+        if (normalized.includes('ogg')) return 'audio/ogg';
+        return 'audio/mp4';
     };
 
     const normalizeFileName = (fileName, mimeType) => {
@@ -36,10 +44,10 @@ window.conversacionesAudio = (function () {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             _chunks = [];
             const preferredTypes = [
+                'audio/mp4',
                 'audio/ogg;codecs=opus',
                 'audio/webm;codecs=opus',
-                'audio/webm',
-                'audio/mp4'
+                'audio/webm'
             ];
             const mimeType = preferredTypes.find(type => window.MediaRecorder && MediaRecorder.isTypeSupported(type));
             _recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
@@ -89,6 +97,7 @@ window.conversacionesAudio = (function () {
 
                 _recorder.onstop = () => {
                     const mimeType = _recorder.mimeType || 'audio/webm';
+                    const uploadMimeType = normalizeRecordedAudioMimeForUpload(mimeType);
                     const blob = buildRecordingBlob();
                     stopTracks(_recorder);
                     resetRecorder();
@@ -100,16 +109,16 @@ window.conversacionesAudio = (function () {
                     }
 
                     try {
-                        const normalizedFileName = normalizeFileName(fileName, mimeType);
+                        const normalizedFileName = normalizeFileName(fileName, uploadMimeType);
                         const file = new File([blob], normalizedFileName, {
-                            type: mimeType,
+                            type: uploadMimeType,
                             lastModified: Date.now()
                         });
                         const transfer = new DataTransfer();
                         transfer.items.add(file);
                         input.files = transfer.files;
                         input.dispatchEvent(new Event('change', { bubbles: true }));
-                        resolve({ ok: true, mimeType: mimeType, size: blob.size, fileName: normalizedFileName });
+                        resolve({ ok: true, mimeType: uploadMimeType, size: blob.size, fileName: normalizedFileName });
                     } catch (error) {
                         resolve({
                             ok: false,

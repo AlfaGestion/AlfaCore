@@ -4916,7 +4916,7 @@
     {
         var normalized = (mimeType ?? string.Empty).ToLowerInvariant();
         if (normalized.Contains("ogg", StringComparison.OrdinalIgnoreCase)) return ".ogg";
-        if (normalized.Contains("mp4", StringComparison.OrdinalIgnoreCase)) return ".m4a";
+        if (normalized.Contains("mp4", StringComparison.OrdinalIgnoreCase)) return ".mp4";
         if (normalized.Contains("mpeg", StringComparison.OrdinalIgnoreCase)) return ".mp3";
         return ".webm";
     }
