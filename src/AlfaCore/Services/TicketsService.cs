@@ -976,7 +976,8 @@ public sealed class TicketsService(
         "este", "estos", "estas", "hay", "ahi", "aca", "aqui", "problema", "problemas", "consulta", "consultar",
         "necesito", "necesitamos", "quiero", "queria", "puedo", "pueden", "favor", "hola", "buen", "buenas",
         "buenos", "dia", "dias", "tarde", "noches", "anda", "funciona", "funcionar", "falla", "fallando",
-        "error", "tema", "algo", "esto", "eso", "como", "cuando", "donde", "nuevo", "nueva", "ticket"
+        "error", "tema", "algo", "esto", "eso", "como", "cuando", "donde", "nuevo", "nueva", "ticket",
+        "crear", "creo", "creado", "creada", "creados", "creadas", "generar", "generado", "generada"
     };
 
     private static async Task HydrateEtiquetasAsync(SqlConnection cn, IReadOnlyList<TicketGridItemDto> tickets, CancellationToken ct)

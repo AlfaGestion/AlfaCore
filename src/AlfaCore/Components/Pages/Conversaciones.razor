@@ -2421,12 +2421,16 @@
         try
         {
             var selectedText = BuildSelectedTicketText();
+            var searchText = BuildRelatedTicketSearchText(selectedText);
+            if (string.IsNullOrWhiteSpace(searchText))
+                return;
+
             var matches = await TicketsSvc.FindRelatedOpenTicketsAsync(new TicketRelatedSearchRequest
             {
                 ClienteCodigo = _selectedConversation.ClienteCodigo,
                 IdContacto = _selectedConversation.IdContacto,
                 IdConversacion = _selectedConversation.IdConversacion,
-                Texto = $"{_ticketTitle} {selectedText}"
+                Texto = searchText
             });
 
             _relatedTicketMatches = matches
@@ -2446,8 +2450,35 @@
     private string BuildSelectedTicketText()
         => string.Join(" ", VisibleMessages
             .Where(x => _selectedTicketMessageIds.Contains(x.IdMensaje))
+            .Where(ShouldUseMessageForRelatedTicketSearch)
             .Select(x => x.Texto)
             .Where(x => !string.IsNullOrWhiteSpace(x)));
+
+    private string BuildRelatedTicketSearchText(string selectedText)
+    {
+        var defaultTitle = BuildDefaultTicketTitle();
+        var titleWasEdited = !string.IsNullOrWhiteSpace(_ticketTitle)
+                             && !string.Equals(_ticketTitle.Trim(), defaultTitle.Trim(), StringComparison.OrdinalIgnoreCase);
+
+        return titleWasEdited
+            ? $"{_ticketTitle} {selectedText}".Trim()
+            : selectedText.Trim();
+    }
+
+    private bool ShouldUseMessageForRelatedTicketSearch(ConversacionMensajeDto message)
+    {
+        if (string.IsNullOrWhiteSpace(message.Texto))
+            return false;
+
+        if (IsContactMessage(message) || IsReactionMessage(message) || IsUnsupportedMessage(message))
+            return false;
+
+        if (message.MessageType is "IMAGE" or "AUDIO" or "VIDEO" or "DOCUMENT" or "STICKER")
+            return HasHumanAttachmentText(message);
+
+        return string.Equals(message.MessageType, "TEXT", StringComparison.OrdinalIgnoreCase)
+               || string.IsNullOrWhiteSpace(message.MessageType);
+    }
 
     private async Task LoadContextTicketsAsync()
     {
