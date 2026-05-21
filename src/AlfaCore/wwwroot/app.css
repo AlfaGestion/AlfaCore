@@ -5861,6 +5861,16 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
     animation: support-dropdown-in .16s cubic-bezier(.2, .8, .2, 1) both;
 }
 
+.conversations-tools-panel--composer {
+    position: fixed;
+    right: max(1rem, env(safe-area-inset-right));
+    bottom: calc(5.6rem + env(safe-area-inset-bottom));
+    z-index: 260;
+    width: min(600px, calc(100vw - 2rem));
+    max-height: min(430px, calc(100dvh - 7.5rem));
+    transform-origin: bottom right;
+}
+
 .message-bubble-shell > .conversations-tools-panel--reaction {
     position: relative;
     right: auto;
@@ -15121,4 +15131,27 @@ textarea {
 .conversations-page--odoo .message-row--outgoing .message-bubble-shell > .message-reaction-picker,
 .conversations-page--odoo .message-row--outgoing .message-bubble-shell > .conversations-tools-panel--reaction {
     align-self: flex-end;
+}
+
+.conversations-page--odoo .conversations-tools-panel--composer,
+.conversations-page--odoo.conversations-page--chat-active .conversations-tools-panel--composer {
+    position: fixed;
+    left: auto;
+    right: max(1rem, env(safe-area-inset-right));
+    bottom: calc(5.6rem + env(safe-area-inset-bottom));
+    z-index: 260;
+    width: min(600px, calc(100vw - 2rem));
+    max-height: min(430px, calc(100dvh - 7.5rem));
+    overflow: auto;
+}
+
+@media (max-width: 720px) {
+    .conversations-page--odoo .conversations-tools-panel--composer,
+    .conversations-page--odoo.conversations-page--chat-active .conversations-tools-panel--composer {
+        left: .65rem;
+        right: .65rem;
+        bottom: calc(5.2rem + env(safe-area-inset-bottom));
+        width: auto;
+        max-height: min(58dvh, calc(100dvh - 7rem));
+    }
 }

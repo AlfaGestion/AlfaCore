@@ -1007,7 +1007,7 @@
                             </div>
                             @if (_showComposerTools && !_reactionEmojiMessageId.HasValue)
                             {
-                                <div class="panel-card conversations-tools-panel" @onclick:stopPropagation>
+                                <div class="panel-card conversations-tools-panel conversations-tools-panel--composer" @onclick:stopPropagation>
                                     <div class="conversations-composer__actions conversations-tools-panel__tabs">
                                         <button type="button" class="conversations-filter-pill @(_composerToolTab == ComposerToolTabs.Emojis ? "is-active" : string.Empty)" @onclick='() => _composerToolTab = ComposerToolTabs.Emojis'><i class="bi bi-emoji-smile"></i> Emojis</button>
                                         <button type="button" class="conversations-filter-pill @(_composerToolTab == ComposerToolTabs.Stickers ? "is-active" : string.Empty)" @onclick='() => _composerToolTab = ComposerToolTabs.Stickers'><i class="bi bi-star-fill"></i> Stickers</button>
