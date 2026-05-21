@@ -10711,7 +10711,8 @@ html[data-theme="light"] .balance-row--detalle td {
 
 .message-attachment--audio {
     position: relative;
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
     gap: .35rem;
     width: min(360px, calc(100vw - 7rem));
@@ -10719,7 +10720,11 @@ html[data-theme="light"] .balance-row--detalle td {
 }
 
 .wa-audio-player__media {
-    display: none;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: .001;
+    pointer-events: none;
 }
 
 .wa-audio-player {
@@ -10728,7 +10733,7 @@ html[data-theme="light"] .balance-row--detalle td {
     align-items: center;
     gap: .65rem;
     width: 100%;
-    min-width: min(300px, calc(100vw - 7.5rem));
+    min-width: 0;
     min-height: 3rem;
     padding: .55rem .65rem;
     border: 1px solid rgba(148, 163, 184, .16);
@@ -10877,6 +10882,9 @@ html[data-theme="light"] .balance-row--detalle td {
 }
 
 .attachment-menu-button {
+    position: relative;
+    z-index: 3;
+    flex: 0 0 auto;
     width: 32px;
     height: 32px;
     border: 1px solid var(--color-border);
@@ -10885,6 +10893,7 @@ html[data-theme="light"] .balance-row--detalle td {
     color: var(--color-muted);
     display: inline-grid;
     place-items: center;
+    cursor: pointer;
 }
 
 .attachment-menu {

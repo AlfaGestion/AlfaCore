@@ -1788,6 +1788,14 @@
             }
         }
 
+        try
+        {
+            await JS.InvokeVoidAsync("conversacionesUi.initAudioPlayers");
+        }
+        catch
+        {
+        }
+
         await SyncBrowserUnreadCountAsync();
 
         if (_selectedConversationId.HasValue && _scrollHandlerConversationId != _selectedConversationId)
