@@ -5505,9 +5505,16 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
 
 .message-bubble-shell {
     position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
     flex: 0 1 auto;
     max-width: min(76%, 720px);
     min-width: 0;
+}
+
+.message-row--outgoing .message-bubble-shell {
+    align-items: flex-end;
 }
 
 .message-row:has(.message-actions) .message-bubble-shell {
@@ -5714,12 +5721,13 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
     transform: none;
     width: max-content;
     max-width: min(100%, calc(100vw - 7rem));
-    margin-top: .35rem;
+    margin-bottom: .35rem;
+    align-self: flex-start;
     overflow-x: auto;
 }
 
 .message-row--outgoing .message-bubble-shell > .message-reaction-picker {
-    margin-left: auto;
+    align-self: flex-end;
     transform: none;
 }
 

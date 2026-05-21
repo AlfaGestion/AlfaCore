@@ -693,7 +693,28 @@
                                         </label>
                                     }
                                     <div class="message-bubble-shell">
-                                <article class="message-card @GetMessageClass(message) @(_selectedTicketMessageIds.Contains(message.IdMensaje) ? "message-card--ticket-selected" : string.Empty)">
+                                        @if (_openReactionMessageId == message.IdMensaje)
+                                        {
+                                            <div class="message-reaction-picker">
+                                                @foreach (var emoji in QuickReactionEmojis)
+                                                {
+                                                    <button type="button"
+                                                            class="btn btn--ghost btn--sm message-reaction-picker__emoji"
+                                                            title="Reaccionar @emoji"
+                                                            @onclick="() => SendReactionAsync(message, emoji)"
+                                                            disabled="@_busyAction">
+                                                        @emoji
+                                                    </button>
+                                                }
+                                                <button type="button"
+                                                        class="btn btn--ghost btn--sm message-reaction-picker__emoji"
+                                                        title="Mas emojis"
+                                                        @onclick="() => OpenReactionEmojiPanel(message.IdMensaje)">
+                                                    <i class="bi bi-plus-lg"></i>
+                                                </button>
+                                            </div>
+                                        }
+                                        <article class="message-card @GetMessageClass(message) @(_selectedTicketMessageIds.Contains(message.IdMensaje) ? "message-card--ticket-selected" : string.Empty)">
                                     <div class="message-card__meta">
                                         <span>@GetMessageAuthor(message)</span>
                                         <span>@message.FechaHora.ToString("dd/MM HH:mm")</span>
@@ -851,27 +872,6 @@
                                                 {
                                                     <span title="@reaction">@reaction</span>
                                                 }
-                                            </div>
-                                        }
-                                        @if (_openReactionMessageId == message.IdMensaje)
-                                        {
-                                            <div class="message-reaction-picker">
-                                                @foreach (var emoji in QuickReactionEmojis)
-                                                {
-                                                    <button type="button"
-                                                            class="btn btn--ghost btn--sm message-reaction-picker__emoji"
-                                                            title="Reaccionar @emoji"
-                                                            @onclick="() => SendReactionAsync(message, emoji)"
-                                                            disabled="@_busyAction">
-                                                        @emoji
-                                                    </button>
-                                                }
-                                                <button type="button"
-                                                        class="btn btn--ghost btn--sm message-reaction-picker__emoji"
-                                                        title="Mas emojis"
-                                                        @onclick="() => OpenReactionEmojiPanel(message.IdMensaje)">
-                                                    <i class="bi bi-plus-lg"></i>
-                                                </button>
                                             </div>
                                         }
                                     </div>
