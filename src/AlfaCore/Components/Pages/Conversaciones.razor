@@ -853,6 +853,27 @@
                                                 }
                                             </div>
                                         }
+                                        @if (_openReactionMessageId == message.IdMensaje)
+                                        {
+                                            <div class="message-reaction-picker">
+                                                @foreach (var emoji in QuickReactionEmojis)
+                                                {
+                                                    <button type="button"
+                                                            class="btn btn--ghost btn--sm message-reaction-picker__emoji"
+                                                            title="Reaccionar @emoji"
+                                                            @onclick="() => SendReactionAsync(message, emoji)"
+                                                            disabled="@_busyAction">
+                                                        @emoji
+                                                    </button>
+                                                }
+                                                <button type="button"
+                                                        class="btn btn--ghost btn--sm message-reaction-picker__emoji"
+                                                        title="Mas emojis"
+                                                        @onclick="() => OpenReactionEmojiPanel(message.IdMensaje)">
+                                                    <i class="bi bi-plus-lg"></i>
+                                                </button>
+                                            </div>
+                                        }
                                     </div>
                                     @if (CanReactToMessage(message) || CanQuoteMessage(message))
                                     {
@@ -874,27 +895,6 @@
                                                         @onclick="() => QuoteMessage(message)">
                                                     <i class="bi bi-reply-fill"></i>
                                                 </button>
-                                            }
-                                            @if (_openReactionMessageId == message.IdMensaje)
-                                            {
-                                                <div class="message-reaction-picker">
-                                                    @foreach (var emoji in QuickReactionEmojis)
-                                                    {
-                                                        <button type="button"
-                                                                class="btn btn--ghost btn--sm message-reaction-picker__emoji"
-                                                                title="Reaccionar @emoji"
-                                                                @onclick="() => SendReactionAsync(message, emoji)"
-                                                                disabled="@_busyAction">
-                                                            @emoji
-                                                        </button>
-                                                    }
-                                                    <button type="button"
-                                                            class="btn btn--ghost btn--sm message-reaction-picker__emoji"
-                                                            title="Mas emojis"
-                                                            @onclick="() => OpenReactionEmojiPanel(message.IdMensaje)">
-                                                        <i class="bi bi-plus-lg"></i>
-                                                    </button>
-                                                </div>
                                             }
                                         </div>
                                     }

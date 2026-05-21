@@ -5705,6 +5705,24 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
     font-size: 1.1rem;
 }
 
+.message-bubble-shell > .message-reaction-picker {
+    position: relative;
+    left: auto;
+    right: auto;
+    top: auto;
+    bottom: auto;
+    transform: none;
+    width: max-content;
+    max-width: min(100%, calc(100vw - 7rem));
+    margin-top: .35rem;
+    overflow-x: auto;
+}
+
+.message-row--outgoing .message-bubble-shell > .message-reaction-picker {
+    margin-left: auto;
+    transform: none;
+}
+
 .conversations-latest-button {
     transition: transform .16s ease, border-color .16s ease, background .16s ease, box-shadow .16s ease;
 }
