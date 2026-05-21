@@ -1,5 +1,7 @@
 @page "/conversaciones"
+@using System.Net
 @using System.Text.Json
+@using System.Text.RegularExpressions
 @using Microsoft.AspNetCore.WebUtilities
 @inject AlfaCore.Services.IConversacionesService ConversacionesSvc
 @inject AlfaCore.Services.IContactosService ContactosSvc
@@ -752,7 +754,7 @@
                                     }
                                     @if (ShouldShowMessageText(message))
                                     {
-                                        <p class="message-card__text">@GetMessageDisplayText(message)</p>
+                                        <p class="message-card__text">@RenderMessageText(message)</p>
                                         @if (IsUnsupportedMessage(message))
                                         {
                                             <div class="message-card__footer">
@@ -4602,6 +4604,44 @@
         => IsUnsupportedMessage(message)
             ? "WhatsApp envió un tipo de mensaje que todavía no es compatible con el módulo."
             : message.Texto;
+
+    private static readonly Regex MessageUrlRegex = new(
+        @"(?i)\b((?:https?://|www\.)[^\s<]+)",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    private static MarkupString RenderMessageText(ConversacionMensajeDto message)
+        => new(LinkifyMessageText(GetMessageDisplayText(message)));
+
+    private static string LinkifyMessageText(string? text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return string.Empty;
+
+        var encoded = WebUtility.HtmlEncode(text);
+        return MessageUrlRegex.Replace(encoded, match =>
+        {
+            var display = match.Value;
+            var trailing = string.Empty;
+
+            while (display.Length > 0 && IsUrlTrailingPunctuation(display[^1]))
+            {
+                trailing = display[^1] + trailing;
+                display = display[..^1];
+            }
+
+            if (string.IsNullOrWhiteSpace(display))
+                return match.Value;
+
+            var href = display.StartsWith("www.", StringComparison.OrdinalIgnoreCase)
+                ? $"https://{display}"
+                : display;
+
+            return $"""<a class="message-card__link" href="{href}" target="_blank" rel="noopener noreferrer">{display}</a>{trailing}""";
+        });
+    }
+
+    private static bool IsUrlTrailingPunctuation(char value)
+        => value is '.' or ',' or ';' or ':' or ')' or ']' or '}' or '!' or '?';
 
     private static bool IsContactMessage(ConversacionMensajeDto message)
         => string.Equals(message.MessageType, "CONTACT", StringComparison.OrdinalIgnoreCase)

@@ -3811,6 +3811,17 @@ tr.row--critical td {
     overflow-wrap: normal;
 }
 
+.message-card__link {
+    color: #7dd3fc;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.message-card__link:hover,
+.message-card__link:focus-visible {
+    color: #bae6fd;
+}
+
 .conversation-badge {
     display: inline-flex;
     align-items: center;
