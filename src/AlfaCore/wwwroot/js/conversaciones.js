@@ -36,7 +36,6 @@ window.conversacionesAudio = (function () {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             _chunks = [];
             const preferredTypes = [
-                'audio/mp4',
                 'audio/ogg;codecs=opus',
                 'audio/webm;codecs=opus',
                 'audio/webm'
