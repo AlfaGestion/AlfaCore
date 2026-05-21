@@ -54,6 +54,7 @@ public class Program
         builder.Services.AddScoped<ICostosService, CostosService>();
         builder.Services.AddScoped<IConversacionesService, ConversacionesService>();
         builder.Services.AddScoped<IConversacionesConfigService, ConversacionesConfigService>();
+        builder.Services.AddScoped<INotificacionesPushService, NotificacionesPushService>();
         builder.Services.AddScoped<ICalendarioService, CalendarioService>();
         builder.Services.AddScoped<ITicketsService, TicketsService>();
         builder.Services.AddScoped<IInterfacesService, InterfacesService>();
@@ -81,6 +82,7 @@ public class Program
         builder.Services.Configure<ServidorWebOptions>(builder.Configuration.GetSection(ServidorWebOptions.SectionName));
         builder.Services.Configure<DatosSqlOptions>(builder.Configuration.GetSection(DatosSqlOptions.SectionName));
         builder.Services.Configure<WhatsAppOptions>(builder.Configuration.GetSection(WhatsAppOptions.SectionName));
+        builder.Services.Configure<PushNotificationsOptions>(builder.Configuration.GetSection(PushNotificationsOptions.SectionName));
         builder.Services.AddHostedService<ServerStartupHostedService>();
         builder.Services.AddHostedService<DatabaseUpdatesHostedService>();
         builder.Services.AddHostedService<InterfacesCompraIaWorkerHostedService>();
@@ -401,6 +403,76 @@ public class Program
                 enableRangeProcessing: true);
         });
 
+        app.MapGet("/api/notificaciones-push/settings", async (
+            string? deviceId,
+            HttpRequest request,
+            AppUserSessionStore sessionStore,
+            INotificacionesPushService svc,
+            CancellationToken ct) =>
+        {
+            if (!TryGetApiUser(request, sessionStore, out var user) || user is null)
+                return Results.Unauthorized();
+
+            var settings = await svc.GetClientSettingsAsync(user.UserName, deviceId ?? string.Empty, ct);
+            return Results.Ok(settings);
+        });
+
+        app.MapPost("/api/notificaciones-push/subscription", async (
+            NotificacionesPushRegistrationRequest body,
+            HttpRequest request,
+            AppUserSessionStore sessionStore,
+            INotificacionesPushService svc,
+            CancellationToken ct) =>
+        {
+            if (!TryGetApiUser(request, sessionStore, out var user) || user is null)
+                return Results.Unauthorized();
+
+            await svc.SaveSubscriptionAsync(user.UserName, body, ct);
+            return Results.Ok();
+        });
+
+        app.MapDelete("/api/notificaciones-push/subscription", async (
+            string? deviceId,
+            HttpRequest request,
+            AppUserSessionStore sessionStore,
+            INotificacionesPushService svc,
+            CancellationToken ct) =>
+        {
+            if (!TryGetApiUser(request, sessionStore, out var user) || user is null)
+                return Results.Unauthorized();
+
+            await svc.DeleteSubscriptionAsync(user.UserName, deviceId ?? string.Empty, ct);
+            return Results.Ok();
+        });
+
+        app.MapPost("/api/notificaciones-push/preferences", async (
+            NotificacionesPushPreferencesRequest body,
+            HttpRequest request,
+            AppUserSessionStore sessionStore,
+            INotificacionesPushService svc,
+            CancellationToken ct) =>
+        {
+            if (!TryGetApiUser(request, sessionStore, out var user) || user is null)
+                return Results.Unauthorized();
+
+            await svc.SavePreferencesAsync(user.UserName, body, ct);
+            return Results.Ok();
+        });
+
+        app.MapPost("/api/notificaciones-push/test", async (
+            NotificacionesPushDeviceRequest body,
+            HttpRequest request,
+            AppUserSessionStore sessionStore,
+            INotificacionesPushService svc,
+            CancellationToken ct) =>
+        {
+            if (!TryGetApiUser(request, sessionStore, out var user) || user is null)
+                return Results.Unauthorized();
+
+            await svc.SendTestAsync(user.UserName, body.DeviceId, ct);
+            return Results.Ok();
+        });
+
         try
         {
             app.Run();
@@ -443,6 +515,16 @@ public class Program
             ".txt" => "text/plain",
             _ => "application/octet-stream"
         };
+    }
+
+    private static bool TryGetApiUser(HttpRequest request, AppUserSessionStore sessionStore, out AppUserSessionInfo? user)
+    {
+        user = null;
+        var token = request.Headers["X-AlfaCore-User-Token"].ToString();
+        if (string.IsNullOrWhiteSpace(token))
+            return false;
+
+        return sessionStore.TryGet(token.Trim(), out user) && user is not null;
     }
 
     private static void WriteStartupError(string message, Exception exception)

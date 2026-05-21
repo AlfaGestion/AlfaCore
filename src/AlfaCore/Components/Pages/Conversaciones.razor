@@ -11,7 +11,7 @@
 
 <PageTitle>@ConversationPageTitle</PageTitle>
 
-<section class="page-grid conversations-page conversations-page--odoo" @onclick="DismissConversationNoticesAsync">
+<section class="page-grid conversations-page conversations-page--odoo @(IsMobileChatView ? "conversations-page--chat-active" : string.Empty)" @onclick="DismissConversationNoticesAsync">
     @if (_loadError is not null)
     {
         <div class="panel-card empty-state">
@@ -356,6 +356,13 @@
                 {
                     <header class="conversations-chat__header">
                         <div class="conversations-chat__identity">
+                            <button type="button"
+                                    class="btn btn--ghost btn--sm conversations-mobile-back"
+                                    @onclick="BackToConversationListAsync"
+                                    title="Volver al listado">
+                                <i class="bi bi-arrow-left"></i>
+                                <span>Volver</span>
+                            </button>
                             <div>
                                 <h3 class="panel-card__title">@GetConversationHeader(_selectedConversation)</h3>
                                 @if (_selectedConversation.Canal != "INTERNO" && !string.IsNullOrWhiteSpace(_selectedConversation.TelefonoWhatsApp))
@@ -738,7 +745,6 @@
                                 <textarea id="conv-message"
                                           @ref="_replyTextArea"
                                           rows="2"
-                                          style="resize: vertical; min-height: 38px; max-height: 180px; overflow: auto;"
                                           placeholder="@(_selectedConversation.Canal == "INTERNO" ? "Escribí un mensaje para el equipo…" : "Escribí una respuesta para WhatsApp…")"
                                           @onfocus="MarkSelectedConversationAsRead"
                                           value="@_replyText"
@@ -1462,6 +1468,8 @@
            && HasRequiredTemplateValues(SelectedTemplate, TemplateValues);
     private bool IsAuditResultsMode
         => _selectedConversation is null && ShouldKeepAuditResultsOpen;
+    private bool IsMobileChatView
+        => _selectedConversation is not null || IsAuditResultsMode;
     private bool ShouldKeepAuditResultsOpen
         => !string.IsNullOrWhiteSpace(_filters.Search)
            || !string.IsNullOrWhiteSpace(_filters.Auditoria)
@@ -3691,6 +3699,12 @@
         _fileDropHandlerConversationId = null;
         _showReturnToLatest = false;
         ClearNewMessageState();
+    }
+
+    private async Task BackToConversationListAsync()
+    {
+        await ClearTypingAsync();
+        ClearSelection();
     }
 
     private void ClearTemplateSelection()

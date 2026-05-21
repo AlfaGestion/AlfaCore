@@ -6,8 +6,16 @@
 @inject AlfaCore.Services.IConversacionesService ConversacionesSvc
 @implements IDisposable
 
-<div class="shell @(_sidebarCollapsed ? "shell--collapsed" : string.Empty)">
-    <aside class="shell__sidebar">
+<div class="@ShellClass">
+    @if (_mobileSidebarOpen)
+    {
+        <button type="button"
+                class="shell__overlay no-print"
+                aria-label="Cerrar menú"
+                @onclick="CloseMobileSidebar"></button>
+    }
+
+    <aside class="shell__sidebar" aria-label="Menú principal">
         <div class="brand">
             <a class="brand__logo-link" href="/" title="Volver al menú principal" aria-label="Volver al menú principal" @onclick="GoToLauncher">
                 <img class="brand__logo" src="logo.png" alt="Alfa Gestión" />
@@ -340,6 +348,27 @@
             }
 
             <div class="menu__footer">
+                @if (_pwaCanInstall)
+                {
+                    <button type="button" class="menu__link menu__button" @onclick="InstallPwaAsync">
+                        <span class="menu__icon"><i class="bi bi-download"></i></span>
+                        <span>Instalar AlfaCore</span>
+                    </button>
+                }
+                else if (_pwaIsIos && !_pwaInstalled)
+                {
+                    <button type="button" class="menu__link menu__button" @onclick="ToggleInstallHelp">
+                        <span class="menu__icon"><i class="bi bi-phone"></i></span>
+                        <span>Instalar app</span>
+                    </button>
+                }
+                @if (AppUserSession.IsAuthenticated)
+                {
+                    <button type="button" class="menu__link menu__button" @onclick="TogglePushPanelAsync">
+                        <span class="menu__icon"><i class="bi bi-bell-fill"></i></span>
+                        <span>Notificaciones</span>
+                    </button>
+                }
                 <NavLink class="menu__link menu__link--help" href="@(_currentModule == "consultas" ? "/ayuda?topic=consultas" : "/ayuda")">
                     <span class="menu__icon"><i class="bi bi-question-circle-fill"></i></span>
                     <span>Ayuda</span>
@@ -350,6 +379,13 @@
 
     <main class="shell__main">
         <header class="shell__header">
+            <button type="button"
+                    class="shell__mobile-toggle no-print"
+                    @onclick="ToggleMobileSidebar"
+                    aria-label="Abrir menú"
+                    aria-expanded="@_mobileSidebarOpen">
+                <i class="bi bi-list"></i>
+            </button>
             <div>
                 <p class="shell__eyebrow">Alfa Gestión</p>
                 <p class="shell__module">@GetModuleTitle()</p>
@@ -423,6 +459,87 @@
 }
 
 <SessionDrawer Open="_drawerOpen" OnClose="() => _drawerOpen = false" />
+
+@if (_showInstallHelp)
+{
+    <button type="button" class="modal-backdrop app-modal-backdrop no-print" aria-label="Cerrar instalación" @onclick="() => _showInstallHelp = false"></button>
+    <section class="panel-card app-modal no-print">
+        <div class="panel-card__header">
+            <div>
+                <h3 class="panel-card__title">Instalar AlfaCore</h3>
+                <p class="panel-card__subtitle">En iPhone o iPad usá Compartir &gt; Agregar a pantalla de inicio.</p>
+            </div>
+            <button type="button" class="btn btn--ghost btn--sm" @onclick="() => _showInstallHelp = false" title="Cerrar">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        </div>
+    </section>
+}
+
+@if (_showPushPanel)
+{
+    <button type="button" class="modal-backdrop app-modal-backdrop no-print" aria-label="Cerrar notificaciones" @onclick="() => _showPushPanel = false"></button>
+    <section class="panel-card app-modal app-modal--wide no-print">
+        <div class="panel-card__header">
+            <div>
+                <h3 class="panel-card__title">Notificaciones</h3>
+                <p class="panel-card__subtitle">Avisos push por dispositivo para mensajes nuevos.</p>
+            </div>
+            <button type="button" class="btn btn--ghost btn--sm" @onclick="() => _showPushPanel = false" title="Cerrar">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(_pushMessage))
+        {
+            <div class="conversations-inline conversations-inline--ok">@_pushMessage</div>
+        }
+        @if (!string.IsNullOrWhiteSpace(_pushError))
+        {
+            <div class="conversations-inline conversations-inline--error">@_pushError</div>
+        }
+
+        <div class="app-settings-grid">
+            <label class="toggle-row">
+                <input type="checkbox" checked="@_pushPreferences.Habilitadas" @onchange="OnPushEnabledChanged" />
+                <span>Activar notificaciones en este dispositivo</span>
+            </label>
+
+            <div class="field">
+                <label>Alcance</label>
+                <select @bind="_pushPreferences.Alcance">
+                    <option value="@NotificacionesPushScopes.Asignadas">Solo conversaciones asignadas a mi usuario</option>
+                    <option value="@NotificacionesPushScopes.Accesibles">Todas las conversaciones accesibles</option>
+                </select>
+            </div>
+
+            <div class="field">
+                <label>Canales</label>
+                <label class="toggle-row toggle-row--compact">
+                    <input type="checkbox" checked="@(PushChannelEnabled("WHATSAPP"))" @onchange="@(args => TogglePushChannel("WHATSAPP", args))" />
+                    <span>WhatsApp</span>
+                </label>
+            </div>
+        </div>
+
+        <div class="actions">
+            <button type="button" class="btn btn--primary" @onclick="SavePushPreferencesAsync" disabled="@_pushBusy">
+                <i class="bi bi-save"></i>
+                <span>Guardar</span>
+            </button>
+            <button type="button" class="btn btn--ghost" @onclick="SendTestPushAsync" disabled="@(_pushBusy || !_pushPreferences.Habilitadas)">
+                <i class="bi bi-send"></i>
+                <span>Enviar prueba</span>
+            </button>
+        </div>
+
+        @if (_pwaIsIos && !_pwaInstalled)
+        {
+            <p class="app-modal__hint">En iOS las notificaciones web requieren instalar AlfaCore en pantalla de inicio.</p>
+        }
+    </section>
+}
+
 <AppLoginOverlay Open="@(!AppUserSession.IsAuthenticated)"
                  SqlSessionLabel="@GetSqlSessionLabel()"
                  UserName="@_loginUserName"
@@ -439,6 +556,7 @@
 @code {
     private bool _sidebarCollapsed;
     private bool _sidebarInitialized;
+    private bool _mobileSidebarOpen;
     private bool _isDark = false;
     private bool _drawerOpen;
     private AlfaCore.Models.SessionDto? _activeSession;
@@ -447,7 +565,21 @@
     private string _loginError = string.Empty;
     private bool _loginBusy;
     private bool _loginShowPassword;
+    private DotNetObjectReference<MainLayout>? _pwaRef;
+    private bool _pwaCanInstall;
+    private bool _pwaInstalled;
+    private bool _pwaIsIos;
+    private bool _showInstallHelp;
+    private bool _showPushPanel;
+    private bool _pushBusy;
+    private bool _pushConfigured;
+    private string _pushPublicKey = string.Empty;
+    private string _pushMessage = string.Empty;
+    private string _pushError = string.Empty;
+    private NotificacionesPushPreferencesDto _pushPreferences = new();
     private string CurrentPageTitle => GetCurrentPageTitle();
+    private string ShellClass
+        => $"shell {(_sidebarCollapsed ? "shell--collapsed" : string.Empty)} {(_mobileSidebarOpen ? "shell--mobile-open" : string.Empty)}";
     private bool ShowShellContext => string.IsNullOrWhiteSpace(_currentModule);
     private bool ShouldShowConversationNotice
         => _globalConversationUnreadCount > 0
@@ -518,11 +650,13 @@
         {
             try { await JS.InvokeVoidAsync("conversacionesUi.setUnreadCount", 0); }
             catch { }
+            _pwaRef?.Dispose();
         });
     }
 
     private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs args)
     {
+        _mobileSidebarOpen = false;
         UpdateCurrentModule();
         if (string.Equals(_currentModule, "conversaciones", StringComparison.OrdinalIgnoreCase))
             ResetGlobalConversationNotifications();
@@ -571,6 +705,18 @@
         catch
         {
             _isDark = true;
+        }
+
+        try
+        {
+            _pwaRef = DotNetObjectReference.Create(this);
+            var pwaState = await JS.InvokeAsync<PwaClientState>("alfaCorePwa.init", _pwaRef);
+            _pwaCanInstall = pwaState.CanInstall;
+            _pwaInstalled = pwaState.Installed;
+            _pwaIsIos = pwaState.IsIos;
+        }
+        catch
+        {
         }
 
         if (!AppUserSession.IsAuthenticated)
@@ -739,6 +885,12 @@
         }
     }
 
+    private void ToggleMobileSidebar()
+        => _mobileSidebarOpen = !_mobileSidebarOpen;
+
+    private void CloseMobileSidebar()
+        => _mobileSidebarOpen = false;
+
     private async Task ToggleThemeAsync()
     {
         _isDark = !_isDark;
@@ -788,6 +940,167 @@
         _loginError = string.Empty;
         try { await JS.InvokeVoidAsync("localStorage.removeItem", "alfacore_user_token"); }
         catch { }
+    }
+
+    [JSInvokable]
+    public Task OnPwaInstallStateChanged(PwaInstallState state)
+    {
+        _pwaCanInstall = state.CanInstall;
+        _pwaInstalled = state.Installed;
+        _pwaIsIos = state.IsIos;
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    private async Task InstallPwaAsync()
+    {
+        try
+        {
+            await JS.InvokeAsync<object>("alfaCorePwa.install");
+        }
+        catch
+        {
+            _showInstallHelp = true;
+        }
+    }
+
+    private void ToggleInstallHelp()
+        => _showInstallHelp = !_showInstallHelp;
+
+    private async Task TogglePushPanelAsync()
+    {
+        _showPushPanel = !_showPushPanel;
+        _pushMessage = string.Empty;
+        _pushError = string.Empty;
+        if (_showPushPanel)
+            await LoadPushSettingsAsync();
+    }
+
+    private async Task LoadPushSettingsAsync()
+    {
+        try
+        {
+            var settings = await JS.InvokeAsync<NotificacionesPushClientSettingsDto>("alfaCorePwa.fetchPushSettings");
+            _pushConfigured = settings.Configurado;
+            _pushPublicKey = settings.PublicKey;
+            _pushPreferences = settings.Preferences ?? new();
+        }
+        catch
+        {
+            _pushError = "No se pudo cargar la configuración de notificaciones.";
+        }
+    }
+
+    private async Task OnPushEnabledChanged(ChangeEventArgs args)
+    {
+        var enabled = args.Value is bool value && value;
+        _pushPreferences.Habilitadas = enabled;
+        if (!enabled)
+        {
+            await DisablePushAsync();
+            return;
+        }
+
+        await EnablePushAsync();
+    }
+
+    private async Task EnablePushAsync()
+    {
+        _pushBusy = true;
+        _pushMessage = string.Empty;
+        _pushError = string.Empty;
+        try
+        {
+            if (!_pushConfigured)
+                throw new InvalidOperationException("Faltan configurar las claves VAPID en el servidor.");
+
+            var subscription = await JS.InvokeAsync<NotificacionesPushSubscriptionDto>("alfaCorePwa.subscribePush", _pushPublicKey);
+            await JS.InvokeVoidAsync("alfaCorePwa.savePushSubscription", subscription);
+            await SavePushPreferencesAsync();
+            _pushMessage = "Notificaciones activadas en este dispositivo.";
+        }
+        catch (Exception ex)
+        {
+            _pushPreferences.Habilitadas = false;
+            _pushError = ex.Message;
+        }
+        finally
+        {
+            _pushBusy = false;
+        }
+    }
+
+    private async Task DisablePushAsync()
+    {
+        _pushBusy = true;
+        _pushMessage = string.Empty;
+        _pushError = string.Empty;
+        try
+        {
+            await JS.InvokeVoidAsync("alfaCorePwa.unsubscribePush");
+            await JS.InvokeVoidAsync("alfaCorePwa.deletePushSubscription");
+            await SavePushPreferencesAsync();
+            _pushMessage = "Notificaciones desactivadas en este dispositivo.";
+        }
+        catch
+        {
+            _pushError = "No se pudo desactivar la suscripción push.";
+        }
+        finally
+        {
+            _pushBusy = false;
+        }
+    }
+
+    private async Task SavePushPreferencesAsync()
+    {
+        _pushBusy = true;
+        _pushMessage = string.Empty;
+        _pushError = string.Empty;
+        try
+        {
+            await JS.InvokeVoidAsync("alfaCorePwa.savePushPreferences", _pushPreferences);
+            _pushMessage = "Preferencias guardadas.";
+        }
+        catch
+        {
+            _pushError = "No se pudieron guardar las preferencias.";
+        }
+        finally
+        {
+            _pushBusy = false;
+        }
+    }
+
+    private async Task SendTestPushAsync()
+    {
+        _pushBusy = true;
+        _pushMessage = string.Empty;
+        _pushError = string.Empty;
+        try
+        {
+            await JS.InvokeVoidAsync("alfaCorePwa.sendTestPush");
+            _pushMessage = "Notificación de prueba enviada.";
+        }
+        catch
+        {
+            _pushError = "No se pudo enviar la notificación de prueba.";
+        }
+        finally
+        {
+            _pushBusy = false;
+        }
+    }
+
+    private bool PushChannelEnabled(string channel)
+        => _pushPreferences.Canales.Contains(channel, StringComparer.OrdinalIgnoreCase);
+
+    private void TogglePushChannel(string channel, ChangeEventArgs args)
+    {
+        var enabled = args.Value is bool value && value;
+        _pushPreferences.Canales.RemoveAll(x => string.Equals(x, channel, StringComparison.OrdinalIgnoreCase));
+        if (enabled)
+            _pushPreferences.Canales.Add(channel);
     }
 
     private Task OpenSqlSessionDrawerAsync()
@@ -878,4 +1191,18 @@
         "contactos" => "Contactos",
         _ => "Dashboard de Compras"
     };
+
+    private sealed class PwaClientState
+    {
+        public bool CanInstall { get; set; }
+        public bool Installed { get; set; }
+        public bool IsIos { get; set; }
+    }
+
+    public sealed class PwaInstallState
+    {
+        public bool CanInstall { get; set; }
+        public bool Installed { get; set; }
+        public bool IsIos { get; set; }
+    }
 }

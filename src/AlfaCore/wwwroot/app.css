@@ -9052,6 +9052,293 @@ th.sortable {
 
 th.sortable:hover { background: var(--color-border); }
 
+/* PWA, mobile shell and responsive safety */
+html,
+body {
+    max-width: 100%;
+    overflow-x: hidden;
+}
+
+img,
+video,
+canvas,
+svg {
+    max-width: 100%;
+}
+
+.menu__button {
+    width: 100%;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.modal-backdrop.app-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1080;
+    background: rgba(15, 23, 42, .48);
+    border: 0;
+}
+
+.app-modal {
+    position: fixed;
+    z-index: 1081;
+    right: 1rem;
+    bottom: 1rem;
+    width: min(420px, calc(100vw - 2rem));
+    max-height: min(720px, calc(100vh - 2rem));
+    overflow: auto;
+}
+
+.app-modal--wide {
+    width: min(560px, calc(100vw - 2rem));
+}
+
+.app-settings-grid {
+    display: grid;
+    gap: .9rem;
+}
+
+.toggle-row {
+    display: flex;
+    align-items: center;
+    gap: .65rem;
+    min-height: 44px;
+    color: var(--color-text);
+}
+
+.toggle-row input {
+    width: 18px;
+    height: 18px;
+    flex: 0 0 auto;
+}
+
+.toggle-row--compact {
+    min-height: 36px;
+}
+
+.app-modal__hint {
+    margin: .85rem 0 0;
+    color: var(--color-muted);
+    font-size: .9rem;
+}
+
+.data-table,
+.consulta-table,
+.comparativo-table,
+.result-group-table,
+.detail-table,
+.balance-saldos-table,
+.costos-lote__table,
+.conv-stats-table {
+    min-width: max-content;
+}
+
+.table-wrap,
+.table-scroll,
+.consulta-result__table-wrap,
+.usuarios-table-wrap,
+.costos-lote__table-wrap,
+.result-group-table-wrap {
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+button,
+.btn,
+.menu__link,
+input,
+select,
+textarea {
+    touch-action: manipulation;
+}
+
+@media (max-width: 900px) {
+    .shell {
+        display: block;
+        min-height: 100dvh;
+    }
+
+    .shell__sidebar {
+        position: sticky;
+        top: 0;
+        z-index: 1000;
+        width: 100%;
+        min-height: 0;
+        max-height: 58dvh;
+        overflow: auto;
+        border-right: 0;
+        border-bottom: 1px solid var(--color-border);
+    }
+
+    .shell.shell--collapsed .shell__sidebar {
+        width: 100%;
+    }
+
+    .shell--collapsed .menu {
+        display: none;
+    }
+
+    .brand {
+        min-height: 64px;
+    }
+
+    .brand__content {
+        min-width: 0;
+    }
+
+    .brand__title,
+    .brand__eyebrow {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .shell__main {
+        min-width: 0;
+        width: 100%;
+    }
+
+    .shell__content {
+        width: 100%;
+        padding: .9rem;
+    }
+
+    .page-grid,
+    .dashboard-grid,
+    .kpi-grid {
+        grid-template-columns: 1fr !important;
+    }
+
+    .panel-card {
+        min-width: 0;
+    }
+
+    .panel-card__header,
+    .actions,
+    .table-toolbar,
+    .filters-grid,
+    .form-grid {
+        flex-wrap: wrap;
+    }
+
+    .btn {
+        min-height: 42px;
+    }
+
+    input,
+    select,
+    textarea {
+        min-height: 42px;
+    }
+}
+
+@media (max-width: 720px) {
+    .conversations-page--odoo {
+        height: auto;
+        min-height: calc(100dvh - 80px);
+    }
+
+    .conversations-page--odoo .conversations-layout,
+    .conversations-layout {
+        display: grid;
+        grid-template-columns: 1fr !important;
+        height: auto;
+        min-height: 0;
+        gap: .8rem;
+    }
+
+    .conversations-page--odoo .conversations-list,
+    .conversations-page--odoo .conversations-chat,
+    .conversations-list,
+    .conversations-chat {
+        width: 100%;
+        min-width: 0;
+        min-height: 0;
+        max-height: none;
+    }
+
+    .conversations-list__items {
+        max-height: 42dvh;
+    }
+
+    .conversations-thread {
+        min-height: 48dvh;
+        max-height: 62dvh;
+    }
+
+    .conversations-context,
+    .conversations-page--odoo .conversations-context-drawer {
+        width: min(92vw, 420px);
+    }
+
+    .conversations-filters__fields,
+    .conversations-page--odoo .conversations-filters__fields {
+        grid-template-columns: 1fr !important;
+    }
+
+    .conversations-canal,
+    .conversations-filters__modes,
+    .conversations-module-actions,
+    .conversations-composer__actions {
+        overflow-x: auto;
+        flex-wrap: nowrap;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .conversations-filter-pill,
+    .conversations-module-actions .btn,
+    .conversations-composer__actions .btn {
+        flex: 0 0 auto;
+        min-height: 42px;
+    }
+
+    .message-card {
+        max-width: min(86vw, 560px);
+    }
+
+    .app-modal {
+        left: .75rem;
+        right: .75rem;
+        bottom: .75rem;
+        width: auto;
+        max-height: calc(100dvh - 1.5rem);
+    }
+}
+
+@media (max-width: 520px) {
+    .shell__content {
+        padding: .65rem;
+    }
+
+    .panel-card {
+        border-radius: 8px;
+        padding: .85rem;
+    }
+
+    .btn,
+    .conversations-filter-pill {
+        width: auto;
+        max-width: 100%;
+        white-space: nowrap;
+    }
+
+    .actions .btn,
+    .table-toolbar .btn {
+        flex: 1 1 150px;
+    }
+
+    .conversation-row__top,
+    .conversation-row__meta,
+    .conversation-row__badges {
+        min-width: 0;
+    }
+}
+
 .sort-icon {
     font-size: .7rem;
     margin-left: .25rem;
@@ -12832,5 +13119,434 @@ html[data-theme="light"] .tickets-activity__item {
 
     .usuarios-toggle-row {
         display: grid;
+    }
+}
+
+/* Responsive mobile-first: shell, tablas y conversaciones */
+.shell__mobile-toggle,
+.shell__overlay,
+.conversations-mobile-back {
+    display: none;
+}
+
+.shell__main,
+.shell__content,
+.page-grid,
+.panel-card,
+.field,
+.actions,
+.btn,
+input,
+select,
+textarea {
+    max-width: 100%;
+}
+
+.table-wrap,
+.table-scroll,
+.consulta-result__table-wrap,
+.usuarios-table-wrap,
+.costos-lote__table-wrap,
+.result-group-table-wrap,
+.data-table-wrap,
+.table-responsive,
+.panel-card:has(> table),
+.panel-card:has(.data-table),
+.panel-card:has(.consulta-table),
+.panel-card:has(.result-group-table),
+.panel-card:has(.detail-table),
+.panel-card:has(.balance-saldos-table),
+.panel-card:has(.conv-stats-table) {
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.data-table,
+.consulta-table,
+.comparativo-table,
+.result-group-table,
+.detail-table,
+.balance-saldos-table,
+.costos-lote__table,
+.conv-stats-table {
+    width: 100%;
+}
+
+@media (max-width: 768px) {
+    html,
+    body {
+        width: 100%;
+        max-width: 100%;
+        overflow-x: hidden;
+    }
+
+    .shell,
+    .shell.shell--collapsed {
+        display: block;
+        min-height: 100dvh;
+        overflow-x: hidden;
+    }
+
+    .shell__overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 1090;
+        display: block;
+        border: 0;
+        background: rgba(2, 6, 23, .58);
+        backdrop-filter: blur(2px);
+        animation: support-modal-backdrop-in .16s ease-out both;
+    }
+
+    .shell__sidebar,
+    .shell.shell--collapsed .shell__sidebar {
+        position: fixed;
+        inset: 0 auto 0 0;
+        z-index: 1100;
+        width: min(320px, 86vw);
+        height: 100dvh;
+        max-height: none;
+        overflow-y: auto;
+        overflow-x: hidden;
+        border-right: 1px solid var(--color-border);
+        border-bottom: 0;
+        background: rgba(8, 15, 28, .98);
+        box-shadow: 24px 0 60px rgba(0, 0, 0, .42);
+        transform: translateX(-104%);
+        opacity: .98;
+        transition: transform .24s cubic-bezier(.2, .8, .2, 1);
+    }
+
+    html[data-theme="light"] .shell__sidebar,
+    html[data-theme="light"] .shell.shell--collapsed .shell__sidebar {
+        background: rgba(255, 255, 255, .98);
+    }
+
+    .shell.shell--mobile-open .shell__sidebar {
+        transform: translateX(0);
+    }
+
+    .shell--collapsed .brand,
+    .shell.shell--collapsed .brand {
+        display: flex;
+        justify-items: initial;
+        justify-content: flex-start;
+        gap: .85rem;
+        padding: 1rem;
+    }
+
+    .shell--collapsed .brand__content,
+    .shell--collapsed .menu__section,
+    .shell--collapsed .menu__link span:not(.menu__icon),
+    .shell.shell--collapsed .brand__content,
+    .shell.shell--collapsed .menu__section,
+    .shell.shell--collapsed .menu__link span:not(.menu__icon) {
+        display: block;
+    }
+
+    .shell--collapsed .menu,
+    .shell.shell--collapsed .menu {
+        display: block;
+        padding: 0 1rem 1rem;
+    }
+
+    .shell--collapsed .menu__nav,
+    .shell.shell--collapsed .menu__nav {
+        align-items: stretch;
+    }
+
+    .shell--collapsed .menu__link,
+    .shell.shell--collapsed .menu__link {
+        justify-content: flex-start;
+        padding: .8rem .9rem;
+    }
+
+    .shell__main {
+        width: 100%;
+        min-width: 0;
+        padding: .85rem;
+    }
+
+    .shell__content {
+        width: 100%;
+        min-width: 0;
+        padding: 0;
+    }
+
+    .shell__header {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        align-items: center;
+        gap: .75rem;
+        margin-bottom: .85rem;
+    }
+
+    .shell__mobile-toggle {
+        display: inline-grid;
+        place-items: center;
+        width: 42px;
+        min-width: 42px;
+        height: 42px;
+        border: 1px solid rgba(148, 163, 184, .18);
+        border-radius: 10px;
+        background: rgba(15, 23, 42, .58);
+        color: var(--color-text);
+        cursor: pointer;
+    }
+
+    html[data-theme="light"] .shell__mobile-toggle {
+        background: rgba(15, 23, 42, .06);
+        color: #0f172a;
+    }
+
+    .shell__header > .shell__actions {
+        grid-column: 1 / -1;
+    }
+
+    .sidebar-toggle {
+        width: 42px;
+        min-width: 42px;
+        height: 42px;
+        border-radius: 10px;
+    }
+
+    .filters-grid,
+    .form-grid,
+    .page-intro,
+    .panel-card__header,
+    .actions,
+    .table-toolbar,
+    .conversations-filters__fields {
+        grid-template-columns: 1fr;
+        flex-wrap: wrap;
+        min-width: 0;
+    }
+
+    .field input,
+    .field select,
+    .field textarea,
+    input,
+    select,
+    textarea {
+        width: 100%;
+        min-width: 0;
+    }
+
+    .btn,
+    button {
+        min-height: 42px;
+    }
+
+    .panel-card {
+        min-width: 0;
+        overflow-wrap: anywhere;
+    }
+
+    .modal,
+    .app-modal,
+    .conversations-modal {
+        max-width: calc(100vw - 1rem);
+    }
+
+    .conversations-page--odoo {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        gap: .65rem;
+        min-height: calc(100dvh - 84px);
+        overflow: hidden;
+    }
+
+    .conversations-page--odoo.conversations-page--chat-active {
+        grid-template-rows: minmax(0, 1fr);
+    }
+
+    .conversations-page--odoo.conversations-page--chat-active .conversations-filters,
+    .conversations-page--odoo.conversations-page--chat-active .conversations-list {
+        display: none;
+    }
+
+    .conversations-page--odoo:not(.conversations-page--chat-active) .conversations-chat {
+        display: none;
+    }
+
+    .conversations-page--odoo .conversations-layout,
+    .conversations-layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 0;
+        height: auto;
+        min-height: 0;
+        overflow: hidden;
+    }
+
+    .conversations-page--odoo.conversations-page--chat-active .conversations-layout {
+        height: calc(100dvh - 84px);
+    }
+
+    .conversations-page--odoo .conversations-list,
+    .conversations-page--odoo .conversations-chat {
+        width: 100%;
+        min-width: 0;
+        min-height: 0;
+        padding: 0;
+        border-width: 0;
+    }
+
+    .conversations-page--odoo .conversations-list {
+        max-height: calc(100dvh - 235px);
+        overflow: hidden;
+    }
+
+    .conversations-page--odoo .conversations-list__items {
+        max-height: none;
+        min-height: 0;
+        padding: .45rem;
+    }
+
+    .conversations-page--odoo .conversations-chat {
+        height: 100%;
+        max-height: none;
+    }
+
+    .conversations-page--odoo .conversations-chat__header {
+        grid-template-columns: minmax(0, 1fr);
+        gap: .45rem;
+        padding: .55rem .65rem;
+    }
+
+    .conversations-mobile-back {
+        display: inline-flex;
+        width: fit-content;
+        min-height: 36px;
+        padding: .38rem .68rem;
+        gap: .4rem;
+    }
+
+    .conversation-header-state,
+    .conversation-header-state__row,
+    .conversation-header-state__trigger,
+    .conversation-header-state__close {
+        width: 100%;
+        min-width: 0;
+        max-width: 100%;
+    }
+
+    .conversations-page--odoo .conversations-thread-shell {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow: hidden;
+    }
+
+    .conversations-page--odoo .conversations-thread {
+        flex: 1 1 auto;
+        min-height: 0;
+        max-height: none;
+        padding: .65rem;
+        overflow-y: auto;
+        overflow-x: hidden;
+    }
+
+    .conversations-page--odoo .conversations-composer {
+        position: sticky;
+        bottom: 0;
+        z-index: 8;
+        grid-template-columns: minmax(0, 1fr) auto;
+        padding: .5rem .65rem calc(.5rem + env(safe-area-inset-bottom));
+        background: var(--color-panel);
+    }
+
+    .conversations-page--odoo .conversations-composer textarea {
+        resize: vertical;
+        min-height: 38px;
+        max-height: 140px;
+        overflow: auto;
+    }
+
+    .conversations-page--odoo .conversations-composer__actions {
+        overflow-x: visible;
+        flex-wrap: wrap;
+    }
+
+    .conversations-page--odoo .message-bubble-shell,
+    .conversations-page--odoo .message-row:has(.message-actions) .message-bubble-shell {
+        max-width: min(92vw, calc(100% - 2rem));
+    }
+
+    .conversations-page--odoo .message-card {
+        min-width: 0;
+        max-width: 100%;
+    }
+
+    .message-contact-card {
+        grid-template-columns: 2rem minmax(0, 1fr);
+    }
+
+    .message-contact-card .btn {
+        grid-column: 1 / -1;
+        width: 100%;
+        justify-content: center;
+    }
+
+    .conversations-page--odoo .conversations-context-drawer {
+        width: min(360px, 92vw);
+    }
+
+    .conversations-tools-panel {
+        left: .65rem;
+        right: .65rem;
+        bottom: calc(5.8rem + env(safe-area-inset-bottom));
+        width: auto;
+        max-height: min(420px, calc(100dvh - 9rem));
+    }
+}
+
+@media (max-width: 430px) {
+    .shell__main {
+        padding: .65rem;
+    }
+
+    .brand__eyebrow {
+        display: none;
+    }
+
+    .conversations-canal,
+    .conversations-filters__modes,
+    .conversations-module-actions {
+        display: grid;
+        grid-template-columns: 1fr;
+        overflow-x: visible;
+    }
+
+    .conversations-filter-pill,
+    .conversations-module-actions .btn,
+    .conversations-filters__fields .btn {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .conversation-row__top,
+    .conversation-row__meta,
+    .conversation-row__badges,
+    .message-card__meta,
+    .message-card__footer {
+        min-width: 0;
+        align-items: flex-start;
+    }
+
+    .conversation-row__name,
+    .conversation-row__summary,
+    .conversation-badge,
+    .panel-card__title,
+    .panel-card__subtitle {
+        overflow-wrap: anywhere;
+    }
+
+    .conversation-badge {
+        white-space: normal;
+    }
+
+    .conversations-page--odoo.conversations-page--chat-active .conversations-layout {
+        height: calc(100dvh - 72px);
     }
 }

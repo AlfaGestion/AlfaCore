@@ -15,9 +15,11 @@ public sealed class ConversacionesService(
     IAppEventService appEvents,
     IHttpClientFactory httpClientFactory,
     IConversacionesConfigService conversacionesConfigService,
+    INotificacionesPushService notificacionesPushService,
     IWebHostEnvironment environment) : IConversacionesService
 {
     private readonly IAppEventService _appEvents = appEvents;
+    private readonly INotificacionesPushService _notificacionesPushService = notificacionesPushService;
     private const string ManualWhatsAppConversationSummary = "Conversaci\u00f3n iniciada manualmente.";
     private const string ManualWhatsAppInitialState = "PENDIENTE";
     private const string InternalEventDirection = "NOTA_INTERNA";
@@ -1890,6 +1892,7 @@ public sealed class ConversacionesService(
                     await StoreIncomingAttachmentsAsync(conversationId, messageId, incoming, whatsAppConfig, token);
 
                 await RefreshConversationAsync(conversationId, NormalizeIncomingTimestamp(incoming.Timestamp), incoming.Text, token, reopenIfClosed: true);
+                await NotifyIncomingMessageAsync(conversationId, messageId, token);
                 processed++;
             }
 
@@ -3004,6 +3007,25 @@ public sealed class ConversacionesService(
         cmd.Parameters.AddWithValue("@IdTecnicoAutor", DbNullablePreserve(idTecnicoAutor));
         var result = await cmd.ExecuteScalarAsync(ct);
         return Convert.ToInt64(result, CultureInfo.InvariantCulture);
+    }
+
+    private async Task NotifyIncomingMessageAsync(long conversationId, long messageId, CancellationToken ct)
+    {
+        try
+        {
+            await _notificacionesPushService.NotifyNewMessageAsync(conversationId, messageId, ct);
+        }
+        catch (Exception ex)
+        {
+            await _appEvents.LogErrorAsync(
+                "Conversaciones",
+                "NotifyIncomingMessage",
+                ex,
+                "No se pudo enviar la notificación push del mensaje entrante.",
+                new { IdConversacion = conversationId, IdMensaje = messageId },
+                AppEventSeverity.Warning,
+                ct);
+        }
     }
 
     private async Task<long> InsertAttachmentRecordAsync(
