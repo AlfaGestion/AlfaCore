@@ -793,18 +793,6 @@
                                                             </div>
                                                             <button type="button" class="wa-audio-player__speed" data-audio-speed title="Cambiar velocidad">1</button>
                                                         </div>
-                                                        <button type="button"
-                                                                class="attachment-menu-button"
-                                                                title="Opciones"
-                                                                @onclick="() => ToggleAttachmentMenu(adj.IdAdjunto)">
-                                                            <i class="bi bi-three-dots-vertical"></i>
-                                                        </button>
-                                                        @if (_openAttachmentMenuId == adj.IdAdjunto)
-                                                        {
-                                                            <div class="attachment-menu">
-                                                                <a href="@GetAttachmentDownloadUrl(adj)" download="@adj.NombreArchivo">Descargar audio</a>
-                                                            </div>
-                                                        }
                                                     </div>
                                                 }
                                                 else if (IsVideoAttachment(adj))

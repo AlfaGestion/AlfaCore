@@ -10711,11 +10711,8 @@ html[data-theme="light"] .balance-row--detalle td {
 
 .message-attachment--audio {
     position: relative;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
-    gap: .35rem;
-    width: min(360px, calc(100vw - 7rem));
+    display: block;
+    width: min(370px, calc(100vw - 7rem));
     max-width: 100%;
 }
 
@@ -10729,15 +10726,15 @@ html[data-theme="light"] .balance-row--detalle td {
 
 .wa-audio-player {
     display: grid;
-    grid-template-columns: 2rem minmax(8rem, 1fr) 2.65rem;
+    grid-template-columns: 1.75rem minmax(0, 1fr) 2.25rem;
     align-items: center;
-    gap: .65rem;
+    gap: .55rem;
     width: 100%;
     min-width: 0;
-    min-height: 3rem;
-    padding: .55rem .65rem;
+    min-height: 3.1rem;
+    padding: .52rem .58rem .45rem;
     border: 1px solid rgba(148, 163, 184, .16);
-    border-radius: 12px;
+    border-radius: 10px;
     background: linear-gradient(180deg, rgba(31, 41, 55, .94), rgba(17, 24, 39, .94));
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04);
 }
@@ -10750,8 +10747,8 @@ html[data-theme="light"] .balance-row--detalle td {
 .wa-audio-player__play {
     display: inline-grid;
     place-items: center;
-    width: 2rem;
-    height: 2rem;
+    width: 1.75rem;
+    height: 1.75rem;
     padding: 0;
     border: 0;
     border-radius: 50%;
@@ -10761,7 +10758,7 @@ html[data-theme="light"] .balance-row--detalle td {
 }
 
 .wa-audio-player__play .bi {
-    font-size: 1.35rem;
+    font-size: 1.25rem;
     line-height: 1;
 }
 
@@ -10775,16 +10772,16 @@ html[data-theme="light"] .balance-row--detalle td {
 .wa-audio-player__seek {
     --audio-progress: 0%;
     width: 100%;
-    height: 1.45rem;
+    height: 1.35rem;
     margin: 0;
     appearance: none;
     -webkit-appearance: none;
     cursor: pointer;
     background:
-        radial-gradient(circle at var(--audio-progress) 50%, #38bdf8 0 .34rem, transparent .36rem),
+        radial-gradient(circle at var(--audio-progress) 50%, #38bdf8 0 .3rem, transparent .32rem),
         linear-gradient(90deg, rgba(56, 189, 248, .95) 0 var(--audio-progress), rgba(148, 163, 184, .62) var(--audio-progress) 100%);
-    mask-image: repeating-linear-gradient(90deg, #000 0 3px, transparent 3px 7px);
-    -webkit-mask-image: repeating-linear-gradient(90deg, #000 0 3px, transparent 3px 7px);
+    mask-image: repeating-linear-gradient(90deg, #000 0 3px, transparent 3px 6px);
+    -webkit-mask-image: repeating-linear-gradient(90deg, #000 0 3px, transparent 3px 6px);
 }
 
 .wa-audio-player__seek::-webkit-slider-runnable-track {
@@ -10823,14 +10820,14 @@ html[data-theme="light"] .balance-row--detalle td {
 
 .wa-audio-player__speed {
     justify-self: end;
-    min-width: 2.35rem;
-    height: 1.35rem;
-    padding: 0 .45rem;
+    min-width: 2.1rem;
+    height: 1.25rem;
+    padding: 0 .4rem;
     border: 0;
     border-radius: 999px;
     background: rgba(2, 6, 23, .66);
     color: #f8fafc;
-    font-size: .78rem;
+    font-size: .74rem;
     font-weight: 800;
     line-height: 1;
     cursor: pointer;
