@@ -37,9 +37,9 @@ window.conversacionesAudio = (function () {
             _chunks = [];
             const preferredTypes = [
                 'audio/ogg;codecs=opus',
-                'audio/mp4',
                 'audio/webm;codecs=opus',
-                'audio/webm'
+                'audio/webm',
+                'audio/mp4'
             ];
             const mimeType = preferredTypes.find(type => window.MediaRecorder && MediaRecorder.isTypeSupported(type));
             _recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
