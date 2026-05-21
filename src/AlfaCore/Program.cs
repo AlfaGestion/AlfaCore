@@ -47,7 +47,7 @@ public class Program
         // Add services to the container.
         builder.Services.AddRazorComponents()
             .AddInteractiveServerComponents();
-        builder.Services.AddSingleton<ISessionService, SessionService>();
+        builder.Services.AddScoped<ISessionService, SessionService>();
         builder.Services.AddScoped<IComprasDashboardService, ComprasDashboardService>();
         builder.Services.AddScoped<IInformesIaService, InformesIaService>();
         builder.Services.AddScoped<IConsultasService, ConsultasService>();
@@ -70,8 +70,8 @@ public class Program
         builder.Services.AddScoped<IAuditoriaService, AuditoriaService>();
         builder.Services.AddScoped<IGestionDashboardService, GestionDashboardService>();
         builder.Services.AddScoped<IAppUiOperationService, AppUiOperationService>();
-        builder.Services.AddSingleton<IAuxErrRepository, AuxErrRepository>();
-        builder.Services.AddSingleton<IAppEventService, AppEventService>();
+        builder.Services.AddScoped<IAuxErrRepository, AuxErrRepository>();
+        builder.Services.AddScoped<IAppEventService, AppEventService>();
         builder.Services.AddSingleton<ConsultasExcelExporter>();
         builder.Services.AddSingleton<InformesIaHistoryStore>();
         builder.Services.AddSingleton<InformesIaResultStore>();
