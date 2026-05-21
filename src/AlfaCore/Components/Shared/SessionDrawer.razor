@@ -1,4 +1,5 @@
 @inject AlfaCore.Services.ISessionService SessionSvc
+@inject IJSRuntime JS
 
 @if (Open)
 {
@@ -36,7 +37,7 @@
                             }
                             else
                             {
-                                <button class="btn btn--primary btn--sm" @onclick="() => Conectar(s.Id)">
+                                <button class="btn btn--primary btn--sm" @onclick="() => ConectarAsync(s.Id)">
                                     Conectar
                                 </button>
                                 <button class="btn btn--ghost btn--sm btn--danger" @onclick="() => Eliminar(s.Id)">
@@ -124,9 +125,10 @@
     private void Reload() =>
         _sesiones = SessionSvc.GetAllSessions().ToList();
 
-    private void Conectar(Guid id)
+    private async Task ConectarAsync(Guid id)
     {
         SessionSvc.SwitchSession(id);
+        await JS.InvokeVoidAsync("alfaCoreSqlSession.setActive", id.ToString());
         Reload();
     }
 

@@ -9,44 +9,60 @@ public sealed class SessionService : ISessionService
     private readonly string _filePath;
     private readonly List<SessionDto> _sessions = [];
     private readonly object _lock = new();
+    private readonly SessionDto? _defaultSession;
+    private Guid? _activeSessionId;
 
     public event Action? SessionChanged;
 
-    public SessionService(IConfiguration configuration, IWebHostEnvironment env)
+    public SessionService(
+        IConfiguration configuration,
+        IWebHostEnvironment env,
+        IHttpContextAccessor httpContextAccessor)
     {
         _filePath = Path.Combine(env.ContentRootPath, "App_Data", "sessions.json");
+        _defaultSession = CreateSessionFromConfig(configuration);
         Load(configuration);
+        _activeSessionId = ReadActiveSessionId(httpContextAccessor);
     }
 
     public string GetConnectionString()
     {
         lock (_lock)
         {
-            var active = _sessions.FirstOrDefault(s => s.Activa);
+            var active = ResolveActiveSessionUnsafe();
             return active is null ? string.Empty : Build(active);
         }
     }
 
     public SessionDto? GetActiveSession()
     {
-        lock (_lock) return _sessions.FirstOrDefault(s => s.Activa);
+        lock (_lock)
+        {
+            var active = ResolveActiveSessionUnsafe();
+            return active is null ? null : Clone(active, true);
+        }
     }
 
     public IReadOnlyList<SessionDto> GetAllSessions()
     {
-        lock (_lock) return [.. _sessions];
+        lock (_lock)
+        {
+            var active = ResolveActiveSessionUnsafe();
+            return _sessions
+                .Select(s => Clone(s, active is not null && SameConnection(s, active)))
+                .ToArray();
+        }
     }
 
     public void SwitchSession(Guid id)
     {
         lock (_lock)
         {
-            foreach (var s in _sessions) s.Activa = false;
-            var target = _sessions.FirstOrDefault(s => s.Id == id)
-                ?? throw new InvalidOperationException("Sesión no encontrada.");
-            target.Activa = true;
-            Save();
+            _ = _sessions.FirstOrDefault(s => s.Id == id)
+                ?? throw new InvalidOperationException("Sesion no encontrada.");
+            _activeSessionId = id;
         }
+
         SessionChanged?.Invoke();
     }
 
@@ -73,7 +89,9 @@ public sealed class SessionService : ISessionService
         lock (_lock)
         {
             var s = _sessions.FirstOrDefault(s => s.Id == id);
-            if (s is null || s.Activa) return;
+            if (s is null || _activeSessionId == id)
+                return;
+
             _sessions.Remove(s);
             Save();
         }
@@ -89,43 +107,33 @@ public sealed class SessionService : ISessionService
                 var data = JsonSerializer.Deserialize<SessionesData>(json, JsonOpts);
                 if (data?.Sessions.Count > 0)
                 {
-                    _sessions.AddRange(data.Sessions);
-                    if (!_sessions.Any(s => s.Activa))
-                        _sessions[0].Activa = true;
+                    var hadPersistedActiveFlag = data.Sessions.Any(s => s.Activa);
+                    _sessions.AddRange(data.Sessions.Select(s =>
+                    {
+                        s.Activa = false;
+                        return s;
+                    }));
+
+                    if (hadPersistedActiveFlag)
+                        Save();
+
                     return;
                 }
             }
         }
-        catch { /* archivo corrupto → seed desde config */ }
+        catch
+        {
+            // Archivo corrupto: se regenera desde la configuracion default.
+        }
 
         SeedFromConfig(configuration);
     }
 
     private void SeedFromConfig(IConfiguration configuration)
     {
-        var cs = configuration.GetConnectionString("AlfaGestion") ?? string.Empty;
-        SessionDto seed;
-
-        try
-        {
-            var b = new SqlConnectionStringBuilder(cs);
-            seed = new SessionDto
-            {
-                Nombre = $"{b.DataSource} · {b.InitialCatalog}",
-                Servidor = b.DataSource,
-                BaseDatos = b.InitialCatalog,
-                Usuario = b.UserID,
-                Password = b.Password,
-                TrustServerCertificate = true,
-                Activa = true
-            };
-        }
-        catch
-        {
-            seed = new SessionDto { Nombre = "Sesión inicial", Activa = true };
-        }
-
-        _sessions.Add(seed);
+        _sessions.Add(_defaultSession is null
+            ? new SessionDto { Nombre = "Sesion inicial", Activa = false }
+            : Clone(_defaultSession, false));
         Save();
     }
 
@@ -134,11 +142,82 @@ public sealed class SessionService : ISessionService
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(_filePath)!);
-            var json = JsonSerializer.Serialize(new SessionesData { Sessions = _sessions }, JsonOpts);
+            var json = JsonSerializer.Serialize(new SessionesData
+            {
+                Sessions = _sessions.Select(s => Clone(s, false)).ToList()
+            }, JsonOpts);
             File.WriteAllText(_filePath, json);
         }
-        catch { /* no bloquear si no puede escribir */ }
+        catch
+        {
+            // No bloquear la aplicacion si el catalogo no puede escribirse.
+        }
     }
+
+    private SessionDto? ResolveActiveSessionUnsafe()
+    {
+        if (_activeSessionId is Guid activeId)
+        {
+            var selected = _sessions.FirstOrDefault(s => s.Id == activeId);
+            if (selected is not null)
+                return selected;
+        }
+
+        if (_defaultSession is not null)
+            return _defaultSession;
+
+        return _sessions.Count > 0 ? _sessions[0] : null;
+    }
+
+    private static Guid? ReadActiveSessionId(IHttpContextAccessor httpContextAccessor)
+    {
+        var raw = httpContextAccessor.HttpContext?.Request.Cookies[ISessionService.ActiveSessionCookieName];
+        return Guid.TryParse(raw, out var id) ? id : null;
+    }
+
+    private static SessionDto? CreateSessionFromConfig(IConfiguration configuration)
+    {
+        var cs = configuration.GetConnectionString("AlfaGestion") ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(cs))
+            return null;
+
+        try
+        {
+            var b = new SqlConnectionStringBuilder(cs);
+            return new SessionDto
+            {
+                Nombre = $"{b.DataSource} - {b.InitialCatalog}",
+                Servidor = b.DataSource,
+                BaseDatos = b.InitialCatalog,
+                Usuario = b.UserID,
+                Password = b.Password,
+                TrustServerCertificate = true,
+                Activa = false
+            };
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static SessionDto Clone(SessionDto source, bool activa) =>
+        new()
+        {
+            Id = source.Id,
+            Nombre = source.Nombre,
+            Servidor = source.Servidor,
+            BaseDatos = source.BaseDatos,
+            Usuario = source.Usuario,
+            Password = source.Password,
+            TrustServerCertificate = source.TrustServerCertificate,
+            Activa = activa
+        };
+
+    private static bool SameConnection(SessionDto left, SessionDto right)
+        => string.Equals(left.Servidor, right.Servidor, StringComparison.OrdinalIgnoreCase)
+        && string.Equals(left.BaseDatos, right.BaseDatos, StringComparison.OrdinalIgnoreCase)
+        && string.Equals(left.Usuario, right.Usuario, StringComparison.OrdinalIgnoreCase);
 
     private static string Build(SessionDto s) =>
         new SqlConnectionStringBuilder

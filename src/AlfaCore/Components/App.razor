@@ -30,6 +30,17 @@
                 return document.documentElement.getAttribute('data-theme') || 'light';
             }
         };
+        window.alfaCoreSqlSession = {
+            setActive: function (id) {
+                if (!id) return;
+                localStorage.setItem('alfacore.sqlSessionId', id);
+                document.cookie = 'AlfaCore.SqlSessionId=' + encodeURIComponent(id) + '; path=/; max-age=31536000; samesite=lax';
+            },
+            clearActive: function () {
+                localStorage.removeItem('alfacore.sqlSessionId');
+                document.cookie = 'AlfaCore.SqlSessionId=; path=/; max-age=0; samesite=lax';
+            }
+        };
     </script>
     <HeadOutlet />
 </head>
