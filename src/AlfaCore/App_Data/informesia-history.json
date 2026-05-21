@@ -1,10 +1,19 @@
 {
   "anonimo": [
     {
+      "id": "3a612844-9b3e-4031-b237-d33867097dc3",
+      "executionId": "339add33-8c8e-44fc-b990-1d25dc6448b0",
+      "consulta": "Proveedores con mayor crecimiento en el per\u00EDodo",
+      "fechaHora": "2026-05-21T16:58:19.9055519+02:00",
+      "exitosa": true,
+      "tipoResultado": "ranking",
+      "titulo": "Proveedores con mayor crecimiento"
+    },
+    {
       "id": "f6331a4d-033b-4608-8feb-b404d7ed5d4b",
       "executionId": "cb340ec6-3eb9-4178-9f52-956c64a1f5dd",
       "consulta": "decime qu\u00E9 usuario carg\u00F3 m\u00E1s items este mes",
-      "fechaHora": "2026-04-23T12:01:57.6142307-03:00",
+      "fechaHora": "2026-04-23T17:01:57.6142307+02:00",
       "exitosa": true,
       "tipoResultado": "actividad",
       "titulo": "Usuarios con m\u00E1s actividad"
@@ -13,7 +22,7 @@
       "id": "03b87edb-d791-4845-9526-0b0182dd5024",
       "executionId": "d6dae243-6459-4903-9f77-8991a0caf512",
       "consulta": "decime qu\u00E9 usuario carg\u00F3 m\u00E1s comprobantes este mes",
-      "fechaHora": "2026-04-23T12:01:36.7839703-03:00",
+      "fechaHora": "2026-04-23T17:01:36.7839703+02:00",
       "exitosa": true,
       "tipoResultado": "actividad",
       "titulo": "Usuarios con m\u00E1s actividad"
@@ -22,7 +31,7 @@
       "id": "1b254aab-c266-4546-859b-66367eb002a6",
       "executionId": "bc2e93f0-9bd8-41e0-a50b-6f1e8c88e95f",
       "consulta": "dame los 10 articulos mas caros del a\u00F1o, incluime la factura en la cual compro",
-      "fechaHora": "2026-04-22T14:01:25.5779273-03:00",
+      "fechaHora": "2026-04-22T19:01:25.5779273+02:00",
       "exitosa": true,
       "tipoResultado": "consulta",
       "titulo": "Art\u00EDculos m\u00E1s caros del a\u00F1o"
@@ -31,7 +40,7 @@
       "id": "65d8de9f-b461-4ed1-9265-0b822193330c",
       "executionId": "9a30e03a-0a5f-49e9-a514-493c5a279383",
       "consulta": "dame los 10 articulos mas caros del a\u00F1o",
-      "fechaHora": "2026-04-22T14:01:02.4190897-03:00",
+      "fechaHora": "2026-04-22T19:01:02.4190897+02:00",
       "exitosa": true,
       "tipoResultado": "consulta",
       "titulo": "Top 10 Art\u00EDculos M\u00E1s Caros del A\u00F1o"
@@ -40,7 +49,7 @@
       "id": "ab854580-0589-44b0-8502-8efda214fb42",
       "executionId": "e4b45d51-d016-4912-91d4-f7eec62595d7",
       "consulta": "dame los 10 articulos mas caros del a\u00F1o",
-      "fechaHora": "2026-04-22T14:00:46.9403586-03:00",
+      "fechaHora": "2026-04-22T19:00:46.9403586+02:00",
       "exitosa": true,
       "tipoResultado": "consulta",
       "titulo": "Art\u00EDculos m\u00E1s caros del a\u00F1o"
@@ -49,7 +58,7 @@
       "id": "3586cb45-edbe-4c7a-911d-6499e72f38ca",
       "executionId": "67b10928-05cc-4fff-b043-fe20619c6965",
       "consulta": "decime los 10 productos mas caros del a\u00F1o, y decime en que comprobante y que usuario lo cargo cada comprobante.",
-      "fechaHora": "2026-04-21T17:22:48.8488338-03:00",
+      "fechaHora": "2026-04-21T22:22:48.8488338+02:00",
       "exitosa": true,
       "tipoResultado": "actividad",
       "titulo": "Usuarios con m\u00E1s actividad"
@@ -58,7 +67,7 @@
       "id": "d8c0edc7-bd6f-417a-b615-450c0fabc3c5",
       "executionId": "0d22bd08-8acd-4120-af45-8e1e514090b8",
       "consulta": "decime los 10 productos mas caros del a\u00F1o, y decime en que comprobante. y que usuario lo cargo",
-      "fechaHora": "2026-04-21T17:22:14.3627833-03:00",
+      "fechaHora": "2026-04-21T22:22:14.3627833+02:00",
       "exitosa": true,
       "tipoResultado": "actividad",
       "titulo": "Usuarios con m\u00E1s actividad"
@@ -67,7 +76,7 @@
       "id": "b718e29b-77a7-4956-99f4-14c78845d260",
       "executionId": "dba926ce-867d-4f01-b5c3-8e8391ce2c03",
       "consulta": "decime los 10 productos mas caros del a\u00F1o, y decime en que comprobante.",
-      "fechaHora": "2026-04-21T17:21:47.0657601-03:00",
+      "fechaHora": "2026-04-21T22:21:47.0657601+02:00",
       "exitosa": true,
       "tipoResultado": "consulta",
       "titulo": "Productos m\u00E1s caros del a\u00F1o"
@@ -76,7 +85,7 @@
       "id": "61fab9f4-ad8d-4e8e-8f27-c0f5de0aac92",
       "executionId": "f1088d51-e71c-433a-9592-9a7bde13f5a4",
       "consulta": "decime los 10 productos mas caros del a\u00F1o",
-      "fechaHora": "2026-04-21T17:21:18.8668157-03:00",
+      "fechaHora": "2026-04-21T22:21:18.8668157+02:00",
       "exitosa": true,
       "tipoResultado": "consulta",
       "titulo": "Productos m\u00E1s caros del a\u00F1o"
@@ -85,7 +94,7 @@
       "id": "89553c52-c2dd-4948-95d6-08e5fff020ed",
       "executionId": "cb443ef0-e3f1-4a85-9d8d-b9212a4fa9d1",
       "consulta": "decime los 10 articulos mas caros",
-      "fechaHora": "2026-04-21T16:57:58.4034913-03:00",
+      "fechaHora": "2026-04-21T21:57:58.4034913+02:00",
       "exitosa": true,
       "tipoResultado": "consulta",
       "titulo": "Art\u00EDculos m\u00E1s caros"
@@ -94,7 +103,7 @@
       "id": "18979698-be09-4e11-9c8a-1cc654201240",
       "executionId": "a22e2d98-2e7f-4727-b022-f9ab01669136",
       "consulta": "decime los 10 articulos mas caros",
-      "fechaHora": "2026-04-21T16:57:42.9879462-03:00",
+      "fechaHora": "2026-04-21T21:57:42.9879462+02:00",
       "exitosa": true,
       "tipoResultado": "consulta",
       "titulo": "Art\u00EDculos m\u00E1s caros"
@@ -103,7 +112,7 @@
       "id": "ea133568-aede-4826-89c1-c46f3d8e3101",
       "executionId": "9d875df1-2bc2-4379-905b-85450bf9355b",
       "consulta": "DAME UN LISTADO DE COMPRAS DE NEOPEL, DE LOS ULTIMOS 3 MESES",
-      "fechaHora": "2026-04-17T14:10:48.8793004-03:00",
+      "fechaHora": "2026-04-17T19:10:48.8793004+02:00",
       "exitosa": true,
       "tipoResultado": "listado",
       "titulo": "Listado de compras"
@@ -112,7 +121,7 @@
       "id": "508c01b5-7390-4cf3-9b0c-c0240b4cd0d8",
       "executionId": "81df2a4d-477d-4397-8c6d-b84c0aa88cc7",
       "consulta": "listado de compras del mes de marzo, mostrame las columnas fecha factura, tc ,idcomprobante, cuenta, nombre, importe sin iva, iva, total, usuario que cargo el comprobante y la fecha y hora, no generes grafico, solo los campos del libro de iva compras.\nnecesito que cada columna de importes sea totalizada.",
-      "fechaHora": "2026-04-17T14:09:18.2549062-03:00",
+      "fechaHora": "2026-04-17T19:09:18.2549062+02:00",
       "exitosa": true,
       "tipoResultado": "listado",
       "titulo": "Listado de compras"
@@ -121,7 +130,7 @@
       "id": "866c0ec3-2bc2-4687-833d-d28cfe40d9f1",
       "executionId": "2c7c4773-be40-45dd-94c6-3d9b9763a741",
       "consulta": "Art\u00EDculos con mayor aumento",
-      "fechaHora": "2026-04-17T10:44:58.1742004-03:00",
+      "fechaHora": "2026-04-17T15:44:58.1742004+02:00",
       "exitosa": true,
       "tipoResultado": "variacion",
       "titulo": "Art\u00EDculos con mayor aumento"
@@ -130,7 +139,7 @@
       "id": "7d04df8b-22d3-4301-be91-d5adb4af7d33",
       "executionId": "ac91e016-9560-4468-a787-f2f42a7e6aed",
       "consulta": "Art\u00EDculos con mayor aumento",
-      "fechaHora": "2026-04-17T10:44:43.8709796-03:00",
+      "fechaHora": "2026-04-17T15:44:43.8709796+02:00",
       "exitosa": true,
       "tipoResultado": "variacion",
       "titulo": "Art\u00EDculos con mayor aumento"
@@ -139,7 +148,7 @@
       "id": "9221e375-87c2-4f9e-a71e-cd1bc7a7dd96",
       "executionId": "5381d6d3-b1a5-4166-8df0-460f79acd714",
       "consulta": "Compar\u00E1 rubros contra el per\u00EDodo anterior",
-      "fechaHora": "2026-04-17T10:18:18.7784016-03:00",
+      "fechaHora": "2026-04-17T15:18:18.7784016+02:00",
       "exitosa": true,
       "tipoResultado": "comparacion",
       "titulo": "Rubros comparados contra el per\u00EDodo anterior"
@@ -148,7 +157,7 @@
       "id": "61ca3156-68b4-4a96-a89e-9238c84657e7",
       "executionId": "b2bee94a-a661-4a7b-8a72-17f41233c801",
       "consulta": "listado de compras del mes de marzo, mostrame las columnas fecha factura, tc ,idcomprobante, cuenta, nombre, importe sin iva, iva, total, usuario que cargo el comprobante y la fecha y hora, no generes grafico, solo los campos del libro de iva compras.\nnecesito que cada columna de importes sea totalizada.",
-      "fechaHora": "2026-04-17T10:16:52.4364225-03:00",
+      "fechaHora": "2026-04-17T15:16:52.4364225+02:00",
       "exitosa": true,
       "tipoResultado": "listado",
       "titulo": "Listado de compras"
@@ -157,7 +166,7 @@
       "id": "f07e3d00-2c04-469c-9038-02252e3ab59a",
       "executionId": "5ef22547-f294-4b93-9544-ff8a66519bbc",
       "consulta": "listado de compras del mes de marzo, mostrame las columnas fecha factura, tc ,idcomprobante, cuenta, nombre, importe sin iva, iva, total, usuario que cargo el comprobante y la fecha y hora, no generes grafico, solo los campos del libro de iva compras",
-      "fechaHora": "2026-04-17T10:16:08.246065-03:00",
+      "fechaHora": "2026-04-17T15:16:08.246065+02:00",
       "exitosa": true,
       "tipoResultado": "listado",
       "titulo": "Listado de compras"
@@ -166,16 +175,7 @@
       "id": "ed09b902-ab7b-497d-b757-0065bc37ea87",
       "executionId": "96d9cc54-ff08-48e5-a0f1-2704c4068327",
       "consulta": "listado de compras del mes de marzo, mostrame las columnas fecha factura, tc ,idcomprobante, cuenta, nombre, importe sin iva, iva, total, usuario que cargo el comprobante y la fecha y hora, no generes grafico, solo los campos del libro de iva compras",
-      "fechaHora": "2026-04-17T09:17:48.6663578-03:00",
-      "exitosa": true,
-      "tipoResultado": "listado",
-      "titulo": "Listado de compras"
-    },
-    {
-      "id": "3ea8efcb-10e2-4cd9-86cf-cd0eee8411b1",
-      "executionId": "6f60f89d-09e5-4685-829d-afcf2ceef638",
-      "consulta": "listado de compras del mes de marzo, mostrame las columnas fecha factura, tc ,idcomprobante, cuenta, nombre, importe sin iva, iva, total, usuario que cargo el comprobante y la fecha y hora, no generes grafico, solo los campos del libro de iva compras",
-      "fechaHora": "2026-04-17T09:17:33.5186198-03:00",
+      "fechaHora": "2026-04-17T14:17:48.6663578+02:00",
       "exitosa": true,
       "tipoResultado": "listado",
       "titulo": "Listado de compras"
