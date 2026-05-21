@@ -447,7 +447,7 @@
                                         <button type="button"
                                                 class="conversation-pin @(item.FijadaPorUsuario ? "is-pinned" : string.Empty)"
                                                 title="@(item.FijadaPorUsuario ? "Desfijar para mi usuario" : "Fijar para mi usuario")"
-                                                aria-label="@(item.FijadaPorUsuario ? "Desfijar conversaciÃ³n" : "Fijar conversaciÃ³n")"
+                                                aria-label="@(item.FijadaPorUsuario ? "Desfijar conversación" : "Fijar conversación")"
                                                 @onclick:stopPropagation
                                                 @onclick="() => ToggleConversationPinAsync(item)">
                                             <i class="bi @(item.FijadaPorUsuario ? "bi-pin-angle-fill" : "bi-pin-angle")"></i>
@@ -1472,7 +1472,7 @@
                 </select>
             </div>
             <div class="field">
-                <label>Comentario / observaciÃ³n</label>
+                <label>Comentario / observación</label>
                 <textarea rows="4" maxlength="4000" @bind="_ticketDescription" disabled="@_creatingTicket" placeholder="Detalle adicional para el ticket..."></textarea>
             </div>
             <div class="field">
