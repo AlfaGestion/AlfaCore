@@ -1798,23 +1798,62 @@ public sealed class ConversacionesService(
             var isClosed = await GetStateClosedFlagAsync(state, token);
             var wasClosed = await GetConversationClosedFlagAsync(request.IdConversacion, token);
             var previousState = await GetConversationStateAsync(request.IdConversacion, token);
+            var previousTechnicianId = await GetConversationTechnicianIdAsync(request.IdConversacion, token);
 
             const string sql = """
                 UPDATE dbo.CONV_CONVERSACIONES
                 SET
                     CodigoEstado = @CodigoEstado,
+                    IdTecnico = CASE WHEN @EsCerrado = 1 THEN NULL ELSE IdTecnico END,
                     FechaHoraCierre = CASE WHEN @EsCerrado = 1 THEN ISNULL(FechaHoraCierre, GETDATE()) ELSE NULL END,
                     FechaHora_Modificacion = GETDATE()
                 WHERE IdConversacion = @IdConversacion
                 """;
 
+            const string unassignHistorySql = """
+                INSERT INTO dbo.CONV_ASIGNACIONES
+                (
+                    IdConversacion,
+                    FechaHora,
+                    IdTecnico,
+                    UsuarioAccion,
+                    SistemaAccion,
+                    Observaciones
+                )
+                VALUES
+                (
+                    @IdConversacion,
+                    GETDATE(),
+                    NULL,
+                    @UsuarioAccion,
+                    @SistemaAccion,
+                    @Observaciones
+                )
+                """;
+
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
-            await using var cmd = new SqlCommand(sql, cn);
-            cmd.Parameters.AddWithValue("@IdConversacion", request.IdConversacion);
-            cmd.Parameters.AddWithValue("@CodigoEstado", state);
-            cmd.Parameters.AddWithValue("@EsCerrado", isClosed);
-            await cmd.ExecuteNonQueryAsync(token);
+            await using var tx = await cn.BeginTransactionAsync(token);
+
+            await using (var cmd = new SqlCommand(sql, cn, (SqlTransaction)tx))
+            {
+                cmd.Parameters.AddWithValue("@IdConversacion", request.IdConversacion);
+                cmd.Parameters.AddWithValue("@CodigoEstado", state);
+                cmd.Parameters.AddWithValue("@EsCerrado", isClosed);
+                await cmd.ExecuteNonQueryAsync(token);
+            }
+
+            if (isClosed && !string.IsNullOrWhiteSpace(previousTechnicianId))
+            {
+                await using var cmd = new SqlCommand(unassignHistorySql, cn, (SqlTransaction)tx);
+                cmd.Parameters.AddWithValue("@IdConversacion", request.IdConversacion);
+                cmd.Parameters.AddWithValue("@UsuarioAccion", DbNullable(request.UsuarioAccion));
+                cmd.Parameters.AddWithValue("@SistemaAccion", DbNullable(request.SistemaAccion));
+                cmd.Parameters.AddWithValue("@Observaciones", DbNullable("Asignacion limpiada automaticamente al cerrar la conversacion."));
+                await cmd.ExecuteNonQueryAsync(token);
+            }
+
+            await tx.CommitAsync(token);
 
             if (!string.Equals(previousState.CodigoEstado, state, StringComparison.OrdinalIgnoreCase))
             {
