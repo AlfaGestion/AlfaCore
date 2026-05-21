@@ -64,6 +64,8 @@ window.conversacionesUi = {
     _fileDropWatchers: new WeakMap(),
     _previewPanWatchers: new WeakMap(),
     _notificationBaseTitle: 'AlfaCore - Alfa Gestión',
+    _audioPlayersInitialized: false,
+    _audioSpeeds: [1, 1.5, 2],
     _notificationSoundUrl: '/audio/conversaciones/mixkit-alert-quick-chime-766.mp3',
     _notificationAudio: null,
     _audioContext: null,
@@ -86,6 +88,7 @@ window.conversacionesUi = {
         this._notificationAudio = new Audio(this._notificationSoundUrl);
         this._notificationAudio.preload = 'auto';
         this._notificationAudio.volume = 0.8;
+        this.initAudioPlayers();
 
         const unlock = () => {
             window.conversacionesUi.unlockNotificationSound();
@@ -93,6 +96,124 @@ window.conversacionesUi = {
 
         window.addEventListener('pointerdown', unlock, { once: true, passive: true });
         window.addEventListener('keydown', unlock, { once: true });
+    },
+
+    initAudioPlayers: function () {
+        if (this._audioPlayersInitialized) return true;
+        this._audioPlayersInitialized = true;
+
+        const getPlayer = target => target?.closest?.('[data-audio-player]');
+        const getAudio = player => player?.parentElement?.querySelector?.('audio.wa-audio-player__media');
+        const formatTime = value => {
+            if (!Number.isFinite(value) || value < 0) return '0:00';
+            const total = Math.floor(value);
+            const minutes = Math.floor(total / 60);
+            const seconds = String(total % 60).padStart(2, '0');
+            return `${minutes}:${seconds}`;
+        };
+        const setProgressFill = (seek, percent) => {
+            seek.style.setProperty('--audio-progress', `${Math.max(0, Math.min(100, percent))}%`);
+        };
+        const updatePlayer = player => {
+            const audio = getAudio(player);
+            if (!audio) return;
+
+            const playIcon = player.querySelector('[data-audio-play-icon]');
+            const playButton = player.querySelector('[data-audio-play]');
+            const seek = player.querySelector('[data-audio-seek]');
+            const current = player.querySelector('[data-audio-current]');
+            const duration = player.querySelector('[data-audio-duration]');
+            const hasDuration = Number.isFinite(audio.duration) && audio.duration > 0;
+            const percent = hasDuration ? (audio.currentTime / audio.duration) * 100 : 0;
+
+            player.classList.toggle('is-playing', !audio.paused && !audio.ended);
+            if (playIcon) {
+                playIcon.className = !audio.paused && !audio.ended ? 'bi bi-pause-fill' : 'bi bi-play-fill';
+            }
+            if (playButton) {
+                const label = !audio.paused && !audio.ended ? 'Pausar audio' : 'Reproducir audio';
+                playButton.title = label;
+                playButton.setAttribute('aria-label', label);
+            }
+            if (seek) {
+                seek.value = hasDuration ? Math.round((audio.currentTime / audio.duration) * Number(seek.max || 1000)) : 0;
+                setProgressFill(seek, percent);
+            }
+            if (current) current.textContent = formatTime(audio.currentTime);
+            if (duration) duration.textContent = hasDuration ? formatTime(audio.duration) : '0:00';
+        };
+        const pauseOtherPlayers = currentAudio => {
+            document.querySelectorAll('audio.wa-audio-player__media').forEach(audio => {
+                if (audio !== currentAudio && !audio.paused) audio.pause();
+            });
+        };
+
+        document.addEventListener('click', async event => {
+            const playButton = event.target.closest?.('[data-audio-play]');
+            if (playButton) {
+                const player = getPlayer(playButton);
+                const audio = getAudio(player);
+                if (!audio) return;
+
+                try {
+                    if (audio.paused || audio.ended) {
+                        pauseOtherPlayers(audio);
+                        await audio.play();
+                    } else {
+                        audio.pause();
+                    }
+                    updatePlayer(player);
+                } catch {
+                    player?.classList.add('has-audio-error');
+                }
+                return;
+            }
+
+            const speedButton = event.target.closest?.('[data-audio-speed]');
+            if (speedButton) {
+                const player = getPlayer(speedButton);
+                const audio = getAudio(player);
+                if (!audio) return;
+
+                const currentSpeed = Number(audio.playbackRate || 1);
+                const index = this._audioSpeeds.findIndex(speed => Math.abs(speed - currentSpeed) < 0.01);
+                const nextSpeed = this._audioSpeeds[(index + 1) % this._audioSpeeds.length];
+                audio.playbackRate = nextSpeed;
+                speedButton.textContent = Number.isInteger(nextSpeed) ? String(nextSpeed) : String(nextSpeed);
+                speedButton.title = `Velocidad ${nextSpeed}x`;
+            }
+        });
+
+        document.addEventListener('input', event => {
+            const seek = event.target.closest?.('[data-audio-seek]');
+            if (!seek) return;
+            const player = getPlayer(seek);
+            const audio = getAudio(player);
+            if (!audio || !Number.isFinite(audio.duration) || audio.duration <= 0) return;
+
+            audio.currentTime = (Number(seek.value) / Number(seek.max || 1000)) * audio.duration;
+            updatePlayer(player);
+        });
+
+        document.addEventListener('loadedmetadata', event => {
+            const audio = event.target;
+            if (!audio?.matches?.('audio.wa-audio-player__media')) return;
+            const player = audio.parentElement?.querySelector?.('[data-audio-player]');
+            updatePlayer(player);
+        }, true);
+
+        ['timeupdate', 'play', 'pause', 'ended', 'durationchange'].forEach(name => {
+            document.addEventListener(name, event => {
+                const audio = event.target;
+                if (!audio?.matches?.('audio.wa-audio-player__media')) return;
+                const player = audio.parentElement?.querySelector?.('[data-audio-player]');
+                if (name === 'ended') audio.currentTime = 0;
+                updatePlayer(player);
+            }, true);
+        });
+
+        document.querySelectorAll('[data-audio-player]').forEach(updatePlayer);
+        return true;
     },
 
     setUnreadCount: function (count) {

@@ -10424,7 +10424,8 @@ html[data-theme="light"] .balance-row--detalle td {
         padding: .9rem;
     }
 
-    .message-attachment--audio audio,
+    .message-attachment--audio,
+    .wa-audio-player,
     .attachment-link {
         max-width: 100%;
         width: 100%;
@@ -10654,17 +10655,135 @@ html[data-theme="light"] .balance-row--detalle td {
     margin-top: .2rem;
 }
 
-.message-attachment--audio audio {
-    max-width: 240px;
-    width: 100%;
-    height: 32px;
-}
-
 .message-attachment--audio {
     position: relative;
     display: flex;
     align-items: center;
     gap: .35rem;
+    width: min(360px, calc(100vw - 7rem));
+    max-width: 100%;
+}
+
+.wa-audio-player__media {
+    display: none;
+}
+
+.wa-audio-player {
+    display: grid;
+    grid-template-columns: 2rem minmax(8rem, 1fr) 2.65rem;
+    align-items: center;
+    gap: .65rem;
+    width: 100%;
+    min-width: min(300px, calc(100vw - 7.5rem));
+    min-height: 3rem;
+    padding: .55rem .65rem;
+    border: 1px solid rgba(148, 163, 184, .16);
+    border-radius: 12px;
+    background: linear-gradient(180deg, rgba(31, 41, 55, .94), rgba(17, 24, 39, .94));
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04);
+}
+
+.message-row--outgoing .wa-audio-player {
+    background: linear-gradient(180deg, rgba(7, 89, 133, .9), rgba(8, 76, 112, .92));
+    border-color: rgba(56, 189, 248, .18);
+}
+
+.wa-audio-player__play {
+    display: inline-grid;
+    place-items: center;
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: #f8fafc;
+    cursor: pointer;
+}
+
+.wa-audio-player__play .bi {
+    font-size: 1.35rem;
+    line-height: 1;
+}
+
+.wa-audio-player__body {
+    position: relative;
+    display: grid;
+    gap: .18rem;
+    min-width: 0;
+}
+
+.wa-audio-player__seek {
+    --audio-progress: 0%;
+    width: 100%;
+    height: 1.45rem;
+    margin: 0;
+    appearance: none;
+    -webkit-appearance: none;
+    cursor: pointer;
+    background:
+        radial-gradient(circle at var(--audio-progress) 50%, #38bdf8 0 .34rem, transparent .36rem),
+        linear-gradient(90deg, rgba(56, 189, 248, .95) 0 var(--audio-progress), rgba(148, 163, 184, .62) var(--audio-progress) 100%);
+    mask-image: repeating-linear-gradient(90deg, #000 0 3px, transparent 3px 7px);
+    -webkit-mask-image: repeating-linear-gradient(90deg, #000 0 3px, transparent 3px 7px);
+}
+
+.wa-audio-player__seek::-webkit-slider-runnable-track {
+    height: 1.45rem;
+    background: transparent;
+}
+
+.wa-audio-player__seek::-webkit-slider-thumb {
+    appearance: none;
+    -webkit-appearance: none;
+    width: .01rem;
+    height: 1.45rem;
+    background: transparent;
+}
+
+.wa-audio-player__seek::-moz-range-track {
+    height: 1.45rem;
+    background: transparent;
+}
+
+.wa-audio-player__seek::-moz-range-thumb {
+    width: .01rem;
+    height: 1.45rem;
+    border: 0;
+    background: transparent;
+}
+
+.wa-audio-player__meta {
+    display: flex;
+    justify-content: space-between;
+    gap: .75rem;
+    color: rgba(203, 213, 225, .72);
+    font-size: .7rem;
+    line-height: 1;
+}
+
+.wa-audio-player__speed {
+    justify-self: end;
+    min-width: 2.35rem;
+    height: 1.35rem;
+    padding: 0 .45rem;
+    border: 0;
+    border-radius: 999px;
+    background: rgba(2, 6, 23, .66);
+    color: #f8fafc;
+    font-size: .78rem;
+    font-weight: 800;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.wa-audio-player__speed:hover,
+.wa-audio-player__speed:focus-visible {
+    background: rgba(2, 6, 23, .9);
+}
+
+.wa-audio-player.has-audio-error {
+    border-color: rgba(248, 113, 113, .55);
 }
 
 .message-attachment--video {
@@ -13867,7 +13986,7 @@ textarea {
     .conversations-page--odoo .message-attachments,
     .conversations-page--odoo .message-attachment,
     .conversations-page--odoo .attachment-link,
-    .conversations-page--odoo .message-attachment--audio audio,
+    .conversations-page--odoo .wa-audio-player,
     .conversations-page--odoo .message-attachment--image img {
         max-width: 100%;
         overflow-wrap: anywhere;
