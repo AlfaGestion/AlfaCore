@@ -39,6 +39,10 @@ public sealed class NotificacionesPushClientSettingsDto
 {
     public bool Configurado { get; set; }
     public string PublicKey { get; set; } = string.Empty;
+    public bool PublicKeyConfigurada { get; set; }
+    public bool PrivateKeyConfigurada { get; set; }
+    public bool SubjectConfigurado { get; set; }
+    public string ConfiguracionMensaje { get; set; } = string.Empty;
     public NotificacionesPushPreferencesDto Preferences { get; set; } = new();
 }
 

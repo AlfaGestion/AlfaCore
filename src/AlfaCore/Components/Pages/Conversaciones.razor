@@ -26,7 +26,110 @@
     }
     else
     {
-        <section class="panel-card conversations-filters">
+        <section class="panel-card conversations-filters conversations-mobile-filters mobile-only">
+            <div class="conversations-mobile-header">
+                <div>
+                    <h2>Conversaciones</h2>
+                    <span>@_inbox.Count conversación(es)</span>
+                </div>
+                <button type="button" class="conversations-mobile-icon-button" @onclick="RecargarAsync" disabled="@(_loadingInbox || _loadingConversation)" title="Recargar">
+                    <i class="bi bi-arrow-clockwise"></i>
+                </button>
+            </div>
+
+            <div class="conversations-mobile-actions mobile-actions">
+                <button type="button"
+                        class="conversations-mobile-action @(_canalActivo == "WHATSAPP" ? "is-active" : string.Empty)"
+                        @onclick='() => ChangeCanalAsync("WHATSAPP")'>
+                    <i class="bi bi-whatsapp"></i>
+                    <span>WhatsApp</span>
+                </button>
+                <button type="button"
+                        class="conversations-mobile-action @(_canalActivo == "INTERNO" ? "is-active" : string.Empty)"
+                        @onclick='() => ChangeCanalAsync("INTERNO")'>
+                    <i class="bi bi-people-fill"></i>
+                    <span>Chat interno</span>
+                </button>
+                <button type="button"
+                        class="conversations-mobile-action"
+                        @onclick="ToggleContextPanel"
+                        disabled="@(_selectedConversation is null)">
+                    <i class="bi bi-layout-sidebar-inset-reverse"></i>
+                    <span>Contexto</span>
+                </button>
+                <button type="button"
+                        class="conversations-mobile-action"
+                        @onclick="StartTicketSelection"
+                        disabled="@(_selectedConversation is null || _messages.Count == 0)">
+                    <i class="bi bi-plus-lg"></i>
+                    <span>Ticket</span>
+                </button>
+            </div>
+
+            <div class="conversations-mobile-quick-filters mobile-filter-chips" aria-label="Filtros rápidos">
+                <button type="button"
+                        class="conversations-mobile-chip @(_filters.Modo == "todas" ? "is-active" : string.Empty)"
+                        @onclick='() => ChangeModeAsync("todas")'>
+                    Todas
+                </button>
+                <button type="button"
+                        class="conversations-mobile-chip @(_filters.Modo == "sin_asignar" ? "is-active" : string.Empty)"
+                        @onclick='() => ChangeModeAsync("sin_asignar")'>
+                    Sin asignar
+                </button>
+                <button type="button"
+                        class="conversations-mobile-chip @(_filters.Modo == "asignadas_a_mi" ? "is-active" : string.Empty)"
+                        @onclick='() => ChangeModeAsync("asignadas_a_mi")'>
+                    Asignadas a mí
+                </button>
+                <button type="button"
+                        class="conversations-mobile-chip conversations-mobile-chip--icon"
+                        @onclick="OpenMobileAdvancedFilters"
+                        aria-label="Filtros avanzados">
+                    <i class="bi bi-sliders"></i>
+                </button>
+            </div>
+
+            <div class="conversations-mobile-states mobile-status-cards" aria-label="Estados">
+                <button type="button"
+                        class="conversations-mobile-state-card @(_filters.Modo == "pendientes" ? "is-active" : string.Empty)"
+                        @onclick='() => ChangeModeAsync("pendientes")'>
+                    <span><i class="bi bi-clock-history"></i> Pendientes</span>
+                    <strong>@MobilePendingCount</strong>
+                </button>
+                <button type="button"
+                        class="conversations-mobile-state-card @(_filters.Modo == "cerradas" ? "is-active" : string.Empty)"
+                        @onclick='() => ChangeModeAsync("cerradas")'>
+                    <span><i class="bi bi-check2-circle"></i> Cerradas</span>
+                    <strong>@MobileClosedCount</strong>
+                </button>
+            </div>
+
+            <div class="conversations-filters__fields">
+                <div class="field">
+                    <label for="conv-mobile-search">Buscar</label>
+                    <input id="conv-mobile-search"
+                           type="search"
+                           placeholder="Teléfono, cliente, contacto o resumen..."
+                           value="@_filters.Search"
+                           @oninput="HandleSearchInputAsync"
+                           @onkeydown="HandleSearchEnter" />
+                </div>
+
+                <div class="field">
+                    <label for="conv-mobile-my-tech">Técnico</label>
+                    <select id="conv-mobile-my-tech" value="@_filters.IdTecnicoActual" @onchange="HandleTechnicianFilterChangedAsync">
+                        <option value="">Todos</option>
+                        @foreach (var tech in _technicians)
+                        {
+                            <option value="@tech.IdTecnico">@tech.Nombre (@tech.IdTecnico)</option>
+                        }
+                    </select>
+                </div>
+            </div>
+        </section>
+
+        <section class="panel-card conversations-filters desktop-only">
             <div class="conversations-canal">
                 <button type="button"
                         class="conversations-filter-pill @(_canalActivo == "WHATSAPP" ? "is-active" : string.Empty)"
@@ -229,6 +332,79 @@
             </div>
         </section>
 
+        @if (_showMobileAdvancedFilters)
+        {
+            <button type="button" class="conversations-mobile-sheet-backdrop" aria-label="Cerrar filtros" @onclick="CloseMobileAdvancedFilters"></button>
+            <section class="conversations-mobile-filter-sheet" aria-label="Filtros avanzados">
+                <div class="conversations-mobile-filter-sheet__handle"></div>
+                <header>
+                    <h3>Filtros</h3>
+                    <button type="button" class="conversations-mobile-icon-button" @onclick="CloseMobileAdvancedFilters" aria-label="Cerrar filtros">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
+                </header>
+
+                <div class="conversations-mobile-sheet-group">
+                    <span>Estados</span>
+                    @foreach (var mode in _modeOptions)
+                    {
+                        <button type="button"
+                                class="conversations-mobile-sheet-option @(mode.Value == _filters.Modo ? "is-active" : string.Empty)"
+                                @onclick="() => SetMobileMode(mode.Value)">
+                            <i class="bi @(mode.Value == _filters.Modo ? "bi-record-circle-fill" : "bi-circle")"></i>
+                            <span>@mode.Label</span>
+                        </button>
+                    }
+                </div>
+
+                <div class="field">
+                    <label for="conv-mobile-state-filter">Estado puntual</label>
+                    <select id="conv-mobile-state-filter" @bind="_filters.CodigoEstado">
+                        <option value="">Todos</option>
+                        <option value="@ConversacionesInboxFilters.EstadoSinFinalizar">Sin finalizar</option>
+                        @foreach (var state in _states)
+                        {
+                            <option value="@state.CodigoEstado">@state.Descripcion</option>
+                        }
+                    </select>
+                </div>
+
+                <div class="field">
+                    <label for="conv-mobile-tech-filter">Mi tecnico</label>
+                    <select id="conv-mobile-tech-filter" @bind="_filters.IdTecnicoActual">
+                        <option value="">Todos</option>
+                        @foreach (var tech in _technicians)
+                        {
+                            <option value="@tech.IdTecnico">@tech.Nombre (@tech.IdTecnico)</option>
+                        }
+                    </select>
+                </div>
+
+                <div class="conversations-mobile-sheet-group">
+                    <span>Canal</span>
+                    <div class="conversations-mobile-sheet-channel">
+                        <button type="button"
+                                class="conversations-mobile-chip @(_canalActivo == "WHATSAPP" ? "is-active" : string.Empty)"
+                                @onclick='() => ChangeCanalAsync("WHATSAPP")'>
+                            WhatsApp
+                        </button>
+                        <button type="button"
+                                class="conversations-mobile-chip @(_canalActivo == "INTERNO" ? "is-active" : string.Empty)"
+                                @onclick='() => ChangeCanalAsync("INTERNO")'>
+                            Chat interno
+                        </button>
+                    </div>
+                </div>
+
+                <button type="button" class="btn btn--primary" @onclick="ApplyMobileAdvancedFiltersAsync" disabled="@_loadingInbox">
+                    Aplicar filtros
+                </button>
+                <button type="button" class="btn btn--ghost" @onclick="ClearMobileAdvancedFiltersAsync">
+                    Limpiar filtros
+                </button>
+            </section>
+        }
+
         @if (_showContextPanel)
         {
             <button type="button" class="conversations-panel-backdrop" aria-label="Cerrar paneles" @onclick="CloseFloatingPanels"></button>
@@ -238,7 +414,7 @@
             <aside class="panel-card conversations-list">
                 <div class="conversations-list__header">
                     <div>
-                        <h3 class="panel-card__title">Inbox</h3>
+                        <h3 class="panel-card__title">Inbox <span class="conversations-mobile-inbox-count mobile-only">@_inbox.Count</span></h3>
                         <p class="panel-card__subtitle">@_inbox.Count conversación(es)</p>
                     </div>
                 </div>
@@ -260,7 +436,9 @@
                         {
                             <button type="button"
                                     class="conversation-row @(item.IdConversacion == _selectedConversationId ? "is-selected" : string.Empty)"
-                                    @onclick="() => SelectConversationAsync(item.IdConversacion)">
+                                    @onclick="() => SelectConversationAsync(item.IdConversacion, showMobileChat: true)">
+                                <span class="conversation-row__avatar" aria-hidden="true">@GetConversationInitials(item)</span>
+                                <div class="conversation-row__content">
                                 <div class="conversation-row__top">
                                     <span class="conversation-row__name">@GetDisplayName(item)</span>
                                     <span class="conversation-row__side">
@@ -290,6 +468,7 @@
                                     }
                                 </div>
                                 <p class="conversation-row__summary">@item.ResumenUltimoMensaje</p>
+                                </div>
                             </button>
                         }
                     </div>
@@ -325,7 +504,7 @@
                             <div class="conversation-audit-results__list">
                                 @foreach (var item in _auditMessages)
                                 {
-                                    <button type="button" class="conversation-audit-result" @onclick="() => SelectConversationAsync(item.IdConversacion)">
+                                    <button type="button" class="conversation-audit-result" @onclick="() => SelectConversationAsync(item.IdConversacion, showMobileChat: true)">
                                         <div class="conversation-audit-result__top">
                                             <strong>@DisplayOrFallback(item.NombreConversacion)</strong>
                                             <span>@item.FechaHora.ToString("dd/MM HH:mm")</span>
@@ -1289,6 +1468,7 @@
     private string _canalActivo = "WHATSAPP";
     private bool _showNuevoHilo;
     private bool _showContextPanel;
+    private bool _showMobileAdvancedFilters;
     private bool _showTemplatePanel;
     private string _nuevoHiloNombre = string.Empty;
     private string _nuevoHiloTecnico = string.Empty;
@@ -1317,6 +1497,7 @@
     private readonly Dictionary<string, ConversationChannelCache> _channelCache = [];
     private ConversacionDetalleDto? _selectedConversation;
     private long? _selectedConversationId;
+    private bool _mobileChatActive;
     private bool _loadingInbox;
     private bool _loadingAuditMessages;
     private bool _loadingConversation;
@@ -1469,7 +1650,11 @@
     private bool IsAuditResultsMode
         => _selectedConversation is null && ShouldKeepAuditResultsOpen;
     private bool IsMobileChatView
-        => _selectedConversation is not null || IsAuditResultsMode;
+        => (_mobileChatActive && _selectedConversation is not null) || IsAuditResultsMode;
+    private int MobilePendingCount
+        => _inbox.Count(x => !IsClosedInboxItem(x));
+    private int MobileClosedCount
+        => _inbox.Count(IsClosedInboxItem);
     private bool ShouldKeepAuditResultsOpen
         => !string.IsNullOrWhiteSpace(_filters.Search)
            || !string.IsNullOrWhiteSpace(_filters.Auditoria)
@@ -1490,7 +1675,7 @@
         {
             await LoadInboxAsync();
             if (_startupConversationId.HasValue)
-                await SelectConversationAsync(_startupConversationId.Value);
+                await SelectConversationAsync(_startupConversationId.Value, showMobileChat: true);
         }
 
         StartPolling();
@@ -1664,6 +1849,33 @@
         await LoadInboxAsync();
     }
 
+    private void SetMobileMode(string mode)
+    {
+        _filters.Modo = mode;
+        EnsureCurrentTechnicianFilterForCurrentMode();
+    }
+
+    private void OpenMobileAdvancedFilters()
+        => _showMobileAdvancedFilters = true;
+
+    private void CloseMobileAdvancedFilters()
+        => _showMobileAdvancedFilters = false;
+
+    private async Task ApplyMobileAdvancedFiltersAsync()
+    {
+        _showMobileAdvancedFilters = false;
+        await LoadInboxAsync();
+    }
+
+    private async Task ClearMobileAdvancedFiltersAsync()
+    {
+        _filters.Modo = "todas";
+        _filters.CodigoEstado = string.Empty;
+        _filters.IdTecnicoActual = string.Empty;
+        _showMobileAdvancedFilters = false;
+        await LoadInboxAsync();
+    }
+
     private async Task HandleSearchEnter(KeyboardEventArgs args)
     {
         if (args.Key != "Enter")
@@ -1694,6 +1906,12 @@
         }
 
         await DebounceContactSuggestionsAsync();
+    }
+
+    private async Task HandleTechnicianFilterChangedAsync(ChangeEventArgs args)
+    {
+        _filters.IdTecnicoActual = Convert.ToString(args.Value, System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
+        await LoadInboxAsync();
     }
 
     private async Task DebounceSearchAsync()
@@ -1866,8 +2084,11 @@
            && DateTime.Now - value <= LateIncomingNotificationWindow
            && value <= DateTime.Now.AddMinutes(2);
 
-    private async Task SelectConversationAsync(long idConversacion)
+    private async Task SelectConversationAsync(long idConversacion, bool showMobileChat = false)
     {
+        if (showMobileChat)
+            _mobileChatActive = true;
+
         await ClearTypingAsync();
         _showTemplatePanel = false;
         _showStatusMenu = false;
@@ -3123,6 +3344,7 @@
     private void CloseFloatingPanels()
     {
         _showContextPanel = false;
+        _showMobileAdvancedFilters = false;
     }
 
     private async Task OpenTemplatePanel()
@@ -3167,7 +3389,7 @@
             _nuevoHiloNombre = string.Empty;
             _nuevoHiloTecnico = string.Empty;
             await LoadInboxAsync();
-            await SelectConversationAsync(id);
+            await SelectConversationAsync(id, showMobileChat: true);
         }
         catch (Exception ex)
         {
@@ -3203,7 +3425,7 @@
             _filters.Search = result.TelefonoWhatsApp;
 
             await LoadInboxAsync();
-            await SelectConversationAsync(result.IdConversacion);
+            await SelectConversationAsync(result.IdConversacion, showMobileChat: true);
 
             var action = result.Creada ? "Conversación creada" : "Conversación existente abierta";
             var contact = result.ContactoAsociado ? " y asociada al contacto encontrado." : ". No se encontró un contacto existente para asociar.";
@@ -3315,7 +3537,7 @@
     private async Task SelectConversationFromSuggestionAsync(long idConversacion)
     {
         _showContactSuggestions = false;
-        await SelectConversationAsync(idConversacion);
+        await SelectConversationAsync(idConversacion, showMobileChat: true);
     }
 
     private ConversacionInboxItemDto? GetBestConversationMatchForSearch()
@@ -3692,7 +3914,9 @@
         _pendingAttachments = [];
         _assignmentTechnicianId = string.Empty;
         _showContextPanel = false;
+        _showMobileAdvancedFilters = false;
         _showTemplatePanel = false;
+        _mobileChatActive = false;
         ClearTemplateSelection();
         _scrollHandlerConversationId = null;
         _replyEnterHandlerConversationId = null;
@@ -3718,6 +3942,26 @@
 
     private static string GetDisplayName(ConversacionInboxItemDto item)
         => FirstNonEmpty(item.ContactoNombre, item.ClienteNombre, item.NombreVisible, item.TelefonoWhatsApp);
+
+    private string GetConversationInitials(ConversacionInboxItemDto item)
+    {
+        var displayName = GetDisplayName(item).Trim();
+        if (string.IsNullOrWhiteSpace(displayName))
+            return "?";
+
+        var parts = displayName
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Take(2)
+            .ToArray();
+
+        if (parts.Length == 0)
+            return "?";
+
+        return string.Concat(parts.Select(x => char.ToUpperInvariant(x[0])));
+    }
+
+    private bool IsClosedInboxItem(ConversacionInboxItemDto item)
+        => _states.Any(x => x.EsCerrado && string.Equals(x.CodigoEstado, item.CodigoEstado, StringComparison.OrdinalIgnoreCase));
 
     private static string GetConversationHeader(ConversacionDetalleDto item)
         => FirstNonEmpty(item.ContactoNombre, item.ClienteNombre, item.NombreVisible, item.TelefonoWhatsApp);

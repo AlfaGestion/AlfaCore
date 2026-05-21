@@ -4,6 +4,7 @@
 @inject AlfaCore.Services.ISessionService SessionSvc
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject AlfaCore.Services.IConversacionesService ConversacionesSvc
+@inject AlfaCore.Services.IAppEventService AppEvents
 @implements IDisposable
 
 <div class="@ShellClass">
@@ -428,6 +429,34 @@
             }
         </header>
 
+        @if (ShouldShowConversationMobilePwaActions)
+        {
+            <div class="pwa-mobile-actions no-print">
+                @if (_pwaInstalled)
+                {
+                    <span class="pwa-mobile-actions__status">
+                        <i class="bi bi-check2-circle"></i>
+                        App instalada
+                    </span>
+                }
+                else
+                {
+                    <button type="button" class="btn btn--ghost pwa-mobile-actions__button" @onclick="InstallPwaAsync">
+                        <i class="bi bi-download"></i>
+                        <span>Instalar app</span>
+                    </button>
+                }
+
+                @if (AppUserSession.IsAuthenticated)
+                {
+                    <button type="button" class="btn btn--primary pwa-mobile-actions__button" @onclick="TogglePushPanelAsync">
+                        <i class="bi bi-bell-fill"></i>
+                        <span>Notificaciones</span>
+                    </button>
+                }
+            </div>
+        }
+
         <section class="shell__content">
             <div class="print-banner print-only">
                 <div>
@@ -501,7 +530,7 @@
 
         <div class="app-settings-grid">
             <label class="toggle-row">
-                <input type="checkbox" checked="@_pushPreferences.Habilitadas" @onchange="OnPushEnabledChanged" />
+                <input type="checkbox" checked="@_pushPreferences.Habilitadas" @onchange="OnPushEnabledChanged" disabled="@(!CanEnablePush)" />
                 <span>Activar notificaciones en este dispositivo</span>
             </label>
 
@@ -519,6 +548,7 @@
                     <input type="checkbox" checked="@(PushChannelEnabled("WHATSAPP"))" @onchange="@(args => TogglePushChannel("WHATSAPP", args))" />
                     <span>WhatsApp</span>
                 </label>
+                <p class="app-modal__hint">El selector queda preparado para sumar nuevos canales cuando el módulo los habilite.</p>
             </div>
         </div>
 
@@ -527,7 +557,7 @@
                 <i class="bi bi-save"></i>
                 <span>Guardar</span>
             </button>
-            <button type="button" class="btn btn--ghost" @onclick="SendTestPushAsync" disabled="@(_pushBusy || !_pushPreferences.Habilitadas)">
+            <button type="button" class="btn btn--ghost" @onclick="SendTestPushAsync" disabled="@(!CanSendTestPush)">
                 <i class="bi bi-send"></i>
                 <span>Enviar prueba</span>
             </button>
@@ -535,7 +565,15 @@
 
         @if (_pwaIsIos && !_pwaInstalled)
         {
-            <p class="app-modal__hint">En iOS las notificaciones web requieren instalar AlfaCore en pantalla de inicio.</p>
+            <p class="app-modal__hint">En iOS las notificaciones web requieren instalar AlfaCore en pantalla de inicio. Primero usá Compartir &gt; Agregar a pantalla de inicio y abrí la app desde ese ícono.</p>
+        }
+        else if (!_pwaPushSupported)
+        {
+            <p class="app-modal__hint">Este navegador no informa soporte para notificaciones push web.</p>
+        }
+        else if (!_pushConfigured)
+        {
+            <p class="app-modal__hint">@_pushConfigurationMessage</p>
         }
     </section>
 }
@@ -569,11 +607,14 @@
     private bool _pwaCanInstall;
     private bool _pwaInstalled;
     private bool _pwaIsIos;
+    private bool _pwaPushSupported;
+    private string _pwaNotificationPermission = string.Empty;
     private bool _showInstallHelp;
     private bool _showPushPanel;
     private bool _pushBusy;
     private bool _pushConfigured;
     private string _pushPublicKey = string.Empty;
+    private string _pushConfigurationMessage = string.Empty;
     private string _pushMessage = string.Empty;
     private string _pushError = string.Empty;
     private NotificacionesPushPreferencesDto _pushPreferences = new();
@@ -581,6 +622,15 @@
     private string ShellClass
         => $"shell {(_sidebarCollapsed ? "shell--collapsed" : string.Empty)} {(_mobileSidebarOpen ? "shell--mobile-open" : string.Empty)}";
     private bool ShowShellContext => string.IsNullOrWhiteSpace(_currentModule);
+    private bool ShouldShowConversationMobilePwaActions
+        => string.Equals(_currentModule, "conversaciones", StringComparison.OrdinalIgnoreCase);
+    private bool CanEnablePush
+        => !_pushBusy
+           && _pushConfigured
+           && _pwaPushSupported
+           && (!_pwaIsIos || _pwaInstalled);
+    private bool CanSendTestPush
+        => CanEnablePush && _pushPreferences.Habilitadas;
     private bool ShouldShowConversationNotice
         => _globalConversationUnreadCount > 0
            && !string.Equals(_currentModule, "conversaciones", StringComparison.OrdinalIgnoreCase);
@@ -714,6 +764,8 @@
             _pwaCanInstall = pwaState.CanInstall;
             _pwaInstalled = pwaState.Installed;
             _pwaIsIos = pwaState.IsIos;
+            _pwaPushSupported = pwaState.PushSupported;
+            _pwaNotificationPermission = pwaState.NotificationPermission;
         }
         catch
         {
@@ -948,6 +1000,8 @@
         _pwaCanInstall = state.CanInstall;
         _pwaInstalled = state.Installed;
         _pwaIsIos = state.IsIos;
+        _pwaPushSupported = state.PushSupported;
+        _pwaNotificationPermission = state.NotificationPermission;
         StateHasChanged();
         return Task.CompletedTask;
     }
@@ -956,7 +1010,10 @@
     {
         try
         {
-            await JS.InvokeAsync<object>("alfaCorePwa.install");
+            if (_pwaCanInstall)
+                await JS.InvokeAsync<object>("alfaCorePwa.install");
+            else
+                _showInstallHelp = true;
         }
         catch
         {
@@ -983,11 +1040,16 @@
             var settings = await JS.InvokeAsync<NotificacionesPushClientSettingsDto>("alfaCorePwa.fetchPushSettings");
             _pushConfigured = settings.Configurado;
             _pushPublicKey = settings.PublicKey;
+            _pushConfigurationMessage = settings.ConfiguracionMensaje;
             _pushPreferences = settings.Preferences ?? new();
+            if (!_pushConfigured)
+            {
+                _pushPreferences.Habilitadas = false;
+            }
         }
-        catch
+        catch (Exception ex)
         {
-            _pushError = "No se pudo cargar la configuración de notificaciones.";
+            _pushError = $"No se pudo cargar la configuración de notificaciones. {ex.Message}";
         }
     }
 
@@ -1012,7 +1074,13 @@
         try
         {
             if (!_pushConfigured)
-                throw new InvalidOperationException("Faltan configurar las claves VAPID en el servidor.");
+                throw new InvalidOperationException(string.IsNullOrWhiteSpace(_pushConfigurationMessage)
+                    ? "Faltan configurar las claves VAPID en el servidor."
+                    : _pushConfigurationMessage);
+            if (!_pwaPushSupported)
+                throw new InvalidOperationException("Este navegador no soporta notificaciones push web.");
+            if (_pwaIsIos && !_pwaInstalled)
+                throw new InvalidOperationException("En iOS las notificaciones web requieren instalar AlfaCore en pantalla de inicio. Primero usá Compartir > Agregar a pantalla de inicio.");
 
             var subscription = await JS.InvokeAsync<NotificacionesPushSubscriptionDto>("alfaCorePwa.subscribePush", _pushPublicKey);
             await JS.InvokeVoidAsync("alfaCorePwa.savePushSubscription", subscription);
@@ -1021,6 +1089,7 @@
         }
         catch (Exception ex)
         {
+            await LogBrowserPushErrorAsync("EnablePush", ex);
             _pushPreferences.Habilitadas = false;
             _pushError = ex.Message;
         }
@@ -1042,9 +1111,10 @@
             await SavePushPreferencesAsync();
             _pushMessage = "Notificaciones desactivadas en este dispositivo.";
         }
-        catch
+        catch (Exception ex)
         {
-            _pushError = "No se pudo desactivar la suscripción push.";
+            await LogBrowserPushErrorAsync("DisablePush", ex);
+            _pushError = $"No se pudo desactivar la suscripción push. {ex.Message}";
         }
         finally
         {
@@ -1062,9 +1132,10 @@
             await JS.InvokeVoidAsync("alfaCorePwa.savePushPreferences", _pushPreferences);
             _pushMessage = "Preferencias guardadas.";
         }
-        catch
+        catch (Exception ex)
         {
-            _pushError = "No se pudieron guardar las preferencias.";
+            await LogBrowserPushErrorAsync("SavePushPreferences", ex);
+            _pushError = $"No se pudieron guardar las preferencias. {ex.Message}";
         }
         finally
         {
@@ -1079,12 +1150,18 @@
         _pushError = string.Empty;
         try
         {
+            if (!_pushConfigured)
+                throw new InvalidOperationException(string.IsNullOrWhiteSpace(_pushConfigurationMessage)
+                    ? "Faltan configurar las claves VAPID en el servidor."
+                    : _pushConfigurationMessage);
+
             await JS.InvokeVoidAsync("alfaCorePwa.sendTestPush");
             _pushMessage = "Notificación de prueba enviada.";
         }
-        catch
+        catch (Exception ex)
         {
-            _pushError = "No se pudo enviar la notificación de prueba.";
+            await LogBrowserPushErrorAsync("SendTestPush", ex);
+            _pushError = ex.Message;
         }
         finally
         {
@@ -1101,6 +1178,30 @@
         _pushPreferences.Canales.RemoveAll(x => string.Equals(x, channel, StringComparison.OrdinalIgnoreCase));
         if (enabled)
             _pushPreferences.Canales.Add(channel);
+    }
+
+    private async Task LogBrowserPushErrorAsync(string action, Exception ex)
+    {
+        try
+        {
+            await AppEvents.LogErrorAsync(
+                "PWA",
+                action,
+                ex,
+                "Falló una operación de instalación o notificaciones web.",
+                new
+                {
+                    _pwaCanInstall,
+                    _pwaInstalled,
+                    _pwaIsIos,
+                    _pwaPushSupported,
+                    _pwaNotificationPermission,
+                    _pushConfigured
+                });
+        }
+        catch
+        {
+        }
     }
 
     private Task OpenSqlSessionDrawerAsync()
@@ -1197,6 +1298,8 @@
         public bool CanInstall { get; set; }
         public bool Installed { get; set; }
         public bool IsIos { get; set; }
+        public bool PushSupported { get; set; }
+        public string NotificationPermission { get; set; } = string.Empty;
     }
 
     public sealed class PwaInstallState
@@ -1204,5 +1307,7 @@
         public bool CanInstall { get; set; }
         public bool Installed { get; set; }
         public bool IsIos { get; set; }
+        public bool PushSupported { get; set; }
+        public string NotificationPermission { get; set; } = string.Empty;
     }
 }

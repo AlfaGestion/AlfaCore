@@ -40,6 +40,10 @@ public sealed class NotificacionesPushService(
             {
                 Configurado = pushOptions.IsConfigured,
                 PublicKey = pushOptions.PublicKey.Trim(),
+                PublicKeyConfigurada = pushOptions.HasPublicKey,
+                PrivateKeyConfigurada = pushOptions.HasPrivateKey,
+                SubjectConfigurado = pushOptions.HasSubject,
+                ConfiguracionMensaje = pushOptions.GetConfigurationMessage(),
                 Preferences = preferences
             };
         }, "No se pudo cargar la configuración de notificaciones.", ct);
@@ -100,6 +104,7 @@ public sealed class NotificacionesPushService(
         {
             ValidateDeviceId(deviceId);
             await EnsureUserCanUseConversacionesAsync(userName, token);
+            EnsureVapidConfigured();
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
             var subscription = await ReadSubscriptionAsync(cn, userName, deviceId, token)
@@ -371,15 +376,22 @@ public sealed class NotificacionesPushService(
 
     private async Task SendAsync(StoredSubscription subscription, PushPayload payload, CancellationToken ct)
     {
-        var pushOptions = options.Value;
-        if (!pushOptions.IsConfigured)
-            throw new InvalidOperationException("Las claves VAPID no están configuradas.");
+        var pushOptions = EnsureVapidConfigured();
 
         var webPushSubscription = new PushSubscription(subscription.Endpoint, subscription.P256dh, subscription.Auth);
         var vapidDetails = new VapidDetails(pushOptions.Subject.Trim(), pushOptions.PublicKey.Trim(), pushOptions.PrivateKey.Trim());
         var client = new WebPushClient();
         var json = JsonSerializer.Serialize(payload, JsonOptions);
         await client.SendNotificationAsync(webPushSubscription, json, vapidDetails, ct);
+    }
+
+    private PushNotificationsOptions EnsureVapidConfigured()
+    {
+        var pushOptions = options.Value;
+        if (!pushOptions.IsConfigured)
+            throw new InvalidOperationException(pushOptions.GetConfigurationMessage());
+
+        return pushOptions;
     }
 
     private async Task EnsureUserCanUseConversacionesAsync(string userName, CancellationToken ct)

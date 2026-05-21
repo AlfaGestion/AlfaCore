@@ -3516,6 +3516,15 @@ tr.row--critical td {
     transition: border-color .18s ease, transform .18s ease, background-color .18s ease;
 }
 
+.conversation-row__avatar {
+    display: none;
+}
+
+.conversation-row__content {
+    display: contents;
+    min-width: 0;
+}
+
 .conversation-row:hover {
     transform: translateY(-1px);
     border-color: rgba(14, 165, 233, 0.24);
@@ -9126,6 +9135,25 @@ svg {
     font-size: .9rem;
 }
 
+.pwa-mobile-actions {
+    display: none;
+}
+
+.pwa-mobile-actions__status {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: .45rem;
+    min-height: 42px;
+    padding: .55rem .8rem;
+    border: 1px solid rgba(34, 197, 94, .22);
+    border-radius: 10px;
+    background: rgba(34, 197, 94, .1);
+    color: var(--color-text);
+    font-size: .86rem;
+    font-weight: 800;
+}
+
 .data-table,
 .consulta-table,
 .comparativo-table,
@@ -13123,9 +13151,28 @@ html[data-theme="light"] .tickets-activity__item {
 }
 
 /* Responsive mobile-first: shell, tablas y conversaciones */
+.desktop-only {
+    display: block;
+}
+
+.conversations-filters.desktop-only {
+    display: grid;
+}
+
+.mobile-only {
+    display: none !important;
+}
+
 .shell__mobile-toggle,
 .shell__overlay,
-.conversations-mobile-back {
+.conversations-mobile-back,
+.conversations-mobile-actions,
+.conversations-mobile-quick-filters,
+.conversations-mobile-states,
+.conversations-mobile-header,
+.conversations-mobile-inbox-count,
+.conversations-mobile-sheet-backdrop,
+.conversations-mobile-filter-sheet {
     display: none;
 }
 
@@ -13174,6 +13221,14 @@ textarea {
 }
 
 @media (max-width: 768px) {
+    .desktop-only {
+        display: none !important;
+    }
+
+    .mobile-only {
+        display: block !important;
+    }
+
     html,
     body {
         width: 100%;
@@ -13304,6 +13359,22 @@ textarea {
         grid-column: 1 / -1;
     }
 
+    .pwa-mobile-actions {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: .5rem;
+        margin: -.2rem 0 .75rem;
+    }
+
+    .pwa-mobile-actions__button,
+    .pwa-mobile-actions__status {
+        width: 100%;
+        min-width: 0;
+        min-height: 42px;
+        border-radius: 10px;
+        white-space: nowrap;
+    }
+
     .sidebar-toggle {
         width: 42px;
         min-width: 42px;
@@ -13349,10 +13420,24 @@ textarea {
         max-width: calc(100vw - 1rem);
     }
 
+    .shell:not(.shell--collapsed) .conversations-page--odoo,
+    .shell.shell--collapsed .conversations-page--odoo {
+        position: relative;
+        inset: auto;
+        z-index: auto;
+        width: 100%;
+        height: auto;
+        min-height: calc(100dvh - 84px);
+        overflow: hidden;
+    }
+
     .conversations-page--odoo {
         display: grid;
         grid-template-rows: auto minmax(0, 1fr);
         gap: .65rem;
+        width: 100%;
+        max-width: 100%;
+        height: auto;
         min-height: calc(100dvh - 84px);
         overflow: hidden;
     }
@@ -13361,8 +13446,17 @@ textarea {
         grid-template-rows: minmax(0, 1fr);
     }
 
+    .conversations-page--odoo:not(.conversations-page--chat-active) .conversations-filters {
+        display: grid;
+    }
+
+    .conversations-page--odoo:not(.conversations-page--chat-active) .conversations-list {
+        display: flex;
+    }
+
     .conversations-page--odoo.conversations-page--chat-active .conversations-filters,
-    .conversations-page--odoo.conversations-page--chat-active .conversations-list {
+    .conversations-page--odoo.conversations-page--chat-active .conversations-list,
+    .conversations-page--odoo:not(.conversations-page--chat-active) .conversations-context {
         display: none;
     }
 
@@ -13374,6 +13468,8 @@ textarea {
     .conversations-layout {
         display: grid;
         grid-template-columns: minmax(0, 1fr);
+        width: 100%;
+        max-width: 100%;
         gap: 0;
         height: auto;
         min-height: 0;
@@ -13384,9 +13480,49 @@ textarea {
         height: calc(100dvh - 84px);
     }
 
+    .conversations-page--odoo .conversations-filters {
+        display: grid;
+        grid-template-columns: 1fr;
+        width: 100%;
+        max-width: 100%;
+        padding: .55rem .65rem;
+        gap: .55rem;
+    }
+
+    .conversations-page--odoo .conversations-canal,
+    .conversations-page--odoo .conversations-module-actions,
+    .conversations-page--odoo .conversations-filters__modes,
+    .conversations-page--odoo .conversations-filters__fields {
+        display: grid;
+        grid-template-columns: 1fr;
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+        gap: .45rem;
+        overflow-x: visible;
+    }
+
+    .conversations-page--odoo .conversations-filter-pill,
+    .conversations-page--odoo .conversations-module-actions .btn,
+    .conversations-page--odoo .conversations-filters__fields .btn,
+    .conversations-page--odoo .conversations-filters input,
+    .conversations-page--odoo .conversations-filters select {
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+    }
+
+    .conversations-page--odoo .conversations-filter-pill,
+    .conversations-page--odoo .conversations-module-actions .btn,
+    .conversations-page--odoo .conversations-filters__fields .btn {
+        justify-content: center;
+        min-height: 42px;
+    }
+
     .conversations-page--odoo .conversations-list,
     .conversations-page--odoo .conversations-chat {
         width: 100%;
+        max-width: 100%;
         min-width: 0;
         min-height: 0;
         padding: 0;
@@ -13394,19 +13530,32 @@ textarea {
     }
 
     .conversations-page--odoo .conversations-list {
-        max-height: calc(100dvh - 235px);
+        height: auto;
+        max-height: none;
         overflow: hidden;
     }
 
     .conversations-page--odoo .conversations-list__items {
-        max-height: none;
+        max-height: calc(100dvh - 320px);
         min-height: 0;
+        overflow-y: auto;
+        overflow-x: hidden;
         padding: .45rem;
     }
 
+    .conversations-page--odoo .conversation-row {
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+        overflow-wrap: anywhere;
+    }
+
     .conversations-page--odoo .conversations-chat {
+        display: flex;
+        flex-direction: column;
         height: 100%;
         max-height: none;
+        overflow: hidden;
     }
 
     .conversations-page--odoo .conversations-chat__header {
@@ -13448,10 +13597,13 @@ textarea {
     }
 
     .conversations-page--odoo .conversations-composer {
+        flex: 0 0 auto;
         position: sticky;
         bottom: 0;
         z-index: 8;
         grid-template-columns: minmax(0, 1fr) auto;
+        width: 100%;
+        max-width: 100%;
         padding: .5rem .65rem calc(.5rem + env(safe-area-inset-bottom));
         background: var(--color-panel);
     }
@@ -13470,12 +13622,21 @@ textarea {
 
     .conversations-page--odoo .message-bubble-shell,
     .conversations-page--odoo .message-row:has(.message-actions) .message-bubble-shell {
-        max-width: min(92vw, calc(100% - 2rem));
+        max-width: 100%;
     }
 
     .conversations-page--odoo .message-card {
         min-width: 0;
+        max-width: 92%;
+    }
+
+    .conversations-page--odoo .message-attachments,
+    .conversations-page--odoo .message-attachment,
+    .conversations-page--odoo .attachment-link,
+    .conversations-page--odoo .message-attachment--audio audio,
+    .conversations-page--odoo .message-attachment--image img {
         max-width: 100%;
+        overflow-wrap: anywhere;
     }
 
     .message-contact-card {
@@ -13492,12 +13653,635 @@ textarea {
         width: min(360px, 92vw);
     }
 
+    .conversations-page--odoo.conversations-page--chat-active .conversations-context-drawer.is-open {
+        display: flex;
+    }
+
+    .conversations-page--odoo:not(.conversations-page--chat-active) .conversations-context-drawer.is-open {
+        display: flex;
+    }
+
     .conversations-tools-panel {
         left: .65rem;
         right: .65rem;
         bottom: calc(5.8rem + env(safe-area-inset-bottom));
         width: auto;
         max-height: min(420px, calc(100dvh - 9rem));
+    }
+
+    .conversations-page--odoo {
+        padding: .15rem 0 0;
+        background:
+            radial-gradient(circle at 18% -10%, rgba(20, 184, 166, .11), transparent 34%),
+            linear-gradient(180deg, rgba(2, 6, 23, .7), rgba(2, 6, 23, .28));
+    }
+
+    .conversations-page--odoo .conversations-filters {
+        gap: .75rem;
+        padding: .75rem;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        box-shadow: none;
+    }
+
+    .conversations-page--odoo .conversations-mobile-filters.mobile-only {
+        display: grid !important;
+    }
+
+    .conversations-mobile-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: .75rem;
+        min-width: 0;
+    }
+
+    .conversations-mobile-header h2 {
+        margin: 0;
+        color: var(--color-text);
+        font-size: 1.05rem;
+        line-height: 1.15;
+    }
+
+    .conversations-mobile-header span {
+        color: var(--color-muted);
+        font-size: .78rem;
+        font-weight: 750;
+    }
+
+    .conversations-mobile-icon-button {
+        display: inline-grid;
+        place-items: center;
+        width: 40px;
+        min-width: 40px;
+        height: 40px;
+        border: 1px solid rgba(148, 163, 184, .16);
+        border-radius: 12px;
+        background: rgba(15, 23, 42, .62);
+        color: var(--color-text);
+    }
+
+    .conversations-mobile-actions,
+    .mobile-actions {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: .45rem;
+        width: 100%;
+        padding: .5rem;
+        border: 1px solid rgba(148, 163, 184, .14);
+        border-radius: 16px;
+        background: linear-gradient(180deg, rgba(15, 23, 42, .78), rgba(15, 23, 42, .46));
+        box-shadow: 0 16px 36px rgba(2, 6, 23, .26);
+    }
+
+    .conversations-mobile-action {
+        display: grid;
+        place-items: center;
+        align-content: center;
+        gap: .28rem;
+        min-width: 0;
+        min-height: 58px;
+        padding: .35rem .2rem;
+        border: 0;
+        border-radius: 12px;
+        background: transparent;
+        color: var(--color-text);
+        font-size: .72rem;
+        font-weight: 800;
+        text-align: center;
+    }
+
+    .conversations-mobile-action i {
+        display: inline-grid;
+        place-items: center;
+        width: 30px;
+        height: 30px;
+        border-radius: 999px;
+        background: rgba(14, 165, 233, .16);
+        color: #8be8ff;
+        font-size: 1rem;
+    }
+
+    .conversations-mobile-action.is-active i,
+    .conversations-mobile-action:not(:disabled):hover i {
+        background: linear-gradient(135deg, #06b6d4, #2dd4bf);
+        color: #02111c;
+    }
+
+    .conversations-mobile-action:disabled {
+        opacity: .52;
+    }
+
+    .conversations-page--odoo .conversations-canal,
+    .conversations-page--odoo .conversations-module-actions,
+    .conversations-page--odoo .conversations-filters__modes {
+        display: none;
+    }
+
+    .conversations-mobile-quick-filters,
+    .mobile-filter-chips {
+        display: flex;
+        align-items: center;
+        gap: .45rem;
+        width: 100%;
+        min-width: 0;
+        overflow-x: auto;
+        padding-bottom: .05rem;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .conversations-mobile-chip {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex: 0 0 auto;
+        min-height: 38px;
+        min-width: 0;
+        padding: .48rem .82rem;
+        border: 1px solid rgba(148, 163, 184, .15);
+        border-radius: 999px;
+        background: rgba(15, 23, 42, .62);
+        color: var(--color-text);
+        font-size: .82rem;
+        font-weight: 800;
+        white-space: nowrap;
+    }
+
+    .conversations-mobile-chip.is-active {
+        border-color: rgba(45, 212, 191, .34);
+        background: linear-gradient(135deg, rgba(6, 182, 212, .85), rgba(20, 184, 166, .78));
+        color: #02111c;
+    }
+
+    .conversations-mobile-chip--icon {
+        width: 42px;
+        padding-inline: 0;
+    }
+
+    .conversations-mobile-states,
+    .mobile-status-cards {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: .55rem;
+        width: 100%;
+        min-width: 0;
+    }
+
+    .conversations-mobile-state-card {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: .45rem;
+        min-width: 0;
+        min-height: 48px;
+        padding: .65rem .75rem;
+        border: 1px solid rgba(148, 163, 184, .14);
+        border-radius: 12px;
+        background: rgba(15, 23, 42, .58);
+        color: var(--color-text);
+        font-weight: 850;
+    }
+
+    .conversations-mobile-state-card.is-active {
+        border-color: rgba(45, 212, 191, .34);
+        background: linear-gradient(135deg, rgba(8, 145, 178, .62), rgba(20, 184, 166, .22));
+    }
+
+    .conversations-mobile-state-card span {
+        display: inline-flex;
+        align-items: center;
+        gap: .35rem;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .conversations-mobile-state-card strong {
+        display: inline-grid;
+        place-items: center;
+        min-width: 1.7rem;
+        height: 1.45rem;
+        padding: 0 .38rem;
+        border-radius: 999px;
+        background: linear-gradient(135deg, #22d3ee, #2dd4bf);
+        color: #02111c;
+        font-size: .78rem;
+    }
+
+    .conversations-page--odoo .conversations-filters__fields {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: .55rem;
+    }
+
+    .conversations-page--odoo .conversations-filters__fields > .field:nth-of-type(3),
+    .conversations-page--odoo .conversations-filters__fields > .btn {
+        display: none;
+    }
+
+    .conversations-page--odoo .conversations-filters__fields label {
+        color: var(--color-muted);
+        font-size: .72rem;
+        font-weight: 850;
+    }
+
+    .conversations-page--odoo .conversations-filters__fields .field:first-child label {
+        display: none;
+    }
+
+    .conversations-page--odoo .conversations-filters__fields .field:nth-of-type(2) {
+        position: relative;
+    }
+
+    .conversations-page--odoo .conversations-filters__fields .field:nth-of-type(2)::before {
+        content: "Mi tecnico:";
+        position: absolute;
+        left: .75rem;
+        bottom: .72rem;
+        z-index: 1;
+        color: var(--color-muted);
+        font-size: .82rem;
+        font-weight: 700;
+        pointer-events: none;
+    }
+
+    .conversations-page--odoo .conversations-filters__fields .field:nth-of-type(2) label {
+        display: none;
+    }
+
+    .conversations-page--odoo .conversations-filters__fields input,
+    .conversations-page--odoo .conversations-filters__fields select {
+        min-height: 44px;
+        border-color: rgba(148, 163, 184, .15);
+        border-radius: 12px;
+        background: rgba(2, 6, 23, .42);
+        box-shadow: none;
+    }
+
+    .conversations-page--odoo .conversations-filters__fields .field:nth-of-type(2) select {
+        padding-left: 5.75rem;
+    }
+
+    .conversations-page--odoo .conversations-list {
+        padding: 0 .75rem .75rem;
+        background: transparent;
+    }
+
+    .conversations-page--odoo .conversations-list__header {
+        padding: .2rem .1rem .45rem;
+        border-bottom: 0;
+    }
+
+    .conversations-page--odoo .conversations-list__header .panel-card__title {
+        display: inline-flex;
+        align-items: center;
+        gap: .45rem;
+        color: var(--color-muted);
+        font-size: .78rem;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+    }
+
+    .conversations-page--odoo .conversations-list__header .panel-card__title::after {
+        content: attr(data-count);
+    }
+
+    .conversations-mobile-inbox-count {
+        display: inline-grid;
+        place-items: center;
+        min-width: 1.55rem;
+        height: 1.35rem;
+        padding: 0 .32rem;
+        border-radius: 999px;
+        background: rgba(34, 211, 238, .18);
+        color: #67e8f9;
+        font-size: .72rem;
+        letter-spacing: 0;
+    }
+
+    .conversations-mobile-inbox-count.mobile-only {
+        display: inline-grid !important;
+    }
+
+    .conversations-page--odoo .conversations-list__header .panel-card__subtitle {
+        display: none;
+    }
+
+    .conversations-page--odoo .conversations-list__items {
+        display: grid;
+        gap: .45rem;
+        max-height: calc(100dvh - 355px);
+        padding: 0 0 calc(.75rem + env(safe-area-inset-bottom));
+    }
+
+    .conversations-page--odoo .conversation-row {
+        grid-template-columns: 42px minmax(0, 1fr);
+        align-items: center;
+        gap: .68rem;
+        padding: .72rem .78rem;
+        border: 0;
+        border-radius: 12px;
+        background: rgba(15, 23, 42, .46);
+        box-shadow: 0 12px 24px rgba(2, 6, 23, .15);
+    }
+
+    .conversations-page--odoo .conversation-row__avatar {
+        display: inline-grid;
+        place-items: center;
+        width: 42px;
+        height: 42px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, rgba(14, 165, 233, .42), rgba(45, 212, 191, .22));
+        color: #e0faff;
+        font-size: .82rem;
+        font-weight: 900;
+    }
+
+    .conversations-page--odoo .conversation-row__content {
+        display: grid;
+        gap: .15rem;
+    }
+
+    .conversations-page--odoo .conversation-row__top {
+        gap: .45rem;
+    }
+
+    .conversations-page--odoo .conversation-row__name {
+        overflow: hidden;
+        color: #f8fafc;
+        font-size: .9rem;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .conversations-page--odoo .conversation-row__date {
+        font-size: .74rem;
+    }
+
+    .conversations-page--odoo .conversation-row__new-count {
+        min-width: 1.25rem;
+        height: 1.25rem;
+        background: #22d3ee;
+        color: #02111c;
+    }
+
+    .conversations-page--odoo .conversation-row__meta {
+        gap: .28rem;
+        color: rgba(226, 232, 240, .7);
+        font-size: .75rem;
+        white-space: nowrap;
+        overflow: hidden;
+    }
+
+    .conversations-page--odoo .conversation-row__meta span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .conversations-page--odoo .conversation-row__badges {
+        display: none;
+    }
+
+    .conversations-page--odoo .conversation-row__summary {
+        color: rgba(226, 232, 240, .72);
+        font-size: .78rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    html[data-theme="light"] .conversations-page--odoo {
+        background:
+            radial-gradient(circle at 18% -10%, rgba(20, 184, 166, .12), transparent 34%),
+            linear-gradient(180deg, #06111f, #081827);
+        color: #e5eef8;
+    }
+
+    html[data-theme="light"] .conversations-page--odoo .conversations-filters,
+    html[data-theme="light"] .conversations-page--odoo .conversations-list,
+    html[data-theme="light"] .conversations-page--odoo .conversations-chat {
+        background: transparent;
+    }
+
+    html[data-theme="light"] .conversations-page--odoo .conversations-mobile-actions,
+    html[data-theme="light"] .conversations-page--odoo .conversations-mobile-state-card,
+    html[data-theme="light"] .conversations-page--odoo .conversations-mobile-chip {
+        border-color: rgba(148, 163, 184, .18);
+        background-color: rgba(15, 23, 42, .76);
+        color: #e5eef8;
+    }
+
+    html[data-theme="light"] .conversations-page--odoo .conversations-mobile-chip.is-active,
+    html[data-theme="light"] .conversations-page--odoo .conversations-mobile-state-card.is-active {
+        color: #02111c;
+    }
+
+    html[data-theme="light"] .conversations-page--odoo .conversations-filters__fields input,
+    html[data-theme="light"] .conversations-page--odoo .conversations-filters__fields select {
+        border-color: rgba(148, 163, 184, .2);
+        background: rgba(2, 6, 23, .56);
+        color: #e5eef8;
+    }
+
+    html[data-theme="light"] .conversations-page--odoo .conversations-filters__fields input::placeholder {
+        color: rgba(226, 232, 240, .62);
+    }
+
+    html[data-theme="light"] .conversations-page--odoo .conversation-row,
+    html[data-theme="light"] .conversations-page--odoo .conversation-row:hover {
+        border-color: rgba(148, 163, 184, .08);
+        background: rgba(15, 23, 42, .74);
+    }
+
+    html[data-theme="light"] .conversations-page--odoo .conversation-row.is-selected {
+        background: linear-gradient(135deg, rgba(8, 145, 178, .72), rgba(20, 184, 166, .28));
+    }
+
+    html[data-theme="light"] .conversations-page--odoo .conversation-row__name {
+        color: #f8fafc;
+    }
+
+    html[data-theme="light"] .conversations-page--odoo .conversation-row__date,
+    html[data-theme="light"] .conversations-page--odoo .conversation-row__meta,
+    html[data-theme="light"] .conversations-page--odoo .conversation-row__summary {
+        color: rgba(226, 232, 240, .72);
+    }
+
+    .conversations-page--odoo .conversations-chat {
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+    }
+
+    .conversations-page--odoo .conversations-chat__header {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: .5rem;
+        padding: .55rem .75rem;
+        border-bottom: 1px solid rgba(45, 212, 191, .18);
+        background: rgba(2, 6, 23, .64);
+    }
+
+    .conversations-page--odoo .conversations-chat__identity {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        align-items: center;
+        gap: .6rem;
+    }
+
+    .conversations-page--odoo .conversations-chat__identity > div:first-of-type {
+        min-width: 0;
+    }
+
+    .conversations-mobile-back {
+        width: 38px;
+        min-width: 38px;
+        height: 38px;
+        padding: 0;
+        border-radius: 999px;
+    }
+
+    .conversations-mobile-back span {
+        display: none;
+    }
+
+    .conversations-page--odoo .conversations-chat__header .panel-card__title {
+        overflow: hidden;
+        font-size: .98rem;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .conversations-page--odoo .conversations-chat__chips {
+        grid-column: 2;
+        justify-content: flex-start;
+        gap: .35rem;
+        overflow: hidden;
+    }
+
+    .conversations-page--odoo .conversation-header-state {
+        display: none;
+    }
+
+    .conversations-page--odoo .conversations-thread {
+        padding: .8rem .72rem;
+    }
+
+    .conversations-page--odoo .message-card {
+        border-radius: 14px;
+        max-width: 92%;
+    }
+
+    .conversations-page--odoo .message-row--outgoing .message-card {
+        background: linear-gradient(135deg, rgba(6, 182, 212, .88), rgba(20, 184, 166, .72));
+        color: #02111c;
+    }
+
+    .conversations-page--odoo .message-row--outgoing .message-card__meta,
+    .conversations-page--odoo .message-row--outgoing .message-card__footer {
+        color: rgba(2, 17, 28, .68);
+    }
+
+    .conversations-page--odoo .conversations-composer {
+        border-top: 1px solid rgba(148, 163, 184, .12);
+        background: rgba(2, 6, 23, .86);
+    }
+
+    .conversations-mobile-sheet-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 1160;
+        display: block;
+        border: 0;
+        background: rgba(2, 6, 23, .66);
+        backdrop-filter: blur(2px);
+    }
+
+    .conversations-mobile-filter-sheet {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 1170;
+        display: grid;
+        gap: .9rem;
+        max-height: min(82dvh, 620px);
+        padding: .55rem .9rem calc(.9rem + env(safe-area-inset-bottom));
+        border: 1px solid rgba(148, 163, 184, .18);
+        border-bottom: 0;
+        border-radius: 22px 22px 0 0;
+        background: rgba(8, 15, 28, .98);
+        box-shadow: 0 -24px 70px rgba(2, 6, 23, .58);
+        overflow-y: auto;
+        animation: conversations-sheet-in .2s cubic-bezier(.2, .8, .2, 1) both;
+    }
+
+    .conversations-mobile-filter-sheet__handle {
+        justify-self: center;
+        width: 42px;
+        height: 4px;
+        border-radius: 999px;
+        background: rgba(148, 163, 184, .28);
+    }
+
+    .conversations-mobile-filter-sheet header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: .75rem;
+    }
+
+    .conversations-mobile-filter-sheet h3 {
+        margin: 0;
+        color: var(--color-text);
+        font-size: 1.05rem;
+    }
+
+    .conversations-mobile-sheet-group {
+        display: grid;
+        gap: .4rem;
+    }
+
+    .conversations-mobile-sheet-group > span {
+        color: var(--color-muted);
+        font-size: .78rem;
+        font-weight: 850;
+    }
+
+    .conversations-mobile-sheet-option {
+        display: flex;
+        align-items: center;
+        gap: .65rem;
+        min-height: 44px;
+        padding: .55rem .25rem;
+        border: 0;
+        border-bottom: 1px solid rgba(148, 163, 184, .1);
+        background: transparent;
+        color: var(--color-text);
+        text-align: left;
+    }
+
+    .conversations-mobile-sheet-option i {
+        color: #22d3ee;
+    }
+
+    .conversations-mobile-sheet-channel {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .45rem;
+    }
+
+    @keyframes conversations-sheet-in {
+        from {
+            opacity: .72;
+            transform: translateY(22px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
     }
 }
 
@@ -13546,7 +14330,287 @@ textarea {
         white-space: normal;
     }
 
+    .conversations-page--odoo .conversations-canal,
+    .conversations-page--odoo .conversations-filters__modes,
+    .conversations-page--odoo .conversations-module-actions {
+        display: none;
+    }
+
+    .conversations-page--odoo .conversations-mobile-actions {
+        display: grid;
+    }
+
+    .conversations-page--odoo .conversations-mobile-quick-filters {
+        display: flex;
+    }
+
+    .conversations-page--odoo .conversations-mobile-states {
+        display: grid;
+    }
+
+    .conversations-page--odoo .conversations-mobile-action {
+        font-size: .68rem;
+    }
+
+    .conversations-page--odoo .conversations-list__items {
+        max-height: calc(100dvh - 345px);
+    }
+
     .conversations-page--odoo.conversations-page--chat-active .conversations-layout {
-        height: calc(100dvh - 72px);
+        height: calc(100dvh - 84px);
+    }
+}
+
+@media (max-width: 768px) {
+    .shell__main:has(.conversations-page--chat-active) {
+        padding: 0;
+    }
+
+    .shell__main:has(.conversations-page--chat-active) .shell__header,
+    .shell__main:has(.conversations-page--chat-active) .pwa-mobile-actions {
+        display: none;
+    }
+
+    .shell__content:has(.conversations-page--chat-active) {
+        height: 100dvh;
+        min-height: 100dvh;
+        padding: 0;
+        overflow: hidden;
+    }
+
+    .shell:not(.shell--collapsed) .conversations-page--odoo.conversations-page--chat-active,
+    .shell.shell--collapsed .conversations-page--odoo.conversations-page--chat-active,
+    .conversations-page--odoo.conversations-page--chat-active {
+        position: fixed;
+        inset: 0;
+        z-index: 1040;
+        display: block;
+        width: 100vw;
+        max-width: 100vw;
+        height: 100dvh;
+        min-height: 100dvh;
+        padding: 0;
+        overflow: hidden;
+        background: #07111f;
+    }
+
+    .conversations-page--odoo.conversations-page--chat-active .conversations-filters,
+    .conversations-page--odoo.conversations-page--chat-active .conversations-list,
+    .conversations-page--odoo.conversations-page--chat-active .conversations-context,
+    .conversations-page--odoo.conversations-page--chat-active .conversations-context-drawer {
+        display: none !important;
+    }
+
+    .conversations-page--odoo.conversations-page--chat-active .conversations-layout {
+        display: block;
+        width: 100%;
+        height: 100dvh;
+        min-height: 0;
+        overflow: hidden;
+    }
+
+    .conversations-page--odoo.conversations-page--chat-active .conversations-chat {
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        max-width: 100%;
+        height: 100dvh;
+        max-height: 100dvh;
+        min-height: 0;
+        padding: 0;
+        border: 0;
+        border-radius: 0;
+        overflow: hidden;
+        background: #07111f;
+    }
+
+    .conversations-page--odoo.conversations-page--chat-active .conversations-chat__header {
+        position: sticky;
+        top: 0;
+        z-index: 6;
+        flex: 0 0 auto;
+        display: block;
+        padding: calc(.45rem + env(safe-area-inset-top)) .65rem .5rem;
+        border-bottom: 1px solid rgba(148, 163, 184, .14);
+        background: rgba(7, 17, 31, .96);
+        backdrop-filter: blur(10px);
+    }
+
+    .conversations-page--odoo.conversations-page--chat-active .conversations-chat__identity {
+        display: grid;
+        grid-template-columns: 40px minmax(0, 1fr);
+        align-items: center;
+        gap: .55rem;
+        min-width: 0;
+    }
+
+    .conversations-page--odoo.conversations-page--chat-active .conversations-mobile-back {
+        display: inline-grid;
+        place-items: center;
+        width: 38px;
+        min-width: 38px;
+        height: 38px;
+        min-height: 38px;
+        padding: 0;
+        border-radius: 999px;
+    }
+
+    .conversations-page--odoo.conversations-page--chat-active .conversations-mobile-back span {
+        display: none;
+    }
+
+    .conversations-page--odoo.conversations-page--chat-active .conversations-chat__identity > div:first-of-type {
+        min-width: 0;
+    }
+
+    .conversations-page--odoo.conversations-page--chat-active .conversations-chat__header .panel-card__title {
+        margin: 0;
+        overflow: hidden;
+        color: #f8fafc;
+        font-size: .98rem;
+        line-height: 1.15;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .conversations-page--odoo.conversations-page--chat-active .conversations-chat__header .panel-card__subtitle {
+        margin: .12rem 0 0;
+        overflow: hidden;
+        color: rgba(226, 232, 240, .68);
+        font-size: .76rem;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .conversations-page--odoo.conversations-page--chat-active .conversations-chat__chips {
+        grid-column: 2;
+        display: flex;
+        align-items: center;
+        justify-content: flex-start;
+        gap: .35rem;
+        min-width: 0;
+        margin-top: .2rem;
+        overflow: hidden;
+    }
+
+    .conversations-page--odoo.conversations-page--chat-active .conversation-badge {
+        max-width: 100%;
+        min-height: 20px;
+        padding: .16rem .42rem;
+        overflow: hidden;
+        font-size: .68rem;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .conversations-page--odoo.conversations-page--chat-active .conversation-header-state,
+    .conversations-page--odoo.conversations-page--chat-active .conversations-window-banner,
+    .conversations-page--odoo.conversations-page--chat-active .conversations-notice {
+        display: none;
+    }
+
+    .conversations-page--odoo.conversations-page--chat-active .conversations-thread-shell {
+        flex: 1 1 auto;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        overflow: hidden;
+    }
+
+    .conversations-page--odoo.conversations-page--chat-active .conversations-thread {
+        flex: 1 1 auto;
+        min-height: 0;
+        max-height: none;
+        padding: .75rem .65rem;
+        overflow-y: auto;
+        overflow-x: hidden;
+        background: #07111f;
+        overscroll-behavior: contain;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .conversations-page--odoo.conversations-page--chat-active .message-row {
+        align-items: flex-end;
+        padding-bottom: .48rem;
+    }
+
+    .conversations-page--odoo.conversations-page--chat-active .message-bubble-shell,
+    .conversations-page--odoo.conversations-page--chat-active .message-row:has(.message-actions) .message-bubble-shell {
+        max-width: min(86%, 620px);
+    }
+
+    .conversations-page--odoo.conversations-page--chat-active .message-row--incoming {
+        justify-content: flex-start;
+    }
+
+    .conversations-page--odoo.conversations-page--chat-active .message-row--outgoing {
+        justify-content: flex-end;
+    }
+
+    .conversations-page--odoo.conversations-page--chat-active .message-card {
+        max-width: 100%;
+        border-radius: 14px;
+        overflow-wrap: anywhere;
+    }
+
+    .conversations-page--odoo.conversations-page--chat-active .conversations-composer {
+        position: sticky;
+        bottom: 0;
+        z-index: 7;
+        flex: 0 0 auto;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: end;
+        gap: .45rem;
+        width: 100%;
+        max-width: 100%;
+        max-height: 38dvh;
+        margin: 0;
+        padding: .5rem .6rem calc(.5rem + env(safe-area-inset-bottom));
+        border-top: 1px solid rgba(148, 163, 184, .14);
+        background: rgba(7, 17, 31, .98);
+        overflow: auto;
+    }
+
+    .conversations-page--odoo.conversations-page--chat-active .conversations-composer__reply label,
+    .conversations-page--odoo.conversations-page--chat-active .conversations-composer__note label {
+        display: none;
+    }
+
+    .conversations-page--odoo.conversations-page--chat-active .conversations-composer__note,
+    .conversations-page--odoo.conversations-page--chat-active .conversations-composer__actions--note {
+        display: none;
+    }
+
+    .conversations-page--odoo.conversations-page--chat-active .conversations-composer textarea {
+        min-height: 42px;
+        max-height: 118px;
+        resize: none;
+        border-radius: 18px;
+    }
+
+    .conversations-page--odoo.conversations-page--chat-active .conversations-composer__actions {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: .38rem;
+        overflow: visible;
+    }
+
+    .conversations-page--odoo.conversations-page--chat-active .conversations-composer__actions .btn {
+        width: 42px;
+        min-width: 42px;
+        height: 42px;
+        min-height: 42px;
+        padding: 0;
+        border-radius: 999px;
+    }
+
+    .conversations-page--odoo.conversations-page--chat-active .conversations-tools-panel {
+        left: .6rem;
+        right: .6rem;
+        bottom: calc(4.6rem + env(safe-area-inset-bottom));
+        width: auto;
+        max-height: min(48dvh, 420px);
     }
 }
