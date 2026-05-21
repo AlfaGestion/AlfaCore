@@ -5486,7 +5486,7 @@ public sealed class ConversacionesService(
     private static string NormalizeOutgoingMime(string? mimeType, string? fileName, string tipoArchivo)
     {
         if (!string.IsNullOrWhiteSpace(mimeType))
-            return mimeType.Trim();
+            return NormalizeMimeForHttp(mimeType);
 
         var ext = Path.GetExtension(fileName ?? string.Empty).ToLowerInvariant();
         return ext switch
@@ -5510,6 +5510,21 @@ public sealed class ConversacionesService(
             ".xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             _ => InferMimeFromType(tipoArchivo)
         };
+    }
+
+    private static string NormalizeMimeForHttp(string mimeType)
+    {
+        var normalized = (mimeType ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(normalized))
+            return "application/octet-stream";
+
+        var semicolonIndex = normalized.IndexOf(';', StringComparison.Ordinal);
+        if (semicolonIndex >= 0)
+            normalized = normalized[..semicolonIndex].Trim();
+
+        return string.IsNullOrWhiteSpace(normalized)
+            ? "application/octet-stream"
+            : normalized;
     }
 
     private static string NormalizePhone(string? phone)
