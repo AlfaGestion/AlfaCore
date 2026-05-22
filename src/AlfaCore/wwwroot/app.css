@@ -14557,7 +14557,7 @@ textarea {
     .conversations-page--odoo .conversations-list__items {
         display: grid;
         gap: .45rem;
-        max-height: calc(100dvh - 355px);
+        max-height: calc(100dvh - 320px);
         padding: 0 0 calc(.75rem + env(safe-area-inset-bottom));
     }
 
@@ -14947,6 +14947,10 @@ textarea {
 }
 
 @media (max-width: 768px) {
+    .shell__main:has(.conversations-page--odoo) .pwa-mobile-actions {
+        display: none;
+    }
+
     .shell__main:has(.conversations-page--chat-active) {
         padding: 0;
     }
@@ -15106,7 +15110,7 @@ textarea {
         flex: 1 1 auto;
         min-height: 0;
         max-height: none;
-        padding: .75rem .65rem;
+        padding: .75rem .65rem calc(.95rem + env(safe-area-inset-bottom));
         overflow-y: auto;
         overflow-x: hidden;
         background: #07111f;
@@ -15154,7 +15158,7 @@ textarea {
         padding: .5rem .6rem calc(.5rem + env(safe-area-inset-bottom));
         border-top: 1px solid rgba(148, 163, 184, .14);
         background: rgba(7, 17, 31, .98);
-        overflow: auto;
+        overflow: hidden;
     }
 
     .conversations-page--odoo.conversations-page--chat-active .conversations-composer__reply label,
@@ -15169,8 +15173,8 @@ textarea {
 
     .conversations-page--odoo.conversations-page--chat-active .conversations-composer textarea {
         min-height: 42px;
-        max-height: 180px;
-        resize: vertical;
+        max-height: 120px;
+        resize: none;
         overflow: auto;
         border-radius: 18px;
     }

@@ -7,7 +7,7 @@
     <div class="app-login-modal" role="dialog" aria-label="Ingreso al sistema">
         <div class="app-login-modal__header">
             <div>
-                <p class="shell__eyebrow">Alfa GestiÃ³n</p>
+                <p class="shell__eyebrow">Alfa Gestión</p>
                 <h2 class="app-login-modal__title">Ingresar a la base activa</h2>
             </div>
         </div>
@@ -16,14 +16,14 @@
             <div class="usuarios-empty">
                 <strong>Base activa</strong>
                 <p>@SqlSessionLabel</p>
-                <small>Si cambiÃ¡s de base, se cierra la sesiÃ³n funcional actual y tenÃ©s que volver a ingresar.</small>
+                <small>Si cambiás de base, se cierra la sesión funcional actual y tenés que volver a ingresar.</small>
             </div>
 
             @if (!string.IsNullOrWhiteSpace(ErrorMessage))
             {
                 <div class="editor-msg editor-msg--error">
                     <div>
-                        <strong>No se pudo iniciar sesiÃ³n</strong>
+                        <strong>No se pudo iniciar sesión</strong>
                         <p>@ErrorMessage</p>
                     </div>
                 </div>
@@ -38,12 +38,13 @@
             </div>
 
             <div class="field">
-                <label>ContraseÃ±a</label>
+                <label>Contraseña</label>
                 <div class="drawer-new__password">
                     <input type="@(ShowPassword ? "text" : "password")"
                            value="@Password"
                            @oninput="OnPasswordInput"
-                           placeholder="ContraseÃ±a"
+                           @onkeydown="OnPasswordKeyDownAsync"
+                           placeholder="Contraseña"
                            disabled="@IsBusy" />
                     <button type="button"
                             class="drawer-new__eye"
@@ -54,6 +55,14 @@
                     </button>
                 </div>
             </div>
+
+            <label class="toggle-row toggle-row--compact">
+                <input type="checkbox"
+                       checked="@RememberCredentials"
+                       @onchange="OnRememberCredentialsChangedAsync"
+                       disabled="@IsBusy" />
+                <span>Recordar usuario y contraseña en este equipo</span>
+            </label>
 
             <div class="actions app-login-modal__actions">
                 <button type="button" class="btn btn--primary" @onclick="SubmitAsync" disabled="@IsBusy">
@@ -77,9 +86,11 @@
     [Parameter] public string ErrorMessage { get; set; } = string.Empty;
     [Parameter] public bool IsBusy { get; set; }
     [Parameter] public bool ShowPassword { get; set; }
+    [Parameter] public bool RememberCredentials { get; set; }
     [Parameter] public EventCallback<string> UserNameChanged { get; set; }
     [Parameter] public EventCallback<string> PasswordChanged { get; set; }
     [Parameter] public EventCallback<bool> ShowPasswordChanged { get; set; }
+    [Parameter] public EventCallback<bool> RememberCredentialsChanged { get; set; }
     [Parameter] public EventCallback OnSubmit { get; set; }
     [Parameter] public EventCallback OnOpenSqlSessions { get; set; }
 
@@ -95,4 +106,13 @@
 
     private async Task OnPasswordInput(ChangeEventArgs args)
         => await PasswordChanged.InvokeAsync(args.Value?.ToString() ?? string.Empty);
+
+    private async Task OnRememberCredentialsChangedAsync(ChangeEventArgs args)
+        => await RememberCredentialsChanged.InvokeAsync(args.Value is bool value && value);
+
+    private async Task OnPasswordKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (string.Equals(args.Key, "Enter", StringComparison.Ordinal))
+            await SubmitAsync();
+    }
 }

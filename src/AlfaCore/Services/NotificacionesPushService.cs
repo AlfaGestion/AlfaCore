@@ -164,7 +164,7 @@ public sealed class NotificacionesPushService(
                 .ToList();
 
             if (subscriptions.Count == 0)
-                throw new InvalidOperationException("No hay suscripciones push activas para este usuario.");
+                return new NotificacionesPushSendResultDto();
 
             await appEvents.LogAuditAsync(
                 ModuleName,
@@ -223,7 +223,8 @@ public sealed class NotificacionesPushService(
                     EndpointParcial = EndpointPreview(x.Endpoint),
                     Success = x.Activo,
                     StatusCode = x.LastStatusCode,
-                    Error = x.LastError
+                    Error = x.LastError,
+                    ResponseBody = x.LastProviderResponseBody
                 }).ToList()
             };
         }, "No se pudo obtener el diagnóstico de notificaciones.", ct);
@@ -571,6 +572,23 @@ public sealed class NotificacionesPushService(
         var json = JsonSerializer.Serialize(payload, JsonOptions);
         try
         {
+            await appEvents.LogAuditAsync(
+                ModuleName,
+                "SendSubscriptionAttempt",
+                "TA_CONFIGURACION",
+                BuildSubscriptionKey(subscription.UserName, subscription.DeviceId),
+                "Intento de envío a suscripción push.",
+                new
+                {
+                    subscription.UserName,
+                    subscription.DeviceId,
+                    Endpoint = EndpointPreview(subscription.Endpoint),
+                    payload.IdConversacion,
+                    payload.IdMensaje,
+                    payload.Canal
+                },
+                ct);
+
             await client.SendNotificationAsync(webPushSubscription, json, vapidDetails, ct);
             result.Success = true;
             await appEvents.LogAuditAsync(
@@ -588,9 +606,20 @@ public sealed class NotificacionesPushService(
             result.StatusCode = Convert.ToInt32(ex.StatusCode, CultureInfo.InvariantCulture);
             result.ResponseBody = ReadExceptionTextProperty(ex, "ResponseBody", "Body", "Content");
             result.Error = BuildWebPushErrorMessage(result.StatusCode, ex.Message);
+            subscription.LastStatusCode = result.StatusCode;
+            subscription.LastError = result.Error;
+            subscription.LastProviderResponseBody = result.ResponseBody;
+            subscription.UpdatedAt = DateTimeOffset.UtcNow;
 
             if (result.StatusCode is 404 or 410)
                 await DeactivateSubscriptionAsync(cn, subscription, result.StatusCode, result.Error, ct);
+            else
+                await SaveConfigJsonAsync(
+                    cn,
+                    BuildSubscriptionKey(subscription.UserName, subscription.DeviceId),
+                    subscription,
+                    "Estado de último envío Web Push",
+                    ct);
 
             await appEvents.LogErrorAsync(
                 ModuleName,
@@ -653,6 +682,7 @@ public sealed class NotificacionesPushService(
         subscription.Activo = false;
         subscription.LastStatusCode = statusCode;
         subscription.LastError = error;
+        subscription.LastProviderResponseBody = string.Empty;
         subscription.UpdatedAt = DateTimeOffset.UtcNow;
         await SaveConfigJsonAsync(
             cn,
@@ -934,6 +964,7 @@ public sealed class NotificacionesPushService(
         public DateTimeOffset UpdatedAt { get; set; }
         public int? LastStatusCode { get; set; }
         public string LastError { get; set; } = string.Empty;
+        public string LastProviderResponseBody { get; set; } = string.Empty;
     }
 
     private sealed class PushPayload

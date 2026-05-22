@@ -58,24 +58,35 @@ self.addEventListener('push', event => {
     try {
         payload = event.data ? event.data.json() : {};
     } catch {
-        payload = {};
+        const raw = event.data ? event.data.text() : '';
+        payload = raw ? { body: raw } : {};
     }
 
     console.log('[AlfaCore SW] Push recibido', payload);
 
+    const idConversacion = payload.idConversacion || null;
+    const pushUrl = payload.url
+        || (idConversacion ? `/conversaciones?id=${encodeURIComponent(idConversacion)}` : '/conversaciones');
     const title = payload.title || 'Nuevo mensaje';
+    const actions = [];
+    if (idConversacion) {
+        actions.push({ action: 'open-conversation', title: 'Abrir conversación' });
+    }
+    actions.push({ action: 'view-later', title: 'Ver después' });
+
     const options = {
         body: payload.body || 'Tenes un mensaje nuevo.',
         icon: payload.icon || '/icons/icon-192.png',
         badge: payload.badge || '/icons/badge-96.png',
         data: {
-            url: payload.url || '/conversaciones',
-            idConversacion: payload.idConversacion || null,
+            url: pushUrl,
+            idConversacion: idConversacion,
             idMensaje: payload.idMensaje || null,
             canal: payload.canal || ''
         },
-        tag: payload.idConversacion ? `conversacion-${payload.idConversacion}` : 'alfacore-mensaje',
-        renotify: true
+        tag: idConversacion ? `conversacion-${idConversacion}` : 'alfacore-mensaje',
+        renotify: true,
+        actions: actions
     };
 
     event.waitUntil(self.registration.showNotification(title, options));
@@ -83,6 +94,9 @@ self.addEventListener('push', event => {
 
 self.addEventListener('notificationclick', event => {
     event.notification.close();
+    if (event.action === 'view-later')
+        return;
+
     const targetUrl = new URL(event.notification.data?.url || '/conversaciones', self.location.origin).href;
 
     event.waitUntil(

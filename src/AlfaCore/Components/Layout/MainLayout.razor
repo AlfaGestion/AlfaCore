@@ -1,4 +1,4 @@
-@inherits LayoutComponentBase
+﻿@inherits LayoutComponentBase
 @inject IJSRuntime JS
 @inject NavigationManager Nav
 @inject AlfaCore.Services.ISessionService SessionSvc
@@ -12,24 +12,24 @@
     {
         <button type="button"
                 class="shell__overlay no-print"
-                aria-label="Cerrar menú"
+                aria-label="Cerrar menÃº"
                 @onclick="CloseMobileSidebar"></button>
     }
 
-    <aside class="shell__sidebar" aria-label="Menú principal">
+    <aside class="shell__sidebar" aria-label="MenÃº principal">
         <div class="brand">
-            <a class="brand__logo-link" href="/" title="Volver al menú principal" aria-label="Volver al menú principal" @onclick="GoToLauncher">
-                <img class="brand__logo" src="logo.png" alt="Alfa Gestión" />
+            <a class="brand__logo-link" href="/" title="Volver al menÃº principal" aria-label="Volver al menÃº principal" @onclick="GoToLauncher">
+                <img class="brand__logo" src="logo.png" alt="Alfa GestiÃ³n" />
             </a>
             <div class="brand__content">
                 <p class="brand__eyebrow">Business Intelligence</p>
-                <a class="brand__title" href="/" @onclick="GoToLauncher">Alfa Gestión</a>
+                <a class="brand__title" href="/" @onclick="GoToLauncher">Alfa GestiÃ³n</a>
             </div>
             <button type="button"
                     class="sidebar-toggle"
                     @onclick="ToggleSidebar"
-                    title="@(_sidebarCollapsed ? "Mostrar menú" : "Ocultar menú")"
-                    aria-label="@(_sidebarCollapsed ? "Mostrar menú lateral" : "Ocultar menú lateral")">
+                    title="@(_sidebarCollapsed ? "Mostrar menÃº" : "Ocultar menÃº")"
+                    aria-label="@(_sidebarCollapsed ? "Mostrar menÃº lateral" : "Ocultar menÃº lateral")">
                 <i class="bi @(_sidebarCollapsed ? "bi-layout-sidebar-inset" : "bi-layout-sidebar")"></i>
             </button>
         </div>
@@ -59,7 +59,7 @@
                     <i class="bi bi-grid-3x3-gap-fill"></i>
                     <span>Aplicaciones</span>
                 </a>
-                <p class="menu__section">Actualización de Costos</p>
+                <p class="menu__section">ActualizaciÃ³n de Costos</p>
                 <nav class="menu__nav">
                     <NavLink class="menu__link" href="/costos" Match="NavLinkMatch.All">
                         <span class="menu__icon"><i class="bi bi-currency-dollar"></i></span>
@@ -67,7 +67,7 @@
                     </NavLink>
                     <NavLink class="menu__link" href="/costos/nueva" Match="NavLinkMatch.All">
                         <span class="menu__icon"><i class="bi bi-upload"></i></span>
-                        <span>Nueva importación</span>
+                        <span>Nueva importaciÃ³n</span>
                     </NavLink>
                     <NavLink class="menu__link" href="/costos/perfiles">
                         <span class="menu__icon"><i class="bi bi-sliders"></i></span>
@@ -85,7 +85,7 @@
                     <i class="bi bi-grid-3x3-gap-fill"></i>
                     <span>Aplicaciones</span>
                 </a>
-                <p class="menu__section">Auditoría</p>
+                <p class="menu__section">AuditorÃ­a</p>
                 <nav class="menu__nav">
                     <NavLink class="menu__link" href="/auditoria" Match="NavLinkMatch.All">
                         <span class="menu__icon"><i class="bi bi-shield-exclamation"></i></span>
@@ -115,7 +115,7 @@
                     </NavLink>
                     <NavLink class="menu__link" href="/conversaciones/configuracion" Match="NavLinkMatch.All">
                         <span class="menu__icon"><i class="bi bi-sliders"></i></span>
-                        <span>Configuración</span>
+                        <span>ConfiguraciÃ³n</span>
                     </NavLink>
                     <NavLink class="menu__link" href="/conversaciones/estadisticas" Match="NavLinkMatch.All">
                         <span class="menu__icon"><i class="bi bi-bar-chart-line-fill"></i></span>
@@ -161,11 +161,11 @@
                 <nav class="menu__nav">
                     <NavLink class="menu__link" href="/interfaces" Match="NavLinkMatch.All">
                         <span class="menu__icon"><i class="bi bi-folder2-open"></i></span>
-                        <span>Recepción documental</span>
+                        <span>RecepciÃ³n documental</span>
                     </NavLink>
                     <NavLink class="menu__link" href="/interfaces/configuracion" Match="NavLinkMatch.All">
                         <span class="menu__icon"><i class="bi bi-sliders"></i></span>
-                        <span>Configuración</span>
+                        <span>ConfiguraciÃ³n</span>
                     </NavLink>
                 </nav>
             }
@@ -193,7 +193,7 @@
                 <nav class="menu__nav">
                     <NavLink class="menu__link" href="/usuarios" Match="NavLinkMatch.All">
                         <span class="menu__icon"><i class="bi bi-people-fill"></i></span>
-                        <span>Gestión de usuarios</span>
+                        <span>GestiÃ³n de usuarios</span>
                     </NavLink>
                 </nav>
             }
@@ -237,7 +237,7 @@
                     </NavLink>
                     <NavLink class="menu__link" href="/ventas/articulos">
                         <span class="menu__icon"><i class="bi bi-box-fill"></i></span>
-                        <span>Artículos</span>
+                        <span>ArtÃ­culos</span>
                     </NavLink>
                     <NavLink class="menu__link" href="/ventas/comprobantes">
                         <span class="menu__icon"><i class="bi bi-receipt"></i></span>
@@ -291,7 +291,7 @@
                     </NavLink>
                     <NavLink class="menu__link" href="/contabilidad/posicion-iva" Match="NavLinkMatch.All">
                         <span class="menu__icon"><i class="bi bi-receipt"></i></span>
-                        <span>Posición de IVA</span>
+                        <span>PosiciÃ³n de IVA</span>
                     </NavLink>
                 </nav>
             }
@@ -325,7 +325,7 @@
                     </NavLink>
                     <NavLink class="menu__link" href="/compras/articulos">
                         <span class="menu__icon"><i class="bi bi-box-fill"></i></span>
-                        <span>Artículos</span>
+                        <span>ArtÃ­culos</span>
                     </NavLink>
                     <NavLink class="menu__link" href="/compras/actividad">
                         <span class="menu__icon"><i class="bi bi-bar-chart-steps"></i></span>
@@ -383,12 +383,12 @@
             <button type="button"
                     class="shell__mobile-toggle no-print"
                     @onclick="ToggleMobileSidebar"
-                    aria-label="Abrir menú"
+                    aria-label="Abrir menÃº"
                     aria-expanded="@_mobileSidebarOpen">
                 <i class="bi bi-list"></i>
             </button>
             <div>
-                <p class="shell__eyebrow">Alfa Gestión</p>
+                <p class="shell__eyebrow">Alfa GestiÃ³n</p>
                 <p class="shell__module">@GetModuleTitle()</p>
             </div>
             @if (ShowShellContext)
@@ -406,12 +406,12 @@
                     }
                     <button class="session-chip no-print" @onclick="() => _drawerOpen = true" title="Gestionar sesiones de base de datos">
                         <span class="session-chip__dot"></span>
-                        <span class="session-chip__text">@(_activeSession?.Servidor ?? "—") · @(_activeSession?.BaseDatos ?? "—")</span>
+                        <span class="session-chip__text">@(_activeSession?.Servidor ?? "â€”") Â· @(_activeSession?.BaseDatos ?? "â€”")</span>
                         <i class="bi bi-chevron-down"></i>
                     </button>
                     @if (AppUserSession.IsAuthenticated && AppUserSession.CurrentUser is not null)
                     {
-                        <button type="button" class="session-chip no-print" @onclick="LogoutAppUser" title="Cerrar sesión del sistema">
+                        <button type="button" class="session-chip no-print" @onclick="LogoutAppUser" title="Cerrar sesiÃ³n del sistema">
                             <span class="session-chip__dot"></span>
                             <span class="session-chip__text">@AppUserSession.CurrentUser.UserName</span>
                             <i class="bi bi-box-arrow-right"></i>
@@ -475,7 +475,7 @@
     <button type="button"
             class="global-message-notice no-print"
             @onclick="OpenGlobalConversationNotice"
-            title="Abrir conversación">
+            title="Abrir conversaciÃ³n">
         <span class="global-message-notice__icon">
             <i class="bi bi-whatsapp"></i>
         </span>
@@ -491,12 +491,12 @@
 
 @if (_showInstallHelp)
 {
-    <button type="button" class="modal-backdrop app-modal-backdrop no-print" aria-label="Cerrar instalación" @onclick="() => _showInstallHelp = false"></button>
+    <button type="button" class="modal-backdrop app-modal-backdrop no-print" aria-label="Cerrar instalaciÃ³n" @onclick="() => _showInstallHelp = false"></button>
     <section class="panel-card app-modal no-print">
         <div class="panel-card__header">
             <div>
                 <h3 class="panel-card__title">Instalar AlfaCore</h3>
-                <p class="panel-card__subtitle">En iPhone o iPad usá Compartir &gt; Agregar a pantalla de inicio.</p>
+                <p class="panel-card__subtitle">En iPhone o iPad usÃ¡ Compartir &gt; Agregar a pantalla de inicio.</p>
             </div>
             <button type="button" class="btn btn--ghost btn--sm" @onclick="() => _showInstallHelp = false" title="Cerrar">
                 <i class="bi bi-x-lg"></i>
@@ -548,7 +548,7 @@
                     <input type="checkbox" checked="@(PushChannelEnabled("WHATSAPP"))" @onchange="@(args => TogglePushChannel("WHATSAPP", args))" />
                     <span>WhatsApp</span>
                 </label>
-                <p class="app-modal__hint">El selector queda preparado para sumar nuevos canales cuando el módulo los habilite.</p>
+                <p class="app-modal__hint">El selector queda preparado para sumar nuevos canales cuando el mÃ³dulo los habilite.</p>
             </div>
         </div>
 
@@ -561,11 +561,57 @@
                 <i class="bi bi-send"></i>
                 <span>Enviar prueba</span>
             </button>
+            <button type="button" class="btn btn--ghost" @onclick="LoadPushDiagnosticsAsync" disabled="@_pushBusy">
+                <i class="bi bi-activity"></i>
+                <span>DiagnÃ³stico push</span>
+            </button>
         </div>
+
+        @if (!string.IsNullOrWhiteSpace(PushScopeNotice))
+        {
+            <p class="app-modal__hint">@PushScopeNotice</p>
+        }
+
+        @if (_pushDiagnostics is not null)
+        {
+            <div class="app-settings-grid">
+                <div class="field">
+                    <label>DiagnÃ³stico del dispositivo</label>
+                    <p class="app-modal__hint">HTTPS: @(_pushDiagnostics.Https ? "SI" : "NO") Â· SW activo: @(_pushDiagnostics.ServiceWorkerReady ? "SI" : "NO") Â· Push soportado: @(_pushDiagnostics.PushSupported ? "SI" : "NO") Â· Permiso: @_pushDiagnostics.NotificationPermission</p>
+                    <p class="app-modal__hint">DeviceId: @_pushDiagnostics.DeviceId</p>
+                    <p class="app-modal__hint">PublicKey: @_pushDiagnostics.PublicKeyPreview</p>
+                    @if (_pushDiagnostics.IsBrave)
+                    {
+                        <p class="conversations-inline conversations-inline--error">Brave detectado: este navegador puede bloquear push por Shields/Notificaciones.</p>
+                    }
+                </div>
+                <div class="field">
+                    <label>Suscripciones registradas</label>
+                    <p class="app-modal__hint">Dispositivos registrados: @_pushDiagnostics.SubscriptionCount Â· Activos: @_pushDiagnostics.ActiveSubscriptionCount</p>
+                    @if (_pushDiagnostics.Subscriptions.Count == 0)
+                    {
+                        <p class="conversations-inline conversations-inline--error">No hay suscripciones push activas para este usuario/dispositivo.</p>
+                    }
+                    else
+                    {
+                        @foreach (var sub in _pushDiagnostics.Subscriptions)
+                        {
+                            <p class="app-modal__hint">[@sub.DeviceId] @sub.EndpointParcial Â· status: @(sub.StatusCode?.ToString() ?? "-") Â· error: @DisplayOrDash(sub.Error)</p>
+                        }
+                    }
+                </div>
+                <div class="field">
+                    <label>Preferencias y Ãºltimo test</label>
+                    <p class="app-modal__hint">Alcance: @_pushDiagnostics.Preferences.Alcance Â· Canales: @string.Join(", ", _pushDiagnostics.Preferences.Canales)</p>
+                    <p class="app-modal__hint">Ãšltimo envÃ­o de prueba: @_pushLastTestSummary</p>
+                    <p class="app-modal__hint">Ãšltimo error del proveedor push: @DisplayOrDash(_pushDiagnosticsLastProviderError)</p>
+                </div>
+            </div>
+        }
 
         @if (_pwaIsIos && !_pwaInstalled)
         {
-            <p class="app-modal__hint">En iOS las notificaciones web requieren instalar AlfaCore en pantalla de inicio. Primero usá Compartir &gt; Agregar a pantalla de inicio y abrí la app desde ese ícono.</p>
+            <p class="app-modal__hint">En iOS las notificaciones web requieren instalar AlfaCore en pantalla de inicio. Primero usÃ¡ Compartir &gt; Agregar a pantalla de inicio y abrÃ­ la app desde ese Ã­cono.</p>
         }
         else if (!_pwaPushSupported)
         {
@@ -585,9 +631,11 @@
                  ErrorMessage="@_loginError"
                  IsBusy="@_loginBusy"
                  ShowPassword="@_loginShowPassword"
+                 RememberCredentials="@_loginRememberCredentials"
                  UserNameChanged="@(value => _loginUserName = value)"
                  PasswordChanged="@(value => _loginPassword = value)"
                  ShowPasswordChanged="@(value => _loginShowPassword = value)"
+                 RememberCredentialsChanged="OnRememberCredentialsChangedAsync"
                  OnSubmit="LoginAsync"
                  OnOpenSqlSessions="OpenSqlSessionDrawerAsync" />
 
@@ -603,6 +651,7 @@
     private string _loginError = string.Empty;
     private bool _loginBusy;
     private bool _loginShowPassword;
+    private bool _loginRememberCredentials;
     private DotNetObjectReference<MainLayout>? _pwaRef;
     private bool _pwaCanInstall;
     private bool _pwaInstalled;
@@ -618,6 +667,9 @@
     private string _pushMessage = string.Empty;
     private string _pushError = string.Empty;
     private NotificacionesPushPreferencesDto _pushPreferences = new();
+    private PushDiagnosticsVm? _pushDiagnostics;
+    private string _pushLastTestSummary = "Sin pruebas ejecutadas.";
+    private string _pushDiagnosticsLastProviderError = string.Empty;
     private string CurrentPageTitle => GetCurrentPageTitle();
     private string ShellClass
         => $"shell {(_sidebarCollapsed ? "shell--collapsed" : string.Empty)} {(_mobileSidebarOpen ? "shell--mobile-open" : string.Empty)}";
@@ -640,6 +692,10 @@
         => string.IsNullOrWhiteSpace(_globalConversationLatestName)
             ? "Abrir conversaciones"
             : $"{_globalConversationLatestName}: {_globalConversationLatestSummary}";
+    private string PushScopeNotice
+        => string.Equals(_pushPreferences.Alcance, NotificacionesPushScopes.Asignadas, StringComparison.OrdinalIgnoreCase)
+            ? "Importante: con 'solo asignadas', si la conversaciÃ³n no tiene tÃ©cnico asignado no se envÃ­a push."
+            : string.Empty;
 
     private string _currentModule = string.Empty;
     private readonly Dictionary<long, long> _globalConversationLastIncomingById = [];
@@ -741,7 +797,7 @@
 
         try
         {
-            await JS.InvokeVoidAsync("conversacionesUi.initNotifications", "AlfaCore - Alfa Gestión");
+            await JS.InvokeVoidAsync("conversacionesUi.initNotifications", "AlfaCore - Alfa GestiÃ³n");
         }
         catch
         {
@@ -778,6 +834,21 @@
                 var token = await JS.InvokeAsync<string?>("localStorage.getItem", "alfacore_user_token");
                 if (!string.IsNullOrEmpty(token))
                     AppUserSession.TryRestoreFromToken(token);
+            }
+            catch { }
+
+            try
+            {
+                _loginRememberCredentials = string.Equals(
+                    await JS.InvokeAsync<string?>("localStorage.getItem", "alfacore_login_remember"),
+                    "true",
+                    StringComparison.OrdinalIgnoreCase);
+
+                if (_loginRememberCredentials)
+                {
+                    _loginUserName = await JS.InvokeAsync<string?>("localStorage.getItem", "alfacore_login_user") ?? string.Empty;
+                    _loginPassword = await JS.InvokeAsync<string?>("localStorage.getItem", "alfacore_login_password") ?? string.Empty;
+                }
             }
             catch { }
         }
@@ -933,7 +1004,7 @@
         }
         catch
         {
-            // Si localStorage no está disponible, dejamos el estado solo en memoria.
+            // Si localStorage no estÃ¡ disponible, dejamos el estado solo en memoria.
         }
     }
 
@@ -967,7 +1038,27 @@
         {
             var session = await AppUserSession.LoginAsync(_loginUserName, _loginPassword);
             _loginUserName = session.UserName;
-            _loginPassword = string.Empty;
+            if (_loginRememberCredentials)
+            {
+                try
+                {
+                    await JS.InvokeVoidAsync("localStorage.setItem", "alfacore_login_remember", "true");
+                    await JS.InvokeVoidAsync("localStorage.setItem", "alfacore_login_user", _loginUserName);
+                    await JS.InvokeVoidAsync("localStorage.setItem", "alfacore_login_password", _loginPassword);
+                }
+                catch { }
+            }
+            else
+            {
+                _loginPassword = string.Empty;
+                try
+                {
+                    await JS.InvokeVoidAsync("localStorage.removeItem", "alfacore_login_user");
+                    await JS.InvokeVoidAsync("localStorage.removeItem", "alfacore_login_password");
+                    await JS.InvokeVoidAsync("localStorage.setItem", "alfacore_login_remember", "false");
+                }
+                catch { }
+            }
             _loginShowPassword = false;
             if (AppUserSession.CurrentToken is not null)
             {
@@ -1029,6 +1120,7 @@
         _showPushPanel = !_showPushPanel;
         _pushMessage = string.Empty;
         _pushError = string.Empty;
+        _pushDiagnostics = null;
         if (_showPushPanel)
             await LoadPushSettingsAsync();
     }
@@ -1049,7 +1141,7 @@
         }
         catch (Exception ex)
         {
-            _pushError = $"No se pudo cargar la configuración de notificaciones. {ex.Message}";
+            _pushError = $"No se pudo cargar la configuraciÃ³n de notificaciones. {ex.Message}";
         }
     }
 
@@ -1080,7 +1172,7 @@
             if (!_pwaPushSupported)
                 throw new InvalidOperationException("Este navegador no soporta notificaciones push web.");
             if (_pwaIsIos && !_pwaInstalled)
-                throw new InvalidOperationException("En iOS las notificaciones web requieren instalar AlfaCore en pantalla de inicio. Primero usá Compartir > Agregar a pantalla de inicio.");
+                throw new InvalidOperationException("En iOS las notificaciones web requieren instalar AlfaCore en pantalla de inicio. Primero usÃ¡ Compartir > Agregar a pantalla de inicio.");
 
             var subscription = await JS.InvokeAsync<NotificacionesPushSubscriptionDto>("alfaCorePwa.subscribePush", _pushPublicKey);
             await JS.InvokeVoidAsync("alfaCorePwa.savePushSubscription", subscription);
@@ -1114,7 +1206,7 @@
         catch (Exception ex)
         {
             await LogBrowserPushErrorAsync("DisablePush", ex);
-            _pushError = $"No se pudo desactivar la suscripción push. {ex.Message}";
+            _pushError = $"No se pudo desactivar la suscripciÃ³n push. {ex.Message}";
         }
         finally
         {
@@ -1156,21 +1248,58 @@
                     : _pushConfigurationMessage);
 
             var result = await JS.InvokeAsync<NotificacionesPushSendResultDto>("alfaCorePwa.sendTestPush");
-            if (result.SuccessCount > 0)
-            {
-                _pushMessage = $"Se envió a {result.SuccessCount} dispositivo(s).";
-                if (result.FailCount > 0)
-                    _pushError = BuildPushSendError(result);
-            }
-            else
-            {
+            _pushLastTestSummary = $"Total: {result.TotalCount} · OK: {result.SuccessCount} · Fallidos: {result.FailCount}";
+            _pushMessage = _pushLastTestSummary;
+            if (result.TotalCount == 0)
+                _pushError = "No hay suscripciones push activas para este usuario/dispositivo.";
+            else if (result.FailCount > 0)
                 _pushError = BuildPushSendError(result);
-            }
         }
         catch (Exception ex)
         {
+            _pushLastTestSummary = $"Falló: {ex.Message}";
             await LogBrowserPushErrorAsync("SendTestPush", ex);
             _pushError = ex.Message;
+        }
+        finally
+        {
+            _pushBusy = false;
+        }
+    }
+
+    private async Task LoadPushDiagnosticsAsync()
+    {
+        _pushBusy = true;
+        _pushMessage = string.Empty;
+        _pushError = string.Empty;
+        try
+        {
+            var client = await JS.InvokeAsync<PwaPushClientDiagnostics>("alfaCorePwa.getPushClientDiagnostics", _pushPublicKey);
+            var server = await JS.InvokeAsync<NotificacionesPushDiagnosticsDto>("alfaCorePwa.fetchPushDiagnostics");
+            _pushDiagnostics = new PushDiagnosticsVm
+            {
+                Https = client.Https,
+                ServiceWorkerReady = client.ServiceWorkerReady,
+                PushSupported = client.PushSupported,
+                NotificationPermission = client.NotificationPermission,
+                DeviceId = client.DeviceId,
+                PublicKeyPreview = client.PublicKeyPreview,
+                IsBrave = client.IsBrave,
+                SubscriptionCount = server.SubscriptionCount,
+                ActiveSubscriptionCount = server.ActiveSubscriptionCount,
+                Preferences = server.Preferences ?? new(),
+                Subscriptions = server.Subscriptions ?? []
+            };
+            _pushDiagnosticsLastProviderError = _pushDiagnostics.Subscriptions
+                .Where(x => !string.IsNullOrWhiteSpace(x.Error))
+                .Select(x => x.Error)
+                .FirstOrDefault() ?? string.Empty;
+            _pushMessage = "Diagnóstico actualizado.";
+        }
+        catch (Exception ex)
+        {
+            await LogBrowserPushErrorAsync("LoadPushDiagnostics", ex);
+            _pushError = $"No se pudo cargar el diagnóstico push. {ex.Message}";
         }
         finally
         {
@@ -1181,19 +1310,22 @@
     private static string BuildPushSendError(NotificacionesPushSendResultDto? result)
     {
         if (result is null)
-            return "El backend no devolvió resultado del envío push.";
+            return "El backend no devolviÃ³ resultado del envÃ­o push.";
 
-        var firstError = result.Results.FirstOrDefault(x => !x.Success && !string.IsNullOrWhiteSpace(x.Error));
+        var firstError = result.Results.FirstOrDefault(x => !x.Success);
         if (firstError is not null)
-            return $"Fallaron {result.FailCount} dispositivo(s). {firstError.Error}";
+            return $"Fallaron {result.FailCount} dispositivo(s). Endpoint: {firstError.EndpointParcial}. Status: {(firstError.StatusCode?.ToString() ?? "-")}. Error: {DisplayOrDash(firstError.Error)}";
 
         return result.TotalCount == 0
             ? "No hay suscripciones push activas para enviar."
-            : $"Fallaron {result.FailCount} dispositivo(s). Revisá el diagnóstico de notificaciones.";
+            : $"Fallaron {result.FailCount} dispositivo(s). RevisÃ¡ el diagnÃ³stico de notificaciones.";
     }
 
     private bool PushChannelEnabled(string channel)
         => _pushPreferences.Canales.Contains(channel, StringComparer.OrdinalIgnoreCase);
+
+    private static string DisplayOrDash(string? value)
+        => string.IsNullOrWhiteSpace(value) ? "-" : value.Trim();
 
     private void TogglePushChannel(string channel, ChangeEventArgs args)
     {
@@ -1211,7 +1343,7 @@
                 "PWA",
                 action,
                 ex,
-                "Falló una operación de instalación o notificaciones web.",
+                "FallÃ³ una operaciÃ³n de instalaciÃ³n o notificaciones web.",
                 new
                 {
                     _pwaCanInstall,
@@ -1227,7 +1359,31 @@
         }
     }
 
-    private Task OpenSqlSessionDrawerAsync()
+
+    private async Task OnRememberCredentialsChangedAsync(bool value)
+    {
+        _loginRememberCredentials = value;
+        if (!value)
+        {
+            _loginPassword = string.Empty;
+            try
+            {
+                await JS.InvokeVoidAsync("localStorage.removeItem", "alfacore_login_user");
+                await JS.InvokeVoidAsync("localStorage.removeItem", "alfacore_login_password");
+                await JS.InvokeVoidAsync("localStorage.setItem", "alfacore_login_remember", "false");
+            }
+            catch { }
+            return;
+        }
+
+        try
+        {
+            await JS.InvokeVoidAsync("localStorage.setItem", "alfacore_login_remember", "true");
+            await JS.InvokeVoidAsync("localStorage.setItem", "alfacore_login_user", _loginUserName ?? string.Empty);
+            await JS.InvokeVoidAsync("localStorage.setItem", "alfacore_login_password", _loginPassword ?? string.Empty);
+        }
+        catch { }
+    }    private Task OpenSqlSessionDrawerAsync()
     {
         _drawerOpen = true;
         return Task.CompletedTask;
@@ -1236,7 +1392,7 @@
     private string GetSqlSessionLabel()
         => _activeSession is null
             ? "Sin base activa"
-            : $"{_activeSession.Nombre} · {_activeSession.Servidor} · {_activeSession.BaseDatos}";
+            : $"{_activeSession.Nombre} Â· {_activeSession.Servidor} Â· {_activeSession.BaseDatos}";
 
     private string GetCurrentPageTitle()
     {
@@ -1250,27 +1406,27 @@
             "ventas/clientes" => "Clientes",
             "ventas/rubros" => "Rubros",
             "ventas/familias" => "Familias",
-            "ventas/articulos" => "Artículos",
+            "ventas/articulos" => "ArtÃ­culos",
             "ventas/comprobantes" => "Comprobantes",
             "ventas/comparativo" => "Comparativo",
             "stock" => "Stock",
             "caja-bancos" => "Caja y Bancos",
             "contabilidad" => "Contabilidad",
-            "contabilidad/posicion-iva" => "Posición de IVA",
-            "costos" => "Actualización de Costos",
-            "costos/nueva" => "Nueva Importación",
+            "contabilidad/posicion-iva" => "PosiciÃ³n de IVA",
+            "costos" => "ActualizaciÃ³n de Costos",
+            "costos/nueva" => "Nueva ImportaciÃ³n",
             "costos/perfiles" => "Perfiles de Costos",
             "costos/historial" => "Historial de Costos",
-            "auditoria" => "Auditoría",
+            "auditoria" => "AuditorÃ­a",
             "auditoria/errores" => "Errores",
             "conversaciones" => "Conversaciones",
             "conversaciones/plantillas" => "Plantillas de WhatsApp",
-            "conversaciones/configuracion" => "Configuración de WhatsApp",
+            "conversaciones/configuracion" => "ConfiguraciÃ³n de WhatsApp",
             "conversaciones/estadisticas" => "Estadisticas de conversaciones",
             "tickets" => "Tickets de asistencia",
             "calendario" => "Calendario",
-            "interfaces" => "Recepción documental",
-            "interfaces/configuracion" => "Configuración de Interfaces",
+            "interfaces" => "RecepciÃ³n documental",
+            "interfaces/configuracion" => "ConfiguraciÃ³n de Interfaces",
             "interfaces/nuevo" => "Nuevo documento",
             "actualizaciones" => "Actualizaciones",
             "usuarios" => "Usuarios",
@@ -1280,7 +1436,7 @@
             "compras/comprobantes" => "Comprobantes",
             "compras/rubros" => "Rubros",
             "compras/familias" => "Familias",
-            "compras/articulos" => "Artículos",
+            "compras/articulos" => "ArtÃ­culos",
             "compras/actividad" => "Actividad",
             "compras/informesia" => "Informes IA",
             "consultas" => "Consultas",
@@ -1299,13 +1455,13 @@
     private string GetModuleTitle() => _currentModule switch
     {
         "" => "Inicio",
-        "consultas" => "Diseñador de Consultas",
+        "consultas" => "DiseÃ±ador de Consultas",
         "ventas" => "Dashboard de Ventas",
         "stock" => "Dashboard de Stock",
         "caja-bancos" => "Caja y Bancos",
         "contabilidad" => "Dashboard Contable",
-        "costos" => "Actualización de Costos",
-        "auditoria" => "Auditoría",
+        "costos" => "ActualizaciÃ³n de Costos",
+        "auditoria" => "AuditorÃ­a",
         "conversaciones" => "Conversaciones",
         "tickets" => "Tickets de asistencia",
         "calendario" => "Calendario",
@@ -1333,4 +1489,36 @@
         public bool PushSupported { get; set; }
         public string NotificationPermission { get; set; } = string.Empty;
     }
+    private sealed class PwaPushClientDiagnostics
+    {
+        public bool Https { get; set; }
+        public bool ServiceWorkerReady { get; set; }
+        public bool PushSupported { get; set; }
+        public string NotificationPermission { get; set; } = string.Empty;
+        public string DeviceId { get; set; } = string.Empty;
+        public string PublicKeyPreview { get; set; } = string.Empty;
+        public bool IsBrave { get; set; }
+    }
+
+    private sealed class PushDiagnosticsVm
+    {
+        public bool Https { get; set; }
+        public bool ServiceWorkerReady { get; set; }
+        public bool PushSupported { get; set; }
+        public string NotificationPermission { get; set; } = string.Empty;
+        public string DeviceId { get; set; } = string.Empty;
+        public string PublicKeyPreview { get; set; } = string.Empty;
+        public bool IsBrave { get; set; }
+        public int SubscriptionCount { get; set; }
+        public int ActiveSubscriptionCount { get; set; }
+        public NotificacionesPushPreferencesDto Preferences { get; set; } = new();
+        public List<NotificacionesPushEndpointResultDto> Subscriptions { get; set; } = [];
+    }
 }
+
+
+
+
+
+
+

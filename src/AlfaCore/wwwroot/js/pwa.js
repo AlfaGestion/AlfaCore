@@ -59,6 +59,17 @@ window.alfaCorePwa = (function () {
         return localStorage.getItem('alfacore_user_token') || '';
     }
 
+    function isBraveBrowser() {
+        const nav = window.navigator;
+        if (!nav)
+            return false;
+
+        if (nav.brave && typeof nav.brave.isBrave === 'function')
+            return true;
+
+        return /brave/i.test(nav.userAgent || '');
+    }
+
     function urlBase64ToUint8Array(value) {
         const normalized = (value || '').trim();
         if (!/^[A-Za-z0-9_-]+$/.test(normalized))
@@ -341,16 +352,6 @@ window.alfaCorePwa = (function () {
         },
 
         sendTestPush: async function () {
-            const status = await this.getPushStatus();
-            if (!status.supported)
-                throw new Error('Este navegador no soporta notificaciones push web.');
-            if (status.isIos && !status.installed)
-                throw new Error('En iOS las notificaciones web requieren instalar AlfaCore en pantalla de inicio.');
-            if (status.permission !== 'granted')
-                throw new Error('Falta otorgar permiso de notificaciones en este navegador.');
-            if (!status.subscribed)
-                throw new Error('No hay una suscripcion push activa para este dispositivo.');
-
             return api('/api/notificaciones-push/test', {
                 method: 'POST',
                 body: JSON.stringify({ deviceId: getDeviceId() })
@@ -359,6 +360,32 @@ window.alfaCorePwa = (function () {
 
         fetchPushDiagnostics: async function () {
             return api(`/api/notificaciones-push/diagnostico?deviceId=${encodeURIComponent(getDeviceId())}`, { method: 'GET' });
+        },
+
+        getPushClientDiagnostics: async function (publicKey) {
+            const supported = isPushSupported();
+            let swReady = false;
+            if (supported) {
+                try {
+                    await getRegistration();
+                    swReady = true;
+                } catch {
+                    swReady = false;
+                }
+            }
+
+            const normalizedKey = (publicKey || '').trim();
+            return {
+                https: window.isSecureContext === true,
+                serviceWorkerReady: swReady,
+                pushSupported: supported,
+                notificationPermission: getNotificationPermission(),
+                deviceId: getDeviceId(),
+                publicKeyPreview: normalizedKey.length > 16
+                    ? `${normalizedKey.slice(0, 8)}...${normalizedKey.slice(-8)}`
+                    : normalizedKey,
+                isBrave: isBraveBrowser()
+            };
         }
     };
 })();
