@@ -7,12 +7,27 @@ namespace AlfaCore.Repositories;
 public sealed class AuxErrRepository(
     IConfiguration configuration,
     ISessionService sessionService,
+    IHttpContextAccessor httpContextAccessor,
     ILogger<AuxErrRepository> logger) : IAuxErrRepository
 {
-    private string ConnectionString => sessionService.GetConnectionString().Length > 0
-        ? sessionService.GetConnectionString()
-        : configuration.GetConnectionString("AlfaGestion")
-          ?? throw new InvalidOperationException("No se configuró la cadena de conexión 'ConnectionStrings:AlfaGestion'.");
+    private string ConnectionString
+    {
+        get
+        {
+            var configured = configuration.GetConnectionString("AlfaGestion") ?? string.Empty;
+            if (httpContextAccessor.HttpContext is null && !string.IsNullOrWhiteSpace(configured))
+                return configured;
+
+            var sessionConnection = sessionService.GetConnectionString();
+            if (!string.IsNullOrWhiteSpace(sessionConnection))
+                return sessionConnection;
+
+            if (!string.IsNullOrWhiteSpace(configured))
+                return configured;
+
+            throw new InvalidOperationException("No se configuró la cadena de conexión 'ConnectionStrings:AlfaGestion'.");
+        }
+    }
 
     public async Task<int> InsertAsync(AuxErrEntry entry, CancellationToken ct = default)
     {

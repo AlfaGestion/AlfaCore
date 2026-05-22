@@ -44,6 +44,26 @@ public sealed class ConversacionesService(
         : configuration.GetConnectionString("AlfaGestion")
           ?? throw new InvalidOperationException("No se configuró la cadena de conexión 'ConnectionStrings:AlfaGestion'.");
 
+    public Task<bool> HasConversationSchemaAsync(CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "HasConversationSchema", async token =>
+        {
+            const string sql = """
+                SELECT
+                    CASE
+                        WHEN OBJECT_ID(N'dbo.CONV_CONVERSACIONES', N'U') IS NOT NULL
+                         AND OBJECT_ID(N'dbo.CONV_ESTADOS', N'U') IS NOT NULL
+                        THEN CAST(1 AS bit)
+                        ELSE CAST(0 AS bit)
+                    END;
+                """;
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var cmd = new SqlCommand(sql, cn);
+            var result = await cmd.ExecuteScalarAsync(token);
+            return result is not null && Convert.ToBoolean(result);
+        }, "No se pudo verificar el esquema de conversaciones.", ct);
+
     public Task<IReadOnlyList<ConversacionTecnicoOptionDto>> GetTechniciansAsync(CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetTechnicians", async token =>
         {

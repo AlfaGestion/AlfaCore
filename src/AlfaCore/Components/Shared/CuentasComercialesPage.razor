@@ -1,0 +1,1651 @@
+@using AlfaCore.Models
+@using AlfaCore.Services
+@inject ICuentasComercialesService CuentasSvc
+@inject IAppUiOperationService UiOps
+@inject IAppUserSessionService AppUserSession
+@implements IDisposable
+
+<div class="page-grid" @onclick="HandlePageClickAsync">
+    <section class="page-intro">
+        <div>
+            <h2 class="page-intro__title">@PluralLabel</h2>
+            <p class="page-intro__text">@IntroText</p>
+        </div>
+        <div class="actions">
+            <button type="button" class="btn btn--primary" @onclick="BeginNewAsync">
+                <i class="bi bi-plus-circle"></i> Nuevo @SingularLabelLower
+            </button>
+            <button type="button" class="btn btn--ghost" @onclick="RecargarAsync" disabled="@_loadingList">
+                <i class="bi bi-arrow-clockwise"></i> Recargar
+            </button>
+        </div>
+    </section>
+
+    @if (_feedback is not null)
+    {
+        <section class="panel-card">
+            <div class="editor-msg @GetFeedbackClass(_feedback)">
+                <div>
+                    <strong>@_feedback.Title</strong>
+                    <p>@_feedback.Message</p>
+                    @if (_feedback.HasSuggestion)
+                    {
+                        <small>@_feedback.Suggestion</small>
+                    }
+                    @if (_feedback.HasCode)
+                    {
+                        <small>Código: @_feedback.Code</small>
+                    }
+                </div>
+            </div>
+        </section>
+    }
+
+    <section class="panel-card smart-search-card" @onclick:stopPropagation>
+        <div class="smart-search">
+            <div class="smart-search__bar">
+                <i class="bi bi-search"></i>
+                <input type="search"
+                       placeholder="Buscar por código, razón social, contacto, localidad, teléfono o documento..."
+                       value="@_filters.Texto"
+                       @onfocus="OpenSearchPanel"
+                       @oninput="OnSearchInput" />
+                <button type="button" class="smart-search__toggle" @onclick="ToggleSearchPanel" aria-label="Mostrar filtros">
+                    <i class="bi @(_showSearchPanel ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
+                </button>
+            </div>
+
+            <div class="smart-search__chips" aria-live="polite">
+                @foreach (var chip in BuildFilterChips())
+                {
+                    <button type="button" class="smart-chip" @onclick="() => RemoveChipAsync(chip.Key)">
+                        @chip.Label <i class="bi bi-x"></i>
+                    </button>
+                }
+                @if (BuildFilterChips().Count == 0)
+                {
+                    <span class="smart-search__hint">Click en el buscador para filtros rápidos y agrupación.</span>
+                }
+            </div>
+
+            @if (_showSearchPanel)
+            {
+                <div class="smart-search__panel">
+                    <div class="smart-search__column">
+                        <h4><i class="bi bi-funnel-fill"></i> Filtros</h4>
+                        <button type="button" class="@GetSmartOptionClass(_activoFiltro == "1")" @onclick='() => SetStatusFilterAsync("1")'>Activos</button>
+                        <button type="button" class="@GetSmartOptionClass(_activoFiltro == "0")" @onclick='() => SetStatusFilterAsync("0")'>Inactivos</button>
+                        <button type="button" class="@GetSmartOptionClass(_bloqueoFiltro == "1")" @onclick='() => SetBlockFilterAsync("1")'>Bloqueados</button>
+                        <button type="button" class="@GetSmartOptionClass(_bloqueoFiltro == "0")" @onclick='() => SetBlockFilterAsync("0")'>Sin bloquear</button>
+                    </div>
+                    <div class="smart-search__column">
+                        <h4><i class="bi bi-stack"></i> Agrupar por</h4>
+                        <button type="button" class="@GetSmartOptionClass(_viewSettings.AgruparPor == CuentaComercialViewGroupKeys.None)" @onclick='() => SetGroupAsync(CuentaComercialViewGroupKeys.None)'>Sin agrupar</button>
+                        <button type="button" class="@GetSmartOptionClass(_viewSettings.AgruparPor == CuentaComercialViewGroupKeys.Activo)" @onclick='() => SetGroupAsync(CuentaComercialViewGroupKeys.Activo)'>Estado</button>
+                        <button type="button" class="@GetSmartOptionClass(_viewSettings.AgruparPor == CuentaComercialViewGroupKeys.Provincia)" @onclick='() => SetGroupAsync(CuentaComercialViewGroupKeys.Provincia)'>Provincia</button>
+                        <button type="button" class="@GetSmartOptionClass(_viewSettings.AgruparPor == CuentaComercialViewGroupKeys.Bloqueado)" @onclick='() => SetGroupAsync(CuentaComercialViewGroupKeys.Bloqueado)'>Bloqueo</button>
+                    </div>
+                    <div class="smart-search__column">
+                        <h4><i class="bi bi-geo-alt-fill"></i> Ubicación</h4>
+                        <div class="smart-search__inline">
+                            <label>Provincia</label>
+                            <select value="@_filters.ProvinciaCodigo" @onchange="OnProvinciaChangedAsync">
+                                <option value="">Todas</option>
+                                @foreach (var provincia in _lookups.Provincias)
+                                {
+                                    <option value="@provincia.Codigo">@provincia.Descripcion</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="smart-search__inline">
+                            <label>País</label>
+                            <select value="@_filters.PaisCodigo" @onchange="OnPaisChangedAsync">
+                                <option value="">Todos</option>
+                                @foreach (var pais in _lookups.Paises)
+                                {
+                                    <option value="@pais.Codigo">@pais.Descripcion</option>
+                                }
+                            </select>
+                        </div>
+                        <button type="button" @onclick="LimpiarFiltrosAsync">Limpiar búsqueda</button>
+                    </div>
+                </div>
+            }
+        </div>
+    </section>
+
+    @if (_showViewSettings && !_showEditor)
+    {
+        <section class="panel-card">
+            <div class="panel-card__header">
+                <div>
+                    <h3 class="panel-card__title">Configuración de vista</h3>
+                    <p class="panel-card__subtitle">Elegí columnas visibles, orden y agrupación para la grilla.</p>
+                </div>
+            </div>
+
+            <div class="usuarios-view-settings">
+                <div class="field">
+                    <label>Agrupar por</label>
+                    <select @bind="_draftAgruparPor">
+                        <option value="@CuentaComercialViewGroupKeys.None">Sin agrupar</option>
+                        <option value="@CuentaComercialViewGroupKeys.Activo">Estado</option>
+                        <option value="@CuentaComercialViewGroupKeys.Provincia">Provincia</option>
+                        <option value="@CuentaComercialViewGroupKeys.Bloqueado">Bloqueo</option>
+                    </select>
+                </div>
+
+                <div class="usuarios-view-settings__list">
+                    @foreach (var column in _viewSettingsDraft.OrderBy(c => c.Order))
+                    {
+                        <div class="usuarios-view-settings__item">
+                            <label class="checkbox">
+                                <input type="checkbox" checked="@column.Visible" @onchange="args => ToggleViewColumn(column.Key, args)" />
+                                <span>@column.Label</span>
+                            </label>
+                            <div class="actions">
+                                <button type="button" class="btn btn--ghost btn--sm" @onclick="() => MoveViewColumn(column.Key, -1)">
+                                    <i class="bi bi-arrow-up"></i>
+                                </button>
+                                <button type="button" class="btn btn--ghost btn--sm" @onclick="() => MoveViewColumn(column.Key, 1)">
+                                    <i class="bi bi-arrow-down"></i>
+                                </button>
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                <div class="actions">
+                    <button type="button" class="btn btn--primary" @onclick="GuardarConfiguracionVistaAsync">
+                        <i class="bi bi-floppy"></i> Guardar vista
+                    </button>
+                    <button type="button" class="btn btn--ghost" @onclick="CancelarConfiguracionVista">
+                        <i class="bi bi-x-circle"></i> Cancelar
+                    </button>
+                </div>
+            </div>
+        </section>
+    }
+
+    @if (_showEditor)
+    {
+        <section class="panel-card">
+            <div class="panel-card__header">
+                <div>
+                    <h3 class="panel-card__title">@(_isNewMode ? $"Nuevo {SingularLabelLower}" : $"Editar {_form.RazonSocial}")</h3>
+                    <p class="panel-card__subtitle">@(_isNewMode ? $"Cuenta título configurada: {_lookups.TituloCuenta}" : $"Código: {_form.Codigo} · Estado: {(_selectedActivo ? "Activo" : "Inactivo")}")</p>
+                </div>
+                <div class="actions">
+                    <button type="button" class="btn btn--ghost" @onclick="CerrarEditor" disabled="@_saving">
+                        <i class="bi bi-arrow-left"></i>
+                        <span>Volver al listado</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="contactos-tabs">
+                <button type="button"
+                        class="btn @(_activeTab == CuentaComercialTab.Datos ? "btn--primary" : "btn--ghost")"
+                        @onclick="() => _activeTab = CuentaComercialTab.Datos">
+                    Carga de datos
+                </button>
+                <button type="button"
+                        class="btn @(_activeTab == CuentaComercialTab.Condiciones ? "btn--primary" : "btn--ghost")"
+                        @onclick="() => _activeTab = CuentaComercialTab.Condiciones">
+                    Condiciones
+                </button>
+                <button type="button"
+                        class="btn @(_activeTab == CuentaComercialTab.Notas ? "btn--primary" : "btn--ghost")"
+                        @onclick="() => _activeTab = CuentaComercialTab.Notas">
+                    Notas
+                </button>
+            </div>
+
+            <div class="contactos-form">
+                @if (_activeTab == CuentaComercialTab.Datos)
+                {
+                <div class="contactos-form__grid">
+                    <div class="field">
+                        <label>Código</label>
+                        <input type="text" class="@GetFieldInputClass("codigo")" maxlength="15" @bind="_form.Codigo" disabled="true" />
+                        @if (HasFieldError("codigo"))
+                        {
+                            <small class="usuarios-field-error">@GetFieldError("codigo")</small>
+                        }
+                    </div>
+                    <div class="field">
+                        <label>Razón social</label>
+                        <input type="text" class="@GetFieldInputClass("razon-social")" maxlength="50" @bind="_form.RazonSocial" disabled="@_saving" />
+                        @if (HasFieldError("razon-social"))
+                        {
+                            <small class="usuarios-field-error">@GetFieldError("razon-social")</small>
+                        }
+                    </div>
+                    <div class="field">
+                        <label>Contacto</label>
+                        <input type="text" class="@GetFieldInputClass("contacto")" maxlength="70" @bind="_form.Contacto" disabled="@_saving" />
+                        @if (HasFieldError("contacto"))
+                        {
+                            <small class="usuarios-field-error">@GetFieldError("contacto")</small>
+                        }
+                    </div>
+                    <div class="field">
+                        <label>Calle</label>
+                        <input type="text" class="@GetFieldInputClass("calle")" maxlength="50" @bind="_form.Calle" disabled="@_saving" />
+                        @if (HasFieldError("calle"))
+                        {
+                            <small class="usuarios-field-error">@GetFieldError("calle")</small>
+                        }
+                    </div>
+                    <div class="field">
+                        <label>Altura</label>
+                        <input type="text" class="@GetFieldInputClass("numero")" maxlength="6" @bind="_form.Numero" disabled="@_saving" />
+                        @if (HasFieldError("numero"))
+                        {
+                            <small class="usuarios-field-error">@GetFieldError("numero")</small>
+                        }
+                    </div>
+                    <div class="field">
+                        <label>Piso</label>
+                        <input type="text" class="@GetFieldInputClass("piso")" maxlength="2" @bind="_form.Piso" disabled="@_saving" />
+                        @if (HasFieldError("piso"))
+                        {
+                            <small class="usuarios-field-error">@GetFieldError("piso")</small>
+                        }
+                    </div>
+                    <div class="field">
+                        <label>Depto.</label>
+                        <input type="text" class="@GetFieldInputClass("departamento")" maxlength="2" @bind="_form.Departamento" disabled="@_saving" />
+                        @if (HasFieldError("departamento"))
+                        {
+                            <small class="usuarios-field-error">@GetFieldError("departamento")</small>
+                        }
+                    </div>
+                    <div class="field">
+                        <label>Código postal</label>
+                        <input type="text" class="@GetFieldInputClass("codigo-postal")" maxlength="10" @bind="_form.CodigoPostal" disabled="@_saving" />
+                        @if (HasFieldError("codigo-postal"))
+                        {
+                            <small class="usuarios-field-error">@GetFieldError("codigo-postal")</small>
+                        }
+                    </div>
+                    <div class="field">
+                        <label>Localidad</label>
+                        <input type="text" class="@GetFieldInputClass("localidad")" maxlength="50" @bind="_form.Localidad" disabled="@_saving" />
+                        @if (HasFieldError("localidad"))
+                        {
+                            <small class="usuarios-field-error">@GetFieldError("localidad")</small>
+                        }
+                    </div>
+                    <div class="field">
+                        <label>Provincia</label>
+                        <select class="@GetFieldInputClass("provincia")" @bind="_form.ProvinciaCodigo" disabled="@_saving">
+                            <option value="">Seleccionar...</option>
+                            @foreach (var item in _lookups.Provincias)
+                            {
+                                <option value="@item.Codigo">@item.Descripcion</option>
+                            }
+                        </select>
+                        @if (HasFieldError("provincia"))
+                        {
+                            <small class="usuarios-field-error">@GetFieldError("provincia")</small>
+                        }
+                    </div>
+                    <div class="field">
+                        <label>País</label>
+                        <select class="@GetFieldInputClass("pais")" @bind="_form.PaisCodigo" disabled="@_saving">
+                            <option value="">Seleccionar...</option>
+                            @foreach (var item in _lookups.Paises)
+                            {
+                                <option value="@item.Codigo">@item.Descripcion</option>
+                            }
+                        </select>
+                        @if (HasFieldError("pais"))
+                        {
+                            <small class="usuarios-field-error">@GetFieldError("pais")</small>
+                        }
+                    </div>
+                    <div class="field">
+                        <label>Teléfono</label>
+                        <input type="text" class="@GetFieldInputClass("telefono")" maxlength="50" @bind="_form.Telefono" disabled="@_saving" />
+                        @if (HasFieldError("telefono"))
+                        {
+                            <small class="usuarios-field-error">@GetFieldError("telefono")</small>
+                        }
+                    </div>
+                    <div class="field">
+                        <label>Fax</label>
+                        <input type="text" class="@GetFieldInputClass("fax")" maxlength="50" @bind="_form.Fax" disabled="@_saving" />
+                        @if (HasFieldError("fax"))
+                        {
+                            <small class="usuarios-field-error">@GetFieldError("fax")</small>
+                        }
+                    </div>
+                    <div class="field">
+                        <label>Email</label>
+                        <input type="email" class="@GetFieldInputClass("mail")" maxlength="250" @bind="_form.Mail" disabled="@_saving" />
+                        @if (HasFieldError("mail"))
+                        {
+                            <small class="usuarios-field-error">@GetFieldError("mail")</small>
+                        }
+                    </div>
+                    <div class="field">
+                        <label>Web</label>
+                        <input type="text" class="@GetFieldInputClass("web")" maxlength="250" @bind="_form.Web" disabled="@_saving" />
+                        @if (HasFieldError("web"))
+                        {
+                            <small class="usuarios-field-error">@GetFieldError("web")</small>
+                        }
+                    </div>
+                    <div class="field">
+                        <label>Tipo documento</label>
+                        <select class="@GetFieldInputClass("tipo-documento")" @bind="_form.DocumentoTipoCodigo" disabled="@_saving">
+                            <option value="">Seleccionar...</option>
+                            @foreach (var item in _lookups.TiposDocumento)
+                            {
+                                <option value="@item.Codigo">@item.Descripcion</option>
+                            }
+                        </select>
+                        @if (HasFieldError("tipo-documento"))
+                        {
+                            <small class="usuarios-field-error">@GetFieldError("tipo-documento")</small>
+                        }
+                    </div>
+                    <div class="field">
+                        <label>CUIT / Nro. documento</label>
+                        <input type="text" class="@GetFieldInputClass("numero-documento")" maxlength="13" @bind="_form.NumeroDocumento" disabled="@_saving" />
+                        @if (HasFieldError("numero-documento"))
+                        {
+                            <small class="usuarios-field-error">@GetFieldError("numero-documento")</small>
+                        }
+                    </div>
+                    <div class="field">
+                        <label>Condición IVA</label>
+                        <select class="@GetFieldInputClass("iva")" @bind="_form.IvaCodigo" disabled="@_saving">
+                            <option value="">Seleccionar...</option>
+                            @foreach (var item in _lookups.CondicionesIva)
+                            {
+                                <option value="@item.Codigo">@item.Descripcion</option>
+                            }
+                        </select>
+                        @if (HasFieldError("iva"))
+                        {
+                            <small class="usuarios-field-error">@GetFieldError("iva")</small>
+                        }
+                    </div>
+                </div>
+                }
+
+                @if (_activeTab == CuentaComercialTab.Condiciones)
+                {
+                <div class="contactos-form__grid">
+                    <div class="field">
+                        <label>Condición comercial</label>
+                        <select class="@GetFieldInputClass("condicion-comercial")" @bind="_form.CondicionComercialCodigo" disabled="@_saving">
+                            <option value="">Seleccionar...</option>
+                            @foreach (var item in _lookups.CondicionesComerciales)
+                            {
+                                <option value="@item.Codigo">@item.Descripcion</option>
+                            }
+                        </select>
+                        @if (HasFieldError("condicion-comercial"))
+                        {
+                            <small class="usuarios-field-error">@GetFieldError("condicion-comercial")</small>
+                        }
+                    </div>
+                    @if (_lookups.UsaListasDePrecio)
+                    {
+                        <div class="field">
+                            <label>Lista de precios</label>
+                            <select class="@GetFieldInputClass("lista-precio")" @bind="_form.ListaPrecioCodigo" disabled="@_saving">
+                                <option value="">Sin lista</option>
+                                @foreach (var item in _lookups.ListasPrecio)
+                                {
+                                    <option value="@item.Codigo">@($"{item.Codigo} · {item.Descripcion}")</option>
+                                }
+                            </select>
+                            @if (HasFieldError("lista-precio"))
+                            {
+                                <small class="usuarios-field-error">@GetFieldError("lista-precio")</small>
+                            }
+                        </div>
+                    }
+                    <div class="field">
+                        <label>Vendedor</label>
+                        <select class="@GetFieldInputClass("vendedor")" @bind="_form.VendedorCodigo" disabled="@_saving">
+                            <option value="">Sin vendedor</option>
+                            @foreach (var item in _lookups.Vendedores)
+                            {
+                                <option value="@item.Codigo">@($"{item.Codigo} · {item.Descripcion}")</option>
+                            }
+                        </select>
+                        @if (HasFieldError("vendedor"))
+                        {
+                            <small class="usuarios-field-error">@GetFieldError("vendedor")</small>
+                        }
+                    </div>
+                    <div class="field">
+                        <label>Clasificación</label>
+                        <select class="@GetFieldInputClass("clasificacion")" @bind="_form.ClasificacionCodigo" disabled="@_saving">
+                            <option value="">Sin clasificación</option>
+                            @foreach (var item in _lookups.Clasificaciones)
+                            {
+                                <option value="@item.Codigo">@($"{item.Codigo} · {item.Descripcion}")</option>
+                            }
+                        </select>
+                        @if (HasFieldError("clasificacion"))
+                        {
+                            <small class="usuarios-field-error">@GetFieldError("clasificacion")</small>
+                        }
+                    </div>
+                    <div class="field">
+                        <label>Moneda</label>
+                        <select class="@GetFieldInputClass("moneda")" @bind="_form.MonedaCodigo" disabled="@_saving">
+                            <option value="">Sin moneda</option>
+                            @foreach (var item in _lookups.Monedas)
+                            {
+                                <option value="@item.Codigo">@item.Descripcion</option>
+                            }
+                        </select>
+                        @if (HasFieldError("moneda"))
+                        {
+                            <small class="usuarios-field-error">@GetFieldError("moneda")</small>
+                        }
+                    </div>
+                    <div class="field">
+                        <label>Cuenta principal</label>
+                        <input type="text" class="@GetFieldInputClass("cuenta-principal")" maxlength="15" @bind="_form.CuentaPrincipal" disabled="@_saving" />
+                        @if (HasFieldError("cuenta-principal"))
+                        {
+                            <small class="usuarios-field-error">@GetFieldError("cuenta-principal")</small>
+                        }
+                    </div>
+                    <div class="field">
+                        <label>Código imputación</label>
+                        <input type="text" class="@GetFieldInputClass("codigo-imputacion")" maxlength="15" @bind="_form.CodigoImputacion" disabled="@_saving" />
+                        @if (HasFieldError("codigo-imputacion"))
+                        {
+                            <small class="usuarios-field-error">@GetFieldError("codigo-imputacion")</small>
+                        }
+                    </div>
+                    <div class="field">
+                        <label>Código opcional</label>
+                        <input type="text" class="@GetFieldInputClass("codigo-opcional")" maxlength="15" @bind="_form.CodigoOpcional" disabled="@_saving" />
+                        @if (HasFieldError("codigo-opcional"))
+                        {
+                            <small class="usuarios-field-error">@GetFieldError("codigo-opcional")</small>
+                        }
+                    </div>
+                    <div class="field">
+                        <label>Límite de crédito</label>
+                        <input type="number" step="0.01" class="@GetFieldInputClass("limite-credito")" @bind="_form.LimiteCredito" disabled="@_saving" />
+                        @if (HasFieldError("limite-credito"))
+                        {
+                            <small class="usuarios-field-error">@GetFieldError("limite-credito")</small>
+                        }
+                    </div>
+                    <div class="field">
+                        <label>Clase</label>
+                        <input type="number" min="0" max="8" class="@GetFieldInputClass("clase")" @bind="_form.Clase" disabled="@_saving" />
+                        @if (HasFieldError("clase"))
+                        {
+                            <small class="usuarios-field-error">@GetFieldError("clase")</small>
+                        }
+                    </div>
+                    <div class="field">
+                        <label>Lugar de entrega</label>
+                        <input type="text" class="@GetFieldInputClass("lugar-entrega")" maxlength="200" @bind="_form.LugarEntrega" disabled="@_saving" />
+                        @if (HasFieldError("lugar-entrega"))
+                        {
+                            <small class="usuarios-field-error">@GetFieldError("lugar-entrega")</small>
+                        }
+                    </div>
+                    <div class="field">
+                        <label>Datos de pago</label>
+                        <input type="text" class="@GetFieldInputClass("datos-pago")" maxlength="150" @bind="_form.DatosPago" disabled="@_saving" />
+                        @if (HasFieldError("datos-pago"))
+                        {
+                            <small class="usuarios-field-error">@GetFieldError("datos-pago")</small>
+                        }
+                    </div>
+                </div>
+
+                <div class="contactos-flags">
+                    <label class="checkbox">
+                        <input type="checkbox" @bind="_form.Bloqueado" disabled="@_saving" />
+                        <span>Bloqueado</span>
+                    </label>
+                    <label class="checkbox">
+                        <input type="checkbox" @bind="_form.ExentoIvaServicios" disabled="@_saving" />
+                        <span>Exento IVA servicios</span>
+                    </label>
+                    <label class="checkbox">
+                        <input type="checkbox" @bind="_form.ExentoIvaArticulos" disabled="@_saving" />
+                        <span>Exento IVA artículos</span>
+                    </label>
+                    <label class="checkbox">
+                        <input type="checkbox" @bind="_form.ExentoIvaOtros" disabled="@_saving" />
+                        <span>Exento IVA otros</span>
+                    </label>
+                    @if (Tipo == CuentaComercialTipo.Proveedor)
+                    {
+                        <label class="checkbox">
+                            <input type="checkbox" @bind="_form.ProveedorLocal" disabled="@_saving" />
+                            <span>Proveedor local</span>
+                        </label>
+                        <label class="checkbox">
+                            <input type="checkbox" @bind="_form.ProveedorCompartido" disabled="@_saving" />
+                            <span>Proveedor compartido</span>
+                        </label>
+                    }
+                </div>
+                }
+
+                @if (_activeTab == CuentaComercialTab.Notas)
+                {
+                <div class="field">
+                    <label>Manual / notas internas</label>
+                    <textarea rows="4" class="@GetFieldInputClass("manual")" maxlength="4000" @bind="_form.Manual" disabled="@_saving"></textarea>
+                    @if (HasFieldError("manual"))
+                    {
+                        <small class="usuarios-field-error">@GetFieldError("manual")</small>
+                    }
+                </div>
+
+                <div class="field">
+                    <label>Observaciones</label>
+                    <textarea rows="5" class="@GetFieldInputClass("observaciones")" maxlength="200" @bind="_form.Observaciones" disabled="@_saving"></textarea>
+                    @if (HasFieldError("observaciones"))
+                    {
+                        <small class="usuarios-field-error">@GetFieldError("observaciones")</small>
+                    }
+                </div>
+
+                <div class="field field--wide">
+                    <label>Nota ampliada</label>
+                    <textarea rows="5" class="@GetFieldInputClass("nota-cuenta")" maxlength="4000" @bind="_form.NotaCuenta" disabled="@_saving"></textarea>
+                    @if (HasFieldError("nota-cuenta"))
+                    {
+                        <small class="usuarios-field-error">@GetFieldError("nota-cuenta")</small>
+                    }
+                </div>
+
+                <div class="contactos-form__grid">
+                    <div class="field">
+                        <label>Situación IB</label>
+                        <input type="text" class="@GetFieldInputClass("situacion-ib")" maxlength="2" @bind="_form.SituacionIb" disabled="@_saving" />
+                        @if (HasFieldError("situacion-ib"))
+                        {
+                            <small class="usuarios-field-error">@GetFieldError("situacion-ib")</small>
+                        }
+                    </div>
+                    <div class="field">
+                        <label>Convenio IB</label>
+                        <input type="text" class="@GetFieldInputClass("convenio-ib")" maxlength="2" @bind="_form.ConvenioIb" disabled="@_saving" />
+                        @if (HasFieldError("convenio-ib"))
+                        {
+                            <small class="usuarios-field-error">@GetFieldError("convenio-ib")</small>
+                        }
+                    </div>
+                    <div class="field">
+                        <label>Concepto IB</label>
+                        <input type="text" class="@GetFieldInputClass("concepto-ib")" maxlength="2" @bind="_form.ConceptoIb" disabled="@_saving" />
+                        @if (HasFieldError("concepto-ib"))
+                        {
+                            <small class="usuarios-field-error">@GetFieldError("concepto-ib")</small>
+                        }
+                    </div>
+                    <div class="field">
+                        <label>Nro. constancia</label>
+                        <input type="text" class="@GetFieldInputClass("nro-constancia-ib")" maxlength="13" @bind="_form.NroConstanciaIb" disabled="@_saving" />
+                        @if (HasFieldError("nro-constancia-ib"))
+                        {
+                            <small class="usuarios-field-error">@GetFieldError("nro-constancia-ib")</small>
+                        }
+                    </div>
+                </div>
+
+                }
+
+                @if (_activeTab == CuentaComercialTab.Condiciones && Tipo == CuentaComercialTipo.Proveedor)
+                {
+                    <div class="field field--wide">
+                        <label>Descuentos por condición de compra</label>
+                        @if (HasFieldError("descuentos"))
+                        {
+                            <small class="usuarios-field-error">@GetFieldError("descuentos")</small>
+                        }
+                        <div class="usuarios-table-wrap">
+                            <table class="data-table usuarios-table">
+                                <thead>
+                                    <tr>
+                                        <th>Condición</th>
+                                        <th>Dto 1</th>
+                                        <th>Dto 2</th>
+                                        <th>Dto 3</th>
+                                        <th>Dto 4</th>
+                                        <th>Dto 5</th>
+                                        <th>Acciones</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @if (_form.DescuentosCondicion.Count == 0)
+                                    {
+                                        <tr>
+                                            <td colspan="7" class="usuarios-empty">No hay descuentos cargados para este proveedor.</td>
+                                        </tr>
+                                    }
+                                    else
+                                    {
+                                        @foreach (var descuento in _form.DescuentosCondicion)
+                                        {
+                                            <tr>
+                                                <td>
+                                                    <select class="@GetFieldInputClass("descuentos")" @bind="descuento.CondicionCodigo" disabled="@_saving">
+                                                        <option value="">Seleccionar...</option>
+                                                        @foreach (var item in _lookups.CondicionesComerciales)
+                                                        {
+                                                            <option value="@item.Codigo">@($"{item.Codigo} · {item.Descripcion}")</option>
+                                                        }
+                                                    </select>
+                                                </td>
+                                                <td><input type="number" step="0.01" min="0" max="100" class="@GetFieldInputClass("descuentos")" @bind="descuento.Descuento1" disabled="@_saving" /></td>
+                                                <td><input type="number" step="0.01" min="0" max="100" class="@GetFieldInputClass("descuentos")" @bind="descuento.Descuento2" disabled="@_saving" /></td>
+                                                <td><input type="number" step="0.01" min="0" max="100" class="@GetFieldInputClass("descuentos")" @bind="descuento.Descuento3" disabled="@_saving" /></td>
+                                                <td><input type="number" step="0.01" min="0" max="100" class="@GetFieldInputClass("descuentos")" @bind="descuento.Descuento4" disabled="@_saving" /></td>
+                                                <td><input type="number" step="0.01" min="0" max="100" class="@GetFieldInputClass("descuentos")" @bind="descuento.Descuento5" disabled="@_saving" /></td>
+                                                <td>
+                                                    <button type="button" class="btn btn--ghost btn--sm" @onclick="() => QuitarDescuento(descuento)" disabled="@_saving">
+                                                        <i class="bi bi-trash"></i> Quitar
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        }
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="actions">
+                            <button type="button" class="btn btn--ghost" @onclick="AgregarDescuento" disabled="@_saving">
+                                <i class="bi bi-plus-circle"></i> Agregar descuento
+                            </button>
+                        </div>
+                    </div>
+                }
+
+                <div class="actions usuarios-editor__actions">
+                    <button type="button" class="btn btn--primary" @onclick="GuardarAsync" disabled="@_saving">
+                        <i class="bi bi-floppy"></i>
+                        <span>@(_saving ? $"Guardando {SingularLabelLower}..." : $"Guardar {SingularLabelLower}")</span>
+                    </button>
+                    <button type="button" class="btn btn--ghost" @onclick="ResetForm" disabled="@_saving">
+                        <i class="bi bi-eraser"></i>
+                        <span>@(_isNewMode ? "Limpiar" : "Revertir")</span>
+                    </button>
+                    @if (!_isNewMode && _selectedActivo)
+                    {
+                        <button type="button" class="btn btn--ghost usuarios-btn-danger" @onclick="DarDeBajaAsync" disabled="@_saving">
+                            <i class="bi bi-person-dash"></i>
+                            <span>Dar de baja</span>
+                        </button>
+                    }
+                </div>
+
+                @if (!_isNewMode)
+                {
+                    <div class="usuarios-editor__meta">
+                        <span>Alta: @FormatDate(_selectedAlta)</span>
+                        <span>Modificación: @FormatDate(_selectedModificacion)</span>
+                    </div>
+                }
+            </div>
+        </section>
+    }
+    else
+    {
+        var visibleColumns = GetVisibleColumns();
+        var groups = BuildGridGroups();
+
+        <section class="panel-card">
+            <div class="panel-card__header">
+                <div>
+                    <h3 class="panel-card__title">@PluralLabel</h3>
+                    <p class="panel-card__subtitle">@_pagedTotal registro(s) · Página @_pageNumber de @_totalPages · doble clic para abrir la ficha.</p>
+                </div>
+                <div class="actions">
+                    <button type="button" class="btn btn--ghost" @onclick="AbrirConfiguracionVista">
+                        <i class="bi bi-sliders"></i> Configurar vista
+                    </button>
+                    <span class="panel-card__subtitle">Agrupación: @GetGroupingLabel(_viewSettings.AgruparPor)</span>
+                </div>
+            </div>
+
+            @if (_loadingList)
+            {
+                <div class="usuarios-empty">Cargando @PluralLabelLower...</div>
+            }
+            else if (_items.Count == 0)
+            {
+                <div class="usuarios-empty">No hay @PluralLabelLower para los filtros seleccionados.</div>
+            }
+            else
+            {
+                <div class="usuarios-table-wrap">
+                    <table class="data-table usuarios-table">
+                        <thead>
+                            <tr>
+                                @foreach (var column in visibleColumns)
+                                {
+                                    <th>@column.Label</th>
+                                }
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        @foreach (var group in groups)
+                        {
+                            <tbody>
+                                @if (group.ShowHeader)
+                                {
+                                    <tr class="usuarios-group-row">
+                                        <td colspan="@(visibleColumns.Count + 1)">@group.Label</td>
+                                    </tr>
+                                }
+                                @foreach (var item in group.Items)
+                                {
+                                    <tr class="@(IsSelected(item) ? "usuarios-table__row is-selected" : "usuarios-table__row")"
+                                        @onclick="() => SeleccionarFila(item.Codigo)"
+                                        @ondblclick="() => AbrirEditorAsync(item.Codigo)">
+                                        @foreach (var column in visibleColumns)
+                                        {
+                                            <td>@RenderCell(item, column.Key)</td>
+                                        }
+                                        <td>
+                                            <button type="button" class="btn btn--ghost btn--sm" @onclick="() => AbrirEditorAsync(item.Codigo)">
+                                                <i class="bi bi-pencil-square"></i> Editar
+                                            </button>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        }
+                    </table>
+                </div>
+
+                <div class="usuarios-pagination">
+                    <span>@_pagedTotal registro(s)</span>
+                    <div class="actions">
+                        <button type="button" class="btn btn--ghost btn--sm" @onclick="() => CambiarPaginaAsync(_pageNumber - 1)" disabled="@(!_hasPrev || _loadingList)">
+                            <i class="bi bi-chevron-left"></i>
+                        </button>
+                        <span>@_pageNumber / @_totalPages</span>
+                        <button type="button" class="btn btn--ghost btn--sm" @onclick="() => CambiarPaginaAsync(_pageNumber + 1)" disabled="@(!_hasNext || _loadingList)">
+                            <i class="bi bi-chevron-right"></i>
+                        </button>
+                        <select @onchange="OnPageSizeChangedAsync" value="@_filters.PageSize.ToString()">
+                            <option value="25">25</option>
+                            <option value="50">50</option>
+                            <option value="100">100</option>
+                        </select>
+                    </div>
+                </div>
+            }
+        </section>
+    }
+</div>
+
+@code {
+    [Parameter] public CuentaComercialTipo Tipo { get; set; }
+
+    private readonly Dictionary<string, string> _fieldErrors = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<CuentaComercialViewColumnDto> _viewSettingsDraft = [];
+    private readonly List<CuentaComercialGridItemDto> _items = [];
+
+    private CuentaComercialFilters _filters = new();
+    private CuentaComercialSaveRequest _form = new();
+    private CuentaComercialLookupDataDto _lookups = new();
+    private CuentaComercialViewSettingsDto _viewSettings = new();
+    private AppUiMessage? _feedback;
+    private bool _loadingList;
+    private bool _saving;
+    private bool _showEditor;
+    private bool _showViewSettings;
+    private bool _showSearchPanel;
+    private bool _isNewMode = true;
+    private bool _selectedActivo = true;
+    private string _selectedCodigo = string.Empty;
+    private string _draftAgruparPor = CuentaComercialViewGroupKeys.None;
+    private string _activoFiltro = "1";
+    private string _bloqueoFiltro = string.Empty;
+    private string _viewSettingsUserName = string.Empty;
+    private bool _viewSettingsLoaded;
+    private int _pagedTotal;
+    private int _pageNumber = 1;
+    private int _totalPages = 1;
+    private bool _hasPrev;
+    private bool _hasNext;
+    private DateTime? _selectedAlta;
+    private DateTime? _selectedModificacion;
+    private CancellationTokenSource? _searchDebounceCts;
+    private CuentaComercialTab _activeTab = CuentaComercialTab.Datos;
+
+    private string SingularLabel => Tipo == CuentaComercialTipo.Cliente ? "Cliente" : "Proveedor";
+    private string SingularLabelLower => SingularLabel.ToLowerInvariant();
+    private string PluralLabel => Tipo == CuentaComercialTipo.Cliente ? "Clientes" : "Proveedores";
+    private string PluralLabelLower => PluralLabel.ToLowerInvariant();
+    private string ViewName => Tipo == CuentaComercialTipo.Cliente ? "VT_CLIENTES" : "VT_PROVEEDORES";
+    private string IntroText => Tipo == CuentaComercialTipo.Cliente
+        ? "Administrá el maestro comercial de clientes sobre la base actual, usando la cuenta contable y sus datos adicionales."
+        : "Administrá el maestro comercial de proveedores sobre la base actual, usando la cuenta contable y sus datos adicionales.";
+
+    protected override async Task OnInitializedAsync()
+    {
+        AppUserSession.StateChanged += OnAppUserSessionChanged;
+        await LoadLookupsAsync();
+        await EnsureViewSettingsLoadedAsync();
+        await BuscarAsync();
+    }
+
+    public void Dispose()
+    {
+        AppUserSession.StateChanged -= OnAppUserSessionChanged;
+        _searchDebounceCts?.Cancel();
+        _searchDebounceCts?.Dispose();
+    }
+
+    private void OpenSearchPanel()
+        => _showSearchPanel = true;
+
+    private void ToggleSearchPanel()
+        => _showSearchPanel = !_showSearchPanel;
+
+    private void CloseSearchPanel()
+        => _showSearchPanel = false;
+
+    private async Task HandlePageClickAsync()
+    {
+        CloseSearchPanel();
+        await Task.CompletedTask;
+    }
+
+    private async Task LoadLookupsAsync()
+    {
+        var result = await UiOps.RunAsync(() => CuentasSvc.GetLookupDataAsync(Tipo), $"No se pudieron cargar las referencias de {PluralLabelLower}.");
+        if (!result.Success || result.Value is null)
+        {
+            SetFeedback(result.Feedback);
+            _lookups = new CuentaComercialLookupDataDto();
+            return;
+        }
+
+        _lookups = result.Value;
+    }
+
+    private async Task RecargarAsync()
+    {
+        await LoadLookupsAsync();
+        await EnsureViewSettingsLoadedAsync(force: true);
+        await BuscarAsync();
+    }
+
+    private void OnSearchInput(ChangeEventArgs e)
+    {
+        _filters.Texto = e.Value?.ToString() ?? string.Empty;
+        DebounceSearch();
+    }
+
+    private void DebounceSearch()
+    {
+        _searchDebounceCts?.Cancel();
+        _searchDebounceCts?.Dispose();
+        var cts = new CancellationTokenSource();
+        _searchDebounceCts = cts;
+        _ = InvokeAsync(async () =>
+        {
+            try
+            {
+                await Task.Delay(300, cts.Token);
+                if (cts.IsCancellationRequested)
+                    return;
+
+                _filters.PageNumber = 1;
+                await BuscarAsync();
+            }
+            catch (TaskCanceledException)
+            {
+            }
+        });
+    }
+
+    private async Task SetStatusFilterAsync(string value)
+    {
+        _activoFiltro = _activoFiltro == value ? string.Empty : value;
+        await AplicarFiltrosAsync();
+    }
+
+    private async Task SetBlockFilterAsync(string value)
+    {
+        _bloqueoFiltro = _bloqueoFiltro == value ? string.Empty : value;
+        await AplicarFiltrosAsync();
+    }
+
+    private async Task SetGroupAsync(string group)
+    {
+        _viewSettings.AgruparPor = group;
+        await AplicarFiltrosAsync();
+    }
+
+    private async Task OnProvinciaChangedAsync(ChangeEventArgs e)
+    {
+        _filters.ProvinciaCodigo = e.Value?.ToString() ?? string.Empty;
+        await AplicarFiltrosAsync();
+    }
+
+    private async Task OnPaisChangedAsync(ChangeEventArgs e)
+    {
+        _filters.PaisCodigo = e.Value?.ToString() ?? string.Empty;
+        await AplicarFiltrosAsync();
+    }
+
+    private async Task LimpiarFiltrosAsync()
+    {
+        LimpiarFiltros();
+        await AplicarFiltrosAsync();
+    }
+
+    private async Task AplicarFiltrosAsync()
+    {
+        _filters.PageNumber = 1;
+        await BuscarAsync();
+    }
+
+    private async Task BuscarAsync()
+    {
+        SyncFilters();
+        _loadingList = true;
+
+        try
+        {
+            var result = await UiOps.RunAsync(() => CuentasSvc.SearchAsync(Tipo, _filters), $"No se pudieron cargar los {PluralLabelLower}.");
+            if (!result.Success || result.Value is null)
+            {
+                _items.Clear();
+                _pagedTotal = 0;
+                _pageNumber = 1;
+                _totalPages = 1;
+                _hasPrev = false;
+                _hasNext = false;
+                SetFeedback(result.Feedback);
+                return;
+            }
+
+            _items.Clear();
+            _items.AddRange(result.Value.Items);
+            _pagedTotal = result.Value.Total;
+            _pageNumber = result.Value.PageNumber;
+            _totalPages = Math.Max(1, result.Value.TotalPages);
+            _hasPrev = result.Value.HasPrev;
+            _hasNext = result.Value.HasNext;
+        }
+        finally
+        {
+            _loadingList = false;
+        }
+    }
+
+    private async Task CambiarPaginaAsync(int page)
+    {
+        if (page < 1 || page > _totalPages || _loadingList)
+            return;
+
+        _filters.PageNumber = page;
+        await BuscarAsync();
+    }
+
+    private async Task OnPageSizeChangedAsync(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var size) && size > 0)
+            _filters.PageSize = size;
+
+        _filters.PageNumber = 1;
+        await BuscarAsync();
+    }
+
+    private async Task BeginNewAsync()
+    {
+        ClearFieldErrors();
+        _showEditor = true;
+        _showViewSettings = false;
+        _isNewMode = true;
+        _selectedCodigo = string.Empty;
+        _selectedActivo = true;
+        _selectedAlta = null;
+        _selectedModificacion = null;
+        _activeTab = CuentaComercialTab.Datos;
+        _showSearchPanel = false;
+
+        _form = new CuentaComercialSaveRequest
+        {
+            ProvinciaCodigo = "1",
+            PaisCodigo = "1",
+            DocumentoTipoCodigo = "1",
+            IvaCodigo = "1",
+            CondicionComercialCodigo = "1",
+            Clase = Tipo == CuentaComercialTipo.Cliente ? (short)1 : (short)0,
+            DescuentosCondicion = []
+        };
+
+        var result = await UiOps.RunAsync(() => CuentasSvc.GetSuggestedCodigoAsync(Tipo), $"No se pudo preparar el código del {SingularLabelLower}.");
+        if (!result.Success || string.IsNullOrWhiteSpace(result.Value))
+        {
+            SetFeedback(result.Feedback);
+            return;
+        }
+
+        _form.Codigo = result.Value;
+    }
+
+    private async Task SeleccionarAsync(string codigo)
+    {
+        if (string.IsNullOrWhiteSpace(codigo))
+            return;
+
+        var result = await UiOps.RunAsync(() => CuentasSvc.GetByIdAsync(Tipo, codigo), $"No se pudo cargar el {SingularLabelLower}.");
+        if (!result.Success)
+        {
+            SetFeedback(result.Feedback);
+            return;
+        }
+
+        if (result.Value is null)
+        {
+            SetFeedback(new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Warning,
+                Title = $"{SingularLabel} no disponible",
+                Message = $"El {SingularLabelLower} seleccionado ya no existe en la base activa."
+            });
+            await BuscarAsync();
+            return;
+        }
+
+        MapDetailToForm(result.Value);
+    }
+
+    private void SeleccionarFila(string codigo)
+        => _selectedCodigo = codigo?.Trim() ?? string.Empty;
+
+    private async Task AbrirEditorAsync(string codigo)
+    {
+        _showEditor = true;
+        _showViewSettings = false;
+        _showSearchPanel = false;
+        await SeleccionarAsync(codigo);
+    }
+
+    private void CerrarEditor()
+    {
+        ClearFieldErrors();
+        _showEditor = false;
+    }
+
+    private void ResetForm()
+    {
+        ClearFieldErrors();
+        if (_isNewMode)
+        {
+            _ = BeginNewAsync();
+            return;
+        }
+
+        _ = SeleccionarAsync(_selectedCodigo);
+    }
+
+    private async Task GuardarAsync()
+    {
+        ClearFieldErrors();
+        _saving = true;
+        try
+        {
+            try
+            {
+                var savedCode = await CuentasSvc.SaveAsync(Tipo, _form);
+                SetFeedback(AppUiMessage.Success($"{SingularLabel} guardado", $"El {SingularLabelLower} {savedCode} se guardó correctamente."));
+                await BuscarAsync();
+                await SeleccionarAsync(savedCode);
+            }
+            catch (AppValidationException validationEx)
+            {
+                ApplyFieldErrors(validationEx.Validation);
+                SetFeedback(new AppUiMessage
+                {
+                    Severity = AppUiFeedbackSeverity.Warning,
+                    Title = $"Revisá los datos del {SingularLabelLower}",
+                    Message = validationEx.UserMessage,
+                    Suggestion = "Corregí los campos marcados y volvé a intentar."
+                });
+            }
+            catch (Exception ex)
+            {
+                SetFeedback(UiOps.BuildMessage(ex, $"No se pudo guardar el {SingularLabelLower}."));
+            }
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task DarDeBajaAsync()
+    {
+        if (_isNewMode || string.IsNullOrWhiteSpace(_selectedCodigo))
+            return;
+
+        _saving = true;
+        try
+        {
+            var result = await UiOps.RunAsync(() => CuentasSvc.DeactivateAsync(Tipo, _selectedCodigo), $"No se pudo dar de baja el {SingularLabelLower}.");
+            if (!result.Success)
+            {
+                SetFeedback(result.Feedback);
+                return;
+            }
+
+            SetFeedback(AppUiMessage.Success($"{SingularLabel} dado de baja", $"El {SingularLabelLower} {_selectedCodigo} quedó inactivo."));
+            _showEditor = false;
+            await BuscarAsync();
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private void LimpiarFiltros()
+    {
+        _filters.Texto = string.Empty;
+        _filters.ProvinciaCodigo = string.Empty;
+        _filters.PaisCodigo = string.Empty;
+        _activoFiltro = "1";
+        _bloqueoFiltro = string.Empty;
+    }
+
+    private void SyncFilters()
+    {
+        _filters.Activo = _activoFiltro switch
+        {
+            "1" => true,
+            "0" => false,
+            _ => null
+        };
+
+        _filters.Bloqueado = _bloqueoFiltro switch
+        {
+            "1" => true,
+            "0" => false,
+            _ => null
+        };
+    }
+
+    private void MapDetailToForm(CuentaComercialDetailDto detail)
+    {
+        ClearFieldErrors();
+        _isNewMode = false;
+        _showEditor = true;
+        _activeTab = CuentaComercialTab.Datos;
+        _selectedCodigo = detail.Codigo;
+        _selectedActivo = detail.Activo;
+        _selectedAlta = detail.FechaHoraGrabacion;
+        _selectedModificacion = detail.FechaHoraModificacion;
+        _form = new CuentaComercialSaveRequest
+        {
+            CodigoOriginal = detail.CodigoOriginal,
+            Codigo = detail.Codigo,
+            RazonSocial = detail.RazonSocial,
+            Contacto = detail.Contacto,
+            Calle = detail.Calle,
+            Numero = detail.Numero,
+            Piso = detail.Piso,
+            Departamento = detail.Departamento,
+            CodigoPostal = detail.CodigoPostal,
+            Localidad = detail.Localidad,
+            ProvinciaCodigo = detail.ProvinciaCodigo,
+            PaisCodigo = detail.PaisCodigo,
+            Telefono = detail.Telefono,
+            Fax = detail.Fax,
+            Mail = detail.Mail,
+            Web = detail.Web,
+            DocumentoTipoCodigo = detail.DocumentoTipoCodigo,
+            NumeroDocumento = detail.NumeroDocumento,
+            IvaCodigo = detail.IvaCodigo,
+            Observaciones = detail.Observaciones,
+            LimiteCredito = detail.LimiteCredito,
+            CondicionComercialCodigo = detail.CondicionComercialCodigo,
+            ListaPrecioCodigo = detail.ListaPrecioCodigo,
+            Clase = detail.Clase,
+            VendedorCodigo = detail.VendedorCodigo,
+            CuentaPrincipal = detail.CuentaPrincipal,
+            CodigoImputacion = detail.CodigoImputacion,
+            CodigoOpcional = detail.CodigoOpcional,
+            MonedaCodigo = detail.MonedaCodigo,
+            ClasificacionCodigo = detail.ClasificacionCodigo,
+            LugarEntrega = detail.LugarEntrega,
+            DatosPago = detail.DatosPago,
+            Manual = detail.Manual,
+            NotaCuenta = detail.NotaCuenta,
+            SituacionIb = detail.SituacionIb,
+            ConvenioIb = detail.ConvenioIb,
+            ConceptoIb = detail.ConceptoIb,
+            NroConstanciaIb = detail.NroConstanciaIb,
+            Bloqueado = detail.Bloqueado,
+            ExentoIvaServicios = detail.ExentoIvaServicios,
+            ExentoIvaArticulos = detail.ExentoIvaArticulos,
+            ExentoIvaOtros = detail.ExentoIvaOtros,
+            ProveedorLocal = detail.ProveedorLocal,
+            ProveedorCompartido = detail.ProveedorCompartido,
+            DescuentosCondicion = detail.DescuentosCondicion
+                .Select(item => new CuentaComercialCondicionDescuentoDto
+                {
+                    CondicionCodigo = item.CondicionCodigo,
+                    CondicionDescripcion = item.CondicionDescripcion,
+                    Descuento1 = item.Descuento1,
+                    Descuento2 = item.Descuento2,
+                    Descuento3 = item.Descuento3,
+                    Descuento4 = item.Descuento4,
+                    Descuento5 = item.Descuento5
+                })
+                .ToList()
+        };
+    }
+
+    private void AgregarDescuento()
+        => _form.DescuentosCondicion.Add(new CuentaComercialCondicionDescuentoDto());
+
+    private void QuitarDescuento(CuentaComercialCondicionDescuentoDto descuento)
+    {
+        if (descuento is null)
+            return;
+
+        _form.DescuentosCondicion.Remove(descuento);
+    }
+
+    private async Task EnsureViewSettingsLoadedAsync(bool force = false)
+    {
+        var currentUser = AppUserSession.GetCurrentUserName(string.Empty).Trim();
+        if (!force && _viewSettingsLoaded && string.Equals(_viewSettingsUserName, currentUser, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        if (string.IsNullOrWhiteSpace(currentUser))
+        {
+            ApplyViewSettings(BuildDefaultViewSettings(), string.Empty);
+            return;
+        }
+
+        var result = await UiOps.RunAsync(() => CuentasSvc.GetViewSettingsAsync(Tipo, currentUser), "No se pudo cargar la configuración de vista.");
+        if (!result.Success || result.Value is null)
+        {
+            SetFeedback(result.Feedback);
+            ApplyViewSettings(BuildDefaultViewSettings(), currentUser);
+            return;
+        }
+
+        ApplyViewSettings(result.Value, currentUser);
+    }
+
+    private void AbrirConfiguracionVista()
+    {
+        _showViewSettings = true;
+        _draftAgruparPor = _viewSettings.AgruparPor;
+        _viewSettingsDraft.Clear();
+        _viewSettingsDraft.AddRange(CloneColumns(_viewSettings.Columnas));
+    }
+
+    private void CancelarConfiguracionVista()
+    {
+        _showViewSettings = false;
+        _draftAgruparPor = _viewSettings.AgruparPor;
+        _viewSettingsDraft.Clear();
+        _viewSettingsDraft.AddRange(CloneColumns(_viewSettings.Columnas));
+    }
+
+    private void ToggleViewColumn(string key, ChangeEventArgs args)
+    {
+        var column = _viewSettingsDraft.FirstOrDefault(c => string.Equals(c.Key, key, StringComparison.OrdinalIgnoreCase));
+        if (column is null)
+            return;
+
+        column.Visible = args.Value is bool flag && flag;
+        if (!_viewSettingsDraft.Any(c => c.Visible))
+            column.Visible = true;
+    }
+
+    private void MoveViewColumn(string key, int offset)
+    {
+        var ordered = _viewSettingsDraft.OrderBy(c => c.Order).ToList();
+        var index = ordered.FindIndex(c => string.Equals(c.Key, key, StringComparison.OrdinalIgnoreCase));
+        if (index < 0)
+            return;
+
+        var target = index + offset;
+        if (target < 0 || target >= ordered.Count)
+            return;
+
+        (ordered[index], ordered[target]) = (ordered[target], ordered[index]);
+        for (var i = 0; i < ordered.Count; i++)
+            ordered[i].Order = i;
+
+        _viewSettingsDraft.Clear();
+        _viewSettingsDraft.AddRange(ordered);
+    }
+
+    private async Task GuardarConfiguracionVistaAsync()
+    {
+        var currentUser = AppUserSession.GetCurrentUserName(string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(currentUser))
+        {
+            SetFeedback(new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Warning,
+                Title = "Sesión requerida",
+                Message = "Necesitás iniciar sesión para guardar la configuración de vista."
+            });
+            return;
+        }
+
+        var settings = new CuentaComercialViewSettingsDto
+        {
+            AgruparPor = _draftAgruparPor,
+            Columnas = CloneColumns(_viewSettingsDraft)
+        };
+
+        var result = await UiOps.RunAsync(async () =>
+        {
+            await CuentasSvc.SaveViewSettingsAsync(Tipo, currentUser, settings);
+            return true;
+        }, "No se pudo guardar la configuración de vista.");
+
+        if (!result.Success)
+        {
+            SetFeedback(result.Feedback);
+            return;
+        }
+
+        ApplyViewSettings(settings, currentUser);
+        _showViewSettings = false;
+        SetFeedback(AppUiMessage.Success("Vista guardada", "La configuración de la grilla quedó actualizada para tu usuario."));
+    }
+
+    private void ApplyViewSettings(CuentaComercialViewSettingsDto settings, string userName)
+    {
+        _viewSettings = NormalizeViewSettings(settings);
+        _viewSettingsUserName = userName;
+        _viewSettingsLoaded = true;
+        _draftAgruparPor = _viewSettings.AgruparPor;
+        _viewSettingsDraft.Clear();
+        _viewSettingsDraft.AddRange(CloneColumns(_viewSettings.Columnas));
+    }
+
+    private void OnAppUserSessionChanged()
+    {
+        _ = InvokeAsync(async () =>
+        {
+            await EnsureViewSettingsLoadedAsync(force: true);
+            StateHasChanged();
+        });
+    }
+
+    private IReadOnlyList<CuentaComercialViewColumnDto> GetVisibleColumns()
+        => _viewSettings.Columnas.Where(c => c.Visible).OrderBy(c => c.Order).ToList();
+
+    private IReadOnlyList<GridGroup> BuildGridGroups()
+    {
+        if (_viewSettings.AgruparPor == CuentaComercialViewGroupKeys.None)
+        {
+            return
+            [
+                new GridGroup
+                {
+                    Label = string.Empty,
+                    ShowHeader = false,
+                    Items = _items.ToList()
+                }
+            ];
+        }
+
+        return _items
+            .GroupBy(item => ResolveGroupValue(item, _viewSettings.AgruparPor))
+            .OrderBy(g => g.Key, StringComparer.CurrentCultureIgnoreCase)
+            .Select(g => new GridGroup
+            {
+                Label = g.Key,
+                ShowHeader = true,
+                Items = g.ToList()
+            })
+            .ToList();
+    }
+
+    private IReadOnlyList<SmartFilterChip> BuildFilterChips()
+    {
+        var chips = new List<SmartFilterChip>();
+        if (!string.IsNullOrWhiteSpace(_filters.Texto))
+            chips.Add(new("texto", $"Buscar: {_filters.Texto}"));
+        if (!string.IsNullOrWhiteSpace(_activoFiltro))
+            chips.Add(new("activo", _activoFiltro == "1" ? "Activos" : "Inactivos"));
+        if (!string.IsNullOrWhiteSpace(_bloqueoFiltro))
+            chips.Add(new("bloqueo", _bloqueoFiltro == "1" ? "Bloqueados" : "Sin bloquear"));
+        if (!string.IsNullOrWhiteSpace(_filters.ProvinciaCodigo))
+        {
+            var label = _lookups.Provincias.FirstOrDefault(p => string.Equals(p.Codigo, _filters.ProvinciaCodigo, StringComparison.OrdinalIgnoreCase))?.Descripcion ?? _filters.ProvinciaCodigo;
+            chips.Add(new("provincia", $"Provincia: {label}"));
+        }
+        if (!string.IsNullOrWhiteSpace(_filters.PaisCodigo))
+        {
+            var label = _lookups.Paises.FirstOrDefault(p => string.Equals(p.Codigo, _filters.PaisCodigo, StringComparison.OrdinalIgnoreCase))?.Descripcion ?? _filters.PaisCodigo;
+            chips.Add(new("pais", $"País: {label}"));
+        }
+
+        return chips;
+    }
+
+    private async Task RemoveChipAsync(string key)
+    {
+        switch (key)
+        {
+            case "texto":
+                _filters.Texto = string.Empty;
+                break;
+            case "activo":
+                _activoFiltro = string.Empty;
+                break;
+            case "bloqueo":
+                _bloqueoFiltro = string.Empty;
+                break;
+            case "provincia":
+                _filters.ProvinciaCodigo = string.Empty;
+                break;
+            case "pais":
+                _filters.PaisCodigo = string.Empty;
+                break;
+        }
+
+        await AplicarFiltrosAsync();
+    }
+
+    private static string GetSmartOptionClass(bool active)
+        => active ? "smart-option is-active" : "smart-option";
+
+    private object RenderCell(CuentaComercialGridItemDto item, string key)
+        => key switch
+        {
+            CuentaComercialViewColumnKeys.Codigo => item.Codigo,
+            CuentaComercialViewColumnKeys.RazonSocial => item.RazonSocial,
+            CuentaComercialViewColumnKeys.Contacto => item.Contacto,
+            CuentaComercialViewColumnKeys.Localidad => item.Localidad,
+            CuentaComercialViewColumnKeys.Provincia => string.IsNullOrWhiteSpace(item.ProvinciaDescripcion) ? item.ProvinciaCodigo : item.ProvinciaDescripcion,
+            CuentaComercialViewColumnKeys.Telefono => item.Telefono,
+            CuentaComercialViewColumnKeys.Mail => item.Mail,
+            CuentaComercialViewColumnKeys.Documento => item.NumeroDocumento,
+            CuentaComercialViewColumnKeys.Iva => string.IsNullOrWhiteSpace(item.IvaDescripcion) ? item.IvaCodigo : item.IvaDescripcion,
+            CuentaComercialViewColumnKeys.Vendedor => string.IsNullOrWhiteSpace(item.NombreVendedor) ? item.IdVendedor : item.NombreVendedor,
+            CuentaComercialViewColumnKeys.Lista => item.IdLista,
+            CuentaComercialViewColumnKeys.Bloqueado => item.Bloqueado ? "Sí" : "No",
+            _ => string.Empty
+        };
+
+    private static string ResolveGroupValue(CuentaComercialGridItemDto item, string grouping)
+        => grouping switch
+        {
+            CuentaComercialViewGroupKeys.Activo => item.Activo ? "Activos" : "Inactivos",
+            CuentaComercialViewGroupKeys.Provincia => string.IsNullOrWhiteSpace(item.ProvinciaDescripcion) ? "Sin provincia" : item.ProvinciaDescripcion,
+            CuentaComercialViewGroupKeys.Bloqueado => item.Bloqueado ? "Bloqueados" : "Sin bloqueo",
+            _ => string.Empty
+        };
+
+    private static string GetGroupingLabel(string grouping)
+        => grouping switch
+        {
+            CuentaComercialViewGroupKeys.Activo => "Estado",
+            CuentaComercialViewGroupKeys.Provincia => "Provincia",
+            CuentaComercialViewGroupKeys.Bloqueado => "Bloqueo",
+            _ => "Sin agrupar"
+        };
+
+    private CuentaComercialViewSettingsDto BuildDefaultViewSettings()
+        => new()
+        {
+            AgruparPor = CuentaComercialViewGroupKeys.None,
+            Columnas =
+            [
+                new() { Key = CuentaComercialViewColumnKeys.Codigo, Label = "Código", Visible = true, Order = 0 },
+                new() { Key = CuentaComercialViewColumnKeys.RazonSocial, Label = Tipo == CuentaComercialTipo.Cliente ? "Cliente" : "Proveedor", Visible = true, Order = 1 },
+                new() { Key = CuentaComercialViewColumnKeys.Contacto, Label = "Contacto", Visible = true, Order = 2 },
+                new() { Key = CuentaComercialViewColumnKeys.Localidad, Label = "Localidad", Visible = true, Order = 3 },
+                new() { Key = CuentaComercialViewColumnKeys.Provincia, Label = "Provincia", Visible = true, Order = 4 },
+                new() { Key = CuentaComercialViewColumnKeys.Telefono, Label = "Teléfono", Visible = true, Order = 5 },
+                new() { Key = CuentaComercialViewColumnKeys.Mail, Label = "Email", Visible = true, Order = 6 },
+                new() { Key = CuentaComercialViewColumnKeys.Documento, Label = "CUIT / Doc.", Visible = true, Order = 7 },
+                new() { Key = CuentaComercialViewColumnKeys.Iva, Label = "Cond. IVA", Visible = false, Order = 8 },
+                new() { Key = CuentaComercialViewColumnKeys.Vendedor, Label = "Vendedor", Visible = false, Order = 9 },
+                new() { Key = CuentaComercialViewColumnKeys.Lista, Label = "Lista", Visible = false, Order = 10 },
+                new() { Key = CuentaComercialViewColumnKeys.Bloqueado, Label = "Bloqueado", Visible = true, Order = 11 }
+            ]
+        };
+
+    private CuentaComercialViewSettingsDto NormalizeViewSettings(CuentaComercialViewSettingsDto settings)
+    {
+        var defaults = BuildDefaultViewSettings();
+        var incoming = settings.Columnas
+            .Where(c => !string.IsNullOrWhiteSpace(c.Key))
+            .ToDictionary(c => c.Key.Trim(), StringComparer.OrdinalIgnoreCase);
+
+        var normalizedColumns = defaults.Columnas
+            .Select(defaultCol =>
+            {
+                if (!incoming.TryGetValue(defaultCol.Key, out var source))
+                {
+                    return new CuentaComercialViewColumnDto
+                    {
+                        Key = defaultCol.Key,
+                        Label = defaultCol.Label,
+                        Visible = defaultCol.Visible,
+                        Order = defaultCol.Order
+                    };
+                }
+
+                return new CuentaComercialViewColumnDto
+                {
+                    Key = defaultCol.Key,
+                    Label = defaultCol.Label,
+                    Visible = source.Visible,
+                    Order = source.Order
+                };
+            })
+            .OrderBy(c => c.Order)
+            .Select((column, index) =>
+            {
+                column.Order = index;
+                return column;
+            })
+            .ToList();
+
+        if (!normalizedColumns.Any(c => c.Visible))
+            normalizedColumns[0].Visible = true;
+
+        return new CuentaComercialViewSettingsDto
+        {
+            AgruparPor = settings.AgruparPor switch
+            {
+                CuentaComercialViewGroupKeys.Activo => CuentaComercialViewGroupKeys.Activo,
+                CuentaComercialViewGroupKeys.Provincia => CuentaComercialViewGroupKeys.Provincia,
+                CuentaComercialViewGroupKeys.Bloqueado => CuentaComercialViewGroupKeys.Bloqueado,
+                _ => CuentaComercialViewGroupKeys.None
+            },
+            Columnas = normalizedColumns
+        };
+    }
+
+    private static List<CuentaComercialViewColumnDto> CloneColumns(IEnumerable<CuentaComercialViewColumnDto> columns)
+        => columns.OrderBy(c => c.Order)
+            .Select(c => new CuentaComercialViewColumnDto
+            {
+                Key = c.Key,
+                Label = c.Label,
+                Visible = c.Visible,
+                Order = c.Order
+            })
+            .ToList();
+
+    private void ClearFieldErrors()
+        => _fieldErrors.Clear();
+
+    private void ApplyFieldErrors(ValidationResult validation)
+    {
+        ClearFieldErrors();
+        foreach (var issue in validation.Issues)
+        {
+            if (!string.IsNullOrWhiteSpace(issue.FieldKey))
+                _fieldErrors[issue.FieldKey.Trim()] = issue.Message;
+        }
+    }
+
+    private bool HasFieldError(string key)
+        => !string.IsNullOrWhiteSpace(key) && _fieldErrors.ContainsKey(key.Trim());
+
+    private string GetFieldError(string key)
+        => HasFieldError(key) ? _fieldErrors[key.Trim()] : string.Empty;
+
+    private string GetFieldInputClass(string key)
+        => HasFieldError(key) ? "usuarios-input usuarios-input--invalid" : "usuarios-input";
+
+    private bool IsSelected(CuentaComercialGridItemDto item)
+        => !_isNewMode && string.Equals(_selectedCodigo, item.Codigo, StringComparison.OrdinalIgnoreCase);
+
+    private void SetFeedback(AppUiMessage? message)
+        => _feedback = message;
+
+    private static string FormatDate(DateTime? value)
+        => value.HasValue ? value.Value.ToString("dd/MM/yyyy HH:mm") : "—";
+
+    private static string GetFeedbackClass(AppUiMessage message)
+        => message.Severity switch
+        {
+            AppUiFeedbackSeverity.Success => "editor-msg--ok",
+            AppUiFeedbackSeverity.Warning => "editor-msg--warning",
+            _ => "editor-msg--error"
+        };
+
+    private sealed class GridGroup
+    {
+        public string Label { get; init; } = string.Empty;
+        public bool ShowHeader { get; init; }
+        public List<CuentaComercialGridItemDto> Items { get; init; } = [];
+    }
+
+    private sealed record SmartFilterChip(string Key, string Label);
+
+    private enum CuentaComercialTab
+    {
+        Datos = 0,
+        Condiciones = 1,
+        Notas = 2
+    }
+}

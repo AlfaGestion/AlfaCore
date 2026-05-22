@@ -211,6 +211,24 @@
                     </NavLink>
                 </nav>
             }
+            else if (_currentModule == "clientes")
+            {
+                <a class="menu__back" href="/">
+                    <i class="bi bi-grid-3x3-gap-fill"></i>
+                    <span>Aplicaciones</span>
+                </a>
+                <p class="menu__section">Clientes</p>
+                <nav class="menu__nav">
+                    <NavLink class="menu__link" href="/ventas/clientes" Match="NavLinkMatch.All">
+                        <span class="menu__icon"><i class="bi bi-people-fill"></i></span>
+                        <span>Maestro de clientes</span>
+                    </NavLink>
+                    <NavLink class="menu__link" href="/ventas">
+                        <span class="menu__icon"><i class="bi bi-graph-up-arrow"></i></span>
+                        <span>Dashboard ventas</span>
+                    </NavLink>
+                </nav>
+            }
             else if (_currentModule == "ventas")
             {
                 <a class="menu__back" href="/">
@@ -292,6 +310,24 @@
                     <NavLink class="menu__link" href="/contabilidad/posicion-iva" Match="NavLinkMatch.All">
                         <span class="menu__icon"><i class="bi bi-receipt"></i></span>
                         <span>Posición de IVA</span>
+                    </NavLink>
+                </nav>
+            }
+            else if (_currentModule == "proveedores")
+            {
+                <a class="menu__back" href="/">
+                    <i class="bi bi-grid-3x3-gap-fill"></i>
+                    <span>Aplicaciones</span>
+                </a>
+                <p class="menu__section">Proveedores</p>
+                <nav class="menu__nav">
+                    <NavLink class="menu__link" href="/compras/proveedores" Match="NavLinkMatch.All">
+                        <span class="menu__icon"><i class="bi bi-people-fill"></i></span>
+                        <span>Maestro de proveedores</span>
+                    </NavLink>
+                    <NavLink class="menu__link" href="/compras">
+                        <span class="menu__icon"><i class="bi bi-house-fill"></i></span>
+                        <span>Dashboard compras</span>
                     </NavLink>
                 </nav>
             }
@@ -874,7 +910,13 @@
     private void UpdateCurrentModule()
     {
         var path = Nav.ToBaseRelativePath(Nav.Uri).Split('?')[0].Split('#')[0].Trim('/');
-        _currentModule = path.Split('/').FirstOrDefault()?.ToLowerInvariant() ?? string.Empty;
+        var normalized = path.ToLowerInvariant();
+        _currentModule = normalized switch
+        {
+            "ventas/clientes" => "clientes",
+            "compras/proveedores" => "proveedores",
+            _ => path.Split('/').FirstOrDefault()?.ToLowerInvariant() ?? string.Empty
+        };
     }
 
     private void StartGlobalConversationPolling()
@@ -1461,9 +1503,9 @@
 
         return path switch
         {
-            "" => "Aplicaciones",
-            "ventas" => "Ventas",
-            "ventas/clientes" => "Clientes",
+        "" => "Aplicaciones",
+        "ventas" => "Ventas",
+        "ventas/clientes" => "Clientes",
             "ventas/rubros" => "Rubros",
             "ventas/familias" => "Familias",
             "ventas/articulos" => "Artículos",
@@ -1516,10 +1558,12 @@
     {
         "" => "Inicio",
         "consultas" => "Diseñador de Consultas",
+        "clientes" => "Clientes",
         "ventas" => "Dashboard de Ventas",
         "stock" => "Dashboard de Stock",
         "caja-bancos" => "Caja y Bancos",
         "contabilidad" => "Dashboard Contable",
+        "proveedores" => "Proveedores",
         "costos" => "Actualización de Costos",
         "auditoria" => "Auditoría",
         "conversaciones" => "Conversaciones",

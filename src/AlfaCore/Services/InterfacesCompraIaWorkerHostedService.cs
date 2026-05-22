@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Hosting;
+using Microsoft.Data.SqlClient;
 
 namespace AlfaCore.Services;
 
@@ -28,6 +29,10 @@ public sealed class InterfacesCompraIaWorkerHostedService(
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
                 break;
+            }
+            catch (SqlException ex) when (ex.Number == 4060)
+            {
+                logger.LogWarning(ex, "Worker de lectura automática de compras sin acceso a la base configurada. Se reintentará en {DelaySeconds}s.", delaySeconds);
             }
             catch (Exception ex)
             {

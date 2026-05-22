@@ -9,6 +9,7 @@ namespace AlfaCore.Services;
 public sealed class InterfacesConfigService(
     IConfiguration configuration,
     ISessionService sessionService,
+    IHttpContextAccessor httpContextAccessor,
     IAppEventService appEvents) : IInterfacesConfigService
 {
     private const string ConfigGroup = "INTERFACES";
@@ -22,10 +23,24 @@ public sealed class InterfacesConfigService(
     private const string DefaultIaFolder = @"C:\dev\IA_ProcesarDocumentos";
     private const string DefaultIaScriptName = "lector_facturas_to_json_v5.py";
 
-    private string ConnectionString => sessionService.GetConnectionString().Length > 0
-        ? sessionService.GetConnectionString()
-        : configuration.GetConnectionString("AlfaGestion")
-          ?? throw new InvalidOperationException("No se configuró la cadena de conexión 'ConnectionStrings:AlfaGestion'.");
+    private string ConnectionString
+    {
+        get
+        {
+            var configured = configuration.GetConnectionString("AlfaGestion") ?? string.Empty;
+            if (httpContextAccessor.HttpContext is null && !string.IsNullOrWhiteSpace(configured))
+                return configured;
+
+            var sessionConnection = sessionService.GetConnectionString();
+            if (!string.IsNullOrWhiteSpace(sessionConnection))
+                return sessionConnection;
+
+            if (!string.IsNullOrWhiteSpace(configured))
+                return configured;
+
+            throw new InvalidOperationException("No se configuró la cadena de conexión 'ConnectionStrings:AlfaGestion'.");
+        }
+    }
 
     public Task<InterfacesUploadSettingsDto> GetUploadSettingsAsync(CancellationToken ct = default)
         => ExecuteLoggedAsync("Interfaces", "GetUploadSettings", async token =>
