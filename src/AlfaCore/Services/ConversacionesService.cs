@@ -1,5 +1,6 @@
 using AlfaCore.Models;
 using Microsoft.Data.SqlClient;
+using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Globalization;
 using System.Net.Http.Headers;
@@ -42,13 +43,6 @@ public sealed class ConversacionesService(
         ? sessionService.GetConnectionString()
         : configuration.GetConnectionString("AlfaGestion")
           ?? throw new InvalidOperationException("No se configuró la cadena de conexión 'ConnectionStrings:AlfaGestion'.");
-
-    public async Task<bool> HasConversationSchemaAsync(CancellationToken ct = default)
-    {
-        await using var cn = new SqlConnection(ConnectionString);
-        await cn.OpenAsync(ct);
-        return await HasConversationSchemaInternalAsync(cn, ct);
-    }
 
     public Task<IReadOnlyList<ConversacionTecnicoOptionDto>> GetTechniciansAsync(CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetTechnicians", async token =>
@@ -535,22 +529,17 @@ public sealed class ConversacionesService(
     public Task<IReadOnlyList<ConversacionInboxItemDto>> GetInboxAsync(ConversacionesInboxFilters filters, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetInbox", async token =>
         {
-            try
-            {
-                await using var cn = new SqlConnection(ConnectionString);
-                await cn.OpenAsync(token);
-                if (!await HasConversationSchemaInternalAsync(cn, token))
-                    return [];
-
-                filters ??= new();
-                var items = new List<ConversacionInboxItemDto>();
-                var searchPhone = NormalizePhone(filters.Search);
-                var searchPhoneTail = GetPhoneComparableTail(searchPhone);
-                var desde = filters.Desde?.Date;
-                var hastaExclusive = filters.Hasta?.Date.AddDays(1);
-                var auditoria = NormalizeAuditFilter(filters.Auditoria);
-                var tipoMensaje = NormalizeMessageType(filters.TipoMensaje);
-                var sql = $"""
+            filters ??= new();
+            var items = new List<ConversacionInboxItemDto>();
+            var searchPhone = NormalizePhone(filters.Search);
+            var searchPhoneTail = GetPhoneComparableTail(searchPhone);
+            var desde = filters.Desde?.Date;
+            var hastaExclusive = filters.Hasta?.Date.AddDays(1);
+            var auditoria = NormalizeAuditFilter(filters.Auditoria);
+            var tipoMensaje = NormalizeMessageType(filters.TipoMensaje);
+            var usuarioActual = NormalizePinUser(filters.UsuarioActual);
+            var sistemaActual = NormalizePinSystem(filters.SistemaActual);
+            var sql = $"""
                 DECLARE @TicketsFiltro TABLE (IdConversacion bigint NOT NULL PRIMARY KEY);
 
                 IF @Auditoria = N'tickets' AND OBJECT_ID(N'dbo.TICK_TICKETS', N'U') IS NOT NULL
@@ -586,10 +575,24 @@ public sealed class ConversacionesService(
                     ultCliente.IdUltimoMensajeCliente,
                     ISNULL(clienteConteo.CantidadMensajesCliente, 0),
                     ISNULL(c.Archivada, 0),
-                    ISNULL(c.Bloqueada, 0)
+                    ISNULL(c.Bloqueada, 0),
+                    CASE WHEN pin.IdConversacion IS NULL THEN CAST(0 AS bit) ELSE CAST(1 AS bit) END AS FijadaPorUsuario,
+                    pin.FechaHora_Grabacion AS FechaHoraFijada,
+                    ISNULL(noLeidos.CantidadNoLeida, 0) AS MensajesNoLeidosUsuario
                 FROM dbo.CONV_CONVERSACIONES c
                 INNER JOIN dbo.CONV_ESTADOS e
                     ON e.CodigoEstado = c.CodigoEstado
+                OUTER APPLY (
+                    SELECT TOP (1)
+                        p.IdConversacion,
+                        p.FechaHora_Grabacion
+                    FROM dbo.CONV_CONVERSACIONES_PIN_USUARIO p
+                    WHERE p.IdConversacion = c.IdConversacion
+                      AND p.Usuario = @UsuarioActual
+                    ORDER BY
+                        CASE WHEN p.Sistema = @SistemaActual THEN 0 ELSE 1 END,
+                        p.FechaHora_Grabacion DESC
+                ) pin
                 LEFT JOIN dbo.VT_CLIENTES cli
                     ON cli.CODIGO = c.ClienteCodigo
                 LEFT JOIN dbo.MA_CONTACTOS mc
@@ -611,6 +614,23 @@ public sealed class ConversacionesService(
                     WHERE m.IdConversacion = c.IdConversacion
                       AND m.Direction = N'ENTRANTE'
                 ) clienteConteo
+                OUTER APPLY (
+                    SELECT TOP (1)
+                        r.IdUltimoMensajeLeido
+                    FROM dbo.CONV_CONVERSACIONES_LECTURA_USUARIO r
+                    WHERE r.IdConversacion = c.IdConversacion
+                      AND r.Usuario = @UsuarioActual
+                    ORDER BY
+                        CASE WHEN r.Sistema = @SistemaActual THEN 0 ELSE 1 END,
+                        r.FechaHora_Modificacion DESC
+                ) lectura
+                OUTER APPLY (
+                    SELECT COUNT(1) AS CantidadNoLeida
+                    FROM dbo.CONV_MENSAJES m
+                    WHERE m.IdConversacion = c.IdConversacion
+                      AND m.Direction = N'ENTRANTE'
+                      AND m.IdMensaje > ISNULL(lectura.IdUltimoMensajeLeido, 0)
+                ) noLeidos
                 OUTER APPLY (
                     SELECT TOP (1)
                         msg.IdMensaje,
@@ -743,66 +763,75 @@ public sealed class ConversacionesService(
                             WHERE msg.IdConversacion = c.IdConversacion
                         )
                     )
-                ORDER BY ISNULL(c.FechaHoraUltimoMensaje, ultMsg.FechaHoraVisible) DESC, c.IdConversacion DESC
+                ORDER BY
+                    CASE WHEN pin.IdConversacion IS NULL THEN 0 ELSE 1 END DESC,
+                    pin.FechaHora_Grabacion DESC,
+                    ISNULL(c.FechaHoraUltimoMensaje, ultMsg.FechaHoraVisible) DESC,
+                    c.IdConversacion DESC
                 OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY
                 """;
 
-                await LinkUnassociatedWhatsAppConversationsByPhoneAsync(cn, token);
-                await ConsolidateExistingDuplicateWhatsAppConversationsAsync(cn, token);
-                await ReopenClosedConversationsWithIncomingAfterCloseAsync(cn, null, token);
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await EnsureConversationPinsTableAsync(cn, token);
+            await EnsureConversationReadStateTableAsync(cn, token);
+            await EnsureConversationReadBaselinesAsync(cn, usuarioActual, sistemaActual, token);
+            await LinkUnassociatedWhatsAppConversationsByPhoneAsync(cn, token);
+            await ConsolidateExistingDuplicateWhatsAppConversationsAsync(cn, token);
+            await ReopenClosedConversationsWithIncomingAfterCloseAsync(cn, null, token);
 
-                await using var cmd = new SqlCommand(sql, cn);
-                cmd.Parameters.AddWithValue("@Canal", DbNullable(filters.Canal));
-                cmd.Parameters.AddWithValue("@CodigoEstado", DbNullable(filters.CodigoEstado));
-                cmd.Parameters.AddWithValue("@EstadoSinFinalizar", ConversacionesInboxFilters.EstadoSinFinalizar);
-                cmd.Parameters.AddWithValue("@Search", DbNullable(Like(filters.Search)));
-                cmd.Parameters.AddWithValue("@SearchPhone", DbNullable(searchPhone));
-                cmd.Parameters.AddWithValue("@SearchPhoneTail", DbNullable(searchPhoneTail));
-                cmd.Parameters.AddWithValue("@Modo", NormalizeMode(filters.Modo));
-                cmd.Parameters.AddWithValue("@IdTecnicoActual", DbNullable(NormalizeTechnicianId(filters.IdTecnicoActual)));
-                cmd.Parameters.AddWithValue("@Desde", desde.HasValue ? desde.Value : DBNull.Value);
-                cmd.Parameters.AddWithValue("@HastaExclusive", hastaExclusive.HasValue ? hastaExclusive.Value : DBNull.Value);
-                cmd.Parameters.AddWithValue("@Auditoria", DbNullable(auditoria));
-                cmd.Parameters.AddWithValue("@TipoMensaje", DbNullable(tipoMensaje));
-                cmd.Parameters.AddWithValue("@ManualWhatsAppConversationSummary", ManualWhatsAppConversationSummary);
-                cmd.Parameters.AddWithValue("@Offset", Math.Max(0, filters.Offset));
-                cmd.Parameters.AddWithValue("@Limit", Math.Clamp(filters.Limit, 1, 200));
+            await using var cmd = new SqlCommand(sql, cn);
+            cmd.Parameters.AddWithValue("@Canal", DbNullable(filters.Canal));
+            cmd.Parameters.AddWithValue("@CodigoEstado", DbNullable(filters.CodigoEstado));
+            cmd.Parameters.AddWithValue("@EstadoSinFinalizar", ConversacionesInboxFilters.EstadoSinFinalizar);
+            cmd.Parameters.AddWithValue("@Search", DbNullable(Like(filters.Search)));
+            cmd.Parameters.AddWithValue("@SearchPhone", DbNullable(searchPhone));
+            cmd.Parameters.AddWithValue("@SearchPhoneTail", DbNullable(searchPhoneTail));
+            cmd.Parameters.AddWithValue("@Modo", NormalizeMode(filters.Modo));
+            cmd.Parameters.AddWithValue("@IdTecnicoActual", DbNullable(NormalizeTechnicianId(filters.IdTecnicoActual)));
+            cmd.Parameters.AddWithValue("@Desde", desde.HasValue ? desde.Value : DBNull.Value);
+            cmd.Parameters.AddWithValue("@HastaExclusive", hastaExclusive.HasValue ? hastaExclusive.Value : DBNull.Value);
+            cmd.Parameters.AddWithValue("@Auditoria", DbNullable(auditoria));
+            cmd.Parameters.AddWithValue("@TipoMensaje", DbNullable(tipoMensaje));
+            cmd.Parameters.AddWithValue("@UsuarioActual", usuarioActual);
+            cmd.Parameters.AddWithValue("@SistemaActual", sistemaActual);
+            cmd.Parameters.AddWithValue("@ManualWhatsAppConversationSummary", ManualWhatsAppConversationSummary);
+            cmd.Parameters.AddWithValue("@Offset", Math.Max(0, filters.Offset));
+            cmd.Parameters.AddWithValue("@Limit", Math.Clamp(filters.Limit, 1, 200));
 
-                await using var rd = await cmd.ExecuteReaderAsync(token);
-                while (await rd.ReadAsync(token))
-                {
-                    items.Add(new ConversacionInboxItemDto
-                    {
-                        IdConversacion = rd.GetInt64(0),
-                        TelefonoWhatsApp = GetString(rd, 1),
-                        NombreVisible = GetString(rd, 2),
-                        ClienteCodigo = GetString(rd, 3),
-                        ClienteNombre = GetString(rd, 4),
-                        IdContacto = rd.IsDBNull(5) ? null : rd.GetInt32(5),
-                        ContactoNombre = GetString(rd, 6),
-                        CodigoEstado = GetString(rd, 7),
-                        EstadoDescripcion = GetString(rd, 8),
-                        IdTecnico = GetString(rd, 9),
-                        TecnicoNombre = GetString(rd, 10),
-                        ResumenUltimoMensaje = GetString(rd, 11),
-                        FechaHoraUltimoMensaje = rd.IsDBNull(12) ? DateTime.MinValue : NormalizeStoredConversationTime(rd.GetDateTime(12)),
-                        FechaHoraUltimoMensajeCliente = rd.IsDBNull(13) ? null : NormalizeStoredConversationTime(rd.GetDateTime(13)),
-                        IdUltimoMensajeCliente = rd.IsDBNull(14) ? null : rd.GetInt64(14),
-                        CantidadMensajesCliente = rd.IsDBNull(15) ? 0 : rd.GetInt32(15),
-                        Archivada = !rd.IsDBNull(16) && rd.GetBoolean(16),
-                        Bloqueada = !rd.IsDBNull(17) && rd.GetBoolean(17)
-                    });
-                }
-
-                foreach (var item in items)
-                    ApplyWhatsAppWindow(item);
-
-                return DeduplicateInboxItems(items);
-            }
-            catch (SqlException ex) when (IsMissingConversationSchema(ex))
+            await using var rd = await cmd.ExecuteReaderAsync(token);
+            while (await rd.ReadAsync(token))
             {
-                return [];
+                items.Add(new ConversacionInboxItemDto
+                {
+                    IdConversacion = rd.GetInt64(0),
+                    TelefonoWhatsApp = GetString(rd, 1),
+                    NombreVisible = GetString(rd, 2),
+                    ClienteCodigo = GetString(rd, 3),
+                    ClienteNombre = GetString(rd, 4),
+                    IdContacto = rd.IsDBNull(5) ? null : rd.GetInt32(5),
+                    ContactoNombre = GetString(rd, 6),
+                    CodigoEstado = GetString(rd, 7),
+                    EstadoDescripcion = GetString(rd, 8),
+                    IdTecnico = GetString(rd, 9),
+                    TecnicoNombre = GetString(rd, 10),
+                    ResumenUltimoMensaje = GetString(rd, 11),
+                    FechaHoraUltimoMensaje = rd.IsDBNull(12) ? DateTime.MinValue : NormalizeStoredConversationTime(rd.GetDateTime(12)),
+                    FechaHoraUltimoMensajeCliente = rd.IsDBNull(13) ? null : NormalizeStoredConversationTime(rd.GetDateTime(13)),
+                    IdUltimoMensajeCliente = rd.IsDBNull(14) ? null : rd.GetInt64(14),
+                    CantidadMensajesCliente = rd.IsDBNull(15) ? 0 : rd.GetInt32(15),
+                    Archivada = !rd.IsDBNull(16) && rd.GetBoolean(16),
+                    Bloqueada = !rd.IsDBNull(17) && rd.GetBoolean(17),
+                    FijadaPorUsuario = !rd.IsDBNull(18) && rd.GetBoolean(18),
+                    FechaHoraFijada = rd.IsDBNull(19) ? null : rd.GetDateTime(19),
+                    MensajesNoLeidosUsuario = rd.IsDBNull(20) ? 0 : rd.GetInt32(20)
+                });
             }
+
+            foreach (var item in items)
+                ApplyWhatsAppWindow(item);
+
+            return DeduplicateInboxItems(items);
         }, "No se pudieron cargar las conversaciones.", ct);
 
     public Task<IReadOnlyList<ConversacionAuditoriaMensajeDto>> GetAuditMessagesAsync(ConversacionesInboxFilters filters, CancellationToken ct = default)
@@ -1815,23 +1844,62 @@ public sealed class ConversacionesService(
             var isClosed = await GetStateClosedFlagAsync(state, token);
             var wasClosed = await GetConversationClosedFlagAsync(request.IdConversacion, token);
             var previousState = await GetConversationStateAsync(request.IdConversacion, token);
+            var previousTechnicianId = await GetConversationTechnicianIdAsync(request.IdConversacion, token);
 
             const string sql = """
                 UPDATE dbo.CONV_CONVERSACIONES
                 SET
                     CodigoEstado = @CodigoEstado,
+                    IdTecnico = CASE WHEN @EsCerrado = 1 THEN NULL ELSE IdTecnico END,
                     FechaHoraCierre = CASE WHEN @EsCerrado = 1 THEN ISNULL(FechaHoraCierre, GETDATE()) ELSE NULL END,
                     FechaHora_Modificacion = GETDATE()
                 WHERE IdConversacion = @IdConversacion
                 """;
 
+            const string unassignHistorySql = """
+                INSERT INTO dbo.CONV_ASIGNACIONES
+                (
+                    IdConversacion,
+                    FechaHora,
+                    IdTecnico,
+                    UsuarioAccion,
+                    SistemaAccion,
+                    Observaciones
+                )
+                VALUES
+                (
+                    @IdConversacion,
+                    GETDATE(),
+                    NULL,
+                    @UsuarioAccion,
+                    @SistemaAccion,
+                    @Observaciones
+                )
+                """;
+
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
-            await using var cmd = new SqlCommand(sql, cn);
-            cmd.Parameters.AddWithValue("@IdConversacion", request.IdConversacion);
-            cmd.Parameters.AddWithValue("@CodigoEstado", state);
-            cmd.Parameters.AddWithValue("@EsCerrado", isClosed);
-            await cmd.ExecuteNonQueryAsync(token);
+            await using var tx = await cn.BeginTransactionAsync(token);
+
+            await using (var cmd = new SqlCommand(sql, cn, (SqlTransaction)tx))
+            {
+                cmd.Parameters.AddWithValue("@IdConversacion", request.IdConversacion);
+                cmd.Parameters.AddWithValue("@CodigoEstado", state);
+                cmd.Parameters.AddWithValue("@EsCerrado", isClosed);
+                await cmd.ExecuteNonQueryAsync(token);
+            }
+
+            if (isClosed && !string.IsNullOrWhiteSpace(previousTechnicianId))
+            {
+                await using var cmd = new SqlCommand(unassignHistorySql, cn, (SqlTransaction)tx);
+                cmd.Parameters.AddWithValue("@IdConversacion", request.IdConversacion);
+                cmd.Parameters.AddWithValue("@UsuarioAccion", DbNullable(request.UsuarioAccion));
+                cmd.Parameters.AddWithValue("@SistemaAccion", DbNullable(request.SistemaAccion));
+                cmd.Parameters.AddWithValue("@Observaciones", DbNullable("Asignacion limpiada automaticamente al cerrar la conversacion."));
+                await cmd.ExecuteNonQueryAsync(token);
+            }
+
+            await tx.CommitAsync(token);
 
             if (!string.Equals(previousState.CodigoEstado, state, StringComparison.OrdinalIgnoreCase))
             {
@@ -1863,6 +1931,126 @@ public sealed class ConversacionesService(
             return true;
         }, "No se pudo cambiar el estado de la conversación.", ct);
     }
+
+    public Task SetConversationPinAsync(long idConversacion, string usuario, string? sistema, bool fijada, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "SetConversationPin", async token =>
+        {
+            if (idConversacion <= 0)
+                throw new InvalidOperationException("La conversaciÃ³n es obligatoria.");
+
+            var normalizedUser = NormalizePinUser(usuario);
+            if (string.IsNullOrWhiteSpace(normalizedUser))
+                throw new InvalidOperationException("No se pudo identificar el usuario actual para fijar la conversaciÃ³n.");
+
+            var normalizedSystem = NormalizePinSystem(sistema);
+
+            const string upsertSql = """
+                DELETE FROM dbo.CONV_CONVERSACIONES_PIN_USUARIO
+                WHERE Usuario = @Usuario
+                  AND IdConversacion = @IdConversacion;
+
+                INSERT INTO dbo.CONV_CONVERSACIONES_PIN_USUARIO
+                (
+                    Usuario,
+                    Sistema,
+                    IdConversacion,
+                    FechaHora_Grabacion
+                )
+                VALUES
+                (
+                    @Usuario,
+                    @Sistema,
+                    @IdConversacion,
+                    GETDATE()
+                );
+                """;
+
+            const string deleteSql = """
+                DELETE FROM dbo.CONV_CONVERSACIONES_PIN_USUARIO
+                WHERE Usuario = @Usuario
+                  AND IdConversacion = @IdConversacion;
+                """;
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await EnsureConversationPinsTableAsync(cn, token);
+
+            await using var cmd = new SqlCommand(fijada ? upsertSql : deleteSql, cn);
+            cmd.Parameters.AddWithValue("@Usuario", normalizedUser);
+            cmd.Parameters.AddWithValue("@Sistema", normalizedSystem);
+            cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
+            await cmd.ExecuteNonQueryAsync(token);
+
+            await _appEvents.LogAuditAsync(
+                "Conversaciones",
+                "SetConversationPin",
+                "CONV_CONVERSACIONES_PIN_USUARIO",
+                idConversacion.ToString(CultureInfo.InvariantCulture),
+                fijada ? "ConversaciÃ³n fijada por usuario." : "ConversaciÃ³n desfijada por usuario.",
+                new { Usuario = normalizedUser, Sistema = normalizedSystem },
+                token);
+
+            return true;
+        }, "No se pudo actualizar el pin de la conversaciÃ³n.", ct);
+
+    public Task MarkConversationReadAsync(long idConversacion, string usuario, string? sistema, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "MarkConversationRead", async token =>
+        {
+            if (idConversacion <= 0)
+                throw new InvalidOperationException("La conversación es obligatoria.");
+
+            var normalizedUser = NormalizePinUser(usuario);
+            if (string.IsNullOrWhiteSpace(normalizedUser))
+                throw new InvalidOperationException("No se pudo identificar el usuario actual para marcar la conversación como leída.");
+
+            var normalizedSystem = NormalizePinSystem(sistema);
+
+            const string sql = """
+                DECLARE @IdUltimoMensajeLeido bigint;
+
+                SELECT @IdUltimoMensajeLeido = MAX(m.IdMensaje)
+                FROM dbo.CONV_MENSAJES m
+                WHERE m.IdConversacion = @IdConversacion
+                  AND m.Direction = N'ENTRANTE';
+
+                IF @IdUltimoMensajeLeido IS NULL
+                    SET @IdUltimoMensajeLeido = 0;
+
+                DELETE FROM dbo.CONV_CONVERSACIONES_LECTURA_USUARIO
+                WHERE Usuario = @Usuario
+                  AND IdConversacion = @IdConversacion;
+
+                INSERT INTO dbo.CONV_CONVERSACIONES_LECTURA_USUARIO
+                (
+                    Usuario,
+                    Sistema,
+                    IdConversacion,
+                    IdUltimoMensajeLeido,
+                    FechaHora_Grabacion,
+                    FechaHora_Modificacion
+                )
+                VALUES
+                (
+                    @Usuario,
+                    @Sistema,
+                    @IdConversacion,
+                    @IdUltimoMensajeLeido,
+                    GETDATE(),
+                    GETDATE()
+                );
+                """;
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await EnsureConversationReadStateTableAsync(cn, token);
+            await using var cmd = new SqlCommand(sql, cn);
+            cmd.Parameters.AddWithValue("@Usuario", normalizedUser);
+            cmd.Parameters.AddWithValue("@Sistema", normalizedSystem);
+            cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
+            await cmd.ExecuteNonQueryAsync(token);
+
+            return true;
+        }, "No se pudo marcar la conversación como leída.", ct);
 
     public Task<ConversacionWebhookResultDto> RegisterIncomingWebhookAsync(ConversacionWebhookRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "RegisterIncomingWebhook", async token =>
@@ -2103,6 +2291,7 @@ public sealed class ConversacionesService(
             var isInternal = string.Equals(conversation.Canal, "INTERNO", StringComparison.OrdinalIgnoreCase);
             var messageType = NormalizeMessageType(request.TipoArchivo);
             var mimeType = NormalizeOutgoingMime(request.MimeType, request.NombreArchivo, messageType);
+            var nombreArchivo = request.NombreArchivo.Trim();
             var now = BusinessNow();
             string initialState;
             ConversacionWhatsAppConfigDto? whatsAppConfig = null;
@@ -2124,12 +2313,27 @@ public sealed class ConversacionesService(
             var folder = Path.Combine(UploadsBasePath, request.IdConversacion.ToString(CultureInfo.InvariantCulture));
             Directory.CreateDirectory(folder);
 
-            var ext = Path.GetExtension(request.NombreArchivo).ToLowerInvariant();
+            var ext = Path.GetExtension(nombreArchivo).ToLowerInvariant();
             var safeFileName = $"{Guid.NewGuid():N}{ext}";
             var rutaLocal = Path.Combine(folder, safeFileName);
 
             await using (var fs = File.Create(rutaLocal))
                 await request.Contenido.CopyToAsync(fs, token);
+
+            if (!isInternal && ShouldConvertWebmOpusForWhatsApp(rutaLocal, mimeType, nombreArchivo))
+            {
+                var oggBytes = ConvertWebmOpusFileToOgg(rutaLocal);
+                var oggPath = Path.ChangeExtension(rutaLocal, ".ogg");
+                await File.WriteAllBytesAsync(oggPath, oggBytes, token);
+                TryDeleteFile(rutaLocal);
+
+                rutaLocal = oggPath;
+                nombreArchivo = Path.ChangeExtension(nombreArchivo, ".ogg");
+                mimeType = "audio/ogg";
+                messageType = "AUDIO";
+            }
+
+            var tamanoBytes = new FileInfo(rutaLocal).Length;
 
             string whatsAppMessageId = string.Empty;
             string finalState = initialState;
@@ -2141,7 +2345,7 @@ public sealed class ConversacionesService(
                     whatsAppConfig,
                     conversation.TelefonoWhatsApp,
                     rutaLocal,
-                    request.NombreArchivo,
+                    nombreArchivo,
                     mimeType,
                     messageType,
                     token);
@@ -2159,7 +2363,7 @@ public sealed class ConversacionesService(
                 MessageType = messageType,
                 Direction = "SALIENTE",
                 EstadoEnvio = finalState,
-                Text = request.NombreArchivo,
+                Text = nombreArchivo,
                 PayloadJson = payload,
                 FechaHora = now,
                 IdTecnicoAutor = request.IdTecnicoAutor,
@@ -2170,24 +2374,24 @@ public sealed class ConversacionesService(
             var adjuntoId = await InsertAttachmentRecordAsync(
                 messageId,
                 messageType,
-                request.NombreArchivo,
+                nombreArchivo,
                 mimeType,
                 rutaLocal,
-                request.TamanoBytes,
+                tamanoBytes,
                 payload,
                 token);
 
-            await RefreshConversationAsync(request.IdConversacion, now, $"[{messageType}] {request.NombreArchivo}", token);
+            await RefreshConversationAsync(request.IdConversacion, now, $"[{messageType}] {nombreArchivo}", token);
 
             return new ConversacionAdjuntoDto
             {
                 IdAdjunto = adjuntoId,
                 IdMensaje = messageId,
                 TipoArchivo = messageType,
-                NombreArchivo = request.NombreArchivo,
+                NombreArchivo = nombreArchivo,
                 MimeType = mimeType,
                 RutaLocal = rutaLocal,
-                TamanoBytes = request.TamanoBytes
+                TamanoBytes = tamanoBytes
             };
         }, "No se pudo guardar el adjunto.", ct);
 
@@ -2778,23 +2982,6 @@ public sealed class ConversacionesService(
         return result;
     }
 
-    private static async Task<bool> HasConversationSchemaInternalAsync(SqlConnection cn, CancellationToken ct)
-    {
-        const string sql = """
-            SELECT
-                CASE
-                    WHEN OBJECT_ID(N'dbo.CONV_CONVERSACIONES', N'U') IS NOT NULL
-                     AND OBJECT_ID(N'dbo.CONV_ESTADOS', N'U') IS NOT NULL
-                    THEN 1
-                    ELSE 0
-                END
-            """;
-
-        await using var cmd = new SqlCommand(sql, cn);
-        var result = await cmd.ExecuteScalarAsync(ct);
-        return Convert.ToInt32(result, CultureInfo.InvariantCulture) == 1;
-    }
-
     private async Task<string> ReadConversationConfigValueAsync(SqlConnection cn, string key, CancellationToken ct)
     {
         var detailColumn = await ResolveConfigDetailColumnAsync(cn, ct);
@@ -3159,7 +3346,7 @@ public sealed class ConversacionesService(
     private async Task RefreshConversationAsync(long idConversacion, DateTime fechaHora, string? text, CancellationToken ct, bool reopenIfClosed = false)
     {
         const string sql = """
-            UPDATE dbo.CONV_CONVERSACIONES
+            UPDATE c
             SET
                 ResumenUltimoMensaje = CASE
                     WHEN @FechaHora >= ISNULL(FechaHoraUltimoMensaje, CONVERT(datetime, '19000101', 112)) THEN @ResumenUltimoMensaje
@@ -3171,15 +3358,34 @@ public sealed class ConversacionesService(
                     ELSE FechaHoraUltimoMensaje
                 END,
                 CodigoEstado = CASE
-                    WHEN @Reabrir = 1 AND (FechaHoraCierre IS NULL OR @FechaHora > FechaHoraCierre) THEN N'ABIERTA'
+                    WHEN @Reabrir = 1 AND (
+                        c.FechaHoraCierre IS NOT NULL
+                        OR UPPER(LTRIM(RTRIM(ISNULL(c.CodigoEstado, N'')))) IN (N'CERRADA', N'CERRADO')
+                        OR EXISTS (
+                            SELECT 1
+                            FROM dbo.CONV_ESTADOS e
+                            WHERE e.CodigoEstado = c.CodigoEstado
+                              AND ISNULL(e.EsCerrado, 0) = 1
+                        )
+                    ) THEN N'ABIERTA'
                     ELSE CodigoEstado
                 END,
                 FechaHoraCierre = CASE
-                    WHEN @Reabrir = 1 AND (FechaHoraCierre IS NULL OR @FechaHora > FechaHoraCierre) THEN NULL
+                    WHEN @Reabrir = 1 AND (
+                        c.FechaHoraCierre IS NOT NULL
+                        OR UPPER(LTRIM(RTRIM(ISNULL(c.CodigoEstado, N'')))) IN (N'CERRADA', N'CERRADO')
+                        OR EXISTS (
+                            SELECT 1
+                            FROM dbo.CONV_ESTADOS e
+                            WHERE e.CodigoEstado = c.CodigoEstado
+                              AND ISNULL(e.EsCerrado, 0) = 1
+                        )
+                    ) THEN NULL
                     ELSE FechaHoraCierre
                 END,
                 FechaHora_Modificacion = GETDATE()
-            WHERE IdConversacion = @IdConversacion
+            FROM dbo.CONV_CONVERSACIONES c
+            WHERE c.IdConversacion = @IdConversacion
             """;
 
         await using var cn = new SqlConnection(ConnectionString);
@@ -3200,9 +3406,13 @@ public sealed class ConversacionesService(
                    FechaHoraCierre = NULL,
                    FechaHora_Modificacion = GETDATE()
             FROM dbo.CONV_CONVERSACIONES c
-            INNER JOIN dbo.CONV_ESTADOS e
+            LEFT JOIN dbo.CONV_ESTADOS e
                 ON e.CodigoEstado = c.CodigoEstado
-            WHERE ISNULL(e.EsCerrado, 0) = 1
+            WHERE (
+                  ISNULL(e.EsCerrado, 0) = 1
+                  OR c.FechaHoraCierre IS NOT NULL
+                  OR UPPER(LTRIM(RTRIM(ISNULL(c.CodigoEstado, N'')))) IN (N'CERRADA', N'CERRADO')
+              )
               AND (@IdConversacion IS NULL OR c.IdConversacion = @IdConversacion)
               AND EXISTS
               (
@@ -3210,7 +3420,11 @@ public sealed class ConversacionesService(
                   FROM dbo.CONV_MENSAJES m
                   WHERE m.IdConversacion = c.IdConversacion
                     AND m.Direction = N'ENTRANTE'
-                    AND (c.FechaHoraCierre IS NULL OR m.FechaHora > c.FechaHoraCierre)
+                    AND (
+                        c.FechaHoraCierre IS NULL
+                        OR m.FechaHora > c.FechaHoraCierre
+                        OR m.FechaHora_Grabacion > c.FechaHoraCierre
+                    )
               );
             """;
 
@@ -4076,6 +4290,119 @@ public sealed class ConversacionesService(
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
+    private static async Task EnsureConversationPinsTableAsync(SqlConnection cn, CancellationToken ct)
+    {
+        const string sql = """
+            IF OBJECT_ID(N'dbo.CONV_CONVERSACIONES_PIN_USUARIO', N'U') IS NULL
+            BEGIN
+                CREATE TABLE dbo.CONV_CONVERSACIONES_PIN_USUARIO
+                (
+                    Usuario nvarchar(120) NOT NULL,
+                    Sistema nvarchar(50) NOT NULL CONSTRAINT DF_CONV_CONV_PIN_USU_Sistema DEFAULT (N''),
+                    IdConversacion bigint NOT NULL,
+                    FechaHora_Grabacion datetime NOT NULL CONSTRAINT DF_CONV_CONV_PIN_USU_FhGrab DEFAULT (GETDATE()),
+                    CONSTRAINT PK_CONV_CONVERSACIONES_PIN_USUARIO PRIMARY KEY CLUSTERED (Usuario, Sistema, IdConversacion),
+                    CONSTRAINT FK_CONV_CONV_PIN_USU_CONVERSACION FOREIGN KEY (IdConversacion)
+                        REFERENCES dbo.CONV_CONVERSACIONES (IdConversacion)
+                );
+            END;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM sys.indexes
+                WHERE name = N'IX_CONV_CONV_PIN_USU_Orden'
+                  AND object_id = OBJECT_ID(N'dbo.CONV_CONVERSACIONES_PIN_USUARIO')
+            )
+            BEGIN
+                CREATE NONCLUSTERED INDEX IX_CONV_CONV_PIN_USU_Orden
+                    ON dbo.CONV_CONVERSACIONES_PIN_USUARIO (Usuario, Sistema, FechaHora_Grabacion DESC)
+                    INCLUDE (IdConversacion);
+            END;
+            """;
+
+        await using var cmd = new SqlCommand(sql, cn);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    private static async Task EnsureConversationReadStateTableAsync(SqlConnection cn, CancellationToken ct)
+    {
+        const string sql = """
+            IF OBJECT_ID(N'dbo.CONV_CONVERSACIONES_LECTURA_USUARIO', N'U') IS NULL
+            BEGIN
+                CREATE TABLE dbo.CONV_CONVERSACIONES_LECTURA_USUARIO
+                (
+                    Usuario nvarchar(120) NOT NULL,
+                    Sistema nvarchar(50) NOT NULL CONSTRAINT DF_CONV_CONV_LECT_USU_Sistema DEFAULT (N''),
+                    IdConversacion bigint NOT NULL,
+                    IdUltimoMensajeLeido bigint NOT NULL CONSTRAINT DF_CONV_CONV_LECT_USU_UltMsg DEFAULT (0),
+                    FechaHora_Grabacion datetime NOT NULL CONSTRAINT DF_CONV_CONV_LECT_USU_FhGrab DEFAULT (GETDATE()),
+                    FechaHora_Modificacion datetime NOT NULL CONSTRAINT DF_CONV_CONV_LECT_USU_FhMod DEFAULT (GETDATE()),
+                    CONSTRAINT PK_CONV_CONVERSACIONES_LECTURA_USUARIO PRIMARY KEY CLUSTERED (Usuario, Sistema, IdConversacion),
+                    CONSTRAINT FK_CONV_CONV_LECT_USU_CONVERSACION FOREIGN KEY (IdConversacion)
+                        REFERENCES dbo.CONV_CONVERSACIONES (IdConversacion)
+                );
+            END;
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM sys.indexes
+                WHERE name = N'IX_CONV_CONV_LECT_USU_Conversacion'
+                  AND object_id = OBJECT_ID(N'dbo.CONV_CONVERSACIONES_LECTURA_USUARIO')
+            )
+            BEGIN
+                CREATE NONCLUSTERED INDEX IX_CONV_CONV_LECT_USU_Conversacion
+                    ON dbo.CONV_CONVERSACIONES_LECTURA_USUARIO (IdConversacion, Usuario)
+                    INCLUDE (Sistema, IdUltimoMensajeLeido, FechaHora_Modificacion);
+            END;
+            """;
+
+        await using var cmd = new SqlCommand(sql, cn);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    private static async Task EnsureConversationReadBaselinesAsync(SqlConnection cn, string usuario, string sistema, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(usuario))
+            return;
+
+        const string sql = """
+            INSERT INTO dbo.CONV_CONVERSACIONES_LECTURA_USUARIO
+            (
+                Usuario,
+                Sistema,
+                IdConversacion,
+                IdUltimoMensajeLeido,
+                FechaHora_Grabacion,
+                FechaHora_Modificacion
+            )
+            SELECT
+                @Usuario,
+                @Sistema,
+                c.IdConversacion,
+                ISNULL(ult.IdUltimoMensajeCliente, 0),
+                GETDATE(),
+                GETDATE()
+            FROM dbo.CONV_CONVERSACIONES c
+            OUTER APPLY (
+                SELECT MAX(m.IdMensaje) AS IdUltimoMensajeCliente
+                FROM dbo.CONV_MENSAJES m
+                WHERE m.IdConversacion = c.IdConversacion
+                  AND m.Direction = N'ENTRANTE'
+            ) ult
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM dbo.CONV_CONVERSACIONES_LECTURA_USUARIO r
+                WHERE r.Usuario = @Usuario
+                  AND r.IdConversacion = c.IdConversacion
+            );
+            """;
+
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@Usuario", usuario);
+        cmd.Parameters.AddWithValue("@Sistema", sistema);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
     private async Task<ConversacionAdjuntoServeDto> GetFavoriteStickerFileAsync(long idFavorito, CancellationToken ct)
     {
         const string sql = """
@@ -4739,6 +5066,268 @@ public sealed class ConversacionesService(
             FechaHora = BusinessNow()
         });
 
+    private static bool ShouldConvertWebmOpusForWhatsApp(string path, string mimeType, string nombreArchivo)
+        => LooksLikeWebm(path)
+           || mimeType.StartsWith("audio/webm", StringComparison.OrdinalIgnoreCase)
+           || Path.GetExtension(nombreArchivo).Equals(".webm", StringComparison.OrdinalIgnoreCase);
+
+    private static bool LooksLikeWebm(string path)
+    {
+        Span<byte> header = stackalloc byte[4];
+        using var fs = File.OpenRead(path);
+        return fs.Read(header) == 4
+               && header[0] == 0x1A
+               && header[1] == 0x45
+               && header[2] == 0xDF
+               && header[3] == 0xA3;
+    }
+
+    private static byte[] ConvertWebmOpusFileToOgg(string path)
+    {
+        var webm = File.ReadAllBytes(path);
+        var packets = ExtractWebmOpusPackets(webm);
+        if (packets.Count == 0)
+            throw new InvalidOperationException("No se pudo convertir el audio WebM a OGG para WhatsApp.");
+
+        var opusHead = ExtractWebmCodecPrivate(webm);
+        if (opusHead.Length == 0 || !Encoding.ASCII.GetString(opusHead, 0, Math.Min(opusHead.Length, 8)).Equals("OpusHead", StringComparison.Ordinal))
+            opusHead = [.. Encoding.ASCII.GetBytes("OpusHead"), 1, 1, 0, 0, 0x80, 0xbb, 0, 0, 0, 0, 0, 0];
+
+        using var output = new MemoryStream();
+        var serial = BitConverter.ToUInt32(Guid.NewGuid().ToByteArray(), 0);
+        var sequence = 0;
+        WriteOggPacket(output, opusHead, 0, serial, ref sequence, 2);
+        WriteOggPacket(output, Encoding.ASCII.GetBytes("OpusTags\0\0\0\0\0\0\0\0"), 0, serial, ref sequence, 0);
+
+        long granule = 0;
+        foreach (var packet in packets)
+        {
+            granule += GetOpusPacketSampleCount(packet);
+            WriteOggPacket(output, packet, granule, serial, ref sequence, 0);
+        }
+
+        return output.ToArray();
+    }
+
+    private static List<byte[]> ExtractWebmOpusPackets(byte[] webm)
+    {
+        var packets = new List<byte[]>();
+        ScanEbmlElements(webm, 0, webm.Length, (id, payloadStart, payloadSize) =>
+        {
+            if (id is 0xA3 or 0xA1)
+            {
+                var packet = ExtractWebmBlockPayload(webm.AsSpan(payloadStart, payloadSize).ToArray());
+                if (packet.Length > 0)
+                    packets.Add(packet);
+            }
+        });
+
+        return packets;
+    }
+
+    private static byte[] ExtractWebmCodecPrivate(byte[] webm)
+    {
+        byte[] result = [];
+        ScanEbmlElements(webm, 0, webm.Length, (id, payloadStart, payloadSize) =>
+        {
+            if (id == 0x63A2 && result.Length == 0)
+                result = webm.AsSpan(payloadStart, payloadSize).ToArray();
+        });
+
+        return result;
+    }
+
+    private static void ScanEbmlElements(byte[] data, int start, int end, Action<ulong, int, int> visit)
+    {
+        var offset = start;
+        while (offset < end)
+        {
+            if (!TryReadEbmlId(data, offset, end, out var id, out var idLength))
+                break;
+
+            offset += idLength;
+            if (!TryReadEbmlSize(data, offset, end, out var size, out var sizeLength))
+                break;
+
+            offset += sizeLength;
+            if (size < 0 || size > end - offset)
+                break;
+
+            var payloadStart = offset;
+            var payloadSize = (int)size;
+            visit(id, payloadStart, payloadSize);
+
+            if (IsEbmlContainer(id))
+                ScanEbmlElements(data, payloadStart, payloadStart + payloadSize, visit);
+
+            offset = payloadStart + payloadSize;
+        }
+    }
+
+    private static bool TryReadEbmlId(byte[] data, int offset, int end, out ulong value, out int length)
+    {
+        value = 0;
+        length = 0;
+        if (offset >= end)
+            return false;
+
+        var first = data[offset];
+        var mask = 0x80;
+        while (length < 4 && (first & mask) == 0)
+        {
+            mask >>= 1;
+            length++;
+        }
+
+        length++;
+        if (length is < 1 or > 4 || offset + length > end)
+            return false;
+
+        for (var i = 0; i < length; i++)
+            value = (value << 8) | data[offset + i];
+
+        return true;
+    }
+
+    private static bool TryReadEbmlSize(byte[] data, int offset, int end, out long value, out int length)
+    {
+        value = 0;
+        length = 0;
+        if (offset >= end)
+            return false;
+
+        var first = data[offset];
+        var mask = 0x80;
+        while (length < 8 && (first & mask) == 0)
+        {
+            mask >>= 1;
+            length++;
+        }
+
+        length++;
+        if (length is < 1 or > 8 || offset + length > end)
+            return false;
+
+        value = first & (mask - 1);
+        for (var i = 1; i < length; i++)
+            value = (value << 8) | data[offset + i];
+
+        return true;
+    }
+
+    private static bool IsEbmlContainer(ulong id)
+        => id is 0x1A45DFA3 or 0x18538067 or 0x1549A966 or 0x1654AE6B or 0xAE or 0x1F43B675 or 0xA0;
+
+    private static byte[] ExtractWebmBlockPayload(byte[] block)
+    {
+        if (block.Length < 4)
+            return [];
+
+        if (!TryReadEbmlSize(block, 0, block.Length, out _, out var trackLength))
+            return [];
+
+        var payloadStart = trackLength + 3;
+        if (payloadStart >= block.Length)
+            return [];
+
+        var flags = block[trackLength + 2];
+        if ((flags & 0x06) != 0)
+            return [];
+
+        return block[payloadStart..];
+    }
+
+    private static int GetOpusPacketSampleCount(byte[] packet)
+    {
+        if (packet.Length == 0)
+            return 960;
+
+        var toc = packet[0];
+        var config = toc >> 3;
+        var code = toc & 0x03;
+        var frameCount = code switch
+        {
+            0 => 1,
+            1 or 2 => 2,
+            3 when packet.Length > 1 => packet[1] & 0x3F,
+            _ => 1
+        };
+
+        var samplesPerFrame = config switch
+        {
+            < 12 => (config % 4) switch { 0 => 480, 1 => 960, 2 => 1920, _ => 2880 },
+            < 16 => (config % 2) == 0 ? 480 : 960,
+            _ => (config % 4) switch { 0 => 120, 1 => 240, 2 => 480, _ => 960 }
+        };
+
+        return Math.Max(120, frameCount * samplesPerFrame);
+    }
+
+    private static void WriteOggPacket(Stream output, byte[] packet, long granulePosition, uint serial, ref int sequence, byte headerType)
+    {
+        var segments = BuildOggSegments(packet.Length);
+        using var page = new MemoryStream();
+        page.Write(Encoding.ASCII.GetBytes("OggS"));
+        page.WriteByte(0);
+        page.WriteByte(headerType);
+        Span<byte> buffer8 = stackalloc byte[8];
+        BinaryPrimitives.WriteInt64LittleEndian(buffer8, granulePosition);
+        page.Write(buffer8);
+        Span<byte> buffer4 = stackalloc byte[4];
+        BinaryPrimitives.WriteUInt32LittleEndian(buffer4, serial);
+        page.Write(buffer4);
+        BinaryPrimitives.WriteInt32LittleEndian(buffer4, sequence++);
+        page.Write(buffer4);
+        page.Write(new byte[4]);
+        page.WriteByte((byte)segments.Count);
+        foreach (var segment in segments)
+            page.WriteByte((byte)segment);
+        page.Write(packet);
+
+        var pageBytes = page.ToArray();
+        BinaryPrimitives.WriteUInt32LittleEndian(pageBytes.AsSpan(22, 4), ComputeOggCrc(pageBytes));
+        output.Write(pageBytes);
+    }
+
+    private static List<int> BuildOggSegments(int packetLength)
+    {
+        var segments = new List<int>();
+        var remaining = packetLength;
+        while (remaining >= 255)
+        {
+            segments.Add(255);
+            remaining -= 255;
+        }
+
+        segments.Add(remaining);
+        return segments;
+    }
+
+    private static uint ComputeOggCrc(byte[] bytes)
+    {
+        uint crc = 0;
+        foreach (var b in bytes)
+        {
+            crc ^= (uint)b << 24;
+            for (var i = 0; i < 8; i++)
+                crc = (crc & 0x80000000) != 0 ? (crc << 1) ^ 0x04C11DB7 : crc << 1;
+        }
+
+        return crc;
+    }
+
+    private static void TryDeleteFile(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+        catch
+        {
+        }
+    }
+
     private static DateTime ParseUnixTimestamp(string? value)
     {
         if (long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var unix))
@@ -5165,6 +5754,12 @@ public sealed class ConversacionesService(
         };
     }
 
+    private static string NormalizePinUser(string? usuario)
+        => (usuario ?? string.Empty).Trim().ToUpperInvariant();
+
+    private static string NormalizePinSystem(string? sistema)
+        => (sistema ?? string.Empty).Trim().ToUpperInvariant();
+
     private static IReadOnlyList<ConversacionInboxItemDto> DeduplicateInboxItems(IReadOnlyList<ConversacionInboxItemDto> items)
     {
         var result = new List<ConversacionInboxItemDto>();
@@ -5322,7 +5917,7 @@ public sealed class ConversacionesService(
     private static string NormalizeOutgoingMime(string? mimeType, string? fileName, string tipoArchivo)
     {
         if (!string.IsNullOrWhiteSpace(mimeType))
-            return mimeType.Trim();
+            return NormalizeMimeForHttp(mimeType);
 
         var ext = Path.GetExtension(fileName ?? string.Empty).ToLowerInvariant();
         return ext switch
@@ -5346,6 +5941,21 @@ public sealed class ConversacionesService(
             ".xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             _ => InferMimeFromType(tipoArchivo)
         };
+    }
+
+    private static string NormalizeMimeForHttp(string mimeType)
+    {
+        var normalized = (mimeType ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(normalized))
+            return "application/octet-stream";
+
+        var semicolonIndex = normalized.IndexOf(';', StringComparison.Ordinal);
+        if (semicolonIndex >= 0)
+            normalized = normalized[..semicolonIndex].Trim();
+
+        return string.IsNullOrWhiteSpace(normalized)
+            ? "application/octet-stream"
+            : normalized;
     }
 
     private static string NormalizePhone(string? phone)
@@ -5452,23 +6062,17 @@ public sealed class ConversacionesService(
     private static bool TryBuildKnownSqlMessage(SqlException ex, out string message)
     {
         message = string.Empty;
-        if (!IsMissingConversationSchema(ex))
-            return false;
-
-        var rawMessage = ex.Message ?? string.Empty;
-        var objectName = ExtractMissingObjectName(rawMessage);
-        var objectLabel = string.IsNullOrWhiteSpace(objectName) ? "CONV_*" : objectName;
-        message = $"El módulo Conversaciones todavía no está inicializado en la base activa. Falta crear el objeto {objectLabel}. Aplicá la actualización 2026-05-17-999__conversaciones_modelo_base.sql y recargá el módulo.";
-        return true;
-    }
-
-    private static bool IsMissingConversationSchema(SqlException ex)
-    {
         if (ex.Number != 208)
             return false;
 
         var rawMessage = ex.Message ?? string.Empty;
-        return rawMessage.Contains("CONV_", StringComparison.OrdinalIgnoreCase);
+        if (!rawMessage.Contains("CONV_", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        var objectName = ExtractMissingObjectName(rawMessage);
+        var objectLabel = string.IsNullOrWhiteSpace(objectName) ? "CONV_*" : objectName;
+        message = $"El módulo Conversaciones todavía no está inicializado en la base activa. Falta crear el objeto {objectLabel}. Ejecutá el script docs/conversaciones_modelo_inicial.sql y recargá el módulo.";
+        return true;
     }
 
     private static string ExtractMissingObjectName(string rawMessage)

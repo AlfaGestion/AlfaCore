@@ -4,6 +4,8 @@ namespace AlfaCore.Services;
 
 public interface ISessionService
 {
+    const string ActiveSessionCookieName = "AlfaCore.SqlSessionId";
+
     string GetConnectionString();
     SessionDto? GetActiveSession();
     IReadOnlyList<SessionDto> GetAllSessions();

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'alfacore-static-v3';
+﻿const CACHE_NAME = 'alfacore-static-v4';
 const STATIC_ASSETS = [
     '/app.css',
     '/bootstrap/bootstrap.min.css',
@@ -8,8 +8,7 @@ const STATIC_ASSETS = [
     '/icons/icon-512.png',
     '/icons/badge-96.png',
     '/audio/conversaciones/mixkit-alert-quick-chime-766.mp3',
-    '/js/conversaciones.js',
-    '/js/pwa.js'
+    '/js/conversaciones.js'
 ];
 
 self.addEventListener('install', event => {
@@ -54,33 +53,53 @@ self.addEventListener('fetch', event => {
 });
 
 self.addEventListener('push', event => {
+    console.log('[AlfaCore SW] push recibido', event);
     let payload = {};
     try {
         payload = event.data ? event.data.json() : {};
     } catch {
-        payload = {};
+        const raw = event.data ? event.data.text() : '';
+        payload = raw ? { body: raw } : {};
     }
 
-    const title = payload.title || 'Nuevo mensaje';
+    console.log('[AlfaCore SW] payload', payload);
+
+    const idConversacion = payload.idConversacion || null;
+    const pushUrl = payload.url
+        || (idConversacion ? `/conversaciones?id=${encodeURIComponent(idConversacion)}` : '/conversaciones');
+    const title = payload.contactName || payload.title || 'AlfaCore';
+    const preview = payload.preview || payload.body || 'Tenés un nuevo mensaje';
+    const actions = [];
+    if (idConversacion) {
+        actions.push({ action: 'open-conversation', title: 'Abrir conversación' });
+    }
+    actions.push({ action: 'view-later', title: 'Ver después' });
+
     const options = {
-        body: payload.body || 'Tenes un mensaje nuevo.',
+        body: preview,
         icon: payload.icon || '/icons/icon-192.png',
         badge: payload.badge || '/icons/badge-96.png',
+        timestamp: typeof payload.timestampUnixMs === 'number' ? payload.timestampUnixMs : Date.now(),
         data: {
-            url: payload.url || '/conversaciones',
-            idConversacion: payload.idConversacion || null,
+            url: pushUrl,
+            idConversacion: idConversacion,
             idMensaje: payload.idMensaje || null,
             canal: payload.canal || ''
         },
-        tag: payload.idConversacion ? `conversacion-${payload.idConversacion}` : 'alfacore-mensaje',
-        renotify: true
+        tag: idConversacion ? `conversacion-${idConversacion}` : 'alfacore-mensaje',
+        renotify: !!payload.renotify,
+        actions: actions
     };
 
+    console.log('[AlfaCore SW] showNotification', title, options);
     event.waitUntil(self.registration.showNotification(title, options));
 });
 
 self.addEventListener('notificationclick', event => {
     event.notification.close();
+    if (event.action === 'view-later')
+        return;
+
     const targetUrl = new URL(event.notification.data?.url || '/conversaciones', self.location.origin).href;
 
     event.waitUntil(
@@ -99,6 +118,9 @@ self.addEventListener('notificationclick', event => {
 });
 
 function IsSafeStaticAsset(pathname) {
+    if (pathname === '/js/pwa.js')
+        return false;
+
     return pathname.endsWith('.css')
         || pathname.endsWith('.js')
         || pathname.endsWith('.png')
@@ -106,3 +128,4 @@ function IsSafeStaticAsset(pathname) {
         || pathname.endsWith('.webmanifest')
         || pathname.endsWith('.mp3');
 }
+

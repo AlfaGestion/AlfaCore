@@ -1,4 +1,4 @@
-@inherits LayoutComponentBase
+﻿@inherits LayoutComponentBase
 @inject IJSRuntime JS
 @inject NavigationManager Nav
 @inject AlfaCore.Services.ISessionService SessionSvc
@@ -561,7 +561,66 @@
                 <i class="bi bi-send"></i>
                 <span>Enviar prueba</span>
             </button>
+            <button type="button" class="btn btn--ghost" @onclick="ReRegisterCurrentDeviceAsync" disabled="@_pushBusy">
+                <i class="bi bi-arrow-repeat"></i>
+                <span>Re-registrar este dispositivo</span>
+            </button>
+            <button type="button" class="btn btn--ghost" @onclick="LoadPushDiagnosticsAsync" disabled="@_pushBusy">
+                <i class="bi bi-activity"></i>
+                <span>Diagnóstico push</span>
+            </button>
         </div>
+
+        @if (!string.IsNullOrWhiteSpace(PushScopeNotice))
+        {
+            <p class="app-modal__hint">@PushScopeNotice</p>
+        }
+
+        @if (_pushDiagnostics is not null)
+        {
+            <div class="app-settings-grid">
+                <div class="field">
+                    <label>Diagnóstico del dispositivo</label>
+                    <p class="app-modal__hint">HTTPS: @(_pushDiagnostics.Https ? "SI" : "NO") · SW activo: @(_pushDiagnostics.ServiceWorkerReady ? "SI" : "NO") · Push soportado: @(_pushDiagnostics.PushSupported ? "SI" : "NO") · Permiso: @_pushDiagnostics.NotificationPermission</p>
+                    <p class="app-modal__hint">DeviceId: @_pushDiagnostics.DeviceId</p>
+                    <p class="app-modal__hint">PublicKey: @_pushDiagnostics.PublicKeyPreview</p>
+                    @if (_pushDiagnostics.IsBrave)
+                    {
+                        <p class="conversations-inline conversations-inline--error">Brave detectado: este navegador puede bloquear push por Shields/Notificaciones.</p>
+                    }
+                </div>
+                <div class="field">
+                    <label>Suscripciones registradas</label>
+                    <p class="app-modal__hint">Dispositivos registrados: @_pushDiagnostics.SubscriptionCount · Activos: @_pushDiagnostics.ActiveSubscriptionCount</p>
+                    @if (_pushDiagnostics.Subscriptions.Count == 0)
+                    {
+                        <p class="conversations-inline conversations-inline--error">No hay suscripciones push activas para este usuario/dispositivo.</p>
+                    }
+                    else
+                    {
+                        @foreach (var sub in _pushDiagnostics.Subscriptions)
+                        {
+                            <p class="app-modal__hint">[@sub.DeviceId@(sub.EsDispositivoActual ? " · ESTE EQUIPO" : string.Empty)] activo: @(sub.Activo ? "SI" : "NO") · endpoint: @sub.EndpointParcial · alta: @(sub.CreatedAt?.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss") ?? "-")</p>
+                            <p class="app-modal__hint">UA: @DisplayOrDash(sub.UserAgent) · último intento: @(sub.LastAttemptAt?.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss") ?? "-") · último status: @(sub.StatusCode?.ToString() ?? "-") · último error: @DisplayOrDash(sub.Error)</p>
+                            <p class="app-modal__hint">Preferencias dispositivo: alcance=@sub.Preferences.Alcance · canales=@string.Join(", ", sub.Preferences.Canales)</p>
+                        }
+                    }
+                </div>
+                <div class="field">
+                    <label>Preferencias y último test</label>
+                    <p class="app-modal__hint">Alcance: @_pushDiagnostics.Preferences.Alcance · Canales: @string.Join(", ", _pushDiagnostics.Preferences.Canales)</p>
+                    <p class="app-modal__hint">Último envío de prueba: @_pushLastTestSummary</p>
+                    <p class="app-modal__hint">Último error del proveedor push: @DisplayOrDash(_pushDiagnosticsLastProviderError)</p>
+                    @if (_pushLastTestResults.Count > 0)
+                    {
+                        @foreach (var item in _pushLastTestResults)
+                        {
+                            <p class="app-modal__hint">Prueba → [@item.DeviceId] endpoint=@item.EndpointParcial · resultado=@(item.Success ? "OK" : "FALLÓ") · status=@(item.StatusCode?.ToString() ?? "-") · error=@DisplayOrDash(item.Error)</p>
+                        }
+                    }
+                </div>
+            </div>
+        }
 
         @if (_pwaIsIos && !_pwaInstalled)
         {
@@ -585,9 +644,11 @@
                  ErrorMessage="@_loginError"
                  IsBusy="@_loginBusy"
                  ShowPassword="@_loginShowPassword"
+                 RememberCredentials="@_loginRememberCredentials"
                  UserNameChanged="@(value => _loginUserName = value)"
                  PasswordChanged="@(value => _loginPassword = value)"
                  ShowPasswordChanged="@(value => _loginShowPassword = value)"
+                 RememberCredentialsChanged="OnRememberCredentialsChangedAsync"
                  OnSubmit="LoginAsync"
                  OnOpenSqlSessions="OpenSqlSessionDrawerAsync" />
 
@@ -603,6 +664,7 @@
     private string _loginError = string.Empty;
     private bool _loginBusy;
     private bool _loginShowPassword;
+    private bool _loginRememberCredentials;
     private DotNetObjectReference<MainLayout>? _pwaRef;
     private bool _pwaCanInstall;
     private bool _pwaInstalled;
@@ -618,6 +680,10 @@
     private string _pushMessage = string.Empty;
     private string _pushError = string.Empty;
     private NotificacionesPushPreferencesDto _pushPreferences = new();
+    private PushDiagnosticsVm? _pushDiagnostics;
+    private string _pushLastTestSummary = "Sin pruebas ejecutadas.";
+    private string _pushDiagnosticsLastProviderError = string.Empty;
+    private List<NotificacionesPushEndpointResultDto> _pushLastTestResults = [];
     private string CurrentPageTitle => GetCurrentPageTitle();
     private string ShellClass
         => $"shell {(_sidebarCollapsed ? "shell--collapsed" : string.Empty)} {(_mobileSidebarOpen ? "shell--mobile-open" : string.Empty)}";
@@ -640,6 +706,10 @@
         => string.IsNullOrWhiteSpace(_globalConversationLatestName)
             ? "Abrir conversaciones"
             : $"{_globalConversationLatestName}: {_globalConversationLatestSummary}";
+    private string PushScopeNotice
+        => string.Equals(_pushPreferences.Alcance, NotificacionesPushScopes.Asignadas, StringComparison.OrdinalIgnoreCase)
+            ? "Importante: con 'solo asignadas', si la conversación no tiene técnico asignado no se envía push."
+            : string.Empty;
 
     private string _currentModule = string.Empty;
     private readonly Dictionary<long, long> _globalConversationLastIncomingById = [];
@@ -778,6 +848,21 @@
                 var token = await JS.InvokeAsync<string?>("localStorage.getItem", "alfacore_user_token");
                 if (!string.IsNullOrEmpty(token))
                     AppUserSession.TryRestoreFromToken(token);
+            }
+            catch { }
+
+            try
+            {
+                _loginRememberCredentials = string.Equals(
+                    await JS.InvokeAsync<string?>("localStorage.getItem", "alfacore_login_remember"),
+                    "true",
+                    StringComparison.OrdinalIgnoreCase);
+
+                if (_loginRememberCredentials)
+                {
+                    _loginUserName = await JS.InvokeAsync<string?>("localStorage.getItem", "alfacore_login_user") ?? string.Empty;
+                    _loginPassword = await JS.InvokeAsync<string?>("localStorage.getItem", "alfacore_login_password") ?? string.Empty;
+                }
             }
             catch { }
         }
@@ -973,7 +1058,27 @@
         {
             var session = await AppUserSession.LoginAsync(_loginUserName, _loginPassword);
             _loginUserName = session.UserName;
-            _loginPassword = string.Empty;
+            if (_loginRememberCredentials)
+            {
+                try
+                {
+                    await JS.InvokeVoidAsync("localStorage.setItem", "alfacore_login_remember", "true");
+                    await JS.InvokeVoidAsync("localStorage.setItem", "alfacore_login_user", _loginUserName);
+                    await JS.InvokeVoidAsync("localStorage.setItem", "alfacore_login_password", _loginPassword);
+                }
+                catch { }
+            }
+            else
+            {
+                _loginPassword = string.Empty;
+                try
+                {
+                    await JS.InvokeVoidAsync("localStorage.removeItem", "alfacore_login_user");
+                    await JS.InvokeVoidAsync("localStorage.removeItem", "alfacore_login_password");
+                    await JS.InvokeVoidAsync("localStorage.setItem", "alfacore_login_remember", "false");
+                }
+                catch { }
+            }
             _loginShowPassword = false;
             if (AppUserSession.CurrentToken is not null)
             {
@@ -1035,6 +1140,7 @@
         _showPushPanel = !_showPushPanel;
         _pushMessage = string.Empty;
         _pushError = string.Empty;
+        _pushDiagnostics = null;
         if (_showPushPanel)
             await LoadPushSettingsAsync();
     }
@@ -1154,6 +1260,7 @@
         _pushBusy = true;
         _pushMessage = string.Empty;
         _pushError = string.Empty;
+        _pushLastTestResults = [];
         try
         {
             if (!_pushConfigured)
@@ -1161,11 +1268,18 @@
                     ? "Faltan configurar las claves VAPID en el servidor."
                     : _pushConfigurationMessage);
 
-            await JS.InvokeVoidAsync("alfaCorePwa.sendTestPush");
-            _pushMessage = "Notificación de prueba enviada.";
+            var result = await JS.InvokeAsync<NotificacionesPushSendResultDto>("alfaCorePwa.sendTestPush");
+            _pushLastTestResults = result.Results ?? [];
+            _pushLastTestSummary = $"Total: {result.TotalCount} · OK: {result.SuccessCount} · Fallidos: {result.FailCount}";
+            _pushMessage = _pushLastTestSummary;
+            if (result.TotalCount == 0)
+                _pushError = "No hay suscripciones push activas para este usuario/dispositivo.";
+            else if (result.FailCount > 0)
+                _pushError = BuildPushSendError(result);
         }
         catch (Exception ex)
         {
+            _pushLastTestSummary = $"Falló: {ex.Message}";
             await LogBrowserPushErrorAsync("SendTestPush", ex);
             _pushError = ex.Message;
         }
@@ -1175,8 +1289,103 @@
         }
     }
 
+    private async Task ReRegisterCurrentDeviceAsync()
+    {
+        _pushBusy = true;
+        _pushMessage = string.Empty;
+        _pushError = string.Empty;
+        try
+        {
+            if (!_pushConfigured)
+                throw new InvalidOperationException(string.IsNullOrWhiteSpace(_pushConfigurationMessage)
+                    ? "Faltan configurar las claves VAPID en el servidor."
+                    : _pushConfigurationMessage);
+
+            await JS.InvokeVoidAsync("alfaCorePwa.unsubscribePush");
+            await JS.InvokeVoidAsync("alfaCorePwa.deletePushSubscription");
+            var subscription = await JS.InvokeAsync<NotificacionesPushSubscriptionDto>("alfaCorePwa.subscribePush", _pushPublicKey);
+            await JS.InvokeVoidAsync("alfaCorePwa.savePushSubscription", subscription);
+            await JS.InvokeVoidAsync("alfaCorePwa.savePushPreferences", _pushPreferences);
+            _pushMessage = "Dispositivo re-registrado correctamente.";
+            await LoadPushDiagnosticsAsync();
+        }
+        catch (Exception ex)
+        {
+            await LogBrowserPushErrorAsync("ReRegisterCurrentDevice", ex);
+            _pushError = $"No se pudo re-registrar este dispositivo. {ex.Message}";
+        }
+        finally
+        {
+            _pushBusy = false;
+        }
+    }
+
+    private async Task LoadPushDiagnosticsAsync()
+    {
+        _pushBusy = true;
+        _pushMessage = string.Empty;
+        _pushError = string.Empty;
+        try
+        {
+            var diagnosticsFunctionAvailable = await JS.InvokeAsync<bool>("alfaCorePwaFunctionExists", "getPushClientDiagnostics");
+            if (!diagnosticsFunctionAvailable)
+            {
+                _pushError = "La app tiene archivos PWA antiguos en caché. Cerrá y abrí de nuevo o borrá datos del sitio.";
+                return;
+            }
+
+            var client = await JS.InvokeAsync<PwaPushClientDiagnostics>("alfaCorePwa.getPushClientDiagnostics", _pushPublicKey);
+            var server = await JS.InvokeAsync<NotificacionesPushDiagnosticsDto>("alfaCorePwa.fetchPushDiagnostics");
+            _pushDiagnostics = new PushDiagnosticsVm
+            {
+                Https = client.Https,
+                ServiceWorkerReady = client.ServiceWorkerReady,
+                PushSupported = client.PushSupported,
+                NotificationPermission = client.NotificationPermission,
+                DeviceId = client.DeviceId,
+                PublicKeyPreview = client.PublicKeyPreview,
+                IsBrave = client.IsBrave,
+                SubscriptionCount = server.SubscriptionCount,
+                ActiveSubscriptionCount = server.ActiveSubscriptionCount,
+                Preferences = server.Preferences ?? new(),
+                Subscriptions = server.Subscriptions ?? []
+            };
+            _pushDiagnosticsLastProviderError = _pushDiagnostics.Subscriptions
+                .Where(x => !string.IsNullOrWhiteSpace(x.Error))
+                .Select(x => x.Error)
+                .FirstOrDefault() ?? string.Empty;
+            _pushMessage = "Diagnóstico actualizado.";
+        }
+        catch (Exception ex)
+        {
+            await LogBrowserPushErrorAsync("LoadPushDiagnostics", ex);
+            _pushError = $"No se pudo cargar el diagnóstico push. {ex.Message}";
+        }
+        finally
+        {
+            _pushBusy = false;
+        }
+    }
+
+    private static string BuildPushSendError(NotificacionesPushSendResultDto? result)
+    {
+        if (result is null)
+            return "El backend no devolvió resultado del envío push.";
+
+        var firstError = result.Results.FirstOrDefault(x => !x.Success);
+        if (firstError is not null)
+            return $"Fallaron {result.FailCount} dispositivo(s). Endpoint: {firstError.EndpointParcial}. Status: {(firstError.StatusCode?.ToString() ?? "-")}. Error: {DisplayOrDash(firstError.Error)}";
+
+        return result.TotalCount == 0
+            ? "No hay suscripciones push activas para enviar."
+            : $"Fallaron {result.FailCount} dispositivo(s). Revisá el diagnóstico de notificaciones.";
+    }
+
     private bool PushChannelEnabled(string channel)
         => _pushPreferences.Canales.Contains(channel, StringComparer.OrdinalIgnoreCase);
+
+    private static string DisplayOrDash(string? value)
+        => string.IsNullOrWhiteSpace(value) ? "-" : value.Trim();
 
     private void TogglePushChannel(string channel, ChangeEventArgs args)
     {
@@ -1210,7 +1419,31 @@
         }
     }
 
-    private Task OpenSqlSessionDrawerAsync()
+
+    private async Task OnRememberCredentialsChangedAsync(bool value)
+    {
+        _loginRememberCredentials = value;
+        if (!value)
+        {
+            _loginPassword = string.Empty;
+            try
+            {
+                await JS.InvokeVoidAsync("localStorage.removeItem", "alfacore_login_user");
+                await JS.InvokeVoidAsync("localStorage.removeItem", "alfacore_login_password");
+                await JS.InvokeVoidAsync("localStorage.setItem", "alfacore_login_remember", "false");
+            }
+            catch { }
+            return;
+        }
+
+        try
+        {
+            await JS.InvokeVoidAsync("localStorage.setItem", "alfacore_login_remember", "true");
+            await JS.InvokeVoidAsync("localStorage.setItem", "alfacore_login_user", _loginUserName ?? string.Empty);
+            await JS.InvokeVoidAsync("localStorage.setItem", "alfacore_login_password", _loginPassword ?? string.Empty);
+        }
+        catch { }
+    }    private Task OpenSqlSessionDrawerAsync()
     {
         _drawerOpen = true;
         return Task.CompletedTask;
@@ -1316,4 +1549,38 @@
         public bool PushSupported { get; set; }
         public string NotificationPermission { get; set; } = string.Empty;
     }
+    private sealed class PwaPushClientDiagnostics
+    {
+        public bool Https { get; set; }
+        public bool ServiceWorkerReady { get; set; }
+        public bool PushSupported { get; set; }
+        public string NotificationPermission { get; set; } = string.Empty;
+        public string DeviceId { get; set; } = string.Empty;
+        public string PublicKeyPreview { get; set; } = string.Empty;
+        public bool IsBrave { get; set; }
+    }
+
+    private sealed class PushDiagnosticsVm
+    {
+        public bool Https { get; set; }
+        public bool ServiceWorkerReady { get; set; }
+        public bool PushSupported { get; set; }
+        public string NotificationPermission { get; set; } = string.Empty;
+        public string DeviceId { get; set; } = string.Empty;
+        public string PublicKeyPreview { get; set; } = string.Empty;
+        public bool IsBrave { get; set; }
+        public int SubscriptionCount { get; set; }
+        public int ActiveSubscriptionCount { get; set; }
+        public NotificacionesPushPreferencesDto Preferences { get; set; } = new();
+        public List<NotificacionesPushEndpointResultDto> Subscriptions { get; set; } = [];
+    }
 }
+
+
+
+
+
+
+
+
+

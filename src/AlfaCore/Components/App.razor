@@ -30,6 +30,20 @@
                 return document.documentElement.getAttribute('data-theme') || 'light';
             }
         };
+        window.alfaCoreSqlSession = {
+            setActive: function (id) {
+                if (!id) return;
+                localStorage.setItem('alfacore.sqlSessionId', id);
+                document.cookie = 'AlfaCore.SqlSessionId=' + encodeURIComponent(id) + '; path=/; max-age=31536000; samesite=lax';
+            },
+            clearActive: function () {
+                localStorage.removeItem('alfacore.sqlSessionId');
+                document.cookie = 'AlfaCore.SqlSessionId=; path=/; max-age=0; samesite=lax';
+            }
+        };
+        window.alfaCorePwaFunctionExists = function (name) {
+            return !!(window.alfaCorePwa && typeof window.alfaCorePwa[name] === 'function');
+        };
     </script>
     <HeadOutlet />
 </head>
@@ -39,7 +53,7 @@
     <script src="_framework/blazor.web.js"></script>
     <script src="js/dashboard-export.js?v=20260417"></script>
     <script src="js/conversaciones.js?v=20260520e"></script>
-    <script src="js/pwa.js?v=20260521b"></script>
+    <script src="js/pwa.js?v=20260521e"></script>
 </body>
 
 </html>

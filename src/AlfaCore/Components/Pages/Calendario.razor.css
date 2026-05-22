@@ -1,0 +1,162 @@
+.calendario-page {
+    grid-template-rows: auto auto minmax(0, 1fr);
+    gap: .75rem;
+    height: 100dvh;
+    min-height: 0;
+    padding: 1rem 1.25rem 1.15rem;
+    overflow: hidden;
+}
+
+.calendario-topbar {
+    align-items: center;
+    gap: 1.25rem;
+    padding-bottom: .45rem;
+}
+
+.calendario-actions {
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.calendario-toolbar {
+    grid-template-columns: minmax(245px, auto) minmax(280px, .45fr) minmax(560px, 1fr);
+    align-items: end;
+    gap: .85rem;
+    padding: .45rem 0 .65rem;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    overflow: visible;
+}
+
+.calendario-nav {
+    align-items: center;
+    flex-wrap: wrap;
+    gap: .55rem;
+    min-width: 0;
+}
+
+.calendario-nav strong {
+    min-width: 9.75rem;
+}
+
+.calendario-active-guard {
+    min-height: 48px;
+    padding: .55rem .75rem;
+}
+
+.calendario-filters {
+    display: grid;
+    grid-template-columns: minmax(280px, 1fr) minmax(150px, .42fr) minmax(150px, .42fr);
+    align-items: end;
+    gap: .65rem;
+    min-width: 0;
+}
+
+.calendario-filters .field,
+.calendario-filters .field:first-child {
+    min-width: 0;
+}
+
+.calendario-page .field {
+    gap: .34rem;
+}
+
+.calendario-page .field label {
+    line-height: 1.1;
+}
+
+.calendario-page input,
+.calendario-page select,
+.calendario-page textarea {
+    min-height: 38px;
+    padding: .52rem .68rem;
+}
+
+.calendario-shell {
+    min-height: 0;
+    overflow: auto;
+}
+
+.calendario-grid {
+    grid-template-rows: 30px repeat(6, minmax(88px, 1fr));
+    width: 100%;
+    min-width: 0;
+    height: 100%;
+    min-height: 0;
+    border-radius: 0;
+}
+
+.calendario-weekday {
+    min-width: 0;
+    padding: 0 .5rem;
+}
+
+.calendario-day {
+    gap: .45rem;
+    padding: .65rem;
+}
+
+.calendario-day-number {
+    line-height: 1.6rem;
+}
+
+.calendario-day-events {
+    gap: .28rem;
+}
+
+.calendario-event-chip {
+    padding: .28rem .42rem;
+}
+
+.calendario-side {
+    position: fixed;
+    top: max(.6rem, env(safe-area-inset-top));
+    right: max(.6rem, env(safe-area-inset-right));
+    bottom: max(.6rem, env(safe-area-inset-bottom));
+    width: min(340px, calc(100vw - 1.2rem));
+    max-height: calc(100dvh - 1.2rem);
+    padding: .95rem;
+    border: 1px solid rgba(56, 189, 248, .22);
+    border-radius: 10px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.calendario-panel-backdrop {
+    position: fixed;
+    inset: 0;
+}
+
+@media (max-width: 1280px) {
+    .calendario-toolbar {
+        grid-template-columns: minmax(230px, auto) minmax(260px, 1fr);
+    }
+
+    .calendario-filters {
+        grid-column: 1 / -1;
+    }
+}
+
+@media (max-width: 900px) {
+    .calendario-page {
+        padding: .8rem;
+        overflow: auto;
+    }
+
+    .calendario-topbar,
+    .calendario-actions {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .calendario-toolbar,
+    .calendario-filters {
+        grid-template-columns: 1fr;
+    }
+
+    .calendario-active-guard {
+        min-width: 0;
+    }
+}

@@ -1,5 +1,7 @@
 @page "/conversaciones"
+@using System.Net
 @using System.Text.Json
+@using System.Text.RegularExpressions
 @using Microsoft.AspNetCore.WebUtilities
 @inject AlfaCore.Services.IConversacionesService ConversacionesSvc
 @inject AlfaCore.Services.IContactosService ContactosSvc
@@ -160,6 +162,10 @@
                 </button>
                 <button type="button" class="btn btn--ghost btn--sm" @onclick="RecargarAsync" disabled="@(_loadingInbox || _loadingConversation)" title="Recargar">
                     <i class="bi bi-arrow-clockwise"></i>
+                </button>
+                <button type="button" class="btn btn--ghost btn--sm" @onclick="TestNewMessageSoundAsync" disabled="@_loadingInbox" title="Probar sonido">
+                    <i class="bi bi-volume-up-fill"></i>
+                    <span>Probar sonido</span>
                 </button>
             </div>
 
@@ -434,14 +440,24 @@
                     <div class="conversations-list__items">
                         @foreach (var item in _inbox)
                         {
-                            <button type="button"
-                                    class="conversation-row @(item.IdConversacion == _selectedConversationId ? "is-selected" : string.Empty)"
-                                    @onclick="() => SelectConversationAsync(item.IdConversacion, showMobileChat: true)">
+                            <div role="button"
+                                 tabindex="0"
+                                 class="@ConversationRowClass(item)"
+                                 @onclick="() => SelectConversationAsync(item.IdConversacion, showMobileChat: true)"
+                                 @onkeydown="args => HandleConversationRowKeyDownAsync(args, item.IdConversacion)">
                                 <span class="conversation-row__avatar" aria-hidden="true">@GetConversationInitials(item)</span>
                                 <div class="conversation-row__content">
                                 <div class="conversation-row__top">
                                     <span class="conversation-row__name">@GetDisplayName(item)</span>
                                     <span class="conversation-row__side">
+                                        <button type="button"
+                                                class="conversation-pin @(item.FijadaPorUsuario ? "is-pinned" : string.Empty)"
+                                                title="@(item.FijadaPorUsuario ? "Desfijar para mi usuario" : "Fijar para mi usuario")"
+                                                aria-label="@(item.FijadaPorUsuario ? "Desfijar conversación" : "Fijar conversación")"
+                                                @onclick:stopPropagation
+                                                @onclick="() => ToggleConversationPinAsync(item)">
+                                            <i class="bi @(item.FijadaPorUsuario ? "bi-pin-angle-fill" : "bi-pin-angle")"></i>
+                                        </button>
                                         <span class="conversation-row__date">@FormatShortDate(item.FechaHoraUltimoMensaje)</span>
                                         @if (GetConversationNewCount(item.IdConversacion) > 0)
                                         {
@@ -469,7 +485,7 @@
                                 </div>
                                 <p class="conversation-row__summary">@item.ResumenUltimoMensaje</p>
                                 </div>
-                            </button>
+                            </div>
                         }
                     </div>
                 }
@@ -657,13 +673,22 @@
                                 @if (IsInternalEventMessage(message))
                                 {
                                     <div class="conversation-event-divider">
-                                        <span class="conversation-event-divider__text">@message.Texto</span>
+                                        @if (TryGetTicketIdFromEvent(message, out var eventTicketId))
+                                        {
+                                            <button type="button" class="conversation-event-divider__text conversation-event-divider__link" @onclick="() => OpenTicket(eventTicketId)">
+                                                @message.Texto
+                                            </button>
+                                        }
+                                        else
+                                        {
+                                            <span class="conversation-event-divider__text">@message.Texto</span>
+                                        }
                                         <time class="conversation-event-divider__time">@message.FechaHora.ToString("dd/MM HH:mm")</time>
                                     </div>
                                     continue;
                                 }
 
-                                <div class="message-row @(IsOutgoingMessage(message) ? "message-row--outgoing" : "message-row--incoming")">
+                                <div id="@GetMessageDomId(message.IdMensaje)" class="message-row @(IsOutgoingMessage(message) ? "message-row--outgoing" : "message-row--incoming")">
                                     @if (_ticketSelectionMode)
                                     {
                                         <label class="message-ticket-selector" title="Incluir mensaje en el ticket">
@@ -674,14 +699,66 @@
                                         </label>
                                     }
                                     <div class="message-bubble-shell">
-                                <article class="message-card @GetMessageClass(message) @(_selectedTicketMessageIds.Contains(message.IdMensaje) ? "message-card--ticket-selected" : string.Empty)">
+                                        @if (_openReactionMessageId == message.IdMensaje)
+                                        {
+                                            <div class="message-reaction-picker" @onclick:stopPropagation>
+                                                @foreach (var emoji in QuickReactionEmojis)
+                                                {
+                                                    <button type="button"
+                                                            class="btn btn--ghost btn--sm message-reaction-picker__emoji"
+                                                            title="Reaccionar @emoji"
+                                                            @onclick="() => SendReactionAsync(message, emoji)"
+                                                            @onclick:stopPropagation
+                                                            disabled="@_busyAction">
+                                                        @emoji
+                                                    </button>
+                                                }
+                                                <button type="button"
+                                                        class="btn btn--ghost btn--sm message-reaction-picker__emoji"
+                                                        title="Mas emojis"
+                                                        @onclick="() => OpenReactionEmojiPanel(message.IdMensaje)"
+                                                        @onclick:stopPropagation>
+                                                    <i class="bi bi-plus-lg"></i>
+                                                </button>
+                                            </div>
+                                        }
+                                        @if (_reactionEmojiMessageId == message.IdMensaje && _showComposerTools)
+                                        {
+                                            <div class="panel-card conversations-tools-panel conversations-tools-panel--reaction" @onclick:stopPropagation>
+                                                <input class="conversations-tools-panel__search" type="search" placeholder="Buscar emoji" value="@_emojiSearch" @oninput="HandleEmojiSearchInput" />
+                                                @foreach (var group in FilteredEmojiGroups)
+                                                {
+                                                    <div class="conversations-tools-panel__group">
+                                                        <strong class="context-card__label">@group.Nombre</strong>
+                                                        <div class="conversations-tools-panel__grid">
+                                                            @foreach (var emoji in group.Emojis)
+                                                            {
+                                                                <button type="button" class="btn btn--ghost btn--sm conversations-tools-panel__emoji" title="@GetEmojiButtonTitle(emoji)" @onclick="() => SelectEmojiFromPanelAsync(emoji)">@emoji</button>
+                                                            }
+                                                        </div>
+                                                    </div>
+                                                }
+                                            </div>
+                                        }
+                                        <article class="message-card @GetMessageClass(message) @(_selectedTicketMessageIds.Contains(message.IdMensaje) ? "message-card--ticket-selected" : string.Empty)">
                                     <div class="message-card__meta">
                                         <span>@GetMessageAuthor(message)</span>
                                         <span>@message.FechaHora.ToString("dd/MM HH:mm")</span>
                                     </div>
+                                    @if (TryGetQuotedMessage(message, out var quotedMessage))
+                                    {
+                                        <button type="button"
+                                                class="message-card__quote"
+                                                title="Ir al mensaje citado"
+                                                @onclick="() => ScrollToQuotedMessageAsync(quotedMessage.IdMensaje)"
+                                                @onclick:stopPropagation>
+                                            <span>@GetMessageAuthor(quotedMessage)</span>
+                                            <strong>@GetQuotePreview(quotedMessage)</strong>
+                                        </button>
+                                    }
                                     @if (ShouldShowMessageText(message))
                                     {
-                                        <p class="message-card__text">@GetMessageDisplayText(message)</p>
+                                        <p class="message-card__text">@RenderMessageText(message)</p>
                                         @if (IsUnsupportedMessage(message))
                                         {
                                             <div class="message-card__footer">
@@ -750,22 +827,30 @@
                                                 else if (IsAudioAttachment(adj))
                                                 {
                                                     <div class="message-attachment message-attachment--audio">
-                                                        <audio controls preload="metadata">
+                                                        <audio class="wa-audio-player__media" preload="metadata">
                                                             <source src="@GetAttachmentUrl(adj)" type="@GetAttachmentMime(adj)" />
                                                             Tu navegador no puede reproducir este audio.
                                                         </audio>
-                                                        <button type="button"
-                                                                class="attachment-menu-button"
-                                                                title="Opciones"
-                                                                @onclick="() => ToggleAttachmentMenu(adj.IdAdjunto)">
-                                                            <i class="bi bi-three-dots-vertical"></i>
-                                                        </button>
-                                                        @if (_openAttachmentMenuId == adj.IdAdjunto)
-                                                        {
-                                                            <div class="attachment-menu">
-                                                                <a href="@GetAttachmentDownloadUrl(adj)" download="@adj.NombreArchivo">Descargar audio</a>
+                                                        <div class="wa-audio-player" data-audio-player>
+                                                            <button type="button" class="wa-audio-player__play" data-audio-play title="Reproducir audio" aria-label="Reproducir audio">
+                                                                <i class="bi bi-play-fill" data-audio-play-icon></i>
+                                                            </button>
+                                                            <div class="wa-audio-player__body">
+                                                                <input class="wa-audio-player__seek"
+                                                                       data-audio-seek
+                                                                       type="range"
+                                                                       min="0"
+                                                                       max="1000"
+                                                                       value="0"
+                                                                       step="1"
+                                                                       aria-label="Progreso del audio" />
+                                                                <div class="wa-audio-player__meta">
+                                                                    <span data-audio-current>0:00</span>
+                                                                    <span data-audio-duration>0:00</span>
+                                                                </div>
                                                             </div>
-                                                        }
+                                                            <button type="button" class="wa-audio-player__speed" data-audio-speed title="Cambiar velocidad">1</button>
+                                                        </div>
                                                     </div>
                                                 }
                                                 else if (IsVideoAttachment(adj))
@@ -848,27 +933,6 @@
                                                     <i class="bi bi-reply-fill"></i>
                                                 </button>
                                             }
-                                            @if (_openReactionMessageId == message.IdMensaje)
-                                            {
-                                                <div class="message-reaction-picker">
-                                                    @foreach (var emoji in QuickReactionEmojis)
-                                                    {
-                                                        <button type="button"
-                                                                class="btn btn--ghost btn--sm message-reaction-picker__emoji"
-                                                                title="Reaccionar @emoji"
-                                                                @onclick="() => SendReactionAsync(message, emoji)"
-                                                                disabled="@_busyAction">
-                                                            @emoji
-                                                        </button>
-                                                    }
-                                                    <button type="button"
-                                                            class="btn btn--ghost btn--sm message-reaction-picker__emoji"
-                                                            title="Mas emojis"
-                                                            @onclick="OpenComposerEmojiPanel">
-                                                        <i class="bi bi-plus-lg"></i>
-                                                    </button>
-                                                </div>
-                                            }
                                         </div>
                                     }
                                 </div>
@@ -926,6 +990,7 @@
                                           rows="2"
                                           placeholder="@(_selectedConversation.Canal == "INTERNO" ? "Escribí un mensaje para el equipo…" : "Escribí una respuesta para WhatsApp…")"
                                           @onfocus="MarkSelectedConversationAsRead"
+                                          @onfocusin="OnReplyFocusAsync"
                                           value="@_replyText"
                                           @oninput="HandleReplyInputAsync"></textarea>
                             </div>
@@ -940,6 +1005,7 @@
                                             @if (pending.HasError)
                                             {
                                                 <i class="bi bi-exclamation-circle-fill" title="@pending.Error"></i>
+                                                <span class="conversations-pending-attachment__error">@pending.Error</span>
                                             }
                                             <button type="button" class="btn btn--ghost btn--sm" @onclick="() => RemovePendingAttachment(pending.Id)" title="Quitar adjunto">
                                                 <i class="bi bi-x-lg"></i>
@@ -960,13 +1026,14 @@
                                     <i class="bi bi-plus-lg"></i>
                                 </button>
                             </div>
-                            @if (_showComposerTools)
+                            @if (_showComposerTools && !_reactionEmojiMessageId.HasValue)
                             {
-                                <div class="panel-card conversations-tools-panel" @onclick:stopPropagation>
+                                <div class="panel-card conversations-tools-panel conversations-tools-panel--composer" @onclick:stopPropagation>
                                     <div class="conversations-composer__actions conversations-tools-panel__tabs">
                                         <button type="button" class="conversations-filter-pill @(_composerToolTab == ComposerToolTabs.Emojis ? "is-active" : string.Empty)" @onclick='() => _composerToolTab = ComposerToolTabs.Emojis'><i class="bi bi-emoji-smile"></i> Emojis</button>
                                         <button type="button" class="conversations-filter-pill @(_composerToolTab == ComposerToolTabs.Stickers ? "is-active" : string.Empty)" @onclick='() => _composerToolTab = ComposerToolTabs.Stickers'><i class="bi bi-star-fill"></i> Stickers</button>
                                         <button type="button" class="conversations-filter-pill @(_composerToolTab == ComposerToolTabs.Adjuntos ? "is-active" : string.Empty)" @onclick='() => _composerToolTab = ComposerToolTabs.Adjuntos'><i class="bi bi-paperclip"></i> Adjuntos</button>
+                                        <button type="button" class="conversations-filter-pill mobile-only @(_composerToolTab == ComposerToolTabs.Notas ? "is-active" : string.Empty)" @onclick='() => _composerToolTab = ComposerToolTabs.Notas'><i class="bi bi-journal-text"></i> Nota</button>
                                     </div>
                                     @if (_composerToolTab == ComposerToolTabs.Emojis)
                                     {
@@ -978,7 +1045,7 @@
                                                 <div class="conversations-tools-panel__grid">
                                                     @foreach (var emoji in group.Emojis)
                                                     {
-                                                        <button type="button" class="btn btn--ghost btn--sm conversations-tools-panel__emoji" title="Agregar @emoji" @onclick="() => AddEmojiToReply(emoji)">@emoji</button>
+                                                        <button type="button" class="btn btn--ghost btn--sm conversations-tools-panel__emoji" title="@GetEmojiButtonTitle(emoji)" @onclick="() => SelectEmojiFromPanelAsync(emoji)">@emoji</button>
                                                     }
                                                 </div>
                                             </div>
@@ -1007,7 +1074,7 @@
                                     }
                                         </div>
                                     }
-                                    else
+                                    else if (_composerToolTab == ComposerToolTabs.Adjuntos)
                                     {
                                         <div class="conversations-tools-panel__actions">
                                             <label class="btn btn--ghost conversations-tools-panel__tool" title="Adjuntar archivo">
@@ -1018,6 +1085,23 @@
                                             <button type="button" class="btn btn--ghost conversations-tools-panel__tool @(_recording ? "is-recording" : string.Empty)" @onclick="ToggleRecordingAsync" title="@(_recording ? "Detener grabación" : "Grabar mensaje de voz")" disabled="@_uploadingAudio">
                                                 <i class="bi @(_recording ? "bi-stop-circle-fill" : "bi-mic-fill")"></i>
                                                 <span>Audio</span>
+                                            </button>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <div class="field conversations-composer__note conversations-composer__note--mobile">
+                                            <label for="conv-note-mobile">Nota interna</label>
+                                            <textarea id="conv-note-mobile"
+                                                      @ref="_internalNoteMobileTextArea"
+                                                      rows="1"
+                                                      placeholder="Escribí una nota interna visible solo para el equipo…"
+                                                      value="@_internalNoteText"
+                                                      @oninput="HandleInternalNoteInputAsync"></textarea>
+                                        </div>
+                                        <div class="conversations-composer__actions conversations-composer__actions--note conversations-composer__actions--note-mobile">
+                                            <button type="button" class="btn btn--ghost" @onclick="AddInternalNoteAsync" disabled="@(!_canAddNote)" title="Guardar nota interna">
+                                                <i class="bi bi-journal-text"></i>
                                             </button>
                                         </div>
                                     }
@@ -1433,14 +1517,15 @@
                 </select>
             </div>
             <div class="field">
+                <label>Comentario / observación</label>
+                <textarea rows="4" maxlength="4000" @bind="_ticketDescription" disabled="@_creatingTicket" placeholder="Detalle adicional para el ticket..."></textarea>
+            </div>
+            <div class="field">
                 <label>Asignado a</label>
-                <select @bind="_ticketTechnicianId" disabled="@_creatingTicket">
-                    <option value="">Usar asignado de la conversación</option>
-                    @foreach (var tech in _technicians)
-                    {
-                        <option value="@tech.IdTecnico">@tech.Nombre</option>
-                    }
-                </select>
+                <div class="ticket-creator-assignment">
+                    <span>@CurrentMessageTechnicianName</span>
+                    <small>Se asignará automáticamente al usuario que crea el ticket.</small>
+                </div>
             </div>
         </div>
         <div class="actions usuarios-editor__actions">
@@ -1537,7 +1622,9 @@
     private ConversacionAdjuntoDto? _previewAttachment;
     private ElementReference _previewCanvas;
     private bool _bindPreviewPanAfterRender;
+    private SoundDiagnosticsVm _soundDiagnostics = new();
     private ElementReference _replyTextArea;
+    private ElementReference _internalNoteMobileTextArea;
     private long? _replyEnterHandlerConversationId;
     private int _lastSyncedBrowserNewCount = -1;
     private readonly string _typingClientId = Guid.NewGuid().ToString("N");
@@ -1549,6 +1636,7 @@
     private List<ConversacionStickerFavoritoDto> _favoriteStickers = [];
     private bool _showComposerTools;
     private string _composerToolTab = ComposerToolTabs.Emojis;
+    private long? _reactionEmojiMessageId;
     private string _emojiSearch = string.Empty;
     private bool _showContactSuggestions;
     private bool _loadingContactSuggestions;
@@ -1557,8 +1645,8 @@
     private bool _showTicketDialog;
     private readonly HashSet<long> _selectedTicketMessageIds = [];
     private string _ticketTitle = string.Empty;
+    private string _ticketDescription = string.Empty;
     private int _ticketPriority = 2;
-    private string _ticketTechnicianId = string.Empty;
     private string? _ticketError;
     private bool _creatingTicket;
     private bool _checkingRelatedTickets;
@@ -1616,7 +1704,7 @@
     private bool CanCreateWhatsAppFromSearch => _canalActivo == "WHATSAPP" && !_busyAction && IsPotentialPhone(_filters.Search);
     private bool ShouldShowContactSuggestions => _canalActivo == "WHATSAPP" && _filters.Search.Trim().Length >= 2;
     private bool ShouldShowLatestButton => _showReturnToLatest || _newMessagesCount > 0;
-    private int TotalNewMessagesCount => _newMessagesByConversation.Values.Sum() + _newMessagesCount;
+    private int TotalNewMessagesCount => _inbox.Sum(x => GetConversationNewCount(x.IdConversacion));
     private string ConversationPageTitle
         => TotalNewMessagesCount > 0
             ? $"({TotalNewMessagesCount}) Conversaciones | Alfa Gestión"
@@ -1742,10 +1830,19 @@
             try
             {
                 await JS.InvokeVoidAsync("conversacionesUi.initNotifications", "AlfaCore - Alfa Gestión");
+                await UpdateSoundDiagnosticsAsync();
             }
             catch
             {
             }
+        }
+
+        try
+        {
+            await JS.InvokeVoidAsync("conversacionesUi.initAudioPlayers");
+        }
+        catch
+        {
         }
 
         await SyncBrowserUnreadCountAsync();
@@ -1980,6 +2077,7 @@
         try
         {
             var previousInbox = _inbox.ToDictionary(x => x.IdConversacion);
+            ApplyCurrentUserToFilters(_filters);
             var refreshedInbox = (await ConversacionesSvc.GetInboxAsync(_filters)).ToList();
             if (trackNewMessages)
                 newMessagesDetected = TrackInboxNewMessages(previousInbox, refreshedInbox);
@@ -2029,6 +2127,52 @@
         {
             _loadingAuditMessages = false;
         }
+    }
+
+    private async Task ToggleConversationPinAsync(ConversacionInboxItemDto item)
+    {
+        _actionError = null;
+        _actionMessage = null;
+
+        try
+        {
+            var nextPinned = !item.FijadaPorUsuario;
+            await ConversacionesSvc.SetConversationPinAsync(
+                item.IdConversacion,
+                CurrentUserNameForAudit,
+                CurrentUserSystemForAudit,
+                nextPinned);
+
+            item.FijadaPorUsuario = nextPinned;
+            item.FechaHoraFijada = nextPinned ? DateTime.Now : null;
+            await RefreshInboxAsync(showLoading: false, allowSelectionChange: false);
+        }
+        catch (Exception ex)
+        {
+            _actionError = ex.Message;
+        }
+    }
+
+    private async Task HandleConversationRowKeyDownAsync(KeyboardEventArgs args, long idConversacion)
+    {
+        if (args.Key is "Enter" or " ")
+            await SelectConversationAsync(idConversacion, showMobileChat: true);
+    }
+
+    private string ConversationRowClass(ConversacionInboxItemDto item)
+    {
+        var classes = "conversation-row";
+        if (item.IdConversacion == _selectedConversationId)
+            classes += " is-selected";
+        if (item.FijadaPorUsuario)
+            classes += " is-pinned";
+        return classes;
+    }
+
+    private void ApplyCurrentUserToFilters(ConversacionesInboxFilters filters)
+    {
+        filters.UsuarioActual = CurrentUserNameForAudit;
+        filters.SistemaActual = CurrentUserSystemForAudit;
     }
 
     private int TrackInboxNewMessages(
@@ -2185,8 +2329,8 @@
         _ticketError = null;
         _selectedTicketMessageIds.Clear();
         _ticketTitle = BuildDefaultTicketTitle();
+        _ticketDescription = string.Empty;
         _ticketPriority = 2;
-        _ticketTechnicianId = _selectedConversation.IdTecnico;
         _allowCreateDespiteRelated = false;
         _relatedTicketMatches.Clear();
     }
@@ -2233,6 +2377,7 @@
         _ticketSelectionMode = false;
         _showTicketDialog = false;
         _selectedTicketMessageIds.Clear();
+        _ticketDescription = string.Empty;
         _ticketError = null;
         _allowCreateDespiteRelated = false;
         _relatedTicketMatches.Clear();
@@ -2250,6 +2395,12 @@
         if (string.IsNullOrWhiteSpace(_ticketTitle))
         {
             _ticketError = "Ingresá el nombre del ticket.";
+            return;
+        }
+        var creatorTechnicianId = CurrentMessageTechnicianId;
+        if (string.IsNullOrWhiteSpace(creatorTechnicianId))
+        {
+            _ticketError = "No se pudo crear el ticket porque tu usuario no tiene un técnico asociado.";
             return;
         }
 
@@ -2271,14 +2422,15 @@
             var idTicket = await TicketsSvc.CreateAsync(new TicketCreateRequest
             {
                 Titulo = _ticketTitle,
+                Descripcion = _ticketDescription,
                 CodigoEstado = TicketEstadoKeys.Nuevo,
                 Prioridad = _ticketPriority,
-                IdTecnico = string.IsNullOrWhiteSpace(_ticketTechnicianId) ? null : _ticketTechnicianId,
+                IdTecnico = creatorTechnicianId,
                 ClienteCodigo = _selectedConversation.ClienteCodigo,
                 IdContacto = _selectedConversation.IdContacto,
                 IdConversacion = _selectedConversation.IdConversacion,
                 IdMensajes = orderedMessageIds,
-                UsuarioAccion = AppUserSession.GetCurrentUserName(string.Empty)
+                UsuarioAccion = CurrentUserNameForAudit
             });
 
             await ConversacionesSvc.AddInternalEventAsync(new ConversacionEventoInternoRequest
@@ -2294,10 +2446,11 @@
             _ticketSelectionMode = false;
             _showTicketDialog = false;
             _selectedTicketMessageIds.Clear();
+            _ticketDescription = string.Empty;
             _relatedTicketMatches.Clear();
             _allowCreateDespiteRelated = false;
-            _actionMessage = $"Ticket #{idTicket} creado correctamente.";
-            Nav.NavigateTo($"/tickets?id={idTicket.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+            _actionMessage = $"Ticket #{idTicket.ToString(System.Globalization.CultureInfo.InvariantCulture)} creado correctamente.";
+            await LoadConversationAsync(_selectedConversation.IdConversacion, showLoading: false, clearActionState: false);
         }
         catch (Exception ex)
         {
@@ -2325,12 +2478,16 @@
         try
         {
             var selectedText = BuildSelectedTicketText();
+            var searchText = BuildRelatedTicketSearchText(selectedText);
+            if (string.IsNullOrWhiteSpace(searchText))
+                return;
+
             var matches = await TicketsSvc.FindRelatedOpenTicketsAsync(new TicketRelatedSearchRequest
             {
                 ClienteCodigo = _selectedConversation.ClienteCodigo,
                 IdContacto = _selectedConversation.IdContacto,
                 IdConversacion = _selectedConversation.IdConversacion,
-                Texto = $"{_ticketTitle} {selectedText}"
+                Texto = searchText
             });
 
             _relatedTicketMatches = matches
@@ -2350,8 +2507,35 @@
     private string BuildSelectedTicketText()
         => string.Join(" ", VisibleMessages
             .Where(x => _selectedTicketMessageIds.Contains(x.IdMensaje))
+            .Where(ShouldUseMessageForRelatedTicketSearch)
             .Select(x => x.Texto)
             .Where(x => !string.IsNullOrWhiteSpace(x)));
+
+    private string BuildRelatedTicketSearchText(string selectedText)
+    {
+        var defaultTitle = BuildDefaultTicketTitle();
+        var titleWasEdited = !string.IsNullOrWhiteSpace(_ticketTitle)
+                             && !string.Equals(_ticketTitle.Trim(), defaultTitle.Trim(), StringComparison.OrdinalIgnoreCase);
+
+        return titleWasEdited
+            ? $"{_ticketTitle} {selectedText}".Trim()
+            : selectedText.Trim();
+    }
+
+    private bool ShouldUseMessageForRelatedTicketSearch(ConversacionMensajeDto message)
+    {
+        if (string.IsNullOrWhiteSpace(message.Texto))
+            return false;
+
+        if (IsContactMessage(message) || IsReactionMessage(message) || IsUnsupportedMessage(message))
+            return false;
+
+        if (message.MessageType is "IMAGE" or "AUDIO" or "VIDEO" or "DOCUMENT" or "STICKER")
+            return HasHumanAttachmentText(message);
+
+        return string.Equals(message.MessageType, "TEXT", StringComparison.OrdinalIgnoreCase)
+               || string.IsNullOrWhiteSpace(message.MessageType);
+    }
 
     private async Task LoadContextTicketsAsync()
     {
@@ -2440,6 +2624,8 @@
                 Search = _filters.Search.Trim(),
                 IdTecnicoActual = _filters.IdTecnicoActual,
                 CodigoEstado = _filters.CodigoEstado,
+                UsuarioActual = CurrentUserNameForAudit,
+                SistemaActual = CurrentUserSystemForAudit,
                 Limit = 6
             }, cts.Token);
 
@@ -2553,6 +2739,8 @@
             Hasta = filters.Hasta,
             Auditoria = filters.Auditoria,
             TipoMensaje = filters.TipoMensaje,
+            UsuarioActual = filters.UsuarioActual,
+            SistemaActual = filters.SistemaActual,
             Limit = filters.Limit,
             Offset = filters.Offset
         };
@@ -2762,6 +2950,32 @@
         try
         {
             await JS.InvokeVoidAsync("conversacionesUi.playNewMessageSound");
+            await UpdateSoundDiagnosticsAsync();
+        }
+        catch
+        {
+        }
+    }
+
+    private async Task TestNewMessageSoundAsync()
+    {
+        try
+        {
+            _soundDiagnostics = await JS.InvokeAsync<SoundDiagnosticsVm>("conversacionesUi.testNewMessageSound");
+            _actionMessage = "Prueba de sonido ejecutada.";
+            _actionError = null;
+        }
+        catch (Exception ex)
+        {
+            _actionError = $"No se pudo reproducir el sonido de prueba: {ex.Message}";
+        }
+    }
+
+    private async Task UpdateSoundDiagnosticsAsync()
+    {
+        try
+        {
+            _soundDiagnostics = await JS.InvokeAsync<SoundDiagnosticsVm>("conversacionesUi.getSoundDiagnostics");
         }
         catch
         {
@@ -2808,7 +3022,17 @@
     private void MarkSelectedConversationAsRead()
     {
         if (_selectedConversationId is { } id)
-            _newMessagesByConversation.Remove(id);
+        {
+            var hadUnread = _newMessagesByConversation.Remove(id);
+            if (_inbox.FirstOrDefault(x => x.IdConversacion == id) is { } inboxItem)
+            {
+                hadUnread = hadUnread || inboxItem.MensajesNoLeidosUsuario > 0;
+                inboxItem.MensajesNoLeidosUsuario = 0;
+            }
+
+            if (hadUnread || _newMessagesCount > 0)
+                _ = InvokeAsync(() => PersistConversationReadAsync(id));
+        }
 
         ClearNewMessageState();
         _showReturnToLatest = false;
@@ -2817,10 +3041,27 @@
     private int GetConversationNewCount(long idConversacion)
     {
         var count = _newMessagesByConversation.TryGetValue(idConversacion, out var storedCount) ? storedCount : 0;
+        if (_inbox.FirstOrDefault(x => x.IdConversacion == idConversacion) is { } inboxItem)
+            count = Math.Max(count, inboxItem.MensajesNoLeidosUsuario);
+
         if (_selectedConversationId == idConversacion)
             count = Math.Max(count, _newMessagesCount);
 
         return count;
+    }
+
+    private async Task PersistConversationReadAsync(long idConversacion)
+    {
+        try
+        {
+            await ConversacionesSvc.MarkConversationReadAsync(
+                idConversacion,
+                CurrentUserNameForAudit,
+                CurrentUserSystemForAudit);
+        }
+        catch
+        {
+        }
     }
 
     private void RestoreSelectedNewMessageMarker(long idConversacion)
@@ -2861,7 +3102,42 @@
     private async Task HandleReplyInputAsync(ChangeEventArgs args)
     {
         _replyText = Convert.ToString(args.Value, System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
+        await AutoResizeReplyTextareaAsync();
         await NotifyTypingAsync(HasReplyText);
+    }
+
+    private async Task HandleInternalNoteInputAsync(ChangeEventArgs args)
+    {
+        _internalNoteText = Convert.ToString(args.Value, System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
+        await AutoResizeInternalNoteTextareaAsync();
+    }
+
+    private async Task OnReplyFocusAsync(FocusEventArgs _)
+    {
+        await AutoResizeReplyTextareaAsync();
+        await ScrollThreadToBottomAsync();
+    }
+
+    private async Task AutoResizeReplyTextareaAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("conversacionesUi.autoResizeTextarea", _replyTextArea, 44, 120);
+        }
+        catch
+        {
+        }
+    }
+
+    private async Task AutoResizeInternalNoteTextareaAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("conversacionesUi.autoResizeTextarea", _internalNoteMobileTextArea, 44, 120);
+        }
+        catch
+        {
+        }
     }
 
     private async Task NotifyTypingAsync(bool escribiendo, bool force = false)
@@ -2917,6 +3193,7 @@
         }
 
         await InvokeAsync(StateHasChanged);
+        await AutoResizeReplyTextareaAsync();
 
         try
         {
@@ -2943,6 +3220,7 @@
         catch (Exception ex)
         {
             _actionError = ex.Message;
+            MarkPendingAttachmentsError(ex.Message);
             if (optimisticMessageId.HasValue)
                 RemoveOptimisticMessage(optimisticMessageId.Value);
 
@@ -3161,6 +3439,9 @@
             });
 
             _internalNoteText = string.Empty;
+            await AutoResizeInternalNoteTextareaAsync();
+            _showComposerTools = false;
+            _composerToolTab = ComposerToolTabs.Emojis;
             _actionMessage = "Nota interna guardada.";
             await SelectConversationAsync(_selectedConversation.IdConversacion);
             await LoadInboxAsync();
@@ -3603,6 +3884,9 @@
         try
         {
             await AddFilesToPendingAttachmentsAsync(e, _pendingAttachments);
+            foreach (var pending in _pendingAttachments)
+                pending.Error = null;
+
             MinimizeComposerTools();
 
             _actionMessage = _pendingAttachments.Count == 1
@@ -3724,24 +4008,12 @@
 
         try
         {
-            var recording = await JS.InvokeAsync<RecordedAudioPayload>("conversacionesAudio.stopRecordingPayload");
-            if (string.IsNullOrWhiteSpace(recording.Base64)) return;
-
-            var bytes = Convert.FromBase64String(recording.Base64);
-            var mimeType = string.IsNullOrWhiteSpace(recording.MimeType) ? "audio/webm" : recording.MimeType;
-            var fileName = $"audio_{DateTime.Now:yyyyMMdd_HHmmss}{InferAudioExtension(mimeType)}";
-
-            _pendingAttachments.Add(new PendingAttachment
-            {
-                NombreArchivo = fileName,
-                MimeType = mimeType,
-                TipoArchivo = "AUDIO",
-                Contenido = bytes,
-                TamanoBytes = bytes.Length
-            });
-
-            _actionMessage = "Audio listo para enviar.";
-            MinimizeComposerTools();
+            var fileName = $"audio_{DateTime.Now:yyyyMMdd_HHmmss}";
+            var result = await JS.InvokeAsync<RecordedAudioFileResult>("conversacionesAudio.stopRecordingToInput", "conv-file-drop-input", fileName);
+            if (!result.Ok)
+                _actionError = string.IsNullOrWhiteSpace(result.Message)
+                    ? "No se pudo preparar el audio grabado."
+                    : result.Message;
         }
         catch (Exception ex)
         {
@@ -3756,8 +4028,34 @@
     private void RemovePendingAttachment(Guid id)
         => _pendingAttachments.RemoveAll(x => x.Id == id);
 
+    private void MarkPendingAttachmentsError(string? message)
+    {
+        var error = string.IsNullOrWhiteSpace(message)
+            ? "No se pudo enviar. Reintentá con el botón de enviar."
+            : message;
+
+        foreach (var pending in _pendingAttachments)
+            pending.Error = error;
+    }
+
     private void RemoveTemplatePendingAttachment(Guid id)
         => _templatePendingAttachments.RemoveAll(x => x.Id == id);
+
+    private async Task SelectEmojiFromPanelAsync(string emoji)
+    {
+        if (_reactionEmojiMessageId.HasValue)
+        {
+            var message = _messages.FirstOrDefault(x => x.IdMensaje == _reactionEmojiMessageId.Value);
+            if (message is not null)
+                await SendReactionAsync(message, emoji);
+
+            _reactionEmojiMessageId = null;
+            MinimizeComposerTools();
+            return;
+        }
+
+        AddEmojiToReply(emoji);
+    }
 
     private void AddEmojiToReply(string emoji)
     {
@@ -3807,10 +4105,16 @@
     }
 
     private void ToggleComposerTools()
-        => _showComposerTools = !_showComposerTools;
+    {
+        _reactionEmojiMessageId = null;
+        _showComposerTools = !_showComposerTools;
+    }
 
     private void MinimizeComposerTools()
-        => _showComposerTools = false;
+    {
+        _showComposerTools = false;
+        _reactionEmojiMessageId = null;
+    }
 
     private void HandleEmojiSearchInput(ChangeEventArgs args)
         => _emojiSearch = Convert.ToString(args.Value, System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
@@ -4197,6 +4501,22 @@
            || (string.Equals(message.Direction, "NOTA_INTERNA", StringComparison.OrdinalIgnoreCase)
                && string.Equals(message.MessageType, "SYSTEM", StringComparison.OrdinalIgnoreCase));
 
+    private static bool TryGetTicketIdFromEvent(ConversacionMensajeDto message, out long idTicket)
+    {
+        idTicket = 0;
+        if (!IsInternalEventMessage(message) || string.IsNullOrWhiteSpace(message.Texto))
+            return false;
+
+        var match = System.Text.RegularExpressions.Regex.Match(
+            message.Texto,
+            @"\bticket\s*#\s*(\d+)\b",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+        return match.Success
+               && long.TryParse(match.Groups[1].Value, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out idTicket)
+               && idTicket > 0;
+    }
+
     private bool CanReactToMessage(ConversacionMensajeDto message)
         => IsWhatsAppConversation
            && !IsWhatsAppWindowExpired
@@ -4231,6 +4551,37 @@
         }
 
         return string.Empty;
+    }
+
+    private bool TryGetQuotedMessage(ConversacionMensajeDto message, out ConversacionMensajeDto quotedMessage)
+    {
+        quotedMessage = default!;
+        if (string.IsNullOrWhiteSpace(message.WhatsAppReplyToMessageId))
+            return false;
+
+        quotedMessage = _messages.FirstOrDefault(x =>
+            !string.IsNullOrWhiteSpace(x.WhatsAppMessageId)
+            && string.Equals(x.WhatsAppMessageId, message.WhatsAppReplyToMessageId, StringComparison.OrdinalIgnoreCase))!;
+
+        return quotedMessage is not null;
+    }
+
+    private static string GetMessageDomId(long idMensaje)
+        => $"conversation-message-{idMensaje}";
+
+    private async Task ScrollToQuotedMessageAsync(long idMensaje)
+    {
+        if (idMensaje <= 0)
+            return;
+
+        try
+        {
+            await JS.InvokeVoidAsync("conversacionesUi.scrollToMessage", GetMessageDomId(idMensaje));
+        }
+        catch (Exception ex)
+        {
+            _actionError = $"No se pudo ubicar el mensaje citado: {ex.Message}";
+        }
     }
 
     private static string DisplayOrFallback(params string?[] values)
@@ -4287,6 +4638,7 @@
     private static string InferTipoArchivo(string mimeType)
     {
         if (mimeType.StartsWith("image/", StringComparison.OrdinalIgnoreCase)) return "IMAGE";
+        if (mimeType.StartsWith("audio/webm", StringComparison.OrdinalIgnoreCase)) return "DOCUMENT";
         if (mimeType.StartsWith("audio/", StringComparison.OrdinalIgnoreCase)) return "AUDIO";
         if (mimeType.StartsWith("video/", StringComparison.OrdinalIgnoreCase)) return "VIDEO";
         return "DOCUMENT";
@@ -4343,6 +4695,44 @@
         => IsUnsupportedMessage(message)
             ? "WhatsApp envió un tipo de mensaje que todavía no es compatible con el módulo."
             : message.Texto;
+
+    private static readonly Regex MessageUrlRegex = new(
+        @"(?i)\b((?:https?://|www\.)[^\s<]+)",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    private static MarkupString RenderMessageText(ConversacionMensajeDto message)
+        => new(LinkifyMessageText(GetMessageDisplayText(message)));
+
+    private static string LinkifyMessageText(string? text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return string.Empty;
+
+        var encoded = WebUtility.HtmlEncode(text);
+        return MessageUrlRegex.Replace(encoded, match =>
+        {
+            var display = match.Value;
+            var trailing = string.Empty;
+
+            while (display.Length > 0 && IsUrlTrailingPunctuation(display[^1]))
+            {
+                trailing = display[^1] + trailing;
+                display = display[..^1];
+            }
+
+            if (string.IsNullOrWhiteSpace(display))
+                return match.Value;
+
+            var href = display.StartsWith("www.", StringComparison.OrdinalIgnoreCase)
+                ? $"https://{display}"
+                : display;
+
+            return $"""<a class="message-card__link" href="{href}" target="_blank" rel="noopener noreferrer">{display}</a>{trailing}""";
+        });
+    }
+
+    private static bool IsUrlTrailingPunctuation(char value)
+        => value is '.' or ',' or ';' or ':' or ')' or ']' or '}' or '!' or '?';
 
     private static bool IsContactMessage(ConversacionMensajeDto message)
         => string.Equals(message.MessageType, "CONTACT", StringComparison.OrdinalIgnoreCase)
@@ -4520,12 +4910,16 @@
     private void ToggleReactionPicker(long idMensaje)
         => _openReactionMessageId = _openReactionMessageId == idMensaje ? null : idMensaje;
 
-    private void OpenComposerEmojiPanel()
+    private void OpenReactionEmojiPanel(long idMensaje)
     {
+        _reactionEmojiMessageId = idMensaje;
         _showComposerTools = true;
         _composerToolTab = ComposerToolTabs.Emojis;
         _openReactionMessageId = null;
     }
+
+    private string GetEmojiButtonTitle(string emoji)
+        => _reactionEmojiMessageId.HasValue ? $"Reaccionar {emoji}" : $"Agregar {emoji}";
 
     private void OpenAttachmentPreview(ConversacionAdjuntoDto adjunto)
     {
@@ -4702,7 +5096,7 @@
     {
         var normalized = (mimeType ?? string.Empty).ToLowerInvariant();
         if (normalized.Contains("ogg", StringComparison.OrdinalIgnoreCase)) return ".ogg";
-        if (normalized.Contains("mp4", StringComparison.OrdinalIgnoreCase)) return ".m4a";
+        if (normalized.Contains("mp4", StringComparison.OrdinalIgnoreCase)) return ".mp4";
         if (normalized.Contains("mpeg", StringComparison.OrdinalIgnoreCase)) return ".mp3";
         return ".webm";
     }
@@ -4787,15 +5181,19 @@
         {
             "IMAGE" => "Imagen",
             "AUDIO" => "Audio",
+            "DOCUMENT" when MimeType.StartsWith("audio/", StringComparison.OrdinalIgnoreCase) => "Audio",
             "VIDEO" => "Video",
             _ => "Archivo"
         };
     }
 
-    private sealed class RecordedAudioPayload
+    private sealed class RecordedAudioFileResult
     {
-        public string Base64 { get; set; } = string.Empty;
+        public bool Ok { get; set; }
         public string MimeType { get; set; } = string.Empty;
+        public string FileName { get; set; } = string.Empty;
+        public long Size { get; set; }
+        public string Message { get; set; } = string.Empty;
     }
 
     private sealed record EmojiGroup(string Nombre, IReadOnlyList<string> Emojis);
@@ -4817,10 +5215,21 @@
         List<ConversacionInboxItemDto> Inbox,
         long? SelectedConversationId);
 
+    private sealed class SoundDiagnosticsVm
+    {
+        public bool SoundInitialized { get; set; }
+        public bool AudioUnlocked { get; set; }
+        public bool HasNotificationAudio { get; set; }
+        public string NotificationSoundUrl { get; set; } = string.Empty;
+        public string LastAttemptAt { get; set; } = string.Empty;
+        public string LastError { get; set; } = string.Empty;
+    }
+
     private static class ComposerToolTabs
     {
         public const string Emojis = "emojis";
         public const string Stickers = "stickers";
         public const string Adjuntos = "adjuntos";
+        public const string Notas = "notas";
     }
 }

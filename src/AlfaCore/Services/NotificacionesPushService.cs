@@ -1,4 +1,4 @@
-using AlfaCore.Configuration;
+﻿using AlfaCore.Configuration;
 using AlfaCore.Models;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Options;
@@ -62,12 +62,39 @@ public sealed class NotificacionesPushService(
                 Endpoint = request.Subscription.Endpoint.Trim(),
                 P256dh = request.Subscription.P256dh.Trim(),
                 Auth = request.Subscription.Auth.Trim(),
+                UserAgent = (request.UserAgent ?? string.Empty).Trim(),
+                Activo = true,
+                CreatedAt = DateTimeOffset.UtcNow,
                 UpdatedAt = DateTimeOffset.UtcNow
             };
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
-            await SaveConfigJsonAsync(cn, BuildSubscriptionKey(userName, request.DeviceId), record, "Suscripción Web Push", token);
+            var existing = await ReadSubscriptionAsync(cn, userName, request.DeviceId, token);
+            if (existing is not null && existing.CreatedAt != default)
+                record.CreatedAt = existing.CreatedAt;
+
+            var key = BuildSubscriptionKey(userName, request.DeviceId);
+            await SaveConfigJsonAsync(cn, key, record, "Suscripción Web Push", token);
+            await appEvents.LogAuditAsync(
+                ModuleName,
+                "SaveSubscription",
+                "TA_CONFIGURACION",
+                key,
+                "Suscripción Web Push guardada.",
+                new
+                {
+                    Usuario = record.UserName,
+                    record.DeviceId,
+                    Endpoint = EndpointPreview(record.Endpoint),
+                    TieneP256dh = !string.IsNullOrWhiteSpace(record.P256dh),
+                    TieneAuth = !string.IsNullOrWhiteSpace(record.Auth),
+                    record.Activo,
+                    record.CreatedAt,
+                    record.UpdatedAt,
+                    record.UserAgent
+                },
+                token);
         }, "No se pudo guardar la suscripción de notificaciones.", ct);
 
     public Task DeleteSubscriptionAsync(string userName, string deviceId, CancellationToken ct = default)
@@ -83,9 +110,18 @@ public sealed class NotificacionesPushService(
                 WHERE UPPER(LTRIM(RTRIM(CLAVE))) = @Clave;
                 """;
 
+            var key = BuildSubscriptionKey(userName, deviceId);
             await using var cmd = new SqlCommand(sql, cn);
-            cmd.Parameters.AddWithValue("@Clave", BuildSubscriptionKey(userName, deviceId).ToUpperInvariant());
-            await cmd.ExecuteNonQueryAsync(token);
+            cmd.Parameters.AddWithValue("@Clave", key.ToUpperInvariant());
+            var rows = await cmd.ExecuteNonQueryAsync(token);
+            await appEvents.LogAuditAsync(
+                ModuleName,
+                "DeleteSubscription",
+                "TA_CONFIGURACION",
+                key,
+                "Suscripción Web Push eliminada.",
+                new { Usuario = NormalizeUser(userName), DeviceId = NormalizeDeviceId(deviceId), Rows = rows },
+                token);
         }, "No se pudo eliminar la suscripción de notificaciones.", ct);
 
     public Task SavePreferencesAsync(string userName, NotificacionesPushPreferencesRequest request, CancellationToken ct = default)
@@ -96,10 +132,26 @@ public sealed class NotificacionesPushService(
             var preferences = NormalizePreferences(request.Preferences);
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
-            await SaveConfigJsonAsync(cn, BuildPreferencesKey(userName, request.DeviceId), preferences, "Preferencias Web Push", token);
+            var key = BuildPreferencesKey(userName, request.DeviceId);
+            await SaveConfigJsonAsync(cn, key, preferences, "Preferencias Web Push", token);
+            await appEvents.LogAuditAsync(
+                ModuleName,
+                "SavePreferences",
+                "TA_CONFIGURACION",
+                key,
+                "Preferencias Web Push guardadas.",
+                new
+                {
+                    Usuario = NormalizeUser(userName),
+                    DeviceId = NormalizeDeviceId(request.DeviceId),
+                    preferences.Habilitadas,
+                    preferences.Alcance,
+                    preferences.Canales
+                },
+                token);
         }, "No se pudieron guardar las preferencias de notificaciones.", ct);
 
-    public Task SendTestAsync(string userName, string deviceId, CancellationToken ct = default)
+    public Task<NotificacionesPushSendResultDto> SendTestAsync(string userName, string deviceId, CancellationToken ct = default)
         => ExecuteLoggedAsync("SendTest", async token =>
         {
             ValidateDeviceId(deviceId);
@@ -107,16 +159,111 @@ public sealed class NotificacionesPushService(
             EnsureVapidConfigured();
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
-            var subscription = await ReadSubscriptionAsync(cn, userName, deviceId, token)
-                ?? throw new InvalidOperationException("No hay una suscripción activa para este dispositivo.");
+            var subscriptions = (await ReadUserSubscriptionsAsync(cn, userName, token))
+                .Where(x => x.Activo)
+                .ToList();
 
-            await SendAsync(subscription, new PushPayload
+            if (subscriptions.Count == 0)
+                return new NotificacionesPushSendResultDto();
+
+            var currentDeviceId = NormalizeDeviceId(deviceId);
+            var currentSubscription = subscriptions.FirstOrDefault(x =>
+                string.Equals(x.DeviceId, currentDeviceId, StringComparison.OrdinalIgnoreCase));
+            if (currentSubscription is null)
+            {
+                await appEvents.LogAuditAsync(
+                    ModuleName,
+                    "SendTestCurrentDeviceMissing",
+                    "TA_CONFIGURACION",
+                    NormalizeUser(userName),
+                    "No hay suscripción activa para el deviceId actual al enviar prueba.",
+                    new { Usuario = NormalizeUser(userName), DeviceIdActual = currentDeviceId, SuscripcionesActivas = subscriptions.Count },
+                    token);
+            }
+
+            subscriptions = subscriptions
+                .OrderByDescending(x => string.Equals(x.DeviceId, currentDeviceId, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            await appEvents.LogAuditAsync(
+                ModuleName,
+                "SendTestStart",
+                "TA_CONFIGURACION",
+                NormalizeUser(userName),
+                "Inicio de envío de prueba Web Push.",
+                new
+                {
+                    Usuario = NormalizeUser(userName),
+                    DeviceIdActual = currentDeviceId,
+                    SuscripcionesActivas = subscriptions.Count,
+                    Endpoints = subscriptions.Select(x => new { x.DeviceId, Endpoint = EndpointPreview(x.Endpoint) }).ToList()
+                },
+                token);
+
+            var result = await SendToSubscriptionsAsync(cn, subscriptions, new PushPayload
             {
                 Title = "Nuevo mensaje",
                 Body = "Notificación de prueba de AlfaCore.",
                 Url = "/conversaciones"
             }, token);
+
+            await appEvents.LogAuditAsync(
+                ModuleName,
+                "SendTestResult",
+                "TA_CONFIGURACION",
+                NormalizeUser(userName),
+                "Resultado de envío de prueba Web Push.",
+                new { Usuario = NormalizeUser(userName), result.TotalCount, result.SuccessCount, result.FailCount, result.Results },
+                token);
+
+            return result;
         }, "No se pudo enviar la notificación de prueba.", ct);
+
+    public Task<NotificacionesPushDiagnosticsDto> GetDiagnosticsAsync(string userName, string deviceId, CancellationToken ct = default)
+        => ExecuteLoggedAsync("GetDiagnostics", async token =>
+        {
+            ValidateDeviceId(deviceId);
+            await EnsureUserCanUseConversacionesAsync(userName, token);
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            var subscriptions = await ReadUserSubscriptionsAsync(cn, userName, token);
+            var currentDeviceId = NormalizeDeviceId(deviceId);
+            var preferences = await ReadPreferencesAsync(cn, userName, currentDeviceId, token);
+
+            var endpointDiagnostics = new List<NotificacionesPushEndpointResultDto>();
+            foreach (var subscription in subscriptions)
+            {
+                var itemPreferences = await ReadPreferencesAsync(cn, subscription.UserName, subscription.DeviceId, token);
+                endpointDiagnostics.Add(new NotificacionesPushEndpointResultDto
+                {
+                    UserName = subscription.UserName,
+                    DeviceId = subscription.DeviceId,
+                    EndpointParcial = EndpointPreview(subscription.Endpoint),
+                    Activo = subscription.Activo,
+                    EsDispositivoActual = string.Equals(subscription.DeviceId, currentDeviceId, StringComparison.OrdinalIgnoreCase),
+                    UserAgent = subscription.UserAgent,
+                    CreatedAt = subscription.CreatedAt == default ? null : subscription.CreatedAt,
+                    Preferences = itemPreferences,
+                    Success = subscription.Activo,
+                    StatusCode = subscription.LastStatusCode,
+                    Error = subscription.LastError,
+                    ResponseBody = subscription.LastProviderResponseBody,
+                    LastAttemptAt = subscription.LastAttemptAt,
+                    ScopeFilterReason = string.Empty,
+                    ChannelFilterReason = string.Empty
+                });
+            }
+
+            return new NotificacionesPushDiagnosticsDto
+            {
+                UserName = NormalizeUser(userName),
+                DeviceId = currentDeviceId,
+                SubscriptionCount = subscriptions.Count,
+                ActiveSubscriptionCount = subscriptions.Count(x => x.Activo),
+                Preferences = preferences,
+                Subscriptions = endpointDiagnostics
+            };
+        }, "No se pudo obtener el diagnóstico de notificaciones.", ct);
 
     public Task NotifyNewMessageAsync(long idConversacion, long idMensaje, CancellationToken ct = default)
         => ExecuteLoggedAsync("NotifyNewMessage", async token =>
@@ -128,40 +275,133 @@ public sealed class NotificacionesPushService(
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
             var subscriptions = await ReadAllSubscriptionsAsync(cn, token);
+            var activeSubscriptions = subscriptions.Where(x => x.Activo).ToList();
+            var candidates = 0;
+            var filteredByPreferences = 0;
+            var filteredByPermissions = 0;
 
-            foreach (var subscription in subscriptions)
+            await appEvents.LogAuditAsync(
+                ModuleName,
+                "NotifyNewMessageStart",
+                "CONV_MENSAJES",
+                message.IdMensaje.ToString(CultureInfo.InvariantCulture),
+                "Inicio de evaluación de push por mensaje entrante.",
+                new
+                {
+                    message.IdConversacion,
+                    message.IdMensaje,
+                    message.Canal,
+                    message.IdTecnico,
+                    SuscripcionesTotales = subscriptions.Count,
+                    SuscripcionesActivas = activeSubscriptions.Count
+                },
+                token);
+
+            var toSend = new List<StoredSubscription>();
+            foreach (var subscription in activeSubscriptions)
             {
+                candidates++;
                 var preferences = await ReadPreferencesAsync(cn, subscription.UserName, subscription.DeviceId, token);
-                if (!ShouldNotify(message, subscription.UserName, preferences))
+                var evaluation = EvaluateNotification(message, subscription.UserName, preferences);
+                if (!evaluation.CanNotify)
+                {
+                    filteredByPreferences++;
+                    await appEvents.LogAuditAsync(
+                        ModuleName,
+                        "NotifyNewMessageFiltered",
+                        "CONV_MENSAJES",
+                        message.IdMensaje.ToString(CultureInfo.InvariantCulture),
+                        "Suscripción filtrada por preferencias de push.",
+                        new
+                        {
+                            subscription.UserName,
+                            subscription.DeviceId,
+                            Endpoint = EndpointPreview(subscription.Endpoint),
+                            evaluation.ScopeFilterReason,
+                            evaluation.ChannelFilterReason,
+                            preferences.Habilitadas,
+                            preferences.Alcance,
+                            preferences.Canales,
+                            message.Canal,
+                            message.IdTecnico
+                        },
+                        token);
                     continue;
+                }
 
                 if (!await UserCanUseConversacionesAsync(subscription.UserName, token))
-                    continue;
-
-                try
                 {
-                    await SendAsync(subscription, new PushPayload
-                    {
-                        Title = "Nuevo mensaje",
-                        Body = BuildBody(message),
-                        Url = $"/conversaciones?id={message.IdConversacion.ToString(CultureInfo.InvariantCulture)}",
-                        IdConversacion = message.IdConversacion,
-                        IdMensaje = message.IdMensaje,
-                        Canal = message.Canal
-                    }, token);
-                }
-                catch (Exception ex)
-                {
-                    await appEvents.LogErrorAsync(
+                    filteredByPermissions++;
+                    await appEvents.LogAuditAsync(
                         ModuleName,
-                        "NotifySubscription",
-                        ex,
-                        "No se pudo enviar una notificación push a una suscripción.",
-                        new { subscription.UserName, subscription.DeviceId, message.IdConversacion, message.IdMensaje },
-                        AppEventSeverity.Warning,
+                        "NotifyNewMessageNoPermission",
+                        "CONV_MENSAJES",
+                        message.IdMensaje.ToString(CultureInfo.InvariantCulture),
+                        "Suscripción sin permiso al módulo Conversaciones.",
+                        new
+                        {
+                            subscription.UserName,
+                            subscription.DeviceId,
+                            Endpoint = EndpointPreview(subscription.Endpoint)
+                        },
                         token);
+                    continue;
                 }
+
+                await appEvents.LogAuditAsync(
+                    ModuleName,
+                    "NotifyNewMessageCandidate",
+                    "CONV_MENSAJES",
+                    message.IdMensaje.ToString(CultureInfo.InvariantCulture),
+                    "Suscripción elegible para envío push.",
+                    new
+                    {
+                        subscription.UserName,
+                        subscription.DeviceId,
+                        Endpoint = EndpointPreview(subscription.Endpoint),
+                        evaluation.ScopeFilterReason,
+                        evaluation.ChannelFilterReason
+                    },
+                    token);
+                toSend.Add(subscription);
             }
+
+            var result = await SendToSubscriptionsAsync(cn, toSend, new PushPayload
+            {
+                Title = BuildNotificationTitle(message),
+                Body = BuildNotificationPreview(message),
+                Url = $"/conversaciones?id={message.IdConversacion.ToString(CultureInfo.InvariantCulture)}",
+                IdConversacion = message.IdConversacion,
+                IdMensaje = message.IdMensaje,
+                Canal = message.Canal,
+                ContactName = BuildNotificationTitle(message),
+                Preview = BuildNotificationPreview(message),
+                TimestampUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                UnreadCount = 1,
+                Renotify = false
+            }, token);
+
+            await appEvents.LogAuditAsync(
+                ModuleName,
+                "NotifyNewMessageResult",
+                "CONV_MENSAJES",
+                message.IdMensaje.ToString(CultureInfo.InvariantCulture),
+                "Resultado de envío push por mensaje entrante.",
+                new
+                {
+                    message.IdConversacion,
+                    message.IdMensaje,
+                    message.Canal,
+                    message.IdTecnico,
+                    Candidatos = candidates,
+                    FiltradosPorPreferencias = filteredByPreferences,
+                    FiltradosPorPermisos = filteredByPermissions,
+                    SuscripcionesAEnviar = toSend.Count,
+                    result.SuccessCount,
+                    result.FailCount,
+                    result.Results
+                },
+                token);
         }, "No se pudo enviar la notificación push de mensaje nuevo.", ct);
 
     public Task<bool> UserCanUseConversacionesAsync(string userName, CancellationToken ct = default)
@@ -310,6 +550,15 @@ public sealed class NotificacionesPushService(
         return items;
     }
 
+    private async Task<List<StoredSubscription>> ReadUserSubscriptionsAsync(SqlConnection cn, string userName, CancellationToken ct)
+    {
+        var normalizedUser = NormalizeUser(userName);
+        var items = await ReadAllSubscriptionsAsync(cn, ct);
+        return items
+            .Where(x => string.Equals(x.UserName, normalizedUser, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+    }
+
     private async Task<string> ReadConfigValueAsync(SqlConnection cn, string key, CancellationToken ct)
     {
         var detailColumn = await ResolveConfigDetailColumnAsync(cn, ct);
@@ -374,15 +623,148 @@ public sealed class NotificacionesPushService(
         await appEvents.LogAuditAsync(ModuleName, "SaveConfig", "TA_CONFIGURACION", key, description, null, ct);
     }
 
-    private async Task SendAsync(StoredSubscription subscription, PushPayload payload, CancellationToken ct)
+    private async Task<NotificacionesPushSendResultDto> SendToSubscriptionsAsync(
+        SqlConnection cn,
+        IReadOnlyCollection<StoredSubscription> subscriptions,
+        PushPayload payload,
+        CancellationToken ct)
+    {
+        var result = new NotificacionesPushSendResultDto { TotalCount = subscriptions.Count };
+        foreach (var subscription in subscriptions)
+        {
+            var item = await SendToSubscriptionAsync(cn, subscription, payload, ct);
+            result.Results.Add(item);
+            if (item.Success)
+                result.SuccessCount++;
+            else
+                result.FailCount++;
+        }
+
+        return result;
+    }
+
+    private async Task<NotificacionesPushEndpointResultDto> SendToSubscriptionAsync(
+        SqlConnection cn,
+        StoredSubscription subscription,
+        PushPayload payload,
+        CancellationToken ct)
     {
         var pushOptions = EnsureVapidConfigured();
+        var result = new NotificacionesPushEndpointResultDto
+        {
+            DeviceId = subscription.DeviceId,
+            EndpointParcial = EndpointPreview(subscription.Endpoint)
+        };
 
         var webPushSubscription = new PushSubscription(subscription.Endpoint, subscription.P256dh, subscription.Auth);
         var vapidDetails = new VapidDetails(pushOptions.Subject.Trim(), pushOptions.PublicKey.Trim(), pushOptions.PrivateKey.Trim());
         var client = new WebPushClient();
         var json = JsonSerializer.Serialize(payload, JsonOptions);
-        await client.SendNotificationAsync(webPushSubscription, json, vapidDetails, ct);
+        try
+        {
+            subscription.LastAttemptAt = DateTimeOffset.UtcNow;
+            await appEvents.LogAuditAsync(
+                ModuleName,
+                "SendSubscriptionAttempt",
+                "TA_CONFIGURACION",
+                BuildSubscriptionKey(subscription.UserName, subscription.DeviceId),
+                "Intento de envío a suscripción push.",
+                new
+                {
+                    subscription.UserName,
+                    subscription.DeviceId,
+                    Endpoint = EndpointPreview(subscription.Endpoint),
+                    payload.IdConversacion,
+                    payload.IdMensaje,
+                    payload.Canal
+                },
+                ct);
+
+            await client.SendNotificationAsync(webPushSubscription, json, vapidDetails, ct);
+            result.Success = true;
+            result.StatusCode = 201;
+            subscription.LastStatusCode = result.StatusCode;
+            subscription.LastError = string.Empty;
+            subscription.LastProviderResponseBody = string.Empty;
+            subscription.UpdatedAt = DateTimeOffset.UtcNow;
+            await SaveConfigJsonAsync(
+                cn,
+                BuildSubscriptionKey(subscription.UserName, subscription.DeviceId),
+                subscription,
+                "Estado de último envío Web Push",
+                ct);
+            await appEvents.LogAuditAsync(
+                ModuleName,
+                "SendSubscriptionOk",
+                "TA_CONFIGURACION",
+                BuildSubscriptionKey(subscription.UserName, subscription.DeviceId),
+                "Proveedor push aceptó la notificación.",
+                new { subscription.UserName, subscription.DeviceId, Endpoint = EndpointPreview(subscription.Endpoint), PayloadLength = json.Length },
+                ct);
+        }
+        catch (WebPushException ex)
+        {
+            result.Success = false;
+            result.StatusCode = Convert.ToInt32(ex.StatusCode, CultureInfo.InvariantCulture);
+            result.ResponseBody = ReadExceptionTextProperty(ex, "ResponseBody", "Body", "Content");
+            result.Error = BuildWebPushErrorMessage(result.StatusCode, ex.Message);
+            subscription.LastStatusCode = result.StatusCode;
+            subscription.LastError = result.Error;
+            subscription.LastProviderResponseBody = result.ResponseBody;
+            subscription.UpdatedAt = DateTimeOffset.UtcNow;
+
+            if (result.StatusCode is 401 or 403 or 404 or 410)
+                await DeactivateSubscriptionAsync(cn, subscription, result.StatusCode, result.Error, ct);
+            else
+                await SaveConfigJsonAsync(
+                    cn,
+                    BuildSubscriptionKey(subscription.UserName, subscription.DeviceId),
+                    subscription,
+                    "Estado de último envío Web Push",
+                    ct);
+
+            await appEvents.LogErrorAsync(
+                ModuleName,
+                "SendSubscriptionWebPushError",
+                ex,
+                result.Error,
+                new
+                {
+                    subscription.UserName,
+                    subscription.DeviceId,
+                    Endpoint = EndpointPreview(subscription.Endpoint),
+                    result.StatusCode,
+                    result.ResponseBody,
+                    Payload = json
+                },
+                AppEventSeverity.Warning,
+                ct);
+        }
+        catch (Exception ex)
+        {
+            result.Success = false;
+            result.Error = ex.Message;
+            subscription.LastStatusCode = null;
+            subscription.LastError = ex.Message;
+            subscription.LastProviderResponseBody = string.Empty;
+            subscription.UpdatedAt = DateTimeOffset.UtcNow;
+            await SaveConfigJsonAsync(
+                cn,
+                BuildSubscriptionKey(subscription.UserName, subscription.DeviceId),
+                subscription,
+                "Estado de último envío Web Push",
+                ct);
+            await appEvents.LogErrorAsync(
+                ModuleName,
+                "SendSubscriptionError",
+                ex,
+                "No se pudo enviar una notificación push a una suscripción.",
+                new { subscription.UserName, subscription.DeviceId, Endpoint = EndpointPreview(subscription.Endpoint), Payload = json },
+                AppEventSeverity.Warning,
+                ct);
+        }
+
+        return result;
     }
 
     private PushNotificationsOptions EnsureVapidConfigured()
@@ -391,7 +773,35 @@ public sealed class NotificacionesPushService(
         if (!pushOptions.IsConfigured)
             throw new InvalidOperationException(pushOptions.GetConfigurationMessage());
 
+        var subject = pushOptions.Subject.Trim();
+        if (!subject.StartsWith("mailto:", StringComparison.OrdinalIgnoreCase)
+            && !subject.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+            && !subject.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("PushNotifications:Subject debe tener formato mailto:admin@alfagestion.com o una URL http/https.");
+
+        ValidateVapidKeys(pushOptions.PublicKey, pushOptions.PrivateKey);
+
         return pushOptions;
+    }
+
+    private async Task DeactivateSubscriptionAsync(
+        SqlConnection cn,
+        StoredSubscription subscription,
+        int? statusCode,
+        string error,
+        CancellationToken ct)
+    {
+        subscription.Activo = false;
+        subscription.LastStatusCode = statusCode;
+        subscription.LastError = error;
+        subscription.LastProviderResponseBody = string.Empty;
+        subscription.UpdatedAt = DateTimeOffset.UtcNow;
+        await SaveConfigJsonAsync(
+            cn,
+            BuildSubscriptionKey(subscription.UserName, subscription.DeviceId),
+            subscription,
+            "Suscripción Web Push inactiva",
+            ct);
     }
 
     private async Task EnsureUserCanUseConversacionesAsync(string userName, CancellationToken ct)
@@ -400,18 +810,30 @@ public sealed class NotificacionesPushService(
             throw new InvalidOperationException("El usuario no tiene acceso al módulo Conversaciones.");
     }
 
-    private static bool ShouldNotify(NotificacionMensajeNuevoDto message, string userName, NotificacionesPushPreferencesDto preferences)
+    private static PushNotificationEvaluation EvaluateNotification(NotificacionMensajeNuevoDto message, string userName, NotificacionesPushPreferencesDto preferences)
     {
         if (!preferences.Habilitadas)
-            return false;
+            return PushNotificationEvaluation.Blocked("Notificaciones desactivadas en preferencias del dispositivo.", "Notificaciones desactivadas.");
 
         if (!preferences.Canales.Contains(message.Canal, StringComparer.OrdinalIgnoreCase))
-            return false;
+            return PushNotificationEvaluation.Blocked(
+                "Canal no habilitado para el dispositivo.",
+                $"Canales configurados: {string.Join(", ", preferences.Canales)}. Canal del mensaje: {message.Canal}.");
 
         if (string.Equals(preferences.Alcance, NotificacionesPushScopes.Asignadas, StringComparison.OrdinalIgnoreCase))
-            return string.Equals(message.IdTecnico, NormalizeUser(userName), StringComparison.OrdinalIgnoreCase);
+        {
+            var matches = string.Equals(message.IdTecnico, NormalizeUser(userName), StringComparison.OrdinalIgnoreCase);
+            return matches
+                ? PushNotificationEvaluation.Allowed("Pasa alcance: asignadas al usuario.", "Pasa canal.")
+                : PushNotificationEvaluation.Blocked(
+                    $"Filtrada por alcance '{NotificacionesPushScopes.Asignadas}'.",
+                    $"Mensaje asignado a '{message.IdTecnico}', usuario '{NormalizeUser(userName)}'.");
+        }
 
-        return string.Equals(preferences.Alcance, NotificacionesPushScopes.Accesibles, StringComparison.OrdinalIgnoreCase);
+        if (string.Equals(preferences.Alcance, NotificacionesPushScopes.Accesibles, StringComparison.OrdinalIgnoreCase))
+            return PushNotificationEvaluation.Allowed("Pasa alcance: conversaciones accesibles.", "Pasa canal.");
+
+        return PushNotificationEvaluation.Blocked($"Alcance no soportado: {preferences.Alcance}.", "Canal válido.");
     }
 
     private static NotificacionesPushPreferencesDto NormalizePreferences(NotificacionesPushPreferencesDto? preferences)
@@ -456,12 +878,48 @@ public sealed class NotificacionesPushService(
         }
     }
 
-    private static string BuildBody(NotificacionMensajeNuevoDto message)
+    private static string BuildNotificationTitle(NotificacionMensajeNuevoDto message)
     {
-        var channel = string.IsNullOrWhiteSpace(message.Canal) ? "Conversación" : message.Canal.Trim();
-        var contact = string.IsNullOrWhiteSpace(message.Contacto) ? "contacto sin nombre" : message.Contacto.Trim();
-        return $"{channel} · {contact}";
+        var contact = SanitizeText(message.Contacto, 80);
+        return string.IsNullOrWhiteSpace(contact) ? "AlfaCore" : contact;
     }
+
+    private static string BuildNotificationPreview(NotificacionMensajeNuevoDto message)
+    {
+        var text = SanitizeText(message.Resumen, 100);
+        if (string.IsNullOrWhiteSpace(text))
+            return "Tenés un nuevo mensaje";
+
+        var lower = text.ToLowerInvariant();
+        if (LooksLikeImage(lower)) return "📷 Imagen";
+        if (LooksLikeAudio(lower)) return "🎤 Audio";
+        if (LooksLikeFile(lower)) return "📎 Archivo";
+        if (LooksLikeSticker(lower)) return "😊 Sticker";
+        return text;
+    }
+
+    private static string SanitizeText(string value, int maxLen)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return string.Empty;
+
+        var withoutHtml = System.Text.RegularExpressions.Regex.Replace(value, "<.*?>", " ");
+        var singleLine = withoutHtml.Replace("\r", " ").Replace("\n", " ").Trim();
+        var collapsed = System.Text.RegularExpressions.Regex.Replace(singleLine, "\\s{2,}", " ");
+        return collapsed.Length <= maxLen ? collapsed : $"{collapsed[..maxLen].TrimEnd()}…";
+    }
+
+    private static bool LooksLikeImage(string text)
+        => text.Contains("image/") || text.Contains(".jpg") || text.Contains(".jpeg") || text.Contains(".png") || text.Contains(".webp");
+
+    private static bool LooksLikeAudio(string text)
+        => text.Contains("audio/") || text.Contains(".ogg") || text.Contains(".mp3") || text.Contains(".wav") || text.Contains(".m4a");
+
+    private static bool LooksLikeFile(string text)
+        => text.Contains("application/") || text.Contains(".pdf") || text.Contains(".doc") || text.Contains(".xls") || text.Contains(".zip");
+
+    private static bool LooksLikeSticker(string text)
+        => text.Contains("sticker");
 
     private static string BuildSubscriptionKey(string userName, string deviceId)
         => $"{SubscriptionPrefix}{HashPart(userName, 24)}-{HashPart(deviceId, 10)}";
@@ -538,6 +996,100 @@ public sealed class NotificacionesPushService(
             throw new InvalidOperationException("La suscripción push recibida no es válida.");
     }
 
+    private static void ValidateVapidKeys(string publicKey, string privateKey)
+    {
+        var publicBytes = DecodeBase64Url(publicKey, "PushNotifications:PublicKey");
+        var privateBytes = DecodeBase64Url(privateKey, "PushNotifications:PrivateKey");
+
+        if (publicBytes.Length != 65 || publicBytes[0] != 4)
+            throw new InvalidOperationException("PushNotifications:PublicKey no tiene el formato P-256 esperado.");
+
+        if (privateBytes.Length != 32)
+            throw new InvalidOperationException("PushNotifications:PrivateKey no tiene el formato P-256 esperado.");
+
+        try
+        {
+            var parameters = new ECParameters
+            {
+                Curve = ECCurve.NamedCurves.nistP256,
+                D = privateBytes
+            };
+
+            using var ecdsa = ECDsa.Create(parameters);
+            var publicParameters = ecdsa.ExportParameters(false);
+            if (publicParameters.Q.X is null || publicParameters.Q.Y is null)
+                throw new InvalidOperationException("No se pudo derivar la clave pública desde PushNotifications:PrivateKey.");
+
+            var expectedPublicKey = new byte[65];
+            expectedPublicKey[0] = 4;
+            Buffer.BlockCopy(publicParameters.Q.X, 0, expectedPublicKey, 1, 32);
+            Buffer.BlockCopy(publicParameters.Q.Y, 0, expectedPublicKey, 33, 32);
+
+            if (!CryptographicOperations.FixedTimeEquals(publicBytes, expectedPublicKey))
+                throw new InvalidOperationException("PushNotifications:PublicKey y PushNotifications:PrivateKey no pertenecen al mismo par VAPID.");
+        }
+        catch (CryptographicException ex)
+        {
+            throw new InvalidOperationException("No se pudo validar el par VAPID configurado.", ex);
+        }
+    }
+
+    private static byte[] DecodeBase64Url(string value, string name)
+    {
+        var normalized = (value ?? string.Empty).Trim();
+        if (normalized.Length == 0)
+            throw new InvalidOperationException($"{name} no puede estar vacía.");
+
+        if (normalized.Any(ch => !char.IsLetterOrDigit(ch) && ch != '-' && ch != '_'))
+            throw new InvalidOperationException($"{name} no tiene formato base64url válido.");
+
+        try
+        {
+            var padded = normalized.PadRight(normalized.Length + ((4 - normalized.Length % 4) % 4), '=');
+            return Convert.FromBase64String(padded.Replace('-', '+').Replace('_', '/'));
+        }
+        catch (FormatException ex)
+        {
+            throw new InvalidOperationException($"{name} no tiene formato base64url válido.", ex);
+        }
+    }
+
+    private static string BuildWebPushErrorMessage(int? statusCode, string message)
+    {
+        if (statusCode is 401 or 403)
+            return "El proveedor push rechazó la autenticación VAPID (401/403). Verificá que PublicKey y PrivateKey pertenezcan al mismo par y que Subject use mailto:admin@alfagestion.com.";
+
+        if (statusCode is 404 or 410)
+            return "La suscripción push ya no existe en el navegador/proveedor y fue marcada como inactiva.";
+
+        return string.IsNullOrWhiteSpace(message)
+            ? "El proveedor push rechazó la notificación."
+            : message;
+    }
+
+    private static string ReadExceptionTextProperty(Exception exception, params string[] propertyNames)
+    {
+        foreach (var propertyName in propertyNames)
+        {
+            var property = exception.GetType().GetProperty(propertyName);
+            if (property?.GetValue(exception) is string value && !string.IsNullOrWhiteSpace(value))
+                return value;
+        }
+
+        return string.Empty;
+    }
+
+    private static string EndpointPreview(string endpoint)
+    {
+        if (string.IsNullOrWhiteSpace(endpoint))
+            return string.Empty;
+
+        var normalized = endpoint.Trim();
+        return normalized.Length <= 42
+            ? normalized
+            : $"{normalized[..28]}...{normalized[^10..]}";
+    }
+
     private static string NormalizeUser(string userName)
         => (userName ?? string.Empty).Trim().ToUpperInvariant();
 
@@ -566,7 +1118,14 @@ public sealed class NotificacionesPushService(
         public string Endpoint { get; set; } = string.Empty;
         public string P256dh { get; set; } = string.Empty;
         public string Auth { get; set; } = string.Empty;
+        public string UserAgent { get; set; } = string.Empty;
+        public bool Activo { get; set; } = true;
+        public DateTimeOffset CreatedAt { get; set; }
         public DateTimeOffset UpdatedAt { get; set; }
+        public int? LastStatusCode { get; set; }
+        public string LastError { get; set; } = string.Empty;
+        public string LastProviderResponseBody { get; set; } = string.Empty;
+        public DateTimeOffset? LastAttemptAt { get; set; }
     }
 
     private sealed class PushPayload
@@ -579,5 +1138,25 @@ public sealed class NotificacionesPushService(
         public long? IdConversacion { get; set; }
         public long? IdMensaje { get; set; }
         public string Canal { get; set; } = string.Empty;
+        public string ContactName { get; set; } = string.Empty;
+        public string Preview { get; set; } = string.Empty;
+        public long? TimestampUnixMs { get; set; }
+        public int? UnreadCount { get; set; }
+        public bool Renotify { get; set; } = false;
+    }
+
+    private sealed class PushNotificationEvaluation
+    {
+        public bool CanNotify { get; init; }
+        public string ScopeFilterReason { get; init; } = string.Empty;
+        public string ChannelFilterReason { get; init; } = string.Empty;
+
+        public static PushNotificationEvaluation Allowed(string scopeReason, string channelReason)
+            => new() { CanNotify = true, ScopeFilterReason = scopeReason, ChannelFilterReason = channelReason };
+
+        public static PushNotificationEvaluation Blocked(string scopeReason, string channelReason)
+            => new() { CanNotify = false, ScopeFilterReason = scopeReason, ChannelFilterReason = channelReason };
     }
 }
+
+

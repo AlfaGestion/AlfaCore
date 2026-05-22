@@ -1,1 +1,13 @@
-/* Styles moved to app.css */
+/* Ajustes puntuales del layout para modulos que necesitan superficie completa. */
+.shell__main--calendario {
+    padding: 0;
+    overflow: hidden;
+}
+
+.shell__header--hidden {
+    display: none;
+}
+
+.shell__main--calendario .shell__content {
+    min-height: 100dvh;
+}

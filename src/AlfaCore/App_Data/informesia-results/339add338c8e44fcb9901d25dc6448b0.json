@@ -1,0 +1,82 @@
+{
+  "executionId": "339add33-8c8e-44fc-b990-1d25dc6448b0",
+  "exitoso": true,
+  "consultaOriginal": "Proveedores con mayor crecimiento en el per\u00EDodo",
+  "titulo": "Proveedores con mayor crecimiento",
+  "subtitulo": "Variaci\u00F3n del gasto contra el per\u00EDodo anterior",
+  "resumen": "No se encontraron registros para la consulta y los filtros seleccionados.",
+  "mensaje": "La consulta es v\u00E1lida, pero no devolvi\u00F3 datos con los filtros actuales.",
+  "notaSeguridad": "InformesIA trabaja en modo solo lectura y solo consulta las vistas autorizadas del dashboard.",
+  "tipoResultado": "ranking",
+  "generadoEn": "2026-05-21T16:58:19.887424+02:00",
+  "filtrosAplicados": {
+    "fechaDesde": "2026-05-01T00:00:00",
+    "fechaHasta": "2026-05-21T00:00:00+02:00",
+    "proveedor": null,
+    "articulo": null,
+    "articuloCodigo": null,
+    "articuloDescripcion": null,
+    "rubro": null,
+    "familia": null,
+    "usuario": null,
+    "sucursal": null,
+    "deposito": null,
+    "estado": null,
+    "tipoComprobante": null
+  },
+  "fuentesAutorizadas": [
+    "vw_compras_cabecera_dashboard"
+  ],
+  "columnas": [
+    {
+      "key": "Codigo",
+      "label": "C\u00F3digo",
+      "format": "texto",
+      "align": "left"
+    },
+    {
+      "key": "Proveedor",
+      "label": "Proveedor",
+      "format": "texto",
+      "align": "left"
+    },
+    {
+      "key": "TotalActual",
+      "label": "Total actual",
+      "format": "moneda",
+      "align": "right"
+    },
+    {
+      "key": "TotalAnterior",
+      "label": "Total anterior",
+      "format": "moneda",
+      "align": "right"
+    },
+    {
+      "key": "Variacion",
+      "label": "Variaci\u00F3n",
+      "format": "porcentaje",
+      "align": "right"
+    }
+  ],
+  "filas": [],
+  "grafico": null,
+  "sugerenciasRelacionadas": [
+    {
+      "texto": "Proveedores con mayor crecimiento en el per\u00EDodo",
+      "descripcion": "Compara el gasto actual contra el per\u00EDodo anterior y ordena por variaci\u00F3n.",
+      "categoria": "Ranking"
+    },
+    {
+      "texto": "Familias que m\u00E1s crecieron",
+      "descripcion": "Compara ramas familiares contra el per\u00EDodo anterior.",
+      "categoria": "Comparaci\u00F3n"
+    },
+    {
+      "texto": "Compar\u00E1 rubros contra el per\u00EDodo anterior",
+      "descripcion": "Diferencia y variaci\u00F3n de rubros vs per\u00EDodo previo.",
+      "categoria": "Comparaci\u00F3n"
+    }
+  ],
+  "sqlGenerado": "SELECT TOP (40)\r\n    currentData.Codigo,\r\n    currentData.Proveedor,\r\n    currentData.TotalActual,\r\n    ISNULL(priorData.TotalAnterior, 0) AS TotalAnterior,\r\n    CASE\r\n        WHEN ISNULL(priorData.TotalAnterior, 0) \u003E 0\r\n            THEN (currentData.TotalActual - priorData.TotalAnterior) / priorData.TotalAnterior\r\n        ELSE NULL\r\n    END AS Variacion\r\nFROM (\r\n    SELECT\r\n        c.CUENTA AS Codigo,\r\n        COALESCE(NULLIF(MAX(c.RAZON_SOCIAL), \u0027\u0027), c.CUENTA) AS Proveedor,\r\n        SUM(c.ImporteDashboard) AS TotalActual\r\n    FROM vw_compras_cabecera_dashboard c\r\n    WHERE (@CurFechaDesde IS NULL OR c.FECHA \u003E= @CurFechaDesde)\r\nAND (@CurFechaHasta IS NULL OR c.FECHA \u003C DATEADD(day, 1, @CurFechaHasta))\r\nAND (@CurProveedor IS NULL OR c.CUENTA LIKE \u0027%\u0027 \u002B @CurProveedor \u002B \u0027%\u0027 OR c.RAZON_SOCIAL LIKE \u0027%\u0027 \u002B @CurProveedor \u002B \u0027%\u0027)\r\nAND (@CurUsuario IS NULL OR c.USUARIO = @CurUsuario)\r\nAND (@CurSucursal IS NULL OR c.SUCURSAL = @CurSucursal)\r\nAND (@CurDeposito IS NULL OR CONVERT(varchar(20), c.IdDeposito) = @CurDeposito)\r\nAND (@CurEstado IS NULL OR c.EstadoComprobante = @CurEstado)\r\nAND (@CurTipoComprobante IS NULL OR c.TC = @CurTipoComprobante)\r\nAND (\r\n    (@CurArticulo IS NULL AND @CurArticuloCodigo IS NULL AND @CurArticuloDescripcion IS NULL AND @CurRubro IS NULL AND @CurFamilia IS NULL)\r\n    OR EXISTS (\r\n        SELECT 1\r\n        FROM vw_compras_detalle_dashboard detailFilter\r\n        WHERE detailFilter.TC = c.TC\r\n          AND detailFilter.IDCOMPROBANTE = c.IDCOMPROBANTE\r\n          AND detailFilter.CUENTA = c.CUENTA\r\n          AND (@CurArticulo IS NULL OR LTRIM(RTRIM(detailFilter.IDARTICULO)) = LTRIM(RTRIM(@CurArticulo)))\r\n          AND (@CurArticuloCodigo IS NULL OR LTRIM(RTRIM(detailFilter.IDARTICULO)) = LTRIM(RTRIM(@CurArticuloCodigo)))\r\n          AND (@CurArticuloDescripcion IS NULL OR detailFilter.DESCRIPCION_ARTICULO LIKE \u0027%\u0027 \u002B @CurArticuloDescripcion \u002B \u0027%\u0027)\r\n          AND (@CurRubro IS NULL OR detailFilter.RUBRO = @CurRubro)\r\n          AND (@CurFamilia IS NULL OR detailFilter.FAMILIA = @CurFamilia)\r\n    )\r\n)\r\n    GROUP BY c.CUENTA\r\n) currentData\r\nLEFT JOIN (\r\n    SELECT\r\n        c.CUENTA AS Codigo,\r\n        SUM(c.ImporteDashboard) AS TotalAnterior\r\n    FROM vw_compras_cabecera_dashboard c\r\n    WHERE (@PrFechaDesde IS NULL OR c.FECHA \u003E= @PrFechaDesde)\r\nAND (@PrFechaHasta IS NULL OR c.FECHA \u003C DATEADD(day, 1, @PrFechaHasta))\r\nAND (@PrProveedor IS NULL OR c.CUENTA LIKE \u0027%\u0027 \u002B @PrProveedor \u002B \u0027%\u0027 OR c.RAZON_SOCIAL LIKE \u0027%\u0027 \u002B @PrProveedor \u002B \u0027%\u0027)\r\nAND (@PrUsuario IS NULL OR c.USUARIO = @PrUsuario)\r\nAND (@PrSucursal IS NULL OR c.SUCURSAL = @PrSucursal)\r\nAND (@PrDeposito IS NULL OR CONVERT(varchar(20), c.IdDeposito) = @PrDeposito)\r\nAND (@PrEstado IS NULL OR c.EstadoComprobante = @PrEstado)\r\nAND (@PrTipoComprobante IS NULL OR c.TC = @PrTipoComprobante)\r\nAND (\r\n    (@PrArticulo IS NULL AND @PrArticuloCodigo IS NULL AND @PrArticuloDescripcion IS NULL AND @PrRubro IS NULL AND @PrFamilia IS NULL)\r\n    OR EXISTS (\r\n        SELECT 1\r\n        FROM vw_compras_detalle_dashboard detailFilter\r\n        WHERE detailFilter.TC = c.TC\r\n          AND detailFilter.IDCOMPROBANTE = c.IDCOMPROBANTE\r\n          AND detailFilter.CUENTA = c.CUENTA\r\n          AND (@PrArticulo IS NULL OR LTRIM(RTRIM(detailFilter.IDARTICULO)) = LTRIM(RTRIM(@PrArticulo)))\r\n          AND (@PrArticuloCodigo IS NULL OR LTRIM(RTRIM(detailFilter.IDARTICULO)) = LTRIM(RTRIM(@PrArticuloCodigo)))\r\n          AND (@PrArticuloDescripcion IS NULL OR detailFilter.DESCRIPCION_ARTICULO LIKE \u0027%\u0027 \u002B @PrArticuloDescripcion \u002B \u0027%\u0027)\r\n          AND (@PrRubro IS NULL OR detailFilter.RUBRO = @PrRubro)\r\n          AND (@PrFamilia IS NULL OR detailFilter.FAMILIA = @PrFamilia)\r\n    )\r\n)\r\n    GROUP BY c.CUENTA\r\n) priorData ON priorData.Codigo = currentData.Codigo\r\nORDER BY\r\n    CASE\r\n        WHEN ISNULL(priorData.TotalAnterior, 0) \u003E 0\r\n            THEN (currentData.TotalActual - priorData.TotalAnterior) / priorData.TotalAnterior\r\n        ELSE -1\r\n    END DESC,\r\n    currentData.TotalActual DESC"
+}

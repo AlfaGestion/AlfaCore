@@ -1058,6 +1058,163 @@ select {
     }
 }
 
+.shell__main--calendario .calendario-page {
+    grid-template-rows: auto auto minmax(0, 1fr);
+    gap: .75rem;
+    height: 100dvh;
+    min-height: 0;
+    padding: 1rem 1.25rem 1.15rem;
+    overflow: hidden;
+}
+
+.shell__main--calendario .calendario-topbar {
+    align-items: center;
+    gap: 1.25rem;
+    padding-bottom: .45rem;
+}
+
+.shell__main--calendario .calendario-toolbar {
+    grid-template-columns: minmax(245px, auto) minmax(280px, .45fr) minmax(560px, 1fr);
+    align-items: end;
+    gap: .85rem;
+    padding: .45rem 0 .65rem;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    overflow: visible;
+}
+
+.shell__main--calendario .calendario-nav {
+    align-items: center;
+    flex-wrap: wrap;
+    gap: .55rem;
+    min-width: 0;
+}
+
+.shell__main--calendario .calendario-nav strong {
+    min-width: 9.75rem;
+}
+
+.shell__main--calendario .calendario-active-guard {
+    min-height: 48px;
+    padding: .55rem .75rem;
+}
+
+.shell__main--calendario .calendario-filters {
+    display: grid;
+    grid-template-columns: minmax(280px, 1fr) minmax(150px, .42fr) minmax(150px, .42fr);
+    align-items: end;
+    gap: .65rem;
+    min-width: 0;
+}
+
+.shell__main--calendario .calendario-filters .field,
+.shell__main--calendario .calendario-filters .field:first-child {
+    min-width: 0;
+}
+
+.shell__main--calendario .calendario-page .field {
+    gap: .34rem;
+}
+
+.shell__main--calendario .calendario-page .field label {
+    line-height: 1.1;
+}
+
+.shell__main--calendario .calendario-page input,
+.shell__main--calendario .calendario-page select,
+.shell__main--calendario .calendario-page textarea {
+    min-height: 38px;
+    padding: .52rem .68rem;
+}
+
+.shell__main--calendario .calendario-shell {
+    min-height: 0;
+    overflow: auto;
+}
+
+.shell__main--calendario .calendario-grid {
+    grid-template-rows: 30px repeat(6, minmax(88px, 1fr));
+    width: 100%;
+    min-width: 0;
+    height: 100%;
+    min-height: 0;
+    border-radius: 0;
+}
+
+.shell__main--calendario .calendario-weekday {
+    min-width: 0;
+    padding: 0 .5rem;
+}
+
+.shell__main--calendario .calendario-day {
+    gap: .45rem;
+    padding: .65rem;
+}
+
+.shell__main--calendario .calendario-day-number {
+    line-height: 1.6rem;
+}
+
+.shell__main--calendario .calendario-day-events {
+    gap: .28rem;
+}
+
+.shell__main--calendario .calendario-event-chip {
+    padding: .28rem .42rem;
+}
+
+.shell__main--calendario .calendario-side {
+    position: fixed;
+    top: max(.6rem, env(safe-area-inset-top));
+    right: max(.6rem, env(safe-area-inset-right));
+    bottom: max(.6rem, env(safe-area-inset-bottom));
+    width: min(340px, calc(100vw - 1.2rem));
+    max-height: calc(100dvh - 1.2rem);
+    padding: .95rem;
+    border: 1px solid rgba(56, 189, 248, .22);
+    border-radius: 10px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.shell__main--calendario .calendario-panel-backdrop {
+    position: fixed;
+    inset: 0;
+}
+
+@media (max-width: 1280px) {
+    .shell__main--calendario .calendario-toolbar {
+        grid-template-columns: minmax(230px, auto) minmax(260px, 1fr);
+    }
+
+    .shell__main--calendario .calendario-filters {
+        grid-column: 1 / -1;
+    }
+}
+
+@media (max-width: 900px) {
+    .shell__main--calendario .calendario-page {
+        padding: .8rem;
+        overflow: auto;
+    }
+
+    .shell__main--calendario .calendario-topbar,
+    .shell__main--calendario .calendario-actions {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .shell__main--calendario .calendario-toolbar,
+    .shell__main--calendario .calendario-filters {
+        grid-template-columns: 1fr;
+    }
+
+    .shell__main--calendario .calendario-active-guard {
+        min-width: 0;
+    }
+}
+
 .smart-search-card {
     position: relative;
     z-index: 80;
@@ -2241,6 +2398,15 @@ html[data-theme="light"] .costos-lote__table th {
 
 .shell__content {
     min-width: 0;
+}
+
+.shell__main--calendario {
+    padding: 0;
+    overflow: hidden;
+}
+
+.shell__main--calendario .shell__content {
+    min-height: 100dvh;
 }
 
 .global-message-notice {
@@ -3513,6 +3679,7 @@ tr.row--critical td {
     padding: 1rem;
     display: grid;
     gap: .45rem;
+    cursor: pointer;
     transition: border-color .18s ease, transform .18s ease, background-color .18s ease;
 }
 
@@ -3534,6 +3701,11 @@ tr.row--critical td {
 .conversation-row.is-selected {
     background: linear-gradient(135deg, rgba(14, 165, 233, 0.16), rgba(20, 184, 166, 0.08));
     border-color: rgba(14, 165, 233, 0.28);
+}
+
+.conversation-row.is-pinned {
+    border-color: rgba(245, 158, 11, .34);
+    background: linear-gradient(135deg, rgba(245, 158, 11, .12), rgba(14, 165, 233, .05));
 }
 
 .conversation-row__top,
@@ -3574,6 +3746,32 @@ tr.row--critical td {
     line-height: 1;
 }
 
+.conversation-pin {
+    display: inline-grid;
+    place-items: center;
+    width: 1.55rem;
+    height: 1.55rem;
+    border: 1px solid rgba(148, 163, 184, .18);
+    border-radius: 999px;
+    background: rgba(15, 23, 42, .44);
+    color: var(--color-muted);
+    cursor: pointer;
+    transition: color .16s ease, border-color .16s ease, background .16s ease, transform .16s ease;
+}
+
+.conversation-pin:hover {
+    color: #fbbf24;
+    border-color: rgba(245, 158, 11, .45);
+    background: rgba(245, 158, 11, .12);
+    transform: translateY(-1px);
+}
+
+.conversation-pin.is-pinned {
+    color: #fbbf24;
+    border-color: rgba(245, 158, 11, .55);
+    background: rgba(245, 158, 11, .18);
+}
+
 .conversation-row__date,
 .conversation-row__meta,
 .conversation-row__summary,
@@ -3611,6 +3809,17 @@ tr.row--critical td {
     text-overflow: ellipsis;
     white-space: nowrap;
     overflow-wrap: normal;
+}
+
+.message-card__link {
+    color: #7dd3fc;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.message-card__link:hover,
+.message-card__link:focus-visible {
+    color: #bae6fd;
 }
 
 .conversation-badge {
@@ -3814,6 +4023,67 @@ tr.row--critical td {
     opacity: .78;
 }
 
+.message-card__quote {
+    appearance: none;
+    border: 0;
+    display: grid;
+    gap: .12rem;
+    width: 100%;
+    min-width: 0;
+    margin-bottom: .15rem;
+    padding: .38rem .5rem;
+    border-left: 3px solid rgba(14, 165, 233, .72);
+    border-radius: 6px;
+    background: rgba(2, 6, 23, .22);
+    color: var(--color-muted);
+    font-family: inherit;
+    font-size: .72rem;
+    text-align: left;
+    cursor: pointer;
+    transition: background .18s ease, border-color .18s ease, transform .18s ease;
+}
+
+.message-card__quote:hover,
+.message-card__quote:focus-visible {
+    border-left-color: rgba(34, 211, 238, .95);
+    background: rgba(8, 47, 73, .38);
+}
+
+.message-card__quote:focus-visible {
+    outline: 2px solid rgba(56, 189, 248, .7);
+    outline-offset: 2px;
+}
+
+.message-card__quote span,
+.message-card__quote strong {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.message-card__quote strong {
+    color: var(--color-text);
+    font-size: .78rem;
+    font-weight: 800;
+}
+
+.message-row--jump-target .message-card {
+    animation: message-jump-highlight 2.4s ease;
+}
+
+@keyframes message-jump-highlight {
+    0%,
+    100% {
+        box-shadow: 0 4px 14px rgba(2, 6, 23, 0.10);
+    }
+
+    18%,
+    70% {
+        box-shadow: 0 0 0 2px rgba(34, 211, 238, .85), 0 12px 30px rgba(14, 165, 233, .25);
+    }
+}
+
 .message-card__footer span:nth-child(2) {
     display: none;
 }
@@ -3906,6 +4176,23 @@ tr.row--critical td {
     text-overflow: ellipsis;
     white-space: nowrap;
     font-weight: 400;
+}
+
+.conversation-event-divider__link {
+    border: 0;
+    padding: 0;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    text-decoration: underline;
+    text-decoration-color: rgba(125, 211, 252, .55);
+    text-underline-offset: 3px;
+}
+
+.conversation-event-divider__link:hover,
+.conversation-event-divider__link:focus-visible {
+    color: #e0f2fe;
+    text-decoration-color: currentColor;
 }
 
 .conversation-event-divider__time {
@@ -4208,6 +4495,13 @@ tr.row--critical td {
     font-weight: 700;
 }
 
+.conversations-pending-attachment__error {
+    max-width: min(360px, 48vw);
+    color: #fecaca;
+    font-size: .72rem;
+    font-weight: 700;
+}
+
 .conversations-pending-attachment .btn {
     display: inline-grid !important;
     place-items: center;
@@ -4312,7 +4606,9 @@ tr.row--critical td {
 
 .conversations-composer--support > .field textarea {
     min-height: 38px;
-    max-height: 48px;
+    max-height: 180px;
+    resize: vertical;
+    overflow: auto;
 }
 
 .conversations-composer--support > .field label {
@@ -4325,7 +4621,9 @@ tr.row--critical td {
 
 .conversations-composer textarea {
     min-height: 42px;
-    max-height: 64px;
+    max-height: 180px;
+    resize: vertical;
+    overflow: auto;
 }
 
 .conversations-composer .field {
@@ -5030,8 +5328,59 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
     left: 50%;
     transform: translate(-50%, -50%);
     width: min(560px, calc(100vw - 2rem));
+    max-height: min(760px, calc(100dvh - 2rem));
+    display: flex;
+    flex-direction: column;
+    overflow: auto;
     transform-origin: center;
     animation: conversations-centered-modal-in .2s cubic-bezier(.2, .8, .2, 1) both;
+}
+
+.conversations-ticket-dialog {
+    width: min(560px, calc(100vw - 2rem));
+    padding: clamp(1rem, 2.4vh, 1.35rem);
+    gap: clamp(.65rem, 1.6vh, 1rem);
+    overscroll-behavior: contain;
+}
+
+.conversations-ticket-dialog .panel-card__header {
+    flex: 0 0 auto;
+}
+
+.conversations-ticket-dialog .tickets-from-conversation-form {
+    flex: 0 0 auto;
+}
+
+.conversations-ticket-dialog > .actions {
+    position: sticky;
+    bottom: calc(-1 * clamp(1rem, 2.4vh, 1.35rem));
+    z-index: 2;
+    margin: 0 calc(-1 * clamp(1rem, 2.4vh, 1.35rem)) calc(-1 * clamp(1rem, 2.4vh, 1.35rem));
+    padding: .85rem clamp(1rem, 2.4vh, 1.35rem) clamp(1rem, 2.4vh, 1.35rem);
+    border-top: 1px solid rgba(148, 163, 184, .14);
+    background: linear-gradient(180deg, rgba(15, 23, 42, .86), rgba(15, 23, 42, .98));
+    backdrop-filter: blur(10px);
+}
+
+.conversations-ticket-dialog textarea {
+    min-height: clamp(5rem, 15vh, 7rem);
+    resize: vertical;
+}
+
+.conversations-ticket-dialog::-webkit-scrollbar,
+.conversations-ticket-duplicates__list::-webkit-scrollbar {
+    width: 8px;
+}
+
+.conversations-ticket-dialog::-webkit-scrollbar-track,
+.conversations-ticket-duplicates__list::-webkit-scrollbar-track {
+    background: rgba(15, 23, 42, .35);
+}
+
+.conversations-ticket-dialog::-webkit-scrollbar-thumb,
+.conversations-ticket-duplicates__list::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: rgba(56, 189, 248, .55);
 }
 
 @keyframes conversations-centered-modal-in {
@@ -5048,6 +5397,25 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
 .tickets-from-conversation-form {
     display: grid;
     gap: .8rem;
+}
+
+.ticket-creator-assignment {
+    display: grid;
+    gap: .2rem;
+    min-height: 2.55rem;
+    padding: .65rem .75rem;
+    border: 1px solid rgba(34, 211, 238, .24);
+    border-radius: 10px;
+    background: rgba(34, 211, 238, .08);
+    color: #e5f6ff;
+}
+
+.ticket-creator-assignment span {
+    font-weight: 700;
+}
+
+.ticket-creator-assignment small {
+    color: #8fb4ca;
 }
 
 .conversations-ticket-duplicates {
@@ -5109,6 +5477,9 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
 .conversations-ticket-duplicates__list {
     display: grid;
     gap: .5rem;
+    max-height: min(210px, 22vh);
+    overflow: auto;
+    padding-right: .2rem;
 }
 
 .conversations-ticket-duplicate {
@@ -5217,9 +5588,16 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
 
 .message-bubble-shell {
     position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
     flex: 0 1 auto;
     max-width: min(76%, 720px);
     min-width: 0;
+}
+
+.message-row--outgoing .message-bubble-shell {
+    align-items: flex-end;
 }
 
 .message-row:has(.message-actions) .message-bubble-shell {
@@ -5256,6 +5634,16 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
     font-size: .72rem;
 }
 
+.conversations-page--odoo .message-card__quote {
+    max-width: 100%;
+    background: rgba(15, 23, 42, .36);
+}
+
+.conversations-page--odoo .message-card--outgoing .message-card__quote {
+    border-left-color: rgba(167, 139, 250, .9);
+    background: rgba(2, 6, 23, .24);
+}
+
 .conversations-page--odoo .message-attachments {
     gap: .35rem;
     margin-top: .28rem;
@@ -5288,6 +5676,7 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
 
 .message-actions {
     position: relative;
+    z-index: 40;
     display: flex;
     flex: 0 0 auto;
     flex-direction: column;
@@ -5381,13 +5770,13 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
 
 .message-reaction-picker {
     position: absolute;
-    /* aparece a la izquierda de los botones de acción, centrado verticalmente */
-    left: calc(100% + .45rem);
+    /* Se abre hacia arriba para no taparse con el compositor. */
+    left: 50%;
     right: auto;
-    top: 50%;
-    transform: translateY(-50%);
-    bottom: auto;
-    z-index: 30;
+    top: auto;
+    transform: translateX(-50%);
+    bottom: calc(100% + .45rem);
+    z-index: 220;
     display: flex;
     align-items: center;
     gap: .25rem;
@@ -5401,18 +5790,39 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
     white-space: nowrap;
 }
 
-/* para mensajes salientes: el picker aparece a la derecha de los botones */
+/* En mensajes salientes se alinea desde el lado opuesto del botón. */
 .message-row--outgoing .message-reaction-picker {
-    right: calc(100% + .45rem);
+    right: 50%;
     left: auto;
-    top: 50%;
-    transform: translateY(-50%);
+    top: auto;
+    bottom: calc(100% + .45rem);
+    transform: translateX(50%);
 }
 
 .message-reaction-picker__emoji {
     min-width: 2.15rem;
     padding-inline: .35rem;
     font-size: 1.1rem;
+}
+
+.message-bubble-shell > .message-reaction-picker {
+    position: relative;
+    left: auto;
+    right: auto;
+    top: auto;
+    bottom: auto;
+    transform: none;
+    width: max-content;
+    max-width: min(100%, calc(100vw - 7rem));
+    margin-bottom: .35rem;
+    align-self: flex-start;
+    order: -1;
+    overflow-x: auto;
+}
+
+.message-row--outgoing .message-bubble-shell > .message-reaction-picker {
+    align-self: flex-end;
+    transform: none;
 }
 
 .conversations-latest-button {
@@ -5544,6 +5954,49 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
     animation: support-dropdown-in .16s cubic-bezier(.2, .8, .2, 1) both;
 }
 
+.conversations-tools-panel--composer {
+    position: fixed;
+    right: max(1rem, env(safe-area-inset-right));
+    bottom: calc(5.6rem + env(safe-area-inset-bottom));
+    z-index: 260;
+    width: min(600px, calc(100vw - 2rem));
+    max-height: min(430px, calc(100dvh - 7.5rem));
+    transform-origin: bottom right;
+}
+
+.message-bubble-shell > .conversations-tools-panel--reaction {
+    position: relative;
+    right: auto;
+    bottom: auto;
+    z-index: 90;
+    width: min(360px, calc(100vw - 7rem));
+    max-width: 100%;
+    max-height: min(260px, calc(100vh - 14rem));
+    margin-bottom: .45rem;
+    padding: .75rem;
+    align-self: flex-start;
+    order: -1;
+    transform-origin: bottom left;
+}
+
+.message-row--outgoing .message-bubble-shell > .conversations-tools-panel--reaction {
+    align-self: flex-end;
+    transform-origin: bottom right;
+}
+
+.conversations-tools-panel--reaction .conversations-tools-panel__search {
+    width: 100%;
+    margin-bottom: .7rem;
+}
+
+.conversations-tools-panel--reaction .conversations-tools-panel__group {
+    margin-bottom: .7rem;
+}
+
+.conversations-tools-panel--reaction .conversations-tools-panel__grid {
+    gap: .35rem;
+}
+
 .conversations-tools-panel__tabs {
     justify-content: flex-start;
     gap: .55rem;
@@ -5651,11 +6104,9 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
 @keyframes reaction-picker-slide {
     from {
         opacity: 0;
-        transform: translateY(-50%) scale(.9);
     }
     to {
         opacity: 1;
-        transform: translateY(-50%) scale(1);
     }
 }
 
@@ -5698,6 +6149,11 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
 .conversations-page--odoo textarea,
 .templates-page--odoo textarea {
     resize: none;
+}
+
+.conversations-page--odoo .conversations-composer textarea {
+    resize: vertical;
+    overflow: auto;
 }
 
 .templates-variable-guide {
@@ -10190,7 +10646,8 @@ html[data-theme="light"] .balance-row--detalle td {
         padding: .9rem;
     }
 
-    .message-attachment--audio audio,
+    .message-attachment--audio,
+    .wa-audio-player,
     .attachment-link {
         max-width: 100%;
         width: 100%;
@@ -10420,17 +10877,141 @@ html[data-theme="light"] .balance-row--detalle td {
     margin-top: .2rem;
 }
 
-.message-attachment--audio audio {
-    max-width: 240px;
-    width: 100%;
-    height: 32px;
-}
-
 .message-attachment--audio {
     position: relative;
-    display: flex;
+    display: block;
+    width: min(370px, calc(100vw - 7rem));
+    max-width: 100%;
+}
+
+.message-row:has(.message-reaction-picker) {
+    z-index: 60;
+}
+
+.wa-audio-player__media {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: .001;
+    pointer-events: none;
+}
+
+.wa-audio-player {
+    display: grid;
+    grid-template-columns: 1.75rem minmax(0, 1fr) 2.25rem;
     align-items: center;
-    gap: .35rem;
+    gap: .55rem;
+    width: 100%;
+    min-width: 0;
+    min-height: 3.1rem;
+    padding: .52rem .58rem .45rem;
+    border: 1px solid rgba(148, 163, 184, .16);
+    border-radius: 10px;
+    background: linear-gradient(180deg, rgba(31, 41, 55, .94), rgba(17, 24, 39, .94));
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04);
+}
+
+.message-row--outgoing .wa-audio-player {
+    background: linear-gradient(180deg, rgba(7, 89, 133, .9), rgba(8, 76, 112, .92));
+    border-color: rgba(56, 189, 248, .18);
+}
+
+.wa-audio-player__play {
+    display: inline-grid;
+    place-items: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: #f8fafc;
+    cursor: pointer;
+}
+
+.wa-audio-player__play .bi {
+    font-size: 1.25rem;
+    line-height: 1;
+}
+
+.wa-audio-player__body {
+    position: relative;
+    display: grid;
+    gap: .18rem;
+    min-width: 0;
+}
+
+.wa-audio-player__seek {
+    --audio-progress: 0%;
+    width: 100%;
+    height: 1.35rem;
+    margin: 0;
+    appearance: none;
+    -webkit-appearance: none;
+    cursor: pointer;
+    background:
+        radial-gradient(circle at var(--audio-progress) 50%, #38bdf8 0 .3rem, transparent .32rem),
+        linear-gradient(90deg, rgba(56, 189, 248, .95) 0 var(--audio-progress), rgba(148, 163, 184, .62) var(--audio-progress) 100%);
+    mask-image: repeating-linear-gradient(90deg, #000 0 3px, transparent 3px 6px);
+    -webkit-mask-image: repeating-linear-gradient(90deg, #000 0 3px, transparent 3px 6px);
+}
+
+.wa-audio-player__seek::-webkit-slider-runnable-track {
+    height: 1.45rem;
+    background: transparent;
+}
+
+.wa-audio-player__seek::-webkit-slider-thumb {
+    appearance: none;
+    -webkit-appearance: none;
+    width: .01rem;
+    height: 1.45rem;
+    background: transparent;
+}
+
+.wa-audio-player__seek::-moz-range-track {
+    height: 1.45rem;
+    background: transparent;
+}
+
+.wa-audio-player__seek::-moz-range-thumb {
+    width: .01rem;
+    height: 1.45rem;
+    border: 0;
+    background: transparent;
+}
+
+.wa-audio-player__meta {
+    display: flex;
+    justify-content: space-between;
+    gap: .75rem;
+    color: rgba(203, 213, 225, .72);
+    font-size: .7rem;
+    line-height: 1;
+}
+
+.wa-audio-player__speed {
+    justify-self: end;
+    min-width: 2.1rem;
+    height: 1.25rem;
+    padding: 0 .4rem;
+    border: 0;
+    border-radius: 999px;
+    background: rgba(2, 6, 23, .66);
+    color: #f8fafc;
+    font-size: .74rem;
+    font-weight: 800;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.wa-audio-player__speed:hover,
+.wa-audio-player__speed:focus-visible {
+    background: rgba(2, 6, 23, .9);
+}
+
+.wa-audio-player.has-audio-error {
+    border-color: rgba(248, 113, 113, .55);
 }
 
 .message-attachment--video {
@@ -10470,6 +11051,9 @@ html[data-theme="light"] .balance-row--detalle td {
 }
 
 .attachment-menu-button {
+    position: relative;
+    z-index: 3;
+    flex: 0 0 auto;
     width: 32px;
     height: 32px;
     border: 1px solid var(--color-border);
@@ -10478,6 +11062,7 @@ html[data-theme="light"] .balance-row--detalle td {
     color: var(--color-muted);
     display: inline-grid;
     place-items: center;
+    cursor: pointer;
 }
 
 .attachment-menu {
@@ -13633,7 +14218,7 @@ textarea {
     .conversations-page--odoo .message-attachments,
     .conversations-page--odoo .message-attachment,
     .conversations-page--odoo .attachment-link,
-    .conversations-page--odoo .message-attachment--audio audio,
+    .conversations-page--odoo .wa-audio-player,
     .conversations-page--odoo .message-attachment--image img {
         max-width: 100%;
         overflow-wrap: anywhere;
@@ -13972,7 +14557,7 @@ textarea {
     .conversations-page--odoo .conversations-list__items {
         display: grid;
         gap: .45rem;
-        max-height: calc(100dvh - 355px);
+        max-height: calc(100dvh - 320px);
         padding: 0 0 calc(.75rem + env(safe-area-inset-bottom));
     }
 
@@ -14362,6 +14947,14 @@ textarea {
 }
 
 @media (max-width: 768px) {
+    body:has(.conversations-page--chat-active) {
+        overflow: hidden;
+    }
+
+    .shell__main:has(.conversations-page--odoo) .pwa-mobile-actions {
+        display: none;
+    }
+
     .shell__main:has(.conversations-page--chat-active) {
         padding: 0;
     }
@@ -14407,6 +15000,7 @@ textarea {
         height: 100dvh;
         min-height: 0;
         overflow: hidden;
+        overflow-x: hidden;
     }
 
     .conversations-page--odoo.conversations-page--chat-active .conversations-chat {
@@ -14422,6 +15016,7 @@ textarea {
         border-radius: 0;
         overflow: hidden;
         background: #07111f;
+        overflow-x: hidden;
     }
 
     .conversations-page--odoo.conversations-page--chat-active .conversations-chat__header {
@@ -14430,7 +15025,7 @@ textarea {
         z-index: 6;
         flex: 0 0 auto;
         display: block;
-        padding: calc(.45rem + env(safe-area-inset-top)) .65rem .5rem;
+        padding: calc(.3rem + env(safe-area-inset-top)) .62rem .42rem;
         border-bottom: 1px solid rgba(148, 163, 184, .14);
         background: rgba(7, 17, 31, .96);
         backdrop-filter: blur(10px);
@@ -14489,7 +15084,7 @@ textarea {
         justify-content: flex-start;
         gap: .35rem;
         min-width: 0;
-        margin-top: .2rem;
+        margin-top: .1rem;
         overflow: hidden;
     }
 
@@ -14521,7 +15116,7 @@ textarea {
         flex: 1 1 auto;
         min-height: 0;
         max-height: none;
-        padding: .75rem .65rem;
+        padding: .62rem .58rem .62rem;
         overflow-y: auto;
         overflow-x: hidden;
         background: #07111f;
@@ -14536,7 +15131,7 @@ textarea {
 
     .conversations-page--odoo.conversations-page--chat-active .message-bubble-shell,
     .conversations-page--odoo.conversations-page--chat-active .message-row:has(.message-actions) .message-bubble-shell {
-        max-width: min(86%, 620px);
+        max-width: min(84%, 620px);
     }
 
     .conversations-page--odoo.conversations-page--chat-active .message-row--incoming {
@@ -14549,8 +15144,25 @@ textarea {
 
     .conversations-page--odoo.conversations-page--chat-active .message-card {
         max-width: 100%;
-        border-radius: 14px;
+        border-radius: 12px;
         overflow-wrap: anywhere;
+        padding: .52rem .62rem;
+    }
+
+    .conversations-page--odoo.conversations-page--chat-active .message-card__meta,
+    .conversations-page--odoo.conversations-page--chat-active .message-card__footer {
+        font-size: .66rem;
+        line-height: 1.2;
+        gap: .3rem;
+    }
+
+    .conversations-page--odoo.conversations-page--chat-active .message-card__text {
+        margin-top: .22rem;
+        margin-bottom: .22rem;
+    }
+
+    .conversations-page--odoo.conversations-page--chat-active .message-card__footer > span:first-child {
+        display: none;
     }
 
     .conversations-page--odoo.conversations-page--chat-active .conversations-composer {
@@ -14569,7 +15181,7 @@ textarea {
         padding: .5rem .6rem calc(.5rem + env(safe-area-inset-bottom));
         border-top: 1px solid rgba(148, 163, 184, .14);
         background: rgba(7, 17, 31, .98);
-        overflow: auto;
+        overflow: hidden;
     }
 
     .conversations-page--odoo.conversations-page--chat-active .conversations-composer__reply label,
@@ -14582,10 +15194,28 @@ textarea {
         display: none;
     }
 
+    .conversations-page--odoo.conversations-page--chat-active .conversations-tools-panel--composer .conversations-composer__note--mobile,
+    .conversations-page--odoo.conversations-page--chat-active .conversations-tools-panel--composer .conversations-composer__actions--note-mobile {
+        display: block;
+    }
+
+    .conversations-page--odoo.conversations-page--chat-active .conversations-tools-panel--composer .conversations-composer__actions--note-mobile {
+        display: flex;
+        justify-content: flex-end;
+        margin-top: .42rem;
+    }
+
+    .conversations-page--odoo.conversations-page--chat-active .conversations-tools-panel--composer .conversations-composer__note--mobile textarea {
+        min-height: 44px;
+        max-height: 120px;
+    }
+
     .conversations-page--odoo.conversations-page--chat-active .conversations-composer textarea {
-        min-height: 42px;
-        max-height: 118px;
+        min-height: 44px;
+        max-height: 120px;
         resize: none;
+        overflow-y: hidden;
+        overflow-x: hidden;
         border-radius: 18px;
     }
 
@@ -14612,5 +15242,59 @@ textarea {
         bottom: calc(4.6rem + env(safe-area-inset-bottom));
         width: auto;
         max-height: min(48dvh, 420px);
+    }
+}
+
+.conversations-page--odoo .message-bubble-shell > .message-reaction-picker {
+    position: relative;
+    left: auto;
+    right: auto;
+    top: auto;
+    bottom: auto;
+    z-index: 90;
+    order: -1;
+    transform: none;
+    margin: 0 0 .35rem;
+}
+
+.conversations-page--odoo .message-bubble-shell > .conversations-tools-panel--reaction,
+.conversations-page--odoo.conversations-page--chat-active .message-bubble-shell > .conversations-tools-panel--reaction {
+    position: relative;
+    left: auto;
+    right: auto;
+    bottom: auto;
+    z-index: 90;
+    order: -1;
+    width: min(360px, calc(100vw - 7rem));
+    max-width: 100%;
+    max-height: min(260px, calc(100vh - 14rem));
+    margin: 0 0 .45rem;
+}
+
+.conversations-page--odoo .message-row--outgoing .message-bubble-shell > .message-reaction-picker,
+.conversations-page--odoo .message-row--outgoing .message-bubble-shell > .conversations-tools-panel--reaction {
+    align-self: flex-end;
+}
+
+.conversations-page--odoo .conversations-tools-panel--composer,
+.conversations-page--odoo.conversations-page--chat-active .conversations-tools-panel--composer {
+    position: fixed;
+    left: auto;
+    right: max(1rem, env(safe-area-inset-right));
+    bottom: calc(5.6rem + env(safe-area-inset-bottom));
+    z-index: 260;
+    width: min(600px, calc(100vw - 2rem));
+    max-height: min(430px, calc(100dvh - 7.5rem));
+    overflow: auto;
+}
+
+@media (max-width: 720px) {
+    .conversations-page--odoo .conversations-tools-panel--composer,
+    .conversations-page--odoo.conversations-page--chat-active .conversations-tools-panel--composer {
+        left: .65rem;
+        right: .65rem;
+        bottom: calc(5.2rem + env(safe-area-inset-bottom));
+        width: auto;
+        max-height: min(58dvh, calc(100dvh - 7rem));
     }
 }
