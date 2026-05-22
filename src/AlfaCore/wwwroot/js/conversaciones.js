@@ -626,5 +626,17 @@ window.conversacionesUi = {
         events.forEach(item => element.addEventListener(item.name, item.handler));
         this._previewPanWatchers.set(element, { events: events });
         return true;
+    },
+
+    autoResizeTextarea: function (element, minHeight, maxHeight) {
+        if (!element || typeof element.style === 'undefined') return false;
+
+        const min = Number(minHeight) > 0 ? Number(minHeight) : 44;
+        const max = Number(maxHeight) > 0 ? Number(maxHeight) : 120;
+        element.style.height = 'auto';
+        const target = Math.min(max, Math.max(min, element.scrollHeight || min));
+        element.style.height = `${target}px`;
+        element.style.overflowY = (element.scrollHeight || 0) > max ? 'auto' : 'hidden';
+        return true;
     }
 };

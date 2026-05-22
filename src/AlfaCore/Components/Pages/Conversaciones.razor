@@ -336,12 +336,6 @@
                     <i class="bi bi-funnel"></i> Aplicar
                 </button>
             </div>
-            <div class="conversations-inline conversations-inline--ok" style="margin-top: .5rem;">
-                Audio inicializado: @(_soundDiagnostics.SoundInitialized ? "SI" : "NO")
-                · Audio desbloqueado: @(_soundDiagnostics.AudioUnlocked ? "SI" : "NO")
-                · Último intento: @DisplayOrFallback(_soundDiagnostics.LastAttemptAt)
-                · Último error: @DisplayOrFallback(_soundDiagnostics.LastError)
-            </div>
         </section>
 
         @if (_showMobileAdvancedFilters)
@@ -996,6 +990,7 @@
                                           rows="2"
                                           placeholder="@(_selectedConversation.Canal == "INTERNO" ? "Escribí un mensaje para el equipo…" : "Escribí una respuesta para WhatsApp…")"
                                           @onfocus="MarkSelectedConversationAsRead"
+                                          @onfocusin="OnReplyFocusAsync"
                                           value="@_replyText"
                                           @oninput="HandleReplyInputAsync"></textarea>
                             </div>
@@ -1038,6 +1033,7 @@
                                         <button type="button" class="conversations-filter-pill @(_composerToolTab == ComposerToolTabs.Emojis ? "is-active" : string.Empty)" @onclick='() => _composerToolTab = ComposerToolTabs.Emojis'><i class="bi bi-emoji-smile"></i> Emojis</button>
                                         <button type="button" class="conversations-filter-pill @(_composerToolTab == ComposerToolTabs.Stickers ? "is-active" : string.Empty)" @onclick='() => _composerToolTab = ComposerToolTabs.Stickers'><i class="bi bi-star-fill"></i> Stickers</button>
                                         <button type="button" class="conversations-filter-pill @(_composerToolTab == ComposerToolTabs.Adjuntos ? "is-active" : string.Empty)" @onclick='() => _composerToolTab = ComposerToolTabs.Adjuntos'><i class="bi bi-paperclip"></i> Adjuntos</button>
+                                        <button type="button" class="conversations-filter-pill mobile-only @(_composerToolTab == ComposerToolTabs.Notas ? "is-active" : string.Empty)" @onclick='() => _composerToolTab = ComposerToolTabs.Notas'><i class="bi bi-journal-text"></i> Nota</button>
                                     </div>
                                     @if (_composerToolTab == ComposerToolTabs.Emojis)
                                     {
@@ -1078,7 +1074,7 @@
                                     }
                                         </div>
                                     }
-                                    else
+                                    else if (_composerToolTab == ComposerToolTabs.Adjuntos)
                                     {
                                         <div class="conversations-tools-panel__actions">
                                             <label class="btn btn--ghost conversations-tools-panel__tool" title="Adjuntar archivo">
@@ -1089,6 +1085,23 @@
                                             <button type="button" class="btn btn--ghost conversations-tools-panel__tool @(_recording ? "is-recording" : string.Empty)" @onclick="ToggleRecordingAsync" title="@(_recording ? "Detener grabación" : "Grabar mensaje de voz")" disabled="@_uploadingAudio">
                                                 <i class="bi @(_recording ? "bi-stop-circle-fill" : "bi-mic-fill")"></i>
                                                 <span>Audio</span>
+                                            </button>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <div class="field conversations-composer__note conversations-composer__note--mobile">
+                                            <label for="conv-note-mobile">Nota interna</label>
+                                            <textarea id="conv-note-mobile"
+                                                      @ref="_internalNoteMobileTextArea"
+                                                      rows="1"
+                                                      placeholder="Escribí una nota interna visible solo para el equipo…"
+                                                      value="@_internalNoteText"
+                                                      @oninput="HandleInternalNoteInputAsync"></textarea>
+                                        </div>
+                                        <div class="conversations-composer__actions conversations-composer__actions--note conversations-composer__actions--note-mobile">
+                                            <button type="button" class="btn btn--ghost" @onclick="AddInternalNoteAsync" disabled="@(!_canAddNote)" title="Guardar nota interna">
+                                                <i class="bi bi-journal-text"></i>
                                             </button>
                                         </div>
                                     }
@@ -1611,6 +1624,7 @@
     private bool _bindPreviewPanAfterRender;
     private SoundDiagnosticsVm _soundDiagnostics = new();
     private ElementReference _replyTextArea;
+    private ElementReference _internalNoteMobileTextArea;
     private long? _replyEnterHandlerConversationId;
     private int _lastSyncedBrowserNewCount = -1;
     private readonly string _typingClientId = Guid.NewGuid().ToString("N");
@@ -3088,7 +3102,42 @@
     private async Task HandleReplyInputAsync(ChangeEventArgs args)
     {
         _replyText = Convert.ToString(args.Value, System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
+        await AutoResizeReplyTextareaAsync();
         await NotifyTypingAsync(HasReplyText);
+    }
+
+    private async Task HandleInternalNoteInputAsync(ChangeEventArgs args)
+    {
+        _internalNoteText = Convert.ToString(args.Value, System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
+        await AutoResizeInternalNoteTextareaAsync();
+    }
+
+    private async Task OnReplyFocusAsync(FocusEventArgs _)
+    {
+        await AutoResizeReplyTextareaAsync();
+        await ScrollThreadToBottomAsync();
+    }
+
+    private async Task AutoResizeReplyTextareaAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("conversacionesUi.autoResizeTextarea", _replyTextArea, 44, 120);
+        }
+        catch
+        {
+        }
+    }
+
+    private async Task AutoResizeInternalNoteTextareaAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("conversacionesUi.autoResizeTextarea", _internalNoteMobileTextArea, 44, 120);
+        }
+        catch
+        {
+        }
     }
 
     private async Task NotifyTypingAsync(bool escribiendo, bool force = false)
@@ -3144,6 +3193,7 @@
         }
 
         await InvokeAsync(StateHasChanged);
+        await AutoResizeReplyTextareaAsync();
 
         try
         {
@@ -3389,6 +3439,9 @@
             });
 
             _internalNoteText = string.Empty;
+            await AutoResizeInternalNoteTextareaAsync();
+            _showComposerTools = false;
+            _composerToolTab = ComposerToolTabs.Emojis;
             _actionMessage = "Nota interna guardada.";
             await SelectConversationAsync(_selectedConversation.IdConversacion);
             await LoadInboxAsync();
@@ -5177,5 +5230,6 @@
         public const string Emojis = "emojis";
         public const string Stickers = "stickers";
         public const string Adjuntos = "adjuntos";
+        public const string Notas = "notas";
     }
 }
