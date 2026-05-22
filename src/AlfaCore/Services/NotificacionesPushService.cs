@@ -284,12 +284,17 @@ public sealed class NotificacionesPushService(
 
             var result = await SendToSubscriptionsAsync(cn, toSend, new PushPayload
             {
-                Title = "Nuevo mensaje",
-                Body = BuildBody(message),
+                Title = BuildNotificationTitle(message),
+                Body = BuildNotificationPreview(message),
                 Url = $"/conversaciones?id={message.IdConversacion.ToString(CultureInfo.InvariantCulture)}",
                 IdConversacion = message.IdConversacion,
                 IdMensaje = message.IdMensaje,
-                Canal = message.Canal
+                Canal = message.Canal,
+                ContactName = BuildNotificationTitle(message),
+                Preview = BuildNotificationPreview(message),
+                TimestampUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                UnreadCount = 1,
+                Renotify = false
             }, token);
 
             await appEvents.LogAuditAsync(
@@ -766,12 +771,48 @@ public sealed class NotificacionesPushService(
         }
     }
 
-    private static string BuildBody(NotificacionMensajeNuevoDto message)
+    private static string BuildNotificationTitle(NotificacionMensajeNuevoDto message)
     {
-        var channel = string.IsNullOrWhiteSpace(message.Canal) ? "Conversación" : message.Canal.Trim();
-        var contact = string.IsNullOrWhiteSpace(message.Contacto) ? "contacto sin nombre" : message.Contacto.Trim();
-        return $"{channel} · {contact}";
+        var contact = SanitizeText(message.Contacto, 80);
+        return string.IsNullOrWhiteSpace(contact) ? "AlfaCore" : contact;
     }
+
+    private static string BuildNotificationPreview(NotificacionMensajeNuevoDto message)
+    {
+        var text = SanitizeText(message.Resumen, 100);
+        if (string.IsNullOrWhiteSpace(text))
+            return "Tenés un nuevo mensaje";
+
+        var lower = text.ToLowerInvariant();
+        if (LooksLikeImage(lower)) return "📷 Imagen";
+        if (LooksLikeAudio(lower)) return "🎤 Audio";
+        if (LooksLikeFile(lower)) return "📎 Archivo";
+        if (LooksLikeSticker(lower)) return "😊 Sticker";
+        return text;
+    }
+
+    private static string SanitizeText(string value, int maxLen)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return string.Empty;
+
+        var withoutHtml = System.Text.RegularExpressions.Regex.Replace(value, "<.*?>", " ");
+        var singleLine = withoutHtml.Replace("\r", " ").Replace("\n", " ").Trim();
+        var collapsed = System.Text.RegularExpressions.Regex.Replace(singleLine, "\\s{2,}", " ");
+        return collapsed.Length <= maxLen ? collapsed : $"{collapsed[..maxLen].TrimEnd()}…";
+    }
+
+    private static bool LooksLikeImage(string text)
+        => text.Contains("image/") || text.Contains(".jpg") || text.Contains(".jpeg") || text.Contains(".png") || text.Contains(".webp");
+
+    private static bool LooksLikeAudio(string text)
+        => text.Contains("audio/") || text.Contains(".ogg") || text.Contains(".mp3") || text.Contains(".wav") || text.Contains(".m4a");
+
+    private static bool LooksLikeFile(string text)
+        => text.Contains("application/") || text.Contains(".pdf") || text.Contains(".doc") || text.Contains(".xls") || text.Contains(".zip");
+
+    private static bool LooksLikeSticker(string text)
+        => text.Contains("sticker");
 
     private static string BuildSubscriptionKey(string userName, string deviceId)
         => $"{SubscriptionPrefix}{HashPart(userName, 24)}-{HashPart(deviceId, 10)}";
@@ -990,6 +1031,12 @@ public sealed class NotificacionesPushService(
         public long? IdConversacion { get; set; }
         public long? IdMensaje { get; set; }
         public string Canal { get; set; } = string.Empty;
+        public string ContactName { get; set; } = string.Empty;
+        public string Preview { get; set; } = string.Empty;
+        public long? TimestampUnixMs { get; set; }
+        public int? UnreadCount { get; set; }
+        public bool Renotify { get; set; } = false;
     }
 }
+
 

@@ -406,7 +406,7 @@
                     }
                     <button class="session-chip no-print" @onclick="() => _drawerOpen = true" title="Gestionar sesiones de base de datos">
                         <span class="session-chip__dot"></span>
-                        <span class="session-chip__text">@(_activeSession?.Servidor ?? "â€”") · @(_activeSession?.BaseDatos ?? "â€”")</span>
+                        <span class="session-chip__text">@(_activeSession?.Servidor ?? "—") · @(_activeSession?.BaseDatos ?? "—")</span>
                         <i class="bi bi-chevron-down"></i>
                     </button>
                     @if (AppUserSession.IsAuthenticated && AppUserSession.CurrentUser is not null)
@@ -1522,6 +1522,7 @@
         public List<NotificacionesPushEndpointResultDto> Subscriptions { get; set; } = [];
     }
 }
+
 
 
 
