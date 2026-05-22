@@ -834,6 +834,12 @@
 
         try
         {
+            if (!await ConversacionesSvc.HasConversationSchemaAsync(cancellationToken))
+            {
+                ResetGlobalConversationNotifications();
+                return;
+            }
+
             var inbox = await ConversacionesSvc.GetInboxAsync(new AlfaCore.Models.ConversacionesInboxFilters
             {
                 Canal = "WHATSAPP",

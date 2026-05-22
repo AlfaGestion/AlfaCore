@@ -1,5 +1,8 @@
 using AlfaCore.Models;
 using Microsoft.Data.SqlClient;
+using System.ComponentModel;
+using System.IO;
+using System.Net;
 
 namespace AlfaCore.Services;
 
@@ -81,6 +84,30 @@ public sealed class AppUiOperationService : IAppUiOperationService
             };
         }
 
+        if (IsFtpAccessError(innerException, win32Code))
+        {
+            return new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Error,
+                Title = "No se pudo acceder al FTP configurado",
+                Message = "El sistema no pudo conectarse o subir los archivos al FTP configurado para Interfaces.",
+                Code = code,
+                Suggestion = "Revisá el host, puerto, usuario, clave, modo pasivo y la conectividad al servidor FTP antes de volver a intentar."
+            };
+        }
+
+        if (IsSharedFolderAccessError(innerException, win32Code))
+        {
+            return new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Error,
+                Title = "No se pudo acceder a la carpeta compartida",
+                Message = "El sistema no pudo guardar los archivos en la carpeta compartida configurada para Interfaces.",
+                Code = code,
+                Suggestion = "Revisá la ruta configurada, que la carpeta exista, que el servidor esté accesible y que este equipo tenga permisos de lectura y escritura."
+            };
+        }
+
         if (sqlException?.Number == 208)
         {
             return new AppUiMessage
@@ -154,11 +181,73 @@ public sealed class AppUiOperationService : IAppUiOperationService
         var current = exception;
         while (current is not null)
         {
-            if (current is System.ComponentModel.Win32Exception win32)
+            if (current is Win32Exception win32)
                 return win32.NativeErrorCode;
             current = current.InnerException;
         }
 
         return null;
+    }
+
+    private static bool IsSharedFolderAccessError(Exception? exception, int? win32Code)
+    {
+        if (win32Code is 5 or 53 or 64 or 67)
+            return true;
+
+        var current = exception;
+        while (current is not null)
+        {
+            if (current is UnauthorizedAccessException or DirectoryNotFoundException)
+                return true;
+
+            if (current is IOException ioEx)
+            {
+                var message = ioEx.Message ?? string.Empty;
+                if (message.Contains("network path", StringComparison.OrdinalIgnoreCase)
+                    || message.Contains("nombre de red", StringComparison.OrdinalIgnoreCase)
+                    || message.Contains("ruta de acceso", StringComparison.OrdinalIgnoreCase)
+                    || message.Contains("cannot find the path", StringComparison.OrdinalIgnoreCase)
+                    || message.Contains("no se encuentra la ruta", StringComparison.OrdinalIgnoreCase)
+                    || message.Contains("access is denied", StringComparison.OrdinalIgnoreCase)
+                    || message.Contains("acceso denegado", StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            current = current.InnerException;
+        }
+
+        return false;
+    }
+
+    private static bool IsFtpAccessError(Exception? exception, int? win32Code)
+    {
+        if (win32Code is 53 or 64 or 67 or 11001)
+            return true;
+
+        var current = exception;
+        while (current is not null)
+        {
+            if (current is WebException webEx)
+            {
+                if (webEx.Response is FtpWebResponse)
+                    return true;
+
+                var message = webEx.Message ?? string.Empty;
+                if (message.Contains("ftp", StringComparison.OrdinalIgnoreCase)
+                    || message.Contains("remote name", StringComparison.OrdinalIgnoreCase)
+                    || message.Contains("servidor remoto", StringComparison.OrdinalIgnoreCase)
+                    || message.Contains("timed out", StringComparison.OrdinalIgnoreCase)
+                    || message.Contains("tiempo de espera", StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            current = current.InnerException;
+        }
+
+        return false;
     }
 }

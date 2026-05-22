@@ -163,6 +163,363 @@
         </section>
     }
 
+    @{
+        var visibleColumns = GetVisibleColumns();
+        var groups = BuildGridGroups();
+    }
+
+    <section class="panel-card">
+        <div class="panel-card__header">
+            <div>
+                <h3 class="panel-card__title">Documentos recibidos</h3>
+                <p class="panel-card__subtitle">@_pagedTotal registro(s) · Página @_pageNumber de @_totalPages · podés abrir la ficha con el botón editar o con doble clic.</p>
+            </div>
+            <div class="actions">
+                <button type="button" class="btn btn--ghost" @onclick="AbrirConfiguracionVista">
+                    <i class="bi bi-sliders"></i> Configurar vista
+                </button>
+                <span class="panel-card__subtitle">Agrupación: @GetGroupingLabel(_viewSettings.AgruparPor)</span>
+            </div>
+        </div>
+
+        <div class="interfaces-bulkbar @GetMobileBulkbarClass()">
+            <div class="field interfaces-bulkbar__field">
+                <label>Acciones masivas</label>
+                <select @bind="_bulkAction" disabled="@(_loadingList || _selectedIds.Count == 0)">
+                    <option value="@BulkActionDelete">Eliminar seleccionados</option>
+                </select>
+            </div>
+            <button type="button"
+                    class="btn btn--ghost interfaces-bulkbar__apply"
+                    @onclick="EjecutarAccionSeleccionadaAsync"
+                    disabled="@(_loadingList || _selectedIds.Count == 0)">
+                <i class="bi bi-lightning-charge"></i> Aplicar
+            </button>
+            <span class="panel-card__subtitle">@GetSelectionSummary()</span>
+        </div>
+
+        @if (_loadingList)
+        {
+            <div class="usuarios-empty">Cargando documentos...</div>
+        }
+        else if (_items.Count == 0)
+        {
+            <div class="usuarios-empty">No hay documentos para los filtros seleccionados.</div>
+        }
+        else
+        {
+            <div class="interfaces-mobile-list">
+                @foreach (var group in groups)
+                {
+                    @if (group.ShowHeader)
+                    {
+                        <div class="interfaces-mobile-group">@group.Label</div>
+                    }
+
+                    @foreach (var item in group.Items)
+                    {
+                        <article class="@GetMobileCardClass(item)"
+                                 @onclick="() => _selectedId = item.IdComprobanteRecibido">
+                            <div class="interfaces-mobile-card__head">
+                                <label class="interfaces-mobile-card__check" @onclick:stopPropagation="true">
+                                    <input type="checkbox"
+                                           class="interfaces-table__checkbox"
+                                           checked="@_selectedIds.Contains(item.IdComprobanteRecibido)"
+                                           @onchange="args => ToggleRowSelection(item.IdComprobanteRecibido, args)" />
+                                    <span></span>
+                                </label>
+                                <div class="interfaces-mobile-card__identity">
+                                    <strong>#@item.IdComprobanteRecibido</strong>
+                                    <span>@item.TipoDocumentoDescripcion</span>
+                                </div>
+                                <span class="interfaces-status-pill @GetStateCssClass(item.EstadoCodigo, item.EstadoDescripcion)">@item.EstadoDescripcion</span>
+                            </div>
+
+                            <p class="interfaces-mobile-card__summary">@GetSummary(item.Observacion)</p>
+
+                            <div class="interfaces-mobile-card__meta">
+                                <span><i class="bi bi-clock"></i> @item.FechaHoraGrabacion.ToString("dd/MM/yyyy HH:mm")</span>
+                                <span><i class="bi bi-person"></i> @(string.IsNullOrWhiteSpace(item.UsuarioAlta) ? "—" : item.UsuarioAlta)</span>
+                                <span><i class="bi bi-paperclip"></i> @item.CantidadAdjuntos adj.</span>
+                                @if (IsCompraDocument(item))
+                                {
+                                    <span><i class="bi bi-building"></i> @GetDisplayValue(item.ProveedorNombre)</span>
+                                    <span><i class="bi bi-cash-stack"></i> @FormatMoney(item.ImporteTotal)</span>
+                                }
+                            </div>
+
+                            <div class="interfaces-mobile-card__actions" @onclick:stopPropagation="true">
+                                <button type="button"
+                                        class="btn btn--ghost btn--sm"
+                                        @onclick="() => VerDetalleLecturaAsync(item.IdComprobanteRecibido)">
+                                    <i class="bi bi-card-list"></i> Detalle IA
+                                </button>
+                                <button type="button"
+                                        class="btn btn--ghost btn--sm"
+                                        @onclick="() => AbrirFicha(item.IdComprobanteRecibido)">
+                                    <i class="bi bi-pencil-square"></i> Editar
+                                </button>
+                            </div>
+                        </article>
+                    }
+                }
+            </div>
+
+            <div class="usuarios-table-wrap">
+                <table class="data-table usuarios-table">
+                    <thead>
+                        <tr>
+                            <th class="interfaces-table__selector">
+                                <input type="checkbox"
+                                       class="interfaces-table__checkbox"
+                                       checked="@AreAllCurrentPageSelected"
+                                       @onchange="ToggleSelectAll"
+                                       title="Seleccionar todos los documentos visibles" />
+                            </th>
+                            @foreach (var col in visibleColumns)
+                            {
+                                <th>@col.Label</th>
+                            }
+                            <th class="interfaces-table__actions">Acciones</th>
+                        </tr>
+                    </thead>
+                    @foreach (var group in groups)
+                    {
+                        <tbody>
+                            @if (group.ShowHeader)
+                            {
+                                <tr class="usuarios-group-row">
+                                    <td colspan="@GetGridColumnSpan(visibleColumns.Count)">@group.Label</td>
+                                </tr>
+                            }
+
+                            @foreach (var item in group.Items)
+                            {
+                                <tr class="@(_selectedId == item.IdComprobanteRecibido ? "usuarios-table__row is-selected" : "usuarios-table__row")"
+                                    @onclick="() => _selectedId = item.IdComprobanteRecibido"
+                                    @ondblclick="() => AbrirFicha(item.IdComprobanteRecibido)">
+                                    <td class="interfaces-table__selector" @onclick:stopPropagation="true">
+                                        <input type="checkbox"
+                                               class="interfaces-table__checkbox"
+                                               checked="@_selectedIds.Contains(item.IdComprobanteRecibido)"
+                                               @onchange="args => ToggleRowSelection(item.IdComprobanteRecibido, args)"
+                                               title="Seleccionar documento" />
+                                    </td>
+                                    @foreach (var col in visibleColumns)
+                                    {
+                                        <td>
+                                            @switch (col.Key)
+                                            {
+                                                case InterfacesViewColumnKeys.Numero:
+                                                    <strong>#@item.IdComprobanteRecibido</strong>
+                                                    break;
+                                                case InterfacesViewColumnKeys.Fecha:
+                                                    @item.FechaHoraGrabacion.ToString("dd/MM/yyyy HH:mm")
+                                                    break;
+                                                case InterfacesViewColumnKeys.Tipo:
+                                                    @item.TipoDocumentoDescripcion
+                                                    break;
+                                                case InterfacesViewColumnKeys.Proveedor:
+                                                    @(IsCompraDocument(item) ? GetDisplayValue(item.ProveedorNombre) : "—")
+                                                    break;
+                                                case InterfacesViewColumnKeys.Importe:
+                                                    @(IsCompraDocument(item) ? FormatMoney(item.ImporteTotal) : "—")
+                                                    break;
+                                                case InterfacesViewColumnKeys.Estado:
+                                                    <span class="interfaces-status-pill @GetStateCssClass(item.EstadoCodigo, item.EstadoDescripcion)">@item.EstadoDescripcion</span>
+                                                    break;
+                                                case InterfacesViewColumnKeys.Usuario:
+                                                    @(string.IsNullOrWhiteSpace(item.UsuarioAlta) ? "—" : item.UsuarioAlta)
+                                                    break;
+                                                case InterfacesViewColumnKeys.Observacion:
+                                                    @GetSummary(item.Observacion)
+                                                    break;
+                                                case InterfacesViewColumnKeys.Adjuntos:
+                                                    @item.CantidadAdjuntos
+                                                    break;
+                                            }
+                                        </td>
+                                    }
+                                    <td class="interfaces-table__actions" @onclick:stopPropagation="true">
+                                        <button type="button"
+                                                class="btn btn--ghost btn--sm"
+                                                title="Ver detalle de lectura automática"
+                                                @onclick="() => VerDetalleLecturaAsync(item.IdComprobanteRecibido)">
+                                            <i class="bi bi-card-list"></i>
+                                            <span>Detalle IA</span>
+                                        </button>
+                                        <button type="button"
+                                                class="btn btn--ghost btn--sm interfaces-table__edit"
+                                                title="Editar documento"
+                                                @onclick="() => AbrirFicha(item.IdComprobanteRecibido)">
+                                            <i class="bi bi-pencil-square"></i>
+                                            <span>Editar</span>
+                                        </button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    }
+                </table>
+            </div>
+
+            <div class="result-pagination">
+                <span class="result-pagination__info">@_pagedTotal registro(s)</span>
+                <div class="result-pagination__controls">
+                    <button class="result-pagination__btn" title="Página anterior"
+                            @onclick="() => CambiarPaginaAsync(_pageNumber - 1)"
+                            disabled="@(!_hasPrev || _loadingList)">
+                        <i class="bi bi-chevron-left"></i>
+                    </button>
+                    <span class="result-pagination__btn result-pagination__btn--active">@_pageNumber / @_totalPages</span>
+                    <button class="result-pagination__btn" title="Página siguiente"
+                            @onclick="() => CambiarPaginaAsync(_pageNumber + 1)"
+                            disabled="@(!_hasNext || _loadingList)">
+                        <i class="bi bi-chevron-right"></i>
+                    </button>
+                </div>
+                <select class="result-pagination__size" title="Registros por página"
+                        value="@_filters.PageSize"
+                        @onchange="OnPageSizeChangedAsync"
+                        disabled="@_loadingList">
+                    <option value="25">25</option>
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                </select>
+            </div>
+        }
+    </section>
+
+    @if (_loadingDetalleLectura || _detalleLectura is not null)
+    {
+        <section class="panel-card">
+            <div class="panel-card__header">
+                <div>
+                    <h3 class="panel-card__title">Detalle de lectura automática</h3>
+                    <p class="panel-card__subtitle">
+                        @if (_loadingDetalleLectura)
+                        {
+                            <span>Cargando detalle del documento...</span>
+                        }
+                        else if (_detalleLecturaDocumentoId.HasValue)
+                        {
+                            <span>Documento #@_detalleLecturaDocumentoId.Value · proveedor, cabecera y renglones detectados.</span>
+                        }
+                    </p>
+                </div>
+                <div class="actions">
+                    @if (_detalleLecturaDocumentoId.HasValue)
+                    {
+                        <button type="button" class="btn btn--ghost" @onclick="() => AbrirFicha(_detalleLecturaDocumentoId.Value)">
+                            <i class="bi bi-pencil-square"></i> Abrir ficha
+                        </button>
+                    }
+                    <button type="button" class="btn btn--ghost" @onclick="CerrarDetalleLectura">
+                        <i class="bi bi-x-circle"></i> Cerrar
+                    </button>
+                </div>
+            </div>
+
+            @if (_loadingDetalleLectura)
+            {
+                <div class="usuarios-empty">Cargando detalle leído...</div>
+            }
+            else if (_detalleLectura is not null)
+            {
+                <div class="contactos-form__grid">
+                    <div class="field">
+                        <label>Estado</label>
+                        <input value="@_detalleLectura.Estado" readonly />
+                    </div>
+                    <div class="field">
+                        <label>Proveedor</label>
+                        <input value="@GetDisplayValue(_detalleLectura.ProveedorNombre)" readonly />
+                    </div>
+                    <div class="field">
+                        <label>CUIT</label>
+                        <input value="@GetDisplayValue(_detalleLectura.ProveedorCuit)" readonly />
+                    </div>
+                    <div class="field">
+                        <label>Cuenta</label>
+                        <input value="@GetDisplayValue(_detalleLectura.CuentaContable)" readonly />
+                    </div>
+                    <div class="field">
+                        <label>Comprobante</label>
+                        <input value="@BuildComprobanteLecturaLabel(_detalleLectura)" readonly />
+                    </div>
+                    <div class="field">
+                        <label>Total</label>
+                        <input value="@FormatMoney(_detalleLectura.Total)" readonly />
+                    </div>
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(_detalleLectura.LectorObservaciones))
+                {
+                    <div class="field">
+                        <label>Observaciones del lector</label>
+                        <textarea class="contactos-observaciones" readonly>@_detalleLectura.LectorObservaciones</textarea>
+                    </div>
+                }
+
+                @if (!string.IsNullOrWhiteSpace(_detalleLectura.LectorError))
+                {
+                    <div class="field">
+                        <label>Error del lector</label>
+                        <textarea class="contactos-observaciones" readonly>@_detalleLectura.LectorError</textarea>
+                    </div>
+                }
+
+                <div class="panel-card__header">
+                    <div>
+                        <h4 class="panel-card__title">Renglones detectados</h4>
+                        <p class="panel-card__subtitle">@_detalleLectura.Items.Count renglón(es) guardado(s) en la lectura.</p>
+                    </div>
+                </div>
+
+                @if (_detalleLectura.Items.Count == 0)
+                {
+                    <div class="usuarios-empty">Esta lectura no devolvió renglones de detalle.</div>
+                }
+                else
+                {
+                    <div class="usuarios-table-wrap">
+                        <table class="data-table usuarios-table">
+                            <thead>
+                                <tr>
+                                    <th>Renglón</th>
+                                    <th>Código</th>
+                                    <th>Descripción</th>
+                                    <th>Cantidad</th>
+                                    <th>U.D.</th>
+                                    <th>Imp. lista</th>
+                                    <th>Imp. neto</th>
+                                    <th>IVA</th>
+                                    <th>Total</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var row in _detalleLectura.Items)
+                                {
+                                    <tr class="usuarios-table__row">
+                                        <td>@row.NroRenglon</td>
+                                        <td>@GetDisplayValue(row.CodigoArticulo)</td>
+                                        <td>@GetDisplayValue(row.Descripcion)</td>
+                                        <td>@GetDisplayValue(row.Cantidad)</td>
+                                        <td>@GetDisplayValue(row.Ud)</td>
+                                        <td>@FormatMoney(row.ImporteLista)</td>
+                                        <td>@FormatMoney(row.ImporteNeto)</td>
+                                        <td>@FormatPercent(row.Iva)</td>
+                                        <td>@FormatMoney(row.Total)</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            }
+        </section>
+    }
+
     <section class="panel-card">
         <div class="panel-card__header">
             <div>
@@ -276,210 +633,6 @@
             </div>
         }
     </section>
-
-    @{
-        var visibleColumns = GetVisibleColumns();
-        var groups = BuildGridGroups();
-    }
-
-    <section class="panel-card">
-        <div class="panel-card__header">
-            <div>
-                <h3 class="panel-card__title">Documentos recibidos</h3>
-                <p class="panel-card__subtitle">@_pagedTotal registro(s) · Página @_pageNumber de @_totalPages · podés abrir la ficha con el botón editar o con doble clic.</p>
-            </div>
-            <div class="actions">
-                <button type="button" class="btn btn--ghost" @onclick="AbrirConfiguracionVista">
-                    <i class="bi bi-sliders"></i> Configurar vista
-                </button>
-                <span class="panel-card__subtitle">Agrupación: @GetGroupingLabel(_viewSettings.AgruparPor)</span>
-            </div>
-        </div>
-
-        <div class="interfaces-bulkbar @GetMobileBulkbarClass()">
-            <div class="field interfaces-bulkbar__field">
-                <label>Acciones masivas</label>
-                <select @bind="_bulkAction" disabled="@(_loadingList || _selectedIds.Count == 0)">
-                    <option value="@BulkActionDelete">Eliminar seleccionados</option>
-                </select>
-            </div>
-            <button type="button"
-                    class="btn btn--ghost interfaces-bulkbar__apply"
-                    @onclick="EjecutarAccionSeleccionadaAsync"
-                    disabled="@(_loadingList || _selectedIds.Count == 0)">
-                <i class="bi bi-lightning-charge"></i> Aplicar
-            </button>
-            <span class="panel-card__subtitle">@GetSelectionSummary()</span>
-        </div>
-
-        @if (_loadingList)
-        {
-            <div class="usuarios-empty">Cargando documentos...</div>
-        }
-        else if (_items.Count == 0)
-        {
-            <div class="usuarios-empty">No hay documentos para los filtros seleccionados.</div>
-        }
-        else
-        {
-            <div class="interfaces-mobile-list">
-                @foreach (var group in groups)
-                {
-                    @if (group.ShowHeader)
-                    {
-                        <div class="interfaces-mobile-group">@group.Label</div>
-                    }
-
-                    @foreach (var item in group.Items)
-                    {
-                        <article class="@GetMobileCardClass(item)"
-                                 @onclick="() => _selectedId = item.IdComprobanteRecibido">
-                            <div class="interfaces-mobile-card__head">
-                                <label class="interfaces-mobile-card__check" @onclick:stopPropagation="true">
-                                    <input type="checkbox"
-                                           class="interfaces-table__checkbox"
-                                           checked="@_selectedIds.Contains(item.IdComprobanteRecibido)"
-                                           @onchange="args => ToggleRowSelection(item.IdComprobanteRecibido, args)" />
-                                    <span></span>
-                                </label>
-                                <div class="interfaces-mobile-card__identity">
-                                    <strong>#@item.IdComprobanteRecibido</strong>
-                                    <span>@item.TipoDocumentoDescripcion</span>
-                                </div>
-                                <span class="interfaces-status-pill @GetStateCssClass(item.EstadoCodigo, item.EstadoDescripcion)">@item.EstadoDescripcion</span>
-                            </div>
-
-                            <p class="interfaces-mobile-card__summary">@GetSummary(item.Observacion)</p>
-
-                            <div class="interfaces-mobile-card__meta">
-                                <span><i class="bi bi-clock"></i> @item.FechaHoraGrabacion.ToString("dd/MM/yyyy HH:mm")</span>
-                                <span><i class="bi bi-person"></i> @(string.IsNullOrWhiteSpace(item.UsuarioAlta) ? "—" : item.UsuarioAlta)</span>
-                                <span><i class="bi bi-paperclip"></i> @item.CantidadAdjuntos adj.</span>
-                            </div>
-
-                            <div class="interfaces-mobile-card__actions" @onclick:stopPropagation="true">
-                                <button type="button"
-                                        class="btn btn--ghost btn--sm"
-                                        @onclick="() => AbrirFicha(item.IdComprobanteRecibido)">
-                                    <i class="bi bi-pencil-square"></i> Editar
-                                </button>
-                            </div>
-                        </article>
-                    }
-                }
-            </div>
-
-            <div class="usuarios-table-wrap">
-                <table class="data-table usuarios-table">
-                    <thead>
-                        <tr>
-                            <th class="interfaces-table__selector">
-                                <input type="checkbox"
-                                       class="interfaces-table__checkbox"
-                                       checked="@AreAllCurrentPageSelected"
-                                       @onchange="ToggleSelectAll"
-                                       title="Seleccionar todos los documentos visibles" />
-                            </th>
-                            @foreach (var col in visibleColumns)
-                            {
-                                <th>@col.Label</th>
-                            }
-                            <th class="interfaces-table__actions">Acciones</th>
-                        </tr>
-                    </thead>
-                    @foreach (var group in groups)
-                    {
-                        <tbody>
-                            @if (group.ShowHeader)
-                            {
-                                <tr class="usuarios-group-row">
-                                    <td colspan="@GetGridColumnSpan(visibleColumns.Count)">@group.Label</td>
-                                </tr>
-                            }
-
-                            @foreach (var item in group.Items)
-                            {
-                                <tr class="@(_selectedId == item.IdComprobanteRecibido ? "usuarios-table__row is-selected" : "usuarios-table__row")"
-                                    @onclick="() => _selectedId = item.IdComprobanteRecibido"
-                                    @ondblclick="() => AbrirFicha(item.IdComprobanteRecibido)">
-                                    <td class="interfaces-table__selector" @onclick:stopPropagation="true">
-                                        <input type="checkbox"
-                                               class="interfaces-table__checkbox"
-                                               checked="@_selectedIds.Contains(item.IdComprobanteRecibido)"
-                                               @onchange="args => ToggleRowSelection(item.IdComprobanteRecibido, args)"
-                                               title="Seleccionar documento" />
-                                    </td>
-                                    @foreach (var col in visibleColumns)
-                                    {
-                                        <td>
-                                            @switch (col.Key)
-                                            {
-                                                case InterfacesViewColumnKeys.Numero:
-                                                    <strong>#@item.IdComprobanteRecibido</strong>
-                                                    break;
-                                                case InterfacesViewColumnKeys.Fecha:
-                                                    @item.FechaHoraGrabacion.ToString("dd/MM/yyyy HH:mm")
-                                                    break;
-                                                case InterfacesViewColumnKeys.Tipo:
-                                                    @item.TipoDocumentoDescripcion
-                                                    break;
-                                                case InterfacesViewColumnKeys.Estado:
-                                                    <span class="interfaces-status-pill @GetStateCssClass(item.EstadoCodigo, item.EstadoDescripcion)">@item.EstadoDescripcion</span>
-                                                    break;
-                                                case InterfacesViewColumnKeys.Usuario:
-                                                    @(string.IsNullOrWhiteSpace(item.UsuarioAlta) ? "—" : item.UsuarioAlta)
-                                                    break;
-                                                case InterfacesViewColumnKeys.Observacion:
-                                                    @GetSummary(item.Observacion)
-                                                    break;
-                                                case InterfacesViewColumnKeys.Adjuntos:
-                                                    @item.CantidadAdjuntos
-                                                    break;
-                                            }
-                                        </td>
-                                    }
-                                    <td class="interfaces-table__actions" @onclick:stopPropagation="true">
-                                        <button type="button"
-                                                class="btn btn--ghost btn--sm interfaces-table__edit"
-                                                title="Editar documento"
-                                                @onclick="() => AbrirFicha(item.IdComprobanteRecibido)">
-                                            <i class="bi bi-pencil-square"></i>
-                                            <span>Editar</span>
-                                        </button>
-                                    </td>
-                                </tr>
-                            }
-                        </tbody>
-                    }
-                </table>
-            </div>
-
-            <div class="result-pagination">
-                <span class="result-pagination__info">@_pagedTotal registro(s)</span>
-                <div class="result-pagination__controls">
-                    <button class="result-pagination__btn" title="Página anterior"
-                            @onclick="() => CambiarPaginaAsync(_pageNumber - 1)"
-                            disabled="@(!_hasPrev || _loadingList)">
-                        <i class="bi bi-chevron-left"></i>
-                    </button>
-                    <span class="result-pagination__btn result-pagination__btn--active">@_pageNumber / @_totalPages</span>
-                    <button class="result-pagination__btn" title="Página siguiente"
-                            @onclick="() => CambiarPaginaAsync(_pageNumber + 1)"
-                            disabled="@(!_hasNext || _loadingList)">
-                        <i class="bi bi-chevron-right"></i>
-                    </button>
-                </div>
-                <select class="result-pagination__size" title="Registros por página"
-                        value="@_filters.PageSize"
-                        @onchange="OnPageSizeChangedAsync"
-                        disabled="@_loadingList">
-                    <option value="25">25</option>
-                    <option value="50">50</option>
-                    <option value="100">100</option>
-                </select>
-            </div>
-        }
-    </section>
 </div>
 
 @code {
@@ -492,11 +645,14 @@
     private AppUiMessage? _feedback;
     private InterfacesViewSettingsDto _viewSettings = BuildDefaultViewSettings();
     private InterfacesCompraIaQueueSnapshotDto _queueSnapshot = new();
+    private InterfacesCompraIaResultadoDto? _detalleLectura;
     private bool _loadingList;
     private bool _loadingQueue;
+    private bool _loadingDetalleLectura;
     private bool _showViewSettings;
     private bool _viewSettingsLoaded;
     private long _selectedId;
+    private long? _detalleLecturaDocumentoId;
     private int _pagedTotal;
     private int _pageNumber = 1;
     private int _totalPages = 1;
@@ -607,6 +763,56 @@
 
     private void AbrirFicha(long id)
         => Navigation.NavigateTo($"/interfaces/{id}");
+
+    private async Task VerDetalleLecturaAsync(long idComprobanteRecibido)
+    {
+        if (_loadingDetalleLectura)
+            return;
+
+        if (_detalleLecturaDocumentoId == idComprobanteRecibido && _detalleLectura is not null)
+        {
+            CerrarDetalleLectura();
+            return;
+        }
+
+        _loadingDetalleLectura = true;
+        try
+        {
+            var result = await UiOps.RunAsync(() => InterfacesSvc.GetByIdAsync(idComprobanteRecibido), "No se pudo cargar el detalle de lectura automática.");
+            if (!result.Success || result.Value is null)
+            {
+                SetFeedback(result.Feedback);
+                return;
+            }
+
+            if (result.Value.LecturaCompra is null)
+            {
+                _detalleLectura = null;
+                _detalleLecturaDocumentoId = null;
+                SetFeedback(new AppUiMessage
+                {
+                    Severity = AppUiFeedbackSeverity.Warning,
+                    Title = "Sin lectura automática",
+                    Message = $"El documento #{idComprobanteRecibido} todavía no tiene una lectura automática guardada.",
+                    Suggestion = "Procesalo desde la ficha o esperá a que termine la cola de compras si ya fue encolado."
+                });
+                return;
+            }
+
+            _detalleLectura = result.Value.LecturaCompra;
+            _detalleLecturaDocumentoId = idComprobanteRecibido;
+        }
+        finally
+        {
+            _loadingDetalleLectura = false;
+        }
+    }
+
+    private void CerrarDetalleLectura()
+    {
+        _detalleLectura = null;
+        _detalleLecturaDocumentoId = null;
+    }
 
     [Inject] private NavigationManager Navigation { get; set; } = default!;
 
@@ -889,10 +1095,12 @@
                 new() { Key = InterfacesViewColumnKeys.Numero, Label = "Número", Visible = true, Order = 0 },
                 new() { Key = InterfacesViewColumnKeys.Fecha, Label = "Fecha", Visible = true, Order = 1 },
                 new() { Key = InterfacesViewColumnKeys.Tipo, Label = "Tipo", Visible = true, Order = 2 },
-                new() { Key = InterfacesViewColumnKeys.Estado, Label = "Estado", Visible = true, Order = 3 },
-                new() { Key = InterfacesViewColumnKeys.Usuario, Label = "Usuario", Visible = true, Order = 4 },
-                new() { Key = InterfacesViewColumnKeys.Observacion, Label = "Observación", Visible = true, Order = 5 },
-                new() { Key = InterfacesViewColumnKeys.Adjuntos, Label = "Adjuntos", Visible = true, Order = 6 }
+                new() { Key = InterfacesViewColumnKeys.Proveedor, Label = "Proveedor", Visible = true, Order = 3 },
+                new() { Key = InterfacesViewColumnKeys.Importe, Label = "Importe", Visible = true, Order = 4 },
+                new() { Key = InterfacesViewColumnKeys.Estado, Label = "Estado", Visible = true, Order = 5 },
+                new() { Key = InterfacesViewColumnKeys.Usuario, Label = "Usuario", Visible = true, Order = 6 },
+                new() { Key = InterfacesViewColumnKeys.Observacion, Label = "Observación", Visible = true, Order = 7 },
+                new() { Key = InterfacesViewColumnKeys.Adjuntos, Label = "Adjuntos", Visible = true, Order = 8 }
             ]
         };
 
@@ -906,6 +1114,39 @@
         var normalized = string.IsNullOrWhiteSpace(value) ? "Sin observación." : value.Trim().Replace(Environment.NewLine, " ").Replace('\n', ' ');
         return normalized.Length > 100 ? normalized[..97] + "..." : normalized;
     }
+
+    private static bool IsCompraDocument(InterfacesInboxItemDto item)
+        => string.Equals(item.TipoDocumentoCodigo, "COMPROBANTE_COMPRA", StringComparison.OrdinalIgnoreCase);
+
+    private static string GetDisplayValue(string? value)
+        => string.IsNullOrWhiteSpace(value) ? "—" : value.Trim();
+
+    private static string BuildComprobanteLecturaLabel(InterfacesCompraIaResultadoDto lectura)
+    {
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(lectura.TipoComprobante))
+            parts.Add(lectura.TipoComprobante.Trim());
+        if (!string.IsNullOrWhiteSpace(lectura.Letra))
+            parts.Add(lectura.Letra.Trim());
+
+        var puntoNumero = string.Join("-",
+            new[] { lectura.PuntoVenta?.Trim(), lectura.Numero?.Trim() }
+                .Where(static x => !string.IsNullOrWhiteSpace(x)));
+        if (!string.IsNullOrWhiteSpace(puntoNumero))
+            parts.Add(puntoNumero);
+
+        return parts.Count == 0 ? "—" : string.Join(" ", parts);
+    }
+
+    private static string FormatMoney(decimal? value)
+        => value.HasValue
+            ? value.Value.ToString("N2")
+            : "—";
+
+    private static string FormatPercent(double? value)
+        => value.HasValue
+            ? value.Value.ToString("N2") + " %"
+            : "—";
 
     private static string GetFeedbackClass(AppUiMessage message)
         => message.Severity switch

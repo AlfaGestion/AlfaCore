@@ -63,7 +63,15 @@
 
                 <div class="field conv-config-fields__full">
                     <label>@(_config.UsaFtp ? "Carpeta remota dentro del FTP" : "Ruta compartida o local")</label>
-                    <input @bind="_config.RutaBase" placeholder="@(_config.UsaFtp ? "/documentos-a-procesar/" : @"\\SERVIDOR\Carpeta\Subcarpeta")" />
+                    <div class="actions" style="gap:12px; align-items:center;">
+                        <input @bind="_config.RutaBase" placeholder="@(_config.UsaFtp ? "/documentos-a-procesar/" : @"\\SERVIDOR\Carpeta\Subcarpeta")" />
+                        @if (!_config.UsaFtp)
+                        {
+                            <button type="button" class="btn btn--ghost" @onclick="BuscarCarpetaAsync" disabled="@(Loading || Saving)">
+                                <i class="bi bi-folder2-open"></i> Buscar carpeta
+                            </button>
+                        }
+                    </div>
                 </div>
 
                 @if (_config.UsaFtp)
@@ -292,6 +300,23 @@
         }
 
         Saving = false;
+    }
+
+    private async Task BuscarCarpetaAsync()
+    {
+        _feedback = null;
+        var result = await UiOps.RunAsync(
+            () => ConfigSvc.BrowseLocalFolderAsync(),
+            "No se pudo abrir el selector de carpetas.");
+
+        if (!result.Success)
+        {
+            _feedback = result.Feedback;
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(result.Value))
+            _config.RutaBase = result.Value;
     }
 
     private async Task SaveCompraIaAsync()

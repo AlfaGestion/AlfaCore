@@ -122,17 +122,39 @@ public sealed class InterfacesService(
                     ISNULL(c.CantidadAdjuntos, 0),
                     ISNULL(c.Eliminado, 0),
                     e.IdEstado,
-                    ISNULL(e.Codigo, ''),
-                    ISNULL(e.Descripcion, ''),
+                    CASE
+                        WHEN ISNULL(t.Codigo, '') = 'COMPROBANTE_COMPRA'
+                         AND ISNULL(ia.Estado, '') IN ('PROCESADO', 'SIN_PROVEEDOR')
+                            THEN 'PROCESADO'
+                        ELSE ISNULL(e.Codigo, '')
+                    END,
+                    CASE
+                        WHEN ISNULL(t.Codigo, '') = 'COMPROBANTE_COMPRA'
+                         AND ISNULL(ia.Estado, '') IN ('PROCESADO', 'SIN_PROVEEDOR')
+                            THEN 'Procesado'
+                        ELSE ISNULL(e.Descripcion, '')
+                    END,
                     ISNULL(e.PermiteEdicion, 0),
                     t.IdTipoDocumento,
                     ISNULL(t.Codigo, ''),
-                    ISNULL(t.Descripcion, '')
+                    ISNULL(t.Descripcion, ''),
+                    ISNULL(ia.Proveedor_Nombre, ''),
+                    ia.Total
                 FROM dbo.INT_COMPROBANTE_RECIBIDO c
                 INNER JOIN dbo.INT_ESTADO e
                     ON e.IdEstado = c.IdEstado
                 INNER JOIN dbo.INT_TIPO_DOCUMENTO t
                     ON t.IdTipoDocumento = c.IdTipoDocumento
+                OUTER APPLY
+                (
+                    SELECT TOP (1)
+                        cab.Estado,
+                        cab.Proveedor_Nombre,
+                        cab.Total
+                    FROM dbo.IA_Compras_CAB cab
+                    WHERE cab.IdComprobanteRecibido = c.IdComprobanteRecibido
+                    ORDER BY cab.FechaHora_Proceso DESC, cab.ID DESC
+                ) ia
                 WHERE (@Desde IS NULL OR c.FechaHora_Grabacion >= @Desde)
                   AND (@Hasta IS NULL OR c.FechaHora_Grabacion < DATEADD(day, 1, @Hasta))
                   AND (@IdEstado IS NULL OR c.IdEstado = @IdEstado)
@@ -190,7 +212,9 @@ public sealed class InterfacesService(
                     PermiteEdicion = GetBool(rd, 9),
                     IdTipoDocumento = GetInt(rd, 10),
                     TipoDocumentoCodigo = GetString(rd, 11),
-                    TipoDocumentoDescripcion = GetString(rd, 12)
+                    TipoDocumentoDescripcion = GetString(rd, 12),
+                    ProveedorNombre = GetString(rd, 13),
+                    ImporteTotal = GetNullableDecimal(rd, 14)
                 });
             }
 
@@ -465,7 +489,14 @@ public sealed class InterfacesService(
                     var extension = NormalizeExtension(Path.GetExtension(attachment.NombreArchivo));
                     var savedName = $"{order:0000}_{Guid.NewGuid():N}{extension}";
                     var relativePath = CombineStoragePath(relativeFolder, savedName);
-                    await SaveAttachmentAsync(settings, relativePath, attachment, savedFiles, token);
+                    try
+                    {
+                        await SaveAttachmentAsync(settings, relativePath, attachment, savedFiles, token);
+                    }
+                    catch (Exception ex)
+                    {
+                        throw await BuildAttachmentStorageExceptionAsync("Create", settings, attachment, relativePath, ex, token);
+                    }
 
                     const string insertAttachmentSql = """
                         INSERT INTO dbo.INT_COMPROBANTE_RECIBIDO_ADJUNTO
@@ -540,6 +571,7 @@ public sealed class InterfacesService(
                     },
                     token);
 
+                await TryAutoQueueCompraDetectionAfterCreateAsync(idComprobante, user, pc, token);
                 return idComprobante;
             }
             catch
@@ -557,6 +589,61 @@ public sealed class InterfacesService(
                 throw;
             }
         }, "No se pudo registrar el comprobante recibido.", ct);
+
+    private async Task TryAutoQueueCompraDetectionAfterCreateAsync(long idComprobanteRecibido, string user, string pc, CancellationToken ct)
+    {
+        try
+        {
+            var compraIaSettings = await interfacesConfigService.GetCompraIaSettingsAsync(ct);
+            if (!compraIaSettings.Habilitado)
+                return;
+
+            await EnsureCompraIaConfigurationReadyAsync(ct);
+
+            var detail = await GetByIdAsync(idComprobanteRecibido, ct);
+            if (detail is null)
+                return;
+            if (!string.Equals(detail.TipoDocumentoCodigo, "COMPROBANTE_COMPRA", StringComparison.OrdinalIgnoreCase))
+                return;
+
+            var eligibleAttachments = GetEligibleCompraAttachments(detail);
+            if (eligibleAttachments.Count == 0)
+                return;
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(ct);
+            var queued = await EnqueueCompraDetectionInternalAsync(cn, detail, eligibleAttachments[0], user, pc, ct);
+
+            await _appEvents.LogAuditAsync(
+                "Interfaces",
+                "CreateAutoQueueCompra",
+                "IA_Compras_CAB",
+                queued.Id.ToString(CultureInfo.InvariantCulture),
+                "Documento encolado automáticamente para lectura de compras al registrarse.",
+                new
+                {
+                    detail.IdComprobanteRecibido,
+                    queued.Estado
+                },
+                ct);
+        }
+        catch (Exception ex)
+        {
+            await _appEvents.LogErrorAsync(
+                "Interfaces",
+                "CreateAutoQueueCompra",
+                ex,
+                "No se pudo encolar automáticamente el comprobante de compras recién registrado.",
+                new
+                {
+                    IdComprobanteRecibido = idComprobanteRecibido,
+                    Usuario = user,
+                    Pc = pc
+                },
+                AppEventSeverity.Error,
+                ct);
+        }
+    }
 
     public Task UpdateAsync(InterfacesActualizarComprobanteRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync("Interfaces", "Update", async token =>
@@ -662,7 +749,14 @@ public sealed class InterfacesService(
                     var extension = NormalizeExtension(Path.GetExtension(attachment.NombreArchivo));
                     var savedName = $"{nextOrder:0000}_{Guid.NewGuid():N}{extension}";
                     var relativePath = CombineStoragePath(relativeFolder, savedName);
-                    await SaveAttachmentAsync(settings, relativePath, attachment, savedFiles, token);
+                    try
+                    {
+                        await SaveAttachmentAsync(settings, relativePath, attachment, savedFiles, token);
+                    }
+                    catch (Exception ex)
+                    {
+                        throw await BuildAttachmentStorageExceptionAsync("AddAttachments", settings, attachment, relativePath, ex, token);
+                    }
 
                     const string insertAttachmentSql = """
                         INSERT INTO dbo.INT_COMPROBANTE_RECIBIDO_ADJUNTO
@@ -1542,7 +1636,7 @@ public sealed class InterfacesService(
         };
     }
 
-    private static async Task<InterfacesEstadoOptionDto?> GetStateByCodeAsync(SqlConnection cn, string codigoEstado, CancellationToken ct)
+    private static async Task<InterfacesEstadoOptionDto?> GetStateByCodeAsync(SqlConnection cn, string codigoEstado, CancellationToken ct, SqlTransaction? tx = null)
     {
         const string sql = """
             SELECT TOP (1)
@@ -1559,7 +1653,7 @@ public sealed class InterfacesService(
             WHERE UPPER(LTRIM(RTRIM(Codigo))) = UPPER(LTRIM(RTRIM(@Codigo)))
             """;
 
-        await using var cmd = new SqlCommand(sql, cn);
+        await using var cmd = tx is null ? new SqlCommand(sql, cn) : new SqlCommand(sql, cn, tx);
         cmd.Parameters.AddWithValue("@Codigo", codigoEstado.Trim());
         await using var rd = await cmd.ExecuteReaderAsync(ct);
         if (!await rd.ReadAsync(ct))
@@ -1583,42 +1677,49 @@ public sealed class InterfacesService(
     {
         ArgumentNullException.ThrowIfNull(request);
         if (request.IdTipoDocumento <= 0)
-            throw new InvalidOperationException("El tipo documental es obligatorio.");
+            throw BuildValidationException("Revisá los datos del documento antes de guardarlo.", "tipo-documental", "El tipo documental es obligatorio.");
         if (request.Adjuntos is null || request.Adjuntos.Count == 0)
-            throw new InvalidOperationException("Debés adjuntar al menos un archivo.");
+            throw BuildValidationException("Revisá los datos del documento antes de guardarlo.", "adjuntos", "Debés adjuntar al menos un archivo.");
     }
 
     private static void ValidateSettings(InterfacesUploadSettingsDto settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
         if (string.IsNullOrWhiteSpace(settings.RutaBase))
-            throw new InvalidOperationException("La ruta base o carpeta remota para documentos no está configurada.");
+            throw BuildValidationException("La configuración de carga de Interfaces está incompleta.", "ruta-base", "La ruta base o carpeta remota para documentos no está configurada.");
         if (settings.UsaFtp)
         {
             if (string.IsNullOrWhiteSpace(settings.FtpHost))
-                throw new InvalidOperationException("El host FTP no está configurado.");
+                throw BuildValidationException("La configuración FTP de Interfaces está incompleta.", "ftp-host", "El host FTP no está configurado.");
             if (string.IsNullOrWhiteSpace(settings.FtpUsuario))
-                throw new InvalidOperationException("El usuario FTP no está configurado.");
+                throw BuildValidationException("La configuración FTP de Interfaces está incompleta.", "ftp-usuario", "El usuario FTP no está configurado.");
         }
     }
 
     private static void ValidateAttachment(InterfacesCrearAdjuntoRequest attachment, InterfacesUploadSettingsDto settings)
     {
         if (attachment is null)
-            throw new InvalidOperationException("Se recibió un adjunto inválido.");
+            throw BuildValidationException("Revisá los adjuntos seleccionados antes de guardar.", "adjuntos", "Se recibió un adjunto inválido.");
         if (string.IsNullOrWhiteSpace(attachment.NombreArchivo))
-            throw new InvalidOperationException("El nombre del archivo es obligatorio.");
+            throw BuildValidationException("Revisá los adjuntos seleccionados antes de guardar.", "adjuntos", "El nombre del archivo es obligatorio.");
         if (attachment.TamanoBytes <= 0)
-            throw new InvalidOperationException("Uno de los archivos está vacío.");
+            throw BuildValidationException("Revisá los adjuntos seleccionados antes de guardar.", "adjuntos", "Uno de los archivos está vacío.");
         if (attachment.TamanoBytes > settings.TamanoMaximoBytes)
-            throw new InvalidOperationException($"Uno de los archivos supera el máximo permitido de {settings.TamanoMaximoMb} MB.");
+            throw BuildValidationException("Revisá los adjuntos seleccionados antes de guardar.", "adjuntos", $"Uno de los archivos supera el máximo permitido de {settings.TamanoMaximoMb} MB.");
 
         var extension = NormalizeExtension(Path.GetExtension(attachment.NombreArchivo));
         if (settings.ExtensionesPermitidas.Count > 0
             && !settings.ExtensionesPermitidas.Contains(extension, StringComparer.OrdinalIgnoreCase))
         {
-            throw new InvalidOperationException($"La extensión {extension} no está permitida para Interfaces.");
+            throw BuildValidationException("Revisá los adjuntos seleccionados antes de guardar.", "adjuntos", $"La extensión {extension} no está permitida para Interfaces.");
         }
+    }
+
+    private static AppValidationException BuildValidationException(string userMessage, string fieldKey, string message)
+    {
+        var validation = new ValidationResult();
+        validation.Add(fieldKey, message);
+        return new AppValidationException(userMessage, validation);
     }
 
     private async Task<InterfacesDetalleDto> RequireEditableComprobanteAsync(long idComprobanteRecibido, CancellationToken ct)
@@ -1641,10 +1742,12 @@ public sealed class InterfacesService(
                 new() { Key = InterfacesViewColumnKeys.Numero, Label = "Número", Visible = true, Order = 0 },
                 new() { Key = InterfacesViewColumnKeys.Fecha, Label = "Fecha", Visible = true, Order = 1 },
                 new() { Key = InterfacesViewColumnKeys.Tipo, Label = "Tipo", Visible = true, Order = 2 },
-                new() { Key = InterfacesViewColumnKeys.Estado, Label = "Estado", Visible = true, Order = 3 },
-                new() { Key = InterfacesViewColumnKeys.Usuario, Label = "Usuario", Visible = true, Order = 4 },
-                new() { Key = InterfacesViewColumnKeys.Observacion, Label = "Observación", Visible = true, Order = 5 },
-                new() { Key = InterfacesViewColumnKeys.Adjuntos, Label = "Adjuntos", Visible = true, Order = 6 }
+                new() { Key = InterfacesViewColumnKeys.Proveedor, Label = "Proveedor", Visible = true, Order = 3 },
+                new() { Key = InterfacesViewColumnKeys.Importe, Label = "Importe", Visible = true, Order = 4 },
+                new() { Key = InterfacesViewColumnKeys.Estado, Label = "Estado", Visible = true, Order = 5 },
+                new() { Key = InterfacesViewColumnKeys.Usuario, Label = "Usuario", Visible = true, Order = 6 },
+                new() { Key = InterfacesViewColumnKeys.Observacion, Label = "Observación", Visible = true, Order = 7 },
+                new() { Key = InterfacesViewColumnKeys.Adjuntos, Label = "Adjuntos", Visible = true, Order = 8 }
             ]
         };
 
@@ -1719,6 +1822,10 @@ public sealed class InterfacesService(
         {
             return await operation(ct);
         }
+        catch (AppUserFacingException)
+        {
+            throw;
+        }
         catch (SqlException ex) when (ex.Number == 208)
         {
             var incidentId = await _appEvents.LogErrorAsync(module, action, ex, userMessage, null, AppEventSeverity.Error, ct);
@@ -1746,6 +1853,10 @@ public sealed class InterfacesService(
         {
             await operation(ct);
         }
+        catch (AppUserFacingException)
+        {
+            throw;
+        }
         catch (SqlException ex) when (ex.Number == 208)
         {
             var incidentId = await _appEvents.LogErrorAsync(module, action, ex, userMessage, null, AppEventSeverity.Error, ct);
@@ -1763,6 +1874,38 @@ public sealed class InterfacesService(
     }
 
     private static string ResolvePc() => Environment.MachineName;
+
+    private async Task<AppUserFacingException> BuildAttachmentStorageExceptionAsync(
+        string action,
+        InterfacesUploadSettingsDto settings,
+        InterfacesCrearAdjuntoRequest attachment,
+        string relativePath,
+        Exception exception,
+        CancellationToken ct)
+    {
+        var userMessage = settings.UsaFtp
+            ? "No se pudo guardar el archivo en el FTP configurado para Interfaces."
+            : "No se pudo guardar el archivo en la carpeta compartida configurada para Interfaces.";
+
+        var incidentId = await _appEvents.LogErrorAsync(
+            "Interfaces",
+            action,
+            exception,
+            userMessage,
+            new
+            {
+                settings.DestinoTipo,
+                settings.RutaBase,
+                settings.FtpHost,
+                settings.FtpPuerto,
+                Archivo = attachment.NombreArchivo,
+                RutaRelativa = relativePath
+            },
+            AppEventSeverity.Error,
+            ct);
+
+        return new AppUserFacingException(userMessage, incidentId, exception);
+    }
 
     private static string NormalizeActor(string? value, string fallback, int maxLength)
     {
@@ -3241,6 +3384,7 @@ public sealed class InterfacesService(
                 }
             }
 
+            await SyncDocumentStateFromCompraIaAsync(cn, (SqlTransaction)tx, detail, state, user, pc, ct);
             await tx.CommitAsync(ct);
         }
         catch
@@ -3255,6 +3399,74 @@ public sealed class InterfacesService(
 
             throw;
         }
+    }
+
+    private static async Task SyncDocumentStateFromCompraIaAsync(
+        SqlConnection cn,
+        SqlTransaction tx,
+        InterfacesDetalleDto detail,
+        string compraIaState,
+        string user,
+        string pc,
+        CancellationToken ct)
+    {
+        if (detail.IdComprobanteRecibido <= 0)
+            return;
+
+        if (!string.Equals(detail.TipoDocumentoCodigo, "COMPROBANTE_COMPRA", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        if (compraIaState is not ("PROCESADO" or "SIN_PROVEEDOR"))
+            return;
+
+        var processedState = await GetStateByCodeAsync(cn, "PROCESADO", ct, tx);
+        if (processedState is null || processedState.IdEstado <= 0)
+            return;
+
+        if (detail.IdEstado == processedState.IdEstado)
+            return;
+
+        const string updateSql = """
+            UPDATE dbo.INT_COMPROBANTE_RECIBIDO
+            SET
+                IdEstado = @IdEstado,
+                FechaHoraEstado = GETDATE(),
+                FechaHora_Modificacion = GETDATE(),
+                UsuarioModificacion = @UsuarioModificacion,
+                PcModificacion = @PcModificacion
+            WHERE IdComprobanteRecibido = @IdComprobanteRecibido
+            """;
+
+        await using (var cmd = new SqlCommand(updateSql, cn, tx))
+        {
+            cmd.Parameters.AddWithValue("@IdEstado", processedState.IdEstado);
+            cmd.Parameters.AddWithValue("@UsuarioModificacion", DbNullable(user, 50));
+            cmd.Parameters.AddWithValue("@PcModificacion", DbNullable(pc, 100));
+            cmd.Parameters.AddWithValue("@IdComprobanteRecibido", detail.IdComprobanteRecibido);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        var observacion = string.Equals(compraIaState, "SIN_PROVEEDOR", StringComparison.OrdinalIgnoreCase)
+            ? "Estado actualizado automáticamente: la lectura por IA finalizó, aunque quedó pendiente la identificación del proveedor."
+            : "Estado actualizado automáticamente: el documento ya fue procesado por la lectura automática.";
+
+        await InsertHistoryAsync(
+            cn,
+            tx,
+            detail.IdComprobanteRecibido,
+            "CAMBIO_ESTADO_IA",
+            detail.IdEstado,
+            processedState.IdEstado,
+            user,
+            pc,
+            observacion,
+            new
+            {
+                EstadoAnterior = detail.EstadoCodigo,
+                EstadoNuevo = processedState.Codigo,
+                EstadoLectura = compraIaState
+            },
+            ct);
     }
 
     private static void FillCompraCabParameters(

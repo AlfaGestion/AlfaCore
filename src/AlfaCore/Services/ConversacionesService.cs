@@ -43,6 +43,13 @@ public sealed class ConversacionesService(
         : configuration.GetConnectionString("AlfaGestion")
           ?? throw new InvalidOperationException("No se configuró la cadena de conexión 'ConnectionStrings:AlfaGestion'.");
 
+    public async Task<bool> HasConversationSchemaAsync(CancellationToken ct = default)
+    {
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        return await HasConversationSchemaInternalAsync(cn, ct);
+    }
+
     public Task<IReadOnlyList<ConversacionTecnicoOptionDto>> GetTechniciansAsync(CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetTechnicians", async token =>
         {
@@ -528,15 +535,22 @@ public sealed class ConversacionesService(
     public Task<IReadOnlyList<ConversacionInboxItemDto>> GetInboxAsync(ConversacionesInboxFilters filters, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetInbox", async token =>
         {
-            filters ??= new();
-            var items = new List<ConversacionInboxItemDto>();
-            var searchPhone = NormalizePhone(filters.Search);
-            var searchPhoneTail = GetPhoneComparableTail(searchPhone);
-            var desde = filters.Desde?.Date;
-            var hastaExclusive = filters.Hasta?.Date.AddDays(1);
-            var auditoria = NormalizeAuditFilter(filters.Auditoria);
-            var tipoMensaje = NormalizeMessageType(filters.TipoMensaje);
-            var sql = $"""
+            try
+            {
+                await using var cn = new SqlConnection(ConnectionString);
+                await cn.OpenAsync(token);
+                if (!await HasConversationSchemaInternalAsync(cn, token))
+                    return [];
+
+                filters ??= new();
+                var items = new List<ConversacionInboxItemDto>();
+                var searchPhone = NormalizePhone(filters.Search);
+                var searchPhoneTail = GetPhoneComparableTail(searchPhone);
+                var desde = filters.Desde?.Date;
+                var hastaExclusive = filters.Hasta?.Date.AddDays(1);
+                var auditoria = NormalizeAuditFilter(filters.Auditoria);
+                var tipoMensaje = NormalizeMessageType(filters.TipoMensaje);
+                var sql = $"""
                 DECLARE @TicketsFiltro TABLE (IdConversacion bigint NOT NULL PRIMARY KEY);
 
                 IF @Auditoria = N'tickets' AND OBJECT_ID(N'dbo.TICK_TICKETS', N'U') IS NOT NULL
@@ -733,59 +747,62 @@ public sealed class ConversacionesService(
                 OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY
                 """;
 
-            await using var cn = new SqlConnection(ConnectionString);
-            await cn.OpenAsync(token);
-            await LinkUnassociatedWhatsAppConversationsByPhoneAsync(cn, token);
-            await ConsolidateExistingDuplicateWhatsAppConversationsAsync(cn, token);
-            await ReopenClosedConversationsWithIncomingAfterCloseAsync(cn, null, token);
+                await LinkUnassociatedWhatsAppConversationsByPhoneAsync(cn, token);
+                await ConsolidateExistingDuplicateWhatsAppConversationsAsync(cn, token);
+                await ReopenClosedConversationsWithIncomingAfterCloseAsync(cn, null, token);
 
-            await using var cmd = new SqlCommand(sql, cn);
-            cmd.Parameters.AddWithValue("@Canal", DbNullable(filters.Canal));
-            cmd.Parameters.AddWithValue("@CodigoEstado", DbNullable(filters.CodigoEstado));
-            cmd.Parameters.AddWithValue("@EstadoSinFinalizar", ConversacionesInboxFilters.EstadoSinFinalizar);
-            cmd.Parameters.AddWithValue("@Search", DbNullable(Like(filters.Search)));
-            cmd.Parameters.AddWithValue("@SearchPhone", DbNullable(searchPhone));
-            cmd.Parameters.AddWithValue("@SearchPhoneTail", DbNullable(searchPhoneTail));
-            cmd.Parameters.AddWithValue("@Modo", NormalizeMode(filters.Modo));
-            cmd.Parameters.AddWithValue("@IdTecnicoActual", DbNullable(NormalizeTechnicianId(filters.IdTecnicoActual)));
-            cmd.Parameters.AddWithValue("@Desde", desde.HasValue ? desde.Value : DBNull.Value);
-            cmd.Parameters.AddWithValue("@HastaExclusive", hastaExclusive.HasValue ? hastaExclusive.Value : DBNull.Value);
-            cmd.Parameters.AddWithValue("@Auditoria", DbNullable(auditoria));
-            cmd.Parameters.AddWithValue("@TipoMensaje", DbNullable(tipoMensaje));
-            cmd.Parameters.AddWithValue("@ManualWhatsAppConversationSummary", ManualWhatsAppConversationSummary);
-            cmd.Parameters.AddWithValue("@Offset", Math.Max(0, filters.Offset));
-            cmd.Parameters.AddWithValue("@Limit", Math.Clamp(filters.Limit, 1, 200));
+                await using var cmd = new SqlCommand(sql, cn);
+                cmd.Parameters.AddWithValue("@Canal", DbNullable(filters.Canal));
+                cmd.Parameters.AddWithValue("@CodigoEstado", DbNullable(filters.CodigoEstado));
+                cmd.Parameters.AddWithValue("@EstadoSinFinalizar", ConversacionesInboxFilters.EstadoSinFinalizar);
+                cmd.Parameters.AddWithValue("@Search", DbNullable(Like(filters.Search)));
+                cmd.Parameters.AddWithValue("@SearchPhone", DbNullable(searchPhone));
+                cmd.Parameters.AddWithValue("@SearchPhoneTail", DbNullable(searchPhoneTail));
+                cmd.Parameters.AddWithValue("@Modo", NormalizeMode(filters.Modo));
+                cmd.Parameters.AddWithValue("@IdTecnicoActual", DbNullable(NormalizeTechnicianId(filters.IdTecnicoActual)));
+                cmd.Parameters.AddWithValue("@Desde", desde.HasValue ? desde.Value : DBNull.Value);
+                cmd.Parameters.AddWithValue("@HastaExclusive", hastaExclusive.HasValue ? hastaExclusive.Value : DBNull.Value);
+                cmd.Parameters.AddWithValue("@Auditoria", DbNullable(auditoria));
+                cmd.Parameters.AddWithValue("@TipoMensaje", DbNullable(tipoMensaje));
+                cmd.Parameters.AddWithValue("@ManualWhatsAppConversationSummary", ManualWhatsAppConversationSummary);
+                cmd.Parameters.AddWithValue("@Offset", Math.Max(0, filters.Offset));
+                cmd.Parameters.AddWithValue("@Limit", Math.Clamp(filters.Limit, 1, 200));
 
-            await using var rd = await cmd.ExecuteReaderAsync(token);
-            while (await rd.ReadAsync(token))
-            {
-                items.Add(new ConversacionInboxItemDto
+                await using var rd = await cmd.ExecuteReaderAsync(token);
+                while (await rd.ReadAsync(token))
                 {
-                    IdConversacion = rd.GetInt64(0),
-                    TelefonoWhatsApp = GetString(rd, 1),
-                    NombreVisible = GetString(rd, 2),
-                    ClienteCodigo = GetString(rd, 3),
-                    ClienteNombre = GetString(rd, 4),
-                    IdContacto = rd.IsDBNull(5) ? null : rd.GetInt32(5),
-                    ContactoNombre = GetString(rd, 6),
-                    CodigoEstado = GetString(rd, 7),
-                    EstadoDescripcion = GetString(rd, 8),
-                    IdTecnico = GetString(rd, 9),
-                    TecnicoNombre = GetString(rd, 10),
-                    ResumenUltimoMensaje = GetString(rd, 11),
-                    FechaHoraUltimoMensaje = rd.IsDBNull(12) ? DateTime.MinValue : NormalizeStoredConversationTime(rd.GetDateTime(12)),
-                    FechaHoraUltimoMensajeCliente = rd.IsDBNull(13) ? null : NormalizeStoredConversationTime(rd.GetDateTime(13)),
-                    IdUltimoMensajeCliente = rd.IsDBNull(14) ? null : rd.GetInt64(14),
-                    CantidadMensajesCliente = rd.IsDBNull(15) ? 0 : rd.GetInt32(15),
-                    Archivada = !rd.IsDBNull(16) && rd.GetBoolean(16),
-                    Bloqueada = !rd.IsDBNull(17) && rd.GetBoolean(17)
-                });
+                    items.Add(new ConversacionInboxItemDto
+                    {
+                        IdConversacion = rd.GetInt64(0),
+                        TelefonoWhatsApp = GetString(rd, 1),
+                        NombreVisible = GetString(rd, 2),
+                        ClienteCodigo = GetString(rd, 3),
+                        ClienteNombre = GetString(rd, 4),
+                        IdContacto = rd.IsDBNull(5) ? null : rd.GetInt32(5),
+                        ContactoNombre = GetString(rd, 6),
+                        CodigoEstado = GetString(rd, 7),
+                        EstadoDescripcion = GetString(rd, 8),
+                        IdTecnico = GetString(rd, 9),
+                        TecnicoNombre = GetString(rd, 10),
+                        ResumenUltimoMensaje = GetString(rd, 11),
+                        FechaHoraUltimoMensaje = rd.IsDBNull(12) ? DateTime.MinValue : NormalizeStoredConversationTime(rd.GetDateTime(12)),
+                        FechaHoraUltimoMensajeCliente = rd.IsDBNull(13) ? null : NormalizeStoredConversationTime(rd.GetDateTime(13)),
+                        IdUltimoMensajeCliente = rd.IsDBNull(14) ? null : rd.GetInt64(14),
+                        CantidadMensajesCliente = rd.IsDBNull(15) ? 0 : rd.GetInt32(15),
+                        Archivada = !rd.IsDBNull(16) && rd.GetBoolean(16),
+                        Bloqueada = !rd.IsDBNull(17) && rd.GetBoolean(17)
+                    });
+                }
+
+                foreach (var item in items)
+                    ApplyWhatsAppWindow(item);
+
+                return DeduplicateInboxItems(items);
             }
-
-            foreach (var item in items)
-                ApplyWhatsAppWindow(item);
-
-            return DeduplicateInboxItems(items);
+            catch (SqlException ex) when (IsMissingConversationSchema(ex))
+            {
+                return [];
+            }
         }, "No se pudieron cargar las conversaciones.", ct);
 
     public Task<IReadOnlyList<ConversacionAuditoriaMensajeDto>> GetAuditMessagesAsync(ConversacionesInboxFilters filters, CancellationToken ct = default)
@@ -2759,6 +2776,23 @@ public sealed class ConversacionesService(
             result.Add(GetString(rd, 0));
 
         return result;
+    }
+
+    private static async Task<bool> HasConversationSchemaInternalAsync(SqlConnection cn, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT
+                CASE
+                    WHEN OBJECT_ID(N'dbo.CONV_CONVERSACIONES', N'U') IS NOT NULL
+                     AND OBJECT_ID(N'dbo.CONV_ESTADOS', N'U') IS NOT NULL
+                    THEN 1
+                    ELSE 0
+                END
+            """;
+
+        await using var cmd = new SqlCommand(sql, cn);
+        var result = await cmd.ExecuteScalarAsync(ct);
+        return Convert.ToInt32(result, CultureInfo.InvariantCulture) == 1;
     }
 
     private async Task<string> ReadConversationConfigValueAsync(SqlConnection cn, string key, CancellationToken ct)
@@ -5418,17 +5452,23 @@ public sealed class ConversacionesService(
     private static bool TryBuildKnownSqlMessage(SqlException ex, out string message)
     {
         message = string.Empty;
+        if (!IsMissingConversationSchema(ex))
+            return false;
+
+        var rawMessage = ex.Message ?? string.Empty;
+        var objectName = ExtractMissingObjectName(rawMessage);
+        var objectLabel = string.IsNullOrWhiteSpace(objectName) ? "CONV_*" : objectName;
+        message = $"El módulo Conversaciones todavía no está inicializado en la base activa. Falta crear el objeto {objectLabel}. Aplicá la actualización 2026-05-17-999__conversaciones_modelo_base.sql y recargá el módulo.";
+        return true;
+    }
+
+    private static bool IsMissingConversationSchema(SqlException ex)
+    {
         if (ex.Number != 208)
             return false;
 
         var rawMessage = ex.Message ?? string.Empty;
-        if (!rawMessage.Contains("CONV_", StringComparison.OrdinalIgnoreCase))
-            return false;
-
-        var objectName = ExtractMissingObjectName(rawMessage);
-        var objectLabel = string.IsNullOrWhiteSpace(objectName) ? "CONV_*" : objectName;
-        message = $"El módulo Conversaciones todavía no está inicializado en la base activa. Falta crear el objeto {objectLabel}. Ejecutá el script docs/conversaciones_modelo_inicial.sql y recargá el módulo.";
-        return true;
+        return rawMessage.Contains("CONV_", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string ExtractMissingObjectName(string rawMessage)

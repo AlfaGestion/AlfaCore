@@ -25,8 +25,8 @@
     @if (!string.IsNullOrWhiteSpace(_message))
     {
         <section class="panel-card">
-            <div class="editor-msg @(_isError ? "editor-msg--error" : "editor-msg--ok")">
-                <i class="bi @(_isError ? "bi-exclamation-circle" : "bi-check-circle")"></i> @_message
+            <div class="editor-msg @GetMessageCssClass()">
+                <i class="bi @GetMessageIconClass()"></i> @_message
             </div>
         </section>
     }
@@ -175,6 +175,7 @@
     private bool _busy;
     private string _message = string.Empty;
     private bool _isError;
+    private bool _isWorkingMessage;
 
     protected override async Task OnInitializedAsync()
     {
@@ -184,6 +185,8 @@
     private async Task RecargarAsync()
     {
         _busy = true;
+        SetMessage("Cargando panel de actualizaciones y revisando scripts disponibles...", false, isWorking: true);
+        await FlushWorkingMessageAsync();
         try
         {
             var result = await UiOps.RunAsync(() => ActualizacionesSvc.GetDashboardAsync(), "No se pudo cargar el panel de actualizaciones.");
@@ -196,7 +199,7 @@
             _dashboard = result.Value;
             _settings.RutaRed = _dashboard?.RutaRed ?? string.Empty;
             _loaded = true;
-            if (string.IsNullOrWhiteSpace(_message) || !_isError)
+            if (!_isError)
                 SetMessage(string.Empty, false);
         }
         finally
@@ -208,6 +211,8 @@
     private async Task GuardarConfiguracionAsync()
     {
         _busy = true;
+        SetMessage("Guardando la ruta de actualizaciones y validando el origen configurado...", false, isWorking: true);
+        await FlushWorkingMessageAsync();
         try
         {
             var result = await UiOps.RunAsync(async () =>
@@ -234,6 +239,14 @@
     private async Task EjecutarPendientesAsync()
     {
         _busy = true;
+        var pendientes = _dashboard?.Pendientes.Count ?? 0;
+        SetMessage(
+            pendientes > 0
+                ? $"Aplicando {pendientes} actualización(es) pendiente(s). Esto puede tardar unos momentos según el tamaño de los scripts."
+                : "Revisando si hay actualizaciones pendientes para la base activa...",
+            false,
+            isWorking: true);
+        await FlushWorkingMessageAsync();
         try
         {
             var result = await UiOps.RunAsync(async () =>
@@ -277,9 +290,32 @@
         return string.Join(" ", parts.Where(static x => !string.IsNullOrWhiteSpace(x)));
     }
 
-    private void SetMessage(string message, bool isError)
+    private string GetMessageCssClass()
+    {
+        if (_isError)
+            return "editor-msg--error";
+
+        return _isWorkingMessage ? "editor-msg--warning" : "editor-msg--ok";
+    }
+
+    private string GetMessageIconClass()
+    {
+        if (_isError)
+            return "bi-exclamation-circle";
+
+        return _isWorkingMessage ? "bi-hourglass-split" : "bi-check-circle";
+    }
+
+    private void SetMessage(string message, bool isError, bool isWorking = false)
     {
         _message = message;
         _isError = isError;
+        _isWorkingMessage = isWorking && !isError;
+    }
+
+    private async Task FlushWorkingMessageAsync()
+    {
+        await InvokeAsync(StateHasChanged);
+        await Task.Yield();
     }
 }

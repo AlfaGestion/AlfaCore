@@ -112,6 +112,8 @@ public sealed class InterfacesInboxItemDto
     public int IdTipoDocumento { get; set; }
     public string TipoDocumentoCodigo { get; set; } = string.Empty;
     public string TipoDocumentoDescripcion { get; set; } = string.Empty;
+    public string ProveedorNombre { get; set; } = string.Empty;
+    public decimal? ImporteTotal { get; set; }
 }
 
 public sealed class InterfacesViewSettingsDto
@@ -133,6 +135,8 @@ public static class InterfacesViewColumnKeys
     public const string Numero = "numero";
     public const string Fecha = "fecha";
     public const string Tipo = "tipo";
+    public const string Proveedor = "proveedor";
+    public const string Importe = "importe";
     public const string Estado = "estado";
     public const string Usuario = "usuario";
     public const string Observacion = "observacion";

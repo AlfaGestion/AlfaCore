@@ -460,6 +460,30 @@
             return;
         }
 
+        if (_nuevo.IdTipoDocumento <= 0)
+        {
+            SetFeedback(new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Warning,
+                Title = "Falta el tipo documental",
+                Message = "Seleccioná un tipo documental antes de guardar el documento.",
+                Suggestion = "Completá el dato requerido y volvé a intentar."
+            });
+            return;
+        }
+
+        if (_selectedFiles.Count == 0)
+        {
+            SetFeedback(new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Warning,
+                Title = "Faltan adjuntos",
+                Message = "Debés adjuntar al menos un archivo para registrar el documento.",
+                Suggestion = "Usá “Seleccionar archivos” y luego volvé a guardar."
+            });
+            return;
+        }
+
         _saving = true;
         try
         {

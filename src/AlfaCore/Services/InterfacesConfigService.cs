@@ -2,6 +2,7 @@ using AlfaCore.Models;
 using Microsoft.Data.SqlClient;
 using System.Diagnostics;
 using System.Net;
+using System.Runtime.InteropServices;
 
 namespace AlfaCore.Services;
 
@@ -161,6 +162,60 @@ public sealed class InterfacesConfigService(
             return true;
         }, "No se pudo guardar la configuración de Interfaces.", ct);
     }
+
+    public Task<string?> BrowseLocalFolderAsync(CancellationToken ct = default)
+        => ExecuteLoggedAsync("Interfaces", "BrowseLocalFolder", async token =>
+        {
+            if (!OperatingSystem.IsWindows())
+                throw new InvalidOperationException("La búsqueda de carpetas solo está disponible en Windows.");
+            if (!Environment.UserInteractive)
+                throw new InvalidOperationException("La búsqueda de carpetas requiere una sesión interactiva en el servidor o equipo donde corre AlfaCore.");
+
+            var psExe = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), @"WindowsPowerShell\v1.0\powershell.exe");
+            if (!File.Exists(psExe))
+                psExe = "powershell.exe";
+
+            const string command = """
+Add-Type -AssemblyName System.Windows.Forms
+$dialog = New-Object System.Windows.Forms.FolderBrowserDialog
+$dialog.Description = 'Seleccioná la carpeta de destino para Interfaces'
+$dialog.ShowNewFolderButton = $true
+if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+    [Console]::Out.Write($dialog.SelectedPath)
+}
+""";
+
+            using var process = new Process
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = psExe,
+                    Arguments = $"-NoProfile -STA -Command \"{command.Replace("\"", "\\\"", StringComparison.Ordinal)}\"",
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = false
+                }
+            };
+
+            if (!process.Start())
+                throw new InvalidOperationException("No se pudo abrir el selector de carpetas del sistema.");
+
+            var stdoutTask = process.StandardOutput.ReadToEndAsync(token);
+            var stderrTask = process.StandardError.ReadToEndAsync(token);
+            await process.WaitForExitAsync(token);
+            var selectedPath = (await stdoutTask).Trim();
+            var stderr = (await stderrTask).Trim();
+
+            if (process.ExitCode != 0)
+            {
+                throw new InvalidOperationException(string.IsNullOrWhiteSpace(stderr)
+                    ? "No se pudo abrir el selector de carpetas del sistema."
+                    : $"El selector de carpetas devolvió un error: {stderr}");
+            }
+
+            return string.IsNullOrWhiteSpace(selectedPath) ? null : selectedPath;
+        }, "No se pudo abrir el selector de carpetas.", ct);
 
     public Task<InterfacesCompraIaSettingsDto> GetCompraIaSettingsAsync(CancellationToken ct = default)
         => ExecuteLoggedAsync("Interfaces", "GetCompraIaSettings", async token =>
