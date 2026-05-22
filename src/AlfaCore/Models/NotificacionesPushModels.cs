@@ -57,8 +57,16 @@ public sealed class NotificacionesPushSendResultDto
 
 public sealed class NotificacionesPushEndpointResultDto
 {
+    public string UserName { get; set; } = string.Empty;
     public string DeviceId { get; set; } = string.Empty;
     public string EndpointParcial { get; set; } = string.Empty;
+    public bool Activo { get; set; }
+    public bool EsDispositivoActual { get; set; }
+    public string UserAgent { get; set; } = string.Empty;
+    public DateTimeOffset? CreatedAt { get; set; }
+    public NotificacionesPushPreferencesDto Preferences { get; set; } = new();
+    public string ScopeFilterReason { get; set; } = string.Empty;
+    public string ChannelFilterReason { get; set; } = string.Empty;
     public bool Success { get; set; }
     public int? StatusCode { get; set; }
     public string Error { get; set; } = string.Empty;

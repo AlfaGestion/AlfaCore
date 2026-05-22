@@ -163,6 +163,10 @@
                 <button type="button" class="btn btn--ghost btn--sm" @onclick="RecargarAsync" disabled="@(_loadingInbox || _loadingConversation)" title="Recargar">
                     <i class="bi bi-arrow-clockwise"></i>
                 </button>
+                <button type="button" class="btn btn--ghost btn--sm" @onclick="TestNewMessageSoundAsync" disabled="@_loadingInbox" title="Probar sonido">
+                    <i class="bi bi-volume-up-fill"></i>
+                    <span>Probar sonido</span>
+                </button>
             </div>
 
             <div class="conversations-filters__modes">
@@ -331,6 +335,12 @@
                 <button type="button" class="btn btn--primary" @onclick="LoadInboxAsync" disabled="_loadingInbox">
                     <i class="bi bi-funnel"></i> Aplicar
                 </button>
+            </div>
+            <div class="conversations-inline conversations-inline--ok" style="margin-top: .5rem;">
+                Audio inicializado: @(_soundDiagnostics.SoundInitialized ? "SI" : "NO")
+                · Audio desbloqueado: @(_soundDiagnostics.AudioUnlocked ? "SI" : "NO")
+                · Último intento: @DisplayOrFallback(_soundDiagnostics.LastAttemptAt)
+                · Último error: @DisplayOrFallback(_soundDiagnostics.LastError)
             </div>
         </section>
 
@@ -1599,6 +1609,7 @@
     private ConversacionAdjuntoDto? _previewAttachment;
     private ElementReference _previewCanvas;
     private bool _bindPreviewPanAfterRender;
+    private SoundDiagnosticsVm _soundDiagnostics = new();
     private ElementReference _replyTextArea;
     private long? _replyEnterHandlerConversationId;
     private int _lastSyncedBrowserNewCount = -1;
@@ -1805,6 +1816,7 @@
             try
             {
                 await JS.InvokeVoidAsync("conversacionesUi.initNotifications", "AlfaCore - Alfa Gestión");
+                await UpdateSoundDiagnosticsAsync();
             }
             catch
             {
@@ -2924,6 +2936,32 @@
         try
         {
             await JS.InvokeVoidAsync("conversacionesUi.playNewMessageSound");
+            await UpdateSoundDiagnosticsAsync();
+        }
+        catch
+        {
+        }
+    }
+
+    private async Task TestNewMessageSoundAsync()
+    {
+        try
+        {
+            _soundDiagnostics = await JS.InvokeAsync<SoundDiagnosticsVm>("conversacionesUi.testNewMessageSound");
+            _actionMessage = "Prueba de sonido ejecutada.";
+            _actionError = null;
+        }
+        catch (Exception ex)
+        {
+            _actionError = $"No se pudo reproducir el sonido de prueba: {ex.Message}";
+        }
+    }
+
+    private async Task UpdateSoundDiagnosticsAsync()
+    {
+        try
+        {
+            _soundDiagnostics = await JS.InvokeAsync<SoundDiagnosticsVm>("conversacionesUi.getSoundDiagnostics");
         }
         catch
         {
@@ -5123,6 +5161,16 @@
         ConversacionesInboxFilters Filters,
         List<ConversacionInboxItemDto> Inbox,
         long? SelectedConversationId);
+
+    private sealed class SoundDiagnosticsVm
+    {
+        public bool SoundInitialized { get; set; }
+        public bool AudioUnlocked { get; set; }
+        public bool HasNotificationAudio { get; set; }
+        public string NotificationSoundUrl { get; set; } = string.Empty;
+        public string LastAttemptAt { get; set; } = string.Empty;
+        public string LastError { get; set; } = string.Empty;
+    }
 
     private static class ComposerToolTabs
     {

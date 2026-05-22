@@ -166,6 +166,25 @@ public sealed class NotificacionesPushService(
             if (subscriptions.Count == 0)
                 return new NotificacionesPushSendResultDto();
 
+            var currentDeviceId = NormalizeDeviceId(deviceId);
+            var currentSubscription = subscriptions.FirstOrDefault(x =>
+                string.Equals(x.DeviceId, currentDeviceId, StringComparison.OrdinalIgnoreCase));
+            if (currentSubscription is null)
+            {
+                await appEvents.LogAuditAsync(
+                    ModuleName,
+                    "SendTestCurrentDeviceMissing",
+                    "TA_CONFIGURACION",
+                    NormalizeUser(userName),
+                    "No hay suscripción activa para el deviceId actual al enviar prueba.",
+                    new { Usuario = NormalizeUser(userName), DeviceIdActual = currentDeviceId, SuscripcionesActivas = subscriptions.Count },
+                    token);
+            }
+
+            subscriptions = subscriptions
+                .OrderByDescending(x => string.Equals(x.DeviceId, currentDeviceId, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
             await appEvents.LogAuditAsync(
                 ModuleName,
                 "SendTestStart",
@@ -175,7 +194,7 @@ public sealed class NotificacionesPushService(
                 new
                 {
                     Usuario = NormalizeUser(userName),
-                    DeviceIdActual = NormalizeDeviceId(deviceId),
+                    DeviceIdActual = currentDeviceId,
                     SuscripcionesActivas = subscriptions.Count,
                     Endpoints = subscriptions.Select(x => new { x.DeviceId, Endpoint = EndpointPreview(x.Endpoint) }).ToList()
                 },
@@ -208,25 +227,41 @@ public sealed class NotificacionesPushService(
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
             var subscriptions = await ReadUserSubscriptionsAsync(cn, userName, token);
-            var preferences = await ReadPreferencesAsync(cn, userName, deviceId, token);
+            var currentDeviceId = NormalizeDeviceId(deviceId);
+            var preferences = await ReadPreferencesAsync(cn, userName, currentDeviceId, token);
+
+            var endpointDiagnostics = new List<NotificacionesPushEndpointResultDto>();
+            foreach (var subscription in subscriptions)
+            {
+                var itemPreferences = await ReadPreferencesAsync(cn, subscription.UserName, subscription.DeviceId, token);
+                endpointDiagnostics.Add(new NotificacionesPushEndpointResultDto
+                {
+                    UserName = subscription.UserName,
+                    DeviceId = subscription.DeviceId,
+                    EndpointParcial = EndpointPreview(subscription.Endpoint),
+                    Activo = subscription.Activo,
+                    EsDispositivoActual = string.Equals(subscription.DeviceId, currentDeviceId, StringComparison.OrdinalIgnoreCase),
+                    UserAgent = subscription.UserAgent,
+                    CreatedAt = subscription.CreatedAt == default ? null : subscription.CreatedAt,
+                    Preferences = itemPreferences,
+                    Success = subscription.Activo,
+                    StatusCode = subscription.LastStatusCode,
+                    Error = subscription.LastError,
+                    ResponseBody = subscription.LastProviderResponseBody,
+                    LastAttemptAt = subscription.LastAttemptAt,
+                    ScopeFilterReason = string.Empty,
+                    ChannelFilterReason = string.Empty
+                });
+            }
 
             return new NotificacionesPushDiagnosticsDto
             {
                 UserName = NormalizeUser(userName),
-                DeviceId = NormalizeDeviceId(deviceId),
+                DeviceId = currentDeviceId,
                 SubscriptionCount = subscriptions.Count,
                 ActiveSubscriptionCount = subscriptions.Count(x => x.Activo),
                 Preferences = preferences,
-                Subscriptions = subscriptions.Select(x => new NotificacionesPushEndpointResultDto
-                {
-                    DeviceId = x.DeviceId,
-                    EndpointParcial = EndpointPreview(x.Endpoint),
-                    Success = x.Activo,
-                    StatusCode = x.LastStatusCode,
-                    Error = x.LastError,
-                    ResponseBody = x.LastProviderResponseBody,
-                    LastAttemptAt = x.LastAttemptAt
-                }).ToList()
+                Subscriptions = endpointDiagnostics
             };
         }, "No se pudo obtener el diagnóstico de notificaciones.", ct);
 
@@ -267,18 +302,67 @@ public sealed class NotificacionesPushService(
             {
                 candidates++;
                 var preferences = await ReadPreferencesAsync(cn, subscription.UserName, subscription.DeviceId, token);
-                if (!ShouldNotify(message, subscription.UserName, preferences))
+                var evaluation = EvaluateNotification(message, subscription.UserName, preferences);
+                if (!evaluation.CanNotify)
                 {
                     filteredByPreferences++;
+                    await appEvents.LogAuditAsync(
+                        ModuleName,
+                        "NotifyNewMessageFiltered",
+                        "CONV_MENSAJES",
+                        message.IdMensaje.ToString(CultureInfo.InvariantCulture),
+                        "Suscripción filtrada por preferencias de push.",
+                        new
+                        {
+                            subscription.UserName,
+                            subscription.DeviceId,
+                            Endpoint = EndpointPreview(subscription.Endpoint),
+                            evaluation.ScopeFilterReason,
+                            evaluation.ChannelFilterReason,
+                            preferences.Habilitadas,
+                            preferences.Alcance,
+                            preferences.Canales,
+                            message.Canal,
+                            message.IdTecnico
+                        },
+                        token);
                     continue;
                 }
 
                 if (!await UserCanUseConversacionesAsync(subscription.UserName, token))
                 {
                     filteredByPermissions++;
+                    await appEvents.LogAuditAsync(
+                        ModuleName,
+                        "NotifyNewMessageNoPermission",
+                        "CONV_MENSAJES",
+                        message.IdMensaje.ToString(CultureInfo.InvariantCulture),
+                        "Suscripción sin permiso al módulo Conversaciones.",
+                        new
+                        {
+                            subscription.UserName,
+                            subscription.DeviceId,
+                            Endpoint = EndpointPreview(subscription.Endpoint)
+                        },
+                        token);
                     continue;
                 }
 
+                await appEvents.LogAuditAsync(
+                    ModuleName,
+                    "NotifyNewMessageCandidate",
+                    "CONV_MENSAJES",
+                    message.IdMensaje.ToString(CultureInfo.InvariantCulture),
+                    "Suscripción elegible para envío push.",
+                    new
+                    {
+                        subscription.UserName,
+                        subscription.DeviceId,
+                        Endpoint = EndpointPreview(subscription.Endpoint),
+                        evaluation.ScopeFilterReason,
+                        evaluation.ChannelFilterReason
+                    },
+                    token);
                 toSend.Add(subscription);
             }
 
@@ -598,6 +682,17 @@ public sealed class NotificacionesPushService(
 
             await client.SendNotificationAsync(webPushSubscription, json, vapidDetails, ct);
             result.Success = true;
+            result.StatusCode = 201;
+            subscription.LastStatusCode = result.StatusCode;
+            subscription.LastError = string.Empty;
+            subscription.LastProviderResponseBody = string.Empty;
+            subscription.UpdatedAt = DateTimeOffset.UtcNow;
+            await SaveConfigJsonAsync(
+                cn,
+                BuildSubscriptionKey(subscription.UserName, subscription.DeviceId),
+                subscription,
+                "Estado de último envío Web Push",
+                ct);
             await appEvents.LogAuditAsync(
                 ModuleName,
                 "SendSubscriptionOk",
@@ -618,7 +713,7 @@ public sealed class NotificacionesPushService(
             subscription.LastProviderResponseBody = result.ResponseBody;
             subscription.UpdatedAt = DateTimeOffset.UtcNow;
 
-            if (result.StatusCode is 404 or 410)
+            if (result.StatusCode is 401 or 403 or 404 or 410)
                 await DeactivateSubscriptionAsync(cn, subscription, result.StatusCode, result.Error, ct);
             else
                 await SaveConfigJsonAsync(
@@ -715,18 +810,30 @@ public sealed class NotificacionesPushService(
             throw new InvalidOperationException("El usuario no tiene acceso al módulo Conversaciones.");
     }
 
-    private static bool ShouldNotify(NotificacionMensajeNuevoDto message, string userName, NotificacionesPushPreferencesDto preferences)
+    private static PushNotificationEvaluation EvaluateNotification(NotificacionMensajeNuevoDto message, string userName, NotificacionesPushPreferencesDto preferences)
     {
         if (!preferences.Habilitadas)
-            return false;
+            return PushNotificationEvaluation.Blocked("Notificaciones desactivadas en preferencias del dispositivo.", "Notificaciones desactivadas.");
 
         if (!preferences.Canales.Contains(message.Canal, StringComparer.OrdinalIgnoreCase))
-            return false;
+            return PushNotificationEvaluation.Blocked(
+                "Canal no habilitado para el dispositivo.",
+                $"Canales configurados: {string.Join(", ", preferences.Canales)}. Canal del mensaje: {message.Canal}.");
 
         if (string.Equals(preferences.Alcance, NotificacionesPushScopes.Asignadas, StringComparison.OrdinalIgnoreCase))
-            return string.Equals(message.IdTecnico, NormalizeUser(userName), StringComparison.OrdinalIgnoreCase);
+        {
+            var matches = string.Equals(message.IdTecnico, NormalizeUser(userName), StringComparison.OrdinalIgnoreCase);
+            return matches
+                ? PushNotificationEvaluation.Allowed("Pasa alcance: asignadas al usuario.", "Pasa canal.")
+                : PushNotificationEvaluation.Blocked(
+                    $"Filtrada por alcance '{NotificacionesPushScopes.Asignadas}'.",
+                    $"Mensaje asignado a '{message.IdTecnico}', usuario '{NormalizeUser(userName)}'.");
+        }
 
-        return string.Equals(preferences.Alcance, NotificacionesPushScopes.Accesibles, StringComparison.OrdinalIgnoreCase);
+        if (string.Equals(preferences.Alcance, NotificacionesPushScopes.Accesibles, StringComparison.OrdinalIgnoreCase))
+            return PushNotificationEvaluation.Allowed("Pasa alcance: conversaciones accesibles.", "Pasa canal.");
+
+        return PushNotificationEvaluation.Blocked($"Alcance no soportado: {preferences.Alcance}.", "Canal válido.");
     }
 
     private static NotificacionesPushPreferencesDto NormalizePreferences(NotificacionesPushPreferencesDto? preferences)
@@ -1036,6 +1143,19 @@ public sealed class NotificacionesPushService(
         public long? TimestampUnixMs { get; set; }
         public int? UnreadCount { get; set; }
         public bool Renotify { get; set; } = false;
+    }
+
+    private sealed class PushNotificationEvaluation
+    {
+        public bool CanNotify { get; init; }
+        public string ScopeFilterReason { get; init; } = string.Empty;
+        public string ChannelFilterReason { get; init; } = string.Empty;
+
+        public static PushNotificationEvaluation Allowed(string scopeReason, string channelReason)
+            => new() { CanNotify = true, ScopeFilterReason = scopeReason, ChannelFilterReason = channelReason };
+
+        public static PushNotificationEvaluation Blocked(string scopeReason, string channelReason)
+            => new() { CanNotify = false, ScopeFilterReason = scopeReason, ChannelFilterReason = channelReason };
     }
 }
 

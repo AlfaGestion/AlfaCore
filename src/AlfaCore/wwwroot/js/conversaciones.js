@@ -137,6 +137,9 @@ window.conversacionesUi = {
     _notificationAudio: null,
     _audioContext: null,
     _audioUnlocked: false,
+    _lastSoundAttemptAt: '',
+    _lastSoundError: '',
+    _soundInitialized: false,
 
     isNearBottom: function (element) {
         if (!element) return false;
@@ -152,9 +155,15 @@ window.conversacionesUi = {
     initNotifications: function (baseTitle) {
         this._notificationBaseTitle = baseTitle || document.title || this._notificationBaseTitle;
         this.setUnreadCount(0);
+        this._lastSoundError = '';
         this._notificationAudio = new Audio(this._notificationSoundUrl);
         this._notificationAudio.preload = 'auto';
         this._notificationAudio.volume = 0.8;
+        this._soundInitialized = true;
+        this._notificationAudio.addEventListener('error', () => {
+            this._lastSoundError = 'No se pudo cargar el archivo MP3 de notificación.';
+            console.error('[conversacionesUi] audio file error', this._notificationSoundUrl);
+        });
         this.initAudioPlayers();
 
         const unlock = () => {
@@ -324,13 +333,20 @@ window.conversacionesUi = {
     },
 
     playNewMessageSound: async function () {
+        this._lastSoundAttemptAt = new Date().toISOString();
         try {
             if (this._notificationAudio) {
                 this._notificationAudio.pause();
                 this._notificationAudio.currentTime = 0;
                 this._notificationAudio.volume = 0.85;
-                await this._notificationAudio.play();
-                return;
+                try {
+                    await this._notificationAudio.play();
+                    this._lastSoundError = '';
+                    return;
+                } catch (error) {
+                    this._lastSoundError = error?.message || 'audio.play() rechazado por autoplay policy.';
+                    console.warn('[conversacionesUi] playNewMessageSound mp3 failed, fallback beep', error);
+                }
             }
 
             const context = this._getAudioContext();
@@ -364,8 +380,26 @@ window.conversacionesUi = {
             const now = context.currentTime;
             playTone(now, 880, 0.12, 0.18);
             playTone(now + 0.13, 1175, 0.18, 0.16);
+            this._lastSoundError = '';
         } catch {
+            this._lastSoundError = 'No se pudo reproducir el sonido de notificación.';
         }
+    },
+
+    getSoundDiagnostics: function () {
+        return {
+            soundInitialized: !!this._soundInitialized,
+            audioUnlocked: !!this._audioUnlocked,
+            hasNotificationAudio: !!this._notificationAudio,
+            notificationSoundUrl: this._notificationSoundUrl || '',
+            lastAttemptAt: this._lastSoundAttemptAt || '',
+            lastError: this._lastSoundError || ''
+        };
+    },
+
+    testNewMessageSound: async function () {
+        await this.playNewMessageSound();
+        return this.getSoundDiagnostics();
     },
 
     watchThreadScroll: function (element, dotNetRef) {

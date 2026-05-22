@@ -561,6 +561,10 @@
                 <i class="bi bi-send"></i>
                 <span>Enviar prueba</span>
             </button>
+            <button type="button" class="btn btn--ghost" @onclick="ReRegisterCurrentDeviceAsync" disabled="@_pushBusy">
+                <i class="bi bi-arrow-repeat"></i>
+                <span>Re-registrar este dispositivo</span>
+            </button>
             <button type="button" class="btn btn--ghost" @onclick="LoadPushDiagnosticsAsync" disabled="@_pushBusy">
                 <i class="bi bi-activity"></i>
                 <span>Diagnóstico push</span>
@@ -596,7 +600,9 @@
                     {
                         @foreach (var sub in _pushDiagnostics.Subscriptions)
                         {
-                            <p class="app-modal__hint">[@sub.DeviceId] @sub.EndpointParcial · status: @(sub.StatusCode?.ToString() ?? "-") · error: @DisplayOrDash(sub.Error) · último intento: @(sub.LastAttemptAt?.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss") ?? "-")</p>
+                            <p class="app-modal__hint">[@sub.DeviceId@(sub.EsDispositivoActual ? " · ESTE EQUIPO" : string.Empty)] activo: @(sub.Activo ? "SI" : "NO") · endpoint: @sub.EndpointParcial · alta: @(sub.CreatedAt?.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss") ?? "-")</p>
+                            <p class="app-modal__hint">UA: @DisplayOrDash(sub.UserAgent) · último intento: @(sub.LastAttemptAt?.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss") ?? "-") · último status: @(sub.StatusCode?.ToString() ?? "-") · último error: @DisplayOrDash(sub.Error)</p>
+                            <p class="app-modal__hint">Preferencias dispositivo: alcance=@sub.Preferences.Alcance · canales=@string.Join(", ", sub.Preferences.Canales)</p>
                         }
                     }
                 </div>
@@ -605,6 +611,13 @@
                     <p class="app-modal__hint">Alcance: @_pushDiagnostics.Preferences.Alcance · Canales: @string.Join(", ", _pushDiagnostics.Preferences.Canales)</p>
                     <p class="app-modal__hint">Último envío de prueba: @_pushLastTestSummary</p>
                     <p class="app-modal__hint">Último error del proveedor push: @DisplayOrDash(_pushDiagnosticsLastProviderError)</p>
+                    @if (_pushLastTestResults.Count > 0)
+                    {
+                        @foreach (var item in _pushLastTestResults)
+                        {
+                            <p class="app-modal__hint">Prueba → [@item.DeviceId] endpoint=@item.EndpointParcial · resultado=@(item.Success ? "OK" : "FALLÓ") · status=@(item.StatusCode?.ToString() ?? "-") · error=@DisplayOrDash(item.Error)</p>
+                        }
+                    }
                 </div>
             </div>
         }
@@ -670,6 +683,7 @@
     private PushDiagnosticsVm? _pushDiagnostics;
     private string _pushLastTestSummary = "Sin pruebas ejecutadas.";
     private string _pushDiagnosticsLastProviderError = string.Empty;
+    private List<NotificacionesPushEndpointResultDto> _pushLastTestResults = [];
     private string CurrentPageTitle => GetCurrentPageTitle();
     private string ShellClass
         => $"shell {(_sidebarCollapsed ? "shell--collapsed" : string.Empty)} {(_mobileSidebarOpen ? "shell--mobile-open" : string.Empty)}";
@@ -1240,6 +1254,7 @@
         _pushBusy = true;
         _pushMessage = string.Empty;
         _pushError = string.Empty;
+        _pushLastTestResults = [];
         try
         {
             if (!_pushConfigured)
@@ -1248,6 +1263,7 @@
                     : _pushConfigurationMessage);
 
             var result = await JS.InvokeAsync<NotificacionesPushSendResultDto>("alfaCorePwa.sendTestPush");
+            _pushLastTestResults = result.Results ?? [];
             _pushLastTestSummary = $"Total: {result.TotalCount} · OK: {result.SuccessCount} · Fallidos: {result.FailCount}";
             _pushMessage = _pushLastTestSummary;
             if (result.TotalCount == 0)
@@ -1260,6 +1276,37 @@
             _pushLastTestSummary = $"Falló: {ex.Message}";
             await LogBrowserPushErrorAsync("SendTestPush", ex);
             _pushError = ex.Message;
+        }
+        finally
+        {
+            _pushBusy = false;
+        }
+    }
+
+    private async Task ReRegisterCurrentDeviceAsync()
+    {
+        _pushBusy = true;
+        _pushMessage = string.Empty;
+        _pushError = string.Empty;
+        try
+        {
+            if (!_pushConfigured)
+                throw new InvalidOperationException(string.IsNullOrWhiteSpace(_pushConfigurationMessage)
+                    ? "Faltan configurar las claves VAPID en el servidor."
+                    : _pushConfigurationMessage);
+
+            await JS.InvokeVoidAsync("alfaCorePwa.unsubscribePush");
+            await JS.InvokeVoidAsync("alfaCorePwa.deletePushSubscription");
+            var subscription = await JS.InvokeAsync<NotificacionesPushSubscriptionDto>("alfaCorePwa.subscribePush", _pushPublicKey);
+            await JS.InvokeVoidAsync("alfaCorePwa.savePushSubscription", subscription);
+            await JS.InvokeVoidAsync("alfaCorePwa.savePushPreferences", _pushPreferences);
+            _pushMessage = "Dispositivo re-registrado correctamente.";
+            await LoadPushDiagnosticsAsync();
+        }
+        catch (Exception ex)
+        {
+            await LogBrowserPushErrorAsync("ReRegisterCurrentDevice", ex);
+            _pushError = $"No se pudo re-registrar este dispositivo. {ex.Message}";
         }
         finally
         {
