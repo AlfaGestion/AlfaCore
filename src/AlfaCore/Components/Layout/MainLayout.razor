@@ -378,9 +378,7 @@
         </div>
     </aside>
 
-    <main class="@MainClass">
-        @if (_currentModule != "calendario")
-        {
+    <main class="shell__main">
         <header class="shell__header">
             <button type="button"
                     class="shell__mobile-toggle no-print"
@@ -430,7 +428,6 @@
                 </div>
             }
         </header>
-        }
 
         @if (ShouldShowConversationMobilePwaActions)
         {
@@ -1158,8 +1155,17 @@
                     ? "Faltan configurar las claves VAPID en el servidor."
                     : _pushConfigurationMessage);
 
-            await JS.InvokeVoidAsync("alfaCorePwa.sendTestPush");
-            _pushMessage = "Notificación de prueba enviada.";
+            var result = await JS.InvokeAsync<NotificacionesPushSendResultDto>("alfaCorePwa.sendTestPush");
+            if (result.SuccessCount > 0)
+            {
+                _pushMessage = $"Se envió a {result.SuccessCount} dispositivo(s).";
+                if (result.FailCount > 0)
+                    _pushError = BuildPushSendError(result);
+            }
+            else
+            {
+                _pushError = BuildPushSendError(result);
+            }
         }
         catch (Exception ex)
         {
@@ -1170,6 +1176,20 @@
         {
             _pushBusy = false;
         }
+    }
+
+    private static string BuildPushSendError(NotificacionesPushSendResultDto? result)
+    {
+        if (result is null)
+            return "El backend no devolvió resultado del envío push.";
+
+        var firstError = result.Results.FirstOrDefault(x => !x.Success && !string.IsNullOrWhiteSpace(x.Error));
+        if (firstError is not null)
+            return $"Fallaron {result.FailCount} dispositivo(s). {firstError.Error}";
+
+        return result.TotalCount == 0
+            ? "No hay suscripciones push activas para enviar."
+            : $"Fallaron {result.FailCount} dispositivo(s). Revisá el diagnóstico de notificaciones.";
     }
 
     private bool PushChannelEnabled(string channel)
@@ -1295,10 +1315,6 @@
         "contactos" => "Contactos",
         _ => "Dashboard de Compras"
     };
-
-    private string MainClass => _currentModule == "calendario"
-        ? "shell__main shell__main--calendario"
-        : "shell__main";
 
     private sealed class PwaClientState
     {

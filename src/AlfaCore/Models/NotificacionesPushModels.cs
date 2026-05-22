@@ -28,6 +28,7 @@ public class NotificacionesPushDeviceRequest
 public sealed class NotificacionesPushRegistrationRequest : NotificacionesPushDeviceRequest
 {
     public NotificacionesPushSubscriptionDto Subscription { get; set; } = new();
+    public string UserAgent { get; set; } = string.Empty;
 }
 
 public sealed class NotificacionesPushPreferencesRequest : NotificacionesPushDeviceRequest
@@ -44,6 +45,34 @@ public sealed class NotificacionesPushClientSettingsDto
     public bool SubjectConfigurado { get; set; }
     public string ConfiguracionMensaje { get; set; } = string.Empty;
     public NotificacionesPushPreferencesDto Preferences { get; set; } = new();
+}
+
+public sealed class NotificacionesPushSendResultDto
+{
+    public int TotalCount { get; set; }
+    public int SuccessCount { get; set; }
+    public int FailCount { get; set; }
+    public List<NotificacionesPushEndpointResultDto> Results { get; set; } = [];
+}
+
+public sealed class NotificacionesPushEndpointResultDto
+{
+    public string DeviceId { get; set; } = string.Empty;
+    public string EndpointParcial { get; set; } = string.Empty;
+    public bool Success { get; set; }
+    public int? StatusCode { get; set; }
+    public string Error { get; set; } = string.Empty;
+    public string ResponseBody { get; set; } = string.Empty;
+}
+
+public sealed class NotificacionesPushDiagnosticsDto
+{
+    public string UserName { get; set; } = string.Empty;
+    public string DeviceId { get; set; } = string.Empty;
+    public int SubscriptionCount { get; set; }
+    public int ActiveSubscriptionCount { get; set; }
+    public NotificacionesPushPreferencesDto Preferences { get; set; } = new();
+    public List<NotificacionesPushEndpointResultDto> Subscriptions { get; set; } = [];
 }
 
 public sealed class NotificacionMensajeNuevoDto

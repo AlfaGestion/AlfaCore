@@ -108,6 +108,33 @@ window.alfaCorePwa = (function () {
         return message || 'No se pudo activar la suscripcion push en este navegador.';
     }
 
+    function buildPushSubscribeDiagnostics(error, publicKey, applicationServerKey, registration) {
+        return {
+            errorName: error?.name || '',
+            errorMessage: error?.message || '',
+            errorStack: error?.stack || '',
+            notificationPermission: getNotificationPermission(),
+            locationProtocol: window.location?.protocol || '',
+            serviceWorkerSupported: 'serviceWorker' in navigator,
+            serviceWorkerRegistered: !!registration,
+            serviceWorkerActive: !!registration?.active,
+            serviceWorkerActiveState: registration?.active?.state || '',
+            serviceWorkerInstallingState: registration?.installing?.state || '',
+            serviceWorkerWaitingState: registration?.waiting?.state || '',
+            pushManagerAvailable: !!registration?.pushManager && 'PushManager' in window,
+            publicKeyReceived: publicKey || '',
+            publicKeyLength: (publicKey || '').length,
+            applicationServerKeyLength: applicationServerKey?.length || 0,
+            userAgent: window.navigator?.userAgent || ''
+        };
+    }
+
+    function buildDetailedPushSubscribeError(error, publicKey, applicationServerKey, registration) {
+        const userMessage = buildPushSubscribeError(error);
+        const diagnostics = buildPushSubscribeDiagnostics(error, publicKey, applicationServerKey, registration);
+        return `${userMessage} Diagnostico tecnico: ${JSON.stringify(diagnostics)}`;
+    }
+
     function subscriptionToDto(subscription) {
         const json = subscription.toJSON();
         return {
@@ -118,22 +145,57 @@ window.alfaCorePwa = (function () {
     }
 
     async function api(path, options) {
+        const method = (options?.method || 'GET').toUpperCase();
+        const url = path;
         const headers = Object.assign({
             'Content-Type': 'application/json',
             'X-AlfaCore-User-Token': getToken()
         }, options?.headers || {});
 
-        const response = await fetch(path, Object.assign({}, options, { headers }));
+        const response = await fetch(url, Object.assign({}, options, { headers }));
+        const contentType = response.headers.get('content-type') || '';
+        console.log('[PWA API]', method, url, response.status, contentType);
+
+        const text = await response.text();
         if (!response.ok) {
-            const text = await response.text();
-            console.error('AlfaCore PWA API error', { path, status: response.status, body: text });
-            throw new Error(text || 'No se pudo completar la operacion.');
+            console.error('AlfaCore PWA API error', {
+                method,
+                url,
+                status: response.status,
+                statusText: response.statusText,
+                contentType,
+                body: text
+            });
+
+            let message = text || 'No se pudo completar la operacion.';
+            if (response.status === 401 || response.status === 403)
+                message = 'Tu sesion expiro o no tenes permisos para configurar notificaciones.';
+            else if (text && contentType.includes('application/json')) {
+                try {
+                    const errorData = JSON.parse(text);
+                    message = errorData.message || errorData.title || errorData.detail || message;
+                } catch {
+                    // Se informa abajo con el cuerpo crudo.
+                }
+            }
+
+            throw new Error(`${message} Endpoint: ${url}. Status: ${response.status} ${response.statusText}. Body: ${text.slice(0, 300)}`);
         }
 
-        if (response.status === 204)
+        if (!text)
             return null;
 
-        return response.json();
+        try {
+            const data = JSON.parse(text);
+            if (data && data.ok === false) {
+                const message = data.message || 'La API de notificaciones devolvio error.';
+                throw new Error(`${message} Endpoint: ${url}. Status: ${response.status} ${response.statusText}.`);
+            }
+
+            return data;
+        } catch {
+            throw new Error(`Respuesta no JSON desde ${url}. Status ${response.status} ${response.statusText}. Content-Type: ${contentType}. Body: ${text.slice(0, 300)}`);
+        }
     }
 
     async function getRegistration() {
@@ -217,8 +279,9 @@ window.alfaCorePwa = (function () {
                         applicationServerKey: applicationServerKey.buffer
                     });
                 } catch (error) {
-                    console.error('AlfaCore PWA push subscription error', error);
-                    throw new Error(buildPushSubscribeError(error));
+                    const diagnostics = buildPushSubscribeDiagnostics(error, publicKey, applicationServerKey, registration);
+                    console.error('AlfaCore PWA push subscription error', diagnostics, error);
+                    throw new Error(buildDetailedPushSubscribeError(error, publicKey, applicationServerKey, registration));
                 }
             }
 
@@ -262,7 +325,7 @@ window.alfaCorePwa = (function () {
         savePushSubscription: async function (subscription) {
             return api('/api/notificaciones-push/subscription', {
                 method: 'POST',
-                body: JSON.stringify({ deviceId: getDeviceId(), subscription })
+                body: JSON.stringify({ deviceId: getDeviceId(), subscription, userAgent: window.navigator?.userAgent || '' })
             });
         },
 
@@ -292,6 +355,10 @@ window.alfaCorePwa = (function () {
                 method: 'POST',
                 body: JSON.stringify({ deviceId: getDeviceId() })
             });
+        },
+
+        fetchPushDiagnostics: async function () {
+            return api(`/api/notificaciones-push/diagnostico?deviceId=${encodeURIComponent(getDeviceId())}`, { method: 'GET' });
         }
     };
 })();

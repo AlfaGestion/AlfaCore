@@ -411,10 +411,27 @@ public class Program
             CancellationToken ct) =>
         {
             if (!TryGetApiUser(request, sessionStore, out var user) || user is null)
-                return Results.Unauthorized();
+                return PushApiUnauthorized();
 
-            var settings = await svc.GetClientSettingsAsync(user.UserName, deviceId ?? string.Empty, ct);
-            return Results.Ok(settings);
+            try
+            {
+                var settings = await svc.GetClientSettingsAsync(user.UserName, deviceId ?? string.Empty, ct);
+                return Results.Json(new
+                {
+                    ok = true,
+                    settings.Configurado,
+                    settings.PublicKey,
+                    settings.PublicKeyConfigurada,
+                    settings.PrivateKeyConfigurada,
+                    settings.SubjectConfigurado,
+                    settings.ConfiguracionMensaje,
+                    settings.Preferences
+                });
+            }
+            catch (Exception ex)
+            {
+                return PushApiException(ex);
+            }
         });
 
         app.MapPost("/api/notificaciones-push/subscription", async (
@@ -425,10 +442,17 @@ public class Program
             CancellationToken ct) =>
         {
             if (!TryGetApiUser(request, sessionStore, out var user) || user is null)
-                return Results.Unauthorized();
+                return PushApiUnauthorized();
 
-            await svc.SaveSubscriptionAsync(user.UserName, body, ct);
-            return Results.Ok();
+            try
+            {
+                await svc.SaveSubscriptionAsync(user.UserName, body, ct);
+                return PushApiOk();
+            }
+            catch (Exception ex)
+            {
+                return PushApiException(ex);
+            }
         });
 
         app.MapDelete("/api/notificaciones-push/subscription", async (
@@ -439,10 +463,17 @@ public class Program
             CancellationToken ct) =>
         {
             if (!TryGetApiUser(request, sessionStore, out var user) || user is null)
-                return Results.Unauthorized();
+                return PushApiUnauthorized();
 
-            await svc.DeleteSubscriptionAsync(user.UserName, deviceId ?? string.Empty, ct);
-            return Results.Ok();
+            try
+            {
+                await svc.DeleteSubscriptionAsync(user.UserName, deviceId ?? string.Empty, ct);
+                return PushApiOk();
+            }
+            catch (Exception ex)
+            {
+                return PushApiException(ex);
+            }
         });
 
         app.MapPost("/api/notificaciones-push/preferences", async (
@@ -453,10 +484,17 @@ public class Program
             CancellationToken ct) =>
         {
             if (!TryGetApiUser(request, sessionStore, out var user) || user is null)
-                return Results.Unauthorized();
+                return PushApiUnauthorized();
 
-            await svc.SavePreferencesAsync(user.UserName, body, ct);
-            return Results.Ok();
+            try
+            {
+                await svc.SavePreferencesAsync(user.UserName, body, ct);
+                return PushApiOk();
+            }
+            catch (Exception ex)
+            {
+                return PushApiException(ex);
+            }
         });
 
         app.MapPost("/api/notificaciones-push/test", async (
@@ -467,10 +505,54 @@ public class Program
             CancellationToken ct) =>
         {
             if (!TryGetApiUser(request, sessionStore, out var user) || user is null)
-                return Results.Unauthorized();
+                return PushApiUnauthorized();
 
-            await svc.SendTestAsync(user.UserName, body.DeviceId, ct);
-            return Results.Ok();
+            try
+            {
+                var result = await svc.SendTestAsync(user.UserName, body.DeviceId, ct);
+                return Results.Json(new
+                {
+                    ok = true,
+                    result.TotalCount,
+                    result.SuccessCount,
+                    result.FailCount,
+                    result.Results
+                });
+            }
+            catch (Exception ex)
+            {
+                return PushApiException(ex);
+            }
+        });
+
+        app.MapGet("/api/notificaciones-push/diagnostico", async (
+            string? deviceId,
+            HttpRequest request,
+            AppUserSessionStore sessionStore,
+            INotificacionesPushService svc,
+            CancellationToken ct) =>
+        {
+            if (!TryGetApiUser(request, sessionStore, out var user) || user is null)
+                return PushApiUnauthorized();
+
+            try
+            {
+                var result = await svc.GetDiagnosticsAsync(user.UserName, deviceId ?? string.Empty, ct);
+                return Results.Json(new
+                {
+                    ok = true,
+                    result.UserName,
+                    result.DeviceId,
+                    result.SubscriptionCount,
+                    result.ActiveSubscriptionCount,
+                    result.Preferences,
+                    result.Subscriptions
+                });
+            }
+            catch (Exception ex)
+            {
+                return PushApiException(ex);
+            }
         });
 
         try
@@ -525,6 +607,35 @@ public class Program
             return false;
 
         return sessionStore.TryGet(token.Trim(), out user) && user is not null;
+    }
+
+    private static IResult PushApiOk()
+        => Results.Json(new { ok = true });
+
+    private static IResult PushApiUnauthorized()
+        => Results.Json(
+            new
+            {
+                ok = false,
+                message = "Tu sesiÃ³n expirÃ³ o no tenÃ©s permisos para configurar notificaciones."
+            },
+            statusCode: StatusCodes.Status401Unauthorized);
+
+    private static IResult PushApiException(Exception exception)
+    {
+        var message = exception is AppUserFacingException userFacing
+            ? userFacing.Message
+            : exception.Message;
+
+        return Results.Json(
+            new
+            {
+                ok = false,
+                message = string.IsNullOrWhiteSpace(message)
+                    ? "No se pudo completar la operaciÃ³n de notificaciones."
+                    : message
+            },
+            statusCode: StatusCodes.Status500InternalServerError);
     }
 
     private static void WriteStartupError(string message, Exception exception)

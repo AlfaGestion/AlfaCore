@@ -61,6 +61,8 @@ self.addEventListener('push', event => {
         payload = {};
     }
 
+    console.log('[AlfaCore SW] Push recibido', payload);
+
     const title = payload.title || 'Nuevo mensaje';
     const options = {
         body: payload.body || 'Tenes un mensaje nuevo.',
