@@ -63,6 +63,7 @@ public sealed class NotificacionesPushEndpointResultDto
     public int? StatusCode { get; set; }
     public string Error { get; set; } = string.Empty;
     public string ResponseBody { get; set; } = string.Empty;
+    public DateTimeOffset? LastAttemptAt { get; set; }
 }
 
 public sealed class NotificacionesPushDiagnosticsDto

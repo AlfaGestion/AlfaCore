@@ -1,4 +1,4 @@
-using AlfaCore.Components;
+﻿using AlfaCore.Components;
 using AlfaCore.Configuration;
 using AlfaCore.Models;
 using AlfaCore.Repositories;
@@ -416,16 +416,37 @@ public class Program
             try
             {
                 var settings = await svc.GetClientSettingsAsync(user.UserName, deviceId ?? string.Empty, ct);
+                var diag = await svc.GetDiagnosticsAsync(user.UserName, deviceId ?? string.Empty, ct);
+                var currentDevice = (deviceId ?? string.Empty).Trim();
+                var currentRegistered = diag.Subscriptions.Any(x =>
+                    string.Equals(x.DeviceId, currentDevice, StringComparison.OrdinalIgnoreCase) && x.Success);
                 return Results.Json(new
                 {
                     ok = true,
+                    message = "Configuración de notificaciones cargada.",
                     settings.Configurado,
                     settings.PublicKey,
                     settings.PublicKeyConfigurada,
                     settings.PrivateKeyConfigurada,
                     settings.SubjectConfigurado,
                     settings.ConfiguracionMensaje,
-                    settings.Preferences
+                    settings.Preferences,
+                    diagnostics = new
+                    {
+                        subscriptionsFound = diag.SubscriptionCount,
+                        activeSubscriptions = diag.ActiveSubscriptionCount,
+                        currentDeviceRegistered = currentRegistered,
+                        sentOk = 0,
+                        sentFailed = 0,
+                        lastProviderStatus = diag.Subscriptions
+                            .Where(x => x.StatusCode.HasValue)
+                            .Select(x => x.StatusCode)
+                            .FirstOrDefault(),
+                        lastProviderError = diag.Subscriptions
+                            .Where(x => !string.IsNullOrWhiteSpace(x.Error))
+                            .Select(x => x.Error)
+                            .FirstOrDefault() ?? string.Empty
+                    }
                 });
             }
             catch (Exception ex)
@@ -447,7 +468,22 @@ public class Program
             try
             {
                 await svc.SaveSubscriptionAsync(user.UserName, body, ct);
-                return PushApiOk();
+                var diag = await svc.GetDiagnosticsAsync(user.UserName, body.DeviceId, ct);
+                return Results.Json(new
+                {
+                    ok = true,
+                    message = "Suscripción push guardada.",
+                    diagnostics = new
+                    {
+                        subscriptionsFound = diag.SubscriptionCount,
+                        activeSubscriptions = diag.ActiveSubscriptionCount,
+                        currentDeviceRegistered = diag.Subscriptions.Any(x => string.Equals(x.DeviceId, body.DeviceId, StringComparison.OrdinalIgnoreCase) && x.Success),
+                        sentOk = 0,
+                        sentFailed = 0,
+                        lastProviderStatus = diag.Subscriptions.Where(x => x.StatusCode.HasValue).Select(x => x.StatusCode).FirstOrDefault(),
+                        lastProviderError = diag.Subscriptions.Where(x => !string.IsNullOrWhiteSpace(x.Error)).Select(x => x.Error).FirstOrDefault() ?? string.Empty
+                    }
+                });
             }
             catch (Exception ex)
             {
@@ -467,8 +503,24 @@ public class Program
 
             try
             {
-                await svc.DeleteSubscriptionAsync(user.UserName, deviceId ?? string.Empty, ct);
-                return PushApiOk();
+                var currentDeviceId = deviceId ?? string.Empty;
+                await svc.DeleteSubscriptionAsync(user.UserName, currentDeviceId, ct);
+                var diag = await svc.GetDiagnosticsAsync(user.UserName, currentDeviceId, ct);
+                return Results.Json(new
+                {
+                    ok = true,
+                    message = "Suscripción push eliminada.",
+                    diagnostics = new
+                    {
+                        subscriptionsFound = diag.SubscriptionCount,
+                        activeSubscriptions = diag.ActiveSubscriptionCount,
+                        currentDeviceRegistered = diag.Subscriptions.Any(x => string.Equals(x.DeviceId, currentDeviceId, StringComparison.OrdinalIgnoreCase) && x.Success),
+                        sentOk = 0,
+                        sentFailed = 0,
+                        lastProviderStatus = diag.Subscriptions.Where(x => x.StatusCode.HasValue).Select(x => x.StatusCode).FirstOrDefault(),
+                        lastProviderError = diag.Subscriptions.Where(x => !string.IsNullOrWhiteSpace(x.Error)).Select(x => x.Error).FirstOrDefault() ?? string.Empty
+                    }
+                });
             }
             catch (Exception ex)
             {
@@ -489,7 +541,22 @@ public class Program
             try
             {
                 await svc.SavePreferencesAsync(user.UserName, body, ct);
-                return PushApiOk();
+                var diag = await svc.GetDiagnosticsAsync(user.UserName, body.DeviceId, ct);
+                return Results.Json(new
+                {
+                    ok = true,
+                    message = "Preferencias de notificaciones guardadas.",
+                    diagnostics = new
+                    {
+                        subscriptionsFound = diag.SubscriptionCount,
+                        activeSubscriptions = diag.ActiveSubscriptionCount,
+                        currentDeviceRegistered = diag.Subscriptions.Any(x => string.Equals(x.DeviceId, body.DeviceId, StringComparison.OrdinalIgnoreCase) && x.Success),
+                        sentOk = 0,
+                        sentFailed = 0,
+                        lastProviderStatus = diag.Subscriptions.Where(x => x.StatusCode.HasValue).Select(x => x.StatusCode).FirstOrDefault(),
+                        lastProviderError = diag.Subscriptions.Where(x => !string.IsNullOrWhiteSpace(x.Error)).Select(x => x.Error).FirstOrDefault() ?? string.Empty
+                    }
+                });
             }
             catch (Exception ex)
             {
@@ -510,13 +577,27 @@ public class Program
             try
             {
                 var result = await svc.SendTestAsync(user.UserName, body.DeviceId, ct);
+                var diag = await svc.GetDiagnosticsAsync(user.UserName, body.DeviceId, ct);
                 return Results.Json(new
                 {
                     ok = true,
+                    message = result.TotalCount == 0
+                        ? "No hay suscripciones activas para enviar prueba."
+                        : "Prueba de push ejecutada.",
                     result.TotalCount,
                     result.SuccessCount,
                     result.FailCount,
-                    result.Results
+                    result.Results,
+                    diagnostics = new
+                    {
+                        subscriptionsFound = diag.SubscriptionCount,
+                        activeSubscriptions = diag.ActiveSubscriptionCount,
+                        currentDeviceRegistered = diag.Subscriptions.Any(x => string.Equals(x.DeviceId, body.DeviceId, StringComparison.OrdinalIgnoreCase) && x.Success),
+                        sentOk = result.SuccessCount,
+                        sentFailed = result.FailCount,
+                        lastProviderStatus = result.Results.Where(x => x.StatusCode.HasValue).Select(x => x.StatusCode).FirstOrDefault(),
+                        lastProviderError = result.Results.Where(x => !string.IsNullOrWhiteSpace(x.Error)).Select(x => x.Error).FirstOrDefault() ?? string.Empty
+                    }
                 });
             }
             catch (Exception ex)
@@ -541,12 +622,23 @@ public class Program
                 return Results.Json(new
                 {
                     ok = true,
+                    message = "Diagnóstico push cargado.",
                     result.UserName,
                     result.DeviceId,
                     result.SubscriptionCount,
                     result.ActiveSubscriptionCount,
                     result.Preferences,
-                    result.Subscriptions
+                    result.Subscriptions,
+                    diagnostics = new
+                    {
+                        subscriptionsFound = result.SubscriptionCount,
+                        activeSubscriptions = result.ActiveSubscriptionCount,
+                        currentDeviceRegistered = result.Subscriptions.Any(x => string.Equals(x.DeviceId, result.DeviceId, StringComparison.OrdinalIgnoreCase) && x.Success),
+                        sentOk = 0,
+                        sentFailed = 0,
+                        lastProviderStatus = result.Subscriptions.Where(x => x.StatusCode.HasValue).Select(x => x.StatusCode).FirstOrDefault(),
+                        lastProviderError = result.Subscriptions.Where(x => !string.IsNullOrWhiteSpace(x.Error)).Select(x => x.Error).FirstOrDefault() ?? string.Empty
+                    }
                 });
             }
             catch (Exception ex)
@@ -617,7 +709,7 @@ public class Program
             new
             {
                 ok = false,
-                message = "Tu sesiÃ³n expirÃ³ o no tenÃ©s permisos para configurar notificaciones."
+                message = "Tu sesión expiró o no tenés permisos para configurar notificaciones."
             },
             statusCode: StatusCodes.Status401Unauthorized);
 
@@ -632,7 +724,7 @@ public class Program
             {
                 ok = false,
                 message = string.IsNullOrWhiteSpace(message)
-                    ? "No se pudo completar la operaciÃ³n de notificaciones."
+                    ? "No se pudo completar la operación de notificaciones."
                     : message
             },
             statusCode: StatusCodes.Status500InternalServerError);
@@ -661,3 +753,5 @@ public class Program
         }
     }
 }
+
+

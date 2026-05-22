@@ -1,4 +1,4 @@
-const CACHE_NAME = 'alfacore-static-v3';
+const CACHE_NAME = 'alfacore-static-v4';
 const STATIC_ASSETS = [
     '/app.css',
     '/bootstrap/bootstrap.min.css',
@@ -8,8 +8,7 @@ const STATIC_ASSETS = [
     '/icons/icon-512.png',
     '/icons/badge-96.png',
     '/audio/conversaciones/mixkit-alert-quick-chime-766.mp3',
-    '/js/conversaciones.js',
-    '/js/pwa.js'
+    '/js/conversaciones.js'
 ];
 
 self.addEventListener('install', event => {
@@ -54,6 +53,7 @@ self.addEventListener('fetch', event => {
 });
 
 self.addEventListener('push', event => {
+    console.log('[AlfaCore SW] push recibido', event);
     let payload = {};
     try {
         payload = event.data ? event.data.json() : {};
@@ -62,12 +62,12 @@ self.addEventListener('push', event => {
         payload = raw ? { body: raw } : {};
     }
 
-    console.log('[AlfaCore SW] Push recibido', payload);
+    console.log('[AlfaCore SW] payload', payload);
 
     const idConversacion = payload.idConversacion || null;
     const pushUrl = payload.url
         || (idConversacion ? `/conversaciones?id=${encodeURIComponent(idConversacion)}` : '/conversaciones');
-    const title = payload.title || 'Nuevo mensaje';
+    const title = payload.title || 'AlfaCore';
     const actions = [];
     if (idConversacion) {
         actions.push({ action: 'open-conversation', title: 'Abrir conversación' });
@@ -75,7 +75,7 @@ self.addEventListener('push', event => {
     actions.push({ action: 'view-later', title: 'Ver después' });
 
     const options = {
-        body: payload.body || 'Tenes un mensaje nuevo.',
+        body: payload.body || 'Tenés un nuevo mensaje',
         icon: payload.icon || '/icons/icon-192.png',
         badge: payload.badge || '/icons/badge-96.png',
         data: {
@@ -89,6 +89,7 @@ self.addEventListener('push', event => {
         actions: actions
     };
 
+    console.log('[AlfaCore SW] showNotification', title, options);
     event.waitUntil(self.registration.showNotification(title, options));
 });
 
@@ -115,6 +116,9 @@ self.addEventListener('notificationclick', event => {
 });
 
 function IsSafeStaticAsset(pathname) {
+    if (pathname === '/js/pwa.js')
+        return false;
+
     return pathname.endsWith('.css')
         || pathname.endsWith('.js')
         || pathname.endsWith('.png')

@@ -1,4 +1,4 @@
-using AlfaCore.Configuration;
+﻿using AlfaCore.Configuration;
 using AlfaCore.Models;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Options;
@@ -224,7 +224,8 @@ public sealed class NotificacionesPushService(
                     Success = x.Activo,
                     StatusCode = x.LastStatusCode,
                     Error = x.LastError,
-                    ResponseBody = x.LastProviderResponseBody
+                    ResponseBody = x.LastProviderResponseBody,
+                    LastAttemptAt = x.LastAttemptAt
                 }).ToList()
             };
         }, "No se pudo obtener el diagnóstico de notificaciones.", ct);
@@ -572,6 +573,7 @@ public sealed class NotificacionesPushService(
         var json = JsonSerializer.Serialize(payload, JsonOptions);
         try
         {
+            subscription.LastAttemptAt = DateTimeOffset.UtcNow;
             await appEvents.LogAuditAsync(
                 ModuleName,
                 "SendSubscriptionAttempt",
@@ -642,6 +644,16 @@ public sealed class NotificacionesPushService(
         {
             result.Success = false;
             result.Error = ex.Message;
+            subscription.LastStatusCode = null;
+            subscription.LastError = ex.Message;
+            subscription.LastProviderResponseBody = string.Empty;
+            subscription.UpdatedAt = DateTimeOffset.UtcNow;
+            await SaveConfigJsonAsync(
+                cn,
+                BuildSubscriptionKey(subscription.UserName, subscription.DeviceId),
+                subscription,
+                "Estado de último envío Web Push",
+                ct);
             await appEvents.LogErrorAsync(
                 ModuleName,
                 "SendSubscriptionError",
@@ -965,6 +977,7 @@ public sealed class NotificacionesPushService(
         public int? LastStatusCode { get; set; }
         public string LastError { get; set; } = string.Empty;
         public string LastProviderResponseBody { get; set; } = string.Empty;
+        public DateTimeOffset? LastAttemptAt { get; set; }
     }
 
     private sealed class PushPayload
@@ -979,3 +992,4 @@ public sealed class NotificacionesPushService(
         public string Canal { get; set; } = string.Empty;
     }
 }
+
