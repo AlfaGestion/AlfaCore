@@ -269,7 +269,20 @@ public sealed class InterfacesCompraIaQueueSnapshotDto
     public int Procesados { get; set; }
     public int ConError { get; set; }
     public int Cancelados { get; set; }
+    public InterfacesCompraIaWorkerStatusDto Worker { get; set; } = new();
     public IReadOnlyList<InterfacesCompraIaResultadoDto> Items { get; set; } = [];
+}
+
+public sealed class InterfacesCompraIaWorkerStatusDto
+{
+    public string Estado { get; set; } = string.Empty;
+    public string Descripcion { get; set; } = string.Empty;
+    public DateTime? UltimaEjecucion { get; set; }
+    public DateTime? UltimoInicio { get; set; }
+    public DateTime? ProximoIntento { get; set; }
+    public string UltimoMensaje { get; set; } = string.Empty;
+    public string UltimoError { get; set; } = string.Empty;
+    public int UltimosProcesados { get; set; }
 }
 
 public sealed class InterfacesCompraIaDetalleItemDto

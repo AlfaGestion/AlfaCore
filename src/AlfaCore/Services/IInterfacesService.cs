@@ -18,6 +18,7 @@ public interface IInterfacesService
     Task<InterfacesCompraIaQueueSnapshotDto> GetCompraIaQueueSnapshotAsync(CancellationToken ct = default);
     Task CancelCompraDetectionAsync(InterfacesCompraIaAccionRequest request, CancellationToken ct = default);
     Task RetryCompraDetectionAsync(InterfacesCompraIaAccionRequest request, CancellationToken ct = default);
+    Task ProcessCompraDetectionNowAsync(InterfacesCompraIaAccionRequest request, CancellationToken ct = default);
     Task<int> ProcessCompraIaQueueAsync(CancellationToken ct = default);
     Task<int> DeleteAsync(InterfacesEliminarComprobantesRequest request, CancellationToken ct = default);
     Task<InterfacesAdjuntoServeDto?> GetAttachmentForServeAsync(long idAdjunto, CancellationToken ct = default);

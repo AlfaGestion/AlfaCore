@@ -160,6 +160,14 @@ public sealed class CuentasComercialesService(
             var descriptor = ResolveDescriptor(tipo);
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
+            var hasManualColumn = await ColumnExistsAsync(cn, null, "MA_CUENTAS", "MANUAL", token);
+            var hasClasificacionColumn = await ColumnExistsAsync(cn, null, descriptor.ViewName, "Clasificacion", token);
+            var manualSelect = hasManualColumn
+                ? "ISNULL(CAST(acc.MANUAL AS nvarchar(max)), '')"
+                : "CAST('' AS nvarchar(max))";
+            var clasificacionSelect = hasClasificacionColumn
+                ? "ISNULL(base.Clasificacion, '')"
+                : "CAST('' AS nvarchar(4))";
 
             var sql = $"""
                 SELECT
@@ -191,10 +199,10 @@ public sealed class CuentasComercialesService(
                     ISNULL(base.CodigoImputacion, ''),
                     ISNULL(base.CodigoOpcional, ''),
                     ISNULL(base.Moneda, ''),
-                    ISNULL(base.Clasificacion, ''),
+                    {clasificacionSelect},
                     ISNULL(base.LugarEntrega, ''),
                     ISNULL(base.DatosPago, ''),
-                    ISNULL(CAST(acc.MANUAL AS nvarchar(max)), ''),
+                    {manualSelect},
                     ISNULL(base.BLOQUEO, 0),
                     ISNULL(base.ExentoIvaServicios, 0),
                     ISNULL(base.ExentoIvaArticulos, 0),
@@ -360,6 +368,7 @@ public sealed class CuentasComercialesService(
             await using var tx = await cn.BeginTransactionAsync(token);
             var descriptor = ResolveDescriptor(tipo);
             var isNew = string.IsNullOrWhiteSpace(normalized.CodigoOriginal);
+            var hasManualColumn = await ColumnExistsAsync(cn, (SqlTransaction)tx, "MA_CUENTAS", "MANUAL", token);
 
             if (string.IsNullOrWhiteSpace(normalized.Codigo))
                 normalized.Codigo = await GenerateNextCodigoAsync(cn, (SqlTransaction)tx, tipo, token);
@@ -380,7 +389,8 @@ public sealed class CuentasComercialesService(
             var accountExists = await ExistsAsync(cn, (SqlTransaction)tx, "MA_CUENTAS", "CODIGO", normalized.Codigo, token);
             if (!accountExists)
             {
-                const string insertAccountSql = """
+                var insertAccountSql = hasManualColumn
+                    ? """
                     INSERT INTO dbo.MA_CUENTAS
                     (
                         CODIGO,
@@ -417,13 +427,50 @@ public sealed class CuentasComercialesService(
                         GETDATE(),
                         GETDATE()
                     );
+                    """
+                    : """
+                    INSERT INTO dbo.MA_CUENTAS
+                    (
+                        CODIGO,
+                        DESCRIPCION,
+                        TITULO,
+                        PideVencimiento,
+                        TipoVista,
+                        CuentaPrincipal,
+                        Libro_Iva_Ventas,
+                        Libro_Iva_Compras,
+                        Moneda,
+                        BLOQUEO,
+                        Dada_De_Baja,
+                        CodigoOpcional,
+                        FechaHora_Grabacion,
+                        FechaHora_Modificacion
+                    )
+                    VALUES
+                    (
+                        @Codigo,
+                        @Descripcion,
+                        0,
+                        1,
+                        @TipoVista,
+                        @CuentaPrincipal,
+                        @LibroVentas,
+                        @LibroCompras,
+                        @Moneda,
+                        @Bloqueo,
+                        0,
+                        @CodigoOpcional,
+                        GETDATE(),
+                        GETDATE()
+                    );
                     """;
 
                 await using var cmd = new SqlCommand(insertAccountSql, cn, (SqlTransaction)tx);
                 cmd.Parameters.AddWithValue("@Codigo", normalized.Codigo);
                 cmd.Parameters.AddWithValue("@Descripcion", normalized.RazonSocial);
                 cmd.Parameters.AddWithValue("@TipoVista", tipoVista);
-                cmd.Parameters.AddWithValue("@Manual", DbNullable(normalized.Manual));
+                if (hasManualColumn)
+                    cmd.Parameters.AddWithValue("@Manual", DbNullable(normalized.Manual));
                 cmd.Parameters.AddWithValue("@CuentaPrincipal", DbNullable(normalized.CuentaPrincipal));
                 cmd.Parameters.AddWithValue("@LibroVentas", tipo == CuentaComercialTipo.Cliente);
                 cmd.Parameters.AddWithValue("@LibroCompras", tipo == CuentaComercialTipo.Proveedor);
@@ -434,11 +481,24 @@ public sealed class CuentasComercialesService(
             }
             else
             {
-                const string updateAccountSql = """
+                var updateAccountSql = hasManualColumn
+                    ? """
                     UPDATE dbo.MA_CUENTAS
                     SET
                         DESCRIPCION = @Descripcion,
                         MANUAL = @Manual,
+                        CuentaPrincipal = @CuentaPrincipal,
+                        Moneda = @Moneda,
+                        BLOQUEO = @Bloqueo,
+                        Dada_De_Baja = 0,
+                        CodigoOpcional = @CodigoOpcional,
+                        FechaHora_Modificacion = GETDATE()
+                    WHERE UPPER(LTRIM(RTRIM(CODIGO))) = @Codigo;
+                    """
+                    : """
+                    UPDATE dbo.MA_CUENTAS
+                    SET
+                        DESCRIPCION = @Descripcion,
                         CuentaPrincipal = @CuentaPrincipal,
                         Moneda = @Moneda,
                         BLOQUEO = @Bloqueo,
@@ -451,7 +511,8 @@ public sealed class CuentasComercialesService(
                 await using var cmd = new SqlCommand(updateAccountSql, cn, (SqlTransaction)tx);
                 cmd.Parameters.AddWithValue("@Codigo", normalized.Codigo.Trim().ToUpperInvariant());
                 cmd.Parameters.AddWithValue("@Descripcion", normalized.RazonSocial);
-                cmd.Parameters.AddWithValue("@Manual", DbNullable(normalized.Manual));
+                if (hasManualColumn)
+                    cmd.Parameters.AddWithValue("@Manual", DbNullable(normalized.Manual));
                 cmd.Parameters.AddWithValue("@CuentaPrincipal", DbNullable(normalized.CuentaPrincipal));
                 cmd.Parameters.AddWithValue("@Moneda", DbNullable(normalized.MonedaCodigo));
                 cmd.Parameters.AddWithValue("@Bloqueo", normalized.Bloqueado);
@@ -1277,6 +1338,22 @@ public sealed class CuentasComercialesService(
 
         await using var cmd = new SqlCommand(sql, cn, tx);
         cmd.Parameters.AddWithValue("@Value", value.Trim().ToUpperInvariant());
+        var result = await cmd.ExecuteScalarAsync(ct);
+        return Convert.ToInt32(result) > 0;
+    }
+
+    private static async Task<bool> ColumnExistsAsync(SqlConnection cn, SqlTransaction? tx, string tableName, string columnName, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT COUNT(1)
+            FROM sys.columns
+            WHERE object_id = OBJECT_ID(@ObjectName)
+              AND UPPER(name) = @ColumnName;
+            """;
+
+        await using var cmd = new SqlCommand(sql, cn, tx);
+        cmd.Parameters.AddWithValue("@ObjectName", $"dbo.{tableName}");
+        cmd.Parameters.AddWithValue("@ColumnName", columnName.Trim().ToUpperInvariant());
         var result = await cmd.ExecuteScalarAsync(ct);
         return Convert.ToInt32(result) > 0;
     }

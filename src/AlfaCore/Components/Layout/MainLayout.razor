@@ -93,7 +93,11 @@
                     </NavLink>
                     <NavLink class="menu__link" href="/auditoria/errores" Match="NavLinkMatch.Prefix">
                         <span class="menu__icon"><i class="bi bi-bug"></i></span>
-                        <span>Errores</span>
+                        <span>Auditoría de errores</span>
+                    </NavLink>
+                    <NavLink class="menu__link" href="/auditoria/usuarios" Match="NavLinkMatch.Prefix">
+                        <span class="menu__icon"><i class="bi bi-person-check"></i></span>
+                        <span>Auditoría de usuarios</span>
                     </NavLink>
                 </nav>
             }
@@ -219,13 +223,9 @@
                 </a>
                 <p class="menu__section">Clientes</p>
                 <nav class="menu__nav">
-                    <NavLink class="menu__link" href="/ventas/clientes" Match="NavLinkMatch.All">
+                    <NavLink class="menu__link" href="/clientes" Match="NavLinkMatch.All">
                         <span class="menu__icon"><i class="bi bi-people-fill"></i></span>
                         <span>Maestro de clientes</span>
-                    </NavLink>
-                    <NavLink class="menu__link" href="/ventas">
-                        <span class="menu__icon"><i class="bi bi-graph-up-arrow"></i></span>
-                        <span>Dashboard ventas</span>
                     </NavLink>
                 </nav>
             }
@@ -321,13 +321,9 @@
                 </a>
                 <p class="menu__section">Proveedores</p>
                 <nav class="menu__nav">
-                    <NavLink class="menu__link" href="/compras/proveedores" Match="NavLinkMatch.All">
+                    <NavLink class="menu__link" href="/proveedores" Match="NavLinkMatch.All">
                         <span class="menu__icon"><i class="bi bi-people-fill"></i></span>
                         <span>Maestro de proveedores</span>
-                    </NavLink>
-                    <NavLink class="menu__link" href="/compras">
-                        <span class="menu__icon"><i class="bi bi-house-fill"></i></span>
-                        <span>Dashboard compras</span>
                     </NavLink>
                 </nav>
             }
@@ -913,8 +909,8 @@
         var normalized = path.ToLowerInvariant();
         _currentModule = normalized switch
         {
-            "ventas/clientes" => "clientes",
-            "compras/proveedores" => "proveedores",
+            "clientes" => "clientes",
+            "proveedores" => "proveedores",
             _ => path.Split('/').FirstOrDefault()?.ToLowerInvariant() ?? string.Empty
         };
     }
@@ -1504,8 +1500,9 @@
         return path switch
         {
         "" => "Aplicaciones",
+        "clientes" => "Clientes",
         "ventas" => "Ventas",
-        "ventas/clientes" => "Clientes",
+            "ventas/clientes" => "Clientes",
             "ventas/rubros" => "Rubros",
             "ventas/familias" => "Familias",
             "ventas/articulos" => "Artículos",
@@ -1521,6 +1518,7 @@
             "costos/historial" => "Historial de Costos",
             "auditoria" => "Auditoría",
             "auditoria/errores" => "Errores",
+            "auditoria/usuarios" => "Auditoría de usuarios",
             "conversaciones" => "Conversaciones",
             "conversaciones/plantillas" => "Plantillas de WhatsApp",
             "conversaciones/configuracion" => "Configuración de WhatsApp",
@@ -1534,6 +1532,7 @@
             "usuarios" => "Usuarios",
             "contactos" => "Contactos",
             "compras" => "Inicio",
+            "proveedores" => "Proveedores",
             "compras/proveedores" => "Proveedores",
             "compras/comprobantes" => "Comprobantes",
             "compras/rubros" => "Rubros",

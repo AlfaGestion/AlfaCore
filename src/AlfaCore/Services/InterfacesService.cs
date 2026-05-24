@@ -14,9 +14,11 @@ public sealed class InterfacesService(
     IConfiguration configuration,
     ISessionService sessionService,
     IAppEventService appEvents,
-    IInterfacesConfigService interfacesConfigService) : IInterfacesService
+    IInterfacesConfigService interfacesConfigService,
+    InterfacesCompraIaWorkerState workerState) : IInterfacesService
 {
     private readonly IAppEventService _appEvents = appEvents;
+    private readonly InterfacesCompraIaWorkerState _workerState = workerState;
     private const string ModuleName = "Interfaces";
     private const string ConfigGroup = "INTERFACES";
     private const string ViewConfigPrefix = "USUVIEW-INTERFACES-";
@@ -1103,6 +1105,7 @@ public sealed class InterfacesService(
             var snapshot = new InterfacesCompraIaQueueSnapshotDto();
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
+            var settings = await interfacesConfigService.GetCompraIaSettingsAsync(token);
 
             await using (var cmd = new SqlCommand(summarySql, cn))
             await using (var rd = await cmd.ExecuteReaderAsync(token))
@@ -1127,6 +1130,7 @@ public sealed class InterfacesService(
                 }
             }
 
+            snapshot.Worker = _workerState.Snapshot(settings.Habilitado && settings.WorkerHabilitado, settings.WorkerIntervaloSegundos);
             snapshot.Items = items;
             return snapshot;
         }, "No se pudo cargar la cola de procesamiento de compras.", ct);
@@ -1160,6 +1164,51 @@ public sealed class InterfacesService(
             await cn.OpenAsync(token);
             await RetryCompraDetectionInternalAsync(cn, request.Id, user, pc, token);
         }, "No se pudo reencolar el procesamiento de compra.", ct);
+
+    public Task ProcessCompraDetectionNowAsync(InterfacesCompraIaAccionRequest request, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Interfaces", "ProcessCompraDetectionNow", async token =>
+        {
+            ArgumentNullException.ThrowIfNull(request);
+            if (request.Id <= 0)
+                throw new InvalidOperationException("El registro de cola es obligatorio.");
+
+            var user = NormalizeActor(request.UsuarioAccion, Environment.UserName, 50);
+            var pc = NormalizeActor(request.PcAccion, ResolvePc(), 100);
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            var claimed = await TryClaimCompraDetectionByIdAsync(cn, request.Id, user, token);
+            if (claimed is null || !claimed.IdComprobanteRecibido.HasValue)
+                throw new InvalidOperationException("El proceso seleccionado ya no está pendiente para ejecutarse ahora.");
+
+            try
+            {
+                await RunCompraDetectionAsync(
+                    claimed.IdComprobanteRecibido.Value,
+                    string.IsNullOrWhiteSpace(claimed.UsuarioProceso) ? user : claimed.UsuarioProceso,
+                    pc,
+                    claimed.Id,
+                    processToken => IsCancellationRequestedAsync(claimed.Id, processToken),
+                    token);
+
+                await _appEvents.LogAuditAsync(
+                    "Interfaces",
+                    "ProcessCompraDetectionNow",
+                    "IA_Compras_CAB",
+                    claimed.Id.ToString(CultureInfo.InvariantCulture),
+                    "Procesamiento manual inmediato de factura ejecutado desde la cola.",
+                    new
+                    {
+                        claimed.IdComprobanteRecibido,
+                        Usuario = user,
+                        Pc = pc
+                    },
+                    token);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }, "No se pudo ejecutar ahora la lectura automática de compra.", ct);
 
     public Task<int> ProcessCompraIaQueueAsync(CancellationToken ct = default)
         => ExecuteLoggedAsync("Interfaces", "ProcessCompraIaQueue", async token =>
@@ -2471,6 +2520,93 @@ public sealed class InterfacesService(
             """;
 
         await using var cmd = new SqlCommand(sql, cn);
+        await using var rd = await cmd.ExecuteReaderAsync(ct);
+        if (!await rd.ReadAsync(ct))
+            return null;
+
+        return MapCompraIaResult(rd);
+    }
+
+    private static async Task<InterfacesCompraIaResultadoDto?> TryClaimCompraDetectionByIdAsync(
+        SqlConnection cn,
+        int id,
+        string user,
+        CancellationToken ct)
+    {
+        const string sql = """
+            ;WITH target_job AS
+            (
+                SELECT TOP (1) ID
+                FROM dbo.IA_Compras_CAB WITH (UPDLOCK, READPAST, ROWLOCK)
+                WHERE ID = @ID
+                  AND Estado = 'PENDIENTE_LECTURA'
+                  AND ISNULL(SolicitarCancelacion, 0) = 0
+            )
+            UPDATE cab
+            SET
+                Estado = 'PROCESANDO_LECTURA',
+                FechaHora_Inicio = GETDATE(),
+                FechaHora_Fin = NULL,
+                FechaHora_Modificacion = GETDATE(),
+                Usuario_Proceso = @Usuario_Proceso,
+                SolicitarCancelacion = 0,
+                Intentos = ISNULL(Intentos, 0) + 1,
+                Observaciones_Rev = @Observaciones_Rev
+            OUTPUT
+                inserted.ID,
+                inserted.IdComprobanteRecibido,
+                inserted.IdAdjuntoFuente,
+                inserted.Estado,
+                inserted.FechaHora_Proceso,
+                inserted.FechaHora_Inicio,
+                inserted.FechaHora_Fin,
+                inserted.FechaHora_Modificacion,
+                ISNULL(inserted.Usuario_Proceso, ''),
+                ISNULL(inserted.Observaciones_Rev, ''),
+                ISNULL(inserted.SolicitarCancelacion, 0),
+                ISNULL(inserted.Intentos, 0),
+                ISNULL(inserted.Archivo_RutaOriginal, ''),
+                ISNULL(inserted.Archivo_NombreOriginal, ''),
+                ISNULL(inserted.Archivo_NombreRenombrado, ''),
+                ISNULL(inserted.Proveedor_Nombre, ''),
+                ISNULL(inserted.Proveedor_CUIT, ''),
+                ISNULL(inserted.Proveedor_Domicilio, ''),
+                ISNULL(inserted.Proveedor_CondIVA, ''),
+                ISNULL(inserted.Cuenta_Contable, ''),
+                ISNULL(inserted.Match_Metodo, ''),
+                ISNULL(inserted.TipoComprobante, ''),
+                ISNULL(inserted.Letra, ''),
+                ISNULL(inserted.PuntoVenta, ''),
+                ISNULL(inserted.Numero, ''),
+                inserted.Fecha,
+                inserted.Vencimiento,
+                ISNULL(inserted.CAE, ''),
+                inserted.VtoCAE,
+                ISNULL(inserted.Moneda, ''),
+                inserted.NetoGravado,
+                inserted.NetoNoGravado,
+                inserted.Exento,
+                inserted.IVA_21,
+                inserted.IVA_105,
+                inserted.IVA_27,
+                inserted.Percepcion_IVA,
+                inserted.Percepcion_IIBB,
+                inserted.Percepcion_Ganancias,
+                inserted.ImpuestosInternos,
+                inserted.OtrosImpuestos,
+                inserted.Total,
+                ISNULL(inserted.Lector_Observaciones, ''),
+                ISNULL(inserted.Lector_Error, ''),
+                ISNULL(inserted.JsonResultado, '')
+            FROM dbo.IA_Compras_CAB cab
+            INNER JOIN target_job target_job
+                ON target_job.ID = cab.ID;
+            """;
+
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@ID", id);
+        cmd.Parameters.AddWithValue("@Usuario_Proceso", DbNullable(user, 50));
+        cmd.Parameters.AddWithValue("@Observaciones_Rev", DbNullable("Procesamiento manual inmediato solicitado.", 500));
         await using var rd = await cmd.ExecuteReaderAsync(ct);
         if (!await rd.ReadAsync(ct))
             return null;

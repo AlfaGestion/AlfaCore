@@ -5,6 +5,7 @@
 @inject AlfaCore.Services.IUsuariosService UsuariosSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
+@inject IJSRuntime Js
 @implements IDisposable
 
 <PageTitle>Usuarios | Alfa Gestión</PageTitle>
@@ -330,7 +331,7 @@
             <div class="panel-card__header">
                 <div>
                     <h3 class="panel-card__title">Usuarios</h3>
-                    <p class="panel-card__subtitle">@_pagedTotal registro(s) · Página @_pageNumber de @_totalPages · doble clic para abrir la ficha.</p>
+                    <p class="panel-card__subtitle">@_pagedTotal registro(s) · Página @_pageNumber de @_totalPages · podés abrir la ficha con el botón editar o con doble clic.</p>
                 </div>
                 <div class="actions">
                     <button type="button" class="btn btn--ghost" @onclick="AbrirConfiguracionVista">
@@ -338,6 +339,22 @@
                     </button>
                     <span class="panel-card__subtitle">Agrupación: @GetGroupingLabel(_viewSettings.AgruparPor)</span>
                 </div>
+            </div>
+
+            <div class="interfaces-bulkbar">
+                <div class="field interfaces-bulkbar__field">
+                    <label>Acciones masivas</label>
+                    <select @bind="_bulkAction" disabled="@(_loadingList || _selectedNames.Count == 0)">
+                        <option value="@BulkActionDeactivate">Dar de baja seleccionados</option>
+                    </select>
+                </div>
+                <button type="button"
+                        class="btn btn--ghost interfaces-bulkbar__apply"
+                        @onclick="EjecutarAccionSeleccionadaAsync"
+                        disabled="@(_loadingList || _selectedNames.Count == 0)">
+                    <i class="bi bi-lightning-charge"></i> Aplicar
+                </button>
+                <span class="panel-card__subtitle">@GetSelectionSummary()</span>
             </div>
 
             @if (_loadingList)
@@ -354,10 +371,18 @@
                     <table class="data-table usuarios-table">
                         <thead>
                             <tr>
+                                <th class="interfaces-table__selector">
+                                    <input type="checkbox"
+                                           class="interfaces-table__checkbox"
+                                           checked="@AreAllCurrentPageSelected"
+                                           @onchange="ToggleSelectAll"
+                                           title="Seleccionar todos los usuarios visibles" />
+                                </th>
                                 @foreach (var column in visibleColumns)
                                 {
                                     <th>@column.Label</th>
                                 }
+                                <th class="interfaces-table__actions">Acciones</th>
                             </tr>
                         </thead>
                         @foreach (var group in groups)
@@ -366,7 +391,7 @@
                                 @if (group.ShowHeader)
                                 {
                                     <tr class="usuarios-group-row">
-                                        <td colspan="@visibleColumns.Count">@group.Label</td>
+                                        <td colspan="@(visibleColumns.Count + 2)">@group.Label</td>
                                     </tr>
                                 }
 
@@ -375,6 +400,13 @@
                                     <tr class="@(IsSelected(item) ? "usuarios-table__row is-selected" : "usuarios-table__row")"
                                         @onclick="() => SeleccionarFila(item.Nombre)"
                                         @ondblclick="() => AbrirEditorAsync(item.Nombre)">
+                                        <td class="interfaces-table__selector" @onclick:stopPropagation="true">
+                                            <input type="checkbox"
+                                                   class="interfaces-table__checkbox"
+                                                   checked="@_selectedNames.Contains(item.Nombre)"
+                                                   @onchange="args => ToggleRowSelection(item.Nombre, args)"
+                                                   title="Seleccionar usuario" />
+                                        </td>
                                         @foreach (var column in visibleColumns)
                                         {
                                             <td>
@@ -418,6 +450,12 @@
                                                 }
                                             </td>
                                         }
+                                        <td class="interfaces-table__actions" @onclick:stopPropagation="true">
+                                            <button type="button" class="btn btn--ghost btn--sm interfaces-table__edit" @onclick="() => AbrirEditorAsync(item.Nombre)">
+                                                <i class="bi bi-pencil-square"></i>
+                                                <span>Editar</span>
+                                            </button>
+                                        </td>
                                     </tr>
                                 }
                             </tbody>
@@ -460,6 +498,7 @@
     private readonly List<UsuarioGridItemDto> _items = [];
     private readonly List<UsuarioViewColumnDto> _viewSettingsDraft = [];
     private readonly Dictionary<string, string> _fieldErrors = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _selectedNames = new(StringComparer.OrdinalIgnoreCase);
     private AppUiMessage? _feedback;
     private PendingUserPhoto? _pendingPhoto;
     private UsuariosViewSettingsDto _viewSettings = BuildDefaultViewSettings();
@@ -484,6 +523,7 @@
     private string _existingPhotoCacheToken = string.Empty;
     private string _draftAgruparPor = UsuariosViewGroupKeys.None;
     private string _viewSettingsUserName = string.Empty;
+    private string _bulkAction = BulkActionDeactivate;
     private DateTime? _selectedAlta;
     private DateTime? _selectedModificacion;
 
@@ -495,6 +535,7 @@
 
     private bool HasExistingPhoto => !_form.QuitarFoto && !_isNewMode && !string.IsNullOrWhiteSpace(_selectedNombre) && !string.IsNullOrWhiteSpace(_existingPhotoCacheToken);
     private bool HasExistingOrPendingPhoto => _pendingPhoto is not null || HasExistingPhoto;
+    private bool AreAllCurrentPageSelected => _items.Count > 0 && _items.All(item => _selectedNames.Contains(item.Nombre));
 
     protected override async Task OnInitializedAsync()
     {
@@ -537,6 +578,9 @@
 
             _items.Clear();
             _items.AddRange(result.Value.Items);
+            _selectedNames.IntersectWith(_items.Select(item => item.Nombre));
+            if (!string.IsNullOrWhiteSpace(_selectedNombre) && !_items.Any(item => string.Equals(item.Nombre, _selectedNombre, StringComparison.OrdinalIgnoreCase)))
+                _selectedNombre = string.Empty;
             _pagedTotal  = result.Value.Total;
             _pageNumber  = result.Value.PageNumber;
             _totalPages  = result.Value.TotalPages;
@@ -699,6 +743,30 @@
         _selectedNombre = nombre?.Trim() ?? string.Empty;
     }
 
+    private void ToggleRowSelection(string nombre, ChangeEventArgs args)
+    {
+        var normalized = nombre?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(normalized))
+            return;
+
+        if (args.Value is bool flag && flag)
+            _selectedNames.Add(normalized);
+        else
+            _selectedNames.Remove(normalized);
+    }
+
+    private void ToggleSelectAll(ChangeEventArgs args)
+    {
+        var shouldSelect = args.Value is bool flag && flag;
+        foreach (var nombre in _items.Select(item => item.Nombre).Where(static nombre => !string.IsNullOrWhiteSpace(nombre)))
+        {
+            if (shouldSelect)
+                _selectedNames.Add(nombre);
+            else
+                _selectedNames.Remove(nombre);
+        }
+    }
+
     private async Task AbrirEditorAsync(string nombre)
     {
         _showEditor = true;
@@ -725,6 +793,43 @@
             BeginNew();
             _showEditor = false;
             await BuscarAsync();
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task EjecutarAccionSeleccionadaAsync()
+    {
+        if (_selectedNames.Count == 0 || _loadingList)
+            return;
+
+        if (!string.Equals(_bulkAction, BulkActionDeactivate, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        var nombres = _selectedNames.OrderBy(nombre => nombre, StringComparer.OrdinalIgnoreCase).ToArray();
+        var confirm = await Js.InvokeAsync<bool>("confirm", $"Se van a dar de baja {nombres.Length} usuario(s) o grupo(s) seleccionados. ¿Querés continuar?");
+        if (!confirm)
+            return;
+
+        _saving = true;
+        try
+        {
+            foreach (var nombre in nombres)
+                await UsuariosSvc.DeactivateAsync(nombre);
+
+            _selectedNames.Clear();
+            if (nombres.Contains(_selectedNombre, StringComparer.OrdinalIgnoreCase))
+                _selectedNombre = string.Empty;
+
+            _showEditor = false;
+            SetFeedback(AppUiMessage.Success("Usuarios actualizados", $"Se dieron de baja {nombres.Length} registro(s) seleccionados."));
+            await BuscarAsync();
+        }
+        catch (Exception ex)
+        {
+            SetFeedback(UiOps.BuildMessage(ex, "No se pudieron actualizar los usuarios seleccionados."));
         }
         finally
         {
@@ -1079,6 +1184,11 @@
     private static string FormatDate(DateTime? value)
         => value.HasValue ? value.Value.ToString("dd/MM/yyyy HH:mm") : "—";
 
+    private string GetSelectionSummary()
+        => _selectedNames.Count == 0
+            ? "Seleccioná uno o más usuarios para ejecutar acciones."
+            : $"{_selectedNames.Count} usuario(s) o grupo(s) seleccionado(s).";
+
     private void ClearFieldErrors()
         => _fieldErrors.Clear();
 
@@ -1139,4 +1249,6 @@
         public bool ShowHeader { get; init; }
         public List<UsuarioGridItemDto> Items { get; init; } = [];
     }
+
+    private const string BulkActionDeactivate = "baja";
 }

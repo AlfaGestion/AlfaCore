@@ -1,9 +1,12 @@
 @using AlfaCore.Models
 @using AlfaCore.Services
+@using Microsoft.JSInterop
 @inject ICuentasComercialesService CuentasSvc
 @inject IAppUiOperationService UiOps
 @inject IAppUserSessionService AppUserSession
+@inject IJSRuntime Js
 @implements IDisposable
+@implements IAsyncDisposable
 
 <div class="page-grid" @onclick="HandlePageClickAsync">
     <section class="page-intro">
@@ -186,17 +189,17 @@
             <div class="contactos-tabs">
                 <button type="button"
                         class="btn @(_activeTab == CuentaComercialTab.Datos ? "btn--primary" : "btn--ghost")"
-                        @onclick="() => _activeTab = CuentaComercialTab.Datos">
+                        @onclick="() => SetActiveTab(CuentaComercialTab.Datos)">
                     Carga de datos
                 </button>
                 <button type="button"
                         class="btn @(_activeTab == CuentaComercialTab.Condiciones ? "btn--primary" : "btn--ghost")"
-                        @onclick="() => _activeTab = CuentaComercialTab.Condiciones">
+                        @onclick="() => SetActiveTab(CuentaComercialTab.Condiciones)">
                     Condiciones
                 </button>
                 <button type="button"
                         class="btn @(_activeTab == CuentaComercialTab.Notas ? "btn--primary" : "btn--ghost")"
-                        @onclick="() => _activeTab = CuentaComercialTab.Notas">
+                        @onclick="() => SetActiveTab(CuentaComercialTab.Notas)">
                     Notas
                 </button>
             </div>
@@ -205,7 +208,7 @@
                 @if (_activeTab == CuentaComercialTab.Datos)
                 {
                 <div class="contactos-form__grid">
-                    <div class="field">
+                    <div class="field field--sm">
                         <label>Código</label>
                         <input type="text" class="@GetFieldInputClass("codigo")" maxlength="15" @bind="_form.Codigo" disabled="true" />
                         @if (HasFieldError("codigo"))
@@ -237,7 +240,7 @@
                             <small class="usuarios-field-error">@GetFieldError("calle")</small>
                         }
                     </div>
-                    <div class="field">
+                    <div class="field field--xs">
                         <label>Altura</label>
                         <input type="text" class="@GetFieldInputClass("numero")" maxlength="6" @bind="_form.Numero" disabled="@_saving" />
                         @if (HasFieldError("numero"))
@@ -245,7 +248,7 @@
                             <small class="usuarios-field-error">@GetFieldError("numero")</small>
                         }
                     </div>
-                    <div class="field">
+                    <div class="field field--xs">
                         <label>Piso</label>
                         <input type="text" class="@GetFieldInputClass("piso")" maxlength="2" @bind="_form.Piso" disabled="@_saving" />
                         @if (HasFieldError("piso"))
@@ -253,7 +256,7 @@
                             <small class="usuarios-field-error">@GetFieldError("piso")</small>
                         }
                     </div>
-                    <div class="field">
+                    <div class="field field--xs">
                         <label>Depto.</label>
                         <input type="text" class="@GetFieldInputClass("departamento")" maxlength="2" @bind="_form.Departamento" disabled="@_saving" />
                         @if (HasFieldError("departamento"))
@@ -261,7 +264,7 @@
                             <small class="usuarios-field-error">@GetFieldError("departamento")</small>
                         }
                     </div>
-                    <div class="field">
+                    <div class="field field--sm">
                         <label>Código postal</label>
                         <input type="text" class="@GetFieldInputClass("codigo-postal")" maxlength="10" @bind="_form.CodigoPostal" disabled="@_saving" />
                         @if (HasFieldError("codigo-postal"))
@@ -351,7 +354,7 @@
                             <small class="usuarios-field-error">@GetFieldError("tipo-documento")</small>
                         }
                     </div>
-                    <div class="field">
+                    <div class="field field--md">
                         <label>CUIT / Nro. documento</label>
                         <input type="text" class="@GetFieldInputClass("numero-documento")" maxlength="13" @bind="_form.NumeroDocumento" disabled="@_saving" />
                         @if (HasFieldError("numero-documento"))
@@ -395,7 +398,7 @@
                     </div>
                     @if (_lookups.UsaListasDePrecio)
                     {
-                        <div class="field">
+                        <div class="field field--md">
                             <label>Lista de precios</label>
                             <select class="@GetFieldInputClass("lista-precio")" @bind="_form.ListaPrecioCodigo" disabled="@_saving">
                                 <option value="">Sin lista</option>
@@ -410,7 +413,7 @@
                             }
                         </div>
                     }
-                    <div class="field">
+                    <div class="field field--md">
                         <label>Vendedor</label>
                         <select class="@GetFieldInputClass("vendedor")" @bind="_form.VendedorCodigo" disabled="@_saving">
                             <option value="">Sin vendedor</option>
@@ -424,7 +427,7 @@
                             <small class="usuarios-field-error">@GetFieldError("vendedor")</small>
                         }
                     </div>
-                    <div class="field">
+                    <div class="field field--sm">
                         <label>Clasificación</label>
                         <select class="@GetFieldInputClass("clasificacion")" @bind="_form.ClasificacionCodigo" disabled="@_saving">
                             <option value="">Sin clasificación</option>
@@ -438,7 +441,7 @@
                             <small class="usuarios-field-error">@GetFieldError("clasificacion")</small>
                         }
                     </div>
-                    <div class="field">
+                    <div class="field field--sm">
                         <label>Moneda</label>
                         <select class="@GetFieldInputClass("moneda")" @bind="_form.MonedaCodigo" disabled="@_saving">
                             <option value="">Sin moneda</option>
@@ -452,7 +455,7 @@
                             <small class="usuarios-field-error">@GetFieldError("moneda")</small>
                         }
                     </div>
-                    <div class="field">
+                    <div class="field field--sm">
                         <label>Cuenta principal</label>
                         <input type="text" class="@GetFieldInputClass("cuenta-principal")" maxlength="15" @bind="_form.CuentaPrincipal" disabled="@_saving" />
                         @if (HasFieldError("cuenta-principal"))
@@ -460,7 +463,7 @@
                             <small class="usuarios-field-error">@GetFieldError("cuenta-principal")</small>
                         }
                     </div>
-                    <div class="field">
+                    <div class="field field--sm">
                         <label>Código imputación</label>
                         <input type="text" class="@GetFieldInputClass("codigo-imputacion")" maxlength="15" @bind="_form.CodigoImputacion" disabled="@_saving" />
                         @if (HasFieldError("codigo-imputacion"))
@@ -468,7 +471,7 @@
                             <small class="usuarios-field-error">@GetFieldError("codigo-imputacion")</small>
                         }
                     </div>
-                    <div class="field">
+                    <div class="field field--sm">
                         <label>Código opcional</label>
                         <input type="text" class="@GetFieldInputClass("codigo-opcional")" maxlength="15" @bind="_form.CodigoOpcional" disabled="@_saving" />
                         @if (HasFieldError("codigo-opcional"))
@@ -476,7 +479,7 @@
                             <small class="usuarios-field-error">@GetFieldError("codigo-opcional")</small>
                         }
                     </div>
-                    <div class="field">
+                    <div class="field field--sm">
                         <label>Límite de crédito</label>
                         <input type="number" step="0.01" class="@GetFieldInputClass("limite-credito")" @bind="_form.LimiteCredito" disabled="@_saving" />
                         @if (HasFieldError("limite-credito"))
@@ -484,7 +487,7 @@
                             <small class="usuarios-field-error">@GetFieldError("limite-credito")</small>
                         }
                     </div>
-                    <div class="field">
+                    <div class="field field--xs">
                         <label>Clase</label>
                         <input type="number" min="0" max="8" class="@GetFieldInputClass("clase")" @bind="_form.Clase" disabled="@_saving" />
                         @if (HasFieldError("clase"))
@@ -543,35 +546,74 @@
 
                 @if (_activeTab == CuentaComercialTab.Notas)
                 {
-                <div class="field">
-                    <label>Manual / notas internas</label>
-                    <textarea rows="4" class="@GetFieldInputClass("manual")" maxlength="4000" @bind="_form.Manual" disabled="@_saving"></textarea>
-                    @if (HasFieldError("manual"))
-                    {
-                        <small class="usuarios-field-error">@GetFieldError("manual")</small>
-                    }
-                </div>
+                <div class="cuentas-notas-grid">
+                    <div class="field field--full">
+                        <label>Manual / notas internas</label>
+                        <div class="tickets-rich-editor cuentas-rich-editor-note">
+                            <div class="tickets-rich-editor__surface"
+                                 @ref="_manualEditor"
+                                 contenteditable="@(!_saving)"
+                                 data-placeholder="Escribí notas internas, claves, instrucciones o referencias..."
+                                 @oninput="OnManualChangedAsync"
+                                 @onkeyup="OnManualChangedAsync"></div>
+                            <div class="tickets-rich-editor__bar">
+                                @foreach (var option in NotesToolbarCommands)
+                                {
+                                    <button type="button"
+                                            class="tickets-rich-editor__tool"
+                                            title="@option.Title"
+                                            disabled="@_saving"
+                                            @onclick="() => RunNoteCommandAsync(_manualEditor, option)">
+                                        <i class="bi @option.Icon"></i>
+                                    </button>
+                                }
+                            </div>
+                        </div>
+                        @if (HasFieldError("manual"))
+                        {
+                            <small class="usuarios-field-error">@GetFieldError("manual")</small>
+                        }
+                    </div>
 
-                <div class="field">
-                    <label>Observaciones</label>
-                    <textarea rows="5" class="@GetFieldInputClass("observaciones")" maxlength="200" @bind="_form.Observaciones" disabled="@_saving"></textarea>
-                    @if (HasFieldError("observaciones"))
-                    {
-                        <small class="usuarios-field-error">@GetFieldError("observaciones")</small>
-                    }
-                </div>
+                    <div class="field field--full">
+                        <label>Observaciones</label>
+                        <textarea rows="4" class="@GetFieldInputClass("observaciones")" maxlength="200" @bind="_form.Observaciones" disabled="@_saving"></textarea>
+                        @if (HasFieldError("observaciones"))
+                        {
+                            <small class="usuarios-field-error">@GetFieldError("observaciones")</small>
+                        }
+                    </div>
 
-                <div class="field field--wide">
-                    <label>Nota ampliada</label>
-                    <textarea rows="5" class="@GetFieldInputClass("nota-cuenta")" maxlength="4000" @bind="_form.NotaCuenta" disabled="@_saving"></textarea>
-                    @if (HasFieldError("nota-cuenta"))
-                    {
-                        <small class="usuarios-field-error">@GetFieldError("nota-cuenta")</small>
-                    }
-                </div>
+                    <div class="field field--wide">
+                        <label>Nota ampliada</label>
+                        <div class="tickets-rich-editor cuentas-rich-editor-note">
+                            <div class="tickets-rich-editor__surface"
+                                 @ref="_notaCuentaEditor"
+                                 contenteditable="@(!_saving)"
+                                 data-placeholder="Detalle ampliado, antecedentes o información heredada..."
+                                 @oninput="OnNotaCuentaChangedAsync"
+                                 @onkeyup="OnNotaCuentaChangedAsync"></div>
+                            <div class="tickets-rich-editor__bar">
+                                @foreach (var option in NotesToolbarCommands)
+                                {
+                                    <button type="button"
+                                            class="tickets-rich-editor__tool"
+                                            title="@option.Title"
+                                            disabled="@_saving"
+                                            @onclick="() => RunNoteCommandAsync(_notaCuentaEditor, option)">
+                                        <i class="bi @option.Icon"></i>
+                                    </button>
+                                }
+                            </div>
+                        </div>
+                        @if (HasFieldError("nota-cuenta"))
+                        {
+                            <small class="usuarios-field-error">@GetFieldError("nota-cuenta")</small>
+                        }
+                    </div>
 
-                <div class="contactos-form__grid">
-                    <div class="field">
+                    <div class="contactos-form__grid">
+                    <div class="field field--xs">
                         <label>Situación IB</label>
                         <input type="text" class="@GetFieldInputClass("situacion-ib")" maxlength="2" @bind="_form.SituacionIb" disabled="@_saving" />
                         @if (HasFieldError("situacion-ib"))
@@ -579,7 +621,7 @@
                             <small class="usuarios-field-error">@GetFieldError("situacion-ib")</small>
                         }
                     </div>
-                    <div class="field">
+                    <div class="field field--xs">
                         <label>Convenio IB</label>
                         <input type="text" class="@GetFieldInputClass("convenio-ib")" maxlength="2" @bind="_form.ConvenioIb" disabled="@_saving" />
                         @if (HasFieldError("convenio-ib"))
@@ -587,7 +629,7 @@
                             <small class="usuarios-field-error">@GetFieldError("convenio-ib")</small>
                         }
                     </div>
-                    <div class="field">
+                    <div class="field field--xs">
                         <label>Concepto IB</label>
                         <input type="text" class="@GetFieldInputClass("concepto-ib")" maxlength="2" @bind="_form.ConceptoIb" disabled="@_saving" />
                         @if (HasFieldError("concepto-ib"))
@@ -595,13 +637,14 @@
                             <small class="usuarios-field-error">@GetFieldError("concepto-ib")</small>
                         }
                     </div>
-                    <div class="field">
+                    <div class="field field--md">
                         <label>Nro. constancia</label>
                         <input type="text" class="@GetFieldInputClass("nro-constancia-ib")" maxlength="13" @bind="_form.NroConstanciaIb" disabled="@_saving" />
                         @if (HasFieldError("nro-constancia-ib"))
                         {
                             <small class="usuarios-field-error">@GetFieldError("nro-constancia-ib")</small>
                         }
+                    </div>
                     </div>
                 </div>
 
@@ -710,7 +753,7 @@
             <div class="panel-card__header">
                 <div>
                     <h3 class="panel-card__title">@PluralLabel</h3>
-                    <p class="panel-card__subtitle">@_pagedTotal registro(s) · Página @_pageNumber de @_totalPages · doble clic para abrir la ficha.</p>
+                    <p class="panel-card__subtitle">@_pagedTotal registro(s) · Página @_pageNumber de @_totalPages · podés abrir la ficha con el botón editar o con doble clic.</p>
                 </div>
                 <div class="actions">
                     <button type="button" class="btn btn--ghost" @onclick="AbrirConfiguracionVista">
@@ -718,6 +761,22 @@
                     </button>
                     <span class="panel-card__subtitle">Agrupación: @GetGroupingLabel(_viewSettings.AgruparPor)</span>
                 </div>
+            </div>
+
+            <div class="interfaces-bulkbar">
+                <div class="field interfaces-bulkbar__field">
+                    <label>Acciones masivas</label>
+                    <select @bind="_bulkAction" disabled="@(_loadingList || _selectedCodes.Count == 0)">
+                        <option value="@BulkActionDeactivate">Dar de baja seleccionados</option>
+                    </select>
+                </div>
+                <button type="button"
+                        class="btn btn--ghost interfaces-bulkbar__apply"
+                        @onclick="EjecutarAccionSeleccionadaAsync"
+                        disabled="@(_loadingList || _selectedCodes.Count == 0)">
+                    <i class="bi bi-lightning-charge"></i> Aplicar
+                </button>
+                <span class="panel-card__subtitle">@GetSelectionSummary()</span>
             </div>
 
             @if (_loadingList)
@@ -734,11 +793,18 @@
                     <table class="data-table usuarios-table">
                         <thead>
                             <tr>
+                                <th class="interfaces-table__selector">
+                                    <input type="checkbox"
+                                           class="interfaces-table__checkbox"
+                                           checked="@AreAllCurrentPageSelected"
+                                           @onchange="ToggleSelectAll"
+                                           title="Seleccionar todos los registros visibles" />
+                                </th>
                                 @foreach (var column in visibleColumns)
                                 {
                                     <th>@column.Label</th>
                                 }
-                                <th>Acciones</th>
+                                <th class="interfaces-table__actions">Acciones</th>
                             </tr>
                         </thead>
                         @foreach (var group in groups)
@@ -747,7 +813,7 @@
                                 @if (group.ShowHeader)
                                 {
                                     <tr class="usuarios-group-row">
-                                        <td colspan="@(visibleColumns.Count + 1)">@group.Label</td>
+                                        <td colspan="@(visibleColumns.Count + 2)">@group.Label</td>
                                     </tr>
                                 }
                                 @foreach (var item in group.Items)
@@ -755,13 +821,21 @@
                                     <tr class="@(IsSelected(item) ? "usuarios-table__row is-selected" : "usuarios-table__row")"
                                         @onclick="() => SeleccionarFila(item.Codigo)"
                                         @ondblclick="() => AbrirEditorAsync(item.Codigo)">
+                                        <td class="interfaces-table__selector" @onclick:stopPropagation="true">
+                                            <input type="checkbox"
+                                                   class="interfaces-table__checkbox"
+                                                   checked="@_selectedCodes.Contains(item.Codigo)"
+                                                   @onchange="args => ToggleRowSelection(item.Codigo, args)"
+                                                   title="@($"Seleccionar {SingularLabelLower}")" />
+                                        </td>
                                         @foreach (var column in visibleColumns)
                                         {
                                             <td>@RenderCell(item, column.Key)</td>
                                         }
-                                        <td>
-                                            <button type="button" class="btn btn--ghost btn--sm" @onclick="() => AbrirEditorAsync(item.Codigo)">
-                                                <i class="bi bi-pencil-square"></i> Editar
+                                        <td class="interfaces-table__actions" @onclick:stopPropagation="true">
+                                            <button type="button" class="btn btn--ghost btn--sm interfaces-table__edit" @onclick="() => AbrirEditorAsync(item.Codigo)">
+                                                <i class="bi bi-pencil-square"></i>
+                                                <span>Editar</span>
                                             </button>
                                         </td>
                                     </tr>
@@ -799,7 +873,11 @@
     private readonly Dictionary<string, string> _fieldErrors = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<CuentaComercialViewColumnDto> _viewSettingsDraft = [];
     private readonly List<CuentaComercialGridItemDto> _items = [];
+    private readonly HashSet<string> _selectedCodes = new(StringComparer.OrdinalIgnoreCase);
 
+    private IJSObjectReference? _richEditorJs;
+    private ElementReference _manualEditor;
+    private ElementReference _notaCuentaEditor;
     private CuentaComercialFilters _filters = new();
     private CuentaComercialSaveRequest _form = new();
     private CuentaComercialLookupDataDto _lookups = new();
@@ -810,6 +888,7 @@
     private bool _showEditor;
     private bool _showViewSettings;
     private bool _showSearchPanel;
+    private bool _notesEditorsReady;
     private bool _isNewMode = true;
     private bool _selectedActivo = true;
     private string _selectedCodigo = string.Empty;
@@ -827,6 +906,21 @@
     private DateTime? _selectedModificacion;
     private CancellationTokenSource? _searchDebounceCts;
     private CuentaComercialTab _activeTab = CuentaComercialTab.Datos;
+    private string _bulkAction = BulkActionDeactivate;
+    private static readonly IReadOnlyList<RichTextCommandOption> NotesToolbarCommands =
+    [
+        new("Título", "bi-type-h1", "h1"),
+        new("Párrafo", "bi-text-paragraph", "paragraph"),
+        new("Lista", "bi-list-ul", "bulletList"),
+        new("Numeración", "bi-list-ol", "numberedList"),
+        new("Separador", "bi-hr", "separator"),
+        new("Cita", "bi-blockquote-left", "quote"),
+        new("Código", "bi-code-slash", "codeBlock"),
+        new("Info", "bi-info-circle", "infoBanner"),
+        new("Advertencia", "bi-exclamation-triangle", "warningBanner"),
+        new("Éxito", "bi-check-circle", "successBanner"),
+        new("Emoji", "bi-emoji-smile", "emoji")
+    ];
 
     private string SingularLabel => Tipo == CuentaComercialTipo.Cliente ? "Cliente" : "Proveedor";
     private string SingularLabelLower => SingularLabel.ToLowerInvariant();
@@ -836,6 +930,7 @@
     private string IntroText => Tipo == CuentaComercialTipo.Cliente
         ? "Administrá el maestro comercial de clientes sobre la base actual, usando la cuenta contable y sus datos adicionales."
         : "Administrá el maestro comercial de proveedores sobre la base actual, usando la cuenta contable y sus datos adicionales.";
+    private bool AreAllCurrentPageSelected => _items.Count > 0 && _items.All(item => _selectedCodes.Contains(item.Codigo));
 
     protected override async Task OnInitializedAsync()
     {
@@ -845,11 +940,26 @@
         await BuscarAsync();
     }
 
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+            _richEditorJs = await Js.InvokeAsync<IJSObjectReference>("import", "/js/tickets-rich-editor.js?v=20260519i");
+
+        if (_showEditor && _activeTab == CuentaComercialTab.Notas && !_notesEditorsReady && _richEditorJs is not null)
+            await InitializeNotesEditorsAsync();
+    }
+
     public void Dispose()
     {
         AppUserSession.StateChanged -= OnAppUserSessionChanged;
         _searchDebounceCts?.Cancel();
         _searchDebounceCts?.Dispose();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_richEditorJs is not null)
+            await _richEditorJs.DisposeAsync();
     }
 
     private void OpenSearchPanel()
@@ -865,6 +975,52 @@
     {
         CloseSearchPanel();
         await Task.CompletedTask;
+    }
+
+    private void SetActiveTab(CuentaComercialTab tab)
+    {
+        if (_activeTab == tab)
+            return;
+
+        _activeTab = tab;
+        _notesEditorsReady = false;
+    }
+
+    private async Task InitializeNotesEditorsAsync()
+    {
+        if (_richEditorJs is null)
+            return;
+
+        await _richEditorJs.InvokeVoidAsync("setHtml", _manualEditor, _form.Manual ?? string.Empty);
+        await _richEditorJs.InvokeVoidAsync("setHtml", _notaCuentaEditor, _form.NotaCuenta ?? string.Empty);
+        _notesEditorsReady = true;
+    }
+
+    private async Task RunNoteCommandAsync(ElementReference editor, RichTextCommandOption option)
+    {
+        if (_richEditorJs is null)
+            return;
+
+        await _richEditorJs.InvokeVoidAsync("runCommand", editor, option.Command);
+        await SyncNoteEditorAsync(editor);
+    }
+
+    private async Task OnManualChangedAsync()
+        => await SyncNoteEditorAsync(_manualEditor);
+
+    private async Task OnNotaCuentaChangedAsync()
+        => await SyncNoteEditorAsync(_notaCuentaEditor);
+
+    private async Task SyncNoteEditorAsync(ElementReference editor)
+    {
+        if (_richEditorJs is null || !_notesEditorsReady)
+            return;
+
+        var html = await _richEditorJs.InvokeAsync<string>("getHtml", editor);
+        if (editor.Equals(_manualEditor))
+            _form.Manual = html;
+        else if (editor.Equals(_notaCuentaEditor))
+            _form.NotaCuenta = html;
     }
 
     private async Task LoadLookupsAsync()
@@ -980,6 +1136,9 @@
 
             _items.Clear();
             _items.AddRange(result.Value.Items);
+            _selectedCodes.IntersectWith(_items.Select(item => item.Codigo));
+            if (!string.IsNullOrWhiteSpace(_selectedCodigo) && !_items.Any(item => string.Equals(item.Codigo, _selectedCodigo, StringComparison.OrdinalIgnoreCase)))
+                _selectedCodigo = string.Empty;
             _pagedTotal = result.Value.Total;
             _pageNumber = result.Value.PageNumber;
             _totalPages = Math.Max(1, result.Value.TotalPages);
@@ -1021,6 +1180,7 @@
         _selectedAlta = null;
         _selectedModificacion = null;
         _activeTab = CuentaComercialTab.Datos;
+        _notesEditorsReady = false;
         _showSearchPanel = false;
 
         _form = new CuentaComercialSaveRequest
@@ -1074,6 +1234,30 @@
     private void SeleccionarFila(string codigo)
         => _selectedCodigo = codigo?.Trim() ?? string.Empty;
 
+    private void ToggleRowSelection(string codigo, ChangeEventArgs args)
+    {
+        var normalized = codigo?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(normalized))
+            return;
+
+        if (args.Value is bool flag && flag)
+            _selectedCodes.Add(normalized);
+        else
+            _selectedCodes.Remove(normalized);
+    }
+
+    private void ToggleSelectAll(ChangeEventArgs args)
+    {
+        var shouldSelect = args.Value is bool flag && flag;
+        foreach (var codigo in _items.Select(item => item.Codigo).Where(static codigo => !string.IsNullOrWhiteSpace(codigo)))
+        {
+            if (shouldSelect)
+                _selectedCodes.Add(codigo);
+            else
+                _selectedCodes.Remove(codigo);
+        }
+    }
+
     private async Task AbrirEditorAsync(string codigo)
     {
         _showEditor = true;
@@ -1086,6 +1270,7 @@
     {
         ClearFieldErrors();
         _showEditor = false;
+        _notesEditorsReady = false;
     }
 
     private void ResetForm()
@@ -1108,6 +1293,8 @@
         {
             try
             {
+                await SyncNoteEditorAsync(_manualEditor);
+                await SyncNoteEditorAsync(_notaCuentaEditor);
                 var savedCode = await CuentasSvc.SaveAsync(Tipo, _form);
                 SetFeedback(AppUiMessage.Success($"{SingularLabel} guardado", $"El {SingularLabelLower} {savedCode} se guardó correctamente."));
                 await BuscarAsync();
@@ -1160,6 +1347,48 @@
         }
     }
 
+    private async Task EjecutarAccionSeleccionadaAsync()
+    {
+        if (_selectedCodes.Count == 0 || _loadingList)
+            return;
+
+        if (!string.Equals(_bulkAction, BulkActionDeactivate, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        var codigos = _selectedCodes.OrderBy(codigo => codigo, StringComparer.OrdinalIgnoreCase).ToArray();
+        var confirm = await Js.InvokeAsync<bool>(
+            "confirm",
+            $"Se van a dar de baja {codigos.Length} {PluralLabelLower}. ¿Querés continuar?");
+
+        if (!confirm)
+            return;
+
+        _saving = true;
+        try
+        {
+            foreach (var codigo in codigos)
+                await CuentasSvc.DeactivateAsync(Tipo, codigo);
+
+            _selectedCodes.Clear();
+            if (codigos.Contains(_selectedCodigo, StringComparer.OrdinalIgnoreCase))
+                _selectedCodigo = string.Empty;
+
+            if (!_isNewMode)
+                _showEditor = false;
+
+            SetFeedback(AppUiMessage.Success($"{PluralLabel} actualizados", $"Se dieron de baja {codigos.Length} {PluralLabelLower} seleccionados."));
+            await BuscarAsync();
+        }
+        catch (Exception ex)
+        {
+            SetFeedback(UiOps.BuildMessage(ex, $"No se pudieron actualizar los {PluralLabelLower} seleccionados."));
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
     private void LimpiarFiltros()
     {
         _filters.Texto = string.Empty;
@@ -1192,6 +1421,7 @@
         _isNewMode = false;
         _showEditor = true;
         _activeTab = CuentaComercialTab.Datos;
+        _notesEditorsReady = false;
         _selectedCodigo = detail.Codigo;
         _selectedActivo = detail.Activo;
         _selectedAlta = detail.FechaHoraGrabacion;
@@ -1217,7 +1447,7 @@
             DocumentoTipoCodigo = detail.DocumentoTipoCodigo,
             NumeroDocumento = detail.NumeroDocumento,
             IvaCodigo = detail.IvaCodigo,
-            Observaciones = detail.Observaciones,
+            Observaciones = TextoEnriquecidoCompat.NormalizarComoTextoPlano(detail.Observaciones),
             LimiteCredito = detail.LimiteCredito,
             CondicionComercialCodigo = detail.CondicionComercialCodigo,
             ListaPrecioCodigo = detail.ListaPrecioCodigo,
@@ -1230,8 +1460,8 @@
             ClasificacionCodigo = detail.ClasificacionCodigo,
             LugarEntrega = detail.LugarEntrega,
             DatosPago = detail.DatosPago,
-            Manual = detail.Manual,
-            NotaCuenta = detail.NotaCuenta,
+            Manual = TextoEnriquecidoCompat.NormalizarParaEditor(detail.Manual),
+            NotaCuenta = TextoEnriquecidoCompat.NormalizarParaEditor(detail.NotaCuenta),
             SituacionIb = detail.SituacionIb,
             ConvenioIb = detail.ConvenioIb,
             ConceptoIb = detail.ConceptoIb,
@@ -1473,6 +1703,11 @@
     private static string GetSmartOptionClass(bool active)
         => active ? "smart-option is-active" : "smart-option";
 
+    private string GetSelectionSummary()
+        => _selectedCodes.Count == 0
+            ? $"Seleccioná uno o más {PluralLabelLower} para ejecutar acciones."
+            : $"{_selectedCodes.Count} {PluralLabelLower} seleccionado(s).";
+
     private object RenderCell(CuentaComercialGridItemDto item, string key)
         => key switch
         {
@@ -1633,12 +1868,19 @@
             _ => "editor-msg--error"
         };
 
+    private const string BulkActionDeactivate = "baja";
+
     private sealed class GridGroup
     {
         public string Label { get; init; } = string.Empty;
         public bool ShowHeader { get; init; }
         public List<CuentaComercialGridItemDto> Items { get; init; } = [];
     }
+
+    private sealed record RichTextCommandOption(
+        string Title,
+        string Icon,
+        string Command);
 
     private sealed record SmartFilterChip(string Key, string Label);
 

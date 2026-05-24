@@ -1,0 +1,655 @@
+@using AlfaCore.Models
+@inject AlfaCore.Services.IComprobanteViewerService ComprobanteViewerSvc
+@inject AlfaCore.Services.IAppUiOperationService UiOps
+@inject NavigationManager Navigation
+@inject IJSRuntime Js
+
+<div class="page-grid comprobante-viewer-page">
+    <section class="page-intro">
+        <div>
+            <h2 class="page-intro__title">@GetTitle()</h2>
+            <p class="page-intro__text">@GetIntro()</p>
+        </div>
+        <div class="actions">
+            @if (_history.Count > 0)
+            {
+                <button type="button" class="btn btn--secondary" @onclick="VolverAlAnteriorAsync" disabled="@_loading">
+                    <i class="bi bi-arrow-return-left"></i>
+                    <span>Volver al comprobante anterior</span>
+                </button>
+            }
+            @if (!string.IsNullOrWhiteSpace(ReturnUrl))
+            {
+                <a class="btn btn--ghost" href="@ReturnUrl">
+                    <i class="bi bi-arrow-left"></i>
+                    <span>Volver</span>
+                </a>
+            }
+            <button type="button" class="btn btn--ghost" @onclick="CopyCurrentAsync" disabled="@(_loading || _dto?.Cabecera is null)">
+                <i class="bi bi-copy"></i>
+                <span>Copiar TC + ID</span>
+            </button>
+            @if (_dto?.Cabecera is not null)
+            {
+                <a class="btn btn--ghost" href="@BuildPageUrl(_dto.Cabecera.Tc, _dto.Cabecera.IdComprobante, _dto.Cabecera.IdComplemento)" target="_blank" rel="noopener noreferrer">
+                    <i class="bi bi-box-arrow-up-right"></i>
+                    <span>Abrir en otra pestaña</span>
+                </a>
+            }
+        </div>
+    </section>
+
+    @if (_feedback is not null)
+    {
+        <section class="panel-card">
+            <div class="editor-msg @GetFeedbackClass(_feedback)">
+                <div>
+                    <strong>@_feedback.Title</strong>
+                    <p>@_feedback.Message</p>
+                    @if (_feedback.HasSuggestion)
+                    {
+                        <small>@_feedback.Suggestion</small>
+                    }
+                    @if (_feedback.HasCode)
+                    {
+                        <small>Código: @_feedback.Code</small>
+                    }
+                </div>
+            </div>
+        </section>
+    }
+
+    @if (_loading)
+    {
+        <section class="panel-card">
+            <div class="loading">Cargando comprobante...</div>
+        </section>
+    }
+    else if (_dto?.Cabecera is null)
+    {
+        <section class="panel-card">
+            <div class="interfaces-empty-upload">No se encontró el comprobante solicitado.</div>
+        </section>
+    }
+    else
+    {
+        var c = _dto.Cabecera;
+        <section class="panel-card comprobante-viewer__summary">
+            <div class="panel-card__header">
+                <div>
+                    <h3 class="panel-card__title">@($"{c.Tc} {c.IdComprobante}")</h3>
+                    <p class="panel-card__subtitle">Complemento: @c.IdComplemento · Fecha: @FormatDate(c.Fecha) · Usuario: @c.Usuario</p>
+                </div>
+                <div class="comprobante-viewer__badges">
+                    @foreach (var badge in BuildEstadoBadges(c))
+                    {
+                        <span class="comprobante-badge @badge.Css">@badge.Label</span>
+                    }
+                </div>
+            </div>
+
+            <div class="contactos-form__grid">
+                <div class="field">
+                    <label>Cliente / cuenta</label>
+                    <input value="@FormatClienteCuenta(c)" readonly />
+                </div>
+                <div class="field">
+                    <label>Nombre</label>
+                    <input value="@c.Nombre" readonly />
+                </div>
+                <div class="field">
+                    <label>Domicilio</label>
+                    <input value="@c.Domicilio" readonly />
+                </div>
+                <div class="field">
+                    <label>Localidad</label>
+                    <input value="@BuildLocalidad(c)" readonly />
+                </div>
+                <div class="field">
+                    <label>Teléfono</label>
+                    <input value="@c.Telefono" readonly />
+                </div>
+                <div class="field">
+                    <label>Condición comercial</label>
+                    <input value="@BuildCondicion(c)" readonly />
+                </div>
+                <div class="field">
+                    <label>Vendedor</label>
+                    <input value="@BuildVendedor(c)" readonly />
+                </div>
+                <div class="field">
+                    <label>Técnico</label>
+                    <input value="@BuildTecnico(c)" readonly />
+                </div>
+            </div>
+
+            <div class="comprobante-viewer__totales">
+                <article class="kpi-card">
+                    <div class="kpi-card__label">Importe total</div>
+                    <div class="kpi-card__value">@FormatMoney(c.ImporteTotal)</div>
+                </article>
+                <article class="kpi-card">
+                    <div class="kpi-card__label">Importe sin IVA</div>
+                    <div class="kpi-card__value">@FormatMoney(c.ImporteSinIva)</div>
+                </article>
+                <article class="kpi-card">
+                    <div class="kpi-card__label">IVA</div>
+                    <div class="kpi-card__value">@FormatMoney(c.Iva)</div>
+                </article>
+                <article class="kpi-card">
+                    <div class="kpi-card__label">IVA recargo</div>
+                    <div class="kpi-card__value">@FormatMoney(c.IvaRecargo)</div>
+                </article>
+                <article class="kpi-card">
+                    <div class="kpi-card__label">Descuentos</div>
+                    <div class="kpi-card__value">@FormatMoney(c.Descuentos)</div>
+                </article>
+            </div>
+        </section>
+
+        <section class="panel-card">
+            <div class="contactos-tabs">
+                @foreach (var tab in Tabs)
+                {
+                    <button type="button" class="btn @(_activeTab == tab.Key ? "btn--primary" : "btn--ghost")" @onclick="() => _activeTab = tab.Key">
+                        @tab.Label
+                    </button>
+                }
+            </div>
+
+            @if (_activeTab == "resumen")
+            {
+                <div class="contactos-form__grid">
+                    <div class="field">
+                        <label>Neto gravado</label>
+                        <input value="@FormatMoney(c.NetoGravado)" readonly />
+                    </div>
+                    <div class="field">
+                        <label>Neto no gravado</label>
+                        <input value="@FormatMoney(c.NetoNoGravado)" readonly />
+                    </div>
+                    <div class="field field--full">
+                        <label>Observaciones generales</label>
+                        <textarea rows="4" readonly>@c.ObservacionesGenerales</textarea>
+                    </div>
+                    <div class="field field--full">
+                        <label>Comentarios</label>
+                        <textarea rows="4" readonly>@c.Comentarios</textarea>
+                    </div>
+                </div>
+            }
+            else if (_activeTab == "insumos")
+            {
+                @RenderInsumos()
+            }
+            else if (_activeTab == "tareas")
+            {
+                @RenderTareas()
+            }
+            else if (_activeTab == "observaciones")
+            {
+                @RenderObservaciones()
+            }
+            else if (_activeTab == "aplicaciones")
+            {
+                @RenderAplicaciones()
+            }
+            else if (_activeTab == "documentos")
+            {
+                @RenderDocumentos()
+            }
+            else if (_activeTab == "acciones")
+            {
+                @RenderAcciones()
+            }
+        </section>
+    }
+</div>
+
+@code {
+    [Parameter] public string Tc { get; set; } = string.Empty;
+    [Parameter] public string IdComprobante { get; set; } = string.Empty;
+    [Parameter] public int IdComplemento { get; set; }
+    [Parameter] public string? ReturnUrl { get; set; }
+
+    private static readonly (string Key, string Label)[] Tabs =
+    [
+        ("resumen", "Resumen"),
+        ("insumos", "Artículos"),
+        ("tareas", "Servicios"),
+        ("observaciones", "Observaciones"),
+        ("aplicaciones", "Aplicaciones"),
+        ("documentos", "Documentos"),
+        ("acciones", "Historial")
+    ];
+
+    private readonly Stack<ViewerNavItem> _history = new();
+    private ComprobanteViewerDto? _dto;
+    private AppUiMessage? _feedback;
+    private bool _loading;
+    private string _activeTab = "resumen";
+    private string _routeKey = string.Empty;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var nextKey = BuildKey(Tc, IdComprobante, IdComplemento);
+        if (_routeKey == nextKey)
+            return;
+
+        _routeKey = nextKey;
+        _history.Clear();
+        await LoadAsync(Tc, IdComprobante, IdComplemento, false);
+    }
+
+    private async Task LoadAsync(string tc, string idComprobante, int idComplemento, bool pushCurrent)
+    {
+        if (_dto?.Cabecera is not null && pushCurrent)
+        {
+            _history.Push(new ViewerNavItem(_dto.Cabecera.Tc, _dto.Cabecera.IdComprobante, _dto.Cabecera.IdComplemento));
+        }
+
+        _loading = true;
+        _feedback = null;
+        StateHasChanged();
+
+        var result = await UiOps.RunAsync(
+            () => ComprobanteViewerSvc.GetAsync(tc, idComprobante, idComplemento),
+            "No se pudo cargar el comprobante.");
+
+        if (!result.Success)
+        {
+            _feedback = result.Feedback;
+            _dto = null;
+            _loading = false;
+            return;
+        }
+
+        _dto = result.Value;
+        _activeTab = "resumen";
+        _loading = false;
+    }
+
+    private async Task VolverAlAnteriorAsync()
+    {
+        if (_history.Count == 0)
+            return;
+
+        var previous = _history.Pop();
+        await LoadAsync(previous.Tc, previous.IdComprobante, previous.IdComplemento, false);
+    }
+
+    private async Task OpenRelacionadoAsync(string tc, string idComprobante, int idComplemento)
+    {
+        await LoadAsync(tc, idComprobante, idComplemento, true);
+    }
+
+    private async Task CopyCurrentAsync()
+    {
+        if (_dto?.Cabecera is null)
+            return;
+
+        var value = $"{_dto.Cabecera.Tc} {_dto.Cabecera.IdComprobante}";
+        await Js.InvokeVoidAsync("navigator.clipboard.writeText", value);
+    }
+
+    private string BuildPageUrl(string tc, string idComprobante, int idComplemento)
+    {
+        var path = $"/comprobantes/viewer/{Uri.EscapeDataString(tc)}/{Uri.EscapeDataString(idComprobante)}?idComplemento={idComplemento}";
+        if (!string.IsNullOrWhiteSpace(ReturnUrl))
+            path += $"&returnUrl={Uri.EscapeDataString(ReturnUrl)}";
+        return path;
+    }
+
+    private string BuildDocumentoUrl(ComprobanteDocumentoDto item)
+        => $"/api/comprobantes/{Uri.EscapeDataString(_dto!.Cabecera!.Tc)}/{Uri.EscapeDataString(_dto.Cabecera.IdComprobante)}/documentos?idComplemento={_dto.Cabecera.IdComplemento}&documento={Uri.EscapeDataString(item.Documento)}";
+
+    private static string BuildKey(string tc, string idComprobante, int idComplemento)
+        => $"{tc.Trim().ToUpperInvariant()}|{idComprobante.Trim().ToUpperInvariant()}|{idComplemento}";
+
+    private static string FormatMoney(decimal? value)
+        => value.HasValue ? value.Value.ToString("N2") : "—";
+
+    private static string FormatDate(DateTime? value)
+        => value.HasValue ? value.Value.ToString("dd/MM/yyyy") : "—";
+
+    private static string FormatDateTime(DateTime? value)
+        => value.HasValue ? value.Value.ToString("dd/MM/yyyy HH:mm") : "—";
+
+    private static string FormatClienteCuenta(ComprobanteCabeceraDto c)
+        => string.Join(" · ", new[] { c.Cuenta, c.Nombre }.Where(x => !string.IsNullOrWhiteSpace(x)));
+
+    private static string BuildLocalidad(ComprobanteCabeceraDto c)
+        => string.Join(" · ", new[] { c.Localidad, c.CodigoPostal }.Where(x => !string.IsNullOrWhiteSpace(x)));
+
+    private static string BuildCondicion(ComprobanteCabeceraDto c)
+        => string.Join(" · ", new[] { c.CondicionComercialCodigo, c.CondicionComercialDescripcion }.Distinct().Where(x => !string.IsNullOrWhiteSpace(x)));
+
+    private static string BuildVendedor(ComprobanteCabeceraDto c)
+        => string.Join(" · ", new[] { c.VendedorCodigo, c.VendedorNombre }.Distinct().Where(x => !string.IsNullOrWhiteSpace(x)));
+
+    private static string BuildTecnico(ComprobanteCabeceraDto c)
+        => string.Join(" · ", new[] { c.TecnicoCodigo, c.TecnicoNombre }.Distinct().Where(x => !string.IsNullOrWhiteSpace(x)));
+
+    private string GetTitle()
+        => _dto?.Cabecera is null
+            ? "Visualizador de comprobantes"
+            : $"{_dto.Cabecera.Tc} {_dto.Cabecera.IdComprobante}";
+
+    private string GetIntro()
+        => _dto?.Cabecera is null
+            ? "Consultá cabecera, detalle, observaciones, aplicaciones, documentos e historial del comprobante."
+            : $"Visor genérico del comprobante {_dto.Cabecera.Tc} {_dto.Cabecera.IdComprobante} con navegación entre comprobantes relacionados.";
+
+    private static IEnumerable<(string Label, string Css)> BuildEstadoBadges(ComprobanteCabeceraDto c)
+    {
+        if (c.Anulada) yield return ("ANULADO", "is-danger");
+        if (c.Finalizada) yield return ("FINALIZADO", "is-success");
+        if (c.Aprobada) yield return ("APROBADO", "is-info");
+        if (c.Impresa) yield return ("IMPRESO", "is-neutral");
+        if (c.Bloqueada) yield return ("BLOQUEADO", "is-warning");
+        if (c.Cerrada) yield return ("CERRADO", "is-neutral");
+    }
+
+    private static string GetFeedbackClass(AppUiMessage message)
+        => message.Severity switch
+        {
+            AppUiFeedbackSeverity.Success => "editor-msg--ok",
+            AppUiFeedbackSeverity.Warning => "editor-msg--warn",
+            _ => "editor-msg--error"
+        };
+
+    private RenderFragment RenderInsumos() => @<div class="table-wrap">
+        <table class="data-table usuarios-table">
+            <thead>
+                <tr>
+                    <th>Código</th>
+                    <th>Descripción</th>
+                    <th>Unidad</th>
+                    <th>Cantidad</th>
+                    <th>Importe</th>
+                    <th>Dto.</th>
+                    <th>IVA</th>
+                    <th>Total</th>
+                    <th>Serie</th>
+                    <th>Lote</th>
+                    <th>Depósito</th>
+                    <th>Código barra</th>
+                    <th>Secuencia</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (_dto!.Insumos.Count == 0)
+                {
+                    <tr><td colspan="13" class="muted">El comprobante no tiene detalle de artículos.</td></tr>
+                }
+                else
+                {
+                    @foreach (var item in _dto.Insumos)
+                    {
+                        <tr>
+                            <td>@item.CodigoArticulo</td>
+                            <td>@item.Descripcion</td>
+                            <td>@item.Unidad</td>
+                            <td>@FormatMoney(item.Cantidad)</td>
+                            <td>@FormatMoney(item.PrecioImporte)</td>
+                            <td>@FormatMoney(item.DescuentoImporte)</td>
+                            <td>@FormatMoney(item.Iva)</td>
+                            <td>@FormatMoney(item.Total)</td>
+                            <td>@item.NumeroSerie</td>
+                            <td>@item.NumeroLote</td>
+                            <td>@item.Deposito</td>
+                            <td>@item.CodigoBarra</td>
+                            <td>@item.Secuencia</td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>;
+
+    private RenderFragment RenderTareas() => @<div class="table-wrap">
+        <table class="data-table usuarios-table">
+            <thead>
+                <tr>
+                    <th>Código</th>
+                    <th>Descripción</th>
+                    <th>Horas</th>
+                    <th>Valor hora</th>
+                    <th>Total</th>
+                    <th>Técnico</th>
+                    <th>Est. inicio</th>
+                    <th>Est. fin</th>
+                    <th>Real inicio</th>
+                    <th>Real fin</th>
+                    <th>Prioridad</th>
+                    <th>Usuario</th>
+                    <th>Secuencia</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (_dto!.Tareas.Count == 0)
+                {
+                    <tr><td colspan="13" class="muted">El comprobante no tiene detalle de servicios o tareas.</td></tr>
+                }
+                else
+                {
+                    @foreach (var item in _dto.Tareas)
+                    {
+                        <tr>
+                            <td>@item.CodigoTarea</td>
+                            <td>@item.Descripcion</td>
+                            <td>@FormatMoney(item.Horas)</td>
+                            <td>@FormatMoney(item.ValorHora)</td>
+                            <td>@FormatMoney(item.Total)</td>
+                            <td>@string.Join(" · ", new[] { item.TecnicoCodigo, item.TecnicoNombre }.Where(x => !string.IsNullOrWhiteSpace(x)))</td>
+                            <td>@FormatDate(item.FechaEstimadaInicio)</td>
+                            <td>@FormatDate(item.FechaEstimadaFin)</td>
+                            <td>@FormatDate(item.FechaRealInicio)</td>
+                            <td>@FormatDate(item.FechaRealFin)</td>
+                            <td>@item.Prioridad</td>
+                            <td>@item.Usuario</td>
+                            <td>@item.Secuencia</td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>;
+
+    private RenderFragment RenderObservaciones() => @<div class="table-wrap">
+        <table class="data-table usuarios-table">
+            <thead>
+                <tr>
+                    <th>Tipo</th>
+                    <th>Observación</th>
+                    <th>Importe</th>
+                    <th>Secuencia</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (_dto!.Observaciones.Count == 0)
+                {
+                    <tr><td colspan="4" class="muted">El comprobante no tiene observaciones asociadas.</td></tr>
+                }
+                else
+                {
+                    @foreach (var item in _dto.Observaciones)
+                    {
+                        <tr>
+                            <td>@item.TipoObservacion</td>
+                            <td>@item.Observacion</td>
+                            <td>@FormatMoney(item.Importe)</td>
+                            <td>@item.Secuencia</td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>;
+
+    private RenderFragment RenderAplicaciones() => @<div class="comprobante-viewer__related">
+        <div class="panel-card comprobante-viewer__nested">
+            <div class="panel-card__header">
+                <div>
+                    <h3 class="panel-card__title">Este comprobante aplica a</h3>
+                    <p class="panel-card__subtitle">Por ejemplo, factura aplicada a remito.</p>
+                </div>
+            </div>
+            @RenderRelacionadasTable(_dto!.AplicaA, false)
+        </div>
+        <div class="panel-card comprobante-viewer__nested">
+            <div class="panel-card__header">
+                <div>
+                    <h3 class="panel-card__title">Comprobantes que aplican a este comprobante</h3>
+                    <p class="panel-card__subtitle">Por ejemplo, cobranzas o facturas relacionadas.</p>
+                </div>
+            </div>
+            @RenderRelacionadasTable(_dto!.AplicadoPor, true)
+        </div>
+    </div>;
+
+    private RenderFragment RenderRelacionadasTable(IReadOnlyList<ComprobanteAplicacionDto> rows, bool usarRelacionado) => @<div class="table-wrap">
+        <table class="data-table usuarios-table">
+            <thead>
+                <tr>
+                    <th>TC origen</th>
+                    <th>ID origen</th>
+                    <th>TC relacionado</th>
+                    <th>ID relacionado</th>
+                    <th>Fecha</th>
+                    <th>Importe</th>
+                    <th>Recibo</th>
+                    <th>Estado</th>
+                    <th>Cuenta / nombre</th>
+                    <th>Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (rows.Count == 0)
+                {
+                    <tr><td colspan="10" class="muted">No hay comprobantes relacionados por aplicación.</td></tr>
+                }
+                else
+                {
+                    @foreach (var item in rows)
+                    {
+                        var tcDestino = usarRelacionado ? item.TcRelacionado : item.TcOrigen;
+                        var idDestino = usarRelacionado ? item.IdComprobanteRelacionado : item.IdComprobanteOrigen;
+                        var idCompDestino = usarRelacionado ? item.IdComplementoRelacionado : item.IdComplementoOrigen;
+                        <tr>
+                            <td>@item.TcOrigen</td>
+                            <td>@item.IdComprobanteOrigen</td>
+                            <td>@item.TcRelacionado</td>
+                            <td>@item.IdComprobanteRelacionado</td>
+                            <td>@FormatDate(item.FechaRelacionado)</td>
+                            <td>@FormatMoney(item.ImporteAplicado)</td>
+                            <td>@item.Recibo</td>
+                            <td>@item.EstadoRelacionado</td>
+                            <td>@string.Join(" · ", new[] { item.CuentaRelacionada, item.NombreRelacionado }.Where(x => !string.IsNullOrWhiteSpace(x)))</td>
+                            <td>
+                                <div class="actions">
+                                    <button type="button" class="btn btn--ghost btn--sm" @onclick="() => OpenRelacionadoAsync(tcDestino, idDestino, idCompDestino)">
+                                        <i class="bi bi-eye"></i>
+                                        <span>Abrir</span>
+                                    </button>
+                                    <a class="btn btn--ghost btn--sm" href="@BuildPageUrl(tcDestino, idDestino, idCompDestino)" target="_blank" rel="noopener noreferrer">
+                                        <i class="bi bi-box-arrow-up-right"></i>
+                                        <span>Nueva pestaña</span>
+                                    </a>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>;
+
+    private RenderFragment RenderDocumentos() => @<div class="table-wrap">
+        <table class="data-table usuarios-table">
+            <thead>
+                <tr>
+                    <th>Documento</th>
+                    <th>Ruta / adjunto</th>
+                    <th>Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (_dto!.Documentos.Count == 0)
+                {
+                    <tr><td colspan="3" class="muted">El comprobante no tiene documentos relacionados.</td></tr>
+                }
+                else
+                {
+                    @foreach (var item in _dto.Documentos)
+                    {
+                        <tr>
+                            <td>@item.NombreArchivo</td>
+                            <td class="comprobante-viewer__doc-path">@item.Documento</td>
+                            <td>
+                                @if (item.EsAbrible)
+                                {
+                                    if (item.EsUrlExterna)
+                                    {
+                                        <a class="btn btn--ghost btn--sm" href="@item.Documento" target="_blank" rel="noopener noreferrer">
+                                            <i class="bi bi-box-arrow-up-right"></i>
+                                            <span>Abrir</span>
+                                        </a>
+                                    }
+                                    else
+                                    {
+                                        <a class="btn btn--ghost btn--sm" href="@BuildDocumentoUrl(item)" target="_blank" rel="noopener noreferrer">
+                                            <i class="bi bi-file-earmark-arrow-down"></i>
+                                            <span>Abrir</span>
+                                        </a>
+                                    }
+                                }
+                                else
+                                {
+                                    <span class="muted">No disponible</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>;
+
+    private RenderFragment RenderAcciones() => @<div class="table-wrap">
+        <table class="data-table usuarios-table">
+            <thead>
+                <tr>
+                    <th>Tipo acción</th>
+                    <th>Comentario</th>
+                    <th>Fecha y hora</th>
+                    <th>Usuario</th>
+                    <th>PC</th>
+                    <th>Acción / proceso</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (_dto!.Acciones.Count == 0)
+                {
+                    <tr><td colspan="6" class="muted">No hay historial de acciones para este comprobante.</td></tr>
+                }
+                else
+                {
+                    @foreach (var item in _dto.Acciones)
+                    {
+                        <tr>
+                            <td>@item.TipoAccion</td>
+                            <td>@item.Comentario</td>
+                            <td>@FormatDateTime(item.FechaHora)</td>
+                            <td>@item.Usuario</td>
+                            <td>@item.Pc</td>
+                            <td>@item.Proceso</td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>;
+
+    private sealed record ViewerNavItem(string Tc, string IdComprobante, int IdComplemento);
+}

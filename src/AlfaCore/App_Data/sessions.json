@@ -49,6 +49,16 @@
       "Password": "ALFANET2007",
       "TrustServerCertificate": true,
       "Activa": false
+    },
+    {
+      "Id": "305441cb-aedf-4bae-8b81-5a7bb40f024f",
+      "Nombre": "HIERROSUR EN VB6 PRUEBAS",
+      "Servidor": "SERVER-ALFAVB6",
+      "BaseDatos": "HIERROSUR",
+      "Usuario": "HIERROSUR",
+      "Password": "HIERROSUR",
+      "TrustServerCertificate": true,
+      "Activa": false
     }
   ]
 }

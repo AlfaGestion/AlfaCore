@@ -1,0 +1,16 @@
+.cuentas-notas-grid {
+    display: grid;
+    gap: 1rem;
+}
+
+.cuentas-rich-editor-note .tickets-rich-editor__surface {
+    min-height: 10rem;
+}
+
+.cuentas-rich-editor-note--compact .tickets-rich-editor__surface {
+    min-height: 7rem;
+}
+
+.cuentas-notas-grid .contactos-form__grid {
+    margin-top: .25rem;
+}

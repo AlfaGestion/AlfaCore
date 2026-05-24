@@ -9,4 +9,8 @@ public interface IAuditoriaService
     Task<AuditoriaErrorRowDto?> GetErrorByIdAsync(int id, CancellationToken ct = default);
     Task<IReadOnlyList<string>> GetUsuariosAsync(CancellationToken ct = default);
     Task<IReadOnlyList<string>> GetProcesosAsync(CancellationToken ct = default);
+    Task<AuditoriaUsuarioLookupsDto> GetUserAuditLookupsAsync(DateTime? desde = null, DateTime? hasta = null, CancellationToken ct = default);
+    Task<AuditoriaUsuarioSettingsDto> GetUserAuditSettingsAsync(CancellationToken ct = default);
+    Task SaveUserAuditSettingsAsync(AuditoriaUsuarioSettingsDto settings, CancellationToken ct = default);
+    Task<AuditoriaUsuarioResultDto> SearchUserAuditAsync(AuditoriaUsuarioFilterDto filter, CancellationToken ct = default);
 }

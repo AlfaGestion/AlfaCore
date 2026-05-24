@@ -258,7 +258,9 @@ public sealed class ActualizacionesService(
 
         var files = Directory
             .GetFiles(basePath, "*.sql", SearchOption.TopDirectoryOnly)
-            .Select(ParseScript)
+            .Select(static path => TryParseScript(path, out var script) ? script : null)
+            .Where(static script => script is not null)
+            .Select(static script => script!)
             .OrderBy(x => x.FechaVersion)
             .ThenBy(x => x.Correlativo)
             .ThenBy(x => x.Archivo, StringComparer.OrdinalIgnoreCase)
@@ -296,6 +298,20 @@ public sealed class ActualizacionesService(
             Descripcion = description,
             RutaCompleta = path
         };
+    }
+
+    private static bool TryParseScript(string path, out ActualizacionScriptDto? script)
+    {
+        var fileName = Path.GetFileName(path);
+        var match = Regex.Match(fileName, @"^(?<date>\d{4}-\d{2}-\d{2})-(?<seq>\d{3})__(?<desc>.+)\.sql$", RegexOptions.IgnoreCase);
+        if (!match.Success)
+        {
+            script = null;
+            return false;
+        }
+
+        script = ParseScript(path);
+        return true;
     }
 
     private static IEnumerable<string> SplitSqlBatches(string sql)

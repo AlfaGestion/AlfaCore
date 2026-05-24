@@ -249,6 +249,14 @@
                             </div>
 
                             <div class="interfaces-mobile-card__actions" @onclick:stopPropagation="true">
+                                @if (CanProcessNowInboxItem(item))
+                                {
+                                    <button type="button"
+                                            class="btn btn--ghost btn--sm interfaces-table__edit"
+                                            @onclick="() => ProcesarDocumentoAhoraAsync(item.IdComprobanteRecibido)">
+                                        <i class="bi bi-play-circle"></i> Procesar ahora
+                                    </button>
+                                }
                                 <button type="button"
                                         class="btn btn--ghost btn--sm"
                                         @onclick="() => VerDetalleLecturaAsync(item.IdComprobanteRecibido)">
@@ -341,6 +349,16 @@
                                         </td>
                                     }
                                     <td class="interfaces-table__actions" @onclick:stopPropagation="true">
+                                        @if (CanProcessNowInboxItem(item))
+                                        {
+                                            <button type="button"
+                                                    class="btn btn--ghost btn--sm interfaces-table__edit"
+                                                    title="Ejecutar ahora la lectura automática"
+                                                    @onclick="() => ProcesarDocumentoAhoraAsync(item.IdComprobanteRecibido)">
+                                                <i class="bi bi-play-circle"></i>
+                                                <span>Procesar ahora</span>
+                                            </button>
+                                        }
                                         <button type="button"
                                                 class="btn btn--ghost btn--sm"
                                                 title="Ver detalle de lectura automática"
@@ -556,6 +574,17 @@
             </div>
         </div>
 
+        <div class="editor-msg @GetWorkerFeedbackClass()">
+            <div>
+                <strong>@GetWorkerTitle()</strong>
+                <p>@GetWorkerMessage()</p>
+                @if (!string.IsNullOrWhiteSpace(_queueSnapshot.Worker.UltimoError))
+                {
+                    <small>@_queueSnapshot.Worker.UltimoError</small>
+                }
+            </div>
+        </div>
+
         @if (_loadingQueue)
         {
             <div class="usuarios-empty">Cargando cola de procesamiento...</div>
@@ -587,11 +616,23 @@
                                 <td>
                                     @if (job.IdComprobanteRecibido.HasValue)
                                     {
-                                        <button type="button"
-                                                class="btn btn--ghost btn--sm"
-                                                @onclick="() => AbrirFicha(job.IdComprobanteRecibido.Value)">
-                                            #@job.IdComprobanteRecibido.Value
-                                        </button>
+                                        <div class="interfaces-queue-doccell">
+                                            <button type="button"
+                                                    class="btn btn--ghost btn--sm"
+                                                    @onclick="() => AbrirFicha(job.IdComprobanteRecibido.Value)">
+                                                #@job.IdComprobanteRecibido.Value
+                                            </button>
+                                            @if (CanProcessNowQueueJob(job))
+                                            {
+                                                <button type="button"
+                                                        class="btn btn--ghost btn--sm interfaces-table__edit"
+                                                        @onclick="() => ProcesarColaAhoraAsync(job.Id)"
+                                                        disabled="@_loadingQueue">
+                                                    <i class="bi bi-play-circle"></i>
+                                                    <span>Procesar ahora</span>
+                                                </button>
+                                            }
+                                        </div>
                                     }
                                     else
                                     {
@@ -605,6 +646,16 @@
                                 <td>@job.Intentos</td>
                                 <td>@GetQueueDetail(job)</td>
                                 <td class="interfaces-table__actions">
+                                    @if (CanProcessNowQueueJob(job))
+                                    {
+                                        <button type="button"
+                                                class="btn btn--ghost btn--sm interfaces-table__edit"
+                                                @onclick="() => ProcesarColaAhoraAsync(job.Id)"
+                                                disabled="@_loadingQueue">
+                                            <i class="bi bi-play-circle"></i>
+                                            <span>Procesar ahora</span>
+                                        </button>
+                                    }
                                     @if (CanCancelQueueJob(job))
                                     {
                                         <button type="button"
@@ -968,6 +1019,62 @@
         await CargarColaAsync();
     }
 
+    private async Task ProcesarDocumentoAhoraAsync(long idComprobanteRecibido)
+    {
+        var result = await UiOps.RunAsync(async () =>
+        {
+            var queued = await InterfacesSvc.QueueCompraDetectionAsync(new InterfacesDetectarCompraRequest
+            {
+                IdComprobanteRecibido = idComprobanteRecibido,
+                UsuarioAccion = AppUserSession.GetCurrentUserName(Environment.UserName),
+                PcAccion = Environment.MachineName
+            });
+
+            await InterfacesSvc.ProcessCompraDetectionNowAsync(new InterfacesCompraIaAccionRequest
+            {
+                Id = queued.Id,
+                UsuarioAccion = AppUserSession.GetCurrentUserName(Environment.UserName),
+                PcAccion = Environment.MachineName
+            });
+
+            return true;
+        }, "No se pudo ejecutar ahora la lectura automática del documento.");
+
+        if (!result.Success)
+        {
+            SetFeedback(result.Feedback);
+            return;
+        }
+
+        SetFeedback(AppUiMessage.Success("Procesamiento lanzado", $"El documento #{idComprobanteRecibido} se envió a lectura automática inmediata."));
+        await BuscarAsync();
+        await CargarColaAsync();
+    }
+
+    private async Task ProcesarColaAhoraAsync(int id)
+    {
+        var result = await UiOps.RunAsync(async () =>
+        {
+            await InterfacesSvc.ProcessCompraDetectionNowAsync(new InterfacesCompraIaAccionRequest
+            {
+                Id = id,
+                UsuarioAccion = AppUserSession.GetCurrentUserName(Environment.UserName),
+                PcAccion = Environment.MachineName
+            });
+            return true;
+        }, "No se pudo ejecutar ahora la lectura automática seleccionada.");
+
+        if (!result.Success)
+        {
+            SetFeedback(result.Feedback);
+            return;
+        }
+
+        SetFeedback(AppUiMessage.Success("Procesamiento ejecutado", "La lectura automática seleccionada se ejecutó de forma inmediata."));
+        await CargarColaAsync();
+        await BuscarAsync();
+    }
+
     private async Task EnsureViewSettingsLoadedAsync(bool force = false)
     {
         var currentUser = AppUserSession.GetCurrentUserName(string.Empty).Trim();
@@ -1156,6 +1263,58 @@
             _ => "editor-msg--error"
         };
 
+    private string GetWorkerFeedbackClass()
+    {
+        var workerState = _queueSnapshot.Worker.Estado;
+        if (string.Equals(workerState, "SIN_ACTIVIDAD", StringComparison.OrdinalIgnoreCase) && _queueSnapshot.Pendientes > 0)
+            return "editor-msg editor-msg--error";
+
+        return workerState switch
+        {
+            "PROCESANDO" => "editor-msg editor-msg--ok",
+            "ESPERANDO" => "editor-msg editor-msg--ok",
+            "ERROR_RECIENTE" => "editor-msg editor-msg--error",
+            "DESHABILITADO" => "editor-msg editor-msg--warning",
+            "SIN_ACTIVIDAD" => "editor-msg editor-msg--warning",
+            _ => "editor-msg editor-msg--warning"
+        };
+    }
+
+    private string GetWorkerTitle()
+    {
+        if (string.Equals(_queueSnapshot.Worker.Estado, "SIN_ACTIVIDAD", StringComparison.OrdinalIgnoreCase) && _queueSnapshot.Pendientes > 0)
+            return "Worker sin actividad con pendientes en cola";
+
+        return string.IsNullOrWhiteSpace(_queueSnapshot.Worker.Descripcion)
+            ? "Estado del worker"
+            : _queueSnapshot.Worker.Descripcion;
+    }
+
+    private string GetWorkerMessage()
+    {
+        var worker = _queueSnapshot.Worker;
+        var parts = new List<string>();
+
+        if (worker.UltimaEjecucion.HasValue)
+            parts.Add($"Ultima ejecución: {worker.UltimaEjecucion.Value:dd/MM/yyyy HH:mm:ss}");
+
+        if (worker.ProximoIntento.HasValue)
+            parts.Add($"Próximo intento: {worker.ProximoIntento.Value:dd/MM/yyyy HH:mm:ss}");
+
+        if (worker.UltimosProcesados > 0)
+            parts.Add($"Procesados en el último ciclo: {worker.UltimosProcesados}");
+
+        if (!string.IsNullOrWhiteSpace(worker.UltimoMensaje))
+            parts.Add(worker.UltimoMensaje.Trim());
+
+        if (string.Equals(worker.Estado, "SIN_ACTIVIDAD", StringComparison.OrdinalIgnoreCase) && _queueSnapshot.Pendientes > 0)
+            parts.Insert(0, $"Hay {_queueSnapshot.Pendientes} documento(s) pendiente(s) y el worker no está mostrando actividad reciente.");
+
+        return parts.Count == 0
+            ? "Todavía no hay señales del worker de lectura automática."
+            : string.Join(" · ", parts);
+    }
+
     private static string GetStateCssClass(string estadoCodigo, string estadoDescripcion)
     {
         var key = $"{estadoCodigo} {estadoDescripcion}".ToUpperInvariant();
@@ -1170,6 +1329,12 @@
 
     private static bool CanCancelQueueJob(InterfacesCompraIaResultadoDto job)
         => job.Estado is "PENDIENTE_LECTURA" or "PROCESANDO_LECTURA";
+
+    private static bool CanProcessNowQueueJob(InterfacesCompraIaResultadoDto job)
+        => job.Estado is "PENDIENTE_LECTURA";
+
+    private static bool CanProcessNowInboxItem(InterfacesInboxItemDto item)
+        => IsCompraDocument(item);
 
     private static bool CanRetryQueueJob(InterfacesCompraIaResultadoDto job)
         => job.Estado is "ERROR_LECTURA" or "CANCELADO" or "SIN_PROVEEDOR";

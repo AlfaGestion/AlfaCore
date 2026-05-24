@@ -1,0 +1,127 @@
+.audit-users-table th {
+    white-space: nowrap;
+    vertical-align: middle;
+}
+
+.audit-users-table .table-sort {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 0.4rem;
+    width: 100%;
+    min-height: 2rem;
+    margin: 0;
+    padding: 0;
+    border: 0 !important;
+    border-radius: 0;
+    background: transparent !important;
+    box-shadow: none;
+    color: inherit;
+    font: inherit;
+    font-size: 0.74rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: color 0.18s ease;
+    appearance: none;
+    -webkit-appearance: none;
+}
+
+.audit-users-table .table-sort:hover,
+.audit-users-table .table-sort:focus-visible {
+    color: var(--accent, #35c2ff);
+    outline: none;
+}
+
+.audit-users-table .table-sort.is-active {
+    color: var(--accent, #35c2ff);
+}
+
+.audit-users-table .table-sort__mark {
+    min-width: 1rem;
+    text-align: center;
+    font-size: 0.72rem;
+    opacity: 0.85;
+}
+
+.audit-users-table th:last-child {
+    min-width: 10rem;
+}
+
+.audit-users-table td {
+    vertical-align: top;
+}
+
+.audit-users-table .actions {
+    flex-wrap: nowrap;
+}
+
+.audit-users-table .muted {
+    color: rgba(220, 229, 244, 0.78);
+    text-align: center;
+    padding: 1rem 0.5rem;
+}
+
+.audit-risk {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 5.5rem;
+    padding: 0.22rem 0.7rem;
+    border-radius: 999px;
+    font-size: 0.76rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+}
+
+.audit-risk--high {
+    background: rgba(255, 92, 92, 0.14);
+    color: #ff8e8e;
+    border: 1px solid rgba(255, 92, 92, 0.28);
+}
+
+.audit-risk--medium {
+    background: rgba(255, 184, 77, 0.14);
+    color: #ffcc74;
+    border: 1px solid rgba(255, 184, 77, 0.28);
+}
+
+.pager-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+.checkbox-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem 1rem;
+    padding-top: 0.35rem;
+}
+
+.checkbox-row__item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    color: rgba(220, 229, 244, 0.92);
+    font-size: 0.92rem;
+}
+
+.checkbox-row__item input[type="checkbox"] {
+    width: auto;
+    accent-color: var(--accent, #35c2ff);
+}
+
+@media (max-width: 900px) {
+    .pager-bar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .audit-users-table .actions {
+        flex-wrap: wrap;
+    }
+}

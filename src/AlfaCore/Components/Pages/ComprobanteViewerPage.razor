@@ -1,0 +1,16 @@
+@page "/comprobantes/viewer/{Tc}/{IdComprobante}"
+@using Microsoft.AspNetCore.Components
+
+<PageTitle>Visualizador de comprobantes | Alfa Gestión</PageTitle>
+
+<ComprobanteViewer Tc="@Tc"
+                   IdComprobante="@IdComprobante"
+                   IdComplemento="@IdComplemento"
+                   ReturnUrl="@ReturnUrl" />
+
+@code {
+    [Parameter] public string Tc { get; set; } = string.Empty;
+    [Parameter] public string IdComprobante { get; set; } = string.Empty;
+    [SupplyParameterFromQuery] public int IdComplemento { get; set; }
+    [SupplyParameterFromQuery] public string? ReturnUrl { get; set; }
+}

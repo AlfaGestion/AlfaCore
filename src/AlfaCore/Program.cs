@@ -59,6 +59,7 @@ public class Program
         builder.Services.AddScoped<ITicketsService, TicketsService>();
         builder.Services.AddScoped<IInterfacesService, InterfacesService>();
         builder.Services.AddScoped<IInterfacesConfigService, InterfacesConfigService>();
+        builder.Services.AddSingleton<InterfacesCompraIaWorkerState>();
         builder.Services.AddScoped<IActualizacionesService, ActualizacionesService>();
         builder.Services.AddScoped<IUsuariosService, UsuariosService>();
         builder.Services.AddScoped<IUsuariosValidator, UsuariosValidator>();
@@ -66,6 +67,7 @@ public class Program
         builder.Services.AddScoped<IContactosValidator, ContactosValidator>();
         builder.Services.AddScoped<ICuentasComercialesService, CuentasComercialesService>();
         builder.Services.AddScoped<ICuentasComercialesValidator, CuentasComercialesValidator>();
+        builder.Services.AddScoped<IComprobanteViewerService, ComprobanteViewerService>();
         builder.Services.AddSingleton<AppUserSessionStore>();
         builder.Services.AddScoped<IAppUserSessionService, AppUserSessionService>();
         builder.Services.AddSingleton<UsuariosPasswordCodec>();
@@ -172,6 +174,30 @@ public class Program
                 return Results.NotFound();
 
             return Results.File(photo.RutaCompleta, photo.MimeType, photo.NombreArchivo);
+        });
+
+        app.MapGet("/api/comprobantes/{tc}/{idComprobante}", async (
+            string tc,
+            string idComprobante,
+            int? idComplemento,
+            IComprobanteViewerService comprobanteViewerSvc,
+            CancellationToken ct) =>
+        {
+            var dto = await comprobanteViewerSvc.GetAsync(tc, idComprobante, idComplemento ?? 0, ct);
+            return dto is null ? Results.NotFound() : Results.Ok(dto);
+        });
+
+        app.MapGet("/api/comprobantes/{tc}/{idComprobante}/documentos", async (
+            string tc,
+            string idComprobante,
+            int? idComplemento,
+            string documento,
+            IComprobanteViewerService comprobanteViewerSvc,
+            CancellationToken ct) =>
+        {
+            var file = await comprobanteViewerSvc.GetDocumentoArchivoAsync(tc, idComprobante, idComplemento ?? 0, documento, ct);
+            if (file is null) return Results.NotFound();
+            return Results.File(file.RutaCompleta, file.MimeType, file.NombreArchivo);
         });
 
         app.MapGet("/consultas/{id:int}/descargar-excel", async (
