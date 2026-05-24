@@ -13,4 +13,6 @@ public interface IAuditoriaService
     Task<AuditoriaUsuarioSettingsDto> GetUserAuditSettingsAsync(CancellationToken ct = default);
     Task SaveUserAuditSettingsAsync(AuditoriaUsuarioSettingsDto settings, CancellationToken ct = default);
     Task<AuditoriaUsuarioResultDto> SearchUserAuditAsync(AuditoriaUsuarioFilterDto filter, CancellationToken ct = default);
+    Task<AuditoriaComprobanteLookupsDto> GetComprobanteAuditLookupsAsync(DateTime? desde = null, DateTime? hasta = null, CancellationToken ct = default);
+    Task<AuditoriaComprobanteResultDto> SearchComprobanteAuditAsync(AuditoriaComprobanteFilterDto filter, CancellationToken ct = default);
 }

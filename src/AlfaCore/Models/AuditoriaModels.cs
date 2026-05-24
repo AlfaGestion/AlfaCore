@@ -145,3 +145,62 @@ public sealed class AuditoriaLookupItemDto
     public string Value { get; init; } = string.Empty;
     public string Label { get; init; } = string.Empty;
 }
+
+public sealed class AuditoriaComprobanteFilterDto
+{
+    public DateTime? Desde { get; init; }
+    public DateTime? Hasta { get; init; }
+    public string Texto { get; init; } = string.Empty;
+    public string TipoComprobante { get; init; } = string.Empty;
+    public string Riesgo { get; init; } = string.Empty;
+    public string TipoControl { get; init; } = string.Empty;
+    public string CuentaCliente { get; init; } = string.Empty;
+    public string OrdenCampo { get; init; } = "fecha";
+    public string OrdenDireccion { get; init; } = "desc";
+    public int Pagina { get; init; } = 1;
+    public int TamanioPagina { get; init; } = 50;
+}
+
+public sealed class AuditoriaComprobanteRowDto
+{
+    public string TipoControl { get; init; } = string.Empty;
+    public string TipoControlLabel { get; init; } = string.Empty;
+    public string Riesgo { get; init; } = string.Empty;
+    public DateTime FechaHora { get; init; }
+    public string TipoComprobante { get; init; } = string.Empty;
+    public string IdComprobante { get; init; } = string.Empty;
+    public int IdComplemento { get; init; }
+    public string Cuenta { get; init; } = string.Empty;
+    public string Cliente { get; init; } = string.Empty;
+    public decimal? ImporteCabecera { get; init; }
+    public decimal? ImporteDetalle { get; init; }
+    public decimal? Diferencia { get; init; }
+    public int CantidadOcurrencias { get; init; }
+    public string Motivo { get; init; } = string.Empty;
+    public string Observaciones { get; init; } = string.Empty;
+}
+
+public sealed class AuditoriaComprobanteStatsDto
+{
+    public int TotalAlertas { get; init; }
+    public int RiesgoAlto { get; init; }
+    public int RiesgoMedio { get; init; }
+    public int ControlesDetectados { get; init; }
+}
+
+public sealed class AuditoriaComprobanteResultDto
+{
+    public IReadOnlyList<AuditoriaComprobanteRowDto> Items { get; init; } = [];
+    public AuditoriaComprobanteStatsDto Stats { get; init; } = new();
+    public int TotalRegistros { get; init; }
+    public int Pagina { get; init; }
+    public int TamanioPagina { get; init; }
+}
+
+public sealed class AuditoriaComprobanteLookupsDto
+{
+    public IReadOnlyList<string> TiposComprobante { get; init; } = [];
+    public IReadOnlyList<string> CuentasClientes { get; init; } = [];
+    public IReadOnlyList<AuditoriaLookupItemDto> TiposControl { get; init; } = [];
+    public IReadOnlyList<AuditoriaLookupItemDto> Riesgos { get; init; } = [];
+}

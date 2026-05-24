@@ -4,6 +4,8 @@
 }
 
 .audit-users-table .table-sort {
+    all: unset;
+    box-sizing: border-box;
     display: inline-flex;
     align-items: center;
     justify-content: flex-start;
@@ -16,7 +18,7 @@
     border-radius: 0;
     background: transparent !important;
     box-shadow: none;
-    color: inherit;
+    color: rgba(210, 223, 245, 0.88);
     font: inherit;
     font-size: 0.74rem;
     font-weight: 700;
@@ -26,6 +28,36 @@
     transition: color 0.18s ease;
     appearance: none;
     -webkit-appearance: none;
+    text-decoration: none;
+}
+
+.audit-users-table .table-sort,
+.audit-users-table .table-sort:hover,
+.audit-users-table .table-sort:focus,
+.audit-users-table .table-sort:active,
+.audit-users-table .table-sort:visited {
+    background: transparent !important;
+    border: 0 !important;
+    box-shadow: none !important;
+}
+
+.audit-users-table .table-sort *,
+.audit-users-table .table-sort__label,
+.audit-users-table .table-sort__mark {
+    background: transparent !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    color: inherit;
+}
+
+.audit-users-table .table-sort span {
+    display: inline-flex;
+    align-items: center;
+}
+
+.audit-users-table .table-sort__label {
+    flex: 1 1 auto;
+    min-width: 0;
 }
 
 .audit-users-table .table-sort:hover,
@@ -43,6 +75,14 @@
     text-align: center;
     font-size: 0.72rem;
     opacity: 0.85;
+}
+
+.audit-users-table thead th {
+    padding-top: 0.85rem;
+    padding-bottom: 0.85rem;
+    color: rgba(210, 223, 245, 0.88);
+    background: transparent;
+    vertical-align: bottom;
 }
 
 .audit-users-table th:last-child {

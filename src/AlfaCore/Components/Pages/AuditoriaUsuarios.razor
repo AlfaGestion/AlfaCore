@@ -19,9 +19,6 @@
                 }
             </div>
             <div class="actions">
-                <button type="button" class="btn btn--ghost" @onclick="ToggleSettingsPanelAsync" @onclick:stopPropagation disabled="@(_loadingRows || _savingSettings)">
-                    <i class="bi bi-sliders"></i> Configuración
-                </button>
                 <button type="button" class="btn btn--ghost" @onclick="RecargarAsync" @onclick:stopPropagation disabled="@_loadingRows">
                     <i class="bi bi-arrow-clockwise"></i> Recargar
                 </button>
@@ -243,6 +240,9 @@
                                 <input type="number" min="2" @bind="_umbralModificaciones" />
                             </div>
                             <div class="actions">
+                                <button type="button" class="btn btn--ghost btn--sm" @onclick="ToggleSettingsPanelAsync" disabled="@(_loadingRows || _savingSettings)">
+                                    <i class="bi bi-sliders"></i> Configuración
+                                </button>
                                 <button type="button" class="btn btn--primary btn--sm" @onclick="ApplyFiltersAsync" disabled="@_loadingRows">
                                     <i class="bi bi-search"></i> Aplicar
                                 </button>
@@ -370,6 +370,32 @@
                         <label>Días pendientes</label>
                         <input value="@(_selected.DiasPendientes > 0 ? _selected.DiasPendientes.ToString() : string.Empty)" readonly />
                     </div>
+                    @if (IsRemitoAudit(_selected))
+                    {
+                        <div class="field field--full">
+                            <label>Detalle técnico de comparación</label>
+                            <textarea rows="6" readonly>@BuildRemitoTechnicalDetail(_selected)</textarea>
+                        </div>
+                        <div class="field field--full">
+                            <label>Tablas y vínculos usados</label>
+                            <textarea rows="4" readonly>@BuildRemitoTechnicalSources(_selected)</textarea>
+                        </div>
+                        <div class="field field--full">
+                            <div class="actions">
+                                <button type="button" class="btn btn--ghost btn--sm" @onclick="ToggleRemitoSqlPreview">
+                                    <i class="bi bi-code-slash"></i>
+                                    <span>@(_showRemitoSqlPreview ? "Ocultar consulta SQL" : "Ver consulta SQL")</span>
+                                </button>
+                            </div>
+                        </div>
+                        @if (_showRemitoSqlPreview)
+                        {
+                            <div class="field field--full">
+                                <label>Consulta SQL simplificada</label>
+                                <textarea rows="16" readonly>@BuildRemitoSqlPreview()</textarea>
+                            </div>
+                        }
+                    }
                     <div class="field field--full">
                         <label>Motivo</label>
                         <textarea rows="3" readonly>@_selected.Motivo</textarea>
@@ -405,18 +431,18 @@
                     <table class="data-table usuarios-table audit-users-table">
                         <thead>
                             <tr>
-                                <th><button type="button" class="table-sort @GetSortClass("fecha")" @onclick='() => ToggleSortAsync("fecha")'><span>Fecha y hora</span><span class="table-sort__mark">@SortMark("fecha")</span></button></th>
-                                <th><button type="button" class="table-sort @GetSortClass("control")" @onclick='() => ToggleSortAsync("control")'><span>Tipo de control</span><span class="table-sort__mark">@SortMark("control")</span></button></th>
-                                <th><button type="button" class="table-sort @GetSortClass("riesgo")" @onclick='() => ToggleSortAsync("riesgo")'><span>Nivel de riesgo</span><span class="table-sort__mark">@SortMark("riesgo")</span></button></th>
-                                <th><button type="button" class="table-sort @GetSortClass("usuario")" @onclick='() => ToggleSortAsync("usuario")'><span>Usuario</span><span class="table-sort__mark">@SortMark("usuario")</span></button></th>
-                                <th><button type="button" class="table-sort @GetSortClass("pc")" @onclick='() => ToggleSortAsync("pc")'><span>Equipo</span><span class="table-sort__mark">@SortMark("pc")</span></button></th>
-                                <th><button type="button" class="table-sort @GetSortClass("tc")" @onclick='() => ToggleSortAsync("tc")'><span>Tipo comp.</span><span class="table-sort__mark">@SortMark("tc")</span></button></th>
-                                <th><button type="button" class="table-sort @GetSortClass("comprobante")" @onclick='() => ToggleSortAsync("comprobante")'><span>N° comprobante</span><span class="table-sort__mark">@SortMark("comprobante")</span></button></th>
-                                <th><button type="button" class="table-sort @GetSortClass("cliente")" @onclick='() => ToggleSortAsync("cliente")'><span>Cliente / cuenta</span><span class="table-sort__mark">@SortMark("cliente")</span></button></th>
-                                <th><button type="button" class="table-sort @GetSortClass("estadofacturacion")" @onclick='() => ToggleSortAsync("estadofacturacion")'><span>Estado remito</span><span class="table-sort__mark">@SortMark("estadofacturacion")</span></button></th>
-                                <th><button type="button" class="table-sort @GetSortClass("importe")" @onclick='() => ToggleSortAsync("importe")'><span>Importe base</span><span class="table-sort__mark">@SortMark("importe")</span></button></th>
-                                <th><button type="button" class="table-sort @GetSortClass("diferencia")" @onclick='() => ToggleSortAsync("diferencia")'><span>Diferencia</span><span class="table-sort__mark">@SortMark("diferencia")</span></button></th>
-                                <th><button type="button" class="table-sort @GetSortClass("cantidad")" @onclick='() => ToggleSortAsync("cantidad")'><span>Ocurrencias</span><span class="table-sort__mark">@SortMark("cantidad")</span></button></th>
+                                <th><button type="button" class="table-sort @GetSortClass("fecha")" @onclick='() => ToggleSortAsync("fecha")'><span class="table-sort__label">Fecha y hora</span><span class="table-sort__mark">@SortMark("fecha")</span></button></th>
+                                <th><button type="button" class="table-sort @GetSortClass("control")" @onclick='() => ToggleSortAsync("control")'><span class="table-sort__label">Tipo de control</span><span class="table-sort__mark">@SortMark("control")</span></button></th>
+                                <th><button type="button" class="table-sort @GetSortClass("riesgo")" @onclick='() => ToggleSortAsync("riesgo")'><span class="table-sort__label">Nivel de riesgo</span><span class="table-sort__mark">@SortMark("riesgo")</span></button></th>
+                                <th><button type="button" class="table-sort @GetSortClass("usuario")" @onclick='() => ToggleSortAsync("usuario")'><span class="table-sort__label">Usuario</span><span class="table-sort__mark">@SortMark("usuario")</span></button></th>
+                                <th><button type="button" class="table-sort @GetSortClass("pc")" @onclick='() => ToggleSortAsync("pc")'><span class="table-sort__label">Equipo</span><span class="table-sort__mark">@SortMark("pc")</span></button></th>
+                                <th><button type="button" class="table-sort @GetSortClass("tc")" @onclick='() => ToggleSortAsync("tc")'><span class="table-sort__label">Tipo comp.</span><span class="table-sort__mark">@SortMark("tc")</span></button></th>
+                                <th><button type="button" class="table-sort @GetSortClass("comprobante")" @onclick='() => ToggleSortAsync("comprobante")'><span class="table-sort__label">N° comprobante</span><span class="table-sort__mark">@SortMark("comprobante")</span></button></th>
+                                <th><button type="button" class="table-sort @GetSortClass("cliente")" @onclick='() => ToggleSortAsync("cliente")'><span class="table-sort__label">Cliente / cuenta</span><span class="table-sort__mark">@SortMark("cliente")</span></button></th>
+                                <th><button type="button" class="table-sort @GetSortClass("estadofacturacion")" @onclick='() => ToggleSortAsync("estadofacturacion")'><span class="table-sort__label">Estado remito</span><span class="table-sort__mark">@SortMark("estadofacturacion")</span></button></th>
+                                <th><button type="button" class="table-sort @GetSortClass("importe")" @onclick='() => ToggleSortAsync("importe")'><span class="table-sort__label">Importe base</span><span class="table-sort__mark">@SortMark("importe")</span></button></th>
+                                <th><button type="button" class="table-sort @GetSortClass("diferencia")" @onclick='() => ToggleSortAsync("diferencia")'><span class="table-sort__label">Diferencia</span><span class="table-sort__mark">@SortMark("diferencia")</span></button></th>
+                                <th><button type="button" class="table-sort @GetSortClass("cantidad")" @onclick='() => ToggleSortAsync("cantidad")'><span class="table-sort__label">Ocurrencias</span><span class="table-sort__mark">@SortMark("cantidad")</span></button></th>
                                 <th>Acciones</th>
                             </tr>
                         </thead>
@@ -490,6 +516,7 @@
     private bool _savingSettings;
     private bool _showSearchPanel;
     private bool _showSettingsPanel;
+    private bool _showRemitoSqlPreview;
     private bool _initialLoadDone;
     private AppUiMessage? _feedback;
     private AuditoriaUsuarioLookupsDto _lookups = new();
@@ -693,10 +720,19 @@
     }
 
     private void Seleccionar(AuditoriaUsuarioRowDto item)
-        => _selected = item;
+    {
+        _selected = item;
+        _showRemitoSqlPreview = false;
+    }
 
     private void CerrarDetalle()
-        => _selected = null;
+    {
+        _selected = null;
+        _showRemitoSqlPreview = false;
+    }
+
+    private void ToggleRemitoSqlPreview()
+        => _showRemitoSqlPreview = !_showRemitoSqlPreview;
 
     private List<(string Key, string Label)> BuildFilterChips()
     {
@@ -923,6 +959,105 @@
     private static bool HasCancellationTrace(AuditoriaUsuarioRowDto item)
         => string.Equals(item.TipoControl, "IN_NO_GRABADO", StringComparison.OrdinalIgnoreCase)
            && !string.IsNullOrWhiteSpace(item.SystemUserDetalle);
+
+    private static bool IsRemitoAudit(AuditoriaUsuarioRowDto item)
+        => string.Equals(item.TipoControl, "RM_PARCIAL", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(item.TipoControl, "RM_SIN_FACTURA", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(item.TipoControl, "RM_DE_MAS", StringComparison.OrdinalIgnoreCase);
+
+    private static string BuildRemitoTechnicalDetail(AuditoriaUsuarioRowDto item)
+    {
+        var lines = new List<string>
+        {
+            $"Regla evaluada: {item.EstadoFacturacion}.",
+            $"Importe remito (V_MV_Cpte.IMPORTE): {FormatMoney(item.ImporteOriginal)}.",
+            $"Importe aplicado (SUM(MV_APLICACION.IMPORTE)): {FormatMoney(item.ImporteAplicado)}.",
+            $"Diferencia calculada: {FormatMoney(item.Diferencia)}."
+        };
+
+        if (!string.IsNullOrWhiteSpace(item.FacturaRelacionada))
+            lines.Add($"Comprobantes relacionados detectados: {item.FacturaRelacionada}.");
+
+        lines.Add(item.TipoControl switch
+        {
+            "RM_PARCIAL" => "Criterio: el importe aplicado es mayor que cero y menor que el importe original del remito.",
+            "RM_SIN_FACTURA" => "Criterio: el importe aplicado es cero y superó el umbral mínimo de días configurado.",
+            "RM_DE_MAS" => "Criterio: el importe aplicado es mayor que el importe original del remito.",
+            _ => string.Empty
+        });
+
+        return string.Join(Environment.NewLine, lines.Where(x => !string.IsNullOrWhiteSpace(x)));
+    }
+
+    private static string BuildRemitoTechnicalSources(AuditoriaUsuarioRowDto item)
+    {
+        var relation = string.IsNullOrWhiteSpace(item.FacturaRelacionada)
+            ? "Se buscó relación por MV_APLICACION usando TCO_ORIGEN = 'RM' e IDComprobante_Origen = IDCOMPROBANTE del remito."
+            : $"Relación encontrada en MV_APLICACION: {item.FacturaRelacionada}.";
+
+        return string.Join(Environment.NewLine, new[]
+        {
+            "1. V_MV_Cpte: cabecera del remito, fecha, cuenta, cliente e importe original.",
+            "2. MV_APLICACION: suma de importes aplicados al remito para TC FC, FP, TK y TKFC.",
+            "3. MA_CUENTAS: nombre de cliente como respaldo cuando la vista no lo informa.",
+            relation
+        });
+    }
+
+    private static string BuildRemitoSqlPreview()
+        => string.Join(Environment.NewLine, new[]
+        {
+            "SELECT",
+            "    r.TC,",
+            "    r.IDCOMPROBANTE,",
+            "    r.FECHA,",
+            "    r.Usuario,",
+            "    r.CUENTA,",
+            "    r.NOMBRE,",
+            "    r.IMPORTE,",
+            "    ROUND(ISNULL(ar.ImporteAplicado, 0), 2) AS ImporteAplicado,",
+            "    ROUND(r.IMPORTE - ISNULL(ar.ImporteAplicado, 0), 2) AS Diferencia,",
+            "    ISNULL(fr.Facturas, '') AS FacturasRelacionadas,",
+            "    CASE",
+            "        WHEN ROUND(ISNULL(ar.ImporteAplicado, 0), 2) = 0 THEN 'SIN FACTURAR'",
+            "        WHEN ROUND(ISNULL(ar.ImporteAplicado, 0), 2) < ROUND(r.IMPORTE, 2) THEN 'FACTURADO PARCIAL'",
+            "        WHEN ROUND(ISNULL(ar.ImporteAplicado, 0), 2) = ROUND(r.IMPORTE, 2) THEN 'FACTURADO TOTAL'",
+            "        WHEN ROUND(ISNULL(ar.ImporteAplicado, 0), 2) > ROUND(r.IMPORTE, 2) THEN 'FACTURADO DE MAS'",
+            "        ELSE 'REVISAR'",
+            "    END AS EstadoFacturacion",
+            "FROM dbo.V_MV_Cpte r",
+            "LEFT JOIN (",
+            "    SELECT",
+            "        ap.IDComprobante_Origen,",
+            "        SUM(CASE",
+            "            WHEN ap.TC IN ('FC','FP','TK','TKFC') THEN ISNULL(ap.IMPORTE, 0)",
+            "            ELSE 0",
+            "        END) AS ImporteAplicado",
+            "    FROM dbo.MV_APLICACION ap",
+            "    WHERE ap.TCO_ORIGEN = 'RM'",
+            "    GROUP BY ap.IDComprobante_Origen",
+            ") ar",
+            "    ON ar.IDComprobante_Origen = r.IDCOMPROBANTE",
+            "LEFT JOIN (",
+            "    SELECT",
+            "        ap.IDComprobante_Origen,",
+            "        STUFF((",
+            "            SELECT DISTINCT ', ' + ap2.TC + ' ' + ISNULL(ap2.IDComprobante, '')",
+            "            FROM dbo.MV_APLICACION ap2",
+            "            WHERE ap2.TCO_ORIGEN = 'RM'",
+            "              AND ap2.IDComprobante_Origen = ap.IDComprobante_Origen",
+            "              AND ap2.TC IN ('FC','FP','TK','TKFC')",
+            "            FOR XML PATH(''), TYPE",
+            "        ).value('.', 'nvarchar(max)'), 1, 2, '') AS Facturas",
+            "    FROM dbo.MV_APLICACION ap",
+            "    WHERE ap.TCO_ORIGEN = 'RM'",
+            "      AND ap.TC IN ('FC','FP','TK','TKFC')",
+            "    GROUP BY ap.IDComprobante_Origen",
+            ") fr",
+            "    ON fr.IDComprobante_Origen = r.IDCOMPROBANTE",
+            "WHERE r.TC = 'RM'",
+            "  AND r.ANULADA = 0;"
+        });
 
     private static string GetCancellationTimeText(AuditoriaUsuarioRowDto item)
         => TryParseCancellationTrace(item.SystemUserDetalle, out var when, out _)

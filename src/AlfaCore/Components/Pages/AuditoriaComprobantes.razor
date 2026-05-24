@@ -1,0 +1,616 @@
+@page "/auditoria/comprobantes"
+@using AlfaCore.Models
+@inject AlfaCore.Services.IAuditoriaService AuditoriaSvc
+@inject AlfaCore.Services.IAppUiOperationService UiOps
+
+<PageTitle>Auditoría de comprobantes | Alfa Gestión</PageTitle>
+
+<div class="page-grid audit-comprobantes-page" @onclick="HandlePageClickAsync">
+    <section class="page-intro">
+        <div>
+            <h2 class="page-intro__title">Auditoría de comprobantes</h2>
+            <p class="page-intro__text">Detectá inconsistencias en comprobantes de ventas: posibles duplicados y diferencias entre cabecera y detalle.</p>
+            @if (_loading)
+            {
+                <p class="page-intro__text"><i class="bi bi-hourglass-split"></i> Preparando auditoría y cargando resultados iniciales...</p>
+            }
+        </div>
+        <div class="actions">
+            <button type="button" class="btn btn--ghost" @onclick="RecargarAsync" disabled="@_loadingRows">
+                <i class="bi bi-arrow-clockwise"></i>
+                <span>Recargar</span>
+            </button>
+        </div>
+    </section>
+
+    @if (_feedback is not null)
+    {
+        <section class="panel-card">
+            <div class="editor-msg @GetFeedbackClass(_feedback)">
+                <div>
+                    <strong>@_feedback.Title</strong>
+                    <p>@_feedback.Message</p>
+                    @if (_feedback.HasSuggestion)
+                    {
+                        <small>@_feedback.Suggestion</small>
+                    }
+                    @if (_feedback.HasCode)
+                    {
+                        <small>Código: @_feedback.Code</small>
+                    }
+                </div>
+            </div>
+        </section>
+    }
+
+    <section class="panel-card smart-search-card" @onclick:stopPropagation>
+        <div class="smart-search">
+            <div class="smart-search__bar">
+                <i class="bi bi-search"></i>
+                <input type="search"
+                       placeholder="Buscar por TC, comprobante, cuenta, cliente o motivo..."
+                       value="@_texto"
+                       @onfocus="OpenSearchPanel"
+                       @oninput="OnSearchInput" />
+                <button type="button" class="smart-search__toggle" @onclick="ToggleSearchPanel" aria-label="Mostrar filtros">
+                    <i class="bi @(_showSearchPanel ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
+                </button>
+            </div>
+
+            <div class="smart-search__chips" aria-live="polite">
+                @foreach (var chip in BuildFilterChips())
+                {
+                    <button type="button" class="smart-chip" @onclick="() => RemoveChipAsync(chip.Key)">
+                        @chip.Label <i class="bi bi-x"></i>
+                    </button>
+                }
+                @if (BuildFilterChips().Count == 0)
+                {
+                    <span class="smart-search__hint">Click en el buscador para filtros rápidos del análisis.</span>
+                }
+            </div>
+
+            @if (_showSearchPanel)
+            {
+                <div class="smart-search__panel">
+                    <div class="smart-search__column">
+                        <h4><i class="bi bi-funnel-fill"></i> Período</h4>
+                        <div class="smart-search__inline">
+                            <label>Desde</label>
+                            <InputDate @bind-Value="_desde" />
+                        </div>
+                        <div class="smart-search__inline">
+                            <label>Hasta</label>
+                            <InputDate @bind-Value="_hasta" />
+                        </div>
+                        <div class="smart-search__inline">
+                            <label>TC</label>
+                            <select @bind="_tipoComprobante" disabled="@_loadingLookups">
+                                <option value="">Todos</option>
+                                @foreach (var item in _lookups.TiposComprobante)
+                                {
+                                    <option value="@item">@item</option>
+                                }
+                            </select>
+                        </div>
+                    </div>
+                    <div class="smart-search__column">
+                        <h4><i class="bi bi-shield-fill-exclamation"></i> Controles</h4>
+                        <div class="smart-search__inline">
+                            <label>Tipo control</label>
+                            <select @bind="_tipoControl">
+                                <option value="">Todos</option>
+                                @foreach (var item in _lookups.TiposControl)
+                                {
+                                    <option value="@item.Value">@item.Label</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="smart-search__inline">
+                            <label>Riesgo</label>
+                            <select @bind="_riesgo">
+                                <option value="">Todos</option>
+                                @foreach (var item in _lookups.Riesgos)
+                                {
+                                    <option value="@item.Value">@item.Label</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="smart-search__inline">
+                            <label>Cliente / cuenta</label>
+                            <input type="text" @bind="_cuentaCliente" list="auditoria-comprobantes-clientes" placeholder="Cuenta o nombre..." disabled="@_loadingLookups" />
+                            <datalist id="auditoria-comprobantes-clientes">
+                                @foreach (var item in _lookups.CuentasClientes)
+                                {
+                                    <option value="@item"></option>
+                                }
+                            </datalist>
+                        </div>
+                    </div>
+                    <div class="smart-search__column">
+                        <h4><i class="bi bi-sliders"></i> Acciones</h4>
+                        <div class="actions">
+                            <button type="button" class="btn btn--primary btn--sm" @onclick="ApplyFiltersAsync" disabled="@_loadingRows">
+                                <i class="bi bi-search"></i> Aplicar
+                            </button>
+                            <button type="button" class="btn btn--ghost btn--sm" @onclick="LimpiarAsync" disabled="@_loadingRows">
+                                <i class="bi bi-eraser"></i> Limpiar
+                            </button>
+                        </div>
+                        @if (_loadingLookups)
+                        {
+                            <p class="smart-search__hint">Cargando opciones reales del período seleccionado...</p>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    </section>
+
+    <section class="kpi-grid">
+        <article class="kpi-card">
+            <div class="kpi-card__label">Alertas</div>
+            <div class="kpi-card__value">@_stats.TotalAlertas</div>
+        </article>
+        <article class="kpi-card">
+            <div class="kpi-card__label">Riesgo alto</div>
+            <div class="kpi-card__value">@_stats.RiesgoAlto</div>
+        </article>
+        <article class="kpi-card">
+            <div class="kpi-card__label">Riesgo medio</div>
+            <div class="kpi-card__value">@_stats.RiesgoMedio</div>
+        </article>
+        <article class="kpi-card">
+            <div class="kpi-card__label">Controles activos</div>
+            <div class="kpi-card__value">@_stats.ControlesDetectados</div>
+        </article>
+    </section>
+
+    @if (_selected is not null)
+    {
+        <section class="panel-card">
+            <div class="panel-card__header">
+                <div>
+                    <h3 class="panel-card__title">Detalle de alerta</h3>
+                    <p class="panel-card__subtitle">@_selected.TipoControlLabel · @_selected.FechaHora.ToString("dd/MM/yyyy HH:mm")</p>
+                </div>
+                <div class="actions">
+                    <button type="button" class="btn btn--secondary btn--sm" @onclick="CerrarDetalle">
+                        <i class="bi bi-arrow-left-circle"></i>
+                        <span>Volver al listado</span>
+                    </button>
+                    <a class="btn btn--ghost btn--sm" href="@BuildComprobanteViewerUrl(_selected)">
+                        <i class="bi bi-box-arrow-up-right"></i>
+                        <span>Abrir comprobante</span>
+                    </a>
+                </div>
+            </div>
+
+            <div class="contactos-form__grid">
+                <div class="field">
+                    <label>Tipo de control</label>
+                    <input value="@_selected.TipoControlLabel" readonly />
+                </div>
+                <div class="field">
+                    <label>Nivel de riesgo</label>
+                    <input value="@_selected.Riesgo" readonly />
+                </div>
+                <div class="field">
+                    <label>TC / comprobante</label>
+                    <input value="@($"{_selected.TipoComprobante} {_selected.IdComprobante}")" readonly />
+                </div>
+                <div class="field">
+                    <label>Cuenta / cliente</label>
+                    <input value="@FormatCliente(_selected)" readonly />
+                </div>
+                <div class="field">
+                    <label>Importe cabecera</label>
+                    <input value="@FormatMoney(_selected.ImporteCabecera)" readonly />
+                </div>
+                <div class="field">
+                    <label>Importe detalle</label>
+                    <input value="@FormatMoney(_selected.ImporteDetalle)" readonly />
+                </div>
+                <div class="field">
+                    <label>Diferencia</label>
+                    <input value="@FormatMoney(_selected.Diferencia)" readonly />
+                </div>
+                <div class="field">
+                    <label>Ocurrencias</label>
+                    <input value="@_selected.CantidadOcurrencias.ToString()" readonly />
+                </div>
+                <div class="field field--full">
+                    <label>Motivo</label>
+                    <textarea rows="3" readonly>@_selected.Motivo</textarea>
+                </div>
+                <div class="field field--full">
+                    <label>Observaciones</label>
+                    <textarea rows="4" readonly>@_selected.Observaciones</textarea>
+                </div>
+            </div>
+        </section>
+    }
+    else
+    {
+        <section class="panel-card">
+            <div class="panel-card__header">
+                <div>
+                    <h3 class="panel-card__title">Resultados</h3>
+                    <p class="panel-card__subtitle">@_result.TotalRegistros alerta(s) detectada(s). Página @_pagina de @TotalPaginas.</p>
+                </div>
+                <div class="actions">
+                    <div class="field field--inline">
+                        <label>Tamaño</label>
+                        <select value="@_tamanioPagina" @onchange="OnPageSizeChangedAsync">
+                            <option value="25">25</option>
+                            <option value="50">50</option>
+                            <option value="100">100</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <div class="table-wrap">
+                <table class="data-table usuarios-table audit-comprobantes-table">
+                    <thead>
+                        <tr>
+                            <th><button type="button" class="table-sort @GetSortClass("fecha")" @onclick='() => ToggleSortAsync("fecha")'><span>Fecha y hora</span><span class="table-sort__mark">@SortMark("fecha")</span></button></th>
+                            <th><button type="button" class="table-sort @GetSortClass("control")" @onclick='() => ToggleSortAsync("control")'><span>Tipo de control</span><span class="table-sort__mark">@SortMark("control")</span></button></th>
+                            <th><button type="button" class="table-sort @GetSortClass("riesgo")" @onclick='() => ToggleSortAsync("riesgo")'><span>Nivel de riesgo</span><span class="table-sort__mark">@SortMark("riesgo")</span></button></th>
+                            <th><button type="button" class="table-sort @GetSortClass("tc")" @onclick='() => ToggleSortAsync("tc")'><span>TC</span><span class="table-sort__mark">@SortMark("tc")</span></button></th>
+                            <th><button type="button" class="table-sort @GetSortClass("comprobante")" @onclick='() => ToggleSortAsync("comprobante")'><span>N° comprobante</span><span class="table-sort__mark">@SortMark("comprobante")</span></button></th>
+                            <th><button type="button" class="table-sort @GetSortClass("cuenta")" @onclick='() => ToggleSortAsync("cuenta")'><span>Cuenta</span><span class="table-sort__mark">@SortMark("cuenta")</span></button></th>
+                            <th><button type="button" class="table-sort @GetSortClass("cliente")" @onclick='() => ToggleSortAsync("cliente")'><span>Cliente</span><span class="table-sort__mark">@SortMark("cliente")</span></button></th>
+                            <th><button type="button" class="table-sort @GetSortClass("importecabecera")" @onclick='() => ToggleSortAsync("importecabecera")'><span>Importe cabecera</span><span class="table-sort__mark">@SortMark("importecabecera")</span></button></th>
+                            <th><button type="button" class="table-sort @GetSortClass("importedetalle")" @onclick='() => ToggleSortAsync("importedetalle")'><span>Importe detalle</span><span class="table-sort__mark">@SortMark("importedetalle")</span></button></th>
+                            <th><button type="button" class="table-sort @GetSortClass("diferencia")" @onclick='() => ToggleSortAsync("diferencia")'><span>Diferencia</span><span class="table-sort__mark">@SortMark("diferencia")</span></button></th>
+                            <th><button type="button" class="table-sort @GetSortClass("cantidad")" @onclick='() => ToggleSortAsync("cantidad")'><span>Ocurrencias</span><span class="table-sort__mark">@SortMark("cantidad")</span></button></th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (_loadingRows)
+                        {
+                            <tr><td colspan="12" class="muted">Cargando resultados de auditoría...</td></tr>
+                        }
+                        else if (_rows.Count == 0)
+                        {
+                            <tr><td colspan="12" class="muted">No se encontraron alertas con los filtros actuales.</td></tr>
+                        }
+                        else
+                        {
+                            @foreach (var item in _rows)
+                            {
+                                <tr @ondblclick="() => Seleccionar(item)">
+                                    <td>@item.FechaHora.ToString("dd/MM/yyyy HH:mm")</td>
+                                    <td>@item.TipoControlLabel</td>
+                                    <td><span class="@GetRiskBadgeClass(item.Riesgo)">@item.Riesgo</span></td>
+                                    <td>@item.TipoComprobante</td>
+                                    <td>@item.IdComprobante</td>
+                                    <td>@item.Cuenta</td>
+                                    <td>@item.Cliente</td>
+                                    <td>@FormatMoney(item.ImporteCabecera)</td>
+                                    <td>@FormatMoney(item.ImporteDetalle)</td>
+                                    <td>@FormatMoney(item.Diferencia)</td>
+                                    <td>@item.CantidadOcurrencias</td>
+                                    <td>
+                                        <div class="actions">
+                                            <button type="button" class="btn btn--ghost btn--sm" @onclick="() => Seleccionar(item)">
+                                                <i class="bi bi-eye"></i>
+                                                <span>Detalle</span>
+                                            </button>
+                                            <a class="btn btn--ghost btn--sm" href="@BuildComprobanteViewerUrl(item)">
+                                                <i class="bi bi-box-arrow-up-right"></i>
+                                                <span>Comprobante</span>
+                                            </a>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="pager-bar">
+                <button type="button" class="btn btn--ghost btn--sm" @onclick="AnteriorAsync" disabled="@(_pagina <= 1 || _loadingRows)">
+                    <i class="bi bi-chevron-left"></i> Anterior
+                </button>
+                <span>Página @_pagina de @TotalPaginas</span>
+                <button type="button" class="btn btn--ghost btn--sm" @onclick="SiguienteAsync" disabled="@(_pagina >= TotalPaginas || _loadingRows)">
+                    Siguiente <i class="bi bi-chevron-right"></i>
+                </button>
+            </div>
+        </section>
+    }
+</div>
+
+@code {
+    private bool _loading = true;
+    private bool _loadingLookups;
+    private bool _loadingRows;
+    private bool _showSearchPanel;
+    private bool _initialLoadDone;
+    private AppUiMessage? _feedback;
+    private AuditoriaComprobanteLookupsDto _lookups = new();
+    private AuditoriaComprobanteResultDto _result = new();
+    private AuditoriaComprobanteStatsDto _stats = new();
+    private List<AuditoriaComprobanteRowDto> _rows = [];
+    private AuditoriaComprobanteRowDto? _selected;
+    private DateTime? _desde = DateTime.Today.AddDays(-30);
+    private DateTime? _hasta = DateTime.Today;
+    private string _texto = string.Empty;
+    private string _tipoComprobante = string.Empty;
+    private string _riesgo = string.Empty;
+    private string _tipoControl = string.Empty;
+    private string _cuentaCliente = string.Empty;
+    private int _pagina = 1;
+    private int _tamanioPagina = 50;
+    private string _ordenCampo = "fecha";
+    private string _ordenDireccion = "desc";
+
+    private AuditoriaComprobanteFilterDto _filters => new()
+    {
+        Desde = _desde,
+        Hasta = _hasta,
+        Texto = _texto.Trim(),
+        TipoComprobante = _tipoComprobante.Trim(),
+        Riesgo = _riesgo.Trim(),
+        TipoControl = _tipoControl.Trim(),
+        CuentaCliente = _cuentaCliente.Trim(),
+        OrdenCampo = _ordenCampo,
+        OrdenDireccion = _ordenDireccion,
+        Pagina = _pagina,
+        TamanioPagina = _tamanioPagina
+    };
+
+    private int TotalPaginas => Math.Max(1, (int)Math.Ceiling((_result.TotalRegistros <= 0 ? 1 : _result.TotalRegistros) / (double)_tamanioPagina));
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _initialLoadDone)
+            return;
+
+        _initialLoadDone = true;
+        await InicializarAsync();
+        StateHasChanged();
+    }
+
+    private async Task InicializarAsync()
+    {
+        _loading = true;
+        try
+        {
+            await BuscarAsync();
+        }
+        finally
+        {
+            _loading = false;
+        }
+
+        await CargarLookupsAsync();
+    }
+
+    private async Task CargarLookupsAsync()
+    {
+        _loadingLookups = true;
+        try
+        {
+            var result = await UiOps.RunAsync(() => AuditoriaSvc.GetComprobanteAuditLookupsAsync(_desde, _hasta), "No se pudo cargar la auditoría de comprobantes.");
+            if (!result.Success || result.Value is null)
+            {
+                _lookups = new AuditoriaComprobanteLookupsDto();
+                if (_rows.Count == 0)
+                    _feedback = result.Feedback;
+                return;
+            }
+
+            _lookups = result.Value;
+            ClearErrorFeedback();
+        }
+        finally
+        {
+            _loadingLookups = false;
+        }
+    }
+
+    private async Task BuscarAsync()
+    {
+        _loadingRows = true;
+        try
+        {
+            _result = await AuditoriaSvc.SearchComprobanteAuditAsync(_filters);
+            _rows = _result.Items.ToList();
+            _stats = _result.Stats;
+            ClearErrorFeedback();
+        }
+        catch (Exception ex)
+        {
+            _feedback = UiOps.BuildMessage(ex, "No se pudo cargar la auditoría de comprobantes.");
+            _result = new AuditoriaComprobanteResultDto();
+            _rows = [];
+            _stats = new AuditoriaComprobanteStatsDto();
+        }
+        finally
+        {
+            _loadingRows = false;
+        }
+    }
+
+    private Task HandlePageClickAsync()
+    {
+        _showSearchPanel = false;
+        return Task.CompletedTask;
+    }
+
+    private void OpenSearchPanel() => _showSearchPanel = true;
+    private void ToggleSearchPanel() => _showSearchPanel = !_showSearchPanel;
+
+    private Task OnSearchInput(ChangeEventArgs args)
+    {
+        _texto = args.Value?.ToString() ?? string.Empty;
+        return Task.CompletedTask;
+    }
+
+    private async Task ApplyFiltersAsync()
+    {
+        _pagina = 1;
+        _showSearchPanel = false;
+        await CargarLookupsAsync();
+        await BuscarAsync();
+    }
+
+    private async Task LimpiarAsync()
+    {
+        _desde = DateTime.Today.AddDays(-30);
+        _hasta = DateTime.Today;
+        _texto = string.Empty;
+        _tipoComprobante = string.Empty;
+        _riesgo = string.Empty;
+        _tipoControl = string.Empty;
+        _cuentaCliente = string.Empty;
+        _pagina = 1;
+        _ordenCampo = "fecha";
+        _ordenDireccion = "desc";
+        _showSearchPanel = false;
+        await CargarLookupsAsync();
+        await BuscarAsync();
+    }
+
+    private async Task RemoveChipAsync(string key)
+    {
+        switch (key)
+        {
+            case "texto": _texto = string.Empty; break;
+            case "periodo":
+                _desde = DateTime.Today.AddDays(-30);
+                _hasta = DateTime.Today;
+                break;
+            case "tc": _tipoComprobante = string.Empty; break;
+            case "riesgo": _riesgo = string.Empty; break;
+            case "control": _tipoControl = string.Empty; break;
+            case "cuenta": _cuentaCliente = string.Empty; break;
+        }
+
+        _pagina = 1;
+        await BuscarAsync();
+    }
+
+    private List<(string Key, string Label)> BuildFilterChips()
+    {
+        var chips = new List<(string Key, string Label)>();
+        if (!string.IsNullOrWhiteSpace(_texto))
+            chips.Add(("texto", $"Texto: {_texto}"));
+        if (_desde.HasValue || _hasta.HasValue)
+            chips.Add(("periodo", $"Periodo: {FormatDate(_desde)} - {FormatDate(_hasta)}"));
+        if (!string.IsNullOrWhiteSpace(_tipoComprobante))
+            chips.Add(("tc", $"TC: {_tipoComprobante}"));
+        if (!string.IsNullOrWhiteSpace(_tipoControl))
+            chips.Add(("control", $"Control: {ResolveControlLabel(_tipoControl)}"));
+        if (!string.IsNullOrWhiteSpace(_riesgo))
+            chips.Add(("riesgo", $"Riesgo: {_riesgo}"));
+        if (!string.IsNullOrWhiteSpace(_cuentaCliente))
+            chips.Add(("cuenta", $"Cuenta: {_cuentaCliente}"));
+        return chips;
+    }
+
+    private string ResolveControlLabel(string value)
+        => _lookups.TiposControl.FirstOrDefault(x => string.Equals(x.Value, value, StringComparison.OrdinalIgnoreCase))?.Label ?? value;
+
+    private string GetSortClass(string campo)
+        => string.Equals(_ordenCampo, campo, StringComparison.OrdinalIgnoreCase) ? "is-active" : string.Empty;
+
+    private string SortMark(string campo)
+    {
+        if (!string.Equals(_ordenCampo, campo, StringComparison.OrdinalIgnoreCase))
+            return "↕";
+        return string.Equals(_ordenDireccion, "asc", StringComparison.OrdinalIgnoreCase) ? "↑" : "↓";
+    }
+
+    private async Task ToggleSortAsync(string campo)
+    {
+        if (string.Equals(_ordenCampo, campo, StringComparison.OrdinalIgnoreCase))
+            _ordenDireccion = string.Equals(_ordenDireccion, "asc", StringComparison.OrdinalIgnoreCase) ? "desc" : "asc";
+        else
+        {
+            _ordenCampo = campo;
+            _ordenDireccion = "asc";
+        }
+
+        _pagina = 1;
+        await BuscarAsync();
+    }
+
+    private void Seleccionar(AuditoriaComprobanteRowDto item) => _selected = item;
+    private void CerrarDetalle() => _selected = null;
+
+    private async Task RecargarAsync()
+    {
+        await CargarLookupsAsync();
+        await BuscarAsync();
+    }
+
+    private async Task OnPageSizeChangedAsync(ChangeEventArgs args)
+    {
+        if (int.TryParse(args.Value?.ToString(), out var value))
+            _tamanioPagina = Math.Clamp(value, 25, 100);
+        _pagina = 1;
+        await BuscarAsync();
+    }
+
+    private async Task AnteriorAsync()
+    {
+        if (_pagina <= 1)
+            return;
+        _pagina--;
+        await BuscarAsync();
+    }
+
+    private async Task SiguienteAsync()
+    {
+        if (_pagina >= TotalPaginas)
+            return;
+        _pagina++;
+        await BuscarAsync();
+    }
+
+    private static string FormatMoney(decimal? value)
+        => value.HasValue ? value.Value.ToString("N2") : "—";
+
+    private static string FormatDate(DateTime? value)
+        => value.HasValue ? value.Value.ToString("dd/MM") : "—";
+
+    private static string FormatCliente(AuditoriaComprobanteRowDto item)
+    {
+        if (!string.IsNullOrWhiteSpace(item.Cliente) && !string.IsNullOrWhiteSpace(item.Cuenta))
+            return $"{item.Cuenta} · {item.Cliente}";
+        if (!string.IsNullOrWhiteSpace(item.Cliente))
+            return item.Cliente;
+        if (!string.IsNullOrWhiteSpace(item.Cuenta))
+            return item.Cuenta;
+        return "—";
+    }
+
+    private static string GetRiskBadgeClass(string riesgo)
+        => string.Equals(riesgo, "ALTO", StringComparison.OrdinalIgnoreCase)
+            ? "audit-risk audit-risk--high"
+            : "audit-risk audit-risk--medium";
+
+    private static string BuildComprobanteViewerUrl(AuditoriaComprobanteRowDto item)
+        => $"/comprobantes/viewer/{Uri.EscapeDataString(item.TipoComprobante ?? string.Empty)}/{Uri.EscapeDataString(item.IdComprobante ?? string.Empty)}?idComplemento={item.IdComplemento}&returnUrl=%2Fauditoria%2Fcomprobantes";
+
+    private static string GetFeedbackClass(AppUiMessage message)
+        => message.Severity switch
+        {
+            AppUiFeedbackSeverity.Success => "editor-msg--success",
+            AppUiFeedbackSeverity.Warning => "editor-msg--warning",
+            AppUiFeedbackSeverity.Error => "editor-msg--error",
+            _ => "editor-msg--info"
+        };
+
+    private void ClearErrorFeedback()
+    {
+        if (_feedback?.Severity is AppUiFeedbackSeverity.Error or AppUiFeedbackSeverity.Warning)
+            _feedback = null;
+    }
+}

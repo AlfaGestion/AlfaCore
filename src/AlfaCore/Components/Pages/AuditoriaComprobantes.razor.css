@@ -1,0 +1,75 @@
+.audit-comprobantes-table th {
+    white-space: nowrap;
+    vertical-align: middle;
+}
+
+.audit-comprobantes-table .table-sort {
+    all: unset;
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 0.4rem;
+    width: 100%;
+    min-height: 2rem;
+    color: rgba(210, 223, 245, 0.88);
+    font: inherit;
+    font-size: 0.74rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: color 0.18s ease;
+}
+
+.audit-comprobantes-table .table-sort span {
+    display: inline-flex;
+    align-items: center;
+}
+
+.audit-comprobantes-table .table-sort:hover,
+.audit-comprobantes-table .table-sort:focus-visible {
+    color: var(--accent, #35c2ff);
+    outline: none;
+}
+
+.audit-comprobantes-table .table-sort.is-active {
+    color: var(--accent, #35c2ff);
+}
+
+.audit-comprobantes-table .table-sort__mark {
+    min-width: 1rem;
+    text-align: center;
+    font-size: 0.72rem;
+    opacity: 0.85;
+}
+
+.audit-comprobantes-table thead th {
+    padding-top: 0.85rem;
+    padding-bottom: 0.85rem;
+    color: rgba(210, 223, 245, 0.88);
+}
+
+.audit-comprobantes-table th:last-child {
+    min-width: 10rem;
+}
+
+.audit-comprobantes-table td {
+    vertical-align: top;
+}
+
+.audit-comprobantes-table .actions {
+    flex-wrap: nowrap;
+}
+
+.audit-comprobantes-table .muted {
+    color: rgba(220, 229, 244, 0.78);
+    text-align: center;
+    padding: 1rem 0.5rem;
+}
+
+@media (max-width: 900px) {
+    .audit-comprobantes-table .actions {
+        flex-wrap: wrap;
+    }
+}

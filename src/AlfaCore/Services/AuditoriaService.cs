@@ -288,6 +288,73 @@ public sealed class AuditoriaService(
         }, "No se pudieron cargar las opciones de auditoría de usuarios.", ct);
     }
 
+    public async Task<AuditoriaComprobanteLookupsDto> GetComprobanteAuditLookupsAsync(DateTime? desde = null, DateTime? hasta = null, CancellationToken ct = default)
+    {
+        return await ExecuteLoggedAsync("Auditoria", "GetComprobanteAuditLookups", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            var tiposComprobante = await QueryStringListAsync(
+                """
+                SELECT DISTINCT TOP (50)
+                    LTRIM(RTRIM(ISNULL(TC, ''))) AS TC
+                FROM dbo.V_MV_Cpte
+                WHERE (@Desde IS NULL OR FECHA >= @Desde)
+                  AND (@Hasta IS NULL OR FECHA < DATEADD(day, 1, @Hasta))
+                  AND ISNULL(TC, '') <> ''
+                ORDER BY LTRIM(RTRIM(ISNULL(TC, '')));
+                """,
+                cn,
+                desde,
+                hasta,
+                token);
+
+            var cuentasClientes = await QueryStringListAsync(
+                """
+                SELECT DISTINCT TOP (200)
+                    LTRIM(RTRIM(
+                        CASE
+                            WHEN ISNULL(CUENTA, '') <> '' AND ISNULL(NOMBRE, '') <> '' THEN CUENTA + N' · ' + NOMBRE
+                            WHEN ISNULL(CUENTA, '') <> '' THEN CUENTA
+                            ELSE ISNULL(NOMBRE, '')
+                        END
+                    )) AS ClienteCuenta
+                FROM dbo.V_MV_Cpte
+                WHERE (@Desde IS NULL OR FECHA >= @Desde)
+                  AND (@Hasta IS NULL OR FECHA < DATEADD(day, 1, @Hasta))
+                  AND (ISNULL(CUENTA, '') <> '' OR ISNULL(NOMBRE, '') <> '')
+                ORDER BY LTRIM(RTRIM(
+                    CASE
+                        WHEN ISNULL(CUENTA, '') <> '' AND ISNULL(NOMBRE, '') <> '' THEN CUENTA + N' · ' + NOMBRE
+                        WHEN ISNULL(CUENTA, '') <> '' THEN CUENTA
+                        ELSE ISNULL(NOMBRE, '')
+                    END
+                ));
+                """,
+                cn,
+                desde,
+                hasta,
+                token);
+
+            return new AuditoriaComprobanteLookupsDto
+            {
+                TiposComprobante = tiposComprobante,
+                CuentasClientes = cuentasClientes,
+                TiposControl =
+                [
+                    new AuditoriaLookupItemDto { Value = "DUPLICADO_POTENCIAL", Label = "Duplicados potenciales" },
+                    new AuditoriaLookupItemDto { Value = "DETALLE_CABECERA", Label = "Cabecera vs detalle" }
+                ],
+                Riesgos =
+                [
+                    new AuditoriaLookupItemDto { Value = "ALTO", Label = "Alto" },
+                    new AuditoriaLookupItemDto { Value = "MEDIO", Label = "Medio" }
+                ]
+            };
+        }, "No se pudieron cargar los filtros de auditoría de comprobantes.", ct);
+    }
+
     public async Task<AuditoriaUsuarioSettingsDto> GetUserAuditSettingsAsync(CancellationToken ct = default)
     {
         return await ExecuteLoggedAsync("Auditoria", "GetUserAuditSettings", async token =>
@@ -1064,6 +1131,330 @@ public sealed class AuditoriaService(
         }, "No se pudo cargar la auditoría de usuarios.", ct);
     }
 
+    public async Task<AuditoriaComprobanteResultDto> SearchComprobanteAuditAsync(AuditoriaComprobanteFilterDto filter, CancellationToken ct = default)
+    {
+        return await ExecuteLoggedAsync("Auditoria", "SearchComprobanteAudit", async token =>
+        {
+            filter ??= new AuditoriaComprobanteFilterDto();
+            var pagina = Math.Max(1, filter.Pagina);
+            var tamanio = Math.Clamp(filter.TamanioPagina, 10, 200);
+            var offset = (pagina - 1) * tamanio;
+            var orderBy = ResolveComprobanteAuditOrderBy(filter.OrdenCampo, filter.OrdenDireccion);
+
+            var sql = $"""
+                IF OBJECT_ID('tempdb..#VentasPeriodo') IS NOT NULL DROP TABLE #VentasPeriodo;
+                IF OBJECT_ID('tempdb..#Duplicados') IS NOT NULL DROP TABLE #Duplicados;
+                IF OBJECT_ID('tempdb..#InsumosAgg') IS NOT NULL DROP TABLE #InsumosAgg;
+                IF OBJECT_ID('tempdb..#TareasAgg') IS NOT NULL DROP TABLE #TareasAgg;
+                IF OBJECT_ID('tempdb..#ObservAgg') IS NOT NULL DROP TABLE #ObservAgg;
+                IF OBJECT_ID('tempdb..#AlertasCmp') IS NOT NULL DROP TABLE #AlertasCmp;
+
+                SELECT
+                    ISNULL(c.ID, 0) AS ID,
+                    ISNULL(c.TC, '') AS TC,
+                    ISNULL(c.IDCOMPROBANTE, '') AS IDCOMPROBANTE,
+                    ISNULL(c.IDCOMPLEMENTO, 0) AS IDCOMPLEMENTO,
+                    ISNULL(c.CUENTA, '') AS CUENTA,
+                    ISNULL(c.NOMBRE, '') AS NOMBRE,
+                    ISNULL(c.IMPORTE, 0) AS IMPORTE,
+                    CAST(ISNULL(c.FECHA, GETDATE()) AS datetime) AS FECHA,
+                    ISNULL(c.FechaHora_Grabacion, CAST(ISNULL(c.FECHA, GETDATE()) AS datetime)) AS FechaHora_Grabacion,
+                    ISNULL(c.ANULADA, 0) AS ANULADA
+                INTO #VentasPeriodo
+                FROM dbo.V_MV_Cpte c
+                WHERE (@Desde IS NULL OR c.FECHA >= @Desde)
+                  AND (@Hasta IS NULL OR c.FECHA < DATEADD(day, 1, @Hasta));
+
+                SELECT
+                    UPPER(LTRIM(RTRIM(TC))) AS TC,
+                    UPPER(LTRIM(RTRIM(CUENTA))) AS CUENTA,
+                    CAST(FECHA AS date) AS FECHA,
+                    ROUND(ISNULL(IMPORTE, 0), 2) AS IMPORTE,
+                    COUNT(*) AS Cantidad,
+                    STUFF((
+                        SELECT ', ' + v2.IDCOMPROBANTE
+                        FROM #VentasPeriodo v2
+                        WHERE UPPER(LTRIM(RTRIM(v2.TC))) = UPPER(LTRIM(RTRIM(v.TC)))
+                          AND UPPER(LTRIM(RTRIM(v2.CUENTA))) = UPPER(LTRIM(RTRIM(v.CUENTA)))
+                          AND CAST(v2.FECHA AS date) = CAST(v.FECHA AS date)
+                          AND ROUND(ISNULL(v2.IMPORTE, 0), 2) = ROUND(ISNULL(v.IMPORTE, 0), 2)
+                        ORDER BY v2.IDCOMPROBANTE
+                        FOR XML PATH(''), TYPE
+                    ).value('.', 'nvarchar(max)'), 1, 2, '') AS ComprobantesRelacionados
+                INTO #Duplicados
+                FROM #VentasPeriodo v
+                WHERE ISNULL(v.ANULADA, 0) = 0
+                  AND ISNULL(v.CUENTA, '') <> ''
+                  AND ROUND(ISNULL(v.IMPORTE, 0), 2) <> 0
+                GROUP BY
+                    UPPER(LTRIM(RTRIM(TC))),
+                    UPPER(LTRIM(RTRIM(CUENTA))),
+                    CAST(FECHA AS date),
+                    ROUND(ISNULL(IMPORTE, 0), 2)
+                HAVING COUNT(*) > 1;
+
+                SELECT
+                    UPPER(LTRIM(RTRIM(TC))) AS TC,
+                    UPPER(LTRIM(RTRIM(IDCOMPROBANTE))) AS IDCOMPROBANTE,
+                    ISNULL(IDCOMPLEMENTO, 0) AS IDCOMPLEMENTO,
+                    ROUND(SUM(ISNULL(TOTAL, 0)), 2) AS TotalInsumos,
+                    COUNT(*) AS CantidadLineas
+                INTO #InsumosAgg
+                FROM dbo.V_MV_CpteInsumos
+                GROUP BY UPPER(LTRIM(RTRIM(TC))), UPPER(LTRIM(RTRIM(IDCOMPROBANTE))), ISNULL(IDCOMPLEMENTO, 0);
+
+                SELECT
+                    UPPER(LTRIM(RTRIM(TC))) AS TC,
+                    UPPER(LTRIM(RTRIM(IDCOMPROBANTE))) AS IDCOMPROBANTE,
+                    ISNULL(IDCOMPLEMENTO, 0) AS IDCOMPLEMENTO,
+                    ROUND(SUM(ISNULL(TOTAL, 0)), 2) AS TotalTareas,
+                    COUNT(*) AS CantidadLineas
+                INTO #TareasAgg
+                FROM dbo.V_MV_CpteTareas
+                GROUP BY UPPER(LTRIM(RTRIM(TC))), UPPER(LTRIM(RTRIM(IDCOMPROBANTE))), ISNULL(IDCOMPLEMENTO, 0);
+
+                SELECT
+                    UPPER(LTRIM(RTRIM(TC))) AS TC,
+                    UPPER(LTRIM(RTRIM(IDCOMPROBANTE))) AS IDCOMPROBANTE,
+                    ISNULL(IDCOMPLEMENTO, 0) AS IDCOMPLEMENTO,
+                    ROUND(SUM(ISNULL(IMPORTE, 0)), 2) AS TotalObserv,
+                    COUNT(*) AS CantidadLineas
+                INTO #ObservAgg
+                FROM dbo.V_MV_CPTE_OBSERV
+                GROUP BY UPPER(LTRIM(RTRIM(TC))), UPPER(LTRIM(RTRIM(IDCOMPROBANTE))), ISNULL(IDCOMPLEMENTO, 0);
+
+                CREATE TABLE #AlertasCmp
+                (
+                    TipoControl nvarchar(50) NOT NULL,
+                    TipoControlLabel nvarchar(120) NOT NULL,
+                    Riesgo nvarchar(20) NOT NULL,
+                    RiesgoOrden int NOT NULL,
+                    FechaHora datetime NOT NULL,
+                    TipoComprobante nvarchar(20) NOT NULL,
+                    IdComprobante nvarchar(40) NOT NULL,
+                    IdComplemento int NOT NULL,
+                    Cuenta nvarchar(50) NOT NULL,
+                    Cliente nvarchar(150) NOT NULL,
+                    ImporteCabecera decimal(18, 2) NULL,
+                    ImporteDetalle decimal(18, 2) NULL,
+                    Diferencia decimal(18, 2) NULL,
+                    CantidadOcurrencias int NOT NULL,
+                    Motivo nvarchar(max) NOT NULL,
+                    Observaciones nvarchar(max) NOT NULL
+                );
+
+                INSERT INTO #AlertasCmp
+                (
+                    TipoControl, TipoControlLabel, Riesgo, RiesgoOrden, FechaHora,
+                    TipoComprobante, IdComprobante, IdComplemento, Cuenta, Cliente,
+                    ImporteCabecera, ImporteDetalle, Diferencia, CantidadOcurrencias,
+                    Motivo, Observaciones
+                )
+                SELECT
+                    'DUPLICADO_POTENCIAL',
+                    'Duplicados potenciales',
+                    'ALTO',
+                    2,
+                    v.FechaHora_Grabacion,
+                    v.TC,
+                    v.IDCOMPROBANTE,
+                    v.IDCOMPLEMENTO,
+                    v.CUENTA,
+                    v.NOMBRE,
+                    ROUND(v.IMPORTE, 2),
+                    NULL,
+                    NULL,
+                    d.Cantidad,
+                    'Se detectó más de un comprobante con mismo TC, cuenta, fecha e importe.',
+                    'Comprobantes del grupo: ' + ISNULL(d.ComprobantesRelacionados, '')
+                FROM #VentasPeriodo v
+                INNER JOIN #Duplicados d
+                    ON d.TC = UPPER(LTRIM(RTRIM(v.TC)))
+                   AND d.CUENTA = UPPER(LTRIM(RTRIM(v.CUENTA)))
+                   AND d.FECHA = CAST(v.FECHA AS date)
+                   AND d.IMPORTE = ROUND(ISNULL(v.IMPORTE, 0), 2);
+
+                INSERT INTO #AlertasCmp
+                (
+                    TipoControl, TipoControlLabel, Riesgo, RiesgoOrden, FechaHora,
+                    TipoComprobante, IdComprobante, IdComplemento, Cuenta, Cliente,
+                    ImporteCabecera, ImporteDetalle, Diferencia, CantidadOcurrencias,
+                    Motivo, Observaciones
+                )
+                SELECT
+                    'DETALLE_CABECERA',
+                    'Cabecera vs detalle',
+                    CASE
+                        WHEN (ISNULL(i.CantidadLineas, 0) + ISNULL(t.CantidadLineas, 0) + ISNULL(o.CantidadLineas, 0)) = 0 THEN 'ALTO'
+                        WHEN ABS(ROUND(v.IMPORTE, 2) - ROUND(ISNULL(i.TotalInsumos, 0) + ISNULL(t.TotalTareas, 0) + ISNULL(o.TotalObserv, 0), 2)) >= 1 THEN 'ALTO'
+                        ELSE 'MEDIO'
+                    END,
+                    CASE
+                        WHEN (ISNULL(i.CantidadLineas, 0) + ISNULL(t.CantidadLineas, 0) + ISNULL(o.CantidadLineas, 0)) = 0 THEN 2
+                        WHEN ABS(ROUND(v.IMPORTE, 2) - ROUND(ISNULL(i.TotalInsumos, 0) + ISNULL(t.TotalTareas, 0) + ISNULL(o.TotalObserv, 0), 2)) >= 1 THEN 2
+                        ELSE 1
+                    END,
+                    v.FechaHora_Grabacion,
+                    v.TC,
+                    v.IDCOMPROBANTE,
+                    v.IDCOMPLEMENTO,
+                    v.CUENTA,
+                    v.NOMBRE,
+                    ROUND(v.IMPORTE, 2),
+                    ROUND(ISNULL(i.TotalInsumos, 0) + ISNULL(t.TotalTareas, 0) + ISNULL(o.TotalObserv, 0), 2),
+                    ROUND(v.IMPORTE - (ISNULL(i.TotalInsumos, 0) + ISNULL(t.TotalTareas, 0) + ISNULL(o.TotalObserv, 0)), 2),
+                    1,
+                    CASE
+                        WHEN (ISNULL(i.CantidadLineas, 0) + ISNULL(t.CantidadLineas, 0) + ISNULL(o.CantidadLineas, 0)) = 0 THEN 'La cabecera tiene importe pero no se encontraron líneas de detalle.'
+                        ELSE 'La suma del detalle no coincide con el importe de cabecera.'
+                    END,
+                    CONCAT(
+                        'Insumos: ', CONVERT(nvarchar(50), ROUND(ISNULL(i.TotalInsumos, 0), 2)),
+                        ' · Tareas: ', CONVERT(nvarchar(50), ROUND(ISNULL(t.TotalTareas, 0), 2)),
+                        ' · Observaciones: ', CONVERT(nvarchar(50), ROUND(ISNULL(o.TotalObserv, 0), 2))
+                    )
+                FROM #VentasPeriodo v
+                LEFT JOIN #InsumosAgg i
+                    ON i.TC = UPPER(LTRIM(RTRIM(v.TC)))
+                   AND i.IDCOMPROBANTE = UPPER(LTRIM(RTRIM(v.IDCOMPROBANTE)))
+                   AND i.IDCOMPLEMENTO = v.IDCOMPLEMENTO
+                LEFT JOIN #TareasAgg t
+                    ON t.TC = UPPER(LTRIM(RTRIM(v.TC)))
+                   AND t.IDCOMPROBANTE = UPPER(LTRIM(RTRIM(v.IDCOMPROBANTE)))
+                   AND t.IDCOMPLEMENTO = v.IDCOMPLEMENTO
+                LEFT JOIN #ObservAgg o
+                    ON o.TC = UPPER(LTRIM(RTRIM(v.TC)))
+                   AND o.IDCOMPROBANTE = UPPER(LTRIM(RTRIM(v.IDCOMPROBANTE)))
+                   AND o.IDCOMPLEMENTO = v.IDCOMPLEMENTO
+                WHERE ISNULL(v.ANULADA, 0) = 0
+                  AND ROUND(ISNULL(v.IMPORTE, 0), 2) <> ROUND(ISNULL(i.TotalInsumos, 0) + ISNULL(t.TotalTareas, 0) + ISNULL(o.TotalObserv, 0), 2);
+
+                SELECT
+                    TipoControl,
+                    TipoControlLabel,
+                    Riesgo,
+                    FechaHora,
+                    TipoComprobante,
+                    IdComprobante,
+                    IdComplemento,
+                    Cuenta,
+                    Cliente,
+                    ImporteCabecera,
+                    ImporteDetalle,
+                    Diferencia,
+                    CantidadOcurrencias,
+                    Motivo,
+                    Observaciones
+                FROM #AlertasCmp
+                WHERE (@TipoComprobante = '' OR TipoComprobante LIKE '%' + @TipoComprobante + '%')
+                  AND (@Riesgo = '' OR Riesgo = @Riesgo)
+                  AND (@TipoControl = '' OR TipoControl = @TipoControl)
+                  AND (
+                        @CuentaCliente = ''
+                        OR Cuenta LIKE '%' + @CuentaCliente + '%'
+                        OR Cliente LIKE '%' + @CuentaCliente + '%'
+                      )
+                  AND (
+                        @Texto = ''
+                        OR TipoComprobante LIKE '%' + @Texto + '%'
+                        OR IdComprobante LIKE '%' + @Texto + '%'
+                        OR Cuenta LIKE '%' + @Texto + '%'
+                        OR Cliente LIKE '%' + @Texto + '%'
+                        OR Motivo LIKE '%' + @Texto + '%'
+                        OR Observaciones LIKE '%' + @Texto + '%'
+                      )
+                ORDER BY {orderBy}
+                OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY;
+
+                SELECT
+                    COUNT(*) AS TotalAlertas,
+                    SUM(CASE WHEN Riesgo = 'ALTO' THEN 1 ELSE 0 END) AS RiesgoAlto,
+                    SUM(CASE WHEN Riesgo = 'MEDIO' THEN 1 ELSE 0 END) AS RiesgoMedio,
+                    COUNT(DISTINCT TipoControl) AS ControlesDetectados
+                FROM #AlertasCmp
+                WHERE (@TipoComprobante = '' OR TipoComprobante LIKE '%' + @TipoComprobante + '%')
+                  AND (@Riesgo = '' OR Riesgo = @Riesgo)
+                  AND (@TipoControl = '' OR TipoControl = @TipoControl)
+                  AND (
+                        @CuentaCliente = ''
+                        OR Cuenta LIKE '%' + @CuentaCliente + '%'
+                        OR Cliente LIKE '%' + @CuentaCliente + '%'
+                      )
+                  AND (
+                        @Texto = ''
+                        OR TipoComprobante LIKE '%' + @Texto + '%'
+                        OR IdComprobante LIKE '%' + @Texto + '%'
+                        OR Cuenta LIKE '%' + @Texto + '%'
+                        OR Cliente LIKE '%' + @Texto + '%'
+                        OR Motivo LIKE '%' + @Texto + '%'
+                        OR Observaciones LIKE '%' + @Texto + '%'
+                      );
+                """;
+
+            var items = new List<AuditoriaComprobanteRowDto>();
+            var stats = new AuditoriaComprobanteStatsDto();
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var cmd = new SqlCommand(sql, cn);
+            cmd.Parameters.AddWithValue("@Desde", (object?)filter.Desde ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@Hasta", (object?)filter.Hasta ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@Texto", filter.Texto ?? string.Empty);
+            cmd.Parameters.AddWithValue("@TipoComprobante", filter.TipoComprobante ?? string.Empty);
+            cmd.Parameters.AddWithValue("@Riesgo", filter.Riesgo ?? string.Empty);
+            cmd.Parameters.AddWithValue("@TipoControl", filter.TipoControl ?? string.Empty);
+            cmd.Parameters.AddWithValue("@CuentaCliente", filter.CuentaCliente ?? string.Empty);
+            cmd.Parameters.AddWithValue("@Offset", offset);
+            cmd.Parameters.AddWithValue("@PageSize", tamanio);
+            cmd.CommandTimeout = 90;
+
+            await using var rd = await cmd.ExecuteReaderAsync(token);
+            while (await rd.ReadAsync(token))
+            {
+                items.Add(new AuditoriaComprobanteRowDto
+                {
+                    TipoControl = ReadString(rd, 0),
+                    TipoControlLabel = ReadString(rd, 1),
+                    Riesgo = ReadString(rd, 2),
+                    FechaHora = ReadDateTime(rd, 3) ?? DateTime.MinValue,
+                    TipoComprobante = ReadString(rd, 4),
+                    IdComprobante = ReadString(rd, 5),
+                    IdComplemento = ReadInt(rd, 6),
+                    Cuenta = ReadString(rd, 7),
+                    Cliente = ReadString(rd, 8),
+                    ImporteCabecera = ReadDecimal(rd, 9),
+                    ImporteDetalle = ReadDecimal(rd, 10),
+                    Diferencia = ReadDecimal(rd, 11),
+                    CantidadOcurrencias = ReadInt(rd, 12),
+                    Motivo = ReadString(rd, 13),
+                    Observaciones = ReadString(rd, 14)
+                });
+            }
+
+            var total = 0;
+            if (await rd.NextResultAsync(token) && await rd.ReadAsync(token))
+            {
+                total = ReadInt(rd, 0);
+                stats = new AuditoriaComprobanteStatsDto
+                {
+                    TotalAlertas = total,
+                    RiesgoAlto = ReadInt(rd, 1),
+                    RiesgoMedio = ReadInt(rd, 2),
+                    ControlesDetectados = ReadInt(rd, 3)
+                };
+            }
+
+            return new AuditoriaComprobanteResultDto
+            {
+                Items = items,
+                Stats = stats,
+                TotalRegistros = total,
+                Pagina = pagina,
+                TamanioPagina = tamanio
+            };
+        }, "No se pudo cargar la auditoría de comprobantes.", ct);
+    }
+
     private async Task<IReadOnlyList<string>> QueryDistinctAsync(string field, CancellationToken ct)
     {
         return await ExecuteLoggedAsync("Auditoria", $"GetDistinct{field}", async token =>
@@ -1372,6 +1763,33 @@ public sealed class AuditoriaService(
             "estadofacturacion" => "EstadoFacturacion",
             "importe" => "ISNULL(ImporteOriginal, 0)",
             "aplicado" => "ISNULL(ImporteAplicado, 0)",
+            "diferencia" => "ISNULL(Diferencia, 0)",
+            "cantidad" => "CantidadOcurrencias",
+            _ => "FechaHora"
+        };
+
+        var suffix = descending ? "DESC" : "ASC";
+        return sqlField switch
+        {
+            "RiesgoOrden" => $"RiesgoOrden {suffix}, FechaHora DESC, TipoControlLabel ASC",
+            "FechaHora" => $"FechaHora {suffix}, TipoControlLabel ASC",
+            _ => $"{sqlField} {suffix}, FechaHora DESC"
+        };
+    }
+
+    private static string ResolveComprobanteAuditOrderBy(string? field, string? direction)
+    {
+        var descending = !string.Equals(direction, "asc", StringComparison.OrdinalIgnoreCase);
+        var sqlField = (field ?? string.Empty).Trim().ToLowerInvariant() switch
+        {
+            "control" => "TipoControlLabel",
+            "riesgo" => "RiesgoOrden",
+            "tc" => "TipoComprobante",
+            "comprobante" => "IdComprobante",
+            "cliente" => "Cliente",
+            "cuenta" => "Cuenta",
+            "importecabecera" => "ISNULL(ImporteCabecera, 0)",
+            "importedetalle" => "ISNULL(ImporteDetalle, 0)",
             "diferencia" => "ISNULL(Diferencia, 0)",
             "cantidad" => "CantidadOcurrencias",
             _ => "FechaHora"

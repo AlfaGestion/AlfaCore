@@ -381,26 +381,29 @@
             }
 
             <div class="menu__footer">
-                @if (_pwaCanInstall)
+                @if (string.IsNullOrWhiteSpace(_currentModule))
                 {
-                    <button type="button" class="menu__link menu__button" @onclick="InstallPwaAsync">
-                        <span class="menu__icon"><i class="bi bi-download"></i></span>
-                        <span>Instalar AlfaCore</span>
-                    </button>
-                }
-                else if (_pwaIsIos && !_pwaInstalled)
-                {
-                    <button type="button" class="menu__link menu__button" @onclick="ToggleInstallHelp">
-                        <span class="menu__icon"><i class="bi bi-phone"></i></span>
-                        <span>Instalar app</span>
-                    </button>
-                }
-                @if (AppUserSession.IsAuthenticated)
-                {
-                    <button type="button" class="menu__link menu__button" @onclick="TogglePushPanelAsync">
-                        <span class="menu__icon"><i class="bi bi-bell-fill"></i></span>
-                        <span>Notificaciones</span>
-                    </button>
+                    @if (_pwaCanInstall)
+                    {
+                        <button type="button" class="menu__link menu__button" @onclick="InstallPwaAsync">
+                            <span class="menu__icon"><i class="bi bi-download"></i></span>
+                            <span>Instalar AlfaCore</span>
+                        </button>
+                    }
+                    else if (_pwaIsIos && !_pwaInstalled)
+                    {
+                        <button type="button" class="menu__link menu__button" @onclick="ToggleInstallHelp">
+                            <span class="menu__icon"><i class="bi bi-phone"></i></span>
+                            <span>Instalar app</span>
+                        </button>
+                    }
+                    @if (AppUserSession.IsAuthenticated)
+                    {
+                        <button type="button" class="menu__link menu__button" @onclick="TogglePushPanelAsync">
+                            <span class="menu__icon"><i class="bi bi-bell-fill"></i></span>
+                            <span>Notificaciones</span>
+                        </button>
+                    }
                 }
                 <NavLink class="menu__link menu__link--help" href="@(_currentModule == "consultas" ? "/ayuda?topic=consultas" : "/ayuda")">
                     <span class="menu__icon"><i class="bi bi-question-circle-fill"></i></span>
