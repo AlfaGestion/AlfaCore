@@ -375,7 +375,7 @@
             {
                 <p class="menu__section">Aplicaciones</p>
                 <nav class="menu__nav">
-                    @if (IsLauncherRoute)
+                    @if (ShowShellContext)
                     {
                         <a class="menu__link menu__link--module" href="/#favoritos">
                             <span class="menu__icon"><i class="bi bi-star-fill"></i></span>
@@ -383,12 +383,19 @@
                         </a>
                     }
 
-                    @if (_mainMenuModules.Count == 0)
+                    @if (_menuSearchLoading || (!_menuSearchLoaded && ShowShellContext))
                     {
-                        <NavLink class="menu__link" href="/" Match="NavLinkMatch.All">
+                        <div class="menu__link menu__link--disabled">
+                            <span class="menu__icon"><i class="bi bi-hourglass-split"></i></span>
+                            <span>Cargando módulos...</span>
+                        </div>
+                    }
+                    else if (_mainMenuModules.Count == 0)
+                    {
+                        <div class="menu__link menu__link--disabled">
                             <span class="menu__icon"><i class="bi bi-grid-3x3-gap-fill"></i></span>
-                            <span>Aplicaciones</span>
-                        </NavLink>
+                            <span>Sin módulos visibles</span>
+                        </div>
                     }
                     else
                     {
@@ -876,6 +883,8 @@
         _loginShowPassword = false;
         _loginError = string.Empty;
         ResetGlobalConversationNotifications();
+        if (ShowShellContext)
+            _ = InvokeAsync(EnsureMenuSearchCatalogAsync);
         InvokeAsync(StateHasChanged);
     }
 
@@ -888,6 +897,8 @@
             _loginShowPassword = false;
         }
 
+        if (ShowShellContext)
+            _ = InvokeAsync(EnsureMenuSearchCatalogAsync);
         InvokeAsync(StateHasChanged);
     }
 

@@ -68,6 +68,7 @@ else
     private ShellWorkspaceDto _workspace = new();
     private bool _interactiveReady;
     private bool _disposed;
+    private int _loadVersion;
 
     protected override void OnInitialized()
     {
@@ -89,6 +90,7 @@ else
         _interactiveReady = true;
         await Task.Yield();
         await LoadWorkspaceAsync();
+        await InvokeAsync(StateHasChanged);
     }
 
     private async Task OpenNodeAsync(ShellMenuNodeDto item)
@@ -111,10 +113,22 @@ else
 
     private async Task LoadWorkspaceAsync()
     {
+        var version = Interlocked.Increment(ref _loadVersion);
         _loading = true;
         StateHasChanged();
-        _workspace = await WorkspaceSvc.GetModuleWorkspaceAsync(ModuleKey);
-        _loading = false;
+        try
+        {
+            var workspace = await WorkspaceSvc.GetModuleWorkspaceAsync(ModuleKey);
+            if (version != _loadVersion)
+                return;
+
+            _workspace = workspace;
+        }
+        finally
+        {
+            if (version == _loadVersion)
+                _loading = false;
+        }
     }
 
     public void Dispose()

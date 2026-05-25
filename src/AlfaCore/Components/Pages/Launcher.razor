@@ -111,6 +111,7 @@ else
     private bool _loading = true;
     private ShellHomeDto _home = new();
     private bool _disposed;
+    private int _loadVersion;
 
     protected override void OnInitialized()
     {
@@ -125,6 +126,7 @@ else
 
         await Task.Yield();
         await LoadHomeAsync();
+        await InvokeAsync(StateHasChanged);
     }
 
     private async Task OpenNodeAsync(ShellMenuNodeDto item)
@@ -147,10 +149,22 @@ else
 
     private async Task LoadHomeAsync()
     {
+        var version = Interlocked.Increment(ref _loadVersion);
         _loading = true;
         StateHasChanged();
-        _home = await WorkspaceSvc.GetHomeAsync();
-        _loading = false;
+        try
+        {
+            var home = await WorkspaceSvc.GetHomeAsync();
+            if (version != _loadVersion)
+                return;
+
+            _home = home;
+        }
+        finally
+        {
+            if (version == _loadVersion)
+                _loading = false;
+        }
     }
 
     public void Dispose()
