@@ -1,0 +1,193 @@
+.main-shell {
+    min-height: 100vh;
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    background: var(--page-bg, #071426);
+}
+
+.main-shell__sidebar {
+    border-right: 1px solid rgba(80, 118, 180, 0.18);
+    background: rgba(6, 18, 34, 0.94);
+    padding: 1.5rem 1.1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.main-shell__brand {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+}
+
+.main-shell__brand-copy {
+    min-width: 0;
+}
+
+.main-shell__logo {
+    width: 3.25rem;
+    height: 3.25rem;
+    object-fit: contain;
+}
+
+.main-shell__logo-link,
+.main-shell__title {
+    text-decoration: none;
+}
+
+.main-shell__eyebrow {
+    color: rgba(196, 212, 237, 0.7);
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+}
+
+.main-shell__title {
+    color: #f5f8ff;
+    font-size: 1.25rem;
+    font-weight: 700;
+}
+
+.main-shell__nav {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+}
+
+.main-shell__toggle {
+    margin-left: auto;
+    width: 2.75rem;
+    height: 2.75rem;
+    border-radius: 1rem;
+    border: 1px solid rgba(73, 191, 255, 0.28);
+    background: rgba(10, 32, 58, 0.88);
+    color: #d8efff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: transform 0.18s ease, background 0.18s ease, border-color 0.18s ease;
+}
+
+.main-shell__toggle:hover {
+    background: rgba(18, 45, 78, 0.96);
+    border-color: rgba(73, 191, 255, 0.42);
+}
+
+.main-shell__back,
+.main-shell__nav-link {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.85rem 0.95rem;
+    border-radius: 1rem;
+    color: rgba(220, 229, 244, 0.92);
+    text-decoration: none;
+    transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease;
+    border: 1px solid transparent;
+}
+
+.main-shell__back {
+    margin-bottom: 0.35rem;
+    color: rgba(205, 219, 242, 0.76);
+}
+
+.main-shell__nav-link:hover,
+.main-shell__back:hover {
+    background: rgba(53, 194, 255, 0.08);
+    color: #f5fbff;
+}
+
+.main-shell__nav-link.is-active {
+    background: rgba(53, 194, 255, 0.14);
+    border-color: rgba(53, 194, 255, 0.18);
+    color: #f5fbff;
+}
+
+.main-shell__footer {
+    margin-top: auto;
+    display: grid;
+    gap: 0.35rem;
+    color: rgba(190, 206, 232, 0.72);
+    font-size: 0.83rem;
+}
+
+.main-shell__workspace {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.main-shell__topbar {
+    padding: 1.5rem 1.75rem 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.main-shell__module-label {
+    color: rgba(173, 195, 228, 0.7);
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+}
+
+.main-shell__module-title {
+    margin: 0.15rem 0 0;
+    color: #f5f8ff;
+    font-size: 1.9rem;
+}
+
+.main-shell__topbar-meta {
+    color: rgba(196, 212, 237, 0.78);
+}
+
+.main-shell__content {
+    padding: 0 1.75rem 1.75rem;
+}
+
+.main-shell--collapsed {
+    grid-template-columns: 96px 1fr;
+}
+
+.main-shell--collapsed .main-shell__sidebar {
+    padding-left: 0.8rem;
+    padding-right: 0.8rem;
+}
+
+.main-shell--collapsed .main-shell__brand {
+    justify-content: center;
+}
+
+.main-shell--collapsed .main-shell__brand-copy,
+.main-shell--collapsed .main-shell__back span,
+.main-shell--collapsed .main-shell__nav-link span,
+.main-shell--collapsed .main-shell__footer {
+    display: none;
+}
+
+.main-shell--collapsed .main-shell__back,
+.main-shell--collapsed .main-shell__nav-link {
+    justify-content: center;
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+}
+
+.main-shell--collapsed .main-shell__toggle {
+    margin-left: 0;
+}
+
+@media (max-width: 980px) {
+    .main-shell {
+        grid-template-columns: 1fr;
+    }
+
+    .main-shell__sidebar {
+        border-right: 0;
+        border-bottom: 1px solid rgba(80, 118, 180, 0.18);
+    }
+
+    .main-shell__toggle {
+        display: none;
+    }
+}

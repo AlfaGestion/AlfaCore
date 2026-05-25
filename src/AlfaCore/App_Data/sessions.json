@@ -1,49 +1,9 @@
 {
   "Sessions": [
     {
-      "Id": "6719513c-7978-4594-940c-b10878fff86b",
-      "Nombre": "SERVER01 \u00B7 FERNANDEZF2",
-      "Servidor": "SERVER01",
-      "BaseDatos": "FERNANDEZF2",
-      "Usuario": "FERNANDEZF2",
-      "Password": "FERNANDEZF2",
-      "TrustServerCertificate": true,
-      "Activa": false
-    },
-    {
-      "Id": "7926143d-f89c-45d4-a812-2032bbd2c906",
-      "Nombre": "OLIVA - REAL",
-      "Servidor": "AGSERVER\\ALFANET",
-      "BaseDatos": "ALFANET",
-      "Usuario": "ALFANET",
-      "Password": "ALFANET",
-      "TrustServerCertificate": true,
-      "Activa": false
-    },
-    {
-      "Id": "a7860c47-5030-43e9-a6db-ee618fa9918f",
-      "Nombre": "PRUEBAS FF",
-      "Servidor": "SERVER01",
-      "BaseDatos": "FERNANDEZF2-BCK3101",
-      "Usuario": "FERNANDEZF2-BCK3101",
-      "Password": "FERNANDEZF2-BCK3101",
-      "TrustServerCertificate": true,
-      "Activa": false
-    },
-    {
-      "Id": "1e868fa4-a06b-47c6-9eab-2afd5165470c",
-      "Nombre": "LEXISTAPE - PRUEBAS",
-      "Servidor": "SERVER-ALFAVB6",
-      "BaseDatos": "LEXISTAPE",
-      "Usuario": "LEXISTAPE",
-      "Password": "LEXISTAPE",
-      "TrustServerCertificate": true,
-      "Activa": false
-    },
-    {
-      "Id": "180bd5eb-6b03-48ae-b06b-0a80d8211234",
-      "Nombre": "ALFANET 2007",
-      "Servidor": "10.8.0.31",
+      "Id": "06b90dfb-42fd-4910-86d2-512411d69d07",
+      "Nombre": "SERVER-DB - ALFANET2007",
+      "Servidor": "SERVER-DB",
       "BaseDatos": "ALFANET2007",
       "Usuario": "ALFANET2007",
       "Password": "ALFANET2007",
@@ -51,14 +11,14 @@
       "Activa": false
     },
     {
-      "Id": "305441cb-aedf-4bae-8b81-5a7bb40f024f",
-      "Nombre": "HIERROSUR EN VB6 PRUEBAS",
+      "Id": "3e7aee64-08fb-499b-978d-cb0f107aabef",
+      "Nombre": "HIERROSUR",
       "Servidor": "SERVER-ALFAVB6",
       "BaseDatos": "HIERROSUR",
       "Usuario": "HIERROSUR",
       "Password": "HIERROSUR",
       "TrustServerCertificate": true,
-      "Activa": false
+      "Activa": true
     }
   ]
 }

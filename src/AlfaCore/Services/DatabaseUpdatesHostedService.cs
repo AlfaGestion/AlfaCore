@@ -17,7 +17,8 @@ public sealed class DatabaseUpdatesHostedService(
             var result = await updates.ExecutePendingAsync(new ActualizacionesRunRequest
             {
                 UsuarioAccion = "SYSTEM",
-                PcAccion = Environment.MachineName
+                PcAccion = Environment.MachineName,
+                EsEjecucionAutomatica = true
             }, stoppingToken);
 
             if (result.SinCambios)

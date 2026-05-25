@@ -60,7 +60,13 @@ public class Program
         builder.Services.AddScoped<IInterfacesService, InterfacesService>();
         builder.Services.AddScoped<IInterfacesConfigService, InterfacesConfigService>();
         builder.Services.AddSingleton<InterfacesCompraIaWorkerState>();
+        builder.Services.AddSingleton<DatabaseUpdatesRuntimeState>();
         builder.Services.AddScoped<IActualizacionesService, ActualizacionesService>();
+        builder.Services.AddScoped<IPermissionService, PermissionService>();
+        builder.Services.AddScoped<IMenuService, MenuService>();
+        builder.Services.AddScoped<IFavoritesService, FavoritesService>();
+        builder.Services.AddScoped<IRecentService, RecentService>();
+        builder.Services.AddScoped<IWorkspaceService, WorkspaceService>();
         builder.Services.AddScoped<IUsuariosService, UsuariosService>();
         builder.Services.AddScoped<IUsuariosValidator, UsuariosValidator>();
         builder.Services.AddScoped<IContactosService, ContactosService>();

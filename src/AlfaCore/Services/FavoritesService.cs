@@ -1,0 +1,240 @@
+using AlfaCore.Models;
+using Dapper;
+using Microsoft.Data.SqlClient;
+
+namespace AlfaCore.Services;
+
+public sealed class FavoritesService(
+    IConfiguration configuration,
+    ISessionService sessionService,
+    IAppUserSessionService appUserSession,
+    IAppEventService appEvents) : IFavoritesService
+{
+    private string ConnectionString => sessionService.GetConnectionString().Length > 0
+        ? sessionService.GetConnectionString()
+        : configuration.GetConnectionString("AlfaGestion")
+          ?? throw new InvalidOperationException("No se configuró la cadena de conexión 'ConnectionStrings:AlfaGestion'.");
+
+    public async Task<IReadOnlyList<ShellMenuNodeDto>> GetFavoritesAsync(CancellationToken ct = default)
+    {
+        return await ExecuteLoggedAsync("Shell", "GetFavorites", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            if (!await TableExistsAsync(cn, "ALFACORE_MENU_WEB", token) || !await TableExistsAsync(cn, "TA_MENU", token))
+                return [];
+
+            var hasNombreWeb = await ColumnExistsAsync(cn, "ALFACORE_MENU_WEB", "NombreWeb", token);
+            var hasDescripcion = await ColumnExistsAsync(cn, "TA_MENU", "Descripcion", token);
+            var nombreExpression = hasNombreWeb
+                ? "ISNULL(NULLIF(w.NombreWeb, ''), ISNULL(m.Nombre, ''))"
+                : "ISNULL(m.Nombre, '')";
+            var descripcionExpression = hasDescripcion
+                ? "ISNULL(CAST(m.Descripcion AS nvarchar(max)), '')"
+                : "''";
+
+            var userName = appUserSession.CurrentUser?.UserName?.Trim();
+            var systemCode = appUserSession.CurrentUser?.SystemCode?.Trim();
+
+            var sql = string.IsNullOrWhiteSpace(userName) || string.IsNullOrWhiteSpace(systemCode)
+                ? $"""
+                    SELECT
+                        m.Menu AS Menu,
+                        m.Clave AS Clave,
+                        ISNULL(m.Titulo, '') AS Titulo,
+                        {nombreExpression} AS Nombre,
+                        {descripcionExpression} AS Descripcion,
+                        ISNULL(m.Proceso, '') AS Proceso,
+                        ISNULL(w.RutaWeb, '') AS RutaWeb,
+                        ISNULL(w.Componente, '') AS Componente,
+                        ISNULL(w.Icono, '') AS Icono,
+                        ISNULL(w.OrdenWeb, 0) AS OrdenWeb,
+                        ISNULL(w.EsFavoritoDefault, 0) AS EsFavoritoDefault,
+                        ISNULL(w.Observacion, '') AS Observacion
+                    FROM dbo.ALFACORE_MENU_WEB w
+                    INNER JOIN dbo.TA_MENU m
+                        ON m.Menu = w.Menu
+                       AND m.Clave = w.Clave
+                    WHERE ISNULL(w.HabilitadoWeb, 1) = 1
+                      AND ISNULL(w.EsFavoritoDefault, 0) = 1
+                    ORDER BY ISNULL(w.OrdenWeb, 0), ISNULL(m.Nombre, '');
+                    """
+                : $"""
+                    SELECT
+                        m.Menu AS Menu,
+                        m.Clave AS Clave,
+                        ISNULL(m.Titulo, '') AS Titulo,
+                        {nombreExpression} AS Nombre,
+                        {descripcionExpression} AS Descripcion,
+                        ISNULL(m.Proceso, '') AS Proceso,
+                        ISNULL(w.RutaWeb, '') AS RutaWeb,
+                        ISNULL(w.Componente, '') AS Componente,
+                        ISNULL(w.Icono, '') AS Icono,
+                        ISNULL(w.OrdenWeb, 0) AS OrdenWeb,
+                        ISNULL(w.EsFavoritoDefault, 0) AS EsFavoritoDefault,
+                        ISNULL(w.Observacion, '') AS Observacion
+                    FROM dbo.ALFACORE_MENU_WEB w
+                    INNER JOIN dbo.TA_MENU m
+                        ON m.Menu = w.Menu
+                       AND m.Clave = w.Clave
+                    LEFT JOIN dbo.ALFACORE_FAVORITOS f
+                        ON f.Clave = w.Clave
+                       AND UPPER(LTRIM(RTRIM(f.Usuario))) = @Usuario
+                       AND UPPER(LTRIM(RTRIM(f.Sistema))) = @Sistema
+                    WHERE ISNULL(w.HabilitadoWeb, 1) = 1
+                      AND (f.Clave IS NOT NULL OR ISNULL(w.EsFavoritoDefault, 0) = 1)
+                    ORDER BY ISNULL(f.Orden, ISNULL(w.OrdenWeb, 0)), ISNULL(m.Nombre, '');
+                    """;
+
+            var rows = await cn.QueryAsync<ShellMenuNodeDto>(new CommandDefinition(sql, new
+            {
+                Usuario = userName?.ToUpperInvariant(),
+                Sistema = systemCode?.ToUpperInvariant()
+            }, cancellationToken: token));
+
+            return rows.ToArray();
+        }, "No se pudieron cargar los favoritos del shell.", ct);
+    }
+
+    public async Task<bool> IsFavoriteAsync(string clave, CancellationToken ct = default)
+    {
+        var userName = appUserSession.CurrentUser?.UserName?.Trim();
+        var systemCode = appUserSession.CurrentUser?.SystemCode?.Trim();
+        if (string.IsNullOrWhiteSpace(userName) || string.IsNullOrWhiteSpace(systemCode))
+            return false;
+
+        return await ExecuteLoggedAsync("Shell", "IsFavorite", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            if (!await TableExistsAsync(cn, "ALFACORE_FAVORITOS", token))
+                return false;
+
+            var sql = """
+                SELECT COUNT(1)
+                FROM dbo.ALFACORE_FAVORITOS
+                WHERE UPPER(LTRIM(RTRIM(Usuario))) = @Usuario
+                  AND UPPER(LTRIM(RTRIM(Sistema))) = @Sistema
+                  AND UPPER(LTRIM(RTRIM(Clave))) = @Clave;
+                """;
+
+            var count = await cn.ExecuteScalarAsync<int>(new CommandDefinition(sql, new
+            {
+                Usuario = userName.ToUpperInvariant(),
+                Sistema = systemCode.ToUpperInvariant(),
+                Clave = (clave ?? string.Empty).Trim().ToUpperInvariant()
+            }, cancellationToken: token));
+
+            return count > 0;
+        }, "No se pudo verificar el favorito solicitado.", ct);
+    }
+
+    public async Task ToggleFavoriteAsync(string menu, string clave, CancellationToken ct = default)
+    {
+        await ExecuteLoggedAsync("Shell", "ToggleFavorite", async token =>
+        {
+            var userName = appUserSession.CurrentUser?.UserName?.Trim();
+            var systemCode = appUserSession.CurrentUser?.SystemCode?.Trim();
+            if (string.IsNullOrWhiteSpace(userName) || string.IsNullOrWhiteSpace(systemCode))
+                return 0;
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            if (!await TableExistsAsync(cn, "ALFACORE_FAVORITOS", token))
+                return 0;
+
+            var existsSql = """
+                SELECT COUNT(1)
+                FROM dbo.ALFACORE_FAVORITOS
+                WHERE UPPER(LTRIM(RTRIM(Usuario))) = @Usuario
+                  AND UPPER(LTRIM(RTRIM(Sistema))) = @Sistema
+                  AND UPPER(LTRIM(RTRIM(Clave))) = @Clave;
+                """;
+
+            var args = new
+            {
+                Usuario = userName.ToUpperInvariant(),
+                Sistema = systemCode.ToUpperInvariant(),
+                Clave = (clave ?? string.Empty).Trim().ToUpperInvariant()
+            };
+
+            var exists = await cn.ExecuteScalarAsync<int>(new CommandDefinition(existsSql, args, cancellationToken: token)) > 0;
+            if (exists)
+            {
+                const string deleteSql = """
+                    DELETE FROM dbo.ALFACORE_FAVORITOS
+                    WHERE UPPER(LTRIM(RTRIM(Usuario))) = @Usuario
+                      AND UPPER(LTRIM(RTRIM(Sistema))) = @Sistema
+                      AND UPPER(LTRIM(RTRIM(Clave))) = @Clave;
+                    """;
+
+                await cn.ExecuteAsync(new CommandDefinition(deleteSql, args, cancellationToken: token));
+                return 0;
+            }
+
+            const string insertSql = """
+                INSERT INTO dbo.ALFACORE_FAVORITOS (Usuario, Sistema, Clave, Orden)
+                VALUES (@UsuarioRaw, @SistemaRaw, @ClaveRaw,
+                    (SELECT ISNULL(MAX(Orden), 0) + 1
+                     FROM dbo.ALFACORE_FAVORITOS
+                     WHERE UPPER(LTRIM(RTRIM(Usuario))) = @Usuario
+                       AND UPPER(LTRIM(RTRIM(Sistema))) = @Sistema));
+                """;
+
+            await cn.ExecuteAsync(new CommandDefinition(insertSql, new
+            {
+                Usuario = userName.ToUpperInvariant(),
+                Sistema = systemCode.ToUpperInvariant(),
+                Clave = (clave ?? string.Empty).Trim().ToUpperInvariant(),
+                UsuarioRaw = userName,
+                SistemaRaw = systemCode,
+                ClaveRaw = (clave ?? string.Empty).Trim()
+            }, cancellationToken: token));
+
+            return 0;
+        }, "No se pudo actualizar el favorito seleccionado.", ct);
+    }
+
+    private async Task<T> ExecuteLoggedAsync<T>(string process, string action, Func<CancellationToken, Task<T>> operation, string userMessage, CancellationToken ct)
+    {
+        try
+        {
+            return await operation(ct);
+        }
+        catch (Exception ex)
+        {
+            var incidentId = await appEvents.LogErrorAsync(process, action, ex, userMessage, ct: ct);
+            throw new InvalidOperationException($"{userMessage} Código: {incidentId}", ex);
+        }
+    }
+
+    private static async Task<bool> TableExistsAsync(SqlConnection cn, string tableName, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT COUNT(1)
+            FROM sys.tables
+            WHERE object_id = OBJECT_ID(@FullName);
+            """;
+
+        var count = await cn.ExecuteScalarAsync<int>(new CommandDefinition(sql, new { FullName = $"dbo.{tableName}" }, cancellationToken: ct));
+        return count > 0;
+    }
+
+    private static async Task<bool> ColumnExistsAsync(SqlConnection cn, string tableName, string columnName, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT COUNT(1)
+            FROM sys.columns
+            WHERE object_id = OBJECT_ID(@FullName)
+              AND name = @ColumnName;
+            """;
+
+        var count = await cn.ExecuteScalarAsync<int>(new CommandDefinition(sql, new
+        {
+            FullName = $"dbo.{tableName}",
+            ColumnName = columnName
+        }, cancellationToken: ct));
+        return count > 0;
+    }
+}

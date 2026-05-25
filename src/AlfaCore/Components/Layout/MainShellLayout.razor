@@ -1,0 +1,158 @@
+@using AlfaCore.Models
+@inherits LayoutComponentBase
+@implements IDisposable
+@inject IJSRuntime JS
+@inject NavigationManager Nav
+@inject AlfaCore.Services.IWorkspaceService WorkspaceSvc
+@inject AlfaCore.Services.ISessionService SessionSvc
+@inject AlfaCore.Services.IAppUserSessionService AppUserSession
+
+<div class="@ShellClass">
+    <aside class="main-shell__sidebar">
+        <div class="main-shell__brand">
+            <a href="/" class="main-shell__logo-link">
+                <img src="logo.png" alt="Alfa Gestión" class="main-shell__logo" width="52" height="52" />
+            </a>
+            <div class="main-shell__brand-copy">
+                <div class="main-shell__eyebrow">Business Intelligence</div>
+                <a href="/" class="main-shell__title">Alfa Gestión</a>
+            </div>
+            <button type="button"
+                    class="main-shell__toggle"
+                    @onclick="ToggleSidebarAsync"
+                    title="@(_sidebarCollapsed ? "Mostrar menú" : "Ocultar menú")"
+                    aria-label="@(_sidebarCollapsed ? "Mostrar menú lateral" : "Ocultar menú lateral")">
+                <i class="bi @(_sidebarCollapsed ? "bi-layout-sidebar-inset" : "bi-layout-sidebar")"></i>
+            </button>
+        </div>
+
+        <nav class="main-shell__nav">
+            <a href="/" class="main-shell__back">Aplicaciones</a>
+            @foreach (var module in _context.Modules)
+            {
+                <a href="@module.RutaWeb" class="@GetModuleLinkClass(module)">
+                    <i class="bi @(string.IsNullOrWhiteSpace(module.Icono) ? "bi-grid" : module.Icono)"></i>
+                    <span>@module.Nombre</span>
+                </a>
+            }
+        </nav>
+
+        <div class="main-shell__footer">
+            <div class="main-shell__footer-line">@(_activeSession?.Servidor ?? "—") · @(_activeSession?.BaseDatos ?? "—")</div>
+            <div class="main-shell__footer-line">@(!AppUserSession.IsAuthenticated ? "Sin usuario validado" : AppUserSession.CurrentUser?.UserName)</div>
+        </div>
+    </aside>
+
+    <main class="main-shell__workspace">
+        <header class="main-shell__topbar">
+            <div>
+                <div class="main-shell__module-label">Shell web</div>
+                <h1 class="main-shell__module-title">@GetTitle()</h1>
+            </div>
+            <div class="main-shell__topbar-meta">
+                <span>@DateTime.Now.ToString("dd/MM/yyyy")</span>
+            </div>
+        </header>
+
+        <section class="main-shell__content">
+            @Body
+        </section>
+    </main>
+</div>
+
+@code {
+    private ShellRouteContextDto _context = new();
+    private SessionDto? _activeSession;
+    private bool _sidebarCollapsed;
+    private bool _sidebarInitialized;
+    private string ShellClass => _sidebarCollapsed ? "main-shell main-shell--collapsed" : "main-shell";
+
+    protected override void OnInitialized()
+    {
+        _activeSession = SessionSvc.GetActiveSession();
+        Nav.LocationChanged += OnLocationChanged;
+        SessionSvc.SessionChanged += OnSessionChanged;
+        AppUserSession.StateChanged += OnAppUserStateChanged;
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await RefreshContextAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+            return;
+
+        try
+        {
+            var sidebar = await JS.InvokeAsync<string?>("localStorage.getItem", "dashboard.sidebar.collapsed");
+            _sidebarCollapsed = string.Equals(sidebar, "true", StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            _sidebarCollapsed = false;
+        }
+
+        _sidebarInitialized = true;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+        => _ = InvokeAsync(RefreshContextAsync);
+
+    private void OnSessionChanged()
+    {
+        _activeSession = SessionSvc.GetActiveSession();
+        _ = InvokeAsync(RefreshContextAsync);
+    }
+
+    private void OnAppUserStateChanged()
+        => _ = InvokeAsync(StateHasChanged);
+
+    private async Task RefreshContextAsync()
+    {
+        _context = await WorkspaceSvc.GetRouteContextAsync(Nav.ToBaseRelativePath(Nav.Uri));
+        StateHasChanged();
+    }
+
+    private string GetModuleLinkClass(ShellModuleDto module)
+        => _context.Module is not null && string.Equals(_context.Module.Clave, module.Clave, StringComparison.OrdinalIgnoreCase)
+            ? "main-shell__nav-link is-active"
+            : "main-shell__nav-link";
+
+    private string GetTitle()
+    {
+        if (_context.ActiveNode is not null)
+            return _context.ActiveNode.Nombre;
+
+        if (_context.Module is not null)
+            return _context.Module.Nombre;
+
+        return "Aplicaciones";
+    }
+
+    private async Task ToggleSidebarAsync()
+    {
+        _sidebarCollapsed = !_sidebarCollapsed;
+
+        if (!_sidebarInitialized)
+            return;
+
+        try
+        {
+            await JS.InvokeVoidAsync("localStorage.setItem", "dashboard.sidebar.collapsed", _sidebarCollapsed ? "true" : "false");
+        }
+        catch
+        {
+        }
+    }
+
+    public void Dispose()
+    {
+        Nav.LocationChanged -= OnLocationChanged;
+        SessionSvc.SessionChanged -= OnSessionChanged;
+        AppUserSession.StateChanged -= OnAppUserStateChanged;
+    }
+}

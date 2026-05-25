@@ -1,0 +1,126 @@
+@page "/shell/{ModuleKey}"
+@layout AlfaCore.Components.Layout.MainLayout
+@using AlfaCore.Models
+@inject AlfaCore.Services.IWorkspaceService WorkspaceSvc
+@inject AlfaCore.Services.IRecentService RecentSvc
+@inject AlfaCore.Services.ISessionService SessionSvc
+@inject AlfaCore.Services.IAppUserSessionService AppUserSession
+@inject NavigationManager Nav
+@implements IDisposable
+
+<PageTitle>Workspace | Alfa Gestión</PageTitle>
+
+@if (_loading)
+{
+    <div class="consultas-loading">
+        <i class="bi bi-hourglass-split"></i> Cargando aplicaciones del módulo...
+    </div>
+}
+else
+{
+    <div class="page-grid">
+        <section class="page-intro">
+            <div>
+                <h2 class="page-intro__title">@(_workspace.Module?.Nombre ?? "Módulo")</h2>
+                <p class="page-intro__text">Seleccioná una aplicación disponible. Las rutas web actuales se mantienen; el shell solo organiza el acceso.</p>
+            </div>
+        </section>
+
+        @if (_workspace.Sections.Count == 0)
+        {
+            <section class="panel-card">
+                <p class="page-intro__text">Todavía no hay aplicaciones web mapeadas para este módulo en `ALFACORE_MENU_WEB`.</p>
+            </section>
+        }
+        else
+        {
+            @foreach (var workspaceSection in _workspace.Sections)
+            {
+                <section class="panel-card">
+                    <div class="panel-card__header">
+                        <div>
+                            <h3 class="panel-card__title">@workspaceSection.Nombre</h3>
+                            <p class="panel-card__subtitle">Opciones web disponibles para este tramo del árbol funcional.</p>
+                        </div>
+                    </div>
+                    <div class="launcher__grid">
+                        @foreach (var item in workspaceSection.Items)
+                        {
+                            <button type="button" class="app-card app-card--button" @onclick="() => OpenNodeAsync(item)">
+                                <div class="app-card__icon @ShellNavigationUiHelper.GetNodeIconClass(item)">
+                                    <i class="bi @(string.IsNullOrWhiteSpace(item.Icono) ? "bi-box-arrow-up-right" : item.Icono)"></i>
+                                </div>
+                                <span class="app-card__name">@item.Nombre</span>
+                                <span class="app-card__desc">@ShellNavigationUiHelper.GetNodeDescription(item)</span>
+                            </button>
+                        }
+                    </div>
+                </section>
+            }
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public string ModuleKey { get; set; } = string.Empty;
+
+    private bool _loading = true;
+    private ShellWorkspaceDto _workspace = new();
+    private bool _interactiveReady;
+    private bool _disposed;
+
+    protected override void OnInitialized()
+    {
+        SessionSvc.SessionChanged += OnContextChanged;
+        AppUserSession.StateChanged += OnContextChanged;
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_interactiveReady)
+            await LoadWorkspaceAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+            return;
+
+        _interactiveReady = true;
+        await Task.Yield();
+        await LoadWorkspaceAsync();
+    }
+
+    private async Task OpenNodeAsync(ShellMenuNodeDto item)
+    {
+        await RecentSvc.RegisterRecentAsync(item.Menu, item.Clave);
+        Nav.NavigateTo(item.RutaWeb);
+    }
+
+    private async void OnContextChanged()
+    {
+        if (_disposed || !_interactiveReady)
+            return;
+
+        await InvokeAsync(async () =>
+        {
+            await LoadWorkspaceAsync();
+            StateHasChanged();
+        });
+    }
+
+    private async Task LoadWorkspaceAsync()
+    {
+        _loading = true;
+        StateHasChanged();
+        _workspace = await WorkspaceSvc.GetModuleWorkspaceAsync(ModuleKey);
+        _loading = false;
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        SessionSvc.SessionChanged -= OnContextChanged;
+        AppUserSession.StateChanged -= OnContextChanged;
+    }
+}

@@ -9,7 +9,8 @@ public sealed class ActualizacionesService(
     IConfiguration configuration,
     ISessionService sessionService,
     IWebHostEnvironment env,
-    IAppEventService appEvents) : IActualizacionesService
+    IAppEventService appEvents,
+    DatabaseUpdatesRuntimeState runtimeState) : IActualizacionesService
 {
     private const string ConfigGroup = "SISTEMA";
     private const string FechaUpdateKey = "FECHAUPDATE_CORE";
@@ -64,6 +65,7 @@ public sealed class ActualizacionesService(
         {
             var source = ResolveSource(await GetSettingsAsync(token), validateAvailability: false);
             var scripts = GetScripts(source, requireAvailability: false);
+            var activeSession = sessionService.GetActiveSession();
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
@@ -82,6 +84,10 @@ public sealed class ActualizacionesService(
                 RutaOrigenActiva = source.RutaOrigenActiva,
                 RutaRedDisponible = source.RutaRedDisponible,
                 UsaRutaRed = source.UsaRutaRed,
+                BaseActiva = activeSession is null
+                    ? "Sin base activa"
+                    : $"{activeSession.Nombre} · {activeSession.Servidor} · {activeSession.BaseDatos}",
+                MotorEstado = runtimeState.GetSnapshot(),
                 Scripts = scripts,
                 Pendientes = currentVersion.HasValue
                     ? scripts.Where(x => CompareScriptToVersion(x, currentVersion.Value) > 0).ToArray()
@@ -94,18 +100,22 @@ public sealed class ActualizacionesService(
         => ExecuteLoggedAsync("Actualizaciones", "ExecutePending", async token =>
         {
             ArgumentNullException.ThrowIfNull(request);
-
-            await using var cn = new SqlConnection(ConnectionString);
-            await cn.OpenAsync(token);
-            var detailColumn = await ResolveDetailColumnAsync(cn, token);
-            await EnsureHistoryTableAsync(cn, token);
-
-            var settings = await GetSettingsAsync(token);
-            var source = ResolveSource(settings, validateAvailability: !request.ForzarRutaLocal, request.ForzarRutaLocal);
-            var lockHandle = await AcquireLockAsync(cn, token);
+            var activeSession = sessionService.GetActiveSession();
+            runtimeState.MarkStarted(activeSession, request);
 
             try
             {
+                await using var cn = new SqlConnection(ConnectionString);
+                await cn.OpenAsync(token);
+                var detailColumn = await ResolveDetailColumnAsync(cn, token);
+                await EnsureHistoryTableAsync(cn, token);
+
+                var settings = await GetSettingsAsync(token);
+                var source = ResolveSource(settings, validateAvailability: !request.ForzarRutaLocal, request.ForzarRutaLocal);
+                var lockHandle = await AcquireLockAsync(cn, token);
+
+                try
+                {
                 var scripts = GetScripts(source, requireAvailability: true);
                 var currentVersionText = await GetConfigValueAsync(cn, detailColumn, FechaUpdateKey, token);
                 var currentVersion = ParseVersionToken(currentVersionText);
@@ -115,7 +125,7 @@ public sealed class ActualizacionesService(
 
                 if (pending.Count == 0)
                 {
-                    return new ActualizacionesRunResultDto
+                    var noChanges = new ActualizacionesRunResultDto
                     {
                         CantidadAplicada = 0,
                         VersionAnterior = NormalizeVersionText(currentVersion),
@@ -123,6 +133,8 @@ public sealed class ActualizacionesService(
                         RutaOrigen = source.RutaOrigenActiva,
                         SinCambios = true
                     };
+                    runtimeState.MarkCompleted(activeSession, request, noChanges);
+                    return noChanges;
                 }
 
                 var applied = new List<string>();
@@ -196,7 +208,7 @@ public sealed class ActualizacionesService(
                     }
                 }
 
-                return new ActualizacionesRunResultDto
+                var completed = new ActualizacionesRunResultDto
                 {
                     CantidadAplicada = applied.Count,
                     VersionAnterior = currentVersionText,
@@ -205,10 +217,18 @@ public sealed class ActualizacionesService(
                     SinCambios = false,
                     ScriptsAplicados = applied
                 };
+                runtimeState.MarkCompleted(activeSession, request, completed);
+                return completed;
+                }
+                finally
+                {
+                    await ReleaseLockAsync(cn, lockHandle, token);
+                }
             }
-            finally
+            catch (Exception ex)
             {
-                await ReleaseLockAsync(cn, lockHandle, token);
+                runtimeState.MarkFailed(activeSession, request, ex);
+                throw;
             }
         }, "No se pudieron aplicar las actualizaciones pendientes.", ct);
 

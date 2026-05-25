@@ -23,6 +23,7 @@ public sealed class SessionService : ISessionService
         _defaultSession = CreateSessionFromConfig(configuration);
         Load(configuration);
         _activeSessionId = ReadActiveSessionId(httpContextAccessor);
+        PersistCookieSelectedSessionIfNeeded();
     }
 
     public string GetConnectionString()
@@ -58,9 +59,15 @@ public sealed class SessionService : ISessionService
     {
         lock (_lock)
         {
-            _ = _sessions.FirstOrDefault(s => s.Id == id)
+            var selected = _sessions.FirstOrDefault(s => s.Id == id)
                 ?? throw new InvalidOperationException("Sesion no encontrada.");
+
             _activeSessionId = id;
+
+            foreach (var session in _sessions)
+                session.Activa = session.Id == selected.Id;
+
+            Save();
         }
 
         SessionChanged?.Invoke();
@@ -107,16 +114,7 @@ public sealed class SessionService : ISessionService
                 var data = JsonSerializer.Deserialize<SessionesData>(json, JsonOpts);
                 if (data?.Sessions.Count > 0)
                 {
-                    var hadPersistedActiveFlag = data.Sessions.Any(s => s.Activa);
-                    _sessions.AddRange(data.Sessions.Select(s =>
-                    {
-                        s.Activa = false;
-                        return s;
-                    }));
-
-                    if (hadPersistedActiveFlag)
-                        Save();
-
+                    _sessions.AddRange(data.Sessions);
                     return;
                 }
             }
@@ -163,10 +161,35 @@ public sealed class SessionService : ISessionService
                 return selected;
         }
 
+        var persistedActive = _sessions.FirstOrDefault(s => s.Activa);
+        if (persistedActive is not null)
+            return persistedActive;
+
         if (_defaultSession is not null)
             return _defaultSession;
 
         return _sessions.Count > 0 ? _sessions[0] : null;
+    }
+
+    private void PersistCookieSelectedSessionIfNeeded()
+    {
+        lock (_lock)
+        {
+            if (_activeSessionId is not Guid activeId)
+                return;
+
+            var selected = _sessions.FirstOrDefault(s => s.Id == activeId);
+            if (selected is null)
+                return;
+
+            if (_sessions.Any(s => s.Activa && s.Id == activeId))
+                return;
+
+            foreach (var session in _sessions)
+                session.Activa = session.Id == activeId;
+
+            Save();
+        }
     }
 
     private static Guid? ReadActiveSessionId(IHttpContextAccessor httpContextAccessor)

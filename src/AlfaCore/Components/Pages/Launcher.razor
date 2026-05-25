@@ -1,148 +1,162 @@
 @page "/"
+@layout AlfaCore.Components.Layout.MainLayout
+@using AlfaCore.Models
+@inject AlfaCore.Services.IWorkspaceService WorkspaceSvc
+@inject AlfaCore.Services.IRecentService RecentSvc
+@inject AlfaCore.Services.ISessionService SessionSvc
+@inject AlfaCore.Services.IAppUserSessionService AppUserSession
+@inject NavigationManager Nav
+@implements IDisposable
+
 <PageTitle>Aplicaciones | Alfa Gestión</PageTitle>
 
-<div class="launcher">
-    <div class="launcher__header">
-        <p class="launcher__eyebrow">Alfa Gestión</p>
-        <h1 class="launcher__title">Aplicaciones</h1>
-        <p class="launcher__subtitle">Seleccioná el módulo al que querés ingresar.</p>
+@if (_loading)
+{
+    <div class="consultas-loading">
+        <i class="bi bi-hourglass-split"></i> Cargando shell principal...
     </div>
-
-    <div class="launcher__grid">
-        <a class="app-card" href="/ventas">
-            <div class="app-card__icon app-card__icon--ventas">
-                <i class="bi bi-graph-up-arrow"></i>
+}
+else
+{
+    <div class="page-grid">
+        <section class="page-intro">
+            <div>
+                <h2 class="page-intro__title">Aplicaciones</h2>
+                <p class="page-intro__text">Seleccioná un módulo del ERP para entrar al nuevo shell web y abrir las aplicaciones disponibles para tu usuario.</p>
             </div>
-            <span class="app-card__name">Dashboard Ventas</span>
-            <span class="app-card__desc">Tablero comercial de facturación, clientes activos, artículos vendidos y cobranza pendiente</span>
-        </a>
+        </section>
 
-        <a class="app-card" href="/compras">
-            <div class="app-card__icon app-card__icon--compras">
-                <i class="bi bi-cart-fill"></i>
-            </div>
-            <span class="app-card__name">Dashboard Compras</span>
-            <span class="app-card__desc">Tablero de compras con KPIs, comprobantes, artículos, proveedores e informes IA</span>
-        </a>
+        @if (_home.Favorites.Count > 0)
+        {
+            <section id="favoritos" class="panel-card">
+                <div class="panel-card__header">
+                    <div>
+                        <h3 class="panel-card__title">Favoritos</h3>
+                        <p class="panel-card__subtitle">Accesos frecuentes preparados para el usuario actual.</p>
+                    </div>
+                </div>
+                <div class="launcher__grid">
+                    @foreach (var item in _home.Favorites)
+                    {
+                        <button type="button" class="app-card app-card--button" @onclick="() => OpenNodeAsync(item)">
+                            <div class="app-card__icon @ShellNavigationUiHelper.GetNodeIconClass(item)">
+                                <i class="bi @(string.IsNullOrWhiteSpace(item.Icono) ? "bi-star-fill" : item.Icono)"></i>
+                            </div>
+                            <span class="app-card__name">@item.Nombre</span>
+                            <span class="app-card__desc">@ShellNavigationUiHelper.GetNodeDescription(item)</span>
+                        </button>
+                    }
+                </div>
+            </section>
+        }
 
-        <a class="app-card" href="/stock">
-            <div class="app-card__icon app-card__icon--stock">
-                <i class="bi bi-box-seam"></i>
-            </div>
-            <span class="app-card__name">Dashboard Stock</span>
-            <span class="app-card__desc">Tablero de stock con valorización, movimiento y artículos críticos</span>
-        </a>
+        @if (_home.Recents.Count > 0)
+        {
+            <section id="recientes" class="panel-card">
+                <div class="panel-card__header">
+                    <div>
+                        <h3 class="panel-card__title">Recientes</h3>
+                        <p class="panel-card__subtitle">Últimas aplicaciones abiertas dentro del shell.</p>
+                    </div>
+                </div>
+                <div class="launcher__grid launcher__grid--compact">
+                    @foreach (var item in _home.Recents)
+                    {
+                        <button type="button" class="app-card app-card--button" @onclick="() => OpenNodeAsync(item)">
+                            <div class="app-card__icon @ShellNavigationUiHelper.GetNodeIconClass(item)">
+                                <i class="bi @(string.IsNullOrWhiteSpace(item.Icono) ? "bi-clock-history" : item.Icono)"></i>
+                            </div>
+                            <span class="app-card__name">@item.Nombre</span>
+                            <span class="app-card__desc">@ShellNavigationUiHelper.GetNodeDescription(item)</span>
+                        </button>
+                    }
+                </div>
+            </section>
+        }
 
-        <a class="app-card" href="/caja-bancos">
-            <div class="app-card__icon app-card__icon--caja">
-                <i class="bi bi-bank"></i>
+        <section class="panel-card">
+            <div class="panel-card__header">
+                <div>
+                    <h3 class="panel-card__title">Módulos</h3>
+                    <p class="panel-card__subtitle">Árbol funcional histórico de Alfa Gestión filtrado por permisos y opciones web habilitadas.</p>
+                </div>
             </div>
-            <span class="app-card__name">Dashboard Caja y Bancos</span>
-            <span class="app-card__desc">Tablero financiero de liquidez, saldos, ingresos, egresos y pendientes</span>
-        </a>
-
-        <a class="app-card" href="/contabilidad">
-            <div class="app-card__icon app-card__icon--contabilidad">
-                <i class="bi bi-journal-bookmark-fill"></i>
-            </div>
-            <span class="app-card__name">Dashboard Contabilidad</span>
-            <span class="app-card__desc">Tablero contable con posición general, saldos y actividad por período</span>
-        </a>
-
-        <a class="app-card" href="/clientes">
-            <div class="app-card__icon app-card__icon--contactos">
-                <i class="bi bi-people-fill"></i>
-            </div>
-            <span class="app-card__name">Clientes</span>
-            <span class="app-card__desc">ABM comercial de clientes sobre `VT_CLIENTES`, `MA_CUENTAS` y `MA_CUENTASADIC`</span>
-        </a>
-
-        <a class="app-card" href="/proveedores">
-            <div class="app-card__icon app-card__icon--usuarios">
-                <i class="bi bi-people-fill"></i>
-            </div>
-            <span class="app-card__name">Proveedores</span>
-            <span class="app-card__desc">ABM comercial de proveedores sobre `VT_PROVEEDORES`, `MA_CUENTAS` y `MA_CUENTASADIC`</span>
-        </a>
-
-        <a class="app-card" href="/consultas">
-            <div class="app-card__icon app-card__icon--consultas">
-                <i class="bi bi-table"></i>
-            </div>
-            <span class="app-card__name">Diseñador de consultas</span>
-            <span class="app-card__desc">Ejecutá y exportá las consultas guardadas del sistema</span>
-        </a>
-
-        <a class="app-card" href="/costos">
-            <div class="app-card__icon app-card__icon--compras">
-                <i class="bi bi-currency-dollar"></i>
-            </div>
-            <span class="app-card__name">Actualización de costos</span>
-            <span class="app-card__desc">Importá listas de proveedores y registrá corridas para revisión y auditoría</span>
-        </a>
-
-        <a class="app-card" href="/auditoria">
-            <div class="app-card__icon app-card__icon--consultas">
-                <i class="bi bi-shield-exclamation"></i>
-            </div>
-            <span class="app-card__name">Auditoría</span>
-            <span class="app-card__desc">Revisá errores técnicos centralizados y actividad sospechosa de usuarios sobre comprobantes</span>
-        </a>
-
-        <a class="app-card" href="/conversaciones">
-            <div class="app-card__icon app-card__icon--ventas">
-                <i class="bi bi-chat-dots-fill"></i>
-            </div>
-            <span class="app-card__name">Conversaciones</span>
-            <span class="app-card__desc">Inbox operativo de WhatsApp con asignación por técnico, contexto del contacto y seguimiento de estado</span>
-        </a>
-
-        <a class="app-card" href="/tickets">
-            <div class="app-card__icon app-card__icon--tickets">
-                <i class="bi bi-life-preserver"></i>
-            </div>
-            <span class="app-card__name">Tickets de asistencia</span>
-            <span class="app-card__desc">Mesa de ayuda para soporte con kanban, prioridades, asignación y mensajes vinculados</span>
-        </a>
-
-        <a class="app-card" href="/calendario">
-            <div class="app-card__icon app-card__icon--calendario">
-                <i class="bi bi-calendar3"></i>
-            </div>
-            <span class="app-card__name">Calendario</span>
-            <span class="app-card__desc">Agenda guardias, reuniones y recordatorios WhatsApp para el equipo de soporte</span>
-        </a>
-
-        <a class="app-card" href="/interfaces">
-            <div class="app-card__icon app-card__icon--caja">
-                <i class="bi bi-folder2-open"></i>
-            </div>
-            <span class="app-card__name">Interfaces</span>
-            <span class="app-card__desc">Recepción documental de comprobantes, liquidaciones, listas y adjuntos con trazabilidad</span>
-        </a>
-
-        <a class="app-card" href="/actualizaciones">
-            <div class="app-card__icon app-card__icon--consultas">
-                <i class="bi bi-cloud-arrow-up"></i>
-            </div>
-            <span class="app-card__name">Actualizaciones</span>
-            <span class="app-card__desc">Aplicá scripts SQL versionados, controlá FECHAUPDATE_CORE y revisá el historial de corridas</span>
-        </a>
-
-        <a class="app-card" href="/usuarios">
-            <div class="app-card__icon app-card__icon--usuarios">
-                <i class="bi bi-people-fill"></i>
-            </div>
-            <span class="app-card__name">Usuarios</span>
-            <span class="app-card__desc">Alta, edición y baja lógica de usuarios y grupos del sistema con contraseña compatible e imagen opcional</span>
-        </a>
-
-        <a class="app-card" href="/contactos">
-            <div class="app-card__icon app-card__icon--contactos">
-                <i class="bi bi-person-lines-fill"></i>
-            </div>
-            <span class="app-card__name">Contactos</span>
-            <span class="app-card__desc">Agenda general del sistema con datos de contacto, domicilio, teléfonos y baja lógica</span>
-        </a>
+            @if (_home.Modules.Count == 0)
+            {
+                <div class="shell-empty-state">
+                    <strong>No hay módulos web disponibles para esta base.</strong>
+                    <span>Revisá que `ALFACORE_MENU_WEB` exista, tenga datos para el `Menu` real de `TA_MENU` y que estén aplicados los updates de shell web.</span>
+                </div>
+            }
+            else
+            {
+                <div class="launcher__grid">
+                    @foreach (var module in _home.Modules)
+                    {
+                        <a class="app-card" href="@module.RutaWeb">
+                            <div class="app-card__icon @ShellNavigationUiHelper.GetModuleIconClass(module)">
+                                <i class="bi @(string.IsNullOrWhiteSpace(module.Icono) ? "bi-grid-3x3-gap-fill" : module.Icono)"></i>
+                            </div>
+                            <span class="app-card__name">@module.Nombre</span>
+                            <span class="app-card__desc">Abrí el workspace del módulo y accedé a las aplicaciones web disponibles.</span>
+                        </a>
+                    }
+                </div>
+            }
+        </section>
     </div>
-</div>
+}
+
+@code {
+    private bool _loading = true;
+    private ShellHomeDto _home = new();
+    private bool _disposed;
+
+    protected override void OnInitialized()
+    {
+        SessionSvc.SessionChanged += OnContextChanged;
+        AppUserSession.StateChanged += OnContextChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+            return;
+
+        await Task.Yield();
+        await LoadHomeAsync();
+    }
+
+    private async Task OpenNodeAsync(ShellMenuNodeDto item)
+    {
+        await RecentSvc.RegisterRecentAsync(item.Menu, item.Clave);
+        Nav.NavigateTo(item.RutaWeb);
+    }
+
+    private async void OnContextChanged()
+    {
+        if (_disposed)
+            return;
+
+        await InvokeAsync(async () =>
+        {
+            await LoadHomeAsync();
+            StateHasChanged();
+        });
+    }
+
+    private async Task LoadHomeAsync()
+    {
+        _loading = true;
+        StateHasChanged();
+        _home = await WorkspaceSvc.GetHomeAsync();
+        _loading = false;
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        SessionSvc.SessionChanged -= OnContextChanged;
+        AppUserSession.StateChanged -= OnContextChanged;
+    }
+}

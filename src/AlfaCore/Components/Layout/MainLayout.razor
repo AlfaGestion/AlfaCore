@@ -3,6 +3,8 @@
 @inject NavigationManager Nav
 @inject AlfaCore.Services.ISessionService SessionSvc
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
+@inject AlfaCore.Services.IMenuService MenuSvc
+@inject AlfaCore.Services.IRecentService RecentSvc
 @inject AlfaCore.Services.IConversacionesService ConversacionesSvc
 @inject AlfaCore.Services.IAppEventService AppEvents
 @implements IDisposable
@@ -371,13 +373,96 @@
             }
             else
             {
-                <p class="menu__section">Tableros</p>
+                <p class="menu__section">Aplicaciones</p>
                 <nav class="menu__nav">
-                    <NavLink class="menu__link" href="/" Match="NavLinkMatch.All">
-                        <span class="menu__icon"><i class="bi bi-grid-3x3-gap-fill"></i></span>
-                        <span>Aplicaciones</span>
-                    </NavLink>
+                    @if (IsLauncherRoute)
+                    {
+                        <a class="menu__link menu__link--module" href="/#favoritos">
+                            <span class="menu__icon"><i class="bi bi-star-fill"></i></span>
+                            <span>Favoritos</span>
+                        </a>
+                    }
+
+                    @if (_mainMenuModules.Count == 0)
+                    {
+                        <NavLink class="menu__link" href="/" Match="NavLinkMatch.All">
+                            <span class="menu__icon"><i class="bi bi-grid-3x3-gap-fill"></i></span>
+                            <span>Aplicaciones</span>
+                        </NavLink>
+                    }
+                    else
+                    {
+                        @foreach (var module in _mainMenuModules)
+                        {
+                            <a class="@GetMainMenuModuleClass(module)"
+                               href="@module.RutaWeb"
+                               title="@module.Nombre"
+                               @onclick="(() => NavigateToModule(module.RutaWeb))">
+                                <span class="menu__icon"><i class="bi @(string.IsNullOrWhiteSpace(module.Icono) ? "bi-grid" : module.Icono)"></i></span>
+                                <span>@module.Nombre</span>
+                            </a>
+                        }
+                    }
                 </nav>
+
+                <div class="menu__search" @onclick:stopPropagation="true">
+                    <label class="menu__search-label" for="main-menu-search">Buscar opción</label>
+                    <div class="menu__search-box">
+                        <span class="menu__search-icon"><i class="bi bi-search"></i></span>
+                        <input id="main-menu-search"
+                               class="menu__search-input"
+                               type="search"
+                               placeholder="Ventas, clientes, auditoría..."
+                               @bind="_menuSearchText"
+                               @bind:event="oninput"
+                               @onfocus="EnsureMenuSearchCatalogAsync" />
+                        @if (!string.IsNullOrWhiteSpace(_menuSearchText))
+                        {
+                            <button type="button"
+                                    class="menu__search-clear"
+                                    aria-label="Limpiar búsqueda"
+                                    @onclick="ClearMenuSearch">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
+                        }
+                    </div>
+
+                    @if (_menuSearchLoading)
+                    {
+                        <p class="menu__search-state">Preparando opciones del menú...</p>
+                    }
+                    else if (!string.IsNullOrWhiteSpace(_menuSearchError))
+                    {
+                        <p class="menu__search-state menu__search-state--error">@_menuSearchError</p>
+                    }
+                    else if (!string.IsNullOrWhiteSpace(_menuSearchText))
+                    {
+                        <div class="menu__search-results">
+                            @if (FilteredMenuSearchResults.Count == 0)
+                            {
+                                <p class="menu__search-state">No se encontraron opciones para "@_menuSearchText".</p>
+                            }
+                            else
+                            {
+                                @foreach (var item in FilteredMenuSearchResults)
+                                {
+                                    <button type="button"
+                                            class="menu__search-result"
+                                            @onclick="() => OpenMenuSearchResultAsync(item)">
+                                        <span class="menu__search-result-icon">
+                                            <i class="bi @item.Icono"></i>
+                                        </span>
+                                        <span class="menu__search-result-body">
+                                            <span class="menu__search-result-title">@item.Nombre</span>
+                                            <span class="menu__search-result-meta">@item.Descripcion</span>
+                                        </span>
+                                        <span class="menu__search-result-kind">@(item.EsModulo ? "Módulo" : "Opción")</span>
+                                    </button>
+                                }
+                            }
+                        </div>
+                    }
+                </div>
             }
 
             <div class="menu__footer">
@@ -723,6 +808,7 @@
     private string ShellClass
         => $"shell {(_sidebarCollapsed ? "shell--collapsed" : string.Empty)} {(_mobileSidebarOpen ? "shell--mobile-open" : string.Empty)}";
     private bool ShowShellContext => string.IsNullOrWhiteSpace(_currentModule);
+    private bool IsLauncherRoute => string.IsNullOrWhiteSpace(Nav.ToBaseRelativePath(Nav.Uri).Split('?')[0].Split('#')[0].Trim('/'));
     private bool ShouldShowConversationMobilePwaActions
         => string.Equals(_currentModule, "conversaciones", StringComparison.OrdinalIgnoreCase);
     private bool CanEnablePush
@@ -745,8 +831,16 @@
         => string.Equals(_pushPreferences.Alcance, NotificacionesPushScopes.Asignadas, StringComparison.OrdinalIgnoreCase)
             ? "Importante: con 'solo asignadas', si la conversación no tiene técnico asignado no se envía push."
             : string.Empty;
+    private IReadOnlyList<ShellMenuSearchItemDto> FilteredMenuSearchResults => GetFilteredMenuSearchResults();
 
     private string _currentModule = string.Empty;
+    private string _activeShellModuleKey = string.Empty;
+    private List<ShellModuleDto> _mainMenuModules = [];
+    private List<ShellMenuSearchItemDto> _menuSearchCatalog = [];
+    private string _menuSearchText = string.Empty;
+    private string _menuSearchError = string.Empty;
+    private bool _menuSearchLoaded;
+    private bool _menuSearchLoading;
     private readonly Dictionary<long, long> _globalConversationLastIncomingById = [];
     private CancellationTokenSource? _globalConversationPollingCts;
     private Task? _globalConversationPollingTask;
@@ -767,6 +861,7 @@
     private void OnSessionChanged()
     {
         _activeSession = SessionSvc.GetActiveSession();
+        ResetMenuSearchCatalog();
         var wasAuthenticated = AppUserSession.IsAuthenticated;
         AppUserSession.HandleSqlSessionChanged();
         if (wasAuthenticated && !AppUserSession.IsAuthenticated)
@@ -786,6 +881,7 @@
 
     private void OnAppUserStateChanged()
     {
+        ResetMenuSearchCatalog();
         if (!AppUserSession.IsAuthenticated)
         {
             _loginPassword = string.Empty;
@@ -813,6 +909,8 @@
     {
         _mobileSidebarOpen = false;
         UpdateCurrentModule();
+        if (ShowShellContext)
+            _ = InvokeAsync(EnsureMenuSearchCatalogAsync);
         if (string.Equals(_currentModule, "conversaciones", StringComparison.OrdinalIgnoreCase))
             ResetGlobalConversationNotifications();
 
@@ -903,6 +1001,8 @@
         }
 
         _sidebarInitialized = true;
+        if (ShowShellContext)
+            await EnsureMenuSearchCatalogAsync();
         StateHasChanged();
     }
 
@@ -910,12 +1010,148 @@
     {
         var path = Nav.ToBaseRelativePath(Nav.Uri).Split('?')[0].Split('#')[0].Trim('/');
         var normalized = path.ToLowerInvariant();
+        if (normalized.StartsWith("shell/", StringComparison.OrdinalIgnoreCase))
+        {
+            _activeShellModuleKey = path.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Skip(1).FirstOrDefault() ?? string.Empty;
+            _currentModule = string.Empty;
+            return;
+        }
+
+        _activeShellModuleKey = string.Empty;
+
         _currentModule = normalized switch
         {
             "clientes" => "clientes",
             "proveedores" => "proveedores",
             _ => path.Split('/').FirstOrDefault()?.ToLowerInvariant() ?? string.Empty
         };
+    }
+
+    private void ResetMenuSearchCatalog()
+    {
+        _mainMenuModules = [];
+        _menuSearchCatalog = [];
+        _menuSearchText = string.Empty;
+        _menuSearchError = string.Empty;
+        _menuSearchLoaded = false;
+        _menuSearchLoading = false;
+    }
+
+    private async Task EnsureMenuSearchCatalogAsync()
+    {
+        if (!ShowShellContext || _menuSearchLoaded || _menuSearchLoading)
+            return;
+
+        _menuSearchLoading = true;
+        _menuSearchError = string.Empty;
+
+        try
+        {
+            _mainMenuModules = (await MenuSvc.GetModulesAsync()).ToList();
+            _menuSearchCatalog = (await MenuSvc.GetSearchItemsAsync()).ToList();
+            _menuSearchLoaded = true;
+        }
+        catch
+        {
+            _mainMenuModules = [];
+            _menuSearchCatalog = [];
+            _menuSearchError = "No se pudo preparar la búsqueda del menú.";
+        }
+        finally
+        {
+            _menuSearchLoading = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private IReadOnlyList<ShellMenuSearchItemDto> GetFilteredMenuSearchResults()
+    {
+        var query = _menuSearchText?.Trim();
+        if (string.IsNullOrWhiteSpace(query))
+            return [];
+
+        var tokens = query
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(x => x.ToLowerInvariant())
+            .ToArray();
+        if (tokens.Length == 0)
+            return [];
+
+        static int ScoreItem(ShellMenuSearchItemDto item, string rawQuery, string[] tokens)
+        {
+            var name = item.Nombre.ToLowerInvariant();
+            var description = item.Descripcion.ToLowerInvariant();
+            var clave = item.Clave.ToLowerInvariant();
+            var observacion = item.Observacion.ToLowerInvariant();
+            var full = $"{name} {description} {clave} {observacion}";
+
+            if (!tokens.All(full.Contains))
+                return int.MaxValue;
+
+            if (name.StartsWith(rawQuery, StringComparison.OrdinalIgnoreCase))
+                return item.EsModulo ? 0 : 1;
+
+            if (name.Contains(rawQuery, StringComparison.OrdinalIgnoreCase))
+                return item.EsModulo ? 2 : 3;
+
+            if (description.Contains(rawQuery, StringComparison.OrdinalIgnoreCase))
+                return 4;
+
+            return 5;
+        }
+
+        return _menuSearchCatalog
+            .Select(x => new { Item = x, Score = ScoreItem(x, query.ToLowerInvariant(), tokens) })
+            .Where(x => x.Score < int.MaxValue)
+            .OrderBy(x => x.Score)
+            .ThenBy(x => x.Item.ModuloNombre)
+            .ThenBy(x => x.Item.Nombre)
+            .Take(8)
+            .Select(x => x.Item)
+            .ToArray();
+    }
+
+    private void ClearMenuSearch()
+        => _menuSearchText = string.Empty;
+
+    private string GetMainMenuModuleClass(ShellModuleDto module)
+    {
+        var css = "menu__link menu__link--module";
+        if (!string.IsNullOrWhiteSpace(_activeShellModuleKey)
+            && string.Equals(_activeShellModuleKey, module.Clave, StringComparison.OrdinalIgnoreCase))
+        {
+            css += " active";
+        }
+
+        return css;
+    }
+
+    private async Task OpenMenuSearchResultAsync(ShellMenuSearchItemDto item)
+    {
+        if (item is null || string.IsNullOrWhiteSpace(item.RutaWeb))
+            return;
+
+        _menuSearchText = string.Empty;
+        _mobileSidebarOpen = false;
+
+        try
+        {
+            await RecentSvc.RegisterRecentAsync(item.Menu, item.Clave);
+        }
+        catch
+        {
+        }
+
+        Nav.NavigateTo(item.RutaWeb);
+    }
+
+    private void NavigateToModule(string? route)
+    {
+        if (string.IsNullOrWhiteSpace(route))
+            return;
+
+        _mobileSidebarOpen = false;
+        Nav.NavigateTo(route);
     }
 
     private void StartGlobalConversationPolling()
@@ -1503,6 +1739,7 @@
         return path switch
         {
         "" => "Aplicaciones",
+        _ when path.StartsWith("shell/") => "Aplicaciones",
         "clientes" => "Clientes",
         "ventas" => "Ventas",
             "ventas/clientes" => "Clientes",

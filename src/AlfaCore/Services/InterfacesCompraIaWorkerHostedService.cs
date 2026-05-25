@@ -45,7 +45,7 @@ public sealed class InterfacesCompraIaWorkerHostedService(
             catch (SqlException ex) when (ex.Number == 4060)
             {
                 state.MarkWarning(delaySeconds, "Worker sin acceso a la base configurada. Reintentará automáticamente.");
-                logger.LogWarning(ex, "Worker de lectura automática de compras sin acceso a la base configurada. Se reintentará en {DelaySeconds}s.", delaySeconds);
+                logger.LogWarning("Worker de lectura automática de compras sin acceso a la base configurada. Error SQL 4060. Se reintentará en {DelaySeconds}s.", delaySeconds);
             }
             catch (Exception ex)
             {

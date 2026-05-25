@@ -62,6 +62,76 @@
         <section class="panel-card">
             <div class="panel-card__header">
                 <div>
+                    <h3 class="panel-card__title">Estado del motor de actualizaciones</h3>
+                    <p class="panel-card__subtitle">Seguimiento visible de la corrida automática al iniciar y de las ejecuciones manuales sobre la base activa.</p>
+                </div>
+            </div>
+
+            <div class="filters-grid updates-config-grid">
+                <div class="field field--wide">
+                    <label>Base activa actual</label>
+                    <input value="@_dashboard.BaseActiva" readonly />
+                </div>
+                <div class="field">
+                    <label>Estado</label>
+                    <input value="@GetMotorEstadoLabel()" readonly />
+                </div>
+                <div class="field">
+                    <label>Último modo</label>
+                    <input value="@GetMotorModoLabel()" readonly />
+                </div>
+                <div class="field">
+                    <label>Último inicio</label>
+                    <input value="@FormatMotorDate(_dashboard.MotorEstado.InicioUltimaEjecucion)" readonly />
+                </div>
+                <div class="field">
+                    <label>Último fin</label>
+                    <input value="@FormatMotorDate(_dashboard.MotorEstado.FinUltimaEjecucion)" readonly />
+                </div>
+                <div class="field">
+                    <label>Usuario / origen</label>
+                    <input value="@GetMotorActorLabel()" readonly />
+                </div>
+                <div class="field field--wide">
+                    <label>Base objetivo usada por la última corrida</label>
+                    <input value="@DisplayOrDash(_dashboard.MotorEstado.BaseObjetivo)" readonly />
+                </div>
+                <div class="field field--wide">
+                    <label>Ruta usada en la última corrida</label>
+                    <input value="@DisplayOrDash(_dashboard.MotorEstado.RutaOrigen)" readonly />
+                </div>
+                <div class="field">
+                    <label>Cantidad aplicada</label>
+                    <input value="@_dashboard.MotorEstado.CantidadAplicada" readonly />
+                </div>
+                <div class="field">
+                    <label>Versión final</label>
+                    <input value="@DisplayOrDash(_dashboard.MotorEstado.VersionFinal)" readonly />
+                </div>
+                <div class="field field--wide">
+                    <label>Mensaje</label>
+                    <textarea readonly rows="3">@DisplayOrDash(_dashboard.MotorEstado.Mensaje)</textarea>
+                </div>
+                @if (!string.IsNullOrWhiteSpace(_dashboard.MotorEstado.ErrorDetalle))
+                {
+                    <div class="field field--wide">
+                        <label>Último error</label>
+                        <textarea readonly rows="4">@_dashboard.MotorEstado.ErrorDetalle</textarea>
+                    </div>
+                }
+                @if (_dashboard.MotorEstado.ScriptsAplicados.Count > 0)
+                {
+                    <div class="field field--wide">
+                        <label>Scripts aplicados en la última corrida</label>
+                        <textarea readonly rows="3">@string.Join(Environment.NewLine, _dashboard.MotorEstado.ScriptsAplicados)</textarea>
+                    </div>
+                }
+            </div>
+        </section>
+
+        <section class="panel-card">
+            <div class="panel-card__header">
+                <div>
                     <h3 class="panel-card__title">Configuración de origen</h3>
                     <p class="panel-card__subtitle">Si la ruta de red está disponible, el sistema la prioriza. Si no, usa la carpeta local del servidor.</p>
                 </div>
@@ -318,4 +388,38 @@
         await InvokeAsync(StateHasChanged);
         await Task.Yield();
     }
+
+    private string GetMotorEstadoLabel()
+    {
+        if (_dashboard is null)
+            return "-";
+
+        var state = _dashboard.MotorEstado;
+        if (!state.TieneRegistro)
+            return "Sin registro todavía";
+
+        return state.EnEjecucion ? $"{state.Estado}..." : state.Estado;
+    }
+
+    private string GetMotorModoLabel()
+    {
+        if (_dashboard is null || !_dashboard.MotorEstado.TieneRegistro)
+            return "-";
+
+        return _dashboard.MotorEstado.EsEjecucionAutomatica ? "Automática al iniciar" : "Manual";
+    }
+
+    private string GetMotorActorLabel()
+    {
+        if (_dashboard is null || !_dashboard.MotorEstado.TieneRegistro)
+            return "-";
+
+        return $"{DisplayOrDash(_dashboard.MotorEstado.UsuarioAccion)} · {DisplayOrDash(_dashboard.MotorEstado.PcAccion)}";
+    }
+
+    private static string FormatMotorDate(DateTime? value)
+        => value.HasValue ? value.Value.ToString("dd/MM/yyyy HH:mm:ss") : "-";
+
+    private static string DisplayOrDash(string? value)
+        => string.IsNullOrWhiteSpace(value) ? "-" : value.Trim();
 }
