@@ -9,6 +9,20 @@
     let syncingFromWrapper = false;
     let rafId = 0;
     let mutationObserver = null;
+    let currentPath = '';
+
+    function handleRouteChanged() {
+        const nextPath = `${window.location.pathname}${window.location.search}`;
+        if (nextPath === currentPath) {
+            return;
+        }
+
+        currentPath = nextPath;
+        activeWrapper = null;
+        scheduleRefresh();
+        window.setTimeout(scheduleRefresh, 60);
+        window.setTimeout(scheduleRefresh, 220);
+    }
 
     function ensureHost() {
         if (host) {
@@ -69,6 +83,10 @@
             return null;
         }
 
+        if (activeWrapper && wrappers.includes(activeWrapper)) {
+            return activeWrapper;
+        }
+
         let best = null;
         let bestScore = 0;
 
@@ -80,7 +98,7 @@
             }
         }
 
-        return best;
+        return best || wrappers[0];
     }
 
     function syncWrapperToBar() {
@@ -179,10 +197,16 @@
     function init() {
         ensureHost();
         installObservers();
+        currentPath = `${window.location.pathname}${window.location.search}`;
         scheduleRefresh();
 
         window.addEventListener('resize', scheduleRefresh, { passive: true });
         window.addEventListener('scroll', scheduleRefresh, { passive: true });
+        window.addEventListener('popstate', handleRouteChanged, { passive: true });
+        window.addEventListener('hashchange', handleRouteChanged, { passive: true });
+        window.addEventListener('click', () => {
+            window.setTimeout(handleRouteChanged, 0);
+        }, { passive: true });
     }
 
     if (document.readyState === 'loading') {

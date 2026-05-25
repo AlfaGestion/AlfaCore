@@ -14004,28 +14004,30 @@ textarea {
 #alfacore-sticky-x-scroll {
     position: fixed;
     left: 0;
-    bottom: 10px;
+    bottom: 18px;
     z-index: 1085;
     opacity: 0;
     pointer-events: none;
-    transition: opacity .18s ease;
+    transition: opacity .18s ease, transform .18s ease;
+    transform: translateY(10px);
 }
 
 #alfacore-sticky-x-scroll.is-visible {
     opacity: 1;
     pointer-events: auto;
+    transform: translateY(0);
 }
 
 .alfacore-sticky-x-scroll__track {
     overflow-x: auto;
     overflow-y: hidden;
     width: 100%;
-    height: 16px;
-    border: 1px solid rgba(92, 201, 255, .16);
+    height: 18px;
+    border: 1px solid rgba(92, 201, 255, .22);
     border-radius: 999px;
-    background: rgba(7, 20, 39, .92);
-    box-shadow: 0 14px 32px rgba(2, 6, 23, .32);
-    backdrop-filter: blur(14px);
+    background: rgba(7, 20, 39, .96);
+    box-shadow: 0 18px 38px rgba(2, 6, 23, .38);
+    backdrop-filter: blur(16px);
 }
 
 .alfacore-sticky-x-scroll__content {
@@ -14033,24 +14035,29 @@ textarea {
 }
 
 .alfacore-sticky-x-scroll__track::-webkit-scrollbar {
-    height: 14px;
+    height: 16px;
 }
 
 .alfacore-sticky-x-scroll__track::-webkit-scrollbar-track {
-    background: rgba(15, 23, 42, .18);
+    background: rgba(15, 23, 42, .24);
     border-radius: 999px;
 }
 
 .alfacore-sticky-x-scroll__track::-webkit-scrollbar-thumb {
-    border: 2px solid rgba(15, 23, 42, .18);
+    min-width: 52px;
+    border: 2px solid rgba(15, 23, 42, .24);
     border-radius: 999px;
     background: linear-gradient(180deg, rgba(34, 211, 238, .92), rgba(14, 165, 233, .82));
 }
 
+.alfacore-sticky-x-scroll__track:hover::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, rgba(103, 232, 249, .96), rgba(14, 165, 233, .9));
+}
+
 html[data-theme="light"] .alfacore-sticky-x-scroll__track {
-    border-color: rgba(19, 103, 170, .12);
+    border-color: rgba(19, 103, 170, .18);
     background: rgba(255, 255, 255, .96);
-    box-shadow: 0 14px 28px rgba(15, 23, 42, .16);
+    box-shadow: 0 18px 30px rgba(15, 23, 42, .18);
 }
 
 html[data-theme="light"] .alfacore-sticky-x-scroll__track::-webkit-scrollbar-track {
@@ -14060,6 +14067,10 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track::-webkit-scrollbar-tra
 html[data-theme="light"] .alfacore-sticky-x-scroll__track::-webkit-scrollbar-thumb {
     border-color: rgba(226, 232, 240, .9);
     background: linear-gradient(180deg, rgba(14, 165, 233, .88), rgba(2, 132, 199, .8));
+}
+
+html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, rgba(56, 189, 248, .96), rgba(2, 132, 199, .88));
 }
 
 @media (max-width: 768px) {
