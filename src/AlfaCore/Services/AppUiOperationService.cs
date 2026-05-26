@@ -58,6 +58,21 @@ public sealed class AppUiOperationService : IAppUiOperationService
             return BuildFromKnownException(plainMessage, code, invalidOp.InnerException, fallbackTitle);
         }
 
+        if (exception is InvalidOperationException directInvalidOperation)
+        {
+            var message = (directInvalidOperation.Message ?? string.Empty).Trim();
+            if (!string.IsNullOrWhiteSpace(message))
+            {
+                return new AppUiMessage
+                {
+                    Severity = AppUiFeedbackSeverity.Error,
+                    Title = fallbackTitle,
+                    Message = message,
+                    Suggestion = "Revisá el mensaje y, si persiste, compartilo con soporte para ajustar la configuración o los datos."
+                };
+            }
+        }
+
         return new AppUiMessage
         {
             Severity = AppUiFeedbackSeverity.Error,

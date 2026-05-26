@@ -12505,6 +12505,18 @@ html[data-theme="light"] .interfaces-field-shell {
     background: var(--interfaces-surface-3);
 }
 
+.interfaces-upload-dropzone {
+    outline: none;
+    transition: background-color .16s ease, border-color .16s ease, box-shadow .16s ease;
+}
+
+.interfaces-upload-dropzone[data-upload-paste-ready="1"]:focus-visible,
+.interfaces-upload-dropzone.is-file-dragging {
+    border-radius: 18px;
+    box-shadow: inset 0 0 0 1px rgba(14, 165, 233, 0.45);
+    background: rgba(14, 165, 233, 0.08);
+}
+
 .interfaces-upload-hint {
     margin: 0;
     color: var(--color-muted);
@@ -12518,6 +12530,13 @@ html[data-theme="light"] .interfaces-field-shell {
 .interfaces-file-trigger.is-disabled {
     opacity: .5;
     pointer-events: none;
+}
+
+.interfaces-upload-actions {
+    display: flex;
+    gap: .5rem;
+    flex-wrap: wrap;
+    align-items: center;
 }
 
 .interfaces-file-trigger--mobile {
@@ -12556,6 +12575,78 @@ html[data-theme="light"] .interfaces-field-shell {
     gap: .2rem;
     min-width: 0;
     flex: 1 1 auto;
+}
+
+.interfaces-pending-file {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: .8rem;
+}
+
+.interfaces-pending-file__thumb {
+    width: 58px;
+    height: 58px;
+    border: 1px solid var(--interfaces-stroke);
+    border-radius: 10px;
+    padding: 0;
+    overflow: hidden;
+    background: rgba(2, 6, 23, .45);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+.interfaces-pending-file__thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.interfaces-pending-preview {
+    width: min(1080px, 96vw);
+    max-height: 94vh;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: .9rem;
+    overflow: hidden;
+}
+
+.interfaces-pending-preview__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .8rem;
+}
+
+.interfaces-pending-preview__header > div:first-child {
+    display: grid;
+    gap: .15rem;
+}
+
+.interfaces-pending-preview__header span {
+    color: var(--color-muted);
+    font-size: .82rem;
+}
+
+.interfaces-pending-preview__canvas {
+    min-height: 0;
+    overflow: auto;
+    border: 1px solid var(--interfaces-stroke);
+    border-radius: 14px;
+    background: rgba(2, 6, 23, .55);
+    display: grid;
+    place-items: center;
+    padding: 1rem;
+}
+
+.interfaces-pending-preview__canvas img {
+    transform-origin: center center;
+    max-width: 100%;
+    max-height: 72vh;
+    transition: transform .12s ease;
 }
 
 .interfaces-attachment-row__content strong {
