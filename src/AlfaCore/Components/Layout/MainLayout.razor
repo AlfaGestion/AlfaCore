@@ -1,11 +1,14 @@
 ﻿@inherits LayoutComponentBase
 @inject IJSRuntime JS
+@using System.Globalization
+@using AlfaCore.Models
 @inject NavigationManager Nav
 @inject AlfaCore.Services.ISessionService SessionSvc
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject AlfaCore.Services.IMenuService MenuSvc
 @inject AlfaCore.Services.IRecentService RecentSvc
 @inject AlfaCore.Services.IConversacionesService ConversacionesSvc
+@inject AlfaCore.Services.ITareasService TareasSvc
 @inject AlfaCore.Services.IAppEventService AppEvents
 @implements IDisposable
 
@@ -519,10 +522,10 @@
                         </button>
                     }
                 }
-                <NavLink class="menu__link menu__link--help" href="/tareas" Match="NavLinkMatch.All">
+                <button type="button" class="menu__link menu__button menu__link--help @(_tasksPanelOpen ? "is-active" : string.Empty)" @onclick="ToggleTasksPanelAsync">
                     <span class="menu__icon"><i class="bi bi-check2-circle"></i></span>
                     <span>Tareas</span>
-                </NavLink>
+                </button>
                 <NavLink class="menu__link menu__link--help" href="@(_currentModule == "consultas" ? "/ayuda?topic=consultas" : "/ayuda")">
                     <span class="menu__icon"><i class="bi bi-question-circle-fill"></i></span>
                     <span>Ayuda</span>
@@ -641,6 +644,108 @@
 }
 
 <SessionDrawer Open="_drawerOpen" OnClose="() => _drawerOpen = false" />
+
+@if (_tasksPanelOpen)
+{
+    <button type="button"
+            class="tareas-side-backdrop no-print"
+            aria-label="Cerrar tareas"
+            @onclick="CloseTasksPanel"></button>
+}
+
+<aside class="tareas-side-panel no-print @(_tasksPanelOpen ? "is-open" : string.Empty)" aria-label="Tareas rápidas">
+    <header class="tareas-side-panel__head">
+        <div class="tareas-side-panel__title">
+            <span>TASKS</span>
+            <select value="@TasksPanelSelectedValue" @onchange="OnTasksPanelListChanged" aria-label="Lista de tareas">
+                <option value="">Todas las listas</option>
+                @foreach (var lista in _tasksPanel.Listas)
+                {
+                    <option value="@lista.IdLista">@lista.Nombre</option>
+                }
+            </select>
+        </div>
+        <div class="tareas-side-panel__actions">
+            <a href="/tareas" title="Ir al módulo de tareas" aria-label="Ir al módulo de tareas">
+                <i class="bi bi-box-arrow-up-right"></i>
+            </a>
+            <button type="button" title="Cerrar" aria-label="Cerrar tareas" @onclick="CloseTasksPanel">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        </div>
+    </header>
+
+    <section class="tareas-side-panel__add">
+        <i class="bi bi-check2-circle"></i>
+        <input value="@_tasksPanelQuickTitle"
+               @oninput="e => _tasksPanelQuickTitle = Convert.ToString(e.Value) ?? string.Empty"
+               @onkeydown="HandleTasksPanelQuickKeyDown"
+               placeholder="Añadir una tarea" />
+    </section>
+
+    <section class="tareas-side-panel__body">
+        @if (_tasksPanelLoading)
+        {
+            <div class="tareas-side-panel__empty">Cargando tareas...</div>
+        }
+        else if (!string.IsNullOrWhiteSpace(_tasksPanelError))
+        {
+            <div class="tareas-side-panel__empty is-error">@_tasksPanelError</div>
+        }
+        else
+        {
+            @if (TasksPanelActiveTasks.Count > 0)
+            {
+                <p class="tareas-side-panel__group">Sin fecha</p>
+                <div class="tareas-side-list">
+                    @foreach (var tarea in TasksPanelActiveTasks)
+                    {
+                        <article class="tareas-side-row">
+                            <button type="button" class="tareas-side-check" title="Completar" @onclick="() => CompleteTasksPanelTaskAsync(tarea)">
+                                <i class="bi bi-circle"></i>
+                            </button>
+                            <a class="tareas-side-row__body" href="/tareas" title="Abrir en tareas">
+                                <strong>@tarea.Titulo</strong>
+                                <span>
+                                    @if (tarea.FechaVencimiento is not null)
+                                    {
+                                        <span>@tarea.FechaVencimiento.Value.ToString("dd/MM")</span>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(tarea.UsuarioAsignado))
+                                    {
+                                        <span>@(tarea.FechaVencimiento is null ? string.Empty : " · ")@tarea.UsuarioAsignado</span>
+                                    }
+                                </span>
+                            </a>
+                        </article>
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="tareas-side-panel__empty">No hay tareas pendientes.</div>
+            }
+
+            <details class="tareas-side-completed">
+                <summary>Completadas (@TasksPanelCompletedTasks.Count)</summary>
+                <div class="tareas-side-list">
+                    @foreach (var tarea in TasksPanelCompletedTasks)
+                    {
+                        <article class="tareas-side-row is-done">
+                            <button type="button" class="tareas-side-check is-done" title="Restaurar" @onclick="() => RestoreTasksPanelTaskAsync(tarea)">
+                                <i class="bi bi-check-circle-fill"></i>
+                            </button>
+                            <span class="tareas-side-row__body">
+                                <strong>@tarea.Titulo</strong>
+                                <span>@tarea.ListaNombre</span>
+                            </span>
+                        </article>
+                    }
+                </div>
+            </details>
+        }
+    </section>
+</aside>
 
 @if (_showInstallHelp)
 {
@@ -874,6 +979,12 @@
     private string _menuSearchError = string.Empty;
     private bool _menuSearchLoaded;
     private bool _menuSearchLoading;
+    private bool _tasksPanelOpen;
+    private bool _tasksPanelLoading;
+    private string _tasksPanelQuickTitle = string.Empty;
+    private string _tasksPanelError = string.Empty;
+    private int? _tasksPanelListId;
+    private TareasPageDto _tasksPanel = new();
     private readonly Dictionary<long, long> _globalConversationLastIncomingById = [];
     private CancellationTokenSource? _globalConversationPollingCts;
     private Task? _globalConversationPollingTask;
@@ -1700,6 +1811,150 @@
 
     private static string DisplayOrDash(string? value)
         => string.IsNullOrWhiteSpace(value) ? "-" : value.Trim();
+
+    private string TasksPanelUser => AppUserSession.GetCurrentUserName(Environment.UserName).Trim();
+
+    private string TasksPanelSelectedValue => _tasksPanelListId?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
+
+    private List<TareaItemDto> TasksPanelActiveTasks => _tasksPanel.Tareas
+        .Where(MatchesTasksPanelList)
+        .OrderBy(x => x.FechaVencimiento is null)
+        .ThenBy(x => x.FechaVencimiento)
+        .ThenByDescending(x => x.FechaHoraAlta)
+        .ToList();
+
+    private List<TareaItemDto> TasksPanelCompletedTasks => _tasksPanel.Completadas
+        .Where(MatchesTasksPanelList)
+        .OrderByDescending(x => x.FechaHoraCompletada ?? x.FechaHoraModificacion ?? x.FechaHoraAlta)
+        .Take(20)
+        .ToList();
+
+    private bool MatchesTasksPanelList(TareaItemDto tarea)
+        => _tasksPanelListId is null || tarea.IdLista == _tasksPanelListId.Value;
+
+    private async Task ToggleTasksPanelAsync()
+    {
+        if (_tasksPanelOpen)
+        {
+            CloseTasksPanel();
+            return;
+        }
+
+        _tasksPanelOpen = true;
+        await LoadTasksPanelAsync();
+    }
+
+    private void CloseTasksPanel()
+    {
+        _tasksPanelOpen = false;
+        _tasksPanelQuickTitle = string.Empty;
+    }
+
+    private async Task LoadTasksPanelAsync()
+    {
+        _tasksPanelLoading = true;
+        _tasksPanelError = string.Empty;
+
+        try
+        {
+            _tasksPanel = await TareasSvc.GetPageAsync(TasksPanelUser);
+            if (_tasksPanelListId is int selected && !_tasksPanel.Listas.Any(x => x.IdLista == selected))
+                _tasksPanelListId = null;
+            _tasksPanelListId ??= _tasksPanel.Listas.FirstOrDefault(x => x.EsDefault)?.IdLista
+                ?? _tasksPanel.Listas.FirstOrDefault()?.IdLista;
+        }
+        catch (Exception ex)
+        {
+            _tasksPanelError = "No se pudieron cargar las tareas.";
+            try
+            {
+                await AppEvents.LogErrorAsync("TAREAS", "PANEL_CARGA", ex, "Falló la carga del panel rápido de tareas.");
+            }
+            catch
+            {
+            }
+        }
+        finally
+        {
+            _tasksPanelLoading = false;
+        }
+    }
+
+    private async Task HandleTasksPanelQuickKeyDown(KeyboardEventArgs args)
+    {
+        if (!string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        var title = _tasksPanelQuickTitle.Trim();
+        if (string.IsNullOrWhiteSpace(title))
+            return;
+
+        var listId = _tasksPanelListId
+            ?? _tasksPanel.Listas.FirstOrDefault(x => x.EsDefault)?.IdLista
+            ?? _tasksPanel.Listas.FirstOrDefault()?.IdLista
+            ?? 0;
+        if (listId <= 0)
+            return;
+
+        try
+        {
+            await TareasSvc.SaveTaskAsync(new TareaSaveRequest
+            {
+                IdLista = listId,
+                Titulo = title,
+                UsuarioAsignado = TasksPanelUser,
+                UsuarioAccion = TasksPanelUser,
+                Estado = TareaEstadoKeys.Pendiente
+            });
+
+            _tasksPanelQuickTitle = string.Empty;
+            await LoadTasksPanelAsync();
+        }
+        catch (Exception ex)
+        {
+            _tasksPanelError = "No se pudo crear la tarea.";
+            try
+            {
+                await AppEvents.LogErrorAsync("TAREAS", "PANEL_CREAR", ex, "Falló la creación rápida de una tarea.");
+            }
+            catch
+            {
+            }
+        }
+    }
+
+    private async Task CompleteTasksPanelTaskAsync(TareaItemDto tarea)
+        => await ChangeTasksPanelTaskStateAsync(tarea.IdTarea, TareaEstadoKeys.Completada);
+
+    private async Task RestoreTasksPanelTaskAsync(TareaItemDto tarea)
+        => await ChangeTasksPanelTaskStateAsync(tarea.IdTarea, TareaEstadoKeys.Pendiente);
+
+    private async Task ChangeTasksPanelTaskStateAsync(long idTarea, string estado)
+    {
+        try
+        {
+            await TareasSvc.ChangeTaskStateAsync(idTarea, estado, TasksPanelUser);
+            await LoadTasksPanelAsync();
+        }
+        catch (Exception ex)
+        {
+            _tasksPanelError = "No se pudo actualizar la tarea.";
+            try
+            {
+                await AppEvents.LogErrorAsync("TAREAS", "PANEL_ESTADO", ex, "Falló el cambio de estado desde el panel rápido de tareas.");
+            }
+            catch
+            {
+            }
+        }
+    }
+
+    private async Task OnTasksPanelListChanged(ChangeEventArgs args)
+    {
+        var value = Convert.ToString(args.Value);
+        _tasksPanelListId = int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id) ? id : null;
+        await Task.CompletedTask;
+    }
 
     private void TogglePushChannel(string channel, ChangeEventArgs args)
     {

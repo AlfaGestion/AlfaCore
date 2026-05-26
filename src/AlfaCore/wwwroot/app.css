@@ -16160,3 +16160,367 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
         border-bottom: 1px solid rgba(80, 118, 180, 0.18);
     }
 }
+
+/* Tareas: panel rapido y vista completa */
+.menu__footer .menu__button.is-active {
+    background: rgba(37, 179, 198, 0.16);
+    border-color: rgba(37, 179, 198, 0.28);
+    color: #f5fbff;
+}
+
+.tareas-side-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1160;
+    background: rgba(2, 8, 18, 0.34);
+    border: 0;
+    padding: 0;
+}
+
+.tareas-side-panel {
+    position: fixed;
+    top: 0;
+    right: 0;
+    z-index: 1165;
+    width: min(380px, calc(100vw - 1rem));
+    height: 100dvh;
+    display: grid;
+    grid-template-rows: auto auto 1fr;
+    background: #07111f;
+    border-left: 1px solid rgba(84, 129, 190, 0.35);
+    box-shadow: -24px 0 70px rgba(0, 0, 0, 0.38);
+    transform: translateX(104%);
+    transition: transform 0.18s ease;
+    color: #edf6ff;
+}
+
+.tareas-side-panel.is-open {
+    transform: translateX(0);
+}
+
+.tareas-side-panel__head {
+    min-height: 66px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.9rem 1rem 0.8rem;
+    border-bottom: 1px solid rgba(84, 129, 190, 0.18);
+}
+
+.tareas-side-panel__title {
+    min-width: 0;
+    display: grid;
+    gap: 0.25rem;
+}
+
+.tareas-side-panel__title span {
+    color: rgba(150, 190, 225, 0.8);
+    font-size: 0.68rem;
+    letter-spacing: 0.16em;
+    font-weight: 800;
+}
+
+.tareas-side-panel__title select {
+    min-width: 0;
+    max-width: 220px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: #f5fbff;
+    font-size: 1rem;
+    font-weight: 750;
+    outline: 0;
+}
+
+.tareas-side-panel__actions {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.tareas-side-panel__actions a,
+.tareas-side-panel__actions button {
+    width: 34px;
+    height: 34px;
+    display: inline-grid;
+    place-items: center;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    color: rgba(221, 235, 250, 0.86);
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.tareas-side-panel__actions a:hover,
+.tareas-side-panel__actions button:hover {
+    background: rgba(64, 199, 220, 0.12);
+    color: #ffffff;
+}
+
+.tareas-side-panel__add {
+    display: grid;
+    grid-template-columns: 28px 1fr;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.85rem 1rem;
+    border-bottom: 1px solid rgba(84, 129, 190, 0.14);
+}
+
+.tareas-side-panel__add i {
+    color: #24c2dc;
+    font-size: 1.15rem;
+}
+
+.tareas-side-panel__add input {
+    min-width: 0;
+    height: 36px;
+    border: 0;
+    background: transparent;
+    color: #f5fbff;
+    outline: 0;
+    font-weight: 650;
+}
+
+.tareas-side-panel__add input::placeholder {
+    color: rgba(167, 190, 220, 0.72);
+}
+
+.tareas-side-panel__body {
+    min-height: 0;
+    overflow: auto;
+    padding: 0.8rem 1rem 1rem;
+}
+
+.tareas-side-panel__group {
+    margin: 0.2rem 0 0.55rem;
+    color: rgba(176, 205, 235, 0.92);
+    font-size: 0.82rem;
+}
+
+.tareas-side-list {
+    display: grid;
+    gap: 0.18rem;
+}
+
+.tareas-side-row {
+    display: grid;
+    grid-template-columns: 28px 1fr;
+    align-items: start;
+    gap: 0.55rem;
+    min-height: 42px;
+    padding: 0.38rem 0.2rem;
+    border-radius: 8px;
+}
+
+.tareas-side-row:hover {
+    background: rgba(92, 132, 185, 0.1);
+}
+
+.tareas-side-check {
+    width: 24px;
+    height: 24px;
+    margin-top: 0.1rem;
+    display: inline-grid;
+    place-items: center;
+    border: 0;
+    background: transparent;
+    color: rgba(221, 235, 250, 0.82);
+    cursor: pointer;
+}
+
+.tareas-side-check:hover,
+.tareas-side-check.is-done {
+    color: #25c6da;
+}
+
+.tareas-side-row__body {
+    min-width: 0;
+    display: grid;
+    gap: 0.12rem;
+    color: inherit;
+    text-decoration: none;
+}
+
+.tareas-side-row__body strong {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #f4f8ff;
+    font-size: 0.92rem;
+}
+
+.tareas-side-row__body span {
+    min-height: 1rem;
+    color: rgba(162, 190, 225, 0.78);
+    font-size: 0.76rem;
+}
+
+.tareas-side-row.is-done strong {
+    text-decoration: line-through;
+    color: rgba(210, 224, 245, 0.62);
+}
+
+.tareas-side-completed {
+    margin-top: 1rem;
+    border-top: 1px solid rgba(84, 129, 190, 0.16);
+    padding-top: 0.75rem;
+}
+
+.tareas-side-completed summary {
+    cursor: pointer;
+    color: rgba(221, 235, 250, 0.86);
+    font-weight: 750;
+}
+
+.tareas-side-panel__empty {
+    padding: 2.2rem 0.5rem;
+    color: rgba(180, 204, 232, 0.72);
+    text-align: center;
+}
+
+.tareas-side-panel__empty.is-error {
+    color: #ff8b9b;
+}
+
+.shell__content .tareas-page {
+    min-height: calc(100dvh - 84px);
+    display: grid;
+    grid-template-rows: auto 1fr;
+    gap: 0.85rem;
+    padding: 0;
+}
+
+.shell__content .tareas-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.85rem 1rem;
+    border: 1px solid rgba(80, 118, 180, 0.18);
+    border-radius: 8px;
+    background: rgba(6, 16, 30, 0.62);
+}
+
+.shell__content .tareas-header .shell__eyebrow,
+.shell__content .tareas-header > div > span {
+    display: none;
+}
+
+.shell__content .tareas-header h2 {
+    margin: 0;
+    font-size: 1.25rem;
+    letter-spacing: 0;
+}
+
+.shell__content .tareas-shell {
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 230px minmax(0, 1fr) 300px;
+    gap: 0.8rem;
+}
+
+.shell__content .tareas-lists,
+.shell__content .tareas-main,
+.shell__content .tareas-quick {
+    min-width: 0;
+    min-height: 0;
+    border: 1px solid rgba(80, 118, 180, 0.18);
+    border-radius: 8px;
+    background: rgba(7, 17, 31, 0.82);
+    box-shadow: none;
+}
+
+.shell__content .tareas-lists,
+.shell__content .tareas-quick {
+    padding: 0.75rem;
+}
+
+.shell__content .tareas-main {
+    padding: 0.75rem;
+    display: grid;
+    grid-template-rows: auto auto 1fr auto;
+    gap: 0.65rem;
+}
+
+.shell__content .tareas-list-button,
+.shell__content .tareas-row,
+.shell__content .tareas-note,
+.shell__content .tareas-compose,
+.shell__content .tareas-toolbar {
+    border-radius: 8px;
+    box-shadow: none;
+}
+
+.shell__content .tareas-list-button,
+.shell__content .tareas-row,
+.shell__content .tareas-note {
+    background: transparent;
+}
+
+.shell__content .tareas-row:hover,
+.shell__content .tareas-list-button:hover,
+.shell__content .tareas-list-button.is-active {
+    background: rgba(37, 179, 198, 0.12);
+}
+
+.shell__content .tareas-compose,
+.shell__content .tareas-toolbar {
+    border: 1px solid rgba(80, 118, 180, 0.16);
+    background: rgba(10, 24, 42, 0.72);
+}
+
+.shell__content .tareas-page input,
+.shell__content .tareas-page select,
+.shell__content .tareas-page textarea {
+    border: 1px solid rgba(80, 118, 180, 0.22);
+    background: rgba(12, 24, 43, 0.9);
+    color: #edf6ff;
+    border-radius: 8px;
+}
+
+.shell__content .tareas-compose input,
+.shell__content .tareas-title-input {
+    border: 0;
+    background: transparent;
+}
+
+.shell__content .tareas-list {
+    min-height: 0;
+    overflow: auto;
+}
+
+.shell__content .tareas-completed {
+    margin-top: 0;
+}
+
+.shell__content .tareas-modal {
+    border-radius: 16px;
+    background: #0b1728;
+}
+
+@media (max-width: 1100px) {
+    .shell__content .tareas-shell {
+        grid-template-columns: 190px minmax(0, 1fr);
+    }
+
+    .shell__content .tareas-quick {
+        grid-column: 1 / -1;
+    }
+}
+
+@media (max-width: 780px) {
+    .tareas-side-panel {
+        width: min(360px, calc(100vw - 0.5rem));
+    }
+
+    .shell__content .tareas-header,
+    .shell__content .tareas-shell {
+        grid-template-columns: 1fr;
+    }
+
+    .shell__content .tareas-header {
+        align-items: stretch;
+    }
+}
