@@ -123,28 +123,18 @@
                 </div>
             </div>
 
-            <div class="comprobante-viewer__totales">
-                <article class="kpi-card">
-                    <div class="kpi-card__label">Importe total</div>
-                    <div class="kpi-card__value">@FormatMoney(c.ImporteTotal)</div>
-                </article>
-                <article class="kpi-card">
-                    <div class="kpi-card__label">Importe sin IVA</div>
-                    <div class="kpi-card__value">@FormatMoney(c.ImporteSinIva)</div>
-                </article>
-                <article class="kpi-card">
-                    <div class="kpi-card__label">IVA</div>
-                    <div class="kpi-card__value">@FormatMoney(c.Iva)</div>
-                </article>
-                <article class="kpi-card">
-                    <div class="kpi-card__label">IVA recargo</div>
-                    <div class="kpi-card__value">@FormatMoney(c.IvaRecargo)</div>
-                </article>
-                <article class="kpi-card">
-                    <div class="kpi-card__label">Descuentos</div>
-                    <div class="kpi-card__value">@FormatMoney(c.Descuentos)</div>
-                </article>
-            </div>
+            @if (BuildTotales(c).Count > 0)
+            {
+                <div class="comprobante-viewer__totales" style="@BuildTotalesStyle(BuildTotales(c).Count)">
+                    @foreach (var total in BuildTotales(c))
+                    {
+                        <article class="kpi-card" style="width:auto;display:block;">
+                            <div class="kpi-card__label">@total.Label</div>
+                            <div class="kpi-card__value">@FormatMoney(total.Value)</div>
+                        </article>
+                    }
+                </div>
+            }
         </section>
 
         <section class="panel-card">
@@ -164,18 +154,27 @@
                         <label>Neto gravado</label>
                         <input value="@FormatMoney(c.NetoGravado)" readonly />
                     </div>
-                    <div class="field">
-                        <label>Neto no gravado</label>
-                        <input value="@FormatMoney(c.NetoNoGravado)" readonly />
-                    </div>
-                    <div class="field field--full">
-                        <label>Observaciones generales</label>
-                        <textarea rows="4" readonly>@c.ObservacionesGenerales</textarea>
-                    </div>
-                    <div class="field field--full">
-                        <label>Comentarios</label>
-                        <textarea rows="4" readonly>@c.Comentarios</textarea>
-                    </div>
+                    @if (HasValue(c.NetoNoGravado))
+                    {
+                        <div class="field">
+                            <label>Neto no gravado</label>
+                            <input value="@FormatMoney(c.NetoNoGravado)" readonly />
+                        </div>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(c.ObservacionesGenerales))
+                    {
+                        <div class="field field--full">
+                            <label>Observaciones generales</label>
+                            <textarea rows="4" readonly>@c.ObservacionesGenerales</textarea>
+                        </div>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(c.Comentarios))
+                    {
+                        <div class="field field--full">
+                            <label>Comentarios</label>
+                            <textarea rows="4" readonly>@c.Comentarios</textarea>
+                        </div>
+                    }
                 </div>
             }
             else if (_activeTab == "insumos")
@@ -217,7 +216,7 @@
         ("resumen", "Resumen"),
         ("insumos", "Artículos"),
         ("tareas", "Servicios"),
-        ("observaciones", "Observaciones"),
+        ("observaciones", "Otros conceptos"),
         ("aplicaciones", "Aplicaciones"),
         ("documentos", "Documentos"),
         ("acciones", "Historial")
@@ -265,7 +264,7 @@
         }
 
         _dto = result.Value;
-        _activeTab = "resumen";
+        _activeTab = ResolveDefaultTab(_dto);
         _loading = false;
     }
 
@@ -309,6 +308,9 @@
     private static string FormatMoney(decimal? value)
         => value.HasValue ? value.Value.ToString("N2") : "—";
 
+    private static bool HasValue(decimal? value)
+        => value.HasValue && value.Value != 0m;
+
     private static string FormatDate(DateTime? value)
         => value.HasValue ? value.Value.ToString("dd/MM/yyyy") : "—";
 
@@ -329,6 +331,52 @@
 
     private static string BuildTecnico(ComprobanteCabeceraDto c)
         => string.Join(" · ", new[] { c.TecnicoCodigo, c.TecnicoNombre }.Distinct().Where(x => !string.IsNullOrWhiteSpace(x)));
+
+    private static List<(string Label, decimal Value)> BuildTotales(ComprobanteCabeceraDto c)
+    {
+        var items = new List<(string Label, decimal Value)>
+        {
+            ("Importe total", c.ImporteTotal),
+            ("Importe sin IVA", c.ImporteSinIva),
+            ("IVA", c.Iva),
+            ("IVA recargo", c.IvaRecargo),
+            ("Descuentos", c.Descuentos)
+        };
+
+        return items.Where(static x => x.Value != 0m).ToList();
+    }
+
+    private static string ResolveDefaultTab(ComprobanteViewerDto? dto)
+    {
+        if (dto?.Cabecera is null)
+            return "resumen";
+
+        if (dto.Insumos.Count > 0)
+            return "insumos";
+
+        if (dto.Tareas.Count > 0)
+            return "tareas";
+
+        if (dto.Observaciones.Count > 0)
+            return "observaciones";
+
+        if (HasResumenContent(dto.Cabecera))
+            return "resumen";
+
+        return "resumen";
+    }
+
+    private static string BuildTotalesStyle(int count)
+    {
+        var columns = count >= 3 ? 3 : Math.Max(1, count);
+        return $"display:grid;grid-template-columns:repeat({columns}, minmax(0, 1fr));gap:.85rem;align-items:stretch;";
+    }
+
+    private static bool HasResumenContent(ComprobanteCabeceraDto c)
+        => HasValue(c.NetoGravado)
+           || HasValue(c.NetoNoGravado)
+           || !string.IsNullOrWhiteSpace(c.ObservacionesGenerales)
+           || !string.IsNullOrWhiteSpace(c.Comentarios);
 
     private string GetTitle()
         => _dto?.Cabecera is null
@@ -469,7 +517,7 @@
             <tbody>
                 @if (_dto!.Observaciones.Count == 0)
                 {
-                    <tr><td colspan="4" class="muted">El comprobante no tiene observaciones asociadas.</td></tr>
+                    <tr><td colspan="4" class="muted">El comprobante no tiene otros conceptos asociados.</td></tr>
                 }
                 else
                 {
