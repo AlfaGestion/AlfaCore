@@ -5,6 +5,7 @@
 @using System.Text.RegularExpressions
 @inject AlfaCore.Services.IAuditoriaService AuditoriaSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
+@inject IJSRuntime JS
 
 <PageTitle>Auditoría de usuarios | Alfa Gestión</PageTitle>
 
@@ -272,28 +273,54 @@
         </section>
 
         <section class="kpi-grid">
-            <article class="kpi-card">
-                <div class="kpi-card__label">@GetTotalKpiLabel()</div>
-                <div class="kpi-card__value">@GetTotalKpiValue()</div>
-            </article>
-            <article class="kpi-card">
-                <div class="kpi-card__label">Riesgo alto</div>
-                <div class="kpi-card__value">@_stats.RiesgoAlto</div>
-            </article>
-            <article class="kpi-card">
-                <div class="kpi-card__label">Riesgo medio</div>
-                <div class="kpi-card__value">@_stats.RiesgoMedio</div>
-            </article>
-            <article class="kpi-card">
-                <div class="kpi-card__label">@GetFourthKpiLabel()</div>
-                <div class="kpi-card__value">@GetFourthKpiValue()</div>
-            </article>
-            @if (IsDuplicateMode)
+            @if (IsStartedNotSavedMode)
             {
                 <article class="kpi-card">
-                    <div class="kpi-card__label">Contables duplicados</div>
-                    <div class="kpi-card__value">@_stats.ContablesDuplicados</div>
+                    <div class="kpi-card__label">Comprobantes cancelados</div>
+                    <div class="kpi-card__value">@_stats.TotalAlertas</div>
                 </article>
+                <article class="kpi-card">
+                    <div class="kpi-card__label">Promedio min. cancelación</div>
+                    <div class="kpi-card__value">@FormatMinutesMetric(_stats.PromedioMinutosCancelacion)</div>
+                </article>
+                <article class="kpi-card">
+                    <div class="kpi-card__label">Máx. min. cancelación</div>
+                    <div class="kpi-card__value">@FormatMinutesMetric(_stats.MaximoMinutosCancelacion)</div>
+                </article>
+                <article class="kpi-card">
+                    <div class="kpi-card__label">Importe total cancelado</div>
+                    <div class="kpi-card__value">@FormatMoney(_stats.ImporteTotalCancelado)</div>
+                </article>
+                <article class="kpi-card">
+                    <div class="kpi-card__label">Usuarios involucrados</div>
+                    <div class="kpi-card__value">@_stats.UsuariosInvolucrados</div>
+                </article>
+            }
+            else
+            {
+                <article class="kpi-card">
+                    <div class="kpi-card__label">@GetTotalKpiLabel()</div>
+                    <div class="kpi-card__value">@GetTotalKpiValue()</div>
+                </article>
+                <article class="kpi-card">
+                    <div class="kpi-card__label">Riesgo alto</div>
+                    <div class="kpi-card__value">@_stats.RiesgoAlto</div>
+                </article>
+                <article class="kpi-card">
+                    <div class="kpi-card__label">Riesgo medio</div>
+                    <div class="kpi-card__value">@_stats.RiesgoMedio</div>
+                </article>
+                <article class="kpi-card">
+                    <div class="kpi-card__label">@GetFourthKpiLabel()</div>
+                    <div class="kpi-card__value">@GetFourthKpiValue()</div>
+                </article>
+                @if (IsDuplicateMode)
+                {
+                    <article class="kpi-card">
+                        <div class="kpi-card__label">Contables duplicados</div>
+                        <div class="kpi-card__value">@_stats.ContablesDuplicados</div>
+                    </article>
+                }
             }
         </section>
 
@@ -446,6 +473,10 @@
                                 <input value="@GetCancellationTimeText(_selected)" readonly />
                             </div>
                             <div class="field">
+                                <label>Minutos hasta cancelación</label>
+                                <input value="@GetCancellationMinutesText(_selected)" readonly />
+                            </div>
+                            <div class="field">
                                 <label>Importe al cancelar</label>
                                 <input value="@GetCancellationAmountText(_selected)" readonly />
                             </div>
@@ -505,6 +536,14 @@
                         <p class="panel-card__subtitle">@_result.TotalRegistros alerta(s) detectada(s). Página @_pagina de @TotalPaginas.</p>
                     </div>
                     <div class="actions">
+                        <button type="button" class="btn btn--ghost btn--sm" @onclick="ExportarPdfAsync" disabled="@_loadingRows">
+                            <i class="bi bi-file-earmark-pdf"></i>
+                            <span>PDF</span>
+                        </button>
+                        <a class="btn btn--ghost btn--sm" href="@BuildExcelExportUrl()">
+                            <i class="bi bi-file-earmark-excel"></i>
+                            <span>Excel</span>
+                        </a>
                         <div class="field field--inline">
                             <label>Tamaño</label>
                             <select value="@_tamanioPagina" @onchange="OnPageSizeChangedAsync">
@@ -533,6 +572,22 @@
                                     <th><button type="button" class="table-sort @GetSortClass("fecha")" @onclick='() => ToggleSortAsync("fecha")'><span class="table-sort__label">Fecha mínima</span><span class="table-sort__mark">@SortMark("fecha")</span></button></th>
                                     <th>Fecha máxima</th>
                                     <th><button type="button" class="table-sort @GetSortClass("impactocontable")" @onclick='() => ToggleSortAsync("impactocontable")'><span class="table-sort__label">Impacto contable</span><span class="table-sort__mark">@SortMark("impactocontable")</span></button></th>
+                                    <th>Acciones</th>
+                                </tr>
+                            }
+                            else if (IsStartedNotSavedMode)
+                            {
+                                <tr>
+                                    <th><button type="button" class="table-sort @GetSortClass("fecha")" @onclick='() => ToggleSortAsync("fecha")'><span class="table-sort__label">Fecha inicio</span><span class="table-sort__mark">@SortMark("fecha")</span></button></th>
+                                    <th><button type="button" class="table-sort @GetSortClass("control")" @onclick='() => ToggleSortAsync("control")'><span class="table-sort__label">Tipo de control</span><span class="table-sort__mark">@SortMark("control")</span></button></th>
+                                    <th><button type="button" class="table-sort @GetSortClass("riesgo")" @onclick='() => ToggleSortAsync("riesgo")'><span class="table-sort__label">Nivel de riesgo</span><span class="table-sort__mark">@SortMark("riesgo")</span></button></th>
+                                    <th><button type="button" class="table-sort @GetSortClass("usuario")" @onclick='() => ToggleSortAsync("usuario")'><span class="table-sort__label">Usuario</span><span class="table-sort__mark">@SortMark("usuario")</span></button></th>
+                                    <th><button type="button" class="table-sort @GetSortClass("pc")" @onclick='() => ToggleSortAsync("pc")'><span class="table-sort__label">Equipo</span><span class="table-sort__mark">@SortMark("pc")</span></button></th>
+                                    <th><button type="button" class="table-sort @GetSortClass("tc")" @onclick='() => ToggleSortAsync("tc")'><span class="table-sort__label">Tipo comp.</span><span class="table-sort__mark">@SortMark("tc")</span></button></th>
+                                    <th><button type="button" class="table-sort @GetSortClass("comprobante")" @onclick='() => ToggleSortAsync("comprobante")'><span class="table-sort__label">N° comprobante</span><span class="table-sort__mark">@SortMark("comprobante")</span></button></th>
+                                    <th>Hora cancelación</th>
+                                    <th>Minutos</th>
+                                    <th>Importe al cancelar</th>
                                     <th>Acciones</th>
                                 </tr>
                             }
@@ -592,6 +647,33 @@
                                                         <i class="bi bi-eye"></i>
                                                         <span>Detalle</span>
                                                     </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    }
+                                    else if (string.Equals(item.TipoControl, "IN_NO_GRABADO", StringComparison.OrdinalIgnoreCase) && IsStartedNotSavedMode)
+                                    {
+                                        <tr @ondblclick="() => Seleccionar(item)">
+                                            <td>@item.FechaHora.ToString("dd/MM/yyyy HH:mm")</td>
+                                            <td>@item.TipoControlLabel</td>
+                                            <td><span class="@GetRiskBadgeClass(item.Riesgo)">@item.Riesgo</span></td>
+                                            <td>@item.Usuario</td>
+                                            <td>@item.Pc</td>
+                                            <td>@item.TipoComprobante</td>
+                                            <td>@item.IdComprobante</td>
+                                            <td>@GetCancellationTimeText(item)</td>
+                                            <td>@GetCancellationMinutesText(item)</td>
+                                            <td>@GetCancellationAmountText(item)</td>
+                                            <td>
+                                                <div class="actions">
+                                                    <button type="button" class="btn btn--ghost btn--sm" @onclick="() => Seleccionar(item)">
+                                                        <i class="bi bi-eye"></i>
+                                                        <span>Detalle</span>
+                                                    </button>
+                                                    <a class="btn btn--ghost btn--sm" href="@BuildComprobanteViewerUrl(item)">
+                                                        <i class="bi bi-box-arrow-up-right"></i>
+                                                        <span>Comprobantes</span>
+                                                    </a>
                                                 </div>
                                             </td>
                                         </tr>
@@ -707,6 +789,7 @@
 
     private int TotalPaginas => Math.Max(1, (int)Math.Ceiling((_result.TotalRegistros <= 0 ? 1m : _result.TotalRegistros) / (decimal)Math.Max(1, _tamanioPagina)));
     private bool IsDuplicateMode => string.Equals(_tipoControl, "CPRA_DUPLICADO", StringComparison.OrdinalIgnoreCase);
+    private bool IsStartedNotSavedMode => string.Equals(_tipoControl, "IN_NO_GRABADO", StringComparison.OrdinalIgnoreCase);
     private bool SoloDiferenciasSucursal => string.Equals(_soloDiferenciasSucursalText, "SI", StringComparison.OrdinalIgnoreCase);
 
     private AuditoriaUsuarioFilterDto _filters => new()
@@ -872,6 +955,34 @@
 
         _pagina++;
         await BuscarAsync();
+    }
+
+    private async Task ExportarPdfAsync()
+        => await JS.InvokeVoidAsync("dashboardExport.printCurrentPage", "Auditoría de usuarios");
+
+    private string BuildExcelExportUrl()
+    {
+        var parts = new List<string>();
+
+        AddQuery(parts, "desde", _desde?.ToString("yyyy-MM-dd"));
+        AddQuery(parts, "hasta", _hasta?.ToString("yyyy-MM-dd"));
+        AddQuery(parts, "texto", _texto);
+        AddQuery(parts, "usuario", _usuario);
+        AddQuery(parts, "pc", _pc);
+        AddQuery(parts, "tipoComprobante", _tipoComprobante);
+        AddQuery(parts, "riesgo", _riesgo);
+        AddQuery(parts, "tipoControl", _tipoControl);
+        AddQuery(parts, "cuentaCliente", _cuentaCliente);
+        AddQuery(parts, "diasMinimosSinFactura", _diasMinimosSinFactura.ToString(CultureInfo.InvariantCulture));
+        AddQuery(parts, "umbralModificaciones", _umbralModificaciones.ToString(CultureInfo.InvariantCulture));
+        AddQuery(parts, "diasToleranciaDuplicados", _diasToleranciaDuplicados.ToString(CultureInfo.InvariantCulture));
+        AddQuery(parts, "soloDiferenciasSucursal", SoloDiferenciasSucursal ? "true" : "false");
+        AddQuery(parts, "ordenCampo", _ordenCampo);
+        AddQuery(parts, "ordenDireccion", _ordenDireccion);
+
+        return parts.Count == 0
+            ? "/auditoria/usuarios/descargar-excel"
+            : $"/auditoria/usuarios/descargar-excel?{string.Join("&", parts)}";
     }
 
     private void Seleccionar(AuditoriaUsuarioRowDto item)
@@ -1146,6 +1257,18 @@
     private int GetFourthKpiValue()
         => IsDuplicateMode ? _stats.ComprobantesInvolucrados : _stats.ControlesDetectados;
 
+    private static string FormatMinutesMetric(decimal? value)
+        => value.HasValue ? Math.Round(value.Value, 0).ToString("N0") : "—";
+
+    private static string FormatMinutesMetric(int value)
+        => value > 0 ? value.ToString("N0") : "—";
+
+    private static void AddQuery(List<string> parts, string key, string? value)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+            parts.Add($"{Uri.EscapeDataString(key)}={Uri.EscapeDataString(value)}");
+    }
+
     private static string BuildRemitoTechnicalDetail(AuditoriaUsuarioRowDto item)
     {
         var lines = new List<string>
@@ -1250,28 +1373,52 @@
             ? amount
             : "—";
 
+    private static string GetCancellationMinutesText(AuditoriaUsuarioRowDto item)
+    {
+        if (!TryParseCancellationTraceParts(item.SystemUserDetalle, out var cancellationAt, out _))
+            return "—";
+
+        var startAt = item.FechaHora;
+        if (!cancellationAt.HasValue || startAt == DateTime.MinValue || cancellationAt.Value < startAt)
+            return "—";
+
+        return Math.Round((cancellationAt.Value - startAt).TotalMinutes, 0).ToString("N0");
+    }
+
     private static bool TryParseCancellationTrace(string source, out string when, out string amount)
     {
         when = string.Empty;
         amount = string.Empty;
+        if (!TryParseCancellationTraceParts(source, out var cancellationAt, out var cancellationAmount))
+            return false;
+
+        when = cancellationAt?.ToString("dd/MM/yyyy HH:mm:ss") ?? string.Empty;
+        if (cancellationAmount.HasValue)
+            amount = cancellationAmount.Value.ToString("N2", CultureInfo.GetCultureInfo("es-AR"));
+
+        return !string.IsNullOrWhiteSpace(when) || !string.IsNullOrWhiteSpace(amount);
+    }
+
+    private static bool TryParseCancellationTraceParts(string source, out DateTime? cancellationAt, out decimal? cancellationAmount)
+    {
+        cancellationAt = null;
+        cancellationAmount = null;
         if (string.IsNullOrWhiteSpace(source))
             return false;
 
         var dateMatch = Regex.Match(source, @"(?<fecha>\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2}:\d{2})");
-        if (dateMatch.Success)
-            when = dateMatch.Groups["fecha"].Value.Trim();
+        if (dateMatch.Success && DateTime.TryParseExact(dateMatch.Groups["fecha"].Value.Trim(), "dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsedDate))
+            cancellationAt = parsedDate;
 
         var moneyMatch = Regex.Match(source, @"\$\s*(?<importe>[0-9][0-9\.,]*)");
         if (moneyMatch.Success)
         {
             var rawAmount = moneyMatch.Groups["importe"].Value.Trim();
-            if (TryNormalizeAmount(rawAmount, out var parsed))
-                amount = parsed.ToString("N2", CultureInfo.GetCultureInfo("es-AR"));
-            else
-                amount = rawAmount;
+            if (TryNormalizeAmount(rawAmount, out var parsedAmount))
+                cancellationAmount = parsedAmount;
         }
 
-        return !string.IsNullOrWhiteSpace(when) || !string.IsNullOrWhiteSpace(amount);
+        return cancellationAt.HasValue || cancellationAmount.HasValue;
     }
 
     private static bool TryNormalizeAmount(string rawAmount, out decimal amount)

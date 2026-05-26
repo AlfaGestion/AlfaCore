@@ -1256,34 +1256,93 @@ public sealed class AuditoriaService(
 
                 SELECT
                     COUNT(*) AS TotalRegistros,
-                    SUM(CASE WHEN Riesgo = 'ALTO' THEN 1 ELSE 0 END) AS RiesgoAlto,
-                    SUM(CASE WHEN Riesgo = 'MEDIO' THEN 1 ELSE 0 END) AS RiesgoMedio,
-                    COUNT(DISTINCT TipoControl) AS ControlesDetectados,
-                    SUM(ISNULL(ComprobantesInvolucrados, 0)) AS ComprobantesInvolucrados,
-                    SUM(ISNULL(ContablesDuplicados, 0)) AS ContablesDuplicados
-                FROM #AuditUser
-                WHERE (@Usuario = '' OR Usuario = @Usuario)
-                  AND (@Pc = '' OR Pc LIKE '%' + @Pc + '%')
-                  AND (@TipoComprobante = '' OR TipoComprobante LIKE '%' + @TipoComprobante + '%')
-                  AND (@Riesgo = '' OR Riesgo = @Riesgo)
-                  AND (@TipoControl = '' OR TipoControl = @TipoControl)
-                  AND (@CuentaCliente = '' OR Cuenta LIKE '%' + @CuentaCliente + '%' OR Cliente LIKE '%' + @CuentaCliente + '%')
+                    SUM(CASE WHEN au.Riesgo = 'ALTO' THEN 1 ELSE 0 END) AS RiesgoAlto,
+                    SUM(CASE WHEN au.Riesgo = 'MEDIO' THEN 1 ELSE 0 END) AS RiesgoMedio,
+                    COUNT(DISTINCT au.TipoControl) AS ControlesDetectados,
+                    SUM(ISNULL(au.ComprobantesInvolucrados, 0)) AS ComprobantesInvolucrados,
+                    SUM(ISNULL(au.ContablesDuplicados, 0)) AS ContablesDuplicados,
+                    COUNT(DISTINCT CASE WHEN au.TipoControl = 'IN_NO_GRABADO' AND NULLIF(au.Usuario, '') IS NOT NULL THEN au.Usuario END) AS UsuariosInvolucrados,
+                    AVG(CASE
+                        WHEN au.TipoControl = 'IN_NO_GRABADO'
+                         AND Parsed.CancelacionFecha IS NOT NULL
+                         AND Parsed.CancelacionFecha >= au.FechaHora
+                        THEN DATEDIFF(second, au.FechaHora, Parsed.CancelacionFecha) / 60.0
+                    END) AS PromedioMinutosCancelacion,
+                    MAX(CASE
+                        WHEN au.TipoControl = 'IN_NO_GRABADO'
+                         AND Parsed.CancelacionFecha IS NOT NULL
+                         AND Parsed.CancelacionFecha >= au.FechaHora
+                        THEN DATEDIFF(minute, au.FechaHora, Parsed.CancelacionFecha)
+                    END) AS MaximoMinutosCancelacion,
+                    SUM(CASE
+                        WHEN au.TipoControl = 'IN_NO_GRABADO'
+                        THEN ISNULL(Parsed.ImporteCancelacion, 0)
+                        ELSE 0
+                    END) AS ImporteTotalCancelado
+                FROM #AuditUser au
+                OUTER APPLY
+                (
+                    SELECT
+                        CASE
+                            WHEN au.TipoControl = 'IN_NO_GRABADO' AND LEN(au.SystemUserDetalle) >= 19
+                            THEN SUBSTRING(au.SystemUserDetalle, 7, 4) + '-'
+                               + SUBSTRING(au.SystemUserDetalle, 4, 2) + '-'
+                               + SUBSTRING(au.SystemUserDetalle, 1, 2) + ' '
+                               + SUBSTRING(au.SystemUserDetalle, 12, 8)
+                            ELSE ''
+                        END AS CancelacionFechaTexto,
+                        CASE
+                            WHEN au.TipoControl = 'IN_NO_GRABADO' AND CHARINDEX('$', au.SystemUserDetalle) > 0
+                            THEN REPLACE(REPLACE(LTRIM(RTRIM(
+                                CASE
+                                    WHEN CHARINDEX(' cancel', LOWER(au.SystemUserDetalle), CHARINDEX('$', au.SystemUserDetalle)) > 0
+                                    THEN SUBSTRING(
+                                        au.SystemUserDetalle,
+                                        CHARINDEX('$', au.SystemUserDetalle) + 1,
+                                        CHARINDEX(' cancel', LOWER(au.SystemUserDetalle), CHARINDEX('$', au.SystemUserDetalle)) - CHARINDEX('$', au.SystemUserDetalle) - 1)
+                                    ELSE SUBSTRING(au.SystemUserDetalle, CHARINDEX('$', au.SystemUserDetalle) + 1, 64)
+                                END
+                            )), ',', ''), ' ', '')
+                            ELSE ''
+                        END AS ImporteCancelacionTexto
+                ) ParsedRaw
+                OUTER APPLY
+                (
+                    SELECT
+                        CASE
+                            WHEN ParsedRaw.CancelacionFechaTexto <> '' AND ISDATE(ParsedRaw.CancelacionFechaTexto) = 1
+                            THEN CAST(ParsedRaw.CancelacionFechaTexto AS datetime)
+                            ELSE NULL
+                        END AS CancelacionFecha,
+                        CASE
+                            WHEN ParsedRaw.ImporteCancelacionTexto <> ''
+                             AND PATINDEX('%[^0-9.]%', ParsedRaw.ImporteCancelacionTexto) = 0
+                            THEN CAST(ParsedRaw.ImporteCancelacionTexto AS decimal(18, 2))
+                            ELSE NULL
+                        END AS ImporteCancelacion
+                ) Parsed
+                WHERE (@Usuario = '' OR au.Usuario = @Usuario)
+                  AND (@Pc = '' OR au.Pc LIKE '%' + @Pc + '%')
+                  AND (@TipoComprobante = '' OR au.TipoComprobante LIKE '%' + @TipoComprobante + '%')
+                  AND (@Riesgo = '' OR au.Riesgo = @Riesgo)
+                  AND (@TipoControl = '' OR au.TipoControl = @TipoControl)
+                  AND (@CuentaCliente = '' OR au.Cuenta LIKE '%' + @CuentaCliente + '%' OR au.Cliente LIKE '%' + @CuentaCliente + '%')
                   AND (
                         @Texto = ''
-                        OR TipoControlLabel LIKE '%' + @Texto + '%'
-                        OR Motivo LIKE '%' + @Texto + '%'
-                        OR Observaciones LIKE '%' + @Texto + '%'
-                        OR Usuario LIKE '%' + @Texto + '%'
-                        OR Pc LIKE '%' + @Texto + '%'
-                        OR TipoComprobante LIKE '%' + @Texto + '%'
-                        OR IdComprobante LIKE '%' + @Texto + '%'
-                        OR NumeroNormalizado LIKE '%' + @Texto + '%'
-                        OR Cliente LIKE '%' + @Texto + '%'
-                        OR Cuenta LIKE '%' + @Texto + '%'
-                        OR EstadoFacturacion LIKE '%' + @Texto + '%'
-                        OR SucursalesDetectadas LIKE '%' + @Texto + '%'
-                        OR UsuariosDetectados LIKE '%' + @Texto + '%'
-                        OR ImpactoContable LIKE '%' + @Texto + '%'
+                        OR au.TipoControlLabel LIKE '%' + @Texto + '%'
+                        OR au.Motivo LIKE '%' + @Texto + '%'
+                        OR au.Observaciones LIKE '%' + @Texto + '%'
+                        OR au.Usuario LIKE '%' + @Texto + '%'
+                        OR au.Pc LIKE '%' + @Texto + '%'
+                        OR au.TipoComprobante LIKE '%' + @Texto + '%'
+                        OR au.IdComprobante LIKE '%' + @Texto + '%'
+                        OR au.NumeroNormalizado LIKE '%' + @Texto + '%'
+                        OR au.Cliente LIKE '%' + @Texto + '%'
+                        OR au.Cuenta LIKE '%' + @Texto + '%'
+                        OR au.EstadoFacturacion LIKE '%' + @Texto + '%'
+                        OR au.SucursalesDetectadas LIKE '%' + @Texto + '%'
+                        OR au.UsuariosDetectados LIKE '%' + @Texto + '%'
+                        OR au.ImpactoContable LIKE '%' + @Texto + '%'
                       );
 
                 SELECT
@@ -1382,7 +1441,11 @@ public sealed class AuditoriaService(
                     RiesgoMedio = ReadInt(rd, 2),
                     ControlesDetectados = ReadInt(rd, 3),
                     ComprobantesInvolucrados = ReadInt(rd, 4),
-                    ContablesDuplicados = ReadInt(rd, 5)
+                    ContablesDuplicados = ReadInt(rd, 5),
+                    UsuariosInvolucrados = ReadInt(rd, 6),
+                    PromedioMinutosCancelacion = ReadDecimal(rd, 7),
+                    MaximoMinutosCancelacion = ReadInt(rd, 8),
+                    ImporteTotalCancelado = ReadDecimal(rd, 9)
                 };
             }
 
