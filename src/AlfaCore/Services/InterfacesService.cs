@@ -1258,6 +1258,7 @@ public sealed class InterfacesService(
             await using var tx = await cn.BeginTransactionAsync(token);
             try
             {
+                await DeleteCompraIaByComprobanteIdsAsync(cn, (SqlTransaction)tx, existingIds, token);
                 await DeleteByIdsAsync(cn, (SqlTransaction)tx, "dbo.INT_COMPROBANTE_RECIBIDO_HIST", "IdComprobanteRecibido", existingIds, token);
                 await DeleteByIdsAsync(cn, (SqlTransaction)tx, "dbo.INT_COMPROBANTE_RECIBIDO_ADJUNTO", "IdComprobanteRecibido", existingIds, token);
                 await DeleteByIdsAsync(cn, (SqlTransaction)tx, "dbo.INT_COMPROBANTE_RECIBIDO", "IdComprobanteRecibido", existingIds, token);
@@ -3590,7 +3591,7 @@ public sealed class InterfacesService(
             cn,
             tx,
             detail.IdComprobanteRecibido,
-            "CAMBIO_ESTADO_IA",
+            "CAMBIO_ESTADO",
             detail.IdEstado,
             processedState.IdEstado,
             user,
@@ -3838,6 +3839,28 @@ public sealed class InterfacesService(
         using var cmd = new SqlCommand(string.Empty, cn, tx);
         var inClause = AddIdParameters(cmd, "@Id", ids);
         cmd.CommandText = $"DELETE FROM {tableName} WHERE {columnName} IN ({inClause})";
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    private static async Task DeleteCompraIaByComprobanteIdsAsync(
+        SqlConnection cn,
+        SqlTransaction tx,
+        IReadOnlyList<long> ids,
+        CancellationToken ct)
+    {
+        if (ids.Count == 0)
+            return;
+
+        using var cmd = new SqlCommand(string.Empty, cn, tx);
+        var inClause = AddIdParameters(cmd, "@IdComp", ids);
+        cmd.CommandText = $"""
+            IF OBJECT_ID(N'dbo.IA_Compras_CAB', N'U') IS NOT NULL
+            BEGIN
+                DELETE FROM dbo.IA_Compras_CAB
+                WHERE IdComprobanteRecibido IN ({inClause});
+            END
+            """;
+
         await cmd.ExecuteNonQueryAsync(ct);
     }
 

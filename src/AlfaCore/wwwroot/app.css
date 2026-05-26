@@ -11965,6 +11965,68 @@ html[data-theme="light"] .interfaces-hero {
     display: inline;
 }
 
+.interfaces-queue-progress {
+    min-width: 180px;
+    display: grid;
+    gap: .32rem;
+}
+
+.interfaces-queue-progress__track {
+    width: 100%;
+    height: 8px;
+    border-radius: 999px;
+    overflow: hidden;
+    background: color-mix(in srgb, var(--interfaces-surface-3) 78%, transparent);
+    border: 1px solid color-mix(in srgb, var(--interfaces-stroke) 75%, transparent);
+}
+
+.interfaces-queue-progress__fill {
+    height: 100%;
+    border-radius: 999px;
+    transition: width .35s ease;
+}
+
+.interfaces-queue-progress__fill--pending {
+    background: linear-gradient(90deg, #94a3b8, #64748b);
+}
+
+.interfaces-queue-progress__fill--active {
+    background: linear-gradient(90deg, #0ea5e9, #22d3ee, #0ea5e9);
+    background-size: 220% 100%;
+    animation: interfaces-progress-stripe 1.3s linear infinite;
+}
+
+.interfaces-queue-progress__fill--success {
+    background: linear-gradient(90deg, #22c55e, #16a34a);
+}
+
+.interfaces-queue-progress__fill--info {
+    background: linear-gradient(90deg, #06b6d4, #0ea5e9);
+}
+
+.interfaces-queue-progress__fill--danger {
+    background: linear-gradient(90deg, #f43f5e, #ef4444);
+}
+
+.interfaces-queue-progress__fill--muted {
+    background: linear-gradient(90deg, #64748b, #475569);
+}
+
+.interfaces-queue-progress__label {
+    font-size: .74rem;
+    color: var(--color-text-muted);
+    font-weight: 600;
+}
+
+@keyframes interfaces-progress-stripe {
+    from {
+        background-position: 0% 0%;
+    }
+    to {
+        background-position: 220% 0%;
+    }
+}
+
 .interfaces-mobile-toolbar,
 .interfaces-mobile-list {
     display: none;
