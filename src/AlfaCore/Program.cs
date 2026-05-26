@@ -71,6 +71,8 @@ public class Program
         builder.Services.AddScoped<IWorkspaceService, WorkspaceService>();
         builder.Services.AddScoped<IUsuariosService, UsuariosService>();
         builder.Services.AddScoped<IUsuariosValidator, UsuariosValidator>();
+        builder.Services.AddScoped<ITecnicosService, TecnicosService>();
+        builder.Services.AddScoped<ITecnicosValidator, TecnicosValidator>();
         builder.Services.AddScoped<IContactosService, ContactosService>();
         builder.Services.AddScoped<IContactosValidator, ContactosValidator>();
         builder.Services.AddScoped<ICuentasComercialesService, CuentasComercialesService>();
