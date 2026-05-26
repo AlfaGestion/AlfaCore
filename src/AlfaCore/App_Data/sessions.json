@@ -1,24 +1,14 @@
 {
   "Sessions": [
     {
-      "Id": "06b90dfb-42fd-4910-86d2-512411d69d07",
-      "Nombre": "SERVER-DB - ALFANET2007",
-      "Servidor": "SERVER-DB",
+      "Id": "7603e1e1-0236-4666-8d60-b2788bba86a9",
+      "Nombre": "ALFANETWEB",
+      "Servidor": "10.8.0.31",
       "BaseDatos": "ALFANET2007",
       "Usuario": "ALFANET2007",
       "Password": "ALFANET2007",
       "TrustServerCertificate": true,
       "Activa": false
-    },
-    {
-      "Id": "3e7aee64-08fb-499b-978d-cb0f107aabef",
-      "Nombre": "HIERROSUR",
-      "Servidor": "SERVER-ALFAVB6",
-      "BaseDatos": "HIERROSUR",
-      "Usuario": "HIERROSUR",
-      "Password": "HIERROSUR",
-      "TrustServerCertificate": true,
-      "Activa": true
     }
   ]
 }
