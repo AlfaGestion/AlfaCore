@@ -130,8 +130,8 @@ public sealed class SessionService : ISessionService
     private void SeedFromConfig(IConfiguration configuration)
     {
         _sessions.Add(_defaultSession is null
-            ? new SessionDto { Nombre = "Sesion inicial", Activa = false }
-            : Clone(_defaultSession, false));
+            ? new SessionDto { Nombre = "Sesion inicial", Activa = true }
+            : Clone(_defaultSession, true));
         Save();
     }
 
@@ -165,10 +165,13 @@ public sealed class SessionService : ISessionService
         if (persistedActive is not null)
             return persistedActive;
 
+        if (_sessions.Count > 0)
+            return _sessions[0];
+
         if (_defaultSession is not null)
             return _defaultSession;
 
-        return _sessions.Count > 0 ? _sessions[0] : null;
+        return null;
     }
 
     private void PersistCookieSelectedSessionIfNeeded()

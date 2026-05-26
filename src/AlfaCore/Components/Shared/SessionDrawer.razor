@@ -1,4 +1,5 @@
 @inject AlfaCore.Services.ISessionService SessionSvc
+@inject AlfaCore.Services.IActualizacionesService ActualizacionesSvc
 @inject IJSRuntime JS
 
 @if (Open)
@@ -127,8 +128,22 @@
 
     private async Task ConectarAsync(Guid id)
     {
+        _mensajeError = null;
         SessionSvc.SwitchSession(id);
         await JS.InvokeVoidAsync("alfaCoreSqlSession.setActive", id.ToString());
+        try
+        {
+            await ActualizacionesSvc.ExecutePendingAsync(new AlfaCore.Models.ActualizacionesRunRequest
+            {
+                UsuarioAccion = "SYSTEM",
+                PcAccion = Environment.MachineName,
+                EsEjecucionAutomatica = true
+            });
+        }
+        catch (Exception ex)
+        {
+            _mensajeError = ex.Message;
+        }
         Reload();
     }
 
