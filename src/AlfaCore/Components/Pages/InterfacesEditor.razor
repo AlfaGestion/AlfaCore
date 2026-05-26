@@ -7,6 +7,7 @@
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject NavigationManager Navigation
+@inject IJSRuntime Js
 
 <PageTitle>@(_isNewMode ? "Nuevo documento | Interfaces" : $"Documento #{IdComprobanteRecibido} | Interfaces")</PageTitle>
 
@@ -77,11 +78,11 @@
                     </div>
                 </div>
 
-                <div class="interfaces-upload-dropzone">
+                <div id="interfaces-new-dropzone" class="interfaces-upload-dropzone" tabindex="0">
                     <div class="interfaces-upload-dropzone__head">
                         <div>
                             <h4>Adjuntos iniciales</h4>
-                            <p>Podés cargar archivos desde explorador o cámara. Se requieren adjuntos para registrar el documento.</p>
+                            <p>Podés cargar archivos desde explorador o cámara. También podés pegar con Ctrl+V o menú contextual Pegar.</p>
                         </div>
                         <div class="interfaces-upload-actions">
                             <InputFile id="interfaces-file-picker"
@@ -96,6 +97,10 @@
                                 <i class="bi bi-paperclip"></i>
                                 <span>Seleccionar archivos</span>
                             </label>
+                            <button type="button" class="btn btn--ghost" @onclick="PegarImagenNuevoAsync" disabled="@_saving">
+                                <i class="bi bi-clipboard-image"></i>
+                                <span>Pegar imagen</span>
+                            </button>
                         </div>
                     </div>
 
@@ -109,13 +114,28 @@
                             @foreach (var file in _selectedFiles)
                             {
                                 <article class="interfaces-pending-file">
+                                    @if (IsImageMime(file.MimeType))
+                                    {
+                                        <button type="button"
+                                                class="interfaces-pending-file__thumb"
+                                                title="Ver imagen"
+                                                @onclick="() => VerArchivoPendienteAsync(file)"
+                                                disabled="@_saving">
+                                            <img src="@BuildPreviewDataUrl(file)" alt="@file.NombreArchivo" />
+                                        </button>
+                                    }
                                     <div>
                                         <strong>@file.NombreArchivo</strong>
                                         <span>@FormatSize(file.TamanoBytes)</span>
                                     </div>
-                                    <button type="button" class="btn btn--ghost btn--sm" @onclick="() => QuitarArchivoPendiente(file.Id)" disabled="@_saving">
-                                        <i class="bi bi-x-circle"></i> Quitar
-                                    </button>
+                                    <div class="actions">
+                                        <button type="button" class="btn btn--ghost btn--sm" @onclick="() => VerArchivoPendienteAsync(file)" disabled="@_saving">
+                                            <i class="bi bi-eye"></i> Ver
+                                        </button>
+                                        <button type="button" class="btn btn--ghost btn--sm" @onclick="() => QuitarArchivoPendiente(file.Id)" disabled="@_saving">
+                                            <i class="bi bi-x-circle"></i> Quitar
+                                        </button>
+                                    </div>
                                 </article>
                             }
                         </div>
@@ -289,13 +309,13 @@
             }
             else if (_activeTab == InterfacesTab.Adjuntos)
             {
-                <div class="interfaces-upload-dropzone">
+                <div id="interfaces-extra-dropzone" class="interfaces-upload-dropzone" tabindex="0">
                     @if (_detail.PermiteEdicion)
                     {
                         <div class="interfaces-upload-dropzone__head">
                             <div>
                                 <h4>Adjuntos activos</h4>
-                                <p>Podés sumar más archivos al documento desde esta ficha.</p>
+                                <p>Podés sumar más archivos al documento desde esta ficha o pegarlos con Ctrl+V / menú contextual Pegar.</p>
                             </div>
                             <div class="interfaces-upload-actions">
                                 <InputFile id="interfaces-extra-picker"
@@ -310,6 +330,10 @@
                                     <i class="bi bi-folder-plus"></i>
                                     <span>Agregar adjuntos</span>
                                 </label>
+                                <button type="button" class="btn btn--ghost" @onclick="PegarImagenExtraAsync" disabled="@_savingExtraAttachments">
+                                    <i class="bi bi-clipboard-image"></i>
+                                    <span>Pegar imagen</span>
+                                </button>
                                 <button type="button" class="btn btn--ghost" @onclick="AgregarAdjuntosAsync" disabled="@(_savingExtraAttachments || _extraFiles.Count == 0)">
                                     <i class="bi bi-upload"></i>
                                     <span>@(_savingExtraAttachments ? "Subiendo..." : "Subir")</span>
@@ -373,6 +397,42 @@
             }
         </section>
     }
+
+    @if (_previewPendingFile is not null)
+    {
+        <div class="modal-overlay" @onclick="CerrarPreviewPendiente">
+            <article class="modal-card interfaces-pending-preview" @onclick:stopPropagation="true">
+                <header class="interfaces-pending-preview__header">
+                    <div>
+                        <strong>@_previewPendingFile.NombreArchivo</strong>
+                        <span>@FormatSize(_previewPendingFile.TamanoBytes)</span>
+                    </div>
+                    <div class="actions">
+                        <button type="button" class="btn btn--ghost btn--sm" @onclick="() => AjustarZoomPreview(-0.15m)">
+                            <i class="bi bi-zoom-out"></i>
+                        </button>
+                        <button type="button" class="btn btn--ghost btn--sm" @onclick="ResetZoomPreview">
+                            @($"{_previewZoom:0}%")
+                        </button>
+                        <button type="button" class="btn btn--ghost btn--sm" @onclick="() => AjustarZoomPreview(0.15m)">
+                            <i class="bi bi-zoom-in"></i>
+                        </button>
+                        <button type="button" class="btn btn--ghost btn--sm" @onclick="DescargarPreviewPendienteAsync">
+                            <i class="bi bi-download"></i> Descargar
+                        </button>
+                        <button type="button" class="btn btn--ghost btn--sm" @onclick="CerrarPreviewPendiente">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                    </div>
+                </header>
+                <div class="interfaces-pending-preview__canvas" @onwheel="OnPreviewWheel" @onwheel:preventDefault="true">
+                    <img src="@BuildPreviewDataUrl(_previewPendingFile)"
+                         alt="@_previewPendingFile.NombreArchivo"
+                         style="@($"transform: scale({_previewZoom / 100m:0.00});")" />
+                </div>
+            </article>
+        </div>
+    }
 </div>
 
 @code {
@@ -397,6 +457,8 @@
     private int _filePickerVersion;
     private int _extraPickerVersion;
     private InterfacesTab _activeTab = InterfacesTab.Datos;
+    private PendingUploadFile? _previewPendingFile;
+    private decimal _previewZoom = 100m;
 
     private bool _isNewMode => !IdComprobanteRecibido.HasValue;
     private bool IsSavingDetalle => _savingEdit || _changingState;
@@ -426,6 +488,12 @@
         {
             _loading = false;
         }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        await Js.InvokeVoidAsync("alfaCoreInterfacesUpload.bindPasteDrop", "#interfaces-new-dropzone", "#interfaces-file-picker");
+        await Js.InvokeVoidAsync("alfaCoreInterfacesUpload.bindPasteDrop", "#interfaces-extra-dropzone", "#interfaces-extra-picker");
     }
 
     private async Task LoadCatalogsAsync()
@@ -767,6 +835,36 @@
         await InvokeAsync(StateHasChanged);
     }
 
+    private async Task PegarImagenNuevoAsync()
+    {
+        var result = await Js.InvokeAsync<ClipboardPasteResult>("alfaCoreInterfacesUpload.pasteImageFromClipboard", "#interfaces-file-picker");
+        if (result.Ok)
+            return;
+
+        SetFeedback(new AppUiMessage
+        {
+            Severity = AppUiFeedbackSeverity.Warning,
+            Title = "No se pudo pegar la imagen",
+            Message = string.IsNullOrWhiteSpace(result.Message) ? "No se detectó ninguna imagen en el portapapeles." : result.Message,
+            Suggestion = "Copiá la imagen y volvé a intentar. También podés usar Ctrl+V sobre esta pantalla."
+        });
+    }
+
+    private async Task PegarImagenExtraAsync()
+    {
+        var result = await Js.InvokeAsync<ClipboardPasteResult>("alfaCoreInterfacesUpload.pasteImageFromClipboard", "#interfaces-extra-picker");
+        if (result.Ok)
+            return;
+
+        SetFeedback(new AppUiMessage
+        {
+            Severity = AppUiFeedbackSeverity.Warning,
+            Title = "No se pudo pegar la imagen",
+            Message = string.IsNullOrWhiteSpace(result.Message) ? "No se detectó ninguna imagen en el portapapeles." : result.Message,
+            Suggestion = "Copiá la imagen y volvé a intentar. También podés usar Ctrl+V sobre esta pantalla."
+        });
+    }
+
     private async Task AgregarArchivosPendientesAsync(List<PendingUploadFile> target, IReadOnlyList<IBrowserFile> files, int maxFiles, long maxBytes)
     {
         var signatures = target.Select(static x => x.Signature).ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -789,6 +887,58 @@
         if (index >= 0)
             _selectedFiles.RemoveAt(index);
         _filePickerVersion++;
+    }
+
+    private async Task VerArchivoPendienteAsync(PendingUploadFile file)
+    {
+        if (!IsImageMime(file.MimeType))
+        {
+            SetFeedback(new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Info,
+                Title = "Vista previa no disponible",
+                Message = "La vista embebida está disponible para imágenes. Podés descargar el archivo para abrirlo.",
+                Suggestion = "Usá “Descargar” desde la vista previa de imagen o desde adjuntos activos."
+            });
+            return;
+        }
+
+        _previewPendingFile = file;
+        _previewZoom = 100m;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void CerrarPreviewPendiente()
+    {
+        _previewPendingFile = null;
+        _previewZoom = 100m;
+    }
+
+    private void AjustarZoomPreview(decimal delta)
+    {
+        _previewZoom = Math.Clamp(_previewZoom + (delta * 100m), 25m, 400m);
+    }
+
+    private void ResetZoomPreview()
+    {
+        _previewZoom = 100m;
+    }
+
+    private void OnPreviewWheel(WheelEventArgs e)
+    {
+        AjustarZoomPreview(e.DeltaY < 0 ? 0.1m : -0.1m);
+    }
+
+    private async Task DescargarPreviewPendienteAsync()
+    {
+        if (_previewPendingFile is null)
+            return;
+
+        await Js.InvokeVoidAsync(
+            "alfaCoreInterfacesUpload.downloadBlob",
+            Convert.ToBase64String(_previewPendingFile.Contenido),
+            string.IsNullOrWhiteSpace(_previewPendingFile.MimeType) ? "application/octet-stream" : _previewPendingFile.MimeType,
+            _previewPendingFile.NombreArchivo);
     }
 
     private void LimpiarNuevo()
@@ -902,6 +1052,13 @@
 
     private string CurrentUserName => AppUserSession.GetCurrentUserName(Environment.UserName);
 
+    private static bool IsImageMime(string? mimeType)
+        => !string.IsNullOrWhiteSpace(mimeType)
+           && mimeType.StartsWith("image/", StringComparison.OrdinalIgnoreCase);
+
+    private static string BuildPreviewDataUrl(PendingUploadFile file)
+        => $"data:{(string.IsNullOrWhiteSpace(file.MimeType) ? "application/octet-stream" : file.MimeType)};base64,{Convert.ToBase64String(file.Contenido)}";
+
     private void SetFeedback(AppUiMessage? message) => _feedback = message;
 
     private static string GetFeedbackClass(AppUiMessage message)
@@ -939,6 +1096,13 @@
         }
 
         public Stream OpenReadStream() => new MemoryStream(Contenido, writable: false);
+    }
+
+    private sealed class ClipboardPasteResult
+    {
+        public bool Ok { get; set; }
+        public string Message { get; set; } = string.Empty;
+        public int AddedCount { get; set; }
     }
 
     private enum InterfacesTab

@@ -1,0 +1,616 @@
+@page "/tareas"
+@inject AlfaCore.Services.ITareasService TareasSvc
+@inject AlfaCore.Services.IAppUiOperationService UiOps
+@inject AlfaCore.Services.IAppUserSessionService AppUserSession
+
+<PageTitle>Tareas | Alfa Gestión</PageTitle>
+
+<section class="page-grid tareas-page">
+    <header class="tareas-header">
+        <div>
+            <p class="shell__eyebrow">Alfa Gestión</p>
+            <h2>Tareas</h2>
+            <span>Listas simples, asignaciones y notas rápidas para que soporte no pierda nada.</span>
+        </div>
+        <div class="actions">
+            <button type="button" class="btn btn--ghost" @onclick="LoadAsync" disabled="@_loading">
+                <i class="bi bi-arrow-clockwise"></i> Recargar
+            </button>
+            <button type="button" class="btn btn--primary" @onclick="OpenNewTask">
+                <i class="bi bi-plus-circle"></i> Nueva tarea
+            </button>
+        </div>
+    </header>
+
+    @if (_feedback is not null)
+    {
+        <div class="editor-msg @GetFeedbackClass(_feedback)">
+            <strong>@_feedback.Title</strong>
+            <p>@_feedback.Message</p>
+            @if (_feedback.HasCode)
+            {
+                <small>Código: @_feedback.Code</small>
+            }
+        </div>
+    }
+
+    <div class="tareas-shell">
+        <aside class="tareas-lists" aria-label="Listas de tareas">
+            <button type="button" class="@GetListButtonClass(null)" @onclick="() => SelectList(null)">
+                <span><i class="bi bi-list-check"></i> Todas las listas</span>
+                <strong>@ActiveTaskCount</strong>
+            </button>
+
+            <div class="tareas-lists__head">
+                <span>Listas</span>
+                <button type="button" title="Crear lista" @onclick="StartCreateList">
+                    <i class="bi bi-plus-lg"></i>
+                </button>
+            </div>
+
+            @if (_editingListId == 0)
+            {
+                <form class="tareas-list-form" @onsubmit="SaveListAsync">
+                    <input value="@_listDraft" @oninput="e => _listDraft = Convert.ToString(e.Value) ?? string.Empty" placeholder="Nombre de lista" />
+                    <button type="submit" class="btn btn--primary btn--sm">Guardar</button>
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="CancelListEdit">Cancelar</button>
+                </form>
+            }
+
+            <div class="tareas-list-stack">
+                @foreach (var lista in _page.Listas)
+                {
+                    <div class="tareas-list-row">
+                        @if (_editingListId == lista.IdLista)
+                        {
+                            <form class="tareas-list-form" @onsubmit="SaveListAsync">
+                                <input value="@_listDraft" @oninput="e => _listDraft = Convert.ToString(e.Value) ?? string.Empty" />
+                                <button type="submit" class="btn btn--primary btn--sm">Guardar</button>
+                                <button type="button" class="btn btn--ghost btn--sm" @onclick="CancelListEdit">Cancelar</button>
+                            </form>
+                        }
+                        else
+                        {
+                            <button type="button" class="@GetListButtonClass(lista.IdLista)" @onclick="() => SelectList(lista.IdLista)">
+                                <span><i class="bi @(lista.EsDefault ? "bi-inbox" : "bi-list-ul")"></i> @lista.Nombre</span>
+                                <strong>@lista.Pendientes</strong>
+                            </button>
+                            <details class="tareas-menu">
+                                <summary title="Opciones"><i class="bi bi-three-dots-vertical"></i></summary>
+                                <div>
+                                    <button type="button" @onclick="() => StartRenameList(lista)">Renombrar</button>
+                                    <button type="button" disabled="@lista.EsDefault" @onclick="() => DeleteListAsync(lista.IdLista)">Eliminar</button>
+                                </div>
+                            </details>
+                        }
+                    </div>
+                }
+            </div>
+        </aside>
+
+        <main class="tareas-main">
+            <section class="tareas-compose">
+                <i class="bi bi-check2-circle"></i>
+                <input value="@_quickTaskTitle"
+                       @oninput="e => _quickTaskTitle = Convert.ToString(e.Value) ?? string.Empty"
+                       @onkeydown="HandleQuickTaskKeyDown"
+                       placeholder="Añadir una tarea..." />
+                <button type="button" class="btn btn--ghost btn--sm" @onclick="OpenNewTask">
+                    Detalles
+                </button>
+            </section>
+
+            <div class="tareas-toolbar">
+                <div>
+                    <strong>@SelectedListTitle</strong>
+                    <span>@FilteredTasks.Count tarea(s) activa(s)</span>
+                </div>
+                <select value="@_assignedFilter" @onchange="OnAssignedFilterChanged">
+                    <option value="">Todos los asignados</option>
+                    <option value="@CurrentUser">Asignadas a mí</option>
+                    @foreach (var user in _page.Usuarios)
+                    {
+                        <option value="@user.Nombre">@user.Nombre</option>
+                    }
+                </select>
+            </div>
+
+            <section class="tareas-list" aria-label="Tareas activas">
+                @if (_loading)
+                {
+                    <div class="loading">Cargando tareas...</div>
+                }
+                else if (FilteredTasks.Count == 0)
+                {
+                    <div class="tareas-empty">
+                        <i class="bi bi-check2-all"></i>
+                        <strong>No hay tareas pendientes</strong>
+                        <span>Agregá una desde el campo superior o cambiá de lista.</span>
+                    </div>
+                }
+                else
+                {
+                    @foreach (var tarea in FilteredTasks)
+                    {
+                        <article class="tareas-row">
+                            <button type="button" class="tareas-check" title="Completar" @onclick="() => ChangeStateAsync(tarea, TareaEstadoKeys.Completada)">
+                                <i class="bi bi-circle"></i>
+                            </button>
+                            <button type="button" class="tareas-row__body" @onclick="() => OpenEditTask(tarea)">
+                                <strong>@tarea.Titulo</strong>
+                                <span>
+                                    @tarea.ListaNombre
+                                    @if (!string.IsNullOrWhiteSpace(tarea.UsuarioAsignado))
+                                    {
+                                        <span> · @tarea.UsuarioAsignado</span>
+                                    }
+                                    @if (tarea.FechaVencimiento is not null)
+                                    {
+                                        <span> · vence @tarea.FechaVencimiento.Value.ToString("dd/MM")</span>
+                                    }
+                                </span>
+                            </button>
+                            <select value="@tarea.Estado" @onchange="e => ChangeStateAsync(tarea, Convert.ToString(e.Value) ?? TareaEstadoKeys.Pendiente)">
+                                <option value="@TareaEstadoKeys.Pendiente">Pendiente</option>
+                                <option value="@TareaEstadoKeys.EnCurso">En curso</option>
+                                <option value="@TareaEstadoKeys.Completada">Completada</option>
+                            </select>
+                            <details class="tareas-menu">
+                                <summary title="Opciones"><i class="bi bi-three-dots-vertical"></i></summary>
+                                <div>
+                                    <button type="button" @onclick="() => OpenEditTask(tarea)">Editar</button>
+                                    <button type="button" @onclick="() => DuplicateTaskAsync(tarea.IdTarea)">Duplicar</button>
+                                    <button type="button" @onclick="() => DeleteTaskAsync(tarea.IdTarea)">Eliminar</button>
+                                </div>
+                            </details>
+                        </article>
+                    }
+                }
+            </section>
+
+            <details class="tareas-completed" open="@_showCompleted" @ontoggle="OnCompletedToggle">
+                <summary>Completadas (@FilteredCompleted.Count)</summary>
+                <div class="tareas-completed__list">
+                    @foreach (var tarea in FilteredCompleted)
+                    {
+                        <article class="tareas-row tareas-row--completed">
+                            <button type="button" class="tareas-check is-done" title="Restaurar" @onclick="() => ChangeStateAsync(tarea, TareaEstadoKeys.Pendiente)">
+                                <i class="bi bi-check-circle-fill"></i>
+                            </button>
+                            <button type="button" class="tareas-row__body" @onclick="() => OpenEditTask(tarea)">
+                                <strong>@tarea.Titulo</strong>
+                                <span>@tarea.ListaNombre · completada @FormatDateTime(tarea.FechaHoraCompletada)</span>
+                            </button>
+                            <button type="button" class="btn btn--ghost btn--sm" @onclick="() => DeleteTaskAsync(tarea.IdTarea)">
+                                Eliminar
+                            </button>
+                        </article>
+                    }
+                </div>
+            </details>
+        </main>
+
+        <aside class="tareas-quick">
+            <div class="tareas-quick__head">
+                <div>
+                    <span>Rápidas</span>
+                    <strong>Para hoy</strong>
+                </div>
+                <button type="button" class="btn btn--ghost btn--sm" @onclick="ClearCompletedNotesAsync" disabled="@(!_page.NotasRapidas.Any(n => n.Completada))">
+                    Limpiar completadas
+                </button>
+            </div>
+
+            <input class="tareas-quick-input"
+                   value="@_quickNoteText"
+                   @oninput="e => _quickNoteText = Convert.ToString(e.Value) ?? string.Empty"
+                   @onkeydown="HandleQuickNoteKeyDown"
+                   placeholder="Escribí y Enter..." />
+
+            <div class="tareas-notes">
+                @foreach (var nota in _page.NotasRapidas)
+                {
+                    <div class="tareas-note @(nota.Completada ? "is-done" : string.Empty)">
+                        <input type="checkbox" checked="@nota.Completada" @onchange="e => ToggleNoteAsync(nota, e.Value is true)" />
+                        <span>@nota.Texto</span>
+                        <button type="button" title="Eliminar" @onclick="() => DeleteNoteAsync(nota.IdNota)">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                    </div>
+                }
+                @if (_page.NotasRapidas.Count == 0)
+                {
+                    <p class="tareas-muted">Todavía no hay anotaciones rápidas.</p>
+                }
+            </div>
+        </aside>
+    </div>
+</section>
+
+@if (_showTaskModal)
+{
+    <button type="button" class="modal-backdrop app-modal-backdrop no-print" aria-label="Cerrar tarea" @onclick="CloseTaskModal"></button>
+    <section class="tareas-modal panel-card no-print" @onclick:stopPropagation>
+        <div class="tareas-modal__head">
+            <input class="tareas-title-input"
+                   value="@_taskDraft.Titulo"
+                   @oninput="e => _taskDraft.Titulo = Convert.ToString(e.Value) ?? string.Empty"
+                   placeholder="Añade un título" />
+            <button type="button" class="drawer__close" @onclick="CloseTaskModal" title="Cerrar">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        </div>
+
+        <div class="tareas-form-grid">
+            <label>
+                <span>Vencimiento</span>
+                <input type="date" value="@DateToInput(_taskDraft.FechaVencimiento)" @onchange="OnDraftDueDateChanged" />
+            </label>
+            <label>
+                <span>Estado</span>
+                <select @bind="_taskDraft.Estado">
+                    <option value="@TareaEstadoKeys.Pendiente">Pendiente</option>
+                    <option value="@TareaEstadoKeys.EnCurso">En curso</option>
+                    <option value="@TareaEstadoKeys.Completada">Completada</option>
+                </select>
+            </label>
+            <label>
+                <span>Lista</span>
+                <select @bind="_taskDraft.IdLista">
+                    @foreach (var lista in _page.Listas)
+                    {
+                        <option value="@lista.IdLista">@lista.Nombre</option>
+                    }
+                </select>
+            </label>
+            <label>
+                <span>Asignado a</span>
+                <select @bind="_taskDraft.UsuarioAsignado">
+                    @foreach (var user in AssigneeOptions)
+                    {
+                        <option value="@user">@user</option>
+                    }
+                </select>
+            </label>
+        </div>
+
+        <label class="tareas-description">
+            <span>Descripción</span>
+            <textarea value="@_taskDraft.Descripcion"
+                      @oninput="e => _taskDraft.Descripcion = Convert.ToString(e.Value) ?? string.Empty"
+                      placeholder="Añade una descripción"></textarea>
+        </label>
+
+        <div class="tareas-modal__actions">
+            @if (_taskDraft.IdTarea is > 0)
+            {
+                <button type="button" class="btn btn--ghost" @onclick="() => DuplicateTaskAsync(_taskDraft.IdTarea!.Value)">
+                    <i class="bi bi-files"></i> Duplicar
+                </button>
+                <button type="button" class="btn btn--ghost" @onclick="() => DeleteTaskAsync(_taskDraft.IdTarea!.Value)">
+                    <i class="bi bi-trash"></i> Eliminar
+                </button>
+            }
+            <span></span>
+            <button type="button" class="btn btn--primary" @onclick="SaveTaskAsync">
+                <i class="bi bi-save"></i> Guardar
+            </button>
+        </div>
+    </section>
+}
+
+@code {
+    private TareasPageDto _page = new();
+    private AppUiMessage? _feedback;
+    private bool _loading;
+    private int? _selectedListId;
+    private string _assignedFilter = string.Empty;
+    private string _quickTaskTitle = string.Empty;
+    private string _quickNoteText = string.Empty;
+    private bool _showTaskModal;
+    private bool _showCompleted;
+    private TareaSaveRequest _taskDraft = new();
+    private int? _editingListId;
+    private string _listDraft = string.Empty;
+
+    private string CurrentUser => AppUserSession.GetCurrentUserName(Environment.UserName).Trim();
+    private int DefaultListId => _page.Listas.FirstOrDefault(x => x.EsDefault)?.IdLista ?? _page.Listas.FirstOrDefault()?.IdLista ?? 0;
+    private int ActiveTaskCount => _page.Tareas.Count;
+
+    private string SelectedListTitle
+        => _selectedListId is null
+            ? "Todas las listas"
+            : _page.Listas.FirstOrDefault(x => x.IdLista == _selectedListId)?.Nombre ?? "Lista";
+
+    private List<TareaItemDto> FilteredTasks => _page.Tareas
+        .Where(MatchesCurrentFilters)
+        .ToList();
+
+    private List<TareaItemDto> FilteredCompleted => _page.Completadas
+        .Where(MatchesCurrentFilters)
+        .ToList();
+
+    private IReadOnlyList<string> AssigneeOptions
+    {
+        get
+        {
+            var values = _page.Usuarios.Select(x => x.Nombre)
+                .Append(CurrentUser)
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(x => x)
+                .ToArray();
+            return values.Length == 0 ? [CurrentUser] : values;
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+        => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        var result = await UiOps.RunAsync(() => TareasSvc.GetPageAsync(CurrentUser), "No se pudieron cargar las tareas.");
+        if (result.Success && result.Value is not null)
+            _page = result.Value;
+        else
+            _feedback = result.Feedback;
+        _loading = false;
+    }
+
+    private bool MatchesCurrentFilters(TareaItemDto tarea)
+    {
+        if (_selectedListId is int listId && tarea.IdLista != listId)
+            return false;
+        if (!string.IsNullOrWhiteSpace(_assignedFilter)
+            && !string.Equals(tarea.UsuarioAsignado, _assignedFilter, StringComparison.OrdinalIgnoreCase))
+            return false;
+        return true;
+    }
+
+    private void SelectList(int? idLista)
+        => _selectedListId = idLista;
+
+    private string GetListButtonClass(int? idLista)
+        => _selectedListId == idLista ? "tareas-list-button is-active" : "tareas-list-button";
+
+    private void StartCreateList()
+    {
+        _editingListId = 0;
+        _listDraft = string.Empty;
+    }
+
+    private void StartRenameList(TareaListaDto lista)
+    {
+        if (lista.EsDefault) return;
+        _editingListId = lista.IdLista;
+        _listDraft = lista.Nombre;
+    }
+
+    private void CancelListEdit()
+    {
+        _editingListId = null;
+        _listDraft = string.Empty;
+    }
+
+    private async Task SaveListAsync()
+    {
+        var result = await UiOps.RunAsync(async () =>
+        {
+            await TareasSvc.SaveListAsync(new TareaListaSaveRequest
+            {
+                IdLista = _editingListId == 0 ? null : _editingListId,
+                Nombre = _listDraft,
+                UsuarioAccion = CurrentUser
+            });
+            return true;
+        }, "No se pudo guardar la lista.");
+
+        _feedback = result.Feedback;
+        if (result.Success)
+        {
+            CancelListEdit();
+            await LoadAsync();
+        }
+    }
+
+    private async Task DeleteListAsync(int idLista)
+    {
+        var result = await UiOps.RunAsync(async () =>
+        {
+            await TareasSvc.DeleteListAsync(idLista, CurrentUser);
+            return true;
+        }, "No se pudo eliminar la lista.");
+        _feedback = result.Feedback;
+        if (result.Success)
+        {
+            if (_selectedListId == idLista) _selectedListId = null;
+            await LoadAsync();
+        }
+    }
+
+    private void OpenNewTask()
+    {
+        _taskDraft = new TareaSaveRequest
+        {
+            IdLista = _selectedListId ?? DefaultListId,
+            UsuarioAsignado = CurrentUser,
+            UsuarioAccion = CurrentUser,
+            Estado = TareaEstadoKeys.Pendiente
+        };
+        _showTaskModal = true;
+    }
+
+    private void OpenEditTask(TareaItemDto tarea)
+    {
+        _taskDraft = new TareaSaveRequest
+        {
+            IdTarea = tarea.IdTarea,
+            IdLista = tarea.IdLista,
+            Titulo = tarea.Titulo,
+            Descripcion = tarea.Descripcion,
+            FechaVencimiento = tarea.FechaVencimiento,
+            UsuarioAsignado = string.IsNullOrWhiteSpace(tarea.UsuarioAsignado) ? CurrentUser : tarea.UsuarioAsignado,
+            Estado = tarea.Estado,
+            UsuarioAccion = CurrentUser
+        };
+        _showTaskModal = true;
+    }
+
+    private void CloseTaskModal()
+        => _showTaskModal = false;
+
+    private async Task SaveTaskAsync()
+    {
+        _taskDraft.UsuarioAccion = CurrentUser;
+        var result = await UiOps.RunAsync(async () =>
+        {
+            await TareasSvc.SaveTaskAsync(_taskDraft);
+            return true;
+        }, "No se pudo guardar la tarea.");
+
+        _feedback = result.Feedback;
+        if (result.Success)
+        {
+            _showTaskModal = false;
+            _quickTaskTitle = string.Empty;
+            await LoadAsync();
+        }
+    }
+
+    private async Task HandleQuickTaskKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key != "Enter") return;
+        var title = _quickTaskTitle.Trim();
+        if (string.IsNullOrWhiteSpace(title)) return;
+
+        var result = await UiOps.RunAsync(async () =>
+        {
+            await TareasSvc.SaveTaskAsync(new TareaSaveRequest
+            {
+                IdLista = _selectedListId ?? DefaultListId,
+                Titulo = title,
+                UsuarioAsignado = CurrentUser,
+                UsuarioAccion = CurrentUser
+            });
+            return true;
+        }, "No se pudo crear la tarea.");
+        _feedback = result.Feedback;
+        if (result.Success)
+        {
+            _quickTaskTitle = string.Empty;
+            await LoadAsync();
+        }
+    }
+
+    private async Task ChangeStateAsync(TareaItemDto tarea, string estado)
+    {
+        var result = await UiOps.RunAsync(async () =>
+        {
+            await TareasSvc.ChangeTaskStateAsync(tarea.IdTarea, estado, CurrentUser);
+            return true;
+        }, "No se pudo cambiar el estado.");
+        _feedback = result.Feedback;
+        if (result.Success) await LoadAsync();
+    }
+
+    private async Task DuplicateTaskAsync(long idTarea)
+    {
+        var result = await UiOps.RunAsync(async () =>
+        {
+            await TareasSvc.DuplicateTaskAsync(idTarea, CurrentUser);
+            return true;
+        }, "No se pudo duplicar la tarea.");
+        _feedback = result.Feedback;
+        if (result.Success)
+        {
+            _showTaskModal = false;
+            await LoadAsync();
+        }
+    }
+
+    private async Task DeleteTaskAsync(long idTarea)
+    {
+        var result = await UiOps.RunAsync(async () =>
+        {
+            await TareasSvc.DeleteTaskAsync(idTarea, CurrentUser);
+            return true;
+        }, "No se pudo eliminar la tarea.");
+        _feedback = result.Feedback;
+        if (result.Success)
+        {
+            _showTaskModal = false;
+            await LoadAsync();
+        }
+    }
+
+    private async Task HandleQuickNoteKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key != "Enter") return;
+        var text = _quickNoteText.Trim();
+        if (string.IsNullOrWhiteSpace(text)) return;
+
+        var result = await UiOps.RunAsync(async () =>
+        {
+            await TareasSvc.AddQuickNoteAsync(text, CurrentUser);
+            return true;
+        }, "No se pudo guardar la nota rápida.");
+        _feedback = result.Feedback;
+        if (result.Success)
+        {
+            _quickNoteText = string.Empty;
+            await LoadAsync();
+        }
+    }
+
+    private async Task ToggleNoteAsync(TareaNotaRapidaDto nota, bool completed)
+    {
+        var result = await UiOps.RunAsync(async () =>
+        {
+            await TareasSvc.ToggleQuickNoteAsync(nota.IdNota, completed, CurrentUser);
+            return true;
+        }, "No se pudo actualizar la nota.");
+        _feedback = result.Feedback;
+        if (result.Success) await LoadAsync();
+    }
+
+    private async Task DeleteNoteAsync(long idNota)
+    {
+        var result = await UiOps.RunAsync(async () =>
+        {
+            await TareasSvc.DeleteQuickNoteAsync(idNota, CurrentUser);
+            return true;
+        }, "No se pudo eliminar la nota.");
+        _feedback = result.Feedback;
+        if (result.Success) await LoadAsync();
+    }
+
+    private async Task ClearCompletedNotesAsync()
+    {
+        var result = await UiOps.RunAsync(async () =>
+        {
+            await TareasSvc.ClearCompletedQuickNotesAsync(CurrentUser);
+            return true;
+        }, "No se pudieron limpiar las notas completadas.");
+        _feedback = result.Feedback;
+        if (result.Success) await LoadAsync();
+    }
+
+    private void OnAssignedFilterChanged(ChangeEventArgs args)
+        => _assignedFilter = Convert.ToString(args.Value) ?? string.Empty;
+
+    private void OnCompletedToggle()
+        => _showCompleted = !_showCompleted;
+
+    private void OnDraftDueDateChanged(ChangeEventArgs args)
+        => _taskDraft.FechaVencimiento = DateTime.TryParse(Convert.ToString(args.Value), out var date) ? date.Date : null;
+
+    private static string DateToInput(DateTime? value)
+        => value?.ToString("yyyy-MM-dd") ?? string.Empty;
+
+    private static string FormatDateTime(DateTime? value)
+        => value?.ToString("dd/MM HH:mm") ?? "-";
+
+    private static string GetFeedbackClass(AppUiMessage message)
+        => message.Severity == AppUiFeedbackSeverity.Success ? "editor-msg--success" : message.Severity == AppUiFeedbackSeverity.Warning ? "editor-msg--warning" : "editor-msg--error";
+}

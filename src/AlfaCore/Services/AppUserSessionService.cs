@@ -7,6 +7,7 @@ public sealed class AppUserSessionService(
     IConfiguration configuration,
     ISessionService sessionService,
     IAppEventService appEvents,
+    IActualizacionesService actualizacionesService,
     UsuariosPasswordCodec passwordCodec,
     AppUserSessionStore sessionStore) : IAppUserSessionService
 {
@@ -94,6 +95,14 @@ public sealed class AppUserSessionService(
             };
 
             _sessionToken = sessionStore.Store(_currentUser);
+
+            await actualizacionesService.ExecutePendingAsync(new ActualizacionesRunRequest
+            {
+                UsuarioAccion = canonicalUser,
+                PcAccion = Environment.MachineName,
+                EsEjecucionAutomatica = true
+            }, ct);
+
             StateChanged?.Invoke();
             return _currentUser;
         }

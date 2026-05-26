@@ -106,9 +106,10 @@ public sealed class SessionService : ISessionService
 
     private void Load(IConfiguration configuration)
     {
+        var fileExists = File.Exists(_filePath);
         try
         {
-            if (File.Exists(_filePath))
+            if (fileExists)
             {
                 var json = File.ReadAllText(_filePath);
                 var data = JsonSerializer.Deserialize<SessionesData>(json, JsonOpts);
@@ -121,17 +122,34 @@ public sealed class SessionService : ISessionService
         }
         catch
         {
-            // Archivo corrupto: se regenera desde la configuracion default.
+            // Archivo existente con formato inválido: no sobreescribir automáticamente.
+            // Se mantiene fallback en memoria para no perder sesiones persistidas.
+            AddFallbackSessionInMemory(configuration);
+            return;
+        }
+
+        if (fileExists)
+        {
+            AddFallbackSessionInMemory(configuration);
+            return;
         }
 
         SeedFromConfig(configuration);
     }
 
+    private void AddFallbackSessionInMemory(IConfiguration configuration)
+    {
+        _sessions.Clear();
+        _sessions.Add(_defaultSession is null
+            ? new SessionDto { Nombre = "Sesion inicial", Activa = true }
+            : Clone(_defaultSession, true));
+    }
+
     private void SeedFromConfig(IConfiguration configuration)
     {
         _sessions.Add(_defaultSession is null
-            ? new SessionDto { Nombre = "Sesion inicial", Activa = false }
-            : Clone(_defaultSession, false));
+            ? new SessionDto { Nombre = "Sesion inicial", Activa = true }
+            : Clone(_defaultSession, true));
         Save();
     }
 
@@ -164,6 +182,9 @@ public sealed class SessionService : ISessionService
         var persistedActive = _sessions.FirstOrDefault(s => s.Activa);
         if (persistedActive is not null)
             return persistedActive;
+
+        if (_sessions.Count > 0)
+            return _sessions[0];
 
         if (_defaultSession is not null)
             return _defaultSession;
