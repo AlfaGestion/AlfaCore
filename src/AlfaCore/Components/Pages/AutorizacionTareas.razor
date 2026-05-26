@@ -1,0 +1,778 @@
+@page "/seguridad/autorizacion-tareas"
+@using AlfaCore.Models
+@inject AlfaCore.Services.IAutorizacionTareasService AutorizacionSvc
+@inject AlfaCore.Services.IAppUiOperationService UiOps
+@inject AlfaCore.Services.IAppUserSessionService AppUserSession
+
+<PageTitle>Autorización de tareas | Alfa Gestión</PageTitle>
+
+<div class="page-grid auth-page">
+    <section class="page-intro">
+        <div>
+            <h2 class="page-intro__title">Autorización de tareas</h2>
+            <p class="page-intro__text">Administrá permisos compartidos entre Desktop y AlfaCore sobre el árbol oficial de <code>TA_MENU</code>, con unidad de negocio, caja, depósito y perfil administrador.</p>
+        </div>
+        <div class="actions">
+            <button type="button" class="btn btn--ghost" @onclick="RecargarUsuariosAsync" disabled="@_loadingUsers">
+                <i class="bi bi-arrow-clockwise"></i> Recargar usuarios
+            </button>
+        </div>
+    </section>
+
+    @if (_feedback is not null)
+    {
+        <section class="panel-card">
+            <div class="editor-msg @GetFeedbackClass(_feedback)">
+                <div>
+                    <strong>@_feedback.Title</strong>
+                    <p>@_feedback.Message</p>
+                    @if (_feedback.HasSuggestion)
+                    {
+                        <small>@_feedback.Suggestion</small>
+                    }
+                    @if (_feedback.HasCode)
+                    {
+                        <small>Código: @_feedback.Code</small>
+                    }
+                </div>
+            </div>
+        </section>
+    }
+
+    <section class="panel-card auth-shell">
+        <div class="panel-card__header auth-shell__header">
+            <div>
+                <h3 class="panel-card__title">Opciones del menú</h3>
+                <p class="panel-card__subtitle">Sistema de menú <code>@MenuSistema</code> · permisos reales <code>@PermisosSistema</code> · vista inicial <strong>Solo Web</strong>.</p>
+            </div>
+
+            @if (_treeLoaded)
+            {
+                <div class="auth-shell__stats">
+                    <div class="auth-stat">
+                        <span class="auth-stat__label">Visible</span>
+                        <strong>@_visibleTreeCount</strong>
+                    </div>
+                    <div class="auth-stat">
+                        <span class="auth-stat__label">Autorizadas</span>
+                        <strong>@_authorizedCount</strong>
+                    </div>
+                    <div class="auth-stat">
+                        <span class="auth-stat__label">Usuario</span>
+                        <strong>@_selectedUser</strong>
+                    </div>
+                </div>
+            }
+        </div>
+
+        <div class="auth-shell__layout">
+            <aside class="auth-sidebar">
+                <div class="auth-panel auth-panel--compact">
+                    <div class="auth-panel__title-wrap">
+                        <h4 class="auth-panel__title">Usuario</h4>
+                        @if (_currentUserAdministrador)
+                        {
+                            <span class="auth-badge auth-badge--shared">Administrador</span>
+                        }
+                    </div>
+
+                    <div class="field field--full">
+                        <label>Usuario del sistema</label>
+                        <input list="auth-users"
+                               type="text"
+                               placeholder="Seleccioná un usuario..."
+                               @bind="_selectedUser"
+                               @bind:event="oninput" />
+                        <datalist id="auth-users">
+                            @foreach (var item in _users)
+                            {
+                                <option value="@item.Nombre">@item.Nombre</option>
+                            }
+                        </datalist>
+                    </div>
+
+                    <div class="auth-sidebar__actions">
+                        <button type="button" class="btn btn--secondary" @onclick="ConsultarAsync" disabled="@(_loadingTree || string.IsNullOrWhiteSpace(_selectedUser))">
+                            <i class="bi bi-search"></i> Consultar
+                        </button>
+                        <button type="button" class="btn btn--primary" @onclick="GuardarAsync" disabled="@(!_canSave)">
+                            <i class="bi bi-floppy"></i> Grabar
+                        </button>
+                        <button type="button" class="btn btn--ghost" @onclick="CancelarCambios" disabled="@(!_dirty || _loadingTree)">
+                            <i class="bi bi-x-circle"></i> Cancelar
+                        </button>
+                    </div>
+
+                    <div class="field field--full">
+                        <label>Aplicar mismos permisos que...</label>
+                        <input list="auth-users-copy"
+                               type="text"
+                               placeholder="Usuario origen..."
+                               @bind="_copyFromUser"
+                               @bind:event="oninput" />
+                        <datalist id="auth-users-copy">
+                            @foreach (var item in _users.Where(x => !string.Equals(x.Nombre, _selectedUser, StringComparison.OrdinalIgnoreCase)))
+                            {
+                                <option value="@item.Nombre">@item.Nombre</option>
+                            }
+                        </datalist>
+                    </div>
+
+                    <div class="auth-sidebar__actions">
+                        <button type="button" class="btn btn--ghost" @onclick="CopiarPermisosAsync" disabled="@(!_canCopy)">
+                            <i class="bi bi-copy"></i> Copiar permisos
+                        </button>
+                    </div>
+                </div>
+
+                <div class="auth-panel auth-panel--compact">
+                    <h4 class="auth-panel__title">Filtros</h4>
+                    <div class="field field--full">
+                        <label>Buscar</label>
+                        <input type="search"
+                               placeholder="Nombre, clave, proceso o ruta web..."
+                               value="@_searchText"
+                               @oninput="OnSearchChanged" />
+                    </div>
+
+                    <div class="field field--full">
+                        <label>Vista</label>
+                        <select value="@_viewMode" @onchange="OnViewModeChanged">
+                            <option value="@ViewWeb">Solo Web</option>
+                            <option value="@ViewAll">Ver todas</option>
+                            <option value="@ViewDesktop">Solo Desktop</option>
+                            <option value="@ViewShared">Compartidas</option>
+                            <option value="@ViewUnauthorized">Sin autorización</option>
+                        </select>
+                    </div>
+
+                    <div class="auth-legend auth-legend--stacked">
+                        <span class="auth-badge auth-badge--web">Web</span>
+                        <span class="auth-badge auth-badge--desktop">Desktop</span>
+                        <span class="auth-badge auth-badge--shared">Desktop + Web</span>
+                        <span class="auth-badge auth-badge--group">Agrupador</span>
+                        <span class="auth-badge auth-badge--partial">Parcial</span>
+                    </div>
+                </div>
+
+                <div class="auth-panel auth-panel--compact auth-panel--footer">
+                    <h4 class="auth-panel__title">Asignaciones del usuario</h4>
+                    <div class="auth-assignments">
+                        <label class="auth-toggle">
+                            <input type="checkbox"
+                                   checked="@_currentUserAdministrador"
+                                   @onchange="OnAdministradorChanged"
+                                   disabled="@(!_treeLoaded || _loadingTree)" />
+                            <span>Administrador del sistema</span>
+                        </label>
+
+                        <div class="field field--full">
+                            <label>Unidad de negocio</label>
+                            <select class="@GetCodeSelectClass(_selectedUNegocio)"
+                                    value="@_selectedUNegocio"
+                                    @onchange="OnUnidadNegocioChanged"
+                                    disabled="@(!_treeLoaded || _loadingTree)">
+                                @foreach (var item in _unidadesNegocio)
+                                {
+                                    <option value="@item.Codigo">@item.Etiqueta</option>
+                                }
+                            </select>
+                            <small>Obligatoria. Por defecto se usa la unidad <strong>1</strong>.</small>
+                        </div>
+
+                        <div class="field field--full">
+                            <label>Caja asignada</label>
+                            <select class="@GetCodeSelectClass(_selectedIdCaja)"
+                                    value="@_selectedIdCaja"
+                                    @onchange="OnCajaChanged"
+                                    disabled="@(!_treeLoaded || _loadingTree)">
+                                <option value="">Sin caja asignada</option>
+                                @foreach (var item in CajasDisponibles)
+                                {
+                                    <option value="@item.Codigo">@item.Etiqueta</option>
+                                }
+                            </select>
+                            <small>Opcional. Se filtra según la unidad de negocio elegida.</small>
+                        </div>
+
+                        <div class="field field--full">
+                            <label>Depósito asignado</label>
+                            <select class="@GetCodeSelectClass(_selectedIdDeposito)"
+                                    value="@_selectedIdDeposito"
+                                    @onchange="OnDepositoChanged"
+                                    disabled="@(!_treeLoaded || _loadingTree)">
+                                <option value="">Sin depósito asignado</option>
+                                @foreach (var item in DepositosDisponibles)
+                                {
+                                    <option value="@item.Codigo">@item.Etiqueta</option>
+                                }
+                            </select>
+                            <small>Opcional. Incluye depósitos compartidos.</small>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+
+            <div class="auth-main">
+                <div class="auth-tree-toolbar">
+                    <button type="button" class="btn btn--ghost" @onclick="SeleccionarTodoVisible" disabled="@(!_treeLoaded || _visibleTree.Count == 0)">
+                        <i class="bi bi-check2-square"></i> Seleccionar visible
+                    </button>
+                    <button type="button" class="btn btn--ghost" @onclick="DeseleccionarTodoVisible" disabled="@(!_treeLoaded || _visibleTree.Count == 0)">
+                        <i class="bi bi-square"></i> Deseleccionar visible
+                    </button>
+                    <button type="button" class="btn btn--ghost" @onclick="ExpandirTodo" disabled="@(!_treeLoaded)">
+                        <i class="bi bi-arrows-expand"></i> Expandir todo
+                    </button>
+                    <button type="button" class="btn btn--ghost" @onclick="ContraerTodo" disabled="@(!_treeLoaded)">
+                        <i class="bi bi-arrows-collapse"></i> Contraer todo
+                    </button>
+                </div>
+
+                @if (_loadingTree)
+                {
+                    <div class="auth-tree-state"><i class="bi bi-hourglass-split"></i> Cargando árbol de autorizaciones...</div>
+                }
+                else if (!_treeLoaded)
+                {
+                    <div class="auth-tree-state">Seleccioná un usuario y presioná <strong>Consultar</strong> para editar permisos y asignaciones.</div>
+                }
+                else if (_visibleTree.Count == 0)
+                {
+                    <div class="auth-tree-state">No hay opciones que coincidan con el filtro actual.</div>
+                }
+                else
+                {
+                    <div class="auth-tree-panel">
+                        <div class="auth-tree">
+                            @foreach (var item in _visibleTree)
+                            {
+                                <AutorizacionTareasTreeNode Item="item"
+                                                            ExpandedKeys="_expandedKeys"
+                                                            ToggleExpand="ToggleExpandAsync"
+                                                            ToggleAuthorization="ToggleAuthorizationAsync" />
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    </section>
+</div>
+
+@code {
+    private const string MenuSistema = "ALFA";
+    private const string PermisosSistema = "CN000PR";
+    private const string DefaultUnidadNegocioVisual = "1";
+
+    private const string ViewAll = "all";
+    private const string ViewWeb = "web";
+    private const string ViewDesktop = "desktop";
+    private const string ViewShared = "shared";
+    private const string ViewUnauthorized = "unauthorized";
+
+    private readonly HashSet<string> _expandedKeys = new(StringComparer.OrdinalIgnoreCase);
+    private List<UsuarioSistemaDto> _users = [];
+    private List<MenuAutorizacionItemDto> _tree = [];
+    private List<MenuAutorizacionItemDto> _originalTree = [];
+    private List<MenuAutorizacionItemDto> _visibleTree = [];
+    private List<AutorizacionCatalogoItemDto> _unidadesNegocio = [];
+    private List<AutorizacionCatalogoItemDto> _cajas = [];
+    private List<AutorizacionCatalogoItemDto> _depositos = [];
+    private string _selectedUser = string.Empty;
+    private string _copyFromUser = string.Empty;
+    private string _searchText = string.Empty;
+    private string _viewMode = ViewWeb;
+    private string _selectedUNegocio = string.Empty;
+    private string _selectedIdCaja = string.Empty;
+    private string _selectedIdDeposito = string.Empty;
+    private string _originalUNegocio = string.Empty;
+    private string _originalIdCaja = string.Empty;
+    private string _originalIdDeposito = string.Empty;
+    private bool _currentUserAdministrador;
+    private bool _originalAdministrador;
+    private bool _loadingUsers;
+    private bool _loadingTree;
+    private bool _treeLoaded;
+    private bool _dirty;
+    private int _visibleTreeCount;
+    private int _authorizedCount;
+    private AppUiMessage? _feedback;
+
+    private bool _canSave => _treeLoaded && !_loadingTree && !string.IsNullOrWhiteSpace(_selectedUser) && _dirty && !string.IsNullOrWhiteSpace(_selectedUNegocio);
+    private bool _canCopy => _treeLoaded && !_loadingTree && !string.IsNullOrWhiteSpace(_selectedUser) && !string.IsNullOrWhiteSpace(_copyFromUser) && !string.Equals(_selectedUser, _copyFromUser, StringComparison.OrdinalIgnoreCase);
+
+    private IReadOnlyList<AutorizacionCatalogoItemDto> CajasDisponibles => _cajas
+        .Where(item => string.Equals(item.UnidadNegocio.Trim(), _selectedUNegocio.Trim(), StringComparison.OrdinalIgnoreCase))
+        .ToList();
+
+    private IReadOnlyList<AutorizacionCatalogoItemDto> DepositosDisponibles => _depositos
+        .Where(item => item.Compartido || string.Equals(item.UnidadNegocio.Trim(), _selectedUNegocio.Trim(), StringComparison.OrdinalIgnoreCase))
+        .ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var currentUser = AppUserSession.CurrentUser?.UserName?.Trim();
+        if (!string.IsNullOrWhiteSpace(currentUser))
+            _selectedUser = currentUser;
+
+        await RecargarUsuariosAsync();
+    }
+
+    private async Task RecargarUsuariosAsync()
+    {
+        _loadingUsers = true;
+        try
+        {
+            var result = await UiOps.RunAsync(() => AutorizacionSvc.GetUsuariosAsync(PermisosSistema), "No se pudieron cargar los usuarios.");
+            if (!result.Success)
+            {
+                SetFeedback(result.Feedback!);
+                return;
+            }
+
+            _users = (result.Value ?? Array.Empty<UsuarioSistemaDto>()).ToList();
+            if (!string.IsNullOrWhiteSpace(_selectedUser) && _users.All(x => !string.Equals(x.Nombre, _selectedUser, StringComparison.OrdinalIgnoreCase)))
+                _selectedUser = string.Empty;
+        }
+        finally
+        {
+            _loadingUsers = false;
+        }
+    }
+
+    private async Task ConsultarAsync()
+    {
+        _feedback = null;
+        _loadingTree = true;
+        try
+        {
+            var result = await UiOps.RunAsync(() => AutorizacionSvc.GetAutorizacionAsync(MenuSistema, PermisosSistema, _selectedUser), "No se pudo cargar la autorización.");
+            if (!result.Success)
+            {
+                SetFeedback(result.Feedback!);
+                return;
+            }
+
+            var dto = result.Value!;
+            var items = dto.Items ?? Array.Empty<MenuAutorizacionItemDto>();
+            _tree = CloneTree(items);
+            _originalTree = CloneTree(items);
+            _treeLoaded = true;
+            _dirty = false;
+            _copyFromUser = string.Empty;
+
+            _unidadesNegocio = (dto.UnidadesNegocio ?? Array.Empty<AutorizacionCatalogoItemDto>()).ToList();
+            _cajas = (dto.Cajas ?? Array.Empty<AutorizacionCatalogoItemDto>()).ToList();
+            _depositos = (dto.Depositos ?? Array.Empty<AutorizacionCatalogoItemDto>()).ToList();
+            _currentUserAdministrador = dto.Administrador;
+            _selectedUNegocio = ResolveUnidadNegocio(dto.UNegocio);
+            _selectedIdCaja = ResolveOptionalCatalogValue(dto.IdCaja, CajasDisponibles);
+            _selectedIdDeposito = ResolveOptionalCatalogValue(dto.IdDeposito, DepositosDisponibles);
+            _originalAdministrador = _currentUserAdministrador;
+            _originalUNegocio = _selectedUNegocio;
+            _originalIdCaja = _selectedIdCaja;
+            _originalIdDeposito = _selectedIdDeposito;
+
+            SeedExpandedKeys(_tree);
+            RebuildVisibleTree();
+        }
+        finally
+        {
+            _loadingTree = false;
+        }
+    }
+
+    private async Task CopiarPermisosAsync()
+    {
+        var result = await UiOps.RunAsync(() => AutorizacionSvc.GetAutorizacionAsync(MenuSistema, PermisosSistema, _copyFromUser), "No se pudo copiar la autorización.");
+        if (!result.Success)
+        {
+            SetFeedback(result.Feedback!);
+            return;
+        }
+
+        var sourceItems = result.Value?.Items ?? Array.Empty<MenuAutorizacionItemDto>();
+        var sourceSelected = new HashSet<string>(EnumerateAuthorizedKeys(sourceItems), StringComparer.OrdinalIgnoreCase);
+        ApplySelectedKeys(_tree, sourceSelected);
+        _dirty = true;
+        RebuildVisibleTree();
+        SetFeedback(AppUiMessage.Success("Permisos copiados", $"Se aplicaron visualmente los permisos de {_copyFromUser}. Grabá para confirmar los cambios."));
+    }
+
+    private async Task GuardarAsync()
+    {
+        var selectedKeys = EnumerateAuthorizedKeys(_tree).ToArray();
+        var result = await UiOps.RunAsync(() => AutorizacionSvc.GuardarAutorizacionAsync(new GuardarAutorizacionTareasRequest
+        {
+            MenuSistema = MenuSistema,
+            PermisosSistema = PermisosSistema,
+            Usuario = _selectedUser,
+            Administrador = _currentUserAdministrador,
+            UNegocio = _selectedUNegocio,
+            IdCaja = _selectedIdCaja,
+            IdDeposito = _selectedIdDeposito,
+            TareasSeleccionadas = selectedKeys
+        }), "No se pudo guardar la autorización.");
+
+        if (!result.Success)
+        {
+            SetFeedback(result.Feedback!);
+            return;
+        }
+
+        _originalTree = CloneTree(_tree);
+        _originalAdministrador = _currentUserAdministrador;
+        _originalUNegocio = _selectedUNegocio;
+        _originalIdCaja = _selectedIdCaja;
+        _originalIdDeposito = _selectedIdDeposito;
+        _dirty = false;
+        RebuildVisibleTree();
+        SetFeedback(AppUiMessage.Success("Permisos actualizados", $"Se guardaron los permisos y asignaciones de {_selectedUser}."));
+    }
+
+    private void CancelarCambios()
+    {
+        _tree = CloneTree(_originalTree);
+        _currentUserAdministrador = _originalAdministrador;
+        _selectedUNegocio = _originalUNegocio;
+        _selectedIdCaja = _originalIdCaja;
+        _selectedIdDeposito = _originalIdDeposito;
+        _dirty = false;
+        _copyFromUser = string.Empty;
+        RebuildVisibleTree();
+        SetFeedback(new AppUiMessage
+        {
+            Severity = AppUiFeedbackSeverity.Info,
+            Title = "Cambios descartados",
+            Message = "Se restauró la autorización cargada originalmente."
+        });
+    }
+
+    private Task ToggleExpandAsync(string key)
+    {
+        if (_expandedKeys.Contains(key))
+            _expandedKeys.Remove(key);
+        else
+            _expandedKeys.Add(key);
+
+        return Task.CompletedTask;
+    }
+
+    private Task ToggleAuthorizationAsync(MenuAutorizacionToggleRequest request)
+    {
+        if (!_treeLoaded)
+            return Task.CompletedTask;
+
+        var target = FindNode(_tree, request.Clave);
+        if (target is null || !target.Habilitado)
+            return Task.CompletedTask;
+
+        var visibleNode = FindNode(_visibleTree, request.Clave);
+        var visibleKeys = visibleNode is null ? GatherDescendantKeys(target) : GatherDescendantKeys(visibleNode);
+        foreach (var key in visibleKeys)
+        {
+            var fullNode = FindNode(_tree, key);
+            if (fullNode is not null && fullNode.Habilitado)
+                fullNode.Autorizado = request.Checked;
+        }
+
+        MarkDirty();
+        return Task.CompletedTask;
+    }
+
+    private Task OnUnidadNegocioChanged(ChangeEventArgs args)
+    {
+        _selectedUNegocio = ResolveUnidadNegocio(Convert.ToString(args.Value));
+        _selectedIdCaja = ResolveOptionalCatalogValue(_selectedIdCaja, CajasDisponibles);
+        _selectedIdDeposito = ResolveOptionalCatalogValue(_selectedIdDeposito, DepositosDisponibles);
+        MarkDirty();
+        return Task.CompletedTask;
+    }
+
+    private Task OnSearchChanged(ChangeEventArgs args)
+    {
+        _searchText = Convert.ToString(args.Value) ?? string.Empty;
+        RebuildVisibleTree();
+        return Task.CompletedTask;
+    }
+
+    private Task OnViewModeChanged(ChangeEventArgs args)
+    {
+        _viewMode = Convert.ToString(args.Value) ?? ViewWeb;
+        RebuildVisibleTree();
+        return Task.CompletedTask;
+    }
+
+    private Task OnAdministradorChanged(ChangeEventArgs args)
+    {
+        _currentUserAdministrador = args.Value is bool b
+            ? b
+            : string.Equals(Convert.ToString(args.Value), "true", StringComparison.OrdinalIgnoreCase);
+        MarkDirty();
+        return Task.CompletedTask;
+    }
+
+    private Task OnCajaChanged(ChangeEventArgs args)
+    {
+        _selectedIdCaja = ResolveOptionalCatalogValue(Convert.ToString(args.Value), CajasDisponibles);
+        MarkDirty();
+        return Task.CompletedTask;
+    }
+
+    private Task OnDepositoChanged(ChangeEventArgs args)
+    {
+        _selectedIdDeposito = ResolveOptionalCatalogValue(Convert.ToString(args.Value), DepositosDisponibles);
+        MarkDirty();
+        return Task.CompletedTask;
+    }
+
+    private void ExpandirTodo()
+    {
+        foreach (var key in GatherAllKeys(_tree))
+            _expandedKeys.Add(key);
+    }
+
+    private void ContraerTodo()
+    {
+        _expandedKeys.Clear();
+        foreach (var item in _tree)
+            _expandedKeys.Add(item.Clave);
+    }
+
+    private void SeleccionarTodoVisible()
+    {
+        ApplyVisibleAuthorization(true);
+    }
+
+    private void DeseleccionarTodoVisible()
+    {
+        ApplyVisibleAuthorization(false);
+    }
+
+    private void ApplyVisibleAuthorization(bool value)
+    {
+        if (!_treeLoaded)
+            return;
+
+        foreach (var key in _visibleTree.SelectMany(item => GatherAllKeys(new[] { item })))
+        {
+            var node = FindNode(_tree, key);
+            if (node is not null && node.Habilitado)
+                node.Autorizado = value;
+        }
+
+        MarkDirty();
+    }
+
+    private void MarkDirty()
+    {
+        _dirty = true;
+        RebuildVisibleTree();
+    }
+
+    private void RebuildVisibleTree()
+    {
+        _visibleTree = BuildFilteredTree(_tree, _searchText, _viewMode);
+        _visibleTreeCount = CountNodes(_visibleTree);
+        _authorizedCount = EnumerateAuthorizedKeys(_tree).Count();
+        NormalizePartialState(_visibleTree);
+    }
+
+    private string ResolveUnidadNegocio(string? value)
+    {
+        var resolved = ResolveOptionalCatalogValue(value, _unidadesNegocio);
+        if (!string.IsNullOrWhiteSpace(resolved))
+            return resolved;
+
+        var preferred = _unidadesNegocio.FirstOrDefault(x => string.Equals(x.CodigoVisual, DefaultUnidadNegocioVisual, StringComparison.OrdinalIgnoreCase));
+        if (preferred is not null)
+            return preferred.Codigo;
+
+        return _unidadesNegocio.FirstOrDefault()?.Codigo ?? string.Empty;
+    }
+
+    private static string ResolveOptionalCatalogValue(string? value, IEnumerable<AutorizacionCatalogoItemDto> options)
+    {
+        var normalized = value?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(normalized))
+            return string.Empty;
+
+        var match = options.FirstOrDefault(x => string.Equals(x.Codigo.Trim(), normalized, StringComparison.OrdinalIgnoreCase));
+        return match?.Codigo ?? string.Empty;
+    }
+
+    private static List<MenuAutorizacionItemDto> BuildFilteredTree(IEnumerable<MenuAutorizacionItemDto> source, string searchText, string viewMode)
+    {
+        var term = searchText?.Trim() ?? string.Empty;
+        var result = new List<MenuAutorizacionItemDto>();
+
+        foreach (var item in source)
+        {
+            var children = BuildFilteredTree(item.Hijos, term, viewMode);
+            var matchesSelf = MatchesSearch(item, term) && MatchesView(item, viewMode);
+            if (!matchesSelf && children.Count == 0)
+                continue;
+
+            var clone = CloneNode(item);
+            clone.Hijos.AddRange(children);
+            result.Add(clone);
+        }
+
+        return result;
+    }
+
+    private static bool MatchesSearch(MenuAutorizacionItemDto item, string term)
+    {
+        if (string.IsNullOrWhiteSpace(term))
+            return true;
+
+        var text = string.Join(" ", new[]
+        {
+            item.Nombre,
+            item.Clave,
+            item.Descripcion,
+            item.Proceso ?? string.Empty,
+            item.RutaWeb ?? string.Empty
+        });
+
+        return text.Contains(term, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool MatchesView(MenuAutorizacionItemDto item, string viewMode) => viewMode switch
+    {
+        ViewWeb => item.EsWeb && !item.EsCompartida,
+        ViewDesktop => item.EsDesktop && !item.EsCompartida,
+        ViewShared => item.EsCompartida,
+        ViewUnauthorized => !item.Autorizado,
+        _ => true
+    };
+
+    private static MenuAutorizacionItemDto CloneNode(MenuAutorizacionItemDto item)
+        => new()
+        {
+            Menu = item.Menu,
+            Clave = item.Clave,
+            Titulo = item.Titulo,
+            Nombre = item.Nombre,
+            Descripcion = item.Descripcion,
+            Proceso = item.Proceso,
+            Habilitado = item.Habilitado,
+            RutaWeb = item.RutaWeb,
+            HabilitadoWeb = item.HabilitadoWeb,
+            Autorizado = item.Autorizado,
+            Parcial = item.Parcial
+        };
+
+    private static List<MenuAutorizacionItemDto> CloneTree(IEnumerable<MenuAutorizacionItemDto> items)
+        => items.Select(CloneTreeNode).ToList();
+
+    private static MenuAutorizacionItemDto CloneTreeNode(MenuAutorizacionItemDto item)
+    {
+        var clone = CloneNode(item);
+        foreach (var child in item.Hijos)
+            clone.Hijos.Add(CloneTreeNode(child));
+        return clone;
+    }
+
+    private static void ApplySelectedKeys(IEnumerable<MenuAutorizacionItemDto> items, HashSet<string> selected)
+    {
+        foreach (var item in items)
+        {
+            item.Autorizado = selected.Contains(item.Clave);
+            ApplySelectedKeys(item.Hijos, selected);
+        }
+    }
+
+    private static IEnumerable<string> EnumerateAuthorizedKeys(IEnumerable<MenuAutorizacionItemDto> items)
+    {
+        foreach (var item in items)
+        {
+            if (item.Autorizado && item.Habilitado)
+                yield return item.Clave;
+
+            foreach (var child in EnumerateAuthorizedKeys(item.Hijos))
+                yield return child;
+        }
+    }
+
+    private static IEnumerable<string> GatherAllKeys(IEnumerable<MenuAutorizacionItemDto> items)
+    {
+        foreach (var item in items)
+        {
+            yield return item.Clave;
+            foreach (var child in GatherAllKeys(item.Hijos))
+                yield return child;
+        }
+    }
+
+    private static List<string> GatherDescendantKeys(MenuAutorizacionItemDto item)
+    {
+        var keys = new List<string> { item.Clave };
+        foreach (var child in item.Hijos)
+            keys.AddRange(GatherDescendantKeys(child));
+        return keys;
+    }
+
+    private static MenuAutorizacionItemDto? FindNode(IEnumerable<MenuAutorizacionItemDto> items, string key)
+    {
+        foreach (var item in items)
+        {
+            if (string.Equals(item.Clave, key, StringComparison.OrdinalIgnoreCase))
+                return item;
+
+            var child = FindNode(item.Hijos, key);
+            if (child is not null)
+                return child;
+        }
+
+        return null;
+    }
+
+    private static void NormalizePartialState(IEnumerable<MenuAutorizacionItemDto> items)
+    {
+        foreach (var item in items)
+        {
+            NormalizePartialState(item.Hijos);
+            if (item.Hijos.Count == 0)
+            {
+                item.Parcial = false;
+                continue;
+            }
+
+            var total = CountNodes(item.Hijos);
+            var selected = EnumerateAuthorizedKeys(item.Hijos).Count();
+            item.Parcial = selected > 0 && selected < total;
+
+            if (selected == total && total > 0)
+                item.Autorizado = true;
+        }
+    }
+
+    private static int CountNodes(IEnumerable<MenuAutorizacionItemDto> items)
+        => items.Sum(x => 1 + CountNodes(x.Hijos));
+
+    private void SeedExpandedKeys(IEnumerable<MenuAutorizacionItemDto> items)
+    {
+        _expandedKeys.Clear();
+        foreach (var item in items)
+        {
+            _expandedKeys.Add(item.Clave);
+            foreach (var child in item.Hijos)
+                _expandedKeys.Add(child.Clave);
+        }
+    }
+
+    private void SetFeedback(AppUiMessage message) => _feedback = message;
+
+    private static string GetFeedbackClass(AppUiMessage message) => message.Severity switch
+    {
+        AppUiFeedbackSeverity.Success => "editor-msg--success",
+        AppUiFeedbackSeverity.Warning => "editor-msg--warning",
+        AppUiFeedbackSeverity.Info => "editor-msg--info",
+        _ => "editor-msg--error"
+    };
+
+    private static string GetCodeSelectClass(string? rawValue)
+        => int.TryParse(rawValue?.Trim(), out _) ? "auth-code-select auth-code-select--numeric" : "auth-code-select";
+}

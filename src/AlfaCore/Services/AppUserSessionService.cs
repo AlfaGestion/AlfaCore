@@ -101,6 +101,30 @@ public sealed class AppUserSessionService(
         {
             throw;
         }
+        catch (SqlException ex)
+        {
+            var activeSqlSession = sessionService.GetActiveSession();
+            var friendlyMessage = BuildKnownSqlLoginMessage(ex, activeSqlSession);
+
+            var incidentId = await appEvents.LogErrorAsync(
+                "Seguridad",
+                "Login",
+                ex,
+                friendlyMessage,
+                new
+                {
+                    UserName = userName?.Trim(),
+                    Sistema = SistemaFijo,
+                    SqlSession = activeSqlSession?.Nombre,
+                    SqlServer = activeSqlSession?.Servidor,
+                    SqlDatabase = activeSqlSession?.BaseDatos,
+                    SqlUser = activeSqlSession?.Usuario
+                },
+                AppEventSeverity.Warning,
+                ct);
+
+            throw new InvalidOperationException($"{friendlyMessage} Código: {incidentId}", ex);
+        }
         catch (Exception ex)
         {
             var incidentId = await appEvents.LogErrorAsync(
@@ -195,4 +219,20 @@ public sealed class AppUserSessionService(
 
     private static bool GetBool(SqlDataReader rd, int index)
         => !rd.IsDBNull(index) && Convert.ToBoolean(rd.GetValue(index));
+
+    private static string BuildKnownSqlLoginMessage(SqlException ex, SessionDto? session)
+    {
+        var db = string.IsNullOrWhiteSpace(session?.BaseDatos) ? "la base seleccionada" : $"la base {session.BaseDatos}";
+        var server = string.IsNullOrWhiteSpace(session?.Servidor) ? "el servidor configurado" : $"el servidor {session.Servidor}";
+        var sqlUser = string.IsNullOrWhiteSpace(session?.Usuario) ? "el usuario SQL configurado" : $"el usuario SQL {session.Usuario}";
+
+        return ex.Number switch
+        {
+            4060 => $"No se pudo abrir {db} en {server}. Revisá que la sesión SQL activa apunte a una base existente y que {sqlUser} tenga acceso.",
+            18456 => $"No se pudo iniciar sesión en SQL Server para entrar a {db}. Revisá el usuario y la contraseña SQL guardados en la sesión activa.",
+            53 or -1 or 2 => $"No se pudo conectar a {server}. Revisá el nombre del servidor, la red y que SQL Server esté accesible desde AlfaCore.",
+            -2 => $"La conexión a {server} tardó demasiado y expiró. Revisá conectividad, carga del servidor o credenciales de la sesión activa.",
+            _ => $"No se pudo conectar a {db} para validar el usuario del sistema. Revisá la sesión SQL activa y la conectividad del servidor."
+        };
+    }
 }

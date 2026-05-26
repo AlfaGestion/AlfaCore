@@ -34,6 +34,8 @@ public static class ShellNavigationUiHelper
             return "Gestión web de usuarios.";
         if (route.StartsWith("/actualizaciones"))
             return "Actualizaciones y mantenimiento de base.";
+        if (route.StartsWith("/seguridad/autorizacion-tareas"))
+            return "Permisos compartidos entre Desktop y AlfaCore.";
         if (route.StartsWith("/compras"))
             return "Acceso web al circuito de compras.";
         if (route.StartsWith("/ventas"))
@@ -65,13 +67,15 @@ public static class ShellNavigationUiHelper
             return "app-card__icon--contabilidad";
         if (route.StartsWith("/consultas") || name.Contains("consulta"))
             return "app-card__icon--consultas";
-        if (route.StartsWith("/usuarios") || route.StartsWith("/actualizaciones") || name.Contains("usuario") || name.Contains("utilidad"))
+        if (route.StartsWith("/usuarios") || route.StartsWith("/actualizaciones") || route.StartsWith("/seguridad/") || name.Contains("usuario") || name.Contains("utilidad") || name.Contains("seguridad"))
             return "app-card__icon--usuarios";
         if (route.StartsWith("/contactos") || route.StartsWith("/interfaces") || name.Contains("contacto") || name.Contains("archivo"))
             return "app-card__icon--contactos";
         if (route.StartsWith("/calendario"))
             return "app-card__icon--calendario";
         if (route.StartsWith("/tickets") || route.StartsWith("/auditoria") || route.StartsWith("/conversaciones"))
+            return "app-card__icon--tickets";
+        if (route.StartsWith("/shell/d010185") || name.Contains("crm"))
             return "app-card__icon--tickets";
 
         return "app-card__icon--consultas";
@@ -96,6 +100,8 @@ public static class ShellNavigationUiHelper
             return "app-card__icon--usuarios";
         if (key == "D01" || name.Contains("archivo"))
             return "app-card__icon--contactos";
+        if (key == "D010185" || name.Contains("crm"))
+            return "app-card__icon--tickets";
 
         return "app-card__icon--consultas";
     }

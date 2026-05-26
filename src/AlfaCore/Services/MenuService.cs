@@ -10,6 +10,12 @@ public sealed class MenuService(
     IPermissionService permissionService,
     IAppEventService appEvents) : IMenuService
 {
+    private const string CrmModuleKey = "D010185";
+    private const string CrmSectionKey = "D010185WEB";
+    private const string CrmSectionName = "CRM";
+    private const string CrmTicketsKey = "D010185-WEB-TICKETS";
+    private const string CrmConversacionesKey = "D010185-WEB-CONVERSACIONES";
+
     private string ConnectionString => sessionService.GetConnectionString().Length > 0
         ? sessionService.GetConnectionString()
         : configuration.GetConnectionString("AlfaGestion")
@@ -167,11 +173,13 @@ public sealed class MenuService(
                 })
                 .OrderBy(x => x.OrdenWeb)
                 .ThenBy(x => x.Nombre)
-                .ToArray();
+                .ToList();
+
+            AddSyntheticCrmNodes(nodes, includeKeys, parentByKey, nameByKey);
 
             var rootModules = visibleRows
-                .Where(x => string.Equals(x.Titulo?.Trim(), "D", StringComparison.OrdinalIgnoreCase)
-                            && includeKeys.Contains(x.Clave.Trim()))
+                .Where(x => includeKeys.Contains(x.Clave.Trim()))
+                .Where(IsShellModuleRow)
                 .Select(x => new ShellModuleDto
                 {
                     Menu = x.Menu,
@@ -185,7 +193,31 @@ public sealed class MenuService(
                 })
                 .OrderBy(x => x.OrdenWeb)
                 .ThenBy(x => x.Nombre)
-                .ToArray();
+                .ToList();
+
+            var crmNode = nodes.FirstOrDefault(x => string.Equals(x.Clave, CrmModuleKey, StringComparison.OrdinalIgnoreCase));
+            if (crmNode is not null && rootModules.All(x => !string.Equals(x.Clave, CrmModuleKey, StringComparison.OrdinalIgnoreCase)))
+            {
+                rootModules.Add(new ShellModuleDto
+                {
+                    Menu = crmNode.Menu,
+                    Clave = crmNode.Clave,
+                    Nombre = crmNode.Nombre,
+                    RutaWeb = crmNode.RutaWeb,
+                    Icono = crmNode.Icono,
+                    OrdenWeb = crmNode.OrdenWeb > 0 ? crmNode.OrdenWeb : 18
+                });
+            }
+
+            nodes = nodes
+                .OrderBy(x => x.OrdenWeb)
+                .ThenBy(x => x.Nombre)
+                .ToList();
+
+            rootModules = rootModules
+                .OrderBy(x => x.OrdenWeb)
+                .ThenBy(x => x.Nombre)
+                .ToList();
 
             return new MenuSnapshot(nodes, rootModules, parentByKey, nameByKey);
         }, "No se pudo construir el menú web dinámico.", ct);
@@ -360,6 +392,68 @@ public sealed class MenuService(
             parts.Add(description.Trim());
 
         return string.Join(" · ", parts.Where(x => x.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase));
+    }
+
+    private static bool IsShellModuleRow(MenuRow row)
+    {
+        var route = NormalizeRoute(row.RutaWeb);
+        return string.Equals(row.Titulo?.Trim(), "D", StringComparison.OrdinalIgnoreCase)
+               || string.Equals(route, $"/shell/{CrmModuleKey}", StringComparison.OrdinalIgnoreCase)
+               || (string.Equals(row.Componente?.Trim(), "ShellWorkspacePage", StringComparison.OrdinalIgnoreCase)
+                   && route.StartsWith("/shell/", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static void AddSyntheticCrmNodes(
+        List<ShellMenuNodeDto> nodes,
+        HashSet<string> includeKeys,
+        Dictionary<string, string> parentByKey,
+        Dictionary<string, string> nameByKey)
+    {
+        if (!includeKeys.Contains(CrmModuleKey))
+            return;
+
+        parentByKey[CrmSectionKey] = CrmModuleKey;
+        nameByKey[CrmSectionKey] = CrmSectionName;
+        parentByKey[CrmConversacionesKey] = CrmSectionKey;
+        parentByKey[CrmTicketsKey] = CrmSectionKey;
+        nameByKey[CrmConversacionesKey] = "Conversaciones";
+        nameByKey[CrmTicketsKey] = "Tickets";
+
+        if (nodes.All(x => !string.Equals(x.Clave, CrmConversacionesKey, StringComparison.OrdinalIgnoreCase)))
+        {
+            var crmModule = nodes.FirstOrDefault(x => string.Equals(x.Clave, CrmModuleKey, StringComparison.OrdinalIgnoreCase));
+            nodes.Add(new ShellMenuNodeDto
+            {
+                Menu = crmModule?.Menu ?? "ALFA",
+                Clave = CrmConversacionesKey,
+                Titulo = CrmSectionKey,
+                Nombre = "Conversaciones",
+                Descripcion = "Inbox operativo de conversaciones, seguimiento y atención comercial.",
+                RutaWeb = "/conversaciones",
+                Componente = "Conversaciones",
+                Icono = "bi-chat-left-text-fill",
+                OrdenWeb = 18501,
+                Observacion = "Atención omnicanal, seguimiento comercial y derivación operativa."
+            });
+        }
+
+        if (nodes.All(x => !string.Equals(x.Clave, CrmTicketsKey, StringComparison.OrdinalIgnoreCase)))
+        {
+            var crmModule = nodes.FirstOrDefault(x => string.Equals(x.Clave, CrmModuleKey, StringComparison.OrdinalIgnoreCase));
+            nodes.Add(new ShellMenuNodeDto
+            {
+                Menu = crmModule?.Menu ?? "ALFA",
+                Clave = CrmTicketsKey,
+                Titulo = CrmSectionKey,
+                Nombre = "Tickets",
+                Descripcion = "Mesa de ayuda, soporte y seguimiento de incidencias.",
+                RutaWeb = "/tickets",
+                Componente = "Tickets",
+                Icono = "bi-life-preserver",
+                OrdenWeb = 18502,
+                Observacion = "Gestión de tickets de asistencia, prioridades y resolución."
+            });
+        }
     }
 
     private static void AddAncestors(HashSet<string> includeKeys, IReadOnlyDictionary<string, string> parentByKey, string key)

@@ -1,0 +1,121 @@
+@using AlfaCore.Models
+@inject IJSRuntime JS
+
+<div class="auth-tree-node auth-tree-node--level-@Level">
+    <div class="auth-tree-node__row @(Item.Habilitado ? string.Empty : "is-disabled")">
+        @if (Item.Hijos.Count > 0)
+        {
+            <button type="button"
+                    class="auth-tree-node__expand"
+                    @onclick="() => ToggleExpand.InvokeAsync(Item.Clave)"
+                    title="@(IsExpanded ? "Contraer" : "Expandir")">
+                <i class="bi @(IsExpanded ? "bi-caret-down-fill" : "bi-caret-right-fill")"></i>
+            </button>
+        }
+        else
+        {
+            <span class="auth-tree-node__spacer"></span>
+        }
+
+        <label class="auth-tree-node__check">
+            <input type="checkbox"
+                   @ref="_checkboxRef"
+                   checked="@Item.Autorizado"
+                   disabled="@(!Item.Habilitado)"
+                   @onchange="OnCheckedChanged" />
+            <span class="auth-tree-node__content">
+                <span class="auth-tree-node__name">@Item.Nombre</span>
+                <span class="auth-tree-node__meta">
+                    <span class="auth-tree-node__key">@Item.Clave</span>
+                    @if (!string.IsNullOrWhiteSpace(Item.Descripcion))
+                    {
+                        <span class="auth-tree-node__desc">@Item.Descripcion</span>
+                    }
+                </span>
+            </span>
+        </label>
+
+        <div class="auth-tree-node__badges">
+            @if (Item.EsCompartida)
+            {
+                <span class="auth-badge auth-badge--shared">Desktop + Web</span>
+            }
+            else if (Item.EsWeb)
+            {
+                <span class="auth-badge auth-badge--web">Web</span>
+            }
+            else if (Item.EsDesktop)
+            {
+                <span class="auth-badge auth-badge--desktop">Desktop</span>
+            }
+            else
+            {
+                <span class="auth-badge auth-badge--group">Agrupador</span>
+            }
+
+            @if (Item.Parcial)
+            {
+                <span class="auth-badge auth-badge--partial">Parcial</span>
+            }
+            @if (!Item.Habilitado)
+            {
+                <span class="auth-badge auth-badge--disabled">Deshabilitada</span>
+            }
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(Item.Proceso) || !string.IsNullOrWhiteSpace(Item.RutaWeb))
+        {
+            <span class="auth-tree-node__hint"
+                  title="@BuildHint()">
+                <i class="bi bi-info-circle"></i>
+            </span>
+        }
+    </div>
+
+    @if (IsExpanded && Item.Hijos.Count > 0)
+    {
+        <div class="auth-tree-node__children">
+            @foreach (var child in Item.Hijos)
+            {
+                <AutorizacionTareasTreeNode Item="child"
+                                            Level="@(Level + 1)"
+                                            ExpandedKeys="ExpandedKeys"
+                                            ToggleExpand="ToggleExpand"
+                                            ToggleAuthorization="ToggleAuthorization" />
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public MenuAutorizacionItemDto Item { get; set; } = default!;
+    [Parameter] public int Level { get; set; }
+    [Parameter] public HashSet<string> ExpandedKeys { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    [Parameter] public EventCallback<string> ToggleExpand { get; set; }
+    [Parameter] public EventCallback<MenuAutorizacionToggleRequest> ToggleAuthorization { get; set; }
+
+    private ElementReference _checkboxRef;
+    private bool IsExpanded => ExpandedKeys.Contains(Item.Clave);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        await JS.InvokeVoidAsync("alfaCoreAuthTree.setIndeterminate", _checkboxRef, Item.Parcial);
+    }
+
+    private Task OnCheckedChanged(ChangeEventArgs args)
+        => ToggleAuthorization.InvokeAsync(new MenuAutorizacionToggleRequest
+        {
+            Clave = Item.Clave,
+            Checked = args.Value is bool b ? b : string.Equals(Convert.ToString(args.Value), "true", StringComparison.OrdinalIgnoreCase)
+        });
+
+    private string BuildHint()
+    {
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(Item.Proceso))
+            parts.Add($"Desktop: {Item.Proceso}");
+        if (!string.IsNullOrWhiteSpace(Item.RutaWeb))
+            parts.Add($"Web: {Item.RutaWeb}");
+        return string.Join(" | ", parts);
+    }
+}

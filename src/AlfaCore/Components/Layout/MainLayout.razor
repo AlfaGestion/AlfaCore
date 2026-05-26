@@ -203,6 +203,28 @@
                     </NavLink>
                 </nav>
             }
+            else if (_currentModule == "seguridad")
+            {
+                <a class="menu__back" href="/">
+                    <i class="bi bi-grid-3x3-gap-fill"></i>
+                    <span>Aplicaciones</span>
+                </a>
+                <p class="menu__section">Seguridad</p>
+                <nav class="menu__nav">
+                    <NavLink class="menu__link" href="/usuarios">
+                        <span class="menu__icon"><i class="bi bi-people-fill"></i></span>
+                        <span>Usuarios</span>
+                    </NavLink>
+                    <NavLink class="menu__link" href="/seguridad/autorizacion-tareas" Match="NavLinkMatch.All">
+                        <span class="menu__icon"><i class="bi bi-shield-lock-fill"></i></span>
+                        <span>Autorización de tareas</span>
+                    </NavLink>
+                    <NavLink class="menu__link" href="/auditoria">
+                        <span class="menu__icon"><i class="bi bi-clipboard2-check"></i></span>
+                        <span>Reporte de auditoría</span>
+                    </NavLink>
+                </nav>
+            }
             else if (_currentModule == "contactos")
             {
                 <a class="menu__back" href="/">
@@ -1781,6 +1803,7 @@
             "interfaces/nuevo" => "Nuevo documento",
             "actualizaciones" => "Actualizaciones",
             "usuarios" => "Usuarios",
+            "seguridad/autorizacion-tareas" => "Autorización de tareas",
             "contactos" => "Contactos",
             "compras" => "Inicio",
             "proveedores" => "Proveedores",
@@ -1822,6 +1845,7 @@
         "interfaces" => "Interfaces",
         "actualizaciones" => "Actualizaciones",
         "usuarios" => "Usuarios",
+        "seguridad" => "Seguridad",
         "contactos" => "Contactos",
         _ => "Dashboard de Compras"
     };
