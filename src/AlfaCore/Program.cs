@@ -57,6 +57,7 @@ public class Program
         builder.Services.AddScoped<INotificacionesPushService, NotificacionesPushService>();
         builder.Services.AddScoped<ICalendarioService, CalendarioService>();
         builder.Services.AddScoped<ITicketsService, TicketsService>();
+        builder.Services.AddScoped<ITareasService, TareasService>();
         builder.Services.AddScoped<IInterfacesService, InterfacesService>();
         builder.Services.AddScoped<IInterfacesConfigService, InterfacesConfigService>();
         builder.Services.AddSingleton<InterfacesCompraIaWorkerState>();
