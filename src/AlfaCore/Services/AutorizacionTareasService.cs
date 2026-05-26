@@ -195,6 +195,10 @@ public sealed class AutorizacionTareasService(
             var unidadNegocio = ResolveUnidadNegocio(request.UNegocio, unidadesNegocio);
             var idCaja = ResolveOptionalCatalogValue(request.IdCaja, cajas);
             var idDeposito = ResolveOptionalCatalogValue(request.IdDeposito, depositos);
+            var hasAdministrador = await ColumnExistsAsync(cn, "TA_USUARIOS", "Administrador", token);
+            var hasIdCaja = await ColumnExistsAsync(cn, "TA_USUARIOS", "IDCAJA", token);
+            var hasUNegocio = await ColumnExistsAsync(cn, "TA_USUARIOS", "UNegocio", token);
+            var hasIdDeposito = await ColumnExistsAsync(cn, "TA_USUARIOS", "IDDEPOSITO", token);
 
             var managedKeys = (await cn.QueryAsync<string>(new CommandDefinition("""
                 SELECT DISTINCT UPPER(LTRIM(RTRIM(Clave)))
@@ -249,6 +253,10 @@ public sealed class AutorizacionTareasService(
                     unidadNegocio,
                     idCaja,
                     idDeposito,
+                    hasAdministrador,
+                    hasIdCaja,
+                    hasUNegocio,
+                    hasIdDeposito,
                     token);
 
                 var deleteBase = """
@@ -441,13 +449,12 @@ public sealed class AutorizacionTareasService(
         string unidadNegocio,
         string idCaja,
         string idDeposito,
+        bool hasAdministrador,
+        bool hasIdCaja,
+        bool hasUNegocio,
+        bool hasIdDeposito,
         CancellationToken ct)
     {
-        var hasAdministrador = await ColumnExistsAsync(cn, "TA_USUARIOS", "Administrador", ct);
-        var hasIdCaja = await ColumnExistsAsync(cn, "TA_USUARIOS", "IDCAJA", ct);
-        var hasUNegocio = await ColumnExistsAsync(cn, "TA_USUARIOS", "UNegocio", ct);
-        var hasIdDeposito = await ColumnExistsAsync(cn, "TA_USUARIOS", "IDDEPOSITO", ct);
-
         var assignments = new List<string>();
         if (hasAdministrador)
             assignments.Add("Administrador = @Administrador");

@@ -19,6 +19,16 @@
       "Password": "HIERROSUR",
       "TrustServerCertificate": true,
       "Activa": false
+    },
+    {
+      "Id": "5f8b1141-ee95-425c-9437-cfade05666a5",
+      "Nombre": "ALFANET WEB",
+      "Servidor": "10.8.0.31",
+      "BaseDatos": "ALFANET2007",
+      "Usuario": "ALFANET2007",
+      "Password": "ALFANET2007",
+      "TrustServerCertificate": true,
+      "Activa": false
     }
   ]
 }
