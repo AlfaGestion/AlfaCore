@@ -1,7 +1,7 @@
 {
   "Sessions": [
     {
-      "Id": "da7f85ac-dbf5-483b-b2ee-2245c2c86007",
+      "Id": "7f40421e-e539-4d42-acfd-8b390c5eb3d0",
       "Nombre": "SERVER-DB - ALFANET2007",
       "Servidor": "SERVER-DB",
       "BaseDatos": "ALFANET2007",
@@ -11,18 +11,18 @@
       "Activa": false
     },
     {
-      "Id": "5f288ebe-2360-4e0f-a3aa-86a88f9bb5de",
-      "Nombre": "HIERROSUR",
-      "Servidor": "SERVER-ALFAVB6",
-      "BaseDatos": "HIERROSUR",
-      "Usuario": "HIERROSUR",
-      "Password": "HIERROSUR",
+      "Id": "9be718c1-aa8f-4188-8518-12cbbba8333a",
+      "Nombre": "FERNANDEZ REAL",
+      "Servidor": "SERVER01",
+      "BaseDatos": "FERNANDEZF2",
+      "Usuario": "FERNANDEZF2",
+      "Password": "FERNANDEZF2",
       "TrustServerCertificate": true,
       "Activa": false
     },
     {
-      "Id": "5f8b1141-ee95-425c-9437-cfade05666a5",
-      "Nombre": "ALFANET WEB",
+      "Id": "aeca6e7f-e432-493e-9921-3300eb6c4d65",
+      "Nombre": "ALFAWEB ALFANET2007",
       "Servidor": "10.8.0.31",
       "BaseDatos": "ALFANET2007",
       "Usuario": "ALFANET2007",

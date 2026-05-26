@@ -168,7 +168,7 @@ public sealed class SessionService : ISessionService
         if (_defaultSession is not null)
             return _defaultSession;
 
-        return _sessions.Count > 0 ? _sessions[0] : null;
+        return null;
     }
 
     private void PersistCookieSelectedSessionIfNeeded()
