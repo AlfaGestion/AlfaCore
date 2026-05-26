@@ -16524,3 +16524,93 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
         align-items: stretch;
     }
 }
+
+.tareas-side-panel__title strong {
+    color: #f5fbff;
+    font-size: 1.02rem;
+    font-weight: 800;
+    line-height: 1.15;
+}
+
+.shell__content .tareas-list-form {
+    width: 100%;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 32px 32px;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.shell__content .tareas-list-form input {
+    min-width: 0;
+    height: 36px;
+    padding: 0 0.65rem;
+}
+
+.shell__content .tareas-icon-action {
+    width: 32px;
+    height: 32px;
+    display: inline-grid;
+    place-items: center;
+    border: 1px solid rgba(119, 152, 202, 0.25);
+    border-radius: 10px;
+    background: rgba(15, 29, 50, 0.95);
+    color: rgba(222, 235, 250, 0.9);
+    cursor: pointer;
+}
+
+.shell__content .tareas-icon-action:hover {
+    background: rgba(42, 196, 215, 0.14);
+    color: #ffffff;
+}
+
+.shell__content .tareas-icon-action.is-save {
+    border-color: rgba(38, 199, 218, 0.35);
+    color: #31d4e8;
+}
+
+.shell__content .tareas-form-grid input,
+.shell__content .tareas-form-grid select,
+.shell__content .tareas-description textarea,
+.shell__content .tareas-modal input,
+.shell__content .tareas-modal select,
+.shell__content .tareas-modal textarea {
+    color-scheme: dark;
+    appearance: none;
+    -webkit-appearance: none;
+    border: 1px solid rgba(95, 132, 186, 0.32) !important;
+    background: rgba(10, 23, 41, 0.96) !important;
+    color: #edf6ff !important;
+    border-radius: 8px !important;
+}
+
+.shell__content .tareas-form-grid select,
+.shell__content .tareas-modal select {
+    background-image: linear-gradient(45deg, transparent 50%, rgba(220, 234, 250, 0.85) 50%), linear-gradient(135deg, rgba(220, 234, 250, 0.85) 50%, transparent 50%) !important;
+    background-position: calc(100% - 16px) 50%, calc(100% - 11px) 50% !important;
+    background-size: 5px 5px, 5px 5px !important;
+    background-repeat: no-repeat !important;
+    padding-right: 2rem !important;
+}
+
+.shell__content .tareas-form-grid input[type="date"] {
+    appearance: auto;
+    -webkit-appearance: auto;
+}
+
+.shell__content .tareas-form-grid option,
+.shell__content .tareas-modal option {
+    background: #0b1728;
+    color: #edf6ff;
+}
+
+.shell__content .tareas-note {
+    grid-template-columns: 28px minmax(0, 1fr) 28px;
+}
+
+.shell__content .tareas-note .tareas-check {
+    width: 24px;
+    height: 24px;
+    min-width: 24px;
+    padding: 0;
+    border: 0;
+}

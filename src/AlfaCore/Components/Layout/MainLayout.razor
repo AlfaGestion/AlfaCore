@@ -657,13 +657,7 @@
     <header class="tareas-side-panel__head">
         <div class="tareas-side-panel__title">
             <span>TASKS</span>
-            <select value="@TasksPanelSelectedValue" @onchange="OnTasksPanelListChanged" aria-label="Lista de tareas">
-                <option value="">Todas las listas</option>
-                @foreach (var lista in _tasksPanel.Listas)
-                {
-                    <option value="@lista.IdLista">@lista.Nombre</option>
-                }
-            </select>
+            <strong>Rápidas</strong>
         </div>
         <div class="tareas-side-panel__actions">
             <a href="/tareas" title="Ir al módulo de tareas" aria-label="Ir al módulo de tareas">
@@ -680,7 +674,7 @@
         <input value="@_tasksPanelQuickTitle"
                @oninput="e => _tasksPanelQuickTitle = Convert.ToString(e.Value) ?? string.Empty"
                @onkeydown="HandleTasksPanelQuickKeyDown"
-               placeholder="Añadir una tarea" />
+               placeholder="Añadir rápida" />
     </section>
 
     <section class="tareas-side-panel__body">
@@ -694,50 +688,41 @@
         }
         else
         {
-            @if (TasksPanelActiveTasks.Count > 0)
+            @if (TasksPanelOpenNotes.Count > 0)
             {
-                <p class="tareas-side-panel__group">Sin fecha</p>
+                <p class="tareas-side-panel__group">Para hoy</p>
                 <div class="tareas-side-list">
-                    @foreach (var tarea in TasksPanelActiveTasks)
+                    @foreach (var nota in TasksPanelOpenNotes)
                     {
                         <article class="tareas-side-row">
-                            <button type="button" class="tareas-side-check" title="Completar" @onclick="() => CompleteTasksPanelTaskAsync(tarea)">
+                            <button type="button" class="tareas-side-check" title="Marcar como hecha" @onclick="() => CompleteTasksPanelNoteAsync(nota)">
                                 <i class="bi bi-circle"></i>
                             </button>
-                            <a class="tareas-side-row__body" href="/tareas" title="Abrir en tareas">
-                                <strong>@tarea.Titulo</strong>
-                                <span>
-                                    @if (tarea.FechaVencimiento is not null)
-                                    {
-                                        <span>@tarea.FechaVencimiento.Value.ToString("dd/MM")</span>
-                                    }
-                                    @if (!string.IsNullOrWhiteSpace(tarea.UsuarioAsignado))
-                                    {
-                                        <span>@(tarea.FechaVencimiento is null ? string.Empty : " · ")@tarea.UsuarioAsignado</span>
-                                    }
-                                </span>
-                            </a>
+                            <span class="tareas-side-row__body">
+                                <strong>@nota.Texto</strong>
+                                <span>Rápida</span>
+                            </span>
                         </article>
                     }
                 </div>
             }
             else
             {
-                <div class="tareas-side-panel__empty">No hay tareas pendientes.</div>
+                <div class="tareas-side-panel__empty">No hay rápidas pendientes.</div>
             }
 
             <details class="tareas-side-completed">
-                <summary>Completadas (@TasksPanelCompletedTasks.Count)</summary>
+                <summary>Hechas (@TasksPanelCompletedNotes.Count)</summary>
                 <div class="tareas-side-list">
-                    @foreach (var tarea in TasksPanelCompletedTasks)
+                    @foreach (var nota in TasksPanelCompletedNotes)
                     {
                         <article class="tareas-side-row is-done">
-                            <button type="button" class="tareas-side-check is-done" title="Restaurar" @onclick="() => RestoreTasksPanelTaskAsync(tarea)">
+                            <button type="button" class="tareas-side-check is-done" title="Restaurar" @onclick="() => RestoreTasksPanelNoteAsync(nota)">
                                 <i class="bi bi-check-circle-fill"></i>
                             </button>
                             <span class="tareas-side-row__body">
-                                <strong>@tarea.Titulo</strong>
-                                <span>@tarea.ListaNombre</span>
+                                <strong>@nota.Texto</strong>
+                                <span>@FormatTasksPanelDateTime(nota.FechaHoraCompletada)</span>
                             </span>
                         </article>
                     }
@@ -983,7 +968,6 @@
     private bool _tasksPanelLoading;
     private string _tasksPanelQuickTitle = string.Empty;
     private string _tasksPanelError = string.Empty;
-    private int? _tasksPanelListId;
     private TareasPageDto _tasksPanel = new();
     private readonly Dictionary<long, long> _globalConversationLastIncomingById = [];
     private CancellationTokenSource? _globalConversationPollingCts;
@@ -1814,23 +1798,16 @@
 
     private string TasksPanelUser => AppUserSession.GetCurrentUserName(Environment.UserName).Trim();
 
-    private string TasksPanelSelectedValue => _tasksPanelListId?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
-
-    private List<TareaItemDto> TasksPanelActiveTasks => _tasksPanel.Tareas
-        .Where(MatchesTasksPanelList)
-        .OrderBy(x => x.FechaVencimiento is null)
-        .ThenBy(x => x.FechaVencimiento)
-        .ThenByDescending(x => x.FechaHoraAlta)
+    private List<TareaNotaRapidaDto> TasksPanelOpenNotes => _tasksPanel.NotasRapidas
+        .Where(x => !x.Completada)
+        .OrderByDescending(x => x.FechaHoraAlta)
         .ToList();
 
-    private List<TareaItemDto> TasksPanelCompletedTasks => _tasksPanel.Completadas
-        .Where(MatchesTasksPanelList)
-        .OrderByDescending(x => x.FechaHoraCompletada ?? x.FechaHoraModificacion ?? x.FechaHoraAlta)
+    private List<TareaNotaRapidaDto> TasksPanelCompletedNotes => _tasksPanel.NotasRapidas
+        .Where(x => x.Completada)
+        .OrderByDescending(x => x.FechaHoraCompletada ?? x.FechaHoraAlta)
         .Take(20)
         .ToList();
-
-    private bool MatchesTasksPanelList(TareaItemDto tarea)
-        => _tasksPanelListId is null || tarea.IdLista == _tasksPanelListId.Value;
 
     private async Task ToggleTasksPanelAsync()
     {
@@ -1858,10 +1835,6 @@
         try
         {
             _tasksPanel = await TareasSvc.GetPageAsync(TasksPanelUser);
-            if (_tasksPanelListId is int selected && !_tasksPanel.Listas.Any(x => x.IdLista == selected))
-                _tasksPanelListId = null;
-            _tasksPanelListId ??= _tasksPanel.Listas.FirstOrDefault(x => x.EsDefault)?.IdLista
-                ?? _tasksPanel.Listas.FirstOrDefault()?.IdLista;
         }
         catch (Exception ex)
         {
@@ -1889,23 +1862,9 @@
         if (string.IsNullOrWhiteSpace(title))
             return;
 
-        var listId = _tasksPanelListId
-            ?? _tasksPanel.Listas.FirstOrDefault(x => x.EsDefault)?.IdLista
-            ?? _tasksPanel.Listas.FirstOrDefault()?.IdLista
-            ?? 0;
-        if (listId <= 0)
-            return;
-
         try
         {
-            await TareasSvc.SaveTaskAsync(new TareaSaveRequest
-            {
-                IdLista = listId,
-                Titulo = title,
-                UsuarioAsignado = TasksPanelUser,
-                UsuarioAccion = TasksPanelUser,
-                Estado = TareaEstadoKeys.Pendiente
-            });
+            await TareasSvc.AddQuickNoteAsync(title, TasksPanelUser);
 
             _tasksPanelQuickTitle = string.Empty;
             await LoadTasksPanelAsync();
@@ -1923,17 +1882,17 @@
         }
     }
 
-    private async Task CompleteTasksPanelTaskAsync(TareaItemDto tarea)
-        => await ChangeTasksPanelTaskStateAsync(tarea.IdTarea, TareaEstadoKeys.Completada);
+    private async Task CompleteTasksPanelNoteAsync(TareaNotaRapidaDto nota)
+        => await ToggleTasksPanelNoteAsync(nota.IdNota, true);
 
-    private async Task RestoreTasksPanelTaskAsync(TareaItemDto tarea)
-        => await ChangeTasksPanelTaskStateAsync(tarea.IdTarea, TareaEstadoKeys.Pendiente);
+    private async Task RestoreTasksPanelNoteAsync(TareaNotaRapidaDto nota)
+        => await ToggleTasksPanelNoteAsync(nota.IdNota, false);
 
-    private async Task ChangeTasksPanelTaskStateAsync(long idTarea, string estado)
+    private async Task ToggleTasksPanelNoteAsync(long idNota, bool completed)
     {
         try
         {
-            await TareasSvc.ChangeTaskStateAsync(idTarea, estado, TasksPanelUser);
+            await TareasSvc.ToggleQuickNoteAsync(idNota, completed, TasksPanelUser);
             await LoadTasksPanelAsync();
         }
         catch (Exception ex)
@@ -1949,12 +1908,8 @@
         }
     }
 
-    private async Task OnTasksPanelListChanged(ChangeEventArgs args)
-    {
-        var value = Convert.ToString(args.Value);
-        _tasksPanelListId = int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id) ? id : null;
-        await Task.CompletedTask;
-    }
+    private static string FormatTasksPanelDateTime(DateTime? value)
+        => value?.ToString("dd/MM HH:mm", CultureInfo.CurrentCulture) ?? string.Empty;
 
     private void TogglePushChannel(string channel, ChangeEventArgs args)
     {
