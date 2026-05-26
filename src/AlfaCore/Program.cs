@@ -64,6 +64,7 @@ public class Program
         builder.Services.AddScoped<IActualizacionesService, ActualizacionesService>();
         builder.Services.AddScoped<IPermissionService, PermissionService>();
         builder.Services.AddScoped<IMenuService, MenuService>();
+        builder.Services.AddScoped<IAutorizacionTareasService, AutorizacionTareasService>();
         builder.Services.AddScoped<IFavoritesService, FavoritesService>();
         builder.Services.AddScoped<IRecentService, RecentService>();
         builder.Services.AddScoped<IWorkspaceService, WorkspaceService>();
