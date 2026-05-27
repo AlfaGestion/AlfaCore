@@ -13641,6 +13641,46 @@ html[data-theme="light"] .interfaces-bulkbar {
     text-align: right;
 }
 
+.contactos-table {
+    table-layout: auto;
+    width: max-content;
+}
+
+.contactos-table th,
+.contactos-table td {
+    white-space: nowrap;
+}
+
+.contactos-table__col {
+    max-width: 16rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.contactos-table__col--nombre {
+    min-width: 13rem;
+    max-width: 22rem;
+}
+
+.contactos-table__col--email {
+    max-width: 18rem;
+}
+
+.contactos-table__col--localidad,
+.contactos-table__col--provincia,
+.contactos-table__col--telefono,
+.contactos-table__col--celular,
+.contactos-table__col--cargo {
+    max-width: 12rem;
+}
+
+.contactos-table .interfaces-table__selector,
+.contactos-table .interfaces-table__actions,
+.contactos-table .contactos-table__actions-head,
+.contactos-table .contactos-table__actions {
+    width: 1%;
+}
+
 .contactos-conversation-btn {
     min-height: 32px;
     gap: .38rem;

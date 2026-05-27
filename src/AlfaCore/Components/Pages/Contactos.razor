@@ -489,7 +489,7 @@
             else
             {
                 <div class="usuarios-table-wrap">
-                    <table class="data-table usuarios-table">
+                    <table class="data-table usuarios-table contactos-table">
                         <thead>
                             <tr>
                                 <th class="interfaces-table__selector">
@@ -501,7 +501,7 @@
                                 </th>
                                 @foreach (var col in visibleColumns)
                                 {
-                                    <th>@col.Label</th>
+                                    <th class="@GetColumnCssClass(col.Key)">@col.Label</th>
                                 }
                                 <th class="interfaces-table__actions">Acciones</th>
                                 <th class="contactos-table__actions-head">Conversación</th>
@@ -530,7 +530,7 @@
                                         </td>
                                         @foreach (var col in visibleColumns)
                                         {
-                                            <td>
+                                            <td class="@GetColumnCssClass(col.Key)">
                                                 @switch (col.Key)
                                                 {
                                                     case ContactosViewColumnKeys.Nombre:
@@ -1659,6 +1659,9 @@
 
     private IReadOnlyList<ContactoViewColumnDto> GetVisibleColumns()
         => _viewSettings.Columnas.Where(c => c.Visible).OrderBy(c => c.Order).ToList();
+
+    private static string GetColumnCssClass(string key)
+        => $"contactos-table__col contactos-table__col--{(key ?? string.Empty).Trim().ToLowerInvariant()}";
 
     private IReadOnlyList<ContactoGridGroup> BuildGridGroups()
     {
