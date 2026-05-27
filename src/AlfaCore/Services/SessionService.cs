@@ -7,6 +7,7 @@ namespace AlfaCore.Services;
 public sealed class SessionService : ISessionService
 {
     private readonly string _filePath;
+    private readonly string _backupFilePath;
     private readonly List<SessionDto> _sessions = [];
     private readonly object _lock = new();
     private readonly SessionDto? _defaultSession;
@@ -20,6 +21,7 @@ public sealed class SessionService : ISessionService
         IHttpContextAccessor httpContextAccessor)
     {
         _filePath = Path.Combine(env.ContentRootPath, "App_Data", "sessions.json");
+        _backupFilePath = $"{_filePath}.bak";
         _defaultSession = CreateSessionFromConfig(configuration);
         Load(configuration);
         _activeSessionId = ReadActiveSessionId(httpContextAccessor);
@@ -111,13 +113,12 @@ public sealed class SessionService : ISessionService
         {
             if (fileExists)
             {
-                var json = File.ReadAllText(_filePath);
-                var data = JsonSerializer.Deserialize<SessionesData>(json, JsonOpts);
-                if (data?.Sessions.Count > 0)
-                {
-                    _sessions.AddRange(data.Sessions);
+                if (TryLoadSessionsFromFile(_filePath))
                     return;
-                }
+
+                // Si el archivo principal quedo corrupto o incompleto, intentar recuperar del backup.
+                if (TryLoadSessionsFromFile(_backupFilePath))
+                    return;
             }
         }
         catch
@@ -163,11 +164,27 @@ public sealed class SessionService : ISessionService
                 Sessions = _sessions.Select(s => Clone(s, false)).ToList()
             }, JsonOpts);
             File.WriteAllText(_filePath, json);
+            File.WriteAllText(_backupFilePath, json);
         }
         catch
         {
             // No bloquear la aplicacion si el catalogo no puede escribirse.
         }
+    }
+
+    private bool TryLoadSessionsFromFile(string path)
+    {
+        if (!File.Exists(path))
+            return false;
+
+        var json = File.ReadAllText(path);
+        var data = JsonSerializer.Deserialize<SessionesData>(json, JsonOpts);
+        if (data?.Sessions.Count is not > 0)
+            return false;
+
+        _sessions.Clear();
+        _sessions.AddRange(data.Sessions);
+        return true;
     }
 
     private SessionDto? ResolveActiveSessionUnsafe()
