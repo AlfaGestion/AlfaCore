@@ -188,6 +188,58 @@
                 </div>
             </div>
 
+            <div class="cuentas-partner-summary">
+                <div class="cuentas-partner-summary__avatar @GetAccountAvatarClass()">
+                    @GetAccountInitial()
+                </div>
+                <div class="cuentas-partner-summary__body">
+                    <div class="cuentas-partner-summary__type">
+                        <span class="is-muted">Individuo</span>
+                        <span class="is-active">Compañía</span>
+                    </div>
+                    <h2>@DisplayOrFallback(_form.RazonSocial, $"Nuevo {SingularLabelLower}")</h2>
+                    <div class="cuentas-partner-summary__meta">
+                        @if (!string.IsNullOrWhiteSpace(_form.Mail))
+                        {
+                            <span><i class="bi bi-envelope"></i>@_form.Mail</span>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(_form.Telefono))
+                        {
+                            <span><i class="bi bi-telephone"></i>@_form.Telefono</span>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(_form.NumeroDocumento))
+                        {
+                            <span><i class="bi bi-card-text"></i>@_form.NumeroDocumento</span>
+                        }
+                    </div>
+                    @if (BuildAddressLines().Count > 0)
+                    {
+                        <div class="cuentas-partner-summary__address">
+                            @foreach (var line in BuildAddressLines())
+                            {
+                                <span>@line</span>
+                            }
+                        </div>
+                    }
+                </div>
+                <div class="cuentas-partner-summary__stats">
+                    <button type="button"
+                            class="cuentas-smart-stat @(_activeTab == CuentaComercialTab.Contactos ? "is-active" : string.Empty)"
+                            @onclick="() => SetActiveTabAsync(CuentaComercialTab.Contactos)">
+                        <i class="bi bi-person-lines-fill"></i>
+                        <strong>@_contactosCuenta.Count</strong>
+                        <span>Contactos</span>
+                    </button>
+                    <button type="button"
+                            class="cuentas-smart-stat @(_activeTab == CuentaComercialTab.Notas ? "is-active" : string.Empty)"
+                            @onclick="() => SetActiveTabAsync(CuentaComercialTab.Notas)">
+                        <i class="bi bi-journal-text"></i>
+                        <strong>@(HasNotes() ? 1 : 0)</strong>
+                        <span>Notas</span>
+                    </button>
+                </div>
+            </div>
+
             <div class="contactos-tabs">
                 <button type="button"
                         class="btn @(_activeTab == CuentaComercialTab.Datos ? "btn--primary" : "btn--ghost")"
@@ -587,45 +639,59 @@
                                 @foreach (var contacto in _contactosCuenta)
                                 {
                                     <article class="cuentas-contacto-item">
-                                        <div class="cuentas-contacto-item__main">
-                                            <strong>@contacto.NombreApellido</strong>
-                                            @if (!string.IsNullOrWhiteSpace(contacto.Cargo))
-                                            {
-                                                <span>@contacto.Cargo</span>
-                                            }
+                                        <div class="cuentas-contacto-item__avatar @GetContactAvatarClass(contacto)">
+                                            @GetContactInitial(contacto)
                                         </div>
-                                        <div class="cuentas-contacto-item__meta">
-                                            @if (!string.IsNullOrWhiteSpace(contacto.Email))
-                                            {
-                                                <span><i class="bi bi-envelope"></i>@contacto.Email</span>
-                                            }
-                                            @if (!string.IsNullOrWhiteSpace(contacto.Celular))
-                                            {
-                                                <span><i class="bi bi-phone"></i>@contacto.Celular</span>
-                                            }
-                                            @if (!string.IsNullOrWhiteSpace(contacto.Telefono))
-                                            {
-                                                <span><i class="bi bi-telephone"></i>@contacto.Telefono</span>
-                                            }
-                                        </div>
-                                        <div class="cuentas-contacto-item__badges">
-                                            @if (contacto.VinculadoPorTabla)
-                                            {
-                                                <span>Relaci&oacute;n m&uacute;ltiple</span>
-                                            }
-                                            @if (contacto.VinculadoPorCuentaRel)
-                                            {
-                                                <span>CuentaRel</span>
-                                            }
-                                        </div>
-                                        <div class="cuentas-contacto-item__actions">
-                                            <a class="btn btn--ghost btn--sm" href="@($"/contactos?editar={contacto.Id}")">
-                                                <i class="bi bi-box-arrow-up-right"></i>
-                                                Ver / editar
-                                            </a>
+                                        <div class="cuentas-contacto-item__content">
+                                            <div class="cuentas-contacto-item__main">
+                                                <strong>@contacto.NombreApellido</strong>
+                                                @if (!string.IsNullOrWhiteSpace(contacto.Cargo))
+                                                {
+                                                    <span>@contacto.Cargo</span>
+                                                }
+                                            </div>
+                                            <div class="cuentas-contacto-item__meta">
+                                                @if (!string.IsNullOrWhiteSpace(contacto.Email))
+                                                {
+                                                    <span><i class="bi bi-envelope"></i>@contacto.Email</span>
+                                                }
+                                                @if (!string.IsNullOrWhiteSpace(contacto.Celular))
+                                                {
+                                                    <span><i class="bi bi-phone"></i>@contacto.Celular</span>
+                                                }
+                                                @if (!string.IsNullOrWhiteSpace(contacto.Telefono))
+                                                {
+                                                    <span><i class="bi bi-telephone"></i>@contacto.Telefono</span>
+                                                }
+                                            </div>
+                                            <div class="cuentas-contacto-item__badges">
+                                                @if (contacto.VinculadoPorTabla)
+                                                {
+                                                    <span>Relaci&oacute;n m&uacute;ltiple</span>
+                                                }
+                                                @if (contacto.VinculadoPorCuentaRel)
+                                                {
+                                                    <span>CuentaRel</span>
+                                                }
+                                            </div>
+                                            <div class="cuentas-contacto-item__actions">
+                                                <a class="btn btn--ghost btn--sm" href="@($"/contactos?editar={contacto.Id}")">
+                                                    <i class="bi bi-box-arrow-up-right"></i>
+                                                    Ver / editar
+                                                </a>
+                                            </div>
                                         </div>
                                     </article>
                                 }
+                                <button type="button" class="cuentas-contacto-item cuentas-contacto-item--add" @onclick="MostrarNuevoContacto" disabled="@(_saving || _savingContacto)">
+                                    <span class="cuentas-contacto-item__avatar cuentas-contacto-item__avatar--add">
+                                        <i class="bi bi-plus-lg"></i>
+                                    </span>
+                                    <span class="cuentas-contacto-item__content">
+                                        <strong>A&ntilde;adir contacto</strong>
+                                        <small>Crear un referente y vincularlo a esta cuenta.</small>
+                                    </span>
+                                </button>
                             </div>
                         }
 
@@ -1946,6 +2012,55 @@
 
     private static string GetSmartOptionClass(bool active)
         => active ? "smart-option is-active" : "smart-option";
+
+    private static string DisplayOrFallback(params string?[] values)
+        => values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim() ?? "-";
+
+    private string GetAccountInitial()
+        => GetInitial(DisplayOrFallback(_form.RazonSocial, _form.Codigo, SingularLabel));
+
+    private string GetAccountAvatarClass()
+        => $"cuentas-partner-summary__avatar--{Math.Abs((DisplayOrFallback(_form.RazonSocial, _form.Codigo).GetHashCode()) % 5)}";
+
+    private static string GetContactInitial(CuentaComercialContactoDto contacto)
+        => GetInitial(contacto.NombreApellido);
+
+    private static string GetContactAvatarClass(CuentaComercialContactoDto contacto)
+        => $"cuentas-contacto-item__avatar--{Math.Abs((contacto.NombreApellido ?? string.Empty).GetHashCode() % 5)}";
+
+    private static string GetInitial(string? value)
+    {
+        var normalized = (value ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(normalized))
+            return "?";
+
+        return normalized[..1].ToUpperInvariant();
+    }
+
+    private List<string> BuildAddressLines()
+    {
+        var lines = new List<string>();
+        var street = string.Join(" ", new[] { _form.Calle, _form.Numero, _form.Piso, _form.Departamento }.Where(value => !string.IsNullOrWhiteSpace(value)));
+        if (!string.IsNullOrWhiteSpace(street))
+            lines.Add(street);
+
+        var city = string.Join(" · ", new[] { _form.Localidad, _form.CodigoPostal }.Where(value => !string.IsNullOrWhiteSpace(value)));
+        if (!string.IsNullOrWhiteSpace(city))
+            lines.Add(city);
+
+        var province = _lookups.Provincias.FirstOrDefault(p => string.Equals(p.Codigo, _form.ProvinciaCodigo, StringComparison.OrdinalIgnoreCase))?.Descripcion;
+        var country = _lookups.Paises.FirstOrDefault(p => string.Equals(p.Codigo, _form.PaisCodigo, StringComparison.OrdinalIgnoreCase))?.Descripcion;
+        var region = string.Join(" · ", new[] { province, country }.Where(value => !string.IsNullOrWhiteSpace(value)));
+        if (!string.IsNullOrWhiteSpace(region))
+            lines.Add(region);
+
+        return lines;
+    }
+
+    private bool HasNotes()
+        => !string.IsNullOrWhiteSpace(_form.Manual)
+           || !string.IsNullOrWhiteSpace(_form.NotaCuenta)
+           || !string.IsNullOrWhiteSpace(_form.Observaciones);
 
     private string GetSelectionSummary()
         => _selectedCodes.Count == 0
