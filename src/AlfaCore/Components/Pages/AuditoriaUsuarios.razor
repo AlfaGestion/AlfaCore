@@ -5,6 +5,7 @@
 @using System.Text.RegularExpressions
 @inject AlfaCore.Services.IAuditoriaService AuditoriaSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
+@inject IJSRuntime JS
 
 <PageTitle>Auditoría de usuarios | Alfa Gestión</PageTitle>
 
@@ -239,6 +240,17 @@
                                 <label>Umbral modificaciones</label>
                                 <input type="number" min="2" @bind="_umbralModificaciones" />
                             </div>
+                            <div class="smart-search__inline">
+                                <label>Días tolerancia duplicados</label>
+                                <input type="number" min="0" @bind="_diasToleranciaDuplicados" />
+                            </div>
+                            <div class="smart-search__inline">
+                                <label>Solo dif. sucursal</label>
+                                <select @bind="_soloDiferenciasSucursalText">
+                                    <option value="SI">Sí</option>
+                                    <option value="NO">No</option>
+                                </select>
+                            </div>
                             <div class="actions">
                                 <button type="button" class="btn btn--ghost btn--sm" @onclick="ToggleSettingsPanelAsync" disabled="@(_loadingRows || _savingSettings)">
                                     <i class="bi bi-sliders"></i> Configuración
@@ -261,22 +273,55 @@
         </section>
 
         <section class="kpi-grid">
-            <article class="kpi-card">
-                <div class="kpi-card__label">Alertas</div>
-                <div class="kpi-card__value">@_stats.TotalAlertas</div>
-            </article>
-            <article class="kpi-card">
-                <div class="kpi-card__label">Riesgo alto</div>
-                <div class="kpi-card__value">@_stats.RiesgoAlto</div>
-            </article>
-            <article class="kpi-card">
-                <div class="kpi-card__label">Riesgo medio</div>
-                <div class="kpi-card__value">@_stats.RiesgoMedio</div>
-            </article>
-            <article class="kpi-card">
-                <div class="kpi-card__label">Controles activos</div>
-                <div class="kpi-card__value">@_stats.ControlesDetectados</div>
-            </article>
+            @if (IsStartedNotSavedMode)
+            {
+                <article class="kpi-card">
+                    <div class="kpi-card__label">Comprobantes cancelados</div>
+                    <div class="kpi-card__value">@_stats.TotalAlertas</div>
+                </article>
+                <article class="kpi-card">
+                    <div class="kpi-card__label">Promedio min. cancelación</div>
+                    <div class="kpi-card__value">@FormatMinutesMetric(_stats.PromedioMinutosCancelacion)</div>
+                </article>
+                <article class="kpi-card">
+                    <div class="kpi-card__label">Máx. min. cancelación</div>
+                    <div class="kpi-card__value">@FormatMinutesMetric(_stats.MaximoMinutosCancelacion)</div>
+                </article>
+                <article class="kpi-card">
+                    <div class="kpi-card__label">Importe total cancelado</div>
+                    <div class="kpi-card__value">@FormatMoney(_stats.ImporteTotalCancelado)</div>
+                </article>
+                <article class="kpi-card">
+                    <div class="kpi-card__label">Usuarios involucrados</div>
+                    <div class="kpi-card__value">@_stats.UsuariosInvolucrados</div>
+                </article>
+            }
+            else
+            {
+                <article class="kpi-card">
+                    <div class="kpi-card__label">@GetTotalKpiLabel()</div>
+                    <div class="kpi-card__value">@GetTotalKpiValue()</div>
+                </article>
+                <article class="kpi-card">
+                    <div class="kpi-card__label">Riesgo alto</div>
+                    <div class="kpi-card__value">@_stats.RiesgoAlto</div>
+                </article>
+                <article class="kpi-card">
+                    <div class="kpi-card__label">Riesgo medio</div>
+                    <div class="kpi-card__value">@_stats.RiesgoMedio</div>
+                </article>
+                <article class="kpi-card">
+                    <div class="kpi-card__label">@GetFourthKpiLabel()</div>
+                    <div class="kpi-card__value">@GetFourthKpiValue()</div>
+                </article>
+                @if (IsDuplicateMode)
+                {
+                    <article class="kpi-card">
+                        <div class="kpi-card__label">Contables duplicados</div>
+                        <div class="kpi-card__value">@_stats.ContablesDuplicados</div>
+                    </article>
+                }
+            }
         </section>
 
         @if (_selected is not null)
@@ -292,119 +337,194 @@
                             <i class="bi bi-arrow-left-circle"></i>
                             <span>Volver al listado</span>
                         </button>
-                        <a class="btn btn--ghost btn--sm" href="@BuildComprobanteViewerUrl(_selected)">
-                            <i class="bi bi-box-arrow-up-right"></i>
-                            <span>Abrir comprobantes</span>
-                        </a>
+                        @if (!IsCompraDuplicadoAudit(_selected))
+                        {
+                            <a class="btn btn--ghost btn--sm" href="@BuildComprobanteViewerUrl(_selected)">
+                                <i class="bi bi-box-arrow-up-right"></i>
+                                <span>Abrir comprobantes</span>
+                            </a>
+                        }
                     </div>
                 </div>
 
-                <div class="contactos-form__grid">
-                    <div class="field">
-                        <label>Riesgo</label>
-                        <input value="@_selected.Riesgo" readonly />
-                    </div>
-                    <div class="field">
-                        <label>Usuario</label>
-                        <input value="@_selected.Usuario" readonly />
-                    </div>
-                    <div class="field">
-                        <label>PC</label>
-                        <input value="@_selected.Pc" readonly />
-                    </div>
-                    <div class="field">
-                        <label>TC / comprobante</label>
-                        <input value="@($"{_selected.TipoComprobante} {_selected.IdComprobante}")" readonly />
-                    </div>
-                    <div class="field">
-                        <label>Cliente / cuenta</label>
-                        <input value="@FormatCliente(_selected)" readonly />
-                    </div>
-                    <div class="field">
-                        <label>Proceso / formulario</label>
-                        <input value="@BuildProcessLabel(_selected)" readonly />
-                    </div>
-                    <div class="field">
-                        <label>Importe original</label>
-                        <input value="@FormatMoney(_selected.ImporteOriginal)" readonly />
-                    </div>
-                    <div class="field">
-                        <label>Importe aplicado</label>
-                        <input value="@FormatMoney(_selected.ImporteAplicado)" readonly />
-                    </div>
-                    <div class="field">
-                        <label>Diferencia</label>
-                        <input value="@FormatMoney(_selected.Diferencia)" readonly />
-                    </div>
-                    <div class="field">
-                        <label>Ocurrencias</label>
-                        <input value="@_selected.CantidadOcurrencias.ToString()" readonly />
-                    </div>
-                    <div class="field">
-                        <label>Factura relacionada</label>
-                        <input value="@_selected.FacturaRelacionada" readonly />
-                    </div>
-                    @if (!string.IsNullOrWhiteSpace(_selected.EstadoFacturacion))
-                    {
+                @if (IsCompraDuplicadoAudit(_selected))
+                {
+                    <div class="contactos-form__grid">
                         <div class="field">
-                            <label>Estado de facturación</label>
-                            <input value="@_selected.EstadoFacturacion" readonly />
-                        </div>
-                    }
-                    @if (HasCancellationTrace(_selected))
-                    {
-                        <div class="field">
-                            <label>Hora cancelación</label>
-                            <input value="@GetCancellationTimeText(_selected)" readonly />
+                            <label>Riesgo</label>
+                            <input value="@_selected.Riesgo" readonly />
                         </div>
                         <div class="field">
-                            <label>Importe al cancelar</label>
-                            <input value="@GetCancellationAmountText(_selected)" readonly />
+                            <label>Proveedor / cuenta</label>
+                            <input value="@FormatCliente(_selected)" readonly />
+                        </div>
+                        <div class="field">
+                            <label>TC</label>
+                            <input value="@_selected.TipoComprobante" readonly />
+                        </div>
+                        <div class="field">
+                            <label>Número normalizado</label>
+                            <input value="@_selected.NumeroNormalizado" readonly />
+                        </div>
+                        <div class="field">
+                            <label>Importe</label>
+                            <input value="@FormatMoney(_selected.ImporteOriginal)" readonly />
+                        </div>
+                        <div class="field">
+                            <label>Coincidencias</label>
+                            <input value="@_selected.CantidadOcurrencias.ToString()" readonly />
+                        </div>
+                        <div class="field">
+                            <label>Sucursales detectadas</label>
+                            <input value="@_selected.SucursalesDetectadas" readonly />
+                        </div>
+                        <div class="field">
+                            <label>Usuarios detectados</label>
+                            <input value="@_selected.UsuariosDetectados" readonly />
+                        </div>
+                        <div class="field">
+                            <label>Fecha mínima</label>
+                            <input value="@_selected.FechaHora.ToString("dd/MM/yyyy HH:mm")" readonly />
+                        </div>
+                        <div class="field">
+                            <label>Fecha máxima</label>
+                            <input value="@(_selected.FechaHoraHasta?.ToString("dd/MM/yyyy HH:mm") ?? "—")" readonly />
+                        </div>
+                        <div class="field">
+                            <label>Impacto contable</label>
+                            <input value="@_selected.ImpactoContable" readonly />
+                        </div>
+                        <div class="field">
+                            <label>Comprobantes con asiento</label>
+                            <input value="@_selected.ContablesDuplicados.ToString()" readonly />
                         </div>
                         <div class="field field--full">
-                            <label>Traza original del sistema</label>
-                            <textarea rows="3" readonly>@_selected.SystemUserDetalle</textarea>
+                            <label>Motivo</label>
+                            <textarea rows="3" readonly>@_selected.Motivo</textarea>
                         </div>
-                    }
-                    <div class="field">
-                        <label>Días pendientes</label>
-                        <input value="@(_selected.DiasPendientes > 0 ? _selected.DiasPendientes.ToString() : string.Empty)" readonly />
+                        <div class="field field--full">
+                            <label>Criterio aplicado</label>
+                            <textarea rows="3" readonly>@_selected.Observaciones</textarea>
+                        </div>
+                        <div class="field field--full">
+                            <label>Comprobantes involucrados</label>
+                            <textarea rows="12" readonly>@_selected.DetalleGrupo</textarea>
+                        </div>
                     </div>
-                    @if (IsRemitoAudit(_selected))
-                    {
-                        <div class="field field--full">
-                            <label>Detalle técnico de comparación</label>
-                            <textarea rows="6" readonly>@BuildRemitoTechnicalDetail(_selected)</textarea>
+                }
+                else
+                {
+                    <div class="contactos-form__grid">
+                        <div class="field">
+                            <label>Riesgo</label>
+                            <input value="@_selected.Riesgo" readonly />
                         </div>
-                        <div class="field field--full">
-                            <label>Tablas y vínculos usados</label>
-                            <textarea rows="4" readonly>@BuildRemitoTechnicalSources(_selected)</textarea>
+                        <div class="field">
+                            <label>Usuario</label>
+                            <input value="@_selected.Usuario" readonly />
                         </div>
-                        <div class="field field--full">
-                            <div class="actions">
-                                <button type="button" class="btn btn--ghost btn--sm" @onclick="ToggleRemitoSqlPreview">
-                                    <i class="bi bi-code-slash"></i>
-                                    <span>@(_showRemitoSqlPreview ? "Ocultar consulta SQL" : "Ver consulta SQL")</span>
-                                </button>
-                            </div>
+                        <div class="field">
+                            <label>PC</label>
+                            <input value="@_selected.Pc" readonly />
                         </div>
-                        @if (_showRemitoSqlPreview)
+                        <div class="field">
+                            <label>TC / comprobante</label>
+                            <input value="@($"{_selected.TipoComprobante} {_selected.IdComprobante}")" readonly />
+                        </div>
+                        <div class="field">
+                            <label>Cliente / cuenta</label>
+                            <input value="@FormatCliente(_selected)" readonly />
+                        </div>
+                        <div class="field">
+                            <label>Proceso / formulario</label>
+                            <input value="@BuildProcessLabel(_selected)" readonly />
+                        </div>
+                        <div class="field">
+                            <label>Importe original</label>
+                            <input value="@FormatMoney(_selected.ImporteOriginal)" readonly />
+                        </div>
+                        <div class="field">
+                            <label>Importe aplicado</label>
+                            <input value="@FormatMoney(_selected.ImporteAplicado)" readonly />
+                        </div>
+                        <div class="field">
+                            <label>Diferencia</label>
+                            <input value="@FormatMoney(_selected.Diferencia)" readonly />
+                        </div>
+                        <div class="field">
+                            <label>Ocurrencias</label>
+                            <input value="@_selected.CantidadOcurrencias.ToString()" readonly />
+                        </div>
+                        <div class="field">
+                            <label>Factura relacionada</label>
+                            <input value="@_selected.FacturaRelacionada" readonly />
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(_selected.EstadoFacturacion))
                         {
-                            <div class="field field--full">
-                                <label>Consulta SQL simplificada</label>
-                                <textarea rows="16" readonly>@BuildRemitoSqlPreview()</textarea>
+                            <div class="field">
+                                <label>Estado de facturación</label>
+                                <input value="@_selected.EstadoFacturacion" readonly />
                             </div>
                         }
-                    }
-                    <div class="field field--full">
-                        <label>Motivo</label>
-                        <textarea rows="3" readonly>@_selected.Motivo</textarea>
+                        @if (HasCancellationTrace(_selected))
+                        {
+                            <div class="field">
+                                <label>Hora cancelación</label>
+                                <input value="@GetCancellationTimeText(_selected)" readonly />
+                            </div>
+                            <div class="field">
+                                <label>Minutos hasta cancelación</label>
+                                <input value="@GetCancellationMinutesText(_selected)" readonly />
+                            </div>
+                            <div class="field">
+                                <label>Importe al cancelar</label>
+                                <input value="@GetCancellationAmountText(_selected)" readonly />
+                            </div>
+                            <div class="field field--full">
+                                <label>Traza original del sistema</label>
+                                <textarea rows="3" readonly>@_selected.SystemUserDetalle</textarea>
+                            </div>
+                        }
+                        <div class="field">
+                            <label>Días pendientes</label>
+                            <input value="@(_selected.DiasPendientes > 0 ? _selected.DiasPendientes.ToString() : string.Empty)" readonly />
+                        </div>
+                        @if (IsRemitoAudit(_selected))
+                        {
+                            <div class="field field--full">
+                                <label>Detalle técnico de comparación</label>
+                                <textarea rows="6" readonly>@BuildRemitoTechnicalDetail(_selected)</textarea>
+                            </div>
+                            <div class="field field--full">
+                                <label>Tablas y vínculos usados</label>
+                                <textarea rows="4" readonly>@BuildRemitoTechnicalSources(_selected)</textarea>
+                            </div>
+                            <div class="field field--full">
+                                <div class="actions">
+                                    <button type="button" class="btn btn--ghost btn--sm" @onclick="ToggleRemitoSqlPreview">
+                                        <i class="bi bi-code-slash"></i>
+                                        <span>@(_showRemitoSqlPreview ? "Ocultar consulta SQL" : "Ver consulta SQL")</span>
+                                    </button>
+                                </div>
+                            </div>
+                            @if (_showRemitoSqlPreview)
+                            {
+                                <div class="field field--full">
+                                    <label>Consulta SQL simplificada</label>
+                                    <textarea rows="16" readonly>@BuildRemitoSqlPreview()</textarea>
+                                </div>
+                            }
+                        }
+                        <div class="field field--full">
+                            <label>Motivo</label>
+                            <textarea rows="3" readonly>@_selected.Motivo</textarea>
+                        </div>
+                        <div class="field field--full">
+                            <label>Observaciones</label>
+                            <textarea rows="4" readonly>@_selected.Observaciones</textarea>
+                        </div>
                     </div>
-                    <div class="field field--full">
-                        <label>Observaciones</label>
-                        <textarea rows="4" readonly>@_selected.Observaciones</textarea>
-                    </div>
-                </div>
+                }
             </section>
         }
         else
@@ -416,6 +536,14 @@
                         <p class="panel-card__subtitle">@_result.TotalRegistros alerta(s) detectada(s). Página @_pagina de @TotalPaginas.</p>
                     </div>
                     <div class="actions">
+                        <button type="button" class="btn btn--ghost btn--sm" @onclick="ExportarPdfAsync" disabled="@_loadingRows">
+                            <i class="bi bi-file-earmark-pdf"></i>
+                            <span>PDF</span>
+                        </button>
+                        <a class="btn btn--ghost btn--sm" href="@BuildExcelExportUrl()">
+                            <i class="bi bi-file-earmark-excel"></i>
+                            <span>Excel</span>
+                        </a>
                         <div class="field field--inline">
                             <label>Tamaño</label>
                             <select value="@_tamanioPagina" @onchange="OnPageSizeChangedAsync">
@@ -430,21 +558,57 @@
                 <div class="table-wrap">
                     <table class="data-table usuarios-table audit-users-table">
                         <thead>
-                            <tr>
-                                <th><button type="button" class="table-sort @GetSortClass("fecha")" @onclick='() => ToggleSortAsync("fecha")'><span class="table-sort__label">Fecha y hora</span><span class="table-sort__mark">@SortMark("fecha")</span></button></th>
-                                <th><button type="button" class="table-sort @GetSortClass("control")" @onclick='() => ToggleSortAsync("control")'><span class="table-sort__label">Tipo de control</span><span class="table-sort__mark">@SortMark("control")</span></button></th>
-                                <th><button type="button" class="table-sort @GetSortClass("riesgo")" @onclick='() => ToggleSortAsync("riesgo")'><span class="table-sort__label">Nivel de riesgo</span><span class="table-sort__mark">@SortMark("riesgo")</span></button></th>
-                                <th><button type="button" class="table-sort @GetSortClass("usuario")" @onclick='() => ToggleSortAsync("usuario")'><span class="table-sort__label">Usuario</span><span class="table-sort__mark">@SortMark("usuario")</span></button></th>
-                                <th><button type="button" class="table-sort @GetSortClass("pc")" @onclick='() => ToggleSortAsync("pc")'><span class="table-sort__label">Equipo</span><span class="table-sort__mark">@SortMark("pc")</span></button></th>
-                                <th><button type="button" class="table-sort @GetSortClass("tc")" @onclick='() => ToggleSortAsync("tc")'><span class="table-sort__label">Tipo comp.</span><span class="table-sort__mark">@SortMark("tc")</span></button></th>
-                                <th><button type="button" class="table-sort @GetSortClass("comprobante")" @onclick='() => ToggleSortAsync("comprobante")'><span class="table-sort__label">N° comprobante</span><span class="table-sort__mark">@SortMark("comprobante")</span></button></th>
-                                <th><button type="button" class="table-sort @GetSortClass("cliente")" @onclick='() => ToggleSortAsync("cliente")'><span class="table-sort__label">Cliente / cuenta</span><span class="table-sort__mark">@SortMark("cliente")</span></button></th>
-                                <th><button type="button" class="table-sort @GetSortClass("estadofacturacion")" @onclick='() => ToggleSortAsync("estadofacturacion")'><span class="table-sort__label">Estado remito</span><span class="table-sort__mark">@SortMark("estadofacturacion")</span></button></th>
-                                <th><button type="button" class="table-sort @GetSortClass("importe")" @onclick='() => ToggleSortAsync("importe")'><span class="table-sort__label">Importe base</span><span class="table-sort__mark">@SortMark("importe")</span></button></th>
-                                <th><button type="button" class="table-sort @GetSortClass("diferencia")" @onclick='() => ToggleSortAsync("diferencia")'><span class="table-sort__label">Diferencia</span><span class="table-sort__mark">@SortMark("diferencia")</span></button></th>
-                                <th><button type="button" class="table-sort @GetSortClass("cantidad")" @onclick='() => ToggleSortAsync("cantidad")'><span class="table-sort__label">Ocurrencias</span><span class="table-sort__mark">@SortMark("cantidad")</span></button></th>
-                                <th>Acciones</th>
-                            </tr>
+                            @if (IsDuplicateMode)
+                            {
+                                <tr>
+                                    <th><button type="button" class="table-sort @GetSortClass("riesgo")" @onclick='() => ToggleSortAsync("riesgo")'><span class="table-sort__label">Riesgo</span><span class="table-sort__mark">@SortMark("riesgo")</span></button></th>
+                                    <th><button type="button" class="table-sort @GetSortClass("cliente")" @onclick='() => ToggleSortAsync("cliente")'><span class="table-sort__label">Proveedor / cuenta</span><span class="table-sort__mark">@SortMark("cliente")</span></button></th>
+                                    <th><button type="button" class="table-sort @GetSortClass("tc")" @onclick='() => ToggleSortAsync("tc")'><span class="table-sort__label">TC</span><span class="table-sort__mark">@SortMark("tc")</span></button></th>
+                                    <th><button type="button" class="table-sort @GetSortClass("numero")" @onclick='() => ToggleSortAsync("numero")'><span class="table-sort__label">Número normalizado</span><span class="table-sort__mark">@SortMark("numero")</span></button></th>
+                                    <th><button type="button" class="table-sort @GetSortClass("importe")" @onclick='() => ToggleSortAsync("importe")'><span class="table-sort__label">Importe</span><span class="table-sort__mark">@SortMark("importe")</span></button></th>
+                                    <th><button type="button" class="table-sort @GetSortClass("cantidad")" @onclick='() => ToggleSortAsync("cantidad")'><span class="table-sort__label">Coincidencias</span><span class="table-sort__mark">@SortMark("cantidad")</span></button></th>
+                                    <th>Sucursales</th>
+                                    <th>Usuarios</th>
+                                    <th><button type="button" class="table-sort @GetSortClass("fecha")" @onclick='() => ToggleSortAsync("fecha")'><span class="table-sort__label">Fecha mínima</span><span class="table-sort__mark">@SortMark("fecha")</span></button></th>
+                                    <th>Fecha máxima</th>
+                                    <th><button type="button" class="table-sort @GetSortClass("impactocontable")" @onclick='() => ToggleSortAsync("impactocontable")'><span class="table-sort__label">Impacto contable</span><span class="table-sort__mark">@SortMark("impactocontable")</span></button></th>
+                                    <th>Acciones</th>
+                                </tr>
+                            }
+                            else if (IsStartedNotSavedMode)
+                            {
+                                <tr>
+                                    <th><button type="button" class="table-sort @GetSortClass("fecha")" @onclick='() => ToggleSortAsync("fecha")'><span class="table-sort__label">Fecha inicio</span><span class="table-sort__mark">@SortMark("fecha")</span></button></th>
+                                    <th><button type="button" class="table-sort @GetSortClass("control")" @onclick='() => ToggleSortAsync("control")'><span class="table-sort__label">Tipo de control</span><span class="table-sort__mark">@SortMark("control")</span></button></th>
+                                    <th><button type="button" class="table-sort @GetSortClass("riesgo")" @onclick='() => ToggleSortAsync("riesgo")'><span class="table-sort__label">Nivel de riesgo</span><span class="table-sort__mark">@SortMark("riesgo")</span></button></th>
+                                    <th><button type="button" class="table-sort @GetSortClass("usuario")" @onclick='() => ToggleSortAsync("usuario")'><span class="table-sort__label">Usuario</span><span class="table-sort__mark">@SortMark("usuario")</span></button></th>
+                                    <th><button type="button" class="table-sort @GetSortClass("pc")" @onclick='() => ToggleSortAsync("pc")'><span class="table-sort__label">Equipo</span><span class="table-sort__mark">@SortMark("pc")</span></button></th>
+                                    <th><button type="button" class="table-sort @GetSortClass("tc")" @onclick='() => ToggleSortAsync("tc")'><span class="table-sort__label">Tipo comp.</span><span class="table-sort__mark">@SortMark("tc")</span></button></th>
+                                    <th><button type="button" class="table-sort @GetSortClass("comprobante")" @onclick='() => ToggleSortAsync("comprobante")'><span class="table-sort__label">N° comprobante</span><span class="table-sort__mark">@SortMark("comprobante")</span></button></th>
+                                    <th>Hora cancelación</th>
+                                    <th>Minutos</th>
+                                    <th>Importe al cancelar</th>
+                                    <th>Acciones</th>
+                                </tr>
+                            }
+                            else
+                            {
+                                <tr>
+                                    <th><button type="button" class="table-sort @GetSortClass("fecha")" @onclick='() => ToggleSortAsync("fecha")'><span class="table-sort__label">Fecha y hora</span><span class="table-sort__mark">@SortMark("fecha")</span></button></th>
+                                    <th><button type="button" class="table-sort @GetSortClass("control")" @onclick='() => ToggleSortAsync("control")'><span class="table-sort__label">Tipo de control</span><span class="table-sort__mark">@SortMark("control")</span></button></th>
+                                    <th><button type="button" class="table-sort @GetSortClass("riesgo")" @onclick='() => ToggleSortAsync("riesgo")'><span class="table-sort__label">Nivel de riesgo</span><span class="table-sort__mark">@SortMark("riesgo")</span></button></th>
+                                    <th><button type="button" class="table-sort @GetSortClass("usuario")" @onclick='() => ToggleSortAsync("usuario")'><span class="table-sort__label">Usuario</span><span class="table-sort__mark">@SortMark("usuario")</span></button></th>
+                                    <th><button type="button" class="table-sort @GetSortClass("pc")" @onclick='() => ToggleSortAsync("pc")'><span class="table-sort__label">Equipo</span><span class="table-sort__mark">@SortMark("pc")</span></button></th>
+                                    <th><button type="button" class="table-sort @GetSortClass("tc")" @onclick='() => ToggleSortAsync("tc")'><span class="table-sort__label">Tipo comp.</span><span class="table-sort__mark">@SortMark("tc")</span></button></th>
+                                    <th><button type="button" class="table-sort @GetSortClass("comprobante")" @onclick='() => ToggleSortAsync("comprobante")'><span class="table-sort__label">N° comprobante</span><span class="table-sort__mark">@SortMark("comprobante")</span></button></th>
+                                    <th><button type="button" class="table-sort @GetSortClass("cliente")" @onclick='() => ToggleSortAsync("cliente")'><span class="table-sort__label">Cliente / cuenta</span><span class="table-sort__mark">@SortMark("cliente")</span></button></th>
+                                    <th><button type="button" class="table-sort @GetSortClass("estadofacturacion")" @onclick='() => ToggleSortAsync("estadofacturacion")'><span class="table-sort__label">Estado remito</span><span class="table-sort__mark">@SortMark("estadofacturacion")</span></button></th>
+                                    <th><button type="button" class="table-sort @GetSortClass("importe")" @onclick='() => ToggleSortAsync("importe")'><span class="table-sort__label">Importe base</span><span class="table-sort__mark">@SortMark("importe")</span></button></th>
+                                    <th><button type="button" class="table-sort @GetSortClass("diferencia")" @onclick='() => ToggleSortAsync("diferencia")'><span class="table-sort__label">Diferencia</span><span class="table-sort__mark">@SortMark("diferencia")</span></button></th>
+                                    <th><button type="button" class="table-sort @GetSortClass("cantidad")" @onclick='() => ToggleSortAsync("cantidad")'><span class="table-sort__label">Ocurrencias</span><span class="table-sort__mark">@SortMark("cantidad")</span></button></th>
+                                    <th>Acciones</th>
+                                </tr>
+                            }
                         </thead>
                         <tbody>
                             @if (_loadingRows)
@@ -463,32 +627,86 @@
                             {
                                 @foreach (var item in _rows)
                                 {
-                                    <tr @ondblclick="() => Seleccionar(item)">
-                                        <td>@item.FechaHora.ToString("dd/MM/yyyy HH:mm")</td>
-                                        <td>@item.TipoControlLabel</td>
-                                        <td><span class="@GetRiskBadgeClass(item.Riesgo)">@item.Riesgo</span></td>
-                                        <td>@item.Usuario</td>
-                                        <td>@item.Pc</td>
-                                        <td>@item.TipoComprobante</td>
-                                        <td>@item.IdComprobante</td>
-                                        <td>@FormatCliente(item)</td>
-                                        <td>@FormatEstadoFacturacion(item)</td>
-                                        <td>@FormatMoney(item.ImporteOriginal)</td>
-                                        <td>@FormatMoney(item.Diferencia)</td>
-                                        <td>@item.CantidadOcurrencias</td>
-                                        <td>
-                                            <div class="actions">
-                                                <button type="button" class="btn btn--ghost btn--sm" @onclick="() => Seleccionar(item)">
-                                                    <i class="bi bi-eye"></i>
-                                                    <span>Detalle</span>
-                                                </button>
-                                                <a class="btn btn--ghost btn--sm" href="@BuildComprobanteViewerUrl(item)">
-                                                    <i class="bi bi-box-arrow-up-right"></i>
-                                                    <span>Comprobantes</span>
-                                                </a>
-                                            </div>
-                                        </td>
-                                    </tr>
+                                    @if (IsCompraDuplicadoAudit(item))
+                                    {
+                                        <tr @ondblclick="() => Seleccionar(item)">
+                                            <td><span class="@GetRiskBadgeClass(item.Riesgo)">@item.Riesgo</span></td>
+                                            <td>@FormatCliente(item)</td>
+                                            <td>@item.TipoComprobante</td>
+                                            <td>@item.NumeroNormalizado</td>
+                                            <td>@FormatMoney(item.ImporteOriginal)</td>
+                                            <td>@item.CantidadOcurrencias</td>
+                                            <td>@item.SucursalesDetectadas</td>
+                                            <td>@item.UsuariosDetectados</td>
+                                            <td>@item.FechaHora.ToString("dd/MM/yyyy")</td>
+                                            <td>@(item.FechaHoraHasta?.ToString("dd/MM/yyyy") ?? "—")</td>
+                                            <td>@item.ImpactoContable</td>
+                                            <td>
+                                                <div class="actions">
+                                                    <button type="button" class="btn btn--ghost btn--sm" @onclick="() => Seleccionar(item)">
+                                                        <i class="bi bi-eye"></i>
+                                                        <span>Detalle</span>
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    }
+                                    else if (string.Equals(item.TipoControl, "IN_NO_GRABADO", StringComparison.OrdinalIgnoreCase) && IsStartedNotSavedMode)
+                                    {
+                                        <tr @ondblclick="() => Seleccionar(item)">
+                                            <td>@item.FechaHora.ToString("dd/MM/yyyy HH:mm")</td>
+                                            <td>@item.TipoControlLabel</td>
+                                            <td><span class="@GetRiskBadgeClass(item.Riesgo)">@item.Riesgo</span></td>
+                                            <td>@item.Usuario</td>
+                                            <td>@item.Pc</td>
+                                            <td>@item.TipoComprobante</td>
+                                            <td>@item.IdComprobante</td>
+                                            <td>@GetCancellationTimeText(item)</td>
+                                            <td>@GetCancellationMinutesText(item)</td>
+                                            <td>@GetCancellationAmountText(item)</td>
+                                            <td>
+                                                <div class="actions">
+                                                    <button type="button" class="btn btn--ghost btn--sm" @onclick="() => Seleccionar(item)">
+                                                        <i class="bi bi-eye"></i>
+                                                        <span>Detalle</span>
+                                                    </button>
+                                                    <a class="btn btn--ghost btn--sm" href="@BuildComprobanteViewerUrl(item)">
+                                                        <i class="bi bi-box-arrow-up-right"></i>
+                                                        <span>Comprobantes</span>
+                                                    </a>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    }
+                                    else
+                                    {
+                                        <tr @ondblclick="() => Seleccionar(item)">
+                                            <td>@item.FechaHora.ToString("dd/MM/yyyy HH:mm")</td>
+                                            <td>@item.TipoControlLabel</td>
+                                            <td><span class="@GetRiskBadgeClass(item.Riesgo)">@item.Riesgo</span></td>
+                                            <td>@item.Usuario</td>
+                                            <td>@item.Pc</td>
+                                            <td>@item.TipoComprobante</td>
+                                            <td>@item.IdComprobante</td>
+                                            <td>@FormatCliente(item)</td>
+                                            <td>@FormatEstadoFacturacion(item)</td>
+                                            <td>@FormatMoney(item.ImporteOriginal)</td>
+                                            <td>@FormatMoney(item.Diferencia)</td>
+                                            <td>@item.CantidadOcurrencias</td>
+                                            <td>
+                                                <div class="actions">
+                                                    <button type="button" class="btn btn--ghost btn--sm" @onclick="() => Seleccionar(item)">
+                                                        <i class="bi bi-eye"></i>
+                                                        <span>Detalle</span>
+                                                    </button>
+                                                    <a class="btn btn--ghost btn--sm" href="@BuildComprobanteViewerUrl(item)">
+                                                        <i class="bi bi-box-arrow-up-right"></i>
+                                                        <span>Comprobantes</span>
+                                                    </a>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    }
                                 }
                             }
                         </tbody>
@@ -536,6 +754,8 @@
     private string _cuentaCliente = string.Empty;
     private int _diasMinimosSinFactura = 2;
     private int _umbralModificaciones = 3;
+    private int _diasToleranciaDuplicados = 7;
+    private string _soloDiferenciasSucursalText = "SI";
     private int _pagina = 1;
     private int _tamanioPagina = 50;
     private string _ordenCampo = "fecha";
@@ -568,6 +788,9 @@
     }
 
     private int TotalPaginas => Math.Max(1, (int)Math.Ceiling((_result.TotalRegistros <= 0 ? 1m : _result.TotalRegistros) / (decimal)Math.Max(1, _tamanioPagina)));
+    private bool IsDuplicateMode => string.Equals(_tipoControl, "CPRA_DUPLICADO", StringComparison.OrdinalIgnoreCase);
+    private bool IsStartedNotSavedMode => string.Equals(_tipoControl, "IN_NO_GRABADO", StringComparison.OrdinalIgnoreCase);
+    private bool SoloDiferenciasSucursal => string.Equals(_soloDiferenciasSucursalText, "SI", StringComparison.OrdinalIgnoreCase);
 
     private AuditoriaUsuarioFilterDto _filters => new()
     {
@@ -582,6 +805,8 @@
         CuentaCliente = _cuentaCliente,
         DiasMinimosSinFactura = _diasMinimosSinFactura,
         UmbralModificaciones = _umbralModificaciones,
+        DiasToleranciaDuplicados = _diasToleranciaDuplicados,
+        SoloDiferenciasSucursal = SoloDiferenciasSucursal,
         Pagina = _pagina,
         TamanioPagina = _tamanioPagina,
         OrdenCampo = _ordenCampo,
@@ -603,7 +828,8 @@
                     x.TipoControl == _selected.TipoControl
                     && x.FechaHora == _selected.FechaHora
                     && x.Usuario == _selected.Usuario
-                    && x.IdComprobante == _selected.IdComprobante);
+                    && x.IdComprobante == _selected.IdComprobante
+                    && x.NumeroNormalizado == _selected.NumeroNormalizado);
             }
         }, "No se pudieron cargar las alertas de auditoría.");
 
@@ -631,6 +857,8 @@
         _cuentaCliente = string.Empty;
         _diasMinimosSinFactura = _lookups.DiasMinimosSinFacturaDefault > 0 ? _lookups.DiasMinimosSinFacturaDefault : 2;
         _umbralModificaciones = _lookups.UmbralModificacionesDefault > 0 ? _lookups.UmbralModificacionesDefault : 3;
+        _diasToleranciaDuplicados = _lookups.DiasToleranciaDuplicadosDefault > 0 ? _lookups.DiasToleranciaDuplicadosDefault : 7;
+        _soloDiferenciasSucursalText = _lookups.SoloDiferenciasSucursalDefault ? "SI" : "NO";
         _pagina = 1;
         _showSearchPanel = false;
         await BuscarAsync();
@@ -644,7 +872,12 @@
     }
 
     private void ToggleSearchPanel()
-        => _showSearchPanel = !_showSearchPanel;
+    {
+        if (_loading)
+            return;
+
+        _showSearchPanel = !_showSearchPanel;
+    }
 
     private async Task ToggleSettingsPanelAsync()
     {
@@ -654,7 +887,12 @@
     }
 
     private void OpenSearchPanel()
-        => _showSearchPanel = true;
+    {
+        if (_loading)
+            return;
+
+        _showSearchPanel = true;
+    }
 
     private void CloseSearchPanel()
         => _showSearchPanel = false;
@@ -719,6 +957,34 @@
         await BuscarAsync();
     }
 
+    private async Task ExportarPdfAsync()
+        => await JS.InvokeVoidAsync("dashboardExport.printCurrentPage", "Auditoría de usuarios");
+
+    private string BuildExcelExportUrl()
+    {
+        var parts = new List<string>();
+
+        AddQuery(parts, "desde", _desde?.ToString("yyyy-MM-dd"));
+        AddQuery(parts, "hasta", _hasta?.ToString("yyyy-MM-dd"));
+        AddQuery(parts, "texto", _texto);
+        AddQuery(parts, "usuario", _usuario);
+        AddQuery(parts, "pc", _pc);
+        AddQuery(parts, "tipoComprobante", _tipoComprobante);
+        AddQuery(parts, "riesgo", _riesgo);
+        AddQuery(parts, "tipoControl", _tipoControl);
+        AddQuery(parts, "cuentaCliente", _cuentaCliente);
+        AddQuery(parts, "diasMinimosSinFactura", _diasMinimosSinFactura.ToString(CultureInfo.InvariantCulture));
+        AddQuery(parts, "umbralModificaciones", _umbralModificaciones.ToString(CultureInfo.InvariantCulture));
+        AddQuery(parts, "diasToleranciaDuplicados", _diasToleranciaDuplicados.ToString(CultureInfo.InvariantCulture));
+        AddQuery(parts, "soloDiferenciasSucursal", SoloDiferenciasSucursal ? "true" : "false");
+        AddQuery(parts, "ordenCampo", _ordenCampo);
+        AddQuery(parts, "ordenDireccion", _ordenDireccion);
+
+        return parts.Count == 0
+            ? "/auditoria/usuarios/descargar-excel"
+            : $"/auditoria/usuarios/descargar-excel?{string.Join("&", parts)}";
+    }
+
     private void Seleccionar(AuditoriaUsuarioRowDto item)
     {
         _selected = item;
@@ -751,6 +1017,8 @@
         if (!string.IsNullOrWhiteSpace(_cuentaCliente)) chips.Add(("cuenta", $"Cliente: {_cuentaCliente}"));
         if (_diasMinimosSinFactura != _lookups.DiasMinimosSinFacturaDefault) chips.Add(("dias", $"Días RM: {_diasMinimosSinFactura}"));
         if (_umbralModificaciones != _lookups.UmbralModificacionesDefault) chips.Add(("mods", $"Mods: {_umbralModificaciones}"));
+        if (_diasToleranciaDuplicados != _lookups.DiasToleranciaDuplicadosDefault) chips.Add(("dupdias", $"Días dup: {_diasToleranciaDuplicados}"));
+        if (SoloDiferenciasSucursal != _lookups.SoloDiferenciasSucursalDefault) chips.Add(("dupsuc", SoloDiferenciasSucursal ? "Solo dif. sucursal" : "Incluye misma sucursal"));
         return chips;
     }
 
@@ -771,6 +1039,8 @@
             case "cuenta": _cuentaCliente = string.Empty; break;
             case "dias": _diasMinimosSinFactura = _lookups.DiasMinimosSinFacturaDefault; break;
             case "mods": _umbralModificaciones = _lookups.UmbralModificacionesDefault; break;
+            case "dupdias": _diasToleranciaDuplicados = _lookups.DiasToleranciaDuplicadosDefault; break;
+            case "dupsuc": _soloDiferenciasSucursalText = _lookups.SoloDiferenciasSucursalDefault ? "SI" : "NO"; break;
         }
 
         _pagina = 1;
@@ -783,14 +1053,13 @@
         try
         {
             await BuscarAsync();
+            await CargarLookupsAsync();
+            await CargarConfiguracionAsync();
         }
         finally
         {
             _loading = false;
         }
-
-        await CargarLookupsAsync();
-        await CargarConfiguracionAsync();
     }
 
     private async Task CargarLookupsAsync()
@@ -810,6 +1079,8 @@
             _lookups = result.Value;
             _diasMinimosSinFactura = _lookups.DiasMinimosSinFacturaDefault > 0 ? _lookups.DiasMinimosSinFacturaDefault : 2;
             _umbralModificaciones = _lookups.UmbralModificacionesDefault > 0 ? _lookups.UmbralModificacionesDefault : 3;
+            _diasToleranciaDuplicados = _lookups.DiasToleranciaDuplicadosDefault > 0 ? _lookups.DiasToleranciaDuplicadosDefault : 7;
+            _soloDiferenciasSucursalText = _lookups.SoloDiferenciasSucursalDefault ? "SI" : "NO";
             ClearErrorFeedback();
         }
         finally
@@ -934,7 +1205,13 @@
         => string.IsNullOrWhiteSpace(item.EstadoFacturacion) ? "—" : item.EstadoFacturacion;
 
     private static string BuildComprobanteViewerUrl(AuditoriaUsuarioRowDto item)
-        => $"/comprobantes/viewer/{Uri.EscapeDataString(item.TipoComprobante ?? string.Empty)}/{Uri.EscapeDataString(item.IdComprobante ?? string.Empty)}?idComplemento=0&returnUrl=%2Fauditoria%2Fusuarios";
+    {
+        var comprobante = item.IdComprobante ?? string.Empty;
+        if (IsCompraDuplicadoAudit(item) && comprobante.Contains('|', StringComparison.Ordinal))
+            comprobante = comprobante.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault() ?? string.Empty;
+
+        return $"/comprobantes/viewer/{Uri.EscapeDataString(item.TipoComprobante ?? string.Empty)}/{Uri.EscapeDataString(comprobante)}?idComplemento=0&returnUrl=%2Fauditoria%2Fusuarios";
+    }
 
     private static string GetRiskBadgeClass(string riesgo)
         => string.Equals(riesgo, "ALTO", StringComparison.OrdinalIgnoreCase)
@@ -964,6 +1241,33 @@
         => string.Equals(item.TipoControl, "RM_PARCIAL", StringComparison.OrdinalIgnoreCase)
            || string.Equals(item.TipoControl, "RM_SIN_FACTURA", StringComparison.OrdinalIgnoreCase)
            || string.Equals(item.TipoControl, "RM_DE_MAS", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsCompraDuplicadoAudit(AuditoriaUsuarioRowDto item)
+        => string.Equals(item.TipoControl, "CPRA_DUPLICADO", StringComparison.OrdinalIgnoreCase);
+
+    private string GetTotalKpiLabel()
+        => IsDuplicateMode ? "Grupos sospechosos" : "Alertas";
+
+    private int GetTotalKpiValue()
+        => IsDuplicateMode ? _stats.TotalAlertas : _stats.TotalAlertas;
+
+    private string GetFourthKpiLabel()
+        => IsDuplicateMode ? "Comprobantes involucrados" : "Controles activos";
+
+    private int GetFourthKpiValue()
+        => IsDuplicateMode ? _stats.ComprobantesInvolucrados : _stats.ControlesDetectados;
+
+    private static string FormatMinutesMetric(decimal? value)
+        => value.HasValue ? Math.Round(value.Value, 0).ToString("N0") : "—";
+
+    private static string FormatMinutesMetric(int value)
+        => value > 0 ? value.ToString("N0") : "—";
+
+    private static void AddQuery(List<string> parts, string key, string? value)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+            parts.Add($"{Uri.EscapeDataString(key)}={Uri.EscapeDataString(value)}");
+    }
 
     private static string BuildRemitoTechnicalDetail(AuditoriaUsuarioRowDto item)
     {
@@ -1069,28 +1373,52 @@
             ? amount
             : "—";
 
+    private static string GetCancellationMinutesText(AuditoriaUsuarioRowDto item)
+    {
+        if (!TryParseCancellationTraceParts(item.SystemUserDetalle, out var cancellationAt, out _))
+            return "—";
+
+        var startAt = item.FechaHora;
+        if (!cancellationAt.HasValue || startAt == DateTime.MinValue || cancellationAt.Value < startAt)
+            return "—";
+
+        return Math.Round((cancellationAt.Value - startAt).TotalMinutes, 0).ToString("N0");
+    }
+
     private static bool TryParseCancellationTrace(string source, out string when, out string amount)
     {
         when = string.Empty;
         amount = string.Empty;
+        if (!TryParseCancellationTraceParts(source, out var cancellationAt, out var cancellationAmount))
+            return false;
+
+        when = cancellationAt?.ToString("dd/MM/yyyy HH:mm:ss") ?? string.Empty;
+        if (cancellationAmount.HasValue)
+            amount = cancellationAmount.Value.ToString("N2", CultureInfo.GetCultureInfo("es-AR"));
+
+        return !string.IsNullOrWhiteSpace(when) || !string.IsNullOrWhiteSpace(amount);
+    }
+
+    private static bool TryParseCancellationTraceParts(string source, out DateTime? cancellationAt, out decimal? cancellationAmount)
+    {
+        cancellationAt = null;
+        cancellationAmount = null;
         if (string.IsNullOrWhiteSpace(source))
             return false;
 
         var dateMatch = Regex.Match(source, @"(?<fecha>\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2}:\d{2})");
-        if (dateMatch.Success)
-            when = dateMatch.Groups["fecha"].Value.Trim();
+        if (dateMatch.Success && DateTime.TryParseExact(dateMatch.Groups["fecha"].Value.Trim(), "dd/MM/yyyy HH:mm:ss", CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsedDate))
+            cancellationAt = parsedDate;
 
         var moneyMatch = Regex.Match(source, @"\$\s*(?<importe>[0-9][0-9\.,]*)");
         if (moneyMatch.Success)
         {
             var rawAmount = moneyMatch.Groups["importe"].Value.Trim();
-            if (TryNormalizeAmount(rawAmount, out var parsed))
-                amount = parsed.ToString("N2", CultureInfo.GetCultureInfo("es-AR"));
-            else
-                amount = rawAmount;
+            if (TryNormalizeAmount(rawAmount, out var parsedAmount))
+                cancellationAmount = parsedAmount;
         }
 
-        return !string.IsNullOrWhiteSpace(when) || !string.IsNullOrWhiteSpace(amount);
+        return cancellationAt.HasValue || cancellationAmount.HasValue;
     }
 
     private static bool TryNormalizeAmount(string rawAmount, out decimal amount)

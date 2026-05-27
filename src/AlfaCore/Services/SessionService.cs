@@ -7,6 +7,7 @@ namespace AlfaCore.Services;
 public sealed class SessionService : ISessionService
 {
     private readonly string _filePath;
+    private readonly string _backupFilePath;
     private readonly List<SessionDto> _sessions = [];
     private readonly object _lock = new();
     private readonly SessionDto? _defaultSession;
@@ -20,6 +21,7 @@ public sealed class SessionService : ISessionService
         IHttpContextAccessor httpContextAccessor)
     {
         _filePath = Path.Combine(env.ContentRootPath, "App_Data", "sessions.json");
+        _backupFilePath = $"{_filePath}.bak";
         _defaultSession = CreateSessionFromConfig(configuration);
         Load(configuration);
         _activeSessionId = ReadActiveSessionId(httpContextAccessor);
@@ -106,32 +108,49 @@ public sealed class SessionService : ISessionService
 
     private void Load(IConfiguration configuration)
     {
+        var fileExists = File.Exists(_filePath);
         try
         {
-            if (File.Exists(_filePath))
+            if (fileExists)
             {
-                var json = File.ReadAllText(_filePath);
-                var data = JsonSerializer.Deserialize<SessionesData>(json, JsonOpts);
-                if (data?.Sessions.Count > 0)
-                {
-                    _sessions.AddRange(data.Sessions);
+                if (TryLoadSessionsFromFile(_filePath))
                     return;
-                }
+
+                // Si el archivo principal quedo corrupto o incompleto, intentar recuperar del backup.
+                if (TryLoadSessionsFromFile(_backupFilePath))
+                    return;
             }
         }
         catch
         {
-            // Archivo corrupto: se regenera desde la configuracion default.
+            // Archivo existente con formato inválido: no sobreescribir automáticamente.
+            // Se mantiene fallback en memoria para no perder sesiones persistidas.
+            AddFallbackSessionInMemory(configuration);
+            return;
+        }
+
+        if (fileExists)
+        {
+            AddFallbackSessionInMemory(configuration);
+            return;
         }
 
         SeedFromConfig(configuration);
     }
 
+    private void AddFallbackSessionInMemory(IConfiguration configuration)
+    {
+        _sessions.Clear();
+        _sessions.Add(_defaultSession is null
+            ? new SessionDto { Nombre = "Sesion inicial", Activa = true }
+            : Clone(_defaultSession, true));
+    }
+
     private void SeedFromConfig(IConfiguration configuration)
     {
         _sessions.Add(_defaultSession is null
-            ? new SessionDto { Nombre = "Sesion inicial", Activa = false }
-            : Clone(_defaultSession, false));
+            ? new SessionDto { Nombre = "Sesion inicial", Activa = true }
+            : Clone(_defaultSession, true));
         Save();
     }
 
@@ -145,11 +164,27 @@ public sealed class SessionService : ISessionService
                 Sessions = _sessions.Select(s => Clone(s, false)).ToList()
             }, JsonOpts);
             File.WriteAllText(_filePath, json);
+            File.WriteAllText(_backupFilePath, json);
         }
         catch
         {
             // No bloquear la aplicacion si el catalogo no puede escribirse.
         }
+    }
+
+    private bool TryLoadSessionsFromFile(string path)
+    {
+        if (!File.Exists(path))
+            return false;
+
+        var json = File.ReadAllText(path);
+        var data = JsonSerializer.Deserialize<SessionesData>(json, JsonOpts);
+        if (data?.Sessions.Count is not > 0)
+            return false;
+
+        _sessions.Clear();
+        _sessions.AddRange(data.Sessions);
+        return true;
     }
 
     private SessionDto? ResolveActiveSessionUnsafe()
@@ -165,10 +200,13 @@ public sealed class SessionService : ISessionService
         if (persistedActive is not null)
             return persistedActive;
 
+        if (_sessions.Count > 0)
+            return _sessions[0];
+
         if (_defaultSession is not null)
             return _defaultSession;
 
-        return _sessions.Count > 0 ? _sessions[0] : null;
+        return null;
     }
 
     private void PersistCookieSelectedSessionIfNeeded()

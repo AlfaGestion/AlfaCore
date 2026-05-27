@@ -8,6 +8,8 @@ public sealed class InterfacesCompraIaWorkerHostedService(
     ILogger<InterfacesCompraIaWorkerHostedService> logger,
     InterfacesCompraIaWorkerState state) : BackgroundService
 {
+    private bool _reportedConnectionWarning;
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
@@ -44,11 +46,25 @@ public sealed class InterfacesCompraIaWorkerHostedService(
             }
             catch (SqlException ex) when (ex.Number == 4060)
             {
-                state.MarkWarning(delaySeconds, "Worker sin acceso a la base configurada. Reintentará automáticamente.");
-                logger.LogWarning("Worker de lectura automática de compras sin acceso a la base configurada. Error SQL 4060. Se reintentará en {DelaySeconds}s.", delaySeconds);
+                RegisterConnectionWarning(delaySeconds, ex);
+            }
+            catch (AppUserFacingException ex) when (IsSqlLoginDatabaseError(ex))
+            {
+                RegisterConnectionWarning(delaySeconds, ex);
+            }
+            catch (InvalidOperationException ex) when (IsMissingSqlSessionConfiguration(ex))
+            {
+                state.MarkWarning(delaySeconds, "Worker sin sesión SQL activa. Seleccioná una base válida y reintentará automáticamente.");
+
+                if (!_reportedConnectionWarning)
+                {
+                    logger.LogWarning(ex, "Worker de lectura automática de compras sin sesión SQL activa. Se reintentará en {DelaySeconds}s.", delaySeconds);
+                    _reportedConnectionWarning = true;
+                }
             }
             catch (Exception ex)
             {
+                _reportedConnectionWarning = false;
                 state.MarkError(delaySeconds, "Worker con error en el último ciclo.", ex.Message);
                 logger.LogError(ex, "Error en worker de lectura automática de compras.");
             }
@@ -56,4 +72,31 @@ public sealed class InterfacesCompraIaWorkerHostedService(
             await Task.Delay(TimeSpan.FromSeconds(delaySeconds), stoppingToken);
         }
     }
+
+    private void RegisterConnectionWarning(int delaySeconds, Exception ex)
+    {
+        state.MarkWarning(delaySeconds, "Worker sin acceso a la base configurada. Reintentará automáticamente.");
+
+        if (_reportedConnectionWarning)
+            return;
+
+        logger.LogWarning(ex, "Worker de lectura automática de compras sin acceso a la base configurada. Se reintentará en {DelaySeconds}s.", delaySeconds);
+        _reportedConnectionWarning = true;
+    }
+
+    private static bool IsSqlLoginDatabaseError(Exception ex)
+    {
+        for (var current = ex; current is not null; current = current.InnerException!)
+        {
+            if (current is SqlException sqlEx && sqlEx.Number == 4060)
+                return true;
+        }
+
+        return false;
+    }
+
+    private static bool IsMissingSqlSessionConfiguration(InvalidOperationException ex)
+        => ex.Message.Contains("ConnectionStrings:AlfaGestion", StringComparison.OrdinalIgnoreCase)
+           || ex.Message.Contains("sesión SQL activa", StringComparison.OrdinalIgnoreCase)
+           || ex.Message.Contains("sesion SQL activa", StringComparison.OrdinalIgnoreCase);
 }

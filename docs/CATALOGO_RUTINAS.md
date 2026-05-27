@@ -454,16 +454,16 @@ Criterio aplicado:
 - Tipo: Service
 - Ubicación: `src/AlfaCore/Services/AuditoriaService.cs`
 - Propósito: consulta `AUX_ERR` para resumen, búsqueda avanzada, filtros y detalle de incidentes.
-- Datos que usa: `AUX_ERR`
-- Observaciones: si la tabla no existe, devuelve un error explícito; registra incidentes del propio módulo mediante `IAppEventService`.
+- Datos que usa: `AUX_ERR`, `V_MV_CpteAcciones`, `CONTROL_ACCESO`, `V_MV_Cpte`, `MV_APLICACION`, `C_MV_Cpte`, `MV_ASIENTOS`, `TA_CONFIGURACION`
+- Observaciones: si la tabla no existe, devuelve un error explícito; registra incidentes del propio módulo mediante `IAppEventService`. En auditoría de usuarios incorpora el control `CPRA_DUPLICADO` para detectar posibles comprobantes de compras duplicados agrupando por proveedor, TC exacto, número normalizado e importe; `MV_ASIENTOS` se consulta solo para informar impacto contable y no para bloquear el hallazgo.
 
 ### AuditoriaModels
 
 - Tipo: DTO
 - Ubicación: `src/AlfaCore/Models/AuditoriaModels.cs`
 - Propósito: define filas, filtros, series y rankings del módulo de auditoría.
-- Datos que usa: modela datos de `AUX_ERR`
-- Observaciones: `AuditoriaErrorFilterDto` concentra todos los filtros visibles en pantalla.
+- Datos que usa: modela datos de `AUX_ERR` y de las búsquedas del módulo Auditoría
+- Observaciones: `AuditoriaErrorFilterDto` concentra todos los filtros visibles en pantalla. `AuditoriaUsuarioRowDto` ahora incluye campos opcionales para grupos sospechosos de compras duplicadas, impacto contable y detalle expandido de los comprobantes involucrados.
 
 ### AppEventService
 
@@ -524,3 +524,18 @@ Criterio aplicado:
 ## Stored Procedures usados
 
 No se identificaron stored procedures invocados directamente desde el código actual de `src/AlfaCore`. La búsqueda realizada sobre `.cs` y `.razor` no mostró usos de `EXEC`, `EXECUTE` ni llamadas concretas a objetos `sp_`.
+
+### MenuService
+
+- Tipo: Service
+- Propósito:
+  Construye el árbol dinámico del sistema reutilizando TA_MENU y TA_TAREAS.
+
+- Datos que usa:
+  TA_MENU
+  TA_TAREAS
+  ALFACORE_MENU_WEB
+
+- Observaciones:
+  La navegación web reutiliza la estructura funcional legacy.
+  Las rutas web se resuelven mediante ALFACORE_MENU_WEB.

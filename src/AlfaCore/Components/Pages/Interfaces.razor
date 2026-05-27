@@ -273,7 +273,7 @@
                 }
             </div>
 
-            <div class="usuarios-table-wrap">
+            <div class="usuarios-table-wrap" data-sticky-x-scroll="off">
                 <table class="data-table usuarios-table">
                     <thead>
                         <tr>
@@ -500,7 +500,7 @@
                 }
                 else
                 {
-                    <div class="usuarios-table-wrap">
+                    <div class="usuarios-table-wrap" data-sticky-x-scroll="off">
                         <table class="data-table usuarios-table">
                             <thead>
                                 <tr>
@@ -595,12 +595,13 @@
         }
         else
         {
-            <div class="usuarios-table-wrap">
+            <div class="usuarios-table-wrap" data-sticky-x-scroll="off">
                 <table class="data-table usuarios-table">
                     <thead>
                         <tr>
                             <th>Documento</th>
                             <th>Estado</th>
+                            <th>Progreso</th>
                             <th>Proveedor</th>
                             <th>Inicio</th>
                             <th>Duración</th>
@@ -640,6 +641,16 @@
                                     }
                                 </td>
                                 <td><span class="interfaces-status-pill @GetStateCssClass(job.Estado, job.Estado)">@job.Estado</span></td>
+                                <td>
+                                    <div class="interfaces-queue-progress">
+                                        <div class="interfaces-queue-progress__track">
+                                            <div class="interfaces-queue-progress__fill @GetQueueProgressCssClass(job)"
+                                                 style="width:@(GetQueueProgressPercent(job))%">
+                                            </div>
+                                        </div>
+                                        <span class="interfaces-queue-progress__label">@GetQueueProgressLabel(job)</span>
+                                    </div>
+                                </td>
                                 <td>@(string.IsNullOrWhiteSpace(job.ProveedorNombre) ? "—" : job.ProveedorNombre)</td>
                                 <td>@FormatQueueDate(job.FechaHoraInicio ?? job.FechaHoraProceso)</td>
                                 <td>@FormatQueueDuration(job)</td>
@@ -1368,6 +1379,51 @@
             return job.LectorObservaciones;
         return "—";
     }
+
+    private static int GetQueueProgressPercent(InterfacesCompraIaResultadoDto job)
+    {
+        if (job.Estado == "PROCESADO" || job.Estado == "SIN_PROVEEDOR")
+            return 100;
+
+        if (job.Estado is "ERROR_LECTURA" or "CANCELADO")
+            return 100;
+
+        if (job.Estado == "PENDIENTE_LECTURA")
+            return 12;
+
+        if (job.Estado == "PROCESANDO_LECTURA")
+        {
+            var start = job.FechaHoraInicio ?? job.FechaHoraProceso;
+            var elapsed = Math.Max(0, (DateTime.Now - start).TotalSeconds);
+            var computed = 25 + (int)Math.Min(65, elapsed / 2d);
+            return Math.Clamp(computed, 25, 90);
+        }
+
+        return 0;
+    }
+
+    private static string GetQueueProgressCssClass(InterfacesCompraIaResultadoDto job)
+        => job.Estado switch
+        {
+            "PROCESADO" => "interfaces-queue-progress__fill--success",
+            "SIN_PROVEEDOR" => "interfaces-queue-progress__fill--info",
+            "ERROR_LECTURA" => "interfaces-queue-progress__fill--danger",
+            "CANCELADO" => "interfaces-queue-progress__fill--muted",
+            "PROCESANDO_LECTURA" => "interfaces-queue-progress__fill--active",
+            _ => "interfaces-queue-progress__fill--pending"
+        };
+
+    private static string GetQueueProgressLabel(InterfacesCompraIaResultadoDto job)
+        => job.Estado switch
+        {
+            "PENDIENTE_LECTURA" => "En cola",
+            "PROCESANDO_LECTURA" => "Procesando",
+            "PROCESADO" => "Completado",
+            "SIN_PROVEEDOR" => "Completado sin proveedor",
+            "ERROR_LECTURA" => "Error de lectura",
+            "CANCELADO" => "Cancelado",
+            _ => "Sin estado"
+        };
 
     private void SetFeedback(AppUiMessage? message)
         => _feedback = message;

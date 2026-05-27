@@ -48,6 +48,7 @@ public sealed class InterfacesCompraIaWorkerState
             LastRunFinishedAt = DateTime.Now;
             NextPlannedRunAt = DateTime.Now.AddSeconds(Math.Max(1, delaySeconds));
             LastMessage = message;
+            LastError = string.Empty;
         }
     }
 

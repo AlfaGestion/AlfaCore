@@ -56,7 +56,10 @@
 
     function getWrappers() {
         return Array.from(document.querySelectorAll(WRAPPER_SELECTOR))
-            .filter(wrapper => wrapper instanceof HTMLElement && wrapper.offsetParent !== null);
+            .filter(wrapper =>
+                wrapper instanceof HTMLElement
+                && wrapper.offsetParent !== null
+                && wrapper.dataset.stickyXScroll !== 'off');
     }
 
     function isWrapperEligible(wrapper) {

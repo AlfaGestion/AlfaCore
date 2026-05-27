@@ -15,6 +15,10 @@ public sealed class AuditoriaService(
     private const string HoraFinLaboralKey = "AUDITORIA-USUARIOS-HORA-FIN-LABORAL";
     private const string DiasLaboralesKey = "AUDITORIA-USUARIOS-DIAS-LABORALES";
     private const string ControlarPcHabitualKey = "AUDITORIA-USUARIOS-CONTROLAR-PC-HABITUAL";
+    private const string DiasRmSinFacturaKey = "AUDITORIA-USUARIOS-DIAS-RM-SIN-FACTURA";
+    private const string UmbralModificacionesKey = "AUDITORIA-USUARIOS-UMBRAL-MODIFICACIONES";
+    private const string DiasDuplicadosCompraKey = "AUDITORIA-USUARIOS-DIAS-DUPLICADOS-COMPRA";
+    private const string SoloSucursalDuplicadosKey = "AUDITORIA-USUARIOS-SOLO-SUCURSAL-DUPLICADOS";
 
     private string ConnectionString => sessionService.GetConnectionString().Length > 0
         ? sessionService.GetConnectionString()
@@ -272,6 +276,7 @@ public sealed class AuditoriaService(
                     new AuditoriaLookupItemDto { Value = "RM_PARCIAL", Label = "Remitos facturados parcialmente" },
                     new AuditoriaLookupItemDto { Value = "RM_SIN_FACTURA", Label = "Remitos sin factura" },
                     new AuditoriaLookupItemDto { Value = "RM_DE_MAS", Label = "Remitos facturados de más" },
+                    new AuditoriaLookupItemDto { Value = "CPRA_DUPLICADO", Label = "Posibles comprobantes duplicados" },
                     new AuditoriaLookupItemDto { Value = "MOD_EXCESIVAS", Label = "Modificaciones excesivas" },
                     new AuditoriaLookupItemDto { Value = "BAJAS", Label = "Bajas de comprobantes" },
                     new AuditoriaLookupItemDto { Value = "FUERA_HORARIO", Label = "Actividad fuera de horario" },
@@ -280,10 +285,13 @@ public sealed class AuditoriaService(
                 Riesgos =
                 [
                     new AuditoriaLookupItemDto { Value = "ALTO", Label = "Alto" },
-                    new AuditoriaLookupItemDto { Value = "MEDIO", Label = "Medio" }
+                    new AuditoriaLookupItemDto { Value = "MEDIO", Label = "Medio" },
+                    new AuditoriaLookupItemDto { Value = "BAJO", Label = "Bajo" }
                 ],
                 DiasMinimosSinFacturaDefault = defaults.DiasMinimosSinFactura,
-                UmbralModificacionesDefault = defaults.UmbralModificaciones
+                UmbralModificacionesDefault = defaults.UmbralModificaciones,
+                DiasToleranciaDuplicadosDefault = defaults.DiasToleranciaDuplicados,
+                SoloDiferenciasSucursalDefault = defaults.SoloDiferenciasSucursal
             };
         }, "No se pudieron cargar las opciones de auditoría de usuarios.", ct);
     }
@@ -451,6 +459,8 @@ public sealed class AuditoriaService(
             var auditSettings = await ReadUserAuditSettingsAsync(cn, inferredSettings, token);
             var diasMinimos = filter.DiasMinimosSinFactura.GetValueOrDefault(defaults.DiasMinimosSinFactura);
             var umbralModificaciones = filter.UmbralModificaciones.GetValueOrDefault(defaults.UmbralModificaciones);
+            var diasToleranciaDuplicados = Math.Max(0, filter.DiasToleranciaDuplicados.GetValueOrDefault(defaults.DiasToleranciaDuplicados));
+            var soloDiferenciasSucursal = filter.SoloDiferenciasSucursal;
             var pagina = Math.Max(1, filter.Pagina);
             var tamanio = Math.Clamp(filter.TamanioPagina, 10, 200);
             var offset = (pagina - 1) * tamanio;
@@ -469,6 +479,9 @@ public sealed class AuditoriaService(
                 IF OBJECT_ID('tempdb..#EstadoRemitos') IS NOT NULL DROP TABLE #EstadoRemitos;
                 IF OBJECT_ID('tempdb..#HabitualPc') IS NOT NULL DROP TABLE #HabitualPc;
                 IF OBJECT_ID('tempdb..#AccesoDia') IS NOT NULL DROP TABLE #AccesoDia;
+                IF OBJECT_ID('tempdb..#ComprasPeriodo') IS NOT NULL DROP TABLE #ComprasPeriodo;
+                IF OBJECT_ID('tempdb..#ComprasDuplicados') IS NOT NULL DROP TABLE #ComprasDuplicados;
+                IF OBJECT_ID('tempdb..#ComprasAsientos') IS NOT NULL DROP TABLE #ComprasAsientos;
 
                 CREATE TABLE #AuditUser
                 (
@@ -495,7 +508,14 @@ public sealed class AuditoriaService(
                     SystemUserDetalle nvarchar(500) NOT NULL,
                     Motivo nvarchar(250) NOT NULL,
                     Observaciones nvarchar(1000) NOT NULL,
-                    DiasPendientes int NOT NULL
+                    DiasPendientes int NOT NULL,
+                    NumeroNormalizado nvarchar(50) NOT NULL,
+                    SucursalesDetectadas nvarchar(400) NOT NULL,
+                    UsuariosDetectados nvarchar(400) NOT NULL,
+                    ImpactoContable nvarchar(150) NOT NULL,
+                    ComprobantesInvolucrados int NOT NULL,
+                    ContablesDuplicados int NOT NULL,
+                    DetalleGrupo nvarchar(max) NOT NULL
                 );
 
                 SELECT
@@ -634,7 +654,8 @@ public sealed class AuditoriaService(
                 (
                     TipoControl, TipoControlLabel, Riesgo, RiesgoOrden, FechaHora, FechaHoraHasta, Usuario, Pc,
                     TipoComprobante, IdComprobante, Cuenta, Cliente, ImporteOriginal, ImporteAplicado, Diferencia,
-                    CantidadOcurrencias, Proceso, Formulario, FacturaRelacionada, EstadoFacturacion, SystemUserDetalle, Motivo, Observaciones, DiasPendientes
+                    CantidadOcurrencias, Proceso, Formulario, FacturaRelacionada, EstadoFacturacion, SystemUserDetalle, Motivo, Observaciones, DiasPendientes,
+                    NumeroNormalizado, SucursalesDetectadas, UsuariosDetectados, ImpactoContable, ComprobantesInvolucrados, ContablesDuplicados, DetalleGrupo
                 )
                 SELECT
                     'IN_NO_GRABADO',
@@ -660,7 +681,14 @@ public sealed class AuditoriaService(
                     MAX(a.SystemUser),
                     'Inicio de comprobante sin registro final equivalente.',
                     'Ocurrencias de acción IN sobre comprobantes comerciales sensibles.',
-                    0
+                    0,
+                    '',
+                    '',
+                    '',
+                    '',
+                    0,
+                    0,
+                    ''
                 FROM #AccionesPeriodo a
                 LEFT JOIN dbo.MA_CUENTAS c ON a.Cuenta = c.CODIGO
                 WHERE a.TIPO_ACCION = 'IN'
@@ -671,7 +699,8 @@ public sealed class AuditoriaService(
                 (
                     TipoControl, TipoControlLabel, Riesgo, RiesgoOrden, FechaHora, FechaHoraHasta, Usuario, Pc,
                     TipoComprobante, IdComprobante, Cuenta, Cliente, ImporteOriginal, ImporteAplicado, Diferencia,
-                    CantidadOcurrencias, Proceso, Formulario, FacturaRelacionada, EstadoFacturacion, SystemUserDetalle, Motivo, Observaciones, DiasPendientes
+                    CantidadOcurrencias, Proceso, Formulario, FacturaRelacionada, EstadoFacturacion, SystemUserDetalle, Motivo, Observaciones, DiasPendientes,
+                    NumeroNormalizado, SucursalesDetectadas, UsuariosDetectados, ImpactoContable, ComprobantesInvolucrados, ContablesDuplicados, DetalleGrupo
                 )
                 SELECT
                     'RM_PARCIAL',
@@ -697,7 +726,14 @@ public sealed class AuditoriaService(
                     '',
                     'Importe aplicado menor al importe original del remito.',
                     'Remito con facturación parcial detectada desde MV_APLICACION.',
-                    0
+                    0,
+                    '',
+                    '',
+                    '',
+                    '',
+                    0,
+                    0,
+                    ''
                 FROM #EstadoRemitos r
                 LEFT JOIN dbo.MA_CUENTAS c ON r.CUENTA = c.CODIGO
                 WHERE r.EstadoFacturacion = 'FACTURADO PARCIAL';
@@ -706,7 +742,8 @@ public sealed class AuditoriaService(
                 (
                     TipoControl, TipoControlLabel, Riesgo, RiesgoOrden, FechaHora, FechaHoraHasta, Usuario, Pc,
                     TipoComprobante, IdComprobante, Cuenta, Cliente, ImporteOriginal, ImporteAplicado, Diferencia,
-                    CantidadOcurrencias, Proceso, Formulario, FacturaRelacionada, EstadoFacturacion, SystemUserDetalle, Motivo, Observaciones, DiasPendientes
+                    CantidadOcurrencias, Proceso, Formulario, FacturaRelacionada, EstadoFacturacion, SystemUserDetalle, Motivo, Observaciones, DiasPendientes,
+                    NumeroNormalizado, SucursalesDetectadas, UsuariosDetectados, ImpactoContable, ComprobantesInvolucrados, ContablesDuplicados, DetalleGrupo
                 )
                 SELECT
                     'RM_SIN_FACTURA',
@@ -732,7 +769,14 @@ public sealed class AuditoriaService(
                     '',
                     'Remito sin aplicación posterior registrada.',
                     'Remito pendiente de facturación según MV_APLICACION.',
-                    DATEDIFF(day, CAST(r.FECHA AS date), CAST(GETDATE() AS date))
+                    DATEDIFF(day, CAST(r.FECHA AS date), CAST(GETDATE() AS date)),
+                    '',
+                    '',
+                    '',
+                    '',
+                    0,
+                    0,
+                    ''
                 FROM #EstadoRemitos r
                 LEFT JOIN dbo.MA_CUENTAS c ON r.CUENTA = c.CODIGO
                 WHERE r.EstadoFacturacion = 'SIN FACTURAR'
@@ -742,7 +786,8 @@ public sealed class AuditoriaService(
                 (
                     TipoControl, TipoControlLabel, Riesgo, RiesgoOrden, FechaHora, FechaHoraHasta, Usuario, Pc,
                     TipoComprobante, IdComprobante, Cuenta, Cliente, ImporteOriginal, ImporteAplicado, Diferencia,
-                    CantidadOcurrencias, Proceso, Formulario, FacturaRelacionada, EstadoFacturacion, SystemUserDetalle, Motivo, Observaciones, DiasPendientes
+                    CantidadOcurrencias, Proceso, Formulario, FacturaRelacionada, EstadoFacturacion, SystemUserDetalle, Motivo, Observaciones, DiasPendientes,
+                    NumeroNormalizado, SucursalesDetectadas, UsuariosDetectados, ImpactoContable, ComprobantesInvolucrados, ContablesDuplicados, DetalleGrupo
                 )
                 SELECT
                     'RM_DE_MAS',
@@ -768,7 +813,14 @@ public sealed class AuditoriaService(
                     '',
                     'Importe aplicado mayor al importe original del remito.',
                     'Remito con aplicaciones superiores al importe del comprobante.',
-                    0
+                    0,
+                    '',
+                    '',
+                    '',
+                    '',
+                    0,
+                    0,
+                    ''
                 FROM #EstadoRemitos r
                 LEFT JOIN dbo.MA_CUENTAS c ON r.CUENTA = c.CODIGO
                 WHERE r.EstadoFacturacion = 'FACTURADO DE MAS';
@@ -777,7 +829,8 @@ public sealed class AuditoriaService(
                 (
                     TipoControl, TipoControlLabel, Riesgo, RiesgoOrden, FechaHora, FechaHoraHasta, Usuario, Pc,
                     TipoComprobante, IdComprobante, Cuenta, Cliente, ImporteOriginal, ImporteAplicado, Diferencia,
-                    CantidadOcurrencias, Proceso, Formulario, FacturaRelacionada, EstadoFacturacion, SystemUserDetalle, Motivo, Observaciones, DiasPendientes
+                    CantidadOcurrencias, Proceso, Formulario, FacturaRelacionada, EstadoFacturacion, SystemUserDetalle, Motivo, Observaciones, DiasPendientes,
+                    NumeroNormalizado, SucursalesDetectadas, UsuariosDetectados, ImpactoContable, ComprobantesInvolucrados, ContablesDuplicados, DetalleGrupo
                 )
                 SELECT
                     'MOD_EXCESIVAS',
@@ -803,7 +856,14 @@ public sealed class AuditoriaService(
                     '',
                     'Cantidad de modificaciones superior al umbral configurado.',
                     'Comprobante comercial modificado reiteradamente por el mismo usuario.',
-                    0
+                    0,
+                    '',
+                    '',
+                    '',
+                    '',
+                    0,
+                    0,
+                    ''
                 FROM #AccionesPeriodo a
                 LEFT JOIN dbo.MA_CUENTAS c ON a.Cuenta = c.CODIGO
                 WHERE a.TIPO_ACCION = 'M'
@@ -815,7 +875,8 @@ public sealed class AuditoriaService(
                 (
                     TipoControl, TipoControlLabel, Riesgo, RiesgoOrden, FechaHora, FechaHoraHasta, Usuario, Pc,
                     TipoComprobante, IdComprobante, Cuenta, Cliente, ImporteOriginal, ImporteAplicado, Diferencia,
-                    CantidadOcurrencias, Proceso, Formulario, FacturaRelacionada, EstadoFacturacion, SystemUserDetalle, Motivo, Observaciones, DiasPendientes
+                    CantidadOcurrencias, Proceso, Formulario, FacturaRelacionada, EstadoFacturacion, SystemUserDetalle, Motivo, Observaciones, DiasPendientes,
+                    NumeroNormalizado, SucursalesDetectadas, UsuariosDetectados, ImpactoContable, ComprobantesInvolucrados, ContablesDuplicados, DetalleGrupo
                 )
                 SELECT
                     'BAJAS',
@@ -841,7 +902,14 @@ public sealed class AuditoriaService(
                     '',
                     'Anulación o baja detectada en comprobante comercial.',
                     'Acción B registrada en V_MV_CpteAcciones.',
-                    0
+                    0,
+                    '',
+                    '',
+                    '',
+                    '',
+                    0,
+                    0,
+                    ''
                 FROM #AccionesPeriodo a
                 LEFT JOIN dbo.MA_CUENTAS c ON a.Cuenta = c.CODIGO
                 WHERE a.TIPO_ACCION = 'B'
@@ -852,7 +920,8 @@ public sealed class AuditoriaService(
                 (
                     TipoControl, TipoControlLabel, Riesgo, RiesgoOrden, FechaHora, FechaHoraHasta, Usuario, Pc,
                     TipoComprobante, IdComprobante, Cuenta, Cliente, ImporteOriginal, ImporteAplicado, Diferencia,
-                    CantidadOcurrencias, Proceso, Formulario, FacturaRelacionada, EstadoFacturacion, SystemUserDetalle, Motivo, Observaciones, DiasPendientes
+                    CantidadOcurrencias, Proceso, Formulario, FacturaRelacionada, EstadoFacturacion, SystemUserDetalle, Motivo, Observaciones, DiasPendientes,
+                    NumeroNormalizado, SucursalesDetectadas, UsuariosDetectados, ImpactoContable, ComprobantesInvolucrados, ContablesDuplicados, DetalleGrupo
                 )
                 SELECT
                     'FUERA_HORARIO',
@@ -895,7 +964,14 @@ public sealed class AuditoriaService(
                         WHEN ISNULL(ad.TAREA, '') <> '' THEN 'Tarea asociada: ' + ad.TAREA
                         ELSE 'Sin acceso correlacionado claro en CONTROL_ACCESO.'
                     END,
-                    0
+                    0,
+                    '',
+                    '',
+                    '',
+                    '',
+                    0,
+                    0,
+                    ''
                 FROM #AccionesPeriodo a
                 LEFT JOIN dbo.MA_CUENTAS c ON a.Cuenta = c.CODIGO
                 LEFT JOIN #HabitualPc hp ON hp.USUARIO = a.USUARIO AND hp.rn = 1
@@ -942,7 +1018,8 @@ public sealed class AuditoriaService(
                 (
                     TipoControl, TipoControlLabel, Riesgo, RiesgoOrden, FechaHora, FechaHoraHasta, Usuario, Pc,
                     TipoComprobante, IdComprobante, Cuenta, Cliente, ImporteOriginal, ImporteAplicado, Diferencia,
-                    CantidadOcurrencias, Proceso, Formulario, FacturaRelacionada, EstadoFacturacion, SystemUserDetalle, Motivo, Observaciones, DiasPendientes
+                    CantidadOcurrencias, Proceso, Formulario, FacturaRelacionada, EstadoFacturacion, SystemUserDetalle, Motivo, Observaciones, DiasPendientes,
+                    NumeroNormalizado, SucursalesDetectadas, UsuariosDetectados, ImpactoContable, ComprobantesInvolucrados, ContablesDuplicados, DetalleGrupo
                 )
                 SELECT
                     'INGRESO_SIN_FINAL',
@@ -968,36 +1045,304 @@ public sealed class AuditoriaService(
                     '',
                     'Ingreso a opción sensible con inicio de operación pero sin cierre registrado.',
                     'Tarea: ' + ca.TAREA + ' · Inicios: ' + CONVERT(nvarchar(20), ISNULL(a.Inicios, 0)) + ' · Total acciones: ' + CONVERT(nvarchar(20), ISNULL(a.TotalAcciones, 0)),
-                    0
+                    0,
+                    '',
+                    '',
+                    '',
+                    '',
+                    0,
+                    0,
+                    ''
                 FROM AccesosSensibles ca
                 LEFT JOIN AccionesPorAcceso a ON a.ID = ca.ID
                 WHERE ISNULL(a.Inicios, 0) > 0
                   AND ISNULL(a.TotalAcciones, 0) = ISNULL(a.Inicios, 0);
 
                 SELECT
+                    UPPER(LTRIM(RTRIM(ISNULL(c.TC, '')))) AS TC,
+                    UPPER(LTRIM(RTRIM(ISNULL(c.IDCOMPROBANTE, '')))) AS IDCOMPROBANTE,
+                    UPPER(LTRIM(RTRIM(ISNULL(c.CUENTA, '')))) AS CUENTA,
+                    CAST(ISNULL(c.FECHA, GETDATE()) AS datetime) AS FECHA,
+                    CAST(ISNULL(c.FECHA, GETDATE()) AS date) AS FECHADIA,
+                    ISNULL(NULLIF(LTRIM(RTRIM(c.NOMBRE)), ''), ISNULL(mc.DESCRIPCION, '')) AS NOMBRE,
+                    ROUND(ISNULL(c.IMPORTE, 0), 2) AS IMPORTE,
+                    ISNULL(NULLIF(LTRIM(RTRIM(c.USUARIO)), ''), '') AS USUARIO,
+                    ISNULL(c.FechaHora_Grabacion, CAST(ISNULL(c.FECHA, GETDATE()) AS datetime)) AS FechaHora_Grabacion,
+                    UPPER(LTRIM(RTRIM(ISNULL(c.SUCURSAL, '')))) AS SUCURSAL,
+                    UPPER(REPLACE(REPLACE(REPLACE(LTRIM(RTRIM(ISNULL(c.NUMERO, ''))), '-', ''), '.', ''), ' ', '')) AS NUMERO_NORMALIZADO,
+                    UPPER(LTRIM(RTRIM(ISNULL(c.LETRA, '')))) AS LETRA
+                INTO #ComprasPeriodo
+                FROM dbo.C_MV_Cpte c
+                LEFT JOIN dbo.MA_CUENTAS mc ON mc.CODIGO = c.CUENTA
+                WHERE (@Desde IS NULL OR c.FECHA >= @Desde)
+                  AND (@Hasta IS NULL OR c.FECHA < DATEADD(day, 1, @Hasta))
+                  AND ISNULL(c.ANULADA, 0) = 0
+                  AND ISNULL(c.CUENTA, '') <> ''
+                  AND ROUND(ISNULL(c.IMPORTE, 0), 2) <> 0
+                  AND ISNULL(c.NUMERO, '') <> '';
+
+                SELECT
+                    c.TC,
+                    c.CUENTA,
+                    c.NOMBRE,
+                    c.NUMERO_NORMALIZADO,
+                    c.IMPORTE,
+                    MIN(c.FECHA) AS FechaMinima,
+                    MAX(c.FECHA) AS FechaMaxima,
+                    MIN(c.FechaHora_Grabacion) AS FechaHoraGrupo,
+                    COUNT(*) AS CantidadCoincidencias,
+                    COUNT(DISTINCT c.IDCOMPROBANTE) AS CantidadComprobantes,
+                    COUNT(DISTINCT NULLIF(c.SUCURSAL, '')) AS CantidadSucursales,
+                    COUNT(DISTINCT NULLIF(c.USUARIO, '')) AS CantidadUsuarios,
+                    STUFF((
+                        SELECT DISTINCT ', ' + c2.SUCURSAL
+                        FROM #ComprasPeriodo c2
+                        WHERE c2.TC = c.TC
+                          AND c2.CUENTA = c.CUENTA
+                          AND c2.NUMERO_NORMALIZADO = c.NUMERO_NORMALIZADO
+                          AND c2.IMPORTE = c.IMPORTE
+                        ORDER BY ', ' + c2.SUCURSAL
+                        FOR XML PATH(''), TYPE
+                    ).value('.', 'nvarchar(max)'), 1, 2, '') AS SucursalesDetectadas,
+                    STUFF((
+                        SELECT DISTINCT ', ' + c2.USUARIO
+                        FROM #ComprasPeriodo c2
+                        WHERE c2.TC = c.TC
+                          AND c2.CUENTA = c.CUENTA
+                          AND c2.NUMERO_NORMALIZADO = c.NUMERO_NORMALIZADO
+                          AND c2.IMPORTE = c.IMPORTE
+                        ORDER BY ', ' + c2.USUARIO
+                        FOR XML PATH(''), TYPE
+                    ).value('.', 'nvarchar(max)'), 1, 2, '') AS UsuariosDetectados,
+                    STUFF((
+                        SELECT DISTINCT ' | ' + c2.IDCOMPROBANTE
+                        FROM #ComprasPeriodo c2
+                        WHERE c2.TC = c.TC
+                          AND c2.CUENTA = c.CUENTA
+                          AND c2.NUMERO_NORMALIZADO = c.NUMERO_NORMALIZADO
+                          AND c2.IMPORTE = c.IMPORTE
+                        ORDER BY ' | ' + c2.IDCOMPROBANTE
+                        FOR XML PATH(''), TYPE
+                    ).value('.', 'nvarchar(max)'), 1, 3, '') AS IdsRelacionados,
+                    STUFF((
+                        SELECT CHAR(10)
+                            + CONVERT(nvarchar(10), CAST(c2.FECHA AS date), 103)
+                            + ' | ' + c2.TC
+                            + ' | Suc ' + ISNULL(c2.SUCURSAL, '')
+                            + ' | Nro ' + ISNULL(c2.NUMERO_NORMALIZADO, '')
+                            + ' | Letra ' + ISNULL(c2.LETRA, '')
+                            + ' | ID ' + ISNULL(c2.IDCOMPROBANTE, '')
+                            + ' | Importe ' + CONVERT(nvarchar(50), c2.IMPORTE)
+                            + ' | Usuario ' + ISNULL(c2.USUARIO, '')
+                            + ' | Grabación ' + CONVERT(nvarchar(16), c2.FechaHora_Grabacion, 120)
+                        FROM #ComprasPeriodo c2
+                        WHERE c2.TC = c.TC
+                          AND c2.CUENTA = c.CUENTA
+                          AND c2.NUMERO_NORMALIZADO = c.NUMERO_NORMALIZADO
+                          AND c2.IMPORTE = c.IMPORTE
+                        ORDER BY c2.FECHA, c2.IDCOMPROBANTE
+                        FOR XML PATH(''), TYPE
+                    ).value('.', 'nvarchar(max)'), 1, 1, '') AS DetalleGrupo
+                INTO #ComprasDuplicados
+                FROM #ComprasPeriodo c
+                GROUP BY c.TC, c.CUENTA, c.NOMBRE, c.NUMERO_NORMALIZADO, c.IMPORTE
+                HAVING COUNT(*) > 1
+                   AND COUNT(DISTINCT c.IDCOMPROBANTE) > 1
+                   AND DATEDIFF(day, MIN(c.FECHA), MAX(c.FECHA)) <= @DiasToleranciaDuplicados
+                   AND (@SoloDiferenciasSucursal = 0 OR COUNT(DISTINCT NULLIF(c.SUCURSAL, '')) > 1);
+
+                SELECT
+                    UPPER(LTRIM(RTRIM(ISNULL(a.TC, '')))) AS TC,
+                    UPPER(LTRIM(RTRIM(ISNULL(a.SUCURSAL, '')))) AS SUCURSAL,
+                    UPPER(REPLACE(REPLACE(REPLACE(LTRIM(RTRIM(ISNULL(a.NUMERO, ''))), '-', ''), '.', ''), ' ', '')) AS NUMERO_NORMALIZADO,
+                    UPPER(LTRIM(RTRIM(ISNULL(a.LETRA, '')))) AS LETRA,
+                    COUNT(*) AS CantidadAsientos
+                INTO #ComprasAsientos
+                FROM dbo.MV_ASIENTOS a
+                INNER JOIN #ComprasPeriodo c
+                    ON c.TC = UPPER(LTRIM(RTRIM(ISNULL(a.TC, ''))))
+                   AND c.SUCURSAL = UPPER(LTRIM(RTRIM(ISNULL(a.SUCURSAL, ''))))
+                   AND c.NUMERO_NORMALIZADO = UPPER(REPLACE(REPLACE(REPLACE(LTRIM(RTRIM(ISNULL(a.NUMERO, ''))), '-', ''), '.', ''), ' ', ''))
+                   AND c.LETRA = UPPER(LTRIM(RTRIM(ISNULL(a.LETRA, ''))))
+                GROUP BY
+                    UPPER(LTRIM(RTRIM(ISNULL(a.TC, '')))),
+                    UPPER(LTRIM(RTRIM(ISNULL(a.SUCURSAL, '')))),
+                    UPPER(REPLACE(REPLACE(REPLACE(LTRIM(RTRIM(ISNULL(a.NUMERO, ''))), '-', ''), '.', ''), ' ', '')),
+                    UPPER(LTRIM(RTRIM(ISNULL(a.LETRA, ''))));
+
+                INSERT INTO #AuditUser
+                (
+                    TipoControl, TipoControlLabel, Riesgo, RiesgoOrden, FechaHora, FechaHoraHasta, Usuario, Pc,
+                    TipoComprobante, IdComprobante, Cuenta, Cliente, ImporteOriginal, ImporteAplicado, Diferencia,
+                    CantidadOcurrencias, Proceso, Formulario, FacturaRelacionada, EstadoFacturacion, SystemUserDetalle, Motivo, Observaciones, DiasPendientes,
+                    NumeroNormalizado, SucursalesDetectadas, UsuariosDetectados, ImpactoContable, ComprobantesInvolucrados, ContablesDuplicados, DetalleGrupo
+                )
+                SELECT
+                    'CPRA_DUPLICADO',
+                    'Posibles comprobantes duplicados',
+                    CASE
+                        WHEN Score.ScoreTotal >= 80 THEN 'ALTO'
+                        WHEN Score.ScoreTotal >= 60 THEN 'MEDIO'
+                        ELSE 'BAJO'
+                    END,
+                    CASE
+                        WHEN Score.ScoreTotal >= 80 THEN 3
+                        WHEN Score.ScoreTotal >= 60 THEN 2
+                        ELSE 1
+                    END,
+                    d.FechaHoraGrupo,
+                    d.FechaMaxima,
+                    d.UsuariosDetectados,
+                    '',
+                    d.TC,
+                    d.IdsRelacionados,
+                    d.CUENTA,
+                    d.NOMBRE,
+                    d.IMPORTE,
+                    NULL,
+                    NULL,
+                    d.CantidadCoincidencias,
+                    'C_MV_Cpte',
+                    '',
+                    d.SucursalesDetectadas,
+                    CONCAT(COALESCE(AsientoStats.ConAsiento, 0), '/', d.CantidadComprobantes, ' comprobante(s) con asiento'),
+                    '',
+                    CASE
+                        WHEN d.CantidadSucursales > 1 THEN 'Mismo proveedor, mismo número e importe con sucursales distintas.'
+                        ELSE 'Mismo proveedor, mismo número e importe cargado más de una vez. Requiere revisión humana.'
+                    END,
+                    CONCAT(
+                        'Se comparó C_MV_Cpte por proveedor, TC exacto, número normalizado e importe. ',
+                        'MV_ASIENTOS se usa solo para informar impacto contable. Score: ', CONVERT(nvarchar(10), Score.ScoreTotal), '.'
+                    ),
+                    DATEDIFF(day, d.FechaMinima, d.FechaMaxima),
+                    d.NUMERO_NORMALIZADO,
+                    d.SucursalesDetectadas,
+                    d.UsuariosDetectados,
+                    CONCAT(COALESCE(AsientoStats.ConAsiento, 0), '/', d.CantidadComprobantes, ' con asiento'),
+                    d.CantidadComprobantes,
+                    COALESCE(AsientoStats.ConAsiento, 0),
+                    d.DetalleGrupo
+                FROM #ComprasDuplicados d
+                CROSS APPLY
+                (
+                    SELECT
+                        40
+                        + 30
+                        + 20
+                        + CASE WHEN DATEDIFF(day, d.FechaMinima, d.FechaMaxima) = 0 THEN 10
+                               WHEN DATEDIFF(day, d.FechaMinima, d.FechaMaxima) <= @DiasToleranciaDuplicados THEN 5
+                               ELSE 0
+                          END
+                        + CASE WHEN d.CantidadSucursales > 1 THEN 25 ELSE 0 END
+                        + CASE WHEN d.CantidadUsuarios > 1 THEN 10 ELSE 0 END AS ScoreTotal
+                ) Score
+                CROSS APPLY
+                (
+                    SELECT
+                        COUNT(*) AS ConAsiento
+                    FROM #ComprasPeriodo c
+                    LEFT JOIN #ComprasAsientos a
+                        ON a.TC = c.TC
+                       AND a.SUCURSAL = c.SUCURSAL
+                       AND a.NUMERO_NORMALIZADO = c.NUMERO_NORMALIZADO
+                       AND a.LETRA = c.LETRA
+                    WHERE c.TC = d.TC
+                      AND c.CUENTA = d.CUENTA
+                      AND c.NUMERO_NORMALIZADO = d.NUMERO_NORMALIZADO
+                      AND c.IMPORTE = d.IMPORTE
+                      AND ISNULL(a.CantidadAsientos, 0) > 0
+                ) AsientoStats;
+
+                SELECT
                     COUNT(*) AS TotalRegistros,
-                    SUM(CASE WHEN Riesgo = 'ALTO' THEN 1 ELSE 0 END) AS RiesgoAlto,
-                    SUM(CASE WHEN Riesgo = 'MEDIO' THEN 1 ELSE 0 END) AS RiesgoMedio,
-                    COUNT(DISTINCT TipoControl) AS ControlesDetectados
-                FROM #AuditUser
-                WHERE (@Usuario = '' OR Usuario = @Usuario)
-                  AND (@Pc = '' OR Pc LIKE '%' + @Pc + '%')
-                  AND (@TipoComprobante = '' OR TipoComprobante LIKE '%' + @TipoComprobante + '%')
-                  AND (@Riesgo = '' OR Riesgo = @Riesgo)
-                  AND (@TipoControl = '' OR TipoControl = @TipoControl)
-                  AND (@CuentaCliente = '' OR Cuenta LIKE '%' + @CuentaCliente + '%' OR Cliente LIKE '%' + @CuentaCliente + '%')
+                    SUM(CASE WHEN au.Riesgo = 'ALTO' THEN 1 ELSE 0 END) AS RiesgoAlto,
+                    SUM(CASE WHEN au.Riesgo = 'MEDIO' THEN 1 ELSE 0 END) AS RiesgoMedio,
+                    COUNT(DISTINCT au.TipoControl) AS ControlesDetectados,
+                    SUM(ISNULL(au.ComprobantesInvolucrados, 0)) AS ComprobantesInvolucrados,
+                    SUM(ISNULL(au.ContablesDuplicados, 0)) AS ContablesDuplicados,
+                    COUNT(DISTINCT CASE WHEN au.TipoControl = 'IN_NO_GRABADO' AND NULLIF(au.Usuario, '') IS NOT NULL THEN au.Usuario END) AS UsuariosInvolucrados,
+                    AVG(CASE
+                        WHEN au.TipoControl = 'IN_NO_GRABADO'
+                         AND Parsed.CancelacionFecha IS NOT NULL
+                         AND Parsed.CancelacionFecha >= au.FechaHora
+                        THEN DATEDIFF(second, au.FechaHora, Parsed.CancelacionFecha) / 60.0
+                    END) AS PromedioMinutosCancelacion,
+                    MAX(CASE
+                        WHEN au.TipoControl = 'IN_NO_GRABADO'
+                         AND Parsed.CancelacionFecha IS NOT NULL
+                         AND Parsed.CancelacionFecha >= au.FechaHora
+                        THEN DATEDIFF(minute, au.FechaHora, Parsed.CancelacionFecha)
+                    END) AS MaximoMinutosCancelacion,
+                    SUM(CASE
+                        WHEN au.TipoControl = 'IN_NO_GRABADO'
+                        THEN ISNULL(Parsed.ImporteCancelacion, 0)
+                        ELSE 0
+                    END) AS ImporteTotalCancelado
+                FROM #AuditUser au
+                OUTER APPLY
+                (
+                    SELECT
+                        CASE
+                            WHEN au.TipoControl = 'IN_NO_GRABADO' AND LEN(au.SystemUserDetalle) >= 19
+                            THEN SUBSTRING(au.SystemUserDetalle, 7, 4) + '-'
+                               + SUBSTRING(au.SystemUserDetalle, 4, 2) + '-'
+                               + SUBSTRING(au.SystemUserDetalle, 1, 2) + ' '
+                               + SUBSTRING(au.SystemUserDetalle, 12, 8)
+                            ELSE ''
+                        END AS CancelacionFechaTexto,
+                        CASE
+                            WHEN au.TipoControl = 'IN_NO_GRABADO' AND CHARINDEX('$', au.SystemUserDetalle) > 0
+                            THEN REPLACE(REPLACE(LTRIM(RTRIM(
+                                CASE
+                                    WHEN CHARINDEX(' cancel', LOWER(au.SystemUserDetalle), CHARINDEX('$', au.SystemUserDetalle)) > 0
+                                    THEN SUBSTRING(
+                                        au.SystemUserDetalle,
+                                        CHARINDEX('$', au.SystemUserDetalle) + 1,
+                                        CHARINDEX(' cancel', LOWER(au.SystemUserDetalle), CHARINDEX('$', au.SystemUserDetalle)) - CHARINDEX('$', au.SystemUserDetalle) - 1)
+                                    ELSE SUBSTRING(au.SystemUserDetalle, CHARINDEX('$', au.SystemUserDetalle) + 1, 64)
+                                END
+                            )), ',', ''), ' ', '')
+                            ELSE ''
+                        END AS ImporteCancelacionTexto
+                ) ParsedRaw
+                OUTER APPLY
+                (
+                    SELECT
+                        CASE
+                            WHEN ParsedRaw.CancelacionFechaTexto <> '' AND ISDATE(ParsedRaw.CancelacionFechaTexto) = 1
+                            THEN CAST(ParsedRaw.CancelacionFechaTexto AS datetime)
+                            ELSE NULL
+                        END AS CancelacionFecha,
+                        CASE
+                            WHEN ParsedRaw.ImporteCancelacionTexto <> ''
+                             AND PATINDEX('%[^0-9.]%', ParsedRaw.ImporteCancelacionTexto) = 0
+                            THEN CAST(ParsedRaw.ImporteCancelacionTexto AS decimal(18, 2))
+                            ELSE NULL
+                        END AS ImporteCancelacion
+                ) Parsed
+                WHERE (@Usuario = '' OR au.Usuario = @Usuario)
+                  AND (@Pc = '' OR au.Pc LIKE '%' + @Pc + '%')
+                  AND (@TipoComprobante = '' OR au.TipoComprobante LIKE '%' + @TipoComprobante + '%')
+                  AND (@Riesgo = '' OR au.Riesgo = @Riesgo)
+                  AND (@TipoControl = '' OR au.TipoControl = @TipoControl)
+                  AND (@CuentaCliente = '' OR au.Cuenta LIKE '%' + @CuentaCliente + '%' OR au.Cliente LIKE '%' + @CuentaCliente + '%')
                   AND (
                         @Texto = ''
-                        OR TipoControlLabel LIKE '%' + @Texto + '%'
-                        OR Motivo LIKE '%' + @Texto + '%'
-                        OR Observaciones LIKE '%' + @Texto + '%'
-                        OR Usuario LIKE '%' + @Texto + '%'
-                        OR Pc LIKE '%' + @Texto + '%'
-                        OR TipoComprobante LIKE '%' + @Texto + '%'
-                        OR IdComprobante LIKE '%' + @Texto + '%'
-                        OR Cliente LIKE '%' + @Texto + '%'
-                        OR Cuenta LIKE '%' + @Texto + '%'
-                        OR EstadoFacturacion LIKE '%' + @Texto + '%'
+                        OR au.TipoControlLabel LIKE '%' + @Texto + '%'
+                        OR au.Motivo LIKE '%' + @Texto + '%'
+                        OR au.Observaciones LIKE '%' + @Texto + '%'
+                        OR au.Usuario LIKE '%' + @Texto + '%'
+                        OR au.Pc LIKE '%' + @Texto + '%'
+                        OR au.TipoComprobante LIKE '%' + @Texto + '%'
+                        OR au.IdComprobante LIKE '%' + @Texto + '%'
+                        OR au.NumeroNormalizado LIKE '%' + @Texto + '%'
+                        OR au.Cliente LIKE '%' + @Texto + '%'
+                        OR au.Cuenta LIKE '%' + @Texto + '%'
+                        OR au.EstadoFacturacion LIKE '%' + @Texto + '%'
+                        OR au.SucursalesDetectadas LIKE '%' + @Texto + '%'
+                        OR au.UsuariosDetectados LIKE '%' + @Texto + '%'
+                        OR au.ImpactoContable LIKE '%' + @Texto + '%'
                       );
 
                 SELECT
@@ -1023,7 +1368,14 @@ public sealed class AuditoriaService(
                     SystemUserDetalle,
                     Motivo,
                     Observaciones,
-                    DiasPendientes
+                    DiasPendientes,
+                    NumeroNormalizado,
+                    SucursalesDetectadas,
+                    UsuariosDetectados,
+                    ImpactoContable,
+                    ComprobantesInvolucrados,
+                    ContablesDuplicados,
+                    DetalleGrupo
                 FROM #AuditUser
                 WHERE (@Usuario = '' OR Usuario = @Usuario)
                   AND (@Pc = '' OR Pc LIKE '%' + @Pc + '%')
@@ -1040,9 +1392,13 @@ public sealed class AuditoriaService(
                         OR Pc LIKE '%' + @Texto + '%'
                         OR TipoComprobante LIKE '%' + @Texto + '%'
                         OR IdComprobante LIKE '%' + @Texto + '%'
+                        OR NumeroNormalizado LIKE '%' + @Texto + '%'
                         OR Cliente LIKE '%' + @Texto + '%'
                         OR Cuenta LIKE '%' + @Texto + '%'
                         OR EstadoFacturacion LIKE '%' + @Texto + '%'
+                        OR SucursalesDetectadas LIKE '%' + @Texto + '%'
+                        OR UsuariosDetectados LIKE '%' + @Texto + '%'
+                        OR ImpactoContable LIKE '%' + @Texto + '%'
                       )
                 ORDER BY {orderBy}
                 OFFSET @Offset ROWS FETCH NEXT @Tamanio ROWS ONLY;
@@ -1065,6 +1421,8 @@ public sealed class AuditoriaService(
             cmd.Parameters.AddWithValue("@CuentaCliente", filter.CuentaCliente ?? string.Empty);
             cmd.Parameters.AddWithValue("@DiasMinimosSinFactura", diasMinimos);
             cmd.Parameters.AddWithValue("@UmbralModificaciones", umbralModificaciones);
+            cmd.Parameters.AddWithValue("@DiasToleranciaDuplicados", diasToleranciaDuplicados);
+            cmd.Parameters.AddWithValue("@SoloDiferenciasSucursal", soloDiferenciasSucursal ? 1 : 0);
             cmd.Parameters.AddWithValue("@HoraInicioLaboral", auditSettings.HoraInicioLaboral);
             cmd.Parameters.AddWithValue("@HoraFinLaboral", auditSettings.HoraFinLaboral);
             cmd.Parameters.AddWithValue("@DiasLaborales", string.Join(",", auditSettings.DiasLaborales));
@@ -1081,7 +1439,13 @@ public sealed class AuditoriaService(
                     TotalAlertas = total,
                     RiesgoAlto = ReadInt(rd, 1),
                     RiesgoMedio = ReadInt(rd, 2),
-                    ControlesDetectados = ReadInt(rd, 3)
+                    ControlesDetectados = ReadInt(rd, 3),
+                    ComprobantesInvolucrados = ReadInt(rd, 4),
+                    ContablesDuplicados = ReadInt(rd, 5),
+                    UsuariosInvolucrados = ReadInt(rd, 6),
+                    PromedioMinutosCancelacion = ReadDecimal(rd, 7),
+                    MaximoMinutosCancelacion = ReadInt(rd, 8),
+                    ImporteTotalCancelado = ReadDecimal(rd, 9)
                 };
             }
 
@@ -1113,7 +1477,14 @@ public sealed class AuditoriaService(
                         SystemUserDetalle = ReadString(rd, 19),
                         Motivo = ReadString(rd, 20),
                         Observaciones = ReadString(rd, 21),
-                        DiasPendientes = ReadInt(rd, 22)
+                        DiasPendientes = ReadInt(rd, 22),
+                        NumeroNormalizado = ReadString(rd, 23),
+                        SucursalesDetectadas = ReadString(rd, 24),
+                        UsuariosDetectados = ReadString(rd, 25),
+                        ImpactoContable = ReadString(rd, 26),
+                        ComprobantesInvolucrados = ReadInt(rd, 27),
+                        ContablesDuplicados = ReadInt(rd, 28),
+                        DetalleGrupo = ReadString(rd, 29)
                     });
                 }
             }
@@ -1126,7 +1497,9 @@ public sealed class AuditoriaService(
                 Pagina = pagina,
                 TamanioPagina = tamanio,
                 DiasMinimosSinFacturaDefault = defaults.DiasMinimosSinFactura,
-                UmbralModificacionesDefault = defaults.UmbralModificaciones
+                UmbralModificacionesDefault = defaults.UmbralModificaciones,
+                DiasToleranciaDuplicadosDefault = defaults.DiasToleranciaDuplicados,
+                SoloDiferenciasSucursalDefault = defaults.SoloDiferenciasSucursal
             };
         }, "No se pudo cargar la auditoría de usuarios.", ct);
     }
@@ -1481,7 +1854,7 @@ public sealed class AuditoriaService(
         }, $"No se pudo cargar la lista de {field.ToLowerInvariant()}.", ct);
     }
 
-    private static async Task<(int DiasMinimosSinFactura, int UmbralModificaciones)> ReadUserAuditDefaultsAsync(SqlConnection cn, CancellationToken ct)
+    private static async Task<(int DiasMinimosSinFactura, int UmbralModificaciones, int DiasToleranciaDuplicados, bool SoloDiferenciasSucursal)> ReadUserAuditDefaultsAsync(SqlConnection cn, CancellationToken ct)
     {
         const string sql = """
             SELECT
@@ -1491,31 +1864,43 @@ public sealed class AuditoriaService(
                     ELSE CONVERT(nvarchar(150), ValorAux)
                 END AS Valor
             FROM dbo.TA_CONFIGURACION
-            WHERE CLAVE IN ('AUDITORIA-USUARIOS-DIAS-RM-SIN-FACTURA', 'AUDITORIA-USUARIOS-UMBRAL-MODIFICACIONES');
+            WHERE CLAVE IN (
+                'AUDITORIA-USUARIOS-DIAS-RM-SIN-FACTURA',
+                'AUDITORIA-USUARIOS-UMBRAL-MODIFICACIONES',
+                'AUDITORIA-USUARIOS-DIAS-DUPLICADOS-COMPRA',
+                'AUDITORIA-USUARIOS-SOLO-SUCURSAL-DUPLICADOS'
+            );
             """;
 
         var dias = 2;
         var umbral = 3;
+        var diasDuplicados = 7;
+        var soloSucursal = true;
         await using var cmd = new SqlCommand(sql, cn);
         await using var rd = await cmd.ExecuteReaderAsync(ct);
         while (await rd.ReadAsync(ct))
         {
             var clave = rd.IsDBNull(0) ? string.Empty : rd.GetString(0);
             var valor = rd.IsDBNull(1) ? string.Empty : rd.GetString(1);
-            if (!int.TryParse(valor, out var parsed))
-                continue;
-
-            if (string.Equals(clave, "AUDITORIA-USUARIOS-DIAS-RM-SIN-FACTURA", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(clave, DiasRmSinFacturaKey, StringComparison.OrdinalIgnoreCase) && int.TryParse(valor, out var parsedDias))
             {
-                dias = Math.Max(1, parsed);
+                dias = Math.Max(1, parsedDias);
             }
-            else if (string.Equals(clave, "AUDITORIA-USUARIOS-UMBRAL-MODIFICACIONES", StringComparison.OrdinalIgnoreCase))
+            else if (string.Equals(clave, UmbralModificacionesKey, StringComparison.OrdinalIgnoreCase) && int.TryParse(valor, out var parsedUmbral))
             {
-                umbral = Math.Max(2, parsed);
+                umbral = Math.Max(2, parsedUmbral);
+            }
+            else if (string.Equals(clave, DiasDuplicadosCompraKey, StringComparison.OrdinalIgnoreCase) && int.TryParse(valor, out var parsedDuplicados))
+            {
+                diasDuplicados = Math.Max(0, parsedDuplicados);
+            }
+            else if (string.Equals(clave, SoloSucursalDuplicadosKey, StringComparison.OrdinalIgnoreCase))
+            {
+                soloSucursal = IsTrueValue(valor);
             }
         }
 
-        return (dias, umbral);
+        return (dias, umbral, diasDuplicados, soloSucursal);
     }
 
     private static async Task<AuditoriaUsuarioSettingsDto> ReadUserAuditSettingsAsync(
@@ -1760,11 +2145,14 @@ public sealed class AuditoriaService(
             "tc" => "TipoComprobante",
             "comprobante" => "IdComprobante",
             "cliente" => "Cliente",
+            "numero" => "NumeroNormalizado",
+            "impactocontable" => "ImpactoContable",
             "estadofacturacion" => "EstadoFacturacion",
             "importe" => "ISNULL(ImporteOriginal, 0)",
             "aplicado" => "ISNULL(ImporteAplicado, 0)",
             "diferencia" => "ISNULL(Diferencia, 0)",
             "cantidad" => "CantidadOcurrencias",
+            "involucrados" => "ComprobantesInvolucrados",
             _ => "FechaHora"
         };
 

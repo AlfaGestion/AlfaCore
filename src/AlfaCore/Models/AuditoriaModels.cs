@@ -60,6 +60,8 @@ public sealed class AuditoriaUsuarioFilterDto
     public string CuentaCliente { get; init; } = string.Empty;
     public int? DiasMinimosSinFactura { get; init; }
     public int? UmbralModificaciones { get; init; }
+    public int? DiasToleranciaDuplicados { get; init; }
+    public bool SoloDiferenciasSucursal { get; init; }
     public string OrdenCampo { get; init; } = "fecha";
     public string OrdenDireccion { get; init; } = "desc";
     public int Pagina { get; init; } = 1;
@@ -91,6 +93,13 @@ public sealed class AuditoriaUsuarioRowDto
     public string Motivo { get; init; } = string.Empty;
     public string Observaciones { get; init; } = string.Empty;
     public int DiasPendientes { get; init; }
+    public string NumeroNormalizado { get; init; } = string.Empty;
+    public string SucursalesDetectadas { get; init; } = string.Empty;
+    public string UsuariosDetectados { get; init; } = string.Empty;
+    public string ImpactoContable { get; init; } = string.Empty;
+    public int ComprobantesInvolucrados { get; init; }
+    public int ContablesDuplicados { get; init; }
+    public string DetalleGrupo { get; init; } = string.Empty;
 }
 
 public sealed class AuditoriaUsuarioStatsDto
@@ -99,6 +108,12 @@ public sealed class AuditoriaUsuarioStatsDto
     public int RiesgoAlto { get; init; }
     public int RiesgoMedio { get; init; }
     public int ControlesDetectados { get; init; }
+    public int ComprobantesInvolucrados { get; init; }
+    public int ContablesDuplicados { get; init; }
+    public int UsuariosInvolucrados { get; init; }
+    public decimal? PromedioMinutosCancelacion { get; init; }
+    public int MaximoMinutosCancelacion { get; init; }
+    public decimal? ImporteTotalCancelado { get; init; }
 }
 
 public sealed class AuditoriaUsuarioResultDto
@@ -110,6 +125,8 @@ public sealed class AuditoriaUsuarioResultDto
     public int TamanioPagina { get; init; }
     public int DiasMinimosSinFacturaDefault { get; init; }
     public int UmbralModificacionesDefault { get; init; }
+    public int DiasToleranciaDuplicadosDefault { get; init; }
+    public bool SoloDiferenciasSucursalDefault { get; init; }
 }
 
 public sealed class AuditoriaUsuarioLookupsDto
@@ -122,6 +139,8 @@ public sealed class AuditoriaUsuarioLookupsDto
     public IReadOnlyList<AuditoriaLookupItemDto> Riesgos { get; init; } = [];
     public int DiasMinimosSinFacturaDefault { get; init; }
     public int UmbralModificacionesDefault { get; init; }
+    public int DiasToleranciaDuplicadosDefault { get; init; }
+    public bool SoloDiferenciasSucursalDefault { get; init; }
 }
 
 public sealed class AuditoriaUsuarioSettingsDto

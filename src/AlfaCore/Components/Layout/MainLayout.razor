@@ -256,6 +256,20 @@
                     </NavLink>
                 </nav>
             }
+            else if (_currentModule == "tecnicos")
+            {
+                <a class="menu__back" href="/">
+                    <i class="bi bi-grid-3x3-gap-fill"></i>
+                    <span>Aplicaciones</span>
+                </a>
+                <p class="menu__section">Técnicos</p>
+                <nav class="menu__nav">
+                    <NavLink class="menu__link" href="/tecnicos" Match="NavLinkMatch.All">
+                        <span class="menu__icon"><i class="bi bi-tools"></i></span>
+                        <span>Técnicos</span>
+                    </NavLink>
+                </nav>
+            }
             else if (_currentModule == "ventas")
             {
                 <a class="menu__back" href="/">
@@ -1988,6 +2002,7 @@
         "" => "Aplicaciones",
         _ when path.StartsWith("shell/") => "Aplicaciones",
         "clientes" => "Clientes",
+        "tecnicos" => "Técnicos",
         "ventas" => "Ventas",
             "ventas/clientes" => "Clientes",
             "ventas/rubros" => "Rubros",
@@ -2047,6 +2062,7 @@
         "" => "Inicio",
         "consultas" => "Diseñador de Consultas",
         "clientes" => "Clientes",
+        "tecnicos" => "Técnicos",
         "ventas" => "Dashboard de Ventas",
         "stock" => "Dashboard de Stock",
         "caja-bancos" => "Caja y Bancos",

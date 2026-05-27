@@ -58,6 +58,21 @@ public sealed class AppUiOperationService : IAppUiOperationService
             return BuildFromKnownException(plainMessage, code, invalidOp.InnerException, fallbackTitle);
         }
 
+        if (exception is InvalidOperationException directInvalidOperation)
+        {
+            var message = (directInvalidOperation.Message ?? string.Empty).Trim();
+            if (!string.IsNullOrWhiteSpace(message))
+            {
+                return new AppUiMessage
+                {
+                    Severity = AppUiFeedbackSeverity.Error,
+                    Title = fallbackTitle,
+                    Message = message,
+                    Suggestion = "Revisá el mensaje y, si persiste, compartilo con soporte para ajustar la configuración o los datos."
+                };
+            }
+        }
+
         return new AppUiMessage
         {
             Severity = AppUiFeedbackSeverity.Error,
@@ -105,6 +120,21 @@ public sealed class AppUiOperationService : IAppUiOperationService
                 Message = "El sistema no pudo guardar los archivos en la carpeta compartida configurada para Interfaces.",
                 Code = code,
                 Suggestion = "Revisá la ruta configurada, que la carpeta exista, que el servidor esté accesible y que este equipo tenga permisos de lectura y escritura."
+            };
+        }
+
+        if (sqlException?.Number == 547)
+        {
+            var detail = sqlException.Message?.Trim() ?? string.Empty;
+            return new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Error,
+                Title = fallbackTitle,
+                Message = userMessage,
+                Code = code,
+                Suggestion = string.IsNullOrWhiteSpace(detail)
+                    ? "Error de integridad referencial. Revisá los campos de referencia (provincia, categoría, usuario, etc.) antes de volver a intentar."
+                    : $"Error de integridad referencial: {detail}"
             };
         }
 

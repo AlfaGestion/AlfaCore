@@ -51,7 +51,15 @@ public sealed class AppEventService(
         }
         catch (Exception insertEx)
         {
-            logger.LogError(insertEx, "[{EventId}] No se pudo registrar en AUX_ERR el error {Module}/{Action}.", eventId, module, action);
+            if (IsSameSqlConnectionFailure(exception, insertEx))
+            {
+                logger.LogWarning(insertEx, "[{EventId}] No se pudo registrar en AUX_ERR el error {Module}/{Action} porque la conexión SQL activa no está disponible.", eventId, module, action);
+            }
+            else
+            {
+                logger.LogError(insertEx, "[{EventId}] No se pudo registrar en AUX_ERR el error {Module}/{Action}.", eventId, module, action);
+            }
+
             record.DataJson = MergeData(record.DataJson, new
             {
                 AuxErrFallback = true,
@@ -178,6 +186,19 @@ public sealed class AppEventService(
         }
 
         return null;
+    }
+
+    private static bool IsSameSqlConnectionFailure(Exception originalException, Exception auxErrInsertException)
+    {
+        var originalSql = FindSqlException(originalException);
+        var auxErrSql = FindSqlException(auxErrInsertException);
+
+        if (originalSql is null || auxErrSql is null)
+            return false;
+
+        return originalSql.Number == auxErrSql.Number
+            && string.Equals(originalSql.Server, auxErrSql.Server, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(originalSql.Message, auxErrSql.Message, StringComparison.Ordinal);
     }
 
     private static string BuildTechnicalDetail(AppEventRecord record, Exception exception)
