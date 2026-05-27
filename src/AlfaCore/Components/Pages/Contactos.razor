@@ -465,8 +465,10 @@
             <div class="interfaces-bulkbar">
                 <div class="field interfaces-bulkbar__field">
                     <label>Acciones masivas</label>
-                    <select @bind="_bulkAction" disabled="@(_loadingList || _selectedIds.Count == 0)">
+                    <select @bind="_bulkAction" disabled="@_loadingList">
                         <option value="@BulkActionDeactivate">Dar de baja seleccionados</option>
+                        <option value="@BulkActionOpenWhatsApp">Crear / abrir conversaciones</option>
+                        <option value="@BulkActionSendTemplate">Enviar plantilla WhatsApp</option>
                     </select>
                 </div>
                 <button type="button"
@@ -475,7 +477,7 @@
                         disabled="@(_loadingList || _selectedIds.Count == 0)">
                     <i class="bi bi-lightning-charge"></i> Aplicar
                 </button>
-                <span class="panel-card__subtitle">@GetSelectionSummary()</span>
+                <span class="panel-card__subtitle">@GetBulkActionHint()</span>
             </div>
 
             @if (_loadingList)
@@ -693,12 +695,85 @@
     </div>
 }
 
+@if (_showBulkTemplateModal)
+{
+    <div class="cuentas-modal-backdrop" @onclick="CloseBulkTemplateModal">
+        <section class="cuentas-modal" role="dialog" aria-modal="true" aria-labelledby="contactos-bulk-template-title" @onclick:stopPropagation="true">
+            <header class="cuentas-modal__header">
+                <div>
+                    <span class="cuentas-modal__eyebrow">Acción masiva</span>
+                    <h3 id="contactos-bulk-template-title">Enviar plantilla WhatsApp</h3>
+                </div>
+                <button type="button" class="cuentas-modal__close" @onclick="CloseBulkTemplateModal" disabled="@_sendingBulkTemplate" aria-label="Cerrar">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </header>
+
+            <div class="cuentas-modal__body">
+                @if (!string.IsNullOrWhiteSpace(_bulkTemplateError))
+                {
+                    <div class="editor-msg editor-msg--warning">@_bulkTemplateError</div>
+                }
+
+                <div class="conversations-context__hint">
+                    <i class="bi bi-info-circle"></i>
+                    <span>Se enviará a contactos seleccionados que tengan celular o teléfono. Si la conversación no existe, se crea automáticamente.</span>
+                </div>
+
+                <div class="field">
+                    <label>Plantilla aprobada</label>
+                    <select class="usuarios-input" @bind="_bulkTemplateId" disabled="@(_loadingBulkTemplates || _sendingBulkTemplate)">
+                        <option value="0">@(_loadingBulkTemplates ? "Cargando plantillas..." : "Seleccionar plantilla...")</option>
+                        @foreach (var template in _bulkTemplates)
+                        {
+                            <option value="@template.IdPlantilla">@template.NombreVisible</option>
+                        }
+                    </select>
+                </div>
+
+                @if (SelectedBulkTemplate is not null)
+                {
+                    <div class="context-card">
+                        <span class="context-card__label">Vista previa</span>
+                        <strong>@SelectedBulkTemplate.NombreVisible</strong>
+                        <span class="context-card__muted">@TruncateText(SelectedBulkTemplate.CuerpoTexto, 220)</span>
+                    </div>
+
+                    @if (CountTemplateVariables(SelectedBulkTemplate.CuerpoTexto) > 0)
+                    {
+                        <div class="field">
+                            <label>Valores de variables</label>
+                            <textarea class="usuarios-input"
+                                      rows="4"
+                                      placeholder="Un valor por línea. Para textos largos separá variables con ---"
+                                      @bind="_bulkTemplateValuesText"
+                                      disabled="@_sendingBulkTemplate"></textarea>
+                            <small class="panel-card__subtitle">Esta plantilla requiere @CountTemplateVariables(SelectedBulkTemplate.CuerpoTexto) valor(es). Se usarán los mismos para todos los contactos seleccionados.</small>
+                        </div>
+                    }
+                }
+            </div>
+
+            <footer class="cuentas-modal__actions">
+                <button type="button" class="btn btn--primary" @onclick="SendBulkTemplateAsync" disabled="@(_sendingBulkTemplate || _bulkTemplateId <= 0)">
+                    <i class="bi bi-send"></i>
+                    @(_sendingBulkTemplate ? "Enviando..." : "Enviar plantilla")
+                </button>
+                <button type="button" class="btn btn--ghost" @onclick="CloseBulkTemplateModal" disabled="@_sendingBulkTemplate">
+                    Cerrar
+                </button>
+            </footer>
+        </section>
+    </div>
+}
+
 @code {
     private readonly ContactosFilters _filters = new();
     private readonly ContactoSaveRequest _form = new();
     private readonly List<ContactoGridItemDto> _items = [];
     private readonly List<ContactoCuentaDto> _linkedAccounts = [];
     private readonly List<ContactoMergeCandidateDto> _mergeCandidates = [];
+    private readonly List<ConversacionPlantillaDto> _bulkTemplates = [];
     private readonly List<ProvinciaOptionDto> _provincias = [];
     private readonly List<ContactoViewColumnDto> _viewSettingsDraft = [];
     private readonly Dictionary<string, string> _fieldErrors = new(StringComparer.OrdinalIgnoreCase);
@@ -737,10 +812,17 @@
     private bool _mergingContact;
     private string _mergeSearchText = string.Empty;
     private string _mergeError = string.Empty;
+    private bool _showBulkTemplateModal;
+    private bool _loadingBulkTemplates;
+    private bool _sendingBulkTemplate;
+    private long _bulkTemplateId;
+    private string _bulkTemplateValuesText = string.Empty;
+    private string _bulkTemplateError = string.Empty;
     private CancellationTokenSource? _searchDebounceCts;
     private SearchRuleDto _contactRuleDraft = new() { Campo = "nombre", Operador = "contains" };
     private readonly List<SavedContactSearch> _contactFavorites = [];
     private bool AreAllCurrentPageSelected => _items.Count > 0 && _items.All(item => _selectedIds.Contains(item.Id));
+    private ConversacionPlantillaDto? SelectedBulkTemplate => _bulkTemplates.FirstOrDefault(item => item.IdPlantilla == _bulkTemplateId);
 
     protected override async Task OnInitializedAsync()
     {
@@ -1358,6 +1440,18 @@
         if (_selectedIds.Count == 0 || _loadingList)
             return;
 
+        if (string.Equals(_bulkAction, BulkActionOpenWhatsApp, StringComparison.OrdinalIgnoreCase))
+        {
+            await CrearConversacionesSeleccionadasAsync();
+            return;
+        }
+
+        if (string.Equals(_bulkAction, BulkActionSendTemplate, StringComparison.OrdinalIgnoreCase))
+        {
+            await OpenBulkTemplateModalAsync();
+            return;
+        }
+
         if (!string.Equals(_bulkAction, BulkActionDeactivate, StringComparison.OrdinalIgnoreCase))
             return;
 
@@ -1387,6 +1481,173 @@
         finally
         {
             _saving = false;
+        }
+    }
+
+    private async Task CrearConversacionesSeleccionadasAsync()
+    {
+        var contacts = GetSelectedContactsWithPhone().ToList();
+        if (contacts.Count == 0)
+        {
+            SetFeedback(new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Warning,
+                Title = "TelÃ©fono requerido",
+                Message = "SeleccionÃ¡ contactos con celular o telÃ©fono para crear conversaciones."
+            });
+            return;
+        }
+
+        _openingConversation = true;
+        try
+        {
+            long? firstConversation = null;
+            var created = 0;
+            foreach (var contact in contacts)
+            {
+                var phone = FirstNonEmpty(contact.Celular, contact.Telefono);
+                var result = await UiOps.RunAsync(
+                    () => ConversacionesSvc.CreateOrGetWhatsAppConversationAsync(new ConversacionCrearWhatsAppRequest { TelefonoWhatsApp = phone }),
+                    $"No se pudo crear la conversaciÃ³n de {DisplayOrFallback(contact.NombreApellido, phone)}.");
+
+                if (!result.Success || result.Value is null)
+                {
+                    SetFeedback(result.Feedback);
+                    continue;
+                }
+
+                firstConversation ??= result.Value.IdConversacion;
+                if (result.Value.Creada)
+                    created++;
+            }
+
+            SetFeedback(AppUiMessage.Success("Conversaciones listas", $"Se prepararon {contacts.Count} conversaciÃ³n(es). Nuevas: {created}."));
+            if (contacts.Count == 1 && firstConversation.HasValue)
+                Nav.NavigateTo($"/conversaciones?id={firstConversation.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+        }
+        finally
+        {
+            _openingConversation = false;
+        }
+    }
+
+    private async Task OpenBulkTemplateModalAsync()
+    {
+        if (!GetSelectedContactsWithPhone().Any())
+        {
+            SetFeedback(new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Warning,
+                Title = "TelÃ©fono requerido",
+                Message = "SeleccionÃ¡ contactos con celular o telÃ©fono para enviar plantillas."
+            });
+            return;
+        }
+
+        _bulkTemplateError = string.Empty;
+        _bulkTemplateValuesText = string.Empty;
+        _showBulkTemplateModal = true;
+        if (_bulkTemplates.Count == 0)
+            await LoadBulkTemplatesAsync();
+    }
+
+    private void CloseBulkTemplateModal()
+    {
+        if (_sendingBulkTemplate)
+            return;
+
+        _showBulkTemplateModal = false;
+        _bulkTemplateError = string.Empty;
+    }
+
+    private async Task LoadBulkTemplatesAsync()
+    {
+        _loadingBulkTemplates = true;
+        _bulkTemplateError = string.Empty;
+        try
+        {
+            var result = await UiOps.RunAsync(
+                () => ConversacionesSvc.GetTemplatesAsync(new ConversacionPlantillaFilters { EstadoMeta = "APPROVED", IncluirInactivas = false }),
+                "No se pudieron cargar las plantillas aprobadas.");
+
+            if (!result.Success || result.Value is null)
+            {
+                _bulkTemplateError = result.Feedback?.Message ?? "No se pudieron cargar las plantillas aprobadas.";
+                return;
+            }
+
+            _bulkTemplates.Clear();
+            _bulkTemplates.AddRange(result.Value.Where(template => template.Activa && string.Equals(template.EstadoMeta, "APPROVED", StringComparison.OrdinalIgnoreCase)));
+            if (_bulkTemplates.Count == 0)
+                _bulkTemplateError = "No hay plantillas aprobadas disponibles para envÃ­o masivo.";
+        }
+        finally
+        {
+            _loadingBulkTemplates = false;
+        }
+    }
+
+    private async Task SendBulkTemplateAsync()
+    {
+        var template = SelectedBulkTemplate;
+        if (template is null)
+        {
+            _bulkTemplateError = "SeleccionÃ¡ una plantilla aprobada.";
+            return;
+        }
+
+        var values = ParseTemplateValues(_bulkTemplateValuesText).ToList();
+        var required = CountTemplateVariables(template.CuerpoTexto);
+        if (values.Count < required)
+        {
+            _bulkTemplateError = $"Esta plantilla requiere {required} valor(es) de variables.";
+            return;
+        }
+
+        var contacts = GetSelectedContactsWithPhone().ToList();
+        if (contacts.Count == 0)
+        {
+            _bulkTemplateError = "No hay contactos seleccionados con telÃ©fono o celular.";
+            return;
+        }
+
+        var confirm = await Js.InvokeAsync<bool>("confirm", $"Se enviarÃ¡ la plantilla \"{template.NombreVisible}\" a {contacts.Count} contacto(s). Â¿QuerÃ©s continuar?");
+        if (!confirm)
+            return;
+
+        _sendingBulkTemplate = true;
+        _bulkTemplateError = string.Empty;
+        var sent = 0;
+        var failed = 0;
+        try
+        {
+            foreach (var contact in contacts)
+            {
+                var phone = FirstNonEmpty(contact.Celular, contact.Telefono);
+                try
+                {
+                    var conversation = await ConversacionesSvc.CreateOrGetWhatsAppConversationAsync(new ConversacionCrearWhatsAppRequest { TelefonoWhatsApp = phone });
+                    await ConversacionesSvc.SendTemplateMessageAsync(new ConversacionPlantillaSendRequest
+                    {
+                        IdConversacion = conversation.IdConversacion,
+                        IdPlantilla = template.IdPlantilla,
+                        ValoresVariables = values
+                    });
+                    sent++;
+                }
+                catch
+                {
+                    failed++;
+                }
+            }
+
+            _sendingBulkTemplate = false;
+            CloseBulkTemplateModal();
+            SetFeedback(AppUiMessage.Success("EnvÃ­o masivo finalizado", $"Plantillas enviadas: {sent}. Fallidas: {failed}."));
+        }
+        finally
+        {
+            _sendingBulkTemplate = false;
         }
     }
 
@@ -1504,6 +1765,12 @@
 
     private static bool HasContactPhone(ContactoGridItemDto contact)
         => !string.IsNullOrWhiteSpace(FirstNonEmpty(contact.Celular, contact.Telefono));
+
+    private IEnumerable<ContactoGridItemDto> GetSelectedContactsWithPhone()
+        => _items
+            .Where(item => _selectedIds.Contains(item.Id))
+            .Where(HasContactPhone)
+            .OrderBy(item => item.NombreApellido, StringComparer.CurrentCultureIgnoreCase);
 
     private static string GetConversationActionLabel(long? idConversacion)
         => idConversacion.HasValue ? "Ver conversación" : "Crear conversación";
@@ -1698,6 +1965,70 @@
             : normalized[0].ToString().ToUpperInvariant();
     }
 
+    private static string TruncateText(string? value, int maxLength)
+    {
+        var normalized = value?.Trim() ?? string.Empty;
+        if (normalized.Length <= maxLength)
+            return normalized;
+
+        return $"{normalized[..Math.Max(0, maxLength - 1)]}…";
+    }
+
+    private static int CountTemplateVariables(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return 0;
+
+        var max = 0;
+        foreach (System.Text.RegularExpressions.Match match in System.Text.RegularExpressions.Regex.Matches(text, @"\{\{\s*(\d+)\s*\}\}"))
+        {
+            if (int.TryParse(match.Groups[1].Value, out var index))
+                max = Math.Max(max, index);
+        }
+
+        return max;
+    }
+
+    private static IReadOnlyList<string> ParseTemplateValues(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return [];
+
+        var normalized = text.Replace("\r\n", "\n").Replace('\r', '\n');
+        if (normalized.Split('\n').Any(x => string.Equals(x.Trim(), "---", StringComparison.Ordinal)))
+        {
+            var result = new List<string>();
+            var current = new List<string>();
+            foreach (var line in normalized.Split('\n'))
+            {
+                if (string.Equals(line.Trim(), "---", StringComparison.Ordinal))
+                {
+                    AddTemplateValueBlock(result, current);
+                    current.Clear();
+                    continue;
+                }
+
+                current.Add(line);
+            }
+
+            AddTemplateValueBlock(result, current);
+            return result;
+        }
+
+        return normalized
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(x => x.Trim())
+            .Where(x => x.Length > 0)
+            .ToList();
+    }
+
+    private static void AddTemplateValueBlock(List<string> result, List<string> lines)
+    {
+        var block = string.Join(Environment.NewLine, lines).Trim();
+        if (block.Length > 0)
+            result.Add(block);
+    }
+
     private static string BuildCuentaLink(ContactoCuentaDto account)
     {
         var route = string.Equals(account.Tipo, "Proveedor", StringComparison.OrdinalIgnoreCase)
@@ -1742,6 +2073,18 @@
         => _selectedIds.Count == 0
             ? "Seleccioná uno o más contactos para ejecutar acciones."
             : $"{_selectedIds.Count} contacto(s) seleccionado(s).";
+
+    private string GetBulkActionHint()
+    {
+        var actionHint = _bulkAction switch
+        {
+            BulkActionOpenWhatsApp => "Crea o abre conversaciones WhatsApp para contactos con teléfono.",
+            BulkActionSendTemplate => "Permite elegir una plantilla aprobada y enviarla a varios contactos.",
+            _ => "Da de baja lógica a los contactos seleccionados."
+        };
+
+        return $"{GetSelectionSummary()} {actionHint}";
+    }
 
     private static bool IsValueOptionalOperator(string? op)
         => NormalizeRuleOperator(op) is "empty" or "not-empty";
@@ -1838,6 +2181,8 @@
     }
 
     private const string BulkActionDeactivate = "baja";
+    private const string BulkActionOpenWhatsApp = "whatsapp";
+    private const string BulkActionSendTemplate = "plantilla";
 
     private sealed record SmartFilterChip(string Key, string Label);
 
