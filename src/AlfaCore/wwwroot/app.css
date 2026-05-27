@@ -1645,6 +1645,7 @@ select {
     text-transform: uppercase;
     letter-spacing: 0.12em;
     font-weight: 700;
+    white-space: nowrap;
 }
 
 .data-table td strong {
