@@ -4506,7 +4506,7 @@
     }
 
     private static string GetDisplayName(ConversacionInboxItemDto item)
-        => FirstNonEmpty(item.ContactoNombre, item.ClienteNombre, item.NombreVisible, item.TelefonoWhatsApp);
+        => FirstNonEmpty(item.NombreVisible, item.ContactoNombre, item.ClienteNombre, item.TelefonoWhatsApp);
 
     private string GetConversationInitials(ConversacionInboxItemDto item)
     {
@@ -4529,7 +4529,7 @@
         => _states.Any(x => x.EsCerrado && string.Equals(x.CodigoEstado, item.CodigoEstado, StringComparison.OrdinalIgnoreCase));
 
     private static string GetConversationHeader(ConversacionDetalleDto item)
-        => FirstNonEmpty(item.ContactoNombre, item.ClienteNombre, item.NombreVisible, item.TelefonoWhatsApp);
+        => FirstNonEmpty(item.NombreVisible, item.ContactoNombre, item.ClienteNombre, item.TelefonoWhatsApp);
 
     private static string GetWhatsAppWindowLabel(ConversacionDetalleDto item)
     {
