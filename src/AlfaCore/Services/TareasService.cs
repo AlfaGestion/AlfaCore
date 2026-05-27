@@ -181,7 +181,7 @@ public sealed class TareasService(
                 """
                 UPDATE dbo.ALFACORE_TAREAS
                 SET IdLista = @DefaultId,
-                    FechaHora_Modificacion = GETDATE()
+                    FechaHoraModificacion = GETDATE()
                 WHERE IdLista = @IdLista
                   AND ISNULL(Activa, 1) = 1;
 
@@ -223,7 +223,7 @@ public sealed class TareasService(
                         FechaVencimiento = @FechaVencimiento,
                         UsuarioAsignado = @UsuarioAsignado,
                         Estado = @Estado,
-                        FechaHora_Modificacion = GETDATE(),
+                        FechaHoraModificacion = GETDATE(),
                         FechaHoraCompletada = CASE
                             WHEN @Estado = 'COMPLETADA' AND Estado <> 'COMPLETADA' THEN GETDATE()
                             WHEN @Estado <> 'COMPLETADA' THEN NULL
@@ -275,7 +275,7 @@ public sealed class TareasService(
                 """
                 UPDATE dbo.ALFACORE_TAREAS
                 SET Estado = @Estado,
-                    FechaHora_Modificacion = GETDATE(),
+                    FechaHoraModificacion = GETDATE(),
                     FechaHoraCompletada = CASE WHEN @Estado = 'COMPLETADA' THEN GETDATE() ELSE NULL END
                 WHERE IdTarea = @IdTarea
                   AND ISNULL(Activa, 1) = 1;
@@ -318,7 +318,7 @@ public sealed class TareasService(
                 """
                 UPDATE dbo.ALFACORE_TAREAS
                 SET Activa = 0,
-                    FechaHora_Modificacion = GETDATE()
+                    FechaHoraModificacion = GETDATE()
                 WHERE IdTarea = @IdTarea;
                 """,
                 new { IdTarea = idTarea },
