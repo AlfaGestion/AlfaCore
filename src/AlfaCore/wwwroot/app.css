@@ -5473,8 +5473,12 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
 }
 
 .conversation-title-editor__button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.85rem;
     min-height: 1.85rem;
-    padding-inline: .55rem;
+    padding: 0;
     white-space: nowrap;
 }
 
