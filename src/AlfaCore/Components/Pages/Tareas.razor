@@ -52,8 +52,12 @@
             {
                 <form class="tareas-list-form" @onsubmit="SaveListAsync">
                     <input value="@_listDraft" @oninput="e => _listDraft = Convert.ToString(e.Value) ?? string.Empty" placeholder="Nombre de lista" />
-                    <button type="submit" class="btn btn--primary btn--sm">Guardar</button>
-                    <button type="button" class="btn btn--ghost btn--sm" @onclick="CancelListEdit">Cancelar</button>
+                    <button type="submit" class="tareas-icon-action is-save" title="Guardar" aria-label="Guardar lista">
+                        <i class="bi bi-check2"></i>
+                    </button>
+                    <button type="button" class="tareas-icon-action" title="Cancelar" aria-label="Cancelar" @onclick="CancelListEdit">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
                 </form>
             }
 
@@ -65,8 +69,12 @@
                         {
                             <form class="tareas-list-form" @onsubmit="SaveListAsync">
                                 <input value="@_listDraft" @oninput="e => _listDraft = Convert.ToString(e.Value) ?? string.Empty" />
-                                <button type="submit" class="btn btn--primary btn--sm">Guardar</button>
-                                <button type="button" class="btn btn--ghost btn--sm" @onclick="CancelListEdit">Cancelar</button>
+                                <button type="submit" class="tareas-icon-action is-save" title="Guardar" aria-label="Guardar lista">
+                                    <i class="bi bi-check2"></i>
+                                </button>
+                                <button type="button" class="tareas-icon-action" title="Cancelar" aria-label="Cancelar" @onclick="CancelListEdit">
+                                    <i class="bi bi-x-lg"></i>
+                                </button>
                             </form>
                         }
                         else
@@ -211,7 +219,9 @@
                 @foreach (var nota in _page.NotasRapidas)
                 {
                     <div class="tareas-note @(nota.Completada ? "is-done" : string.Empty)">
-                        <input type="checkbox" checked="@nota.Completada" @onchange="e => ToggleNoteAsync(nota, e.Value is true)" />
+                        <button type="button" class="tareas-check @(nota.Completada ? "is-done" : string.Empty)" title="Marcar rápida" @onclick="() => ToggleNoteAsync(nota, !nota.Completada)">
+                            <i class="bi @(nota.Completada ? "bi-check-circle-fill" : "bi-circle")"></i>
+                        </button>
                         <span>@nota.Texto</span>
                         <button type="button" title="Eliminar" @onclick="() => DeleteNoteAsync(nota.IdNota)">
                             <i class="bi bi-x-lg"></i>
