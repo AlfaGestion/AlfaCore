@@ -29,18 +29,61 @@ public sealed class TareasService(
                 : string.Empty;
 
             var sql = $"""
+                WITH ListasVisibles AS
+                (
+                    SELECT l.*
+                    FROM dbo.ALFACORE_TAREAS_LISTAS l
+                    WHERE ISNULL(l.Activa, 1) = 1
+                      AND (
+                            UPPER(LTRIM(RTRIM(ISNULL(l.UsuarioAlta, '')))) = UPPER(LTRIM(RTRIM(@Usuario)))
+                         OR EXISTS
+                            (
+                                SELECT 1
+                                FROM dbo.ALFACORE_TAREAS_COMPARTIDOS c
+                                WHERE c.TipoObjeto = N'LISTA'
+                                  AND c.IdObjeto = l.IdLista
+                                  AND ISNULL(c.Activa, 1) = 1
+                                  AND (
+                                        c.EsPublico = 1
+                                     OR UPPER(LTRIM(RTRIM(ISNULL(c.UsuarioDestino, '')))) = UPPER(LTRIM(RTRIM(@Usuario)))
+                                  )
+                            )
+                      )
+                )
                 SELECT
                     l.IdLista,
                     l.Nombre,
                     CONVERT(bit, ISNULL(l.EsDefault, 0)) AS EsDefault,
+                    ISNULL(l.UsuarioAlta, '') AS UsuarioPropietario,
+                    CONVERT(bit, CASE WHEN UPPER(LTRIM(RTRIM(ISNULL(l.UsuarioAlta, '')))) = UPPER(LTRIM(RTRIM(@Usuario))) THEN 1 ELSE 0 END) AS EsPropia,
                     SUM(CASE WHEN t.IdTarea IS NOT NULL AND t.Estado <> 'COMPLETADA' AND ISNULL(t.Activa, 1) = 1 THEN 1 ELSE 0 END) AS Pendientes,
                     SUM(CASE WHEN t.IdTarea IS NOT NULL AND t.Estado = 'COMPLETADA' AND ISNULL(t.Activa, 1) = 1 THEN 1 ELSE 0 END) AS Completadas
-                FROM dbo.ALFACORE_TAREAS_LISTAS l
+                FROM ListasVisibles l
                 LEFT JOIN dbo.ALFACORE_TAREAS t ON t.IdLista = l.IdLista
-                WHERE ISNULL(l.Activa, 1) = 1
-                GROUP BY l.IdLista, l.Nombre, l.EsDefault
+                GROUP BY l.IdLista, l.Nombre, l.EsDefault, l.UsuarioAlta
                 ORDER BY ISNULL(l.EsDefault, 0) DESC, l.Nombre;
 
+                WITH ListasVisibles AS
+                (
+                    SELECT l.IdLista
+                    FROM dbo.ALFACORE_TAREAS_LISTAS l
+                    WHERE ISNULL(l.Activa, 1) = 1
+                      AND (
+                            UPPER(LTRIM(RTRIM(ISNULL(l.UsuarioAlta, '')))) = UPPER(LTRIM(RTRIM(@Usuario)))
+                         OR EXISTS
+                            (
+                                SELECT 1
+                                FROM dbo.ALFACORE_TAREAS_COMPARTIDOS c
+                                WHERE c.TipoObjeto = N'LISTA'
+                                  AND c.IdObjeto = l.IdLista
+                                  AND ISNULL(c.Activa, 1) = 1
+                                  AND (
+                                        c.EsPublico = 1
+                                     OR UPPER(LTRIM(RTRIM(ISNULL(c.UsuarioDestino, '')))) = UPPER(LTRIM(RTRIM(@Usuario)))
+                                  )
+                            )
+                      )
+                )
                 SELECT
                     t.IdTarea,
                     t.IdLista,
@@ -56,6 +99,7 @@ public sealed class TareasService(
                     t.FechaHoraCompletada
                 FROM dbo.ALFACORE_TAREAS t
                 INNER JOIN dbo.ALFACORE_TAREAS_LISTAS l ON l.IdLista = t.IdLista
+                INNER JOIN ListasVisibles lv ON lv.IdLista = t.IdLista
                 WHERE ISNULL(t.Activa, 1) = 1
                   AND ISNULL(l.Activa, 1) = 1
                   AND t.Estado <> 'COMPLETADA'
@@ -64,6 +108,27 @@ public sealed class TareasService(
                     t.FechaVencimiento,
                     t.FechaHoraAlta DESC;
 
+                WITH ListasVisibles AS
+                (
+                    SELECT l.IdLista
+                    FROM dbo.ALFACORE_TAREAS_LISTAS l
+                    WHERE ISNULL(l.Activa, 1) = 1
+                      AND (
+                            UPPER(LTRIM(RTRIM(ISNULL(l.UsuarioAlta, '')))) = UPPER(LTRIM(RTRIM(@Usuario)))
+                         OR EXISTS
+                            (
+                                SELECT 1
+                                FROM dbo.ALFACORE_TAREAS_COMPARTIDOS c
+                                WHERE c.TipoObjeto = N'LISTA'
+                                  AND c.IdObjeto = l.IdLista
+                                  AND ISNULL(c.Activa, 1) = 1
+                                  AND (
+                                        c.EsPublico = 1
+                                     OR UPPER(LTRIM(RTRIM(ISNULL(c.UsuarioDestino, '')))) = UPPER(LTRIM(RTRIM(@Usuario)))
+                                  )
+                            )
+                      )
+                )
                 SELECT
                     t.IdTarea,
                     t.IdLista,
@@ -79,6 +144,7 @@ public sealed class TareasService(
                     t.FechaHoraCompletada
                 FROM dbo.ALFACORE_TAREAS t
                 INNER JOIN dbo.ALFACORE_TAREAS_LISTAS l ON l.IdLista = t.IdLista
+                INNER JOIN ListasVisibles lv ON lv.IdLista = t.IdLista
                 WHERE ISNULL(t.Activa, 1) = 1
                   AND ISNULL(l.Activa, 1) = 1
                   AND t.Estado = 'COMPLETADA'
@@ -87,13 +153,29 @@ public sealed class TareasService(
                 SELECT
                     IdNota,
                     ISNULL(Texto, '') AS Texto,
+                    ISNULL(Usuario, '') AS Usuario,
+                    CONVERT(bit, CASE WHEN UPPER(LTRIM(RTRIM(Usuario))) = UPPER(LTRIM(RTRIM(@Usuario))) THEN 1 ELSE 0 END) AS EsPropia,
                     Fecha,
                     CONVERT(bit, ISNULL(Completada, 0)) AS Completada,
                     FechaHoraAlta,
                     FechaHoraCompletada
-                FROM dbo.ALFACORE_TAREAS_NOTAS_RAPIDAS
-                WHERE ISNULL(Activa, 1) = 1
-                  AND UPPER(LTRIM(RTRIM(Usuario))) = UPPER(LTRIM(RTRIM(@Usuario)))
+                FROM dbo.ALFACORE_TAREAS_NOTAS_RAPIDAS n
+                WHERE ISNULL(n.Activa, 1) = 1
+                  AND (
+                        UPPER(LTRIM(RTRIM(n.Usuario))) = UPPER(LTRIM(RTRIM(@Usuario)))
+                     OR EXISTS
+                        (
+                            SELECT 1
+                            FROM dbo.ALFACORE_TAREAS_COMPARTIDOS c
+                            WHERE c.TipoObjeto = N'NOTA'
+                              AND c.IdObjeto = n.IdNota
+                              AND ISNULL(c.Activa, 1) = 1
+                              AND (
+                                    c.EsPublico = 1
+                                 OR UPPER(LTRIM(RTRIM(ISNULL(c.UsuarioDestino, '')))) = UPPER(LTRIM(RTRIM(@Usuario)))
+                              )
+                        )
+                  )
                 ORDER BY Completada, FechaHoraAlta DESC;
 
                 SELECT
@@ -104,10 +186,19 @@ public sealed class TareasService(
                   AND ISNULL(EsGrupo, 0) = 0
                   {userActiveFilter}
                 ORDER BY NOMBRE;
+
+                SELECT
+                    TipoObjeto,
+                    IdObjeto,
+                    CONVERT(bit, ISNULL(EsPublico, 0)) AS EsPublico,
+                    ISNULL(UsuarioDestino, '') AS UsuarioDestino
+                FROM dbo.ALFACORE_TAREAS_COMPARTIDOS
+                WHERE ISNULL(Activa, 1) = 1
+                  AND TipoObjeto IN (N'LISTA', N'NOTA');
                 """;
 
             using var multi = await cn.QueryMultipleAsync(new CommandDefinition(sql, new { Usuario = user, Sistema = SistemaFijo }, cancellationToken: token));
-            return new TareasPageDto
+            var page = new TareasPageDto
             {
                 Listas = (await multi.ReadAsync<TareaListaDto>()).ToList(),
                 Tareas = (await multi.ReadAsync<TareaItemDto>()).ToList(),
@@ -115,6 +206,9 @@ public sealed class TareasService(
                 NotasRapidas = (await multi.ReadAsync<TareaNotaRapidaDto>()).ToList(),
                 Usuarios = (await multi.ReadAsync<TareaUsuarioDto>()).ToList()
             };
+
+            ApplySharing(page, (await multi.ReadAsync<TareaShareRow>()).ToList());
+            return page;
         }, "No se pudieron cargar las tareas.", ct);
 
     public Task<int> SaveListAsync(TareaListaSaveRequest request, CancellationToken ct = default)
@@ -127,14 +221,23 @@ public sealed class TareasService(
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
-            await EnsureDefaultListAsync(cn, request.UsuarioAccion, token);
+            var user = NormalizeUser(request.UsuarioAccion);
+            await EnsureDefaultListAsync(cn, user, token);
 
             if (request.IdLista is int id && id > 0)
             {
                 var isDefault = await cn.ExecuteScalarAsync<bool>(new CommandDefinition(
-                    "SELECT CONVERT(bit, ISNULL(EsDefault, 0)) FROM dbo.ALFACORE_TAREAS_LISTAS WHERE IdLista = @IdLista;",
-                    new { IdLista = id },
+                    """
+                    SELECT CONVERT(bit, ISNULL(EsDefault, 0))
+                    FROM dbo.ALFACORE_TAREAS_LISTAS
+                    WHERE IdLista = @IdLista
+                      AND UPPER(LTRIM(RTRIM(ISNULL(UsuarioAlta, '')))) = UPPER(LTRIM(RTRIM(@Usuario)));
+                    """,
+                    new { IdLista = id, Usuario = user },
                     cancellationToken: token));
+
+                if (!await IsListOwnedByUserAsync(cn, id, user, token))
+                    throw new InvalidOperationException("Solo podés modificar listas propias.");
 
                 if (isDefault && !string.Equals(nombre, "Mis tareas", StringComparison.OrdinalIgnoreCase))
                     throw new InvalidOperationException("La lista por defecto no se puede renombrar.");
@@ -167,12 +270,21 @@ public sealed class TareasService(
         {
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
-            var defaultId = await EnsureDefaultListAsync(cn, usuarioAccion, token);
+            var user = NormalizeUser(usuarioAccion);
+            var defaultId = await EnsureDefaultListAsync(cn, user, token);
 
             var isDefault = await cn.ExecuteScalarAsync<bool>(new CommandDefinition(
-                "SELECT CONVERT(bit, ISNULL(EsDefault, 0)) FROM dbo.ALFACORE_TAREAS_LISTAS WHERE IdLista = @IdLista;",
-                new { IdLista = idLista },
+                """
+                SELECT CONVERT(bit, ISNULL(EsDefault, 0))
+                FROM dbo.ALFACORE_TAREAS_LISTAS
+                WHERE IdLista = @IdLista
+                  AND UPPER(LTRIM(RTRIM(ISNULL(UsuarioAlta, '')))) = UPPER(LTRIM(RTRIM(@Usuario)));
+                """,
+                new { IdLista = idLista, Usuario = user },
                 cancellationToken: token));
+
+            if (!await IsListOwnedByUserAsync(cn, idLista, user, token))
+                throw new InvalidOperationException("Solo podés eliminar listas propias.");
 
             if (isDefault || idLista == defaultId)
                 throw new InvalidOperationException("La lista Mis tareas no se puede eliminar.");
@@ -211,9 +323,14 @@ public sealed class TareasService(
             await cn.OpenAsync(token);
             var defaultId = await EnsureDefaultListAsync(cn, user, token);
             var idLista = request.IdLista <= 0 ? defaultId : request.IdLista;
+            if (!await CanAccessListAsync(cn, idLista, user, token))
+                throw new InvalidOperationException("No tenés acceso a la lista seleccionada.");
 
             if (request.IdTarea is long id && id > 0)
             {
+                if (!await CanAccessTaskAsync(cn, id, user, token))
+                    throw new InvalidOperationException("No tenés acceso a la tarea seleccionada.");
+
                 await cn.ExecuteAsync(new CommandDefinition(
                     """
                     UPDATE dbo.ALFACORE_TAREAS
@@ -270,7 +387,12 @@ public sealed class TareasService(
     public Task ChangeTaskStateAsync(long idTarea, string estado, string usuarioAccion, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "ChangeTaskState", async token =>
         {
+            var user = NormalizeUser(usuarioAccion);
             await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            if (!await CanAccessTaskAsync(cn, idTarea, user, token))
+                throw new InvalidOperationException("No tenés acceso a la tarea seleccionada.");
+
             await cn.ExecuteAsync(new CommandDefinition(
                 """
                 UPDATE dbo.ALFACORE_TAREAS
@@ -287,7 +409,12 @@ public sealed class TareasService(
     public Task DuplicateTaskAsync(long idTarea, string usuarioAccion, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "DuplicateTask", async token =>
         {
+            var user = NormalizeUser(usuarioAccion);
             await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            if (!await CanAccessTaskAsync(cn, idTarea, user, token))
+                throw new InvalidOperationException("No tenés acceso a la tarea seleccionada.");
+
             await cn.ExecuteAsync(new CommandDefinition(
                 """
                 INSERT INTO dbo.ALFACORE_TAREAS
@@ -306,14 +433,19 @@ public sealed class TareasService(
                 WHERE IdTarea = @IdTarea
                   AND ISNULL(Activa, 1) = 1;
                 """,
-                new { IdTarea = idTarea, Usuario = NormalizeUser(usuarioAccion) },
+                new { IdTarea = idTarea, Usuario = user },
                 cancellationToken: token));
         }, "No se pudo duplicar la tarea.", ct);
 
     public Task DeleteTaskAsync(long idTarea, string usuarioAccion, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "DeleteTask", async token =>
         {
+            var user = NormalizeUser(usuarioAccion);
             await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            if (!await CanAccessTaskAsync(cn, idTarea, user, token))
+                throw new InvalidOperationException("No tenés acceso a la tarea seleccionada.");
+
             await cn.ExecuteAsync(new CommandDefinition(
                 """
                 UPDATE dbo.ALFACORE_TAREAS
@@ -392,6 +524,84 @@ public sealed class TareasService(
                 cancellationToken: token));
         }, "No se pudieron limpiar las notas completadas.", ct);
 
+    public Task SaveSharingAsync(TareaCompartirRequest request, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "SaveSharing", async token =>
+        {
+            ArgumentNullException.ThrowIfNull(request);
+            var user = NormalizeUser(request.UsuarioAccion);
+            var type = ToSharedObjectType(request.TipoObjeto);
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            var ownsObject = request.TipoObjeto == TareaObjetoCompartidoTipo.Lista
+                ? await IsListOwnedByUserAsync(cn, checked((int)request.IdObjeto), user, token)
+                : await IsNoteOwnedByUserAsync(cn, request.IdObjeto, user, token);
+
+            if (!ownsObject)
+                throw new InvalidOperationException("Solo podés compartir elementos propios.");
+
+            await using var tx = await cn.BeginTransactionAsync(token);
+            try
+            {
+                await cn.ExecuteAsync(new CommandDefinition(
+                    """
+                    UPDATE dbo.ALFACORE_TAREAS_COMPARTIDOS
+                    SET Activa = 0
+                    WHERE TipoObjeto = @TipoObjeto
+                      AND IdObjeto = @IdObjeto
+                      AND ISNULL(Activa, 1) = 1;
+                    """,
+                    new { TipoObjeto = type, request.IdObjeto },
+                    transaction: tx,
+                    cancellationToken: token));
+
+                if (request.CompartirConTodos)
+                {
+                    await cn.ExecuteAsync(new CommandDefinition(
+                        """
+                        INSERT INTO dbo.ALFACORE_TAREAS_COMPARTIDOS
+                            (TipoObjeto, IdObjeto, UsuarioDestino, EsPublico, UsuarioAlta, FechaHoraAlta, Activa)
+                        VALUES
+                            (@TipoObjeto, @IdObjeto, NULL, 1, @UsuarioAlta, GETDATE(), 1);
+                        """,
+                        new { TipoObjeto = type, request.IdObjeto, UsuarioAlta = user },
+                        transaction: tx,
+                        cancellationToken: token));
+                }
+                else
+                {
+                    var users = request.Usuarios
+                        .Select(NormalizeUser)
+                        .Where(x => !string.IsNullOrWhiteSpace(x))
+                        .Where(x => !string.Equals(x, user, StringComparison.OrdinalIgnoreCase))
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToArray();
+
+                    foreach (var destino in users)
+                    {
+                        await cn.ExecuteAsync(new CommandDefinition(
+                            """
+                            INSERT INTO dbo.ALFACORE_TAREAS_COMPARTIDOS
+                                (TipoObjeto, IdObjeto, UsuarioDestino, EsPublico, UsuarioAlta, FechaHoraAlta, Activa)
+                            VALUES
+                                (@TipoObjeto, @IdObjeto, @UsuarioDestino, 0, @UsuarioAlta, GETDATE(), 1);
+                            """,
+                            new { TipoObjeto = type, request.IdObjeto, UsuarioDestino = destino, UsuarioAlta = user },
+                            transaction: tx,
+                            cancellationToken: token));
+                    }
+                }
+
+                await tx.CommitAsync(token);
+            }
+            catch
+            {
+                await tx.RollbackAsync(token);
+                throw;
+            }
+        }, "No se pudo guardar la configuración de compartición.", ct);
+
     private static async Task<int> EnsureDefaultListAsync(SqlConnection cn, string usuario, CancellationToken ct)
     {
         const string sql = """
@@ -399,6 +609,7 @@ public sealed class TareasService(
                 SELECT 1
                 FROM dbo.ALFACORE_TAREAS_LISTAS
                 WHERE EsDefault = 1
+                  AND UPPER(LTRIM(RTRIM(ISNULL(UsuarioAlta, '')))) = UPPER(LTRIM(RTRIM(@Usuario)))
                   AND ISNULL(Activa, 1) = 1
             )
             BEGIN
@@ -409,6 +620,7 @@ public sealed class TareasService(
             SELECT TOP (1) IdLista
             FROM dbo.ALFACORE_TAREAS_LISTAS
             WHERE EsDefault = 1
+              AND UPPER(LTRIM(RTRIM(ISNULL(UsuarioAlta, '')))) = UPPER(LTRIM(RTRIM(@Usuario)))
               AND ISNULL(Activa, 1) = 1
             ORDER BY IdLista;
             """;
@@ -420,6 +632,139 @@ public sealed class TareasService(
         => await cn.ExecuteScalarAsync<int>(new CommandDefinition(
             "SELECT CASE WHEN COL_LENGTH('dbo.TA_USUARIOS', 'Activo') IS NULL THEN 0 ELSE 1 END;",
             cancellationToken: ct)) == 1;
+
+    private static void ApplySharing(TareasPageDto page, IReadOnlyList<TareaShareRow> shares)
+    {
+        foreach (var lista in page.Listas)
+        {
+            var listShares = shares
+                .Where(x => x.TipoObjeto == "LISTA" && x.IdObjeto == lista.IdLista)
+                .ToArray();
+            lista.CompartidaConTodos = listShares.Any(x => x.EsPublico);
+            lista.UsuariosCompartidos = listShares
+                .Where(x => !x.EsPublico && !string.IsNullOrWhiteSpace(x.UsuarioDestino))
+                .Select(x => x.UsuarioDestino)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(x => x)
+                .ToList();
+        }
+
+        foreach (var nota in page.NotasRapidas)
+        {
+            var noteShares = shares
+                .Where(x => x.TipoObjeto == "NOTA" && x.IdObjeto == nota.IdNota)
+                .ToArray();
+            nota.CompartidaConTodos = noteShares.Any(x => x.EsPublico);
+            nota.UsuariosCompartidos = noteShares
+                .Where(x => !x.EsPublico && !string.IsNullOrWhiteSpace(x.UsuarioDestino))
+                .Select(x => x.UsuarioDestino)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(x => x)
+                .ToList();
+        }
+    }
+
+    private static async Task<bool> IsListOwnedByUserAsync(SqlConnection cn, int idLista, string usuario, CancellationToken ct)
+        => await cn.ExecuteScalarAsync<int>(new CommandDefinition(
+            """
+            SELECT CASE WHEN EXISTS
+            (
+                SELECT 1
+                FROM dbo.ALFACORE_TAREAS_LISTAS
+                WHERE IdLista = @IdLista
+                  AND ISNULL(Activa, 1) = 1
+                  AND UPPER(LTRIM(RTRIM(ISNULL(UsuarioAlta, '')))) = UPPER(LTRIM(RTRIM(@Usuario)))
+            )
+            THEN 1 ELSE 0 END;
+            """,
+            new { IdLista = idLista, Usuario = usuario },
+            cancellationToken: ct)) == 1;
+
+    private static async Task<bool> IsNoteOwnedByUserAsync(SqlConnection cn, long idNota, string usuario, CancellationToken ct)
+        => await cn.ExecuteScalarAsync<int>(new CommandDefinition(
+            """
+            SELECT CASE WHEN EXISTS
+            (
+                SELECT 1
+                FROM dbo.ALFACORE_TAREAS_NOTAS_RAPIDAS
+                WHERE IdNota = @IdNota
+                  AND ISNULL(Activa, 1) = 1
+                  AND UPPER(LTRIM(RTRIM(Usuario))) = UPPER(LTRIM(RTRIM(@Usuario)))
+            )
+            THEN 1 ELSE 0 END;
+            """,
+            new { IdNota = idNota, Usuario = usuario },
+            cancellationToken: ct)) == 1;
+
+    private static async Task<bool> CanAccessListAsync(SqlConnection cn, int idLista, string usuario, CancellationToken ct)
+        => await cn.ExecuteScalarAsync<int>(new CommandDefinition(
+            """
+            SELECT CASE WHEN EXISTS
+            (
+                SELECT 1
+                FROM dbo.ALFACORE_TAREAS_LISTAS l
+                WHERE l.IdLista = @IdLista
+                  AND ISNULL(l.Activa, 1) = 1
+                  AND (
+                        UPPER(LTRIM(RTRIM(ISNULL(l.UsuarioAlta, '')))) = UPPER(LTRIM(RTRIM(@Usuario)))
+                     OR EXISTS
+                        (
+                            SELECT 1
+                            FROM dbo.ALFACORE_TAREAS_COMPARTIDOS c
+                            WHERE c.TipoObjeto = N'LISTA'
+                              AND c.IdObjeto = l.IdLista
+                              AND ISNULL(c.Activa, 1) = 1
+                              AND (
+                                    c.EsPublico = 1
+                                 OR UPPER(LTRIM(RTRIM(ISNULL(c.UsuarioDestino, '')))) = UPPER(LTRIM(RTRIM(@Usuario)))
+                              )
+                        )
+                  )
+            )
+            THEN 1 ELSE 0 END;
+            """,
+            new { IdLista = idLista, Usuario = usuario },
+            cancellationToken: ct)) == 1;
+
+    private static async Task<bool> CanAccessTaskAsync(SqlConnection cn, long idTarea, string usuario, CancellationToken ct)
+        => await cn.ExecuteScalarAsync<int>(new CommandDefinition(
+            """
+            SELECT CASE WHEN EXISTS
+            (
+                SELECT 1
+                FROM dbo.ALFACORE_TAREAS t
+                INNER JOIN dbo.ALFACORE_TAREAS_LISTAS l ON l.IdLista = t.IdLista
+                WHERE t.IdTarea = @IdTarea
+                  AND ISNULL(t.Activa, 1) = 1
+                  AND ISNULL(l.Activa, 1) = 1
+                  AND (
+                        UPPER(LTRIM(RTRIM(ISNULL(l.UsuarioAlta, '')))) = UPPER(LTRIM(RTRIM(@Usuario)))
+                     OR EXISTS
+                        (
+                            SELECT 1
+                            FROM dbo.ALFACORE_TAREAS_COMPARTIDOS c
+                            WHERE c.TipoObjeto = N'LISTA'
+                              AND c.IdObjeto = l.IdLista
+                              AND ISNULL(c.Activa, 1) = 1
+                              AND (
+                                    c.EsPublico = 1
+                                 OR UPPER(LTRIM(RTRIM(ISNULL(c.UsuarioDestino, '')))) = UPPER(LTRIM(RTRIM(@Usuario)))
+                              )
+                        )
+                  )
+            )
+            THEN 1 ELSE 0 END;
+            """,
+            new { IdTarea = idTarea, Usuario = usuario },
+            cancellationToken: ct)) == 1;
+
+    private static string ToSharedObjectType(TareaObjetoCompartidoTipo tipo)
+        => tipo switch
+        {
+            TareaObjetoCompartidoTipo.Lista => "LISTA",
+            TareaObjetoCompartidoTipo.Nota => "NOTA",
+            _ => throw new InvalidOperationException("Tipo de elemento no válido para compartir.")
+        };
 
     private async Task<T> ExecuteLoggedAsync<T>(
         string module,
@@ -471,4 +816,12 @@ public sealed class TareasService(
 
     private static string? EmptyToNull(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private sealed class TareaShareRow
+    {
+        public string TipoObjeto { get; set; } = string.Empty;
+        public long IdObjeto { get; set; }
+        public bool EsPublico { get; set; }
+        public string UsuarioDestino { get; set; } = string.Empty;
+    }
 }

@@ -15,4 +15,5 @@ public interface ITareasService
     Task ToggleQuickNoteAsync(long idNota, bool completada, string usuario, CancellationToken ct = default);
     Task DeleteQuickNoteAsync(long idNota, string usuario, CancellationToken ct = default);
     Task ClearCompletedQuickNotesAsync(string usuario, CancellationToken ct = default);
+    Task SaveSharingAsync(TareaCompartirRequest request, CancellationToken ct = default);
 }
