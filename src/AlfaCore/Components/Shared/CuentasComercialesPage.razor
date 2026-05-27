@@ -675,10 +675,10 @@
                                                 }
                                             </div>
                                             <div class="cuentas-contacto-item__actions">
-                                                <a class="btn btn--ghost btn--sm" href="@($"/contactos?editar={contacto.Id}")">
+                                                <button type="button" class="btn btn--ghost btn--sm" @onclick="() => MostrarVistaContacto(contacto)">
                                                     <i class="bi bi-box-arrow-up-right"></i>
                                                     Ver / editar
-                                                </a>
+                                                </button>
                                             </div>
                                         </div>
                                     </article>
@@ -695,46 +695,6 @@
                             </div>
                         }
 
-                        @if (_showContactoForm && !_isNewMode)
-                        {
-                            <div class="cuentas-contactos-form">
-                                <div class="contactos-form__grid">
-                                    <div class="field">
-                                        <label>Nombre y apellido</label>
-                                        <input type="text" class="usuarios-input" maxlength="100" @bind="_contactoDraft.NombreApellido" disabled="@_savingContacto" />
-                                    </div>
-                                    <div class="field">
-                                        <label>Cargo / rol</label>
-                                        <input type="text" class="usuarios-input" maxlength="100" @bind="_contactoDraft.Cargo" disabled="@_savingContacto" />
-                                    </div>
-                                    <div class="field">
-                                        <label>Email</label>
-                                        <input type="email" class="usuarios-input" maxlength="100" @bind="_contactoDraft.Email" disabled="@_savingContacto" />
-                                    </div>
-                                    <div class="field">
-                                        <label>Celular</label>
-                                        <input type="text" class="usuarios-input" maxlength="100" @bind="_contactoDraft.Celular" disabled="@_savingContacto" />
-                                    </div>
-                                    <div class="field">
-                                        <label>Tel&eacute;fono</label>
-                                        <input type="text" class="usuarios-input" maxlength="100" @bind="_contactoDraft.Telefono" disabled="@_savingContacto" />
-                                    </div>
-                                    <div class="field field--wide">
-                                        <label>Observaciones</label>
-                                        <textarea rows="3" class="usuarios-input" @bind="_contactoDraft.Observaciones" disabled="@_savingContacto"></textarea>
-                                    </div>
-                                </div>
-                                <div class="actions">
-                                    <button type="button" class="btn btn--primary" @onclick="GuardarContactoCuentaAsync" disabled="@_savingContacto">
-                                        <i class="bi bi-floppy"></i>
-                                        Guardar contacto
-                                    </button>
-                                    <button type="button" class="btn btn--ghost" @onclick="CancelarNuevoContacto" disabled="@_savingContacto">
-                                        Cancelar
-                                    </button>
-                                </div>
-                            </div>
-                        }
                     </div>
                 }
 
@@ -1061,6 +1021,126 @@
     }
 </div>
 
+@if (_showContactoForm && !_isNewMode)
+{
+    <div class="cuentas-modal-backdrop" @onclick="CancelarNuevoContacto">
+        <section class="cuentas-modal" role="dialog" aria-modal="true" aria-labelledby="cuentas-contacto-modal-title" @onclick:stopPropagation="true">
+            <header class="cuentas-modal__header">
+                <div>
+                    <span class="cuentas-modal__eyebrow">@(_form.RazonSocial)</span>
+                    <h3 id="cuentas-contacto-modal-title">Nuevo contacto</h3>
+                </div>
+                <button type="button" class="cuentas-modal__close" @onclick="CancelarNuevoContacto" disabled="@_savingContacto" aria-label="Cerrar">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </header>
+
+            <div class="cuentas-modal__body">
+                @if (!string.IsNullOrWhiteSpace(_contactoError))
+                {
+                    <div class="editor-msg editor-msg--warning">@_contactoError</div>
+                }
+
+                <div class="contactos-form__grid">
+                    <div class="field">
+                        <label>Nombre y apellido</label>
+                        <input type="text" class="usuarios-input" maxlength="100" @bind="_contactoDraft.NombreApellido" disabled="@_savingContacto" />
+                    </div>
+                    <div class="field">
+                        <label>Cargo / rol</label>
+                        <input type="text" class="usuarios-input" maxlength="100" @bind="_contactoDraft.Cargo" disabled="@_savingContacto" />
+                    </div>
+                    <div class="field">
+                        <label>Email</label>
+                        <input type="email" class="usuarios-input" maxlength="100" @bind="_contactoDraft.Email" disabled="@_savingContacto" />
+                    </div>
+                    <div class="field">
+                        <label>Celular</label>
+                        <input type="text" class="usuarios-input" maxlength="100" @bind="_contactoDraft.Celular" disabled="@_savingContacto" />
+                    </div>
+                    <div class="field">
+                        <label>Tel&eacute;fono</label>
+                        <input type="text" class="usuarios-input" maxlength="100" @bind="_contactoDraft.Telefono" disabled="@_savingContacto" />
+                    </div>
+                    <div class="field field--wide">
+                        <label>Observaciones</label>
+                        <textarea rows="4" class="usuarios-input" @bind="_contactoDraft.Observaciones" disabled="@_savingContacto"></textarea>
+                    </div>
+                </div>
+            </div>
+
+            <footer class="cuentas-modal__actions">
+                <button type="button" class="btn btn--primary" @onclick="GuardarContactoCuentaAsync" disabled="@_savingContacto">
+                    <i class="bi bi-floppy"></i>
+                    Guardar contacto
+                </button>
+                <button type="button" class="btn btn--ghost" @onclick="CancelarNuevoContacto" disabled="@_savingContacto">
+                    Cancelar
+                </button>
+            </footer>
+        </section>
+    </div>
+}
+
+@if (_showContactoPreview && _contactoPreview is not null)
+{
+    <div class="cuentas-modal-backdrop" @onclick="CerrarVistaContacto">
+        <section class="cuentas-modal cuentas-modal--compact" role="dialog" aria-modal="true" aria-labelledby="cuentas-contacto-preview-title" @onclick:stopPropagation="true">
+            <header class="cuentas-modal__header">
+                <div>
+                    <span class="cuentas-modal__eyebrow">@(_form.RazonSocial)</span>
+                    <h3 id="cuentas-contacto-preview-title">@_contactoPreview.NombreApellido</h3>
+                </div>
+                <button type="button" class="cuentas-modal__close" @onclick="CerrarVistaContacto" aria-label="Cerrar">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </header>
+
+            <div class="cuentas-modal__body">
+                <div class="cuentas-contacto-preview">
+                    <div class="cuentas-contacto-item__avatar @GetContactAvatarClass(_contactoPreview)">
+                        @GetContactInitial(_contactoPreview)
+                    </div>
+                    <div>
+                        @if (!string.IsNullOrWhiteSpace(_contactoPreview.Cargo))
+                        {
+                            <span class="cuentas-contacto-preview__role">@_contactoPreview.Cargo</span>
+                        }
+                        <dl>
+                            <div>
+                                <dt>Email</dt>
+                                <dd>@FormatNullable(_contactoPreview.Email)</dd>
+                            </div>
+                            <div>
+                                <dt>Celular</dt>
+                                <dd>@FormatNullable(_contactoPreview.Celular)</dd>
+                            </div>
+                            <div>
+                                <dt>Tel&eacute;fono</dt>
+                                <dd>@FormatNullable(_contactoPreview.Telefono)</dd>
+                            </div>
+                            <div>
+                                <dt>Relaci&oacute;n</dt>
+                                <dd>@GetContactoRelacionLabel(_contactoPreview)</dd>
+                            </div>
+                        </dl>
+                    </div>
+                </div>
+            </div>
+
+            <footer class="cuentas-modal__actions">
+                <button type="button" class="btn btn--primary" @onclick="AbrirContactoCompleto">
+                    <i class="bi bi-pencil-square"></i>
+                    Editar ficha completa
+                </button>
+                <button type="button" class="btn btn--ghost" @onclick="CerrarVistaContacto">
+                    Cerrar
+                </button>
+            </footer>
+        </section>
+    </div>
+}
+
 @code {
     [Parameter] public CuentaComercialTipo Tipo { get; set; }
 
@@ -1076,6 +1156,7 @@
     private CuentaComercialFilters _filters = new();
     private CuentaComercialSaveRequest _form = new();
     private CuentaComercialContactoCreateRequest _contactoDraft = new();
+    private CuentaComercialContactoDto? _contactoPreview;
     private CuentaComercialLookupDataDto _lookups = new();
     private CuentaComercialViewSettingsDto _viewSettings = new();
     private AppUiMessage? _feedback;
@@ -1085,6 +1166,7 @@
     private bool _savingContacto;
     private bool _showEditor;
     private bool _showContactoForm;
+    private bool _showContactoPreview;
     private bool _showViewSettings;
     private bool _showSearchPanel;
     private bool _notesEditorsReady;
@@ -1576,15 +1658,45 @@
     private void MostrarNuevoContacto()
     {
         _contactoError = string.Empty;
+        _showContactoPreview = false;
+        _contactoPreview = null;
         _contactoDraft = new CuentaComercialContactoCreateRequest { CuentaCodigo = _selectedCodigo };
         _showContactoForm = true;
     }
 
     private void CancelarNuevoContacto()
     {
+        if (_savingContacto)
+            return;
+
         _contactoError = string.Empty;
         _contactoDraft = new CuentaComercialContactoCreateRequest();
         _showContactoForm = false;
+    }
+
+    private void MostrarVistaContacto(CuentaComercialContactoDto contacto)
+    {
+        _contactoError = string.Empty;
+        _showContactoForm = false;
+        _contactoDraft = new CuentaComercialContactoCreateRequest();
+        _contactoPreview = contacto;
+        _showContactoPreview = true;
+    }
+
+    private void CerrarVistaContacto()
+    {
+        _contactoPreview = null;
+        _showContactoPreview = false;
+    }
+
+    private void AbrirContactoCompleto()
+    {
+        if (_contactoPreview is null)
+            return;
+
+        var contactoId = _contactoPreview.Id;
+        CerrarVistaContacto();
+        Nav.NavigateTo($"/contactos?editar={contactoId}");
     }
 
     private async Task GuardarContactoCuentaAsync()
@@ -1613,6 +1725,8 @@
 
             SetFeedback(AppUiMessage.Success("Contacto guardado", $"El contacto qued\u00f3 vinculado al {SingularLabelLower}."));
             _showContactoForm = false;
+            _showContactoPreview = false;
+            _contactoPreview = null;
             _contactoDraft = new CuentaComercialContactoCreateRequest();
             await LoadContactosCuentaAsync();
         }
@@ -1628,6 +1742,8 @@
         _contactoDraft = new CuentaComercialContactoCreateRequest();
         _contactoError = string.Empty;
         _showContactoForm = false;
+        _showContactoPreview = false;
+        _contactoPreview = null;
         _loadingContactos = false;
         _savingContacto = false;
     }
@@ -2218,6 +2334,21 @@
 
     private static string FormatDate(DateTime? value)
         => value.HasValue ? value.Value.ToString("dd/MM/yyyy HH:mm") : "—";
+
+    private static string FormatNullable(string? value)
+        => string.IsNullOrWhiteSpace(value) ? "Sin dato" : value.Trim();
+
+    private static string GetContactoRelacionLabel(CuentaComercialContactoDto contacto)
+    {
+        if (contacto.VinculadoPorTabla && contacto.VinculadoPorCuentaRel)
+            return "Relación múltiple y CuentaRel";
+        if (contacto.VinculadoPorTabla)
+            return "Relación múltiple";
+        if (contacto.VinculadoPorCuentaRel)
+            return "CuentaRel";
+
+        return "Vinculado";
+    }
 
     private static string GetFeedbackClass(AppUiMessage message)
         => message.Severity switch
