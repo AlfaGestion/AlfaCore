@@ -224,24 +224,24 @@ public sealed class GestionDashboardService(
 
             var evolucion = await QueryMonthlyAsync("""
                 WITH Meses AS (
-                    SELECT DATEADD(month, -11, DATEFROMPARTS(YEAR(DATEADD(day, -1, ISNULL(@FechaHastaExclusive, DATEADD(day, 1, GETDATE())))), MONTH(DATEADD(day, -1, ISNULL(@FechaHastaExclusive, DATEADD(day, 1, GETDATE())))), 1)) AS MesInicio
+                    SELECT DATEADD(month, -11, DATEADD(day, 1 - DAY(DATEADD(day, -1, ISNULL(@FechaHastaExclusive, DATEADD(day, 1, GETDATE())))), CAST(DATEADD(day, -1, ISNULL(@FechaHastaExclusive, DATEADD(day, 1, GETDATE()))) AS date))) AS MesInicio
                     UNION ALL
                     SELECT DATEADD(month, 1, MesInicio)
                     FROM Meses
-                    WHERE MesInicio < DATEFROMPARTS(YEAR(DATEADD(day, -1, ISNULL(@FechaHastaExclusive, DATEADD(day, 1, GETDATE())))), MONTH(DATEADD(day, -1, ISNULL(@FechaHastaExclusive, DATEADD(day, 1, GETDATE())))), 1)
+                    WHERE MesInicio < DATEADD(day, 1 - DAY(DATEADD(day, -1, ISNULL(@FechaHastaExclusive, DATEADD(day, 1, GETDATE())))), CAST(DATEADD(day, -1, ISNULL(@FechaHastaExclusive, DATEADD(day, 1, GETDATE()))) AS date))
                 ),
                 VentasMensuales AS (
                     SELECT
-                        DATEFROMPARTS(YEAR(l.FECHA), MONTH(l.FECHA), 1) AS MesInicio,
+                        DATEADD(day, 1 - DAY(l.FECHA), CAST(l.FECHA AS date)) AS MesInicio,
                         SUM(l.IMPORTE) AS Total
                     FROM dbo.Libro_VentasConFP l
-                    WHERE l.FECHA >= DATEADD(month, -11, DATEFROMPARTS(YEAR(DATEADD(day, -1, ISNULL(@FechaHastaExclusive, DATEADD(day, 1, GETDATE())))), MONTH(DATEADD(day, -1, ISNULL(@FechaHastaExclusive, DATEADD(day, 1, GETDATE())))), 1))
+                    WHERE l.FECHA >= DATEADD(month, -11, DATEADD(day, 1 - DAY(DATEADD(day, -1, ISNULL(@FechaHastaExclusive, DATEADD(day, 1, GETDATE())))), CAST(DATEADD(day, -1, ISNULL(@FechaHastaExclusive, DATEADD(day, 1, GETDATE()))) AS date)))
                       AND l.FECHA < ISNULL(@FechaHastaExclusive, DATEADD(day, 1, GETDATE()))
                       AND (@ClienteLike IS NULL OR l.CUENTA LIKE @ClienteLike OR l.CABNOMBRE LIKE @ClienteLike)
                       AND (@Usuario IS NULL OR l.USUARIO_LOGEADO = @Usuario)
                       AND (@Sucursal IS NULL OR CONVERT(varchar(50), l.UNEGOCIO) = @Sucursal)
                       AND (@TipoComprobante IS NULL OR l.TC = @TipoComprobante)
-                    GROUP BY DATEFROMPARTS(YEAR(l.FECHA), MONTH(l.FECHA), 1)
+                    GROUP BY DATEADD(day, 1 - DAY(l.FECHA), CAST(l.FECHA AS date))
                 )
                 SELECT
                     CONVERT(varchar(7), m.MesInicio, 120) AS Periodo,
@@ -360,11 +360,11 @@ public sealed class GestionDashboardService(
 
             var ventasMes = new Dictionary<string, decimal>();
             await using (var cmd = new SqlCommand("""
-                SELECT FORMAT(l.FECHA, 'yyyy-MM'), ISNULL(SUM(l.IMPORTE), 0)
+                SELECT CONVERT(char(7), l.FECHA, 126), ISNULL(SUM(l.IMPORTE), 0)
                 FROM dbo.Libro_VentasConFP l
                 WHERE l.FECHA >= @EvolucionDesde
                   AND (@FechaHastaExclusive IS NULL OR l.FECHA < @FechaHastaExclusive)
-                GROUP BY FORMAT(l.FECHA, 'yyyy-MM')
+                GROUP BY CONVERT(char(7), l.FECHA, 126)
                 """, cn))
             {
                 cmd.Parameters.AddWithValue("@EvolucionDesde", meses[0]);
@@ -377,7 +377,7 @@ public sealed class GestionDashboardService(
             // Evolución mensual — compras (últimos 12 meses)
             var comprasMes = new Dictionary<string, decimal>();
             await using (var cmd = new SqlCommand("""
-                SELECT FORMAT(c.FECHA, 'yyyy-MM'),
+                SELECT CONVERT(char(7), c.FECHA, 126),
                        ISNULL(SUM(
                            ISNULL(c.NETO_GRAVADO, 0)
                          + ISNULL(c.IVA_21,       0)
@@ -388,7 +388,7 @@ public sealed class GestionDashboardService(
                 FROM dbo.LibroIvaCompras_Contadores c
                 WHERE c.FECHA >= @EvolucionDesde
                   AND (@FechaHastaExclusive IS NULL OR c.FECHA < @FechaHastaExclusive)
-                GROUP BY FORMAT(c.FECHA, 'yyyy-MM')
+                GROUP BY CONVERT(char(7), c.FECHA, 126)
                 """, cn))
             {
                 cmd.Parameters.AddWithValue("@EvolucionDesde", meses[0]);
@@ -944,11 +944,11 @@ public sealed class GestionDashboardService(
 
             var evolucion = await QueryMonthlyAsync("""
                 WITH Meses AS (
-                    SELECT DATEADD(month, -11, DATEFROMPARTS(YEAR(DATEADD(day, -1, ISNULL(@FechaHastaExclusive, DATEADD(day, 1, GETDATE())))), MONTH(DATEADD(day, -1, ISNULL(@FechaHastaExclusive, DATEADD(day, 1, GETDATE())))), 1)) AS MesInicio
+                    SELECT DATEADD(month, -11, DATEADD(day, 1 - DAY(DATEADD(day, -1, ISNULL(@FechaHastaExclusive, DATEADD(day, 1, GETDATE())))), CAST(DATEADD(day, -1, ISNULL(@FechaHastaExclusive, DATEADD(day, 1, GETDATE()))) AS date))) AS MesInicio
                     UNION ALL
                     SELECT DATEADD(month, 1, MesInicio)
                     FROM Meses
-                    WHERE MesInicio < DATEFROMPARTS(YEAR(DATEADD(day, -1, ISNULL(@FechaHastaExclusive, DATEADD(day, 1, GETDATE())))), MONTH(DATEADD(day, -1, ISNULL(@FechaHastaExclusive, DATEADD(day, 1, GETDATE())))), 1)
+                    WHERE MesInicio < DATEADD(day, 1 - DAY(DATEADD(day, -1, ISNULL(@FechaHastaExclusive, DATEADD(day, 1, GETDATE())))), CAST(DATEADD(day, -1, ISNULL(@FechaHastaExclusive, DATEADD(day, 1, GETDATE()))) AS date))
                 ),
                 ArticulosFiltrados AS (
                     SELECT
@@ -967,7 +967,7 @@ public sealed class GestionDashboardService(
                         SUM(s.Cantidad) AS CantidadBase
                     FROM dbo.V_MV_STOCK s
                     INNER JOIN ArticulosFiltrados a ON a.IDARTICULO = s.IDArticulo
-                    WHERE s.FECHA < DATEADD(month, -11, DATEFROMPARTS(YEAR(DATEADD(day, -1, ISNULL(@FechaHastaExclusive, DATEADD(day, 1, GETDATE())))), MONTH(DATEADD(day, -1, ISNULL(@FechaHastaExclusive, DATEADD(day, 1, GETDATE())))), 1))
+                    WHERE s.FECHA < DATEADD(month, -11, DATEADD(day, 1 - DAY(DATEADD(day, -1, ISNULL(@FechaHastaExclusive, DATEADD(day, 1, GETDATE())))), CAST(DATEADD(day, -1, ISNULL(@FechaHastaExclusive, DATEADD(day, 1, GETDATE()))) AS date)))
                       AND (@Deposito IS NULL OR CONVERT(varchar(50), s.IdDeposito) = @Deposito)
                       AND (@Sucursal IS NULL OR CONVERT(varchar(50), s.UNEGOCIO) = @Sucursal)
                       AND (@Estado IS NULL OR s.Estado = @Estado)
@@ -975,17 +975,17 @@ public sealed class GestionDashboardService(
                 ),
                 MovMes AS (
                     SELECT
-                        DATEFROMPARTS(YEAR(s.FECHA), MONTH(s.FECHA), 1) AS MesInicio,
+                        DATEADD(day, 1 - DAY(s.FECHA), CAST(s.FECHA AS date)) AS MesInicio,
                         s.IDArticulo,
                         SUM(s.Cantidad) AS CantidadMes
                     FROM dbo.V_MV_STOCK s
                     INNER JOIN ArticulosFiltrados a ON a.IDARTICULO = s.IDArticulo
-                    WHERE s.FECHA >= DATEADD(month, -11, DATEFROMPARTS(YEAR(DATEADD(day, -1, ISNULL(@FechaHastaExclusive, DATEADD(day, 1, GETDATE())))), MONTH(DATEADD(day, -1, ISNULL(@FechaHastaExclusive, DATEADD(day, 1, GETDATE())))), 1))
+                    WHERE s.FECHA >= DATEADD(month, -11, DATEADD(day, 1 - DAY(DATEADD(day, -1, ISNULL(@FechaHastaExclusive, DATEADD(day, 1, GETDATE())))), CAST(DATEADD(day, -1, ISNULL(@FechaHastaExclusive, DATEADD(day, 1, GETDATE()))) AS date)))
                       AND s.FECHA < ISNULL(@FechaHastaExclusive, DATEADD(day, 1, GETDATE()))
                       AND (@Deposito IS NULL OR CONVERT(varchar(50), s.IdDeposito) = @Deposito)
                       AND (@Sucursal IS NULL OR CONVERT(varchar(50), s.UNEGOCIO) = @Sucursal)
                       AND (@Estado IS NULL OR s.Estado = @Estado)
-                    GROUP BY DATEFROMPARTS(YEAR(s.FECHA), MONTH(s.FECHA), 1), s.IDArticulo
+                    GROUP BY DATEADD(day, 1 - DAY(s.FECHA), CAST(s.FECHA AS date)), s.IDArticulo
                 ),
                 MesArticulo AS (
                     SELECT
@@ -993,25 +993,24 @@ public sealed class GestionDashboardService(
                         a.IDARTICULO,
                         CASE
                             WHEN ISNULL(sb.CantidadBase, 0)
-                                + SUM(ISNULL(mm.CantidadMes, 0)) OVER (
-                                    PARTITION BY a.IDARTICULO
-                                    ORDER BY m.MesInicio
-                                    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-                                ) < 0
+                                + ISNULL((
+                                    SELECT SUM(ISNULL(mm2.CantidadMes, 0))
+                                    FROM MovMes mm2
+                                    WHERE mm2.IDArticulo = a.IDARTICULO
+                                      AND mm2.MesInicio <= m.MesInicio
+                                ), 0) < 0
                             THEN 0
                             ELSE ISNULL(sb.CantidadBase, 0)
-                            + SUM(ISNULL(mm.CantidadMes, 0)) OVER (
-                                PARTITION BY a.IDARTICULO
-                                ORDER BY m.MesInicio
-                                ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-                            ) AS StockMes
+                            + ISNULL((
+                                SELECT SUM(ISNULL(mm2.CantidadMes, 0))
+                                FROM MovMes mm2
+                                WHERE mm2.IDArticulo = a.IDARTICULO
+                                  AND mm2.MesInicio <= m.MesInicio
+                            ), 0)
                         END AS StockMes
                     FROM Meses m
                     CROSS JOIN ArticulosFiltrados a
                     LEFT JOIN StockBase sb ON sb.IDArticulo = a.IDARTICULO
-                    LEFT JOIN MovMes mm
-                        ON mm.MesInicio = m.MesInicio
-                       AND mm.IDArticulo = a.IDARTICULO
                 )
                 SELECT
                     CONVERT(varchar(7), ma.MesInicio, 120) AS Periodo,
@@ -1318,13 +1317,13 @@ public sealed class GestionDashboardService(
             };
 
             const string monthlyWhere = """
-                WHERE FECHA >= DATEADD(MONTH, -11, DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1))
+                WHERE FECHA >= DATEADD(MONTH, -11, DATEADD(day, 1 - DAY(GETDATE()), CAST(GETDATE() AS date)))
                   AND (@Sucursal IS NULL OR CONVERT(varchar(50), UNEGOCIO) = @Sucursal)
-                GROUP BY FORMAT(FECHA, 'yyyy-MM')
+                GROUP BY CONVERT(char(7), FECHA, 126)
                 ORDER BY 1
                 """;
             const string monthlySelect = """
-                SELECT FORMAT(FECHA, 'yyyy-MM'),
+                SELECT CONVERT(char(7), FECHA, 126),
                        ISNULL(SUM(IVA_RESP_INSC + IVA_MONOTRIBUTO + IVA_CONS_FINAL), 0)
                 FROM dbo.
                 """;
@@ -1497,7 +1496,12 @@ public sealed class GestionDashboardService(
     {
         var result = new DigitosPlanCuentas();
         await using var cmd = new SqlCommand("""
-            SELECT UPPER(LTRIM(RTRIM(clave))), TRY_CAST(valor AS int)
+            SELECT
+                UPPER(LTRIM(RTRIM(clave))),
+                CASE
+                    WHEN ISNUMERIC(LTRIM(RTRIM(valor))) = 1 THEN CAST(LTRIM(RTRIM(valor)) AS int)
+                    ELSE NULL
+                END
             FROM dbo.TA_CONFIGURACION
             WHERE UPPER(LTRIM(RTRIM(clave))) LIKE 'DIGITOS_%'
             """, cn);

@@ -61,7 +61,7 @@ public sealed partial class ComprasDashboardService
 
             var evolucionSemanal = await ReadListAsync(connection, $"""
                 SELECT TOP (12)
-                    CONCAT(YEAR(c.FECHA), '-S', RIGHT('00' + CONVERT(varchar(2), DATEPART(ISO_WEEK, c.FECHA)), 2)) AS Periodo,
+                    CONVERT(varchar(4), YEAR(c.FECHA)) + '-S' + RIGHT('00' + CONVERT(varchar(2), DATEPART(ISO_WEEK, c.FECHA)), 2) AS Periodo,
                     SUM(c.ImporteDashboard) AS Total
                 {HeaderFromClause}
                 GROUP BY YEAR(c.FECHA), DATEPART(ISO_WEEK, c.FECHA)
@@ -74,8 +74,8 @@ public sealed partial class ComprasDashboardService
 
             var topComprobantes = await GetCategoryTotalsAsync(connection, filter, $"""
                 SELECT TOP (8)
-                    CONCAT(c.TC, ' ', c.IDCOMPROBANTE, ' · ', COALESCE(NULLIF(c.RAZON_SOCIAL, ''), c.CUENTA)) AS Categoria,
-                    CONCAT(c.TC, '|', c.IDCOMPROBANTE, '|', c.CUENTA) AS Codigo,
+                    ISNULL(c.TC, '') + ' ' + ISNULL(c.IDCOMPROBANTE, '') + ' · ' + ISNULL(COALESCE(NULLIF(c.RAZON_SOCIAL, ''), c.CUENTA), '') AS Categoria,
+                    ISNULL(c.TC, '') + '|' + ISNULL(c.IDCOMPROBANTE, '') + '|' + ISNULL(c.CUENTA, '') AS Codigo,
                     c.ImporteDashboard AS Total
                 {HeaderFromClause}
                 ORDER BY c.ImporteDashboard DESC, c.FECHA DESC;
@@ -123,23 +123,32 @@ public sealed partial class ComprasDashboardService
                 SELECT COUNT(*)
                 {HeaderFromClause};
 
+                WITH comprobantes_paginados AS (
+                    SELECT
+                        c.TC, c.IDCOMPROBANTE, c.NUMERO, c.FECHA, c.CUENTA, c.RAZON_SOCIAL,
+                        c.SUCURSAL, CONVERT(varchar(20), c.IdDeposito) AS Deposito, c.USUARIO,
+                        c.NetoDashboard, c.IvaDashboard, c.ImporteDashboard, c.EstadoComprobante,
+                        ISNULL(det.CantidadItems, 0) AS CantidadItems,
+                        CAST(CASE WHEN ISNULL(det.CantidadItems, 0) > 0 THEN 1 ELSE 0 END AS bit) AS TieneDetalle,
+                        CAST(CASE WHEN ISNULL(det.CantidadItems, 0) = 0 THEN 1 ELSE 0 END AS bit) AS EsContable,
+                        CAST(CASE WHEN c.IvaDashboard = 0 AND c.ImporteDashboard > 0 THEN 1 ELSE 0 END AS bit) AS IvaEnCero,
+                        CASE
+                            WHEN c.ImporteDashboard = 0 THEN 'En cero'
+                            WHEN ISNULL(det.CantidadItems, 0) = 0 THEN 'Sin detalle'
+                            WHEN c.IvaDashboard = 0 AND c.ImporteDashboard > 0 THEN 'IVA 0'
+                            ELSE ''
+                        END AS AlertaOperativa,
+                        ROW_NUMBER() OVER (ORDER BY c.FECHA DESC, c.IDCOMPROBANTE DESC) AS rn
+                    {HeaderWithDetailFromClause}
+                )
                 SELECT
-                    c.TC, c.IDCOMPROBANTE, c.NUMERO, c.FECHA, c.CUENTA, c.RAZON_SOCIAL,
-                    c.SUCURSAL, CONVERT(varchar(20), c.IdDeposito) AS Deposito, c.USUARIO,
-                    c.NetoDashboard, c.IvaDashboard, c.ImporteDashboard, c.EstadoComprobante,
-                    ISNULL(det.CantidadItems, 0) AS CantidadItems,
-                    CAST(CASE WHEN ISNULL(det.CantidadItems, 0) > 0 THEN 1 ELSE 0 END AS bit) AS TieneDetalle,
-                    CAST(CASE WHEN ISNULL(det.CantidadItems, 0) = 0 THEN 1 ELSE 0 END AS bit) AS EsContable,
-                    CAST(CASE WHEN c.IvaDashboard = 0 AND c.ImporteDashboard > 0 THEN 1 ELSE 0 END AS bit) AS IvaEnCero,
-                    CASE
-                        WHEN c.ImporteDashboard = 0 THEN 'En cero'
-                        WHEN ISNULL(det.CantidadItems, 0) = 0 THEN 'Sin detalle'
-                        WHEN c.IvaDashboard = 0 AND c.ImporteDashboard > 0 THEN 'IVA 0'
-                        ELSE ''
-                    END AS AlertaOperativa
-                {HeaderWithDetailFromClause}
-                ORDER BY c.FECHA DESC, c.IDCOMPROBANTE DESC
-                OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY;
+                    TC, IDCOMPROBANTE, NUMERO, FECHA, CUENTA, RAZON_SOCIAL,
+                    SUCURSAL, Deposito, USUARIO,
+                    NetoDashboard, IvaDashboard, ImporteDashboard, EstadoComprobante,
+                    CantidadItems, TieneDetalle, EsContable, IvaEnCero, AlertaOperativa
+                FROM comprobantes_paginados
+                WHERE rn BETWEEN @Offset + 1 AND @Offset + @PageSize
+                ORDER BY rn;
                 """;
 
             await using var command = BuildCommand(connection, sql, filter);
