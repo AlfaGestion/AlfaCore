@@ -46,15 +46,16 @@
         </section>
     }
 
-    <section class="panel-card smart-search-card" @onclick:stopPropagation>
-        <div class="smart-search">
+    <section class="panel-card smart-search-card">
+        <div class="smart-search" @onclick:stopPropagation>
             <div class="smart-search__bar">
                 <i class="bi bi-search"></i>
                 <input type="search"
                        placeholder="Buscar por código, razón social, contacto, localidad, teléfono o documento..."
                        value="@_filters.Texto"
                        @onfocus="OpenSearchPanel"
-                       @oninput="OnSearchInput" />
+                       @oninput="OnSearchInput"
+                       @onkeydown="OnSearchKeyDownAsync" />
                 <button type="button" class="smart-search__toggle" @onclick="ToggleSearchPanel" aria-label="Mostrar filtros">
                     <i class="bi @(_showSearchPanel ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
                 </button>
@@ -1339,6 +1340,17 @@
     {
         _filters.Texto = e.Value?.ToString() ?? string.Empty;
         DebounceSearch();
+    }
+
+    private async Task OnSearchKeyDownAsync(KeyboardEventArgs e)
+    {
+        if (!string.Equals(e.Key, "Enter", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        _searchDebounceCts?.Cancel();
+        _filters.PageNumber = 1;
+        CloseSearchPanel();
+        await BuscarAsync();
     }
 
     private void DebounceSearch()
