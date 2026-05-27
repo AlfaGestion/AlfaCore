@@ -17448,6 +17448,11 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
     overflow-wrap: anywhere;
 }
 
+.cuentas-contacto-preview dd .usuarios-input {
+    min-height: 2.25rem;
+    padding: .45rem .6rem;
+}
+
 @media (max-width: 720px) {
     .shell__content .cuentas-partner-summary {
         grid-template-columns: 4.7rem minmax(0, 1fr);

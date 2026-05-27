@@ -1087,6 +1087,11 @@
             </header>
 
             <div class="cuentas-modal__body">
+                @if (!string.IsNullOrWhiteSpace(_contactoError))
+                {
+                    <div class="editor-msg editor-msg--warning">@_contactoError</div>
+                }
+
                 <div class="cuentas-contacto-preview">
                     <div class="cuentas-contacto-item__avatar @GetContactAvatarClass(_contactoPreview)">
                         @GetContactInitial(_contactoPreview)
@@ -1099,15 +1104,21 @@
                         <dl>
                             <div>
                                 <dt>Email</dt>
-                                <dd>@FormatNullable(_contactoPreview.Email)</dd>
+                                <dd>
+                                    <input type="email" class="usuarios-input" maxlength="100" @bind="_contactoQuickDraft.Email" disabled="@_savingContactoQuick" />
+                                </dd>
                             </div>
                             <div>
                                 <dt>Celular</dt>
-                                <dd>@FormatNullable(_contactoPreview.Celular)</dd>
+                                <dd>
+                                    <input type="text" class="usuarios-input" maxlength="100" @bind="_contactoQuickDraft.Celular" disabled="@_savingContactoQuick" />
+                                </dd>
                             </div>
                             <div>
                                 <dt>Tel&eacute;fono</dt>
-                                <dd>@FormatNullable(_contactoPreview.Telefono)</dd>
+                                <dd>
+                                    <input type="text" class="usuarios-input" maxlength="100" @bind="_contactoQuickDraft.Telefono" disabled="@_savingContactoQuick" />
+                                </dd>
                             </div>
                             <div>
                                 <dt>Relaci&oacute;n</dt>
@@ -1119,6 +1130,10 @@
             </div>
 
             <footer class="cuentas-modal__actions">
+                <button type="button" class="btn btn--primary" @onclick="GuardarDatosRapidosContactoAsync" disabled="@_savingContactoQuick">
+                    <i class="bi bi-floppy"></i>
+                    @(_savingContactoQuick ? "Guardando..." : "Guardar cambios")
+                </button>
                 <button type="button" class="btn btn--primary" @onclick="AbrirContactoCompleto">
                     <i class="bi bi-pencil-square"></i>
                     Editar ficha completa
@@ -1146,6 +1161,7 @@
     private CuentaComercialFilters _filters = new();
     private CuentaComercialSaveRequest _form = new();
     private CuentaComercialContactoCreateRequest _contactoDraft = new();
+    private CuentaComercialContactoQuickUpdateRequest _contactoQuickDraft = new();
     private CuentaComercialContactoDto? _contactoPreview;
     private CuentaComercialLookupDataDto _lookups = new();
     private CuentaComercialViewSettingsDto _viewSettings = new();
@@ -1154,6 +1170,7 @@
     private bool _loadingContactos;
     private bool _saving;
     private bool _savingContacto;
+    private bool _savingContactoQuick;
     private bool _showEditor;
     private bool _showContactoForm;
     private bool _showContactoPreview;
@@ -1670,12 +1687,24 @@
         _showContactoForm = false;
         _contactoDraft = new CuentaComercialContactoCreateRequest();
         _contactoPreview = contacto;
+        _contactoQuickDraft = new CuentaComercialContactoQuickUpdateRequest
+        {
+            Id = contacto.Id,
+            CuentaCodigo = _selectedCodigo,
+            Email = contacto.Email,
+            Telefono = contacto.Telefono,
+            Celular = contacto.Celular
+        };
         _showContactoPreview = true;
     }
 
     private void CerrarVistaContacto()
     {
+        if (_savingContactoQuick)
+            return;
+
         _contactoPreview = null;
+        _contactoQuickDraft = new CuentaComercialContactoQuickUpdateRequest();
         _showContactoPreview = false;
     }
 
@@ -1687,6 +1716,48 @@
         var contactoId = _contactoPreview.Id;
         CerrarVistaContacto();
         Nav.NavigateTo($"/contactos?editar={contactoId}");
+    }
+
+    private async Task GuardarDatosRapidosContactoAsync()
+    {
+        if (_contactoPreview is null)
+            return;
+
+        _contactoError = string.Empty;
+        _savingContactoQuick = true;
+        try
+        {
+            _contactoQuickDraft.Id = _contactoPreview.Id;
+            _contactoQuickDraft.CuentaCodigo = _selectedCodigo;
+            var result = await UiOps.RunAsync(
+                () => CuentasSvc.UpdateContactoQuickAsync(Tipo, _contactoQuickDraft),
+                "No se pudieron guardar los datos rápidos del contacto.");
+
+            if (!result.Success)
+            {
+                _contactoError = result.Feedback?.Message ?? "No se pudieron guardar los datos rápidos del contacto.";
+                SetFeedback(result.Feedback);
+                return;
+            }
+
+            _contactoPreview.Email = _contactoQuickDraft.Email?.Trim() ?? string.Empty;
+            _contactoPreview.Telefono = _contactoQuickDraft.Telefono?.Trim() ?? string.Empty;
+            _contactoPreview.Celular = _contactoQuickDraft.Celular?.Trim() ?? string.Empty;
+
+            var item = _contactosCuenta.FirstOrDefault(contacto => contacto.Id == _contactoPreview.Id);
+            if (item is not null)
+            {
+                item.Email = _contactoPreview.Email;
+                item.Telefono = _contactoPreview.Telefono;
+                item.Celular = _contactoPreview.Celular;
+            }
+
+            SetFeedback(AppUiMessage.Success("Contacto actualizado", "Los datos rápidos del contacto se guardaron correctamente."));
+        }
+        finally
+        {
+            _savingContactoQuick = false;
+        }
     }
 
     private async Task GuardarContactoCuentaAsync()
@@ -1734,8 +1805,10 @@
         _showContactoForm = false;
         _showContactoPreview = false;
         _contactoPreview = null;
+        _contactoQuickDraft = new CuentaComercialContactoQuickUpdateRequest();
         _loadingContactos = false;
         _savingContacto = false;
+        _savingContactoQuick = false;
     }
 
     private async Task DarDeBajaAsync()

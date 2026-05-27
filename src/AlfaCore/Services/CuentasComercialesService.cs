@@ -1,6 +1,7 @@
 using AlfaCore.Models;
 using Dapper;
 using Microsoft.Data.SqlClient;
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -771,9 +772,9 @@ public sealed class CuentasComercialesService(
             ArgumentNullException.ThrowIfNull(request);
             var normalized = NormalizeContactoRequest(request);
             if (string.IsNullOrWhiteSpace(normalized.CuentaCodigo))
-                throw new InvalidOperationException($"No se recibiÃ³ el {GetSingularLabel(tipo).ToLowerInvariant()} al que se vincula el contacto.");
+                throw new InvalidOperationException($"No se recibió el {GetSingularLabel(tipo).ToLowerInvariant()} al que se vincula el contacto.");
             if (string.IsNullOrWhiteSpace(normalized.NombreApellido))
-                throw new InvalidOperationException("IngresÃ¡ el nombre del contacto antes de guardar.");
+                throw new InvalidOperationException("Ingresá el nombre del contacto antes de guardar.");
 
             var descriptor = ResolveDescriptor(tipo);
             var cuenta = normalized.CuentaCodigo.Trim().ToUpperInvariant();
@@ -908,6 +909,59 @@ public sealed class CuentasComercialesService(
             return contactoId;
         }, "No se pudo crear el contacto vinculado.", ct);
 
+    public Task UpdateContactoQuickAsync(CuentaComercialTipo tipo, CuentaComercialContactoQuickUpdateRequest request, CancellationToken ct = default)
+        => ExecuteLoggedAsync(GetModuleLabel(tipo), "UpdateContactoQuick", async token =>
+        {
+            ArgumentNullException.ThrowIfNull(request);
+            var normalized = NormalizeContactoQuickRequest(request);
+            if (normalized.Id <= 0)
+                throw new InvalidOperationException("No se recibió el contacto a actualizar.");
+            if (string.IsNullOrWhiteSpace(normalized.CuentaCodigo))
+                throw new InvalidOperationException($"No se recibió el {GetSingularLabel(tipo).ToLowerInvariant()} vinculado al contacto.");
+
+            var cuenta = normalized.CuentaCodigo.Trim().ToUpperInvariant();
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            var sql = """
+                UPDATE c
+                SET
+                    c.email = @Email,
+                    c.Telefono = @Telefono,
+                    c.Celular = @Celular
+                FROM dbo.MA_CONTACTOS c
+                WHERE c.id = @Id
+                  AND (
+                        EXISTS (
+                            SELECT 1
+                            FROM dbo.MA_CONTACTOS_CUENTAS rel
+                            WHERE rel.IdContacto = ISNULL(NULLIF(c.idContacto, 0), c.id)
+                              AND UPPER(LTRIM(RTRIM(rel.Cuenta))) = @Cuenta
+                        )
+                        OR UPPER(LTRIM(RTRIM(ISNULL(c.CuentaRel, '')))) = @Cuenta
+                    );
+                """;
+
+            await using var cmd = new SqlCommand(sql, cn);
+            cmd.Parameters.AddWithValue("@Id", normalized.Id);
+            cmd.Parameters.AddWithValue("@Cuenta", cuenta);
+            cmd.Parameters.AddWithValue("@Email", DbNullable(normalized.Email));
+            cmd.Parameters.AddWithValue("@Telefono", DbNullable(normalized.Telefono));
+            cmd.Parameters.AddWithValue("@Celular", DbNullable(normalized.Celular));
+            var affected = await cmd.ExecuteNonQueryAsync(token);
+            if (affected == 0)
+                throw new InvalidOperationException("El contacto seleccionado ya no está vinculado a esta cuenta o no existe.");
+
+            await appEvents.LogAuditAsync(
+                GetModuleLabel(tipo),
+                "UpdateContactoQuick",
+                "MA_CONTACTOS",
+                normalized.Id.ToString(CultureInfo.InvariantCulture),
+                $"Datos rápidos de contacto actualizados desde {GetSingularLabel(tipo).ToLowerInvariant()}.",
+                new { normalized.Id, Cuenta = cuenta, normalized.Email, normalized.Telefono, normalized.Celular },
+                token);
+        }, "No se pudieron guardar los datos rápidos del contacto.", ct);
+
     public Task<CuentaComercialViewSettingsDto> GetViewSettingsAsync(CuentaComercialTipo tipo, string userName, CancellationToken ct = default)
         => ExecuteLoggedAsync(GetModuleLabel(tipo), "GetViewSettings", async token =>
         {
@@ -1014,6 +1068,16 @@ public sealed class CuentasComercialesService(
             Telefono = request.Telefono?.Trim() ?? string.Empty,
             Celular = request.Celular?.Trim() ?? string.Empty,
             Observaciones = request.Observaciones?.Trim() ?? string.Empty
+        };
+
+    private static CuentaComercialContactoQuickUpdateRequest NormalizeContactoQuickRequest(CuentaComercialContactoQuickUpdateRequest request)
+        => new()
+        {
+            Id = request.Id,
+            CuentaCodigo = request.CuentaCodigo?.Trim() ?? string.Empty,
+            Email = request.Email?.Trim() ?? string.Empty,
+            Telefono = request.Telefono?.Trim() ?? string.Empty,
+            Celular = request.Celular?.Trim() ?? string.Empty
         };
 
     private static CuentaComercialSaveRequest NormalizeRequest(CuentaComercialSaveRequest request)
