@@ -9619,6 +9619,13 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
     opacity: .82;
 }
 
+.tareas-row__body .bi-share {
+    margin-left: .3rem;
+    color: #67e8f9;
+    font-size: .78rem;
+    opacity: .82;
+}
+
 .tareas-note.is-done span {
     color: var(--color-muted);
     text-decoration: line-through;
@@ -9711,6 +9718,29 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
     background: rgba(15, 23, 42, .28);
 }
 
+.tareas-task-share {
+    display: flex;
+    align-items: center;
+    gap: .7rem;
+    margin: .2rem 0 1rem;
+}
+
+.tareas-task-share > span {
+    color: var(--color-muted);
+    font-size: .82rem;
+    font-weight: 700;
+}
+
+.tareas-task-share-panel {
+    display: grid;
+    gap: .65rem;
+    margin: -0.2rem 0 1.1rem;
+    padding: .75rem;
+    border: 1px solid rgba(148, 163, 184, .18);
+    border-radius: 8px;
+    background: rgba(15, 23, 42, .24);
+}
+
 .tareas-share-users {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -9720,7 +9750,8 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
     padding: .25rem;
 }
 
-.tareas-share-modal input[type="checkbox"] {
+.tareas-share-modal input[type="checkbox"],
+.tareas-task-share-panel input[type="checkbox"] {
     width: 18px;
     height: 18px;
     min-width: 18px;
@@ -16777,6 +16808,14 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
     padding: 0.75rem;
 }
 
+.shell__content .tareas-task-share {
+    margin: 0.15rem 0 1.05rem;
+}
+
+.shell__content .tareas-task-share-panel {
+    margin: -0.25rem 0 1.2rem;
+}
+
 .shell__content .tareas-modal__actions {
     margin-top: 1rem;
 }
@@ -16900,7 +16939,8 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
     opacity: 0.75;
 }
 
-.shell__content .tareas-share-modal input[type="checkbox"] {
+.shell__content .tareas-share-modal input[type="checkbox"],
+.shell__content .tareas-task-share-panel input[type="checkbox"] {
     appearance: auto !important;
     -webkit-appearance: auto !important;
     width: 18px;

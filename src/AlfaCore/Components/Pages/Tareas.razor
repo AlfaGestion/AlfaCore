@@ -163,6 +163,10 @@
                                     {
                                         <span> · vence @tarea.FechaVencimiento.Value.ToString("dd/MM")</span>
                                     }
+                                    @if (tarea.CompartidaConTodos || tarea.UsuariosCompartidos.Count > 0)
+                                    {
+                                        <i class="bi bi-share" title="@GetSharingSummary(tarea.CompartidaConTodos, tarea.UsuariosCompartidos)"></i>
+                                    }
                                 </span>
                             </button>
                             <select value="@tarea.Estado" @onchange="e => ChangeStateAsync(tarea, Convert.ToString(e.Value) ?? TareaEstadoKeys.Pendiente)">
@@ -304,6 +308,41 @@
             </label>
         </div>
 
+        <div class="tareas-task-share">
+            <button type="button" class="btn btn--ghost btn--sm" disabled="@(!_taskCanShare)" @onclick="ToggleTaskSharePanel">
+                <i class="bi bi-share"></i> Compartir
+            </button>
+            @if (_taskDraft.CompartirConTodos || _taskDraft.UsuariosCompartidos.Count > 0)
+            {
+                <span>@GetSharingSummary(_taskDraft.CompartirConTodos, _taskDraft.UsuariosCompartidos)</span>
+            }
+        </div>
+
+        @if (_taskSharePanelOpen)
+        {
+            <section class="tareas-task-share-panel">
+                <label class="tareas-share-all">
+                    <input type="checkbox" checked="@_taskDraft.CompartirConTodos" @onchange="OnTaskShareAllChanged" />
+                    <span>Compartir con todos los usuarios</span>
+                </label>
+
+                @if (!_taskDraft.CompartirConTodos)
+                {
+                    <div class="tareas-share-users">
+                        @foreach (var user in ShareUserOptions)
+                        {
+                            <label>
+                                <input type="checkbox"
+                                       checked="@_taskDraft.UsuariosCompartidos.Contains(user, StringComparer.OrdinalIgnoreCase)"
+                                       @onchange="e => ToggleTaskShareUser(user, e)" />
+                                <span>@user</span>
+                            </label>
+                        }
+                    </div>
+                }
+            </section>
+        }
+
         <label class="tareas-description">
             <span>Descripción</span>
             <textarea value="@_taskDraft.Descripcion"
@@ -384,6 +423,8 @@
     private string _quickTaskTitle = string.Empty;
     private string _quickNoteText = string.Empty;
     private bool _showTaskModal;
+    private bool _taskCanShare;
+    private bool _taskSharePanelOpen;
     private bool _showCompleted;
     private TareaSaveRequest _taskDraft = new();
     private int? _editingListId;
@@ -597,8 +638,11 @@
             IdLista = _selectedListId ?? DefaultListId,
             UsuarioAsignado = CurrentUser,
             UsuarioAccion = CurrentUser,
+            UsuariosCompartidos = [],
             Estado = TareaEstadoKeys.Pendiente
         };
+        _taskCanShare = true;
+        _taskSharePanelOpen = false;
         _showTaskModal = true;
     }
 
@@ -613,13 +657,42 @@
             FechaVencimiento = tarea.FechaVencimiento,
             UsuarioAsignado = string.IsNullOrWhiteSpace(tarea.UsuarioAsignado) ? CurrentUser : tarea.UsuarioAsignado,
             Estado = tarea.Estado,
+            CompartirConTodos = tarea.CompartidaConTodos,
+            UsuariosCompartidos = tarea.UsuariosCompartidos.ToList(),
             UsuarioAccion = CurrentUser
         };
+        _taskCanShare = tarea.EsPropia;
+        _taskSharePanelOpen = false;
         _showTaskModal = true;
     }
 
     private void CloseTaskModal()
-        => _showTaskModal = false;
+    {
+        _taskSharePanelOpen = false;
+        _showTaskModal = false;
+    }
+
+    private void ToggleTaskSharePanel()
+    {
+        if (!_taskCanShare) return;
+        _taskSharePanelOpen = !_taskSharePanelOpen;
+    }
+
+    private void OnTaskShareAllChanged(ChangeEventArgs args)
+    {
+        _taskDraft.CompartirConTodos = Convert.ToBoolean(args.Value);
+        if (_taskDraft.CompartirConTodos)
+            _taskDraft.UsuariosCompartidos = [];
+    }
+
+    private void ToggleTaskShareUser(string user, ChangeEventArgs args)
+    {
+        var selected = Convert.ToBoolean(args.Value);
+        if (selected && !_taskDraft.UsuariosCompartidos.Contains(user, StringComparer.OrdinalIgnoreCase))
+            _taskDraft.UsuariosCompartidos.Add(user);
+        if (!selected)
+            _taskDraft.UsuariosCompartidos.RemoveAll(x => string.Equals(x, user, StringComparison.OrdinalIgnoreCase));
+    }
 
     private async Task SaveTaskAsync()
     {
