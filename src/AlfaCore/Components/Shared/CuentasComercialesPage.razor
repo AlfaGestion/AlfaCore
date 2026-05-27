@@ -242,22 +242,22 @@
 
             <div class="contactos-tabs">
                 <button type="button"
-                        class="btn @(_activeTab == CuentaComercialTab.Datos ? "btn--primary" : "btn--ghost")"
+                        class="cuentas-tab @(_activeTab == CuentaComercialTab.Datos ? "is-active" : string.Empty)"
                         @onclick="() => SetActiveTabAsync(CuentaComercialTab.Datos)">
                     Carga de datos
                 </button>
                 <button type="button"
-                        class="btn @(_activeTab == CuentaComercialTab.Condiciones ? "btn--primary" : "btn--ghost")"
+                        class="cuentas-tab @(_activeTab == CuentaComercialTab.Condiciones ? "is-active" : string.Empty)"
                         @onclick="() => SetActiveTabAsync(CuentaComercialTab.Condiciones)">
                     Condiciones
                 </button>
                 <button type="button"
-                        class="btn @(_activeTab == CuentaComercialTab.Contactos ? "btn--primary" : "btn--ghost")"
+                        class="cuentas-tab @(_activeTab == CuentaComercialTab.Contactos ? "is-active" : string.Empty)"
                         @onclick="() => SetActiveTabAsync(CuentaComercialTab.Contactos)">
                     Contactos
                 </button>
                 <button type="button"
-                        class="btn @(_activeTab == CuentaComercialTab.Notas ? "btn--primary" : "btn--ghost")"
+                        class="cuentas-tab @(_activeTab == CuentaComercialTab.Notas ? "is-active" : string.Empty)"
                         @onclick="() => SetActiveTabAsync(CuentaComercialTab.Notas)">
                     Notas
                 </button>
