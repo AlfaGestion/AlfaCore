@@ -1154,6 +1154,10 @@
                     <i class="bi bi-pencil-square"></i>
                     Editar ficha completa
                 </button>
+                <button type="button" class="btn btn--ghost" @onclick="AbrirUnificarContacto">
+                    <i class="bi bi-intersect"></i>
+                    Unificar contacto
+                </button>
                 <button type="button" class="btn btn--ghost" @onclick="CerrarVistaContacto">
                     Cerrar
                 </button>
@@ -1930,6 +1934,16 @@
         var contactoId = _contactoPreview.Id;
         CerrarVistaContacto();
         Nav.NavigateTo($"/contactos?editar={contactoId}");
+    }
+
+    private void AbrirUnificarContacto()
+    {
+        if (_contactoPreview is null)
+            return;
+
+        var contactoId = _contactoPreview.Id;
+        CerrarVistaContacto();
+        Nav.NavigateTo($"/contactos?editar={contactoId}&unificar=1");
     }
 
     private async Task GuardarDatosRapidosContactoAsync()

@@ -234,6 +234,179 @@ public sealed class ContactosService(
             return await GetCuentasVinculadasCoreAsync(cn, id, token);
         }, "No se pudieron cargar las cuentas vinculadas al contacto.", ct);
 
+    public Task<IReadOnlyList<ContactoMergeCandidateDto>> SearchMergeCandidatesAsync(int contactoPrincipalId, string texto, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "SearchMergeCandidates", async token =>
+        {
+            if (contactoPrincipalId <= 0)
+                return [];
+
+            var normalizedText = texto?.Trim() ?? string.Empty;
+            if (normalizedText.Length < 2)
+                return [];
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            var hasActivo = await HasActivoColumnAsync(cn, token);
+            var activoExpr = hasActivo ? "ISNULL(c.Activo, 1)" : "CAST(1 AS bit)";
+            var sql = $"""
+                SELECT TOP (20)
+                    c.id,
+                    ISNULL(c.Nombre_y_Apellido, ''),
+                    ISNULL(c.Cargo, ''),
+                    ISNULL(c.email, ''),
+                    ISNULL(c.Telefono, ''),
+                    ISNULL(c.Celular, ''),
+                    ISNULL(c.CuentaRel, ''),
+                    {activoExpr}
+                FROM dbo.MA_CONTACTOS c
+                WHERE c.id <> @ContactoPrincipalId
+                  AND (
+                        ISNULL(c.Nombre_y_Apellido, '') LIKE '%' + @Texto + '%'
+                        OR ISNULL(c.email, '') LIKE '%' + @Texto + '%'
+                        OR ISNULL(c.Telefono, '') LIKE '%' + @Texto + '%'
+                        OR ISNULL(c.Celular, '') LIKE '%' + @Texto + '%'
+                        OR ISNULL(c.Cargo, '') LIKE '%' + @Texto + '%'
+                      )
+                ORDER BY {activoExpr} DESC, ISNULL(c.Nombre_y_Apellido, '') ASC, c.id ASC;
+                """;
+
+            var rows = new List<ContactoMergeCandidateDto>();
+            await using var cmd = new SqlCommand(sql, cn);
+            cmd.Parameters.AddWithValue("@ContactoPrincipalId", contactoPrincipalId);
+            cmd.Parameters.AddWithValue("@Texto", normalizedText);
+            await using var rd = await cmd.ExecuteReaderAsync(token);
+            while (await rd.ReadAsync(token))
+            {
+                rows.Add(new ContactoMergeCandidateDto
+                {
+                    Id = GetInt(rd, 0),
+                    NombreApellido = GetString(rd, 1),
+                    Cargo = GetString(rd, 2),
+                    Email = GetString(rd, 3),
+                    Telefono = GetString(rd, 4),
+                    Celular = GetString(rd, 5),
+                    CuentaRel = GetString(rd, 6),
+                    Activo = GetBool(rd, 7)
+                });
+            }
+
+            return (IReadOnlyList<ContactoMergeCandidateDto>)rows;
+        }, "No se pudieron buscar contactos para unificar.", ct);
+
+    public Task<ContactoDetailDto?> MergeContactsAsync(ContactoMergeRequest request, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "MergeContacts", async token =>
+        {
+            ArgumentNullException.ThrowIfNull(request);
+            if (request.ContactoPrincipalId <= 0 || request.ContactoDuplicadoId <= 0)
+                throw new InvalidOperationException("Seleccioná el contacto principal y el duplicado para unificar.");
+            if (request.ContactoPrincipalId == request.ContactoDuplicadoId)
+                throw new InvalidOperationException("No se puede unificar un contacto consigo mismo.");
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            var hasActivo = await HasActivoColumnAsync(cn, token);
+            var hasTickets = await TableColumnExistsAsync(cn, "TICK_TICKETS", "IdContacto", token);
+
+            var principal = await GetMergeRowAsync(cn, request.ContactoPrincipalId, token);
+            var duplicado = await GetMergeRowAsync(cn, request.ContactoDuplicadoId, token);
+            if (principal is null || duplicado is null)
+                throw new InvalidOperationException("No se encontraron los contactos seleccionados para unificar.");
+
+            var principalRel = principal.IdContactoRel > 0 ? principal.IdContactoRel : principal.Id;
+            var duplicadoRel = duplicado.IdContactoRel > 0 ? duplicado.IdContactoRel : duplicado.Id;
+            var merged = MergeRows(principal, duplicado);
+
+            await using var tx = await cn.BeginTransactionAsync(token);
+            var sql = hasActivo
+                ? """
+                UPDATE dbo.MA_CONTACTOS
+                SET
+                    idContacto = @PrincipalRel,
+                    Nombre_y_Apellido = @NombreApellido,
+                    Domicilio = @Domicilio,
+                    Localidad = @Localidad,
+                    Provincia = @Provincia,
+                    C_Postal = @CodigoPostal,
+                    Telefono = @Telefono,
+                    Fax = @TelefonoAlternativo,
+                    Celular = @Celular,
+                    email = @Email,
+                    WebSite = @Website,
+                    Observaciones = @Observaciones,
+                    Cargo = @Cargo,
+                    mailPGCB = @MailPGCB,
+                    mailOT = @MailOT,
+                    mailOC = @MailOC,
+                    NroDocumento = @NumeroDocumento,
+                    Activo = 1
+                WHERE id = @PrincipalId;
+
+                UPDATE dbo.MA_CONTACTOS
+                SET idContacto = @PrincipalRel,
+                    Activo = 0
+                WHERE id = @DuplicadoId;
+                """
+                : """
+                UPDATE dbo.MA_CONTACTOS
+                SET
+                    idContacto = @PrincipalRel,
+                    Nombre_y_Apellido = @NombreApellido,
+                    Domicilio = @Domicilio,
+                    Localidad = @Localidad,
+                    Provincia = @Provincia,
+                    C_Postal = @CodigoPostal,
+                    Telefono = @Telefono,
+                    Fax = @TelefonoAlternativo,
+                    Celular = @Celular,
+                    email = @Email,
+                    WebSite = @Website,
+                    Observaciones = @Observaciones,
+                    Cargo = @Cargo,
+                    mailPGCB = @MailPGCB,
+                    mailOT = @MailOT,
+                    mailOC = @MailOC,
+                    NroDocumento = @NumeroDocumento
+                WHERE id = @PrincipalId;
+
+                UPDATE dbo.MA_CONTACTOS
+                SET idContacto = @PrincipalRel
+                WHERE id = @DuplicadoId;
+                """;
+
+            await using (var cmd = new SqlCommand(sql, cn, (SqlTransaction)tx))
+            {
+                FillSaveParameters(cmd, merged);
+                cmd.Parameters.AddWithValue("@PrincipalId", principal.Id);
+                cmd.Parameters.AddWithValue("@DuplicadoId", duplicado.Id);
+                cmd.Parameters.AddWithValue("@PrincipalRel", principalRel);
+                var affected = await cmd.ExecuteNonQueryAsync(token);
+                if (affected == 0)
+                    throw new InvalidOperationException("No se pudo actualizar el contacto principal.");
+            }
+
+            await ConsolidarRelacionesContactoAsync(cn, (SqlTransaction)tx, principalRel, duplicado.Id, duplicadoRel, duplicado.CuentaRel, token);
+            await ReasignarReferenciasContactoAsync(cn, (SqlTransaction)tx, principal.Id, duplicado.Id, duplicadoRel, hasTickets, token);
+            await tx.CommitAsync(token);
+
+            await appEvents.LogAuditAsync(
+                ModuleName,
+                "Merge",
+                "MA_CONTACTOS",
+                principal.Id.ToString(),
+                "Contactos unificados.",
+                new
+                {
+                    ContactoPrincipalId = principal.Id,
+                    ContactoDuplicadoId = duplicado.Id,
+                    ContactoPrincipalRel = principalRel,
+                    ContactoDuplicadoRel = duplicadoRel,
+                    hasTickets
+                },
+                token);
+
+            return await GetByIdAsync(principal.Id, token);
+        }, "No se pudieron unificar los contactos.", ct);
+
     public Task<int> SaveAsync(ContactoSaveRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "Save", async token =>
         {
@@ -456,6 +629,181 @@ public sealed class ContactosService(
 
             return (IReadOnlyList<ProvinciaOptionDto>)items;
         }, "No se pudieron cargar las provincias.", ct);
+
+    private static async Task<ContactoMergeRow?> GetMergeRowAsync(SqlConnection cn, int id, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT TOP (1)
+                id,
+                ISNULL(NULLIF(idContacto, 0), id) AS IdContactoRel,
+                ISNULL(Nombre_y_Apellido, ''),
+                ISNULL(Domicilio, ''),
+                ISNULL(Localidad, ''),
+                ISNULL(Provincia, ''),
+                ISNULL(C_Postal, ''),
+                ISNULL(NroDocumento, ''),
+                ISNULL(Telefono, ''),
+                ISNULL(Fax, ''),
+                ISNULL(Celular, ''),
+                ISNULL(email, ''),
+                ISNULL(mailPGCB, 0),
+                ISNULL(mailOC, 0),
+                ISNULL(mailOT, 0),
+                ISNULL(WebSite, ''),
+                ISNULL(Cargo, ''),
+                ISNULL(CAST(Observaciones AS nvarchar(max)), ''),
+                ISNULL(CuentaRel, '')
+            FROM dbo.MA_CONTACTOS
+            WHERE id = @Id;
+            """;
+
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@Id", id);
+        await using var rd = await cmd.ExecuteReaderAsync(ct);
+        if (!await rd.ReadAsync(ct))
+            return null;
+
+        return new ContactoMergeRow
+        {
+            Id = GetInt(rd, 0),
+            IdContactoRel = GetInt(rd, 1),
+            NombreApellido = GetString(rd, 2),
+            Domicilio = GetString(rd, 3),
+            Localidad = GetString(rd, 4),
+            ProvinciaCodigo = GetString(rd, 5),
+            CodigoPostal = GetString(rd, 6),
+            NumeroDocumento = GetString(rd, 7),
+            Telefono = GetString(rd, 8),
+            TelefonoAlternativo = GetString(rd, 9),
+            Celular = GetString(rd, 10),
+            Email = GetString(rd, 11),
+            MailPagosCobranzas = GetBool(rd, 12),
+            MailOrdenCompra = GetBool(rd, 13),
+            MailOrdenTrabajo = GetBool(rd, 14),
+            Website = GetString(rd, 15),
+            Cargo = GetString(rd, 16),
+            Observaciones = GetString(rd, 17),
+            CuentaRel = GetString(rd, 18)
+        };
+    }
+
+    private static ContactoSaveRequest MergeRows(ContactoMergeRow principal, ContactoMergeRow duplicado)
+        => new()
+        {
+            Id = principal.Id,
+            NombreApellido = PreferPrincipal(principal.NombreApellido, duplicado.NombreApellido),
+            Domicilio = PreferPrincipal(principal.Domicilio, duplicado.Domicilio),
+            Localidad = PreferPrincipal(principal.Localidad, duplicado.Localidad),
+            ProvinciaCodigo = PreferPrincipal(principal.ProvinciaCodigo, duplicado.ProvinciaCodigo),
+            CodigoPostal = PreferPrincipal(principal.CodigoPostal, duplicado.CodigoPostal),
+            NumeroDocumento = PreferPrincipal(principal.NumeroDocumento, duplicado.NumeroDocumento),
+            Telefono = PreferPrincipal(principal.Telefono, duplicado.Telefono),
+            TelefonoAlternativo = PreferPrincipal(principal.TelefonoAlternativo, duplicado.TelefonoAlternativo),
+            Celular = PreferPrincipal(principal.Celular, duplicado.Celular),
+            Email = PreferPrincipal(principal.Email, duplicado.Email),
+            MailPagosCobranzas = principal.MailPagosCobranzas || duplicado.MailPagosCobranzas,
+            MailOrdenCompra = principal.MailOrdenCompra || duplicado.MailOrdenCompra,
+            MailOrdenTrabajo = principal.MailOrdenTrabajo || duplicado.MailOrdenTrabajo,
+            Website = PreferPrincipal(principal.Website, duplicado.Website),
+            Cargo = PreferPrincipal(principal.Cargo, duplicado.Cargo),
+            Observaciones = MergeObservaciones(principal.Observaciones, duplicado.Observaciones)
+        };
+
+    private static string PreferPrincipal(string principal, string duplicado)
+        => string.IsNullOrWhiteSpace(principal) ? (duplicado?.Trim() ?? string.Empty) : principal.Trim();
+
+    private static string MergeObservaciones(string principal, string duplicado)
+    {
+        var primary = principal?.Trim() ?? string.Empty;
+        var duplicate = duplicado?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(primary))
+            return duplicate;
+        if (string.IsNullOrWhiteSpace(duplicate) || string.Equals(primary, duplicate, StringComparison.OrdinalIgnoreCase))
+            return primary;
+
+        return $"{primary}{Environment.NewLine}{Environment.NewLine}--- Dato unificado ---{Environment.NewLine}{duplicate}";
+    }
+
+    private static async Task ConsolidarRelacionesContactoAsync(
+        SqlConnection cn,
+        SqlTransaction tx,
+        int principalRel,
+        int duplicadoId,
+        int duplicadoRel,
+        string duplicadoCuentaRel,
+        CancellationToken ct)
+    {
+        const string sql = """
+            INSERT INTO dbo.MA_CONTACTOS_CUENTAS (IdContacto, Cuenta)
+            SELECT DISTINCT @PrincipalRel, UPPER(LTRIM(RTRIM(rel.Cuenta)))
+            FROM dbo.MA_CONTACTOS_CUENTAS rel
+            WHERE rel.IdContacto IN (@DuplicadoId, @DuplicadoRel)
+              AND rel.IdContacto <> @PrincipalRel
+              AND LTRIM(RTRIM(ISNULL(rel.Cuenta, ''))) <> ''
+              AND NOT EXISTS (
+                    SELECT 1
+                    FROM dbo.MA_CONTACTOS_CUENTAS actual
+                    WHERE actual.IdContacto = @PrincipalRel
+                      AND UPPER(LTRIM(RTRIM(ISNULL(actual.Cuenta, '')))) = UPPER(LTRIM(RTRIM(ISNULL(rel.Cuenta, ''))))
+              );
+
+            INSERT INTO dbo.MA_CONTACTOS_CUENTAS (IdContacto, Cuenta)
+            SELECT @PrincipalRel, @DuplicadoCuentaRel
+            WHERE @DuplicadoCuentaRel <> ''
+              AND NOT EXISTS (
+                    SELECT 1
+                    FROM dbo.MA_CONTACTOS_CUENTAS actual
+                    WHERE actual.IdContacto = @PrincipalRel
+                      AND UPPER(LTRIM(RTRIM(ISNULL(actual.Cuenta, '')))) = @DuplicadoCuentaRel
+              );
+
+            DELETE rel
+            FROM dbo.MA_CONTACTOS_CUENTAS rel
+            WHERE rel.IdContacto IN (@DuplicadoId, @DuplicadoRel)
+              AND rel.IdContacto <> @PrincipalRel;
+            """;
+
+        await using var cmd = new SqlCommand(sql, cn, tx);
+        cmd.Parameters.AddWithValue("@PrincipalRel", principalRel);
+        cmd.Parameters.AddWithValue("@DuplicadoId", duplicadoId);
+        cmd.Parameters.AddWithValue("@DuplicadoRel", duplicadoRel);
+        cmd.Parameters.AddWithValue("@DuplicadoCuentaRel", (duplicadoCuentaRel ?? string.Empty).Trim().ToUpperInvariant());
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    private static async Task ReasignarReferenciasContactoAsync(
+        SqlConnection cn,
+        SqlTransaction tx,
+        int principalId,
+        int duplicadoId,
+        int duplicadoRel,
+        bool hasTickets,
+        CancellationToken ct)
+    {
+        var sql = new StringBuilder("""
+            UPDATE dbo.CONV_CONVERSACIONES
+            SET IdContacto = @PrincipalId
+            WHERE IdContacto IN (@DuplicadoId, @DuplicadoRel)
+              AND IdContacto <> @PrincipalId;
+            """);
+
+        if (hasTickets)
+        {
+            sql.AppendLine("""
+
+            UPDATE dbo.TICK_TICKETS
+            SET IdContacto = @PrincipalId
+            WHERE IdContacto IN (@DuplicadoId, @DuplicadoRel)
+              AND IdContacto <> @PrincipalId;
+            """);
+        }
+
+        await using var cmd = new SqlCommand(sql.ToString(), cn, tx);
+        cmd.Parameters.AddWithValue("@PrincipalId", principalId);
+        cmd.Parameters.AddWithValue("@DuplicadoId", duplicadoId);
+        cmd.Parameters.AddWithValue("@DuplicadoRel", duplicadoRel);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
 
     private static ContactoSaveRequest NormalizeRequest(ContactoSaveRequest request)
         => new()
@@ -867,6 +1215,22 @@ public sealed class ContactosService(
         return Convert.ToInt32(result) > 0;
     }
 
+    private static async Task<bool> TableColumnExistsAsync(SqlConnection cn, string tableName, string columnName, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT COUNT(1)
+            FROM sys.columns
+            WHERE object_id = OBJECT_ID(@TableName)
+              AND LOWER(name) = LOWER(@ColumnName);
+            """;
+
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@TableName", $"dbo.{tableName}");
+        cmd.Parameters.AddWithValue("@ColumnName", columnName);
+        var result = await cmd.ExecuteScalarAsync(ct);
+        return Convert.ToInt32(result) > 0;
+    }
+
     private static string GetString(SqlDataReader rd, int index)
         => rd.IsDBNull(index) ? string.Empty : Convert.ToString(rd.GetValue(index)) ?? string.Empty;
 
@@ -951,5 +1315,28 @@ public sealed class ContactosService(
             var incidentId = await appEvents.LogErrorAsync(module, action, ex, userMessage, null, AppEventSeverity.Error, ct);
             throw new AppUserFacingException(userMessage, incidentId, ex);
         }
+    }
+
+    private sealed class ContactoMergeRow
+    {
+        public int Id { get; set; }
+        public int IdContactoRel { get; set; }
+        public string NombreApellido { get; set; } = string.Empty;
+        public string Domicilio { get; set; } = string.Empty;
+        public string Localidad { get; set; } = string.Empty;
+        public string ProvinciaCodigo { get; set; } = string.Empty;
+        public string CodigoPostal { get; set; } = string.Empty;
+        public string NumeroDocumento { get; set; } = string.Empty;
+        public string Telefono { get; set; } = string.Empty;
+        public string TelefonoAlternativo { get; set; } = string.Empty;
+        public string Celular { get; set; } = string.Empty;
+        public string Email { get; set; } = string.Empty;
+        public bool MailPagosCobranzas { get; set; }
+        public bool MailOrdenCompra { get; set; }
+        public bool MailOrdenTrabajo { get; set; }
+        public string Website { get; set; } = string.Empty;
+        public string Cargo { get; set; } = string.Empty;
+        public string Observaciones { get; set; } = string.Empty;
+        public string CuentaRel { get; set; } = string.Empty;
     }
 }

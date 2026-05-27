@@ -97,6 +97,24 @@ public sealed class ContactoCuentaDto
     public bool VinculadoPorCuentaRel { get; set; }
 }
 
+public sealed class ContactoMergeCandidateDto
+{
+    public int Id { get; set; }
+    public string NombreApellido { get; set; } = string.Empty;
+    public string Cargo { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+    public string Telefono { get; set; } = string.Empty;
+    public string Celular { get; set; } = string.Empty;
+    public string CuentaRel { get; set; } = string.Empty;
+    public bool Activo { get; set; } = true;
+}
+
+public sealed class ContactoMergeRequest
+{
+    public int ContactoPrincipalId { get; set; }
+    public int ContactoDuplicadoId { get; set; }
+}
+
 public sealed class ContactosViewSettingsDto
 {
     public string AgruparPor { get; set; } = ContactosViewGroupKeys.None;

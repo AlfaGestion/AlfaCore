@@ -2,6 +2,7 @@
 @using AlfaCore.Models
 @using AlfaCore.Services
 @using Microsoft.AspNetCore.WebUtilities
+@using Microsoft.AspNetCore.Components.Web
 @inject IContactosService ContactosSvc
 @inject IConversacionesService ConversacionesSvc
 @inject IAppUiOperationService UiOps
@@ -200,6 +201,10 @@
                 <div class="actions">
                     @if (!_isNewMode)
                     {
+                        <button type="button" class="btn btn--ghost" @onclick="OpenMergeModalAsync" disabled="@(_saving || _mergingContact)">
+                            <i class="bi bi-intersect"></i>
+                            <span>Unificar contacto</span>
+                        </button>
                         <button type="button" class="btn btn--primary" @onclick="OpenConversationForSelectedAsync" disabled="@(_saving || _openingConversation)">
                             <i class="bi bi-whatsapp"></i>
                             <span>@GetConversationActionLabel(_selectedConversationId)</span>
@@ -605,11 +610,95 @@
     }
 </div>
 
+@if (_showMergeModal && !_isNewMode)
+{
+    <div class="cuentas-modal-backdrop" @onclick="CloseMergeModal">
+        <section class="cuentas-modal" role="dialog" aria-modal="true" aria-labelledby="contactos-merge-title" @onclick:stopPropagation="true">
+            <header class="cuentas-modal__header">
+                <div>
+                    <span class="cuentas-modal__eyebrow">Contacto principal</span>
+                    <h3 id="contactos-merge-title">Unificar @_form.NombreApellido</h3>
+                </div>
+                <button type="button" class="cuentas-modal__close" @onclick="CloseMergeModal" disabled="@_mergingContact" aria-label="Cerrar">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </header>
+
+            <div class="cuentas-modal__body">
+                @if (!string.IsNullOrWhiteSpace(_mergeError))
+                {
+                    <div class="editor-msg editor-msg--warning">@_mergeError</div>
+                }
+
+                <div class="cuentas-link-search">
+                    <div class="field">
+                        <label>Buscar contacto duplicado</label>
+                        <input type="search"
+                               class="usuarios-input"
+                               placeholder="Nombre, email, celular o tel&eacute;fono..."
+                               @bind="_mergeSearchText"
+                               @bind:event="oninput"
+                               @onkeydown="OnMergeSearchKeyDownAsync"
+                               disabled="@(_loadingMergeCandidates || _mergingContact)" />
+                    </div>
+                    <button type="button" class="btn btn--primary" @onclick="SearchMergeCandidatesAsync" disabled="@(_loadingMergeCandidates || _mergingContact)">
+                        <i class="bi bi-search"></i>
+                        Buscar
+                    </button>
+                </div>
+
+                <div class="conversations-context__hint">
+                    <i class="bi bi-info-circle"></i>
+                    <span>El contacto elegido se absorbe en el principal: se copian datos faltantes, se mueven cuentas, conversaciones y tickets, y el duplicado queda inactivo si la base lo permite.</span>
+                </div>
+
+                @if (_loadingMergeCandidates)
+                {
+                    <div class="usuarios-empty">Buscando contactos...</div>
+                }
+                else if (_mergeSearchExecuted && _mergeCandidates.Count == 0)
+                {
+                    <div class="usuarios-empty">No encontramos contactos para unificar con ese texto.</div>
+                }
+                else if (_mergeCandidates.Count > 0)
+                {
+                    <div class="cuentas-link-results">
+                        @foreach (var candidate in _mergeCandidates)
+                        {
+                            <button type="button" class="cuentas-link-result" @onclick="() => MergeWithCandidateAsync(candidate)" disabled="@_mergingContact">
+                                <span class="cuentas-contacto-item__avatar cuentas-contacto-item__avatar--2">
+                                    @GetInitial(candidate.NombreApellido)
+                                </span>
+                                <span class="cuentas-link-result__body">
+                                    <strong>@candidate.NombreApellido</strong>
+                                    @if (!string.IsNullOrWhiteSpace(candidate.Cargo))
+                                    {
+                                        <small>@candidate.Cargo</small>
+                                    }
+                                    <span>@FormatMergeCandidateSummary(candidate)</span>
+                                </span>
+                                <i class="bi bi-intersect"></i>
+                            </button>
+                        }
+                    </div>
+                }
+            </div>
+
+            <footer class="cuentas-modal__actions">
+                <button type="button" class="btn btn--ghost" @onclick="CloseMergeModal" disabled="@_mergingContact">
+                    Cerrar
+                </button>
+            </footer>
+        </section>
+    </div>
+}
+
 @code {
     private readonly ContactosFilters _filters = new();
     private readonly ContactoSaveRequest _form = new();
     private readonly List<ContactoGridItemDto> _items = [];
     private readonly List<ContactoCuentaDto> _linkedAccounts = [];
+    private readonly List<ContactoMergeCandidateDto> _mergeCandidates = [];
     private readonly List<ProvinciaOptionDto> _provincias = [];
     private readonly List<ContactoViewColumnDto> _viewSettingsDraft = [];
     private readonly Dictionary<string, string> _fieldErrors = new(StringComparer.OrdinalIgnoreCase);
@@ -639,8 +728,15 @@
     private string _bulkAction = BulkActionDeactivate;
     private ContactoTab _activeTab = ContactoTab.Datos;
     private int? _startupEditId;
+    private bool _startupOpenMerge;
     private long? _selectedConversationId;
     private bool _showSearchPanel;
+    private bool _showMergeModal;
+    private bool _loadingMergeCandidates;
+    private bool _mergeSearchExecuted;
+    private bool _mergingContact;
+    private string _mergeSearchText = string.Empty;
+    private string _mergeError = string.Empty;
     private CancellationTokenSource? _searchDebounceCts;
     private SearchRuleDto _contactRuleDraft = new() { Campo = "nombre", Operador = "contains" };
     private readonly List<SavedContactSearch> _contactFavorites = [];
@@ -655,7 +751,11 @@
         ApplyStartupQuery();
         await BuscarAsync();
         if (_startupEditId is int id)
+        {
             await AbrirEditorAsync(id);
+            if (_startupOpenMerge && _selectedId > 0)
+                await OpenMergeModalAsync();
+        }
     }
 
     public void Dispose()
@@ -1002,6 +1102,8 @@
             && editId > 0)
         {
             _startupEditId = editId;
+            _startupOpenMerge = query.TryGetValue("unificar", out var mergeRaw)
+                && string.Equals(mergeRaw.ToString(), "1", StringComparison.OrdinalIgnoreCase);
             return;
         }
 
@@ -1030,6 +1132,7 @@
     private void CerrarEditor()
     {
         ClearFieldErrors();
+        CloseMergeModal();
         _showEditor = false;
         _linkedAccounts.Clear();
     }
@@ -1044,6 +1147,120 @@
         }
 
         _ = SeleccionarAsync(_selectedId);
+    }
+
+    private async Task OpenMergeModalAsync()
+    {
+        if (_isNewMode || _selectedId <= 0)
+            return;
+
+        _mergeError = string.Empty;
+        _mergeCandidates.Clear();
+        _mergeSearchExecuted = false;
+        _mergeSearchText = _form.NombreApellido;
+        _showMergeModal = true;
+
+        if (_mergeSearchText.Trim().Length >= 2)
+            await SearchMergeCandidatesAsync();
+    }
+
+    private void CloseMergeModal()
+    {
+        if (_mergingContact)
+            return;
+
+        _showMergeModal = false;
+        _loadingMergeCandidates = false;
+        _mergeSearchExecuted = false;
+        _mergeCandidates.Clear();
+        _mergeError = string.Empty;
+    }
+
+    private async Task OnMergeSearchKeyDownAsync(KeyboardEventArgs e)
+    {
+        if (string.Equals(e.Key, "Enter", StringComparison.OrdinalIgnoreCase))
+            await SearchMergeCandidatesAsync();
+    }
+
+    private async Task SearchMergeCandidatesAsync()
+    {
+        if (_selectedId <= 0)
+            return;
+
+        _mergeError = string.Empty;
+        _mergeCandidates.Clear();
+        _mergeSearchExecuted = true;
+
+        if (_mergeSearchText.Trim().Length < 2)
+        {
+            _mergeError = "Escribí al menos dos caracteres para buscar duplicados.";
+            return;
+        }
+
+        _loadingMergeCandidates = true;
+        try
+        {
+            var result = await UiOps.RunAsync(
+                () => ContactosSvc.SearchMergeCandidatesAsync(_selectedId, _mergeSearchText),
+                "No se pudieron buscar contactos para unificar.");
+
+            if (!result.Success || result.Value is null)
+            {
+                _mergeError = result.Feedback?.Message ?? "No se pudieron buscar contactos para unificar.";
+                return;
+            }
+
+            _mergeCandidates.AddRange(result.Value);
+        }
+        finally
+        {
+            _loadingMergeCandidates = false;
+        }
+    }
+
+    private async Task MergeWithCandidateAsync(ContactoMergeCandidateDto candidate)
+    {
+        if (_selectedId <= 0 || candidate.Id <= 0 || _mergingContact)
+            return;
+
+        var confirm = await Js.InvokeAsync<bool>(
+            "confirm",
+            $"Se va a unificar \"{candidate.NombreApellido}\" dentro de \"{_form.NombreApellido}\". Se conservarán los datos y relaciones del contacto principal. ¿Querés continuar?");
+        if (!confirm)
+            return;
+
+        _mergeError = string.Empty;
+        _mergingContact = true;
+        try
+        {
+            var result = await UiOps.RunAsync(
+                () => ContactosSvc.MergeContactsAsync(new ContactoMergeRequest
+                {
+                    ContactoPrincipalId = _selectedId,
+                    ContactoDuplicadoId = candidate.Id
+                }),
+                "No se pudieron unificar los contactos.");
+
+            if (!result.Success)
+            {
+                _mergeError = result.Feedback?.Message ?? "No se pudieron unificar los contactos.";
+                return;
+            }
+
+            if (result.Value is not null)
+                MapDetailToForm(result.Value);
+            else
+                await SeleccionarAsync(_selectedId);
+
+            _mergingContact = false;
+            CloseMergeModal();
+            SetFeedback(AppUiMessage.Success("Contactos unificados", $"Se unificó {candidate.NombreApellido} dentro de {_form.NombreApellido}."));
+            await BuscarAsync();
+        }
+        finally
+        {
+            _mergingContact = false;
+        }
     }
 
     private async Task GuardarAsync()
@@ -1460,6 +1677,23 @@
 
     private static string DisplayOrFallback(params string?[] values)
         => values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim() ?? "-";
+
+    private static string FormatMergeCandidateSummary(ContactoMergeCandidateDto candidate)
+    {
+        var values = new[] { candidate.Email, candidate.Celular, candidate.Telefono, candidate.CuentaRel }
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value.Trim());
+        var summary = string.Join(" · ", values);
+        return string.IsNullOrWhiteSpace(summary) ? "Sin datos de contacto cargados" : summary;
+    }
+
+    private static string GetInitial(string? value)
+    {
+        var normalized = value?.Trim();
+        return string.IsNullOrWhiteSpace(normalized)
+            ? "?"
+            : normalized[0].ToString().ToUpperInvariant();
+    }
 
     private static string BuildCuentaLink(ContactoCuentaDto account)
     {
