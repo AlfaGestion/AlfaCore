@@ -581,8 +581,8 @@ public sealed class ConversacionesService(
                     c.IdConversacion,
                     ISNULL(c.TelefonoWhatsApp, ''),
                     ISNULL(c.NombreVisible, ''),
-                    ISNULL(c.ClienteCodigo, ''),
-                    ISNULL(cli.RAZON_SOCIAL, ''),
+                    ISNULL(COALESCE(NULLIF(LTRIM(RTRIM(c.ClienteCodigo)), ''), contactoCuenta.Cuenta), ''),
+                    ISNULL(COALESCE(NULLIF(cli.RAZON_SOCIAL, ''), contactoCuenta.RazonSocial), ''),
                     c.IdContacto,
                     ISNULL(mc.Nombre_y_Apellido, ''),
                     ISNULL(c.CodigoEstado, ''),
@@ -617,6 +617,27 @@ public sealed class ConversacionesService(
                     ON cli.CODIGO = c.ClienteCodigo
                 LEFT JOIN dbo.MA_CONTACTOS mc
                     ON mc.id = c.IdContacto
+                OUTER APPLY (
+                    SELECT TOP (1)
+                        cuenta.Cuenta,
+                        cliCuenta.RAZON_SOCIAL AS RazonSocial
+                    FROM (
+                        SELECT UPPER(LTRIM(RTRIM(rel.Cuenta))) AS Cuenta, 0 AS Orden
+                        FROM dbo.MA_CONTACTOS_CUENTAS rel
+                        WHERE c.IdContacto IS NOT NULL
+                          AND mc.id IS NOT NULL
+                          AND rel.IdContacto = ISNULL(NULLIF(mc.idContacto, 0), mc.id)
+                          AND LTRIM(RTRIM(ISNULL(rel.Cuenta, ''))) <> ''
+                        UNION ALL
+                        SELECT UPPER(LTRIM(RTRIM(mc.CuentaRel))) AS Cuenta, 1 AS Orden
+                        WHERE c.IdContacto IS NOT NULL
+                          AND mc.id IS NOT NULL
+                          AND LTRIM(RTRIM(ISNULL(mc.CuentaRel, ''))) <> ''
+                    ) cuenta
+                    INNER JOIN dbo.VT_CLIENTES cliCuenta
+                        ON UPPER(LTRIM(RTRIM(cliCuenta.CODIGO))) = cuenta.Cuenta
+                    ORDER BY cuenta.Orden, cliCuenta.RAZON_SOCIAL
+                ) contactoCuenta
                 LEFT JOIN dbo.V_TA_Tecnicos t
                     ON LTRIM(RTRIM(t.IdTecnico)) = LTRIM(RTRIM(c.IdTecnico))
                 OUTER APPLY (
@@ -670,7 +691,7 @@ public sealed class ConversacionesService(
                         @Search IS NULL
                         OR c.TelefonoWhatsApp LIKE @Search
                         OR c.NombreVisible COLLATE Latin1_General_CI_AI LIKE @Search
-                        OR cli.RAZON_SOCIAL COLLATE Latin1_General_CI_AI LIKE @Search
+                        OR COALESCE(NULLIF(cli.RAZON_SOCIAL, ''), contactoCuenta.RazonSocial) COLLATE Latin1_General_CI_AI LIKE @Search
                         OR mc.Nombre_y_Apellido COLLATE Latin1_General_CI_AI LIKE @Search
                         OR c.ResumenUltimoMensaje COLLATE Latin1_General_CI_AI LIKE @Search
                         OR EXISTS (
@@ -983,8 +1004,8 @@ public sealed class ConversacionesService(
                     ISNULL(c.Canal, ''),
                     ISNULL(c.TelefonoWhatsApp, ''),
                     ISNULL(c.NombreVisible, ''),
-                    ISNULL(c.ClienteCodigo, ''),
-                    ISNULL(cli.RAZON_SOCIAL, ''),
+                    ISNULL(COALESCE(NULLIF(LTRIM(RTRIM(c.ClienteCodigo)), ''), contactoCuenta.Cuenta), ''),
+                    ISNULL(COALESCE(NULLIF(cli.RAZON_SOCIAL, ''), contactoCuenta.RazonSocial), ''),
                     c.IdContacto,
                     ISNULL(mc.Nombre_y_Apellido, ''),
                     ISNULL(mc.Telefono, ''),
@@ -1010,6 +1031,27 @@ public sealed class ConversacionesService(
                     ON cli.CODIGO = c.ClienteCodigo
                 LEFT JOIN dbo.MA_CONTACTOS mc
                     ON mc.id = c.IdContacto
+                OUTER APPLY (
+                    SELECT TOP (1)
+                        cuenta.Cuenta,
+                        cliCuenta.RAZON_SOCIAL AS RazonSocial
+                    FROM (
+                        SELECT UPPER(LTRIM(RTRIM(rel.Cuenta))) AS Cuenta, 0 AS Orden
+                        FROM dbo.MA_CONTACTOS_CUENTAS rel
+                        WHERE c.IdContacto IS NOT NULL
+                          AND mc.id IS NOT NULL
+                          AND rel.IdContacto = ISNULL(NULLIF(mc.idContacto, 0), mc.id)
+                          AND LTRIM(RTRIM(ISNULL(rel.Cuenta, ''))) <> ''
+                        UNION ALL
+                        SELECT UPPER(LTRIM(RTRIM(mc.CuentaRel))) AS Cuenta, 1 AS Orden
+                        WHERE c.IdContacto IS NOT NULL
+                          AND mc.id IS NOT NULL
+                          AND LTRIM(RTRIM(ISNULL(mc.CuentaRel, ''))) <> ''
+                    ) cuenta
+                    INNER JOIN dbo.VT_CLIENTES cliCuenta
+                        ON UPPER(LTRIM(RTRIM(cliCuenta.CODIGO))) = cuenta.Cuenta
+                    ORDER BY cuenta.Orden, cliCuenta.RAZON_SOCIAL
+                ) contactoCuenta
                 LEFT JOIN dbo.V_TA_Tecnicos t
                     ON LTRIM(RTRIM(t.IdTecnico)) = LTRIM(RTRIM(c.IdTecnico))
                 OUTER APPLY (
@@ -3920,16 +3962,25 @@ public sealed class ConversacionesService(
         var phoneTail = GetPhoneComparableTail(normalizedPhone);
         var sql = $"""
             SELECT TOP (1)
-                id,
-                ISNULL(CuentaRel, ''),
-                ISNULL(Nombre_y_Apellido, '')
-            FROM dbo.MA_CONTACTOS
+                c.id,
+                ISNULL(COALESCE(contactoCuenta.Cuenta, NULLIF(UPPER(LTRIM(RTRIM(c.CuentaRel))), '')), ''),
+                ISNULL(c.Nombre_y_Apellido, '')
+            FROM dbo.MA_CONTACTOS c
+            OUTER APPLY (
+                SELECT TOP (1) UPPER(LTRIM(RTRIM(rel.Cuenta))) AS Cuenta
+                FROM dbo.MA_CONTACTOS_CUENTAS rel
+                INNER JOIN dbo.VT_CLIENTES cli
+                    ON UPPER(LTRIM(RTRIM(cli.CODIGO))) = UPPER(LTRIM(RTRIM(rel.Cuenta)))
+                WHERE rel.IdContacto = ISNULL(NULLIF(c.idContacto, 0), c.id)
+                  AND LTRIM(RTRIM(ISNULL(rel.Cuenta, ''))) <> ''
+                ORDER BY cli.RAZON_SOCIAL, rel.Cuenta
+            ) contactoCuenta
             WHERE
-                {SqlPhoneEquivalentPredicate("Telefono", "@Telefono", "@TelefonoTail")}
-                OR {SqlPhoneEquivalentPredicate("Celular", "@Telefono", "@TelefonoTail")}
-                OR {SqlPhoneEquivalentPredicate("TelefonoPart", "@Telefono", "@TelefonoTail")}
-                OR {SqlPhoneEquivalentPredicate("CelularPart", "@Telefono", "@TelefonoTail")}
-            ORDER BY id DESC
+                {SqlPhoneEquivalentPredicate("c.Telefono", "@Telefono", "@TelefonoTail")}
+                OR {SqlPhoneEquivalentPredicate("c.Celular", "@Telefono", "@TelefonoTail")}
+                OR {SqlPhoneEquivalentPredicate("c.TelefonoPart", "@Telefono", "@TelefonoTail")}
+                OR {SqlPhoneEquivalentPredicate("c.CelularPart", "@Telefono", "@TelefonoTail")}
+            ORDER BY c.id DESC
             """;
 
         await using var cmd = new SqlCommand(sql, cn);

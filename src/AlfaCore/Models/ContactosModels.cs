@@ -58,6 +58,7 @@ public sealed class ContactoDetailDto
     public string Observaciones { get; set; } = string.Empty;
     public bool Activo { get; set; } = true;
     public long? IdConversacionWhatsApp { get; set; }
+    public List<ContactoCuentaDto> CuentasVinculadas { get; set; } = [];
 }
 
 public sealed class ContactoSaveRequest
@@ -85,6 +86,15 @@ public sealed class ProvinciaOptionDto
 {
     public string Codigo { get; set; } = string.Empty;
     public string Descripcion { get; set; } = string.Empty;
+}
+
+public sealed class ContactoCuentaDto
+{
+    public string Codigo { get; set; } = string.Empty;
+    public string RazonSocial { get; set; } = string.Empty;
+    public string Tipo { get; set; } = string.Empty;
+    public bool VinculadoPorTabla { get; set; }
+    public bool VinculadoPorCuentaRel { get; set; }
 }
 
 public sealed class ContactosViewSettingsDto

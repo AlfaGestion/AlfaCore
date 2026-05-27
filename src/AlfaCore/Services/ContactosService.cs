@@ -195,7 +195,7 @@ public sealed class ContactosService(
             if (!await rd.ReadAsync(token))
                 return null;
 
-            return new ContactoDetailDto
+            var detail = new ContactoDetailDto
             {
                 Id = GetInt(rd, 0),
                 NombreApellido = GetString(rd, 1),
@@ -217,7 +217,22 @@ public sealed class ContactosService(
                 Activo = GetBool(rd, 17),
                 IdConversacionWhatsApp = rd.IsDBNull(18) ? null : rd.GetInt64(18)
             };
+
+            await rd.CloseAsync();
+            detail.CuentasVinculadas = (await GetCuentasVinculadasCoreAsync(cn, id, token)).ToList();
+            return detail;
         }, "No se pudo cargar el contacto seleccionado.", ct);
+
+    public Task<IReadOnlyList<ContactoCuentaDto>> GetCuentasVinculadasAsync(int id, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "GetCuentasVinculadas", async token =>
+        {
+            if (id <= 0)
+                return [];
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            return await GetCuentasVinculadasCoreAsync(cn, id, token);
+        }, "No se pudieron cargar las cuentas vinculadas al contacto.", ct);
 
     public Task<int> SaveAsync(ContactoSaveRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "Save", async token =>
@@ -463,6 +478,81 @@ public sealed class ContactosService(
             Cargo = request.Cargo?.Trim() ?? string.Empty,
             Observaciones = request.Observaciones?.Trim() ?? string.Empty
         };
+
+    private static async Task<IReadOnlyList<ContactoCuentaDto>> GetCuentasVinculadasCoreAsync(SqlConnection cn, int id, CancellationToken ct)
+    {
+        const string sql = """
+            WITH ContactoBase AS
+            (
+                SELECT TOP (1)
+                    id,
+                    ISNULL(NULLIF(idContacto, 0), id) AS IdContactoRel,
+                    UPPER(LTRIM(RTRIM(ISNULL(CuentaRel, '')))) AS CuentaRel
+                FROM dbo.MA_CONTACTOS
+                WHERE id = @Id
+            ),
+            Cuentas AS
+            (
+                SELECT
+                    UPPER(LTRIM(RTRIM(rel.Cuenta))) AS Codigo,
+                    CAST(1 AS bit) AS VinculadoPorTabla,
+                    CAST(0 AS bit) AS VinculadoPorCuentaRel
+                FROM ContactoBase cb
+                INNER JOIN dbo.MA_CONTACTOS_CUENTAS rel
+                    ON rel.IdContacto = cb.IdContactoRel
+                WHERE LTRIM(RTRIM(ISNULL(rel.Cuenta, ''))) <> ''
+
+                UNION ALL
+
+                SELECT
+                    cb.CuentaRel AS Codigo,
+                    CAST(0 AS bit) AS VinculadoPorTabla,
+                    CAST(1 AS bit) AS VinculadoPorCuentaRel
+                FROM ContactoBase cb
+                WHERE cb.CuentaRel <> ''
+            )
+            SELECT
+                c.Codigo,
+                ISNULL(cli.RAZON_SOCIAL, ISNULL(prv.RAZON_SOCIAL, '')) AS RazonSocial,
+                CASE
+                    WHEN cli.CODIGO IS NOT NULL THEN N'Cliente'
+                    WHEN prv.CODIGO IS NOT NULL THEN N'Proveedor'
+                    ELSE N'Cuenta'
+                END AS Tipo,
+                CAST(MAX(CASE WHEN c.VinculadoPorTabla = 1 THEN 1 ELSE 0 END) AS bit) AS VinculadoPorTabla,
+                CAST(MAX(CASE WHEN c.VinculadoPorCuentaRel = 1 THEN 1 ELSE 0 END) AS bit) AS VinculadoPorCuentaRel
+            FROM Cuentas c
+            LEFT JOIN dbo.VT_CLIENTES cli
+                ON UPPER(LTRIM(RTRIM(cli.CODIGO))) = c.Codigo
+            LEFT JOIN dbo.VT_PROVEEDORES prv
+                ON UPPER(LTRIM(RTRIM(prv.CODIGO))) = c.Codigo
+            GROUP BY c.Codigo, ISNULL(cli.RAZON_SOCIAL, ISNULL(prv.RAZON_SOCIAL, '')),
+                CASE
+                    WHEN cli.CODIGO IS NOT NULL THEN N'Cliente'
+                    WHEN prv.CODIGO IS NOT NULL THEN N'Proveedor'
+                    ELSE N'Cuenta'
+                END
+            ORDER BY Tipo, RazonSocial, Codigo;
+            """;
+
+        var rows = new List<ContactoCuentaDto>();
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@Id", id);
+        await using var rd = await cmd.ExecuteReaderAsync(ct);
+        while (await rd.ReadAsync(ct))
+        {
+            rows.Add(new ContactoCuentaDto
+            {
+                Codigo = GetString(rd, 0),
+                RazonSocial = GetString(rd, 1),
+                Tipo = GetString(rd, 2),
+                VinculadoPorTabla = GetBool(rd, 3),
+                VinculadoPorCuentaRel = GetBool(rd, 4)
+            });
+        }
+
+        return rows;
+    }
 
     private static void FillSaveParameters(SqlCommand cmd, ContactoSaveRequest request)
     {

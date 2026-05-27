@@ -223,6 +223,11 @@
                         @onclick="() => _activeTab = ContactoTab.Observaciones">
                     Observaciones
                 </button>
+                <button type="button"
+                        class="btn @(_activeTab == ContactoTab.Cuentas ? "btn--primary" : "btn--ghost")"
+                        @onclick="() => _activeTab = ContactoTab.Cuentas">
+                    Clientes / proveedores
+                </button>
             </div>
 
             @if (_activeTab == ContactoTab.Datos)
@@ -349,11 +354,61 @@
                     </div>
                 </div>
             }
-            else
+            else if (_activeTab == ContactoTab.Observaciones)
             {
                 <div class="field">
                     <label>Observaciones</label>
                     <textarea class="contactos-observaciones" @bind="_form.Observaciones" disabled="@_saving"></textarea>
+                </div>
+            }
+            else
+            {
+                <div class="contactos-form">
+                    <div class="panel-card__header">
+                        <div>
+                            <h3 class="panel-card__title">Cuentas vinculadas</h3>
+                            <p class="panel-card__subtitle">Clientes y proveedores relacionados con este contacto.</p>
+                        </div>
+                    </div>
+                    @if (_linkedAccounts.Count == 0)
+                    {
+                        <div class="usuarios-empty">Este contacto no tiene clientes o proveedores vinculados.</div>
+                    }
+                    else
+                    {
+                        <div class="usuarios-table-wrap">
+                            <table class="data-table usuarios-table">
+                                <thead>
+                                    <tr>
+                                        <th>Tipo</th>
+                                        <th>CÃ³digo</th>
+                                        <th>Cuenta</th>
+                                        <th>RelaciÃ³n</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var account in _linkedAccounts)
+                                    {
+                                        <tr>
+                                            <td>@account.Tipo</td>
+                                            <td>@account.Codigo</td>
+                                            <td><strong>@DisplayOrFallback(account.RazonSocial, account.Codigo)</strong></td>
+                                            <td>
+                                                @if (account.VinculadoPorTabla)
+                                                {
+                                                    <span>RelaciÃ³n mÃºltiple</span>
+                                                }
+                                                @if (account.VinculadoPorCuentaRel)
+                                                {
+                                                    <span>@(account.VinculadoPorTabla ? " / " : string.Empty)CuentaRel</span>
+                                                }
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
                 </div>
             }
 
@@ -547,6 +602,7 @@
     private readonly ContactosFilters _filters = new();
     private readonly ContactoSaveRequest _form = new();
     private readonly List<ContactoGridItemDto> _items = [];
+    private readonly List<ContactoCuentaDto> _linkedAccounts = [];
     private readonly List<ProvinciaOptionDto> _provincias = [];
     private readonly List<ContactoViewColumnDto> _viewSettingsDraft = [];
     private readonly Dictionary<string, string> _fieldErrors = new(StringComparer.OrdinalIgnoreCase);
@@ -910,6 +966,7 @@
         _selectedId = 0;
         _selectedActivo = true;
         _selectedConversationId = null;
+        _linkedAccounts.Clear();
 
         _form.Id = null;
         _form.NombreApellido = string.Empty;
@@ -967,6 +1024,7 @@
     {
         ClearFieldErrors();
         _showEditor = false;
+        _linkedAccounts.Clear();
     }
 
     private void ResetForm()
@@ -1140,6 +1198,8 @@
         _selectedId = detail.Id;
         _selectedActivo = detail.Activo;
         _selectedConversationId = detail.IdConversacionWhatsApp;
+        _linkedAccounts.Clear();
+        _linkedAccounts.AddRange(detail.CuentasVinculadas);
 
         _form.Id = detail.Id;
         _form.NombreApellido = detail.NombreApellido;
@@ -1391,6 +1451,9 @@
     private static string GetGroupingLabel(string grouping)
         => grouping == ContactosViewGroupKeys.Activo ? "Estado" : "Sin agrupar";
 
+    private static string DisplayOrFallback(params string?[] values)
+        => values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim() ?? "-";
+
     private IReadOnlyList<SmartFilterChip> BuildContactFilterChips()
     {
         var chips = new List<SmartFilterChip>();
@@ -1531,6 +1594,7 @@
     private enum ContactoTab
     {
         Datos = 0,
-        Observaciones = 1
+        Observaciones = 1,
+        Cuentas = 2
     }
 }

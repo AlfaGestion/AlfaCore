@@ -217,8 +217,8 @@ public sealed class TicketsService(
                     ISNULL(t.Prioridad, 0),
                     ISNULL(t.IdTecnico, ''),
                     ISNULL(tec.Nombre, ''),
-                    ISNULL(t.ClienteCodigo, ''),
-                    ISNULL(cli.RAZON_SOCIAL, ''),
+                    ISNULL(COALESCE(NULLIF(LTRIM(RTRIM(t.ClienteCodigo)), ''), contactoCuenta.Cuenta), ''),
+                    ISNULL(COALESCE(NULLIF(cli.RAZON_SOCIAL, ''), contactoCuenta.RazonSocial), ''),
                     t.IdContacto,
                     ISNULL(mc.Nombre_y_Apellido, ''),
                     t.IdConversacion,
@@ -234,7 +234,7 @@ public sealed class TicketsService(
                   AND (
                         (@IdConversacion IS NOT NULL AND t.IdConversacion = @IdConversacion)
                         OR (@IdContacto IS NOT NULL AND t.IdContacto = @IdContacto)
-                        OR (@ClienteCodigo <> '' AND t.ClienteCodigo = @ClienteCodigo)
+                        OR (@ClienteCodigo <> '' AND COALESCE(NULLIF(LTRIM(RTRIM(t.ClienteCodigo)), ''), contactoCuenta.Cuenta) = @ClienteCodigo)
                         OR ({textSql})
                       )
                 ORDER BY
@@ -604,8 +604,8 @@ public sealed class TicketsService(
                 ISNULL(t.Prioridad, 0),
                 LTRIM(RTRIM(ISNULL(t.IdTecnico, ''))),
                 ISNULL(tec.Nombre, ''),
-                ISNULL(t.ClienteCodigo, ''),
-                ISNULL(cli.RAZON_SOCIAL, ''),
+                ISNULL(COALESCE(NULLIF(LTRIM(RTRIM(t.ClienteCodigo)), ''), contactoCuenta.Cuenta), ''),
+                ISNULL(COALESCE(NULLIF(cli.RAZON_SOCIAL, ''), contactoCuenta.RazonSocial), ''),
                 t.IdContacto,
                 ISNULL(mc.Nombre_y_Apellido, ''),
                 t.IdConversacion,
@@ -624,6 +624,27 @@ public sealed class TicketsService(
             INNER JOIN dbo.TICK_ESTADOS e ON e.CodigoEstado = t.CodigoEstado
             LEFT JOIN dbo.VT_CLIENTES cli ON cli.CODIGO = t.ClienteCodigo
             LEFT JOIN dbo.MA_CONTACTOS mc ON mc.id = t.IdContacto
+            OUTER APPLY (
+                SELECT TOP (1)
+                    cuenta.Cuenta,
+                    cliCuenta.RAZON_SOCIAL AS RazonSocial
+                FROM (
+                    SELECT UPPER(LTRIM(RTRIM(rel.Cuenta))) AS Cuenta, 0 AS Orden
+                    FROM dbo.MA_CONTACTOS_CUENTAS rel
+                    WHERE t.IdContacto IS NOT NULL
+                      AND mc.id IS NOT NULL
+                      AND rel.IdContacto = ISNULL(NULLIF(mc.idContacto, 0), mc.id)
+                      AND LTRIM(RTRIM(ISNULL(rel.Cuenta, ''))) <> ''
+                    UNION ALL
+                    SELECT UPPER(LTRIM(RTRIM(mc.CuentaRel))) AS Cuenta, 1 AS Orden
+                    WHERE t.IdContacto IS NOT NULL
+                      AND mc.id IS NOT NULL
+                      AND LTRIM(RTRIM(ISNULL(mc.CuentaRel, ''))) <> ''
+                ) cuenta
+                INNER JOIN dbo.VT_CLIENTES cliCuenta
+                    ON UPPER(LTRIM(RTRIM(cliCuenta.CODIGO))) = cuenta.Cuenta
+                ORDER BY cuenta.Orden, cliCuenta.RAZON_SOCIAL
+            ) contactoCuenta
             LEFT JOIN dbo.V_TA_Tecnicos tec ON LTRIM(RTRIM(tec.IdTecnico)) = LTRIM(RTRIM(t.IdTecnico))
             OUTER APPLY (
                 SELECT COUNT(*) AS CantidadMensajes
@@ -652,7 +673,7 @@ public sealed class TicketsService(
                     OR t.Titulo LIKE '%' + @Texto + '%'
                     OR ISNULL(CAST(t.Descripcion AS nvarchar(max)), '') LIKE '%' + @Texto + '%'
                     OR CONVERT(varchar(10), t.Numero) = @Texto
-                    OR cli.RAZON_SOCIAL LIKE '%' + @Texto + '%'
+                    OR COALESCE(NULLIF(cli.RAZON_SOCIAL, ''), contactoCuenta.RazonSocial) LIKE '%' + @Texto + '%'
                     OR mc.Nombre_y_Apellido LIKE '%' + @Texto + '%'
                     OR tec.Nombre LIKE '%' + @Texto + '%'
                 )
@@ -728,11 +749,11 @@ public sealed class TicketsService(
                     OR (
                         @Rule{i}Campo = 'cliente'
                         AND (
-                            (@Rule{i}Operador = 'equals' AND ISNULL(cli.RAZON_SOCIAL, '') = @Rule{i})
-                            OR (@Rule{i}Operador = 'starts' AND ISNULL(cli.RAZON_SOCIAL, '') LIKE @Rule{i}Like)
-                            OR (@Rule{i}Operador = 'empty' AND NULLIF(LTRIM(RTRIM(ISNULL(cli.RAZON_SOCIAL, ''))), '') IS NULL)
-                            OR (@Rule{i}Operador = 'not-empty' AND NULLIF(LTRIM(RTRIM(ISNULL(cli.RAZON_SOCIAL, ''))), '') IS NOT NULL)
-                            OR (@Rule{i}Operador = 'contains' AND ISNULL(cli.RAZON_SOCIAL, '') LIKE @Rule{i}Like)
+                            (@Rule{i}Operador = 'equals' AND ISNULL(COALESCE(NULLIF(cli.RAZON_SOCIAL, ''), contactoCuenta.RazonSocial), '') = @Rule{i})
+                            OR (@Rule{i}Operador = 'starts' AND ISNULL(COALESCE(NULLIF(cli.RAZON_SOCIAL, ''), contactoCuenta.RazonSocial), '') LIKE @Rule{i}Like)
+                            OR (@Rule{i}Operador = 'empty' AND NULLIF(LTRIM(RTRIM(ISNULL(COALESCE(NULLIF(cli.RAZON_SOCIAL, ''), contactoCuenta.RazonSocial), ''))), '') IS NULL)
+                            OR (@Rule{i}Operador = 'not-empty' AND NULLIF(LTRIM(RTRIM(ISNULL(COALESCE(NULLIF(cli.RAZON_SOCIAL, ''), contactoCuenta.RazonSocial), ''))), '') IS NOT NULL)
+                            OR (@Rule{i}Operador = 'contains' AND ISNULL(COALESCE(NULLIF(cli.RAZON_SOCIAL, ''), contactoCuenta.RazonSocial), '') LIKE @Rule{i}Like)
                         )
                     )
                     OR (
@@ -1124,10 +1145,32 @@ public sealed class TicketsService(
     {
         const string sql = """
             SELECT TOP (1)
-                ISNULL(ClienteCodigo, ''),
-                IdContacto
-            FROM dbo.CONV_CONVERSACIONES
-            WHERE IdConversacion = @IdConversacion;
+                ISNULL(COALESCE(NULLIF(LTRIM(RTRIM(c.ClienteCodigo)), ''), contactoCuenta.Cuenta), ''),
+                c.IdContacto
+            FROM dbo.CONV_CONVERSACIONES c
+            LEFT JOIN dbo.MA_CONTACTOS mc
+                ON mc.id = c.IdContacto
+            OUTER APPLY (
+                SELECT TOP (1)
+                    cuenta.Cuenta
+                FROM (
+                    SELECT UPPER(LTRIM(RTRIM(rel.Cuenta))) AS Cuenta, 0 AS Orden
+                    FROM dbo.MA_CONTACTOS_CUENTAS rel
+                    WHERE c.IdContacto IS NOT NULL
+                      AND mc.id IS NOT NULL
+                      AND rel.IdContacto = ISNULL(NULLIF(mc.idContacto, 0), mc.id)
+                      AND LTRIM(RTRIM(ISNULL(rel.Cuenta, ''))) <> ''
+                    UNION ALL
+                    SELECT UPPER(LTRIM(RTRIM(mc.CuentaRel))) AS Cuenta, 1 AS Orden
+                    WHERE c.IdContacto IS NOT NULL
+                      AND mc.id IS NOT NULL
+                      AND LTRIM(RTRIM(ISNULL(mc.CuentaRel, ''))) <> ''
+                ) cuenta
+                INNER JOIN dbo.VT_CLIENTES cliCuenta
+                    ON UPPER(LTRIM(RTRIM(cliCuenta.CODIGO))) = cuenta.Cuenta
+                ORDER BY cuenta.Orden, cliCuenta.RAZON_SOCIAL
+            ) contactoCuenta
+            WHERE c.IdConversacion = @IdConversacion;
             """;
 
         await using var cmd = new SqlCommand(sql, cn, tx);
