@@ -280,6 +280,121 @@ public sealed class TicketsService(
             return (IReadOnlyList<TicketRelatedMatchDto>)matches;
         }, "No se pudieron buscar tickets relacionados.", ct);
 
+    public Task<IReadOnlyList<TicketClienteOptionDto>> SearchClientesAsync(string texto, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "SearchClientes", async token =>
+        {
+            var search = (texto ?? string.Empty).Trim();
+            if (search.Length < 2)
+                return (IReadOnlyList<TicketClienteOptionDto>)[];
+
+            const string sql = """
+                SELECT TOP (12)
+                    LTRIM(RTRIM(ISNULL(CODIGO, ''))),
+                    ISNULL(RAZON_SOCIAL, ''),
+                    ISNULL(LOCALIDAD, ''),
+                    ISNULL(PROVINCIA, '')
+                FROM dbo.VT_CLIENTES
+                WHERE LTRIM(RTRIM(ISNULL(CODIGO, ''))) <> ''
+                  AND (
+                        CODIGO LIKE @Search
+                        OR RAZON_SOCIAL COLLATE Latin1_General_CI_AI LIKE @Search
+                        OR LOCALIDAD COLLATE Latin1_General_CI_AI LIKE @Search
+                      )
+                ORDER BY RAZON_SOCIAL;
+                """;
+
+            var rows = new List<TicketClienteOptionDto>();
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var cmd = new SqlCommand(sql, cn);
+            cmd.Parameters.AddWithValue("@Search", $"%{search}%");
+            await using var rd = await cmd.ExecuteReaderAsync(token);
+            while (await rd.ReadAsync(token))
+            {
+                rows.Add(new TicketClienteOptionDto
+                {
+                    Codigo = GetString(rd, 0),
+                    RazonSocial = GetString(rd, 1),
+                    Localidad = GetString(rd, 2),
+                    Provincia = GetString(rd, 3)
+                });
+            }
+
+            return (IReadOnlyList<TicketClienteOptionDto>)rows;
+        }, "No se pudieron buscar clientes para tickets.", ct);
+
+    public Task<IReadOnlyList<TicketContactoOptionDto>> SearchContactosAsync(string texto, string? clienteCodigo = null, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "SearchContactos", async token =>
+        {
+            var search = (texto ?? string.Empty).Trim();
+            var client = (clienteCodigo ?? string.Empty).Trim().ToUpperInvariant();
+            if (search.Length < 2 && string.IsNullOrWhiteSpace(client))
+                return (IReadOnlyList<TicketContactoOptionDto>)[];
+
+            const string sql = """
+                SELECT TOP (12)
+                    c.id,
+                    ISNULL(c.Nombre_y_Apellido, ''),
+                    ISNULL(c.Email, ''),
+                    ISNULL(c.Telefono, ''),
+                    ISNULL(c.Celular, ''),
+                    ISNULL(contactoCuenta.Cuenta, ''),
+                    ISNULL(contactoCuenta.RazonSocial, '')
+                FROM dbo.MA_CONTACTOS c
+                OUTER APPLY (
+                    SELECT TOP (1)
+                        cuenta.Cuenta,
+                        cliCuenta.RAZON_SOCIAL AS RazonSocial
+                    FROM (
+                        SELECT UPPER(LTRIM(RTRIM(rel.Cuenta))) AS Cuenta, 0 AS Orden
+                        FROM dbo.MA_CONTACTOS_CUENTAS rel
+                        WHERE rel.IdContacto = ISNULL(NULLIF(c.idContacto, 0), c.id)
+                          AND LTRIM(RTRIM(ISNULL(rel.Cuenta, ''))) <> ''
+                        UNION ALL
+                        SELECT UPPER(LTRIM(RTRIM(c.CuentaRel))) AS Cuenta, 1 AS Orden
+                        WHERE LTRIM(RTRIM(ISNULL(c.CuentaRel, ''))) <> ''
+                    ) cuenta
+                    INNER JOIN dbo.VT_CLIENTES cliCuenta
+                        ON UPPER(LTRIM(RTRIM(cliCuenta.CODIGO))) = cuenta.Cuenta
+                    WHERE @ClienteCodigo = '' OR cuenta.Cuenta = @ClienteCodigo
+                    ORDER BY cuenta.Orden, cliCuenta.RAZON_SOCIAL
+                ) contactoCuenta
+                WHERE (@ClienteCodigo = '' OR contactoCuenta.Cuenta = @ClienteCodigo)
+                  AND (
+                        @Texto = ''
+                        OR c.Nombre_y_Apellido COLLATE Latin1_General_CI_AI LIKE @Search
+                        OR c.Email COLLATE Latin1_General_CI_AI LIKE @Search
+                        OR c.Telefono LIKE @Search
+                        OR c.Celular LIKE @Search
+                      )
+                ORDER BY c.Nombre_y_Apellido;
+                """;
+
+            var rows = new List<TicketContactoOptionDto>();
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var cmd = new SqlCommand(sql, cn);
+            cmd.Parameters.AddWithValue("@Texto", search);
+            cmd.Parameters.AddWithValue("@Search", $"%{search}%");
+            cmd.Parameters.AddWithValue("@ClienteCodigo", client);
+            await using var rd = await cmd.ExecuteReaderAsync(token);
+            while (await rd.ReadAsync(token))
+            {
+                rows.Add(new TicketContactoOptionDto
+                {
+                    IdContacto = GetInt(rd, 0),
+                    Nombre = GetString(rd, 1),
+                    Email = GetString(rd, 2),
+                    Telefono = GetString(rd, 3),
+                    Celular = GetString(rd, 4),
+                    ClienteCodigo = GetString(rd, 5),
+                    ClienteNombre = GetString(rd, 6)
+                });
+            }
+
+            return (IReadOnlyList<TicketContactoOptionDto>)rows;
+        }, "No se pudieron buscar contactos para tickets.", ct);
+
     public Task<TicketDetailDto?> GetByIdAsync(long idTicket, CancellationToken ct = default)
         => GetDetailAsync("t.IdTicket = @IdTicket", cmd => cmd.Parameters.AddWithValue("@IdTicket", idTicket), ct);
 
@@ -302,6 +417,8 @@ public sealed class TicketsService(
 
             if (request.IdConversacion.HasValue)
                 await ApplyConversationDefaultsAsync(cn, (SqlTransaction)tx, request, token);
+            if (request.IdContacto.HasValue && string.IsNullOrWhiteSpace(request.ClienteCodigo))
+                await ApplyContactDefaultsAsync(cn, (SqlTransaction)tx, request, token);
 
             const string sql = """
                 DECLARE @Numero int;
@@ -313,13 +430,18 @@ public sealed class TicketsService(
                 (
                     Numero, Titulo, Descripcion, CodigoEstado, Prioridad, IdTecnico,
                     ClienteCodigo, IdContacto, IdConversacion, UsuarioAlta,
-                    FechaHoraAlta, FechaHoraModificacion
+                    FechaHoraAlta, FechaHoraModificacion, FechaHoraCierre
                 )
                 VALUES
                 (
                     @Numero, @Titulo, @Descripcion, @CodigoEstado, @Prioridad, @IdTecnico,
                     @ClienteCodigo, @IdContacto, @IdConversacion, @UsuarioAlta,
-                    GETDATE(), GETDATE()
+                    GETDATE(), GETDATE(),
+                    CASE
+                        WHEN EXISTS (SELECT 1 FROM dbo.TICK_ESTADOS WHERE CodigoEstado = @CodigoEstado AND ISNULL(EsCerrado, 0) = 1)
+                            THEN GETDATE()
+                        ELSE NULL
+                    END
                 );
 
                 SELECT CAST(SCOPE_IDENTITY() AS bigint);
@@ -378,6 +500,8 @@ public sealed class TicketsService(
                     CodigoEstado = @CodigoEstado,
                     Prioridad = @Prioridad,
                     IdTecnico = @IdTecnico,
+                    ClienteCodigo = @ClienteCodigo,
+                    IdContacto = @IdContacto,
                     FechaHoraModificacion = GETDATE(),
                     FechaHoraCierre = CASE WHEN EXISTS (SELECT 1 FROM dbo.TICK_ESTADOS WHERE CodigoEstado = @CodigoEstado AND ISNULL(EsCerrado, 0) = 1) THEN ISNULL(FechaHoraCierre, GETDATE()) ELSE NULL END
                 WHERE IdTicket = @IdTicket;
@@ -390,6 +514,8 @@ public sealed class TicketsService(
             cmd.Parameters.AddWithValue("@CodigoEstado", state);
             cmd.Parameters.AddWithValue("@Prioridad", priority);
             cmd.Parameters.AddWithValue("@IdTecnico", DbNullable(request.IdTecnico));
+            cmd.Parameters.AddWithValue("@ClienteCodigo", DbNullable(request.ClienteCodigo));
+            cmd.Parameters.AddWithValue("@IdContacto", request.IdContacto.HasValue ? request.IdContacto.Value : DBNull.Value);
             var affected = await cmd.ExecuteNonQueryAsync(token);
             if (affected == 0)
                 throw new InvalidOperationException("El ticket seleccionado ya no existe en la base activa.");
@@ -660,6 +786,8 @@ public sealed class TicketsService(
                 AND (@CodigoEstado IS NULL OR t.CodigoEstado = @CodigoEstado)
                 AND (@IdTecnico IS NULL OR LTRIM(RTRIM(t.IdTecnico)) = @IdTecnico)
                 AND (@Prioridad IS NULL OR t.Prioridad = @Prioridad)
+                AND (@ClienteCodigo = '' OR COALESCE(NULLIF(LTRIM(RTRIM(t.ClienteCodigo)), ''), contactoCuenta.Cuenta) = @ClienteCodigo)
+                AND (@IdContacto IS NULL OR t.IdContacto = @IdContacto)
                 AND (@IncluirCerrados = 1 OR ISNULL(e.EsCerrado, 0) = 0)
                 AND (@TieneAsignado IS NULL OR CASE WHEN NULLIF(LTRIM(RTRIM(ISNULL(t.IdTecnico, ''))), '') IS NULL THEN CAST(0 AS bit) ELSE CAST(1 AS bit) END = @TieneAsignado)
                 AND (@TieneMensajes IS NULL OR CASE WHEN ISNULL(msg.CantidadMensajes, 0) > 0 THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END = @TieneMensajes)
@@ -711,6 +839,8 @@ public sealed class TicketsService(
         cmd.Parameters.AddWithValue("@CodigoEstado", DbNullable(filters.CodigoEstado));
         cmd.Parameters.AddWithValue("@IdTecnico", DbNullable(filters.IdTecnico));
         cmd.Parameters.AddWithValue("@Prioridad", filters.Prioridad.HasValue ? filters.Prioridad.Value : DBNull.Value);
+        cmd.Parameters.AddWithValue("@ClienteCodigo", (filters.ClienteCodigo ?? string.Empty).Trim().ToUpperInvariant());
+        cmd.Parameters.AddWithValue("@IdContacto", filters.IdContacto.HasValue ? filters.IdContacto.Value : DBNull.Value);
         cmd.Parameters.AddWithValue("@IncluirCerrados", filters.IncluirCerrados);
         cmd.Parameters.AddWithValue("@TieneAsignado", filters.TieneAsignado.HasValue ? filters.TieneAsignado.Value : DBNull.Value);
         cmd.Parameters.AddWithValue("@TieneMensajes", filters.TieneMensajes.HasValue ? filters.TieneMensajes.Value : DBNull.Value);
@@ -1183,6 +1313,34 @@ public sealed class TicketsService(
             request.ClienteCodigo = GetString(rd, 0);
         if (!request.IdContacto.HasValue && !rd.IsDBNull(1))
             request.IdContacto = rd.GetInt32(1);
+    }
+
+    private static async Task ApplyContactDefaultsAsync(SqlConnection cn, SqlTransaction tx, TicketCreateRequest request, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT TOP (1)
+                cuenta.Cuenta
+            FROM dbo.MA_CONTACTOS c
+            CROSS APPLY (
+                SELECT UPPER(LTRIM(RTRIM(rel.Cuenta))) AS Cuenta, 0 AS Orden
+                FROM dbo.MA_CONTACTOS_CUENTAS rel
+                WHERE rel.IdContacto = ISNULL(NULLIF(c.idContacto, 0), c.id)
+                  AND LTRIM(RTRIM(ISNULL(rel.Cuenta, ''))) <> ''
+                UNION ALL
+                SELECT UPPER(LTRIM(RTRIM(c.CuentaRel))) AS Cuenta, 1 AS Orden
+                WHERE LTRIM(RTRIM(ISNULL(c.CuentaRel, ''))) <> ''
+            ) cuenta
+            INNER JOIN dbo.VT_CLIENTES cliCuenta
+                ON UPPER(LTRIM(RTRIM(cliCuenta.CODIGO))) = cuenta.Cuenta
+            WHERE c.id = @IdContacto
+            ORDER BY cuenta.Orden, cliCuenta.RAZON_SOCIAL;
+            """;
+
+        await using var cmd = new SqlCommand(sql, cn, tx);
+        cmd.Parameters.AddWithValue("@IdContacto", request.IdContacto!.Value);
+        var value = await cmd.ExecuteScalarAsync(ct);
+        if (value is not null && value != DBNull.Value)
+            request.ClienteCodigo = Convert.ToString(value, CultureInfo.InvariantCulture) ?? request.ClienteCodigo;
     }
 
     private static async Task InsertTicketMessagesAsync(SqlConnection cn, SqlTransaction tx, long idTicket, IReadOnlyList<long> idMensajes, CancellationToken ct)

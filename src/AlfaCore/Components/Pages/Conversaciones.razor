@@ -161,6 +161,10 @@
                     <i class="bi bi-life-preserver"></i>
                     <span>Crear ticket</span>
                 </button>
+                <button type="button" class="btn btn--ghost btn--sm conversations-ticket-button" @onclick="StartCloseAndCreateTicketAsync" disabled="@(_selectedConversation is null || _messages.Count == 0 || IsSelectedConversationClosed)" title="Cerrar la conversación y crear ticket con los últimos 20 mensajes">
+                    <i class="bi bi-check2-circle"></i>
+                    <span>Cerrar y crear ticket</span>
+                </button>
                 <button type="button" class="btn btn--ghost btn--sm" @onclick="RecargarAsync" disabled="@(_loadingInbox || _loadingConversation)" title="Recargar">
                     <i class="bi bi-arrow-clockwise"></i>
                 </button>
@@ -1492,7 +1496,11 @@
     <section class="panel-card conversations-modal conversations-ticket-dialog">
         <div class="panel-card__header">
             <div>
-                <h3 class="panel-card__title">Crear ticket</h3>
+                <h3 class="panel-card__title">@(_closeAndCreateTicketMode ? "Cerrar y crear ticket" : "Crear ticket")</h3>
+                @if (_closeAndCreateTicketMode)
+                {
+                    <p class="panel-card__subtitle">El ticket se registrarÃ¡ cerrado y la conversaciÃ³n se cerrarÃ¡ al guardar.</p>
+                }
                 <p class="panel-card__subtitle">@_selectedTicketMessageIds.Count mensaje(s) quedarán vinculados al ticket.</p>
             </div>
             <button type="button" class="btn btn--ghost btn--sm" @onclick="CloseTicketDialog" disabled="@_creatingTicket">
@@ -1575,14 +1583,14 @@
             <div class="field">
                 <label>Asignado a</label>
                 <div class="ticket-creator-assignment">
-                    <span>@CurrentMessageTechnicianName</span>
+                    <span>@GetTicketAssignmentPreview()</span>
                     <small>Se asignará automáticamente al usuario que crea el ticket.</small>
                 </div>
             </div>
         </div>
         <div class="actions usuarios-editor__actions">
             <button type="button" class="btn btn--primary" @onclick="CreateTicketFromSelectionAsync" disabled="@(_creatingTicket || _checkingRelatedTickets)">
-                <i class="bi bi-floppy"></i> @(_creatingTicket ? "Creando..." : "Guardar ticket")
+                <i class="bi bi-floppy"></i> @(_creatingTicket ? "Creando..." : (_closeAndCreateTicketMode ? "Cerrar y crear ticket" : "Guardar ticket"))
             </button>
             <button type="button" class="btn btn--ghost" @onclick="CloseTicketDialog" disabled="@_creatingTicket">
                 Cancelar
@@ -1785,6 +1793,7 @@
     private string? _ticketError;
     private bool _creatingTicket;
     private bool _checkingRelatedTickets;
+    private bool _closeAndCreateTicketMode;
     private bool _allowCreateDespiteRelated;
     private List<TicketRelatedMatchDto> _relatedTicketMatches = [];
     private bool _loadingContextTickets;
@@ -2478,6 +2487,7 @@
             return;
 
         _ticketSelectionMode = true;
+        _closeAndCreateTicketMode = false;
         _showTicketDialog = false;
         _ticketError = null;
         _selectedTicketMessageIds.Clear();
@@ -2486,6 +2496,34 @@
         _ticketPriority = 2;
         _allowCreateDespiteRelated = false;
         _relatedTicketMatches.Clear();
+    }
+
+    private async Task StartCloseAndCreateTicketAsync()
+    {
+        if (_selectedConversation is null || _messages.Count == 0)
+            return;
+
+        _ticketSelectionMode = false;
+        _closeAndCreateTicketMode = true;
+        _showTicketDialog = false;
+        _ticketError = null;
+        _selectedTicketMessageIds.Clear();
+
+        foreach (var idMensaje in _messages
+                     .OrderByDescending(x => x.FechaHora)
+                     .Take(20)
+                     .OrderBy(x => x.FechaHora)
+                     .Select(x => x.IdMensaje))
+        {
+            _selectedTicketMessageIds.Add(idMensaje);
+        }
+
+        _ticketTitle = BuildDefaultTicketTitle();
+        _ticketDescription = string.Empty;
+        _ticketPriority = 2;
+        _allowCreateDespiteRelated = false;
+        _relatedTicketMatches.Clear();
+        await OpenTicketDialog();
     }
 
     private void ToggleTicketMessageSelection(long idMensaje, ChangeEventArgs args)
@@ -2519,6 +2557,7 @@
 
         _showTicketDialog = false;
         _ticketError = null;
+        _closeAndCreateTicketMode = false;
         _allowCreateDespiteRelated = false;
     }
 
@@ -2529,6 +2568,7 @@
 
         _ticketSelectionMode = false;
         _showTicketDialog = false;
+        _closeAndCreateTicketMode = false;
         _selectedTicketMessageIds.Clear();
         _ticketDescription = string.Empty;
         _ticketError = null;
@@ -2550,7 +2590,9 @@
             _ticketError = "Ingresá el nombre del ticket.";
             return;
         }
-        var creatorTechnicianId = CurrentMessageTechnicianId;
+        var creatorTechnicianId = _closeAndCreateTicketMode
+            ? FirstNonEmpty(_selectedConversation.IdTecnico, CurrentMessageTechnicianId)
+            : CurrentMessageTechnicianId;
         if (string.IsNullOrWhiteSpace(creatorTechnicianId))
         {
             _ticketError = "No se pudo crear el ticket porque tu usuario no tiene un técnico asociado.";
@@ -2576,7 +2618,7 @@
             {
                 Titulo = _ticketTitle,
                 Descripcion = _ticketDescription,
-                CodigoEstado = TicketEstadoKeys.Nuevo,
+                CodigoEstado = _closeAndCreateTicketMode ? GetClosedTicketStateCode() : TicketEstadoKeys.Nuevo,
                 Prioridad = _ticketPriority,
                 IdTecnico = creatorTechnicianId,
                 ClienteCodigo = _selectedConversation.ClienteCodigo,
@@ -2586,23 +2628,43 @@
                 UsuarioAccion = CurrentUserNameForAudit
             });
 
+            if (_closeAndCreateTicketMode)
+            {
+                var closedState = _states.FirstOrDefault(x => x.EsCerrado)?.CodigoEstado ?? "CERRADA";
+                await ConversacionesSvc.ChangeStatusAsync(new ConversacionEstadoRequest
+                {
+                    IdConversacion = _selectedConversation.IdConversacion,
+                    CodigoEstado = closedState,
+                    IdTecnicoAutor = creatorTechnicianId,
+                    NombreTecnicoAccion = GetTicketAssignmentPreview(),
+                    UsuarioAccion = CurrentUserNameForAudit,
+                    SistemaAccion = CurrentUserSystemForAudit
+                });
+            }
+
+            var createdAndClosed = _closeAndCreateTicketMode;
             await ConversacionesSvc.AddInternalEventAsync(new ConversacionEventoInternoRequest
             {
                 IdConversacion = _selectedConversation.IdConversacion,
-                Texto = $"{CurrentMessageTechnicianName} cre\u00f3 el ticket #{idTicket.ToString(System.Globalization.CultureInfo.InvariantCulture)}.",
-                IdTecnicoAutor = CurrentMessageTechnicianId,
-                NombreTecnicoAccion = CurrentMessageTechnicianName,
+                Texto = createdAndClosed
+                    ? $"{GetTicketAssignmentPreview()} cerr\u00f3 la conversaci\u00f3n y cre\u00f3 el ticket #{idTicket.ToString(System.Globalization.CultureInfo.InvariantCulture)}."
+                    : $"{CurrentMessageTechnicianName} cre\u00f3 el ticket #{idTicket.ToString(System.Globalization.CultureInfo.InvariantCulture)}.",
+                IdTecnicoAutor = creatorTechnicianId,
+                NombreTecnicoAccion = GetTicketAssignmentPreview(),
                 UsuarioAccion = CurrentUserNameForAudit,
                 SistemaAccion = CurrentUserSystemForAudit
             });
 
             _ticketSelectionMode = false;
+            _closeAndCreateTicketMode = false;
             _showTicketDialog = false;
             _selectedTicketMessageIds.Clear();
             _ticketDescription = string.Empty;
             _relatedTicketMatches.Clear();
             _allowCreateDespiteRelated = false;
-            _actionMessage = $"Ticket #{idTicket.ToString(System.Globalization.CultureInfo.InvariantCulture)} creado correctamente.";
+            _actionMessage = createdAndClosed
+                ? $"Ticket #{idTicket.ToString(System.Globalization.CultureInfo.InvariantCulture)} creado y conversaciÃ³n cerrada."
+                : $"Ticket #{idTicket.ToString(System.Globalization.CultureInfo.InvariantCulture)} creado correctamente.";
             await LoadConversationAsync(_selectedConversation.IdConversacion, showLoading: false, clearActionState: false);
         }
         catch (Exception ex)
@@ -2742,6 +2804,14 @@
 
         return source.Length <= 80 ? source : source[..80];
     }
+
+    private string GetClosedTicketStateCode()
+        => TicketEstadoKeys.Cerrado;
+
+    private string GetTicketAssignmentPreview()
+        => _closeAndCreateTicketMode
+            ? FirstNonEmpty(_selectedConversation?.TecnicoNombre, CurrentMessageTechnicianName, "Sin asignar")
+            : CurrentMessageTechnicianName;
 
     private async Task DebounceContactSuggestionsAsync()
     {

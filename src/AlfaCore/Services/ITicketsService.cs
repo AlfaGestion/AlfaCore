@@ -8,6 +8,8 @@ public interface ITicketsService
     Task<PagedResult<TicketGridItemDto>> SearchAsync(TicketsFilters filters, CancellationToken ct = default);
     Task<IReadOnlyList<TicketGridItemDto>> GetKanbanAsync(TicketsFilters filters, CancellationToken ct = default);
     Task<IReadOnlyList<TicketRelatedMatchDto>> FindRelatedOpenTicketsAsync(TicketRelatedSearchRequest request, CancellationToken ct = default);
+    Task<IReadOnlyList<TicketClienteOptionDto>> SearchClientesAsync(string texto, CancellationToken ct = default);
+    Task<IReadOnlyList<TicketContactoOptionDto>> SearchContactosAsync(string texto, string? clienteCodigo = null, CancellationToken ct = default);
     Task<TicketDetailDto?> GetByIdAsync(long idTicket, CancellationToken ct = default);
     Task<TicketDetailDto?> GetByNumeroAsync(int numero, CancellationToken ct = default);
     Task<long> CreateAsync(TicketCreateRequest request, CancellationToken ct = default);
