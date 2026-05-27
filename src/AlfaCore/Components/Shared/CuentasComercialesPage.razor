@@ -1146,20 +1146,38 @@
             </div>
 
             <footer class="cuentas-modal__actions">
-                <button type="button" class="btn btn--primary" @onclick="GuardarDatosRapidosContactoAsync" disabled="@_savingContactoQuick">
+                <button type="button"
+                        class="btn btn--primary cuentas-action-reveal"
+                        title="@(_savingContactoQuick ? "Guardando..." : "Guardar cambios")"
+                        aria-label="@(_savingContactoQuick ? "Guardando..." : "Guardar cambios")"
+                        @onclick="GuardarDatosRapidosContactoAsync"
+                        disabled="@_savingContactoQuick">
                     <i class="bi bi-floppy"></i>
-                    @(_savingContactoQuick ? "Guardando..." : "Guardar cambios")
+                    <span>@(_savingContactoQuick ? "Guardando..." : "Guardar cambios")</span>
                 </button>
-                <button type="button" class="btn btn--primary" @onclick="AbrirContactoCompleto">
+                <button type="button"
+                        class="btn btn--primary cuentas-action-reveal"
+                        title="Editar ficha completa"
+                        aria-label="Editar ficha completa"
+                        @onclick="AbrirContactoCompleto">
                     <i class="bi bi-pencil-square"></i>
-                    Editar ficha completa
+                    <span>Editar ficha completa</span>
                 </button>
-                <button type="button" class="btn btn--ghost" @onclick="AbrirUnificarContacto">
+                <button type="button"
+                        class="btn btn--ghost cuentas-action-reveal"
+                        title="Unificar contacto"
+                        aria-label="Unificar contacto"
+                        @onclick="AbrirUnificarContacto">
                     <i class="bi bi-intersect"></i>
-                    Unificar contacto
+                    <span>Unificar contacto</span>
                 </button>
-                <button type="button" class="btn btn--ghost" @onclick="CerrarVistaContacto">
-                    Cerrar
+                <button type="button"
+                        class="btn btn--ghost cuentas-action-reveal"
+                        title="Cerrar"
+                        aria-label="Cerrar"
+                        @onclick="CerrarVistaContacto">
+                    <i class="bi bi-x-lg"></i>
+                    <span>Cerrar</span>
                 </button>
             </footer>
         </section>

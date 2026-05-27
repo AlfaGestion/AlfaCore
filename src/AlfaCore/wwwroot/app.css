@@ -17500,6 +17500,43 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
     padding: 1rem 1.25rem 1.2rem;
 }
 
+.cuentas-action-reveal {
+    border-radius: .8rem;
+    gap: 0;
+    justify-content: center;
+    min-height: 2.75rem;
+    min-width: 2.75rem;
+    overflow: hidden;
+    padding-left: 0;
+    padding-right: 0;
+    transition: min-width .18s ease, padding .18s ease, gap .18s ease, background-color .18s ease, border-color .18s ease;
+    white-space: nowrap;
+    width: 2.75rem;
+}
+
+.cuentas-action-reveal span {
+    display: inline-block;
+    max-width: 0;
+    opacity: 0;
+    overflow: hidden;
+    transition: max-width .18s ease, opacity .12s ease;
+}
+
+.cuentas-action-reveal:hover,
+.cuentas-action-reveal:focus-visible {
+    gap: .45rem;
+    min-width: 10.5rem;
+    padding-left: .9rem;
+    padding-right: .9rem;
+    width: auto;
+}
+
+.cuentas-action-reveal:hover span,
+.cuentas-action-reveal:focus-visible span {
+    max-width: 14rem;
+    opacity: 1;
+}
+
 .cuentas-contacto-preview {
     align-items: stretch;
     display: grid;
