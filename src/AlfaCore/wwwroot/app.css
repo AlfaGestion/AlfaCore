@@ -17501,9 +17501,12 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
 }
 
 .cuentas-action-reveal {
+    align-items: center;
     border-radius: .8rem;
+    display: inline-flex;
     gap: 0;
     justify-content: center;
+    line-height: 1;
     min-height: 2.75rem;
     min-width: 2.75rem;
     overflow: hidden;
@@ -17514,11 +17517,27 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
     width: 2.75rem;
 }
 
+.cuentas-action-reveal.btn--primary,
+.cuentas-action-reveal.btn--primary:hover,
+.cuentas-action-reveal.btn--primary:focus-visible,
+.cuentas-action-reveal.btn--ghost:hover,
+.cuentas-action-reveal.btn--ghost:focus-visible {
+    color: #fff;
+}
+
+.cuentas-action-reveal i {
+    color: currentColor;
+    flex: 0 0 auto;
+    line-height: 1;
+}
+
 .cuentas-action-reveal span {
     display: inline-block;
+    line-height: 1;
     max-width: 0;
     opacity: 0;
     overflow: hidden;
+    text-align: center;
     transition: max-width .18s ease, opacity .12s ease;
 }
 
