@@ -327,6 +327,21 @@ public sealed class TecnicosService(
             return (IReadOnlyList<string>)items;
         }, "No se pudieron cargar los usuarios del sistema.", ct);
 
+    public Task<string> GetNextIdTecnicoAsync(CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "GetNextId", async token =>
+        {
+            const string sql = """
+                SELECT ISNULL(MAX(TRY_CAST(LTRIM(RTRIM(IdTecnico)) AS int)), 0) + 1
+                FROM dbo.V_TA_Tecnicos;
+                """;
+
+            await using var cn  = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var cmd = new SqlCommand(sql, cn);
+            var result = await cmd.ExecuteScalarAsync(token);
+            return Convert.ToInt32(result).ToString();
+        }, "No se pudo obtener el próximo código de técnico.", ct);
+
     // ── Configuración de vista ────────────────────────────────────────────────
 
     public Task<TecnicosViewSettingsDto> GetViewSettingsAsync(string userName, CancellationToken ct = default)
@@ -418,7 +433,8 @@ public sealed class TecnicosService(
         cmd.Parameters.AddWithValue("@Cargo",           r.Cargo);
         cmd.Parameters.AddWithValue("@Domicilio",       DbNullable(r.Domicilio));
         cmd.Parameters.AddWithValue("@Localidad",       DbNullable(r.Localidad));
-        cmd.Parameters.AddWithValue("@IdProvincia",     DbNullable(r.IdProvincia));
+        // IdProvincia es FK a TA_ESTADOS.CODIGO: no se trimea para preservar espacios del código legacy
+        cmd.Parameters.AddWithValue("@IdProvincia",     DbNullableExact(r.IdProvincia));
         cmd.Parameters.AddWithValue("@Telefono",        DbNullable(r.Telefono));
         cmd.Parameters.AddWithValue("@CostoHora",       r.CostoHora.HasValue ? r.CostoHora.Value : DBNull.Value);
         cmd.Parameters.AddWithValue("@UsuarioAsociado", DbNullable(r.UsuarioAsociado));
@@ -433,7 +449,9 @@ public sealed class TecnicosService(
         Cargo             = r.Cargo?.Trim() ?? string.Empty,
         Domicilio         = r.Domicilio?.Trim() ?? string.Empty,
         Localidad         = r.Localidad?.Trim() ?? string.Empty,
-        IdProvincia       = r.IdProvincia?.Trim() ?? string.Empty,
+        // IdProvincia no se trimea: su valor proviene de TA_ESTADOS.CODIGO que puede tener
+        // espacios de relleno a la izquierda (códigos numéricos alineados a la derecha).
+        IdProvincia       = r.IdProvincia ?? string.Empty,
         Telefono          = r.Telefono?.Trim() ?? string.Empty,
         CostoHora         = r.CostoHora,
         UsuarioAsociado   = r.UsuarioAsociado?.Trim() ?? string.Empty,
@@ -542,6 +560,10 @@ public sealed class TecnicosService(
 
     private static object DbNullable(string? value)
         => string.IsNullOrWhiteSpace(value) ? DBNull.Value : value.Trim();
+
+    // Versión sin Trim para campos FK cuyo valor debe coincidir exactamente con la PK referenciada.
+    private static object DbNullableExact(string? value)
+        => value is null || value.Length == 0 ? DBNull.Value : (object)value;
 
     private async Task<T> ExecuteLoggedAsync<T>(
         string module, string action,

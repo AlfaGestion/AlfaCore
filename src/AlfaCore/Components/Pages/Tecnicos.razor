@@ -2,15 +2,15 @@
 @using AlfaCore.Models
 @using AlfaCore.Services
 @inject AlfaCore.Services.ITecnicosService TecnicosSvc
+@inject AlfaCore.Services.IUsuariosService UsuariosSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
-@inject NavigationManager Nav
 @inject IJSRuntime Js
 @implements IDisposable
 
 <PageTitle>Técnicos | Alfa Gestión</PageTitle>
 
-<div class="page-grid">
+<div class="page-grid" @onclick="HandlePageClickAsync">
 
     <!-- ── Intro ───────────────────────────────────────────────────────── -->
     <section class="page-intro">
@@ -19,7 +19,7 @@
             <p class="page-intro__text">Administrá los técnicos del sistema: mecánicos, soporte y personal vinculado a usuarios.</p>
         </div>
         <div class="actions">
-            <button type="button" class="btn btn--primary" @onclick="BeginNew">
+            <button type="button" class="btn btn--primary" @onclick="BeginNewAsync">
                 <i class="bi bi-plus-circle"></i> Nuevo técnico
             </button>
             <button type="button" class="btn btn--ghost" @onclick="RecargarAsync" disabled="@_loadingList">
@@ -49,38 +49,57 @@
         </section>
     }
 
-    <!-- ── Filtros ──────────────────────────────────────────────────────── -->
-    <section class="panel-card">
-        <div class="panel-card__header">
-            <div>
-                <h3 class="panel-card__title">Filtros</h3>
-                <p class="panel-card__subtitle">Buscá por código, nombre, cargo o usuario asociado.</p>
-            </div>
-        </div>
-        <div class="filters-grid">
-            <div class="field field--wide">
-                <label>Buscar</label>
+    <!-- ── Buscador ────────────────────────────────────────────────────── -->
+    <section class="panel-card smart-search-card" @onclick:stopPropagation>
+        <div class="smart-search">
+            <div class="smart-search__bar">
+                <i class="bi bi-search"></i>
                 <input type="search"
-                       placeholder="Código, nombre, cargo..."
-                       @bind="_filters.Texto"
-                       @bind:event="oninput" />
-            </div>
-            <div class="field">
-                <label>Estado</label>
-                <select @bind="_activoFiltro">
-                    <option value="1">Activos</option>
-                    <option value="">Todos</option>
-                    <option value="0">Dados de baja</option>
-                </select>
-            </div>
-            <div class="actions">
-                <button type="button" class="btn btn--primary" @onclick="AplicarFiltrosAsync" disabled="@_loadingList">
-                    <i class="bi bi-funnel"></i> Aplicar
-                </button>
-                <button type="button" class="btn btn--ghost" @onclick="LimpiarFiltros" disabled="@_loadingList">
-                    <i class="bi bi-eraser"></i> Limpiar
+                       placeholder="Buscar por código, nombre, cargo o usuario asociado..."
+                       value="@_filters.Texto"
+                       @onfocus="OpenSearchPanel"
+                       @oninput="OnSearchInputAsync" />
+                <button type="button" class="smart-search__toggle" @onclick="ToggleSearchPanel" aria-label="Mostrar filtros">
+                    <i class="bi @(_showSearchPanel ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
                 </button>
             </div>
+
+            <div class="smart-search__chips" aria-live="polite">
+                @{ var chips = BuildFilterChips(); }
+                @foreach (var chip in chips)
+                {
+                    <button type="button" class="smart-chip" @onclick="() => RemoveChipAsync(chip.Key)">
+                        @chip.Label <i class="bi bi-x"></i>
+                    </button>
+                }
+                @if (chips.Count == 0)
+                {
+                    <span class="smart-search__hint">Hacé clic en el buscador para filtros rápidos y agrupación.</span>
+                }
+            </div>
+
+            @if (_showSearchPanel)
+            {
+                <div class="smart-search__panel">
+                    <div class="smart-search__column">
+                        <h4><i class="bi bi-funnel-fill"></i> Filtros</h4>
+                        <button type="button" class="@GetSmartOptionClass(_activoFiltro == "1")" @onclick='() => SetStatusFilterAsync("1")'>Activos</button>
+                        <button type="button" class="@GetSmartOptionClass(_activoFiltro == "0")" @onclick='() => SetStatusFilterAsync("0")'>Dados de baja</button>
+                        <button type="button" class="@GetSmartOptionClass(_activoFiltro == "")"  @onclick='() => SetStatusFilterAsync("")'>Todos</button>
+                    </div>
+                    <div class="smart-search__column">
+                        <h4><i class="bi bi-stack"></i> Agrupar por</h4>
+                        <button type="button" class="@GetSmartOptionClass(_viewSettings.AgruparPor == TecnicosViewGroupKeys.None)"          @onclick='() => SetGroupAsync(TecnicosViewGroupKeys.None)'>Sin agrupar</button>
+                        <button type="button" class="@GetSmartOptionClass(_viewSettings.AgruparPor == TecnicosViewGroupKeys.Cargo)"         @onclick='() => SetGroupAsync(TecnicosViewGroupKeys.Cargo)'>Cargo</button>
+                        <button type="button" class="@GetSmartOptionClass(_viewSettings.AgruparPor == TecnicosViewGroupKeys.OcultarCliente)" @onclick='() => SetGroupAsync(TecnicosViewGroupKeys.OcultarCliente)'>Ocultar cliente</button>
+                        <button type="button" class="@GetSmartOptionClass(_viewSettings.AgruparPor == TecnicosViewGroupKeys.Activo)"        @onclick='() => SetGroupAsync(TecnicosViewGroupKeys.Activo)'>Estado</button>
+                    </div>
+                    <div class="smart-search__column">
+                        <h4><i class="bi bi-eraser"></i> Limpiar</h4>
+                        <button type="button" @onclick="LimpiarFiltrosAsync">Limpiar búsqueda</button>
+                    </div>
+                </div>
+            }
         </div>
     </section>
 
@@ -186,6 +205,7 @@
                             <input type="text"
                                    class="@GetFieldInputClass("nombre")"
                                    maxlength="100"
+                                   @ref="_nombreRef"
                                    @bind="_form.Nombre"
                                    disabled="@_saving" />
                             @if (HasFieldError("nombre"))
@@ -308,17 +328,16 @@
                             </button>
                             <button type="button"
                                     class="btn btn--ghost"
-                                    title="Ir al ABM de Usuarios para crear uno nuevo"
-                                    @onclick="IrACrearUsuario"
+                                    title="Crear un nuevo usuario del sistema"
+                                    @onclick="AbrirModalCrearUsuario"
                                     disabled="@_saving">
-                                <i class="bi bi-box-arrow-up-right"></i> Crear usuario
+                                <i class="bi bi-person-plus"></i> Crear usuario
                             </button>
                         </div>
                         @if (HasFieldError("usuario-asociado"))
                         {
                             <small class="usuarios-field-error">@GetFieldError("usuario-asociado")</small>
                         }
-                        <small class="panel-card__subtitle">Al crear un nuevo usuario, guardá el técnico primero, luego volvé para seleccionarlo.</small>
                     </div>
 
                     <!-- Fila 6: Ocultar cliente -->
@@ -329,13 +348,25 @@
                         </label>
                     </div>
 
+                    <!-- Aviso: usuario recién creado desde el modal -->
+                    @if (!string.IsNullOrEmpty(_editorUserCreatedNote))
+                    {
+                        <div class="editor-msg editor-msg--ok" style="margin-bottom:1rem;">
+                            <div>
+                                <strong>Usuario listo</strong>
+                                <p>@_editorUserCreatedNote</p>
+                                <p><strong>Ahora hacé clic en "Guardar técnico" para confirmar el alta.</strong></p>
+                            </div>
+                        </div>
+                    }
+
                     <!-- Acciones -->
                     <div class="actions usuarios-editor__actions">
                         <button type="button" class="btn btn--primary" @onclick="GuardarAsync" disabled="@_saving">
                             <i class="bi bi-floppy"></i>
                             <span>@(_saving ? "Guardando..." : "Guardar técnico")</span>
                         </button>
-                        <button type="button" class="btn btn--ghost" @onclick="ResetForm" disabled="@_saving">
+                        <button type="button" class="btn btn--ghost" @onclick="ResetFormAsync" disabled="@_saving">
                             <i class="bi bi-eraser"></i>
                             <span>@(_isNewMode ? "Limpiar" : "Revertir")</span>
                         </button>
@@ -387,9 +418,9 @@
                             <tr>
                                 @foreach (var column in visibleColumns)
                                 {
-                                    <th>@column.Label</th>
+                                    <th style="white-space:nowrap;">@column.Label</th>
                                 }
-                                <th class="interfaces-table__actions">Acciones</th>
+                                <th class="interfaces-table__actions" style="white-space:nowrap;">Acciones</th>
                             </tr>
                         </thead>
                         @foreach (var group in groups)
@@ -486,6 +517,111 @@
 
 </div>
 
+<!-- ── Modal: Crear usuario ──────────────────────────────────────────────── -->
+@if (_showCrearUsuarioModal)
+{
+    <button type="button" class="modal-backdrop app-modal-backdrop" aria-label="Cerrar" @onclick="CerrarModalCrearUsuario"></button>
+    <section class="panel-card app-modal no-print" @onclick:stopPropagation>
+        <div class="panel-card__header">
+            <div>
+                <h3 class="panel-card__title">Crear usuario del sistema</h3>
+                <p class="panel-card__subtitle">El usuario se creará con acceso básico al sistema.</p>
+            </div>
+            <button type="button" class="btn btn--ghost btn--sm" @onclick="CerrarModalCrearUsuario" title="Cerrar">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        </div>
+
+        <div class="editor-msg editor-msg--warning" style="margin-bottom:1rem;">
+            <div>
+                <strong>Recordá asignar permisos</strong>
+                <p>Después de crear el usuario, asignale las opciones del menú en <strong>Seguridad → Autorización de tareas</strong>. Sin eso, el usuario tendrá acceso irrestricto a todo el sistema.</p>
+            </div>
+        </div>
+
+        @if (_modalErrors.ContainsKey("general"))
+        {
+            <div class="editor-msg editor-msg--error" style="margin-bottom:1rem;">
+                <div><p>@_modalErrors["general"]</p></div>
+            </div>
+        }
+
+        <div class="contactos-form__grid" style="max-width:420px;">
+            <div class="field">
+                <label>Nombre de usuario</label>
+                <input type="text"
+                       class="@GetModalInputClass("nombre")"
+                       maxlength="50"
+                       placeholder="Nombre de usuario del sistema"
+                       @bind="_modalNombre"
+                       disabled="@_modalSaving" />
+                @if (_modalErrors.ContainsKey("nombre"))
+                {
+                    <small class="usuarios-field-error">@_modalErrors["nombre"]</small>
+                }
+            </div>
+
+            <div class="field">
+                <label>Email <small>(opcional)</small></label>
+                <input type="email"
+                       class="@GetModalInputClass("email")"
+                       maxlength="200"
+                       placeholder="correo@ejemplo.com"
+                       @bind="_modalEmail"
+                       disabled="@_modalSaving" />
+                @if (_modalErrors.ContainsKey("email"))
+                {
+                    <small class="usuarios-field-error">@_modalErrors["email"]</small>
+                }
+            </div>
+
+            <div class="field">
+                <label>Contraseña</label>
+                <div style="display:flex; gap:0.4rem;">
+                    <input type="@(_modalShowClave ? "text" : "password")"
+                           class="@GetModalInputClass("clave")"
+                           style="flex:1;"
+                           placeholder="Contraseña"
+                           @bind="_modalClave"
+                           disabled="@_modalSaving" />
+                    <button type="button" class="btn btn--ghost btn--sm"
+                            @onclick="() => _modalShowClave = !_modalShowClave"
+                            title="@(_modalShowClave ? "Ocultar" : "Mostrar") contraseña">
+                        <i class="bi @(_modalShowClave ? "bi-eye-slash" : "bi-eye")"></i>
+                    </button>
+                </div>
+                @if (_modalErrors.ContainsKey("clave"))
+                {
+                    <small class="usuarios-field-error">@_modalErrors["clave"]</small>
+                }
+            </div>
+
+            <div class="field">
+                <label>Confirmación</label>
+                <input type="@(_modalShowClave ? "text" : "password")"
+                       class="@GetModalInputClass("confirmacion")"
+                       placeholder="Repetí la contraseña"
+                       @bind="_modalConfirmacion"
+                       disabled="@_modalSaving" />
+                @if (_modalErrors.ContainsKey("confirmacion"))
+                {
+                    <small class="usuarios-field-error">@_modalErrors["confirmacion"]</small>
+                }
+            </div>
+        </div>
+
+        <div class="actions" style="margin-top:1.25rem;">
+            <button type="button" class="btn btn--primary" @onclick="CrearUsuarioDesdeModalAsync" disabled="@_modalSaving">
+                <i class="bi bi-person-plus"></i>
+                <span>@(_modalSaving ? "Creando..." : "Crear usuario")</span>
+            </button>
+            <button type="button" class="btn btn--ghost" @onclick="CerrarModalCrearUsuario" disabled="@_modalSaving">
+                <i class="bi bi-x-circle"></i> Cancelar
+            </button>
+        </div>
+    </section>
+}
+
 @code {
     // ── Estado de lista ──────────────────────────────────────────────────────
     private readonly TecnicosFilters          _filters          = new();
@@ -498,6 +634,7 @@
     private bool _saving;
     private bool _showEditor;
     private bool _showViewSettings;
+    private bool _showSearchPanel;
     private bool _viewSettingsLoaded;
     private int  _pagedTotal;
     private int  _pageNumber  = 1;
@@ -514,6 +651,20 @@
     private bool   _isNewMode    = true;
     private bool   _selectedActivo = true;
     private string _costoHoraStr = string.Empty;
+    private bool   _shouldFocusNombre;
+    private ElementReference _nombreRef;
+
+    // ── Modal crear usuario ───────────────────────────────────────────────────
+    private bool   _showCrearUsuarioModal;
+    private bool   _modalSaving;
+    private bool   _modalShowClave;
+    private string _modalNombre           = string.Empty;
+    private string _modalEmail            = string.Empty;
+    private string _modalClave            = string.Empty;
+    private string _modalConfirmacion     = string.Empty;
+    private string _editorUserCreatedNote = string.Empty;
+    private string _pendingCreatedUserName = string.Empty;
+    private readonly Dictionary<string, string> _modalErrors = new(StringComparer.OrdinalIgnoreCase);
 
     // ── Datos de combos ───────────────────────────────────────────────────────
     private IReadOnlyList<EstadoItemDto> _estados   = [];
@@ -530,13 +681,23 @@
             BuscarAsync());
     }
 
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_shouldFocusNombre)
+        {
+            _shouldFocusNombre = false;
+            try { await _nombreRef.FocusAsync(); }
+            catch { }
+        }
+    }
+
     public void Dispose()
         => AppUserSession.StateChanged -= OnAppUserSessionChanged;
 
     private async Task CargarCombosAsync()
     {
-        var estadosResult   = await UiOps.RunAsync(() => TecnicosSvc.GetEstadosAsync(), "No se pudieron cargar las provincias.");
-        var usuariosResult  = await UiOps.RunAsync(() => TecnicosSvc.GetUsuariosDisponiblesAsync(), "No se pudieron cargar los usuarios.");
+        var estadosResult  = await UiOps.RunAsync(() => TecnicosSvc.GetEstadosAsync(), "No se pudieron cargar las provincias.");
+        var usuariosResult = await UiOps.RunAsync(() => TecnicosSvc.GetUsuariosDisponiblesAsync(), "No se pudieron cargar los usuarios.");
 
         if (estadosResult.Success && estadosResult.Value is not null)
             _estados = estadosResult.Value;
@@ -625,49 +786,127 @@
         };
     }
 
-    private void LimpiarFiltros()
+    // ── Smart search ─────────────────────────────────────────────────────────
+
+    private void OpenSearchPanel() => _showSearchPanel = true;
+    private void ToggleSearchPanel() => _showSearchPanel = !_showSearchPanel;
+
+    private async Task HandlePageClickAsync()
     {
-        _filters.Texto = string.Empty;
-        _activoFiltro  = "1";
+        if (_showSearchPanel)
+        {
+            _showSearchPanel = false;
+            StateHasChanged();
+        }
+        await Task.CompletedTask;
     }
+
+    private async Task OnSearchInputAsync(ChangeEventArgs e)
+    {
+        _filters.Texto      = e.Value?.ToString() ?? string.Empty;
+        _filters.PageNumber = 1;
+        await BuscarAsync();
+    }
+
+    private async Task SetStatusFilterAsync(string value)
+    {
+        _activoFiltro       = _activoFiltro == value ? string.Empty : value;
+        _filters.PageNumber = 1;
+        await BuscarAsync();
+    }
+
+    private async Task SetGroupAsync(string value)
+    {
+        var newSettings = new TecnicosViewSettingsDto
+        {
+            AgruparPor = value,
+            Columnas   = _viewSettings.Columnas
+        };
+        var currentUser = AppUserSession.GetCurrentUserName(string.Empty).Trim();
+        if (!string.IsNullOrWhiteSpace(currentUser))
+        {
+            var result = await UiOps.RunAsync(async () =>
+            {
+                await TecnicosSvc.SaveViewSettingsAsync(currentUser, newSettings);
+                return true;
+            }, "No se pudo guardar la agrupación.");
+            if (!result.Success)
+            {
+                SetFeedback(result.Feedback);
+                return;
+            }
+        }
+        _viewSettings = newSettings;
+        _draftAgruparPor = value;
+    }
+
+    private async Task LimpiarFiltrosAsync()
+    {
+        _filters.Texto  = string.Empty;
+        _activoFiltro   = "1";
+        _filters.PageNumber = 1;
+        _showSearchPanel = false;
+        await BuscarAsync();
+    }
+
+    private IReadOnlyList<SmartChip> BuildFilterChips()
+    {
+        var chips = new List<SmartChip>();
+        if (_activoFiltro == "1") chips.Add(new("estado", "Activos"));
+        if (_activoFiltro == "0") chips.Add(new("estado", "Dados de baja"));
+        if (_viewSettings.AgruparPor != TecnicosViewGroupKeys.None)
+            chips.Add(new("agrupar", $"Agrupar: {GetGroupingLabel(_viewSettings.AgruparPor)}"));
+        return chips;
+    }
+
+    private async Task RemoveChipAsync(string key)
+    {
+        if (key == "estado")
+        {
+            _activoFiltro       = string.Empty;
+            _filters.PageNumber = 1;
+            await BuscarAsync();
+        }
+        else if (key == "agrupar")
+        {
+            await SetGroupAsync(TecnicosViewGroupKeys.None);
+        }
+    }
+
+    private static string GetSmartOptionClass(bool active)
+        => active ? "btn btn--primary" : "btn btn--ghost";
 
     // ── Editor ────────────────────────────────────────────────────────────────
 
-    private void BeginNew()
+    private async Task BeginNewAsync()
     {
-        ClearFieldErrors();
-        _showEditor    = true;
+        await CheckAndCleanPendingUserAsync();
+        ResetFormState();
+        _showEditor       = true;
         _showViewSettings = false;
-        _isNewMode     = true;
-        _selectedIdTecnico = string.Empty;
-        _selectedActivo    = true;
-        _costoHoraStr      = string.Empty;
 
-        _form.IdTecnicoOriginal = string.Empty;
-        _form.IdTecnico         = string.Empty;
-        _form.Nombre            = string.Empty;
-        _form.Cargo             = string.Empty;
-        _form.Domicilio         = string.Empty;
-        _form.Localidad         = string.Empty;
-        _form.IdProvincia       = string.Empty;
-        _form.Telefono          = string.Empty;
-        _form.CostoHora         = null;
-        _form.UsuarioAsociado   = string.Empty;
-        _form.OcultarCliente    = false;
+        var result = await UiOps.RunAsync(
+            () => TecnicosSvc.GetNextIdTecnicoAsync(),
+            "No se pudo obtener el próximo código.");
+        _form.IdTecnico = result.Success && result.Value is not null ? result.Value : string.Empty;
+
+        _shouldFocusNombre = true;
     }
 
-    private void CerrarEditor()
+    private async Task CerrarEditor()
     {
+        await CheckAndCleanPendingUserAsync();
         ClearFieldErrors();
+        _editorUserCreatedNote = string.Empty;
         _showEditor = false;
     }
 
-    private void ResetForm()
+    private async Task ResetFormAsync()
     {
         ClearFieldErrors();
         if (_isNewMode)
         {
-            BeginNew();
+            await BeginNewAsync();
             return;
         }
         _ = CargarEditorAsync(_selectedIdTecnico);
@@ -675,6 +914,7 @@
 
     private async Task AbrirEditorAsync(string idTecnico)
     {
+        await CheckAndCleanPendingUserAsync();
         _showEditor       = true;
         _showViewSettings = false;
         await CargarEditorAsync(idTecnico);
@@ -697,7 +937,7 @@
                 Message  = "El técnico seleccionado ya no existe en la base activa."
             });
             await BuscarAsync();
-            BeginNew();
+            ResetFormState();
             return;
         }
         MapDetailToForm(result.Value);
@@ -707,6 +947,8 @@
     {
         ClearFieldErrors();
         SyncCostoHora();
+        _editorUserCreatedNote  = string.Empty;
+        _pendingCreatedUserName = string.Empty;
         _saving = true;
         try
         {
@@ -762,7 +1004,7 @@
             }
 
             SetFeedback(AppUiMessage.Success("Técnico dado de baja", $"El técnico {_form.Nombre} quedó inactivo."));
-            BeginNew();
+            ResetFormState();
             _showEditor = false;
             await BuscarAsync();
         }
@@ -772,13 +1014,30 @@
         }
     }
 
-    private void IrACrearUsuario()
-    {
-        Nav.NavigateTo("/usuarios");
-    }
-
     private void SeleccionarFila(string idTecnico)
         => _selectedIdTecnico = idTecnico?.Trim() ?? string.Empty;
+
+    private void ResetFormState()
+    {
+        ClearFieldErrors();
+        _editorUserCreatedNote = string.Empty;
+        _isNewMode         = true;
+        _selectedIdTecnico = string.Empty;
+        _selectedActivo    = true;
+        _costoHoraStr      = string.Empty;
+
+        _form.IdTecnicoOriginal = string.Empty;
+        _form.IdTecnico         = string.Empty;
+        _form.Nombre            = string.Empty;
+        _form.Cargo             = string.Empty;
+        _form.Domicilio         = string.Empty;
+        _form.Localidad         = string.Empty;
+        _form.IdProvincia       = string.Empty;
+        _form.Telefono          = string.Empty;
+        _form.CostoHora         = null;
+        _form.UsuarioAsociado   = string.Empty;
+        _form.OcultarCliente    = false;
+    }
 
     private void MapDetailToForm(TecnicoDetailDto detail)
     {
@@ -813,6 +1072,87 @@
             System.Globalization.CultureInfo.InvariantCulture, out var val)
             ? val
             : null;
+    }
+
+    // ── Modal: crear usuario ──────────────────────────────────────────────────
+
+    private void AbrirModalCrearUsuario()
+    {
+        _modalNombre           = _form.Nombre?.Trim() ?? string.Empty;
+        _modalEmail            = string.Empty;
+        _modalClave            = string.Empty;
+        _modalConfirmacion     = string.Empty;
+        _modalShowClave        = false;
+        _editorUserCreatedNote = string.Empty;
+        _modalErrors.Clear();
+        _showCrearUsuarioModal = true;
+    }
+
+    private void CerrarModalCrearUsuario()
+    {
+        _showCrearUsuarioModal = false;
+        _modalErrors.Clear();
+    }
+
+    private async Task CrearUsuarioDesdeModalAsync()
+    {
+        _modalErrors.Clear();
+
+        if (string.IsNullOrWhiteSpace(_modalNombre))
+        {
+            _modalErrors["nombre"] = "El nombre de usuario es obligatorio.";
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_modalClave))
+        {
+            _modalErrors["clave"] = "La contraseña es obligatoria.";
+            return;
+        }
+        if (_modalClave != _modalConfirmacion)
+        {
+            _modalErrors["confirmacion"] = "La confirmación no coincide con la contraseña.";
+            return;
+        }
+
+        _modalSaving = true;
+        try
+        {
+            var request = new UsuarioSaveRequest
+            {
+                NombreOriginal        = string.Empty,
+                Nombre                = _modalNombre.Trim(),
+                Email                 = _modalEmail.Trim(),
+                Contrasena            = _modalClave,
+                EsGrupo               = false,
+                CambiarProximoInicio  = false
+            };
+
+            try
+            {
+                await UsuariosSvc.SaveAsync(request);
+                var nombreCreado = _modalNombre.Trim();
+                CerrarModalCrearUsuario();
+                await RecargarUsuariosAsync();
+                _form.UsuarioAsociado  = nombreCreado;
+                _editorUserCreatedNote = $"El usuario '{nombreCreado}' fue creado y asociado al técnico. Recordá asignarle permisos en Seguridad → Autorización de tareas.";
+            }
+            catch (AppValidationException validationEx)
+            {
+                foreach (var issue in validationEx.Validation.Issues.Where(i => !string.IsNullOrWhiteSpace(i.FieldKey)))
+                    _modalErrors[issue.FieldKey.Trim()] = issue.Message;
+                if (_modalErrors.Count == 0)
+                    _modalErrors["general"] = validationEx.UserMessage;
+            }
+            catch (Exception ex)
+            {
+                var msg = UiOps.BuildMessage(ex, "No se pudo crear el usuario.");
+                _modalErrors["general"] = msg?.Message ?? "No se pudo crear el usuario.";
+            }
+        }
+        finally
+        {
+            _modalSaving = false;
+        }
     }
 
     // ── Configurar vista ──────────────────────────────────────────────────────
@@ -991,12 +1331,6 @@
 
     private void ClearFieldErrors() => _fieldErrors.Clear();
 
-    private void SetFieldError(string key, string message)
-    {
-        if (!string.IsNullOrWhiteSpace(key) && !string.IsNullOrWhiteSpace(message))
-            _fieldErrors[key.Trim()] = message.Trim();
-    }
-
     private void ApplyFieldErrors(ValidationResult validation)
     {
         ClearFieldErrors();
@@ -1012,6 +1346,9 @@
 
     private string GetFieldInputClass(string key)
         => HasFieldError(key) ? "usuarios-input usuarios-input--invalid" : "usuarios-input";
+
+    private string GetModalInputClass(string key)
+        => _modalErrors.ContainsKey(key) ? "usuarios-input usuarios-input--invalid" : "usuarios-input";
 
     private void SetFeedback(AppUiMessage? message) => _feedback = message;
 
@@ -1030,8 +1367,10 @@
 
     private sealed class TecnicoGridGroup
     {
-        public string                  Label      { get; init; } = string.Empty;
-        public bool                    ShowHeader { get; init; }
-        public List<TecnicoGridItemDto> Items     { get; init; } = [];
+        public string                   Label      { get; init; } = string.Empty;
+        public bool                     ShowHeader { get; init; }
+        public List<TecnicoGridItemDto> Items      { get; init; } = [];
     }
+
+    private sealed record SmartChip(string Key, string Label);
 }

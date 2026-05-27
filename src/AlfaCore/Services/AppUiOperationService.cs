@@ -123,6 +123,21 @@ public sealed class AppUiOperationService : IAppUiOperationService
             };
         }
 
+        if (sqlException?.Number == 547)
+        {
+            var detail = sqlException.Message?.Trim() ?? string.Empty;
+            return new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Error,
+                Title = fallbackTitle,
+                Message = userMessage,
+                Code = code,
+                Suggestion = string.IsNullOrWhiteSpace(detail)
+                    ? "Error de integridad referencial. Revisá los campos de referencia (provincia, categoría, usuario, etc.) antes de volver a intentar."
+                    : $"Error de integridad referencial: {detail}"
+            };
+        }
+
         if (sqlException?.Number == 208)
         {
             return new AppUiMessage
