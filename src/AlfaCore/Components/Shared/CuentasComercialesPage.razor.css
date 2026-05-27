@@ -14,3 +14,77 @@
 .cuentas-notas-grid .contactos-form__grid {
     margin-top: .25rem;
 }
+
+.cuentas-contactos-panel {
+    display: grid;
+    gap: 1rem;
+}
+
+.cuentas-contactos-header {
+    align-items: center;
+    display: flex;
+    gap: 1rem;
+    justify-content: space-between;
+}
+
+.cuentas-contactos-header h4 {
+    margin: 0;
+}
+
+.cuentas-contactos-header p {
+    color: var(--text-muted, #8da2bf);
+    margin: .2rem 0 0;
+}
+
+.cuentas-contactos-list {
+    display: grid;
+    gap: .75rem;
+}
+
+.cuentas-contacto-item {
+    border: 1px solid rgba(83, 124, 172, .28);
+    border-radius: .75rem;
+    display: grid;
+    gap: .45rem;
+    padding: .9rem 1rem;
+}
+
+.cuentas-contacto-item__main,
+.cuentas-contacto-item__meta,
+.cuentas-contacto-item__badges {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem .8rem;
+}
+
+.cuentas-contacto-item__main span,
+.cuentas-contacto-item__meta span {
+    color: var(--text-muted, #8da2bf);
+}
+
+.cuentas-contacto-item__meta i {
+    margin-right: .35rem;
+}
+
+.cuentas-contacto-item__badges span {
+    border: 1px solid rgba(34, 211, 238, .28);
+    border-radius: 999px;
+    color: var(--accent, #22d3ee);
+    font-size: .78rem;
+    padding: .18rem .55rem;
+}
+
+.cuentas-contactos-form {
+    border-top: 1px solid rgba(83, 124, 172, .24);
+    display: grid;
+    gap: 1rem;
+    padding-top: 1rem;
+}
+
+@media (max-width: 720px) {
+    .cuentas-contactos-header {
+        align-items: stretch;
+        flex-direction: column;
+    }
+}

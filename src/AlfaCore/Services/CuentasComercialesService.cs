@@ -1,4 +1,5 @@
 using AlfaCore.Models;
+using Dapper;
 using Microsoft.Data.SqlClient;
 using System.Security.Cryptography;
 using System.Text;
@@ -714,6 +715,199 @@ public sealed class CuentasComercialesService(
                 token);
         }, $"No se pudo dar de baja el {GetSingularLabel(tipo).ToLowerInvariant()}.", ct);
 
+    public Task<IReadOnlyList<CuentaComercialContactoDto>> GetContactosAsync(CuentaComercialTipo tipo, string cuentaCodigo, CancellationToken ct = default)
+        => ExecuteLoggedAsync<IReadOnlyList<CuentaComercialContactoDto>>(GetModuleLabel(tipo), "GetContactos", async token =>
+        {
+            if (string.IsNullOrWhiteSpace(cuentaCodigo))
+                return [];
+
+            var cuenta = cuentaCodigo.Trim().ToUpperInvariant();
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            var hasActivoColumn = await ColumnExistsAsync(cn, null, "MA_CONTACTOS", "Activo", token);
+            var activoSelect = hasActivoColumn ? "ISNULL(c.Activo, 1)" : "CAST(1 AS bit)";
+            var activoFilter = hasActivoColumn ? "AND ISNULL(c.Activo, 1) = 1" : string.Empty;
+
+            var sql = $"""
+                SELECT
+                    c.id AS Id,
+                    CONVERT(int, ISNULL(NULLIF(c.idContacto, 0), c.id)) AS IdContacto,
+                    ISNULL(c.Nombre_y_Apellido, '') AS NombreApellido,
+                    ISNULL(c.Cargo, '') AS Cargo,
+                    ISNULL(c.email, '') AS Email,
+                    ISNULL(c.Telefono, '') AS Telefono,
+                    ISNULL(c.Celular, '') AS Celular,
+                    {activoSelect} AS Activo,
+                    CASE WHEN EXISTS (
+                        SELECT 1
+                        FROM dbo.MA_CONTACTOS_CUENTAS rel
+                        WHERE rel.IdContacto = ISNULL(NULLIF(c.idContacto, 0), c.id)
+                          AND UPPER(LTRIM(RTRIM(rel.Cuenta))) = @Cuenta
+                    ) THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END AS VinculadoPorTabla,
+                    CASE WHEN UPPER(LTRIM(RTRIM(ISNULL(c.CuentaRel, '')))) = @Cuenta THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END AS VinculadoPorCuentaRel
+                FROM dbo.MA_CONTACTOS c
+                WHERE (
+                        EXISTS (
+                            SELECT 1
+                            FROM dbo.MA_CONTACTOS_CUENTAS rel
+                            WHERE rel.IdContacto = ISNULL(NULLIF(c.idContacto, 0), c.id)
+                              AND UPPER(LTRIM(RTRIM(rel.Cuenta))) = @Cuenta
+                        )
+                        OR UPPER(LTRIM(RTRIM(ISNULL(c.CuentaRel, '')))) = @Cuenta
+                    )
+                    {activoFilter}
+                ORDER BY ISNULL(c.Nombre_y_Apellido, ''), c.id;
+                """;
+
+            var contactos = await cn.QueryAsync<CuentaComercialContactoDto>(
+                new CommandDefinition(sql, new { Cuenta = cuenta }, cancellationToken: token));
+            return contactos.ToList();
+        }, "No se pudieron cargar los contactos vinculados.", ct);
+
+    public Task<int> CreateContactoAsync(CuentaComercialTipo tipo, CuentaComercialContactoCreateRequest request, CancellationToken ct = default)
+        => ExecuteLoggedAsync(GetModuleLabel(tipo), "CreateContacto", async token =>
+        {
+            ArgumentNullException.ThrowIfNull(request);
+            var normalized = NormalizeContactoRequest(request);
+            if (string.IsNullOrWhiteSpace(normalized.CuentaCodigo))
+                throw new InvalidOperationException($"No se recibiÃ³ el {GetSingularLabel(tipo).ToLowerInvariant()} al que se vincula el contacto.");
+            if (string.IsNullOrWhiteSpace(normalized.NombreApellido))
+                throw new InvalidOperationException("IngresÃ¡ el nombre del contacto antes de guardar.");
+
+            var descriptor = ResolveDescriptor(tipo);
+            var cuenta = normalized.CuentaCodigo.Trim().ToUpperInvariant();
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var tx = await cn.BeginTransactionAsync(token);
+            var sqlTx = (SqlTransaction)tx;
+
+            var accountExists = await ExistsAsync(cn, sqlTx, descriptor.ViewName, "CODIGO", cuenta, token);
+            if (!accountExists)
+                throw new InvalidOperationException($"El {GetSingularLabel(tipo).ToLowerInvariant()} seleccionado ya no existe en la base activa.");
+
+            var hasActivoColumn = await ColumnExistsAsync(cn, sqlTx, "MA_CONTACTOS", "Activo", token);
+            var insertSql = hasActivoColumn
+                ? """
+                INSERT INTO dbo.MA_CONTACTOS
+                (
+                    Nombre_y_Apellido,
+                    Telefono,
+                    Celular,
+                    email,
+                    Observaciones,
+                    Cargo,
+                    CuentaRel,
+                    mailPGCB,
+                    mailOT,
+                    mailOC,
+                    Activo
+                )
+                VALUES
+                (
+                    @NombreApellido,
+                    @Telefono,
+                    @Celular,
+                    @Email,
+                    @Observaciones,
+                    @Cargo,
+                    @Cuenta,
+                    0,
+                    0,
+                    0,
+                    1
+                );
+                SELECT CAST(SCOPE_IDENTITY() AS int);
+                """
+                : """
+                INSERT INTO dbo.MA_CONTACTOS
+                (
+                    Nombre_y_Apellido,
+                    Telefono,
+                    Celular,
+                    email,
+                    Observaciones,
+                    Cargo,
+                    CuentaRel,
+                    mailPGCB,
+                    mailOT,
+                    mailOC
+                )
+                VALUES
+                (
+                    @NombreApellido,
+                    @Telefono,
+                    @Celular,
+                    @Email,
+                    @Observaciones,
+                    @Cargo,
+                    @Cuenta,
+                    0,
+                    0,
+                    0
+                );
+                SELECT CAST(SCOPE_IDENTITY() AS int);
+                """;
+
+            var contactoParams = new
+            {
+                NombreApellido = normalized.NombreApellido,
+                Telefono = DbNullable(normalized.Telefono),
+                Celular = DbNullable(normalized.Celular),
+                Email = DbNullable(normalized.Email),
+                Observaciones = DbNullable(normalized.Observaciones),
+                Cargo = DbNullable(normalized.Cargo),
+                Cuenta = cuenta
+            };
+            var contactoId = await cn.ExecuteScalarAsync<int>(
+                new CommandDefinition(insertSql, contactoParams, sqlTx, cancellationToken: token));
+
+            const string linkSql = """
+                UPDATE dbo.MA_CONTACTOS
+                SET idContacto = @IdContacto
+                WHERE id = @Id
+                  AND ISNULL(idContacto, 0) = 0;
+
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM dbo.MA_CONTACTOS_CUENTAS
+                    WHERE IdContacto = @IdContacto
+                      AND UPPER(LTRIM(RTRIM(Cuenta))) = @Cuenta
+                )
+                BEGIN
+                    INSERT INTO dbo.MA_CONTACTOS_CUENTAS (IdContacto, Cuenta)
+                    VALUES (@IdContacto, @Cuenta);
+                END;
+                """;
+
+            await cn.ExecuteAsync(
+                new CommandDefinition(
+                    linkSql,
+                    new { Id = contactoId, IdContacto = Convert.ToDouble(contactoId), Cuenta = cuenta },
+                    sqlTx,
+                    cancellationToken: token));
+
+            await tx.CommitAsync(token);
+
+            await appEvents.LogAuditAsync(
+                GetModuleLabel(tipo),
+                "CreateContacto",
+                "MA_CONTACTOS_CUENTAS",
+                cuenta,
+                $"Contacto vinculado al {GetSingularLabel(tipo).ToLowerInvariant()}.",
+                new
+                {
+                    Cuenta = cuenta,
+                    ContactoId = contactoId,
+                    normalized.NombreApellido,
+                    normalized.Email
+                },
+                token);
+
+            return contactoId;
+        }, "No se pudo crear el contacto vinculado.", ct);
+
     public Task<CuentaComercialViewSettingsDto> GetViewSettingsAsync(CuentaComercialTipo tipo, string userName, CancellationToken ct = default)
         => ExecuteLoggedAsync(GetModuleLabel(tipo), "GetViewSettings", async token =>
         {
@@ -809,6 +1003,18 @@ public sealed class CuentasComercialesService(
                 new { UserName = userName.Trim(), normalized.AgruparPor, Columnas = normalized.Columnas },
                 token);
         }, "No se pudo guardar la configuración de vista.", ct);
+
+    private static CuentaComercialContactoCreateRequest NormalizeContactoRequest(CuentaComercialContactoCreateRequest request)
+        => new()
+        {
+            CuentaCodigo = request.CuentaCodigo?.Trim() ?? string.Empty,
+            NombreApellido = request.NombreApellido?.Trim() ?? string.Empty,
+            Cargo = request.Cargo?.Trim() ?? string.Empty,
+            Email = request.Email?.Trim() ?? string.Empty,
+            Telefono = request.Telefono?.Trim() ?? string.Empty,
+            Celular = request.Celular?.Trim() ?? string.Empty,
+            Observaciones = request.Observaciones?.Trim() ?? string.Empty
+        };
 
     private static CuentaComercialSaveRequest NormalizeRequest(CuentaComercialSaveRequest request)
         => new()
