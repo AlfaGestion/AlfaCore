@@ -3746,22 +3746,68 @@ html[data-theme="light"] .menu__search-result:hover {
     align-items: center;
     width: max-content;
     max-width: 100%;
+    gap: 0;
 }
 
 .conversations-filters__modes--compact .conversations-filter-pill {
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    gap: .3rem;
     white-space: nowrap;
+    overflow: hidden;
+    max-width: 11rem;
+    opacity: 1;
+    transform: translateX(0);
+    transition: max-width .22s ease, opacity .18s ease, transform .22s ease, margin-left .22s ease, padding .22s ease, color .16s ease, border-color .16s ease, background .16s ease, box-shadow .16s ease;
 }
 
 .conversations-filters__modes--compact .conversations-filter-pill:not(.is-active) {
-    display: none;
+    max-width: 0;
+    opacity: 0;
+    margin-left: 0;
+    padding-left: 0;
+    padding-right: 0;
+    border-color: transparent;
+    pointer-events: none;
+    transform: translateX(-.25rem);
 }
 
 .conversations-filters__modes--compact:hover .conversations-filter-pill,
 .conversations-filters__modes--compact:focus-within .conversations-filter-pill {
+    max-width: 11rem;
+    opacity: 1;
+    padding-left: .62rem;
+    padding-right: .62rem;
+    border-color: var(--color-border);
+    pointer-events: auto;
+    transform: translateX(0);
+}
+
+.conversations-filters__modes--compact:hover .conversations-filter-pill:not(.is-active),
+.conversations-filters__modes--compact:focus-within .conversations-filter-pill:not(.is-active) {
+    margin-left: .45rem;
+}
+
+.conversations-filters__modes--compact .conversations-filter-pill.is-active {
+    order: -1;
+}
+
+.conversations-mode-caret {
+    display: none;
+    font-size: .68rem;
+    opacity: .78;
+    transition: transform .22s ease, opacity .18s ease;
+}
+
+.conversations-filters__modes--compact .conversations-filter-pill.is-active .conversations-mode-caret {
     display: inline-flex;
+}
+
+.conversations-filters__modes--compact:hover .conversations-filter-pill.is-active .conversations-mode-caret,
+.conversations-filters__modes--compact:focus-within .conversations-filter-pill.is-active .conversations-mode-caret {
+    transform: rotate(180deg);
+    opacity: 1;
 }
 
 .conversations-filter-pill {

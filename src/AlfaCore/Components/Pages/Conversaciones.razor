@@ -174,6 +174,7 @@
                             class="conversations-filter-pill @(mode.Value == _filters.Modo ? "is-active" : string.Empty)"
                             @onclick="() => ChangeModeAsync(mode.Value)">
                         @mode.Label
+                        <i class="bi bi-chevron-down conversations-mode-caret"></i>
                     </button>
                 }
             </div>
