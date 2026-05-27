@@ -2808,23 +2808,26 @@ public sealed class ConversacionesService(
             await cn.OpenAsync(token);
             await using var cmd = new SqlCommand(sql, cn);
             cmd.Parameters.AddWithValue("@IdAdjunto", idAdjunto);
-            await using var rd = await cmd.ExecuteReaderAsync(token);
-            if (!await rd.ReadAsync(token))
-                return null;
-
-            var record = new AttachmentServeRecord
+            AttachmentServeRecord record;
+            await using (var rd = await cmd.ExecuteReaderAsync(token))
             {
-                IdAdjunto = rd.GetInt64(0),
-                IdMensaje = rd.GetInt64(1),
-                IdConversacion = rd.GetInt64(2),
-                TipoArchivo = GetString(rd, 3),
-                NombreArchivo = GetString(rd, 4),
-                MimeType = GetString(rd, 5),
-                UrlArchivo = GetString(rd, 6),
-                RutaLocal = GetString(rd, 7),
-                AdjuntoPayloadJson = GetString(rd, 8),
-                MensajePayloadJson = GetString(rd, 9)
-            };
+                if (!await rd.ReadAsync(token))
+                    return null;
+
+                record = new AttachmentServeRecord
+                {
+                    IdAdjunto = rd.GetInt64(0),
+                    IdMensaje = rd.GetInt64(1),
+                    IdConversacion = rd.GetInt64(2),
+                    TipoArchivo = GetString(rd, 3),
+                    NombreArchivo = GetString(rd, 4),
+                    MimeType = GetString(rd, 5),
+                    UrlArchivo = GetString(rd, 6),
+                    RutaLocal = GetString(rd, 7),
+                    AdjuntoPayloadJson = GetString(rd, 8),
+                    MensajePayloadJson = GetString(rd, 9)
+                };
+            }
 
             var rutaLocal = ResolveExistingAttachmentPath(record);
             if (!string.IsNullOrWhiteSpace(rutaLocal) && !string.Equals(rutaLocal, record.RutaLocal, StringComparison.OrdinalIgnoreCase))
