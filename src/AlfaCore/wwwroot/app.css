@@ -17449,8 +17449,28 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
 }
 
 .cuentas-contacto-preview dd .usuarios-input {
+    background: rgba(8, 20, 36, .92);
+    border: 1px solid rgba(83, 124, 172, .42);
+    border-radius: .38rem;
+    color: var(--text-main, #e7f1ff);
+    font: inherit;
     min-height: 2.25rem;
     padding: .45rem .6rem;
+    width: 100%;
+}
+
+.cuentas-contacto-preview dd .usuarios-input:focus {
+    border-color: rgba(34, 211, 238, .82);
+    box-shadow: 0 0 0 3px rgba(34, 211, 238, .16);
+    outline: 0;
+}
+
+.cuentas-contacto-preview dd .usuarios-input:disabled {
+    opacity: .72;
+}
+
+.cuentas-contacto-preview dd .usuarios-input::placeholder {
+    color: var(--text-muted, #8da2bf);
 }
 
 @media (max-width: 720px) {
