@@ -88,7 +88,7 @@
 
                 @if (_showSearchPanel)
                 {
-                    <div class="smart-search__panel">
+                    <div class="smart-search__panel" @onclick="CloseTicketLookupSuggestions">
                         <div class="smart-search__column">
                             <h4><i class="bi bi-funnel-fill"></i> Filtros</h4>
                             <button type="button" class="@GetSmartOptionClass(!_filters.IncluirCerrados)" @onclick='() => ToggleTicketClosedAsync(false)'>Abiertos</button>
@@ -133,7 +133,7 @@
                         </div>
                         <div class="smart-search__column">
                             <h4><i class="bi bi-building"></i> Cliente / usuario</h4>
-                            <div class="smart-search__inline tickets-lookup">
+                            <div class="smart-search__inline tickets-lookup" @onclick:stopPropagation>
                                 <label>Cliente</label>
                                 <input type="text" value="@_filterClientSearch" @oninput="OnFilterClientSearchInputAsync" placeholder="Buscar empresa..." />
                                 @if (_filterClientSuggestions.Count > 0)
@@ -149,7 +149,7 @@
                                     </div>
                                 }
                             </div>
-                            <div class="smart-search__inline tickets-lookup">
+                            <div class="smart-search__inline tickets-lookup" @onclick:stopPropagation>
                                 <label>Contacto</label>
                                 <input type="text" value="@_filterContactSearch" @oninput="OnFilterContactSearchInputAsync" placeholder="Buscar usuario/contacto..." />
                                 @if (_filterContactSuggestions.Count > 0)
@@ -1707,7 +1707,7 @@
 
     private async Task DismissFeedbackAsync()
     {
-        _showSearchPanel = false;
+        CloseTicketSearchOverlays();
 
         if (_feedback is null || _feedbackLeaving)
             return;
@@ -1720,6 +1720,20 @@
         await Task.Delay(180);
         _feedback = null;
         _feedbackLeaving = false;
+    }
+
+    private void CloseTicketSearchOverlays()
+    {
+        _showSearchPanel = false;
+        CloseTicketLookupSuggestions();
+    }
+
+    private void CloseTicketLookupSuggestions()
+    {
+        _filterClientSuggestions = [];
+        _filterContactSuggestions = [];
+        _ticketClientSuggestions = [];
+        _ticketContactSuggestions = [];
     }
 
     private void ClearErrorFeedback()
