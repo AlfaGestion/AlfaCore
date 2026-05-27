@@ -1094,6 +1094,20 @@
         _modalErrors.Clear();
     }
 
+    private async Task CheckAndCleanPendingUserAsync()
+    {
+        if (string.IsNullOrEmpty(_pendingCreatedUserName)) return;
+        var name = _pendingCreatedUserName;
+        _pendingCreatedUserName = string.Empty;
+        var confirm = await Js.InvokeAsync<bool>("confirm",
+            $"Se creó el usuario '{name}' pero el técnico no fue guardado. ¿Querés desactivar el usuario para evitar dejar un acceso sin completar?");
+        if (confirm)
+        {
+            await UiOps.RunAsync(() => UsuariosSvc.DeactivateAsync(name), "No se pudo desactivar el usuario.");
+            await RecargarUsuariosAsync();
+        }
+    }
+
     private async Task CrearUsuarioDesdeModalAsync()
     {
         _modalErrors.Clear();
@@ -1133,8 +1147,9 @@
                 var nombreCreado = _modalNombre.Trim();
                 CerrarModalCrearUsuario();
                 await RecargarUsuariosAsync();
-                _form.UsuarioAsociado  = nombreCreado;
-                _editorUserCreatedNote = $"El usuario '{nombreCreado}' fue creado y asociado al técnico. Recordá asignarle permisos en Seguridad → Autorización de tareas.";
+                _form.UsuarioAsociado   = nombreCreado;
+                _pendingCreatedUserName = nombreCreado;
+                _editorUserCreatedNote  = $"El usuario '{nombreCreado}' fue creado y asociado al técnico. Recordá asignarle permisos en Seguridad → Autorización de tareas.";
             }
             catch (AppValidationException validationEx)
             {
