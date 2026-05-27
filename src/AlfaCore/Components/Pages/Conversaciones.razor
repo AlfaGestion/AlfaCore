@@ -1148,7 +1148,13 @@
                             <span class="context-card__label">Cliente</span>
                             <strong>@DisplayOrFallback(_selectedConversation.ClienteNombre)</strong>
                             <span class="context-card__muted">@DisplayOrFallback(_selectedConversation.ClienteCodigo)</span>
-                            @if (string.IsNullOrWhiteSpace(_selectedConversation.ClienteCodigo))
+                            @if (!string.IsNullOrWhiteSpace(_selectedConversation.ClienteCodigo))
+                            {
+                                <button type="button" class="btn btn--ghost btn--sm context-card__action" @onclick="OpenSelectedClient">
+                                    <i class="bi bi-building"></i> Ver cliente
+                                </button>
+                            }
+                            else
                             {
                                 <button type="button" class="btn btn--primary btn--sm context-card__action" @onclick="OpenRelacionarClienteModal">
                                     <i class="bi bi-building-add"></i> Relacionar cliente
@@ -3834,6 +3840,12 @@
     {
         if (_selectedConversation?.IdContacto is int idContacto)
             Nav.NavigateTo($"/contactos?editar={idContacto.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+    }
+
+    private void OpenSelectedClient()
+    {
+        if (!string.IsNullOrWhiteSpace(_selectedConversation?.ClienteCodigo))
+            Nav.NavigateTo($"/clientes?editar={Uri.EscapeDataString(_selectedConversation.ClienteCodigo)}");
     }
 
     private void OpenRelacionarClienteModal()
