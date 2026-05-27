@@ -110,6 +110,10 @@ public sealed class AuditoriaUsuarioStatsDto
     public int ControlesDetectados { get; init; }
     public int ComprobantesInvolucrados { get; init; }
     public int ContablesDuplicados { get; init; }
+    public int UsuariosInvolucrados { get; init; }
+    public decimal? PromedioMinutosCancelacion { get; init; }
+    public int MaximoMinutosCancelacion { get; init; }
+    public decimal? ImporteTotalCancelado { get; init; }
 }
 
 public sealed class AuditoriaUsuarioResultDto

@@ -524,3 +524,18 @@ Criterio aplicado:
 ## Stored Procedures usados
 
 No se identificaron stored procedures invocados directamente desde el código actual de `src/AlfaCore`. La búsqueda realizada sobre `.cs` y `.razor` no mostró usos de `EXEC`, `EXECUTE` ni llamadas concretas a objetos `sp_`.
+
+### MenuService
+
+- Tipo: Service
+- Propósito:
+  Construye el árbol dinámico del sistema reutilizando TA_MENU y TA_TAREAS.
+
+- Datos que usa:
+  TA_MENU
+  TA_TAREAS
+  ALFACORE_MENU_WEB
+
+- Observaciones:
+  La navegación web reutiliza la estructura funcional legacy.
+  Las rutas web se resuelven mediante ALFACORE_MENU_WEB.

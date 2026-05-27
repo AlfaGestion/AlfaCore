@@ -1,686 +1,453 @@
-# Manual de Usuario — Dashboard de Compras
-### Alfa Gestión · v1.0
+# Manual General de AlfaCore
+### Alfa Gestión · Guía principal de uso
 
 ---
 
 ## Índice
 
-1. [¿Qué es el Dashboard de Compras?](#1-qué-es-el-dashboard-de-compras)
-2. [Acceso y navegación general](#2-acceso-y-navegación-general)
-3. [Barra de filtros globales](#3-barra-de-filtros-globales)
-4. [Inicio — Resumen ejecutivo](#4-inicio--resumen-ejecutivo)
-5. [Proveedores](#5-proveedores)
-6. [Comprobantes](#6-comprobantes)
-7. [Rubros](#7-rubros)
-8. [Familias](#8-familias)
-9. [Artículos](#9-artículos)
-10. [Actividad](#10-actividad)
-11. [InformesIA](#11-informesia)
-12. [Conceptos y métricas clave](#12-conceptos-y-métricas-clave)
-13. [Preguntas frecuentes](#13-preguntas-frecuentes)
-14. [Información técnica de vistas](#14-información-técnica-de-vistas)
+1. [¿Qué es AlfaCore?](#1-qué-es-alfacore)
+2. [¿Para qué sirve?](#2-para-qué-sirve)
+3. [Ingreso al sistema](#3-ingreso-al-sistema)
+4. [Selección de base de datos](#4-selección-de-base-de-datos)
+5. [Pantalla principal y navegación](#5-pantalla-principal-y-navegación)
+6. [Cómo usar el menú](#6-cómo-usar-el-menú)
+7. [Cómo leer una pantalla de AlfaCore](#7-cómo-leer-una-pantalla-de-alfacore)
+8. [Filtros, búsquedas y listados](#8-filtros-búsquedas-y-listados)
+9. [Detalle, acciones y exportaciones](#9-detalle-acciones-y-exportaciones)
+10. [Ayuda y manuales por módulo](#10-ayuda-y-manuales-por-módulo)
+11. [Buenas prácticas de uso](#11-buenas-prácticas-de-uso)
+12. [Preguntas frecuentes](#12-preguntas-frecuentes)
 
 ---
 
-## 1. ¿Qué es el Dashboard de Compras?
+## 1. ¿Qué es AlfaCore?
 
-El **Dashboard de Compras** es una herramienta de análisis de datos integrada con el sistema **Alfa Gestión**. Transforma la información de compras registrada en el ERP en indicadores visuales, gráficos y tablas que permiten tomar decisiones informadas sobre:
+**AlfaCore** es la plataforma web de Alfa Gestión.
 
-- Concentración del gasto por proveedor o categoría.
-- Evolución del gasto en el tiempo.
-- Comportamiento de precios de artículos.
-- Productividad operativa de los usuarios que cargan comprobantes.
-- Detección de comprobantes con anomalías (valor cero, sin detalle, IVA cero, etc.).
+Su objetivo es concentrar en una sola aplicación distintas herramientas de gestión, análisis, auditoría, consultas, seguimiento operativo y soporte a decisiones.
 
-La aplicación **no modifica datos** del sistema. Solo los lee y los presenta de forma analítica.
+No es un único módulo.  
+Es una **base común** desde la que se accede a distintas áreas del negocio.
+
+Por ejemplo, según la instalación y los permisos, AlfaCore puede incluir:
+
+- dashboards de gestión
+- consultas SQL
+- auditoría
+- tareas
+- conversaciones
+- interfaces
+- costos
+- seguridad
+
+Cada módulo conserva su propia lógica, pero todos comparten una misma forma de navegación.
 
 ---
 
-## 2. Acceso y navegación general
+## 2. ¿Para qué sirve?
 
-### 2.1 Abrir la aplicación
+AlfaCore sirve para:
 
-La aplicación se ejecuta como un servidor web local. Accedés desde cualquier navegador ingresando la dirección que te indique el área de sistemas, por ejemplo:
+- consultar información del sistema desde el navegador
+- analizar indicadores del negocio
+- revisar operaciones y alertas
+- administrar configuraciones y procesos
+- acceder a herramientas de apoyo para usuarios, supervisores y dueños
 
-```
-http://NOMBRE-SERVIDOR:5055
-```
+En términos simples:
 
-Si estás en la misma PC donde corre el servidor, también podés usar:
+> AlfaCore permite trabajar con información de Alfa Gestión de forma moderna, visual y centralizada.
 
-```
+---
+
+## 3. Ingreso al sistema
+
+La aplicación se abre desde un navegador web.
+
+Según cómo esté instalada en tu empresa, podés ingresar con una dirección como:
+
+```text
 http://localhost:5055
 ```
 
-### 2.2 Menú principal
+o bien con la dirección del servidor publicada por el área de sistemas.
 
-El menú lateral izquierdo contiene las secciones principales:
+Al ingresar, el sistema puede pedirte:
 
-| Sección | ¿Qué muestra? |
-|---|---|
-| **Inicio** | Resumen ejecutivo con los KPI más importantes |
-| **Proveedores** | Análisis del gasto por proveedor |
-| **Comprobantes** | Listado y detalle de facturas y notas de crédito |
-| **Rubros** | Gasto agrupado por categorías de producto |
-| **Familias** | Gasto por familias jerárquicas de productos |
-| **Artículos** | Análisis a nivel de artículo individual y evolución de precios |
-| **Actividad** | Métricas de carga operativa por usuario |
-| **InformesIA** | Consultas en lenguaje natural sobre las vistas autorizadas del dashboard |
-| **Ayuda** | Manual de uso con buscador e índice rápido |
+- seleccionar una base activa
+- iniciar sesión con usuario del sistema
 
-Hacé clic en cualquier sección para navegar. Los filtros que tengas activos **se mantienen** al cambiar de sección.
+Si no podés ingresar:
 
-### 2.3 Tarjetas KPI
-
-En la parte superior de cada sección encontrás tarjetas con indicadores clave. Cada tarjeta muestra:
-
-- **Ícono** representativo del indicador.
-- **Título** descriptivo.
-- **Valor principal** (monto, cantidad, porcentaje, etc.).
-- **Descripción adicional** cuando el indicador requiere contexto.
+- verificá que la base correcta esté activa
+- revisá usuario y contraseña
+- si persiste, contactá a soporte
 
 ---
 
-## 3. Barra de filtros globales
+## 4. Selección de base de datos
 
-Todas las secciones comparten la misma barra de filtros ubicada en la parte superior de la página. Los filtros aplicados afectan **todos los datos visibles** en la sección actual.
+AlfaCore trabaja sobre una **base activa**.
 
-### 3.1 Rango de fechas
+Eso significa que la información que ves depende de la sesión SQL seleccionada.
 
-El filtro más usado. Podés definir el período de análisis de dos maneras:
+### ¿Dónde se ve?
 
-- **Manualmente:** Ingresá las fechas "Desde" y "Hasta" en los campos de texto.
-- **Accesos rápidos:** Botones preconfigurados para los períodos más comunes:
+En la parte superior de la aplicación aparece un chip o indicador con:
 
-| Botón | Período que aplica |
-|---|---|
-| Hoy | Solo el día de hoy |
-| Esta semana | Desde el lunes de la semana actual hasta hoy |
-| Este mes | Desde el primer día del mes hasta hoy |
-| Mes anterior | Mes calendario anterior completo |
-| Últimos 3 meses | Los tres meses anteriores completos |
-| Año actual | Desde el 1 de enero hasta hoy |
+- servidor
+- base de datos activa
 
-### 3.2 Filtros avanzados
+### ¿Qué pasa si cambiás de base?
 
-Hacé clic en **"Filtros avanzados"** para expandir el panel con las siguientes opciones:
+Al cambiar la base:
 
-| Filtro | Descripción |
-|---|---|
-| **Proveedor** | Busca por cuenta o razón social (búsqueda parcial) |
-| **Código de artículo** | Coincidencia exacta con el código interno |
-| **Descripción de artículo** | Búsqueda parcial en la descripción |
-| **Rubro** | Selector desplegable con los rubros disponibles |
-| **Familia** | Selector desplegable con las familias disponibles |
-| **Usuario** | Filtra por el usuario que cargó los comprobantes |
-| **Sucursal** | Filtra por sucursal o punto de venta |
-| **Depósito** | Filtra por depósito o almacén |
-| **Estado** | Estado del comprobante en el sistema |
-| **Tipo de comprobante** | FCC, NCC, NDCC, etc. |
+- la sesión funcional actual puede cerrarse
+- tenés que volver a ingresar
+- cambiás el contexto completo de trabajo
 
-### 3.3 Barra de filtros activos
+### Recomendación
 
-Debajo de la barra de filtros aparece un resumen de los filtros activos en ese momento. Esto te permite saber qué condiciones está aplicando el sistema sin tener que abrir el panel cada vez.
+Antes de revisar datos o hacer análisis, confirmá siempre:
 
-### 3.4 Aplicar y limpiar filtros
-
-- Para aplicar filtros, hacé clic en **"Aplicar"** o presioná Enter.
-- Para quitar todos los filtros, hacé clic en **"Limpiar"**.
+- qué base está activa
+- si corresponde al cliente o empresa con la que querés trabajar
 
 ---
 
-## 4. Inicio — Resumen ejecutivo
+## 5. Pantalla principal y navegación
 
-La pantalla de inicio ofrece una visión rápida del estado de las compras en el período seleccionado.
+La interfaz de AlfaCore tiene una estructura general común:
 
-### 4.1 KPI principales
+### Encabezado
 
-| Indicador | Descripción |
-|---|---|
-| **Total comprado** | Suma de todos los importes con signo aplicado (facturas menos notas de crédito) |
-| **Neto total** | Monto sin IVA |
-| **IVA total** | Monto de IVA acumulado |
-| **Comprobantes** | Cantidad de comprobantes en el período |
-| **Artículos distintos** | Cantidad de artículos únicos comprados |
-| **Proveedores activos** | Cantidad de proveedores con al menos una compra |
-| **Ticket promedio** | Promedio de importe por comprobante |
+En la parte superior vas a encontrar normalmente:
 
-### 4.2 Evolución mensual
+- nombre del entorno
+- módulo actual
+- base activa
+- usuario logueado
+- acceso a ayuda
 
-Gráfico de línea que muestra el gasto total mes a mes en los últimos 12 meses. Permite identificar tendencias, estacionalidad y meses atípicos.
+### Menú lateral
 
-### 4.3 Top 7 Proveedores
+Desde el menú lateral accedés a los módulos.
 
-Gráfico de barras horizontales con los 7 proveedores de mayor importe de compra. Hacé clic en un proveedor para ir directamente a su análisis detallado.
+### Área de trabajo
 
-### 4.4 Top 7 Rubros
+Es la zona central donde se muestra la pantalla activa:
 
-Gráfico de barras horizontales con los 7 rubros de mayor participación en el gasto total.
+- resumen
+- grilla
+- filtros
+- detalle
+- gráficos
+- formularios
 
-### 4.5 Top 10 Artículos
+### Acciones rápidas
 
-Tabla con los 10 artículos de mayor impacto económico. Hacé clic en cualquier fila para ver el historial completo del artículo.
+Algunas pantallas también muestran:
 
----
-
-## 5. Proveedores
-
-### 5.1 KPI de proveedores
-
-| Indicador | Descripción |
-|---|---|
-| **Total comprado** | Importe total del período filtrado |
-| **Proveedores activos** | Cantidad de proveedores distintos |
-| **Proveedor principal** | El de mayor importe |
-| **Concentración Top 5** | Qué porcentaje del gasto total representan los 5 primeros |
-| **Variación vs período anterior** | Variación porcentual respecto al período equivalente anterior |
-| **Mayor crecimiento** | Proveedor con mayor incremento relativo |
-| **Mayor caída** | Proveedor con mayor disminución relativa |
-
-### 5.2 Gráficos
-
-- **Ranking de proveedores:** Top 10 por importe total.
-- **Concentración:** Muestra la participación del Top 5 vs. el resto, útil para evaluar dependencia de proveedores.
-
-### 5.3 Tabla de proveedores
-
-La tabla detallada muestra para cada proveedor:
-
-| Columna | Descripción |
-|---|---|
-| Proveedor | Cuenta y razón social |
-| Total | Importe comprado en el período |
-| Participación | % del gasto total |
-| Comprobantes | Cantidad de facturas |
-| Ticket promedio | Promedio por comprobante |
-| Última compra | Fecha del último comprobante |
-| Variación | Diferencia % vs período anterior |
-| Ficha | Botón para ver el detalle del proveedor |
-
-### 5.4 Ficha de proveedor
-
-Al hacer clic en **"Ficha"** de cualquier proveedor se abre un panel lateral con:
-
-- **Artículos principales:** Los artículos más comprados a ese proveedor.
-- **Últimas facturas:** Los comprobantes más recientes.
-- **Evolución mensual:** Gráfico de línea con el gasto mensual en ese proveedor.
+- recargar
+- exportar
+- abrir detalle
+- configurar
 
 ---
 
-## 6. Comprobantes
+## 6. Cómo usar el menú
 
-### 6.1 KPI de comprobantes
+El menú lateral es la entrada principal a los módulos.
 
-| Indicador | Descripción |
-|---|---|
-| **Importe total** | Suma total del período |
-| **Cantidad** | Número de comprobantes |
-| **Proveedores** | Proveedores distintos involucrados |
-| **Ticket promedio** | Promedio por comprobante |
-| **Sin detalle** | Comprobantes sin líneas de detalle cargadas |
-| **Valor cero** | Comprobantes con importe $0 |
-| **Mayor comprobante** | El comprobante de mayor importe |
+### Qué podés hacer
 
-### 6.2 Distribución por tipo
+- abrir un módulo
+- volver a la opción anterior
+- buscar una opción por nombre
+- acceder a Ayuda
+- ingresar a Tareas
 
-Muestra qué tipos de comprobante predominan (FCC, NCC, NDCC, etc.) y su participación en el total.
+### Búsqueda de menú
 
-### 6.3 Evolución semanal
+Si no sabés dónde está una opción, usá el buscador del menú.
 
-Gráfico de línea que muestra el gasto semana a semana dentro del período filtrado.
+Podés escribir, por ejemplo:
 
-### 6.4 Alertas
+- auditoría
+- consultas
+- clientes
+- interfaces
+- costos
 
-El sistema identifica automáticamente situaciones que pueden requerir revisión:
+### Recomendación
 
-- Comprobantes con importe cero.
-- Comprobantes sin detalle de artículos.
-- Comprobantes con IVA cero en importes significativos.
+Si estás empezando, usá primero:
 
-### 6.5 Filtros rápidos
+- menú lateral
+- título del módulo activo
+- botón de ayuda
 
-Botones sobre la tabla que aplican filtros de un clic:
-
-| Botón | Qué muestra |
-|---|---|
-| Críticos | Comprobantes con alertas activas |
-| Con detalle | Solo los que tienen líneas cargadas |
-| Asientos contables | Comprobantes cargados como asiento |
-| Valor cero | Importes igual a $0 |
-| IVA cero | Sin IVA declarado |
-| Sin detalle | Los que no tienen líneas de artículos |
-
-### 6.6 Tabla de comprobantes
-
-La tabla está paginada de a 20 registros. Para cada comprobante se muestra:
-
-| Columna | Descripción |
-|---|---|
-| Fecha | Fecha del comprobante |
-| TC | Tipo de comprobante |
-| Comprobante | Identificador visible del comprobante (`IDCOMPROBANTE`) |
-| Proveedor | Cuenta y razón social |
-| Cuenta | Cuenta contable asociada |
-| Neto | Importe sin IVA |
-| IVA | Importe de IVA |
-| Total | Importe total |
-| Estado | Estado en el sistema |
-| Detalle | Tiene detalle sí/no |
-| Ítems | Cantidad de líneas de detalle |
-| Tipo | Con detalle o asiento contable |
-| Alertas | Indicadores de situaciones anómalas |
-| Depósito | Depósito destino |
-| Usuario | Usuario que lo cargó |
-
-### 6.7 Detalle de comprobante
-
-Hacé clic en cualquier fila para ver el modal de detalle con todas las líneas del comprobante: artículo, descripción, cantidad, precio unitario y total.
+Eso te ubica rápido dentro del sistema.
 
 ---
 
-## 7. Rubros
+## 7. Cómo leer una pantalla de AlfaCore
 
-Los **rubros** son la categorización principal de los artículos en Alfa Gestión.
+Aunque cada módulo tiene sus particularidades, la mayoría de las pantallas siguen un patrón similar.
 
-### 7.1 KPI de rubros
+### 7.1 Título y descripción
 
-| Indicador | Descripción |
-|---|---|
-| **Total comprado** | Importe del período |
-| **Rubros activos** | Categorías con al menos una compra |
-| **Rubro principal** | El de mayor gasto |
-| **Participación del líder** | Qué % del total representa el rubro principal |
-| **Concentración Top 3** | Los tres primeros rubros como % del total |
-| **Mayor crecimiento** | Rubro con mayor aumento vs período anterior |
-| **Mayor caída** | Rubro con mayor disminución |
+Arriba de todo se informa:
 
-### 7.2 Gráficos
+- qué módulo estás viendo
+- qué analiza o administra
 
-- **Top rubros:** Ranking de los rubros con mayor gasto.
-- **Distribución:** Gráfico de participación porcentual de cada rubro.
-- **Concentración:** Top 3 vs. resto.
-- **En crecimiento:** Rubros con variación positiva vs período anterior.
-- **En caída:** Rubros con variación negativa.
+### 7.2 Filtros
 
-### 7.3 Tabla de rubros
+Sirven para acotar la información.
 
-| Columna | Descripción |
-|---|---|
-| Rubro | Código y descripción |
-| Total | Importe comprado |
-| Participación | % del total general |
-| Comprobantes | Facturas que incluyen este rubro |
-| Artículos | Artículos distintos del rubro |
-| Variación | Cambio % vs período anterior |
-| Ticket promedio | Promedio por comprobante |
-| Última compra | Fecha más reciente |
+Lo más habitual es filtrar por:
 
-### 7.4 Ficha de rubro
+- fechas
+- usuario
+- cuenta
+- tipo
+- estado
+- riesgo
 
-Al hacer clic en un rubro se abre un panel con:
+### 7.3 KPI
 
-- **Composición interna:** Artículos dentro del rubro.
-- **Evolución mensual:** Gasto mensual en el rubro.
-- **Top artículos:** Los artículos más significativos.
-- **Top proveedores:** Los proveedores más relevantes para ese rubro.
-- **Últimas facturas:** Comprobantes más recientes que incluyen el rubro.
+Las tarjetas KPI resumen lo más importante de la pantalla.
+
+Ejemplos:
+
+- cantidades
+- importes
+- alertas
+- tiempos
+- usuarios involucrados
+
+### 7.4 Grilla o tabla
+
+Es el listado detallado del resultado.
+
+### 7.5 Detalle
+
+Al abrir un registro, podés ver información ampliada para analizar mejor el caso.
 
 ---
 
-## 8. Familias
+## 8. Filtros, búsquedas y listados
 
-Las **familias** son una categorización jerárquica de artículos (pueden tener subfamilias).
+### Filtros
 
-La estructura y funcionalidad es idéntica a la de [Rubros](#7-rubros), con las siguientes diferencias:
+Los filtros ayudan a responder preguntas concretas.
 
-- Se muestra la **jerarquía**: familia padre / subfamilia.
-- La tabla incluye columnas de **nivel** (0 = raíz, 1 = subfamilia, etc.) y **tiene hijos** (sí/no).
-- La ficha incluye un desglose de la **composición interna** por subfamilias o artículos.
+Ejemplos:
 
----
+- “mostrame solo este usuario”
+- “quiero revisar solo abril”
+- “quiero ver solo riesgo alto”
 
-## 9. Artículos
+### Búsqueda por texto
 
-### 9.1 KPI de artículos
+Muchas pantallas tienen una búsqueda libre para encontrar por coincidencia:
 
-| Indicador | Descripción |
-|---|---|
-| **Total comprado** | Importe del período |
-| **Artículos distintos** | Cantidad de artículos únicos |
-| **Total ítems** | Suma de unidades compradas |
-| **Costo promedio general** | Promedio ponderado de costo unitario |
-| **Con aumento de precio** | Artículos cuyo precio subió vs período anterior |
-| **Con baja de precio** | Artículos cuyo precio bajó |
-| **Mayor aumento** | Artículo con mayor incremento porcentual de precio |
-| **Mayor caída** | Artículo con mayor disminución porcentual |
+- nombres
+- cuentas
+- comprobantes
+- motivos
+- equipos
 
-### 9.2 Gráficos
+### Ordenamiento
 
-- **Top por impacto económico:** Los artículos que más pesan en el gasto total.
-- **Top por cantidad:** Los artículos que se compran en mayor volumen.
-- **Mayores aumentos de precio:** Los que más subieron vs el período anterior.
-- **Mayores bajas de precio:** Los que más bajaron.
+En muchas tablas podés ordenar por columnas como:
 
-### 9.3 Tabla de artículos
+- fecha
+- importe
+- usuario
+- riesgo
 
-| Columna | Descripción |
-|---|---|
-| Artículo | Código y descripción |
-| Cantidad | Unidades compradas |
-| Total | Importe total |
-| Costo promedio | Precio unitario promedio en el período |
-| Precio anterior | Costo promedio del período comparativo |
-| Precio actual | Costo promedio del período actual |
-| Variación | Cambio % de precio |
-| Última compra | Fecha más reciente |
-| Compras | Cantidad de comprobantes donde aparece |
-| Proveedor principal | El proveedor que más lo vende |
-| % del proveedor | Participación del proveedor principal en ese artículo |
+### Paginación
 
-### 9.4 Ficha de artículo
+Cuando hay muchos resultados, la tabla se divide en páginas.
 
-Al hacer clic en un artículo se abre un panel con:
+Podés:
 
-- **Evolución de costo mensual:** Gráfico de línea con la variación del precio a lo largo del tiempo.
-- **Desglose por proveedor:** Qué proporción compra a cada proveedor.
-- **Historial de compras:** Comprobantes donde apareció el artículo con fecha, proveedor, precio y cantidad.
+- cambiar de página
+- ajustar tamaño de página
 
 ---
 
-## 10. Actividad
+## 9. Detalle, acciones y exportaciones
 
-La sección **Actividad** analiza la carga operativa: quién cargó comprobantes, cuántos, y en qué fechas.
+### Ver detalle
 
-### 10.1 KPI de actividad
+Cuando una fila tiene detalle, conviene usarlo antes de sacar conclusiones.
 
-| Indicador | Descripción |
-|---|---|
-| **Facturas cargadas** | Total de comprobantes ingresados en el período |
-| **Ítems cargados** | Total de líneas de detalle ingresadas |
-| **Usuarios activos** | Usuarios distintos con actividad |
-| **Ítems por factura** | Promedio de líneas por comprobante |
-| **Facturas por usuario** | Promedio de comprobantes por usuario |
-| **Día de mayor actividad** | La fecha con más comprobantes cargados |
-| **Usuario más activo** | El que más comprobantes cargó |
-| **Mayor detalle** | El usuario con más líneas de artículo |
+El detalle suele mostrar:
 
-### 10.2 Gráficos diarios
+- información ampliada
+- motivo
+- observaciones
+- relaciones con otros registros
+- datos técnicos o funcionales
 
-- **Facturas por día:** Evolución diaria de comprobantes cargados.
-- **Ítems por día:** Evolución diaria de líneas ingresadas.
-- **Distribución por tipo:** Proporción entre comprobantes con detalle de artículos y asientos contables.
+### Abrir comprobante o registro relacionado
 
-### 10.3 Gráficos por usuario
+En algunos módulos podés ir del listado a la ficha o visor del comprobante.
 
-- **Facturas por usuario:** Ranking de usuarios por cantidad de comprobantes.
-- **Ítems por usuario:** Ranking de usuarios por líneas de detalle ingresadas.
+### Exportar
 
-### 10.4 Tabla de usuarios
+Según el módulo, puede haber exportación a:
 
-| Columna | Descripción |
-|---|---|
-| Usuario | Nombre de usuario |
-| Facturas | Comprobantes cargados |
-| Ítems | Líneas de detalle |
-| Ítems/Factura | Promedio de detalle por comprobante |
-| Importe | Total de importe manejado |
-| Última actividad | Último comprobante cargado |
-| Días activos | Días distintos con actividad |
-| Con detalle | % de comprobantes con líneas de artículo |
-| Contables | % de comprobantes solo con asiento |
+- `PDF`
+- `Excel`
 
-### 10.5 Ficha de usuario
+### Cuándo usar cada formato
 
-Al hacer clic en un usuario se abre un panel con:
+Usá `PDF` para:
 
-- **Serie diaria de facturas:** Actividad día a día.
-- **Serie diaria de ítems:** Cantidad de líneas por día.
-- **Listado de comprobantes:** Todos los comprobantes cargados por ese usuario en el período.
+- compartir
+- imprimir
+- presentar
+
+Usá `Excel` para:
+
+- analizar
+- ordenar
+- comentar
+- trabajar con más detalle
 
 ---
 
-## 11. InformesIA
+## 10. Ayuda y manuales por módulo
 
-La sección **InformesIA** permite generar informes puntuales en lenguaje natural sobre la misma información visible en el dashboard, sin modificar datos.
+AlfaCore tiene dos niveles de documentación:
 
-### 11.1 Qué hace
+### Manual general
 
-- Interpreta consultas como "proveedores con mayor crecimiento", "rubros con más participación" o "listado de compras del mes".
-- Trabaja en **solo lectura**.
-- Usa únicamente las vistas autorizadas del tablero.
-- Devuelve resultados en una pestaña nueva para no pisar informes anteriores.
+Este archivo.
 
-### 11.2 Cómo usarla
+Sirve para entender:
 
-1. Escribí la consulta en el cuadro principal.
-2. Si querés, ajustá el rango desde los filtros globales.
-3. Marcá o desmarcá **Incluir gráfico** según el tipo de salida que necesitás.
-4. Hacé clic en **Abrir informe en nueva pestaña**.
+- qué es AlfaCore
+- cómo se navega
+- cómo funciona la base activa
+- cómo leer las pantallas
 
-### 11.3 Sugerencias y consultas soportadas
+### Manuales por módulo
 
-La pantalla incluye sugerencias rápidas. Además, reconoce consultas orientadas a:
+Cada módulo importante puede tener su propio manual.
 
-- Rankings: top proveedores, artículos, rubros o comprobantes.
-- Comparaciones: crecimiento, caída, variación contra período anterior.
-- Concentración: participación del gasto por proveedor, rubro o familia.
-- Evolución: compras por día o por mes.
-- Listados: comprobantes del período con columnas pedidas por el usuario.
+Ejemplos:
 
-### 11.4 Reglas importantes
+- Auditoría de usuarios
+- Consultas
+- otros módulos específicos
 
-- Si la consulta incluye un período explícito, por ejemplo **"marzo 2026"** o **"últimos 7 días"**, ese período tiene prioridad sobre la barra de filtros.
-- Si el informe no puede resolverse con las vistas autorizadas, el sistema lo rechaza con un mensaje claro.
-- La validación bloquea comandos peligrosos y cualquier intento de escritura o acceso fuera del alcance permitido.
+### Cuándo usar cada uno
 
-### 11.5 Historial, exportación y dictado
+Usá el **manual general** cuando quieras entender el sistema.
 
-- **Historial:** guarda las últimas consultas para reejecutarlas o reutilizarlas.
-- **PDF:** cada resultado puede exportarse a PDF desde la vista del informe.
-- **Dictado:** el botón de micrófono permite cargar una consulta por voz si el navegador lo soporta.
-
-### 11.6 Fuentes autorizadas
-
-InformesIA usa solo estas vistas:
-
-- `vw_compras_cabecera_dashboard`
-- `vw_compras_detalle_dashboard`
-- `vw_estadisticas_ingresos_diarias`
-- `vw_familias_jerarquia`
-
-El detalle técnico de cada una está documentado al final de este manual.
+Usá el **manual del módulo** cuando necesites trabajar en profundidad una pantalla concreta.
 
 ---
 
-## 12. Conceptos y métricas clave
+## 11. Buenas prácticas de uso
 
-### Sistema de signo
+### Confirmá siempre la base activa
 
-Los comprobantes pueden ser:
-- **Facturas (FCC, FPC, LIQC, NDC):** suman al gasto → signo **+1**
-- **Notas de crédito (NCC, NCPC):** restan del gasto → signo **-1**
+Es la validación más importante antes de interpretar cualquier dato.
 
-Todos los importes del dashboard ya tienen el signo aplicado. Si una nota de crédito aparece en el análisis, ya está descontando del total.
+### Filtrá antes de analizar
 
-### Variación vs período anterior
+No tomes decisiones con resultados demasiado amplios si podés acotar:
 
-Cuando el sistema muestra **"Variación"**, compara el período filtrado con el período inmediatamente anterior de la misma duración.
+- período
+- usuario
+- cuenta
+- módulo
 
-Ejemplo: si filtrás del 1 al 31 de marzo, la variación se calcula contra el 1 al 28 de febrero.
+### Leé primero el resumen y después el detalle
 
-**Interpretación:**
-- Valor positivo (verde) → el gasto/precio aumentó.
-- Valor negativo (rojo) → el gasto/precio disminuyó.
+El orden recomendado es:
 
-### Participación %
+1. mirar KPI
+2. revisar listado
+3. abrir detalle
+4. exportar si hace falta
 
-Es el peso relativo de un ítem (proveedor, rubro, artículo) dentro del total del período:
+### No confundas alerta con error confirmado
 
-```
-Participación = (Total del ítem / Total general) × 100
-```
+Muchos módulos muestran hallazgos, no sentencias definitivas.
 
-### Concentración
+La regla práctica es:
 
-Indica qué porcentaje del gasto total está en los N principales items. Una concentración alta en pocos proveedores puede representar un riesgo de dependencia.
+> primero revisar, después concluir
 
-### Ticket promedio
+### Usá Ayuda dentro del contexto correcto
 
-Importe medio por comprobante:
-
-```
-Ticket promedio = Total comprado / Cantidad de comprobantes
-```
-
-### Costo promedio de artículo
-
-Precio unitario promedio en el período:
-
-```
-Costo promedio = Total comprado del artículo / Cantidad de unidades
-```
+Si estás en un módulo específico, buscá primero su manual.
 
 ---
 
-## 13. Preguntas frecuentes
+## 12. Preguntas frecuentes
 
-**¿Por qué los datos no coinciden exactamente con los del sistema Alfa Gestión?**
+### ¿AlfaCore reemplaza a Alfa Gestión?
 
-El dashboard aplica el sistema de signo de compras: las notas de crédito se restan de las facturas. En Alfa Gestión podés ver los importes brutos de cada comprobante por separado; aquí se muestran los netos analíticos.
+No.  
+Es la capa web y analítica que complementa y moderniza el acceso a información y procesos.
 
-**¿Los filtros se pierden al cambiar de sección?**
+### ¿Todo lo que veo depende de la base activa?
 
-No. Los filtros se mantienen mientras no los limpies vos manualmente. Esto permite, por ejemplo, filtrar por un proveedor en la sección **Proveedores** y luego ver sus comprobantes en **Comprobantes** sin reconfigurar el filtro.
+Sí.  
+La base seleccionada define el contexto de datos.
 
-**¿Puedo exportar la información?**
+### ¿Puedo trabajar en más de una base?
 
-Sí. La aplicación permite exportar a **PDF** la pantalla actual y también los resultados de **InformesIA**. La exportación conserva el contenido visible, incluyendo tablas, resumen y gráficos cuando corresponden.
+Sí, pero no al mismo tiempo en la misma sesión funcional sin cambiar el contexto.
 
-**¿Con qué frecuencia se actualizan los datos?**
+### ¿Todos los usuarios ven los mismos módulos?
 
-Los datos se leen en tiempo real de la base de datos de Alfa Gestión cada vez que navegás a una sección o aplicás un filtro. No hay caché permanente.
+No necesariamente.  
+Depende de:
 
-**¿Qué significa un comprobante "sin detalle"?**
+- permisos
+- configuración
+- base activa
+- opciones habilitadas
 
-Es un comprobante que fue cargado solo con el importe total (como asiento contable), sin especificar los artículos comprados. Esto puede afectar los análisis de artículos y rubros, ya que esas compras no quedan clasificadas.
+### ¿Qué hago si una pantalla no carga?
 
-**¿El dashboard modifica algo en Alfa Gestión?**
+Primero revisá:
 
-No. El dashboard es de **solo lectura**. Ninguna acción dentro de la aplicación modifica datos del sistema.
+- base activa
+- conexión
+- permisos
 
-**¿Puedo ver el dashboard desde otra computadora de la red?**
+Si el problema sigue, compartí el código de incidente con soporte.
 
-Sí, siempre que el servidor esté configurado para escuchar en la red y el firewall esté habilitado. Consultá con el área de sistemas la dirección IP o nombre del servidor y el puerto configurado.
+### ¿Qué hago si no encuentro una opción?
 
----
+Probá:
 
-## 14. Información técnica de vistas
-
-Esta sección resume las vistas usadas por el dashboard y por InformesIA. Está pensada como referencia técnica para soporte, parametrización y evolución funcional.
-
-### 14.1 `vw_compras_cabecera_dashboard`
-
-**Utilidad**
-
-- Vista principal de comprobantes de compras.
-- Alimenta KPI generales, comprobantes, proveedores, actividad por usuario y listados tipo libro IVA compras.
-- Se usa también como base de filtros globales por proveedor, usuario, sucursal, depósito, estado y tipo de comprobante.
-
-**Campos utilizados con más frecuencia**
-
-| Campo | Utilidad en la aplicación |
-|---|---|
-| `TC` | Tipo de comprobante; identifica FCC, NCC, LIQC, etc. |
-| `IDCOMPROBANTE` | Identificador interno del comprobante; se usa para joins y detalle. |
-| `IDCOMPROBANTE` | Identificador completo del comprobante, usado como número visible. En la práctica reúne sucursal, letra y número. |
-| `NUMERO` | Componente interno de numeración simple; no se muestra aislado como identificador principal. |
-| `FECHA` | Fecha de emisión o registración; base de filtros y series temporales. |
-| `CUENTA` | Código o cuenta del proveedor. |
-| `RAZON_SOCIAL` | Nombre del proveedor. |
-| `NetoDashboard` | Importe neto sin IVA con signo analítico aplicado. |
-| `IvaDashboard` | Importe de IVA del comprobante. |
-| `ImporteDashboard` | Total del comprobante; base de totales, rankings y tickets promedio. |
-| `EstadoComprobante` | Estado operativo del comprobante. |
-| `USUARIO` | Usuario que cargó el comprobante; base de la sección Actividad. |
-| `SUCURSAL` | Sucursal o punto de emisión. |
-| `IdDeposito` | Depósito asociado a la operación. |
-
-### 14.2 `vw_compras_detalle_dashboard`
-
-**Utilidad**
-
-- Vista de detalle por ítem o línea de comprobante.
-- Alimenta análisis de artículos, rubros, familias, composición interna y filtros avanzados por artículo.
-- Se usa para saber si un comprobante tiene detalle y para vincular cabecera con líneas.
-
-**Campos utilizados con más frecuencia**
-
-| Campo | Utilidad en la aplicación |
-|---|---|
-| `TC` | Tipo de comprobante; clave de relación con la cabecera. |
-| `IDCOMPROBANTE` | Identificador del comprobante en el detalle. |
-| `CUENTA` | Cuenta del proveedor asociada al comprobante. |
-| `FECHA` | Fecha de la línea o del comprobante, usada en análisis temporales. |
-| `IDARTICULO` | Código interno del artículo. |
-| `DESCRIPCION_ARTICULO` | Descripción principal del artículo. |
-| `DESCRIPCION_ITEM` | Texto alternativo de la línea cuando no hay descripción estándar. |
-| `RUBRO` | Rubro del artículo para análisis por categoría. |
-| `FAMILIA` | Familia del artículo; permite navegación jerárquica. |
-| `CantidadDashboard` | Cantidad analítica comprada. |
-| `COSTO` | Costo unitario o precio de la línea. |
-| `TotalDashboard` | Importe total de la línea; base de rankings y participaciones. |
-| `USUARIO` | Usuario que cargó la operación cuando se analiza actividad por detalle. |
-| `SUCURSAL` | Sucursal de la operación. |
-| `IdDeposito` | Depósito vinculado a la línea. |
-
-### 14.3 `vw_estadisticas_ingresos_diarias`
-
-**Utilidad**
-
-- Vista autorizada para InformesIA orientada a series y resúmenes diarios.
-- Está prevista para consultas de evolución temporal, actividad o ingresos consolidados por fecha.
-- En la versión actual del dashboard su participación es complementaria y se reserva principalmente para ampliaciones de InformesIA.
-
-**Campos esperados de referencia**
-
-Los nombres exactos pueden variar según el entorno, pero su uso esperado es sobre columnas de:
-
-- fecha diaria,
-- cantidad de registros o comprobantes,
-- importe diario,
-- usuario o agrupador operativo,
-- tipo de movimiento o clasificación.
-
-Si esta vista se amplía o cambia en base de datos, conviene actualizar este manual junto con las plantillas de InformesIA.
-
-### 14.4 `vw_familias_jerarquia`
-
-**Utilidad**
-
-- Vista de apoyo para resolver jerarquías de familias.
-- Permite mostrar árbol padre-hijo, nivel jerárquico y análisis agregados por ramas.
-- Se usa en Familias y en informes IA que requieren composición o crecimiento por familia.
-
-**Campos utilizados con más frecuencia**
-
-| Campo | Utilidad en la aplicación |
-|---|---|
-| `IdFamilia` | Identificador o código de la familia. |
-| `Descripcion` | Nombre visible de la familia. |
-| `PadreIdFamilia` | Familia padre; permite reconstruir la jerarquía. |
-| `NivelJerarquico` | Profundidad dentro del árbol de familias. |
-| `TieneHijos` | Indicador lógico para saber si la familia tiene subfamilias. |
-
-### 14.5 Relación entre vistas
-
-- `vw_compras_cabecera_dashboard` representa el comprobante completo.
-- `vw_compras_detalle_dashboard` representa sus líneas o ítems.
-- `vw_familias_jerarquia` aporta la estructura para interpretar familias y subfamilias.
-- `vw_estadisticas_ingresos_diarias` sirve como apoyo para resúmenes temporales diarios en escenarios de IA y evolución.
-
-En términos funcionales, la aplicación combina estas vistas para responder preguntas de negocio sin consultar tablas operativas directamente.
+- el buscador del menú
+- el botón de ayuda
+- el manual del módulo correspondiente
 
 ---
 
-*Manual de Usuario — Dashboard de Compras — Alfa Gestión*
-*Última actualización: abril 2026*
+## Cierre
+
+AlfaCore está pensado para que el trabajo diario sea más claro, más visible y más controlable.
+
+La mejor manera de aprovecharlo es usarlo con este criterio:
+
+- primero ubicar el módulo correcto
+- después confirmar la base activa
+- luego filtrar
+- y recién ahí analizar o decidir
+
+Este manual general es el punto de partida.  
+Para el uso profundo de cada área, apoyate en los manuales específicos por módulo.

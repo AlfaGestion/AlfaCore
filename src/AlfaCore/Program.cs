@@ -71,6 +71,8 @@ public class Program
         builder.Services.AddScoped<IWorkspaceService, WorkspaceService>();
         builder.Services.AddScoped<IUsuariosService, UsuariosService>();
         builder.Services.AddScoped<IUsuariosValidator, UsuariosValidator>();
+        builder.Services.AddScoped<ITecnicosService, TecnicosService>();
+        builder.Services.AddScoped<ITecnicosValidator, TecnicosValidator>();
         builder.Services.AddScoped<IContactosService, ContactosService>();
         builder.Services.AddScoped<IContactosValidator, ContactosValidator>();
         builder.Services.AddScoped<ICuentasComercialesService, CuentasComercialesService>();
@@ -85,6 +87,7 @@ public class Program
         builder.Services.AddScoped<IAuxErrRepository, AuxErrRepository>();
         builder.Services.AddScoped<IAppEventService, AppEventService>();
         builder.Services.AddSingleton<ConsultasExcelExporter>();
+        builder.Services.AddSingleton<AuditoriaExcelExporter>();
         builder.Services.AddSingleton<InformesIaHistoryStore>();
         builder.Services.AddSingleton<InformesIaResultStore>();
         builder.Services.AddScoped<FilterStateService>();
@@ -256,6 +259,100 @@ public class Program
                 : exporter.Exportar(consulta, resultado);
             var filename = ConsultasExcelExporter.NombreArchivo(consulta);
             return Results.File(bytes,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                filename);
+        });
+
+        app.MapGet("/auditoria/usuarios/descargar-excel", async (
+            HttpRequest request,
+            IAuditoriaService auditoriaSvc,
+            AuditoriaExcelExporter exporter,
+            CancellationToken ct) =>
+        {
+            static DateTime? ParseDate(string? value)
+                => DateTime.TryParse(value, out var parsed) ? parsed : null;
+
+            static int? ParseNullableInt(string? value)
+                => int.TryParse(value, out var parsed) ? parsed : null;
+
+            var pagina = 1;
+            var pageSize = 200;
+            var allItems = new List<AuditoriaUsuarioRowDto>();
+            AuditoriaUsuarioResultDto? lastResult = null;
+
+            var filterBase = new AuditoriaUsuarioFilterDto
+            {
+                Desde = ParseDate(request.Query["desde"]),
+                Hasta = ParseDate(request.Query["hasta"]),
+                Texto = request.Query["texto"].ToString(),
+                Usuario = request.Query["usuario"].ToString(),
+                Pc = request.Query["pc"].ToString(),
+                TipoComprobante = request.Query["tipoComprobante"].ToString(),
+                Riesgo = request.Query["riesgo"].ToString(),
+                TipoControl = request.Query["tipoControl"].ToString(),
+                CuentaCliente = request.Query["cuentaCliente"].ToString(),
+                DiasMinimosSinFactura = ParseNullableInt(request.Query["diasMinimosSinFactura"]),
+                UmbralModificaciones = ParseNullableInt(request.Query["umbralModificaciones"]),
+                DiasToleranciaDuplicados = ParseNullableInt(request.Query["diasToleranciaDuplicados"]),
+                SoloDiferenciasSucursal = string.Equals(request.Query["soloDiferenciasSucursal"], "true", StringComparison.OrdinalIgnoreCase),
+                OrdenCampo = string.IsNullOrWhiteSpace(request.Query["ordenCampo"]) ? "fecha" : request.Query["ordenCampo"].ToString(),
+                OrdenDireccion = string.IsNullOrWhiteSpace(request.Query["ordenDireccion"]) ? "desc" : request.Query["ordenDireccion"].ToString()
+            };
+
+            while (true)
+            {
+                var filter = new AuditoriaUsuarioFilterDto
+                {
+                    Desde = filterBase.Desde,
+                    Hasta = filterBase.Hasta,
+                    Texto = filterBase.Texto,
+                    Usuario = filterBase.Usuario,
+                    Pc = filterBase.Pc,
+                    TipoComprobante = filterBase.TipoComprobante,
+                    Riesgo = filterBase.Riesgo,
+                    TipoControl = filterBase.TipoControl,
+                    CuentaCliente = filterBase.CuentaCliente,
+                    DiasMinimosSinFactura = filterBase.DiasMinimosSinFactura,
+                    UmbralModificaciones = filterBase.UmbralModificaciones,
+                    DiasToleranciaDuplicados = filterBase.DiasToleranciaDuplicados,
+                    SoloDiferenciasSucursal = filterBase.SoloDiferenciasSucursal,
+                    OrdenCampo = filterBase.OrdenCampo,
+                    OrdenDireccion = filterBase.OrdenDireccion,
+                    Pagina = pagina,
+                    TamanioPagina = pageSize
+                };
+
+                var result = await auditoriaSvc.SearchUserAuditAsync(filter, ct);
+
+                lastResult = result;
+                if (result.Items.Count == 0)
+                    break;
+
+                allItems.AddRange(result.Items);
+                if (allItems.Count >= result.TotalRegistros || result.Items.Count < pageSize)
+                    break;
+
+                pagina++;
+            }
+
+            lastResult ??= new AuditoriaUsuarioResultDto();
+            var exportResult = new AuditoriaUsuarioResultDto
+            {
+                Items = allItems,
+                Stats = lastResult.Stats,
+                TotalRegistros = lastResult.TotalRegistros,
+                Pagina = 1,
+                TamanioPagina = allItems.Count,
+                DiasMinimosSinFacturaDefault = lastResult.DiasMinimosSinFacturaDefault,
+                UmbralModificacionesDefault = lastResult.UmbralModificacionesDefault,
+                DiasToleranciaDuplicadosDefault = lastResult.DiasToleranciaDuplicadosDefault,
+                SoloDiferenciasSucursalDefault = lastResult.SoloDiferenciasSucursalDefault
+            };
+
+            var bytes = exporter.ExportarUsuarios(filterBase, exportResult);
+            var filename = AuditoriaExcelExporter.NombreArchivoUsuarios(filterBase);
+            return Results.File(
+                bytes,
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 filename);
         });
