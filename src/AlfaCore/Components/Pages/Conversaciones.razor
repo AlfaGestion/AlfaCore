@@ -1,4 +1,5 @@
 @page "/conversaciones"
+@using System.IO
 @using System.Net
 @using System.Text.Json
 @using System.Text.RegularExpressions
@@ -559,7 +560,31 @@
                                 <span>Volver</span>
                             </button>
                             <div>
-                                <h3 class="panel-card__title">@GetConversationHeader(_selectedConversation)</h3>
+                                <div class="conversation-title-editor">
+                                    @if (_editingConversationName)
+                                    {
+                                        <input class="conversation-title-editor__input"
+                                               value="@_conversationNameDraft"
+                                               maxlength="120"
+                                               @oninput="OnConversationNameInput"
+                                               @onkeydown="OnConversationNameKeyDownAsync"
+                                               @onblur="SaveConversationNameAsync"
+                                               disabled="@_savingConversationName"
+                                               autofocus />
+                                    }
+                                    else
+                                    {
+                                        <h3 class="panel-card__title">@GetConversationHeader(_selectedConversation)</h3>
+                                        <button type="button"
+                                                class="btn btn--ghost btn--sm conversation-title-editor__button"
+                                                title="Editar nombre"
+                                                @onclick="StartConversationNameEdit"
+                                                disabled="@_busyAction">
+                                            <i class="bi bi-pencil-square"></i>
+                                            <span>Editar</span>
+                                        </button>
+                                    }
+                                </div>
                                 @if (_selectedConversation.Canal != "INTERNO" && !string.IsNullOrWhiteSpace(_selectedConversation.TelefonoWhatsApp))
                                 {
                                     <p class="panel-card__subtitle">@_selectedConversation.TelefonoWhatsApp</p>
@@ -821,6 +846,12 @@
                                                         else
                                                         {
                                                             <span class="attachment-name">@adj.NombreArchivo</span>
+                                                            <a class="btn btn--ghost btn--sm"
+                                                               href="@GetAttachmentDownloadUrl(adj)"
+                                                               download="@GetAttachmentDownloadName(adj)"
+                                                               title="Descargar imagen">
+                                                                <i class="bi bi-download"></i>
+                                                            </a>
                                                         }
                                                     </div>
                                                 }
@@ -850,6 +881,12 @@
                                                                 </div>
                                                             </div>
                                                             <button type="button" class="wa-audio-player__speed" data-audio-speed title="Cambiar velocidad">1</button>
+                                                            <a class="btn btn--ghost btn--sm wa-audio-player__download"
+                                                               href="@GetAttachmentDownloadUrl(adj)"
+                                                               download="@GetAttachmentDownloadName(adj)"
+                                                               title="Descargar audio">
+                                                                <i class="bi bi-download"></i>
+                                                            </a>
                                                         </div>
                                                     </div>
                                                 }
@@ -872,7 +909,7 @@
                                                 else
                                                 {
                                                     <div class="message-attachment message-attachment--file">
-                                                        <a class="attachment-link" href="@GetAttachmentDownloadUrl(adj)" download="@adj.NombreArchivo">
+                                                        <a class="attachment-link" href="@GetAttachmentDownloadUrl(adj)" download="@GetAttachmentDownloadName(adj)">
                                                             <i class="bi bi-file-earmark-arrow-down"></i>
                                                             <span>@adj.NombreArchivo</span>
                                                             @if (adj.TamanoBytes > 0)
@@ -1422,7 +1459,7 @@
                 <div class="attachment-preview-actions">
                     <a class="btn btn--ghost btn--sm"
                        href="@GetAttachmentDownloadUrl(_previewAttachment)"
-                       download="@_previewAttachment.NombreArchivo">
+                       download="@GetAttachmentDownloadName(_previewAttachment)">
                         <i class="bi bi-download"></i> Descargar
                     </a>
                     <button type="button" class="btn btn--ghost btn--sm attachment-preview-zoom-button" @onclick="ZoomPreviewOut" title="Alejar">
@@ -1674,6 +1711,9 @@
     private bool _loadingAuditMessages;
     private bool _loadingConversation;
     private bool _busyAction;
+    private bool _editingConversationName;
+    private bool _savingConversationName;
+    private string _conversationNameDraft = string.Empty;
     private string? _loadError;
     private string? _conversationError;
     private string? _actionMessage;
@@ -2365,6 +2405,9 @@
             await Task.WhenAll(conversationTask, messagesTask, attachmentsTask, typingTask);
 
             _selectedConversation = await conversationTask;
+            _editingConversationName = false;
+            _savingConversationName = false;
+            _conversationNameDraft = _selectedConversation is null ? string.Empty : GetConversationHeader(_selectedConversation);
             _messages = (await messagesTask).ToList();
             _typingUsers = (await typingTask).ToList();
             var adjuntos = await attachmentsTask;
@@ -5142,6 +5185,82 @@
         ResetPreviewZoom();
     }
 
+    private void StartConversationNameEdit()
+    {
+        if (_selectedConversation is null)
+            return;
+
+        _conversationNameDraft = GetConversationHeader(_selectedConversation);
+        _editingConversationName = true;
+    }
+
+    private void OnConversationNameInput(ChangeEventArgs args)
+        => _conversationNameDraft = args.Value?.ToString() ?? string.Empty;
+
+    private async Task OnConversationNameKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase))
+            await SaveConversationNameAsync();
+        else if (string.Equals(args.Key, "Escape", StringComparison.OrdinalIgnoreCase))
+            CancelConversationNameEdit();
+    }
+
+    private void CancelConversationNameEdit()
+    {
+        _conversationNameDraft = _selectedConversation is null ? string.Empty : GetConversationHeader(_selectedConversation);
+        _editingConversationName = false;
+    }
+
+    private async Task SaveConversationNameAsync()
+    {
+        if (!_editingConversationName || _selectedConversation is null || _savingConversationName)
+            return;
+
+        var nextName = _conversationNameDraft.Trim();
+        var currentName = GetConversationHeader(_selectedConversation).Trim();
+        if (string.IsNullOrWhiteSpace(nextName))
+        {
+            _conversationNameDraft = currentName;
+            _editingConversationName = false;
+            return;
+        }
+
+        if (string.Equals(nextName, currentName, StringComparison.Ordinal))
+        {
+            _editingConversationName = false;
+            return;
+        }
+
+        _savingConversationName = true;
+        try
+        {
+            await ConversacionesSvc.RenameConversationAsync(new ConversacionRenameRequest
+            {
+                IdConversacion = _selectedConversation.IdConversacion,
+                NombreVisible = nextName,
+                UsuarioAccion = CurrentUserNameForAudit,
+                SistemaAccion = CurrentUserSystemForAudit
+            });
+
+            _selectedConversation.NombreVisible = nextName;
+            var inboxItem = _inbox.FirstOrDefault(item => item.IdConversacion == _selectedConversation.IdConversacion);
+            if (inboxItem is not null)
+                inboxItem.NombreVisible = nextName;
+            StoreConversationCache(_selectedConversation.IdConversacion);
+            _editingConversationName = false;
+        }
+        catch (Exception ex)
+        {
+            _conversationError = ex.Message;
+            _conversationNameDraft = currentName;
+            _editingConversationName = false;
+        }
+        finally
+        {
+            _savingConversationName = false;
+        }
+    }
+
     private void CloseAttachmentPreview()
     {
         _previewAttachment = null;
@@ -5228,6 +5347,69 @@
 
     private static string GetAttachmentDownloadUrl(ConversacionAdjuntoDto adjunto)
         => $"/api/conversaciones/adjuntos/{adjunto.IdAdjunto}?download=1";
+
+    private string GetAttachmentDownloadName(ConversacionAdjuntoDto adjunto)
+    {
+        var kind = GetAttachmentDownloadKind(adjunto);
+        var extension = GetAttachmentDownloadExtension(adjunto);
+        var index = _adjuntosPorMensaje.Values
+            .SelectMany(items => items)
+            .Where(item => string.Equals(GetAttachmentDownloadKind(item), kind, StringComparison.OrdinalIgnoreCase))
+            .Where(item => item.IdAdjunto <= adjunto.IdAdjunto)
+            .OrderBy(item => item.IdAdjunto)
+            .Count();
+
+        if (index <= 0)
+            index = 1;
+
+        return $"{kind} ({index}){extension}";
+    }
+
+    private static string GetAttachmentDownloadKind(ConversacionAdjuntoDto adjunto)
+    {
+        var tipo = adjunto.TipoArchivo?.Trim() ?? string.Empty;
+        var mime = adjunto.MimeType?.Trim() ?? string.Empty;
+
+        if (string.Equals(tipo, "IMAGE", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(tipo, "STICKER", StringComparison.OrdinalIgnoreCase)
+            || mime.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+            return "Image";
+
+        if (string.Equals(tipo, "AUDIO", StringComparison.OrdinalIgnoreCase)
+            || mime.StartsWith("audio/", StringComparison.OrdinalIgnoreCase))
+            return "Audio";
+
+        if (string.Equals(tipo, "VIDEO", StringComparison.OrdinalIgnoreCase)
+            || mime.StartsWith("video/", StringComparison.OrdinalIgnoreCase))
+            return "Video";
+
+        return "Document";
+    }
+
+    private static string GetAttachmentDownloadExtension(ConversacionAdjuntoDto adjunto)
+    {
+        var originalExtension = Path.GetExtension(adjunto.NombreArchivo);
+        if (!string.IsNullOrWhiteSpace(originalExtension))
+            return originalExtension;
+
+        var mime = adjunto.MimeType?.Trim().ToLowerInvariant();
+        return mime switch
+        {
+            "image/jpeg" => ".jpg",
+            "image/png" => ".png",
+            "image/gif" => ".gif",
+            "image/webp" => ".webp",
+            "audio/ogg" => ".ogg",
+            "audio/mpeg" => ".mp3",
+            "audio/mp4" => ".m4a",
+            "audio/aac" => ".aac",
+            "audio/webm" => ".webm",
+            "video/mp4" => ".mp4",
+            "video/webm" => ".webm",
+            "application/pdf" => ".pdf",
+            _ => string.Equals(adjunto.TipoArchivo, "AUDIO", StringComparison.OrdinalIgnoreCase) ? ".ogg" : ".bin"
+        };
+    }
 
     private static string GetFavoriteStickerUrl(ConversacionStickerFavoritoDto sticker)
         => $"/api/conversaciones/adjuntos/{sticker.IdAdjunto}";

@@ -14,6 +14,7 @@ public interface IConversacionesService
     Task<IReadOnlyList<ConversacionMensajeDto>> GetMessagesAsync(long conversationId, CancellationToken ct = default);
     Task<IReadOnlyList<ConversacionClienteCandidateDto>> SearchClientesParaRelacionarAsync(string texto, CancellationToken ct = default);
     Task RelacionarClienteAsync(ConversacionRelacionarClienteRequest request, CancellationToken ct = default);
+    Task RenameConversationAsync(ConversacionRenameRequest request, CancellationToken ct = default);
     Task<IReadOnlyList<ConversacionTypingDto>> GetTypingAsync(long conversationId, string? clienteIdActual = null, CancellationToken ct = default);
     Task SetTypingAsync(ConversacionTypingRequest request, CancellationToken ct = default);
     Task<ConversacionMessageResultDto> SendMessageAsync(ConversacionSendMessageRequest request, CancellationToken ct = default);

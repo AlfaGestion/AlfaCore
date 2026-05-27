@@ -5461,6 +5461,42 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
     font-size: .95rem;
 }
 
+.conversation-title-editor {
+    display: flex;
+    align-items: center;
+    gap: .45rem;
+    min-width: 0;
+}
+
+.conversation-title-editor .panel-card__title {
+    flex: 0 1 auto;
+}
+
+.conversation-title-editor__button {
+    min-height: 1.85rem;
+    padding-inline: .55rem;
+    white-space: nowrap;
+}
+
+.conversation-title-editor__input {
+    width: min(36rem, 100%);
+    min-height: 2.15rem;
+    padding: .45rem .7rem;
+    border: 1px solid rgba(34, 211, 238, .45);
+    border-radius: 10px;
+    background: rgba(2, 6, 23, .72);
+    color: #f8fafc;
+    font: inherit;
+    font-size: .95rem;
+    font-weight: 800;
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(34, 211, 238, .12);
+}
+
+.conversation-title-editor__input:disabled {
+    opacity: .7;
+}
+
 .conversations-page--odoo .conversations-chat__header .panel-card__subtitle {
     font-size: .76rem;
 }
@@ -11744,7 +11780,7 @@ html[data-theme="light"] .balance-row--detalle td {
 
 .wa-audio-player {
     display: grid;
-    grid-template-columns: 1.75rem minmax(0, 1fr) 2.25rem;
+    grid-template-columns: 1.75rem minmax(0, 1fr) 2.25rem 2rem;
     align-items: center;
     gap: .55rem;
     width: 100%;
@@ -13639,6 +13675,16 @@ html[data-theme="light"] .interfaces-bulkbar {
     width: 1%;
     white-space: nowrap;
     text-align: right;
+}
+
+.wa-audio-player__download {
+    width: 2rem;
+    height: 2rem;
+    min-width: 2rem;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .contactos-page .contactos-table {

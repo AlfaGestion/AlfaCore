@@ -1344,6 +1344,47 @@ public sealed class ConversacionesService(
         }, "No se pudo relacionar el cliente con la conversación.", ct);
     }
 
+    public async Task RenameConversationAsync(ConversacionRenameRequest request, CancellationToken ct = default)
+    {
+        await ExecuteLoggedAsync("Conversaciones", "RenameConversation", async token =>
+        {
+            ArgumentNullException.ThrowIfNull(request);
+            if (request.IdConversacion <= 0)
+                throw new InvalidOperationException("No se recibiÃ³ la conversaciÃ³n a renombrar.");
+
+            var nombre = request.NombreVisible?.Trim() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(nombre))
+                throw new InvalidOperationException("El nombre de la conversaciÃ³n no puede quedar vacÃ­o.");
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            const string sql = """
+                UPDATE dbo.CONV_CONVERSACIONES
+                SET NombreVisible = @NombreVisible,
+                    FechaHora_Modificacion = GETDATE()
+                WHERE IdConversacion = @IdConversacion;
+                """;
+
+            await using var cmd = new SqlCommand(sql, cn);
+            cmd.Parameters.AddWithValue("@IdConversacion", request.IdConversacion);
+            cmd.Parameters.AddWithValue("@NombreVisible", nombre);
+            var affected = await cmd.ExecuteNonQueryAsync(token);
+            if (affected == 0)
+                throw new InvalidOperationException("La conversaciÃ³n seleccionada ya no existe.");
+
+            await _appEvents.LogAuditAsync(
+                "Conversaciones",
+                "RenameConversation",
+                "CONV_CONVERSACIONES",
+                request.IdConversacion.ToString(CultureInfo.InvariantCulture),
+                "Nombre visible de conversaciÃ³n actualizado.",
+                new { request.IdConversacion, NombreVisible = nombre },
+                token);
+
+            return true;
+        }, "No se pudo actualizar el nombre de la conversaciÃ³n.", ct);
+    }
+
     public Task<IReadOnlyList<ConversacionTypingDto>> GetTypingAsync(long conversationId, string? clienteIdActual = null, CancellationToken ct = default)
     {
         if (conversationId <= 0)
@@ -2795,13 +2836,85 @@ public sealed class ConversacionesService(
             if (string.IsNullOrWhiteSpace(rutaLocal))
                 rutaLocal = await TryRecoverAttachmentFileAsync(record, token);
 
+            var nombreDescarga = await BuildAttachmentDownloadNameAsync(cn, record, token);
             return new ConversacionAdjuntoServeDto
             {
                 RutaLocal = rutaLocal,
                 MimeType = record.MimeType,
-                NombreArchivo = record.NombreArchivo
+                NombreArchivo = record.NombreArchivo,
+                NombreDescarga = nombreDescarga
             };
         }, "No se pudo obtener el adjunto.", ct);
+
+    private static async Task<string> BuildAttachmentDownloadNameAsync(SqlConnection cn, AttachmentServeRecord record, CancellationToken ct)
+    {
+        var kind = NormalizeAttachmentDownloadKind(record.TipoArchivo, record.MimeType);
+        if (string.IsNullOrWhiteSpace(kind))
+            return SanitizeDownloadFileName(record.NombreArchivo, "Attachment", InferExtension(record.MimeType, record.TipoArchivo));
+
+        const string sql = """
+            SELECT COUNT(1)
+            FROM dbo.CONV_ADJUNTOS a
+            INNER JOIN dbo.CONV_MENSAJES m
+                ON m.IdMensaje = a.IdMensaje
+            WHERE m.IdConversacion = @IdConversacion
+              AND a.IdAdjunto <= @IdAdjunto
+              AND (
+                    @Kind = N'Image'
+                    AND (UPPER(ISNULL(a.TipoArchivo, '')) IN (N'IMAGE', N'STICKER') OR LOWER(ISNULL(a.MimeType, '')) LIKE N'image/%')
+                  OR
+                    @Kind = N'Audio'
+                    AND (UPPER(ISNULL(a.TipoArchivo, '')) = N'AUDIO' OR LOWER(ISNULL(a.MimeType, '')) LIKE N'audio/%')
+                  OR
+                    @Kind = N'Video'
+                    AND (UPPER(ISNULL(a.TipoArchivo, '')) = N'VIDEO' OR LOWER(ISNULL(a.MimeType, '')) LIKE N'video/%')
+                  OR
+                    @Kind = N'Document'
+                    AND NOT (
+                        UPPER(ISNULL(a.TipoArchivo, '')) IN (N'IMAGE', N'STICKER', N'AUDIO', N'VIDEO')
+                        OR LOWER(ISNULL(a.MimeType, '')) LIKE N'image/%'
+                        OR LOWER(ISNULL(a.MimeType, '')) LIKE N'audio/%'
+                        OR LOWER(ISNULL(a.MimeType, '')) LIKE N'video/%'
+                    )
+                  );
+            """;
+
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@IdConversacion", record.IdConversacion);
+        cmd.Parameters.AddWithValue("@IdAdjunto", record.IdAdjunto);
+        cmd.Parameters.AddWithValue("@Kind", kind);
+        var index = Convert.ToInt32(await cmd.ExecuteScalarAsync(ct), CultureInfo.InvariantCulture);
+        if (index <= 0)
+            index = 1;
+
+        var extension = InferExtension(record.MimeType, record.TipoArchivo);
+        return SanitizeDownloadFileName($"{kind} ({index}){extension}", kind, extension);
+    }
+
+    private static string NormalizeAttachmentDownloadKind(string tipoArchivo, string mimeType)
+    {
+        if (string.Equals(tipoArchivo, "IMAGE", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(tipoArchivo, "STICKER", StringComparison.OrdinalIgnoreCase)
+            || mimeType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+            return "Image";
+        if (string.Equals(tipoArchivo, "AUDIO", StringComparison.OrdinalIgnoreCase)
+            || mimeType.StartsWith("audio/", StringComparison.OrdinalIgnoreCase))
+            return "Audio";
+        if (string.Equals(tipoArchivo, "VIDEO", StringComparison.OrdinalIgnoreCase)
+            || mimeType.StartsWith("video/", StringComparison.OrdinalIgnoreCase))
+            return "Video";
+
+        return "Document";
+    }
+
+    private static string SanitizeDownloadFileName(string fileName, string fallbackBase, string extension)
+    {
+        var normalized = string.IsNullOrWhiteSpace(fileName) ? $"{fallbackBase}{extension}" : Path.GetFileName(fileName.Trim());
+        foreach (var invalid in Path.GetInvalidFileNameChars())
+            normalized = normalized.Replace(invalid, '_');
+
+        return string.IsNullOrWhiteSpace(normalized) ? $"{fallbackBase}{extension}" : normalized;
+    }
 
     private async Task<int> StoreIncomingAttachmentsAsync(
         long conversationId,

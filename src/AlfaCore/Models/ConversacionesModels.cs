@@ -367,12 +367,21 @@ public sealed class ConversacionAdjuntoServeDto
     public string RutaLocal { get; set; } = string.Empty;
     public string MimeType { get; set; } = string.Empty;
     public string NombreArchivo { get; set; } = string.Empty;
+    public string NombreDescarga { get; set; } = string.Empty;
 }
 
 public sealed class ConversacionCrearHiloInternoRequest
 {
     public string NombreHilo { get; set; } = string.Empty;
     public string? IdTecnico { get; set; }
+    public string? UsuarioAccion { get; set; }
+    public string? SistemaAccion { get; set; }
+}
+
+public sealed class ConversacionRenameRequest
+{
+    public long IdConversacion { get; set; }
+    public string NombreVisible { get; set; } = string.Empty;
     public string? UsuarioAccion { get; set; }
     public string? SistemaAccion { get; set; }
 }

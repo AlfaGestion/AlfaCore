@@ -532,7 +532,7 @@ public class Program
             return Results.File(
                 adjunto.RutaLocal,
                 contentType: mime,
-                fileDownloadName: download ? adjunto.NombreArchivo : null,
+                fileDownloadName: download ? (string.IsNullOrWhiteSpace(adjunto.NombreDescarga) ? adjunto.NombreArchivo : adjunto.NombreDescarga) : null,
                 enableRangeProcessing: true);
         });
 
