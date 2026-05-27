@@ -180,6 +180,22 @@ public sealed class ConversacionDetalleDto
     public DateTime? FechaHoraCierre { get; set; }
 }
 
+public sealed class ConversacionClienteCandidateDto
+{
+    public string Codigo { get; set; } = string.Empty;
+    public string RazonSocial { get; set; } = string.Empty;
+    public string Localidad { get; set; } = string.Empty;
+    public string Provincia { get; set; } = string.Empty;
+    public string Telefono { get; set; } = string.Empty;
+    public string Mail { get; set; } = string.Empty;
+}
+
+public sealed class ConversacionRelacionarClienteRequest
+{
+    public long IdConversacion { get; set; }
+    public string ClienteCodigo { get; set; } = string.Empty;
+}
+
 public sealed class ConversacionMensajeDto
 {
     public long IdMensaje { get; set; }

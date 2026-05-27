@@ -1148,6 +1148,12 @@
                             <span class="context-card__label">Cliente</span>
                             <strong>@DisplayOrFallback(_selectedConversation.ClienteNombre)</strong>
                             <span class="context-card__muted">@DisplayOrFallback(_selectedConversation.ClienteCodigo)</span>
+                            @if (string.IsNullOrWhiteSpace(_selectedConversation.ClienteCodigo))
+                            {
+                                <button type="button" class="btn btn--primary btn--sm context-card__action" @onclick="OpenRelacionarClienteModal">
+                                    <i class="bi bi-building-add"></i> Relacionar cliente
+                                </button>
+                            }
                         </div>
 
                         <div class="context-card">
@@ -1539,6 +1545,77 @@
     </section>
 }
 
+@if (_showRelacionarClienteModal)
+{
+    <div class="conversations-modal-backdrop" @onclick="CloseRelacionarClienteModal"></div>
+    <section class="panel-card conversations-modal conversations-link-client-dialog">
+        <div class="panel-card__header">
+            <div>
+                <h3 class="panel-card__title">Relacionar cliente</h3>
+                <p class="panel-card__subtitle">Buscá la empresa y vinculala con esta conversación.</p>
+            </div>
+            <button type="button" class="btn btn--ghost btn--sm" @onclick="CloseRelacionarClienteModal" disabled="@(_loadingClientCandidates || _linkingClient)">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(_linkClientError))
+        {
+            <div class="conversations-error conversations-notice">@_linkClientError</div>
+        }
+
+        <div class="conversations-link-client-search">
+            <div class="field">
+                <label>Cliente / empresa</label>
+                <input type="search"
+                       placeholder="Código, razón social, teléfono o email..."
+                       @bind="_clientSearchText"
+                       @bind:event="oninput"
+                       @onkeydown="OnClientSearchKeyDownAsync"
+                       disabled="@(_loadingClientCandidates || _linkingClient)" />
+            </div>
+            <button type="button" class="btn btn--primary" @onclick="SearchClientesParaRelacionarAsync" disabled="@(_loadingClientCandidates || _linkingClient)">
+                <i class="bi bi-search"></i> Buscar
+            </button>
+        </div>
+
+        @if (_loadingClientCandidates)
+        {
+            <div class="conversations-ticket-duplicates conversations-ticket-duplicates--loading">
+                <i class="bi bi-search"></i>
+                <span>Buscando clientes...</span>
+            </div>
+        }
+        else if (_clientSearchExecuted && _clientCandidates.Count == 0)
+        {
+            <div class="conversations-empty">No encontramos clientes para ese texto.</div>
+        }
+        else if (_clientCandidates.Count > 0)
+        {
+            <div class="conversations-link-client-results">
+                @foreach (var client in _clientCandidates)
+                {
+                    <button type="button" class="conversations-link-client-result" @onclick="() => RelacionarClienteAsync(client)" disabled="@_linkingClient">
+                        <span class="conversations-link-client-result__avatar">@GetClientInitial(client)</span>
+                        <span class="conversations-link-client-result__body">
+                            <strong>@client.RazonSocial</strong>
+                            <small>@client.Codigo</small>
+                            <span>@FormatClientCandidateSummary(client)</span>
+                        </span>
+                        <i class="bi bi-link-45deg"></i>
+                    </button>
+                }
+            </div>
+        }
+
+        <div class="actions">
+            <button type="button" class="btn btn--ghost" @onclick="CloseRelacionarClienteModal" disabled="@(_loadingClientCandidates || _linkingClient)">
+                Cerrar
+            </button>
+        </div>
+    </section>
+}
+
 @code {
     private readonly (string Value, string Label)[] _modeOptions =
     [
@@ -1578,6 +1655,7 @@
     private List<ConversacionTypingDto> _typingUsers = [];
     private List<ContactoGridItemDto> _contactSuggestions = [];
     private List<ConversacionInboxItemDto> _conversationSuggestions = [];
+    private List<ConversacionClienteCandidateDto> _clientCandidates = [];
     private readonly Dictionary<long, ConversationViewCache> _conversationCache = [];
     private readonly Dictionary<string, ConversationChannelCache> _channelCache = [];
     private ConversacionDetalleDto? _selectedConversation;
@@ -1640,6 +1718,12 @@
     private string _emojiSearch = string.Empty;
     private bool _showContactSuggestions;
     private bool _loadingContactSuggestions;
+    private bool _showRelacionarClienteModal;
+    private bool _loadingClientCandidates;
+    private bool _linkingClient;
+    private bool _clientSearchExecuted;
+    private string _clientSearchText = string.Empty;
+    private string? _linkClientError;
     private long? _startupConversationId;
     private bool _ticketSelectionMode;
     private bool _showTicketDialog;
@@ -3752,6 +3836,99 @@
             Nav.NavigateTo($"/contactos?editar={idContacto.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
     }
 
+    private void OpenRelacionarClienteModal()
+    {
+        if (_selectedConversation is null)
+            return;
+
+        _linkClientError = null;
+        _clientSearchText = FirstNonEmpty(_selectedConversation.ClienteNombre, _selectedConversation.ContactoNombre, _selectedConversation.NombreVisible);
+        _clientCandidates.Clear();
+        _clientSearchExecuted = false;
+        _showRelacionarClienteModal = true;
+    }
+
+    private void CloseRelacionarClienteModal()
+    {
+        if (_loadingClientCandidates || _linkingClient)
+            return;
+
+        _showRelacionarClienteModal = false;
+        _linkClientError = null;
+        _clientSearchText = string.Empty;
+        _clientCandidates.Clear();
+        _clientSearchExecuted = false;
+    }
+
+    private async Task OnClientSearchKeyDownAsync(KeyboardEventArgs e)
+    {
+        if (!string.Equals(e.Key, "Enter", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        await SearchClientesParaRelacionarAsync();
+    }
+
+    private async Task SearchClientesParaRelacionarAsync()
+    {
+        _linkClientError = null;
+        _clientCandidates.Clear();
+        _clientSearchExecuted = true;
+
+        if (string.IsNullOrWhiteSpace(_clientSearchText))
+        {
+            _linkClientError = "Escribí parte del código, razón social, teléfono o email del cliente.";
+            return;
+        }
+
+        _loadingClientCandidates = true;
+        try
+        {
+            var result = await ConversacionesSvc.SearchClientesParaRelacionarAsync(_clientSearchText);
+            _clientCandidates = result.ToList();
+        }
+        catch (Exception ex)
+        {
+            _linkClientError = ex.Message;
+        }
+        finally
+        {
+            _loadingClientCandidates = false;
+        }
+    }
+
+    private async Task RelacionarClienteAsync(ConversacionClienteCandidateDto client)
+    {
+        if (_selectedConversation is null)
+            return;
+
+        _linkClientError = null;
+        _linkingClient = true;
+        try
+        {
+            await ConversacionesSvc.RelacionarClienteAsync(new ConversacionRelacionarClienteRequest
+            {
+                IdConversacion = _selectedConversation.IdConversacion,
+                ClienteCodigo = client.Codigo
+            });
+
+            _actionMessage = $"Cliente relacionado: {client.RazonSocial}.";
+            _showRelacionarClienteModal = false;
+            _clientCandidates.Clear();
+            _clientSearchText = string.Empty;
+            _clientSearchExecuted = false;
+            await RefreshInboxAsync(showLoading: false, allowSelectionChange: false);
+            await SelectConversationAsync(_selectedConversation.IdConversacion);
+        }
+        catch (Exception ex)
+        {
+            _linkClientError = ex.Message;
+        }
+        finally
+        {
+            _linkingClient = false;
+        }
+    }
+
     private void OpenNewContactFromSelectedConversation()
     {
         if (_selectedConversation is null)
@@ -4589,6 +4766,21 @@
 
     private static string FirstNonEmpty(params string?[] values)
         => values.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x))?.Trim() ?? string.Empty;
+
+    private static string GetClientInitial(ConversacionClienteCandidateDto client)
+    {
+        var value = FirstNonEmpty(client.RazonSocial, client.Codigo);
+        return string.IsNullOrWhiteSpace(value) ? "?" : value[..1].ToUpperInvariant();
+    }
+
+    private static string FormatClientCandidateSummary(ConversacionClienteCandidateDto client)
+    {
+        var location = FirstNonEmpty(
+            string.Join(" · ", new[] { client.Localidad, client.Provincia }.Where(x => !string.IsNullOrWhiteSpace(x))),
+            string.Empty);
+        var contact = string.Join(" · ", new[] { client.Telefono, client.Mail }.Where(x => !string.IsNullOrWhiteSpace(x)));
+        return FirstNonEmpty(location, contact, "Sin datos adicionales");
+    }
 
     private IReadOnlyList<string> GetRelatedTerms()
         => _relatedTicketMatches.SelectMany(x => x.Terminos)

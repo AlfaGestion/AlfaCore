@@ -1179,6 +1179,171 @@ public sealed class ConversacionesService(
             return (IReadOnlyList<ConversacionMensajeDto>)items;
         }, "No se pudieron cargar los mensajes.", ct);
 
+    public Task<IReadOnlyList<ConversacionClienteCandidateDto>> SearchClientesParaRelacionarAsync(string texto, CancellationToken ct = default)
+        => ExecuteLoggedAsync<IReadOnlyList<ConversacionClienteCandidateDto>>("Conversaciones", "SearchClientesParaRelacionar", async token =>
+        {
+            if (string.IsNullOrWhiteSpace(texto))
+                return [];
+
+            var search = texto.Trim();
+            const string sql = """
+                SELECT TOP (20)
+                    ISNULL(CODIGO, '') AS Codigo,
+                    ISNULL(RAZON_SOCIAL, '') AS RazonSocial,
+                    ISNULL(LOCALIDAD, '') AS Localidad,
+                    ISNULL(PROVINCIA, '') AS Provincia,
+                    ISNULL(TELEFONO, '') AS Telefono,
+                    ISNULL(MAIL, '') AS Mail
+                FROM dbo.VT_CLIENTES
+                WHERE ISNULL(CODIGO, '') LIKE '%' + @Texto + '%'
+                   OR ISNULL(RAZON_SOCIAL, '') LIKE '%' + @Texto + '%'
+                   OR ISNULL(LOCALIDAD, '') LIKE '%' + @Texto + '%'
+                   OR ISNULL(TELEFONO, '') LIKE '%' + @Texto + '%'
+                   OR ISNULL(MAIL, '') LIKE '%' + @Texto + '%'
+                ORDER BY
+                    CASE WHEN ISNULL(RAZON_SOCIAL, '') LIKE @Texto + '%' THEN 0 ELSE 1 END,
+                    ISNULL(RAZON_SOCIAL, ''),
+                    ISNULL(CODIGO, '');
+                """;
+
+            var items = new List<ConversacionClienteCandidateDto>();
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var cmd = new SqlCommand(sql, cn);
+            cmd.Parameters.AddWithValue("@Texto", search);
+            await using var rd = await cmd.ExecuteReaderAsync(token);
+            while (await rd.ReadAsync(token))
+            {
+                items.Add(new ConversacionClienteCandidateDto
+                {
+                    Codigo = GetString(rd, 0),
+                    RazonSocial = GetString(rd, 1),
+                    Localidad = GetString(rd, 2),
+                    Provincia = GetString(rd, 3),
+                    Telefono = GetString(rd, 4),
+                    Mail = GetString(rd, 5)
+                });
+            }
+
+            return items;
+        }, "No se pudieron buscar clientes para relacionar.", ct);
+
+    public async Task RelacionarClienteAsync(ConversacionRelacionarClienteRequest request, CancellationToken ct = default)
+    {
+        await ExecuteLoggedAsync("Conversaciones", "RelacionarCliente", async token =>
+        {
+            ArgumentNullException.ThrowIfNull(request);
+            var clienteCodigo = request.ClienteCodigo?.Trim().ToUpperInvariant() ?? string.Empty;
+            if (request.IdConversacion <= 0)
+                throw new InvalidOperationException("No se recibió la conversación a relacionar.");
+            if (string.IsNullOrWhiteSpace(clienteCodigo))
+                throw new InvalidOperationException("No se recibió el cliente a relacionar.");
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var tx = await cn.BeginTransactionAsync(token);
+            var sqlTx = (SqlTransaction)tx;
+
+            const string clienteSql = """
+                SELECT TOP (1) ISNULL(CODIGO, ''), ISNULL(RAZON_SOCIAL, '')
+                FROM dbo.VT_CLIENTES
+                WHERE UPPER(LTRIM(RTRIM(CODIGO))) = @ClienteCodigo;
+                """;
+            string clienteNombre;
+            await using (var clienteCmd = new SqlCommand(clienteSql, cn, sqlTx))
+            {
+                clienteCmd.Parameters.AddWithValue("@ClienteCodigo", clienteCodigo);
+                await using var clienteRd = await clienteCmd.ExecuteReaderAsync(token);
+                if (!await clienteRd.ReadAsync(token))
+                    throw new InvalidOperationException("El cliente seleccionado ya no existe en la base activa.");
+                clienteNombre = GetString(clienteRd, 1);
+            }
+
+            const string conversationSql = """
+                SELECT TOP (1) IdContacto
+                FROM dbo.CONV_CONVERSACIONES
+                WHERE IdConversacion = @IdConversacion;
+                """;
+            int? idContacto = null;
+            await using (var convCmd = new SqlCommand(conversationSql, cn, sqlTx))
+            {
+                convCmd.Parameters.AddWithValue("@IdConversacion", request.IdConversacion);
+                var raw = await convCmd.ExecuteScalarAsync(token);
+                if (raw is null || raw is DBNull)
+                    idContacto = null;
+                else
+                    idContacto = Convert.ToInt32(raw, CultureInfo.InvariantCulture);
+            }
+
+            const string existsConversationSql = "SELECT COUNT(1) FROM dbo.CONV_CONVERSACIONES WHERE IdConversacion = @IdConversacion;";
+            await using (var existsCmd = new SqlCommand(existsConversationSql, cn, sqlTx))
+            {
+                existsCmd.Parameters.AddWithValue("@IdConversacion", request.IdConversacion);
+                var exists = Convert.ToInt32(await existsCmd.ExecuteScalarAsync(token), CultureInfo.InvariantCulture);
+                if (exists == 0)
+                    throw new InvalidOperationException("La conversación seleccionada ya no existe.");
+            }
+
+            const string updateConversationSql = """
+                UPDATE dbo.CONV_CONVERSACIONES
+                SET ClienteCodigo = @ClienteCodigo
+                WHERE IdConversacion = @IdConversacion;
+                """;
+            await using (var updateCmd = new SqlCommand(updateConversationSql, cn, sqlTx))
+            {
+                updateCmd.Parameters.AddWithValue("@ClienteCodigo", clienteCodigo);
+                updateCmd.Parameters.AddWithValue("@IdConversacion", request.IdConversacion);
+                await updateCmd.ExecuteNonQueryAsync(token);
+            }
+
+            if (idContacto.HasValue)
+            {
+                const string linkSql = """
+                    DECLARE @IdContactoRel int;
+
+                    SELECT @IdContactoRel = CONVERT(int, ISNULL(NULLIF(idContacto, 0), id))
+                    FROM dbo.MA_CONTACTOS
+                    WHERE id = @IdContacto;
+
+                    IF @IdContactoRel IS NOT NULL
+                    BEGIN
+                        UPDATE dbo.MA_CONTACTOS
+                        SET idContacto = @IdContactoRel
+                        WHERE id = @IdContacto
+                          AND ISNULL(idContacto, 0) = 0;
+
+                        IF NOT EXISTS (
+                            SELECT 1
+                            FROM dbo.MA_CONTACTOS_CUENTAS
+                            WHERE IdContacto = @IdContactoRel
+                              AND UPPER(LTRIM(RTRIM(Cuenta))) = @ClienteCodigo
+                        )
+                        BEGIN
+                            INSERT INTO dbo.MA_CONTACTOS_CUENTAS (IdContacto, Cuenta)
+                            VALUES (@IdContactoRel, @ClienteCodigo);
+                        END;
+                    END;
+                    """;
+                await using var linkCmd = new SqlCommand(linkSql, cn, sqlTx);
+                linkCmd.Parameters.AddWithValue("@IdContacto", idContacto.Value);
+                linkCmd.Parameters.AddWithValue("@ClienteCodigo", clienteCodigo);
+                await linkCmd.ExecuteNonQueryAsync(token);
+            }
+
+            await tx.CommitAsync(token);
+
+            await _appEvents.LogAuditAsync(
+                "Conversaciones",
+                "RelacionarCliente",
+                "CONV_CONVERSACIONES",
+                request.IdConversacion.ToString(CultureInfo.InvariantCulture),
+                "Cliente relacionado manualmente desde contexto de conversación.",
+                new { request.IdConversacion, ClienteCodigo = clienteCodigo, ClienteNombre = clienteNombre, IdContacto = idContacto },
+                token);
+            return true;
+        }, "No se pudo relacionar el cliente con la conversación.", ct);
+    }
+
     public Task<IReadOnlyList<ConversacionTypingDto>> GetTypingAsync(long conversationId, string? clienteIdActual = null, CancellationToken ct = default)
     {
         if (conversationId <= 0)
