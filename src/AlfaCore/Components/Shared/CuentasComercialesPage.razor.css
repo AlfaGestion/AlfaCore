@@ -17,7 +17,8 @@
 
 .cuentas-contactos-panel {
     display: grid;
-    gap: 1rem;
+    gap: 1.25rem;
+    max-width: 58rem;
 }
 
 .cuentas-contactos-header {
@@ -38,15 +39,17 @@
 
 .cuentas-contactos-list {
     display: grid;
-    gap: .75rem;
+    gap: 1rem;
 }
 
 .cuentas-contacto-item {
-    border: 1px solid rgba(83, 124, 172, .28);
+    background: rgba(11, 27, 46, .7);
+    border: 1px solid rgba(83, 124, 172, .36);
     border-radius: .75rem;
     display: grid;
-    gap: .45rem;
-    padding: .9rem 1rem;
+    gap: .65rem 1rem;
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding: 1rem 1.1rem;
 }
 
 .cuentas-contacto-item__main,
@@ -56,6 +59,20 @@
     display: flex;
     flex-wrap: wrap;
     gap: .5rem .8rem;
+}
+
+.cuentas-contacto-item__main,
+.cuentas-contacto-item__meta,
+.cuentas-contacto-item__badges {
+    grid-column: 1;
+}
+
+.cuentas-contacto-item__actions {
+    align-items: flex-start;
+    display: flex;
+    grid-column: 2;
+    grid-row: 1 / span 3;
+    justify-content: flex-end;
 }
 
 .cuentas-contacto-item__main span,
@@ -86,5 +103,15 @@
     .cuentas-contactos-header {
         align-items: stretch;
         flex-direction: column;
+    }
+
+    .cuentas-contacto-item {
+        grid-template-columns: 1fr;
+    }
+
+    .cuentas-contacto-item__actions {
+        grid-column: 1;
+        grid-row: auto;
+        justify-content: flex-start;
     }
 }

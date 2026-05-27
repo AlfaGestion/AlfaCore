@@ -1,9 +1,11 @@
 @using AlfaCore.Models
 @using AlfaCore.Services
+@using Microsoft.AspNetCore.WebUtilities
 @using Microsoft.JSInterop
 @inject ICuentasComercialesService CuentasSvc
 @inject IAppUiOperationService UiOps
 @inject IAppUserSessionService AppUserSession
+@inject NavigationManager Nav
 @inject IJSRuntime Js
 @implements IDisposable
 @implements IAsyncDisposable
@@ -555,7 +557,7 @@
                         <div class="cuentas-contactos-header">
                             <div>
                                 <h4>Contactos vinculados</h4>
-                                <p>@(_isNewMode ? $"GuardÃ¡ el {SingularLabelLower} para cargar contactos." : $"{_contactosCuenta.Count} contacto(s) vigente(s) para {_form.RazonSocial}")</p>
+                                <p>@(_isNewMode ? $"Guard\u00e1 el {SingularLabelLower} para cargar contactos." : $"{_contactosCuenta.Count} contacto(s) vigente(s) para {_form.RazonSocial}")</p>
                             </div>
                             @if (!_isNewMode)
                             {
@@ -609,12 +611,18 @@
                                         <div class="cuentas-contacto-item__badges">
                                             @if (contacto.VinculadoPorTabla)
                                             {
-                                                <span>RelaciÃ³n mÃºltiple</span>
+                                                <span>Relaci&oacute;n m&uacute;ltiple</span>
                                             }
                                             @if (contacto.VinculadoPorCuentaRel)
                                             {
                                                 <span>CuentaRel</span>
                                             }
+                                        </div>
+                                        <div class="cuentas-contacto-item__actions">
+                                            <a class="btn btn--ghost btn--sm" href="@($"/contactos?editar={contacto.Id}")">
+                                                <i class="bi bi-box-arrow-up-right"></i>
+                                                Ver / editar
+                                            </a>
                                         </div>
                                     </article>
                                 }
@@ -642,7 +650,7 @@
                                         <input type="text" class="usuarios-input" maxlength="100" @bind="_contactoDraft.Celular" disabled="@_savingContacto" />
                                     </div>
                                     <div class="field">
-                                        <label>TelÃ©fono</label>
+                                        <label>Tel&eacute;fono</label>
                                         <input type="text" class="usuarios-input" maxlength="100" @bind="_contactoDraft.Telefono" disabled="@_savingContacto" />
                                     </div>
                                     <div class="field field--wide">
@@ -1064,6 +1072,7 @@
         await LoadLookupsAsync();
         await EnsureViewSettingsLoadedAsync();
         await BuscarAsync();
+        await ApplyStartupQueryAsync();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -1361,6 +1370,21 @@
         await LoadContactosCuentaAsync();
     }
 
+    private async Task ApplyStartupQueryAsync()
+    {
+        var query = QueryHelpers.ParseQuery(Nav.ToAbsoluteUri(Nav.Uri).Query);
+        var codigo = query.TryGetValue("editar", out var editRaw)
+            ? editRaw.ToString()
+            : query.TryGetValue("codigo", out var codigoRaw)
+                ? codigoRaw.ToString()
+                : string.Empty;
+
+        if (string.IsNullOrWhiteSpace(codigo))
+            return;
+
+        await AbrirEditorAsync(codigo);
+    }
+
     private void SeleccionarFila(string codigo)
         => _selectedCodigo = codigo?.Trim() ?? string.Empty;
 
@@ -1502,7 +1526,7 @@
         _contactoError = string.Empty;
         if (string.IsNullOrWhiteSpace(_contactoDraft.NombreApellido))
         {
-            _contactoError = "IngresÃ¡ el nombre del contacto antes de guardar.";
+            _contactoError = "Ingres\u00e1 el nombre del contacto antes de guardar.";
             return;
         }
 
@@ -1521,7 +1545,7 @@
                 return;
             }
 
-            SetFeedback(AppUiMessage.Success("Contacto guardado", $"El contacto quedÃ³ vinculado al {SingularLabelLower}."));
+            SetFeedback(AppUiMessage.Success("Contacto guardado", $"El contacto qued\u00f3 vinculado al {SingularLabelLower}."));
             _showContactoForm = false;
             _contactoDraft = new CuentaComercialContactoCreateRequest();
             await LoadContactosCuentaAsync();

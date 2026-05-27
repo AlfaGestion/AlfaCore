@@ -1303,7 +1303,7 @@ public sealed class ConversacionesService(
                     await UpdateMessageDeliveryAsync(messageId, "ERROR_ENVIO", string.Empty, BuildDeliveryErrorPayload(ex), token);
                     await RefreshConversationAsync(request.IdConversacion, now, request.Texto.Trim(), token);
 
-                    throw new InvalidOperationException("No se pudo enviar el mensaje por WhatsApp. QuedÃ³ marcado con error en la conversaciÃ³n.", ex);
+                    throw new InvalidOperationException("No se pudo enviar el mensaje por WhatsApp. Qued\u00f3 marcado con error en la conversaci\u00f3n.", ex);
                 }
             }
 
@@ -1998,11 +1998,11 @@ public sealed class ConversacionesService(
         => ExecuteLoggedAsync("Conversaciones", "SetConversationPin", async token =>
         {
             if (idConversacion <= 0)
-                throw new InvalidOperationException("La conversaciÃ³n es obligatoria.");
+                throw new InvalidOperationException("La conversaci\u00f3n es obligatoria.");
 
             var normalizedUser = NormalizePinUser(usuario);
             if (string.IsNullOrWhiteSpace(normalizedUser))
-                throw new InvalidOperationException("No se pudo identificar el usuario actual para fijar la conversaciÃ³n.");
+                throw new InvalidOperationException("No se pudo identificar el usuario actual para fijar la conversaci\u00f3n.");
 
             var normalizedSystem = NormalizePinSystem(sistema);
 
@@ -2048,12 +2048,12 @@ public sealed class ConversacionesService(
                 "SetConversationPin",
                 "CONV_CONVERSACIONES_PIN_USUARIO",
                 idConversacion.ToString(CultureInfo.InvariantCulture),
-                fijada ? "ConversaciÃ³n fijada por usuario." : "ConversaciÃ³n desfijada por usuario.",
+                fijada ? "Conversaci\u00f3n fijada por usuario." : "Conversaci\u00f3n desfijada por usuario.",
                 new { Usuario = normalizedUser, Sistema = normalizedSystem },
                 token);
 
             return true;
-        }, "No se pudo actualizar el pin de la conversaciÃ³n.", ct);
+        }, "No se pudo actualizar el pin de la conversaci\u00f3n.", ct);
 
     public Task MarkConversationReadAsync(long idConversacion, string usuario, string? sistema, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "MarkConversationRead", async token =>
@@ -3595,7 +3595,7 @@ public sealed class ConversacionesService(
         using var response = await client.SendAsync(request, ct);
         var body = await response.Content.ReadAsStringAsync(ct);
         if (!response.IsSuccessStatusCode)
-            throw new HttpRequestException($"Meta devolvio {(int)response.StatusCode} al crear la plantilla: {body}");
+            throw new HttpRequestException($"Meta devolvi\u00f3 {(int)response.StatusCode} al crear la plantilla: {body}");
 
         using var doc = JsonDocument.Parse(body);
         var root = doc.RootElement;
@@ -3617,11 +3617,11 @@ public sealed class ConversacionesService(
         using var response = await client.SendAsync(request, ct);
         var body = await response.Content.ReadAsStringAsync(ct);
         if (!response.IsSuccessStatusCode)
-            throw new HttpRequestException($"Meta devolvio {(int)response.StatusCode} al sincronizar la plantilla: {body}");
+            throw new HttpRequestException($"Meta devolvi\u00f3 {(int)response.StatusCode} al sincronizar la plantilla: {body}");
 
         using var doc = JsonDocument.Parse(body);
         if (!doc.RootElement.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Array)
-            throw new InvalidOperationException("Meta no devolvio informacion de plantillas.");
+            throw new InvalidOperationException("Meta no devolvi\u00f3 informaci\u00f3n de plantillas.");
 
         foreach (var item in data.EnumerateArray())
         {
@@ -3688,7 +3688,7 @@ public sealed class ConversacionesService(
         var responseBody = await response.Content.ReadAsStringAsync(ct);
 
         if (!response.IsSuccessStatusCode)
-            throw new HttpRequestException($"Meta devolvio {(int)response.StatusCode}: {responseBody}");
+            throw new HttpRequestException($"Meta devolvi\u00f3 {(int)response.StatusCode}: {responseBody}");
 
         var messageId = RequireSentMessageId(responseBody, "enviar plantilla");
         return new WhatsAppSendResult
@@ -3757,9 +3757,9 @@ public sealed class ConversacionesService(
         var responseBody = await response.Content.ReadAsStringAsync(ct);
 
         if (!response.IsSuccessStatusCode)
-            throw new InvalidOperationException($"Meta devolvio {(int)response.StatusCode} al enviar reacción: {responseBody}");
+            throw new InvalidOperationException($"Meta devolvi\u00f3 {(int)response.StatusCode} al enviar reacci\u00f3n: {responseBody}");
 
-        var messageId = RequireSentMessageId(responseBody, "enviar reacciÃ³n");
+        var messageId = RequireSentMessageId(responseBody, "enviar reacci\u00f3n");
         return new WhatsAppSendResult
         {
             EstadoEnvio = "ENVIADO_META",
@@ -3804,7 +3804,7 @@ public sealed class ConversacionesService(
         var responseBody = await response.Content.ReadAsStringAsync(ct);
 
         if (!response.IsSuccessStatusCode)
-            throw new InvalidOperationException($"Meta devolvio {(int)response.StatusCode} al enviar adjunto: {responseBody}");
+            throw new InvalidOperationException($"Meta devolvi\u00f3 {(int)response.StatusCode} al enviar adjunto: {responseBody}");
 
         var messageId = RequireSentMessageId(responseBody, "enviar adjunto");
         return new WhatsAppSendResult
@@ -3845,13 +3845,13 @@ public sealed class ConversacionesService(
         var body = await response.Content.ReadAsStringAsync(ct);
 
         if (!response.IsSuccessStatusCode)
-            throw new InvalidOperationException($"Meta devolvio {(int)response.StatusCode} al subir media: {body}");
+            throw new InvalidOperationException($"Meta devolvi\u00f3 {(int)response.StatusCode} al subir media: {body}");
 
         using var doc = JsonDocument.Parse(body);
         if (doc.RootElement.TryGetProperty("id", out var id))
             return id.GetString() ?? string.Empty;
 
-        throw new InvalidOperationException("Meta no devolvio identificador del archivo subido.");
+        throw new InvalidOperationException("Meta no devolvi\u00f3 identificador del archivo subido.");
     }
 
     private async Task<WhatsAppMediaInfo> GetWhatsAppMediaAsync(ConversacionWhatsAppConfigDto config, string mediaId, CancellationToken ct)
@@ -3865,7 +3865,7 @@ public sealed class ConversacionesService(
         var body = await response.Content.ReadAsStringAsync(ct);
 
         if (!response.IsSuccessStatusCode)
-            throw new InvalidOperationException($"Meta devolvio {(int)response.StatusCode} al obtener media: {body}");
+            throw new InvalidOperationException($"Meta devolvi\u00f3 {(int)response.StatusCode} al obtener media: {body}");
 
         using var doc = JsonDocument.Parse(body);
         var root = doc.RootElement;
@@ -3881,7 +3881,7 @@ public sealed class ConversacionesService(
     private async Task<byte[]> DownloadWhatsAppMediaAsync(ConversacionWhatsAppConfigDto config, string mediaUrl, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(mediaUrl))
-            throw new InvalidOperationException("Meta no devolvio URL para descargar el adjunto.");
+            throw new InvalidOperationException("Meta no devolvi\u00f3 URL para descargar el adjunto.");
 
         using var request = new HttpRequestMessage(HttpMethod.Get, mediaUrl);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", config.AccessToken.Trim());
@@ -3891,7 +3891,7 @@ public sealed class ConversacionesService(
         if (!response.IsSuccessStatusCode)
         {
             var body = await response.Content.ReadAsStringAsync(ct);
-            throw new InvalidOperationException($"Meta devolvio {(int)response.StatusCode} al descargar media: {body}");
+            throw new InvalidOperationException($"Meta devolvi\u00f3 {(int)response.StatusCode} al descargar media: {body}");
         }
 
         return await response.Content.ReadAsByteArrayAsync(ct);
@@ -5126,7 +5126,7 @@ public sealed class ConversacionesService(
         if (!string.IsNullOrWhiteSpace(messageId))
             return messageId;
 
-        throw new InvalidOperationException($"Meta aceptÃ³ la solicitud de {operation}, pero no devolviÃ³ id de mensaje. Respuesta: {responseBody}");
+        throw new InvalidOperationException($"Meta acept\u00f3 la solicitud de {operation}, pero no devolvi\u00f3 id de mensaje. Respuesta: {responseBody}");
     }
 
     private static string BuildDeliveryErrorPayload(Exception ex)

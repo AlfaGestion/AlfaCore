@@ -381,9 +381,10 @@
                                 <thead>
                                     <tr>
                                         <th>Tipo</th>
-                                        <th>CÃ³digo</th>
+                                        <th>C&oacute;digo</th>
                                         <th>Cuenta</th>
-                                        <th>RelaciÃ³n</th>
+                                        <th>Relaci&oacute;n</th>
+                                        <th>Acciones</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -396,12 +397,18 @@
                                             <td>
                                                 @if (account.VinculadoPorTabla)
                                                 {
-                                                    <span>RelaciÃ³n mÃºltiple</span>
+                                                    <span>Relaci&oacute;n m&uacute;ltiple</span>
                                                 }
                                                 @if (account.VinculadoPorCuentaRel)
                                                 {
                                                     <span>@(account.VinculadoPorTabla ? " / " : string.Empty)CuentaRel</span>
                                                 }
+                                            </td>
+                                            <td>
+                                                <a class="btn btn--ghost btn--sm" href="@BuildCuentaLink(account)">
+                                                    <i class="bi bi-box-arrow-up-right"></i>
+                                                    Ver / editar
+                                                </a>
                                             </td>
                                         </tr>
                                     }
@@ -1453,6 +1460,14 @@
 
     private static string DisplayOrFallback(params string?[] values)
         => values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim() ?? "-";
+
+    private static string BuildCuentaLink(ContactoCuentaDto account)
+    {
+        var route = string.Equals(account.Tipo, "Proveedor", StringComparison.OrdinalIgnoreCase)
+            ? "/proveedores"
+            : "/clientes";
+        return $"{route}?editar={Uri.EscapeDataString(account.Codigo ?? string.Empty)}";
+    }
 
     private IReadOnlyList<SmartFilterChip> BuildContactFilterChips()
     {
