@@ -142,6 +142,18 @@ public sealed class CuentaComercialContactoDto
     public bool VinculadoPorCuentaRel { get; set; }
 }
 
+public sealed class CuentaComercialContactoCandidateDto
+{
+    public int Id { get; set; }
+    public int IdContacto { get; set; }
+    public string NombreApellido { get; set; } = string.Empty;
+    public string Cargo { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+    public string Telefono { get; set; } = string.Empty;
+    public string Celular { get; set; } = string.Empty;
+    public string CuentaRel { get; set; } = string.Empty;
+}
+
 public sealed class CuentaComercialContactoCreateRequest
 {
     public string CuentaCodigo { get; set; } = string.Empty;
@@ -160,6 +172,12 @@ public sealed class CuentaComercialContactoQuickUpdateRequest
     public string Email { get; set; } = string.Empty;
     public string Telefono { get; set; } = string.Empty;
     public string Celular { get; set; } = string.Empty;
+}
+
+public sealed class CuentaComercialContactoLinkRequest
+{
+    public string CuentaCodigo { get; set; } = string.Empty;
+    public int ContactoId { get; set; }
 }
 
 public sealed class CuentaComercialViewSettingsDto

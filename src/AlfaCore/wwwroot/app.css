@@ -17473,6 +17473,71 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
     color: var(--text-muted, #8da2bf);
 }
 
+.cuentas-link-search {
+    align-items: end;
+    display: grid;
+    gap: .85rem;
+    grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.cuentas-link-results {
+    display: grid;
+    gap: .75rem;
+}
+
+.cuentas-link-result {
+    align-items: stretch;
+    background: rgba(11, 27, 46, .72);
+    border: 1px solid rgba(83, 124, 172, .34);
+    border-radius: .42rem;
+    color: inherit;
+    cursor: pointer;
+    display: grid;
+    font: inherit;
+    gap: 0;
+    grid-template-columns: 4.4rem minmax(0, 1fr) 2.5rem;
+    min-height: 4.8rem;
+    overflow: hidden;
+    padding: 0;
+    text-align: left;
+}
+
+.cuentas-link-result:hover,
+.cuentas-link-result:focus-visible {
+    background: rgba(13, 33, 56, .9);
+    border-color: rgba(34, 211, 238, .62);
+    outline: 0;
+}
+
+.cuentas-link-result .cuentas-contacto-item__avatar {
+    font-size: 1.9rem;
+    min-height: 100%;
+}
+
+.cuentas-link-result__body {
+    display: grid;
+    gap: .2rem;
+    min-width: 0;
+    padding: .72rem .85rem;
+}
+
+.cuentas-link-result__body strong,
+.cuentas-link-result__body span,
+.cuentas-link-result__body small {
+    overflow-wrap: anywhere;
+}
+
+.cuentas-link-result__body small,
+.cuentas-link-result__body span {
+    color: var(--text-muted, #8da2bf);
+}
+
+.cuentas-link-result > i {
+    align-self: center;
+    color: var(--accent, #22d3ee);
+    justify-self: center;
+}
+
 @media (max-width: 720px) {
     .shell__content .cuentas-partner-summary {
         grid-template-columns: 4.7rem minmax(0, 1fr);

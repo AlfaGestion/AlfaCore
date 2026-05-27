@@ -766,6 +766,57 @@ public sealed class CuentasComercialesService(
             return contactos.ToList();
         }, "No se pudieron cargar los contactos vinculados.", ct);
 
+    public Task<IReadOnlyList<CuentaComercialContactoCandidateDto>> SearchContactosParaVincularAsync(CuentaComercialTipo tipo, string cuentaCodigo, string texto, CancellationToken ct = default)
+        => ExecuteLoggedAsync<IReadOnlyList<CuentaComercialContactoCandidateDto>>(GetModuleLabel(tipo), "SearchContactosParaVincular", async token =>
+        {
+            if (string.IsNullOrWhiteSpace(cuentaCodigo) || string.IsNullOrWhiteSpace(texto))
+                return [];
+
+            var cuenta = cuentaCodigo.Trim().ToUpperInvariant();
+            var search = texto.Trim();
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            var hasActivoColumn = await ColumnExistsAsync(cn, null, "MA_CONTACTOS", "Activo", token);
+            var activoFilter = hasActivoColumn ? "AND ISNULL(c.Activo, 1) = 1" : string.Empty;
+
+            var sql = $"""
+                SELECT TOP (20)
+                    c.id AS Id,
+                    CONVERT(int, ISNULL(NULLIF(c.idContacto, 0), c.id)) AS IdContacto,
+                    ISNULL(c.Nombre_y_Apellido, '') AS NombreApellido,
+                    ISNULL(c.Cargo, '') AS Cargo,
+                    ISNULL(c.email, '') AS Email,
+                    ISNULL(c.Telefono, '') AS Telefono,
+                    ISNULL(c.Celular, '') AS Celular,
+                    ISNULL(c.CuentaRel, '') AS CuentaRel
+                FROM dbo.MA_CONTACTOS c
+                WHERE (
+                        ISNULL(c.Nombre_y_Apellido, '') LIKE '%' + @Texto + '%'
+                        OR ISNULL(c.email, '') LIKE '%' + @Texto + '%'
+                        OR ISNULL(c.Telefono, '') LIKE '%' + @Texto + '%'
+                        OR ISNULL(c.Celular, '') LIKE '%' + @Texto + '%'
+                        OR ISNULL(c.Cargo, '') LIKE '%' + @Texto + '%'
+                    )
+                    {activoFilter}
+                    AND NOT EXISTS (
+                        SELECT 1
+                        FROM dbo.MA_CONTACTOS_CUENTAS rel
+                        WHERE rel.IdContacto = ISNULL(NULLIF(c.idContacto, 0), c.id)
+                          AND UPPER(LTRIM(RTRIM(rel.Cuenta))) = @Cuenta
+                    )
+                    AND UPPER(LTRIM(RTRIM(ISNULL(c.CuentaRel, '')))) <> @Cuenta
+                ORDER BY
+                    CASE WHEN ISNULL(c.Nombre_y_Apellido, '') LIKE @Texto + '%' THEN 0 ELSE 1 END,
+                    ISNULL(c.Nombre_y_Apellido, ''),
+                    c.id;
+                """;
+
+            var contactos = await cn.QueryAsync<CuentaComercialContactoCandidateDto>(
+                new CommandDefinition(sql, new { Cuenta = cuenta, Texto = search }, cancellationToken: token));
+            return contactos.ToList();
+        }, "No se pudieron buscar contactos existentes para vincular.", ct);
+
     public Task<int> CreateContactoAsync(CuentaComercialTipo tipo, CuentaComercialContactoCreateRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync(GetModuleLabel(tipo), "CreateContacto", async token =>
         {
@@ -908,6 +959,78 @@ public sealed class CuentasComercialesService(
 
             return contactoId;
         }, "No se pudo crear el contacto vinculado.", ct);
+
+    public Task LinkContactoAsync(CuentaComercialTipo tipo, CuentaComercialContactoLinkRequest request, CancellationToken ct = default)
+        => ExecuteLoggedAsync(GetModuleLabel(tipo), "LinkContacto", async token =>
+        {
+            ArgumentNullException.ThrowIfNull(request);
+            var cuenta = request.CuentaCodigo?.Trim().ToUpperInvariant() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(cuenta))
+                throw new InvalidOperationException($"No se recibió el {GetSingularLabel(tipo).ToLowerInvariant()} al que se vincula el contacto.");
+            if (request.ContactoId <= 0)
+                throw new InvalidOperationException("No se recibió el contacto a vincular.");
+
+            var descriptor = ResolveDescriptor(tipo);
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var tx = await cn.BeginTransactionAsync(token);
+            var sqlTx = (SqlTransaction)tx;
+
+            var accountExists = await ExistsAsync(cn, sqlTx, descriptor.ViewName, "CODIGO", cuenta, token);
+            if (!accountExists)
+                throw new InvalidOperationException($"El {GetSingularLabel(tipo).ToLowerInvariant()} seleccionado ya no existe en la base activa.");
+
+            const string resolveSql = """
+                SELECT TOP (1)
+                    c.id AS Id,
+                    CONVERT(int, ISNULL(NULLIF(c.idContacto, 0), c.id)) AS IdContacto,
+                    ISNULL(c.Nombre_y_Apellido, '') AS NombreApellido
+                FROM dbo.MA_CONTACTOS c
+                WHERE c.id = @ContactoId;
+                """;
+
+            var contacto = await cn.QuerySingleOrDefaultAsync<CuentaComercialContactoCandidateDto>(
+                new CommandDefinition(resolveSql, new { request.ContactoId }, sqlTx, cancellationToken: token));
+            if (contacto is null || contacto.Id <= 0)
+                throw new InvalidOperationException("El contacto seleccionado ya no existe en la base activa.");
+
+            const string linkSql = """
+                UPDATE dbo.MA_CONTACTOS
+                SET idContacto = @IdContacto
+                WHERE id = @Id
+                  AND ISNULL(idContacto, 0) = 0;
+
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM dbo.MA_CONTACTOS_CUENTAS
+                    WHERE IdContacto = @IdContacto
+                      AND UPPER(LTRIM(RTRIM(Cuenta))) = @Cuenta
+                )
+                BEGIN
+                    INSERT INTO dbo.MA_CONTACTOS_CUENTAS (IdContacto, Cuenta)
+                    VALUES (@IdContacto, @Cuenta);
+                END;
+                """;
+
+            await cn.ExecuteAsync(
+                new CommandDefinition(
+                    linkSql,
+                    new { Id = contacto.Id, IdContacto = Convert.ToDouble(contacto.IdContacto), Cuenta = cuenta },
+                    sqlTx,
+                    cancellationToken: token));
+
+            await tx.CommitAsync(token);
+
+            await appEvents.LogAuditAsync(
+                GetModuleLabel(tipo),
+                "LinkContacto",
+                "MA_CONTACTOS_CUENTAS",
+                cuenta,
+                $"Contacto existente vinculado al {GetSingularLabel(tipo).ToLowerInvariant()}.",
+                new { Cuenta = cuenta, ContactoId = contacto.Id, contacto.IdContacto, contacto.NombreApellido },
+                token);
+        }, "No se pudo vincular el contacto existente.", ct);
 
     public Task UpdateContactoQuickAsync(CuentaComercialTipo tipo, CuentaComercialContactoQuickUpdateRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync(GetModuleLabel(tipo), "UpdateContactoQuick", async token =>
