@@ -1499,7 +1499,7 @@
                 <h3 class="panel-card__title">@(_closeAndCreateTicketMode ? "Cerrar y crear ticket" : "Crear ticket")</h3>
                 @if (_closeAndCreateTicketMode)
                 {
-                    <p class="panel-card__subtitle">El ticket se registrarÃ¡ cerrado y la conversaciÃ³n se cerrarÃ¡ al guardar.</p>
+                    <p class="panel-card__subtitle">El ticket se registrará cerrado y la conversación se cerrará al guardar.</p>
                 }
                 <p class="panel-card__subtitle">@_selectedTicketMessageIds.Count mensaje(s) quedarán vinculados al ticket.</p>
             </div>
@@ -2663,7 +2663,7 @@
             _relatedTicketMatches.Clear();
             _allowCreateDespiteRelated = false;
             _actionMessage = createdAndClosed
-                ? $"Ticket #{idTicket.ToString(System.Globalization.CultureInfo.InvariantCulture)} creado y conversaciÃ³n cerrada."
+                ? $"Ticket #{idTicket.ToString(System.Globalization.CultureInfo.InvariantCulture)} creado y conversación cerrada."
                 : $"Ticket #{idTicket.ToString(System.Globalization.CultureInfo.InvariantCulture)} creado correctamente.";
             await LoadConversationAsync(_selectedConversation.IdConversacion, showLoading: false, clearActionState: false);
         }
