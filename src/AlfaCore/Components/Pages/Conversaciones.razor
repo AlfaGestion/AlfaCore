@@ -564,6 +564,7 @@
                                     @if (_editingConversationName)
                                     {
                                         <input class="conversation-title-editor__input"
+                                               @ref="_conversationNameInput"
                                                value="@_conversationNameDraft"
                                                maxlength="120"
                                                @oninput="OnConversationNameInput"
@@ -1713,6 +1714,7 @@
     private bool _busyAction;
     private bool _editingConversationName;
     private bool _savingConversationName;
+    private bool _focusConversationNameAfterRender;
     private string _conversationNameDraft = string.Empty;
     private string? _loadError;
     private string? _conversationError;
@@ -1728,6 +1730,7 @@
     private bool _showStatusMenu;
     private ElementReference _threadElement;
     private ElementReference _composerDropZone;
+    private ElementReference _conversationNameInput;
     private DotNetObjectReference<Conversaciones>? _dotNetRef;
     private CancellationTokenSource? _pollingCts;
     private Task? _pollingTask;
@@ -2033,6 +2036,18 @@
         {
             _focusReplyAfterRender = false;
             await FocusReplyAsync();
+        }
+
+        if (_focusConversationNameAfterRender)
+        {
+            _focusConversationNameAfterRender = false;
+            try
+            {
+                await _conversationNameInput.FocusAsync(preventScroll: true);
+            }
+            catch
+            {
+            }
         }
 
         if (_bindPreviewPanAfterRender && _previewAttachment is not null)
@@ -2405,9 +2420,12 @@
             await Task.WhenAll(conversationTask, messagesTask, attachmentsTask, typingTask);
 
             _selectedConversation = await conversationTask;
-            _editingConversationName = false;
-            _savingConversationName = false;
-            _conversationNameDraft = _selectedConversation is null ? string.Empty : GetConversationHeader(_selectedConversation);
+            if (conversationChanged || clearActionState || !_editingConversationName)
+            {
+                _editingConversationName = false;
+                _savingConversationName = false;
+                _conversationNameDraft = _selectedConversation is null ? string.Empty : GetConversationHeader(_selectedConversation);
+            }
             _messages = (await messagesTask).ToList();
             _typingUsers = (await typingTask).ToList();
             var adjuntos = await attachmentsTask;
@@ -3028,6 +3046,8 @@
            || _uploadingFile
            || _uploadingAudio
            || _recording
+           || _editingConversationName
+           || _savingConversationName
            || _showNuevoHilo
            || _showTemplatePanel;
 
@@ -5192,6 +5212,7 @@
 
         _conversationNameDraft = GetConversationHeader(_selectedConversation);
         _editingConversationName = true;
+        _focusConversationNameAfterRender = true;
     }
 
     private void OnConversationNameInput(ChangeEventArgs args)
