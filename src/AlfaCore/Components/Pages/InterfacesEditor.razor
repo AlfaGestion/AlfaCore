@@ -76,6 +76,13 @@
                         <label>Observación</label>
                         <textarea class="contactos-observaciones" @bind="_nuevo.Observacion" disabled="@_saving"></textarea>
                     </div>
+                    <div class="field field--wide">
+                        <label>Prompt adicional para IA (opcional)</label>
+                        <textarea class="contactos-observaciones"
+                                  @bind="_nuevo.PromptIaAdicional"
+                                  disabled="@_saving"
+                                  placeholder="Ej: esta factura incluye bonificación en pie y el proveedor usa códigos propios."></textarea>
+                    </div>
                 </div>
 
                 <div id="interfaces-new-dropzone" class="interfaces-upload-dropzone" tabindex="0">
@@ -273,6 +280,13 @@
                     <div class="field">
                         <label>Observación</label>
                         <textarea class="contactos-observaciones" @bind="_editForm.Observacion" disabled="@IsSavingDetalle"></textarea>
+                    </div>
+                    <div class="field">
+                        <label>Prompt adicional para IA (opcional)</label>
+                        <textarea class="contactos-observaciones"
+                                  @bind="_editForm.PromptIaAdicional"
+                                  disabled="@IsSavingDetalle"
+                                  placeholder="Contexto extra para ayudar al lector automático en este comprobante."></textarea>
                     </div>
 
                     <div class="field">
@@ -576,6 +590,7 @@
                 {
                     IdTipoDocumento = _nuevo.IdTipoDocumento,
                     Observacion = _nuevo.Observacion,
+                    PromptIaAdicional = _nuevo.PromptIaAdicional,
                     UsuarioAccion = CurrentUserName,
                     PcAccion = Environment.MachineName,
                     Adjuntos = attachments
@@ -713,6 +728,7 @@
                 return await InterfacesSvc.QueueCompraDetectionAsync(new InterfacesDetectarCompraRequest
                 {
                     IdComprobanteRecibido = IdComprobanteRecibido.Value,
+                    PromptIaAdicional = _editForm.PromptIaAdicional,
                     UsuarioAccion = CurrentUserName,
                     PcAccion = Environment.MachineName
                 });
@@ -945,6 +961,7 @@
     {
         _nuevo.IdTipoDocumento = 0;
         _nuevo.Observacion = string.Empty;
+        _nuevo.PromptIaAdicional = string.Empty;
         _selectedFiles.Clear();
         _filePickerVersion++;
     }
@@ -957,6 +974,7 @@
         _editForm.IdComprobanteRecibido = _detail.IdComprobanteRecibido;
         _editForm.IdTipoDocumento = _detail.IdTipoDocumento;
         _editForm.Observacion = _detail.Observacion;
+        _editForm.PromptIaAdicional = _detail.ReferenciaExterna;
         _statusChange.IdEstadoNuevo = _detail.IdEstado;
         _statusChange.Observacion = string.Empty;
     }

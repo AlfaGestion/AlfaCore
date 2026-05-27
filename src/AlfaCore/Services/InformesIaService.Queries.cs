@@ -177,7 +177,7 @@ public sealed partial class InformesIaService
     {
         var sql = $"""
             SELECT TOP ({MaxRows})
-                CONCAT(c.TC, ' ', c.IDCOMPROBANTE) AS Comprobante,
+                ISNULL(c.TC, '') + ' ' + ISNULL(c.IDCOMPROBANTE, '') AS Comprobante,
                 COALESCE(NULLIF(c.RAZON_SOCIAL, ''), c.CUENTA) AS Proveedor,
                 c.FECHA AS Fecha,
                 c.ImporteDashboard AS Importe,
@@ -256,7 +256,7 @@ public sealed partial class InformesIaService
         scoped.FechaHasta = null;
         var sql = $"""
             SELECT TOP (12)
-                FORMAT(DATEFROMPARTS(YEAR(c.FECHA), MONTH(c.FECHA), 1), 'MM/yyyy') AS Periodo,
+                RIGHT('0' + CONVERT(varchar(2), MONTH(c.FECHA)), 2) + '/' + CONVERT(varchar(4), YEAR(c.FECHA)) AS Periodo,
                 SUM(c.ImporteDashboard) AS Total
             FROM vw_compras_cabecera_dashboard c
             WHERE {BuildHeaderFilterClause("c", "Cur")}

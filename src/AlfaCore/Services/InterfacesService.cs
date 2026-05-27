@@ -446,6 +446,7 @@ public sealed class InterfacesService(
                         IdEstado,
                         IdTipoDocumento,
                         Observacion,
+                        ReferenciaExterna,
                         CantidadAdjuntos,
                         RutaBase,
                         FechaHoraEstado,
@@ -458,6 +459,7 @@ public sealed class InterfacesService(
                         @IdEstado,
                         @IdTipoDocumento,
                         @Observacion,
+                        @ReferenciaExterna,
                         0,
                         @RutaBase,
                         GETDATE(),
@@ -476,6 +478,7 @@ public sealed class InterfacesService(
                     cmd.Parameters.AddWithValue("@IdEstado", state.IdEstado);
                     cmd.Parameters.AddWithValue("@IdTipoDocumento", request.IdTipoDocumento);
                     cmd.Parameters.AddWithValue("@Observacion", DbNullable(request.Observacion, 1000));
+                    cmd.Parameters.AddWithValue("@ReferenciaExterna", DbNullable(request.PromptIaAdicional, 100));
                     cmd.Parameters.AddWithValue("@RutaBase", DbNullable(storedBase, 500));
                     idComprobante = Convert.ToInt64(await cmd.ExecuteScalarAsync(token), CultureInfo.InvariantCulture);
                 }
@@ -677,6 +680,7 @@ public sealed class InterfacesService(
                 SET
                     IdTipoDocumento = @IdTipoDocumento,
                     Observacion = @Observacion,
+                    ReferenciaExterna = @ReferenciaExterna,
                     FechaHora_Modificacion = GETDATE(),
                     UsuarioModificacion = @UsuarioModificacion,
                     PcModificacion = @PcModificacion
@@ -687,6 +691,7 @@ public sealed class InterfacesService(
             {
                 cmd.Parameters.AddWithValue("@IdTipoDocumento", targetDocumentTypeId);
                 cmd.Parameters.AddWithValue("@Observacion", DbNullable(request.Observacion, 1000));
+                cmd.Parameters.AddWithValue("@ReferenciaExterna", DbNullable(request.PromptIaAdicional, 100));
                 cmd.Parameters.AddWithValue("@UsuarioModificacion", DbNullable(user, 50));
                 cmd.Parameters.AddWithValue("@PcModificacion", DbNullable(pc, 100));
                 cmd.Parameters.AddWithValue("@IdComprobanteRecibido", request.IdComprobanteRecibido);
@@ -1009,6 +1014,16 @@ public sealed class InterfacesService(
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
+            var promptManual = string.IsNullOrWhiteSpace(request.PromptIaAdicional)
+                ? detail.ReferenciaExterna
+                : request.PromptIaAdicional.Trim();
+            if (!string.IsNullOrWhiteSpace(promptManual)
+                && !string.Equals(promptManual, detail.ReferenciaExterna, StringComparison.Ordinal))
+            {
+                await SavePromptIaAdicionalAsync(cn, detail.IdComprobanteRecibido, promptManual, user, pc, token);
+                detail.ReferenciaExterna = promptManual;
+            }
+
             var queued = await EnqueueCompraDetectionInternalAsync(cn, detail, eligibleAttachments[0], user, pc, token);
 
             await _appEvents.LogAuditAsync(
@@ -2349,10 +2364,18 @@ public sealed class InterfacesService(
                 stagedFiles.Add(await StageAttachmentForIaAsync(uploadSettings, attachment, tempRoot, ct));
             }
 
-            var jsonPath = await ExecuteFacturaReaderAsync(detectorSettings, stagedFiles, tempRoot, shouldCancelAsync, ct);
+            var promptIaAdicional = detail.ReferenciaExterna?.Trim() ?? string.Empty;
+            var jsonPath = await ExecuteFacturaReaderAsync(detectorSettings, stagedFiles, tempRoot, promptIaAdicional, shouldCancelAsync, ct);
             var jsonText = await File.ReadAllTextAsync(jsonPath, Encoding.UTF8, ct);
             var payload = ParseCompraIaPayload(jsonText);
             payload = await ResolveProviderDataAsync(cn, payload, ct);
+            var duplicateWarning = await BuildDuplicateFacturaWarningAsync(cn, detail.IdComprobanteRecibido, payload, ct);
+            if (!string.IsNullOrWhiteSpace(duplicateWarning))
+            {
+                payload.LectorObservaciones = string.IsNullOrWhiteSpace(payload.LectorObservaciones)
+                    ? duplicateWarning
+                    : $"{payload.LectorObservaciones.Trim()} {duplicateWarning}";
+            }
 
             await UpsertCompraDetectionAsync(
                 cn,
@@ -2977,6 +3000,7 @@ public sealed class InterfacesService(
         InterfacesCompraIaSettings settings,
         IReadOnlyList<string> stagedFiles,
         string tempRoot,
+        string promptIaAdicional,
         Func<CancellationToken, Task<bool>>? shouldCancelAsync,
         CancellationToken ct)
     {
@@ -2996,6 +3020,11 @@ public sealed class InterfacesService(
         startInfo.ArgumentList.Add("--outdir");
         startInfo.ArgumentList.Add(tempRoot);
         startInfo.ArgumentList.Add("--auto");
+        if (!string.IsNullOrWhiteSpace(promptIaAdicional))
+        {
+            startInfo.ArgumentList.Add("--prompt-extra");
+            startInfo.ArgumentList.Add(promptIaAdicional.Trim());
+        }
 
         using var process = new Process { StartInfo = startInfo };
         if (!process.Start())
@@ -3163,6 +3192,69 @@ public sealed class InterfacesService(
             return await SearchProveedorAsync(cn, columns, string.Empty, nombre, "NOMBRE", ct);
 
         return null;
+    }
+
+    private static async Task<string> BuildDuplicateFacturaWarningAsync(
+        SqlConnection cn,
+        long currentComprobanteId,
+        InterfacesCompraIaPayload payload,
+        CancellationToken ct)
+    {
+        if (payload is null)
+            return string.Empty;
+
+        var numero = (payload.Numero ?? string.Empty).Trim();
+        var ptoVenta = (payload.PuntoVenta ?? string.Empty).Trim();
+        var letra = (payload.Letra ?? string.Empty).Trim();
+        var tipo = (payload.TipoComprobante ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(numero) || string.IsNullOrWhiteSpace(ptoVenta))
+            return string.Empty;
+
+        var cuenta = (payload.CuentaContable ?? string.Empty).Trim();
+        var cuit = OnlyDigits(payload.ProveedorCuit ?? string.Empty);
+        if (string.IsNullOrWhiteSpace(cuenta) && string.IsNullOrWhiteSpace(cuit))
+            return string.Empty;
+
+        const string sql = """
+            SELECT TOP (1)
+                cab.IdComprobanteRecibido,
+                cab.FechaHora_Proceso,
+                ISNULL(cab.Estado, '')
+            FROM dbo.IA_Compras_CAB cab
+            WHERE cab.IdComprobanteRecibido <> @IdComprobanteRecibido
+              AND ISNULL(cab.Numero, '') = @Numero
+              AND ISNULL(cab.PuntoVenta, '') = @PuntoVenta
+              AND ISNULL(cab.Letra, '') = @Letra
+              AND ISNULL(cab.TipoComprobante, '') = @TipoComprobante
+              AND
+              (
+                    (@CuentaContable <> '' AND ISNULL(cab.Cuenta_Contable, '') = @CuentaContable)
+                    OR
+                    (@ProveedorCuit <> '' AND REPLACE(REPLACE(REPLACE(ISNULL(cab.Proveedor_CUIT, ''), '-', ''), '.', ''), ' ', '') = @ProveedorCuit)
+              )
+            ORDER BY cab.FechaHora_Proceso DESC, cab.ID DESC
+            """;
+
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@IdComprobanteRecibido", currentComprobanteId);
+        cmd.Parameters.AddWithValue("@Numero", numero);
+        cmd.Parameters.AddWithValue("@PuntoVenta", ptoVenta);
+        cmd.Parameters.AddWithValue("@Letra", letra);
+        cmd.Parameters.AddWithValue("@TipoComprobante", tipo);
+        cmd.Parameters.AddWithValue("@CuentaContable", cuenta);
+        cmd.Parameters.AddWithValue("@ProveedorCuit", cuit);
+
+        await using var rd = await cmd.ExecuteReaderAsync(ct);
+        if (!await rd.ReadAsync(ct))
+            return string.Empty;
+
+        var duplicatedComprobante = rd.IsDBNull(0) ? 0 : Convert.ToInt64(rd.GetValue(0), CultureInfo.InvariantCulture);
+        var duplicatedDate = rd.IsDBNull(1) ? (DateTime?)null : Convert.ToDateTime(rd.GetValue(1), CultureInfo.InvariantCulture);
+        var duplicatedState = GetString(rd, 2);
+        var duplicatedDateText = duplicatedDate.HasValue ? duplicatedDate.Value.ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture) : "s/f";
+        var duplicatedStateText = string.IsNullOrWhiteSpace(duplicatedState) ? "sin estado" : duplicatedState.Trim();
+
+        return $"Aviso: posible factura duplicada detectada (doc #{duplicatedComprobante}, estado {duplicatedStateText}, lectura {duplicatedDateText}).";
     }
 
     private static async Task<ProveedorColumns> ResolveProveedorColumnsAsync(SqlConnection cn, CancellationToken ct)
@@ -3674,6 +3766,32 @@ public sealed class InterfacesService(
     {
         var normalized = NormalizeExtension(string.IsNullOrWhiteSpace(extension) ? Path.GetExtension(originalName) : extension);
         return normalized is ".pdf" or ".jpg" or ".jpeg" or ".png" or ".webp";
+    }
+
+    private static async Task SavePromptIaAdicionalAsync(
+        SqlConnection cn,
+        long idComprobanteRecibido,
+        string promptIaAdicional,
+        string user,
+        string pc,
+        CancellationToken ct)
+    {
+        const string sql = """
+            UPDATE dbo.INT_COMPROBANTE_RECIBIDO
+            SET
+                ReferenciaExterna = @ReferenciaExterna,
+                FechaHora_Modificacion = GETDATE(),
+                UsuarioModificacion = @UsuarioModificacion,
+                PcModificacion = @PcModificacion
+            WHERE IdComprobanteRecibido = @IdComprobanteRecibido
+            """;
+
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@ReferenciaExterna", DbNullable(promptIaAdicional, 100));
+        cmd.Parameters.AddWithValue("@UsuarioModificacion", DbNullable(user, 50));
+        cmd.Parameters.AddWithValue("@PcModificacion", DbNullable(pc, 100));
+        cmd.Parameters.AddWithValue("@IdComprobanteRecibido", idComprobanteRecibido);
+        await cmd.ExecuteNonQueryAsync(ct);
     }
 
     private static string ReadJsonString(JsonObject? obj, string key)

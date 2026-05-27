@@ -154,13 +154,13 @@ public sealed partial class ComprasDashboardService
         string dateColumn,
         CancellationToken cancellationToken)
     {
-        var sql = $"""
-            SELECT TOP (12)
-                FORMAT(DATEFROMPARTS(YEAR({dateColumn}), MONTH({dateColumn}), 1), 'MM/yyyy') AS Periodo,
+            var sql = $"""
+                SELECT TOP (12)
+                RIGHT('0' + CONVERT(varchar(2), MONTH({dateColumn})), 2) + '/' + CONVERT(varchar(4), YEAR({dateColumn})) AS Periodo,
                 {valueExpression} AS Total
             {fromClause}
-            GROUP BY YEAR({dateColumn}), MONTH({dateColumn})
-            ORDER BY YEAR({dateColumn}) DESC, MONTH({dateColumn}) DESC;
+                GROUP BY YEAR({dateColumn}), MONTH({dateColumn})
+                ORDER BY YEAR({dateColumn}) DESC, MONTH({dateColumn}) DESC;
             """;
 
         var items = await ReadListAsync(connection, sql, filters, reader => new MonthlyPointDto
