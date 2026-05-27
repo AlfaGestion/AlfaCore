@@ -193,10 +193,6 @@
                     @GetAccountInitial()
                 </div>
                 <div class="cuentas-partner-summary__body">
-                    <div class="cuentas-partner-summary__type">
-                        <span class="is-muted">Individuo</span>
-                        <span class="is-active">Compañía</span>
-                    </div>
                     <h2>@DisplayOrFallback(_form.RazonSocial, $"Nuevo {SingularLabelLower}")</h2>
                     <div class="cuentas-partner-summary__meta">
                         @if (!string.IsNullOrWhiteSpace(_form.Mail))

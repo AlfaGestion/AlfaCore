@@ -17469,3 +17469,102 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
         grid-template-columns: 1fr;
     }
 }
+
+/* Ajustes finos de cabecera comercial */
+.shell__content .cuentas-partner-summary {
+    align-items: center;
+    background: linear-gradient(180deg, rgba(13, 30, 52, .34), rgba(8, 22, 40, .12));
+    border: 1px solid rgba(83, 124, 172, .18);
+    border-radius: .55rem;
+    grid-template-columns: 5.75rem minmax(0, 1fr) auto;
+    margin: .7rem 0 1rem;
+    padding: 1rem;
+}
+
+.shell__content .cuentas-partner-summary__avatar {
+    aspect-ratio: auto;
+    border-radius: .42rem;
+    font-size: 2.25rem;
+    height: 5.25rem;
+    min-width: 0;
+    width: 5.25rem;
+}
+
+.shell__content .cuentas-partner-summary__type {
+    display: none;
+}
+
+.shell__content .cuentas-partner-summary__body {
+    align-content: center;
+    gap: .48rem;
+}
+
+.shell__content .cuentas-partner-summary h2 {
+    font-size: clamp(1.55rem, 2.1vw, 2.05rem);
+    font-weight: 750;
+    letter-spacing: 0;
+}
+
+.shell__content .cuentas-partner-summary__meta {
+    color: #b7c7dc;
+    gap: .45rem 1rem;
+    line-height: 1.35;
+}
+
+.shell__content .cuentas-partner-summary__meta span {
+    align-items: center;
+    display: inline-flex;
+    min-width: 0;
+}
+
+.shell__content .cuentas-partner-summary__address {
+    color: var(--text-muted, #8da2bf);
+    font-size: .92rem;
+    line-height: 1.35;
+}
+
+.shell__content .cuentas-partner-summary__stats {
+    align-self: start;
+    min-width: max-content;
+}
+
+.shell__content .cuentas-smart-stat {
+    border-radius: .38rem;
+    min-width: 6.4rem;
+    padding: .48rem .65rem;
+}
+
+.shell__content .contactos-tabs {
+    margin-top: .35rem;
+    padding-left: .25rem;
+}
+
+.shell__content .cuentas-tab {
+    background: rgba(15, 29, 49, .62);
+    border-color: rgba(83, 124, 172, .24);
+    border-radius: .32rem .32rem 0 0;
+    min-height: 2.35rem;
+    padding: .5rem .95rem;
+}
+
+.shell__content .cuentas-tab.is-active {
+    background: rgba(8, 22, 40, 1);
+    border-color: rgba(34, 211, 238, .42);
+}
+
+.shell__content .contactos-form {
+    background: rgba(7, 18, 33, .22);
+    padding: 1.35rem 1rem 1.15rem;
+}
+
+@media (max-width: 960px) {
+    .shell__content .cuentas-partner-summary {
+        grid-template-columns: 5.25rem minmax(0, 1fr);
+    }
+
+    .shell__content .cuentas-partner-summary__stats {
+        grid-column: 1 / -1;
+        justify-content: flex-start;
+        min-width: 0;
+    }
+}
