@@ -1208,9 +1208,6 @@
                                 <button type="button" class="btn btn--ghost btn--sm context-card__action" @onclick="OpenSelectedContact">
                                     <i class="bi bi-person-lines-fill"></i> Ver contacto
                                 </button>
-                                <button type="button" class="btn btn--ghost btn--sm context-card__action" @onclick="OpenSelectedContactMerge">
-                                    <i class="bi bi-intersect"></i> Unificar
-                                </button>
                             }
                             else
                             {
@@ -3969,12 +3966,6 @@
     {
         if (_selectedConversation?.IdContacto is int idContacto)
             Nav.NavigateTo($"/contactos?editar={idContacto.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
-    }
-
-    private void OpenSelectedContactMerge()
-    {
-        if (_selectedConversation?.IdContacto is int idContacto)
-            Nav.NavigateTo($"/contactos?editar={idContacto.ToString(System.Globalization.CultureInfo.InvariantCulture)}&unificar=1");
     }
 
     private void OpenSelectedClient()
