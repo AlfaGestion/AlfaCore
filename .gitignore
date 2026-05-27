@@ -39,6 +39,7 @@ src/AlfaCore/App_Data/uploads/
 appsettings.Development.json
 appsettings.*.json
 !appsettings.json
+src/AlfaCore/App_Data/sessions.json
 
 # =========================
 # Instaladores (TU PROBLEMA ACTUAL)
