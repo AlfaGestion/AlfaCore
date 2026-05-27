@@ -17237,7 +17237,10 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
     background: rgba(11, 27, 46, .7);
     border: 1px solid rgba(83, 124, 172, .36);
     border-radius: .35rem;
+    color: inherit;
+    cursor: pointer;
     display: grid;
+    font: inherit;
     gap: 0;
     grid-template-columns: 5.75rem minmax(0, 1fr);
     min-height: 6.1rem;
@@ -17253,7 +17256,15 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
 
 .shell__content .cuentas-contacto-item--add:hover,
 .shell__content .cuentas-contacto-item:hover {
+    background: rgba(13, 33, 56, .86);
     border-color: rgba(34, 211, 238, .55);
+    transform: translateY(-1px);
+}
+
+.shell__content .cuentas-contacto-item:focus-visible {
+    border-color: rgba(34, 211, 238, .9);
+    box-shadow: 0 0 0 3px rgba(34, 211, 238, .18);
+    outline: 0;
 }
 
 .shell__content .cuentas-contacto-item__avatar {

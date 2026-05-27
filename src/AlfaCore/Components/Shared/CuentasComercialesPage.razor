@@ -634,7 +634,7 @@
                             <div class="cuentas-contactos-list">
                                 @foreach (var contacto in _contactosCuenta)
                                 {
-                                    <article class="cuentas-contacto-item">
+                                    <button type="button" class="cuentas-contacto-item" @onclick="() => MostrarVistaContacto(contacto)">
                                         <div class="cuentas-contacto-item__avatar @GetContactAvatarClass(contacto)">
                                             @GetContactInitial(contacto)
                                         </div>
@@ -670,14 +670,8 @@
                                                     <span>CuentaRel</span>
                                                 }
                                             </div>
-                                            <div class="cuentas-contacto-item__actions">
-                                                <button type="button" class="btn btn--ghost btn--sm" @onclick="() => MostrarVistaContacto(contacto)">
-                                                    <i class="bi bi-box-arrow-up-right"></i>
-                                                    Ver / editar
-                                                </button>
-                                            </div>
                                         </div>
-                                    </article>
+                                    </button>
                                 }
                                 <button type="button" class="cuentas-contacto-item cuentas-contacto-item--add" @onclick="MostrarNuevoContacto" disabled="@(_saving || _savingContacto)">
                                     <span class="cuentas-contacto-item__avatar cuentas-contacto-item__avatar--add">
