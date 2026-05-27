@@ -13641,43 +13641,44 @@ html[data-theme="light"] .interfaces-bulkbar {
     text-align: right;
 }
 
-.contactos-table {
+.contactos-page .contactos-table {
     table-layout: auto;
+    min-width: max-content;
     width: max-content;
 }
 
-.contactos-table th,
-.contactos-table td {
+.contactos-page .contactos-table th,
+.contactos-page .contactos-table td {
     white-space: nowrap;
 }
 
-.contactos-table__col {
+.contactos-page .contactos-table__col {
     max-width: 16rem;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
-.contactos-table__col--nombre {
+.contactos-page .contactos-table__col--nombre {
     min-width: 13rem;
     max-width: 22rem;
 }
 
-.contactos-table__col--email {
+.contactos-page .contactos-table__col--email {
     max-width: 18rem;
 }
 
-.contactos-table__col--localidad,
-.contactos-table__col--provincia,
-.contactos-table__col--telefono,
-.contactos-table__col--celular,
-.contactos-table__col--cargo {
+.contactos-page .contactos-table__col--localidad,
+.contactos-page .contactos-table__col--provincia,
+.contactos-page .contactos-table__col--telefono,
+.contactos-page .contactos-table__col--celular,
+.contactos-page .contactos-table__col--cargo {
     max-width: 12rem;
 }
 
-.contactos-table .interfaces-table__selector,
-.contactos-table .interfaces-table__actions,
-.contactos-table .contactos-table__actions-head,
-.contactos-table .contactos-table__actions {
+.contactos-page .contactos-table .interfaces-table__selector,
+.contactos-page .contactos-table .interfaces-table__actions,
+.contactos-page .contactos-table .contactos-table__actions-head,
+.contactos-page .contactos-table .contactos-table__actions {
     width: 1%;
 }
 
