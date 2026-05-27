@@ -3740,6 +3740,30 @@ html[data-theme="light"] .menu__search-result:hover {
     gap: .45rem;
 }
 
+.conversations-filters__modes--compact {
+    position: relative;
+    flex-wrap: nowrap;
+    align-items: center;
+    width: max-content;
+    max-width: 100%;
+}
+
+.conversations-filters__modes--compact .conversations-filter-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    white-space: nowrap;
+}
+
+.conversations-filters__modes--compact .conversations-filter-pill:not(.is-active) {
+    display: none;
+}
+
+.conversations-filters__modes--compact:hover .conversations-filter-pill,
+.conversations-filters__modes--compact:focus-within .conversations-filter-pill {
+    display: inline-flex;
+}
+
 .conversations-filter-pill {
     border: 1px solid var(--color-border);
     background: transparent;
