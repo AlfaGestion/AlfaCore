@@ -165,13 +165,6 @@
                     <i class="bi bi-check2-circle"></i>
                     <span>Cerrar y crear ticket</span>
                 </button>
-                <button type="button" class="btn btn--ghost btn--sm" @onclick="RecargarAsync" disabled="@(_loadingInbox || _loadingConversation)" title="Recargar">
-                    <i class="bi bi-arrow-clockwise"></i>
-                </button>
-                <button type="button" class="btn btn--ghost btn--sm" @onclick="TestNewMessageSoundAsync" disabled="@_loadingInbox" title="Probar sonido">
-                    <i class="bi bi-volume-up-fill"></i>
-                    <span>Probar sonido</span>
-                </button>
             </div>
 
             <div class="conversations-filters__modes">
