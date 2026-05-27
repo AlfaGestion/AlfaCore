@@ -188,7 +188,7 @@ public sealed partial class ComprasDashboardService
                 COALESCE(NULLIF(d.RUBRO, ''), 'Sin rubro') AS Rubro,
                 SUM(d.TotalDashboard) AS TotalComprado,
                 COUNT(DISTINCT d.IDARTICULO) AS CantidadArticulos,
-                COUNT(DISTINCT CONCAT(d.TC, '|', d.IDCOMPROBANTE, '|', d.CUENTA)) AS CantidadComprobantes,
+                COUNT(DISTINCT (ISNULL(d.TC, '') + '|' + ISNULL(d.IDCOMPROBANTE, '') + '|' + ISNULL(d.CUENTA, ''))) AS CantidadComprobantes,
                 MAX(d.FECHA) AS UltimaCompra
             {DetailFromClause}
             GROUP BY COALESCE(NULLIF(d.RUBRO, ''), 'Sin rubro')
@@ -425,7 +425,7 @@ public sealed partial class ComprasDashboardService
                 SUM(d.TotalDashboard) AS TotalComprado,
                 COUNT(DISTINCT d.IDARTICULO) AS CantidadArticulos,
                 COUNT(DISTINCT d.CUENTA) AS CantidadProveedores,
-                COUNT(DISTINCT CONCAT(d.TC, '|', d.IDCOMPROBANTE, '|', d.CUENTA)) AS CantidadComprobantes,
+                COUNT(DISTINCT (ISNULL(d.TC, '') + '|' + ISNULL(d.IDCOMPROBANTE, '') + '|' + ISNULL(d.CUENTA, ''))) AS CantidadComprobantes,
                 MAX(d.FECHA) AS UltimaCompra
             FROM vw_compras_detalle_dashboard d
             LEFT JOIN vw_familias_jerarquia fj ON fj.IdFamilia = d.FAMILIA
@@ -593,7 +593,7 @@ public sealed partial class ComprasDashboardService
                 ISNULL(SUM(d.TotalDashboard), 0) AS TotalComprado,
                 COUNT(DISTINCT d.IDARTICULO) AS CantidadArticulos,
                 COUNT(DISTINCT d.CUENTA) AS CantidadProveedores,
-                COUNT(DISTINCT CONCAT(d.TC, '|', d.IDCOMPROBANTE, '|', d.CUENTA)) AS CantidadComprobantes,
+                COUNT(DISTINCT (ISNULL(d.TC, '') + '|' + ISNULL(d.IDCOMPROBANTE, '') + '|' + ISNULL(d.CUENTA, ''))) AS CantidadComprobantes,
                 MAX(d.FECHA) AS UltimaCompra
             FROM vw_familias_jerarquia fj
             LEFT JOIN vw_compras_detalle_dashboard d
@@ -813,7 +813,7 @@ public sealed partial class ComprasDashboardService
 
         var evolucion = await ReadListAsync(connection, $"""
             SELECT TOP (12)
-                FORMAT(DATEFROMPARTS(YEAR(d.FECHA), MONTH(d.FECHA), 1), 'MM/yyyy') AS Periodo,
+                RIGHT('0' + CONVERT(varchar(2), MONTH(d.FECHA)), 2) + '/' + CONVERT(varchar(4), YEAR(d.FECHA)) AS Periodo,
                 SUM(d.TotalDashboard) AS Total
             FROM vw_compras_detalle_dashboard d
             WHERE d.FAMILIA LIKE @FamiliaSeleccionada + '%'
@@ -927,7 +927,7 @@ public sealed partial class ComprasDashboardService
                     AVG(CAST(d.COSTO AS decimal(18,4))) AS CostoPromedio,
                     MAX(CAST(d.COSTO AS decimal(18,4))) AS PrecioActual,
                     MAX(d.FECHA) AS UltimaCompra,
-                    COUNT(DISTINCT CONCAT(d.TC, '|', d.IDCOMPROBANTE, '|', d.CUENTA)) AS CantidadCompras
+                    COUNT(DISTINCT (ISNULL(d.TC, '') + '|' + ISNULL(d.IDCOMPROBANTE, '') + '|' + ISNULL(d.CUENTA, ''))) AS CantidadCompras
                 {DetailFromClause}
                 GROUP BY d.IDARTICULO, d.DESCRIPCION_ARTICULO
                 ORDER BY SUM(d.TotalDashboard) DESC;
@@ -1139,7 +1139,7 @@ public sealed partial class ComprasDashboardService
 
         var evolucion = await ReadListAsync(connection, """
             SELECT TOP (12)
-                FORMAT(DATEFROMPARTS(YEAR(FECHA), MONTH(FECHA), 1), 'MM/yyyy') AS Periodo,
+                RIGHT('0' + CONVERT(varchar(2), MONTH(FECHA)), 2) + '/' + CONVERT(varchar(4), YEAR(FECHA)) AS Periodo,
                 AVG(CAST(COSTO AS decimal(18,4))) AS Total
             FROM vw_compras_detalle_dashboard
             WHERE LTRIM(RTRIM(IDARTICULO)) = LTRIM(RTRIM(@IdArticulo))
