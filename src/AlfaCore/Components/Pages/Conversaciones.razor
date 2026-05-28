@@ -902,6 +902,9 @@
                                                             {
                                                                 <span>@FormatFileSize(adj.TamanoBytes)</span>
                                                             }
+                                                            <button type="button" class="btn btn--ghost btn--sm" @onclick="() => OpenAttachmentPreview(adj)">
+                                                                <i class="bi bi-arrows-fullscreen"></i> Ver grande
+                                                            </button>
                                                         </div>
                                                     </div>
                                                 }
@@ -1458,26 +1461,68 @@
                        download="@GetAttachmentDownloadName(_previewAttachment)">
                         <i class="bi bi-download"></i> Descargar
                     </a>
-                    <button type="button" class="btn btn--ghost btn--sm attachment-preview-zoom-button" @onclick="ZoomPreviewOut" title="Alejar">
-                        <i class="bi bi-zoom-out"></i>
-                    </button>
-                    <button type="button" class="btn btn--ghost btn--sm attachment-preview-zoom-button" @onclick="ResetPreviewZoom" title="Restablecer zoom">
-                        @PreviewZoomPercent
-                    </button>
-                    <button type="button" class="btn btn--ghost btn--sm attachment-preview-zoom-button" @onclick="ZoomPreviewIn" title="Acercar">
-                        <i class="bi bi-zoom-in"></i>
-                    </button>
+                    @if (IsImageAttachment(_previewAttachment))
+                    {
+                        <button type="button" class="btn btn--ghost btn--sm attachment-preview-zoom-button" @onclick="ZoomPreviewOut" title="Alejar">
+                            <i class="bi bi-zoom-out"></i>
+                        </button>
+                        <button type="button" class="btn btn--ghost btn--sm attachment-preview-zoom-button" @onclick="ResetPreviewZoom" title="Restablecer zoom">
+                            @PreviewZoomPercent
+                        </button>
+                        <button type="button" class="btn btn--ghost btn--sm attachment-preview-zoom-button" @onclick="ZoomPreviewIn" title="Acercar">
+                            <i class="bi bi-zoom-in"></i>
+                        </button>
+                    }
                     <button type="button" class="btn btn--ghost btn--sm" @onclick="CloseAttachmentPreview">
                         <i class="bi bi-x-lg"></i>
                     </button>
                 </div>
             </header>
-            <div class="attachment-preview-canvas" @ref="_previewCanvas" @onwheel="HandlePreviewWheel" @onwheel:preventDefault>
-                <img src="@GetAttachmentUrl(_previewAttachment)"
-                     alt="@GetAttachmentLabel(_previewAttachment)"
-                     draggable="false"
-                     style="@PreviewImageStyle" />
+            <div class="attachment-preview-body">
+                <button type="button" class="attachment-preview-nav attachment-preview-nav--prev" @onclick="ShowPreviousPreviewAttachment" disabled="@(!CanNavigatePreviewGallery)" title="Anterior">
+                    <i class="bi bi-chevron-left"></i>
+                </button>
+                <div class="attachment-preview-canvas" @ref="_previewCanvas" @onwheel="HandlePreviewWheel" @onwheel:preventDefault>
+                    @if (IsVideoAttachment(_previewAttachment))
+                    {
+                        <video controls autoplay src="@GetAttachmentUrl(_previewAttachment)" style="@PreviewVideoStyle">
+                            Tu navegador no puede reproducir este video.
+                        </video>
+                    }
+                    else
+                    {
+                        <img src="@GetAttachmentUrl(_previewAttachment)"
+                             alt="@GetAttachmentLabel(_previewAttachment)"
+                             draggable="false"
+                             style="@PreviewImageStyle" />
+                    }
+                </div>
+                <button type="button" class="attachment-preview-nav attachment-preview-nav--next" @onclick="ShowNextPreviewAttachment" disabled="@(!CanNavigatePreviewGallery)" title="Siguiente">
+                    <i class="bi bi-chevron-right"></i>
+                </button>
             </div>
+            @if (PreviewGallery.Count > 1)
+            {
+                <div class="attachment-preview-strip" aria-label="Adjuntos multimedia de la conversacion">
+                    @foreach (var item in PreviewGallery)
+                    {
+                        <button type="button"
+                                class="@GetPreviewThumbClass(item)"
+                                title="@GetAttachmentLabel(item)"
+                                @onclick="() => OpenAttachmentPreview(item)">
+                            @if (IsVideoAttachment(item))
+                            {
+                                <video preload="metadata" muted src="@GetAttachmentUrl(item)"></video>
+                                <span><i class="bi bi-play-fill"></i></span>
+                            }
+                            else
+                            {
+                                <img src="@GetAttachmentUrl(item)" alt="@GetAttachmentLabel(item)" loading="lazy" />
+                            }
+                        </button>
+                    }
+                </div>
+            }
         </div>
     </div>
 }
@@ -5018,6 +5063,9 @@
         => string.Equals(adjunto.TipoArchivo, "VIDEO", StringComparison.OrdinalIgnoreCase)
            || adjunto.MimeType.StartsWith("video/", StringComparison.OrdinalIgnoreCase);
 
+    private static bool IsPreviewableAttachment(ConversacionAdjuntoDto adjunto)
+        => IsImageAttachment(adjunto) || IsVideoAttachment(adjunto);
+
     private bool ShouldShowMessageText(ConversacionMensajeDto message)
     {
         if (string.IsNullOrWhiteSpace(message.Texto))
@@ -5280,11 +5328,53 @@
 
     private void OpenAttachmentPreview(ConversacionAdjuntoDto adjunto)
     {
+        if (!IsPreviewableAttachment(adjunto))
+            return;
+
         _openAttachmentMenuId = null;
         _previewAttachment = adjunto;
         _bindPreviewPanAfterRender = true;
         ResetPreviewZoom();
     }
+
+    private IReadOnlyList<ConversacionAdjuntoDto> PreviewGallery
+        => _messages
+            .SelectMany(message => _adjuntosPorMensaje.TryGetValue(message.IdMensaje, out var adjuntos)
+                ? adjuntos
+                : Enumerable.Empty<ConversacionAdjuntoDto>())
+            .Where(IsPreviewableAttachment)
+            .ToList();
+
+    private bool CanNavigatePreviewGallery
+        => PreviewGallery.Count > 1;
+
+    private void ShowPreviousPreviewAttachment()
+        => ShowRelativePreviewAttachment(-1);
+
+    private void ShowNextPreviewAttachment()
+        => ShowRelativePreviewAttachment(1);
+
+    private void ShowRelativePreviewAttachment(int offset)
+    {
+        if (_previewAttachment is null)
+            return;
+
+        var gallery = PreviewGallery;
+        if (gallery.Count <= 1)
+            return;
+
+        var index = gallery.ToList().FindIndex(item => item.IdAdjunto == _previewAttachment.IdAdjunto);
+        if (index < 0)
+            index = 0;
+
+        var nextIndex = (index + offset + gallery.Count) % gallery.Count;
+        OpenAttachmentPreview(gallery[nextIndex]);
+    }
+
+    private string GetPreviewThumbClass(ConversacionAdjuntoDto adjunto)
+        => _previewAttachment?.IdAdjunto == adjunto.IdAdjunto
+            ? "attachment-preview-thumb is-active"
+            : "attachment-preview-thumb";
 
     private void StartConversationNameEdit()
     {
@@ -5372,6 +5462,9 @@
     private string PreviewImageStyle
         => $"width: {Math.Round(_previewZoom * 100, 0).ToString(System.Globalization.CultureInfo.InvariantCulture)}%;";
 
+    private string PreviewVideoStyle
+        => "width: min(100%, 960px); max-height: 100%;";
+
     private string PreviewZoomPercent
         => $"{Math.Round(_previewZoom * 100, 0).ToString(System.Globalization.CultureInfo.InvariantCulture)}%";
 
@@ -5385,7 +5478,12 @@
         => SetPreviewZoom(1d);
 
     private void HandlePreviewWheel(WheelEventArgs args)
-        => SetPreviewZoom(_previewZoom + (args.DeltaY < 0 ? .15d : -.15d));
+    {
+        if (_previewAttachment is null || !IsImageAttachment(_previewAttachment))
+            return;
+
+        SetPreviewZoom(_previewZoom + (args.DeltaY < 0 ? .15d : -.15d));
+    }
 
     private void SetPreviewZoom(double value)
         => _previewZoom = Math.Clamp(value, .5d, 4d);

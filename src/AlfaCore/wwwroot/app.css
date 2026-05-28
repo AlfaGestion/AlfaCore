@@ -11857,7 +11857,7 @@ html[data-theme="light"] .balance-row--detalle td {
     width: min(1100px, 96vw);
     max-height: 92vh;
     display: grid;
-    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto;
     gap: .75rem;
     border: 1px solid var(--color-border);
     border-radius: var(--radius-lg);
@@ -11895,6 +11895,36 @@ html[data-theme="light"] .balance-row--detalle td {
     min-width: 2.35rem;
 }
 
+.attachment-preview-body {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr) 44px;
+    align-items: stretch;
+    min-height: 0;
+    gap: .75rem;
+}
+
+.attachment-preview-nav {
+    display: grid;
+    place-items: center;
+    align-self: stretch;
+    min-width: 44px;
+    border: 1px solid rgba(148, 163, 184, .18);
+    border-radius: 8px;
+    background: rgba(15, 23, 42, .35);
+    color: var(--color-text);
+    font-size: 1.15rem;
+}
+
+.attachment-preview-nav:disabled {
+    opacity: .35;
+    cursor: default;
+}
+
+.attachment-preview-nav:not(:disabled):hover {
+    border-color: rgba(56, 189, 248, .45);
+    background: rgba(14, 165, 233, .16);
+}
+
 .attachment-preview-canvas {
     display: grid;
     place-items: start center;
@@ -11926,6 +11956,59 @@ html[data-theme="light"] .balance-row--detalle td {
     transform-origin: top center;
     user-select: none;
     -webkit-user-drag: none;
+}
+
+.attachment-preview-canvas video {
+    align-self: center;
+    justify-self: center;
+    max-width: 100%;
+    max-height: 100%;
+    border-radius: var(--radius-md);
+    background: rgba(2, 6, 23, .72);
+}
+
+.attachment-preview-strip {
+    display: flex;
+    gap: .55rem;
+    max-width: 100%;
+    overflow-x: auto;
+    padding: .65rem .1rem .1rem;
+    border-top: 1px solid rgba(148, 163, 184, .16);
+    scrollbar-width: thin;
+    scrollbar-color: rgba(14, 165, 233, .55) rgba(15, 23, 42, .35);
+}
+
+.attachment-preview-thumb {
+    position: relative;
+    flex: 0 0 76px;
+    width: 76px;
+    height: 58px;
+    overflow: hidden;
+    border: 2px solid transparent;
+    border-radius: 7px;
+    padding: 0;
+    background: rgba(15, 23, 42, .58);
+}
+
+.attachment-preview-thumb.is-active {
+    border-color: #22c55e;
+}
+
+.attachment-preview-thumb img,
+.attachment-preview-thumb video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.attachment-preview-thumb span {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    color: white;
+    background: rgba(2, 6, 23, .28);
 }
 
 /* Adjuntos en mensajes */
