@@ -2,6 +2,7 @@
 @inject AlfaCore.Services.ITareasService TareasSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
+@inject IJSRuntime Js
 
 <PageTitle>Tareas | Alfa Gestión</PageTitle>
 
@@ -151,7 +152,7 @@
                             <button type="button" class="tareas-check" title="Completar" @onclick="() => ChangeStateAsync(tarea, TareaEstadoKeys.Completada)">
                                 <i class="bi bi-circle"></i>
                             </button>
-                            <button type="button" class="tareas-row__body" @onclick="() => OpenEditTask(tarea)">
+                            <button type="button" class="tareas-row__body" @onclick="() => OpenEditTaskAsync(tarea)">
                                 <strong>@tarea.Titulo</strong>
                                 <span>
                                     @tarea.ListaNombre
@@ -167,6 +168,10 @@
                                     {
                                         <i class="bi bi-share" title="@GetSharingSummary(tarea.CompartidaConTodos, tarea.UsuariosCompartidos)"></i>
                                     }
+                                    @if (tarea.Adjuntos > 0)
+                                    {
+                                        <span><i class="bi bi-paperclip"></i> @tarea.Adjuntos</span>
+                                    }
                                 </span>
                             </button>
                             <select value="@tarea.Estado" @onchange="e => ChangeStateAsync(tarea, Convert.ToString(e.Value) ?? TareaEstadoKeys.Pendiente)">
@@ -177,7 +182,7 @@
                             <details class="tareas-menu">
                                 <summary title="Opciones"><i class="bi bi-three-dots-vertical"></i></summary>
                                 <div>
-                                    <button type="button" @onclick="() => OpenEditTask(tarea)">Editar</button>
+                                    <button type="button" @onclick="() => OpenEditTaskAsync(tarea)">Editar</button>
                                     <button type="button" @onclick="() => DuplicateTaskAsync(tarea.IdTarea)">Duplicar</button>
                                     <button type="button" @onclick="() => DeleteTaskAsync(tarea.IdTarea)">Eliminar</button>
                                 </div>
@@ -196,9 +201,15 @@
                             <button type="button" class="tareas-check is-done" title="Restaurar" @onclick="() => ChangeStateAsync(tarea, TareaEstadoKeys.Pendiente)">
                                 <i class="bi bi-check-circle-fill"></i>
                             </button>
-                            <button type="button" class="tareas-row__body" @onclick="() => OpenEditTask(tarea)">
+                            <button type="button" class="tareas-row__body" @onclick="() => OpenEditTaskAsync(tarea)">
                                 <strong>@tarea.Titulo</strong>
-                                <span>@tarea.ListaNombre · completada @FormatDateTime(tarea.FechaHoraCompletada)</span>
+                                <span>
+                                    @tarea.ListaNombre · completada @FormatDateTime(tarea.FechaHoraCompletada)
+                                    @if (tarea.Adjuntos > 0)
+                                    {
+                                        <span> · <i class="bi bi-paperclip"></i> @tarea.Adjuntos</span>
+                                    }
+                                </span>
                             </button>
                             <button type="button" class="btn btn--ghost btn--sm" @onclick="() => DeleteTaskAsync(tarea.IdTarea)">
                                 Eliminar
@@ -344,11 +355,71 @@
         }
 
         <label class="tareas-description">
-            <span>Descripción</span>
+            <span>Descripcion</span>
             <textarea value="@_taskDraft.Descripcion"
                       @oninput="e => _taskDraft.Descripcion = Convert.ToString(e.Value) ?? string.Empty"
-                      placeholder="Añade una descripción"></textarea>
+                      placeholder="Anade una descripcion"></textarea>
         </label>
+
+        <section id="tareas-attachments-dropzone" class="tareas-attachments" tabindex="0">
+            <div class="tareas-attachments__head">
+                <div>
+                    <strong>Adjuntos</strong>
+                    <span>Imagenes, audios o videos. Tambien podes pegar con Ctrl+V.</span>
+                </div>
+                <div class="tareas-attachments__actions">
+                    <InputFile id="tareas-attachments-picker"
+                               style="display:none"
+                               OnChange="HandleTaskFilesSelectedAsync"
+                               multiple
+                               accept="image/*,audio/*,video/*"
+                               disabled="@_savingTask" />
+                    <label class="btn btn--ghost btn--sm" for="tareas-attachments-picker">
+                        <i class="bi bi-paperclip"></i> Adjuntar
+                    </label>
+                </div>
+            </div>
+
+            @if (_loadingTaskAttachments)
+            {
+                <div class="tareas-attachments__empty">Cargando adjuntos...</div>
+            }
+            else if (_taskAttachments.Count == 0 && _pendingTaskAttachments.Count == 0)
+            {
+                <div class="tareas-attachments__empty">Solta archivos aca o pega una imagen, audio o video.</div>
+            }
+            else
+            {
+                <div class="tareas-attachments__grid">
+                    @foreach (var adjunto in _taskAttachments)
+                    {
+                        <article class="tareas-attachment-card">
+                            @RenderAttachmentPreview(adjunto.MimeType, GetAttachmentDataUrl(adjunto), adjunto.NombreArchivo)
+                            <div class="tareas-attachment-card__body">
+                                <strong title="@adjunto.NombreArchivo">@adjunto.NombreArchivo</strong>
+                                <span>@FormatSize(adjunto.TamanoBytes)</span>
+                            </div>
+                            <button type="button" title="Quitar" @onclick="() => DeletePersistedAttachmentAsync(adjunto.IdAdjunto)">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
+                        </article>
+                    }
+                    @foreach (var adjunto in _pendingTaskAttachments)
+                    {
+                        <article class="tareas-attachment-card is-pending">
+                            @RenderAttachmentPreview(adjunto.MimeType, GetAttachmentDataUrl(adjunto), adjunto.NombreArchivo)
+                            <div class="tareas-attachment-card__body">
+                                <strong title="@adjunto.NombreArchivo">@adjunto.NombreArchivo</strong>
+                                <span>@FormatSize(adjunto.TamanoBytes) - pendiente</span>
+                            </div>
+                            <button type="button" title="Quitar" @onclick="() => RemovePendingAttachment(adjunto.Id)">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
+                        </article>
+                    }
+                </div>
+            }
+        </section>
 
         <div class="tareas-modal__actions">
             @if (_taskDraft.IdTarea is > 0)
@@ -361,8 +432,8 @@
                 </button>
             }
             <span></span>
-            <button type="button" class="btn btn--primary" @onclick="SaveTaskAsync">
-                <i class="bi bi-save"></i> Guardar
+            <button type="button" class="btn btn--primary" @onclick="SaveTaskAsync" disabled="@_savingTask">
+                <i class="bi bi-save"></i> @(_savingTask ? "Guardando..." : "Guardar")
             </button>
         </div>
     </section>
@@ -404,7 +475,7 @@
 
         <div class="tareas-modal__actions">
             <button type="button" class="btn btn--ghost" @onclick="ClearSharingAsync">
-                Quitar compartición
+                Quitar comparticion
             </button>
             <span></span>
             <button type="button" class="btn btn--primary" @onclick="SaveSharingAsync">
@@ -413,7 +484,6 @@
         </div>
     </section>
 }
-
 @code {
     private TareasPageDto _page = new();
     private AppUiMessage? _feedback;
@@ -425,8 +495,13 @@
     private bool _showTaskModal;
     private bool _taskCanShare;
     private bool _taskSharePanelOpen;
+    private bool _savingTask;
+    private bool _loadingTaskAttachments;
+    private int _attachmentPickerVersion;
     private bool _showCompleted;
     private TareaSaveRequest _taskDraft = new();
+    private List<TareaAdjuntoDto> _taskAttachments = [];
+    private List<PendingTaskAttachment> _pendingTaskAttachments = [];
     private int? _editingListId;
     private string _listDraft = string.Empty;
     private bool _showShareModal;
@@ -435,6 +510,7 @@
     private string _shareTitle = string.Empty;
     private bool _shareAll;
     private List<string> _shareUsers = [];
+    private const long MaxAttachmentBytes = 50L * 1024L * 1024L;
 
     private string CurrentUser => AppUserSession.GetCurrentUserName(Environment.UserName).Trim();
     private int DefaultListId => _page.Listas.FirstOrDefault(x => x.EsDefault)?.IdLista ?? _page.Listas.FirstOrDefault()?.IdLista ?? 0;
@@ -477,6 +553,12 @@
 
     protected override async Task OnInitializedAsync()
         => await LoadAsync();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_showTaskModal)
+            await Js.InvokeVoidAsync("alfaCoreInterfacesUpload.bindPasteDrop", "#tareas-attachments-dropzone", "#tareas-attachments-picker");
+    }
 
     private async Task LoadAsync()
     {
@@ -641,12 +723,16 @@
             UsuariosCompartidos = [],
             Estado = TareaEstadoKeys.Pendiente
         };
+        _taskAttachments = [];
+        _pendingTaskAttachments = [];
+        _loadingTaskAttachments = false;
+        _attachmentPickerVersion++;
         _taskCanShare = true;
         _taskSharePanelOpen = false;
         _showTaskModal = true;
     }
 
-    private void OpenEditTask(TareaItemDto tarea)
+    private async Task OpenEditTaskAsync(TareaItemDto tarea)
     {
         _taskDraft = new TareaSaveRequest
         {
@@ -661,14 +747,26 @@
             UsuariosCompartidos = tarea.UsuariosCompartidos.ToList(),
             UsuarioAccion = CurrentUser
         };
+        _taskAttachments = [];
+        _pendingTaskAttachments = [];
+        _attachmentPickerVersion++;
         _taskCanShare = tarea.EsPropia;
         _taskSharePanelOpen = false;
         _showTaskModal = true;
+        _loadingTaskAttachments = true;
+        var result = await UiOps.RunAsync(() => TareasSvc.GetTaskAttachmentsAsync(tarea.IdTarea, CurrentUser), "No se pudieron cargar los adjuntos.");
+        if (result.Success && result.Value is not null)
+            _taskAttachments = result.Value.ToList();
+        else
+            _feedback = result.Feedback;
+        _loadingTaskAttachments = false;
     }
 
     private void CloseTaskModal()
     {
         _taskSharePanelOpen = false;
+        _pendingTaskAttachments = [];
+        _taskAttachments = [];
         _showTaskModal = false;
     }
 
@@ -697,20 +795,144 @@
     private async Task SaveTaskAsync()
     {
         _taskDraft.UsuarioAccion = CurrentUser;
+        _savingTask = true;
         var result = await UiOps.RunAsync(async () =>
         {
-            await TareasSvc.SaveTaskAsync(_taskDraft);
+            var idTarea = await TareasSvc.SaveTaskAsync(_taskDraft);
+            if (_pendingTaskAttachments.Count > 0)
+            {
+                await TareasSvc.AddTaskAttachmentsAsync(
+                    idTarea,
+                    _pendingTaskAttachments.Select(x => x.ToUpload()).ToList(),
+                    CurrentUser);
+            }
             return true;
         }, "No se pudo guardar la tarea.");
+        _savingTask = false;
 
         _feedback = result.Feedback;
         if (result.Success)
         {
             _showTaskModal = false;
+            _taskAttachments = [];
+            _pendingTaskAttachments = [];
             _quickTaskTitle = string.Empty;
             await LoadAsync();
         }
     }
+
+    private async Task HandleTaskFilesSelectedAsync(InputFileChangeEventArgs args)
+    {
+        var added = 0;
+        foreach (var file in args.GetMultipleFiles())
+        {
+            if (!IsAllowedAttachment(file.ContentType))
+            {
+                _feedback = BuildWarning("Adjunto no permitido", "Solo se permiten imágenes, audios y videos.");
+                continue;
+            }
+
+            if (file.Size > MaxAttachmentBytes)
+            {
+                _feedback = BuildWarning("Adjunto demasiado grande", "Cada adjunto puede pesar como máximo 50 MB.");
+                continue;
+            }
+
+            try
+            {
+                await using var source = file.OpenReadStream(MaxAttachmentBytes);
+                using var buffer = new MemoryStream();
+                await source.CopyToAsync(buffer);
+                var bytes = buffer.ToArray();
+                _pendingTaskAttachments.Add(new PendingTaskAttachment
+                {
+                    Id = Guid.NewGuid().ToString("N"),
+                    NombreArchivo = file.Name,
+                    MimeType = file.ContentType,
+                    TamanoBytes = file.Size,
+                    Contenido = bytes,
+                    ContenidoBase64 = Convert.ToBase64String(bytes)
+                });
+                added++;
+            }
+            catch
+            {
+                _feedback = BuildWarning("No se pudo adjuntar", $"No se pudo leer {file.Name}.");
+            }
+        }
+
+        if (added > 0)
+            _feedback = AppUiMessage.Success("Adjuntos listos", $"{added} adjunto(s) se guardarán con la tarea.");
+        _attachmentPickerVersion++;
+    }
+
+    private async Task DeletePersistedAttachmentAsync(long idAdjunto)
+    {
+        var result = await UiOps.RunAsync(async () =>
+        {
+            await TareasSvc.DeleteTaskAttachmentAsync(idAdjunto, CurrentUser);
+            return true;
+        }, "No se pudo quitar el adjunto.");
+
+        _feedback = result.Feedback;
+        if (result.Success)
+        {
+            _taskAttachments.RemoveAll(x => x.IdAdjunto == idAdjunto);
+            await LoadAsync();
+        }
+    }
+
+    private void RemovePendingAttachment(string id)
+        => _pendingTaskAttachments.RemoveAll(x => x.Id == id);
+
+    private static bool IsAllowedAttachment(string? mimeType)
+        => !string.IsNullOrWhiteSpace(mimeType)
+           && (mimeType.StartsWith("image/", StringComparison.OrdinalIgnoreCase)
+               || mimeType.StartsWith("audio/", StringComparison.OrdinalIgnoreCase)
+               || mimeType.StartsWith("video/", StringComparison.OrdinalIgnoreCase));
+
+    private static string GetAttachmentDataUrl(TareaAdjuntoDto adjunto)
+        => $"data:{adjunto.MimeType};base64,{adjunto.ContenidoBase64}";
+
+    private static string GetAttachmentDataUrl(PendingTaskAttachment adjunto)
+        => $"data:{adjunto.MimeType};base64,{adjunto.ContenidoBase64}";
+
+    private static RenderFragment RenderAttachmentPreview(string mimeType, string dataUrl, string label) => builder =>
+    {
+        if (mimeType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+        {
+            builder.OpenElement(0, "img");
+            builder.AddAttribute(1, "src", dataUrl);
+            builder.AddAttribute(2, "alt", label);
+            builder.CloseElement();
+            return;
+        }
+
+        if (mimeType.StartsWith("audio/", StringComparison.OrdinalIgnoreCase))
+        {
+            builder.OpenElement(3, "audio");
+            builder.AddAttribute(4, "controls", true);
+            builder.AddAttribute(5, "src", dataUrl);
+            builder.CloseElement();
+            return;
+        }
+
+        if (mimeType.StartsWith("video/", StringComparison.OrdinalIgnoreCase))
+        {
+            builder.OpenElement(6, "video");
+            builder.AddAttribute(7, "controls", true);
+            builder.AddAttribute(8, "src", dataUrl);
+            builder.CloseElement();
+            return;
+        }
+
+        builder.OpenElement(9, "div");
+        builder.AddAttribute(10, "class", "tareas-attachment-card__fallback");
+        builder.OpenElement(11, "i");
+        builder.AddAttribute(12, "class", "bi bi-file-earmark-play");
+        builder.CloseElement();
+        builder.CloseElement();
+    };
 
     private async Task HandleQuickTaskKeyDown(KeyboardEventArgs args)
     {
@@ -847,6 +1069,21 @@
     private static string FormatDateTime(DateTime? value)
         => value?.ToString("dd/MM HH:mm") ?? "-";
 
+    private static string FormatSize(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024d:0.#} KB";
+        return $"{bytes / 1024d / 1024d:0.#} MB";
+    }
+
+    private static AppUiMessage BuildWarning(string title, string message)
+        => new()
+        {
+            Severity = AppUiFeedbackSeverity.Warning,
+            Title = title,
+            Message = message
+        };
+
     private static string GetSharingSummary(bool sharedWithAll, IReadOnlyList<string> users)
         => sharedWithAll
             ? "Compartida con todos"
@@ -856,4 +1093,23 @@
 
     private static string GetFeedbackClass(AppUiMessage message)
         => message.Severity == AppUiFeedbackSeverity.Success ? "editor-msg--success" : message.Severity == AppUiFeedbackSeverity.Warning ? "editor-msg--warning" : "editor-msg--error";
+
+    private sealed class PendingTaskAttachment
+    {
+        public string Id { get; set; } = string.Empty;
+        public string NombreArchivo { get; set; } = string.Empty;
+        public string MimeType { get; set; } = string.Empty;
+        public long TamanoBytes { get; set; }
+        public byte[] Contenido { get; set; } = [];
+        public string ContenidoBase64 { get; set; } = string.Empty;
+
+        public TareaAdjuntoUploadDto ToUpload()
+            => new()
+            {
+                NombreArchivo = NombreArchivo,
+                MimeType = MimeType,
+                TamanoBytes = TamanoBytes,
+                Contenido = Contenido
+            };
+    }
 }

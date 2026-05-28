@@ -45,9 +45,30 @@ public sealed class TareaItemDto
     public bool EsPropia { get; set; }
     public bool CompartidaConTodos { get; set; }
     public List<string> UsuariosCompartidos { get; set; } = [];
+    public int Adjuntos { get; set; }
     public DateTime FechaHoraAlta { get; set; }
     public DateTime? FechaHoraModificacion { get; set; }
     public DateTime? FechaHoraCompletada { get; set; }
+}
+
+public sealed class TareaAdjuntoDto
+{
+    public long IdAdjunto { get; set; }
+    public long IdTarea { get; set; }
+    public string NombreArchivo { get; set; } = string.Empty;
+    public string MimeType { get; set; } = string.Empty;
+    public long TamanoBytes { get; set; }
+    public string ContenidoBase64 { get; set; } = string.Empty;
+    public string UsuarioAlta { get; set; } = string.Empty;
+    public DateTime FechaHoraAlta { get; set; }
+}
+
+public sealed class TareaAdjuntoUploadDto
+{
+    public string NombreArchivo { get; set; } = string.Empty;
+    public string MimeType { get; set; } = string.Empty;
+    public long TamanoBytes { get; set; }
+    public byte[] Contenido { get; set; } = [];
 }
 
 public sealed class TareaNotaRapidaDto

@@ -8,6 +8,9 @@ public interface ITareasService
     Task<int> SaveListAsync(TareaListaSaveRequest request, CancellationToken ct = default);
     Task DeleteListAsync(int idLista, string usuarioAccion, CancellationToken ct = default);
     Task<long> SaveTaskAsync(TareaSaveRequest request, CancellationToken ct = default);
+    Task<IReadOnlyList<TareaAdjuntoDto>> GetTaskAttachmentsAsync(long idTarea, string usuarioAccion, CancellationToken ct = default);
+    Task AddTaskAttachmentsAsync(long idTarea, IReadOnlyList<TareaAdjuntoUploadDto> adjuntos, string usuarioAccion, CancellationToken ct = default);
+    Task DeleteTaskAttachmentAsync(long idAdjunto, string usuarioAccion, CancellationToken ct = default);
     Task ChangeTaskStateAsync(long idTarea, string estado, string usuarioAccion, CancellationToken ct = default);
     Task DuplicateTaskAsync(long idTarea, string usuarioAccion, CancellationToken ct = default);
     Task DeleteTaskAsync(long idTarea, string usuarioAccion, CancellationToken ct = default);

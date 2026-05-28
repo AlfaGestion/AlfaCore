@@ -11,6 +11,8 @@ public sealed class TareasService(
 {
     private const string ModuleName = "Tareas";
     private const string SistemaFijo = "CN000PR";
+    private const long MaxAttachmentBytes = 50L * 1024L * 1024L;
+    private static readonly string[] AllowedAttachmentPrefixes = ["image/", "audio/", "video/"];
 
     private string ConnectionString => sessionService.GetConnectionString().Length > 0
         ? sessionService.GetConnectionString()
@@ -26,6 +28,19 @@ public sealed class TareasService(
             await EnsureDefaultListAsync(cn, user, token);
             var userActiveFilter = await HasUsuarioActivoColumnAsync(cn, token)
                 ? "AND ISNULL(Activo, 1) = 1"
+                : string.Empty;
+            var hasAttachmentsTable = await HasTaskAttachmentsTableAsync(cn, token);
+            var attachmentCountSelect = hasAttachmentsTable ? "ISNULL(ta.Cantidad, 0)" : "0";
+            var attachmentCountApply = hasAttachmentsTable
+                ? """
+                OUTER APPLY
+                (
+                    SELECT COUNT(1) AS Cantidad
+                    FROM dbo.ALFACORE_TAREAS_ADJUNTOS a
+                    WHERE a.IdTarea = t.IdTarea
+                      AND ISNULL(a.Activa, 1) = 1
+                ) ta
+                """
                 : string.Empty;
 
             var sql = $"""
@@ -118,12 +133,14 @@ public sealed class TareasService(
                     ISNULL(t.Estado, 'PENDIENTE') AS Estado,
                     ISNULL(t.UsuarioAlta, '') AS UsuarioAlta,
                     CONVERT(bit, CASE WHEN UPPER(LTRIM(RTRIM(ISNULL(t.UsuarioAlta, '')))) = UPPER(LTRIM(RTRIM(@Usuario))) THEN 1 ELSE 0 END) AS EsPropia,
+                    {attachmentCountSelect} AS Adjuntos,
                     t.FechaHoraAlta,
                     t.FechaHoraModificacion,
                     t.FechaHoraCompletada
                 FROM dbo.ALFACORE_TAREAS t
                 INNER JOIN dbo.ALFACORE_TAREAS_LISTAS l ON l.IdLista = t.IdLista
                 INNER JOIN TareasVisibles tv ON tv.IdTarea = t.IdTarea
+                {attachmentCountApply}
                 WHERE ISNULL(t.Activa, 1) = 1
                   AND ISNULL(l.Activa, 1) = 1
                   AND t.Estado <> 'COMPLETADA'
@@ -187,12 +204,14 @@ public sealed class TareasService(
                     ISNULL(t.Estado, 'PENDIENTE') AS Estado,
                     ISNULL(t.UsuarioAlta, '') AS UsuarioAlta,
                     CONVERT(bit, CASE WHEN UPPER(LTRIM(RTRIM(ISNULL(t.UsuarioAlta, '')))) = UPPER(LTRIM(RTRIM(@Usuario))) THEN 1 ELSE 0 END) AS EsPropia,
+                    {attachmentCountSelect} AS Adjuntos,
                     t.FechaHoraAlta,
                     t.FechaHoraModificacion,
                     t.FechaHoraCompletada
                 FROM dbo.ALFACORE_TAREAS t
                 INNER JOIN dbo.ALFACORE_TAREAS_LISTAS l ON l.IdLista = t.IdLista
                 INNER JOIN TareasVisibles tv ON tv.IdTarea = t.IdTarea
+                {attachmentCountApply}
                 WHERE ISNULL(t.Activa, 1) = 1
                   AND ISNULL(l.Activa, 1) = 1
                   AND t.Estado = 'COMPLETADA'
@@ -438,6 +457,136 @@ public sealed class TareasService(
             return newId;
         }, "No se pudo guardar la tarea.", ct);
 
+    public Task<IReadOnlyList<TareaAdjuntoDto>> GetTaskAttachmentsAsync(long idTarea, string usuarioAccion, CancellationToken ct = default)
+        => ExecuteLoggedAsync<IReadOnlyList<TareaAdjuntoDto>>(ModuleName, "GetTaskAttachments", async token =>
+        {
+            var user = NormalizeUser(usuarioAccion);
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            if (!await HasTaskAttachmentsTableAsync(cn, token))
+                return Array.Empty<TareaAdjuntoDto>();
+            if (!await CanAccessTaskAsync(cn, idTarea, user, token))
+                throw new InvalidOperationException("No tenés acceso a la tarea seleccionada.");
+
+            var rows = await cn.QueryAsync<TareaAdjuntoRecord>(new CommandDefinition(
+                """
+                SELECT
+                    IdAdjunto,
+                    IdTarea,
+                    ISNULL(NombreArchivo, '') AS NombreArchivo,
+                    ISNULL(MimeType, '') AS MimeType,
+                    ISNULL(TamanoBytes, 0) AS TamanoBytes,
+                    Contenido,
+                    ISNULL(UsuarioAlta, '') AS UsuarioAlta,
+                    FechaHoraAlta
+                FROM dbo.ALFACORE_TAREAS_ADJUNTOS
+                WHERE IdTarea = @IdTarea
+                  AND ISNULL(Activa, 1) = 1
+                ORDER BY FechaHoraAlta, IdAdjunto;
+                """,
+                new { IdTarea = idTarea },
+                cancellationToken: token));
+
+            return rows
+                .Select(x => new TareaAdjuntoDto
+                {
+                    IdAdjunto = x.IdAdjunto,
+                    IdTarea = x.IdTarea,
+                    NombreArchivo = x.NombreArchivo,
+                    MimeType = x.MimeType,
+                    TamanoBytes = x.TamanoBytes,
+                    ContenidoBase64 = Convert.ToBase64String(x.Contenido),
+                    UsuarioAlta = x.UsuarioAlta,
+                    FechaHoraAlta = x.FechaHoraAlta
+                })
+                .ToList();
+        }, "No se pudieron cargar los adjuntos de la tarea.", ct);
+
+    public Task AddTaskAttachmentsAsync(long idTarea, IReadOnlyList<TareaAdjuntoUploadDto> adjuntos, string usuarioAccion, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "AddTaskAttachments", async token =>
+        {
+            if (adjuntos.Count == 0)
+                return;
+
+            var user = NormalizeUser(usuarioAccion);
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await EnsureTaskAttachmentsReadyAsync(cn, token);
+            if (!await CanAccessTaskAsync(cn, idTarea, user, token))
+                throw new InvalidOperationException("No tenés acceso a la tarea seleccionada.");
+
+            foreach (var adjunto in adjuntos)
+                ValidateAttachment(adjunto);
+
+            await using var tx = await cn.BeginTransactionAsync(token);
+            try
+            {
+                foreach (var adjunto in adjuntos)
+                {
+                    await cn.ExecuteAsync(new CommandDefinition(
+                        """
+                        INSERT INTO dbo.ALFACORE_TAREAS_ADJUNTOS
+                            (IdTarea, NombreArchivo, MimeType, TamanoBytes, Contenido, UsuarioAlta, FechaHoraAlta, Activa)
+                        VALUES
+                            (@IdTarea, @NombreArchivo, @MimeType, @TamanoBytes, @Contenido, @UsuarioAlta, GETDATE(), 1);
+                        """,
+                        new
+                        {
+                            IdTarea = idTarea,
+                            NombreArchivo = Truncate(adjunto.NombreArchivo, 255),
+                            MimeType = Truncate(adjunto.MimeType, 100),
+                            adjunto.TamanoBytes,
+                            adjunto.Contenido,
+                            UsuarioAlta = user
+                        },
+                        transaction: (SqlTransaction)tx,
+                        cancellationToken: token));
+                }
+
+                await tx.CommitAsync(token);
+            }
+            catch
+            {
+                await tx.RollbackAsync(token);
+                throw;
+            }
+        }, "No se pudieron agregar los adjuntos a la tarea.", ct);
+
+    public Task DeleteTaskAttachmentAsync(long idAdjunto, string usuarioAccion, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "DeleteTaskAttachment", async token =>
+        {
+            var user = NormalizeUser(usuarioAccion);
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await EnsureTaskAttachmentsReadyAsync(cn, token);
+
+            var idTarea = await cn.ExecuteScalarAsync<long?>(new CommandDefinition(
+                """
+                SELECT IdTarea
+                FROM dbo.ALFACORE_TAREAS_ADJUNTOS
+                WHERE IdAdjunto = @IdAdjunto
+                  AND ISNULL(Activa, 1) = 1;
+                """,
+                new { IdAdjunto = idAdjunto },
+                cancellationToken: token));
+
+            if (idTarea is null)
+                return;
+            if (!await CanAccessTaskAsync(cn, idTarea.Value, user, token))
+                throw new InvalidOperationException("No tenés acceso a la tarea seleccionada.");
+
+            await cn.ExecuteAsync(new CommandDefinition(
+                """
+                UPDATE dbo.ALFACORE_TAREAS_ADJUNTOS
+                SET Activa = 0,
+                    FechaHoraModificacion = GETDATE(),
+                    UsuarioModificacion = @Usuario
+                WHERE IdAdjunto = @IdAdjunto;
+                """,
+                new { IdAdjunto = idAdjunto, Usuario = user },
+                cancellationToken: token));
+        }, "No se pudo eliminar el adjunto de la tarea.", ct);
+
     public Task ChangeTaskStateAsync(long idTarea, string estado, string usuarioAccion, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "ChangeTaskState", async token =>
         {
@@ -644,6 +793,11 @@ public sealed class TareasService(
     private static async Task<bool> HasUsuarioActivoColumnAsync(SqlConnection cn, CancellationToken ct)
         => await cn.ExecuteScalarAsync<int>(new CommandDefinition(
             "SELECT CASE WHEN COL_LENGTH('dbo.TA_USUARIOS', 'Activo') IS NULL THEN 0 ELSE 1 END;",
+            cancellationToken: ct)) == 1;
+
+    private static async Task<bool> HasTaskAttachmentsTableAsync(SqlConnection cn, CancellationToken ct)
+        => await cn.ExecuteScalarAsync<int>(new CommandDefinition(
+            "SELECT CASE WHEN OBJECT_ID(N'dbo.ALFACORE_TAREAS_ADJUNTOS', N'U') IS NULL THEN 0 ELSE 1 END;",
             cancellationToken: ct)) == 1;
 
     private static void ApplySharing(TareasPageDto page, IReadOnlyList<TareaShareRow> shares)
@@ -910,6 +1064,30 @@ public sealed class TareasService(
             throw new InvalidOperationException("La base activa todavía no tiene aplicada la actualización para compartir tareas individuales. Ejecutá Actualizaciones y volvé a guardar la tarea.");
     }
 
+    private static async Task EnsureTaskAttachmentsReadyAsync(SqlConnection cn, CancellationToken ct)
+    {
+        if (!await HasTaskAttachmentsTableAsync(cn, ct))
+            throw new InvalidOperationException("La base activa todavía no tiene aplicada la actualización para adjuntos de tareas. Ejecutá Actualizaciones y volvé a guardar la tarea.");
+    }
+
+    private static void ValidateAttachment(TareaAdjuntoUploadDto adjunto)
+    {
+        if (adjunto.Contenido.Length == 0 || adjunto.TamanoBytes <= 0)
+            throw new InvalidOperationException("Uno de los adjuntos está vacío.");
+        if (adjunto.TamanoBytes > MaxAttachmentBytes || adjunto.Contenido.LongLength > MaxAttachmentBytes)
+            throw new InvalidOperationException("Uno de los adjuntos supera el máximo permitido de 50 MB.");
+
+        var mimeType = (adjunto.MimeType ?? string.Empty).Trim();
+        if (!AllowedAttachmentPrefixes.Any(prefix => mimeType.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException("Solo se permiten imágenes, audios y videos en tareas.");
+    }
+
+    private static string Truncate(string? value, int maxLength)
+    {
+        var clean = string.IsNullOrWhiteSpace(value) ? "adjunto" : value.Trim();
+        return clean.Length <= maxLength ? clean : clean[..maxLength];
+    }
+
     private async Task<T> ExecuteLoggedAsync<T>(
         string module,
         string action,
@@ -972,5 +1150,17 @@ public sealed class TareasService(
         public long IdObjeto { get; set; }
         public bool EsPublico { get; set; }
         public string UsuarioDestino { get; set; } = string.Empty;
+    }
+
+    private sealed class TareaAdjuntoRecord
+    {
+        public long IdAdjunto { get; set; }
+        public long IdTarea { get; set; }
+        public string NombreArchivo { get; set; } = string.Empty;
+        public string MimeType { get; set; } = string.Empty;
+        public long TamanoBytes { get; set; }
+        public byte[] Contenido { get; set; } = [];
+        public string UsuarioAlta { get; set; } = string.Empty;
+        public DateTime FechaHoraAlta { get; set; }
     }
 }
