@@ -9842,12 +9842,14 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
 
 .tareas-modal {
     position: fixed;
-    inset: 10vh auto auto 50%;
+    inset: 5vh auto auto 50%;
     z-index: 1120;
-    width: min(560px, calc(100vw - 2rem));
+    width: min(760px, calc(100vw - 2rem));
+    max-height: 90vh;
+    overflow-y: auto;
     transform: translateX(-50%);
     border-radius: 8px;
-    padding: 1.15rem;
+    padding: 1.55rem;
 }
 
 .tareas-modal__head,
@@ -9859,9 +9861,9 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
 }
 
 .tareas-title-input {
-    min-height: 42px;
+    min-height: 50px;
     border-bottom: 2px solid rgba(147, 197, 253, .65);
-    font-size: 1.25rem;
+    font-size: 1.12rem;
 }
 
 .tareas-form-grid {
@@ -9887,7 +9889,7 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
 }
 
 .tareas-description textarea {
-    min-height: 110px;
+    min-height: 150px;
     margin-top: .25rem;
     resize: vertical;
 }
@@ -17280,11 +17282,11 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
 .shell__content .tareas-modal {
     border-radius: 16px;
     background: #0b1728;
-    padding: 1.35rem;
+    padding: 1.65rem;
 }
 
 .shell__content .tareas-modal__head {
-    margin-bottom: 0.95rem;
+    margin-bottom: 1.2rem;
 }
 
 .shell__content .tareas-title-input {
@@ -17293,8 +17295,8 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
 }
 
 .shell__content .tareas-form-grid {
-    gap: 1.35rem 1rem;
-    margin: 1.25rem 0 1.35rem;
+    gap: 1.15rem 1.05rem;
+    margin: 1.35rem 0 1.4rem;
 }
 
 .shell__content .tareas-form-grid label,
@@ -17309,7 +17311,7 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
 }
 
 .shell__content .tareas-description textarea {
-    min-height: 128px;
+    min-height: 160px;
     padding: 0.75rem;
 }
 

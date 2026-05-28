@@ -1,35 +1,23 @@
+function attachFiles(input, files) {
+    const supported = Array.from(files || []).filter(isSupported);
+    if (!supported.length) return false;
+
+    const transfer = new DataTransfer();
+    for (const file of supported) {
+        transfer.items.add(file);
+    }
+
+    input.files = transfer.files;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+}
+
 function isSupported(file) {
     return file && (
         file.type.startsWith('image/')
         || file.type.startsWith('audio/')
         || file.type.startsWith('video/')
     );
-}
-
-function fileToPayload(file) {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onerror = () => reject(reader.error || new Error('No se pudo leer el archivo.'));
-        reader.onload = () => {
-            const result = String(reader.result || '');
-            const comma = result.indexOf(',');
-            resolve({
-                nombreArchivo: file.name || `pegado-${Date.now()}`,
-                mimeType: file.type || 'application/octet-stream',
-                contenidoBase64: comma >= 0 ? result.slice(comma + 1) : result
-            });
-        };
-        reader.readAsDataURL(file);
-    });
-}
-
-async function sendFiles(dotNetRef, files) {
-    const supported = Array.from(files || []).filter(isSupported);
-    if (!supported.length) return false;
-
-    const payload = await Promise.all(supported.map(fileToPayload));
-    await dotNetRef.invokeMethodAsync('ReceiveBrowserAttachmentsAsync', payload);
-    return true;
 }
 
 function filesFromPaste(event) {
@@ -39,23 +27,25 @@ function filesFromPaste(event) {
         .filter(Boolean);
 }
 
-export function bindTareasAttachments(dropzoneId, dotNetRef) {
+export function bindTareasAttachments(dropzoneId, inputId) {
     const dropzone = document.getElementById(dropzoneId);
-    if (!dropzone) {
+    const input = document.getElementById(inputId);
+    if (!dropzone || !input) {
         return { dispose() { } };
     }
 
-    const onPaste = async event => {
+    const onPaste = event => {
         const files = filesFromPaste(event);
         if (!files.length) return;
-        event.preventDefault();
-        await sendFiles(dotNetRef, files);
+        if (attachFiles(input, files)) {
+            event.preventDefault();
+        }
     };
 
-    const onDrop = async event => {
+    const onDrop = event => {
         event.preventDefault();
         dropzone.classList.remove('is-file-dragging');
-        await sendFiles(dotNetRef, event.dataTransfer?.files);
+        attachFiles(input, event.dataTransfer?.files);
     };
 
     const onDragEnter = event => {

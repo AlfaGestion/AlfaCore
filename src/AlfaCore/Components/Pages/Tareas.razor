@@ -523,7 +523,6 @@
     private List<PendingTaskAttachment> _pendingTaskAttachments = [];
     private IJSObjectReference? _attachmentsModule;
     private IJSObjectReference? _attachmentsBinding;
-    private DotNetObjectReference<Tareas>? _attachmentsDotNetRef;
     private int? _editingListId;
     private string _listDraft = string.Empty;
     private bool _showShareModal;
@@ -889,64 +888,15 @@
         _attachmentPickerVersion++;
     }
 
-    [JSInvokable]
-    public Task ReceiveBrowserAttachmentsAsync(List<TareaBrowserAttachment> files)
-    {
-        var added = 0;
-        foreach (var file in files)
-        {
-            if (!IsAllowedAttachment(file.MimeType))
-            {
-                _feedback = BuildWarning("Adjunto no permitido", "Solo se permiten imagenes, audios y videos.");
-                continue;
-            }
-
-            byte[] bytes;
-            try
-            {
-                bytes = Convert.FromBase64String(file.ContenidoBase64);
-            }
-            catch
-            {
-                _feedback = BuildWarning("No se pudo adjuntar", $"No se pudo leer {file.NombreArchivo}.");
-                continue;
-            }
-
-            if (bytes.LongLength == 0 || bytes.LongLength > MaxAttachmentBytes)
-            {
-                _feedback = BuildWarning("Adjunto demasiado grande", "Cada adjunto puede pesar como maximo 50 MB.");
-                continue;
-            }
-
-            _pendingTaskAttachments.Add(new PendingTaskAttachment
-            {
-                Id = Guid.NewGuid().ToString("N"),
-                NombreArchivo = string.IsNullOrWhiteSpace(file.NombreArchivo) ? "pegado" : file.NombreArchivo,
-                MimeType = file.MimeType,
-                TamanoBytes = bytes.LongLength,
-                Contenido = bytes,
-                ContenidoBase64 = file.ContenidoBase64
-            });
-            added++;
-        }
-
-        if (added > 0)
-            _feedback = AppUiMessage.Success("Adjuntos listos", $"{added} adjunto(s) se guardaran con la tarea.");
-
-        StateHasChanged();
-        return Task.CompletedTask;
-    }
-
     private async Task BindTaskAttachmentPasteAsync()
     {
         _attachmentsModule ??= await Js.InvokeAsync<IJSObjectReference>("import", "./js/tareas-attachments.js");
-        _attachmentsDotNetRef ??= DotNetObjectReference.Create(this);
         if (_attachmentsBinding is not null)
             await _attachmentsBinding.InvokeVoidAsync("dispose");
         _attachmentsBinding = await _attachmentsModule.InvokeAsync<IJSObjectReference>(
             "bindTareasAttachments",
             "tareas-attachments-dropzone",
-            _attachmentsDotNetRef);
+            "tareas-attachments-picker");
         _attachmentsPasteBound = true;
     }
 
@@ -1204,7 +1154,6 @@
         await DisposeTaskAttachmentBindingAsync();
         if (_attachmentsModule is not null)
             await _attachmentsModule.DisposeAsync();
-        _attachmentsDotNetRef?.Dispose();
     }
 
     private static string GetSharingSummary(bool sharedWithAll, IReadOnlyList<string> users)
@@ -1236,10 +1185,4 @@
             };
     }
 
-    public sealed class TareaBrowserAttachment
-    {
-        public string NombreArchivo { get; set; } = string.Empty;
-        public string MimeType { get; set; } = string.Empty;
-        public string ContenidoBase64 { get; set; } = string.Empty;
-    }
 }
