@@ -151,9 +151,8 @@
         }
 
         const rect = activeWrapper.getBoundingClientRect();
-        const horizontalPadding = 12;
-        const left = Math.max(horizontalPadding, rect.left);
-        const maxWidth = Math.max(0, window.innerWidth - left - horizontalPadding);
+        const left = Math.max(0, rect.left);
+        const maxWidth = Math.max(0, window.innerWidth - left);
         const width = Math.min(rect.width, maxWidth);
 
         if (width <= 0) {

@@ -78,7 +78,7 @@
                     </div>
                     <div class="field field--wide">
                         <label>Prompt adicional para IA (opcional)</label>
-                        <textarea class="contactos-observaciones"
+                        <textarea class="contactos-observaciones interfaces-prompt-editor"
                                   @bind="_nuevo.PromptIaAdicional"
                                   disabled="@_saving"
                                   placeholder="Ej: esta factura incluye bonificación en pie y el proveedor usa códigos propios."></textarea>
@@ -283,7 +283,7 @@
                     </div>
                     <div class="field">
                         <label>Prompt adicional para IA (opcional)</label>
-                        <textarea class="contactos-observaciones"
+                        <textarea class="contactos-observaciones interfaces-prompt-editor"
                                   @bind="_editForm.PromptIaAdicional"
                                   disabled="@IsSavingDetalle"
                                   placeholder="Contexto extra para ayudar al lector automático en este comprobante."></textarea>
@@ -417,11 +417,11 @@
         <div class="modal-overlay" @onclick="CerrarPreviewPendiente">
             <article class="modal-card interfaces-pending-preview" @onclick:stopPropagation="true">
                 <header class="interfaces-pending-preview__header">
-                    <div>
-                        <strong>@_previewPendingFile.NombreArchivo</strong>
+                    <div class="interfaces-pending-preview__meta">
+                        <strong title="@_previewPendingFile.NombreArchivo">@_previewPendingFile.NombreArchivo</strong>
                         <span>@FormatSize(_previewPendingFile.TamanoBytes)</span>
                     </div>
-                    <div class="actions">
+                    <div class="interfaces-pending-preview__actions">
                         <button type="button" class="btn btn--ghost btn--sm" @onclick="() => AjustarZoomPreview(-0.15m)">
                             <i class="bi bi-zoom-out"></i>
                         </button>

@@ -1,4 +1,4 @@
-@page "/interfaces"
+﻿@page "/interfaces"
 @using AlfaCore.Models
 @inject AlfaCore.Services.IInterfacesService InterfacesSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
@@ -56,57 +56,45 @@
         </button>
     </div>
 
-    <section class="panel-card @GetMobileFiltersSectionClass()">
-        <div class="panel-card__header">
-            <div>
-                <h3 class="panel-card__title">Filtros</h3>
-                <p class="panel-card__subtitle">La búsqueda muestra primero los documentos más recientes y permite filtrar por rango, estado, tipo y texto.</p>
-            </div>
-        </div>
-
-        <div class="filters-grid">
-            <div class="field">
-                <label>Desde</label>
-                <input type="date" @bind="_filtersDesde" />
-            </div>
-            <div class="field">
-                <label>Hasta</label>
-                <input type="date" @bind="_filtersHasta" />
-            </div>
-            <div class="field">
-                <label>Estado</label>
-                <select @bind="_filters.IdEstado">
-                    <option value="">Todos</option>
-                    @foreach (var item in _states)
-                    {
-                        <option value="@item.IdEstado">@item.Descripcion</option>
-                    }
-                </select>
-            </div>
-            <div class="field">
-                <label>Tipo</label>
-                <select @bind="_filters.IdTipoDocumento">
-                    <option value="">Todos</option>
-                    @foreach (var item in _documentTypes)
-                    {
-                        <option value="@item.IdTipoDocumento">@item.Descripcion</option>
-                    }
-                </select>
-            </div>
-            <div class="field field--wide">
-                <label>Buscar</label>
+    <section class="panel-card smart-search-card interfaces-sticky-filters @GetMobileFiltersSectionClass()" @onclick:stopPropagation>
+        <div class="smart-search">
+            <div class="smart-search__bar">
+                <i class="bi bi-search"></i>
                 <input type="search"
-                       placeholder="Observación, usuario o número interno..."
+                       placeholder="Buscar por observación, usuario o número interno..."
                        @bind="_filters.Texto"
-                       @bind:event="oninput" />
+                       @bind:event="oninput"
+                       @bind:after="OnFiltersChangedAsync" />
             </div>
-            <div class="actions">
-                <button type="button" class="btn btn--primary" @onclick="AplicarFiltrosAsync" disabled="@_loadingList">
-                    <i class="bi bi-funnel"></i> Aplicar
-                </button>
-                <button type="button" class="btn btn--ghost" @onclick="LimpiarFiltros" disabled="@_loadingList">
-                    <i class="bi bi-eraser"></i> Limpiar
-                </button>
+            <div class="smart-search__panel interfaces-filters-panel-grid">
+                <div class="smart-search__inline">
+                    <label>Desde</label>
+                    <input type="date" @bind="_filtersDesde" @bind:after="OnFiltersChangedAsync" />
+                </div>
+                <div class="smart-search__inline">
+                    <label>Hasta</label>
+                    <input type="date" @bind="_filtersHasta" @bind:after="OnFiltersChangedAsync" />
+                </div>
+                <div class="smart-search__inline">
+                    <label>Estado</label>
+                    <select @bind="_filters.IdEstado" @bind:after="OnFiltersChangedAsync">
+                        <option value="">Todos</option>
+                        @foreach (var item in _states)
+                        {
+                            <option value="@item.IdEstado">@item.Descripcion</option>
+                        }
+                    </select>
+                </div>
+                <div class="smart-search__inline">
+                    <label>Tipo</label>
+                    <select @bind="_filters.IdTipoDocumento" @bind:after="OnFiltersChangedAsync">
+                        <option value="">Todos</option>
+                        @foreach (var item in _documentTypes)
+                        {
+                            <option value="@item.IdTipoDocumento">@item.Descripcion</option>
+                        }
+                    </select>
+                </div>
             </div>
         </div>
     </section>
@@ -168,7 +156,7 @@
         var groups = BuildGridGroups();
     }
 
-    <section class="panel-card">
+    <section class="panel-card interfaces-docs-panel">
         <div class="panel-card__header">
             <div>
                 <h3 class="panel-card__title">Documentos recibidos</h3>
@@ -241,6 +229,7 @@
                                 <span><i class="bi bi-clock"></i> @item.FechaHoraGrabacion.ToString("dd/MM/yyyy HH:mm")</span>
                                 <span><i class="bi bi-person"></i> @(string.IsNullOrWhiteSpace(item.UsuarioAlta) ? "—" : item.UsuarioAlta)</span>
                                 <span><i class="bi bi-paperclip"></i> @item.CantidadAdjuntos adj.</span>
+                                <span><i class="bi bi-activity"></i> @GetQueueProgressLabelForDocument(item.IdComprobanteRecibido)</span>
                                 @if (IsCompraDocument(item))
                                 {
                                     <span><i class="bi bi-building"></i> @GetDisplayValue(item.ProveedorNombre)</span>
@@ -262,6 +251,27 @@
                                         @onclick="() => VerDetalleLecturaAsync(item.IdComprobanteRecibido)">
                                     <i class="bi bi-card-list"></i> Detalle IA
                                 </button>
+                                @if (GetLatestQueueItemForDocument(item.IdComprobanteRecibido) is { } queueAction)
+                                {
+                                    @if (CanCancelQueueJob(queueAction))
+                                    {
+                                        <button type="button"
+                                                class="btn btn--ghost btn--sm"
+                                                @onclick="() => CancelarColaAsync(queueAction.Id)"
+                                                disabled="@_loadingQueue">
+                                            <i class="bi bi-stop-circle"></i> Cancelar
+                                        </button>
+                                    }
+                                    @if (CanRetryQueueJob(queueAction))
+                                    {
+                                        <button type="button"
+                                                class="btn btn--ghost btn--sm interfaces-table__edit"
+                                                @onclick="() => ReintentarColaAsync(queueAction.Id)"
+                                                disabled="@_loadingQueue">
+                                            <i class="bi bi-arrow-repeat"></i> Reintentar
+                                        </button>
+                                    }
+                                }
                                 <button type="button"
                                         class="btn btn--ghost btn--sm"
                                         @onclick="() => AbrirFicha(item.IdComprobanteRecibido)">
@@ -273,7 +283,7 @@
                 }
             </div>
 
-            <div class="usuarios-table-wrap" data-sticky-x-scroll="off">
+            <div class="usuarios-table-wrap interfaces-docs-table-wrap">
                 <table class="data-table usuarios-table">
                     <thead>
                         <tr>
@@ -288,6 +298,7 @@
                             {
                                 <th>@col.Label</th>
                             }
+                            <th>Progreso</th>
                             <th class="interfaces-table__actions">Acciones</th>
                         </tr>
                     </thead>
@@ -348,31 +359,86 @@
                                             }
                                         </td>
                                     }
-                                    <td class="interfaces-table__actions" @onclick:stopPropagation="true">
-                                        @if (CanProcessNowInboxItem(item))
-                                        {
-                                            <button type="button"
-                                                    class="btn btn--ghost btn--sm interfaces-table__edit"
-                                                    title="Ejecutar ahora la lectura automática"
-                                                    @onclick="() => ProcesarDocumentoAhoraAsync(item.IdComprobanteRecibido)">
-                                                <i class="bi bi-play-circle"></i>
-                                                <span>Procesar ahora</span>
-                                            </button>
+                                    <td>
+                                        @{
+                                            var queue = GetLatestQueueItemForDocument(item.IdComprobanteRecibido);
                                         }
+                                        @if (queue is null)
+                                        {
+                                            <span class="interfaces-status-pill interfaces-status-pill--info">Sin procesamiento</span>
+                                        }
+                                        else
+                                        {
+                                            <div class="interfaces-queue-progress">
+                                                <div class="interfaces-queue-progress__track">
+                                                    <div class="interfaces-queue-progress__fill @GetQueueProgressCssClass(queue)"
+                                                         style="width:@(GetQueueProgressPercent(queue))%">
+                                                    </div>
+                                                </div>
+                                                <span class="interfaces-queue-progress__label">@GetQueueProgressLabel(queue)</span>
+                                            </div>
+                                        }
+                                    </td>
+                                    <td class="interfaces-table__actions interfaces-table__actions--menu" @onclick:stopPropagation="true">
                                         <button type="button"
                                                 class="btn btn--ghost btn--sm"
-                                                title="Ver detalle de lectura automática"
-                                                @onclick="() => VerDetalleLecturaAsync(item.IdComprobanteRecibido)">
-                                            <i class="bi bi-card-list"></i>
-                                            <span>Detalle IA</span>
+                                                title="Acciones del documento"
+                                                @onclick="() => ToggleRowActions(item.IdComprobanteRecibido)">
+                                            <i class="bi bi-three-dots"></i>
+                                            <span>Acciones</span>
                                         </button>
-                                        <button type="button"
-                                                class="btn btn--ghost btn--sm interfaces-table__edit"
-                                                title="Editar documento"
-                                                @onclick="() => AbrirFicha(item.IdComprobanteRecibido)">
-                                            <i class="bi bi-pencil-square"></i>
-                                            <span>Editar</span>
-                                        </button>
+                                        @if (_openRowActionsId == item.IdComprobanteRecibido)
+                                        {
+                                            <div class="interfaces-row-actions-menu">
+                                                @if (CanProcessNowInboxItem(item))
+                                                {
+                                                    <button type="button"
+                                                            class="btn btn--ghost btn--sm interfaces-table__edit"
+                                                            title="Ejecutar ahora la lectura automática"
+                                                            @onclick="() => ProcesarDocumentoAhoraAsync(item.IdComprobanteRecibido)">
+                                                        <i class="bi bi-play-circle"></i>
+                                                        <span>Procesar ahora</span>
+                                                    </button>
+                                                }
+                                                <button type="button"
+                                                        class="btn btn--ghost btn--sm"
+                                                        title="Ver detalle de lectura automática"
+                                                        @onclick="() => VerDetalleLecturaAsync(item.IdComprobanteRecibido)">
+                                                    <i class="bi bi-card-list"></i>
+                                                    <span>Detalle IA</span>
+                                                </button>
+                                                @if (GetLatestQueueItemForDocument(item.IdComprobanteRecibido) is { } queueAction)
+                                                {
+                                                    @if (CanCancelQueueJob(queueAction))
+                                                    {
+                                                        <button type="button"
+                                                                class="btn btn--ghost btn--sm"
+                                                                @onclick="() => CancelarColaAsync(queueAction.Id)"
+                                                                disabled="@_loadingQueue">
+                                                            <i class="bi bi-stop-circle"></i>
+                                                            <span>@(queueAction.Estado == "PROCESANDO_LECTURA" ? "Cancelar" : "Quitar cola")</span>
+                                                        </button>
+                                                    }
+                                                    @if (CanRetryQueueJob(queueAction))
+                                                    {
+                                                        <button type="button"
+                                                                class="btn btn--ghost btn--sm interfaces-table__edit"
+                                                                @onclick="() => ReintentarColaAsync(queueAction.Id)"
+                                                                disabled="@_loadingQueue">
+                                                            <i class="bi bi-arrow-repeat"></i>
+                                                            <span>Reintentar</span>
+                                                        </button>
+                                                    }
+                                                }
+                                                <button type="button"
+                                                        class="btn btn--ghost btn--sm interfaces-table__edit"
+                                                        title="Editar documento"
+                                                        @onclick="() => AbrirFicha(item.IdComprobanteRecibido)">
+                                                    <i class="bi bi-pencil-square"></i>
+                                                    <span>Editar</span>
+                                                </button>
+                                            </div>
+                                        }
                                     </td>
                                 </tr>
                             }
@@ -408,295 +474,119 @@
         }
     </section>
 
-    @if (_loadingDetalleLectura || _detalleLectura is not null)
+    @if (_showDetalleLecturaModal)
     {
-        <section class="panel-card">
-            <div class="panel-card__header">
-                <div>
-                    <h3 class="panel-card__title">Detalle de lectura automática</h3>
-                    <p class="panel-card__subtitle">
-                        @if (_loadingDetalleLectura)
-                        {
-                            <span>Cargando detalle del documento...</span>
-                        }
-                        else if (_detalleLecturaDocumentoId.HasValue)
-                        {
-                            <span>Documento #@_detalleLecturaDocumentoId.Value · proveedor, cabecera y renglones detectados.</span>
-                        }
-                    </p>
-                </div>
-                <div class="actions">
-                    @if (_detalleLecturaDocumentoId.HasValue)
-                    {
-                        <button type="button" class="btn btn--ghost" @onclick="() => AbrirFicha(_detalleLecturaDocumentoId.Value)">
-                            <i class="bi bi-pencil-square"></i> Abrir ficha
-                        </button>
-                    }
-                    <button type="button" class="btn btn--ghost" @onclick="CerrarDetalleLectura">
-                        <i class="bi bi-x-circle"></i> Cerrar
-                    </button>
-                </div>
-            </div>
-
-            @if (_loadingDetalleLectura)
-            {
-                <div class="usuarios-empty">Cargando detalle leído...</div>
-            }
-            else if (_detalleLectura is not null)
-            {
-                <div class="contactos-form__grid">
-                    <div class="field">
-                        <label>Estado</label>
-                        <input value="@_detalleLectura.Estado" readonly />
-                    </div>
-                    <div class="field">
-                        <label>Proveedor</label>
-                        <input value="@GetDisplayValue(_detalleLectura.ProveedorNombre)" readonly />
-                    </div>
-                    <div class="field">
-                        <label>CUIT</label>
-                        <input value="@GetDisplayValue(_detalleLectura.ProveedorCuit)" readonly />
-                    </div>
-                    <div class="field">
-                        <label>Cuenta</label>
-                        <input value="@GetDisplayValue(_detalleLectura.CuentaContable)" readonly />
-                    </div>
-                    <div class="field">
-                        <label>Comprobante</label>
-                        <input value="@BuildComprobanteLecturaLabel(_detalleLectura)" readonly />
-                    </div>
-                    <div class="field">
-                        <label>Total</label>
-                        <input value="@FormatMoney(_detalleLectura.Total)" readonly />
-                    </div>
-                </div>
-
-                @if (!string.IsNullOrWhiteSpace(_detalleLectura.LectorObservaciones))
-                {
-                    <div class="field">
-                        <label>Observaciones del lector</label>
-                        <textarea class="contactos-observaciones" readonly>@_detalleLectura.LectorObservaciones</textarea>
-                    </div>
-                }
-
-                @if (!string.IsNullOrWhiteSpace(_detalleLectura.LectorError))
-                {
-                    <div class="field">
-                        <label>Error del lector</label>
-                        <textarea class="contactos-observaciones" readonly>@_detalleLectura.LectorError</textarea>
-                    </div>
-                }
-
+        <div class="modal-overlay interfaces-detail-modal-overlay" @onclick="CerrarDetalleLectura">
+            <section class="modal-card interfaces-detail-modal" @onclick:stopPropagation="true">
                 <div class="panel-card__header">
                     <div>
-                        <h4 class="panel-card__title">Renglones detectados</h4>
-                        <p class="panel-card__subtitle">@_detalleLectura.Items.Count renglón(es) guardado(s) en la lectura.</p>
+                        <h3 class="panel-card__title">Factura detectada por IA</h3>
+                        <p class="panel-card__subtitle">
+                            @if (_loadingDetalleLectura)
+                            {
+                                <span>Cargando detalle del documento...</span>
+                            }
+                            else if (_detalleLecturaDocumentoId.HasValue)
+                            {
+                                <span>Documento #@_detalleLecturaDocumentoId.Value · vista comercial del comprobante.</span>
+                            }
+                        </p>
+                    </div>
+                    <div class="actions">
+                        @if (_detalleLecturaDocumentoId.HasValue)
+                        {
+                            <button type="button" class="btn btn--ghost" @onclick="() => AbrirFicha(_detalleLecturaDocumentoId.Value)">
+                                <i class="bi bi-pencil-square"></i> Abrir ficha
+                            </button>
+                        }
+                        <button type="button" class="btn btn--ghost" @onclick="CerrarDetalleLectura">
+                            <i class="bi bi-x-circle"></i> Cerrar
+                        </button>
                     </div>
                 </div>
 
-                @if (_detalleLectura.Items.Count == 0)
+                @if (_loadingDetalleLectura)
                 {
-                    <div class="usuarios-empty">Esta lectura no devolvió renglones de detalle.</div>
+                    <div class="usuarios-empty">Cargando detalle leído...</div>
                 }
-                else
+                else if (_detalleLectura is not null)
                 {
-                    <div class="usuarios-table-wrap" data-sticky-x-scroll="off">
-                        <table class="data-table usuarios-table">
-                            <thead>
-                                <tr>
-                                    <th>Renglón</th>
-                                    <th>Código</th>
-                                    <th>Descripción</th>
-                                    <th>Cantidad</th>
-                                    <th>U.D.</th>
-                                    <th>Imp. lista</th>
-                                    <th>Imp. neto</th>
-                                    <th>IVA</th>
-                                    <th>Total</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach (var row in _detalleLectura.Items)
-                                {
-                                    <tr class="usuarios-table__row">
-                                        <td>@row.NroRenglon</td>
-                                        <td>@GetDisplayValue(row.CodigoArticulo)</td>
-                                        <td>@GetDisplayValue(row.Descripcion)</td>
-                                        <td>@GetDisplayValue(row.Cantidad)</td>
-                                        <td>@GetDisplayValue(row.Ud)</td>
-                                        <td>@FormatMoney(row.ImporteLista)</td>
-                                        <td>@FormatMoney(row.ImporteNeto)</td>
-                                        <td>@FormatPercent(row.Iva)</td>
-                                        <td>@FormatMoney(row.Total)</td>
-                                    </tr>
-                                }
-                            </tbody>
-                        </table>
-                    </div>
+                    <article class="interfaces-invoice">
+                        <header class="interfaces-invoice__header">
+                            <div>
+                                <h4>Comprobante @BuildComprobanteLecturaLabel(_detalleLectura)</h4>
+                                <p>@GetDisplayValue(_detalleLectura.TipoComprobante) · Estado: @_detalleLectura.Estado</p>
+                            </div>
+                            <div class="interfaces-invoice__total">
+                                <span>Total</span>
+                                <strong>@FormatMoney(_detalleLectura.Total)</strong>
+                            </div>
+                        </header>
+
+                        <section class="interfaces-invoice__grid">
+                            <div class="context-card"><span class="context-card__label">Proveedor</span><strong>@GetDisplayValue(_detalleLectura.ProveedorNombre)</strong></div>
+                            <div class="context-card"><span class="context-card__label">CUIT</span><strong>@GetDisplayValue(_detalleLectura.ProveedorCuit)</strong></div>
+                            <div class="context-card"><span class="context-card__label">Cuenta</span><strong>@GetDisplayValue(_detalleLectura.CuentaContable)</strong></div>
+                            <div class="context-card"><span class="context-card__label">Fecha</span><strong>@(_detalleLectura.Fecha?.ToString("dd/MM/yyyy") ?? "—")</strong></div>
+                            <div class="context-card"><span class="context-card__label">Vencimiento</span><strong>@(_detalleLectura.Vencimiento?.ToString("dd/MM/yyyy") ?? "—")</strong></div>
+                            <div class="context-card"><span class="context-card__label">Moneda</span><strong>@GetDisplayValue(_detalleLectura.Moneda)</strong></div>
+                        </section>
+
+                        <section class="interfaces-invoice__totals">
+                            <div><span>Neto gravado</span><strong>@FormatMoney(_detalleLectura.NetoGravado)</strong></div>
+                            <div><span>Neto no gravado</span><strong>@FormatMoney(_detalleLectura.NetoNoGravado)</strong></div>
+                            <div><span>Exento</span><strong>@FormatMoney(_detalleLectura.Exento)</strong></div>
+                            <div><span>IVA 21</span><strong>@FormatMoney(_detalleLectura.Iva21)</strong></div>
+                            <div><span>IVA 10.5</span><strong>@FormatMoney(_detalleLectura.Iva105)</strong></div>
+                            <div><span>IVA 27</span><strong>@FormatMoney(_detalleLectura.Iva27)</strong></div>
+                            <div><span>Perc. IVA</span><strong>@FormatMoney(_detalleLectura.PercepcionIva)</strong></div>
+                            <div><span>Perc. IIBB</span><strong>@FormatMoney(_detalleLectura.PercepcionIibb)</strong></div>
+                            <div><span>Perc. Ganancias</span><strong>@FormatMoney(_detalleLectura.PercepcionGanancias)</strong></div>
+                            <div><span>Imp. internos</span><strong>@FormatMoney(_detalleLectura.ImpuestosInternos)</strong></div>
+                            <div><span>Otros</span><strong>@FormatMoney(_detalleLectura.OtrosImpuestos)</strong></div>
+                        </section>
+
+                        @if (_detalleLectura.Items.Count > 0)
+                        {
+                            <div class="usuarios-table-wrap interfaces-docs-table-wrap" data-sticky-x-scroll="off">
+                                <table class="data-table usuarios-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Renglón</th>
+                                            <th>Código</th>
+                                            <th>Descripción</th>
+                                            <th>Cantidad</th>
+                                            <th>U.D.</th>
+                                            <th>Imp. neto</th>
+                                            <th>IVA</th>
+                                            <th>Total</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var row in _detalleLectura.Items)
+                                        {
+                                            <tr class="usuarios-table__row">
+                                                <td>@row.NroRenglon</td>
+                                                <td>@GetDisplayValue(row.CodigoArticulo)</td>
+                                                <td>@GetDisplayValue(row.Descripcion)</td>
+                                                <td>@GetDisplayValue(row.Cantidad)</td>
+                                                <td>@GetDisplayValue(row.Ud)</td>
+                                                <td>@FormatMoney(row.ImporteNeto)</td>
+                                                <td>@FormatPercent(row.Iva)</td>
+                                                <td>@FormatMoney(row.Total)</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                    </article>
                 }
-            }
-        </section>
+            </section>
+        </div>
     }
 
-    <section class="panel-card">
-        <div class="panel-card__header">
-            <div>
-                <h3 class="panel-card__title">Procesamiento de compras</h3>
-                <p class="panel-card__subtitle">Monitor de la cola del lector automático: pendientes, en ejecución y resultados recientes.</p>
-            </div>
-            <div class="actions">
-                <button type="button" class="btn btn--ghost" @onclick="CargarColaAsync" disabled="@_loadingQueue">
-                    <i class="bi bi-arrow-clockwise"></i> Actualizar cola
-                </button>
-            </div>
-        </div>
-
-        <div class="filters-grid">
-            <div class="context-card">
-                <span class="context-card__label">Pendientes</span>
-                <strong>@_queueSnapshot.Pendientes</strong>
-            </div>
-            <div class="context-card">
-                <span class="context-card__label">Procesando</span>
-                <strong>@_queueSnapshot.Procesando</strong>
-            </div>
-            <div class="context-card">
-                <span class="context-card__label">Procesados</span>
-                <strong>@_queueSnapshot.Procesados</strong>
-            </div>
-            <div class="context-card">
-                <span class="context-card__label">Con error</span>
-                <strong>@_queueSnapshot.ConError</strong>
-            </div>
-            <div class="context-card">
-                <span class="context-card__label">Cancelados</span>
-                <strong>@_queueSnapshot.Cancelados</strong>
-            </div>
-        </div>
-
-        <div class="editor-msg @GetWorkerFeedbackClass()">
-            <div>
-                <strong>@GetWorkerTitle()</strong>
-                <p>@GetWorkerMessage()</p>
-                @if (!string.IsNullOrWhiteSpace(_queueSnapshot.Worker.UltimoError))
-                {
-                    <small>@_queueSnapshot.Worker.UltimoError</small>
-                }
-            </div>
-        </div>
-
-        @if (_loadingQueue)
-        {
-            <div class="usuarios-empty">Cargando cola de procesamiento...</div>
-        }
-        else if (_queueSnapshot.Items.Count == 0)
-        {
-            <div class="usuarios-empty">Todavía no hay lecturas automáticas registradas.</div>
-        }
-        else
-        {
-            <div class="usuarios-table-wrap" data-sticky-x-scroll="off">
-                <table class="data-table usuarios-table">
-                    <thead>
-                        <tr>
-                            <th>Documento</th>
-                            <th>Estado</th>
-                            <th>Progreso</th>
-                            <th>Proveedor</th>
-                            <th>Inicio</th>
-                            <th>Duración</th>
-                            <th>Intentos</th>
-                            <th>Detalle</th>
-                            <th class="interfaces-table__actions">Acciones</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var job in _queueSnapshot.Items)
-                        {
-                            <tr class="usuarios-table__row">
-                                <td>
-                                    @if (job.IdComprobanteRecibido.HasValue)
-                                    {
-                                        <div class="interfaces-queue-doccell">
-                                            <button type="button"
-                                                    class="btn btn--ghost btn--sm"
-                                                    @onclick="() => AbrirFicha(job.IdComprobanteRecibido.Value)">
-                                                #@job.IdComprobanteRecibido.Value
-                                            </button>
-                                            @if (CanProcessNowQueueJob(job))
-                                            {
-                                                <button type="button"
-                                                        class="btn btn--ghost btn--sm interfaces-table__edit"
-                                                        @onclick="() => ProcesarColaAhoraAsync(job.Id)"
-                                                        disabled="@_loadingQueue">
-                                                    <i class="bi bi-play-circle"></i>
-                                                    <span>Procesar ahora</span>
-                                                </button>
-                                            }
-                                        </div>
-                                    }
-                                    else
-                                    {
-                                        <span>—</span>
-                                    }
-                                </td>
-                                <td><span class="interfaces-status-pill @GetStateCssClass(job.Estado, job.Estado)">@job.Estado</span></td>
-                                <td>
-                                    <div class="interfaces-queue-progress">
-                                        <div class="interfaces-queue-progress__track">
-                                            <div class="interfaces-queue-progress__fill @GetQueueProgressCssClass(job)"
-                                                 style="width:@(GetQueueProgressPercent(job))%">
-                                            </div>
-                                        </div>
-                                        <span class="interfaces-queue-progress__label">@GetQueueProgressLabel(job)</span>
-                                    </div>
-                                </td>
-                                <td>@(string.IsNullOrWhiteSpace(job.ProveedorNombre) ? "—" : job.ProveedorNombre)</td>
-                                <td>@FormatQueueDate(job.FechaHoraInicio ?? job.FechaHoraProceso)</td>
-                                <td>@FormatQueueDuration(job)</td>
-                                <td>@job.Intentos</td>
-                                <td>@GetQueueDetail(job)</td>
-                                <td class="interfaces-table__actions">
-                                    @if (CanProcessNowQueueJob(job))
-                                    {
-                                        <button type="button"
-                                                class="btn btn--ghost btn--sm interfaces-table__edit"
-                                                @onclick="() => ProcesarColaAhoraAsync(job.Id)"
-                                                disabled="@_loadingQueue">
-                                            <i class="bi bi-play-circle"></i>
-                                            <span>Procesar ahora</span>
-                                        </button>
-                                    }
-                                    @if (CanCancelQueueJob(job))
-                                    {
-                                        <button type="button"
-                                                class="btn btn--ghost btn--sm"
-                                                @onclick="() => CancelarColaAsync(job.Id)"
-                                                disabled="@_loadingQueue">
-                                            <i class="bi bi-stop-circle"></i>
-                                            <span>@(job.Estado == "PROCESANDO_LECTURA" ? "Solicitar cancelación" : "Cancelar")</span>
-                                        </button>
-                                    }
-                                    @if (CanRetryQueueJob(job))
-                                    {
-                                        <button type="button"
-                                                class="btn btn--ghost btn--sm interfaces-table__edit"
-                                                @onclick="() => ReintentarColaAsync(job.Id)"
-                                                disabled="@_loadingQueue">
-                                            <i class="bi bi-arrow-repeat"></i>
-                                            <span>Reintentar</span>
-                                        </button>
-                                    }
-                                </td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-            </div>
-        }
-    </section>
 </div>
-
 @code {
     private readonly InterfacesFilters _filters = new();
     private readonly List<InterfacesInboxItemDto> _items = [];
@@ -711,6 +601,7 @@
     private bool _loadingList;
     private bool _loadingQueue;
     private bool _loadingDetalleLectura;
+    private bool _showDetalleLecturaModal;
     private bool _showViewSettings;
     private bool _viewSettingsLoaded;
     private long _selectedId;
@@ -722,11 +613,15 @@
     private bool _hasNext;
     private bool _showMobileFilters;
     private bool _showMobileBulkActions;
+    private long? _openRowActionsId;
     private string _draftAgruparPor = InterfacesViewGroupKeys.None;
     private string _viewSettingsUserName = string.Empty;
     private string _bulkAction = BulkActionDelete;
     private DateTime? _filtersDesde = DateTime.Today.AddDays(-30);
     private DateTime? _filtersHasta = DateTime.Today;
+    private CancellationTokenSource? _filtersDebounceCts;
+    private CancellationTokenSource? _queueAutoRefreshCts;
+    private Task? _queueAutoRefreshTask;
     private bool AreAllCurrentPageSelected => _items.Count > 0 && _items.All(item => _selectedIds.Contains(item.IdComprobanteRecibido));
 
     protected override async Task OnInitializedAsync()
@@ -736,10 +631,17 @@
         await CargarCatalogosAsync();
         await BuscarAsync();
         await CargarColaAsync();
+        EnsureQueueAutoRefreshLoop();
     }
 
     public void Dispose()
-        => AppUserSession.StateChanged -= OnAppUserSessionChanged;
+    {
+        AppUserSession.StateChanged -= OnAppUserSessionChanged;
+        _filtersDebounceCts?.Cancel();
+        _filtersDebounceCts?.Dispose();
+        _queueAutoRefreshCts?.Cancel();
+        _queueAutoRefreshCts?.Dispose();
+    }
 
     private async Task CargarCatalogosAsync()
     {
@@ -771,6 +673,39 @@
         await BuscarAsync();
     }
 
+    private async Task OnFiltersChangedAsync()
+    {
+        _filters.PageNumber = 1;
+        await BuscarDebouncedAsync();
+    }
+
+    private async Task BuscarDebouncedAsync(int delayMs = 240)
+    {
+        _filtersDebounceCts?.Cancel();
+        _filtersDebounceCts?.Dispose();
+
+        var cts = new CancellationTokenSource();
+        _filtersDebounceCts = cts;
+
+        try
+        {
+            await Task.Delay(delayMs, cts.Token);
+            if (!cts.IsCancellationRequested)
+                await BuscarAsync();
+        }
+        catch (TaskCanceledException)
+        {
+        }
+        finally
+        {
+            if (ReferenceEquals(_filtersDebounceCts, cts))
+            {
+                _filtersDebounceCts = null;
+                cts.Dispose();
+            }
+        }
+    }
+
     private async Task BuscarAsync()
     {
         _loadingList = true;
@@ -788,6 +723,8 @@
 
             _items.Clear();
             _items.AddRange(result.Value.Items);
+            if (_openRowActionsId.HasValue && !_items.Any(item => item.IdComprobanteRecibido == _openRowActionsId.Value))
+                _openRowActionsId = null;
             _selectedIds.IntersectWith(_items.Select(item => item.IdComprobanteRecibido));
             if (_selectedId > 0 && !_items.Any(item => item.IdComprobanteRecibido == _selectedId))
                 _selectedId = 0;
@@ -803,7 +740,7 @@
         }
     }
 
-    private async Task CargarColaAsync()
+    private async Task CargarColaAsync(bool silent = false)
     {
         _loadingQueue = true;
         try
@@ -811,15 +748,67 @@
             var result = await UiOps.RunAsync(() => InterfacesSvc.GetCompraIaQueueSnapshotAsync(), "No se pudo cargar la cola de procesamiento de compras.");
             if (!result.Success || result.Value is null)
             {
-                SetFeedback(result.Feedback);
+                if (!silent)
+                    SetFeedback(result.Feedback);
                 return;
             }
 
             _queueSnapshot = result.Value;
+            EnsureQueueAutoRefreshLoop();
         }
         finally
         {
             _loadingQueue = false;
+        }
+    }
+
+    private bool HasQueueWorkInProgress()
+        => _queueSnapshot.Pendientes > 0
+           || _queueSnapshot.Items.Any(item => item.Estado is "PENDIENTE_LECTURA" or "PROCESANDO_LECTURA");
+
+    private void EnsureQueueAutoRefreshLoop()
+    {
+        if (!HasQueueWorkInProgress())
+        {
+            _queueAutoRefreshCts?.Cancel();
+            return;
+        }
+
+        if (_queueAutoRefreshTask is { IsCompleted: false })
+            return;
+
+        _queueAutoRefreshCts?.Cancel();
+        _queueAutoRefreshCts?.Dispose();
+        _queueAutoRefreshCts = new CancellationTokenSource();
+        _queueAutoRefreshTask = RunQueueAutoRefreshLoopAsync(_queueAutoRefreshCts.Token);
+    }
+
+    private async Task RunQueueAutoRefreshLoopAsync(CancellationToken token)
+    {
+        try
+        {
+            while (!token.IsCancellationRequested)
+            {
+                await Task.Delay(2500, token);
+                if (token.IsCancellationRequested)
+                    break;
+
+                await InvokeAsync(async () =>
+                {
+                    if (_loadingQueue)
+                        return;
+
+                    await CargarColaAsync(silent: true);
+                    if (!HasQueueWorkInProgress())
+                    {
+                        await BuscarAsync();
+                        _queueAutoRefreshCts?.Cancel();
+                    }
+                });
+            }
+        }
+        catch (TaskCanceledException)
+        {
         }
     }
 
@@ -830,6 +819,8 @@
     {
         if (_loadingDetalleLectura)
             return;
+
+        _showDetalleLecturaModal = true;
 
         if (_detalleLecturaDocumentoId == idComprobanteRecibido && _detalleLectura is not null)
         {
@@ -844,6 +835,7 @@
             if (!result.Success || result.Value is null)
             {
                 SetFeedback(result.Feedback);
+                _showDetalleLecturaModal = false;
                 return;
             }
 
@@ -851,6 +843,7 @@
             {
                 _detalleLectura = null;
                 _detalleLecturaDocumentoId = null;
+                _showDetalleLecturaModal = false;
                 SetFeedback(new AppUiMessage
                 {
                     Severity = AppUiFeedbackSeverity.Warning,
@@ -872,6 +865,7 @@
 
     private void CerrarDetalleLectura()
     {
+        _showDetalleLecturaModal = false;
         _detalleLectura = null;
         _detalleLecturaDocumentoId = null;
     }
@@ -907,6 +901,9 @@
     private void ToggleMobileFilters() => _showMobileFilters = !_showMobileFilters;
 
     private void ToggleMobileBulkActions() => _showMobileBulkActions = !_showMobileBulkActions;
+
+    private void ToggleRowActions(long idComprobanteRecibido)
+        => _openRowActionsId = _openRowActionsId == idComprobanteRecibido ? null : idComprobanteRecibido;
 
     private void ToggleRowSelection(long idComprobanteRecibido, ChangeEventArgs args)
     {
@@ -1174,7 +1171,7 @@
     private IReadOnlyList<InterfacesViewColumnDto> GetVisibleColumns()
         => _viewSettings.Columnas.Where(c => c.Visible).OrderBy(c => c.Order).ToList();
 
-    private static int GetGridColumnSpan(int visibleColumnsCount) => visibleColumnsCount + 2;
+    private static int GetGridColumnSpan(int visibleColumnsCount) => visibleColumnsCount + 3;
 
     private IReadOnlyList<InterfacesGridGroup> BuildGridGroups()
     {
@@ -1425,6 +1422,18 @@
             _ => "Sin estado"
         };
 
+    private InterfacesCompraIaResultadoDto? GetLatestQueueItemForDocument(long idComprobanteRecibido)
+        => _queueSnapshot.Items
+            .Where(x => x.IdComprobanteRecibido == idComprobanteRecibido)
+            .OrderByDescending(x => x.FechaHoraModificacion ?? x.FechaHoraFin ?? x.FechaHoraInicio ?? x.FechaHoraProceso)
+            .FirstOrDefault();
+
+    private string GetQueueProgressLabelForDocument(long idComprobanteRecibido)
+    {
+        var job = GetLatestQueueItemForDocument(idComprobanteRecibido);
+        return job is null ? "Sin procesamiento" : GetQueueProgressLabel(job);
+    }
+
     private void SetFeedback(AppUiMessage? message)
         => _feedback = message;
 
@@ -1453,3 +1462,6 @@
         public List<InterfacesInboxItemDto> Items { get; init; } = [];
     }
 }
+
+
+

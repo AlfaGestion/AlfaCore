@@ -470,6 +470,7 @@ public sealed class InterfacesService(
                     """;
 
                 long idComprobante;
+                var maxReferenciaExternaLength = await GetReferenciaExternaMaxLengthAsync(cn, token, (SqlTransaction)tx);
                 await using (var cmd = new SqlCommand(insertSql, cn, (SqlTransaction)tx))
                 {
                     var storedBase = ResolveStoredBase(settings);
@@ -478,7 +479,7 @@ public sealed class InterfacesService(
                     cmd.Parameters.AddWithValue("@IdEstado", state.IdEstado);
                     cmd.Parameters.AddWithValue("@IdTipoDocumento", request.IdTipoDocumento);
                     cmd.Parameters.AddWithValue("@Observacion", DbNullable(request.Observacion, 1000));
-                    cmd.Parameters.AddWithValue("@ReferenciaExterna", DbNullable(request.PromptIaAdicional, 100));
+                    cmd.Parameters.AddWithValue("@ReferenciaExterna", DbNullable(request.PromptIaAdicional, maxReferenciaExternaLength));
                     cmd.Parameters.AddWithValue("@RutaBase", DbNullable(storedBase, 500));
                     idComprobante = Convert.ToInt64(await cmd.ExecuteScalarAsync(token), CultureInfo.InvariantCulture);
                 }
@@ -675,6 +676,7 @@ public sealed class InterfacesService(
             await EnsureDocumentTypeExistsAsync(cn, targetDocumentTypeId, token);
 
             await using var tx = await cn.BeginTransactionAsync(token);
+            var maxReferenciaExternaLength = await GetReferenciaExternaMaxLengthAsync(cn, token, (SqlTransaction)tx);
             const string sql = """
                 UPDATE dbo.INT_COMPROBANTE_RECIBIDO
                 SET
@@ -691,7 +693,7 @@ public sealed class InterfacesService(
             {
                 cmd.Parameters.AddWithValue("@IdTipoDocumento", targetDocumentTypeId);
                 cmd.Parameters.AddWithValue("@Observacion", DbNullable(request.Observacion, 1000));
-                cmd.Parameters.AddWithValue("@ReferenciaExterna", DbNullable(request.PromptIaAdicional, 100));
+                cmd.Parameters.AddWithValue("@ReferenciaExterna", DbNullable(request.PromptIaAdicional, maxReferenciaExternaLength));
                 cmd.Parameters.AddWithValue("@UsuarioModificacion", DbNullable(user, 50));
                 cmd.Parameters.AddWithValue("@PcModificacion", DbNullable(pc, 100));
                 cmd.Parameters.AddWithValue("@IdComprobanteRecibido", request.IdComprobanteRecibido);
@@ -3204,57 +3206,114 @@ public sealed class InterfacesService(
             return string.Empty;
 
         var numero = (payload.Numero ?? string.Empty).Trim();
-        var ptoVenta = (payload.PuntoVenta ?? string.Empty).Trim();
-        var letra = (payload.Letra ?? string.Empty).Trim();
-        var tipo = (payload.TipoComprobante ?? string.Empty).Trim();
-        if (string.IsNullOrWhiteSpace(numero) || string.IsNullOrWhiteSpace(ptoVenta))
-            return string.Empty;
-
+        var puntoVenta = (payload.PuntoVenta ?? string.Empty).Trim();
+        var letra = (payload.Letra ?? string.Empty).Trim().ToUpperInvariant();
+        var tipoComprobante = (payload.TipoComprobante ?? string.Empty).Trim().ToUpperInvariant();
         var cuenta = (payload.CuentaContable ?? string.Empty).Trim();
-        var cuit = OnlyDigits(payload.ProveedorCuit ?? string.Empty);
-        if (string.IsNullOrWhiteSpace(cuenta) && string.IsNullOrWhiteSpace(cuit))
+        if (string.IsNullOrWhiteSpace(numero))
             return string.Empty;
 
-        const string sql = """
+        static string DigitsOnly(string value)
+            => new string((value ?? string.Empty).Where(char.IsDigit).ToArray());
+
+        var numeroDigits = DigitsOnly(numero);
+        var ptoDigits = DigitsOnly(puntoVenta);
+        var candidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (!string.IsNullOrWhiteSpace(numero))
+            candidates.Add(numero);
+        if (!string.IsNullOrWhiteSpace(numeroDigits))
+        {
+            candidates.Add(numeroDigits);
+            candidates.Add(numeroDigits.TrimStart('0'));
+        }
+        if (!string.IsNullOrWhiteSpace(ptoDigits) && !string.IsNullOrWhiteSpace(numeroDigits))
+        {
+            candidates.Add($"{ptoDigits}-{numeroDigits}");
+            candidates.Add($"{ptoDigits}-{numeroDigits.TrimStart('0')}");
+            if (!string.IsNullOrWhiteSpace(letra))
+            {
+                candidates.Add($"{letra} {ptoDigits}-{numeroDigits}");
+                candidates.Add($"{letra} {ptoDigits}-{numeroDigits.TrimStart('0')}");
+                candidates.Add($"{ptoDigits}{numeroDigits}{letra}");
+            }
+        }
+        candidates.RemoveWhere(static x => string.IsNullOrWhiteSpace(x));
+        if (candidates.Count == 0)
+            return string.Empty;
+
+        var paramNames = new List<string>();
+        var idx = 0;
+        foreach (var _ in candidates)
+            paramNames.Add($"@id{idx++}");
+
+        var sqlCompras = $"""
             SELECT TOP (1)
-                cab.IdComprobanteRecibido,
-                cab.FechaHora_Proceso,
-                ISNULL(cab.Estado, '')
-            FROM dbo.IA_Compras_CAB cab
-            WHERE cab.IdComprobanteRecibido <> @IdComprobanteRecibido
-              AND ISNULL(cab.Numero, '') = @Numero
-              AND ISNULL(cab.PuntoVenta, '') = @PuntoVenta
-              AND ISNULL(cab.Letra, '') = @Letra
-              AND ISNULL(cab.TipoComprobante, '') = @TipoComprobante
-              AND
-              (
-                    (@CuentaContable <> '' AND ISNULL(cab.Cuenta_Contable, '') = @CuentaContable)
-                    OR
-                    (@ProveedorCuit <> '' AND REPLACE(REPLACE(REPLACE(ISNULL(cab.Proveedor_CUIT, ''), '-', ''), '.', ''), ' ', '') = @ProveedorCuit)
-              )
-            ORDER BY cab.FechaHora_Proceso DESC, cab.ID DESC
+                ISNULL(TC, ''),
+                CONVERT(nvarchar(30), FECHA, 103),
+                ISNULL(IDCOMPROBANTE, '')
+            FROM dbo.C_MV_CPTE WITH (NOLOCK)
+            WHERE ISNULL(ANULADA, 0) = 0
+              AND LTRIM(RTRIM(ISNULL(IDCOMPROBANTE, ''))) IN ({string.Join(", ", paramNames)})
+            """;
+        if (!string.IsNullOrWhiteSpace(cuenta))
+            sqlCompras += "\n  AND LTRIM(RTRIM(ISNULL(CUENTA, ''))) = @Cuenta";
+        sqlCompras += "\nORDER BY FECHA DESC";
+
+        await using var cmd = new SqlCommand(sqlCompras, cn);
+        idx = 0;
+        foreach (var candidate in candidates)
+            cmd.Parameters.AddWithValue($"@id{idx++}", candidate.Trim());
+        if (!string.IsNullOrWhiteSpace(cuenta))
+            cmd.Parameters.AddWithValue("@Cuenta", cuenta.Trim());
+
+        await using (var rd = await cmd.ExecuteReaderAsync(ct))
+        {
+            if (await rd.ReadAsync(ct))
+            {
+                var tcDb = rd.IsDBNull(0) ? string.Empty : Convert.ToString(rd.GetValue(0), CultureInfo.InvariantCulture) ?? string.Empty;
+                var fechaDb = rd.IsDBNull(1) ? string.Empty : Convert.ToString(rd.GetValue(1), CultureInfo.InvariantCulture) ?? string.Empty;
+                var idDb = rd.IsDBNull(2) ? string.Empty : Convert.ToString(rd.GetValue(2), CultureInfo.InvariantCulture) ?? string.Empty;
+                return $"Aviso: el comprobante ya existe en compras (TC: {tcDb.Trim()}, ID: {idDb.Trim()}, Fecha: {fechaDb}). Revisá antes de grabar.";
+            }
+        }
+
+        const string sqlIa = """
+            SELECT TOP (1)
+                ISNULL(TipoComprobante, ''),
+                ISNULL(Numero, ''),
+                IdComprobanteRecibido
+            FROM dbo.IA_Compras_CAB
+            WHERE IdComprobanteRecibido <> @IdComprobanteRecibido
+              AND (@Cuenta = '' OR UPPER(LTRIM(RTRIM(ISNULL(Cuenta_Contable, '')))) = UPPER(@Cuenta))
+            ORDER BY FechaHora_Proceso DESC, ID DESC
             """;
 
-        await using var cmd = new SqlCommand(sql, cn);
-        cmd.Parameters.AddWithValue("@IdComprobanteRecibido", currentComprobanteId);
-        cmd.Parameters.AddWithValue("@Numero", numero);
-        cmd.Parameters.AddWithValue("@PuntoVenta", ptoVenta);
-        cmd.Parameters.AddWithValue("@Letra", letra);
-        cmd.Parameters.AddWithValue("@TipoComprobante", tipo);
-        cmd.Parameters.AddWithValue("@CuentaContable", cuenta);
-        cmd.Parameters.AddWithValue("@ProveedorCuit", cuit);
+        await using var iaCmd = new SqlCommand(sqlIa, cn);
+        iaCmd.Parameters.AddWithValue("@IdComprobanteRecibido", currentComprobanteId);
+        iaCmd.Parameters.AddWithValue("@Cuenta", cuenta);
+        await using var iaRd = await iaCmd.ExecuteReaderAsync(ct);
+        while (await iaRd.ReadAsync(ct))
+        {
+            var tipoDb = iaRd.IsDBNull(0) ? string.Empty : Convert.ToString(iaRd.GetValue(0), CultureInfo.InvariantCulture) ?? string.Empty;
+            var numeroDb = iaRd.IsDBNull(1) ? string.Empty : Convert.ToString(iaRd.GetValue(1), CultureInfo.InvariantCulture) ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(numeroDb))
+                continue;
+            var numeroDbTrim = numeroDb.Trim();
+            if (!candidates.Contains(numeroDbTrim) && !candidates.Contains(DigitsOnly(numeroDbTrim)))
+                continue;
+            if (!string.IsNullOrWhiteSpace(tipoComprobante) && !string.IsNullOrWhiteSpace(tipoDb))
+            {
+                var tipoCmpNorm = tipoComprobante.Replace(" ", string.Empty);
+                var tipoDbNorm = tipoDb.Trim().ToUpperInvariant().Replace(" ", string.Empty);
+                if (!tipoDbNorm.Contains(tipoCmpNorm) && !tipoCmpNorm.Contains(tipoDbNorm))
+                    continue;
+            }
 
-        await using var rd = await cmd.ExecuteReaderAsync(ct);
-        if (!await rd.ReadAsync(ct))
-            return string.Empty;
+            var docId = iaRd.IsDBNull(2) ? "?" : Convert.ToString(iaRd.GetValue(2), CultureInfo.InvariantCulture) ?? "?";
+            return $"Aviso: posible duplicado ya detectado en Interfaces/IA (doc #{docId}, comprobante {numeroDb.Trim()}, cuenta {cuenta}).";
+        }
 
-        var duplicatedComprobante = rd.IsDBNull(0) ? 0 : Convert.ToInt64(rd.GetValue(0), CultureInfo.InvariantCulture);
-        var duplicatedDate = rd.IsDBNull(1) ? (DateTime?)null : Convert.ToDateTime(rd.GetValue(1), CultureInfo.InvariantCulture);
-        var duplicatedState = GetString(rd, 2);
-        var duplicatedDateText = duplicatedDate.HasValue ? duplicatedDate.Value.ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture) : "s/f";
-        var duplicatedStateText = string.IsNullOrWhiteSpace(duplicatedState) ? "sin estado" : duplicatedState.Trim();
-
-        return $"Aviso: posible factura duplicada detectada (doc #{duplicatedComprobante}, estado {duplicatedStateText}, lectura {duplicatedDateText}).";
+        return string.Empty;
     }
 
     private static async Task<ProveedorColumns> ResolveProveedorColumnsAsync(SqlConnection cn, CancellationToken ct)
@@ -3786,12 +3845,36 @@ public sealed class InterfacesService(
             WHERE IdComprobanteRecibido = @IdComprobanteRecibido
             """;
 
+        var maxReferenciaExternaLength = await GetReferenciaExternaMaxLengthAsync(cn, ct);
         await using var cmd = new SqlCommand(sql, cn);
-        cmd.Parameters.AddWithValue("@ReferenciaExterna", DbNullable(promptIaAdicional, 100));
+        cmd.Parameters.AddWithValue("@ReferenciaExterna", DbNullable(promptIaAdicional, maxReferenciaExternaLength));
         cmd.Parameters.AddWithValue("@UsuarioModificacion", DbNullable(user, 50));
         cmd.Parameters.AddWithValue("@PcModificacion", DbNullable(pc, 100));
         cmd.Parameters.AddWithValue("@IdComprobanteRecibido", idComprobanteRecibido);
         await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    private static async Task<int> GetReferenciaExternaMaxLengthAsync(SqlConnection cn, CancellationToken ct, SqlTransaction? tx = null)
+    {
+        const string sql = """
+            SELECT TOP (1) c.max_length
+            FROM sys.columns c
+            INNER JOIN sys.objects o ON o.object_id = c.object_id
+            WHERE o.object_id = OBJECT_ID(N'dbo.INT_COMPROBANTE_RECIBIDO')
+              AND c.name = N'ReferenciaExterna'
+            """;
+
+        await using var cmd = tx is null ? new SqlCommand(sql, cn) : new SqlCommand(sql, cn, tx);
+        var raw = await cmd.ExecuteScalarAsync(ct);
+        if (raw is null || raw == DBNull.Value)
+            return 1000;
+
+        var maxBytes = Convert.ToInt32(raw, CultureInfo.InvariantCulture);
+        if (maxBytes == -1)
+            return 4000;
+
+        var maxChars = Math.Max(1, maxBytes / 2);
+        return Math.Clamp(maxChars, 1, 4000);
     }
 
     private static string ReadJsonString(JsonObject? obj, string key)
@@ -3858,6 +3941,23 @@ public sealed class InterfacesService(
             .Where(char.IsLetterOrDigit)
             .ToArray();
         return new string(chars);
+    }
+
+    private static string NormalizeFacturaToken(string value, bool digitsOnly = false, bool trimLeadingZeros = false)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return string.Empty;
+
+        var chars = digitsOnly
+            ? value.Where(char.IsDigit).ToArray()
+            : value.Trim().ToUpperInvariant().Where(char.IsLetterOrDigit).ToArray();
+
+        var normalized = new string(chars);
+        if (!trimLeadingZeros || normalized.Length == 0)
+            return normalized;
+
+        var trimmed = normalized.TrimStart('0');
+        return string.IsNullOrWhiteSpace(trimmed) ? "0" : trimmed;
     }
 
     private static string PickProviderColumn(Dictionary<string, string> normalizedColumns, IReadOnlyList<string> candidates)
