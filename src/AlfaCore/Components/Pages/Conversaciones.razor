@@ -8,6 +8,7 @@
 @inject AlfaCore.Services.IContactosService ContactosSvc
 @inject AlfaCore.Services.ITicketsService TicketsSvc
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
+@inject AlfaCore.Services.IFloatingWindowService FloatingWindows
 @inject IJSRuntime JS
 @inject NavigationManager Nav
 @implements IAsyncDisposable
@@ -600,7 +601,7 @@
                             </div>
                         </div>
                         <div class="conversation-header-state">
-                            <div class="conversation-header-state__row @(_showStatusMenu ? "is-open" : string.Empty)">
+                            <div class="conversation-header-state__row @(_showStatusMenu ? "is-open" : string.Empty)" @onclick:stopPropagation="true">
                                 <span class="conversation-header-state__caption">Estado:</span>
                                 <button type="button"
                                         class="conversation-header-state__trigger"
@@ -1726,6 +1727,7 @@
     private string _assignmentTechnicianId = string.Empty;
     private string _statusCode = "ABIERTA";
     private bool _showStatusMenu;
+    private IDisposable? _floatingWindowRegistration;
     private ElementReference _threadElement;
     private ElementReference _composerDropZone;
     private ElementReference _conversationNameInput;
@@ -1892,6 +1894,7 @@
 
     protected override async Task OnInitializedAsync()
     {
+        _floatingWindowRegistration = FloatingWindows.Register(AlfaCore.Services.FloatingWindowType.DropdownMenu, CloseFloatingWindowsAsync);
         ApplyStartupQuery();
         await Task.WhenAll(LoadLookupsAsync(), LoadFavoriteStickersAsync());
         if (_loadError is null)
@@ -3749,6 +3752,15 @@
             return;
 
         _showStatusMenu = !_showStatusMenu;
+    }
+
+    private Task CloseFloatingWindowsAsync()
+    {
+        if (!_showStatusMenu)
+            return Task.CompletedTask;
+
+        _showStatusMenu = false;
+        return InvokeAsync(StateHasChanged);
     }
 
     private async Task SelectStatusAsync(string codigoEstado)
@@ -5619,6 +5631,7 @@
         _typingPollingCts?.Dispose();
         _pollingCts?.Dispose();
         _dotNetRef?.Dispose();
+        _floatingWindowRegistration?.Dispose();
 
         try
         {

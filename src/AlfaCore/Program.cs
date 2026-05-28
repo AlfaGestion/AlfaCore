@@ -84,6 +84,7 @@ public class Program
         builder.Services.AddScoped<IAuditoriaService, AuditoriaService>();
         builder.Services.AddScoped<IGestionDashboardService, GestionDashboardService>();
         builder.Services.AddScoped<IAppUiOperationService, AppUiOperationService>();
+        builder.Services.AddScoped<IFloatingWindowService, FloatingWindowService>();
         builder.Services.AddScoped<IAuxErrRepository, AuxErrRepository>();
         builder.Services.AddScoped<IAppEventService, AppEventService>();
         builder.Services.AddSingleton<ConsultasExcelExporter>();

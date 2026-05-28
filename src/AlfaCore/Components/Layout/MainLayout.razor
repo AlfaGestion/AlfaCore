@@ -10,9 +10,10 @@
 @inject AlfaCore.Services.IConversacionesService ConversacionesSvc
 @inject AlfaCore.Services.ITareasService TareasSvc
 @inject AlfaCore.Services.IAppEventService AppEvents
+@inject AlfaCore.Services.IFloatingWindowService FloatingWindows
 @implements IDisposable
 
-<div class="@ShellClass">
+<div class="@ShellClass" @onclick="CloseFloatingWindowsAsync">
     @if (_mobileSidebarOpen)
     {
         <button type="button"
@@ -1811,6 +1812,9 @@
         => string.IsNullOrWhiteSpace(value) ? "-" : value.Trim();
 
     private string TasksPanelUser => AppUserSession.GetCurrentUserName(Environment.UserName).Trim();
+
+    private Task CloseFloatingWindowsAsync()
+        => FloatingWindows.CloseAllAsync();
 
     private List<TareaNotaRapidaDto> TasksPanelOpenNotes => _tasksPanel.NotasRapidas
         .Where(x => !x.Completada)
