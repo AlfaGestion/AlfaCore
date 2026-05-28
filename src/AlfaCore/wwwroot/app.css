@@ -13890,6 +13890,8 @@ html[data-theme="light"] .interfaces-bulkbar {
 }
 
 .tickets-commandbar {
+    position: relative;
+    z-index: 120;
     display: grid;
     gap: .9rem;
     padding: .8rem;
@@ -13897,6 +13899,7 @@ html[data-theme="light"] .interfaces-bulkbar {
     border-radius: 10px;
     background: rgba(13, 27, 48, .62);
     box-shadow: none;
+    overflow: visible;
     animation: support-panel-in .16s ease-out both;
 }
 
