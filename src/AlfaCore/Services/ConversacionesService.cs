@@ -693,6 +693,7 @@ public sealed class ConversacionesService(
                         OR c.NombreVisible COLLATE Latin1_General_CI_AI LIKE @Search
                         OR COALESCE(NULLIF(cli.RAZON_SOCIAL, ''), contactoCuenta.RazonSocial) COLLATE Latin1_General_CI_AI LIKE @Search
                         OR mc.Nombre_y_Apellido COLLATE Latin1_General_CI_AI LIKE @Search
+                        OR ISNULL(mc.Email, '') COLLATE Latin1_General_CI_AI LIKE @Search
                         OR c.ResumenUltimoMensaje COLLATE Latin1_General_CI_AI LIKE @Search
                         OR EXISTS (
                             SELECT 1
@@ -929,6 +930,7 @@ public sealed class ConversacionesService(
                         OR c.NombreVisible COLLATE Latin1_General_CI_AI LIKE @Search
                         OR cli.RAZON_SOCIAL COLLATE Latin1_General_CI_AI LIKE @Search
                         OR mc.Nombre_y_Apellido COLLATE Latin1_General_CI_AI LIKE @Search
+                        OR ISNULL(mc.Email, '') COLLATE Latin1_General_CI_AI LIKE @Search
                         OR (
                             @SearchPhone IS NOT NULL
                             AND (
@@ -1185,7 +1187,7 @@ public sealed class ConversacionesService(
             if (string.IsNullOrWhiteSpace(texto))
                 return [];
 
-            var search = texto.Trim();
+            var search = SearchTextHelper.Normalize(texto);
             const string sql = """
                 SELECT TOP (20)
                     ISNULL(CODIGO, '') AS Codigo,
@@ -1195,11 +1197,11 @@ public sealed class ConversacionesService(
                     ISNULL(TELEFONO, '') AS Telefono,
                     ISNULL(MAIL, '') AS Mail
                 FROM dbo.VT_CLIENTES
-                WHERE ISNULL(CODIGO, '') LIKE '%' + @Texto + '%'
-                   OR ISNULL(RAZON_SOCIAL, '') LIKE '%' + @Texto + '%'
-                   OR ISNULL(LOCALIDAD, '') LIKE '%' + @Texto + '%'
-                   OR ISNULL(TELEFONO, '') LIKE '%' + @Texto + '%'
-                   OR ISNULL(MAIL, '') LIKE '%' + @Texto + '%'
+                WHERE ISNULL(CODIGO, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                   OR ISNULL(RAZON_SOCIAL, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                   OR ISNULL(LOCALIDAD, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                   OR ISNULL(TELEFONO, '') LIKE @TextoLike
+                   OR ISNULL(MAIL, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
                 ORDER BY
                     CASE WHEN ISNULL(RAZON_SOCIAL, '') LIKE @Texto + '%' THEN 0 ELSE 1 END,
                     ISNULL(RAZON_SOCIAL, ''),
@@ -1211,6 +1213,7 @@ public sealed class ConversacionesService(
             await cn.OpenAsync(token);
             await using var cmd = new SqlCommand(sql, cn);
             cmd.Parameters.AddWithValue("@Texto", search);
+            cmd.Parameters.AddWithValue("@TextoLike", SearchTextHelper.LikeContains(search));
             await using var rd = await cmd.ExecuteReaderAsync(token);
             while (await rd.ReadAsync(token))
             {
@@ -6311,22 +6314,10 @@ public sealed class ConversacionesService(
     }
 
     private static string NormalizePhone(string? phone)
-    {
-        if (string.IsNullOrWhiteSpace(phone))
-            return string.Empty;
-
-        var sb = new StringBuilder(phone.Length);
-        foreach (var ch in phone)
-        {
-            if (char.IsDigit(ch))
-                sb.Append(ch);
-        }
-
-        return sb.ToString();
-    }
+        => SearchTextHelper.DigitsOnly(phone);
 
     private static string SqlNormalizePhone(string columnName)
-        => $"REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(ISNULL({columnName}, ''), ' ', ''), '-', ''), '+', ''), '(', ''), ')', ''), '.', '')";
+        => SearchTextHelper.SqlNormalizePhone(columnName);
 
     private static string SqlPhoneEquivalentPredicate(string columnName, string phoneParameterName, string tailParameterName)
     {
@@ -6344,13 +6335,10 @@ public sealed class ConversacionesService(
     }
 
     private static string? GetPhoneComparableTail(string? phone)
-    {
-        var normalized = NormalizePhone(phone);
-        return normalized.Length >= 10 ? normalized[^10..] : null;
-    }
+        => SearchTextHelper.PhoneTail(phone);
 
     private static string? Like(string? value)
-        => string.IsNullOrWhiteSpace(value) ? null : $"%{value.Trim()}%";
+        => SearchTextHelper.LikeContainsOrNull(value);
 
     private static object DbNullable(string? value)
         => string.IsNullOrWhiteSpace(value) ? DBNull.Value : value.Trim();

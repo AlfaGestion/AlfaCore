@@ -67,14 +67,14 @@ public sealed class CuentasComercialesService(
                 LEFT JOIN dbo.V_TA_VENDEDORES vd
                     ON UPPER(LTRIM(RTRIM(vd.IdVendedor))) = UPPER(LTRIM(RTRIM(ISNULL(base.IdVendedor, ''))))
                 WHERE (
-                        @Texto = ''
-                        OR ISNULL(base.CODIGO, '') LIKE '%' + @Texto + '%'
-                        OR ISNULL(base.RAZON_SOCIAL, '') LIKE '%' + @Texto + '%'
-                        OR ISNULL(base.CONTACTO, '') LIKE '%' + @Texto + '%'
-                        OR ISNULL(base.LOCALIDAD, '') LIKE '%' + @Texto + '%'
-                        OR ISNULL(base.TELEFONO, '') LIKE '%' + @Texto + '%'
-                        OR ISNULL(base.MAIL, '') LIKE '%' + @Texto + '%'
-                        OR ISNULL(base.NUMERO_DOCUMENTO, '') LIKE '%' + @Texto + '%'
+                        @TextoLike = ''
+                        OR ISNULL(base.CODIGO, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                        OR ISNULL(base.RAZON_SOCIAL, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                        OR ISNULL(base.CONTACTO, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                        OR ISNULL(base.LOCALIDAD, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                        OR ISNULL(base.TELEFONO, '') LIKE @TextoLike
+                        OR ISNULL(base.MAIL, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                        OR ISNULL(base.NUMERO_DOCUMENTO, '') LIKE @TextoLike
                       )
                   AND (@Activo IS NULL OR CASE WHEN ISNULL(base.Dada_De_Baja, 0) = 0 THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END = @Activo)
                   AND (@Bloqueado IS NULL OR ISNULL(base.BLOQUEO, 0) = @Bloqueado)
@@ -89,14 +89,14 @@ public sealed class CuentasComercialesService(
                 SELECT COUNT(*)
                 FROM dbo.{descriptor.ViewName} base
                 WHERE (
-                        @Texto = ''
-                        OR ISNULL(base.CODIGO, '') LIKE '%' + @Texto + '%'
-                        OR ISNULL(base.RAZON_SOCIAL, '') LIKE '%' + @Texto + '%'
-                        OR ISNULL(base.CONTACTO, '') LIKE '%' + @Texto + '%'
-                        OR ISNULL(base.LOCALIDAD, '') LIKE '%' + @Texto + '%'
-                        OR ISNULL(base.TELEFONO, '') LIKE '%' + @Texto + '%'
-                        OR ISNULL(base.MAIL, '') LIKE '%' + @Texto + '%'
-                        OR ISNULL(base.NUMERO_DOCUMENTO, '') LIKE '%' + @Texto + '%'
+                        @TextoLike = ''
+                        OR ISNULL(base.CODIGO, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                        OR ISNULL(base.RAZON_SOCIAL, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                        OR ISNULL(base.CONTACTO, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                        OR ISNULL(base.LOCALIDAD, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                        OR ISNULL(base.TELEFONO, '') LIKE @TextoLike
+                        OR ISNULL(base.MAIL, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                        OR ISNULL(base.NUMERO_DOCUMENTO, '') LIKE @TextoLike
                       )
                   AND (@Activo IS NULL OR CASE WHEN ISNULL(base.Dada_De_Baja, 0) = 0 THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END = @Activo)
                   AND (@Bloqueado IS NULL OR ISNULL(base.BLOQUEO, 0) = @Bloqueado)
@@ -106,7 +106,7 @@ public sealed class CuentasComercialesService(
 
             var rows = new List<CuentaComercialGridItemDto>();
             await using var cmd = new SqlCommand(sql, cn);
-            cmd.Parameters.AddWithValue("@Texto", filters.Texto?.Trim() ?? string.Empty);
+            cmd.Parameters.AddWithValue("@TextoLike", SearchTextHelper.LikeContains(filters.Texto));
             cmd.Parameters.AddWithValue("@Activo", filters.Activo.HasValue ? filters.Activo.Value : DBNull.Value);
             cmd.Parameters.AddWithValue("@Bloqueado", filters.Bloqueado.HasValue ? filters.Bloqueado.Value : DBNull.Value);
             cmd.Parameters.AddWithValue("@ProvinciaCodigo", (filters.ProvinciaCodigo ?? string.Empty).Trim().ToUpperInvariant());
@@ -773,7 +773,7 @@ public sealed class CuentasComercialesService(
                 return [];
 
             var cuenta = cuentaCodigo.Trim().ToUpperInvariant();
-            var search = texto.Trim();
+            var search = SearchTextHelper.Normalize(texto);
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
@@ -792,11 +792,11 @@ public sealed class CuentasComercialesService(
                     ISNULL(c.CuentaRel, '') AS CuentaRel
                 FROM dbo.MA_CONTACTOS c
                 WHERE (
-                        ISNULL(c.Nombre_y_Apellido, '') LIKE '%' + @Texto + '%'
-                        OR ISNULL(c.email, '') LIKE '%' + @Texto + '%'
-                        OR ISNULL(c.Telefono, '') LIKE '%' + @Texto + '%'
-                        OR ISNULL(c.Celular, '') LIKE '%' + @Texto + '%'
-                        OR ISNULL(c.Cargo, '') LIKE '%' + @Texto + '%'
+                        ISNULL(c.Nombre_y_Apellido, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                        OR ISNULL(c.email, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                        OR ISNULL(c.Telefono, '') LIKE @TextoLike
+                        OR ISNULL(c.Celular, '') LIKE @TextoLike
+                        OR ISNULL(c.Cargo, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
                     )
                     {activoFilter}
                     AND NOT EXISTS (
@@ -813,7 +813,7 @@ public sealed class CuentasComercialesService(
                 """;
 
             var contactos = await cn.QueryAsync<CuentaComercialContactoCandidateDto>(
-                new CommandDefinition(sql, new { Cuenta = cuenta, Texto = search }, cancellationToken: token));
+                new CommandDefinition(sql, new { Cuenta = cuenta, Texto = search, TextoLike = SearchTextHelper.LikeContains(search) }, cancellationToken: token));
             return contactos.ToList();
         }, "No se pudieron buscar contactos existentes para vincular.", ct);
 

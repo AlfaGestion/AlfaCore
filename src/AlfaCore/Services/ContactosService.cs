@@ -75,12 +75,13 @@ public sealed class ContactosService(
                     ORDER BY cc.IdConversacion ASC
                 ) conv
                 WHERE (
-                        @Texto = ''
-                        OR ISNULL(c.Nombre_y_Apellido, '') LIKE '%' + @Texto + '%'
-                        OR ISNULL(c.email, '') LIKE '%' + @Texto + '%'
-                        OR ISNULL(c.Localidad, '') LIKE '%' + @Texto + '%'
-                        OR ISNULL(c.Telefono, '') LIKE '%' + @Texto + '%'
-                        OR ISNULL(c.Celular, '') LIKE '%' + @Texto + '%'
+                        @TextoLike = ''
+                        OR ISNULL(c.Nombre_y_Apellido, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                        OR ISNULL(c.email, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                        OR ISNULL(c.Localidad, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                        OR ISNULL(c.Telefono, '') LIKE @TextoLike
+                        OR ISNULL(c.Celular, '') LIKE @TextoLike
+                        OR ISNULL(c.Cargo, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
                   )
                   {activoFilterSql}
                   {advancedFilterSql}
@@ -91,12 +92,13 @@ public sealed class ContactosService(
                 SELECT COUNT(*)
                 FROM dbo.MA_CONTACTOS c
                 WHERE (
-                        @Texto = ''
-                        OR ISNULL(c.Nombre_y_Apellido, '') LIKE '%' + @Texto + '%'
-                        OR ISNULL(c.email, '') LIKE '%' + @Texto + '%'
-                        OR ISNULL(c.Localidad, '') LIKE '%' + @Texto + '%'
-                        OR ISNULL(c.Telefono, '') LIKE '%' + @Texto + '%'
-                        OR ISNULL(c.Celular, '') LIKE '%' + @Texto + '%'
+                        @TextoLike = ''
+                        OR ISNULL(c.Nombre_y_Apellido, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                        OR ISNULL(c.email, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                        OR ISNULL(c.Localidad, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                        OR ISNULL(c.Telefono, '') LIKE @TextoLike
+                        OR ISNULL(c.Celular, '') LIKE @TextoLike
+                        OR ISNULL(c.Cargo, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
                   )
                   {advancedFilterSql}
                   {ruleFilterSql}
@@ -105,7 +107,7 @@ public sealed class ContactosService(
 
             var rows = new List<ContactoGridItemDto>();
             await using var cmd = new SqlCommand(sql, cn);
-            cmd.Parameters.AddWithValue("@Texto", filters.Texto?.Trim() ?? string.Empty);
+            cmd.Parameters.AddWithValue("@TextoLike", SearchTextHelper.LikeContains(filters.Texto));
             cmd.Parameters.AddWithValue("@Activo", filters.Activo.HasValue ? filters.Activo.Value : DBNull.Value);
             AddAdvancedFilterParameters(cmd, filters);
             AddRuleFilterParameters(cmd, filters.Reglas, GetContactosRuleFieldSql);
@@ -240,7 +242,7 @@ public sealed class ContactosService(
             if (contactoPrincipalId <= 0)
                 return [];
 
-            var normalizedText = texto?.Trim() ?? string.Empty;
+            var normalizedText = SearchTextHelper.Normalize(texto);
             if (normalizedText.Length < 2)
                 return [];
 
@@ -261,11 +263,11 @@ public sealed class ContactosService(
                 FROM dbo.MA_CONTACTOS c
                 WHERE c.id <> @ContactoPrincipalId
                   AND (
-                        ISNULL(c.Nombre_y_Apellido, '') LIKE '%' + @Texto + '%'
-                        OR ISNULL(c.email, '') LIKE '%' + @Texto + '%'
-                        OR ISNULL(c.Telefono, '') LIKE '%' + @Texto + '%'
-                        OR ISNULL(c.Celular, '') LIKE '%' + @Texto + '%'
-                        OR ISNULL(c.Cargo, '') LIKE '%' + @Texto + '%'
+                        ISNULL(c.Nombre_y_Apellido, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                        OR ISNULL(c.email, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                        OR ISNULL(c.Telefono, '') LIKE @TextoLike
+                        OR ISNULL(c.Celular, '') LIKE @TextoLike
+                        OR ISNULL(c.Cargo, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
                       )
                 ORDER BY {activoExpr} DESC, ISNULL(c.Nombre_y_Apellido, '') ASC, c.id ASC;
                 """;
@@ -273,7 +275,7 @@ public sealed class ContactosService(
             var rows = new List<ContactoMergeCandidateDto>();
             await using var cmd = new SqlCommand(sql, cn);
             cmd.Parameters.AddWithValue("@ContactoPrincipalId", contactoPrincipalId);
-            cmd.Parameters.AddWithValue("@Texto", normalizedText);
+            cmd.Parameters.AddWithValue("@TextoLike", SearchTextHelper.LikeContains(normalizedText));
             await using var rd = await cmd.ExecuteReaderAsync(token);
             while (await rd.ReadAsync(token))
             {

@@ -162,27 +162,37 @@ public sealed class InterfacesService(
                   AND (@IdEstado IS NULL OR c.IdEstado = @IdEstado)
                   AND (@IdTipoDocumento IS NULL OR c.IdTipoDocumento = @IdTipoDocumento)
                   AND (
-                        @Texto = ''
-                        OR ISNULL(c.Observacion, '') LIKE '%' + @Texto + '%'
-                        OR ISNULL(c.ReferenciaExterna, '') LIKE '%' + @Texto + '%'
-                        OR CONVERT(nvarchar(30), c.IdComprobanteRecibido) LIKE '%' + @Texto + '%'
-                        OR ISNULL(c.UsuarioAlta, '') LIKE '%' + @Texto + '%'
+                        @TextoLike = ''
+                        OR ISNULL(c.Observacion, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                        OR ISNULL(c.ReferenciaExterna, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                        OR CONVERT(nvarchar(30), c.IdComprobanteRecibido) LIKE @TextoLike
+                        OR ISNULL(c.UsuarioAlta, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                        OR ISNULL(ia.Proveedor_Nombre, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
                       )
                 ORDER BY c.FechaHora_Grabacion DESC, c.IdComprobanteRecibido DESC
                 OFFSET @Skip ROWS FETCH NEXT @PageSize ROWS ONLY;
 
                 SELECT COUNT(1)
                 FROM dbo.INT_COMPROBANTE_RECIBIDO c
+                OUTER APPLY
+                (
+                    SELECT TOP (1)
+                        cab.Proveedor_Nombre
+                    FROM dbo.IA_Compras_CAB cab
+                    WHERE cab.IdComprobanteRecibido = c.IdComprobanteRecibido
+                    ORDER BY cab.FechaHora_Proceso DESC, cab.ID DESC
+                ) ia
                 WHERE (@Desde IS NULL OR c.FechaHora_Grabacion >= @Desde)
                   AND (@Hasta IS NULL OR c.FechaHora_Grabacion < DATEADD(day, 1, @Hasta))
                   AND (@IdEstado IS NULL OR c.IdEstado = @IdEstado)
                   AND (@IdTipoDocumento IS NULL OR c.IdTipoDocumento = @IdTipoDocumento)
                   AND (
-                        @Texto = ''
-                        OR ISNULL(c.Observacion, '') LIKE '%' + @Texto + '%'
-                        OR ISNULL(c.ReferenciaExterna, '') LIKE '%' + @Texto + '%'
-                        OR CONVERT(nvarchar(30), c.IdComprobanteRecibido) LIKE '%' + @Texto + '%'
-                        OR ISNULL(c.UsuarioAlta, '') LIKE '%' + @Texto + '%'
+                        @TextoLike = ''
+                        OR ISNULL(c.Observacion, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                        OR ISNULL(c.ReferenciaExterna, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                        OR CONVERT(nvarchar(30), c.IdComprobanteRecibido) LIKE @TextoLike
+                        OR ISNULL(c.UsuarioAlta, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                        OR ISNULL(ia.Proveedor_Nombre, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
                       );
                 """;
 
@@ -194,7 +204,7 @@ public sealed class InterfacesService(
             cmd.Parameters.AddWithValue("@Hasta", (object?)filters.Hasta ?? DBNull.Value);
             cmd.Parameters.AddWithValue("@IdEstado", (object?)filters.IdEstado ?? DBNull.Value);
             cmd.Parameters.AddWithValue("@IdTipoDocumento", (object?)filters.IdTipoDocumento ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("@Texto", filters.Texto?.Trim() ?? string.Empty);
+            cmd.Parameters.AddWithValue("@TextoLike", SearchTextHelper.LikeContains(filters.Texto));
             cmd.Parameters.AddWithValue("@Skip", skip);
             cmd.Parameters.AddWithValue("@PageSize", pageSize);
             await using var rd = await cmd.ExecuteReaderAsync(token);

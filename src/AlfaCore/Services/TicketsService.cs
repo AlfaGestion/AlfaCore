@@ -283,7 +283,7 @@ public sealed class TicketsService(
     public Task<IReadOnlyList<TicketClienteOptionDto>> SearchClientesAsync(string texto, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "SearchClientes", async token =>
         {
-            var search = (texto ?? string.Empty).Trim();
+            var search = SearchTextHelper.Normalize(texto);
             if (search.Length < 2)
                 return (IReadOnlyList<TicketClienteOptionDto>)[];
 
@@ -307,7 +307,7 @@ public sealed class TicketsService(
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
             await using var cmd = new SqlCommand(sql, cn);
-            cmd.Parameters.AddWithValue("@Search", $"%{search}%");
+            cmd.Parameters.AddWithValue("@Search", SearchTextHelper.LikeContains(search));
             await using var rd = await cmd.ExecuteReaderAsync(token);
             while (await rd.ReadAsync(token))
             {
@@ -326,7 +326,7 @@ public sealed class TicketsService(
     public Task<IReadOnlyList<TicketContactoOptionDto>> SearchContactosAsync(string texto, string? clienteCodigo = null, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "SearchContactos", async token =>
         {
-            var search = (texto ?? string.Empty).Trim();
+            var search = SearchTextHelper.Normalize(texto);
             var client = (clienteCodigo ?? string.Empty).Trim().ToUpperInvariant();
             if (search.Length < 2 && string.IsNullOrWhiteSpace(client))
                 return (IReadOnlyList<TicketContactoOptionDto>)[];
@@ -375,7 +375,7 @@ public sealed class TicketsService(
             await cn.OpenAsync(token);
             await using var cmd = new SqlCommand(sql, cn);
             cmd.Parameters.AddWithValue("@Texto", search);
-            cmd.Parameters.AddWithValue("@Search", $"%{search}%");
+            cmd.Parameters.AddWithValue("@Search", SearchTextHelper.LikeContains(search));
             cmd.Parameters.AddWithValue("@ClienteCodigo", client);
             await using var rd = await cmd.ExecuteReaderAsync(token);
             while (await rd.ReadAsync(token))
@@ -797,13 +797,17 @@ public sealed class TicketsService(
                     OR (@FechaRapida = 'recientes' AND t.FechaHoraModificacion >= DATEADD(day, -7, GETDATE()))
                 )
                 AND (
-                    @Texto = ''
-                    OR t.Titulo LIKE '%' + @Texto + '%'
-                    OR ISNULL(CAST(t.Descripcion AS nvarchar(max)), '') LIKE '%' + @Texto + '%'
+                    @TextoLike = ''
+                    OR t.Titulo COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                    OR ISNULL(CAST(t.Descripcion AS nvarchar(max)), '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
                     OR CONVERT(varchar(10), t.Numero) = @Texto
-                    OR COALESCE(NULLIF(cli.RAZON_SOCIAL, ''), contactoCuenta.RazonSocial) LIKE '%' + @Texto + '%'
-                    OR mc.Nombre_y_Apellido LIKE '%' + @Texto + '%'
-                    OR tec.Nombre LIKE '%' + @Texto + '%'
+                    OR COALESCE(NULLIF(t.ClienteCodigo, ''), contactoCuenta.Cuenta) COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                    OR COALESCE(NULLIF(cli.RAZON_SOCIAL, ''), contactoCuenta.RazonSocial) COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                    OR mc.Nombre_y_Apellido COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                    OR ISNULL(mc.Email, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                    OR ISNULL(mc.Telefono, '') LIKE @TextoLike
+                    OR ISNULL(mc.Celular, '') LIKE @TextoLike
+                    OR tec.Nombre COLLATE Latin1_General_CI_AI LIKE @TextoLike
                 )
                 {BuildRuleFilterSql()}
             """;
@@ -835,7 +839,8 @@ public sealed class TicketsService(
 
     private static void AddFilterParameters(SqlCommand cmd, TicketsFilters filters)
     {
-        cmd.Parameters.AddWithValue("@Texto", filters.Texto?.Trim() ?? string.Empty);
+        cmd.Parameters.AddWithValue("@Texto", SearchTextHelper.Normalize(filters.Texto));
+        cmd.Parameters.AddWithValue("@TextoLike", SearchTextHelper.LikeContains(filters.Texto));
         cmd.Parameters.AddWithValue("@CodigoEstado", DbNullable(filters.CodigoEstado));
         cmd.Parameters.AddWithValue("@IdTecnico", DbNullable(filters.IdTecnico));
         cmd.Parameters.AddWithValue("@Prioridad", filters.Prioridad.HasValue ? filters.Prioridad.Value : DBNull.Value);

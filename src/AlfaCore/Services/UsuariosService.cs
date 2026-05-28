@@ -57,9 +57,9 @@ public sealed class UsuariosService(
                 FROM dbo.TA_USUARIOS
                 WHERE UPPER(LTRIM(RTRIM(SISTEMA))) = @Sistema
                   AND (
-                        @Texto = ''
-                        OR ISNULL(NOMBRE, '') LIKE '%' + @Texto + '%'
-                        OR ISNULL(email_de, '') LIKE '%' + @Texto + '%'
+                        @TextoLike = ''
+                        OR ISNULL(NOMBRE, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                        OR ISNULL(email_de, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
                       )
                   {activoFilterSql}
                   AND (@EsGrupo IS NULL OR ISNULL(EsGrupo, 0) = @EsGrupo)
@@ -70,9 +70,9 @@ public sealed class UsuariosService(
                 FROM dbo.TA_USUARIOS
                 WHERE UPPER(LTRIM(RTRIM(SISTEMA))) = @Sistema
                   AND (
-                        @Texto = ''
-                        OR ISNULL(NOMBRE, '') LIKE '%' + @Texto + '%'
-                        OR ISNULL(email_de, '') LIKE '%' + @Texto + '%'
+                        @TextoLike = ''
+                        OR ISNULL(NOMBRE, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                        OR ISNULL(email_de, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
                       )
                   {activoFilterSql}
                   AND (@EsGrupo IS NULL OR ISNULL(EsGrupo, 0) = @EsGrupo);
@@ -81,7 +81,7 @@ public sealed class UsuariosService(
             var rows = new List<UsuarioGridItemDto>();
             await using var cmd = new SqlCommand(sql, cn);
             cmd.Parameters.AddWithValue("@Sistema", SistemaFijo);
-            cmd.Parameters.AddWithValue("@Texto", filters.Texto?.Trim() ?? string.Empty);
+            cmd.Parameters.AddWithValue("@TextoLike", SearchTextHelper.LikeContains(filters.Texto));
             cmd.Parameters.AddWithValue("@Activo", filters.Activo.HasValue ? filters.Activo.Value : DBNull.Value);
             cmd.Parameters.AddWithValue("@EsGrupo", filters.EsGrupo.HasValue ? filters.EsGrupo.Value : DBNull.Value);
             cmd.Parameters.AddWithValue("@Skip", skip);
