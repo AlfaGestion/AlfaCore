@@ -4,6 +4,68 @@
 
 <PageTitle>Estadisticas de conversaciones | Alfa Gestion</PageTitle>
 
+<style>
+    .conv-stats-page .conv-stats-board {
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 1rem !important;
+        overflow: visible !important;
+    }
+
+    .conv-stats-page .conv-stats-summary {
+        display: grid !important;
+        grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+        grid-auto-rows: minmax(112px, auto) !important;
+        align-items: stretch !important;
+        gap: .75rem !important;
+        width: 100% !important;
+    }
+
+    .conv-stats-page .conv-stats-columns {
+        display: grid !important;
+        grid-template-columns: minmax(0, 1.02fr) minmax(0, .98fr) !important;
+        gap: .85rem !important;
+        align-items: start !important;
+        width: 100% !important;
+        clear: both !important;
+    }
+
+    .conv-stats-page .conv-stats-column {
+        display: grid !important;
+        gap: .85rem !important;
+        align-content: start !important;
+        min-width: 0 !important;
+    }
+
+    .conv-stats-page .conv-stat-card {
+        display: grid !important;
+        align-content: start !important;
+        gap: .35rem !important;
+        min-height: 112px !important;
+        height: 100% !important;
+    }
+
+    .conv-stats-page .conv-stat-card strong {
+        margin: 0 !important;
+    }
+
+    @@media (max-width: 1180px) {
+        .conv-stats-page .conv-stats-summary {
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        }
+
+        .conv-stats-page .conv-stats-columns {
+            grid-template-columns: 1fr !important;
+        }
+    }
+
+    @@media (max-width: 520px) {
+        .conv-stats-page .conv-stats-summary {
+            grid-template-columns: 1fr !important;
+        }
+    }
+</style>
+
 <section class="page-grid conv-stats-page templates-page--odoo">
     <div class="page-intro conversations-topbar conv-stats-hero">
         <div>
