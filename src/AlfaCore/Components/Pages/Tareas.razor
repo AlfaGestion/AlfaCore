@@ -3,6 +3,7 @@
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject IJSRuntime Js
+@implements IAsyncDisposable
 
 <PageTitle>Tareas | Alfa Gestión</PageTitle>
 
@@ -399,7 +400,7 @@
                                 <strong title="@adjunto.NombreArchivo">@adjunto.NombreArchivo</strong>
                                 <span>@FormatSize(adjunto.TamanoBytes)</span>
                             </div>
-                            <button type="button" title="Quitar" @onclick="() => DeletePersistedAttachmentAsync(adjunto.IdAdjunto)">
+                            <button type="button" class="tareas-attachment-card__remove" title="Quitar" @onclick="() => DeletePersistedAttachmentAsync(adjunto.IdAdjunto)">
                                 <i class="bi bi-x-lg"></i>
                             </button>
                         </article>
@@ -412,7 +413,7 @@
                                 <strong title="@adjunto.NombreArchivo">@adjunto.NombreArchivo</strong>
                                 <span>@FormatSize(adjunto.TamanoBytes) - pendiente</span>
                             </div>
-                            <button type="button" title="Quitar" @onclick="() => RemovePendingAttachment(adjunto.Id)">
+                            <button type="button" class="tareas-attachment-card__remove" title="Quitar" @onclick="() => RemovePendingAttachment(adjunto.Id)">
                                 <i class="bi bi-x-lg"></i>
                             </button>
                         </article>
@@ -484,6 +485,20 @@
         </div>
     </section>
 }
+
+@if (_showImagePreview)
+{
+    <button type="button" class="modal-backdrop app-modal-backdrop no-print" aria-label="Cerrar imagen" @onclick="CloseImagePreview"></button>
+    <section class="tareas-image-preview no-print" @onclick:stopPropagation>
+        <div class="tareas-image-preview__head">
+            <strong>@_previewImageName</strong>
+            <button type="button" class="drawer__close" @onclick="CloseImagePreview" title="Cerrar">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        </div>
+        <img src="@_previewImageUrl" alt="@_previewImageName" />
+    </section>
+}
 @code {
     private TareasPageDto _page = new();
     private AppUiMessage? _feedback;
@@ -498,10 +513,17 @@
     private bool _savingTask;
     private bool _loadingTaskAttachments;
     private int _attachmentPickerVersion;
+    private bool _attachmentsPasteBound;
+    private bool _showImagePreview;
+    private string _previewImageUrl = string.Empty;
+    private string _previewImageName = string.Empty;
     private bool _showCompleted;
     private TareaSaveRequest _taskDraft = new();
     private List<TareaAdjuntoDto> _taskAttachments = [];
     private List<PendingTaskAttachment> _pendingTaskAttachments = [];
+    private IJSObjectReference? _attachmentsModule;
+    private IJSObjectReference? _attachmentsBinding;
+    private DotNetObjectReference<Tareas>? _attachmentsDotNetRef;
     private int? _editingListId;
     private string _listDraft = string.Empty;
     private bool _showShareModal;
@@ -556,8 +578,8 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (_showTaskModal)
-            await Js.InvokeVoidAsync("alfaCoreInterfacesUpload.bindPasteDrop", "#tareas-attachments-dropzone", "#tareas-attachments-picker");
+        if (_showTaskModal && !_attachmentsPasteBound)
+            await BindTaskAttachmentPasteAsync();
     }
 
     private async Task LoadAsync()
@@ -762,12 +784,13 @@
         _loadingTaskAttachments = false;
     }
 
-    private void CloseTaskModal()
+    private async Task CloseTaskModal()
     {
         _taskSharePanelOpen = false;
         _pendingTaskAttachments = [];
         _taskAttachments = [];
         _showTaskModal = false;
+        await DisposeTaskAttachmentBindingAsync();
     }
 
     private void ToggleTaskSharePanel()
@@ -866,6 +889,78 @@
         _attachmentPickerVersion++;
     }
 
+    [JSInvokable]
+    public Task ReceiveBrowserAttachmentsAsync(List<TareaBrowserAttachment> files)
+    {
+        var added = 0;
+        foreach (var file in files)
+        {
+            if (!IsAllowedAttachment(file.MimeType))
+            {
+                _feedback = BuildWarning("Adjunto no permitido", "Solo se permiten imagenes, audios y videos.");
+                continue;
+            }
+
+            byte[] bytes;
+            try
+            {
+                bytes = Convert.FromBase64String(file.ContenidoBase64);
+            }
+            catch
+            {
+                _feedback = BuildWarning("No se pudo adjuntar", $"No se pudo leer {file.NombreArchivo}.");
+                continue;
+            }
+
+            if (bytes.LongLength == 0 || bytes.LongLength > MaxAttachmentBytes)
+            {
+                _feedback = BuildWarning("Adjunto demasiado grande", "Cada adjunto puede pesar como maximo 50 MB.");
+                continue;
+            }
+
+            _pendingTaskAttachments.Add(new PendingTaskAttachment
+            {
+                Id = Guid.NewGuid().ToString("N"),
+                NombreArchivo = string.IsNullOrWhiteSpace(file.NombreArchivo) ? "pegado" : file.NombreArchivo,
+                MimeType = file.MimeType,
+                TamanoBytes = bytes.LongLength,
+                Contenido = bytes,
+                ContenidoBase64 = file.ContenidoBase64
+            });
+            added++;
+        }
+
+        if (added > 0)
+            _feedback = AppUiMessage.Success("Adjuntos listos", $"{added} adjunto(s) se guardaran con la tarea.");
+
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    private async Task BindTaskAttachmentPasteAsync()
+    {
+        _attachmentsModule ??= await Js.InvokeAsync<IJSObjectReference>("import", "./js/tareas-attachments.js");
+        _attachmentsDotNetRef ??= DotNetObjectReference.Create(this);
+        if (_attachmentsBinding is not null)
+            await _attachmentsBinding.InvokeVoidAsync("dispose");
+        _attachmentsBinding = await _attachmentsModule.InvokeAsync<IJSObjectReference>(
+            "bindTareasAttachments",
+            "tareas-attachments-dropzone",
+            _attachmentsDotNetRef);
+        _attachmentsPasteBound = true;
+    }
+
+    private async Task DisposeTaskAttachmentBindingAsync()
+    {
+        if (_attachmentsBinding is not null)
+        {
+            await _attachmentsBinding.InvokeVoidAsync("dispose");
+            _attachmentsBinding = null;
+        }
+
+        _attachmentsPasteBound = false;
+    }
+
     private async Task DeletePersistedAttachmentAsync(long idAdjunto)
     {
         var result = await UiOps.RunAsync(async () =>
@@ -897,42 +992,62 @@
     private static string GetAttachmentDataUrl(PendingTaskAttachment adjunto)
         => $"data:{adjunto.MimeType};base64,{adjunto.ContenidoBase64}";
 
-    private static RenderFragment RenderAttachmentPreview(string mimeType, string dataUrl, string label) => builder =>
+    private RenderFragment RenderAttachmentPreview(string mimeType, string dataUrl, string label) => builder =>
     {
         if (mimeType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
         {
-            builder.OpenElement(0, "img");
-            builder.AddAttribute(1, "src", dataUrl);
-            builder.AddAttribute(2, "alt", label);
+            builder.OpenElement(0, "button");
+            builder.AddAttribute(1, "type", "button");
+            builder.AddAttribute(2, "class", "tareas-attachment-card__image");
+            builder.AddAttribute(3, "title", "Ver imagen");
+            builder.AddAttribute(4, "onclick", EventCallback.Factory.Create(this, () => OpenImagePreview(dataUrl, label)));
+            builder.OpenElement(5, "img");
+            builder.AddAttribute(6, "src", dataUrl);
+            builder.AddAttribute(7, "alt", label);
+            builder.CloseElement();
             builder.CloseElement();
             return;
         }
 
         if (mimeType.StartsWith("audio/", StringComparison.OrdinalIgnoreCase))
         {
-            builder.OpenElement(3, "audio");
-            builder.AddAttribute(4, "controls", true);
-            builder.AddAttribute(5, "src", dataUrl);
+            builder.OpenElement(8, "audio");
+            builder.AddAttribute(9, "controls", true);
+            builder.AddAttribute(10, "src", dataUrl);
             builder.CloseElement();
             return;
         }
 
         if (mimeType.StartsWith("video/", StringComparison.OrdinalIgnoreCase))
         {
-            builder.OpenElement(6, "video");
-            builder.AddAttribute(7, "controls", true);
-            builder.AddAttribute(8, "src", dataUrl);
+            builder.OpenElement(11, "video");
+            builder.AddAttribute(12, "controls", true);
+            builder.AddAttribute(13, "src", dataUrl);
             builder.CloseElement();
             return;
         }
 
-        builder.OpenElement(9, "div");
-        builder.AddAttribute(10, "class", "tareas-attachment-card__fallback");
-        builder.OpenElement(11, "i");
-        builder.AddAttribute(12, "class", "bi bi-file-earmark-play");
+        builder.OpenElement(14, "div");
+        builder.AddAttribute(15, "class", "tareas-attachment-card__fallback");
+        builder.OpenElement(16, "i");
+        builder.AddAttribute(17, "class", "bi bi-file-earmark-play");
         builder.CloseElement();
         builder.CloseElement();
     };
+
+    private void OpenImagePreview(string dataUrl, string label)
+    {
+        _previewImageUrl = dataUrl;
+        _previewImageName = label;
+        _showImagePreview = true;
+    }
+
+    private void CloseImagePreview()
+    {
+        _showImagePreview = false;
+        _previewImageUrl = string.Empty;
+        _previewImageName = string.Empty;
+    }
 
     private async Task HandleQuickTaskKeyDown(KeyboardEventArgs args)
     {
@@ -1084,6 +1199,14 @@
             Message = message
         };
 
+    public async ValueTask DisposeAsync()
+    {
+        await DisposeTaskAttachmentBindingAsync();
+        if (_attachmentsModule is not null)
+            await _attachmentsModule.DisposeAsync();
+        _attachmentsDotNetRef?.Dispose();
+    }
+
     private static string GetSharingSummary(bool sharedWithAll, IReadOnlyList<string> users)
         => sharedWithAll
             ? "Compartida con todos"
@@ -1111,5 +1234,12 @@
                 TamanoBytes = TamanoBytes,
                 Contenido = Contenido
             };
+    }
+
+    public sealed class TareaBrowserAttachment
+    {
+        public string NombreArchivo { get; set; } = string.Empty;
+        public string MimeType { get; set; } = string.Empty;
+        public string ContenidoBase64 { get; set; } = string.Empty;
     }
 }
