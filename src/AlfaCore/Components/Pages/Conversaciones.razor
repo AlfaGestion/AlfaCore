@@ -1026,11 +1026,11 @@
                                 }
                                 <textarea id="conv-message"
                                           @ref="_replyTextArea"
+                                          @key="_selectedConversationId"
                                           rows="2"
                                           placeholder="@(_selectedConversation.Canal == "INTERNO" ? "Escribí un mensaje para el equipo…" : "Escribí una respuesta para WhatsApp…")"
                                           @onfocus="MarkSelectedConversationAsRead"
                                           @onfocusin="OnReplyFocusAsync"
-                                          value="@_replyText"
                                           @oninput="HandleReplyInputAsync"></textarea>
                             </div>
                             @if (_pendingAttachments.Count > 0)
@@ -1801,6 +1801,7 @@
     private ElementReference _replyTextArea;
     private ElementReference _internalNoteMobileTextArea;
     private long? _replyEnterHandlerConversationId;
+    private bool _syncReplyTextAfterRender;
     private int _lastSyncedBrowserNewCount = -1;
     private readonly string _typingClientId = Guid.NewGuid().ToString("N");
     private DateTime _lastTypingSentUtc = DateTime.MinValue;
@@ -2071,6 +2072,12 @@
                     _fileDropHandlerConversationId = null;
                 }
             }
+        }
+
+        if (_syncReplyTextAfterRender)
+        {
+            _syncReplyTextAfterRender = false;
+            await SetReplyTextareaValueAsync(_replyText, focus: false);
         }
 
         if (_scrollThreadToBottomAfterRender)
@@ -2439,6 +2446,12 @@
     {
         var conversationChanged = _selectedConversationId != idConversacion;
         _selectedConversationId = idConversacion;
+        if (conversationChanged)
+        {
+            _replyText = string.Empty;
+            _syncReplyTextAfterRender = true;
+        }
+
         var hasWarmCache = _conversationCache.TryGetValue(idConversacion, out var cachedConversation);
 
         if (hasWarmCache && cachedConversation is not null)
@@ -3366,7 +3379,6 @@
     private async Task HandleReplyInputAsync(ChangeEventArgs args)
     {
         _replyText = Convert.ToString(args.Value, System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
-        await AutoResizeReplyTextareaAsync();
         await NotifyTypingAsync(HasReplyText);
     }
 
@@ -3404,6 +3416,31 @@
         }
     }
 
+    private async Task<string> GetReplyTextareaValueAsync()
+    {
+        try
+        {
+            return await JS.InvokeAsync<string>("conversacionesUi.getElementValue", _replyTextArea);
+        }
+        catch
+        {
+            return _replyText;
+        }
+    }
+
+    private async Task SetReplyTextareaValueAsync(string value, bool focus)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("conversacionesUi.setElementValue", _replyTextArea, value, focus);
+            await AutoResizeReplyTextareaAsync();
+        }
+        catch
+        {
+            _syncReplyTextAfterRender = true;
+        }
+    }
+
     private async Task NotifyTypingAsync(bool escribiendo, bool force = false)
     {
         if (_selectedConversationId is not { } idConversacion)
@@ -3438,6 +3475,7 @@
         if (_selectedConversation is null)
             return;
 
+        _replyText = await GetReplyTextareaValueAsync();
         var textToSend = _replyText.Trim();
         var attachmentsToSend = _pendingAttachments.ToList();
         if (string.IsNullOrWhiteSpace(textToSend) && attachmentsToSend.Count == 0)
@@ -3452,6 +3490,7 @@
         if (!string.IsNullOrWhiteSpace(textToSend))
         {
             _replyText = string.Empty;
+            await SetReplyTextareaValueAsync(string.Empty, focus: true);
             _quotedMessage = null;
             optimisticMessageId = AddOptimisticOutgoingMessage(textToSend);
         }
@@ -3495,7 +3534,10 @@
                 pending.Error ??= "No se pudo enviar. Reintentá con el botón de enviar.";
 
             if (!string.IsNullOrWhiteSpace(textToSend) && !_messages.Any(x => x.Texto == textToSend && IsOutgoingMessage(x)))
+            {
                 _replyText = textToSend;
+                await SetReplyTextareaValueAsync(textToSend, focus: true);
+            }
         }
         finally
         {
@@ -4426,18 +4468,29 @@
             return;
         }
 
-        AddEmojiToReply(emoji);
+        await AddEmojiToReplyAsync(emoji);
     }
 
-    private void AddEmojiToReply(string emoji)
+    private async Task AddEmojiToReplyAsync(string emoji)
     {
         if (string.IsNullOrWhiteSpace(emoji))
             return;
 
-        _replyText = string.IsNullOrWhiteSpace(_replyText)
-            ? emoji
-            : $"{_replyText}{emoji}";
+        try
+        {
+            _replyText = await JS.InvokeAsync<string>("conversacionesUi.insertTextAtCursor", _replyTextArea, emoji);
+        }
+        catch
+        {
+            _replyText = string.IsNullOrWhiteSpace(_replyText)
+                ? emoji
+                : $"{_replyText}{emoji}";
+            _syncReplyTextAfterRender = true;
+        }
+
         MinimizeComposerTools();
+        await NotifyTypingAsync(HasReplyText);
+        await AutoResizeReplyTextareaAsync();
     }
 
     private async Task SendReactionAsync(ConversacionMensajeDto message, string emoji)
