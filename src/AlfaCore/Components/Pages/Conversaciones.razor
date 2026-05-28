@@ -523,7 +523,7 @@
                                     <button type="button" class="conversation-audit-result" @onclick="() => SelectConversationAsync(item.IdConversacion, showMobileChat: true)">
                                         <div class="conversation-audit-result__top">
                                             <strong>@DisplayOrFallback(item.NombreConversacion)</strong>
-                                            <span>@item.FechaHora.ToString("dd/MM HH:mm")</span>
+                                            <span>@FormatShortDate(item.FechaHora)</span>
                                         </div>
                                         <div class="conversation-audit-result__meta">
                                             <span>@DisplayOrFallback(item.TelefonoWhatsApp)</span>
@@ -707,7 +707,7 @@
                                         {
                                             <span class="conversation-event-divider__text">@message.Texto</span>
                                         }
-                                        <time class="conversation-event-divider__time">@message.FechaHora.ToString("dd/MM HH:mm")</time>
+                                        <time class="conversation-event-divider__time">@FormatShortDate(message.FechaHora)</time>
                                     </div>
                                     continue;
                                 }
@@ -767,7 +767,7 @@
                                         <article class="message-card @GetMessageClass(message) @(_selectedTicketMessageIds.Contains(message.IdMensaje) ? "message-card--ticket-selected" : string.Empty)">
                                     <div class="message-card__meta">
                                         <span>@GetMessageAuthor(message)</span>
-                                        <span>@message.FechaHora.ToString("dd/MM HH:mm")</span>
+                                        <span>@FormatShortDate(message.FechaHora)</span>
                                     </div>
                                     @if (TryGetQuotedMessage(message, out var quotedMessage))
                                     {
@@ -4970,7 +4970,22 @@
         };
 
     private static string FormatShortDate(DateTime value)
-        => value == DateTime.MinValue ? "--" : value.ToString("dd/MM HH:mm");
+    {
+        if (value == DateTime.MinValue)
+            return "--";
+
+        var date = value.Date;
+        var today = DateTime.Today;
+        var time = value.ToString("HH:mm", System.Globalization.CultureInfo.CurrentCulture);
+
+        if (date == today)
+            return $"Hoy {time}";
+
+        if (date == today.AddDays(-1))
+            return $"Ayer {time}";
+
+        return value.ToString("dd/MM HH:mm", System.Globalization.CultureInfo.CurrentCulture);
+    }
 
     private static bool IsInitializationPending(string? message)
         => !string.IsNullOrWhiteSpace(message)
