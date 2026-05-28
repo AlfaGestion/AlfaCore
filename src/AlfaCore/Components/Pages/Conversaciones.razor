@@ -1,4 +1,5 @@
 @page "/conversaciones"
+@using System.IO
 @using System.Net
 @using System.Text.Json
 @using System.Text.RegularExpressions
@@ -7,6 +8,7 @@
 @inject AlfaCore.Services.IContactosService ContactosSvc
 @inject AlfaCore.Services.ITicketsService TicketsSvc
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
+@inject AlfaCore.Services.IFloatingWindowService FloatingWindows
 @inject IJSRuntime JS
 @inject NavigationManager Nav
 @implements IAsyncDisposable
@@ -112,7 +114,7 @@
                     <label for="conv-mobile-search">Buscar</label>
                     <input id="conv-mobile-search"
                            type="search"
-                           placeholder="Teléfono, cliente, contacto o resumen..."
+                           placeholder="Buscar por teléfono, cliente, contacto, email, resumen o mensaje..."
                            value="@_filters.Search"
                            @oninput="HandleSearchInputAsync"
                            @onkeydown="HandleSearchEnter" />
@@ -160,22 +162,20 @@
                     <i class="bi bi-life-preserver"></i>
                     <span>Crear ticket</span>
                 </button>
-                <button type="button" class="btn btn--ghost btn--sm" @onclick="RecargarAsync" disabled="@(_loadingInbox || _loadingConversation)" title="Recargar">
-                    <i class="bi bi-arrow-clockwise"></i>
-                </button>
-                <button type="button" class="btn btn--ghost btn--sm" @onclick="TestNewMessageSoundAsync" disabled="@_loadingInbox" title="Probar sonido">
-                    <i class="bi bi-volume-up-fill"></i>
-                    <span>Probar sonido</span>
+                <button type="button" class="btn btn--ghost btn--sm conversations-ticket-button" @onclick="StartCloseAndCreateTicketAsync" disabled="@(_selectedConversation is null || _messages.Count == 0 || IsSelectedConversationClosed)" title="Cerrar la conversación y crear ticket con los últimos 20 mensajes">
+                    <i class="bi bi-check2-circle"></i>
+                    <span>Cerrar y crear ticket</span>
                 </button>
             </div>
 
-            <div class="conversations-filters__modes">
+            <div class="conversations-filters__modes conversations-filters__modes--compact" aria-label="Filtro de conversaciones">
                 @foreach (var mode in _modeOptions)
                 {
                     <button type="button"
                             class="conversations-filter-pill @(mode.Value == _filters.Modo ? "is-active" : string.Empty)"
                             @onclick="() => ChangeModeAsync(mode.Value)">
                         @mode.Label
+                        <i class="bi bi-chevron-down conversations-mode-caret"></i>
                     </button>
                 }
             </div>
@@ -185,7 +185,7 @@
                     <label for="conv-search">Buscar</label>
                     <input id="conv-search"
                            type="search"
-                           placeholder="Teléfono, cliente, contacto o resumen…"
+                           placeholder="Buscar por teléfono, cliente, contacto, email, resumen o mensaje..."
                            value="@_filters.Search"
                            @oninput="HandleSearchInputAsync"
                            @onkeydown="HandleSearchEnter"
@@ -523,7 +523,7 @@
                                     <button type="button" class="conversation-audit-result" @onclick="() => SelectConversationAsync(item.IdConversacion, showMobileChat: true)">
                                         <div class="conversation-audit-result__top">
                                             <strong>@DisplayOrFallback(item.NombreConversacion)</strong>
-                                            <span>@item.FechaHora.ToString("dd/MM HH:mm")</span>
+                                            <span>@FormatShortDate(item.FechaHora)</span>
                                         </div>
                                         <div class="conversation-audit-result__meta">
                                             <span>@DisplayOrFallback(item.TelefonoWhatsApp)</span>
@@ -559,7 +559,31 @@
                                 <span>Volver</span>
                             </button>
                             <div>
-                                <h3 class="panel-card__title">@GetConversationHeader(_selectedConversation)</h3>
+                                <div class="conversation-title-editor">
+                                    @if (_editingConversationName)
+                                    {
+                                        <input class="conversation-title-editor__input"
+                                               @ref="_conversationNameInput"
+                                               value="@_conversationNameDraft"
+                                               maxlength="120"
+                                               @oninput="OnConversationNameInput"
+                                               @onkeydown="OnConversationNameKeyDownAsync"
+                                               @onblur="SaveConversationNameAsync"
+                                               disabled="@_savingConversationName"
+                                               autofocus />
+                                    }
+                                    else
+                                    {
+                                        <h3 class="panel-card__title">@GetConversationHeader(_selectedConversation)</h3>
+                                        <button type="button"
+                                                class="btn btn--ghost btn--sm conversation-title-editor__button"
+                                                title="Editar nombre"
+                                                @onclick="StartConversationNameEdit"
+                                                disabled="@_busyAction">
+                                            <i class="bi bi-pencil-square"></i>
+                                        </button>
+                                    }
+                                </div>
                                 @if (_selectedConversation.Canal != "INTERNO" && !string.IsNullOrWhiteSpace(_selectedConversation.TelefonoWhatsApp))
                                 {
                                     <p class="panel-card__subtitle">@_selectedConversation.TelefonoWhatsApp</p>
@@ -577,7 +601,7 @@
                             </div>
                         </div>
                         <div class="conversation-header-state">
-                            <div class="conversation-header-state__row @(_showStatusMenu ? "is-open" : string.Empty)">
+                            <div class="conversation-header-state__row @(_showStatusMenu ? "is-open" : string.Empty)" @onclick:stopPropagation="true">
                                 <span class="conversation-header-state__caption">Estado:</span>
                                 <button type="button"
                                         class="conversation-header-state__trigger"
@@ -683,7 +707,7 @@
                                         {
                                             <span class="conversation-event-divider__text">@message.Texto</span>
                                         }
-                                        <time class="conversation-event-divider__time">@message.FechaHora.ToString("dd/MM HH:mm")</time>
+                                        <time class="conversation-event-divider__time">@FormatShortDate(message.FechaHora)</time>
                                     </div>
                                     continue;
                                 }
@@ -743,7 +767,7 @@
                                         <article class="message-card @GetMessageClass(message) @(_selectedTicketMessageIds.Contains(message.IdMensaje) ? "message-card--ticket-selected" : string.Empty)">
                                     <div class="message-card__meta">
                                         <span>@GetMessageAuthor(message)</span>
-                                        <span>@message.FechaHora.ToString("dd/MM HH:mm")</span>
+                                        <span>@FormatShortDate(message.FechaHora)</span>
                                     </div>
                                     @if (TryGetQuotedMessage(message, out var quotedMessage))
                                     {
@@ -821,6 +845,12 @@
                                                         else
                                                         {
                                                             <span class="attachment-name">@adj.NombreArchivo</span>
+                                                            <a class="btn btn--ghost btn--sm"
+                                                               href="@GetAttachmentDownloadUrl(adj)"
+                                                               download="@GetAttachmentDownloadName(adj)"
+                                                               title="Descargar imagen">
+                                                                <i class="bi bi-download"></i>
+                                                            </a>
                                                         }
                                                     </div>
                                                 }
@@ -850,6 +880,12 @@
                                                                 </div>
                                                             </div>
                                                             <button type="button" class="wa-audio-player__speed" data-audio-speed title="Cambiar velocidad">1</button>
+                                                            <a class="btn btn--ghost btn--sm wa-audio-player__download"
+                                                               href="@GetAttachmentDownloadUrl(adj)"
+                                                               download="@GetAttachmentDownloadName(adj)"
+                                                               title="Descargar audio">
+                                                                <i class="bi bi-download"></i>
+                                                            </a>
                                                         </div>
                                                     </div>
                                                 }
@@ -866,13 +902,16 @@
                                                             {
                                                                 <span>@FormatFileSize(adj.TamanoBytes)</span>
                                                             }
+                                                            <button type="button" class="btn btn--ghost btn--sm" @onclick="() => OpenAttachmentPreview(adj)">
+                                                                <i class="bi bi-arrows-fullscreen"></i> Ver grande
+                                                            </button>
                                                         </div>
                                                     </div>
                                                 }
                                                 else
                                                 {
                                                     <div class="message-attachment message-attachment--file">
-                                                        <a class="attachment-link" href="@GetAttachmentDownloadUrl(adj)" download="@adj.NombreArchivo">
+                                                        <a class="attachment-link" href="@GetAttachmentDownloadUrl(adj)" download="@GetAttachmentDownloadName(adj)">
                                                             <i class="bi bi-file-earmark-arrow-down"></i>
                                                             <span>@adj.NombreArchivo</span>
                                                             @if (adj.TamanoBytes > 0)
@@ -987,11 +1026,11 @@
                                 }
                                 <textarea id="conv-message"
                                           @ref="_replyTextArea"
+                                          @key="_selectedConversationId"
                                           rows="2"
                                           placeholder="@(_selectedConversation.Canal == "INTERNO" ? "Escribí un mensaje para el equipo…" : "Escribí una respuesta para WhatsApp…")"
                                           @onfocus="MarkSelectedConversationAsRead"
                                           @onfocusin="OnReplyFocusAsync"
-                                          value="@_replyText"
                                           @oninput="HandleReplyInputAsync"></textarea>
                             </div>
                             @if (_pendingAttachments.Count > 0)
@@ -1148,6 +1187,18 @@
                             <span class="context-card__label">Cliente</span>
                             <strong>@DisplayOrFallback(_selectedConversation.ClienteNombre)</strong>
                             <span class="context-card__muted">@DisplayOrFallback(_selectedConversation.ClienteCodigo)</span>
+                            @if (!string.IsNullOrWhiteSpace(_selectedConversation.ClienteCodigo))
+                            {
+                                <button type="button" class="btn btn--ghost btn--sm context-card__action" @onclick="OpenSelectedClient">
+                                    <i class="bi bi-building"></i> Ver cliente
+                                </button>
+                            }
+                            else
+                            {
+                                <button type="button" class="btn btn--primary btn--sm context-card__action" @onclick="OpenRelacionarClienteModal">
+                                    <i class="bi bi-building-add"></i> Relacionar cliente
+                                </button>
+                            }
                         </div>
 
                         <div class="context-card">
@@ -1407,29 +1458,71 @@
                 <div class="attachment-preview-actions">
                     <a class="btn btn--ghost btn--sm"
                        href="@GetAttachmentDownloadUrl(_previewAttachment)"
-                       download="@_previewAttachment.NombreArchivo">
+                       download="@GetAttachmentDownloadName(_previewAttachment)">
                         <i class="bi bi-download"></i> Descargar
                     </a>
-                    <button type="button" class="btn btn--ghost btn--sm attachment-preview-zoom-button" @onclick="ZoomPreviewOut" title="Alejar">
-                        <i class="bi bi-zoom-out"></i>
-                    </button>
-                    <button type="button" class="btn btn--ghost btn--sm attachment-preview-zoom-button" @onclick="ResetPreviewZoom" title="Restablecer zoom">
-                        @PreviewZoomPercent
-                    </button>
-                    <button type="button" class="btn btn--ghost btn--sm attachment-preview-zoom-button" @onclick="ZoomPreviewIn" title="Acercar">
-                        <i class="bi bi-zoom-in"></i>
-                    </button>
+                    @if (IsImageAttachment(_previewAttachment))
+                    {
+                        <button type="button" class="btn btn--ghost btn--sm attachment-preview-zoom-button" @onclick="ZoomPreviewOut" title="Alejar">
+                            <i class="bi bi-zoom-out"></i>
+                        </button>
+                        <button type="button" class="btn btn--ghost btn--sm attachment-preview-zoom-button" @onclick="ResetPreviewZoom" title="Restablecer zoom">
+                            @PreviewZoomPercent
+                        </button>
+                        <button type="button" class="btn btn--ghost btn--sm attachment-preview-zoom-button" @onclick="ZoomPreviewIn" title="Acercar">
+                            <i class="bi bi-zoom-in"></i>
+                        </button>
+                    }
                     <button type="button" class="btn btn--ghost btn--sm" @onclick="CloseAttachmentPreview">
                         <i class="bi bi-x-lg"></i>
                     </button>
                 </div>
             </header>
-            <div class="attachment-preview-canvas" @ref="_previewCanvas" @onwheel="HandlePreviewWheel" @onwheel:preventDefault>
-                <img src="@GetAttachmentUrl(_previewAttachment)"
-                     alt="@GetAttachmentLabel(_previewAttachment)"
-                     draggable="false"
-                     style="@PreviewImageStyle" />
+            <div class="attachment-preview-body">
+                <button type="button" class="attachment-preview-nav attachment-preview-nav--prev" @onclick="ShowPreviousPreviewAttachment" disabled="@(!CanNavigatePreviewGallery)" title="Anterior">
+                    <i class="bi bi-chevron-left"></i>
+                </button>
+                <div class="attachment-preview-canvas" @ref="_previewCanvas" @onwheel="HandlePreviewWheel" @onwheel:preventDefault>
+                    @if (IsVideoAttachment(_previewAttachment))
+                    {
+                        <video controls autoplay src="@GetAttachmentUrl(_previewAttachment)" style="@PreviewVideoStyle">
+                            Tu navegador no puede reproducir este video.
+                        </video>
+                    }
+                    else
+                    {
+                        <img src="@GetAttachmentUrl(_previewAttachment)"
+                             alt="@GetAttachmentLabel(_previewAttachment)"
+                             draggable="false"
+                             style="@PreviewImageStyle" />
+                    }
+                </div>
+                <button type="button" class="attachment-preview-nav attachment-preview-nav--next" @onclick="ShowNextPreviewAttachment" disabled="@(!CanNavigatePreviewGallery)" title="Siguiente">
+                    <i class="bi bi-chevron-right"></i>
+                </button>
             </div>
+            @if (PreviewGallery.Count > 1)
+            {
+                <div class="attachment-preview-strip" aria-label="Adjuntos multimedia de la conversacion">
+                    @foreach (var item in PreviewGallery)
+                    {
+                        <button type="button"
+                                class="@GetPreviewThumbClass(item)"
+                                title="@GetAttachmentLabel(item)"
+                                @onclick="() => OpenAttachmentPreview(item)">
+                            @if (IsVideoAttachment(item))
+                            {
+                                <video preload="metadata" muted src="@GetAttachmentUrl(item)"></video>
+                                <span><i class="bi bi-play-fill"></i></span>
+                            }
+                            else
+                            {
+                                <img src="@GetAttachmentUrl(item)" alt="@GetAttachmentLabel(item)" loading="lazy" />
+                            }
+                        </button>
+                    }
+                </div>
+            }
         </div>
     </div>
 }
@@ -1440,7 +1533,11 @@
     <section class="panel-card conversations-modal conversations-ticket-dialog">
         <div class="panel-card__header">
             <div>
-                <h3 class="panel-card__title">Crear ticket</h3>
+                <h3 class="panel-card__title">@(_closeAndCreateTicketMode ? "Cerrar y crear ticket" : "Crear ticket")</h3>
+                @if (_closeAndCreateTicketMode)
+                {
+                    <p class="panel-card__subtitle">El ticket se registrará cerrado y la conversación se cerrará al guardar.</p>
+                }
                 <p class="panel-card__subtitle">@_selectedTicketMessageIds.Count mensaje(s) quedarán vinculados al ticket.</p>
             </div>
             <button type="button" class="btn btn--ghost btn--sm" @onclick="CloseTicketDialog" disabled="@_creatingTicket">
@@ -1523,17 +1620,88 @@
             <div class="field">
                 <label>Asignado a</label>
                 <div class="ticket-creator-assignment">
-                    <span>@CurrentMessageTechnicianName</span>
+                    <span>@GetTicketAssignmentPreview()</span>
                     <small>Se asignará automáticamente al usuario que crea el ticket.</small>
                 </div>
             </div>
         </div>
         <div class="actions usuarios-editor__actions">
             <button type="button" class="btn btn--primary" @onclick="CreateTicketFromSelectionAsync" disabled="@(_creatingTicket || _checkingRelatedTickets)">
-                <i class="bi bi-floppy"></i> @(_creatingTicket ? "Creando..." : "Guardar ticket")
+                <i class="bi bi-floppy"></i> @(_creatingTicket ? "Creando..." : (_closeAndCreateTicketMode ? "Cerrar y crear ticket" : "Guardar ticket"))
             </button>
             <button type="button" class="btn btn--ghost" @onclick="CloseTicketDialog" disabled="@_creatingTicket">
                 Cancelar
+            </button>
+        </div>
+    </section>
+}
+
+@if (_showRelacionarClienteModal)
+{
+    <div class="conversations-modal-backdrop" @onclick="CloseRelacionarClienteModal"></div>
+    <section class="panel-card conversations-modal conversations-link-client-dialog">
+        <div class="panel-card__header">
+            <div>
+                <h3 class="panel-card__title">Relacionar cliente</h3>
+                <p class="panel-card__subtitle">Buscá la empresa y vinculala con esta conversación.</p>
+            </div>
+            <button type="button" class="btn btn--ghost btn--sm" @onclick="CloseRelacionarClienteModal" disabled="@(_loadingClientCandidates || _linkingClient)">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(_linkClientError))
+        {
+            <div class="conversations-error conversations-notice">@_linkClientError</div>
+        }
+
+        <div class="conversations-link-client-search">
+            <div class="field">
+                <label>Cliente / empresa</label>
+                <input type="search"
+                       placeholder="Código, razón social, teléfono o email..."
+                       @bind="_clientSearchText"
+                       @bind:event="oninput"
+                       @onkeydown="OnClientSearchKeyDownAsync"
+                       disabled="@(_loadingClientCandidates || _linkingClient)" />
+            </div>
+            <button type="button" class="btn btn--primary" @onclick="SearchClientesParaRelacionarAsync" disabled="@(_loadingClientCandidates || _linkingClient)">
+                <i class="bi bi-search"></i> Buscar
+            </button>
+        </div>
+
+        @if (_loadingClientCandidates)
+        {
+            <div class="conversations-ticket-duplicates conversations-ticket-duplicates--loading">
+                <i class="bi bi-search"></i>
+                <span>Buscando clientes...</span>
+            </div>
+        }
+        else if (_clientSearchExecuted && _clientCandidates.Count == 0)
+        {
+            <div class="conversations-empty">No encontramos clientes para ese texto.</div>
+        }
+        else if (_clientCandidates.Count > 0)
+        {
+            <div class="conversations-link-client-results">
+                @foreach (var client in _clientCandidates)
+                {
+                    <button type="button" class="conversations-link-client-result" @onclick="() => RelacionarClienteAsync(client)" disabled="@_linkingClient">
+                        <span class="conversations-link-client-result__avatar">@GetClientInitial(client)</span>
+                        <span class="conversations-link-client-result__body">
+                            <strong>@client.RazonSocial</strong>
+                            <small>@client.Codigo</small>
+                            <span>@FormatClientCandidateSummary(client)</span>
+                        </span>
+                        <i class="bi bi-link-45deg"></i>
+                    </button>
+                }
+            </div>
+        }
+
+        <div class="actions">
+            <button type="button" class="btn btn--ghost" @onclick="CloseRelacionarClienteModal" disabled="@(_loadingClientCandidates || _linkingClient)">
+                Cerrar
             </button>
         </div>
     </section>
@@ -1578,6 +1746,7 @@
     private List<ConversacionTypingDto> _typingUsers = [];
     private List<ContactoGridItemDto> _contactSuggestions = [];
     private List<ConversacionInboxItemDto> _conversationSuggestions = [];
+    private List<ConversacionClienteCandidateDto> _clientCandidates = [];
     private readonly Dictionary<long, ConversationViewCache> _conversationCache = [];
     private readonly Dictionary<string, ConversationChannelCache> _channelCache = [];
     private ConversacionDetalleDto? _selectedConversation;
@@ -1587,6 +1756,10 @@
     private bool _loadingAuditMessages;
     private bool _loadingConversation;
     private bool _busyAction;
+    private bool _editingConversationName;
+    private bool _savingConversationName;
+    private bool _focusConversationNameAfterRender;
+    private string _conversationNameDraft = string.Empty;
     private string? _loadError;
     private string? _conversationError;
     private string? _actionMessage;
@@ -1599,8 +1772,10 @@
     private string _assignmentTechnicianId = string.Empty;
     private string _statusCode = "ABIERTA";
     private bool _showStatusMenu;
+    private IDisposable? _floatingWindowRegistration;
     private ElementReference _threadElement;
     private ElementReference _composerDropZone;
+    private ElementReference _conversationNameInput;
     private DotNetObjectReference<Conversaciones>? _dotNetRef;
     private CancellationTokenSource? _pollingCts;
     private Task? _pollingTask;
@@ -1626,6 +1801,7 @@
     private ElementReference _replyTextArea;
     private ElementReference _internalNoteMobileTextArea;
     private long? _replyEnterHandlerConversationId;
+    private bool _syncReplyTextAfterRender;
     private int _lastSyncedBrowserNewCount = -1;
     private readonly string _typingClientId = Guid.NewGuid().ToString("N");
     private DateTime _lastTypingSentUtc = DateTime.MinValue;
@@ -1640,6 +1816,12 @@
     private string _emojiSearch = string.Empty;
     private bool _showContactSuggestions;
     private bool _loadingContactSuggestions;
+    private bool _showRelacionarClienteModal;
+    private bool _loadingClientCandidates;
+    private bool _linkingClient;
+    private bool _clientSearchExecuted;
+    private string _clientSearchText = string.Empty;
+    private string? _linkClientError;
     private long? _startupConversationId;
     private bool _ticketSelectionMode;
     private bool _showTicketDialog;
@@ -1650,6 +1832,7 @@
     private string? _ticketError;
     private bool _creatingTicket;
     private bool _checkingRelatedTickets;
+    private bool _closeAndCreateTicketMode;
     private bool _allowCreateDespiteRelated;
     private List<TicketRelatedMatchDto> _relatedTicketMatches = [];
     private bool _loadingContextTickets;
@@ -1757,6 +1940,7 @@
 
     protected override async Task OnInitializedAsync()
     {
+        _floatingWindowRegistration = FloatingWindows.Register(AlfaCore.Services.FloatingWindowType.DropdownMenu, CloseFloatingWindowsAsync);
         ApplyStartupQuery();
         await Task.WhenAll(LoadLookupsAsync(), LoadFavoriteStickersAsync());
         if (_loadError is null)
@@ -1890,6 +2074,12 @@
             }
         }
 
+        if (_syncReplyTextAfterRender)
+        {
+            _syncReplyTextAfterRender = false;
+            await SetReplyTextareaValueAsync(_replyText, focus: false);
+        }
+
         if (_scrollThreadToBottomAfterRender)
         {
             _scrollThreadToBottomAfterRender = false;
@@ -1900,6 +2090,18 @@
         {
             _focusReplyAfterRender = false;
             await FocusReplyAsync();
+        }
+
+        if (_focusConversationNameAfterRender)
+        {
+            _focusConversationNameAfterRender = false;
+            try
+            {
+                await _conversationNameInput.FocusAsync(preventScroll: true);
+            }
+            catch
+            {
+            }
         }
 
         if (_bindPreviewPanAfterRender && _previewAttachment is not null)
@@ -2244,6 +2446,12 @@
     {
         var conversationChanged = _selectedConversationId != idConversacion;
         _selectedConversationId = idConversacion;
+        if (conversationChanged)
+        {
+            _replyText = string.Empty;
+            _syncReplyTextAfterRender = true;
+        }
+
         var hasWarmCache = _conversationCache.TryGetValue(idConversacion, out var cachedConversation);
 
         if (hasWarmCache && cachedConversation is not null)
@@ -2272,6 +2480,12 @@
             await Task.WhenAll(conversationTask, messagesTask, attachmentsTask, typingTask);
 
             _selectedConversation = await conversationTask;
+            if (conversationChanged || clearActionState || !_editingConversationName)
+            {
+                _editingConversationName = false;
+                _savingConversationName = false;
+                _conversationNameDraft = _selectedConversation is null ? string.Empty : GetConversationHeader(_selectedConversation);
+            }
             _messages = (await messagesTask).ToList();
             _typingUsers = (await typingTask).ToList();
             var adjuntos = await attachmentsTask;
@@ -2325,6 +2539,7 @@
             return;
 
         _ticketSelectionMode = true;
+        _closeAndCreateTicketMode = false;
         _showTicketDialog = false;
         _ticketError = null;
         _selectedTicketMessageIds.Clear();
@@ -2333,6 +2548,34 @@
         _ticketPriority = 2;
         _allowCreateDespiteRelated = false;
         _relatedTicketMatches.Clear();
+    }
+
+    private async Task StartCloseAndCreateTicketAsync()
+    {
+        if (_selectedConversation is null || _messages.Count == 0)
+            return;
+
+        _ticketSelectionMode = false;
+        _closeAndCreateTicketMode = true;
+        _showTicketDialog = false;
+        _ticketError = null;
+        _selectedTicketMessageIds.Clear();
+
+        foreach (var idMensaje in _messages
+                     .OrderByDescending(x => x.FechaHora)
+                     .Take(20)
+                     .OrderBy(x => x.FechaHora)
+                     .Select(x => x.IdMensaje))
+        {
+            _selectedTicketMessageIds.Add(idMensaje);
+        }
+
+        _ticketTitle = BuildDefaultTicketTitle();
+        _ticketDescription = string.Empty;
+        _ticketPriority = 2;
+        _allowCreateDespiteRelated = false;
+        _relatedTicketMatches.Clear();
+        await OpenTicketDialog();
     }
 
     private void ToggleTicketMessageSelection(long idMensaje, ChangeEventArgs args)
@@ -2366,6 +2609,7 @@
 
         _showTicketDialog = false;
         _ticketError = null;
+        _closeAndCreateTicketMode = false;
         _allowCreateDespiteRelated = false;
     }
 
@@ -2376,6 +2620,7 @@
 
         _ticketSelectionMode = false;
         _showTicketDialog = false;
+        _closeAndCreateTicketMode = false;
         _selectedTicketMessageIds.Clear();
         _ticketDescription = string.Empty;
         _ticketError = null;
@@ -2397,7 +2642,9 @@
             _ticketError = "Ingresá el nombre del ticket.";
             return;
         }
-        var creatorTechnicianId = CurrentMessageTechnicianId;
+        var creatorTechnicianId = _closeAndCreateTicketMode
+            ? FirstNonEmpty(_selectedConversation.IdTecnico, CurrentMessageTechnicianId)
+            : CurrentMessageTechnicianId;
         if (string.IsNullOrWhiteSpace(creatorTechnicianId))
         {
             _ticketError = "No se pudo crear el ticket porque tu usuario no tiene un técnico asociado.";
@@ -2423,7 +2670,7 @@
             {
                 Titulo = _ticketTitle,
                 Descripcion = _ticketDescription,
-                CodigoEstado = TicketEstadoKeys.Nuevo,
+                CodigoEstado = _closeAndCreateTicketMode ? GetClosedTicketStateCode() : TicketEstadoKeys.Nuevo,
                 Prioridad = _ticketPriority,
                 IdTecnico = creatorTechnicianId,
                 ClienteCodigo = _selectedConversation.ClienteCodigo,
@@ -2433,23 +2680,43 @@
                 UsuarioAccion = CurrentUserNameForAudit
             });
 
+            if (_closeAndCreateTicketMode)
+            {
+                var closedState = _states.FirstOrDefault(x => x.EsCerrado)?.CodigoEstado ?? "CERRADA";
+                await ConversacionesSvc.ChangeStatusAsync(new ConversacionEstadoRequest
+                {
+                    IdConversacion = _selectedConversation.IdConversacion,
+                    CodigoEstado = closedState,
+                    IdTecnicoAutor = creatorTechnicianId,
+                    NombreTecnicoAccion = GetTicketAssignmentPreview(),
+                    UsuarioAccion = CurrentUserNameForAudit,
+                    SistemaAccion = CurrentUserSystemForAudit
+                });
+            }
+
+            var createdAndClosed = _closeAndCreateTicketMode;
             await ConversacionesSvc.AddInternalEventAsync(new ConversacionEventoInternoRequest
             {
                 IdConversacion = _selectedConversation.IdConversacion,
-                Texto = $"{CurrentMessageTechnicianName} cre\u00f3 el ticket #{idTicket.ToString(System.Globalization.CultureInfo.InvariantCulture)}.",
-                IdTecnicoAutor = CurrentMessageTechnicianId,
-                NombreTecnicoAccion = CurrentMessageTechnicianName,
+                Texto = createdAndClosed
+                    ? $"{GetTicketAssignmentPreview()} cerr\u00f3 la conversaci\u00f3n y cre\u00f3 el ticket #{idTicket.ToString(System.Globalization.CultureInfo.InvariantCulture)}."
+                    : $"{CurrentMessageTechnicianName} cre\u00f3 el ticket #{idTicket.ToString(System.Globalization.CultureInfo.InvariantCulture)}.",
+                IdTecnicoAutor = creatorTechnicianId,
+                NombreTecnicoAccion = GetTicketAssignmentPreview(),
                 UsuarioAccion = CurrentUserNameForAudit,
                 SistemaAccion = CurrentUserSystemForAudit
             });
 
             _ticketSelectionMode = false;
+            _closeAndCreateTicketMode = false;
             _showTicketDialog = false;
             _selectedTicketMessageIds.Clear();
             _ticketDescription = string.Empty;
             _relatedTicketMatches.Clear();
             _allowCreateDespiteRelated = false;
-            _actionMessage = $"Ticket #{idTicket.ToString(System.Globalization.CultureInfo.InvariantCulture)} creado correctamente.";
+            _actionMessage = createdAndClosed
+                ? $"Ticket #{idTicket.ToString(System.Globalization.CultureInfo.InvariantCulture)} creado y conversación cerrada."
+                : $"Ticket #{idTicket.ToString(System.Globalization.CultureInfo.InvariantCulture)} creado correctamente.";
             await LoadConversationAsync(_selectedConversation.IdConversacion, showLoading: false, clearActionState: false);
         }
         catch (Exception ex)
@@ -2589,6 +2856,14 @@
 
         return source.Length <= 80 ? source : source[..80];
     }
+
+    private string GetClosedTicketStateCode()
+        => TicketEstadoKeys.Cerrado;
+
+    private string GetTicketAssignmentPreview()
+        => _closeAndCreateTicketMode
+            ? FirstNonEmpty(_selectedConversation?.TecnicoNombre, CurrentMessageTechnicianName, "Sin asignar")
+            : CurrentMessageTechnicianName;
 
     private async Task DebounceContactSuggestionsAsync()
     {
@@ -2892,6 +3167,8 @@
            || _uploadingFile
            || _uploadingAudio
            || _recording
+           || _editingConversationName
+           || _savingConversationName
            || _showNuevoHilo
            || _showTemplatePanel;
 
@@ -3102,7 +3379,6 @@
     private async Task HandleReplyInputAsync(ChangeEventArgs args)
     {
         _replyText = Convert.ToString(args.Value, System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
-        await AutoResizeReplyTextareaAsync();
         await NotifyTypingAsync(HasReplyText);
     }
 
@@ -3140,6 +3416,31 @@
         }
     }
 
+    private async Task<string> GetReplyTextareaValueAsync()
+    {
+        try
+        {
+            return await JS.InvokeAsync<string>("conversacionesUi.getElementValue", _replyTextArea);
+        }
+        catch
+        {
+            return _replyText;
+        }
+    }
+
+    private async Task SetReplyTextareaValueAsync(string value, bool focus)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("conversacionesUi.setElementValue", _replyTextArea, value, focus);
+            await AutoResizeReplyTextareaAsync();
+        }
+        catch
+        {
+            _syncReplyTextAfterRender = true;
+        }
+    }
+
     private async Task NotifyTypingAsync(bool escribiendo, bool force = false)
     {
         if (_selectedConversationId is not { } idConversacion)
@@ -3174,6 +3475,7 @@
         if (_selectedConversation is null)
             return;
 
+        _replyText = await GetReplyTextareaValueAsync();
         var textToSend = _replyText.Trim();
         var attachmentsToSend = _pendingAttachments.ToList();
         if (string.IsNullOrWhiteSpace(textToSend) && attachmentsToSend.Count == 0)
@@ -3188,6 +3490,7 @@
         if (!string.IsNullOrWhiteSpace(textToSend))
         {
             _replyText = string.Empty;
+            await SetReplyTextareaValueAsync(string.Empty, focus: true);
             _quotedMessage = null;
             optimisticMessageId = AddOptimisticOutgoingMessage(textToSend);
         }
@@ -3231,7 +3534,10 @@
                 pending.Error ??= "No se pudo enviar. Reintentá con el botón de enviar.";
 
             if (!string.IsNullOrWhiteSpace(textToSend) && !_messages.Any(x => x.Texto == textToSend && IsOutgoingMessage(x)))
+            {
                 _replyText = textToSend;
+                await SetReplyTextareaValueAsync(textToSend, focus: true);
+            }
         }
         finally
         {
@@ -3535,6 +3841,15 @@
         _showStatusMenu = !_showStatusMenu;
     }
 
+    private Task CloseFloatingWindowsAsync()
+    {
+        if (!_showStatusMenu)
+            return Task.CompletedTask;
+
+        _showStatusMenu = false;
+        return InvokeAsync(StateHasChanged);
+    }
+
     private async Task SelectStatusAsync(string codigoEstado)
     {
         _showStatusMenu = false;
@@ -3750,6 +4065,105 @@
     {
         if (_selectedConversation?.IdContacto is int idContacto)
             Nav.NavigateTo($"/contactos?editar={idContacto.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+    }
+
+    private void OpenSelectedClient()
+    {
+        if (!string.IsNullOrWhiteSpace(_selectedConversation?.ClienteCodigo))
+            Nav.NavigateTo($"/clientes?editar={Uri.EscapeDataString(_selectedConversation.ClienteCodigo)}");
+    }
+
+    private void OpenRelacionarClienteModal()
+    {
+        if (_selectedConversation is null)
+            return;
+
+        _linkClientError = null;
+        _clientSearchText = FirstNonEmpty(_selectedConversation.ClienteNombre, _selectedConversation.ContactoNombre, _selectedConversation.NombreVisible);
+        _clientCandidates.Clear();
+        _clientSearchExecuted = false;
+        _showRelacionarClienteModal = true;
+    }
+
+    private void CloseRelacionarClienteModal()
+    {
+        if (_loadingClientCandidates || _linkingClient)
+            return;
+
+        _showRelacionarClienteModal = false;
+        _linkClientError = null;
+        _clientSearchText = string.Empty;
+        _clientCandidates.Clear();
+        _clientSearchExecuted = false;
+    }
+
+    private async Task OnClientSearchKeyDownAsync(KeyboardEventArgs e)
+    {
+        if (!string.Equals(e.Key, "Enter", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        await SearchClientesParaRelacionarAsync();
+    }
+
+    private async Task SearchClientesParaRelacionarAsync()
+    {
+        _linkClientError = null;
+        _clientCandidates.Clear();
+        _clientSearchExecuted = true;
+
+        if (string.IsNullOrWhiteSpace(_clientSearchText))
+        {
+            _linkClientError = "Escribí parte del código, razón social, teléfono o email del cliente.";
+            return;
+        }
+
+        _loadingClientCandidates = true;
+        try
+        {
+            var result = await ConversacionesSvc.SearchClientesParaRelacionarAsync(_clientSearchText);
+            _clientCandidates = result.ToList();
+        }
+        catch (Exception ex)
+        {
+            _linkClientError = ex.Message;
+        }
+        finally
+        {
+            _loadingClientCandidates = false;
+        }
+    }
+
+    private async Task RelacionarClienteAsync(ConversacionClienteCandidateDto client)
+    {
+        if (_selectedConversation is null)
+            return;
+
+        _linkClientError = null;
+        _linkingClient = true;
+        try
+        {
+            await ConversacionesSvc.RelacionarClienteAsync(new ConversacionRelacionarClienteRequest
+            {
+                IdConversacion = _selectedConversation.IdConversacion,
+                ClienteCodigo = client.Codigo
+            });
+
+            _actionMessage = $"Cliente relacionado: {client.RazonSocial}.";
+            _showRelacionarClienteModal = false;
+            _clientCandidates.Clear();
+            _clientSearchText = string.Empty;
+            _clientSearchExecuted = false;
+            await RefreshInboxAsync(showLoading: false, allowSelectionChange: false);
+            await SelectConversationAsync(_selectedConversation.IdConversacion);
+        }
+        catch (Exception ex)
+        {
+            _linkClientError = ex.Message;
+        }
+        finally
+        {
+            _linkingClient = false;
+        }
     }
 
     private void OpenNewContactFromSelectedConversation()
@@ -4054,18 +4468,29 @@
             return;
         }
 
-        AddEmojiToReply(emoji);
+        await AddEmojiToReplyAsync(emoji);
     }
 
-    private void AddEmojiToReply(string emoji)
+    private async Task AddEmojiToReplyAsync(string emoji)
     {
         if (string.IsNullOrWhiteSpace(emoji))
             return;
 
-        _replyText = string.IsNullOrWhiteSpace(_replyText)
-            ? emoji
-            : $"{_replyText}{emoji}";
+        try
+        {
+            _replyText = await JS.InvokeAsync<string>("conversacionesUi.insertTextAtCursor", _replyTextArea, emoji);
+        }
+        catch
+        {
+            _replyText = string.IsNullOrWhiteSpace(_replyText)
+                ? emoji
+                : $"{_replyText}{emoji}";
+            _syncReplyTextAfterRender = true;
+        }
+
         MinimizeComposerTools();
+        await NotifyTypingAsync(HasReplyText);
+        await AutoResizeReplyTextareaAsync();
     }
 
     private async Task SendReactionAsync(ConversacionMensajeDto message, string emoji)
@@ -4245,7 +4670,7 @@
     }
 
     private static string GetDisplayName(ConversacionInboxItemDto item)
-        => FirstNonEmpty(item.ContactoNombre, item.ClienteNombre, item.NombreVisible, item.TelefonoWhatsApp);
+        => FirstNonEmpty(item.NombreVisible, item.ContactoNombre, item.ClienteNombre, item.TelefonoWhatsApp);
 
     private string GetConversationInitials(ConversacionInboxItemDto item)
     {
@@ -4268,7 +4693,7 @@
         => _states.Any(x => x.EsCerrado && string.Equals(x.CodigoEstado, item.CodigoEstado, StringComparison.OrdinalIgnoreCase));
 
     private static string GetConversationHeader(ConversacionDetalleDto item)
-        => FirstNonEmpty(item.ContactoNombre, item.ClienteNombre, item.NombreVisible, item.TelefonoWhatsApp);
+        => FirstNonEmpty(item.NombreVisible, item.ContactoNombre, item.ClienteNombre, item.TelefonoWhatsApp);
 
     private static string GetWhatsAppWindowLabel(ConversacionDetalleDto item)
     {
@@ -4590,6 +5015,21 @@
     private static string FirstNonEmpty(params string?[] values)
         => values.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x))?.Trim() ?? string.Empty;
 
+    private static string GetClientInitial(ConversacionClienteCandidateDto client)
+    {
+        var value = FirstNonEmpty(client.RazonSocial, client.Codigo);
+        return string.IsNullOrWhiteSpace(value) ? "?" : value[..1].ToUpperInvariant();
+    }
+
+    private static string FormatClientCandidateSummary(ConversacionClienteCandidateDto client)
+    {
+        var location = FirstNonEmpty(
+            string.Join(" · ", new[] { client.Localidad, client.Provincia }.Where(x => !string.IsNullOrWhiteSpace(x))),
+            string.Empty);
+        var contact = string.Join(" · ", new[] { client.Telefono, client.Mail }.Where(x => !string.IsNullOrWhiteSpace(x)));
+        return FirstNonEmpty(location, contact, "Sin datos adicionales");
+    }
+
     private IReadOnlyList<string> GetRelatedTerms()
         => _relatedTicketMatches.SelectMany(x => x.Terminos)
             .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -4628,7 +5068,22 @@
         };
 
     private static string FormatShortDate(DateTime value)
-        => value == DateTime.MinValue ? "--" : value.ToString("dd/MM HH:mm");
+    {
+        if (value == DateTime.MinValue)
+            return "--";
+
+        var date = value.Date;
+        var today = DateTime.Today;
+        var time = value.ToString("HH:mm", System.Globalization.CultureInfo.CurrentCulture);
+
+        if (date == today)
+            return $"Hoy {time}";
+
+        if (date == today.AddDays(-1))
+            return $"Ayer {time}";
+
+        return value.ToString("dd/MM HH:mm", System.Globalization.CultureInfo.CurrentCulture);
+    }
 
     private static bool IsInitializationPending(string? message)
         => !string.IsNullOrWhiteSpace(message)
@@ -4660,6 +5115,9 @@
     private static bool IsVideoAttachment(ConversacionAdjuntoDto adjunto)
         => string.Equals(adjunto.TipoArchivo, "VIDEO", StringComparison.OrdinalIgnoreCase)
            || adjunto.MimeType.StartsWith("video/", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsPreviewableAttachment(ConversacionAdjuntoDto adjunto)
+        => IsImageAttachment(adjunto) || IsVideoAttachment(adjunto);
 
     private bool ShouldShowMessageText(ConversacionMensajeDto message)
     {
@@ -4923,10 +5381,129 @@
 
     private void OpenAttachmentPreview(ConversacionAdjuntoDto adjunto)
     {
+        if (!IsPreviewableAttachment(adjunto))
+            return;
+
         _openAttachmentMenuId = null;
         _previewAttachment = adjunto;
         _bindPreviewPanAfterRender = true;
         ResetPreviewZoom();
+    }
+
+    private IReadOnlyList<ConversacionAdjuntoDto> PreviewGallery
+        => _messages
+            .SelectMany(message => _adjuntosPorMensaje.TryGetValue(message.IdMensaje, out var adjuntos)
+                ? adjuntos
+                : Enumerable.Empty<ConversacionAdjuntoDto>())
+            .Where(IsPreviewableAttachment)
+            .ToList();
+
+    private bool CanNavigatePreviewGallery
+        => PreviewGallery.Count > 1;
+
+    private void ShowPreviousPreviewAttachment()
+        => ShowRelativePreviewAttachment(-1);
+
+    private void ShowNextPreviewAttachment()
+        => ShowRelativePreviewAttachment(1);
+
+    private void ShowRelativePreviewAttachment(int offset)
+    {
+        if (_previewAttachment is null)
+            return;
+
+        var gallery = PreviewGallery;
+        if (gallery.Count <= 1)
+            return;
+
+        var index = gallery.ToList().FindIndex(item => item.IdAdjunto == _previewAttachment.IdAdjunto);
+        if (index < 0)
+            index = 0;
+
+        var nextIndex = (index + offset + gallery.Count) % gallery.Count;
+        OpenAttachmentPreview(gallery[nextIndex]);
+    }
+
+    private string GetPreviewThumbClass(ConversacionAdjuntoDto adjunto)
+        => _previewAttachment?.IdAdjunto == adjunto.IdAdjunto
+            ? "attachment-preview-thumb is-active"
+            : "attachment-preview-thumb";
+
+    private void StartConversationNameEdit()
+    {
+        if (_selectedConversation is null)
+            return;
+
+        _conversationNameDraft = GetConversationHeader(_selectedConversation);
+        _editingConversationName = true;
+        _focusConversationNameAfterRender = true;
+    }
+
+    private void OnConversationNameInput(ChangeEventArgs args)
+        => _conversationNameDraft = args.Value?.ToString() ?? string.Empty;
+
+    private async Task OnConversationNameKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase))
+            await SaveConversationNameAsync();
+        else if (string.Equals(args.Key, "Escape", StringComparison.OrdinalIgnoreCase))
+            CancelConversationNameEdit();
+    }
+
+    private void CancelConversationNameEdit()
+    {
+        _conversationNameDraft = _selectedConversation is null ? string.Empty : GetConversationHeader(_selectedConversation);
+        _editingConversationName = false;
+    }
+
+    private async Task SaveConversationNameAsync()
+    {
+        if (!_editingConversationName || _selectedConversation is null || _savingConversationName)
+            return;
+
+        var nextName = _conversationNameDraft.Trim();
+        var currentName = GetConversationHeader(_selectedConversation).Trim();
+        if (string.IsNullOrWhiteSpace(nextName))
+        {
+            _conversationNameDraft = currentName;
+            _editingConversationName = false;
+            return;
+        }
+
+        if (string.Equals(nextName, currentName, StringComparison.Ordinal))
+        {
+            _editingConversationName = false;
+            return;
+        }
+
+        _savingConversationName = true;
+        try
+        {
+            await ConversacionesSvc.RenameConversationAsync(new ConversacionRenameRequest
+            {
+                IdConversacion = _selectedConversation.IdConversacion,
+                NombreVisible = nextName,
+                UsuarioAccion = CurrentUserNameForAudit,
+                SistemaAccion = CurrentUserSystemForAudit
+            });
+
+            _selectedConversation.NombreVisible = nextName;
+            var inboxItem = _inbox.FirstOrDefault(item => item.IdConversacion == _selectedConversation.IdConversacion);
+            if (inboxItem is not null)
+                inboxItem.NombreVisible = nextName;
+            StoreConversationCache(_selectedConversation.IdConversacion);
+            _editingConversationName = false;
+        }
+        catch (Exception ex)
+        {
+            _conversationError = ex.Message;
+            _conversationNameDraft = currentName;
+            _editingConversationName = false;
+        }
+        finally
+        {
+            _savingConversationName = false;
+        }
     }
 
     private void CloseAttachmentPreview()
@@ -4937,6 +5514,9 @@
 
     private string PreviewImageStyle
         => $"width: {Math.Round(_previewZoom * 100, 0).ToString(System.Globalization.CultureInfo.InvariantCulture)}%;";
+
+    private string PreviewVideoStyle
+        => "width: min(100%, 960px); max-height: 100%;";
 
     private string PreviewZoomPercent
         => $"{Math.Round(_previewZoom * 100, 0).ToString(System.Globalization.CultureInfo.InvariantCulture)}%";
@@ -4951,7 +5531,12 @@
         => SetPreviewZoom(1d);
 
     private void HandlePreviewWheel(WheelEventArgs args)
-        => SetPreviewZoom(_previewZoom + (args.DeltaY < 0 ? .15d : -.15d));
+    {
+        if (_previewAttachment is null || !IsImageAttachment(_previewAttachment))
+            return;
+
+        SetPreviewZoom(_previewZoom + (args.DeltaY < 0 ? .15d : -.15d));
+    }
 
     private void SetPreviewZoom(double value)
         => _previewZoom = Math.Clamp(value, .5d, 4d);
@@ -5015,6 +5600,69 @@
 
     private static string GetAttachmentDownloadUrl(ConversacionAdjuntoDto adjunto)
         => $"/api/conversaciones/adjuntos/{adjunto.IdAdjunto}?download=1";
+
+    private string GetAttachmentDownloadName(ConversacionAdjuntoDto adjunto)
+    {
+        var kind = GetAttachmentDownloadKind(adjunto);
+        var extension = GetAttachmentDownloadExtension(adjunto);
+        var index = _adjuntosPorMensaje.Values
+            .SelectMany(items => items)
+            .Where(item => string.Equals(GetAttachmentDownloadKind(item), kind, StringComparison.OrdinalIgnoreCase))
+            .Where(item => item.IdAdjunto <= adjunto.IdAdjunto)
+            .OrderBy(item => item.IdAdjunto)
+            .Count();
+
+        if (index <= 0)
+            index = 1;
+
+        return $"{kind} ({index}){extension}";
+    }
+
+    private static string GetAttachmentDownloadKind(ConversacionAdjuntoDto adjunto)
+    {
+        var tipo = adjunto.TipoArchivo?.Trim() ?? string.Empty;
+        var mime = adjunto.MimeType?.Trim() ?? string.Empty;
+
+        if (string.Equals(tipo, "IMAGE", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(tipo, "STICKER", StringComparison.OrdinalIgnoreCase)
+            || mime.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+            return "Image";
+
+        if (string.Equals(tipo, "AUDIO", StringComparison.OrdinalIgnoreCase)
+            || mime.StartsWith("audio/", StringComparison.OrdinalIgnoreCase))
+            return "Audio";
+
+        if (string.Equals(tipo, "VIDEO", StringComparison.OrdinalIgnoreCase)
+            || mime.StartsWith("video/", StringComparison.OrdinalIgnoreCase))
+            return "Video";
+
+        return "Document";
+    }
+
+    private static string GetAttachmentDownloadExtension(ConversacionAdjuntoDto adjunto)
+    {
+        var originalExtension = Path.GetExtension(adjunto.NombreArchivo);
+        if (!string.IsNullOrWhiteSpace(originalExtension))
+            return originalExtension;
+
+        var mime = adjunto.MimeType?.Trim().ToLowerInvariant();
+        return mime switch
+        {
+            "image/jpeg" => ".jpg",
+            "image/png" => ".png",
+            "image/gif" => ".gif",
+            "image/webp" => ".webp",
+            "audio/ogg" => ".ogg",
+            "audio/mpeg" => ".mp3",
+            "audio/mp4" => ".m4a",
+            "audio/aac" => ".aac",
+            "audio/webm" => ".webm",
+            "video/mp4" => ".mp4",
+            "video/webm" => ".webm",
+            "application/pdf" => ".pdf",
+            _ => string.Equals(adjunto.TipoArchivo, "AUDIO", StringComparison.OrdinalIgnoreCase) ? ".ogg" : ".bin"
+        };
+    }
 
     private static string GetFavoriteStickerUrl(ConversacionStickerFavoritoDto sticker)
         => $"/api/conversaciones/adjuntos/{sticker.IdAdjunto}";
@@ -5149,6 +5797,7 @@
         _typingPollingCts?.Dispose();
         _pollingCts?.Dispose();
         _dotNetRef?.Dispose();
+        _floatingWindowRegistration?.Dispose();
 
         try
         {

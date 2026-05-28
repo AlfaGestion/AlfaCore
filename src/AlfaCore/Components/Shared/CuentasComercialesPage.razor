@@ -1,9 +1,11 @@
 @using AlfaCore.Models
 @using AlfaCore.Services
+@using Microsoft.AspNetCore.WebUtilities
 @using Microsoft.JSInterop
 @inject ICuentasComercialesService CuentasSvc
 @inject IAppUiOperationService UiOps
 @inject IAppUserSessionService AppUserSession
+@inject NavigationManager Nav
 @inject IJSRuntime Js
 @implements IDisposable
 @implements IAsyncDisposable
@@ -44,15 +46,16 @@
         </section>
     }
 
-    <section class="panel-card smart-search-card" @onclick:stopPropagation>
-        <div class="smart-search">
+    <section class="panel-card smart-search-card">
+        <div class="smart-search" @onclick:stopPropagation>
             <div class="smart-search__bar">
                 <i class="bi bi-search"></i>
                 <input type="search"
-                       placeholder="Buscar por código, razón social, contacto, localidad, teléfono o documento..."
+                       placeholder="Buscar por código, razón social, contacto, teléfono, email o documento..."
                        value="@_filters.Texto"
                        @onfocus="OpenSearchPanel"
-                       @oninput="OnSearchInput" />
+                       @oninput="OnSearchInput"
+                       @onkeydown="OnSearchKeyDownAsync" />
                 <button type="button" class="smart-search__toggle" @onclick="ToggleSearchPanel" aria-label="Mostrar filtros">
                     <i class="bi @(_showSearchPanel ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
                 </button>
@@ -186,20 +189,73 @@
                 </div>
             </div>
 
+            <div class="cuentas-partner-summary">
+                <div class="cuentas-partner-summary__avatar @GetAccountAvatarClass()">
+                    @GetAccountInitial()
+                </div>
+                <div class="cuentas-partner-summary__body">
+                    <h2>@DisplayOrFallback(_form.RazonSocial, $"Nuevo {SingularLabelLower}")</h2>
+                    <div class="cuentas-partner-summary__meta">
+                        @if (!string.IsNullOrWhiteSpace(_form.Mail))
+                        {
+                            <span><i class="bi bi-envelope"></i>@_form.Mail</span>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(_form.Telefono))
+                        {
+                            <span><i class="bi bi-telephone"></i>@_form.Telefono</span>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(_form.NumeroDocumento))
+                        {
+                            <span><i class="bi bi-card-text"></i>@_form.NumeroDocumento</span>
+                        }
+                    </div>
+                    @if (BuildAddressLines().Count > 0)
+                    {
+                        <div class="cuentas-partner-summary__address">
+                            @foreach (var line in BuildAddressLines())
+                            {
+                                <span>@line</span>
+                            }
+                        </div>
+                    }
+                </div>
+                <div class="cuentas-partner-summary__stats">
+                    <button type="button"
+                            class="cuentas-smart-stat @(_activeTab == CuentaComercialTab.Contactos ? "is-active" : string.Empty)"
+                            @onclick="() => SetActiveTabAsync(CuentaComercialTab.Contactos)">
+                        <i class="bi bi-person-lines-fill"></i>
+                        <strong>@_contactosCuenta.Count</strong>
+                        <span>Contactos</span>
+                    </button>
+                    <button type="button"
+                            class="cuentas-smart-stat @(_activeTab == CuentaComercialTab.Notas ? "is-active" : string.Empty)"
+                            @onclick="() => SetActiveTabAsync(CuentaComercialTab.Notas)">
+                        <i class="bi bi-journal-text"></i>
+                        <strong>@(HasNotes() ? 1 : 0)</strong>
+                        <span>Notas</span>
+                    </button>
+                </div>
+            </div>
+
             <div class="contactos-tabs">
                 <button type="button"
-                        class="btn @(_activeTab == CuentaComercialTab.Datos ? "btn--primary" : "btn--ghost")"
-                        @onclick="() => SetActiveTab(CuentaComercialTab.Datos)">
+                        class="cuentas-tab @(_activeTab == CuentaComercialTab.Datos ? "is-active" : string.Empty)"
+                        @onclick="() => SetActiveTabAsync(CuentaComercialTab.Datos)">
                     Carga de datos
                 </button>
                 <button type="button"
-                        class="btn @(_activeTab == CuentaComercialTab.Condiciones ? "btn--primary" : "btn--ghost")"
-                        @onclick="() => SetActiveTab(CuentaComercialTab.Condiciones)">
+                        class="cuentas-tab @(_activeTab == CuentaComercialTab.Condiciones ? "is-active" : string.Empty)"
+                        @onclick="() => SetActiveTabAsync(CuentaComercialTab.Condiciones)">
                     Condiciones
                 </button>
                 <button type="button"
-                        class="btn @(_activeTab == CuentaComercialTab.Notas ? "btn--primary" : "btn--ghost")"
-                        @onclick="() => SetActiveTab(CuentaComercialTab.Notas)">
+                        class="cuentas-tab @(_activeTab == CuentaComercialTab.Contactos ? "is-active" : string.Empty)"
+                        @onclick="() => SetActiveTabAsync(CuentaComercialTab.Contactos)">
+                    Contactos
+                </button>
+                <button type="button"
+                        class="cuentas-tab @(_activeTab == CuentaComercialTab.Notas ? "is-active" : string.Empty)"
+                        @onclick="() => SetActiveTabAsync(CuentaComercialTab.Notas)">
                     Notas
                 </button>
             </div>
@@ -544,6 +600,110 @@
                 </div>
                 }
 
+                @if (_activeTab == CuentaComercialTab.Contactos)
+                {
+                    <div class="cuentas-contactos-panel">
+                        <div class="cuentas-contactos-header">
+                            <div>
+                                <h4>Contactos vinculados</h4>
+                                <p>@(_isNewMode ? $"Guard\u00e1 el {SingularLabelLower} para cargar contactos." : $"{_contactosCuenta.Count} contacto(s) vigente(s) para {_form.RazonSocial}")</p>
+                            </div>
+                            @if (!_isNewMode)
+                            {
+                                <div class="actions">
+                                    <button type="button" class="btn btn--ghost" @onclick="MostrarVincularContacto" disabled="@(_saving || _savingContacto || _linkingContacto)">
+                                        <i class="bi bi-link-45deg"></i>
+                                        Vincular existente
+                                    </button>
+                                    <button type="button" class="btn btn--primary" @onclick="MostrarNuevoContacto" disabled="@(_saving || _savingContacto)">
+                                        <i class="bi bi-person-plus"></i>
+                                        Nuevo contacto
+                                    </button>
+                                </div>
+                            }
+                        </div>
+
+                        @if (!string.IsNullOrWhiteSpace(_contactoError))
+                        {
+                            <div class="editor-msg editor-msg--warning">@_contactoError</div>
+                        }
+
+                        @if (_loadingContactos)
+                        {
+                            <div class="usuarios-empty">Cargando contactos...</div>
+                        }
+                        else if (!_isNewMode && _contactosCuenta.Count == 0)
+                        {
+                            <div class="usuarios-empty">No hay contactos vigentes vinculados a esta cuenta.</div>
+                        }
+                        else if (!_isNewMode)
+                        {
+                            <div class="cuentas-contactos-list">
+                                @foreach (var contacto in _contactosCuenta)
+                                {
+                                    <button type="button" class="cuentas-contacto-item" @onclick="() => MostrarVistaContacto(contacto)">
+                                        <div class="cuentas-contacto-item__avatar @GetContactAvatarClass(contacto)">
+                                            @GetContactInitial(contacto)
+                                        </div>
+                                        <div class="cuentas-contacto-item__content">
+                                            <div class="cuentas-contacto-item__main">
+                                                <strong>@contacto.NombreApellido</strong>
+                                                @if (!string.IsNullOrWhiteSpace(contacto.Cargo))
+                                                {
+                                                    <span>@contacto.Cargo</span>
+                                                }
+                                            </div>
+                                            <div class="cuentas-contacto-item__meta">
+                                                @if (!string.IsNullOrWhiteSpace(contacto.Email))
+                                                {
+                                                    <span><i class="bi bi-envelope"></i>@contacto.Email</span>
+                                                }
+                                                @if (!string.IsNullOrWhiteSpace(contacto.Celular))
+                                                {
+                                                    <span><i class="bi bi-phone"></i>@contacto.Celular</span>
+                                                }
+                                                @if (!string.IsNullOrWhiteSpace(contacto.Telefono))
+                                                {
+                                                    <span><i class="bi bi-telephone"></i>@contacto.Telefono</span>
+                                                }
+                                            </div>
+                                            <div class="cuentas-contacto-item__badges">
+                                                @if (contacto.VinculadoPorTabla)
+                                                {
+                                                    <span>Relaci&oacute;n m&uacute;ltiple</span>
+                                                }
+                                                @if (contacto.VinculadoPorCuentaRel)
+                                                {
+                                                    <span>CuentaRel</span>
+                                                }
+                                            </div>
+                                        </div>
+                                    </button>
+                                }
+                                <button type="button" class="cuentas-contacto-item cuentas-contacto-item--add" @onclick="MostrarNuevoContacto" disabled="@(_saving || _savingContacto)">
+                                    <span class="cuentas-contacto-item__avatar cuentas-contacto-item__avatar--add">
+                                        <i class="bi bi-plus-lg"></i>
+                                    </span>
+                                    <span class="cuentas-contacto-item__content">
+                                        <strong>A&ntilde;adir contacto</strong>
+                                        <small>Crear un referente y vincularlo a esta cuenta.</small>
+                                    </span>
+                                </button>
+                                <button type="button" class="cuentas-contacto-item cuentas-contacto-item--add" @onclick="MostrarVincularContacto" disabled="@(_saving || _savingContacto || _linkingContacto)">
+                                    <span class="cuentas-contacto-item__avatar cuentas-contacto-item__avatar--add">
+                                        <i class="bi bi-link-45deg"></i>
+                                    </span>
+                                    <span class="cuentas-contacto-item__content">
+                                        <strong>Vincular existente</strong>
+                                        <small>Buscar un contacto ya creado y relacionarlo con esta cuenta.</small>
+                                    </span>
+                                </button>
+                            </div>
+                        }
+
+                    </div>
+                }
+
                 @if (_activeTab == CuentaComercialTab.Notas)
                 {
                 <div class="cuentas-notas-grid">
@@ -867,12 +1027,251 @@
     }
 </div>
 
+@if (_showContactoForm && !_isNewMode)
+{
+    <div class="cuentas-modal-backdrop" @onclick="CancelarNuevoContacto">
+        <section class="cuentas-modal" role="dialog" aria-modal="true" aria-labelledby="cuentas-contacto-modal-title" @onclick:stopPropagation="true">
+            <header class="cuentas-modal__header">
+                <div>
+                    <span class="cuentas-modal__eyebrow">@(_form.RazonSocial)</span>
+                    <h3 id="cuentas-contacto-modal-title">Nuevo contacto</h3>
+                </div>
+                <button type="button" class="cuentas-modal__close" @onclick="CancelarNuevoContacto" disabled="@_savingContacto" aria-label="Cerrar">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </header>
+
+            <div class="cuentas-modal__body">
+                @if (!string.IsNullOrWhiteSpace(_contactoError))
+                {
+                    <div class="editor-msg editor-msg--warning">@_contactoError</div>
+                }
+
+                <div class="contactos-form__grid">
+                    <div class="field">
+                        <label>Nombre y apellido</label>
+                        <input type="text" class="usuarios-input" maxlength="100" @bind="_contactoDraft.NombreApellido" disabled="@_savingContacto" />
+                    </div>
+                    <div class="field">
+                        <label>Cargo / rol</label>
+                        <input type="text" class="usuarios-input" maxlength="100" @bind="_contactoDraft.Cargo" disabled="@_savingContacto" />
+                    </div>
+                    <div class="field">
+                        <label>Email</label>
+                        <input type="email" class="usuarios-input" maxlength="100" @bind="_contactoDraft.Email" disabled="@_savingContacto" />
+                    </div>
+                    <div class="field">
+                        <label>Celular</label>
+                        <input type="text" class="usuarios-input" maxlength="100" @bind="_contactoDraft.Celular" disabled="@_savingContacto" />
+                    </div>
+                    <div class="field">
+                        <label>Tel&eacute;fono</label>
+                        <input type="text" class="usuarios-input" maxlength="100" @bind="_contactoDraft.Telefono" disabled="@_savingContacto" />
+                    </div>
+                    <div class="field field--wide">
+                        <label>Observaciones</label>
+                        <textarea rows="4" class="usuarios-input" @bind="_contactoDraft.Observaciones" disabled="@_savingContacto"></textarea>
+                    </div>
+                </div>
+            </div>
+
+            <footer class="cuentas-modal__actions">
+                <button type="button" class="btn btn--primary" @onclick="GuardarContactoCuentaAsync" disabled="@_savingContacto">
+                    <i class="bi bi-floppy"></i>
+                    Guardar contacto
+                </button>
+                <button type="button" class="btn btn--ghost" @onclick="CancelarNuevoContacto" disabled="@_savingContacto">
+                    Cancelar
+                </button>
+            </footer>
+        </section>
+    </div>
+}
+
+@if (_showContactoPreview && _contactoPreview is not null)
+{
+    <div class="cuentas-modal-backdrop" @onclick="CerrarVistaContacto">
+        <section class="cuentas-modal cuentas-modal--compact" role="dialog" aria-modal="true" aria-labelledby="cuentas-contacto-preview-title" @onclick:stopPropagation="true">
+            <header class="cuentas-modal__header">
+                <div>
+                    <span class="cuentas-modal__eyebrow">@(_form.RazonSocial)</span>
+                    <h3 id="cuentas-contacto-preview-title">@_contactoPreview.NombreApellido</h3>
+                </div>
+                <button type="button" class="cuentas-modal__close" @onclick="CerrarVistaContacto" aria-label="Cerrar">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </header>
+
+            <div class="cuentas-modal__body">
+                @if (!string.IsNullOrWhiteSpace(_contactoError))
+                {
+                    <div class="editor-msg editor-msg--warning">@_contactoError</div>
+                }
+
+                <div class="cuentas-contacto-preview">
+                    <div class="cuentas-contacto-item__avatar @GetContactAvatarClass(_contactoPreview)">
+                        @GetContactInitial(_contactoPreview)
+                    </div>
+                    <div>
+                        @if (!string.IsNullOrWhiteSpace(_contactoPreview.Cargo))
+                        {
+                            <span class="cuentas-contacto-preview__role">@_contactoPreview.Cargo</span>
+                        }
+                        <dl>
+                            <div>
+                                <dt>Email</dt>
+                                <dd>
+                                    <input type="email" class="usuarios-input" maxlength="100" @bind="_contactoQuickDraft.Email" disabled="@_savingContactoQuick" />
+                                </dd>
+                            </div>
+                            <div>
+                                <dt>Celular</dt>
+                                <dd>
+                                    <input type="text" class="usuarios-input" maxlength="100" @bind="_contactoQuickDraft.Celular" disabled="@_savingContactoQuick" />
+                                </dd>
+                            </div>
+                            <div>
+                                <dt>Tel&eacute;fono</dt>
+                                <dd>
+                                    <input type="text" class="usuarios-input" maxlength="100" @bind="_contactoQuickDraft.Telefono" disabled="@_savingContactoQuick" />
+                                </dd>
+                            </div>
+                            <div>
+                                <dt>Relaci&oacute;n</dt>
+                                <dd>@GetContactoRelacionLabel(_contactoPreview)</dd>
+                            </div>
+                        </dl>
+                    </div>
+                </div>
+            </div>
+
+            <footer class="cuentas-modal__actions">
+                <button type="button"
+                        class="btn btn--primary cuentas-action-reveal"
+                        title="@(_savingContactoQuick ? "Guardando..." : "Guardar cambios")"
+                        aria-label="@(_savingContactoQuick ? "Guardando..." : "Guardar cambios")"
+                        @onclick="GuardarDatosRapidosContactoAsync"
+                        disabled="@_savingContactoQuick">
+                    <i class="bi bi-floppy"></i>
+                    <span>@(_savingContactoQuick ? "Guardando..." : "Guardar cambios")</span>
+                </button>
+                <button type="button"
+                        class="btn btn--primary cuentas-action-reveal"
+                        title="Editar ficha completa"
+                        aria-label="Editar ficha completa"
+                        @onclick="AbrirContactoCompleto">
+                    <i class="bi bi-pencil-square"></i>
+                    <span>Editar ficha completa</span>
+                </button>
+                <button type="button"
+                        class="btn btn--ghost cuentas-action-reveal"
+                        title="Unificar contacto"
+                        aria-label="Unificar contacto"
+                        @onclick="AbrirUnificarContacto">
+                    <i class="bi bi-intersect"></i>
+                    <span>Unificar contacto</span>
+                </button>
+                <button type="button"
+                        class="btn btn--ghost cuentas-action-reveal"
+                        title="Cerrar"
+                        aria-label="Cerrar"
+                        @onclick="CerrarVistaContacto">
+                    <i class="bi bi-x-lg"></i>
+                    <span>Cerrar</span>
+                </button>
+            </footer>
+        </section>
+    </div>
+}
+
+@if (_showLinkContactoModal && !_isNewMode)
+{
+    <div class="cuentas-modal-backdrop" @onclick="CerrarVincularContacto">
+        <section class="cuentas-modal" role="dialog" aria-modal="true" aria-labelledby="cuentas-contacto-link-title" @onclick:stopPropagation="true">
+            <header class="cuentas-modal__header">
+                <div>
+                    <span class="cuentas-modal__eyebrow">@(_form.RazonSocial)</span>
+                    <h3 id="cuentas-contacto-link-title">Vincular contacto existente</h3>
+                </div>
+                <button type="button" class="cuentas-modal__close" @onclick="CerrarVincularContacto" disabled="@_linkingContacto" aria-label="Cerrar">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </header>
+
+            <div class="cuentas-modal__body">
+                @if (!string.IsNullOrWhiteSpace(_contactoError))
+                {
+                    <div class="editor-msg editor-msg--warning">@_contactoError</div>
+                }
+
+                <div class="cuentas-link-search">
+                    <div class="field">
+                        <label>Buscar contacto</label>
+                        <input type="search"
+                               class="usuarios-input"
+                               placeholder="Nombre, email, celular o teléfono..."
+                               @bind="_linkSearchText"
+                               @bind:event="oninput"
+                               @onkeydown="OnLinkSearchKeyDownAsync"
+                               disabled="@(_loadingLinkCandidates || _linkingContacto)" />
+                    </div>
+                    <button type="button" class="btn btn--primary" @onclick="BuscarContactosParaVincularAsync" disabled="@(_loadingLinkCandidates || _linkingContacto)">
+                        <i class="bi bi-search"></i>
+                        Buscar
+                    </button>
+                </div>
+
+                @if (_loadingLinkCandidates)
+                {
+                    <div class="usuarios-empty">Buscando contactos...</div>
+                }
+                else if (_linkSearchExecuted && _linkCandidates.Count == 0)
+                {
+                    <div class="usuarios-empty">No encontramos contactos disponibles para vincular con ese texto.</div>
+                }
+                else if (_linkCandidates.Count > 0)
+                {
+                    <div class="cuentas-link-results">
+                        @foreach (var candidate in _linkCandidates)
+                        {
+                            <button type="button" class="cuentas-link-result" @onclick="() => VincularContactoExistenteAsync(candidate)" disabled="@_linkingContacto">
+                                <span class="cuentas-contacto-item__avatar @GetContactAvatarClass(candidate)">
+                                    @GetContactInitial(candidate)
+                                </span>
+                                <span class="cuentas-link-result__body">
+                                    <strong>@candidate.NombreApellido</strong>
+                                    @if (!string.IsNullOrWhiteSpace(candidate.Cargo))
+                                    {
+                                        <small>@candidate.Cargo</small>
+                                    }
+                                    <span>
+                                        @FormatContactCandidateSummary(candidate)
+                                    </span>
+                                </span>
+                                <i class="bi bi-link-45deg"></i>
+                            </button>
+                        }
+                    </div>
+                }
+            </div>
+
+            <footer class="cuentas-modal__actions">
+                <button type="button" class="btn btn--ghost" @onclick="CerrarVincularContacto" disabled="@_linkingContacto">
+                    Cerrar
+                </button>
+            </footer>
+        </section>
+    </div>
+}
+
 @code {
     [Parameter] public CuentaComercialTipo Tipo { get; set; }
 
     private readonly Dictionary<string, string> _fieldErrors = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<CuentaComercialViewColumnDto> _viewSettingsDraft = [];
     private readonly List<CuentaComercialGridItemDto> _items = [];
+    private readonly List<CuentaComercialContactoDto> _contactosCuenta = [];
+    private readonly List<CuentaComercialContactoCandidateDto> _linkCandidates = [];
     private readonly HashSet<string> _selectedCodes = new(StringComparer.OrdinalIgnoreCase);
 
     private IJSObjectReference? _richEditorJs;
@@ -880,21 +1279,35 @@
     private ElementReference _notaCuentaEditor;
     private CuentaComercialFilters _filters = new();
     private CuentaComercialSaveRequest _form = new();
+    private CuentaComercialContactoCreateRequest _contactoDraft = new();
+    private CuentaComercialContactoQuickUpdateRequest _contactoQuickDraft = new();
+    private CuentaComercialContactoDto? _contactoPreview;
     private CuentaComercialLookupDataDto _lookups = new();
     private CuentaComercialViewSettingsDto _viewSettings = new();
     private AppUiMessage? _feedback;
     private bool _loadingList;
+    private bool _loadingContactos;
     private bool _saving;
+    private bool _savingContacto;
+    private bool _savingContactoQuick;
     private bool _showEditor;
+    private bool _showContactoForm;
+    private bool _showContactoPreview;
+    private bool _showLinkContactoModal;
     private bool _showViewSettings;
     private bool _showSearchPanel;
     private bool _notesEditorsReady;
     private bool _isNewMode = true;
     private bool _selectedActivo = true;
+    private bool _loadingLinkCandidates;
+    private bool _linkingContacto;
+    private bool _linkSearchExecuted;
     private string _selectedCodigo = string.Empty;
+    private string _linkSearchText = string.Empty;
     private string _draftAgruparPor = CuentaComercialViewGroupKeys.None;
     private string _activoFiltro = "1";
     private string _bloqueoFiltro = string.Empty;
+    private string _contactoError = string.Empty;
     private string _viewSettingsUserName = string.Empty;
     private bool _viewSettingsLoaded;
     private int _pagedTotal;
@@ -938,6 +1351,7 @@
         await LoadLookupsAsync();
         await EnsureViewSettingsLoadedAsync();
         await BuscarAsync();
+        await ApplyStartupQueryAsync();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -977,13 +1391,15 @@
         await Task.CompletedTask;
     }
 
-    private void SetActiveTab(CuentaComercialTab tab)
+    private async Task SetActiveTabAsync(CuentaComercialTab tab)
     {
         if (_activeTab == tab)
             return;
 
         _activeTab = tab;
         _notesEditorsReady = false;
+        if (tab == CuentaComercialTab.Contactos)
+            await LoadContactosCuentaAsync();
     }
 
     private async Task InitializeNotesEditorsAsync()
@@ -1047,6 +1463,17 @@
     {
         _filters.Texto = e.Value?.ToString() ?? string.Empty;
         DebounceSearch();
+    }
+
+    private async Task OnSearchKeyDownAsync(KeyboardEventArgs e)
+    {
+        if (!string.Equals(e.Key, "Enter", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        _searchDebounceCts?.Cancel();
+        _filters.PageNumber = 1;
+        CloseSearchPanel();
+        await BuscarAsync();
     }
 
     private void DebounceSearch()
@@ -1182,6 +1609,7 @@
         _activeTab = CuentaComercialTab.Datos;
         _notesEditorsReady = false;
         _showSearchPanel = false;
+        ResetContactosState();
 
         _form = new CuentaComercialSaveRequest
         {
@@ -1229,6 +1657,22 @@
         }
 
         MapDetailToForm(result.Value);
+        await LoadContactosCuentaAsync();
+    }
+
+    private async Task ApplyStartupQueryAsync()
+    {
+        var query = QueryHelpers.ParseQuery(Nav.ToAbsoluteUri(Nav.Uri).Query);
+        var codigo = query.TryGetValue("editar", out var editRaw)
+            ? editRaw.ToString()
+            : query.TryGetValue("codigo", out var codigoRaw)
+                ? codigoRaw.ToString()
+                : string.Empty;
+
+        if (string.IsNullOrWhiteSpace(codigo))
+            return;
+
+        await AbrirEditorAsync(codigo);
     }
 
     private void SeleccionarFila(string codigo)
@@ -1271,6 +1715,7 @@
         ClearFieldErrors();
         _showEditor = false;
         _notesEditorsReady = false;
+        ResetContactosState();
     }
 
     private void ResetForm()
@@ -1320,6 +1765,302 @@
         {
             _saving = false;
         }
+    }
+
+    private async Task LoadContactosCuentaAsync()
+    {
+        _contactoError = string.Empty;
+        _contactosCuenta.Clear();
+
+        if (_isNewMode || string.IsNullOrWhiteSpace(_selectedCodigo))
+            return;
+
+        _loadingContactos = true;
+        try
+        {
+            var result = await UiOps.RunAsync(
+                () => CuentasSvc.GetContactosAsync(Tipo, _selectedCodigo),
+                "No se pudieron cargar los contactos vinculados.");
+
+            if (!result.Success || result.Value is null)
+            {
+                _contactoError = result.Feedback?.Message ?? "No se pudieron cargar los contactos vinculados.";
+                SetFeedback(result.Feedback);
+                return;
+            }
+
+            _contactosCuenta.AddRange(result.Value);
+        }
+        finally
+        {
+            _loadingContactos = false;
+        }
+    }
+
+    private void MostrarNuevoContacto()
+    {
+        _contactoError = string.Empty;
+        _showContactoPreview = false;
+        _showLinkContactoModal = false;
+        _contactoPreview = null;
+        _contactoDraft = new CuentaComercialContactoCreateRequest { CuentaCodigo = _selectedCodigo };
+        _showContactoForm = true;
+    }
+
+    private void CancelarNuevoContacto()
+    {
+        if (_savingContacto)
+            return;
+
+        _contactoError = string.Empty;
+        _contactoDraft = new CuentaComercialContactoCreateRequest();
+        _showContactoForm = false;
+    }
+
+    private void MostrarVincularContacto()
+    {
+        _contactoError = string.Empty;
+        _showContactoForm = false;
+        _showContactoPreview = false;
+        _contactoPreview = null;
+        _contactoQuickDraft = new CuentaComercialContactoQuickUpdateRequest();
+        _linkSearchText = string.Empty;
+        _linkCandidates.Clear();
+        _linkSearchExecuted = false;
+        _showLinkContactoModal = true;
+    }
+
+    private void CerrarVincularContacto()
+    {
+        if (_loadingLinkCandidates || _linkingContacto)
+            return;
+
+        _showLinkContactoModal = false;
+        _linkSearchText = string.Empty;
+        _linkCandidates.Clear();
+        _linkSearchExecuted = false;
+    }
+
+    private async Task OnLinkSearchKeyDownAsync(KeyboardEventArgs e)
+    {
+        if (!string.Equals(e.Key, "Enter", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        await BuscarContactosParaVincularAsync();
+    }
+
+    private async Task BuscarContactosParaVincularAsync()
+    {
+        _contactoError = string.Empty;
+        _linkCandidates.Clear();
+        _linkSearchExecuted = true;
+
+        if (string.IsNullOrWhiteSpace(_linkSearchText))
+        {
+            _contactoError = "Escribí al menos una parte del nombre, email o teléfono del contacto.";
+            return;
+        }
+
+        _loadingLinkCandidates = true;
+        try
+        {
+            var result = await UiOps.RunAsync(
+                () => CuentasSvc.SearchContactosParaVincularAsync(Tipo, _selectedCodigo, _linkSearchText),
+                "No se pudieron buscar contactos existentes para vincular.");
+
+            if (!result.Success || result.Value is null)
+            {
+                _contactoError = result.Feedback?.Message ?? "No se pudieron buscar contactos existentes para vincular.";
+                SetFeedback(result.Feedback);
+                return;
+            }
+
+            _linkCandidates.AddRange(result.Value);
+        }
+        finally
+        {
+            _loadingLinkCandidates = false;
+        }
+    }
+
+    private async Task VincularContactoExistenteAsync(CuentaComercialContactoCandidateDto candidate)
+    {
+        _contactoError = string.Empty;
+        _linkingContacto = true;
+        try
+        {
+            var result = await UiOps.RunAsync(
+                () => CuentasSvc.LinkContactoAsync(Tipo, new CuentaComercialContactoLinkRequest
+                {
+                    CuentaCodigo = _selectedCodigo,
+                    ContactoId = candidate.Id
+                }),
+                "No se pudo vincular el contacto existente.");
+
+            if (!result.Success)
+            {
+                _contactoError = result.Feedback?.Message ?? "No se pudo vincular el contacto existente.";
+                SetFeedback(result.Feedback);
+                return;
+            }
+
+            SetFeedback(AppUiMessage.Success("Contacto vinculado", $"{candidate.NombreApellido} quedó vinculado a {_form.RazonSocial}."));
+            _showLinkContactoModal = false;
+            _linkSearchText = string.Empty;
+            _linkCandidates.Clear();
+            _linkSearchExecuted = false;
+            await LoadContactosCuentaAsync();
+        }
+        finally
+        {
+            _linkingContacto = false;
+        }
+    }
+
+    private void MostrarVistaContacto(CuentaComercialContactoDto contacto)
+    {
+        _contactoError = string.Empty;
+        _showContactoForm = false;
+        _contactoDraft = new CuentaComercialContactoCreateRequest();
+        _contactoPreview = contacto;
+        _contactoQuickDraft = new CuentaComercialContactoQuickUpdateRequest
+        {
+            Id = contacto.Id,
+            CuentaCodigo = _selectedCodigo,
+            Email = contacto.Email,
+            Telefono = contacto.Telefono,
+            Celular = contacto.Celular
+        };
+        _showContactoPreview = true;
+    }
+
+    private void CerrarVistaContacto()
+    {
+        if (_savingContactoQuick)
+            return;
+
+        _contactoPreview = null;
+        _contactoQuickDraft = new CuentaComercialContactoQuickUpdateRequest();
+        _showContactoPreview = false;
+    }
+
+    private void AbrirContactoCompleto()
+    {
+        if (_contactoPreview is null)
+            return;
+
+        var contactoId = _contactoPreview.Id;
+        CerrarVistaContacto();
+        Nav.NavigateTo($"/contactos?editar={contactoId}");
+    }
+
+    private void AbrirUnificarContacto()
+    {
+        if (_contactoPreview is null)
+            return;
+
+        var contactoId = _contactoPreview.Id;
+        CerrarVistaContacto();
+        Nav.NavigateTo($"/contactos?editar={contactoId}&unificar=1");
+    }
+
+    private async Task GuardarDatosRapidosContactoAsync()
+    {
+        if (_contactoPreview is null)
+            return;
+
+        _contactoError = string.Empty;
+        _savingContactoQuick = true;
+        try
+        {
+            _contactoQuickDraft.Id = _contactoPreview.Id;
+            _contactoQuickDraft.CuentaCodigo = _selectedCodigo;
+            var result = await UiOps.RunAsync(
+                () => CuentasSvc.UpdateContactoQuickAsync(Tipo, _contactoQuickDraft),
+                "No se pudieron guardar los datos rápidos del contacto.");
+
+            if (!result.Success)
+            {
+                _contactoError = result.Feedback?.Message ?? "No se pudieron guardar los datos rápidos del contacto.";
+                SetFeedback(result.Feedback);
+                return;
+            }
+
+            _contactoPreview.Email = _contactoQuickDraft.Email?.Trim() ?? string.Empty;
+            _contactoPreview.Telefono = _contactoQuickDraft.Telefono?.Trim() ?? string.Empty;
+            _contactoPreview.Celular = _contactoQuickDraft.Celular?.Trim() ?? string.Empty;
+
+            var item = _contactosCuenta.FirstOrDefault(contacto => contacto.Id == _contactoPreview.Id);
+            if (item is not null)
+            {
+                item.Email = _contactoPreview.Email;
+                item.Telefono = _contactoPreview.Telefono;
+                item.Celular = _contactoPreview.Celular;
+            }
+
+            SetFeedback(AppUiMessage.Success("Contacto actualizado", "Los datos rápidos del contacto se guardaron correctamente."));
+        }
+        finally
+        {
+            _savingContactoQuick = false;
+        }
+    }
+
+    private async Task GuardarContactoCuentaAsync()
+    {
+        _contactoError = string.Empty;
+        if (string.IsNullOrWhiteSpace(_contactoDraft.NombreApellido))
+        {
+            _contactoError = "Ingres\u00e1 el nombre del contacto antes de guardar.";
+            return;
+        }
+
+        _savingContacto = true;
+        try
+        {
+            _contactoDraft.CuentaCodigo = _selectedCodigo;
+            var result = await UiOps.RunAsync(
+                () => CuentasSvc.CreateContactoAsync(Tipo, _contactoDraft),
+                "No se pudo crear el contacto vinculado.");
+
+            if (!result.Success)
+            {
+                _contactoError = result.Feedback?.Message ?? "No se pudo crear el contacto vinculado.";
+                SetFeedback(result.Feedback);
+                return;
+            }
+
+            SetFeedback(AppUiMessage.Success("Contacto guardado", $"El contacto qued\u00f3 vinculado al {SingularLabelLower}."));
+            _showContactoForm = false;
+            _showContactoPreview = false;
+            _contactoPreview = null;
+            _contactoDraft = new CuentaComercialContactoCreateRequest();
+            await LoadContactosCuentaAsync();
+        }
+        finally
+        {
+            _savingContacto = false;
+        }
+    }
+
+    private void ResetContactosState()
+    {
+        _contactosCuenta.Clear();
+        _contactoDraft = new CuentaComercialContactoCreateRequest();
+        _contactoError = string.Empty;
+        _showContactoForm = false;
+        _showContactoPreview = false;
+        _showLinkContactoModal = false;
+        _contactoPreview = null;
+        _contactoQuickDraft = new CuentaComercialContactoQuickUpdateRequest();
+        _linkSearchText = string.Empty;
+        _linkCandidates.Clear();
+        _linkSearchExecuted = false;
+        _loadingContactos = false;
+        _savingContacto = false;
+        _savingContactoQuick = false;
+        _loadingLinkCandidates = false;
+        _linkingContacto = false;
     }
 
     private async Task DarDeBajaAsync()
@@ -1703,6 +2444,70 @@
     private static string GetSmartOptionClass(bool active)
         => active ? "smart-option is-active" : "smart-option";
 
+    private static string DisplayOrFallback(params string?[] values)
+        => values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim() ?? "-";
+
+    private string GetAccountInitial()
+        => GetInitial(DisplayOrFallback(_form.RazonSocial, _form.Codigo, SingularLabel));
+
+    private string GetAccountAvatarClass()
+        => $"cuentas-partner-summary__avatar--{Math.Abs((DisplayOrFallback(_form.RazonSocial, _form.Codigo).GetHashCode()) % 5)}";
+
+    private static string GetContactInitial(CuentaComercialContactoDto contacto)
+        => GetInitial(contacto.NombreApellido);
+
+    private static string GetContactInitial(CuentaComercialContactoCandidateDto contacto)
+        => GetInitial(contacto.NombreApellido);
+
+    private static string GetContactAvatarClass(CuentaComercialContactoDto contacto)
+        => $"cuentas-contacto-item__avatar--{Math.Abs((contacto.NombreApellido ?? string.Empty).GetHashCode() % 5)}";
+
+    private static string GetContactAvatarClass(CuentaComercialContactoCandidateDto contacto)
+        => $"cuentas-contacto-item__avatar--{Math.Abs((contacto.NombreApellido ?? string.Empty).GetHashCode() % 5)}";
+
+    private static string FormatContactCandidateSummary(CuentaComercialContactoCandidateDto contacto)
+    {
+        var values = new[] { contacto.Email, contacto.Celular, contacto.Telefono, contacto.CuentaRel }
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value.Trim());
+
+        return string.Join(" · ", values);
+    }
+
+    private static string GetInitial(string? value)
+    {
+        var normalized = (value ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(normalized))
+            return "?";
+
+        return normalized[..1].ToUpperInvariant();
+    }
+
+    private List<string> BuildAddressLines()
+    {
+        var lines = new List<string>();
+        var street = string.Join(" ", new[] { _form.Calle, _form.Numero, _form.Piso, _form.Departamento }.Where(value => !string.IsNullOrWhiteSpace(value)));
+        if (!string.IsNullOrWhiteSpace(street))
+            lines.Add(street);
+
+        var city = string.Join(" · ", new[] { _form.Localidad, _form.CodigoPostal }.Where(value => !string.IsNullOrWhiteSpace(value)));
+        if (!string.IsNullOrWhiteSpace(city))
+            lines.Add(city);
+
+        var province = _lookups.Provincias.FirstOrDefault(p => string.Equals(p.Codigo, _form.ProvinciaCodigo, StringComparison.OrdinalIgnoreCase))?.Descripcion;
+        var country = _lookups.Paises.FirstOrDefault(p => string.Equals(p.Codigo, _form.PaisCodigo, StringComparison.OrdinalIgnoreCase))?.Descripcion;
+        var region = string.Join(" · ", new[] { province, country }.Where(value => !string.IsNullOrWhiteSpace(value)));
+        if (!string.IsNullOrWhiteSpace(region))
+            lines.Add(region);
+
+        return lines;
+    }
+
+    private bool HasNotes()
+        => !string.IsNullOrWhiteSpace(_form.Manual)
+           || !string.IsNullOrWhiteSpace(_form.NotaCuenta)
+           || !string.IsNullOrWhiteSpace(_form.Observaciones);
+
     private string GetSelectionSummary()
         => _selectedCodes.Count == 0
             ? $"Seleccioná uno o más {PluralLabelLower} para ejecutar acciones."
@@ -1860,6 +2665,21 @@
     private static string FormatDate(DateTime? value)
         => value.HasValue ? value.Value.ToString("dd/MM/yyyy HH:mm") : "—";
 
+    private static string FormatNullable(string? value)
+        => string.IsNullOrWhiteSpace(value) ? "Sin dato" : value.Trim();
+
+    private static string GetContactoRelacionLabel(CuentaComercialContactoDto contacto)
+    {
+        if (contacto.VinculadoPorTabla && contacto.VinculadoPorCuentaRel)
+            return "Relación múltiple y CuentaRel";
+        if (contacto.VinculadoPorTabla)
+            return "Relación múltiple";
+        if (contacto.VinculadoPorCuentaRel)
+            return "CuentaRel";
+
+        return "Vinculado";
+    }
+
     private static string GetFeedbackClass(AppUiMessage message)
         => message.Severity switch
         {
@@ -1888,6 +2708,7 @@
     {
         Datos = 0,
         Condiciones = 1,
-        Notas = 2
+        Contactos = 2,
+        Notas = 3
     }
 }

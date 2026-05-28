@@ -437,6 +437,9 @@ window.conversacionesUi = {
         if (element._conversacionesReplyEnterHandler) {
             element.removeEventListener('keydown', element._conversacionesReplyEnterHandler);
         }
+        if (element._conversacionesReplyResizeHandler) {
+            element.removeEventListener('input', element._conversacionesReplyResizeHandler);
+        }
 
         const handler = (event) => {
             if (event.key !== 'Enter' || event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) {
@@ -447,8 +450,12 @@ window.conversacionesUi = {
             dotNetRef.invokeMethodAsync('SendComposerFromEnter').catch(() => {});
         };
 
+        const resize = () => window.conversacionesUi.autoResizeTextarea(element, 44, 120);
         element.addEventListener('keydown', handler);
+        element.addEventListener('input', resize);
         element._conversacionesReplyEnterHandler = handler;
+        element._conversacionesReplyResizeHandler = resize;
+        resize();
         return true;
     },
 
@@ -638,5 +645,60 @@ window.conversacionesUi = {
         element.style.height = `${target}px`;
         element.style.overflowY = (element.scrollHeight || 0) > max ? 'auto' : 'hidden';
         return true;
+    },
+
+    getElementValue: function (element) {
+        return element?.value || '';
+    },
+
+    setElementValue: function (element, value, focus) {
+        if (!element) return false;
+
+        const text = value || '';
+        element.value = text;
+
+        try {
+            const position = text.length;
+            element.setSelectionRange(position, position);
+        } catch {
+        }
+
+        this.autoResizeTextarea(element, 44, 120);
+
+        if (focus) {
+            try {
+                element.focus({ preventScroll: true });
+            } catch {
+                element.focus();
+            }
+        }
+
+        return true;
+    },
+
+    insertTextAtCursor: function (element, text) {
+        if (!element) return text || '';
+
+        const value = element.value || '';
+        const insert = text || '';
+        const start = Number.isInteger(element.selectionStart) ? element.selectionStart : value.length;
+        const end = Number.isInteger(element.selectionEnd) ? element.selectionEnd : start;
+        const nextValue = `${value.slice(0, start)}${insert}${value.slice(end)}`;
+        element.value = nextValue;
+
+        const nextPosition = start + insert.length;
+        try {
+            element.setSelectionRange(nextPosition, nextPosition);
+        } catch {
+        }
+
+        this.autoResizeTextarea(element, 44, 120);
+        try {
+            element.focus({ preventScroll: true });
+        } catch {
+            element.focus();
+        }
+
+        return nextValue;
     }
 };

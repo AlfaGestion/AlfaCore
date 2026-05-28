@@ -6,9 +6,10 @@ namespace AlfaCore.Services;
 
 public sealed class SessionService : ISessionService
 {
-    private static readonly object FileLock = new();
-
     private readonly string _filePath;
+    private readonly string _backupFilePath;
+    private readonly List<SessionDto> _sessions = [];
+    private readonly object _lock = new();
     private readonly SessionDto? _defaultSession;
     private Guid? _activeSessionId;
 
@@ -20,37 +21,37 @@ public sealed class SessionService : ISessionService
         IHttpContextAccessor httpContextAccessor)
     {
         _filePath = Path.Combine(env.ContentRootPath, "App_Data", "sessions.json");
+        _backupFilePath = $"{_filePath}.bak";
         _defaultSession = CreateSessionFromConfig(configuration);
+        Load(configuration);
         _activeSessionId = ReadActiveSessionId(httpContextAccessor);
+        PersistCookieSelectedSessionIfNeeded();
     }
 
     public string GetConnectionString()
     {
-        lock (FileLock)
+        lock (_lock)
         {
-            var sessions = LoadSessionsUnsafe();
-            var active = ResolveActiveSessionUnsafe(sessions);
+            var active = ResolveActiveSessionUnsafe();
             return active is null ? string.Empty : Build(active);
         }
     }
 
     public SessionDto? GetActiveSession()
     {
-        lock (FileLock)
+        lock (_lock)
         {
-            var sessions = LoadSessionsUnsafe();
-            var active = ResolveActiveSessionUnsafe(sessions);
+            var active = ResolveActiveSessionUnsafe();
             return active is null ? null : Clone(active, true);
         }
     }
 
     public IReadOnlyList<SessionDto> GetAllSessions()
     {
-        lock (FileLock)
+        lock (_lock)
         {
-            var sessions = LoadSessionsUnsafe();
-            var active = ResolveActiveSessionUnsafe(sessions);
-            return sessions
+            var active = ResolveActiveSessionUnsafe();
+            return _sessions
                 .Select(s => Clone(s, active is not null && SameConnection(s, active)))
                 .ToArray();
         }
@@ -58,18 +59,17 @@ public sealed class SessionService : ISessionService
 
     public void SwitchSession(Guid id)
     {
-        lock (FileLock)
+        lock (_lock)
         {
-            var sessions = LoadSessionsUnsafe();
-            var selected = sessions.FirstOrDefault(s => s.Id == id)
+            var selected = _sessions.FirstOrDefault(s => s.Id == id)
                 ?? throw new InvalidOperationException("Sesion no encontrada.");
 
             _activeSessionId = id;
 
-            foreach (var session in sessions)
+            foreach (var session in _sessions)
                 session.Activa = session.Id == selected.Id;
 
-            SaveUnsafe(sessions);
+            Save();
         }
 
         SessionChanged?.Invoke();
@@ -77,10 +77,9 @@ public sealed class SessionService : ISessionService
 
     public void AddSession(string nombre, string servidor, string baseDatos, string usuario, string password)
     {
-        lock (FileLock)
+        lock (_lock)
         {
-            var sessions = LoadSessionsUnsafe();
-            sessions.Add(new SessionDto
+            _sessions.Add(new SessionDto
             {
                 Nombre = nombre.Trim(),
                 Servidor = servidor.Trim(),
@@ -90,72 +89,82 @@ public sealed class SessionService : ISessionService
                 TrustServerCertificate = true,
                 Activa = false
             });
-            SaveUnsafe(sessions);
+            Save();
         }
     }
 
     public void DeleteSession(Guid id)
     {
-        lock (FileLock)
+        lock (_lock)
         {
-            var sessions = LoadSessionsUnsafe();
-            var sessionToDelete = sessions.FirstOrDefault(s => s.Id == id);
-            if (sessionToDelete is null || _activeSessionId == id)
+            var s = _sessions.FirstOrDefault(s => s.Id == id);
+            if (s is null || _activeSessionId == id)
                 return;
 
-            sessions.Remove(sessionToDelete);
-            SaveUnsafe(sessions);
+            _sessions.Remove(s);
+            Save();
         }
     }
 
-    private List<SessionDto> LoadSessionsUnsafe()
+    private void Load(IConfiguration configuration)
     {
         var fileExists = File.Exists(_filePath);
         try
         {
             if (fileExists)
             {
-                var json = File.ReadAllText(_filePath);
-                var data = JsonSerializer.Deserialize<SessionesData>(json, JsonOpts);
-                if (data?.Sessions.Count > 0)
-                {
-                    PersistCookieSelectedSessionIfNeeded(data.Sessions);
-                    return data.Sessions;
-                }
+                if (TryLoadSessionsFromFile(_filePath))
+                    return;
+
+                // Si el archivo principal quedo corrupto o incompleto, intentar recuperar del backup.
+                if (TryLoadSessionsFromFile(_backupFilePath))
+                    return;
             }
         }
         catch
         {
-            // Archivo existente con formato invalido: no sobreescribir automaticamente.
+            // Archivo existente con formato inválido: no sobreescribir automáticamente.
             // Se mantiene fallback en memoria para no perder sesiones persistidas.
-            return BuildFallbackSessions();
+            AddFallbackSessionInMemory(configuration);
+            return;
         }
 
         if (fileExists)
-            return BuildFallbackSessions();
+        {
+            AddFallbackSessionInMemory(configuration);
+            return;
+        }
 
-        var seededSessions = BuildFallbackSessions();
-        SaveUnsafe(seededSessions);
-        return seededSessions;
+        SeedFromConfig(configuration);
     }
 
-    private List<SessionDto> BuildFallbackSessions() =>
-    [
-        _defaultSession is null
+    private void AddFallbackSessionInMemory(IConfiguration configuration)
+    {
+        _sessions.Clear();
+        _sessions.Add(_defaultSession is null
             ? new SessionDto { Nombre = "Sesion inicial", Activa = true }
-            : Clone(_defaultSession, true)
-    ];
+            : Clone(_defaultSession, true));
+    }
 
-    private void SaveUnsafe(List<SessionDto> sessions)
+    private void SeedFromConfig(IConfiguration configuration)
+    {
+        _sessions.Add(_defaultSession is null
+            ? new SessionDto { Nombre = "Sesion inicial", Activa = true }
+            : Clone(_defaultSession, true));
+        Save();
+    }
+
+    private void Save()
     {
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(_filePath)!);
             var json = JsonSerializer.Serialize(new SessionesData
             {
-                Sessions = sessions.Select(s => Clone(s, false)).ToList()
+                Sessions = _sessions.Select(s => Clone(s, false)).ToList()
             }, JsonOpts);
             File.WriteAllText(_filePath, json);
+            File.WriteAllText(_backupFilePath, json);
         }
         catch
         {
@@ -163,21 +172,36 @@ public sealed class SessionService : ISessionService
         }
     }
 
-    private SessionDto? ResolveActiveSessionUnsafe(List<SessionDto> sessions)
+    private bool TryLoadSessionsFromFile(string path)
+    {
+        if (!File.Exists(path))
+            return false;
+
+        var json = File.ReadAllText(path);
+        var data = JsonSerializer.Deserialize<SessionesData>(json, JsonOpts);
+        if (data?.Sessions.Count is not > 0)
+            return false;
+
+        _sessions.Clear();
+        _sessions.AddRange(data.Sessions);
+        return true;
+    }
+
+    private SessionDto? ResolveActiveSessionUnsafe()
     {
         if (_activeSessionId is Guid activeId)
         {
-            var selected = sessions.FirstOrDefault(s => s.Id == activeId);
+            var selected = _sessions.FirstOrDefault(s => s.Id == activeId);
             if (selected is not null)
                 return selected;
         }
 
-        var persistedActive = sessions.FirstOrDefault(s => s.Activa);
+        var persistedActive = _sessions.FirstOrDefault(s => s.Activa);
         if (persistedActive is not null)
             return persistedActive;
 
-        if (sessions.Count > 0)
-            return sessions[0];
+        if (_sessions.Count > 0)
+            return _sessions[0];
 
         if (_defaultSession is not null)
             return _defaultSession;
@@ -185,22 +209,25 @@ public sealed class SessionService : ISessionService
         return null;
     }
 
-    private void PersistCookieSelectedSessionIfNeeded(List<SessionDto> sessions)
+    private void PersistCookieSelectedSessionIfNeeded()
     {
-        if (_activeSessionId is not Guid activeId)
-            return;
+        lock (_lock)
+        {
+            if (_activeSessionId is not Guid activeId)
+                return;
 
-        var selected = sessions.FirstOrDefault(s => s.Id == activeId);
-        if (selected is null)
-            return;
+            var selected = _sessions.FirstOrDefault(s => s.Id == activeId);
+            if (selected is null)
+                return;
 
-        if (sessions.Any(s => s.Activa && s.Id == activeId))
-            return;
+            if (_sessions.Any(s => s.Activa && s.Id == activeId))
+                return;
 
-        foreach (var session in sessions)
-            session.Activa = session.Id == activeId;
+            foreach (var session in _sessions)
+                session.Activa = session.Id == activeId;
 
-        SaveUnsafe(sessions);
+            Save();
+        }
     }
 
     private static Guid? ReadActiveSessionId(IHttpContextAccessor httpContextAccessor)

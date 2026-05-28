@@ -180,6 +180,22 @@ public sealed class ConversacionDetalleDto
     public DateTime? FechaHoraCierre { get; set; }
 }
 
+public sealed class ConversacionClienteCandidateDto
+{
+    public string Codigo { get; set; } = string.Empty;
+    public string RazonSocial { get; set; } = string.Empty;
+    public string Localidad { get; set; } = string.Empty;
+    public string Provincia { get; set; } = string.Empty;
+    public string Telefono { get; set; } = string.Empty;
+    public string Mail { get; set; } = string.Empty;
+}
+
+public sealed class ConversacionRelacionarClienteRequest
+{
+    public long IdConversacion { get; set; }
+    public string ClienteCodigo { get; set; } = string.Empty;
+}
+
 public sealed class ConversacionMensajeDto
 {
     public long IdMensaje { get; set; }
@@ -351,12 +367,21 @@ public sealed class ConversacionAdjuntoServeDto
     public string RutaLocal { get; set; } = string.Empty;
     public string MimeType { get; set; } = string.Empty;
     public string NombreArchivo { get; set; } = string.Empty;
+    public string NombreDescarga { get; set; } = string.Empty;
 }
 
 public sealed class ConversacionCrearHiloInternoRequest
 {
     public string NombreHilo { get; set; } = string.Empty;
     public string? IdTecnico { get; set; }
+    public string? UsuarioAccion { get; set; }
+    public string? SistemaAccion { get; set; }
+}
+
+public sealed class ConversacionRenameRequest
+{
+    public long IdConversacion { get; set; }
+    public string NombreVisible { get; set; } = string.Empty;
     public string? UsuarioAccion { get; set; }
     public string? SistemaAccion { get; set; }
 }

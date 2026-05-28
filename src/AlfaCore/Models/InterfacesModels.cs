@@ -320,6 +320,7 @@ public sealed class InterfacesCrearComprobanteRequest
 {
     public int IdTipoDocumento { get; set; }
     public string Observacion { get; set; } = string.Empty;
+    public string PromptIaAdicional { get; set; } = string.Empty;
     public string UsuarioAccion { get; set; } = string.Empty;
     public string PcAccion { get; set; } = string.Empty;
     public IReadOnlyList<InterfacesCrearAdjuntoRequest> Adjuntos { get; set; } = [];
@@ -339,6 +340,7 @@ public sealed class InterfacesActualizarComprobanteRequest
     public long IdComprobanteRecibido { get; set; }
     public int IdTipoDocumento { get; set; }
     public string Observacion { get; set; } = string.Empty;
+    public string PromptIaAdicional { get; set; } = string.Empty;
     public string UsuarioAccion { get; set; } = string.Empty;
     public string PcAccion { get; set; } = string.Empty;
 }
@@ -376,6 +378,7 @@ public sealed class InterfacesEliminarComprobantesRequest
 public sealed class InterfacesDetectarCompraRequest
 {
     public long IdComprobanteRecibido { get; set; }
+    public string PromptIaAdicional { get; set; } = string.Empty;
     public string UsuarioAccion { get; set; } = string.Empty;
     public string PcAccion { get; set; } = string.Empty;
 }
