@@ -9,6 +9,8 @@ public sealed class TicketsFilters
     public bool IncluirCerrados { get; set; }
     public bool? TieneAsignado { get; set; }
     public bool? TieneMensajes { get; set; }
+    public string? ClienteCodigo { get; set; }
+    public int? IdContacto { get; set; }
     public string FechaRapida { get; set; } = string.Empty;
     public List<SearchRuleDto> Reglas { get; set; } = [];
     public int PageNumber { get; set; } = 1;
@@ -117,7 +119,28 @@ public sealed class TicketUpdateRequest
     public string CodigoEstado { get; set; } = TicketEstadoKeys.Nuevo;
     public int Prioridad { get; set; } = 1;
     public string? IdTecnico { get; set; }
+    public string? ClienteCodigo { get; set; }
+    public int? IdContacto { get; set; }
     public string? UsuarioAccion { get; set; }
+}
+
+public sealed class TicketClienteOptionDto
+{
+    public string Codigo { get; set; } = string.Empty;
+    public string RazonSocial { get; set; } = string.Empty;
+    public string Localidad { get; set; } = string.Empty;
+    public string Provincia { get; set; } = string.Empty;
+}
+
+public sealed class TicketContactoOptionDto
+{
+    public int IdContacto { get; set; }
+    public string Nombre { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+    public string Telefono { get; set; } = string.Empty;
+    public string Celular { get; set; } = string.Empty;
+    public string ClienteCodigo { get; set; } = string.Empty;
+    public string ClienteNombre { get; set; } = string.Empty;
 }
 
 public sealed class TicketQuickUpdateRequest

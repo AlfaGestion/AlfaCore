@@ -581,8 +581,8 @@ public sealed class ConversacionesService(
                     c.IdConversacion,
                     ISNULL(c.TelefonoWhatsApp, ''),
                     ISNULL(c.NombreVisible, ''),
-                    ISNULL(c.ClienteCodigo, ''),
-                    ISNULL(cli.RAZON_SOCIAL, ''),
+                    ISNULL(COALESCE(NULLIF(LTRIM(RTRIM(c.ClienteCodigo)), ''), contactoCuenta.Cuenta), ''),
+                    ISNULL(COALESCE(NULLIF(cli.RAZON_SOCIAL, ''), contactoCuenta.RazonSocial), ''),
                     c.IdContacto,
                     ISNULL(mc.Nombre_y_Apellido, ''),
                     ISNULL(c.CodigoEstado, ''),
@@ -617,6 +617,27 @@ public sealed class ConversacionesService(
                     ON cli.CODIGO = c.ClienteCodigo
                 LEFT JOIN dbo.MA_CONTACTOS mc
                     ON mc.id = c.IdContacto
+                OUTER APPLY (
+                    SELECT TOP (1)
+                        cuenta.Cuenta,
+                        cliCuenta.RAZON_SOCIAL AS RazonSocial
+                    FROM (
+                        SELECT UPPER(LTRIM(RTRIM(rel.Cuenta))) AS Cuenta, 0 AS Orden
+                        FROM dbo.MA_CONTACTOS_CUENTAS rel
+                        WHERE c.IdContacto IS NOT NULL
+                          AND mc.id IS NOT NULL
+                          AND rel.IdContacto = ISNULL(NULLIF(mc.idContacto, 0), mc.id)
+                          AND LTRIM(RTRIM(ISNULL(rel.Cuenta, ''))) <> ''
+                        UNION ALL
+                        SELECT UPPER(LTRIM(RTRIM(mc.CuentaRel))) AS Cuenta, 1 AS Orden
+                        WHERE c.IdContacto IS NOT NULL
+                          AND mc.id IS NOT NULL
+                          AND LTRIM(RTRIM(ISNULL(mc.CuentaRel, ''))) <> ''
+                    ) cuenta
+                    INNER JOIN dbo.VT_CLIENTES cliCuenta
+                        ON UPPER(LTRIM(RTRIM(cliCuenta.CODIGO))) = cuenta.Cuenta
+                    ORDER BY cuenta.Orden, cliCuenta.RAZON_SOCIAL
+                ) contactoCuenta
                 LEFT JOIN dbo.V_TA_Tecnicos t
                     ON LTRIM(RTRIM(t.IdTecnico)) = LTRIM(RTRIM(c.IdTecnico))
                 OUTER APPLY (
@@ -670,8 +691,9 @@ public sealed class ConversacionesService(
                         @Search IS NULL
                         OR c.TelefonoWhatsApp LIKE @Search
                         OR c.NombreVisible COLLATE Latin1_General_CI_AI LIKE @Search
-                        OR cli.RAZON_SOCIAL COLLATE Latin1_General_CI_AI LIKE @Search
+                        OR COALESCE(NULLIF(cli.RAZON_SOCIAL, ''), contactoCuenta.RazonSocial) COLLATE Latin1_General_CI_AI LIKE @Search
                         OR mc.Nombre_y_Apellido COLLATE Latin1_General_CI_AI LIKE @Search
+                        OR ISNULL(mc.Email, '') COLLATE Latin1_General_CI_AI LIKE @Search
                         OR c.ResumenUltimoMensaje COLLATE Latin1_General_CI_AI LIKE @Search
                         OR EXISTS (
                             SELECT 1
@@ -908,6 +930,7 @@ public sealed class ConversacionesService(
                         OR c.NombreVisible COLLATE Latin1_General_CI_AI LIKE @Search
                         OR cli.RAZON_SOCIAL COLLATE Latin1_General_CI_AI LIKE @Search
                         OR mc.Nombre_y_Apellido COLLATE Latin1_General_CI_AI LIKE @Search
+                        OR ISNULL(mc.Email, '') COLLATE Latin1_General_CI_AI LIKE @Search
                         OR (
                             @SearchPhone IS NOT NULL
                             AND (
@@ -983,8 +1006,8 @@ public sealed class ConversacionesService(
                     ISNULL(c.Canal, ''),
                     ISNULL(c.TelefonoWhatsApp, ''),
                     ISNULL(c.NombreVisible, ''),
-                    ISNULL(c.ClienteCodigo, ''),
-                    ISNULL(cli.RAZON_SOCIAL, ''),
+                    ISNULL(COALESCE(NULLIF(LTRIM(RTRIM(c.ClienteCodigo)), ''), contactoCuenta.Cuenta), ''),
+                    ISNULL(COALESCE(NULLIF(cli.RAZON_SOCIAL, ''), contactoCuenta.RazonSocial), ''),
                     c.IdContacto,
                     ISNULL(mc.Nombre_y_Apellido, ''),
                     ISNULL(mc.Telefono, ''),
@@ -1010,6 +1033,27 @@ public sealed class ConversacionesService(
                     ON cli.CODIGO = c.ClienteCodigo
                 LEFT JOIN dbo.MA_CONTACTOS mc
                     ON mc.id = c.IdContacto
+                OUTER APPLY (
+                    SELECT TOP (1)
+                        cuenta.Cuenta,
+                        cliCuenta.RAZON_SOCIAL AS RazonSocial
+                    FROM (
+                        SELECT UPPER(LTRIM(RTRIM(rel.Cuenta))) AS Cuenta, 0 AS Orden
+                        FROM dbo.MA_CONTACTOS_CUENTAS rel
+                        WHERE c.IdContacto IS NOT NULL
+                          AND mc.id IS NOT NULL
+                          AND rel.IdContacto = ISNULL(NULLIF(mc.idContacto, 0), mc.id)
+                          AND LTRIM(RTRIM(ISNULL(rel.Cuenta, ''))) <> ''
+                        UNION ALL
+                        SELECT UPPER(LTRIM(RTRIM(mc.CuentaRel))) AS Cuenta, 1 AS Orden
+                        WHERE c.IdContacto IS NOT NULL
+                          AND mc.id IS NOT NULL
+                          AND LTRIM(RTRIM(ISNULL(mc.CuentaRel, ''))) <> ''
+                    ) cuenta
+                    INNER JOIN dbo.VT_CLIENTES cliCuenta
+                        ON UPPER(LTRIM(RTRIM(cliCuenta.CODIGO))) = cuenta.Cuenta
+                    ORDER BY cuenta.Orden, cliCuenta.RAZON_SOCIAL
+                ) contactoCuenta
                 LEFT JOIN dbo.V_TA_Tecnicos t
                     ON LTRIM(RTRIM(t.IdTecnico)) = LTRIM(RTRIM(c.IdTecnico))
                 OUTER APPLY (
@@ -1137,6 +1181,213 @@ public sealed class ConversacionesService(
             return (IReadOnlyList<ConversacionMensajeDto>)items;
         }, "No se pudieron cargar los mensajes.", ct);
 
+    public Task<IReadOnlyList<ConversacionClienteCandidateDto>> SearchClientesParaRelacionarAsync(string texto, CancellationToken ct = default)
+        => ExecuteLoggedAsync<IReadOnlyList<ConversacionClienteCandidateDto>>("Conversaciones", "SearchClientesParaRelacionar", async token =>
+        {
+            if (string.IsNullOrWhiteSpace(texto))
+                return [];
+
+            var search = SearchTextHelper.Normalize(texto);
+            const string sql = """
+                SELECT TOP (20)
+                    ISNULL(CODIGO, '') AS Codigo,
+                    ISNULL(RAZON_SOCIAL, '') AS RazonSocial,
+                    ISNULL(LOCALIDAD, '') AS Localidad,
+                    ISNULL(PROVINCIA, '') AS Provincia,
+                    ISNULL(TELEFONO, '') AS Telefono,
+                    ISNULL(MAIL, '') AS Mail
+                FROM dbo.VT_CLIENTES
+                WHERE ISNULL(CODIGO, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                   OR ISNULL(RAZON_SOCIAL, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                   OR ISNULL(LOCALIDAD, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                   OR ISNULL(TELEFONO, '') LIKE @TextoLike
+                   OR ISNULL(MAIL, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                ORDER BY
+                    CASE WHEN ISNULL(RAZON_SOCIAL, '') LIKE @Texto + '%' THEN 0 ELSE 1 END,
+                    ISNULL(RAZON_SOCIAL, ''),
+                    ISNULL(CODIGO, '');
+                """;
+
+            var items = new List<ConversacionClienteCandidateDto>();
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var cmd = new SqlCommand(sql, cn);
+            cmd.Parameters.AddWithValue("@Texto", search);
+            cmd.Parameters.AddWithValue("@TextoLike", SearchTextHelper.LikeContains(search));
+            await using var rd = await cmd.ExecuteReaderAsync(token);
+            while (await rd.ReadAsync(token))
+            {
+                items.Add(new ConversacionClienteCandidateDto
+                {
+                    Codigo = GetString(rd, 0),
+                    RazonSocial = GetString(rd, 1),
+                    Localidad = GetString(rd, 2),
+                    Provincia = GetString(rd, 3),
+                    Telefono = GetString(rd, 4),
+                    Mail = GetString(rd, 5)
+                });
+            }
+
+            return items;
+        }, "No se pudieron buscar clientes para relacionar.", ct);
+
+    public async Task RelacionarClienteAsync(ConversacionRelacionarClienteRequest request, CancellationToken ct = default)
+    {
+        await ExecuteLoggedAsync("Conversaciones", "RelacionarCliente", async token =>
+        {
+            ArgumentNullException.ThrowIfNull(request);
+            var clienteCodigo = request.ClienteCodigo?.Trim().ToUpperInvariant() ?? string.Empty;
+            if (request.IdConversacion <= 0)
+                throw new InvalidOperationException("No se recibió la conversación a relacionar.");
+            if (string.IsNullOrWhiteSpace(clienteCodigo))
+                throw new InvalidOperationException("No se recibió el cliente a relacionar.");
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var tx = await cn.BeginTransactionAsync(token);
+            var sqlTx = (SqlTransaction)tx;
+
+            const string clienteSql = """
+                SELECT TOP (1) ISNULL(CODIGO, ''), ISNULL(RAZON_SOCIAL, '')
+                FROM dbo.VT_CLIENTES
+                WHERE UPPER(LTRIM(RTRIM(CODIGO))) = @ClienteCodigo;
+                """;
+            string clienteNombre;
+            await using (var clienteCmd = new SqlCommand(clienteSql, cn, sqlTx))
+            {
+                clienteCmd.Parameters.AddWithValue("@ClienteCodigo", clienteCodigo);
+                await using var clienteRd = await clienteCmd.ExecuteReaderAsync(token);
+                if (!await clienteRd.ReadAsync(token))
+                    throw new InvalidOperationException("El cliente seleccionado ya no existe en la base activa.");
+                clienteNombre = GetString(clienteRd, 1);
+            }
+
+            const string conversationSql = """
+                SELECT TOP (1) IdContacto
+                FROM dbo.CONV_CONVERSACIONES
+                WHERE IdConversacion = @IdConversacion;
+                """;
+            int? idContacto = null;
+            await using (var convCmd = new SqlCommand(conversationSql, cn, sqlTx))
+            {
+                convCmd.Parameters.AddWithValue("@IdConversacion", request.IdConversacion);
+                var raw = await convCmd.ExecuteScalarAsync(token);
+                if (raw is null || raw is DBNull)
+                    idContacto = null;
+                else
+                    idContacto = Convert.ToInt32(raw, CultureInfo.InvariantCulture);
+            }
+
+            const string existsConversationSql = "SELECT COUNT(1) FROM dbo.CONV_CONVERSACIONES WHERE IdConversacion = @IdConversacion;";
+            await using (var existsCmd = new SqlCommand(existsConversationSql, cn, sqlTx))
+            {
+                existsCmd.Parameters.AddWithValue("@IdConversacion", request.IdConversacion);
+                var exists = Convert.ToInt32(await existsCmd.ExecuteScalarAsync(token), CultureInfo.InvariantCulture);
+                if (exists == 0)
+                    throw new InvalidOperationException("La conversación seleccionada ya no existe.");
+            }
+
+            const string updateConversationSql = """
+                UPDATE dbo.CONV_CONVERSACIONES
+                SET ClienteCodigo = @ClienteCodigo
+                WHERE IdConversacion = @IdConversacion;
+                """;
+            await using (var updateCmd = new SqlCommand(updateConversationSql, cn, sqlTx))
+            {
+                updateCmd.Parameters.AddWithValue("@ClienteCodigo", clienteCodigo);
+                updateCmd.Parameters.AddWithValue("@IdConversacion", request.IdConversacion);
+                await updateCmd.ExecuteNonQueryAsync(token);
+            }
+
+            if (idContacto.HasValue)
+            {
+                const string linkSql = """
+                    DECLARE @IdContactoRel int;
+
+                    SELECT @IdContactoRel = CONVERT(int, ISNULL(NULLIF(idContacto, 0), id))
+                    FROM dbo.MA_CONTACTOS
+                    WHERE id = @IdContacto;
+
+                    IF @IdContactoRel IS NOT NULL
+                    BEGIN
+                        UPDATE dbo.MA_CONTACTOS
+                        SET idContacto = @IdContactoRel
+                        WHERE id = @IdContacto
+                          AND ISNULL(idContacto, 0) = 0;
+
+                        IF NOT EXISTS (
+                            SELECT 1
+                            FROM dbo.MA_CONTACTOS_CUENTAS
+                            WHERE IdContacto = @IdContactoRel
+                              AND UPPER(LTRIM(RTRIM(Cuenta))) = @ClienteCodigo
+                        )
+                        BEGIN
+                            INSERT INTO dbo.MA_CONTACTOS_CUENTAS (IdContacto, Cuenta)
+                            VALUES (@IdContactoRel, @ClienteCodigo);
+                        END;
+                    END;
+                    """;
+                await using var linkCmd = new SqlCommand(linkSql, cn, sqlTx);
+                linkCmd.Parameters.AddWithValue("@IdContacto", idContacto.Value);
+                linkCmd.Parameters.AddWithValue("@ClienteCodigo", clienteCodigo);
+                await linkCmd.ExecuteNonQueryAsync(token);
+            }
+
+            await tx.CommitAsync(token);
+
+            await _appEvents.LogAuditAsync(
+                "Conversaciones",
+                "RelacionarCliente",
+                "CONV_CONVERSACIONES",
+                request.IdConversacion.ToString(CultureInfo.InvariantCulture),
+                "Cliente relacionado manualmente desde contexto de conversación.",
+                new { request.IdConversacion, ClienteCodigo = clienteCodigo, ClienteNombre = clienteNombre, IdContacto = idContacto },
+                token);
+            return true;
+        }, "No se pudo relacionar el cliente con la conversación.", ct);
+    }
+
+    public async Task RenameConversationAsync(ConversacionRenameRequest request, CancellationToken ct = default)
+    {
+        await ExecuteLoggedAsync("Conversaciones", "RenameConversation", async token =>
+        {
+            ArgumentNullException.ThrowIfNull(request);
+            if (request.IdConversacion <= 0)
+                throw new InvalidOperationException("No se recibiÃ³ la conversaciÃ³n a renombrar.");
+
+            var nombre = request.NombreVisible?.Trim() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(nombre))
+                throw new InvalidOperationException("El nombre de la conversaciÃ³n no puede quedar vacÃ­o.");
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            const string sql = """
+                UPDATE dbo.CONV_CONVERSACIONES
+                SET NombreVisible = @NombreVisible,
+                    FechaHora_Modificacion = GETDATE()
+                WHERE IdConversacion = @IdConversacion;
+                """;
+
+            await using var cmd = new SqlCommand(sql, cn);
+            cmd.Parameters.AddWithValue("@IdConversacion", request.IdConversacion);
+            cmd.Parameters.AddWithValue("@NombreVisible", nombre);
+            var affected = await cmd.ExecuteNonQueryAsync(token);
+            if (affected == 0)
+                throw new InvalidOperationException("La conversaciÃ³n seleccionada ya no existe.");
+
+            await _appEvents.LogAuditAsync(
+                "Conversaciones",
+                "RenameConversation",
+                "CONV_CONVERSACIONES",
+                request.IdConversacion.ToString(CultureInfo.InvariantCulture),
+                "Nombre visible de conversaciÃ³n actualizado.",
+                new { request.IdConversacion, NombreVisible = nombre },
+                token);
+
+            return true;
+        }, "No se pudo actualizar el nombre de la conversaciÃ³n.", ct);
+    }
+
     public Task<IReadOnlyList<ConversacionTypingDto>> GetTypingAsync(long conversationId, string? clienteIdActual = null, CancellationToken ct = default)
     {
         if (conversationId <= 0)
@@ -1261,7 +1512,7 @@ public sealed class ConversacionesService(
                     await UpdateMessageDeliveryAsync(messageId, "ERROR_ENVIO", string.Empty, BuildDeliveryErrorPayload(ex), token);
                     await RefreshConversationAsync(request.IdConversacion, now, request.Texto.Trim(), token);
 
-                    throw new InvalidOperationException("No se pudo enviar el mensaje por WhatsApp. QuedÃ³ marcado con error en la conversaciÃ³n.", ex);
+                    throw new InvalidOperationException("No se pudo enviar el mensaje por WhatsApp. Qued\u00f3 marcado con error en la conversaci\u00f3n.", ex);
                 }
             }
 
@@ -1956,11 +2207,11 @@ public sealed class ConversacionesService(
         => ExecuteLoggedAsync("Conversaciones", "SetConversationPin", async token =>
         {
             if (idConversacion <= 0)
-                throw new InvalidOperationException("La conversaciÃ³n es obligatoria.");
+                throw new InvalidOperationException("La conversaci\u00f3n es obligatoria.");
 
             var normalizedUser = NormalizePinUser(usuario);
             if (string.IsNullOrWhiteSpace(normalizedUser))
-                throw new InvalidOperationException("No se pudo identificar el usuario actual para fijar la conversaciÃ³n.");
+                throw new InvalidOperationException("No se pudo identificar el usuario actual para fijar la conversaci\u00f3n.");
 
             var normalizedSystem = NormalizePinSystem(sistema);
 
@@ -2006,12 +2257,12 @@ public sealed class ConversacionesService(
                 "SetConversationPin",
                 "CONV_CONVERSACIONES_PIN_USUARIO",
                 idConversacion.ToString(CultureInfo.InvariantCulture),
-                fijada ? "ConversaciÃ³n fijada por usuario." : "ConversaciÃ³n desfijada por usuario.",
+                fijada ? "Conversaci\u00f3n fijada por usuario." : "Conversaci\u00f3n desfijada por usuario.",
                 new { Usuario = normalizedUser, Sistema = normalizedSystem },
                 token);
 
             return true;
-        }, "No se pudo actualizar el pin de la conversaciÃ³n.", ct);
+        }, "No se pudo actualizar el pin de la conversaci\u00f3n.", ct);
 
     public Task MarkConversationReadAsync(long idConversacion, string usuario, string? sistema, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "MarkConversationRead", async token =>
@@ -2560,23 +2811,26 @@ public sealed class ConversacionesService(
             await cn.OpenAsync(token);
             await using var cmd = new SqlCommand(sql, cn);
             cmd.Parameters.AddWithValue("@IdAdjunto", idAdjunto);
-            await using var rd = await cmd.ExecuteReaderAsync(token);
-            if (!await rd.ReadAsync(token))
-                return null;
-
-            var record = new AttachmentServeRecord
+            AttachmentServeRecord record;
+            await using (var rd = await cmd.ExecuteReaderAsync(token))
             {
-                IdAdjunto = rd.GetInt64(0),
-                IdMensaje = rd.GetInt64(1),
-                IdConversacion = rd.GetInt64(2),
-                TipoArchivo = GetString(rd, 3),
-                NombreArchivo = GetString(rd, 4),
-                MimeType = GetString(rd, 5),
-                UrlArchivo = GetString(rd, 6),
-                RutaLocal = GetString(rd, 7),
-                AdjuntoPayloadJson = GetString(rd, 8),
-                MensajePayloadJson = GetString(rd, 9)
-            };
+                if (!await rd.ReadAsync(token))
+                    return null;
+
+                record = new AttachmentServeRecord
+                {
+                    IdAdjunto = rd.GetInt64(0),
+                    IdMensaje = rd.GetInt64(1),
+                    IdConversacion = rd.GetInt64(2),
+                    TipoArchivo = GetString(rd, 3),
+                    NombreArchivo = GetString(rd, 4),
+                    MimeType = GetString(rd, 5),
+                    UrlArchivo = GetString(rd, 6),
+                    RutaLocal = GetString(rd, 7),
+                    AdjuntoPayloadJson = GetString(rd, 8),
+                    MensajePayloadJson = GetString(rd, 9)
+                };
+            }
 
             var rutaLocal = ResolveExistingAttachmentPath(record);
             if (!string.IsNullOrWhiteSpace(rutaLocal) && !string.Equals(rutaLocal, record.RutaLocal, StringComparison.OrdinalIgnoreCase))
@@ -2588,13 +2842,85 @@ public sealed class ConversacionesService(
             if (string.IsNullOrWhiteSpace(rutaLocal))
                 rutaLocal = await TryRecoverAttachmentFileAsync(record, token);
 
+            var nombreDescarga = await BuildAttachmentDownloadNameAsync(cn, record, token);
             return new ConversacionAdjuntoServeDto
             {
                 RutaLocal = rutaLocal,
                 MimeType = record.MimeType,
-                NombreArchivo = record.NombreArchivo
+                NombreArchivo = record.NombreArchivo,
+                NombreDescarga = nombreDescarga
             };
         }, "No se pudo obtener el adjunto.", ct);
+
+    private static async Task<string> BuildAttachmentDownloadNameAsync(SqlConnection cn, AttachmentServeRecord record, CancellationToken ct)
+    {
+        var kind = NormalizeAttachmentDownloadKind(record.TipoArchivo, record.MimeType);
+        if (string.IsNullOrWhiteSpace(kind))
+            return SanitizeDownloadFileName(record.NombreArchivo, "Attachment", InferExtension(record.MimeType, record.TipoArchivo));
+
+        const string sql = """
+            SELECT COUNT(1)
+            FROM dbo.CONV_ADJUNTOS a
+            INNER JOIN dbo.CONV_MENSAJES m
+                ON m.IdMensaje = a.IdMensaje
+            WHERE m.IdConversacion = @IdConversacion
+              AND a.IdAdjunto <= @IdAdjunto
+              AND (
+                    @Kind = N'Image'
+                    AND (UPPER(ISNULL(a.TipoArchivo, '')) IN (N'IMAGE', N'STICKER') OR LOWER(ISNULL(a.MimeType, '')) LIKE N'image/%')
+                  OR
+                    @Kind = N'Audio'
+                    AND (UPPER(ISNULL(a.TipoArchivo, '')) = N'AUDIO' OR LOWER(ISNULL(a.MimeType, '')) LIKE N'audio/%')
+                  OR
+                    @Kind = N'Video'
+                    AND (UPPER(ISNULL(a.TipoArchivo, '')) = N'VIDEO' OR LOWER(ISNULL(a.MimeType, '')) LIKE N'video/%')
+                  OR
+                    @Kind = N'Document'
+                    AND NOT (
+                        UPPER(ISNULL(a.TipoArchivo, '')) IN (N'IMAGE', N'STICKER', N'AUDIO', N'VIDEO')
+                        OR LOWER(ISNULL(a.MimeType, '')) LIKE N'image/%'
+                        OR LOWER(ISNULL(a.MimeType, '')) LIKE N'audio/%'
+                        OR LOWER(ISNULL(a.MimeType, '')) LIKE N'video/%'
+                    )
+                  );
+            """;
+
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@IdConversacion", record.IdConversacion);
+        cmd.Parameters.AddWithValue("@IdAdjunto", record.IdAdjunto);
+        cmd.Parameters.AddWithValue("@Kind", kind);
+        var index = Convert.ToInt32(await cmd.ExecuteScalarAsync(ct), CultureInfo.InvariantCulture);
+        if (index <= 0)
+            index = 1;
+
+        var extension = InferExtension(record.MimeType, record.TipoArchivo);
+        return SanitizeDownloadFileName($"{kind} ({index}){extension}", kind, extension);
+    }
+
+    private static string NormalizeAttachmentDownloadKind(string tipoArchivo, string mimeType)
+    {
+        if (string.Equals(tipoArchivo, "IMAGE", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(tipoArchivo, "STICKER", StringComparison.OrdinalIgnoreCase)
+            || mimeType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+            return "Image";
+        if (string.Equals(tipoArchivo, "AUDIO", StringComparison.OrdinalIgnoreCase)
+            || mimeType.StartsWith("audio/", StringComparison.OrdinalIgnoreCase))
+            return "Audio";
+        if (string.Equals(tipoArchivo, "VIDEO", StringComparison.OrdinalIgnoreCase)
+            || mimeType.StartsWith("video/", StringComparison.OrdinalIgnoreCase))
+            return "Video";
+
+        return "Document";
+    }
+
+    private static string SanitizeDownloadFileName(string fileName, string fallbackBase, string extension)
+    {
+        var normalized = string.IsNullOrWhiteSpace(fileName) ? $"{fallbackBase}{extension}" : Path.GetFileName(fileName.Trim());
+        foreach (var invalid in Path.GetInvalidFileNameChars())
+            normalized = normalized.Replace(invalid, '_');
+
+        return string.IsNullOrWhiteSpace(normalized) ? $"{fallbackBase}{extension}" : normalized;
+    }
 
     private async Task<int> StoreIncomingAttachmentsAsync(
         long conversationId,
@@ -3553,7 +3879,7 @@ public sealed class ConversacionesService(
         using var response = await client.SendAsync(request, ct);
         var body = await response.Content.ReadAsStringAsync(ct);
         if (!response.IsSuccessStatusCode)
-            throw new HttpRequestException($"Meta devolvio {(int)response.StatusCode} al crear la plantilla: {body}");
+            throw new HttpRequestException($"Meta devolvi\u00f3 {(int)response.StatusCode} al crear la plantilla: {body}");
 
         using var doc = JsonDocument.Parse(body);
         var root = doc.RootElement;
@@ -3575,11 +3901,11 @@ public sealed class ConversacionesService(
         using var response = await client.SendAsync(request, ct);
         var body = await response.Content.ReadAsStringAsync(ct);
         if (!response.IsSuccessStatusCode)
-            throw new HttpRequestException($"Meta devolvio {(int)response.StatusCode} al sincronizar la plantilla: {body}");
+            throw new HttpRequestException($"Meta devolvi\u00f3 {(int)response.StatusCode} al sincronizar la plantilla: {body}");
 
         using var doc = JsonDocument.Parse(body);
         if (!doc.RootElement.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Array)
-            throw new InvalidOperationException("Meta no devolvio informacion de plantillas.");
+            throw new InvalidOperationException("Meta no devolvi\u00f3 informaci\u00f3n de plantillas.");
 
         foreach (var item in data.EnumerateArray())
         {
@@ -3646,7 +3972,7 @@ public sealed class ConversacionesService(
         var responseBody = await response.Content.ReadAsStringAsync(ct);
 
         if (!response.IsSuccessStatusCode)
-            throw new HttpRequestException($"Meta devolvio {(int)response.StatusCode}: {responseBody}");
+            throw new HttpRequestException($"Meta devolvi\u00f3 {(int)response.StatusCode}: {responseBody}");
 
         var messageId = RequireSentMessageId(responseBody, "enviar plantilla");
         return new WhatsAppSendResult
@@ -3715,9 +4041,9 @@ public sealed class ConversacionesService(
         var responseBody = await response.Content.ReadAsStringAsync(ct);
 
         if (!response.IsSuccessStatusCode)
-            throw new InvalidOperationException($"Meta devolvio {(int)response.StatusCode} al enviar reacción: {responseBody}");
+            throw new InvalidOperationException($"Meta devolvi\u00f3 {(int)response.StatusCode} al enviar reacci\u00f3n: {responseBody}");
 
-        var messageId = RequireSentMessageId(responseBody, "enviar reacciÃ³n");
+        var messageId = RequireSentMessageId(responseBody, "enviar reacci\u00f3n");
         return new WhatsAppSendResult
         {
             EstadoEnvio = "ENVIADO_META",
@@ -3762,7 +4088,7 @@ public sealed class ConversacionesService(
         var responseBody = await response.Content.ReadAsStringAsync(ct);
 
         if (!response.IsSuccessStatusCode)
-            throw new InvalidOperationException($"Meta devolvio {(int)response.StatusCode} al enviar adjunto: {responseBody}");
+            throw new InvalidOperationException($"Meta devolvi\u00f3 {(int)response.StatusCode} al enviar adjunto: {responseBody}");
 
         var messageId = RequireSentMessageId(responseBody, "enviar adjunto");
         return new WhatsAppSendResult
@@ -3803,13 +4129,13 @@ public sealed class ConversacionesService(
         var body = await response.Content.ReadAsStringAsync(ct);
 
         if (!response.IsSuccessStatusCode)
-            throw new InvalidOperationException($"Meta devolvio {(int)response.StatusCode} al subir media: {body}");
+            throw new InvalidOperationException($"Meta devolvi\u00f3 {(int)response.StatusCode} al subir media: {body}");
 
         using var doc = JsonDocument.Parse(body);
         if (doc.RootElement.TryGetProperty("id", out var id))
             return id.GetString() ?? string.Empty;
 
-        throw new InvalidOperationException("Meta no devolvio identificador del archivo subido.");
+        throw new InvalidOperationException("Meta no devolvi\u00f3 identificador del archivo subido.");
     }
 
     private async Task<WhatsAppMediaInfo> GetWhatsAppMediaAsync(ConversacionWhatsAppConfigDto config, string mediaId, CancellationToken ct)
@@ -3823,7 +4149,7 @@ public sealed class ConversacionesService(
         var body = await response.Content.ReadAsStringAsync(ct);
 
         if (!response.IsSuccessStatusCode)
-            throw new InvalidOperationException($"Meta devolvio {(int)response.StatusCode} al obtener media: {body}");
+            throw new InvalidOperationException($"Meta devolvi\u00f3 {(int)response.StatusCode} al obtener media: {body}");
 
         using var doc = JsonDocument.Parse(body);
         var root = doc.RootElement;
@@ -3839,7 +4165,7 @@ public sealed class ConversacionesService(
     private async Task<byte[]> DownloadWhatsAppMediaAsync(ConversacionWhatsAppConfigDto config, string mediaUrl, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(mediaUrl))
-            throw new InvalidOperationException("Meta no devolvio URL para descargar el adjunto.");
+            throw new InvalidOperationException("Meta no devolvi\u00f3 URL para descargar el adjunto.");
 
         using var request = new HttpRequestMessage(HttpMethod.Get, mediaUrl);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", config.AccessToken.Trim());
@@ -3849,7 +4175,7 @@ public sealed class ConversacionesService(
         if (!response.IsSuccessStatusCode)
         {
             var body = await response.Content.ReadAsStringAsync(ct);
-            throw new InvalidOperationException($"Meta devolvio {(int)response.StatusCode} al descargar media: {body}");
+            throw new InvalidOperationException($"Meta devolvi\u00f3 {(int)response.StatusCode} al descargar media: {body}");
         }
 
         return await response.Content.ReadAsByteArrayAsync(ct);
@@ -3920,16 +4246,25 @@ public sealed class ConversacionesService(
         var phoneTail = GetPhoneComparableTail(normalizedPhone);
         var sql = $"""
             SELECT TOP (1)
-                id,
-                ISNULL(CuentaRel, ''),
-                ISNULL(Nombre_y_Apellido, '')
-            FROM dbo.MA_CONTACTOS
+                c.id,
+                ISNULL(COALESCE(contactoCuenta.Cuenta, NULLIF(UPPER(LTRIM(RTRIM(c.CuentaRel))), '')), ''),
+                ISNULL(c.Nombre_y_Apellido, '')
+            FROM dbo.MA_CONTACTOS c
+            OUTER APPLY (
+                SELECT TOP (1) UPPER(LTRIM(RTRIM(rel.Cuenta))) AS Cuenta
+                FROM dbo.MA_CONTACTOS_CUENTAS rel
+                INNER JOIN dbo.VT_CLIENTES cli
+                    ON UPPER(LTRIM(RTRIM(cli.CODIGO))) = UPPER(LTRIM(RTRIM(rel.Cuenta)))
+                WHERE rel.IdContacto = ISNULL(NULLIF(c.idContacto, 0), c.id)
+                  AND LTRIM(RTRIM(ISNULL(rel.Cuenta, ''))) <> ''
+                ORDER BY cli.RAZON_SOCIAL, rel.Cuenta
+            ) contactoCuenta
             WHERE
-                {SqlPhoneEquivalentPredicate("Telefono", "@Telefono", "@TelefonoTail")}
-                OR {SqlPhoneEquivalentPredicate("Celular", "@Telefono", "@TelefonoTail")}
-                OR {SqlPhoneEquivalentPredicate("TelefonoPart", "@Telefono", "@TelefonoTail")}
-                OR {SqlPhoneEquivalentPredicate("CelularPart", "@Telefono", "@TelefonoTail")}
-            ORDER BY id DESC
+                {SqlPhoneEquivalentPredicate("c.Telefono", "@Telefono", "@TelefonoTail")}
+                OR {SqlPhoneEquivalentPredicate("c.Celular", "@Telefono", "@TelefonoTail")}
+                OR {SqlPhoneEquivalentPredicate("c.TelefonoPart", "@Telefono", "@TelefonoTail")}
+                OR {SqlPhoneEquivalentPredicate("c.CelularPart", "@Telefono", "@TelefonoTail")}
+            ORDER BY c.id DESC
             """;
 
         await using var cmd = new SqlCommand(sql, cn);
@@ -5075,7 +5410,7 @@ public sealed class ConversacionesService(
         if (!string.IsNullOrWhiteSpace(messageId))
             return messageId;
 
-        throw new InvalidOperationException($"Meta aceptÃ³ la solicitud de {operation}, pero no devolviÃ³ id de mensaje. Respuesta: {responseBody}");
+        throw new InvalidOperationException($"Meta acept\u00f3 la solicitud de {operation}, pero no devolvi\u00f3 id de mensaje. Respuesta: {responseBody}");
     }
 
     private static string BuildDeliveryErrorPayload(Exception ex)
@@ -5979,22 +6314,10 @@ public sealed class ConversacionesService(
     }
 
     private static string NormalizePhone(string? phone)
-    {
-        if (string.IsNullOrWhiteSpace(phone))
-            return string.Empty;
-
-        var sb = new StringBuilder(phone.Length);
-        foreach (var ch in phone)
-        {
-            if (char.IsDigit(ch))
-                sb.Append(ch);
-        }
-
-        return sb.ToString();
-    }
+        => SearchTextHelper.DigitsOnly(phone);
 
     private static string SqlNormalizePhone(string columnName)
-        => $"REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(ISNULL({columnName}, ''), ' ', ''), '-', ''), '+', ''), '(', ''), ')', ''), '.', '')";
+        => SearchTextHelper.SqlNormalizePhone(columnName);
 
     private static string SqlPhoneEquivalentPredicate(string columnName, string phoneParameterName, string tailParameterName)
     {
@@ -6012,13 +6335,10 @@ public sealed class ConversacionesService(
     }
 
     private static string? GetPhoneComparableTail(string? phone)
-    {
-        var normalized = NormalizePhone(phone);
-        return normalized.Length >= 10 ? normalized[^10..] : null;
-    }
+        => SearchTextHelper.PhoneTail(phone);
 
     private static string? Like(string? value)
-        => string.IsNullOrWhiteSpace(value) ? null : $"%{value.Trim()}%";
+        => SearchTextHelper.LikeContainsOrNull(value);
 
     private static object DbNullable(string? value)
         => string.IsNullOrWhiteSpace(value) ? DBNull.Value : value.Trim();

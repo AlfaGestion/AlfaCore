@@ -10,9 +10,10 @@
 @inject AlfaCore.Services.IConversacionesService ConversacionesSvc
 @inject AlfaCore.Services.ITareasService TareasSvc
 @inject AlfaCore.Services.IAppEventService AppEvents
+@inject AlfaCore.Services.IFloatingWindowService FloatingWindows
 @implements IDisposable
 
-<div class="@ShellClass">
+<div class="@ShellClass" @onclick="CloseFloatingWindowsAsync">
     @if (_mobileSidebarOpen)
     {
         <button type="button"
@@ -674,7 +675,7 @@
             <strong>Rápidas</strong>
         </div>
         <div class="tareas-side-panel__actions">
-            <a href="/tareas" title="Ir al módulo de tareas" aria-label="Ir al módulo de tareas">
+            <a href="/tareas" title="Ir al módulo de tareas" aria-label="Ir al módulo de tareas" @onclick="CloseTasksPanel">
                 <i class="bi bi-box-arrow-up-right"></i>
             </a>
             <button type="button" title="Cerrar" aria-label="Cerrar tareas" @onclick="CloseTasksPanel">
@@ -1811,6 +1812,9 @@
         => string.IsNullOrWhiteSpace(value) ? "-" : value.Trim();
 
     private string TasksPanelUser => AppUserSession.GetCurrentUserName(Environment.UserName).Trim();
+
+    private Task CloseFloatingWindowsAsync()
+        => FloatingWindows.CloseAllAsync();
 
     private List<TareaNotaRapidaDto> TasksPanelOpenNotes => _tasksPanel.NotasRapidas
         .Where(x => !x.Completada)

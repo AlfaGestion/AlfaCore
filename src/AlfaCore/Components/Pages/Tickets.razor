@@ -64,7 +64,7 @@
                 <div class="smart-search__bar">
                     <i class="bi bi-search"></i>
                     <input type="search"
-                           placeholder="Buscar tickets..."
+                           placeholder="Buscar por ticket, cliente, contacto, teléfono, email o técnico..."
                            value="@_filters.Texto"
                            @onfocus="OpenTicketSearchPanel"
                            @oninput="OnTicketSearchInput" />
@@ -88,7 +88,7 @@
 
                 @if (_showSearchPanel)
                 {
-                    <div class="smart-search__panel">
+                    <div class="smart-search__panel" @onclick="CloseTicketLookupSuggestions">
                         <div class="smart-search__column">
                             <h4><i class="bi bi-funnel-fill"></i> Filtros</h4>
                             <button type="button" class="@GetSmartOptionClass(!_filters.IncluirCerrados)" @onclick='() => ToggleTicketClosedAsync(false)'>Abiertos</button>
@@ -129,6 +129,41 @@
                                     <option value="1">Baja</option>
                                     <option value="0">Sin prioridad</option>
                                 </select>
+                            </div>
+                        </div>
+                        <div class="smart-search__column">
+                            <h4><i class="bi bi-building"></i> Cliente / usuario</h4>
+                            <div class="smart-search__inline tickets-lookup" @onclick:stopPropagation>
+                                <label>Cliente</label>
+                                <input type="text" value="@_filterClientSearch" @oninput="OnFilterClientSearchInputAsync" placeholder="Buscar empresa..." />
+                                @if (_filterClientSuggestions.Count > 0)
+                                {
+                                    <div class="tickets-lookup__results">
+                                        @foreach (var client in _filterClientSuggestions)
+                                        {
+                                            <button type="button" @onclick="() => SelectFilterClientAsync(client)">
+                                                <strong>@client.RazonSocial</strong>
+                                                <small>@client.Codigo @client.Localidad</small>
+                                            </button>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                            <div class="smart-search__inline tickets-lookup" @onclick:stopPropagation>
+                                <label>Contacto</label>
+                                <input type="text" value="@_filterContactSearch" @oninput="OnFilterContactSearchInputAsync" placeholder="Buscar usuario/contacto..." />
+                                @if (_filterContactSuggestions.Count > 0)
+                                {
+                                    <div class="tickets-lookup__results">
+                                        @foreach (var contact in _filterContactSuggestions)
+                                        {
+                                            <button type="button" @onclick="() => SelectFilterContactAsync(contact)">
+                                                <strong>@contact.Nombre</strong>
+                                                <small>@DisplayOrFallback(contact.ClienteNombre, contact.Email, contact.Celular)</small>
+                                            </button>
+                                        }
+                                    </div>
+                                }
                             </div>
                         </div>
                         <div class="smart-search__column">
@@ -326,6 +361,46 @@
                                 <option value="@tech.IdTecnico">@tech.Nombre</option>
                             }
                         </select>
+                    </div>
+                    <div class="field tickets-lookup">
+                        <label>Cliente / empresa</label>
+                        <input type="text" value="@_ticketClientSearch" @oninput="OnTicketClientSearchInputAsync" disabled="@_saving" placeholder="Buscar cliente..." />
+                        @if (!string.IsNullOrWhiteSpace(_selectedClientLabel))
+                        {
+                            <span class="tickets-lookup__selected">@_selectedClientLabel <button type="button" @onclick="ClearTicketClient" disabled="@_saving"><i class="bi bi-x"></i></button></span>
+                        }
+                        @if (_ticketClientSuggestions.Count > 0)
+                        {
+                            <div class="tickets-lookup__results">
+                                @foreach (var client in _ticketClientSuggestions)
+                                {
+                                    <button type="button" @onclick="() => SelectTicketClient(client)" disabled="@_saving">
+                                        <strong>@client.RazonSocial</strong>
+                                        <small>@client.Codigo @client.Localidad</small>
+                                    </button>
+                                }
+                            </div>
+                        }
+                    </div>
+                    <div class="field tickets-lookup">
+                        <label>Usuario / contacto</label>
+                        <input type="text" value="@_ticketContactSearch" @oninput="OnTicketContactSearchInputAsync" disabled="@_saving" placeholder="Buscar contacto..." />
+                        @if (!string.IsNullOrWhiteSpace(_selectedContactLabel))
+                        {
+                            <span class="tickets-lookup__selected">@_selectedContactLabel <button type="button" @onclick="ClearTicketContact" disabled="@_saving"><i class="bi bi-x"></i></button></span>
+                        }
+                        @if (_ticketContactSuggestions.Count > 0)
+                        {
+                            <div class="tickets-lookup__results">
+                                @foreach (var contact in _ticketContactSuggestions)
+                                {
+                                    <button type="button" @onclick="() => SelectTicketContact(contact)" disabled="@_saving">
+                                        <strong>@contact.Nombre</strong>
+                                        <small>@DisplayOrFallback(contact.ClienteNombre, contact.Email, contact.Celular)</small>
+                                    </button>
+                                }
+                            </div>
+                        }
                     </div>
                 </aside>
             </div>
@@ -601,6 +676,18 @@
     private CancellationTokenSource? _searchDebounceCts;
     private SearchRuleDto _ticketRuleDraft = new() { Campo = "titulo", Operador = "contains" };
     private readonly List<SavedTicketSearch> _ticketFavorites = [];
+    private string _ticketClientSearch = string.Empty;
+    private string _ticketContactSearch = string.Empty;
+    private string _selectedClientLabel = string.Empty;
+    private string _selectedContactLabel = string.Empty;
+    private List<TicketClienteOptionDto> _ticketClientSuggestions = [];
+    private List<TicketContactoOptionDto> _ticketContactSuggestions = [];
+    private string _filterClientSearch = string.Empty;
+    private string _filterContactSearch = string.Empty;
+    private string _filterClientLabel = string.Empty;
+    private string _filterContactLabel = string.Empty;
+    private List<TicketClienteOptionDto> _filterClientSuggestions = [];
+    private List<TicketContactoOptionDto> _filterContactSuggestions = [];
 
     private static readonly IReadOnlyList<DescriptionCommandOption> DescriptionCommands =
     [
@@ -811,6 +898,46 @@
         await AplicarFiltrosAsync();
     }
 
+    private async Task OnFilterClientSearchInputAsync(ChangeEventArgs e)
+    {
+        _filterClientSearch = e.Value?.ToString() ?? string.Empty;
+        _filterClientSuggestions = string.IsNullOrWhiteSpace(_filterClientSearch) || _filterClientSearch.Trim().Length < 2
+            ? []
+            : (await TicketsSvc.SearchClientesAsync(_filterClientSearch)).ToList();
+    }
+
+    private async Task SelectFilterClientAsync(TicketClienteOptionDto client)
+    {
+        _filters.ClienteCodigo = client.Codigo;
+        _filterClientLabel = client.RazonSocial;
+        _filterClientSearch = client.RazonSocial;
+        _filterClientSuggestions = [];
+        await AplicarFiltrosAsync();
+    }
+
+    private async Task OnFilterContactSearchInputAsync(ChangeEventArgs e)
+    {
+        _filterContactSearch = e.Value?.ToString() ?? string.Empty;
+        _filterContactSuggestions = string.IsNullOrWhiteSpace(_filterContactSearch) || _filterContactSearch.Trim().Length < 2
+            ? []
+            : (await TicketsSvc.SearchContactosAsync(_filterContactSearch, _filters.ClienteCodigo)).ToList();
+    }
+
+    private async Task SelectFilterContactAsync(TicketContactoOptionDto contact)
+    {
+        _filters.IdContacto = contact.IdContacto;
+        _filterContactLabel = contact.Nombre;
+        _filterContactSearch = contact.Nombre;
+        _filterContactSuggestions = [];
+        if (string.IsNullOrWhiteSpace(_filters.ClienteCodigo) && !string.IsNullOrWhiteSpace(contact.ClienteCodigo))
+        {
+            _filters.ClienteCodigo = contact.ClienteCodigo;
+            _filterClientLabel = contact.ClienteNombre;
+            _filterClientSearch = contact.ClienteNombre;
+        }
+        await AplicarFiltrosAsync();
+    }
+
     private async Task AddTicketRuleAsync()
     {
         if (!IsValueOptionalOperator(_ticketRuleDraft.Operador) && string.IsNullOrWhiteSpace(_ticketRuleDraft.Valor))
@@ -838,6 +965,16 @@
                 break;
             case "tecnico":
                 _filters.IdTecnico = null;
+                break;
+            case "cliente":
+                _filters.ClienteCodigo = null;
+                _filterClientLabel = string.Empty;
+                _filterClientSearch = string.Empty;
+                break;
+            case "contacto":
+                _filters.IdContacto = null;
+                _filterContactLabel = string.Empty;
+                _filterContactSearch = string.Empty;
                 break;
             case "prioridad":
                 _prioridadFiltro = string.Empty;
@@ -961,6 +1098,12 @@
     {
         _filters = new TicketsFilters();
         _prioridadFiltro = string.Empty;
+        _filterClientSearch = string.Empty;
+        _filterContactSearch = string.Empty;
+        _filterClientLabel = string.Empty;
+        _filterContactLabel = string.Empty;
+        _filterClientSuggestions = [];
+        _filterContactSuggestions = [];
         await BuscarAsync();
     }
 
@@ -979,6 +1122,7 @@
             CodigoEstado = _lookups.Estados.FirstOrDefault()?.CodigoEstado ?? TicketEstadoKeys.Nuevo,
             Prioridad = 1
         };
+        ClearTicketRelations();
     }
 
     private async Task AbrirTicketAsync(long idTicket)
@@ -1004,8 +1148,16 @@
             Descripcion = _detail.Descripcion,
             CodigoEstado = _detail.CodigoEstado,
             Prioridad = _detail.Prioridad,
-            IdTecnico = _detail.IdTecnico
+            IdTecnico = _detail.IdTecnico,
+            ClienteCodigo = _detail.ClienteCodigo,
+            IdContacto = _detail.IdContacto
         };
+        _selectedClientLabel = _detail.ClienteNombre;
+        _selectedContactLabel = _detail.ContactoNombre;
+        _ticketClientSearch = _detail.ClienteNombre;
+        _ticketContactSearch = _detail.ContactoNombre;
+        _ticketClientSuggestions = [];
+        _ticketContactSuggestions = [];
         _isNew = false;
         _showEditor = true;
         _newNote = string.Empty;
@@ -1157,6 +1309,72 @@
             await _ticketsKanbanJs.DisposeAsync();
     }
 
+    private async Task OnTicketClientSearchInputAsync(ChangeEventArgs e)
+    {
+        _ticketClientSearch = e.Value?.ToString() ?? string.Empty;
+        _ticketClientSuggestions = string.IsNullOrWhiteSpace(_ticketClientSearch) || _ticketClientSearch.Trim().Length < 2
+            ? []
+            : (await TicketsSvc.SearchClientesAsync(_ticketClientSearch)).ToList();
+    }
+
+    private void SelectTicketClient(TicketClienteOptionDto client)
+    {
+        _form.ClienteCodigo = client.Codigo;
+        _selectedClientLabel = client.RazonSocial;
+        _ticketClientSearch = client.RazonSocial;
+        _ticketClientSuggestions = [];
+    }
+
+    private void ClearTicketClient()
+    {
+        _form.ClienteCodigo = null;
+        _selectedClientLabel = string.Empty;
+        _ticketClientSearch = string.Empty;
+        _ticketClientSuggestions = [];
+    }
+
+    private async Task OnTicketContactSearchInputAsync(ChangeEventArgs e)
+    {
+        _ticketContactSearch = e.Value?.ToString() ?? string.Empty;
+        _ticketContactSuggestions = string.IsNullOrWhiteSpace(_ticketContactSearch) || _ticketContactSearch.Trim().Length < 2
+            ? []
+            : (await TicketsSvc.SearchContactosAsync(_ticketContactSearch, _form.ClienteCodigo)).ToList();
+    }
+
+    private void SelectTicketContact(TicketContactoOptionDto contact)
+    {
+        _form.IdContacto = contact.IdContacto;
+        _selectedContactLabel = contact.Nombre;
+        _ticketContactSearch = contact.Nombre;
+        _ticketContactSuggestions = [];
+        if (string.IsNullOrWhiteSpace(_form.ClienteCodigo) && !string.IsNullOrWhiteSpace(contact.ClienteCodigo))
+        {
+            _form.ClienteCodigo = contact.ClienteCodigo;
+            _selectedClientLabel = contact.ClienteNombre;
+            _ticketClientSearch = contact.ClienteNombre;
+        }
+    }
+
+    private void ClearTicketContact()
+    {
+        _form.IdContacto = null;
+        _selectedContactLabel = string.Empty;
+        _ticketContactSearch = string.Empty;
+        _ticketContactSuggestions = [];
+    }
+
+    private void ClearTicketRelations()
+    {
+        _form.ClienteCodigo = null;
+        _form.IdContacto = null;
+        _ticketClientSearch = string.Empty;
+        _ticketContactSearch = string.Empty;
+        _selectedClientLabel = string.Empty;
+        _selectedContactLabel = string.Empty;
+        _ticketClientSuggestions = [];
+        _ticketContactSuggestions = [];
+    }
+
     private async Task GuardarAsync()
     {
         _saving = true;
@@ -1172,6 +1390,8 @@
                     CodigoEstado = _form.CodigoEstado,
                     Prioridad = _form.Prioridad,
                     IdTecnico = _form.IdTecnico,
+                    ClienteCodigo = _form.ClienteCodigo,
+                    IdContacto = _form.IdContacto,
                     UsuarioAccion = CurrentUserName
                 };
                 var result = await UiOps.RunAsync(() => TicketsSvc.CreateAsync(create), "No se pudo crear el ticket.");
@@ -1351,6 +1571,10 @@
             chips.Add(new("estado", $"Etapa: {_lookups.Estados.FirstOrDefault(x => x.CodigoEstado == _filters.CodigoEstado)?.Nombre ?? _filters.CodigoEstado}"));
         if (!string.IsNullOrWhiteSpace(_filters.IdTecnico))
             chips.Add(new("tecnico", $"Asignado: {_lookups.Tecnicos.FirstOrDefault(x => x.IdTecnico == _filters.IdTecnico)?.Nombre ?? _filters.IdTecnico}"));
+        if (!string.IsNullOrWhiteSpace(_filters.ClienteCodigo))
+            chips.Add(new("cliente", $"Cliente: {DisplayOrFallback(_filterClientLabel, _filters.ClienteCodigo)}"));
+        if (_filters.IdContacto.HasValue)
+            chips.Add(new("contacto", $"Contacto: {DisplayOrFallback(_filterContactLabel, _filters.IdContacto.Value.ToString())}"));
         if (!string.IsNullOrWhiteSpace(_prioridadFiltro) && int.TryParse(_prioridadFiltro, out var priority))
             chips.Add(new("prioridad", $"Prioridad: {RenderPriority(priority)}"));
         if (_filters.IncluirCerrados)
@@ -1417,6 +1641,8 @@
             IncluirCerrados = source.IncluirCerrados,
             TieneAsignado = source.TieneAsignado,
             TieneMensajes = source.TieneMensajes,
+            ClienteCodigo = source.ClienteCodigo,
+            IdContacto = source.IdContacto,
             FechaRapida = source.FechaRapida,
             PageNumber = 1,
             PageSize = source.PageSize,
@@ -1478,7 +1704,7 @@
 
     private async Task DismissFeedbackAsync()
     {
-        _showSearchPanel = false;
+        CloseTicketSearchOverlays();
 
         if (_feedback is null || _feedbackLeaving)
             return;
@@ -1491,6 +1717,20 @@
         await Task.Delay(180);
         _feedback = null;
         _feedbackLeaving = false;
+    }
+
+    private void CloseTicketSearchOverlays()
+    {
+        _showSearchPanel = false;
+        CloseTicketLookupSuggestions();
+    }
+
+    private void CloseTicketLookupSuggestions()
+    {
+        _filterClientSuggestions = [];
+        _filterContactSuggestions = [];
+        _ticketClientSuggestions = [];
+        _ticketContactSuggestions = [];
     }
 
     private void ClearErrorFeedback()

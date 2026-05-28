@@ -23,6 +23,10 @@ public sealed class TareaListaDto
     public int IdLista { get; set; }
     public string Nombre { get; set; } = string.Empty;
     public bool EsDefault { get; set; }
+    public string UsuarioPropietario { get; set; } = string.Empty;
+    public bool EsPropia { get; set; }
+    public bool CompartidaConTodos { get; set; }
+    public List<string> UsuariosCompartidos { get; set; } = [];
     public int Pendientes { get; set; }
     public int Completadas { get; set; }
 }
@@ -38,15 +42,43 @@ public sealed class TareaItemDto
     public string UsuarioAsignado { get; set; } = string.Empty;
     public string Estado { get; set; } = TareaEstadoKeys.Pendiente;
     public string UsuarioAlta { get; set; } = string.Empty;
+    public bool EsPropia { get; set; }
+    public bool CompartidaConTodos { get; set; }
+    public List<string> UsuariosCompartidos { get; set; } = [];
+    public int Adjuntos { get; set; }
     public DateTime FechaHoraAlta { get; set; }
     public DateTime? FechaHoraModificacion { get; set; }
     public DateTime? FechaHoraCompletada { get; set; }
+}
+
+public sealed class TareaAdjuntoDto
+{
+    public long IdAdjunto { get; set; }
+    public long IdTarea { get; set; }
+    public string NombreArchivo { get; set; } = string.Empty;
+    public string MimeType { get; set; } = string.Empty;
+    public long TamanoBytes { get; set; }
+    public string ContenidoBase64 { get; set; } = string.Empty;
+    public string UsuarioAlta { get; set; } = string.Empty;
+    public DateTime FechaHoraAlta { get; set; }
+}
+
+public sealed class TareaAdjuntoUploadDto
+{
+    public string NombreArchivo { get; set; } = string.Empty;
+    public string MimeType { get; set; } = string.Empty;
+    public long TamanoBytes { get; set; }
+    public byte[] Contenido { get; set; } = [];
 }
 
 public sealed class TareaNotaRapidaDto
 {
     public long IdNota { get; set; }
     public string Texto { get; set; } = string.Empty;
+    public string Usuario { get; set; } = string.Empty;
+    public bool EsPropia { get; set; }
+    public bool CompartidaConTodos { get; set; }
+    public List<string> UsuariosCompartidos { get; set; } = [];
     public DateTime Fecha { get; set; }
     public bool Completada { get; set; }
     public DateTime FechaHoraAlta { get; set; }
@@ -68,6 +100,8 @@ public sealed class TareaSaveRequest
     public DateTime? FechaVencimiento { get; set; }
     public string UsuarioAsignado { get; set; } = string.Empty;
     public string Estado { get; set; } = TareaEstadoKeys.Pendiente;
+    public bool CompartirConTodos { get; set; }
+    public List<string> UsuariosCompartidos { get; set; } = [];
     public string UsuarioAccion { get; set; } = string.Empty;
 }
 
@@ -76,4 +110,20 @@ public sealed class TareaListaSaveRequest
     public int? IdLista { get; set; }
     public string Nombre { get; set; } = string.Empty;
     public string UsuarioAccion { get; set; } = string.Empty;
+}
+
+public sealed class TareaCompartirRequest
+{
+    public TareaObjetoCompartidoTipo TipoObjeto { get; set; }
+    public long IdObjeto { get; set; }
+    public bool CompartirConTodos { get; set; }
+    public List<string> Usuarios { get; set; } = [];
+    public string UsuarioAccion { get; set; } = string.Empty;
+}
+
+public enum TareaObjetoCompartidoTipo
+{
+    Lista,
+    Nota,
+    Tarea
 }

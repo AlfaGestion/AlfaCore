@@ -51,11 +51,12 @@ public sealed class TecnicosService(
                     ISNULL(Baja, 0)
                 FROM dbo.V_TA_Tecnicos
                 WHERE (
-                    @Texto = ''
-                    OR ISNULL(IdTecnico, '') LIKE '%' + @Texto + '%'
-                    OR ISNULL(Nombre, '') LIKE '%' + @Texto + '%'
-                    OR ISNULL(Cargo, '') LIKE '%' + @Texto + '%'
-                    OR ISNULL(UsuarioAsociado, '') LIKE '%' + @Texto + '%'
+                    @TextoLike = ''
+                    OR ISNULL(IdTecnico, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                    OR ISNULL(Nombre, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                    OR ISNULL(Cargo, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                    OR ISNULL(UsuarioAsociado, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                    OR ISNULL(Telefono, '') LIKE @TextoLike
                 )
                 {activoFilter}
                 ORDER BY ISNULL(Nombre, '')
@@ -64,11 +65,12 @@ public sealed class TecnicosService(
                 SELECT COUNT(*)
                 FROM dbo.V_TA_Tecnicos
                 WHERE (
-                    @Texto = ''
-                    OR ISNULL(IdTecnico, '') LIKE '%' + @Texto + '%'
-                    OR ISNULL(Nombre, '') LIKE '%' + @Texto + '%'
-                    OR ISNULL(Cargo, '') LIKE '%' + @Texto + '%'
-                    OR ISNULL(UsuarioAsociado, '') LIKE '%' + @Texto + '%'
+                    @TextoLike = ''
+                    OR ISNULL(IdTecnico, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                    OR ISNULL(Nombre, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                    OR ISNULL(Cargo, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                    OR ISNULL(UsuarioAsociado, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                    OR ISNULL(Telefono, '') LIKE @TextoLike
                 )
                 {activoFilter};
                 """;
@@ -77,7 +79,7 @@ public sealed class TecnicosService(
             await using var cn  = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
             await using var cmd = new SqlCommand(sql, cn);
-            cmd.Parameters.AddWithValue("@Texto", filters.Texto?.Trim() ?? string.Empty);
+            cmd.Parameters.AddWithValue("@TextoLike", SearchTextHelper.LikeContains(filters.Texto));
             cmd.Parameters.AddWithValue("@Skip", skip);
             cmd.Parameters.AddWithValue("@PageSize", pageSize);
 

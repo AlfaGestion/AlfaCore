@@ -128,6 +128,58 @@ public sealed class CuentaComercialCondicionDescuentoDto
     public decimal? Descuento5 { get; set; }
 }
 
+public sealed class CuentaComercialContactoDto
+{
+    public int Id { get; set; }
+    public int IdContacto { get; set; }
+    public string NombreApellido { get; set; } = string.Empty;
+    public string Cargo { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+    public string Telefono { get; set; } = string.Empty;
+    public string Celular { get; set; } = string.Empty;
+    public bool Activo { get; set; } = true;
+    public bool VinculadoPorTabla { get; set; }
+    public bool VinculadoPorCuentaRel { get; set; }
+}
+
+public sealed class CuentaComercialContactoCandidateDto
+{
+    public int Id { get; set; }
+    public int IdContacto { get; set; }
+    public string NombreApellido { get; set; } = string.Empty;
+    public string Cargo { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+    public string Telefono { get; set; } = string.Empty;
+    public string Celular { get; set; } = string.Empty;
+    public string CuentaRel { get; set; } = string.Empty;
+}
+
+public sealed class CuentaComercialContactoCreateRequest
+{
+    public string CuentaCodigo { get; set; } = string.Empty;
+    public string NombreApellido { get; set; } = string.Empty;
+    public string Cargo { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+    public string Telefono { get; set; } = string.Empty;
+    public string Celular { get; set; } = string.Empty;
+    public string Observaciones { get; set; } = string.Empty;
+}
+
+public sealed class CuentaComercialContactoQuickUpdateRequest
+{
+    public int Id { get; set; }
+    public string CuentaCodigo { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+    public string Telefono { get; set; } = string.Empty;
+    public string Celular { get; set; } = string.Empty;
+}
+
+public sealed class CuentaComercialContactoLinkRequest
+{
+    public string CuentaCodigo { get; set; } = string.Empty;
+    public int ContactoId { get; set; }
+}
+
 public sealed class CuentaComercialViewSettingsDto
 {
     public string AgruparPor { get; set; } = CuentaComercialViewGroupKeys.None;

@@ -84,6 +84,7 @@ public class Program
         builder.Services.AddScoped<IAuditoriaService, AuditoriaService>();
         builder.Services.AddScoped<IGestionDashboardService, GestionDashboardService>();
         builder.Services.AddScoped<IAppUiOperationService, AppUiOperationService>();
+        builder.Services.AddScoped<IFloatingWindowService, FloatingWindowService>();
         builder.Services.AddScoped<IAuxErrRepository, AuxErrRepository>();
         builder.Services.AddScoped<IAppEventService, AppEventService>();
         builder.Services.AddSingleton<ConsultasExcelExporter>();
@@ -532,7 +533,7 @@ public class Program
             return Results.File(
                 adjunto.RutaLocal,
                 contentType: mime,
-                fileDownloadName: download ? adjunto.NombreArchivo : null,
+                fileDownloadName: download ? (string.IsNullOrWhiteSpace(adjunto.NombreDescarga) ? adjunto.NombreArchivo : adjunto.NombreDescarga) : null,
                 enableRangeProcessing: true);
         });
 
