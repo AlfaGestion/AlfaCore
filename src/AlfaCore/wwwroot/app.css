@@ -9642,6 +9642,37 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
     color: var(--color-muted);
 }
 
+.tareas-feedback {
+    width: calc(100% - 2rem);
+    margin: 0 1rem;
+    padding: 0.85rem 1rem;
+    align-items: center;
+    border-radius: 8px;
+    line-height: 1.35;
+}
+
+.tareas-feedback.editor-msg--warning {
+    background: rgba(251, 191, 36, 0.14);
+    border: 1px solid rgba(251, 191, 36, 0.48);
+    color: #fde68a;
+}
+
+.tareas-feedback > .bi {
+    flex: 0 0 auto;
+    color: #fbbf24;
+    font-size: 1rem;
+}
+
+.tareas-feedback strong,
+.tareas-feedback p,
+.tareas-feedback small {
+    margin: 0;
+}
+
+.tareas-feedback p {
+    color: inherit;
+}
+
 .tareas-shell {
     display: grid;
     grid-template-columns: 260px minmax(420px, 1fr) 300px;

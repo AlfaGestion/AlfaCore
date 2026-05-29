@@ -26,7 +26,8 @@
 
     @if (_feedback is not null)
     {
-        <div class="editor-msg @GetFeedbackClass(_feedback)">
+        <div class="editor-msg tareas-feedback @GetFeedbackClass(_feedback)">
+            <i class="bi @GetFeedbackIcon(_feedback)" aria-hidden="true"></i>
             <strong>@_feedback.Title</strong>
             <p>@_feedback.Message</p>
             @if (_feedback.HasCode)
@@ -1228,6 +1229,9 @@
 
     private static string GetFeedbackClass(AppUiMessage message)
         => message.Severity == AppUiFeedbackSeverity.Success ? "editor-msg--success" : message.Severity == AppUiFeedbackSeverity.Warning ? "editor-msg--warning" : "editor-msg--error";
+
+    private static string GetFeedbackIcon(AppUiMessage message)
+        => message.Severity == AppUiFeedbackSeverity.Warning ? "bi-exclamation-triangle-fill" : message.Severity == AppUiFeedbackSeverity.Success ? "bi-check-circle-fill" : "bi-x-circle-fill";
 
     private sealed class PendingTaskAttachment
     {
