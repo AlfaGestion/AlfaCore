@@ -1640,6 +1640,37 @@
     </section>
 }
 
+@if (_showCloseTicketWarning)
+{
+    <div class="conversations-modal-backdrop" @onclick="CloseCloseTicketWarning"></div>
+    <section class="panel-card conversations-modal conversations-close-ticket-warning">
+        <div class="conversations-close-ticket-warning__head">
+            <i class="bi bi-exclamation-triangle-fill"></i>
+            <div>
+                <h3 class="panel-card__title">Antes de cerrar y crear el ticket</h3>
+                <p class="panel-card__subtitle">Esta acción cierra la conversación automáticamente.</p>
+            </div>
+        </div>
+        <p>
+            Se creará un ticket cerrado con los últimos 20 mensajes de esta conversación. Es útil para casos repetitivos o consultas que solo necesitan quedar registradas.
+        </p>
+        <p>
+            Usalo únicamente cuando el caso ya esté resuelto y el cliente haya confirmado que quedó todo correcto.
+        </p>
+        <div class="actions usuarios-editor__actions">
+            <button type="button" class="btn btn--primary" @onclick="AcceptCloseTicketWarningAsync">
+                <i class="bi bi-check2-circle"></i> Entendido
+            </button>
+            <button type="button" class="btn btn--ghost" @onclick="ContinueCloseTicketWarningOnceAsync">
+                ¿Seguro?
+            </button>
+            <button type="button" class="btn btn--ghost" @onclick="CloseCloseTicketWarning">
+                Cancelar
+            </button>
+        </div>
+    </section>
+}
+
 @if (_showRelacionarClienteModal)
 {
     <div class="conversations-modal-backdrop" @onclick="CloseRelacionarClienteModal"></div>
@@ -1830,6 +1861,7 @@
     private long? _startupConversationId;
     private bool _ticketSelectionMode;
     private bool _showTicketDialog;
+    private bool _showCloseTicketWarning;
     private readonly HashSet<long> _selectedTicketMessageIds = [];
     private string _ticketTitle = string.Empty;
     private string _ticketDescription = string.Empty;
@@ -2580,7 +2612,11 @@
         _ticketPriority = 2;
         _allowCreateDespiteRelated = false;
         _relatedTicketMatches.Clear();
-        await OpenTicketDialog();
+
+        if (await ShouldShowCloseTicketWarningAsync())
+            _showCloseTicketWarning = true;
+        else
+            await OpenTicketDialog();
     }
 
     private void ToggleTicketMessageSelection(long idMensaje, ChangeEventArgs args)
@@ -2600,11 +2636,47 @@
         if (_selectedTicketMessageIds.Count == 0)
             return;
 
+        _showCloseTicketWarning = false;
         _ticketError = null;
         if (string.IsNullOrWhiteSpace(_ticketTitle))
             _ticketTitle = BuildDefaultTicketTitle();
         _showTicketDialog = true;
         await CheckRelatedTicketsForSelectionAsync();
+    }
+
+    private async Task<bool> ShouldShowCloseTicketWarningAsync()
+    {
+        try
+        {
+            return !await JS.InvokeAsync<bool>("conversacionesUi.getCloseTicketWarningAccepted");
+        }
+        catch (JSException)
+        {
+            return true;
+        }
+    }
+
+    private async Task AcceptCloseTicketWarningAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("conversacionesUi.setCloseTicketWarningAccepted", true);
+        }
+        catch (JSException)
+        {
+        }
+
+        await OpenTicketDialog();
+    }
+
+    private async Task ContinueCloseTicketWarningOnceAsync()
+        => await OpenTicketDialog();
+
+    private void CloseCloseTicketWarning()
+    {
+        _showCloseTicketWarning = false;
+        _closeAndCreateTicketMode = false;
+        _selectedTicketMessageIds.Clear();
     }
 
     private void CloseTicketDialog()

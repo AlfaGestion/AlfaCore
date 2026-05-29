@@ -50,3 +50,37 @@
 .attachment-preview-canvas img {
     transform-origin: center center;
 }
+
+.conversations-close-ticket-warning {
+    max-width: 560px;
+    border-color: rgba(245, 158, 11, .55);
+    background:
+        linear-gradient(135deg, rgba(245, 158, 11, .16), transparent 42%),
+        var(--color-panel-strong);
+    box-shadow: 0 24px 70px rgba(2, 6, 23, .5), 0 0 0 1px rgba(245, 158, 11, .18);
+}
+
+.conversations-close-ticket-warning__head {
+    display: grid;
+    grid-template-columns: 2.65rem minmax(0, 1fr);
+    gap: .85rem;
+    align-items: start;
+    margin-bottom: .9rem;
+}
+
+.conversations-close-ticket-warning__head > i {
+    display: grid;
+    place-items: center;
+    width: 2.65rem;
+    height: 2.65rem;
+    border-radius: 999px;
+    background: rgba(245, 158, 11, .18);
+    color: #fbbf24;
+    font-size: 1.35rem;
+}
+
+.conversations-close-ticket-warning p {
+    margin: 0 0 .75rem;
+    color: var(--color-muted);
+    line-height: 1.45;
+}
