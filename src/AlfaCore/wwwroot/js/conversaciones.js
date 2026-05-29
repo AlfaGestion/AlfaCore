@@ -525,6 +525,17 @@ window.conversacionesUi = {
         return true;
     },
 
+    scrollActiveAttachmentPreviewThumb: function (attachmentId) {
+        if (!attachmentId) return false;
+
+        const strip = document.querySelector('.attachment-preview-strip');
+        const thumb = strip?.querySelector(`[data-preview-attachment-id="${attachmentId}"]`);
+        if (!strip || !thumb) return false;
+
+        thumb.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+        return true;
+    },
+
     bindFileDrop: function (element, inputId) {
         if (!element || !inputId) return false;
 

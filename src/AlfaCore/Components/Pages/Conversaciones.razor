@@ -1525,6 +1525,7 @@
                     {
                         <button type="button"
                                 class="@GetPreviewThumbClass(item)"
+                                data-preview-attachment-id="@item.IdAdjunto"
                                 title="@GetAttachmentLabel(item)"
                                 @onclick="() => OpenAttachmentPreview(item)">
                             @if (IsVideoAttachment(item))
@@ -1877,6 +1878,7 @@
     private ConversacionAdjuntoDto? _previewAttachment;
     private ElementReference _previewCanvas;
     private bool _bindPreviewPanAfterRender;
+    private bool _scrollPreviewThumbAfterRender;
     private int _previewRotationDegrees;
     private SoundDiagnosticsVm _soundDiagnostics = new();
     private ElementReference _replyTextArea;
@@ -2201,6 +2203,18 @@
             try
             {
                 await JS.InvokeVoidAsync("conversacionesUi.bindAttachmentPreviewPan", _previewCanvas);
+            }
+            catch
+            {
+            }
+        }
+
+        if (_scrollPreviewThumbAfterRender && _previewAttachment is not null)
+        {
+            _scrollPreviewThumbAfterRender = false;
+            try
+            {
+                await JS.InvokeVoidAsync("conversacionesUi.scrollActiveAttachmentPreviewThumb", _previewAttachment.IdAdjunto);
             }
             catch
             {
@@ -5616,6 +5630,7 @@
         _openAttachmentMenuId = null;
         _previewAttachment = adjunto;
         _bindPreviewPanAfterRender = true;
+        _scrollPreviewThumbAfterRender = true;
         ResetPreviewView();
     }
 
@@ -5741,6 +5756,7 @@
     {
         _previewAttachment = null;
         _bindPreviewPanAfterRender = false;
+        _scrollPreviewThumbAfterRender = false;
         ResetPreviewView();
     }
 
