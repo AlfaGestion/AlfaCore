@@ -16,7 +16,7 @@
                 <p class="page-intro__text">Detectá actividad sospechosa sobre comprobantes comerciales, remitos, accesos sensibles y patrones anómalos de operación.</p>
                 @if (_loading)
                 {
-                    <p class="page-intro__text"><i class="bi bi-hourglass-split"></i> Preparando auditoría y cargando resultados iniciales...</p>
+                    <p class="page-intro__text"><i class="bi bi-hourglass-split"></i> Preparando pantalla de auditoría...</p>
                 }
             </div>
             <div class="actions">
@@ -45,6 +45,15 @@
                 </div>
             </section>
         }
+
+        <section class="panel-card">
+            <div class="panel-card__header">
+                <div>
+                    <h3 class="panel-card__title">Estado de lectura</h3>
+                    <p class="panel-card__subtitle">@GetLoadingStatusMessage()</p>
+                </div>
+            </div>
+        </section>
 
         @if (_showSettingsPanel)
         {
@@ -132,9 +141,9 @@
                     <i class="bi bi-search"></i>
                     <input type="search"
                            placeholder="Buscar por usuario, PC, comprobante, cliente, motivo..."
-                           value="@_filters.Texto"
-                           @onfocus="OpenSearchPanel"
-                           @oninput="OnSearchInput" />
+                           @bind="_texto"
+                           @bind:event="oninput"
+                           @onfocus="OpenSearchPanelAsync" />
                     <button type="button" class="smart-search__toggle" @onclick="ToggleSearchPanel" aria-label="Mostrar filtros">
                         <i class="bi @(_showSearchPanel ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
                     </button>
@@ -210,6 +219,16 @@
                                 </select>
                             </div>
                             <div class="smart-search__inline">
+                                <label>Tipo movimiento</label>
+                                <select @bind="_tipoMovimiento" disabled="@_loadingLookups">
+                                    <option value="">Todos</option>
+                                    @foreach (var item in _lookups.TiposMovimiento)
+                                    {
+                                        <option value="@item">@item</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="smart-search__inline">
                                 <label>TC</label>
                                 <select @bind="_tipoComprobante" disabled="@_loadingLookups">
                                     <option value="">Todos</option>
@@ -273,7 +292,30 @@
         </section>
 
         <section class="kpi-grid">
-            @if (IsStartedNotSavedMode)
+            @if (IsActivityMode)
+            {
+                <article class="kpi-card">
+                    <div class="kpi-card__label">Movimientos</div>
+                    <div class="kpi-card__value">@_stats.TotalAlertas</div>
+                </article>
+                <article class="kpi-card">
+                    <div class="kpi-card__label">Usuarios</div>
+                    <div class="kpi-card__value">@_stats.UsuariosInvolucrados</div>
+                </article>
+                <article class="kpi-card">
+                    <div class="kpi-card__label">Equipos</div>
+                    <div class="kpi-card__value">@_stats.EquiposInvolucrados</div>
+                </article>
+                <article class="kpi-card">
+                    <div class="kpi-card__label">Comprobantes</div>
+                    <div class="kpi-card__value">@_stats.ComprobantesInvolucrados</div>
+                </article>
+                <article class="kpi-card">
+                    <div class="kpi-card__label">Días con actividad</div>
+                    <div class="kpi-card__value">@_stats.DiasConActividad</div>
+                </article>
+            }
+            else if (IsStartedNotSavedMode)
             {
                 <article class="kpi-card">
                     <div class="kpi-card__label">Comprobantes cancelados</div>
@@ -329,7 +371,7 @@
             <section class="panel-card">
                 <div class="panel-card__header">
                     <div>
-                        <h3 class="panel-card__title">Detalle de alerta</h3>
+                        <h3 class="panel-card__title">@(IsActivityMode ? "Detalle de actividad" : "Detalle de alerta")</h3>
                         <p class="panel-card__subtitle">@_selected.TipoControlLabel · @_selected.FechaHora.ToString("dd/MM/yyyy HH:mm")</p>
                     </div>
                     <div class="actions">
@@ -337,7 +379,7 @@
                             <i class="bi bi-arrow-left-circle"></i>
                             <span>Volver al listado</span>
                         </button>
-                        @if (!IsCompraDuplicadoAudit(_selected))
+                        @if (!IsCompraDuplicadoAudit(_selected) && CanOpenComprobante(_selected))
                         {
                             <a class="btn btn--ghost btn--sm" href="@BuildComprobanteViewerUrl(_selected)">
                                 <i class="bi bi-box-arrow-up-right"></i>
@@ -347,7 +389,68 @@
                     </div>
                 </div>
 
-                @if (IsCompraDuplicadoAudit(_selected))
+                @if (IsActivityMode)
+                {
+                    <div class="contactos-form__grid">
+                        <div class="field">
+                            <label>Fecha y hora</label>
+                            <input value="@_selected.FechaHora.ToString("dd/MM/yyyy HH:mm")" readonly />
+                        </div>
+                        <div class="field">
+                            <label>Usuario</label>
+                            <input value="@_selected.Usuario" readonly />
+                        </div>
+                        <div class="field">
+                            <label>PC</label>
+                            <input value="@_selected.Pc" readonly />
+                        </div>
+                        <div class="field">
+                            <label>Origen</label>
+                            <input value="@_selected.Origen" readonly />
+                        </div>
+                        <div class="field">
+                            <label>Tipo movimiento</label>
+                            <input value="@_selected.TipoMovimiento" readonly />
+                        </div>
+                        <div class="field">
+                            <label>TC / comprobante</label>
+                            <input value="@($"{_selected.TipoComprobante} {_selected.IdComprobante}".Trim())" readonly />
+                        </div>
+                        <div class="field">
+                            <label>Cliente / cuenta</label>
+                            <input value="@FormatCliente(_selected)" readonly />
+                        </div>
+                        <div class="field">
+                            <label>Proceso / formulario</label>
+                            <input value="@BuildProcessLabel(_selected)" readonly />
+                        </div>
+                        <div class="field">
+                            <label>Importe</label>
+                            <input value="@FormatMoney(_selected.ImporteOriginal)" readonly />
+                        </div>
+                        <div class="field">
+                            <label>Tiene asiento</label>
+                            <input value="@FormatBool(_selected.TieneAsiento)" readonly />
+                        </div>
+                        <div class="field">
+                            <label>Tiene stock</label>
+                            <input value="@FormatBool(_selected.TieneStock)" readonly />
+                        </div>
+                        <div class="field field--full">
+                            <label>Descripción</label>
+                            <textarea rows="3" readonly>@_selected.Descripcion</textarea>
+                        </div>
+                        <div class="field field--full">
+                            <label>Motivo</label>
+                            <textarea rows="3" readonly>@_selected.Motivo</textarea>
+                        </div>
+                        <div class="field field--full">
+                            <label>Observaciones</label>
+                            <textarea rows="4" readonly>@_selected.Observaciones</textarea>
+                        </div>
+                    </div>
+                }
+                else if (IsCompraDuplicadoAudit(_selected))
                 {
                     <div class="contactos-form__grid">
                         <div class="field">
@@ -529,18 +632,65 @@
         }
         else
         {
+            @if (!_hasSearched)
+            {
+                <section class="three-grid">
+                    <article class="panel-card">
+                        <div class="panel-card__header">
+                            <div>
+                                <h3 class="panel-card__title">Carga inicial liviana</h3>
+                                <p class="panel-card__subtitle">La auditoría no consulta movimientos hasta que apliques filtros.</p>
+                            </div>
+                        </div>
+                        <p class="page-intro__text">Abrí el panel de filtros, elegí período o usuario y luego presioná <code>Aplicar</code>.</p>
+                    </article>
+                    <article class="panel-card">
+                        <div class="panel-card__header">
+                            <div>
+                                <h3 class="panel-card__title">Actividad de usuario</h3>
+                                <p class="panel-card__subtitle">Timeline operativo agrupado por día.</p>
+                            </div>
+                        </div>
+                        <p class="page-intro__text">Sirve para reconstruir qué hizo un usuario, desde qué PC y sobre qué comprobantes.</p>
+                    </article>
+                    <article class="panel-card">
+                        <div class="panel-card__header">
+                            <div>
+                                <h3 class="panel-card__title">Alertas bajo demanda</h3>
+                                <p class="panel-card__subtitle">Remitos, bajas, duplicados y controles existentes.</p>
+                            </div>
+                        </div>
+                        <p class="page-intro__text">Se cargan solo cuando ejecutás la búsqueda para evitar esperas al ingresar.</p>
+                    </article>
+                </section>
+            }
+
             <section class="panel-card">
                 <div class="panel-card__header">
                     <div>
                         <h3 class="panel-card__title">Resultados</h3>
-                        <p class="panel-card__subtitle">@_result.TotalRegistros alerta(s) detectada(s). Página @_pagina de @TotalPaginas.</p>
+                        <p class="panel-card__subtitle @(_loadingRows ? "audit-reading-text" : string.Empty)">
+                            @if (_loadingRows)
+                            {
+                                <span>Leyendo datos de auditoría. Esperá unos segundos...</span>
+                            }
+                            else if (_hasSearched)
+                            {
+                                @(IsActivityMode ? $"{_result.TotalRegistros} movimiento(s) detectado(s)." : $"{_result.TotalRegistros} alerta(s) detectada(s).")
+                                <span> Página @_pagina de @TotalPaginas.</span>
+                            }
+                            else
+                            {
+                                <span>Definí filtros y ejecutá la búsqueda para cargar resultados.</span>
+                            }
+                        </p>
                     </div>
                     <div class="actions">
-                        <button type="button" class="btn btn--ghost btn--sm" @onclick="ExportarPdfAsync" disabled="@_loadingRows">
+                        <button type="button" class="btn btn--ghost btn--sm" @onclick="ExportarPdfAsync" disabled="@(_loadingRows || !_hasSearched)">
                             <i class="bi bi-file-earmark-pdf"></i>
                             <span>PDF</span>
                         </button>
-                        <a class="btn btn--ghost btn--sm" href="@BuildExcelExportUrl()">
+                        <a class="btn btn--ghost btn--sm @(!_hasSearched ? "is-disabled" : string.Empty)" href="@(_hasSearched ? BuildExcelExportUrl() : "#")" aria-disabled="@(!_hasSearched)">
                             <i class="bi bi-file-earmark-excel"></i>
                             <span>Excel</span>
                         </a>
@@ -555,10 +705,38 @@
                     </div>
                 </div>
 
+                @if (_loadingRows)
+                {
+                    <div class="audit-reading-banner">
+                        <div>
+                            <strong>Procesando consulta</strong>
+                            <p>La auditoría está leyendo información de la base activa.</p>
+                        </div>
+                    </div>
+                }
+
                 <div class="table-wrap">
                     <table class="data-table usuarios-table audit-users-table">
                         <thead>
-                            @if (IsDuplicateMode)
+                            @if (IsActivityMode)
+                            {
+                                <tr>
+                                    <th><button type="button" class="table-sort @GetSortClass("fecha")" @onclick='() => ToggleSortAsync("fecha")'><span class="table-sort__label">Fecha y hora</span><span class="table-sort__mark">@SortMark("fecha")</span></button></th>
+                                    <th><button type="button" class="table-sort @GetSortClass("usuario")" @onclick='() => ToggleSortAsync("usuario")'><span class="table-sort__label">Usuario</span><span class="table-sort__mark">@SortMark("usuario")</span></button></th>
+                                    <th><button type="button" class="table-sort @GetSortClass("pc")" @onclick='() => ToggleSortAsync("pc")'><span class="table-sort__label">PC</span><span class="table-sort__mark">@SortMark("pc")</span></button></th>
+                                    <th><button type="button" class="table-sort @GetSortClass("origen")" @onclick='() => ToggleSortAsync("origen")'><span class="table-sort__label">Origen</span><span class="table-sort__mark">@SortMark("origen")</span></button></th>
+                                    <th><button type="button" class="table-sort @GetSortClass("tipomovimiento")" @onclick='() => ToggleSortAsync("tipomovimiento")'><span class="table-sort__label">Tipo de movimiento</span><span class="table-sort__mark">@SortMark("tipomovimiento")</span></button></th>
+                                    <th><button type="button" class="table-sort @GetSortClass("tc")" @onclick='() => ToggleSortAsync("tc")'><span class="table-sort__label">TC</span><span class="table-sort__mark">@SortMark("tc")</span></button></th>
+                                    <th><button type="button" class="table-sort @GetSortClass("comprobante")" @onclick='() => ToggleSortAsync("comprobante")'><span class="table-sort__label">Comprobante</span><span class="table-sort__mark">@SortMark("comprobante")</span></button></th>
+                                    <th><button type="button" class="table-sort @GetSortClass("cliente")" @onclick='() => ToggleSortAsync("cliente")'><span class="table-sort__label">Cuenta / nombre</span><span class="table-sort__mark">@SortMark("cliente")</span></button></th>
+                                    <th>Descripción</th>
+                                    <th><button type="button" class="table-sort @GetSortClass("importe")" @onclick='() => ToggleSortAsync("importe")'><span class="table-sort__label">Importe</span><span class="table-sort__mark">@SortMark("importe")</span></button></th>
+                                    <th><button type="button" class="table-sort @GetSortClass("asiento")" @onclick='() => ToggleSortAsync("asiento")'><span class="table-sort__label">Asiento</span><span class="table-sort__mark">@SortMark("asiento")</span></button></th>
+                                    <th><button type="button" class="table-sort @GetSortClass("stock")" @onclick='() => ToggleSortAsync("stock")'><span class="table-sort__label">Stock</span><span class="table-sort__mark">@SortMark("stock")</span></button></th>
+                                    <th>Acciones</th>
+                                </tr>
+                            }
+                            else if (IsDuplicateMode)
                             {
                                 <tr>
                                     <th><button type="button" class="table-sort @GetSortClass("riesgo")" @onclick='() => ToggleSortAsync("riesgo")'><span class="table-sort__label">Riesgo</span><span class="table-sort__mark">@SortMark("riesgo")</span></button></th>
@@ -611,101 +789,157 @@
                             }
                         </thead>
                         <tbody>
-                            @if (_loadingRows)
+                            @if (!_hasSearched)
                             {
                                 <tr>
-                                    <td colspan="13" class="muted">Cargando resultados de auditoría...</td>
+                                    <td colspan="@GetResultColumnCount()" class="muted">Todavía no se ejecutó una búsqueda.</td>
+                                </tr>
+                            }
+                            else if (_loadingRows)
+                            {
+                                <tr>
+                                    <td colspan="@GetResultColumnCount()" class="muted">Cargando resultados de auditoría...</td>
                                 </tr>
                             }
                             else if (_rows.Count == 0)
                             {
                                 <tr>
-                                    <td colspan="13" class="muted">No se encontraron alertas con los filtros actuales.</td>
+                                    <td colspan="@GetResultColumnCount()" class="muted">@(IsActivityMode ? "No se encontraron movimientos con los filtros actuales." : "No se encontraron alertas con los filtros actuales.")</td>
                                 </tr>
                             }
                             else
                             {
-                                @foreach (var item in _rows)
+                                @if (IsActivityMode)
                                 {
-                                    @if (IsCompraDuplicadoAudit(item))
+                                    @foreach (var userGroup in BuildActivityGroups())
                                     {
-                                        <tr @ondblclick="() => Seleccionar(item)">
-                                            <td><span class="@GetRiskBadgeClass(item.Riesgo)">@item.Riesgo</span></td>
-                                            <td>@FormatCliente(item)</td>
-                                            <td>@item.TipoComprobante</td>
-                                            <td>@item.NumeroNormalizado</td>
-                                            <td>@FormatMoney(item.ImporteOriginal)</td>
-                                            <td>@item.CantidadOcurrencias</td>
-                                            <td>@item.SucursalesDetectadas</td>
-                                            <td>@item.UsuariosDetectados</td>
-                                            <td>@item.FechaHora.ToString("dd/MM/yyyy")</td>
-                                            <td>@(item.FechaHoraHasta?.ToString("dd/MM/yyyy") ?? "—")</td>
-                                            <td>@item.ImpactoContable</td>
-                                            <td>
-                                                <div class="actions">
-                                                    <button type="button" class="btn btn--ghost btn--sm" @onclick="() => Seleccionar(item)">
-                                                        <i class="bi bi-eye"></i>
-                                                        <span>Detalle</span>
-                                                    </button>
-                                                </div>
-                                            </td>
+                                        <tr class="usuarios-group-row audit-activity-group audit-activity-group--user">
+                                            <td colspan="@GetResultColumnCount()">@userGroup.Label</td>
                                         </tr>
+                                        @foreach (var dayGroup in userGroup.Days)
+                                        {
+                                            <tr class="usuarios-group-row audit-activity-group audit-activity-group--day">
+                                                <td colspan="@GetResultColumnCount()">@dayGroup.Label</td>
+                                            </tr>
+                                            @foreach (var item in dayGroup.Items)
+                                            {
+                                                <tr @ondblclick="() => Seleccionar(item)">
+                                                    <td>@item.FechaHora.ToString("dd/MM/yyyy HH:mm")</td>
+                                                    <td>@item.Usuario</td>
+                                                    <td>@item.Pc</td>
+                                                    <td>@item.Origen</td>
+                                                    <td>@item.TipoMovimiento</td>
+                                                    <td>@item.TipoComprobante</td>
+                                                    <td>@item.IdComprobante</td>
+                                                    <td>@FormatCliente(item)</td>
+                                                    <td>@item.Descripcion</td>
+                                                    <td>@FormatMoney(item.ImporteOriginal)</td>
+                                                    <td>@FormatBool(item.TieneAsiento)</td>
+                                                    <td>@FormatBool(item.TieneStock)</td>
+                                                    <td>
+                                                        <div class="actions">
+                                                            <button type="button" class="btn btn--ghost btn--sm" @onclick="() => Seleccionar(item)">
+                                                                <i class="bi bi-eye"></i>
+                                                                <span>Detalle</span>
+                                                            </button>
+                                                            @if (CanOpenComprobante(item))
+                                                            {
+                                                                <a class="btn btn--ghost btn--sm" href="@BuildComprobanteViewerUrl(item)">
+                                                                    <i class="bi bi-box-arrow-up-right"></i>
+                                                                    <span>Comprobante</span>
+                                                                </a>
+                                                            }
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            }
+                                        }
                                     }
-                                    else if (string.Equals(item.TipoControl, "IN_NO_GRABADO", StringComparison.OrdinalIgnoreCase) && IsStartedNotSavedMode)
+                                }
+                                else
+                                {
+                                    @foreach (var item in _rows)
                                     {
-                                        <tr @ondblclick="() => Seleccionar(item)">
-                                            <td>@item.FechaHora.ToString("dd/MM/yyyy HH:mm")</td>
-                                            <td>@item.TipoControlLabel</td>
-                                            <td><span class="@GetRiskBadgeClass(item.Riesgo)">@item.Riesgo</span></td>
-                                            <td>@item.Usuario</td>
-                                            <td>@item.Pc</td>
-                                            <td>@item.TipoComprobante</td>
-                                            <td>@item.IdComprobante</td>
-                                            <td>@GetCancellationTimeText(item)</td>
-                                            <td>@GetCancellationMinutesText(item)</td>
-                                            <td>@GetCancellationAmountText(item)</td>
-                                            <td>
-                                                <div class="actions">
-                                                    <button type="button" class="btn btn--ghost btn--sm" @onclick="() => Seleccionar(item)">
-                                                        <i class="bi bi-eye"></i>
-                                                        <span>Detalle</span>
-                                                    </button>
-                                                    <a class="btn btn--ghost btn--sm" href="@BuildComprobanteViewerUrl(item)">
-                                                        <i class="bi bi-box-arrow-up-right"></i>
-                                                        <span>Comprobantes</span>
-                                                    </a>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    }
-                                    else
-                                    {
-                                        <tr @ondblclick="() => Seleccionar(item)">
-                                            <td>@item.FechaHora.ToString("dd/MM/yyyy HH:mm")</td>
-                                            <td>@item.TipoControlLabel</td>
-                                            <td><span class="@GetRiskBadgeClass(item.Riesgo)">@item.Riesgo</span></td>
-                                            <td>@item.Usuario</td>
-                                            <td>@item.Pc</td>
-                                            <td>@item.TipoComprobante</td>
-                                            <td>@item.IdComprobante</td>
-                                            <td>@FormatCliente(item)</td>
-                                            <td>@FormatEstadoFacturacion(item)</td>
-                                            <td>@FormatMoney(item.ImporteOriginal)</td>
-                                            <td>@FormatMoney(item.Diferencia)</td>
-                                            <td>@item.CantidadOcurrencias</td>
-                                            <td>
-                                                <div class="actions">
-                                                    <button type="button" class="btn btn--ghost btn--sm" @onclick="() => Seleccionar(item)">
-                                                        <i class="bi bi-eye"></i>
-                                                        <span>Detalle</span>
-                                                    </button>
-                                                    <a class="btn btn--ghost btn--sm" href="@BuildComprobanteViewerUrl(item)">
-                                                        <i class="bi bi-box-arrow-up-right"></i>
-                                                        <span>Comprobantes</span>
-                                                    </a>
-                                                </div>
-                                            </td>
-                                        </tr>
+                                        @if (IsCompraDuplicadoAudit(item))
+                                        {
+                                            <tr @ondblclick="() => Seleccionar(item)">
+                                                <td><span class="@GetRiskBadgeClass(item.Riesgo)">@item.Riesgo</span></td>
+                                                <td>@FormatCliente(item)</td>
+                                                <td>@item.TipoComprobante</td>
+                                                <td>@item.NumeroNormalizado</td>
+                                                <td>@FormatMoney(item.ImporteOriginal)</td>
+                                                <td>@item.CantidadOcurrencias</td>
+                                                <td>@item.SucursalesDetectadas</td>
+                                                <td>@item.UsuariosDetectados</td>
+                                                <td>@item.FechaHora.ToString("dd/MM/yyyy")</td>
+                                                <td>@(item.FechaHoraHasta?.ToString("dd/MM/yyyy") ?? "—")</td>
+                                                <td>@item.ImpactoContable</td>
+                                                <td>
+                                                    <div class="actions">
+                                                        <button type="button" class="btn btn--ghost btn--sm" @onclick="() => Seleccionar(item)">
+                                                            <i class="bi bi-eye"></i>
+                                                            <span>Detalle</span>
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        }
+                                        else if (string.Equals(item.TipoControl, "IN_NO_GRABADO", StringComparison.OrdinalIgnoreCase) && IsStartedNotSavedMode)
+                                        {
+                                            <tr @ondblclick="() => Seleccionar(item)">
+                                                <td>@item.FechaHora.ToString("dd/MM/yyyy HH:mm")</td>
+                                                <td>@item.TipoControlLabel</td>
+                                                <td><span class="@GetRiskBadgeClass(item.Riesgo)">@item.Riesgo</span></td>
+                                                <td>@item.Usuario</td>
+                                                <td>@item.Pc</td>
+                                                <td>@item.TipoComprobante</td>
+                                                <td>@item.IdComprobante</td>
+                                                <td>@GetCancellationTimeText(item)</td>
+                                                <td>@GetCancellationMinutesText(item)</td>
+                                                <td>@GetCancellationAmountText(item)</td>
+                                                <td>
+                                                    <div class="actions">
+                                                        <button type="button" class="btn btn--ghost btn--sm" @onclick="() => Seleccionar(item)">
+                                                            <i class="bi bi-eye"></i>
+                                                            <span>Detalle</span>
+                                                        </button>
+                                                        <a class="btn btn--ghost btn--sm" href="@BuildComprobanteViewerUrl(item)">
+                                                            <i class="bi bi-box-arrow-up-right"></i>
+                                                            <span>Comprobantes</span>
+                                                        </a>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        }
+                                        else
+                                        {
+                                            <tr @ondblclick="() => Seleccionar(item)">
+                                                <td>@item.FechaHora.ToString("dd/MM/yyyy HH:mm")</td>
+                                                <td>@item.TipoControlLabel</td>
+                                                <td><span class="@GetRiskBadgeClass(item.Riesgo)">@item.Riesgo</span></td>
+                                                <td>@item.Usuario</td>
+                                                <td>@item.Pc</td>
+                                                <td>@item.TipoComprobante</td>
+                                                <td>@item.IdComprobante</td>
+                                                <td>@FormatCliente(item)</td>
+                                                <td>@FormatEstadoFacturacion(item)</td>
+                                                <td>@FormatMoney(item.ImporteOriginal)</td>
+                                                <td>@FormatMoney(item.Diferencia)</td>
+                                                <td>@item.CantidadOcurrencias</td>
+                                                <td>
+                                                    <div class="actions">
+                                                        <button type="button" class="btn btn--ghost btn--sm" @onclick="() => Seleccionar(item)">
+                                                            <i class="bi bi-eye"></i>
+                                                            <span>Detalle</span>
+                                                        </button>
+                                                        <a class="btn btn--ghost btn--sm" href="@BuildComprobanteViewerUrl(item)">
+                                                            <i class="bi bi-box-arrow-up-right"></i>
+                                                            <span>Comprobantes</span>
+                                                        </a>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        }
                                     }
                                 }
                             }
@@ -736,6 +970,9 @@
     private bool _showSettingsPanel;
     private bool _showRemitoSqlPreview;
     private bool _initialLoadDone;
+    private bool _hasSearched;
+    private bool _lookupsLoaded;
+    private bool _settingsLoaded;
     private AppUiMessage? _feedback;
     private AuditoriaUsuarioLookupsDto _lookups = new();
     private AuditoriaUsuarioSettingsDto _settings = new();
@@ -748,6 +985,7 @@
     private string _texto = string.Empty;
     private string _usuario = string.Empty;
     private string _pc = string.Empty;
+    private string _tipoMovimiento = string.Empty;
     private string _tipoComprobante = string.Empty;
     private string _riesgo = string.Empty;
     private string _tipoControl = string.Empty;
@@ -788,6 +1026,7 @@
     }
 
     private int TotalPaginas => Math.Max(1, (int)Math.Ceiling((_result.TotalRegistros <= 0 ? 1m : _result.TotalRegistros) / (decimal)Math.Max(1, _tamanioPagina)));
+    private bool IsActivityMode => string.Equals(_tipoControl, "ACTIVIDAD_USUARIO", StringComparison.OrdinalIgnoreCase);
     private bool IsDuplicateMode => string.Equals(_tipoControl, "CPRA_DUPLICADO", StringComparison.OrdinalIgnoreCase);
     private bool IsStartedNotSavedMode => string.Equals(_tipoControl, "IN_NO_GRABADO", StringComparison.OrdinalIgnoreCase);
     private bool SoloDiferenciasSucursal => string.Equals(_soloDiferenciasSucursalText, "SI", StringComparison.OrdinalIgnoreCase);
@@ -799,6 +1038,7 @@
         Texto = _texto,
         Usuario = _usuario,
         Pc = _pc,
+        TipoMovimiento = _tipoMovimiento,
         TipoComprobante = _tipoComprobante,
         Riesgo = _riesgo,
         TipoControl = _tipoControl,
@@ -809,6 +1049,7 @@
         SoloDiferenciasSucursal = SoloDiferenciasSucursal,
         Pagina = _pagina,
         TamanioPagina = _tamanioPagina,
+        SoloResumen = false,
         OrdenCampo = _ordenCampo,
         OrdenDireccion = _ordenDireccion
     };
@@ -829,19 +1070,22 @@
                     && x.FechaHora == _selected.FechaHora
                     && x.Usuario == _selected.Usuario
                     && x.IdComprobante == _selected.IdComprobante
-                    && x.NumeroNormalizado == _selected.NumeroNormalizado);
+                    && x.NumeroNormalizado == _selected.NumeroNormalizado
+                    && x.Descripcion == _selected.Descripcion);
             }
-        }, "No se pudieron cargar las alertas de auditoría.");
+        }, IsActivityMode ? "No se pudieron cargar los movimientos de actividad." : "No se pudieron cargar las alertas de auditoría.");
 
         _feedback = result.Success ? null : result.Feedback;
+        _hasSearched = result.Success;
         _loadingRows = false;
     }
 
     private async Task RecargarAsync()
     {
-        await CargarLookupsAsync();
-        await CargarConfiguracionAsync();
-        await BuscarAsync();
+        await CargarLookupsAsync(force: true);
+        await CargarConfiguracionAsync(force: true);
+        if (_hasSearched)
+            await BuscarAsync();
     }
 
     private async Task LimpiarAsync()
@@ -851,6 +1095,7 @@
         _texto = string.Empty;
         _usuario = string.Empty;
         _pc = string.Empty;
+        _tipoMovimiento = string.Empty;
         _tipoComprobante = string.Empty;
         _riesgo = string.Empty;
         _tipoControl = string.Empty;
@@ -861,22 +1106,19 @@
         _soloDiferenciasSucursalText = _lookups.SoloDiferenciasSucursalDefault ? "SI" : "NO";
         _pagina = 1;
         _showSearchPanel = false;
-        await BuscarAsync();
+        _hasSearched = false;
+        _rows.Clear();
+        _selected = null;
     }
 
-    private async Task OnSearchInput(ChangeEventArgs args)
-    {
-        _texto = args.Value?.ToString() ?? string.Empty;
-        _pagina = 1;
-        await BuscarAsync();
-    }
-
-    private void ToggleSearchPanel()
+    private async Task ToggleSearchPanel()
     {
         if (_loading)
             return;
 
         _showSearchPanel = !_showSearchPanel;
+        if (_showSearchPanel)
+            await EnsureLookupsLoadedAsync();
     }
 
     private async Task ToggleSettingsPanelAsync()
@@ -886,12 +1128,13 @@
             await CargarConfiguracionAsync();
     }
 
-    private void OpenSearchPanel()
+    private async Task OpenSearchPanelAsync()
     {
         if (_loading)
             return;
 
         _showSearchPanel = true;
+        await EnsureLookupsLoadedAsync();
     }
 
     private void CloseSearchPanel()
@@ -916,7 +1159,7 @@
         else
         {
             _ordenCampo = field;
-            _ordenDireccion = field == "fecha" ? "desc" : "asc";
+            _ordenDireccion = "asc";
         }
 
         _pagina = 1;
@@ -958,7 +1201,12 @@
     }
 
     private async Task ExportarPdfAsync()
-        => await JS.InvokeVoidAsync("dashboardExport.printCurrentPage", "Auditoría de usuarios");
+    {
+        if (!_hasSearched)
+            return;
+
+        await JS.InvokeVoidAsync("dashboardExport.printCurrentPage", "Auditoría de usuarios");
+    }
 
     private string BuildExcelExportUrl()
     {
@@ -969,6 +1217,7 @@
         AddQuery(parts, "texto", _texto);
         AddQuery(parts, "usuario", _usuario);
         AddQuery(parts, "pc", _pc);
+        AddQuery(parts, "tipoMovimiento", _tipoMovimiento);
         AddQuery(parts, "tipoComprobante", _tipoComprobante);
         AddQuery(parts, "riesgo", _riesgo);
         AddQuery(parts, "tipoControl", _tipoControl);
@@ -1007,6 +1256,7 @@
         if (_desde.HasValue || _hasta.HasValue) chips.Add(("fecha", $"Período: {_desde:dd/MM} - {_hasta:dd/MM}"));
         if (!string.IsNullOrWhiteSpace(_usuario)) chips.Add(("usuario", $"Usuario: {_usuario}"));
         if (!string.IsNullOrWhiteSpace(_pc)) chips.Add(("pc", $"PC: {_pc}"));
+        if (!string.IsNullOrWhiteSpace(_tipoMovimiento)) chips.Add(("mov", $"Movimiento: {_tipoMovimiento}"));
         if (!string.IsNullOrWhiteSpace(_tipoComprobante)) chips.Add(("tc", $"TC: {_tipoComprobante}"));
         if (!string.IsNullOrWhiteSpace(_riesgo)) chips.Add(("riesgo", $"Riesgo: {_riesgo}"));
         if (!string.IsNullOrWhiteSpace(_tipoControl))
@@ -1033,6 +1283,7 @@
                 break;
             case "usuario": _usuario = string.Empty; break;
             case "pc": _pc = string.Empty; break;
+            case "mov": _tipoMovimiento = string.Empty; break;
             case "tc": _tipoComprobante = string.Empty; break;
             case "riesgo": _riesgo = string.Empty; break;
             case "control": _tipoControl = string.Empty; break;
@@ -1052,9 +1303,8 @@
         _loading = true;
         try
         {
-            await BuscarAsync();
-            await CargarLookupsAsync();
-            await CargarConfiguracionAsync();
+            _lookups = new AuditoriaUsuarioLookupsDto();
+            _settings = new AuditoriaUsuarioSettingsDto();
         }
         finally
         {
@@ -1062,8 +1312,19 @@
         }
     }
 
-    private async Task CargarLookupsAsync()
+    private async Task EnsureLookupsLoadedAsync()
     {
+        if (_lookupsLoaded)
+            return;
+
+        await CargarLookupsAsync();
+    }
+
+    private async Task CargarLookupsAsync(bool force = false)
+    {
+        if (_lookupsLoaded && !force)
+            return;
+
         _loadingLookups = true;
         try
         {
@@ -1077,10 +1338,15 @@
             }
 
             _lookups = result.Value;
-            _diasMinimosSinFactura = _lookups.DiasMinimosSinFacturaDefault > 0 ? _lookups.DiasMinimosSinFacturaDefault : 2;
-            _umbralModificaciones = _lookups.UmbralModificacionesDefault > 0 ? _lookups.UmbralModificacionesDefault : 3;
-            _diasToleranciaDuplicados = _lookups.DiasToleranciaDuplicadosDefault > 0 ? _lookups.DiasToleranciaDuplicadosDefault : 7;
-            _soloDiferenciasSucursalText = _lookups.SoloDiferenciasSucursalDefault ? "SI" : "NO";
+            if (!_lookupsLoaded || force)
+            {
+                _diasMinimosSinFactura = _lookups.DiasMinimosSinFacturaDefault > 0 ? _lookups.DiasMinimosSinFacturaDefault : 2;
+                _umbralModificaciones = _lookups.UmbralModificacionesDefault > 0 ? _lookups.UmbralModificacionesDefault : 3;
+                _diasToleranciaDuplicados = _lookups.DiasToleranciaDuplicadosDefault > 0 ? _lookups.DiasToleranciaDuplicadosDefault : 7;
+                _soloDiferenciasSucursalText = _lookups.SoloDiferenciasSucursalDefault ? "SI" : "NO";
+            }
+
+            _lookupsLoaded = true;
             ClearErrorFeedback();
         }
         finally
@@ -1093,12 +1359,17 @@
     {
         _pagina = 1;
         _showSearchPanel = false;
-        await CargarLookupsAsync();
+        if (IsActivityMode && string.Equals(_ordenCampo, "fecha", StringComparison.OrdinalIgnoreCase))
+            _ordenDireccion = "asc";
+        await EnsureLookupsLoadedAsync();
         await BuscarAsync();
     }
 
-    private async Task CargarConfiguracionAsync()
+    private async Task CargarConfiguracionAsync(bool force = false)
     {
+        if (_settingsLoaded && !force)
+            return;
+
         _loadingSettings = true;
         try
         {
@@ -1117,6 +1388,7 @@
                 ? _settings.DiasLaborales.ToHashSet()
                 : [1, 2, 3, 4, 5];
             _cfgControlarPcHabitualText = _settings.ControlarPcHabitual ? "SI" : "NO";
+            _settingsLoaded = true;
             ClearErrorFeedback();
         }
         finally
@@ -1160,8 +1432,9 @@
                 return;
             }
 
-            await CargarConfiguracionAsync();
-            await BuscarAsync();
+            await CargarConfiguracionAsync(force: true);
+            if (_hasSearched)
+                await BuscarAsync();
             _showSettingsPanel = false;
         }
         finally
@@ -1181,6 +1454,22 @@
 
     private static string FormatMoney(decimal? value)
         => value.HasValue ? value.Value.ToString("N2") : "—";
+
+    private static string FormatBool(bool value)
+        => value ? "Sí" : "No";
+
+    private string GetLoadingStatusMessage()
+    {
+        if (_loading)
+            return "Preparando la pantalla. Todavía no se consultaron datos.";
+        if (_loadingRows)
+            return "Leyendo información de auditoría. Esperá unos segundos.";
+        if (!_hasSearched)
+            return "Todavía no hay datos cargados. Definí filtros y presioná Aplicar.";
+        return _rows.Count > 0
+            ? $"Lectura finalizada. Se muestran {_rows.Count} fila(s) en la página actual sobre {_result.TotalRegistros} registro(s)."
+            : "Lectura finalizada. No hay datos para mostrar con los filtros actuales.";
+    }
 
     private static string FormatCliente(AuditoriaUsuarioRowDto item)
     {
@@ -1212,6 +1501,32 @@
 
         return $"/comprobantes/viewer/{Uri.EscapeDataString(item.TipoComprobante ?? string.Empty)}/{Uri.EscapeDataString(comprobante)}?idComplemento=0&returnUrl=%2Fauditoria%2Fusuarios";
     }
+
+    private static bool CanOpenComprobante(AuditoriaUsuarioRowDto item)
+        => !string.IsNullOrWhiteSpace(item.TipoComprobante)
+           && !string.IsNullOrWhiteSpace(item.IdComprobante);
+
+    private int GetResultColumnCount()
+        => IsActivityMode ? 13 : IsDuplicateMode ? 12 : IsStartedNotSavedMode ? 11 : 13;
+
+    private IReadOnlyList<ActivityUserGroup> BuildActivityGroups()
+        => _rows
+            .GroupBy(item => string.IsNullOrWhiteSpace(item.Usuario) ? "(sin usuario)" : item.Usuario)
+            .OrderBy(group => group.Key, StringComparer.CurrentCultureIgnoreCase)
+            .Select(group => new ActivityUserGroup
+            {
+                Label = group.Key,
+                Days = group
+                    .GroupBy(item => item.FechaHora.Date)
+                    .OrderBy(day => day.Key)
+                    .Select(day => new ActivityDayGroup
+                    {
+                        Label = day.Key.ToString("dddd dd/MM/yyyy", CultureInfo.GetCultureInfo("es-AR")),
+                        Items = day.OrderBy(item => item.FechaHora).ToList()
+                    })
+                    .ToList()
+            })
+            .ToList();
 
     private static string GetRiskBadgeClass(string riesgo)
         => string.Equals(riesgo, "ALTO", StringComparison.OrdinalIgnoreCase)
@@ -1454,5 +1769,17 @@
         }
 
         return decimal.TryParse(normalized, NumberStyles.Number, CultureInfo.InvariantCulture, out amount);
+    }
+
+    private sealed class ActivityUserGroup
+    {
+        public string Label { get; init; } = string.Empty;
+        public List<ActivityDayGroup> Days { get; init; } = [];
+    }
+
+    private sealed class ActivityDayGroup
+    {
+        public string Label { get; init; } = string.Empty;
+        public List<AuditoriaUsuarioRowDto> Items { get; init; } = [];
     }
 }

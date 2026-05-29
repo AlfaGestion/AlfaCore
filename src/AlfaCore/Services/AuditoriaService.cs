@@ -268,10 +268,21 @@ public sealed class AuditoriaService(
             {
                 Usuarios = usuarios,
                 Pcs = pcs,
+                TiposMovimiento =
+                [
+                    "Alta",
+                    "Modificación",
+                    "Baja",
+                    "Acceso",
+                    "Asiento manual",
+                    "Movimiento de stock",
+                    "Maestro cliente/proveedor"
+                ],
                 TiposComprobante = tiposComprobante,
                 CuentasClientes = cuentasClientes,
                 TiposControl =
                 [
+                    new AuditoriaLookupItemDto { Value = "ACTIVIDAD_USUARIO", Label = "Actividad de usuario" },
                     new AuditoriaLookupItemDto { Value = "IN_NO_GRABADO", Label = "Comprobantes iniciados y no grabados" },
                     new AuditoriaLookupItemDto { Value = "RM_PARCIAL", Label = "Remitos facturados parcialmente" },
                     new AuditoriaLookupItemDto { Value = "RM_SIN_FACTURA", Label = "Remitos sin factura" },
@@ -449,6 +460,10 @@ public sealed class AuditoriaService(
 
     public async Task<AuditoriaUsuarioResultDto> SearchUserAuditAsync(AuditoriaUsuarioFilterDto filter, CancellationToken ct = default)
     {
+        filter ??= new AuditoriaUsuarioFilterDto();
+        if (string.Equals(filter.TipoControl, "ACTIVIDAD_USUARIO", StringComparison.OrdinalIgnoreCase))
+            return await SearchUserActivityAsync(filter, ct);
+
         return await ExecuteLoggedAsync("Auditoria", "SearchUserAudit", async token =>
         {
             await using var cn = new SqlConnection(ConnectionString);
@@ -461,6 +476,7 @@ public sealed class AuditoriaService(
             var umbralModificaciones = filter.UmbralModificaciones.GetValueOrDefault(defaults.UmbralModificaciones);
             var diasToleranciaDuplicados = Math.Max(0, filter.DiasToleranciaDuplicados.GetValueOrDefault(defaults.DiasToleranciaDuplicados));
             var soloDiferenciasSucursal = filter.SoloDiferenciasSucursal;
+            var soloResumen = filter.SoloResumen;
             var pagina = Math.Max(1, filter.Pagina);
             var tamanio = Math.Clamp(filter.TamanioPagina, 10, 200);
             var offset = (pagina - 1) * tamanio;
@@ -1449,44 +1465,10 @@ public sealed class AuditoriaService(
                 };
             }
 
-            if (await rd.NextResultAsync(token))
+            if (!soloResumen && await rd.NextResultAsync(token))
             {
                 while (await rd.ReadAsync(token))
-                {
-                    items.Add(new AuditoriaUsuarioRowDto
-                    {
-                        TipoControl = ReadString(rd, 0),
-                        TipoControlLabel = ReadString(rd, 1),
-                        Riesgo = ReadString(rd, 2),
-                        FechaHora = ReadDateTime(rd, 3) ?? DateTime.MinValue,
-                        FechaHoraHasta = ReadDateTime(rd, 4),
-                        Usuario = ReadString(rd, 5),
-                        Pc = ReadString(rd, 6),
-                        TipoComprobante = ReadString(rd, 7),
-                        IdComprobante = ReadString(rd, 8),
-                        Cuenta = ReadString(rd, 9),
-                        Cliente = ReadString(rd, 10),
-                        ImporteOriginal = ReadDecimal(rd, 11),
-                        ImporteAplicado = ReadDecimal(rd, 12),
-                        Diferencia = ReadDecimal(rd, 13),
-                        CantidadOcurrencias = ReadInt(rd, 14),
-                        Proceso = ReadString(rd, 15),
-                        Formulario = ReadString(rd, 16),
-                        FacturaRelacionada = ReadString(rd, 17),
-                        EstadoFacturacion = ReadString(rd, 18),
-                        SystemUserDetalle = ReadString(rd, 19),
-                        Motivo = ReadString(rd, 20),
-                        Observaciones = ReadString(rd, 21),
-                        DiasPendientes = ReadInt(rd, 22),
-                        NumeroNormalizado = ReadString(rd, 23),
-                        SucursalesDetectadas = ReadString(rd, 24),
-                        UsuariosDetectados = ReadString(rd, 25),
-                        ImpactoContable = ReadString(rd, 26),
-                        ComprobantesInvolucrados = ReadInt(rd, 27),
-                        ContablesDuplicados = ReadInt(rd, 28),
-                        DetalleGrupo = ReadString(rd, 29)
-                    });
-                }
+                    items.Add(MapUserAuditRow(rd, includeActivityFields: false));
             }
 
             return new AuditoriaUsuarioResultDto
@@ -1828,6 +1810,673 @@ public sealed class AuditoriaService(
         }, "No se pudo cargar la auditoría de comprobantes.", ct);
     }
 
+    private async Task<AuditoriaUsuarioResultDto> SearchUserActivityAsync(AuditoriaUsuarioFilterDto filter, CancellationToken ct)
+    {
+        return await ExecuteLoggedAsync("Auditoria", "SearchUserActivity", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            var defaults = await ReadUserAuditDefaultsAsync(cn, token);
+            var soloResumen = filter.SoloResumen;
+            var pagina = Math.Max(1, filter.Pagina);
+            var tamanio = Math.Clamp(filter.TamanioPagina, 10, 200);
+            var offset = (pagina - 1) * tamanio;
+            var orderBy = ResolveUserAuditOrderBy(filter.OrdenCampo, filter.OrdenDireccion);
+
+            var sql = $"""
+                IF OBJECT_ID('tempdb..#ActividadUsuario') IS NOT NULL DROP TABLE #ActividadUsuario;
+                IF OBJECT_ID('tempdb..#ActividadUsuarioDepurada') IS NOT NULL DROP TABLE #ActividadUsuarioDepurada;
+                IF OBJECT_ID('tempdb..#AccionesPeriodo') IS NOT NULL DROP TABLE #AccionesPeriodo;
+                IF OBJECT_ID('tempdb..#VentasPeriodo') IS NOT NULL DROP TABLE #VentasPeriodo;
+                IF OBJECT_ID('tempdb..#ComprasPeriodo') IS NOT NULL DROP TABLE #ComprasPeriodo;
+                IF OBJECT_ID('tempdb..#AsientoResumen') IS NOT NULL DROP TABLE #AsientoResumen;
+                IF OBJECT_ID('tempdb..#StockResumen') IS NOT NULL DROP TABLE #StockResumen;
+
+                CREATE TABLE #ActividadUsuario
+                (
+                    TipoControl nvarchar(50) NOT NULL,
+                    TipoControlLabel nvarchar(150) NOT NULL,
+                    Riesgo nvarchar(10) NOT NULL,
+                    FechaHora datetime NOT NULL,
+                    FechaHoraHasta datetime NULL,
+                    Usuario nvarchar(255) NOT NULL,
+                    Pc nvarchar(255) NOT NULL,
+                    Origen nvarchar(100) NOT NULL,
+                    TipoMovimiento nvarchar(100) NOT NULL,
+                    TipoComprobante nvarchar(100) NOT NULL,
+                    IdComprobante nvarchar(250) NOT NULL,
+                    Cuenta nvarchar(15) NOT NULL,
+                    Cliente nvarchar(150) NOT NULL,
+                    Descripcion nvarchar(250) NOT NULL,
+                    ImporteOriginal money NULL,
+                    ImporteAplicado money NULL,
+                    Diferencia money NULL,
+                    TieneAsiento bit NOT NULL,
+                    TieneStock bit NOT NULL,
+                    EsAlerta bit NOT NULL,
+                    CantidadOcurrencias int NOT NULL,
+                    Proceso nvarchar(255) NOT NULL,
+                    Formulario nvarchar(150) NOT NULL,
+                    FacturaRelacionada nvarchar(400) NOT NULL,
+                    EstadoFacturacion nvarchar(50) NOT NULL,
+                    SystemUserDetalle nvarchar(500) NOT NULL,
+                    Motivo nvarchar(250) NOT NULL,
+                    Observaciones nvarchar(1000) NOT NULL,
+                    DiasPendientes int NOT NULL,
+                    NumeroNormalizado nvarchar(50) NOT NULL,
+                    SucursalesDetectadas nvarchar(400) NOT NULL,
+                    UsuariosDetectados nvarchar(400) NOT NULL,
+                    ImpactoContable nvarchar(150) NOT NULL,
+                    ComprobantesInvolucrados int NOT NULL,
+                    ContablesDuplicados int NOT NULL,
+                    DetalleGrupo nvarchar(max) NOT NULL
+                );
+
+                SELECT
+                    a.ID,
+                    ISNULL(a.TC, '') AS TC,
+                    ISNULL(a.IDCOMPROBANTE, '') AS IDCOMPROBANTE,
+                    ISNULL(a.IDCOMPLEMENTO, 0) AS IDCOMPLEMENTO,
+                    ISNULL(a.TIPO_ACCION, '') AS TIPO_ACCION,
+                    CAST(ISNULL(a.FECHAHORA, GETDATE()) AS datetime) AS FECHAHORA,
+                    ISNULL(a.USUARIO, '') AS USUARIO,
+                    ISNULL(a.PC, '') AS PC,
+                    ISNULL(a.Cuenta, '') AS Cuenta,
+                    ISNULL(a.Proceso, '') AS Proceso,
+                    ISNULL(a.SYSTEMUSER, '') AS SystemUser
+                INTO #AccionesPeriodo
+                FROM dbo.V_MV_CpteAcciones a
+                WHERE (@Desde IS NULL OR a.FECHAHORA >= @Desde)
+                  AND (@Hasta IS NULL OR a.FECHAHORA < DATEADD(day, 1, @Hasta));
+
+                SELECT
+                    UPPER(LTRIM(RTRIM(ISNULL(v.TC, '')))) AS TC,
+                    UPPER(LTRIM(RTRIM(ISNULL(v.IDCOMPROBANTE, '')))) AS IDCOMPROBANTE,
+                    ISNULL(v.CUENTA, '') AS CUENTA,
+                    ISNULL(v.NOMBRE, '') AS NOMBRE,
+                    ISNULL(v.IMPORTE, 0) AS IMPORTE,
+                    ISNULL(v.Usuario, '') AS Usuario
+                INTO #VentasPeriodo
+                FROM dbo.V_MV_Cpte v
+                WHERE (@Desde IS NULL OR v.FECHA >= @Desde)
+                  AND (@Hasta IS NULL OR v.FECHA < DATEADD(day, 1, @Hasta));
+
+                SELECT
+                    UPPER(LTRIM(RTRIM(ISNULL(c.TC, '')))) AS TC,
+                    UPPER(LTRIM(RTRIM(ISNULL(c.IDCOMPROBANTE, '')))) AS IDCOMPROBANTE,
+                    UPPER(LTRIM(RTRIM(ISNULL(c.CUENTA, '')))) AS CUENTA,
+                    ISNULL(c.NOMBRE, '') AS NOMBRE,
+                    ISNULL(c.IMPORTE, 0) AS IMPORTE,
+                    ISNULL(c.USUARIO, '') AS Usuario,
+                    ISNULL(c.SUCURSAL, '') AS SUCURSAL,
+                    ISNULL(c.NUMERO, '') AS NUMERO,
+                    ISNULL(c.LETRA, '') AS LETRA
+                INTO #ComprasPeriodo
+                FROM dbo.C_MV_Cpte c
+                WHERE (@Desde IS NULL OR c.FECHA >= @Desde)
+                  AND (@Hasta IS NULL OR c.FECHA < DATEADD(day, 1, @Hasta))
+                  AND ISNULL(c.ANULADA, 0) = 0;
+
+                SELECT
+                    UPPER(LTRIM(RTRIM(ISNULL(a.TC, '')))) AS TC,
+                    UPPER(LTRIM(RTRIM(ISNULL(a.SUCURSAL, '') + ISNULL(a.NUMERO, '') + ISNULL(a.LETRA, '')))) AS IDCOMPROBANTE,
+                    UPPER(LTRIM(RTRIM(ISNULL(a.CUENTA, '')))) AS CUENTA,
+                    COUNT(*) AS Cantidad
+                INTO #AsientoResumen
+                FROM dbo.MV_ASIENTOS a
+                WHERE (@Desde IS NULL OR ISNULL(a.FechaHora_Grabacion, a.FECHA) >= @Desde)
+                  AND (@Hasta IS NULL OR ISNULL(a.FechaHora_Grabacion, a.FECHA) < DATEADD(day, 1, @Hasta))
+                GROUP BY
+                    UPPER(LTRIM(RTRIM(ISNULL(a.TC, '')))),
+                    UPPER(LTRIM(RTRIM(ISNULL(a.SUCURSAL, '') + ISNULL(a.NUMERO, '') + ISNULL(a.LETRA, '')))),
+                    UPPER(LTRIM(RTRIM(ISNULL(a.CUENTA, ''))));
+
+                SELECT
+                    UPPER(LTRIM(RTRIM(ISNULL(s.TC, '')))) AS TC,
+                    UPPER(LTRIM(RTRIM(ISNULL(s.IDCOMPROBANTE, '')))) AS IDCOMPROBANTE,
+                    COUNT(*) AS Cantidad
+                INTO #StockResumen
+                FROM dbo.V_MV_STOCK s
+                WHERE (@Desde IS NULL OR s.FECHA >= @Desde)
+                  AND (@Hasta IS NULL OR s.FECHA < DATEADD(day, 1, @Hasta))
+                  AND ISNULL(s.ANULADO, 0) = 0
+                GROUP BY
+                    UPPER(LTRIM(RTRIM(ISNULL(s.TC, '')))),
+                    UPPER(LTRIM(RTRIM(ISNULL(s.IDCOMPROBANTE, ''))));
+
+                INSERT INTO #ActividadUsuario
+                (
+                    TipoControl, TipoControlLabel, Riesgo, FechaHora, FechaHoraHasta, Usuario, Pc, Origen, TipoMovimiento,
+                    TipoComprobante, IdComprobante, Cuenta, Cliente, Descripcion, ImporteOriginal, ImporteAplicado, Diferencia,
+                    TieneAsiento, TieneStock, EsAlerta, CantidadOcurrencias, Proceso, Formulario, FacturaRelacionada,
+                    EstadoFacturacion, SystemUserDetalle, Motivo, Observaciones, DiasPendientes, NumeroNormalizado,
+                    SucursalesDetectadas, UsuariosDetectados, ImpactoContable, ComprobantesInvolucrados, ContablesDuplicados, DetalleGrupo
+                )
+                SELECT
+                    'ACTIVIDAD_USUARIO',
+                    'Actividad de usuario',
+                    '',
+                    cp.INGRESO,
+                    cp.EGRESO,
+                    ISNULL(cp.USUARIO, ''),
+                    ISNULL(cp.MAQUINA, ''),
+                    'Acceso',
+                    'Acceso',
+                    '',
+                    '',
+                    '',
+                    '',
+                    CASE
+                        WHEN ISNULL(cp.FORMULARIO, '') <> '' AND ISNULL(cp.TAREA, '') <> '' THEN cp.FORMULARIO + ' · ' + cp.TAREA
+                        WHEN ISNULL(cp.FORMULARIO, '') <> '' THEN cp.FORMULARIO
+                        ELSE ISNULL(cp.TAREA, '')
+                    END,
+                    NULL,
+                    NULL,
+                    NULL,
+                    CAST(0 AS bit),
+                    CAST(0 AS bit),
+                    CAST(0 AS bit),
+                    1,
+                    '',
+                    ISNULL(cp.FORMULARIO, ''),
+                    '',
+                    '',
+                    '',
+                    'Ingreso al sistema',
+                    CASE
+                        WHEN cp.EGRESO IS NULL THEN 'Acceso sin hora de egreso registrada.'
+                        ELSE 'Acceso con egreso registrado.'
+                    END,
+                    0,
+                    '',
+                    '',
+                    '',
+                    '',
+                    0,
+                    0,
+                    ''
+                FROM dbo.CONTROL_ACCESO cp
+                WHERE (@Desde IS NULL OR cp.INGRESO >= @Desde)
+                  AND (@Hasta IS NULL OR cp.INGRESO < DATEADD(day, 1, @Hasta));
+
+                INSERT INTO #ActividadUsuario
+                (
+                    TipoControl, TipoControlLabel, Riesgo, FechaHora, FechaHoraHasta, Usuario, Pc, Origen, TipoMovimiento,
+                    TipoComprobante, IdComprobante, Cuenta, Cliente, Descripcion, ImporteOriginal, ImporteAplicado, Diferencia,
+                    TieneAsiento, TieneStock, EsAlerta, CantidadOcurrencias, Proceso, Formulario, FacturaRelacionada,
+                    EstadoFacturacion, SystemUserDetalle, Motivo, Observaciones, DiasPendientes, NumeroNormalizado,
+                    SucursalesDetectadas, UsuariosDetectados, ImpactoContable, ComprobantesInvolucrados, ContablesDuplicados, DetalleGrupo
+                )
+                SELECT
+                    'ACTIVIDAD_USUARIO',
+                    'Actividad de usuario',
+                    '',
+                    a.FECHAHORA,
+                    NULL,
+                    a.USUARIO,
+                    a.PC,
+                    CASE
+                        WHEN vm.TC IS NOT NULL THEN 'Ventas'
+                        WHEN cm.TC IS NOT NULL THEN 'Compras'
+                        ELSE 'Maestros'
+                    END,
+                    CASE
+                        WHEN a.TIPO_ACCION = 'B' THEN 'Baja'
+                        WHEN a.TIPO_ACCION = 'M' THEN 'Modificación'
+                        WHEN vm.TC IS NULL AND cm.TC IS NULL THEN 'Maestro cliente/proveedor'
+                        ELSE 'Alta'
+                    END,
+                    a.TC,
+                    a.IDCOMPROBANTE,
+                    CASE
+                        WHEN ISNULL(a.Cuenta, '') <> '' THEN a.Cuenta
+                        WHEN cm.TC IS NOT NULL THEN cm.CUENTA
+                        ELSE ISNULL(vm.CUENTA, '')
+                    END,
+                    CASE
+                        WHEN vm.TC IS NULL AND cm.TC IS NULL THEN ISNULL(mc.DESCRIPCION, '')
+                        WHEN vm.TC IS NOT NULL THEN vm.NOMBRE
+                        ELSE cm.NOMBRE
+                    END,
+                    CASE
+                        WHEN vm.TC IS NULL AND cm.TC IS NULL THEN 'Modificación de cliente/proveedor'
+                        WHEN vm.TC IS NOT NULL THEN ISNULL(NULLIF(vm.NOMBRE, ''), ISNULL(mc.DESCRIPCION, ''))
+                        ELSE ISNULL(NULLIF(cm.NOMBRE, ''), ISNULL(mc.DESCRIPCION, ''))
+                    END,
+                    CASE
+                        WHEN vm.TC IS NOT NULL THEN vm.IMPORTE
+                        WHEN cm.TC IS NOT NULL THEN cm.IMPORTE
+                        ELSE NULL
+                    END,
+                    NULL,
+                    NULL,
+                    CAST(CASE WHEN ISNULL(ar.Cantidad, 0) > 0 THEN 1 ELSE 0 END AS bit),
+                    CAST(CASE WHEN ISNULL(sr.Cantidad, 0) > 0 THEN 1 ELSE 0 END AS bit),
+                    CAST(0 AS bit),
+                    1,
+                    a.Proceso,
+                    '',
+                    '',
+                    '',
+                    a.SystemUser,
+                    CASE
+                        WHEN a.TIPO_ACCION = 'B' THEN 'Baja registrada sobre comprobante.'
+                        WHEN a.TIPO_ACCION = 'M' THEN 'Modificación registrada sobre comprobante.'
+                        WHEN vm.TC IS NULL AND cm.TC IS NULL THEN 'Movimiento maestro detectado desde la bitácora de acciones.'
+                        ELSE 'Alta o grabación registrada sobre comprobante.'
+                    END,
+                    CASE
+                        WHEN vm.TC IS NULL AND cm.TC IS NULL THEN 'SYSTEMUSER compatible con modificación de cliente/proveedor.'
+                        ELSE 'Movimiento operativo reconstruido desde V_MV_CpteAcciones.'
+                    END,
+                    0,
+                    '',
+                    '',
+                    '',
+                    CASE
+                        WHEN ISNULL(ar.Cantidad, 0) > 0 AND ISNULL(sr.Cantidad, 0) > 0 THEN 'Contable y stock'
+                        WHEN ISNULL(ar.Cantidad, 0) > 0 THEN 'Contable'
+                        WHEN ISNULL(sr.Cantidad, 0) > 0 THEN 'Stock'
+                        ELSE ''
+                    END,
+                    0,
+                    0,
+                    ''
+                FROM #AccionesPeriodo a
+                LEFT JOIN #VentasPeriodo vm
+                    ON vm.TC = UPPER(LTRIM(RTRIM(a.TC)))
+                   AND vm.IDCOMPROBANTE = UPPER(LTRIM(RTRIM(a.IDCOMPROBANTE)))
+                LEFT JOIN #ComprasPeriodo cm
+                    ON cm.TC = UPPER(LTRIM(RTRIM(a.TC)))
+                   AND cm.IDCOMPROBANTE = UPPER(LTRIM(RTRIM(a.IDCOMPROBANTE)))
+                   AND cm.CUENTA = UPPER(LTRIM(RTRIM(a.Cuenta)))
+                LEFT JOIN #AsientoResumen ar
+                    ON ar.TC = UPPER(LTRIM(RTRIM(a.TC)))
+                   AND ar.IDCOMPROBANTE = UPPER(LTRIM(RTRIM(a.IDCOMPROBANTE)))
+                   AND (ar.CUENTA = UPPER(LTRIM(RTRIM(a.Cuenta))) OR ar.CUENTA = '' OR ISNULL(a.Cuenta, '') = '')
+                LEFT JOIN #StockResumen sr
+                    ON sr.TC = UPPER(LTRIM(RTRIM(a.TC)))
+                   AND sr.IDCOMPROBANTE = UPPER(LTRIM(RTRIM(a.IDCOMPROBANTE)))
+                LEFT JOIN dbo.MA_CUENTAS mc
+                    ON mc.CODIGO = a.Cuenta
+                WHERE
+                    vm.TC IS NOT NULL
+                    OR cm.TC IS NOT NULL
+                    OR (
+                        ISNULL(LTRIM(RTRIM(a.TC)), '') = ''
+                        AND ISNULL(LTRIM(RTRIM(a.IDCOMPROBANTE)), '') = ''
+                        AND (
+                            a.SystemUser LIKE '11201%'
+                            OR a.SystemUser LIKE '21101%'
+                        )
+                    );
+
+                INSERT INTO #ActividadUsuario
+                (
+                    TipoControl, TipoControlLabel, Riesgo, FechaHora, FechaHoraHasta, Usuario, Pc, Origen, TipoMovimiento,
+                    TipoComprobante, IdComprobante, Cuenta, Cliente, Descripcion, ImporteOriginal, ImporteAplicado, Diferencia,
+                    TieneAsiento, TieneStock, EsAlerta, CantidadOcurrencias, Proceso, Formulario, FacturaRelacionada,
+                    EstadoFacturacion, SystemUserDetalle, Motivo, Observaciones, DiasPendientes, NumeroNormalizado,
+                    SucursalesDetectadas, UsuariosDetectados, ImpactoContable, ComprobantesInvolucrados, ContablesDuplicados, DetalleGrupo
+                )
+                SELECT
+                    'ACTIVIDAD_USUARIO',
+                    'Actividad de usuario',
+                    '',
+                    ISNULL(mv.FechaHora_Grabacion, mv.FECHA),
+                    NULL,
+                    ISNULL(mv.USUARIO_LOGEADO, ''),
+                    ISNULL(ax.PC, ''),
+                    'Contabilidad',
+                    'Asiento manual',
+                    mv.TC,
+                    mv.SUCURSAL + mv.NUMERO + mv.LETRA,
+                    mv.CUENTA,
+                    ISNULL(mc.DESCRIPCION, ''),
+                    ISNULL(mv.DETALLE, ''),
+                    mv.IMPORTE,
+                    NULL,
+                    NULL,
+                    CAST(1 AS bit),
+                    CAST(0 AS bit),
+                    CAST(0 AS bit),
+                    1,
+                    '',
+                    ISNULL(ax.Proceso, ''),
+                    '',
+                    '',
+                    '',
+                    'Asiento sin comprobante comercial asociado.',
+                    'Se toma únicamente SECUENCIA = 1 y se excluyen comprobantes ya presentes en ventas o compras.',
+                    0,
+                    '',
+                    '',
+                    '',
+                    'Contable',
+                    0,
+                    0,
+                    ''
+                FROM dbo.MV_ASIENTOS mv
+                LEFT JOIN #VentasPeriodo vm
+                    ON vm.TC = UPPER(LTRIM(RTRIM(mv.TC)))
+                   AND vm.IDCOMPROBANTE = UPPER(LTRIM(RTRIM(mv.SUCURSAL + mv.NUMERO + mv.LETRA)))
+                LEFT JOIN #ComprasPeriodo cm
+                    ON cm.TC = UPPER(LTRIM(RTRIM(mv.TC)))
+                   AND cm.IDCOMPROBANTE = UPPER(LTRIM(RTRIM(mv.SUCURSAL + mv.NUMERO + mv.LETRA)))
+                   AND cm.CUENTA = UPPER(LTRIM(RTRIM(mv.CUENTA)))
+                OUTER APPLY
+                (
+                    SELECT TOP (1)
+                        ISNULL(ap.PC, '') AS PC,
+                        ISNULL(ap.Proceso, '') AS Proceso
+                    FROM #AccionesPeriodo ap
+                    WHERE ap.TC = mv.TC
+                      AND ap.IDCOMPROBANTE = mv.SUCURSAL + mv.NUMERO + mv.LETRA
+                    ORDER BY ap.FECHAHORA DESC, ap.ID DESC
+                ) ax
+                LEFT JOIN dbo.MA_CUENTAS mc
+                    ON mc.CODIGO = mv.CUENTA
+                WHERE mv.SECUENCIA = 1
+                  AND (@Desde IS NULL OR ISNULL(mv.FechaHora_Grabacion, mv.FECHA) >= @Desde)
+                  AND (@Hasta IS NULL OR ISNULL(mv.FechaHora_Grabacion, mv.FECHA) < DATEADD(day, 1, @Hasta))
+                  AND vm.TC IS NULL
+                  AND cm.TC IS NULL;
+
+                INSERT INTO #ActividadUsuario
+                (
+                    TipoControl, TipoControlLabel, Riesgo, FechaHora, FechaHoraHasta, Usuario, Pc, Origen, TipoMovimiento,
+                    TipoComprobante, IdComprobante, Cuenta, Cliente, Descripcion, ImporteOriginal, ImporteAplicado, Diferencia,
+                    TieneAsiento, TieneStock, EsAlerta, CantidadOcurrencias, Proceso, Formulario, FacturaRelacionada,
+                    EstadoFacturacion, SystemUserDetalle, Motivo, Observaciones, DiasPendientes, NumeroNormalizado,
+                    SucursalesDetectadas, UsuariosDetectados, ImpactoContable, ComprobantesInvolucrados, ContablesDuplicados, DetalleGrupo
+                )
+                SELECT
+                    'ACTIVIDAD_USUARIO',
+                    'Actividad de usuario',
+                    '',
+                    CAST(ISNULL(st.FECHA, GETDATE()) AS datetime),
+                    NULL,
+                    ISNULL(ax.USUARIO, ''),
+                    ISNULL(ax.PC, ''),
+                    'Stock',
+                    'Movimiento de stock',
+                    st.TC,
+                    st.IDCOMPROBANTE,
+                    ISNULL(st.CuentaProveedor, ''),
+                    '',
+                    ISNULL(st.Descripcion, ''),
+                    CASE
+                        WHEN st.IMPORTE_S_IVA IS NOT NULL AND st.IMPORTE_S_IVA <> 0 THEN st.IMPORTE_S_IVA
+                        WHEN st.Costo IS NOT NULL AND st.Costo <> 0 THEN st.Costo
+                        ELSE st.PrecioVenta
+                    END,
+                    NULL,
+                    NULL,
+                    CAST(CASE WHEN ISNULL(ar.Cantidad, 0) > 0 THEN 1 ELSE 0 END AS bit),
+                    CAST(1 AS bit),
+                    CAST(0 AS bit),
+                    1,
+                    ISNULL(ax.Proceso, ''),
+                    '',
+                    '',
+                    '',
+                    '',
+                    'Movimiento de stock sin cabecera comercial asociada.',
+                    CONCAT('Artículo: ', ISNULL(st.IDArticulo, ''), ' · Secuencia: ', CONVERT(nvarchar(10), st.SECUENCIA)),
+                    0,
+                    '',
+                    '',
+                    '',
+                    CASE WHEN ISNULL(ar.Cantidad, 0) > 0 THEN 'Contable y stock' ELSE 'Stock' END,
+                    0,
+                    0,
+                    ''
+                FROM dbo.V_MV_STOCK st
+                LEFT JOIN #VentasPeriodo vm
+                    ON vm.TC = UPPER(LTRIM(RTRIM(st.TC)))
+                   AND vm.IDCOMPROBANTE = UPPER(LTRIM(RTRIM(st.IDCOMPROBANTE)))
+                LEFT JOIN #ComprasPeriodo cm
+                    ON cm.TC = UPPER(LTRIM(RTRIM(st.TC)))
+                   AND cm.IDCOMPROBANTE = UPPER(LTRIM(RTRIM(st.IDCOMPROBANTE)))
+                LEFT JOIN #AsientoResumen ar
+                    ON ar.TC = UPPER(LTRIM(RTRIM(st.TC)))
+                   AND ar.IDCOMPROBANTE = UPPER(LTRIM(RTRIM(st.IDCOMPROBANTE)))
+                OUTER APPLY
+                (
+                    SELECT TOP (1)
+                        ISNULL(ap.USUARIO, '') AS USUARIO,
+                        ISNULL(ap.PC, '') AS PC,
+                        ISNULL(ap.Proceso, '') AS Proceso
+                    FROM #AccionesPeriodo ap
+                    WHERE ap.TC = st.TC
+                      AND ap.IDCOMPROBANTE = st.IDCOMPROBANTE
+                    ORDER BY ap.FECHAHORA DESC, ap.ID DESC
+                ) ax
+                WHERE st.SECUENCIA = 1
+                  AND ISNULL(st.ANULADO, 0) = 0
+                  AND (@Desde IS NULL OR st.FECHA >= @Desde)
+                  AND (@Hasta IS NULL OR st.FECHA < DATEADD(day, 1, @Hasta))
+                  AND vm.TC IS NULL
+                  AND cm.TC IS NULL;
+
+                ;WITH ActividadRankeada AS
+                (
+                    SELECT
+                        *,
+                        ROW_NUMBER() OVER
+                        (
+                            PARTITION BY
+                                TipoControl,
+                                FechaHora,
+                                ISNULL(NULLIF(Usuario, ''), '(sin usuario)'),
+                                ISNULL(NULLIF(Pc, ''), '(sin pc)'),
+                                ISNULL(NULLIF(Origen, ''), '(sin origen)'),
+                                ISNULL(NULLIF(TipoMovimiento, ''), '(sin movimiento)'),
+                                ISNULL(NULLIF(TipoComprobante, ''), '(sin tc)'),
+                                ISNULL(NULLIF(IdComprobante, ''), '(sin comprobante)'),
+                                ISNULL(NULLIF(Cuenta, ''), '(sin cuenta)'),
+                                ISNULL(NULLIF(Cliente, ''), '(sin cliente)'),
+                                ISNULL(NULLIF(Descripcion, ''), '(sin descripcion)'),
+                                ISNULL(ImporteOriginal, 0)
+                            ORDER BY FechaHora, TipoComprobante, IdComprobante
+                        ) AS rn
+                    FROM #ActividadUsuario
+                )
+                SELECT
+                    TipoControl,
+                    TipoControlLabel,
+                    Riesgo,
+                    FechaHora,
+                    FechaHoraHasta,
+                    Usuario,
+                    Pc,
+                    Origen,
+                    TipoMovimiento,
+                    TipoComprobante,
+                    IdComprobante,
+                    Cuenta,
+                    Cliente,
+                    Descripcion,
+                    ImporteOriginal,
+                    ImporteAplicado,
+                    Diferencia,
+                    TieneAsiento,
+                    TieneStock,
+                    EsAlerta,
+                    CantidadOcurrencias,
+                    Proceso,
+                    Formulario,
+                    FacturaRelacionada,
+                    EstadoFacturacion,
+                    SystemUserDetalle,
+                    Motivo,
+                    Observaciones,
+                    DiasPendientes,
+                    NumeroNormalizado,
+                    SucursalesDetectadas,
+                    UsuariosDetectados,
+                    ImpactoContable,
+                    ComprobantesInvolucrados,
+                    ContablesDuplicados,
+                    DetalleGrupo
+                INTO #ActividadUsuarioDepurada
+                FROM ActividadRankeada
+                WHERE rn = 1;
+
+                SELECT
+                    COUNT(*) AS TotalRegistros,
+                    0 AS RiesgoAlto,
+                    0 AS RiesgoMedio,
+                    COUNT(DISTINCT NULLIF(Origen, '')) AS ControlesDetectados,
+                    COUNT(DISTINCT CASE WHEN NULLIF(IdComprobante, '') IS NOT NULL THEN IdComprobante END) AS ComprobantesInvolucrados,
+                    0 AS ContablesDuplicados,
+                    COUNT(DISTINCT NULLIF(Usuario, '')) AS UsuariosInvolucrados,
+                    NULL AS PromedioMinutosCancelacion,
+                    0 AS MaximoMinutosCancelacion,
+                    SUM(ISNULL(ImporteOriginal, 0)) AS ImporteTotalCancelado,
+                    COUNT(DISTINCT NULLIF(Pc, '')) AS EquiposInvolucrados,
+                    COUNT(DISTINCT CAST(FechaHora AS date)) AS DiasConActividad
+                FROM #ActividadUsuarioDepurada
+                WHERE (@Usuario = '' OR Usuario = @Usuario)
+                  AND (@Pc = '' OR Pc LIKE '%' + @Pc + '%')
+                  AND (@TipoMovimiento = '' OR TipoMovimiento = @TipoMovimiento)
+                  AND (@TipoComprobante = '' OR TipoComprobante LIKE '%' + @TipoComprobante + '%')
+                  AND (@CuentaCliente = '' OR Cuenta LIKE '%' + @CuentaCliente + '%' OR Cliente LIKE '%' + @CuentaCliente + '%')
+                  AND (
+                        @Texto = ''
+                        OR Usuario LIKE '%' + @Texto + '%'
+                        OR Pc LIKE '%' + @Texto + '%'
+                        OR Origen LIKE '%' + @Texto + '%'
+                        OR TipoMovimiento LIKE '%' + @Texto + '%'
+                        OR TipoComprobante LIKE '%' + @Texto + '%'
+                        OR IdComprobante LIKE '%' + @Texto + '%'
+                        OR Cuenta LIKE '%' + @Texto + '%'
+                        OR Cliente LIKE '%' + @Texto + '%'
+                        OR Descripcion LIKE '%' + @Texto + '%'
+                        OR Observaciones LIKE '%' + @Texto + '%'
+                      );
+
+                SELECT
+                    TipoControl,
+                    TipoControlLabel,
+                    Riesgo,
+                    FechaHora,
+                    FechaHoraHasta,
+                    Usuario,
+                    Pc,
+                    Origen,
+                    TipoMovimiento,
+                    TipoComprobante,
+                    IdComprobante,
+                    Cuenta,
+                    Cliente,
+                    Descripcion,
+                    ImporteOriginal,
+                    ImporteAplicado,
+                    Diferencia,
+                    TieneAsiento,
+                    TieneStock,
+                    EsAlerta,
+                    CantidadOcurrencias,
+                    Proceso,
+                    Formulario,
+                    FacturaRelacionada,
+                    EstadoFacturacion,
+                    SystemUserDetalle,
+                    Motivo,
+                    Observaciones,
+                    DiasPendientes,
+                    NumeroNormalizado,
+                    SucursalesDetectadas,
+                    UsuariosDetectados,
+                    ImpactoContable,
+                    ComprobantesInvolucrados,
+                    ContablesDuplicados,
+                    DetalleGrupo
+                FROM #ActividadUsuarioDepurada
+                WHERE (@Usuario = '' OR Usuario = @Usuario)
+                  AND (@Pc = '' OR Pc LIKE '%' + @Pc + '%')
+                  AND (@TipoMovimiento = '' OR TipoMovimiento = @TipoMovimiento)
+                  AND (@TipoComprobante = '' OR TipoComprobante LIKE '%' + @TipoComprobante + '%')
+                  AND (@CuentaCliente = '' OR Cuenta LIKE '%' + @CuentaCliente + '%' OR Cliente LIKE '%' + @CuentaCliente + '%')
+                  AND (
+                        @Texto = ''
+                        OR Usuario LIKE '%' + @Texto + '%'
+                        OR Pc LIKE '%' + @Texto + '%'
+                        OR Origen LIKE '%' + @Texto + '%'
+                        OR TipoMovimiento LIKE '%' + @Texto + '%'
+                        OR TipoComprobante LIKE '%' + @Texto + '%'
+                        OR IdComprobante LIKE '%' + @Texto + '%'
+                        OR Cuenta LIKE '%' + @Texto + '%'
+                        OR Cliente LIKE '%' + @Texto + '%'
+                        OR Descripcion LIKE '%' + @Texto + '%'
+                        OR Observaciones LIKE '%' + @Texto + '%'
+                      )
+                ORDER BY {orderBy}
+                OFFSET @Offset ROWS FETCH NEXT @Tamanio ROWS ONLY;
+                """;
+
+            var items = new List<AuditoriaUsuarioRowDto>();
+            var stats = new AuditoriaUsuarioStatsDto();
+            var total = 0;
+
+            await using var cmd = new SqlCommand(sql, cn);
+            cmd.CommandTimeout = 90;
+            cmd.Parameters.AddWithValue("@Desde", (object?)filter.Desde ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@Hasta", (object?)filter.Hasta ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@Texto", filter.Texto ?? string.Empty);
+            cmd.Parameters.AddWithValue("@Usuario", filter.Usuario ?? string.Empty);
+            cmd.Parameters.AddWithValue("@Pc", filter.Pc ?? string.Empty);
+            cmd.Parameters.AddWithValue("@TipoMovimiento", filter.TipoMovimiento ?? string.Empty);
+            cmd.Parameters.AddWithValue("@TipoComprobante", filter.TipoComprobante ?? string.Empty);
+            cmd.Parameters.AddWithValue("@CuentaCliente", filter.CuentaCliente ?? string.Empty);
+            cmd.Parameters.AddWithValue("@Offset", offset);
+            cmd.Parameters.AddWithValue("@Tamanio", tamanio);
+
+            await using var rd = await cmd.ExecuteReaderAsync(token);
+            if (await rd.ReadAsync(token))
+            {
+                total = ReadInt(rd, 0);
+                stats = new AuditoriaUsuarioStatsDto
+                {
+                    TotalAlertas = total,
+                    RiesgoAlto = ReadInt(rd, 1),
+                    RiesgoMedio = ReadInt(rd, 2),
+                    ControlesDetectados = ReadInt(rd, 3),
+                    ComprobantesInvolucrados = ReadInt(rd, 4),
+                    ContablesDuplicados = ReadInt(rd, 5),
+                    UsuariosInvolucrados = ReadInt(rd, 6),
+                    PromedioMinutosCancelacion = ReadDecimal(rd, 7),
+                    MaximoMinutosCancelacion = ReadInt(rd, 8),
+                    ImporteTotalCancelado = ReadDecimal(rd, 9),
+                    EquiposInvolucrados = ReadInt(rd, 10),
+                    DiasConActividad = ReadInt(rd, 11)
+                };
+            }
+
+            if (!soloResumen && await rd.NextResultAsync(token))
+            {
+                while (await rd.ReadAsync(token))
+                    items.Add(MapUserAuditRow(rd, includeActivityFields: true));
+            }
+
+            return new AuditoriaUsuarioResultDto
+            {
+                Items = items,
+                Stats = stats,
+                TotalRegistros = total,
+                Pagina = pagina,
+                TamanioPagina = tamanio,
+                DiasMinimosSinFacturaDefault = defaults.DiasMinimosSinFactura,
+                UmbralModificacionesDefault = defaults.UmbralModificaciones,
+                DiasToleranciaDuplicadosDefault = defaults.DiasToleranciaDuplicados,
+                SoloDiferenciasSucursalDefault = defaults.SoloDiferenciasSucursal
+            };
+        }, "No se pudo cargar la actividad de usuarios.", ct);
+    }
+
     private async Task<IReadOnlyList<string>> QueryDistinctAsync(string field, CancellationToken ct)
     {
         return await ExecuteLoggedAsync("Auditoria", $"GetDistinct{field}", async token =>
@@ -2142,12 +2791,16 @@ public sealed class AuditoriaService(
             "riesgo" => "RiesgoOrden",
             "usuario" => "Usuario",
             "pc" => "Pc",
+            "origen" => "Origen",
+            "tipomovimiento" => "TipoMovimiento",
             "tc" => "TipoComprobante",
             "comprobante" => "IdComprobante",
             "cliente" => "Cliente",
             "numero" => "NumeroNormalizado",
             "impactocontable" => "ImpactoContable",
             "estadofacturacion" => "EstadoFacturacion",
+            "asiento" => "TieneAsiento",
+            "stock" => "TieneStock",
             "importe" => "ISNULL(ImporteOriginal, 0)",
             "aplicado" => "ISNULL(ImporteAplicado, 0)",
             "diferencia" => "ISNULL(Diferencia, 0)",
@@ -2205,6 +2858,9 @@ public sealed class AuditoriaService(
     private static int ReadInt(SqlDataReader rd, int ordinal)
         => rd.IsDBNull(ordinal) ? 0 : Convert.ToInt32(rd.GetValue(ordinal));
 
+    private static bool ReadBool(SqlDataReader rd, int ordinal)
+        => !rd.IsDBNull(ordinal) && Convert.ToBoolean(rd.GetValue(ordinal));
+
     private static DateTime? ReadDateTime(SqlDataReader rd, int ordinal)
         => rd.IsDBNull(ordinal) ? null : Convert.ToDateTime(rd.GetValue(ordinal));
 
@@ -2240,6 +2896,86 @@ public sealed class AuditoriaService(
             Sql = rd.GetString(5),
             Pc = rd.GetString(6),
             Usuario = rd.GetString(7)
+        };
+    }
+
+    private static AuditoriaUsuarioRowDto MapUserAuditRow(SqlDataReader rd, bool includeActivityFields)
+    {
+        if (includeActivityFields)
+        {
+            return new AuditoriaUsuarioRowDto
+            {
+                TipoControl = ReadString(rd, 0),
+                TipoControlLabel = ReadString(rd, 1),
+                Riesgo = ReadString(rd, 2),
+                FechaHora = ReadDateTime(rd, 3) ?? DateTime.MinValue,
+                FechaHoraHasta = ReadDateTime(rd, 4),
+                Usuario = ReadString(rd, 5),
+                Pc = ReadString(rd, 6),
+                Origen = ReadString(rd, 7),
+                TipoMovimiento = ReadString(rd, 8),
+                TipoComprobante = ReadString(rd, 9),
+                IdComprobante = ReadString(rd, 10),
+                Cuenta = ReadString(rd, 11),
+                Cliente = ReadString(rd, 12),
+                Descripcion = ReadString(rd, 13),
+                ImporteOriginal = ReadDecimal(rd, 14),
+                ImporteAplicado = ReadDecimal(rd, 15),
+                Diferencia = ReadDecimal(rd, 16),
+                TieneAsiento = ReadBool(rd, 17),
+                TieneStock = ReadBool(rd, 18),
+                EsAlerta = ReadBool(rd, 19),
+                CantidadOcurrencias = ReadInt(rd, 20),
+                Proceso = ReadString(rd, 21),
+                Formulario = ReadString(rd, 22),
+                FacturaRelacionada = ReadString(rd, 23),
+                EstadoFacturacion = ReadString(rd, 24),
+                SystemUserDetalle = ReadString(rd, 25),
+                Motivo = ReadString(rd, 26),
+                Observaciones = ReadString(rd, 27),
+                DiasPendientes = ReadInt(rd, 28),
+                NumeroNormalizado = ReadString(rd, 29),
+                SucursalesDetectadas = ReadString(rd, 30),
+                UsuariosDetectados = ReadString(rd, 31),
+                ImpactoContable = ReadString(rd, 32),
+                ComprobantesInvolucrados = ReadInt(rd, 33),
+                ContablesDuplicados = ReadInt(rd, 34),
+                DetalleGrupo = ReadString(rd, 35)
+            };
+        }
+
+        return new AuditoriaUsuarioRowDto
+        {
+            TipoControl = ReadString(rd, 0),
+            TipoControlLabel = ReadString(rd, 1),
+            Riesgo = ReadString(rd, 2),
+            FechaHora = ReadDateTime(rd, 3) ?? DateTime.MinValue,
+            FechaHoraHasta = ReadDateTime(rd, 4),
+            Usuario = ReadString(rd, 5),
+            Pc = ReadString(rd, 6),
+            TipoComprobante = ReadString(rd, 7),
+            IdComprobante = ReadString(rd, 8),
+            Cuenta = ReadString(rd, 9),
+            Cliente = ReadString(rd, 10),
+            ImporteOriginal = ReadDecimal(rd, 11),
+            ImporteAplicado = ReadDecimal(rd, 12),
+            Diferencia = ReadDecimal(rd, 13),
+            CantidadOcurrencias = ReadInt(rd, 14),
+            Proceso = ReadString(rd, 15),
+            Formulario = ReadString(rd, 16),
+            FacturaRelacionada = ReadString(rd, 17),
+            EstadoFacturacion = ReadString(rd, 18),
+            SystemUserDetalle = ReadString(rd, 19),
+            Motivo = ReadString(rd, 20),
+            Observaciones = ReadString(rd, 21),
+            DiasPendientes = ReadInt(rd, 22),
+            NumeroNormalizado = ReadString(rd, 23),
+            SucursalesDetectadas = ReadString(rd, 24),
+            UsuariosDetectados = ReadString(rd, 25),
+            ImpactoContable = ReadString(rd, 26),
+            ComprobantesInvolucrados = ReadInt(rd, 27),
+            ContablesDuplicados = ReadInt(rd, 28),
+            DetalleGrupo = ReadString(rd, 29)
         };
     }
 

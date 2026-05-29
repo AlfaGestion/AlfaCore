@@ -54,6 +54,7 @@ public sealed class AuditoriaUsuarioFilterDto
     public string Texto { get; init; } = string.Empty;
     public string Usuario { get; init; } = string.Empty;
     public string Pc { get; init; } = string.Empty;
+    public string TipoMovimiento { get; init; } = string.Empty;
     public string TipoComprobante { get; init; } = string.Empty;
     public string Riesgo { get; init; } = string.Empty;
     public string TipoControl { get; init; } = string.Empty;
@@ -66,6 +67,7 @@ public sealed class AuditoriaUsuarioFilterDto
     public string OrdenDireccion { get; init; } = "desc";
     public int Pagina { get; init; } = 1;
     public int TamanioPagina { get; init; } = 50;
+    public bool SoloResumen { get; init; }
 }
 
 public sealed class AuditoriaUsuarioRowDto
@@ -77,13 +79,19 @@ public sealed class AuditoriaUsuarioRowDto
     public DateTime? FechaHoraHasta { get; init; }
     public string Usuario { get; init; } = string.Empty;
     public string Pc { get; init; } = string.Empty;
+    public string Origen { get; init; } = string.Empty;
+    public string TipoMovimiento { get; init; } = string.Empty;
     public string TipoComprobante { get; init; } = string.Empty;
     public string IdComprobante { get; init; } = string.Empty;
     public string Cuenta { get; init; } = string.Empty;
     public string Cliente { get; init; } = string.Empty;
+    public string Descripcion { get; init; } = string.Empty;
     public decimal? ImporteOriginal { get; init; }
     public decimal? ImporteAplicado { get; init; }
     public decimal? Diferencia { get; init; }
+    public bool TieneAsiento { get; init; }
+    public bool TieneStock { get; init; }
+    public bool EsAlerta { get; init; } = true;
     public int CantidadOcurrencias { get; init; }
     public string Proceso { get; init; } = string.Empty;
     public string Formulario { get; init; } = string.Empty;
@@ -114,6 +122,8 @@ public sealed class AuditoriaUsuarioStatsDto
     public decimal? PromedioMinutosCancelacion { get; init; }
     public int MaximoMinutosCancelacion { get; init; }
     public decimal? ImporteTotalCancelado { get; init; }
+    public int EquiposInvolucrados { get; init; }
+    public int DiasConActividad { get; init; }
 }
 
 public sealed class AuditoriaUsuarioResultDto
@@ -133,6 +143,7 @@ public sealed class AuditoriaUsuarioLookupsDto
 {
     public IReadOnlyList<string> Usuarios { get; init; } = [];
     public IReadOnlyList<string> Pcs { get; init; } = [];
+    public IReadOnlyList<string> TiposMovimiento { get; init; } = [];
     public IReadOnlyList<string> TiposComprobante { get; init; } = [];
     public IReadOnlyList<string> CuentasClientes { get; init; } = [];
     public IReadOnlyList<AuditoriaLookupItemDto> TiposControl { get; init; } = [];

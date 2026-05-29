@@ -68,6 +68,27 @@ public sealed class AuditoriaExcelExporter
 
     private static List<string> BuildColumnas(AuditoriaUsuarioFilterDto filter)
     {
+        if (string.Equals(filter.TipoControl, "ACTIVIDAD_USUARIO", StringComparison.OrdinalIgnoreCase))
+        {
+            return
+            [
+                "Fecha y hora",
+                "Usuario",
+                "PC",
+                "Origen",
+                "Tipo movimiento",
+                "TC",
+                "Comprobante",
+                "Cuenta / nombre",
+                "Descripción",
+                "Importe",
+                "Tiene asiento",
+                "Tiene stock",
+                "Motivo",
+                "Observaciones"
+            ];
+        }
+
         if (string.Equals(filter.TipoControl, "CPRA_DUPLICADO", StringComparison.OrdinalIgnoreCase))
         {
             return
@@ -129,6 +150,27 @@ public sealed class AuditoriaExcelExporter
 
     private static List<object?> BuildFila(AuditoriaUsuarioRowDto item, AuditoriaUsuarioFilterDto filter)
     {
+        if (string.Equals(filter.TipoControl, "ACTIVIDAD_USUARIO", StringComparison.OrdinalIgnoreCase))
+        {
+            return
+            [
+                item.FechaHora,
+                item.Usuario,
+                item.Pc,
+                item.Origen,
+                item.TipoMovimiento,
+                item.TipoComprobante,
+                item.IdComprobante,
+                FormatCliente(item),
+                item.Descripcion,
+                item.ImporteOriginal,
+                item.TieneAsiento ? "Sí" : "No",
+                item.TieneStock ? "Sí" : "No",
+                item.Motivo,
+                item.Observaciones
+            ];
+        }
+
         if (string.Equals(filter.TipoControl, "CPRA_DUPLICADO", StringComparison.OrdinalIgnoreCase))
         {
             return
@@ -224,6 +266,8 @@ public sealed class AuditoriaExcelExporter
             partes.Add($"Usuario: {filter.Usuario}");
         if (!string.IsNullOrWhiteSpace(filter.Pc))
             partes.Add($"PC: {filter.Pc}");
+        if (!string.IsNullOrWhiteSpace(filter.TipoMovimiento))
+            partes.Add($"Movimiento: {filter.TipoMovimiento}");
         if (!string.IsNullOrWhiteSpace(filter.TipoComprobante))
             partes.Add($"TC: {filter.TipoComprobante}");
         if (!string.IsNullOrWhiteSpace(filter.Riesgo))
