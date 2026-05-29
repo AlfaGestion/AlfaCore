@@ -1562,14 +1562,14 @@
         {
             <div class="conversations-error conversations-notice @GetConversationNoticeLeavingClass()">@_ticketError</div>
         }
-        @if (_checkingRelatedTickets)
+        @if (!_closeAndCreateTicketMode && _checkingRelatedTickets)
         {
             <div class="conversations-ticket-duplicates conversations-ticket-duplicates--loading">
                 <i class="bi bi-search"></i>
                 <span>Revisando tickets abiertos relacionados...</span>
             </div>
         }
-        else if (_relatedTicketMatches.Count > 0 && !_allowCreateDespiteRelated)
+        else if (!_closeAndCreateTicketMode && _relatedTicketMatches.Count > 0 && !_allowCreateDespiteRelated)
         {
             <div class="conversations-ticket-duplicates">
                 <div class="conversations-ticket-duplicates__head">
@@ -2683,7 +2683,16 @@
         if (string.IsNullOrWhiteSpace(_ticketTitle))
             _ticketTitle = BuildDefaultTicketTitle();
         _showTicketDialog = true;
-        await CheckRelatedTicketsForSelectionAsync();
+        if (_closeAndCreateTicketMode)
+        {
+            _checkingRelatedTickets = false;
+            _allowCreateDespiteRelated = true;
+            _relatedTicketMatches.Clear();
+        }
+        else
+        {
+            await CheckRelatedTicketsForSelectionAsync();
+        }
     }
 
     private async Task<bool> ShouldShowCloseTicketWarningAsync()
@@ -2774,7 +2783,7 @@
             return;
         }
 
-        if (_relatedTicketMatches.Count > 0 && !_allowCreateDespiteRelated)
+        if (!_closeAndCreateTicketMode && _relatedTicketMatches.Count > 0 && !_allowCreateDespiteRelated)
         {
             _ticketError = "Revisá los tickets relacionados o elegí Crear igual para continuar.";
             return;
