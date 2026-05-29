@@ -4470,16 +4470,13 @@ html[data-theme="light"] .menu__search-result:hover {
 }
 
 .conversations-page--odoo .conversation-date-divider {
-    position: sticky;
-    top: .55rem;
-    z-index: 4;
     display: flex;
     justify-content: center;
     width: 100%;
-    margin: .35rem 0 .72rem;
+    margin: .85rem 0 .9rem;
     pointer-events: none;
     opacity: 0;
-    transform: translateY(-7px) scale(.96);
+    transform: translateY(8px) scale(.97);
     transition: opacity .2s ease, transform .2s cubic-bezier(.2, .8, .2, 1);
 }
 
