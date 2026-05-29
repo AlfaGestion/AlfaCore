@@ -686,9 +686,13 @@
 
     <section class="tareas-side-panel__add">
         <i class="bi bi-check2-circle"></i>
-        <input value="@_tasksPanelQuickTitle"
-               @oninput="e => _tasksPanelQuickTitle = Convert.ToString(e.Value) ?? string.Empty"
+        <input @bind="_tasksPanelQuickTitle"
+               @bind:event="oninput"
                @onkeydown="HandleTasksPanelQuickKeyDown"
+               dir="ltr"
+               autocomplete="off"
+               spellcheck="true"
+               style="direction: ltr; unicode-bidi: plaintext; text-align: left;"
                placeholder="Añadir rápida" />
     </section>
 

@@ -108,9 +108,13 @@
         <main class="tareas-main">
             <section class="tareas-compose">
                 <i class="bi bi-check2-circle"></i>
-                <input value="@_quickTaskTitle"
-                       @oninput="e => _quickTaskTitle = Convert.ToString(e.Value) ?? string.Empty"
+                <input @bind="_quickTaskTitle"
+                       @bind:event="oninput"
                        @onkeydown="HandleQuickTaskKeyDown"
+                       dir="ltr"
+                       autocomplete="off"
+                       spellcheck="true"
+                       style="direction: ltr; unicode-bidi: plaintext; text-align: left;"
                        placeholder="Añadir una tarea..." />
                 <button type="button" class="btn btn--ghost btn--sm" @onclick="OpenNewTask">
                     Detalles
@@ -234,9 +238,13 @@
             </div>
 
             <input class="tareas-quick-input"
-                   value="@_quickNoteText"
-                   @oninput="e => _quickNoteText = Convert.ToString(e.Value) ?? string.Empty"
+                   @bind="_quickNoteText"
+                   @bind:event="oninput"
                    @onkeydown="HandleQuickNoteKeyDown"
+                   dir="ltr"
+                   autocomplete="off"
+                   spellcheck="true"
+                   style="direction: ltr; unicode-bidi: plaintext; text-align: left;"
                    placeholder="Escribí y Enter..." />
 
             <div class="tareas-notes">
