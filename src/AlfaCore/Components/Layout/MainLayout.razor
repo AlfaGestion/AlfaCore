@@ -2,6 +2,7 @@
 @inject IJSRuntime JS
 @using System.Globalization
 @using AlfaCore.Models
+@using Microsoft.AspNetCore.WebUtilities
 @inject NavigationManager Nav
 @inject AlfaCore.Services.ISessionService SessionSvc
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
@@ -24,12 +25,28 @@
 
     <aside class="shell__sidebar" aria-label="Menú principal">
         <div class="brand">
-            <a class="brand__logo-link" href="/" title="Volver al menú principal" aria-label="Volver al menú principal" @onclick="GoToLauncher">
-                <img class="brand__logo" src="logo.png" alt="Alfa Gestión" />
-            </a>
+            @if (CanShowLauncherAccess)
+            {
+                <a class="brand__logo-link" href="/" title="Volver al menú principal" aria-label="Volver al menú principal" @onclick="GoToLauncher">
+                    <img class="brand__logo" src="logo.png" alt="Alfa Gestión" />
+                </a>
+            }
+            else
+            {
+                <span class="brand__logo-link brand__logo-link--static" aria-hidden="true">
+                    <img class="brand__logo" src="logo.png" alt="Alfa Gestión" />
+                </span>
+            }
             <div class="brand__content">
                 <p class="brand__eyebrow">Business Intelligence</p>
-                <a class="brand__title" href="/" @onclick="GoToLauncher">Alfa Gestión</a>
+                @if (CanShowLauncherAccess)
+                {
+                    <a class="brand__title" href="/" @onclick="GoToLauncher">Alfa Gestión</a>
+                }
+                else
+                {
+                    <span class="brand__title">Alfa Gestión</span>
+                }
             </div>
             <button type="button"
                     class="sidebar-toggle"
@@ -49,11 +66,11 @@
                 </a>
                 <p class="menu__section">Consultas</p>
                 <nav class="menu__nav">
-                    <NavLink class="menu__link" href="/consultas" Match="NavLinkMatch.All">
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/consultas")" Match="NavLinkMatch.All">
                         <span class="menu__icon"><i class="bi bi-table"></i></span>
                         <span>Mis consultas</span>
                     </NavLink>
-                    <NavLink class="menu__link" href="/consultas/nueva" Match="NavLinkMatch.All">
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/consultas/nueva")" Match="NavLinkMatch.All">
                         <span class="menu__icon"><i class="bi bi-plus-circle"></i></span>
                         <span>Nueva consulta</span>
                     </NavLink>
@@ -67,19 +84,19 @@
                 </a>
                 <p class="menu__section">Actualización de Costos</p>
                 <nav class="menu__nav">
-                    <NavLink class="menu__link" href="/costos" Match="NavLinkMatch.All">
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/costos")" Match="NavLinkMatch.All">
                         <span class="menu__icon"><i class="bi bi-currency-dollar"></i></span>
                         <span>Inicio</span>
                     </NavLink>
-                    <NavLink class="menu__link" href="/costos/nueva" Match="NavLinkMatch.All">
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/costos/nueva")" Match="NavLinkMatch.All">
                         <span class="menu__icon"><i class="bi bi-upload"></i></span>
                         <span>Nueva importación</span>
                     </NavLink>
-                    <NavLink class="menu__link" href="/costos/perfiles">
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/costos/perfiles")">
                         <span class="menu__icon"><i class="bi bi-sliders"></i></span>
                         <span>Perfiles</span>
                     </NavLink>
-                    <NavLink class="menu__link" href="/costos/historial">
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/costos/historial")">
                         <span class="menu__icon"><i class="bi bi-clock-history"></i></span>
                         <span>Historial</span>
                     </NavLink>
@@ -93,15 +110,15 @@
                 </a>
                 <p class="menu__section">Auditoría</p>
                 <nav class="menu__nav">
-                    <NavLink class="menu__link" href="/auditoria" Match="NavLinkMatch.All">
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/auditoria")" Match="NavLinkMatch.All">
                         <span class="menu__icon"><i class="bi bi-shield-exclamation"></i></span>
                         <span>Resumen</span>
                     </NavLink>
-                    <NavLink class="menu__link" href="/auditoria/errores" Match="NavLinkMatch.Prefix">
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/auditoria/errores")" Match="NavLinkMatch.Prefix">
                         <span class="menu__icon"><i class="bi bi-bug"></i></span>
                         <span>Auditoría de errores</span>
                     </NavLink>
-                    <NavLink class="menu__link" href="/auditoria/usuarios" Match="NavLinkMatch.Prefix">
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/auditoria/usuarios")" Match="NavLinkMatch.Prefix">
                         <span class="menu__icon"><i class="bi bi-person-check"></i></span>
                         <span>Auditoría de usuarios</span>
                     </NavLink>
@@ -115,19 +132,19 @@
                 </a>
                 <p class="menu__section">Conversaciones</p>
                 <nav class="menu__nav">
-                    <NavLink class="menu__link" href="/conversaciones" Match="NavLinkMatch.All">
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/conversaciones")" Match="NavLinkMatch.All">
                         <span class="menu__icon"><i class="bi bi-chat-dots-fill"></i></span>
                         <span>Inbox</span>
                     </NavLink>
-                    <NavLink class="menu__link" href="/conversaciones/plantillas" Match="NavLinkMatch.All">
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/conversaciones/plantillas")" Match="NavLinkMatch.All">
                         <span class="menu__icon"><i class="bi bi-chat-square-text-fill"></i></span>
                         <span>Plantillas</span>
                     </NavLink>
-                    <NavLink class="menu__link" href="/conversaciones/configuracion" Match="NavLinkMatch.All">
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/conversaciones/configuracion")" Match="NavLinkMatch.All">
                         <span class="menu__icon"><i class="bi bi-sliders"></i></span>
                         <span>Configuración</span>
                     </NavLink>
-                    <NavLink class="menu__link" href="/conversaciones/estadisticas" Match="NavLinkMatch.All">
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/conversaciones/estadisticas")" Match="NavLinkMatch.All">
                         <span class="menu__icon"><i class="bi bi-bar-chart-line-fill"></i></span>
                         <span>Estadisticas</span>
                     </NavLink>
@@ -141,7 +158,7 @@
                 </a>
                 <p class="menu__section">Tickets de asistencia</p>
                 <nav class="menu__nav">
-                    <NavLink class="menu__link" href="/tickets" Match="NavLinkMatch.All">
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/tickets")" Match="NavLinkMatch.All">
                         <span class="menu__icon"><i class="bi bi-life-preserver"></i></span>
                         <span>Mesa de ayuda</span>
                     </NavLink>
@@ -155,7 +172,7 @@
                 </a>
                 <p class="menu__section">Calendario</p>
                 <nav class="menu__nav">
-                    <NavLink class="menu__link" href="/calendario" Match="NavLinkMatch.All">
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/calendario")" Match="NavLinkMatch.All">
                         <span class="menu__icon"><i class="bi bi-calendar3"></i></span>
                         <span>Guardias</span>
                     </NavLink>
@@ -169,11 +186,11 @@
                 </a>
                 <p class="menu__section">Interfaces</p>
                 <nav class="menu__nav">
-                    <NavLink class="menu__link" href="/interfaces" Match="NavLinkMatch.All">
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/interfaces")" Match="NavLinkMatch.All">
                         <span class="menu__icon"><i class="bi bi-folder2-open"></i></span>
                         <span>Recepción documental</span>
                     </NavLink>
-                    <NavLink class="menu__link" href="/interfaces/configuracion" Match="NavLinkMatch.All">
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/interfaces/configuracion")" Match="NavLinkMatch.All">
                         <span class="menu__icon"><i class="bi bi-sliders"></i></span>
                         <span>Configuración</span>
                     </NavLink>
@@ -187,7 +204,7 @@
                 </a>
                 <p class="menu__section">Actualizaciones</p>
                 <nav class="menu__nav">
-                    <NavLink class="menu__link" href="/actualizaciones" Match="NavLinkMatch.All">
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/actualizaciones")" Match="NavLinkMatch.All">
                         <span class="menu__icon"><i class="bi bi-cloud-arrow-up"></i></span>
                         <span>Base de datos</span>
                     </NavLink>
@@ -201,7 +218,7 @@
                 </a>
                 <p class="menu__section">Usuarios</p>
                 <nav class="menu__nav">
-                    <NavLink class="menu__link" href="/usuarios" Match="NavLinkMatch.All">
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/usuarios")" Match="NavLinkMatch.All">
                         <span class="menu__icon"><i class="bi bi-people-fill"></i></span>
                         <span>Gestión de usuarios</span>
                     </NavLink>
@@ -215,15 +232,15 @@
                 </a>
                 <p class="menu__section">Seguridad</p>
                 <nav class="menu__nav">
-                    <NavLink class="menu__link" href="/usuarios">
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/usuarios")">
                         <span class="menu__icon"><i class="bi bi-people-fill"></i></span>
                         <span>Usuarios</span>
                     </NavLink>
-                    <NavLink class="menu__link" href="/seguridad/autorizacion-tareas" Match="NavLinkMatch.All">
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/seguridad/autorizacion-tareas")" Match="NavLinkMatch.All">
                         <span class="menu__icon"><i class="bi bi-shield-lock-fill"></i></span>
                         <span>Autorización de tareas</span>
                     </NavLink>
-                    <NavLink class="menu__link" href="/auditoria">
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/auditoria")">
                         <span class="menu__icon"><i class="bi bi-clipboard2-check"></i></span>
                         <span>Reporte de auditoría</span>
                     </NavLink>
@@ -237,7 +254,7 @@
                 </a>
                 <p class="menu__section">Contactos</p>
                 <nav class="menu__nav">
-                    <NavLink class="menu__link" href="/contactos" Match="NavLinkMatch.All">
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/contactos")" Match="NavLinkMatch.All">
                         <span class="menu__icon"><i class="bi bi-person-lines-fill"></i></span>
                         <span>Agenda de contactos</span>
                     </NavLink>
@@ -251,7 +268,7 @@
                 </a>
                 <p class="menu__section">Clientes</p>
                 <nav class="menu__nav">
-                    <NavLink class="menu__link" href="/clientes" Match="NavLinkMatch.All">
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/clientes")" Match="NavLinkMatch.All">
                         <span class="menu__icon"><i class="bi bi-people-fill"></i></span>
                         <span>Maestro de clientes</span>
                     </NavLink>
@@ -265,7 +282,7 @@
                 </a>
                 <p class="menu__section">Técnicos</p>
                 <nav class="menu__nav">
-                    <NavLink class="menu__link" href="/tecnicos" Match="NavLinkMatch.All">
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/tecnicos")" Match="NavLinkMatch.All">
                         <span class="menu__icon"><i class="bi bi-tools"></i></span>
                         <span>Técnicos</span>
                     </NavLink>
@@ -279,31 +296,31 @@
                 </a>
                 <p class="menu__section">Ventas</p>
                 <nav class="menu__nav">
-                    <NavLink class="menu__link" href="/ventas" Match="NavLinkMatch.All">
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/ventas")" Match="NavLinkMatch.All">
                         <span class="menu__icon"><i class="bi bi-graph-up-arrow"></i></span>
                         <span>Inicio</span>
                     </NavLink>
-                    <NavLink class="menu__link" href="/ventas/clientes">
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/ventas/clientes")">
                         <span class="menu__icon"><i class="bi bi-people-fill"></i></span>
                         <span>Clientes</span>
                     </NavLink>
-                    <NavLink class="menu__link" href="/ventas/rubros">
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/ventas/rubros")">
                         <span class="menu__icon"><i class="bi bi-tag-fill"></i></span>
                         <span>Rubros</span>
                     </NavLink>
-                    <NavLink class="menu__link" href="/ventas/familias">
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/ventas/familias")">
                         <span class="menu__icon"><i class="bi bi-collection-fill"></i></span>
                         <span>Familias</span>
                     </NavLink>
-                    <NavLink class="menu__link" href="/ventas/articulos">
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/ventas/articulos")">
                         <span class="menu__icon"><i class="bi bi-box-fill"></i></span>
                         <span>Artículos</span>
                     </NavLink>
-                    <NavLink class="menu__link" href="/ventas/comprobantes">
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/ventas/comprobantes")">
                         <span class="menu__icon"><i class="bi bi-receipt"></i></span>
                         <span>Comprobantes</span>
                     </NavLink>
-                    <NavLink class="menu__link" href="/ventas/comparativo">
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/ventas/comparativo")">
                         <span class="menu__icon"><i class="bi bi-bar-chart-line-fill"></i></span>
                         <span>Comparativo</span>
                     </NavLink>
@@ -317,7 +334,7 @@
                 </a>
                 <p class="menu__section">Stock</p>
                 <nav class="menu__nav">
-                    <NavLink class="menu__link" href="/stock" Match="NavLinkMatch.All">
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/stock")" Match="NavLinkMatch.All">
                         <span class="menu__icon"><i class="bi bi-box-seam"></i></span>
                         <span>Resumen</span>
                     </NavLink>
@@ -331,7 +348,7 @@
                 </a>
                 <p class="menu__section">Caja y Bancos</p>
                 <nav class="menu__nav">
-                    <NavLink class="menu__link" href="/caja-bancos" Match="NavLinkMatch.All">
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/caja-bancos")" Match="NavLinkMatch.All">
                         <span class="menu__icon"><i class="bi bi-bank"></i></span>
                         <span>Resumen</span>
                     </NavLink>
@@ -345,11 +362,11 @@
                 </a>
                 <p class="menu__section">Contabilidad</p>
                 <nav class="menu__nav">
-                    <NavLink class="menu__link" href="/contabilidad" Match="NavLinkMatch.All">
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/contabilidad")" Match="NavLinkMatch.All">
                         <span class="menu__icon"><i class="bi bi-journal-bookmark-fill"></i></span>
                         <span>Resumen</span>
                     </NavLink>
-                    <NavLink class="menu__link" href="/contabilidad/posicion-iva" Match="NavLinkMatch.All">
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/contabilidad/posicion-iva")" Match="NavLinkMatch.All">
                         <span class="menu__icon"><i class="bi bi-receipt"></i></span>
                         <span>Posición de IVA</span>
                     </NavLink>
@@ -363,7 +380,7 @@
                 </a>
                 <p class="menu__section">Proveedores</p>
                 <nav class="menu__nav">
-                    <NavLink class="menu__link" href="/proveedores" Match="NavLinkMatch.All">
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/proveedores")" Match="NavLinkMatch.All">
                         <span class="menu__icon"><i class="bi bi-people-fill"></i></span>
                         <span>Maestro de proveedores</span>
                     </NavLink>
@@ -377,41 +394,41 @@
                 </a>
                 <p class="menu__section">Compras</p>
                 <nav class="menu__nav">
-                    <NavLink class="menu__link" href="/compras" Match="NavLinkMatch.All">
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/compras")" Match="NavLinkMatch.All">
                         <span class="menu__icon"><i class="bi bi-house-fill"></i></span>
                         <span>Inicio</span>
                     </NavLink>
-                    <NavLink class="menu__link" href="/compras/proveedores">
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/compras/proveedores")">
                         <span class="menu__icon"><i class="bi bi-people-fill"></i></span>
                         <span>Proveedores</span>
                     </NavLink>
-                    <NavLink class="menu__link" href="/compras/comprobantes">
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/compras/comprobantes")">
                         <span class="menu__icon"><i class="bi bi-receipt"></i></span>
                         <span>Comprobantes</span>
                     </NavLink>
-                    <NavLink class="menu__link" href="/compras/rubros">
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/compras/rubros")">
                         <span class="menu__icon"><i class="bi bi-tag-fill"></i></span>
                         <span>Rubros</span>
                     </NavLink>
-                    <NavLink class="menu__link" href="/compras/familias">
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/compras/familias")">
                         <span class="menu__icon"><i class="bi bi-collection-fill"></i></span>
                         <span>Familias</span>
                     </NavLink>
-                    <NavLink class="menu__link" href="/compras/articulos">
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/compras/articulos")">
                         <span class="menu__icon"><i class="bi bi-box-fill"></i></span>
                         <span>Artículos</span>
                     </NavLink>
-                    <NavLink class="menu__link" href="/compras/actividad">
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/compras/actividad")">
                         <span class="menu__icon"><i class="bi bi-bar-chart-steps"></i></span>
                         <span>Actividad</span>
                     </NavLink>
-                    <NavLink class="menu__link" href="/compras/informesia">
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/compras/informesia")">
                         <span class="menu__icon"><i class="bi bi-stars"></i></span>
                         <span>InformesIA</span>
                     </NavLink>
                 </nav>
             }
-            else
+            else if (!IsDirectMode)
             {
                 <p class="menu__section">Aplicaciones</p>
                 <nav class="menu__nav">
@@ -562,7 +579,7 @@
                 <p class="shell__eyebrow">Alfa Gestión</p>
                 <p class="shell__module">@GetModuleTitle()</p>
             </div>
-            @if (ShowShellContext)
+            @if (ShowLauncherContext)
             {
                 <div class="shell__actions">
                     <button type="button" class="btn btn--ghost no-print" @onclick="ToggleThemeAsync" title="@(_isDark ? "Cambiar a modo claro" : "Cambiar a modo oscuro")">
@@ -944,9 +961,12 @@
     private List<NotificacionesPushEndpointResultDto> _pushLastTestResults = [];
     private string CurrentPageTitle => GetCurrentPageTitle();
     private string ShellClass
-        => $"shell {(_sidebarCollapsed ? "shell--collapsed" : string.Empty)} {(_mobileSidebarOpen ? "shell--mobile-open" : string.Empty)}";
+        => $"shell {(_sidebarCollapsed ? "shell--collapsed" : string.Empty)} {(_mobileSidebarOpen ? "shell--mobile-open" : string.Empty)} {(IsDirectMode ? "shell--direct" : string.Empty)}";
     private bool ShowShellContext => string.IsNullOrWhiteSpace(_currentModule);
+    private bool ShowLauncherContext => ShowShellContext && !IsDirectMode;
+    private bool CanShowLauncherAccess => !IsDirectMode;
     private bool IsLauncherRoute => string.IsNullOrWhiteSpace(Nav.ToBaseRelativePath(Nav.Uri).Split('?')[0].Split('#')[0].Trim('/'));
+    private bool IsDirectMode => !string.IsNullOrWhiteSpace(_directModuleKey);
     private bool ShouldShowConversationMobilePwaActions
         => string.Equals(_currentModule, "conversaciones", StringComparison.OrdinalIgnoreCase);
     private bool CanEnablePush
@@ -973,6 +993,7 @@
 
     private string _currentModule = string.Empty;
     private string _activeShellModuleKey = string.Empty;
+    private string _directModuleKey = string.Empty;
     private List<ShellModuleDto> _mainMenuModules = [];
     private List<ShellMenuSearchItemDto> _menuSearchCatalog = [];
     private string _menuSearchText = string.Empty;
@@ -1056,6 +1077,8 @@
     {
         _mobileSidebarOpen = false;
         UpdateCurrentModule();
+        if (EnforceDirectMode())
+            return;
         if (ShowShellContext)
             _ = InvokeAsync(EnsureMenuSearchCatalogAsync);
         if (string.Equals(_currentModule, "conversaciones", StringComparison.OrdinalIgnoreCase))
@@ -1067,6 +1090,7 @@
     protected override void OnParametersSet()
     {
         UpdateCurrentModule();
+        EnforceDirectMode();
     }
 
     private void GoToLauncher()
@@ -1155,12 +1179,15 @@
 
     private void UpdateCurrentModule()
     {
-        var path = Nav.ToBaseRelativePath(Nav.Uri).Split('?')[0].Split('#')[0].Trim('/');
+        var relativePath = Nav.ToBaseRelativePath(Nav.Uri);
+        var path = relativePath.Split('?')[0].Split('#')[0].Trim('/');
+        var query = QueryHelpers.ParseQuery(Nav.ToAbsoluteUri(Nav.Uri).Query);
         var normalized = path.ToLowerInvariant();
         if (normalized.StartsWith("shell/", StringComparison.OrdinalIgnoreCase))
         {
             _activeShellModuleKey = path.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Skip(1).FirstOrDefault() ?? string.Empty;
             _currentModule = string.Empty;
+            _directModuleKey = string.Empty;
             return;
         }
 
@@ -1172,6 +1199,66 @@
             "proveedores" => "proveedores",
             _ => path.Split('/').FirstOrDefault()?.ToLowerInvariant() ?? string.Empty
         };
+
+        if (query.TryGetValue("directo", out var directo)
+            && string.Equals(directo.ToString(), "1", StringComparison.OrdinalIgnoreCase)
+            && !string.IsNullOrWhiteSpace(_currentModule))
+        {
+            _directModuleKey = _currentModule;
+        }
+        else if (string.IsNullOrWhiteSpace(path) || string.IsNullOrWhiteSpace(_currentModule))
+        {
+            _directModuleKey = string.Empty;
+        }
+    }
+
+    private bool EnforceDirectMode()
+    {
+        if (!IsDirectMode)
+            return false;
+
+        var normalizedPath = Nav.ToBaseRelativePath(Nav.Uri).Split('?')[0].Split('#')[0].Trim('/').ToLowerInvariant();
+        var isAllowedModuleRoute = normalizedPath == _directModuleKey
+            || normalizedPath.StartsWith($"{_directModuleKey}/", StringComparison.OrdinalIgnoreCase);
+
+        if (isAllowedModuleRoute)
+            return false;
+
+        var target = $"/{_directModuleKey}?directo=1";
+        Nav.NavigateTo(target);
+        return true;
+    }
+
+    private string BuildModuleUrl(string route)
+    {
+        if (string.IsNullOrWhiteSpace(route))
+            return route;
+
+        if (!IsDirectMode)
+            return route;
+
+        var normalizedRoute = route.Trim();
+        if (!normalizedRoute.StartsWith('/'))
+            normalizedRoute = "/" + normalizedRoute;
+
+        var normalizedModule = "/" + _directModuleKey;
+        var belongsToDirectModule = string.Equals(normalizedRoute, normalizedModule, StringComparison.OrdinalIgnoreCase)
+            || normalizedRoute.StartsWith(normalizedModule + "/", StringComparison.OrdinalIgnoreCase);
+
+        return belongsToDirectModule ? AppendDirectFlag(normalizedRoute) : normalizedRoute;
+    }
+
+    private static string AppendDirectFlag(string route)
+    {
+        if (string.IsNullOrWhiteSpace(route))
+            return route;
+
+        if (route.Contains("directo=1", StringComparison.OrdinalIgnoreCase))
+            return route;
+
+        return route.Contains('?', StringComparison.Ordinal)
+            ? route + "&directo=1"
+            : route + "?directo=1";
     }
 
     private void ResetMenuSearchCatalog()
@@ -1289,7 +1376,7 @@
         {
         }
 
-        Nav.NavigateTo(item.RutaWeb);
+        Nav.NavigateTo(BuildModuleUrl(item.RutaWeb));
     }
 
     private void NavigateToModule(string? route)
@@ -1298,7 +1385,7 @@
             return;
 
         _mobileSidebarOpen = false;
-        Nav.NavigateTo(route);
+        Nav.NavigateTo(BuildModuleUrl(route));
     }
 
     private void StartGlobalConversationPolling()

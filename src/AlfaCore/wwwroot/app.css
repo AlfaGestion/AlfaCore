@@ -2557,6 +2557,10 @@ html[data-theme="light"] .costos-lote__table th {
     cursor: pointer;
 }
 
+.brand__logo-link--static {
+    cursor: default;
+}
+
 .brand__logo-link:focus-visible {
     outline: 2px solid rgba(34, 211, 238, .65);
     outline-offset: 3px;
@@ -3290,6 +3294,10 @@ html[data-theme="light"] .chart-type-switch__btn--active {
 }
 
 .shell--collapsed .menu__back span {
+    display: none;
+}
+
+.shell--direct .menu__back {
     display: none;
 }
 
