@@ -904,10 +904,19 @@
                                                 else if (IsVideoAttachment(adj))
                                                 {
                                                     <div class="message-attachment message-attachment--video">
-                                                        <video controls preload="metadata">
-                                                            <source src="@GetAttachmentUrl(adj)" type="@GetAttachmentMime(adj)" />
-                                                            Tu navegador no puede reproducir este video.
-                                                        </video>
+                                                        <div class="message-video-preview">
+                                                            <video controls preload="metadata">
+                                                                <source src="@GetAttachmentUrl(adj)" type="@GetAttachmentMime(adj)" />
+                                                                Tu navegador no puede reproducir este video.
+                                                            </video>
+                                                            <button type="button"
+                                                                    class="message-video-preview__open"
+                                                                    title="Ver video en grande"
+                                                                    aria-label="Ver video en grande"
+                                                                    @onclick="() => OpenAttachmentPreview(adj)">
+                                                                <i class="bi bi-arrows-fullscreen"></i>
+                                                            </button>
+                                                        </div>
                                                         <div class="attachment-video-meta">
                                                             <span>@adj.NombreArchivo</span>
                                                             @if (adj.TamanoBytes > 0)

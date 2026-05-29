@@ -12407,13 +12407,49 @@ html[data-theme="light"] .balance-row--detalle td {
     max-width: min(340px, 100%);
 }
 
+.message-video-preview {
+    position: relative;
+    width: min(320px, 100%);
+    max-width: 100%;
+}
+
 .message-attachment--video video {
     display: block;
-    width: min(320px, 100%);
+    width: 100%;
     max-height: 220px;
     border: 1px solid rgba(148, 163, 184, 0.18);
     border-radius: var(--radius-md);
     background: rgba(2, 6, 23, 0.62);
+}
+
+.message-video-preview__open {
+    position: absolute;
+    inset: 0 0 42px 0;
+    display: grid;
+    place-items: start end;
+    border: 0;
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
+    padding: .45rem;
+    background: linear-gradient(135deg, rgba(2, 6, 23, .08), rgba(2, 6, 23, .34));
+    color: #e2e8f0;
+    cursor: zoom-in;
+    opacity: 0;
+    transition: opacity .16s ease, background-color .16s ease;
+}
+
+.message-video-preview__open i {
+    display: inline-grid;
+    place-items: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    border-radius: 999px;
+    background: rgba(2, 6, 23, .68);
+    box-shadow: 0 8px 18px rgba(2, 6, 23, .22);
+}
+
+.message-video-preview:hover .message-video-preview__open,
+.message-video-preview__open:focus-visible {
+    opacity: 1;
 }
 
 .attachment-video-meta {
