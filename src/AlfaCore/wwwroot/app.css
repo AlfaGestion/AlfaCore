@@ -10034,6 +10034,16 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
     box-shadow: var(--shadow-soft);
 }
 
+.tareas-row .tareas-menu[open] {
+    z-index: 35;
+}
+
+.tareas-row .tareas-menu > div {
+    top: auto;
+    bottom: 38px;
+    z-index: 40;
+}
+
 .tareas-menu button {
     width: 100%;
     min-height: 32px;
