@@ -52,35 +52,78 @@
 }
 
 .conversations-close-ticket-warning {
-    max-width: 560px;
-    border-color: rgba(245, 158, 11, .55);
+    max-width: 620px;
+    padding: 1.35rem;
+    border-color: rgba(245, 158, 11, .42);
+    border-radius: 20px;
     background:
-        linear-gradient(135deg, rgba(245, 158, 11, .16), transparent 42%),
+        radial-gradient(circle at 12% 0%, rgba(245, 158, 11, .18), transparent 32%),
+        linear-gradient(135deg, rgba(14, 165, 233, .08), transparent 42%),
         var(--color-panel-strong);
     box-shadow: 0 24px 70px rgba(2, 6, 23, .5), 0 0 0 1px rgba(245, 158, 11, .18);
 }
 
 .conversations-close-ticket-warning__head {
     display: grid;
-    grid-template-columns: 2.65rem minmax(0, 1fr);
-    gap: .85rem;
-    align-items: start;
-    margin-bottom: .9rem;
+    grid-template-columns: 3.15rem minmax(0, 1fr);
+    gap: 1rem;
+    align-items: center;
+    margin-bottom: 1rem;
 }
 
-.conversations-close-ticket-warning__head > i {
+.conversations-close-ticket-warning__icon {
     display: grid;
     place-items: center;
-    width: 2.65rem;
-    height: 2.65rem;
-    border-radius: 999px;
-    background: rgba(245, 158, 11, .18);
+    width: 3.15rem;
+    height: 3.15rem;
+    border: 1px solid rgba(245, 158, 11, .28);
+    border-radius: 16px;
+    background: linear-gradient(135deg, rgba(245, 158, 11, .22), rgba(245, 158, 11, .08));
     color: #fbbf24;
-    font-size: 1.35rem;
+    font-size: 1.45rem;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12);
 }
 
-.conversations-close-ticket-warning p {
-    margin: 0 0 .75rem;
+.conversations-close-ticket-warning .panel-card__title {
+    font-size: 1.05rem;
+    margin-bottom: .18rem;
+}
+
+.conversations-close-ticket-warning .panel-card__subtitle {
+    color: #f8d68a;
+}
+
+.conversations-close-ticket-warning__summary {
+    display: grid;
+    grid-template-columns: 1.65rem minmax(0, 1fr);
+    gap: .65rem;
+    align-items: start;
+    margin-top: .65rem;
+    padding: .75rem .85rem;
+    border: 1px solid rgba(148, 163, 184, .14);
+    border-radius: 14px;
+    background: rgba(15, 23, 42, .38);
+    color: var(--color-text);
+}
+
+.conversations-close-ticket-warning__summary i {
+    color: #67e8f9;
+    font-size: 1rem;
+    line-height: 1.35;
+}
+
+.conversations-close-ticket-warning__summary span {
+    line-height: 1.38;
+}
+
+.conversations-close-ticket-warning__note {
+    margin: .9rem 0 0;
+    padding-left: .9rem;
+    border-left: 3px solid rgba(245, 158, 11, .72);
     color: var(--color-muted);
     line-height: 1.45;
+}
+
+.conversations-close-ticket-warning__actions {
+    margin-top: 1.15rem;
 }

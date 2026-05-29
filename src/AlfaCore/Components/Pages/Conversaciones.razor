@@ -1655,7 +1655,9 @@
     <div class="conversations-modal-backdrop" @onclick="CloseCloseTicketWarning"></div>
     <section class="panel-card conversations-modal conversations-close-ticket-warning">
         <div class="conversations-close-ticket-warning__head">
-            <i class="bi bi-exclamation-triangle-fill"></i>
+            <div class="conversations-close-ticket-warning__icon">
+                <i class="bi bi-exclamation-triangle-fill"></i>
+            </div>
             <div>
                 <h3 class="panel-card__title">@(_closeTicketWarningUnderstood ? "¿Seguro que querés continuar?" : "Antes de cerrar y crear el ticket")</h3>
                 <p class="panel-card__subtitle">@(_closeTicketWarningUnderstood ? "Última confirmación antes de preparar el ticket." : "Esta acción cierra la conversación automáticamente.")</p>
@@ -1663,20 +1665,30 @@
         </div>
         @if (_closeTicketWarningUnderstood)
         {
-            <p>
-                Si continuás, se abrirá el formulario para crear el ticket cerrado con los últimos 20 mensajes y la conversación quedará lista para cerrarse al guardar.
-            </p>
+            <div class="conversations-close-ticket-warning__summary">
+                <i class="bi bi-check2-circle"></i>
+                <span>Se abrirá el formulario para crear el ticket cerrado con los últimos 20 mensajes.</span>
+            </div>
+            <div class="conversations-close-ticket-warning__summary">
+                <i class="bi bi-lock-fill"></i>
+                <span>La conversación quedará lista para cerrarse automáticamente al guardar.</span>
+            </div>
         }
         else
         {
-            <p>
-                Se creará un ticket cerrado con los últimos 20 mensajes de esta conversación. Es útil para casos repetitivos o consultas que solo necesitan quedar registradas.
-            </p>
-            <p>
+            <div class="conversations-close-ticket-warning__summary">
+                <i class="bi bi-chat-left-text"></i>
+                <span>Se creará un ticket cerrado con los últimos 20 mensajes de esta conversación.</span>
+            </div>
+            <div class="conversations-close-ticket-warning__summary">
+                <i class="bi bi-repeat"></i>
+                <span>Sirve para casos repetitivos o consultas que solo necesitan quedar registradas.</span>
+            </div>
+            <p class="conversations-close-ticket-warning__note">
                 Usalo únicamente cuando el caso ya esté resuelto y el cliente haya confirmado que quedó todo correcto.
             </p>
         }
-        <div class="actions usuarios-editor__actions">
+        <div class="actions usuarios-editor__actions conversations-close-ticket-warning__actions">
             @if (_closeTicketWarningUnderstood)
             {
                 <button type="button" class="btn btn--primary" @onclick="ContinueCloseTicketWarningOnceAsync">
