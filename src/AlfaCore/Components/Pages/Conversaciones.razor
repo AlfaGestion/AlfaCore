@@ -1501,13 +1501,14 @@
                 <div class="attachment-preview-canvas" @ref="_previewCanvas" @onwheel="HandlePreviewWheel" @onwheel:preventDefault>
                     @if (IsVideoAttachment(_previewAttachment))
                     {
-                        <video controls autoplay src="@GetAttachmentUrl(_previewAttachment)" style="@PreviewVideoStyle">
+                        <video @key="_previewAttachment.IdAdjunto" controls autoplay src="@GetAttachmentUrl(_previewAttachment)" style="@PreviewVideoStyle">
                             Tu navegador no puede reproducir este video.
                         </video>
                     }
                     else
                     {
-                        <img src="@GetAttachmentUrl(_previewAttachment)"
+                        <img @key="_previewAttachment.IdAdjunto"
+                             src="@GetAttachmentUrl(_previewAttachment)"
                              alt="@GetAttachmentLabel(_previewAttachment)"
                              draggable="false"
                              style="@PreviewImageStyle" />
@@ -5596,8 +5597,10 @@
 
     private IReadOnlyList<ConversacionAdjuntoDto> PreviewGallery
         => _messages
+            .OrderBy(message => message.FechaHora)
+            .ThenBy(message => message.IdMensaje)
             .SelectMany(message => _adjuntosPorMensaje.TryGetValue(message.IdMensaje, out var adjuntos)
-                ? adjuntos
+                ? adjuntos.OrderBy(adjunto => adjunto.IdAdjunto)
                 : Enumerable.Empty<ConversacionAdjuntoDto>())
             .Where(IsPreviewableAttachment)
             .ToList();
@@ -5718,7 +5721,7 @@
     }
 
     private string PreviewImageStyle
-        => $"width: {Math.Round(_previewZoom * 100, 0).ToString(System.Globalization.CultureInfo.InvariantCulture)}%; transform: rotate({_previewRotationDegrees.ToString(System.Globalization.CultureInfo.InvariantCulture)}deg);";
+        => $"--preview-zoom: {_previewZoom.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)}; --preview-rotation: {_previewRotationDegrees.ToString(System.Globalization.CultureInfo.InvariantCulture)}deg;";
 
     private string PreviewVideoStyle
         => "width: min(100%, 960px); max-height: 100%;";
