@@ -722,7 +722,9 @@
                                     continue;
                                 }
 
-                                <div id="@GetMessageDomId(message.IdMensaje)" class="message-row @(IsOutgoingMessage(message) ? "message-row--outgoing" : "message-row--incoming")">
+                                <div id="@GetMessageDomId(message.IdMensaje)"
+                                     class="message-row @(IsOutgoingMessage(message) ? "message-row--outgoing" : "message-row--incoming") @(IsQuotedSource(message) ? "message-row--quoted-source" : string.Empty)"
+                                     @ondblclick="() => QuoteMessageAsync(message)">
                                     @if (_ticketSelectionMode)
                                     {
                                         <label class="message-ticket-selector" title="Incluir mensaje en el ticket">
@@ -978,7 +980,7 @@
                                                 <button type="button"
                                                         class="btn btn--ghost btn--sm message-action-button"
                                                         title="Responder citando"
-                                                        @onclick="() => QuoteMessage(message)">
+                                                        @onclick="() => QuoteMessageAsync(message)">
                                                     <i class="bi bi-reply-fill"></i>
                                                 </button>
                                             }
@@ -3510,11 +3512,19 @@
            && !string.IsNullOrWhiteSpace(message.WhatsAppMessageId)
            && !IsReactionMessage(message);
 
-    private void QuoteMessage(ConversacionMensajeDto message)
+    private bool IsQuotedSource(ConversacionMensajeDto message)
+        => _quotedMessage?.IdMensaje == message.IdMensaje;
+
+    private async Task QuoteMessageAsync(ConversacionMensajeDto message)
     {
+        if (_ticketSelectionMode || !CanQuoteMessage(message))
+            return;
+
         _quotedMessage = message;
         _openReactionMessageId = null;
         _showComposerTools = false;
+        _focusReplyAfterRender = true;
+        await FocusReplyAsync();
     }
 
     private void ClearQuotedMessage()
