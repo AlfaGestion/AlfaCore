@@ -130,6 +130,7 @@ window.conversacionesUi = {
     _threadWatchers: new WeakMap(),
     _fileDropWatchers: new WeakMap(),
     _previewPanWatchers: new WeakMap(),
+    _previewKeyboardWatcher: null,
     _dateDividerWatchers: new WeakMap(),
     _notificationBaseTitle: 'AlfaCore - Alfa Gestión',
     _audioPlayersInitialized: false,
@@ -696,6 +697,32 @@ window.conversacionesUi = {
         events.forEach(item => element.addEventListener(item.name, item.handler));
         this._previewPanWatchers.set(element, { events: events });
         return true;
+    },
+
+    bindAttachmentPreviewKeyboard: function (dotNetRef) {
+        if (!dotNetRef) return false;
+
+        this.unbindAttachmentPreviewKeyboard();
+
+        const keydown = event => {
+            if (event.key !== 'Escape') return;
+            const overlay = document.querySelector('.attachment-preview-overlay');
+            if (!overlay) return;
+
+            event.preventDefault();
+            dotNetRef.invokeMethodAsync('CloseAttachmentPreviewFromKeyboard').catch(() => {});
+        };
+
+        document.addEventListener('keydown', keydown);
+        this._previewKeyboardWatcher = keydown;
+        return true;
+    },
+
+    unbindAttachmentPreviewKeyboard: function () {
+        if (!this._previewKeyboardWatcher) return;
+
+        document.removeEventListener('keydown', this._previewKeyboardWatcher);
+        this._previewKeyboardWatcher = null;
     },
 
     autoResizeTextarea: function (element, minHeight, maxHeight) {

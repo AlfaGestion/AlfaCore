@@ -2,10 +2,22 @@
     border-radius: 18px;
     background: rgba(9, 24, 43, .96);
     box-shadow: 0 28px 80px rgba(0, 0, 0, .42), 0 0 0 1px rgba(56, 189, 248, .14);
+    overflow: hidden;
 }
 
 .attachment-preview-header {
-    padding-inline: .15rem;
+    position: relative;
+    z-index: 2;
+    min-height: 2.7rem;
+    padding: .15rem .2rem .45rem;
+}
+
+.attachment-preview-header > span {
+    min-width: 0;
+    max-width: min(52vw, 620px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .attachment-preview-actions {
@@ -46,6 +58,7 @@
 .attachment-preview-body {
     grid-template-columns: 2.55rem minmax(0, 1fr) 2.55rem;
     align-items: center;
+    min-height: 0;
 }
 
 .attachment-preview-nav {
@@ -69,13 +82,16 @@
 
 .attachment-preview-canvas {
     place-items: center;
-    min-height: min(64vh, 620px);
+    min-height: 0;
+    height: min(64vh, calc(92vh - 13rem));
+    max-height: calc(92vh - 13rem);
     background: rgba(2, 6, 23, .12);
+    overflow: auto;
 }
 
 .attachment-preview-canvas img {
     max-width: 100%;
-    max-height: calc(92vh - 10rem);
+    max-height: 100%;
     width: auto;
     height: auto;
     object-fit: contain;
@@ -86,11 +102,18 @@
 }
 
 .attachment-preview-canvas video {
+    display: block;
+    width: 100%;
+    max-width: min(100%, 960px);
+    height: 100%;
+    max-height: 100%;
+    object-fit: contain;
     animation: attachment-preview-media-enter .18s ease both;
 }
 
 .attachment-preview-strip {
     align-items: center;
+    flex: 0 0 auto;
     padding: .75rem .2rem .35rem;
 }
 

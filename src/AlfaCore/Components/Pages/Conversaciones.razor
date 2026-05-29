@@ -1916,6 +1916,7 @@
     private ConversacionAdjuntoDto? _previewAttachment;
     private ElementReference _previewCanvas;
     private bool _bindPreviewPanAfterRender;
+    private bool _bindPreviewKeyboardAfterRender;
     private bool _scrollPreviewThumbAfterRender;
     private int _previewRotationDegrees;
     private SoundDiagnosticsVm _soundDiagnostics = new();
@@ -2243,6 +2244,19 @@
             try
             {
                 await JS.InvokeVoidAsync("conversacionesUi.bindAttachmentPreviewPan", _previewCanvas);
+            }
+            catch
+            {
+            }
+        }
+
+        if (_bindPreviewKeyboardAfterRender && _previewAttachment is not null)
+        {
+            _bindPreviewKeyboardAfterRender = false;
+            _dotNetRef ??= DotNetObjectReference.Create(this);
+            try
+            {
+                await JS.InvokeVoidAsync("conversacionesUi.bindAttachmentPreviewKeyboard", _dotNetRef);
             }
             catch
             {
@@ -5708,6 +5722,7 @@
         _openAttachmentMenuId = null;
         _previewAttachment = adjunto;
         _bindPreviewPanAfterRender = true;
+        _bindPreviewKeyboardAfterRender = true;
         _scrollPreviewThumbAfterRender = true;
         ResetPreviewView();
     }
@@ -5834,15 +5849,26 @@
     {
         _previewAttachment = null;
         _bindPreviewPanAfterRender = false;
+        _bindPreviewKeyboardAfterRender = false;
         _scrollPreviewThumbAfterRender = false;
         ResetPreviewView();
+    }
+
+    [JSInvokable]
+    public Task CloseAttachmentPreviewFromKeyboard()
+    {
+        if (_previewAttachment is null)
+            return Task.CompletedTask;
+
+        CloseAttachmentPreview();
+        return InvokeAsync(StateHasChanged);
     }
 
     private string PreviewImageStyle
         => $"--preview-zoom: {_previewZoom.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)}; --preview-rotation: {_previewRotationDegrees.ToString(System.Globalization.CultureInfo.InvariantCulture)}deg;";
 
     private string PreviewVideoStyle
-        => "width: min(100%, 960px); max-height: 100%;";
+        => "width: 100%; max-width: min(100%, 960px); height: 100%; max-height: 100%; object-fit: contain;";
 
     private string PreviewZoomPercent
         => $"{Math.Round(_previewZoom * 100, 0).ToString(System.Globalization.CultureInfo.InvariantCulture)}%";
@@ -6143,6 +6169,14 @@
         try
         {
             await JS.InvokeVoidAsync("conversacionesUi.unbindFileDrop", _composerDropZone);
+        }
+        catch
+        {
+        }
+
+        try
+        {
+            await JS.InvokeVoidAsync("conversacionesUi.unbindAttachmentPreviewKeyboard");
         }
         catch
         {
