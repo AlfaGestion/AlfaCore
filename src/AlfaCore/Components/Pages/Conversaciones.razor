@@ -1057,15 +1057,21 @@
                                     }
                                     @foreach (var pending in _pendingAttachments)
                                     {
-                                        <div class="conversations-pending-attachment @(pending.HasError ? "has-error" : string.Empty)">
+                                        <div class="conversations-pending-attachment @(pending.IsUploading ? "is-loading" : pending.HasError ? "has-error" : string.Empty)">
                                             <i class="bi @GetPendingAttachmentIcon(pending.TipoArchivo)"></i>
                                             <span title="@pending.NombreArchivo">@pending.NombreArchivo</span>
+                                            @if (pending.IsUploading)
+                                            {
+                                                <span class="conversations-pending-attachment__loading" aria-label="Enviando adjunto">
+                                                    <i></i><i></i><i></i>
+                                                </span>
+                                            }
                                             @if (pending.HasError)
                                             {
                                                 <i class="bi bi-exclamation-circle-fill" title="@pending.Error"></i>
                                                 <span class="conversations-pending-attachment__error">@pending.Error</span>
                                             }
-                                            <button type="button" class="btn btn--ghost btn--sm" @onclick="() => RemovePendingAttachment(pending.Id)" title="Quitar adjunto">
+                                            <button type="button" class="btn btn--ghost btn--sm" @onclick="() => RemovePendingAttachment(pending.Id)" title="Quitar adjunto" disabled="@pending.IsUploading">
                                                 <i class="bi bi-x-lg"></i>
                                             </button>
                                         </div>
@@ -1388,14 +1394,20 @@
                             }
                             @foreach (var pending in _templatePendingAttachments)
                             {
-                                <div class="conversations-pending-attachment @(pending.HasError ? "has-error" : string.Empty)">
+                                <div class="conversations-pending-attachment @(pending.IsUploading ? "is-loading" : pending.HasError ? "has-error" : string.Empty)">
                                     <i class="bi @GetPendingAttachmentIcon(pending.TipoArchivo)"></i>
                                     <span title="@pending.NombreArchivo">@pending.NombreArchivo</span>
+                                    @if (pending.IsUploading)
+                                    {
+                                        <span class="conversations-pending-attachment__loading" aria-label="Enviando adjunto">
+                                            <i></i><i></i><i></i>
+                                        </span>
+                                    }
                                     @if (pending.HasError)
                                     {
                                         <i class="bi bi-exclamation-circle-fill" title="@pending.Error"></i>
                                     }
-                                    <button type="button" class="btn btn--ghost btn--sm" @onclick="() => RemoveTemplatePendingAttachment(pending.Id)" title="Quitar adjunto">
+                                    <button type="button" class="btn btn--ghost btn--sm" @onclick="() => RemoveTemplatePendingAttachment(pending.Id)" title="Quitar adjunto" disabled="@pending.IsUploading">
                                         <i class="bi bi-x-lg"></i>
                                     </button>
                                 </div>
@@ -4683,7 +4695,10 @@
             : message;
 
         foreach (var pending in _pendingAttachments)
+        {
+            pending.IsUploading = false;
             pending.Error = error;
+        }
     }
 
     private void RemoveTemplatePendingAttachment(Guid id)
@@ -4838,22 +4853,35 @@
         foreach (var attachmentToSend in attachmentsToSend)
         {
             attachmentToSend.Error = null;
-            await using var stream = new MemoryStream(attachmentToSend.Contenido);
-            await ConversacionesSvc.UploadAttachmentAsync(new ConversacionUploadAdjuntoRequest
-            {
-                IdConversacion = _selectedConversation.IdConversacion,
-                NombreArchivo = attachmentToSend.NombreArchivo,
-                MimeType = attachmentToSend.MimeType,
-                TipoArchivo = attachmentToSend.TipoArchivo,
-                Contenido = stream,
-                TamanoBytes = attachmentToSend.TamanoBytes,
-                IdTecnicoAutor = string.IsNullOrWhiteSpace(CurrentMessageTechnicianId) ? null : CurrentMessageTechnicianId,
-                UsuarioAccion = CurrentUserNameForAudit,
-                SistemaAccion = CurrentUserSystemForAudit,
-                PermitirEnvioConVentanaVencida = allowExpiredWhatsAppWindow
-            });
+            attachmentToSend.IsUploading = true;
+            await InvokeAsync(StateHasChanged);
 
-            removeAttachment(attachmentToSend.Id);
+            try
+            {
+                await using var stream = new MemoryStream(attachmentToSend.Contenido);
+                await ConversacionesSvc.UploadAttachmentAsync(new ConversacionUploadAdjuntoRequest
+                {
+                    IdConversacion = _selectedConversation.IdConversacion,
+                    NombreArchivo = attachmentToSend.NombreArchivo,
+                    MimeType = attachmentToSend.MimeType,
+                    TipoArchivo = attachmentToSend.TipoArchivo,
+                    Contenido = stream,
+                    TamanoBytes = attachmentToSend.TamanoBytes,
+                    IdTecnicoAutor = string.IsNullOrWhiteSpace(CurrentMessageTechnicianId) ? null : CurrentMessageTechnicianId,
+                    UsuarioAccion = CurrentUserNameForAudit,
+                    SistemaAccion = CurrentUserSystemForAudit,
+                    PermitirEnvioConVentanaVencida = allowExpiredWhatsAppWindow
+                });
+
+                removeAttachment(attachmentToSend.Id);
+                await InvokeAsync(StateHasChanged);
+            }
+            catch
+            {
+                attachmentToSend.IsUploading = false;
+                await InvokeAsync(StateHasChanged);
+                throw;
+            }
         }
     }
 
@@ -6129,6 +6157,7 @@
         public byte[] Contenido { get; init; } = [];
         public long TamanoBytes { get; init; }
         public string? Error { get; set; }
+        public bool IsUploading { get; set; }
         public bool HasError => !string.IsNullOrWhiteSpace(Error);
         public string TipoArchivoLabel => TipoArchivo switch
         {
