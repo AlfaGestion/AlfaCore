@@ -9686,11 +9686,9 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
 }
 
 .tareas-list-button .bi-share {
-    margin-left: .25rem;
     color: #67e8f9;
-    font-size: .72rem;
-    opacity: .82;
-    vertical-align: .05em;
+    font-size: .95rem;
+    opacity: 1;
 }
 
 .tareas-list-button:hover,
@@ -18055,8 +18053,8 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
 }
 
 .shell__content .tareas-list-button .bi-share {
-    font-size: 0.68rem;
-    opacity: 0.75;
+    font-size: 0.95rem;
+    opacity: 1;
 }
 
 .shell__content .tareas-share-modal input[type="checkbox"],

@@ -83,11 +83,7 @@
                         {
                             <button type="button" class="@GetListButtonClass(lista.IdLista)" @onclick="() => SelectList(lista.IdLista)">
                                 <span>
-                                    <i class="bi @(lista.EsDefault ? "bi-inbox" : "bi-list-ul")"></i> @lista.Nombre
-                                    @if (lista.CompartidaConTodos || lista.UsuariosCompartidos.Count > 0)
-                                    {
-                                        <i class="bi bi-share" title="@GetSharingSummary(lista.CompartidaConTodos, lista.UsuariosCompartidos)"></i>
-                                    }
+                                    <i class="bi @GetListIcon(lista)" title="@GetListIconTitle(lista)"></i> @lista.Nombre
                                 </span>
                                 <strong>@lista.Pendientes</strong>
                             </button>
@@ -624,6 +620,17 @@
 
     private string GetListButtonClass(int? idLista)
         => _selectedListId == idLista ? "tareas-list-button is-active" : "tareas-list-button";
+
+    private static bool IsSharedList(TareaListaDto lista)
+        => lista.CompartidaConTodos || lista.UsuariosCompartidos.Count > 0;
+
+    private static string GetListIcon(TareaListaDto lista)
+        => IsSharedList(lista) ? "bi-share" : lista.EsDefault ? "bi-inbox" : "bi-list-ul";
+
+    private static string GetListIconTitle(TareaListaDto lista)
+        => IsSharedList(lista)
+            ? GetSharingSummary(lista.CompartidaConTodos, lista.UsuariosCompartidos)
+            : lista.EsDefault ? "Lista personal" : "Lista";
 
     private void StartCreateList()
     {
