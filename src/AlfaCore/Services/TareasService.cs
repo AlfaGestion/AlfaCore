@@ -459,6 +459,34 @@ public sealed class TareasService(
             return newId;
         }, "No se pudo guardar la tarea.", ct);
 
+    public Task MoveTaskToListAsync(long idTarea, int idLista, string usuarioAccion, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "MoveTaskToList", async token =>
+        {
+            if (idTarea <= 0 || idLista <= 0)
+                throw new InvalidOperationException("La tarea o la lista destino no son válidas.");
+
+            var user = NormalizeUser(usuarioAccion);
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            if (!await CanAccessTaskAsync(cn, idTarea, user, token))
+                throw new InvalidOperationException("No tenés acceso a la tarea seleccionada.");
+
+            if (!await CanAccessListAsync(cn, idLista, user, token))
+                throw new InvalidOperationException("No tenés acceso a la lista destino.");
+
+            await cn.ExecuteAsync(new CommandDefinition(
+                """
+                UPDATE dbo.ALFACORE_TAREAS
+                SET IdLista = @IdLista,
+                    FechaHoraModificacion = GETDATE()
+                WHERE IdTarea = @IdTarea
+                  AND ISNULL(Activa, 1) = 1;
+                """,
+                new { IdTarea = idTarea, IdLista = idLista },
+                cancellationToken: token));
+        }, "No se pudo mover la tarea.", ct);
+
     public Task<IReadOnlyList<TareaAdjuntoDto>> GetTaskAttachmentsAsync(long idTarea, string usuarioAccion, CancellationToken ct = default)
         => ExecuteLoggedAsync<IReadOnlyList<TareaAdjuntoDto>>(ModuleName, "GetTaskAttachments", async token =>
         {

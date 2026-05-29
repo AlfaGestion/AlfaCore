@@ -82,7 +82,13 @@
                         }
                         else
                         {
-                            <button type="button" class="@GetListButtonClass(lista.IdLista)" @onclick="() => SelectList(lista.IdLista)">
+                            <button type="button"
+                                    class="@GetListButtonClass(lista.IdLista)"
+                                    @onclick="() => SelectList(lista.IdLista)"
+                                    @ondragenter="() => SetListDropTarget(lista.IdLista)"
+                                    @ondragleave="() => ClearListDropTarget(lista.IdLista)"
+                                    @ondragover:preventDefault
+                                    @ondrop="() => MoveDraggedTaskToListAsync(lista)">
                                 <span>
                                     <i class="bi @GetListIcon(lista)" title="@GetListIconTitle(lista)"></i> @lista.Nombre
                                 </span>
@@ -151,7 +157,10 @@
                 {
                     @foreach (var tarea in FilteredTasks)
                     {
-                        <article class="tareas-row">
+                        <article class="@GetTaskRowClass(tarea)"
+                                 draggable="true"
+                                 @ondragstart="() => StartTaskDrag(tarea)"
+                                 @ondragend="ClearTaskDrag">
                             <button type="button" class="tareas-check" title="Completar" @onclick="() => ChangeStateAsync(tarea, TareaEstadoKeys.Completada)">
                                 <i class="bi bi-circle"></i>
                             </button>
@@ -538,6 +547,8 @@
     private string _shareTitle = string.Empty;
     private bool _shareAll;
     private List<string> _shareUsers = [];
+    private long? _draggingTaskId;
+    private int? _dragOverListId;
     private const long MaxAttachmentBytes = 50L * 1024L * 1024L;
     private const string AssignedByMeFilter = "__assigned_by_me";
 
@@ -620,7 +631,15 @@
         => _selectedListId = idLista;
 
     private string GetListButtonClass(int? idLista)
-        => _selectedListId == idLista ? "tareas-list-button is-active" : "tareas-list-button";
+    {
+        var classes = _selectedListId == idLista ? "tareas-list-button is-active" : "tareas-list-button";
+        if (_draggingTaskId is not null && _dragOverListId == idLista)
+            classes += " is-drop-target";
+        return classes;
+    }
+
+    private string GetTaskRowClass(TareaItemDto tarea)
+        => _draggingTaskId == tarea.IdTarea ? "tareas-row is-dragging" : "tareas-row";
 
     private static bool IsSharedList(TareaListaDto lista)
         => lista.CompartidaConTodos || lista.UsuariosCompartidos.Count > 0;
@@ -632,6 +651,54 @@
         => IsSharedList(lista)
             ? GetSharingSummary(lista.CompartidaConTodos, lista.UsuariosCompartidos)
             : lista.EsDefault ? "Lista personal" : "Lista";
+
+    private void StartTaskDrag(TareaItemDto tarea)
+    {
+        _draggingTaskId = tarea.IdTarea;
+        _dragOverListId = null;
+    }
+
+    private void SetListDropTarget(int idLista)
+    {
+        if (_draggingTaskId is not null)
+            _dragOverListId = idLista;
+    }
+
+    private void ClearListDropTarget(int idLista)
+    {
+        if (_dragOverListId == idLista)
+            _dragOverListId = null;
+    }
+
+    private void ClearTaskDrag()
+    {
+        _draggingTaskId = null;
+        _dragOverListId = null;
+    }
+
+    private async Task MoveDraggedTaskToListAsync(TareaListaDto lista)
+    {
+        if (_draggingTaskId is not long idTarea)
+            return;
+
+        var tarea = _page.Tareas.Concat(_page.Completadas).FirstOrDefault(x => x.IdTarea == idTarea);
+        if (tarea is null || tarea.IdLista == lista.IdLista)
+        {
+            ClearTaskDrag();
+            return;
+        }
+
+        var result = await UiOps.RunAsync(async () =>
+        {
+            await TareasSvc.MoveTaskToListAsync(idTarea, lista.IdLista, CurrentUser);
+            return true;
+        }, "No se pudo mover la tarea.");
+
+        _feedback = result.Feedback;
+        ClearTaskDrag();
+        if (result.Success)
+            await LoadAsync();
+    }
 
     private void StartCreateList()
     {
