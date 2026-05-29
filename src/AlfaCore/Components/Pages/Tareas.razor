@@ -523,6 +523,7 @@
     private List<PendingTaskAttachment> _pendingTaskAttachments = [];
     private IJSObjectReference? _attachmentsModule;
     private IJSObjectReference? _attachmentsBinding;
+    private IJSObjectReference? _menusBinding;
     private int? _editingListId;
     private string _listDraft = string.Empty;
     private bool _showShareModal;
@@ -577,6 +578,9 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (firstRender)
+            await BindTaskMenusAsync();
+
         if (_showTaskModal && !_attachmentsPasteBound)
             await BindTaskAttachmentPasteAsync();
     }
@@ -900,6 +904,15 @@
         _attachmentsPasteBound = true;
     }
 
+    private async Task BindTaskMenusAsync()
+    {
+        _attachmentsModule ??= await Js.InvokeAsync<IJSObjectReference>("import", "./js/tareas-attachments.js");
+        if (_menusBinding is not null)
+            await _menusBinding.InvokeVoidAsync("dispose");
+
+        _menusBinding = await _attachmentsModule.InvokeAsync<IJSObjectReference>("bindTareasMenus");
+    }
+
     private async Task DisposeTaskAttachmentBindingAsync()
     {
         if (_attachmentsBinding is not null)
@@ -1152,6 +1165,8 @@
     public async ValueTask DisposeAsync()
     {
         await DisposeTaskAttachmentBindingAsync();
+        if (_menusBinding is not null)
+            await _menusBinding.InvokeVoidAsync("dispose");
         if (_attachmentsModule is not null)
             await _attachmentsModule.DisposeAsync();
     }
