@@ -1456,24 +1456,32 @@
             <header class="attachment-preview-header">
                 <span>@GetAttachmentLabel(_previewAttachment)</span>
                 <div class="attachment-preview-actions">
-                    <a class="btn btn--ghost btn--sm"
+                    <a class="attachment-preview-action"
                        href="@GetAttachmentDownloadUrl(_previewAttachment)"
-                       download="@GetAttachmentDownloadName(_previewAttachment)">
-                        <i class="bi bi-download"></i> Descargar
+                       download="@GetAttachmentDownloadName(_previewAttachment)"
+                       title="Descargar"
+                       aria-label="Descargar">
+                        <i class="bi bi-download"></i>
                     </a>
                     @if (IsImageAttachment(_previewAttachment))
                     {
-                        <button type="button" class="btn btn--ghost btn--sm attachment-preview-zoom-button" @onclick="ZoomPreviewOut" title="Alejar">
+                        <button type="button" class="attachment-preview-action" @onclick="ZoomPreviewOut" title="Alejar" aria-label="Alejar">
                             <i class="bi bi-zoom-out"></i>
                         </button>
-                        <button type="button" class="btn btn--ghost btn--sm attachment-preview-zoom-button" @onclick="ResetPreviewZoom" title="Restablecer zoom">
+                        <button type="button" class="attachment-preview-action attachment-preview-zoom-button" @onclick="ResetPreviewView" title="Restablecer vista" aria-label="Restablecer vista">
                             @PreviewZoomPercent
                         </button>
-                        <button type="button" class="btn btn--ghost btn--sm attachment-preview-zoom-button" @onclick="ZoomPreviewIn" title="Acercar">
+                        <button type="button" class="attachment-preview-action" @onclick="ZoomPreviewIn" title="Acercar" aria-label="Acercar">
                             <i class="bi bi-zoom-in"></i>
                         </button>
+                        <button type="button" class="attachment-preview-action" @onclick="RotatePreviewLeft" title="Rotar a la izquierda" aria-label="Rotar a la izquierda">
+                            <i class="bi bi-arrow-counterclockwise"></i>
+                        </button>
+                        <button type="button" class="attachment-preview-action" @onclick="RotatePreviewRight" title="Rotar a la derecha" aria-label="Rotar a la derecha">
+                            <i class="bi bi-arrow-clockwise"></i>
+                        </button>
                     }
-                    <button type="button" class="btn btn--ghost btn--sm" @onclick="CloseAttachmentPreview">
+                    <button type="button" class="attachment-preview-action" @onclick="CloseAttachmentPreview" title="Cerrar" aria-label="Cerrar">
                         <i class="bi bi-x-lg"></i>
                     </button>
                 </div>
@@ -1797,6 +1805,7 @@
     private ConversacionAdjuntoDto? _previewAttachment;
     private ElementReference _previewCanvas;
     private bool _bindPreviewPanAfterRender;
+    private int _previewRotationDegrees;
     private SoundDiagnosticsVm _soundDiagnostics = new();
     private ElementReference _replyTextArea;
     private ElementReference _internalNoteMobileTextArea;
@@ -5420,7 +5429,7 @@
         _openAttachmentMenuId = null;
         _previewAttachment = adjunto;
         _bindPreviewPanAfterRender = true;
-        ResetPreviewZoom();
+        ResetPreviewView();
     }
 
     private IReadOnlyList<ConversacionAdjuntoDto> PreviewGallery
@@ -5543,10 +5552,11 @@
     {
         _previewAttachment = null;
         _bindPreviewPanAfterRender = false;
+        ResetPreviewView();
     }
 
     private string PreviewImageStyle
-        => $"width: {Math.Round(_previewZoom * 100, 0).ToString(System.Globalization.CultureInfo.InvariantCulture)}%;";
+        => $"width: {Math.Round(_previewZoom * 100, 0).ToString(System.Globalization.CultureInfo.InvariantCulture)}%; transform: rotate({_previewRotationDegrees.ToString(System.Globalization.CultureInfo.InvariantCulture)}deg);";
 
     private string PreviewVideoStyle
         => "width: min(100%, 960px); max-height: 100%;";
@@ -5562,6 +5572,21 @@
 
     private void ResetPreviewZoom()
         => SetPreviewZoom(1d);
+
+    private void ResetPreviewView()
+    {
+        ResetPreviewZoom();
+        _previewRotationDegrees = 0;
+    }
+
+    private void RotatePreviewLeft()
+        => SetPreviewRotation(_previewRotationDegrees - 90);
+
+    private void RotatePreviewRight()
+        => SetPreviewRotation(_previewRotationDegrees + 90);
+
+    private void SetPreviewRotation(int value)
+        => _previewRotationDegrees = ((value % 360) + 360) % 360;
 
     private void HandlePreviewWheel(WheelEventArgs args)
     {

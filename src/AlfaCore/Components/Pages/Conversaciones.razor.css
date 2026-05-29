@@ -1,0 +1,52 @@
+.attachment-preview-actions {
+    gap: .35rem;
+}
+
+.attachment-preview-action {
+    width: 2.25rem;
+    height: 2.25rem;
+    display: inline-grid;
+    place-items: center;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: color-mix(in srgb, var(--color-text) 88%, white 12%);
+    text-decoration: none;
+    font-size: 1.05rem;
+    line-height: 1;
+}
+
+.attachment-preview-action:hover,
+.attachment-preview-action:focus-visible {
+    background: rgba(255, 255, 255, .1);
+    color: #fff;
+    outline: none;
+}
+
+.attachment-preview-zoom-button {
+    width: auto;
+    min-width: 3rem;
+    padding-inline: .65rem;
+    font-size: .9rem;
+    font-weight: 800;
+}
+
+.attachment-preview-nav {
+    align-self: center;
+    justify-self: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    min-width: 2.75rem;
+    border: 0;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, .28);
+}
+
+.attachment-preview-nav:not(:disabled):hover {
+    background: rgba(255, 255, 255, .12);
+    color: #fff;
+}
+
+.attachment-preview-canvas img {
+    transform-origin: center center;
+}
