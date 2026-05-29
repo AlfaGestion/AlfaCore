@@ -1871,6 +1871,8 @@
     private long? _openAttachmentMenuId;
     private long? _openReactionMessageId;
     private ConversacionMensajeDto? _quotedMessage;
+    private long? _quotedHighlightMessageId;
+    private int _quotedHighlightVersion;
     private long _nextOptimisticMessageId = -1;
     private ConversacionAdjuntoDto? _previewAttachment;
     private ElementReference _previewCanvas;
@@ -3514,7 +3516,7 @@
            && !IsReactionMessage(message);
 
     private bool IsQuotedSource(ConversacionMensajeDto message)
-        => _quotedMessage?.IdMensaje == message.IdMensaje;
+        => _quotedHighlightMessageId == message.IdMensaje;
 
     private async Task QuoteMessageAsync(ConversacionMensajeDto message)
     {
@@ -3522,10 +3524,32 @@
             return;
 
         _quotedMessage = message;
+        _quotedHighlightMessageId = message.IdMensaje;
+        var highlightVersion = ++_quotedHighlightVersion;
         _openReactionMessageId = null;
         _showComposerTools = false;
         _focusReplyAfterRender = true;
+        _ = ClearQuotedHighlightAsync(message.IdMensaje, highlightVersion);
         await FocusReplyAsync();
+    }
+
+    private async Task ClearQuotedHighlightAsync(long idMensaje, int highlightVersion)
+    {
+        try
+        {
+            await Task.Delay(1800);
+            await InvokeAsync(() =>
+            {
+                if (_quotedHighlightVersion == highlightVersion && _quotedHighlightMessageId == idMensaje)
+                {
+                    _quotedHighlightMessageId = null;
+                    StateHasChanged();
+                }
+            });
+        }
+        catch
+        {
+        }
     }
 
     private void ClearQuotedMessage()

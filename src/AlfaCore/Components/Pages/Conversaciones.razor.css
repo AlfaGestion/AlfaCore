@@ -137,7 +137,7 @@
     box-shadow: inset 3px 0 0 rgba(37, 211, 102, .86);
     pointer-events: none;
     z-index: 0;
-    animation: quoted-source-enter .18s ease both;
+    animation: quoted-source-pulse 1.8s ease both;
 }
 
 .message-row--quoted-source .message-bubble-shell,
@@ -147,15 +147,21 @@
     z-index: 1;
 }
 
-@keyframes quoted-source-enter {
-    from {
+@keyframes quoted-source-pulse {
+    0% {
         opacity: 0;
         transform: translateY(-50%) scaleY(.72);
     }
 
-    to {
+    16%,
+    76% {
         opacity: 1;
         transform: translateY(-50%) scaleY(1);
+    }
+
+    100% {
+        opacity: 0;
+        transform: translateY(-50%) scaleY(.86);
     }
 }
 
