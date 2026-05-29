@@ -94,9 +94,9 @@
                             <details class="tareas-menu">
                                 <summary title="Opciones"><i class="bi bi-three-dots-vertical"></i></summary>
                                 <div>
-                                    <button type="button" disabled="@(!lista.EsPropia)" @onclick="() => StartRenameList(lista)">Renombrar</button>
-                                    <button type="button" disabled="@(!lista.EsPropia)" @onclick="() => OpenShareList(lista)">Compartir</button>
-                                    <button type="button" disabled="@(lista.EsDefault || !lista.EsPropia)" @onclick="() => DeleteListAsync(lista.IdLista)">Eliminar</button>
+                                    <button type="button" @onclick="() => StartRenameList(lista)">Renombrar</button>
+                                    <button type="button" @onclick="() => OpenShareList(lista)">Compartir</button>
+                                    <button type="button" @onclick="() => DeleteListAsync(lista)">Eliminar</button>
                                 </div>
                             </details>
                         }
@@ -625,7 +625,18 @@
 
     private void StartRenameList(TareaListaDto lista)
     {
-        if (lista.EsDefault) return;
+        if (!lista.EsPropia)
+        {
+            _feedback = BuildWarning("No se puede renombrar", "No sos dueño de esta lista. Solo el propietario puede renombrarla.");
+            return;
+        }
+
+        if (lista.EsDefault)
+        {
+            _feedback = BuildWarning("No se puede renombrar", "La lista Mis tareas no se puede renombrar.");
+            return;
+        }
+
         _editingListId = lista.IdLista;
         _listDraft = lista.Nombre;
     }
@@ -638,7 +649,12 @@
 
     private void OpenShareList(TareaListaDto lista)
     {
-        if (!lista.EsPropia) return;
+        if (!lista.EsPropia)
+        {
+            _feedback = BuildWarning("No se puede compartir", "No sos dueño de esta lista. Solo el propietario puede compartirla.");
+            return;
+        }
+
         _shareType = TareaObjetoCompartidoTipo.Lista;
         _shareObjectId = lista.IdLista;
         _shareTitle = lista.Nombre;
@@ -728,17 +744,29 @@
         }
     }
 
-    private async Task DeleteListAsync(int idLista)
+    private async Task DeleteListAsync(TareaListaDto lista)
     {
+        if (!lista.EsPropia)
+        {
+            _feedback = BuildWarning("No se puede eliminar", "No sos dueño de esta lista. Solo el propietario puede eliminarla.");
+            return;
+        }
+
+        if (lista.EsDefault)
+        {
+            _feedback = BuildWarning("No se puede eliminar", "La lista Mis tareas no se puede eliminar.");
+            return;
+        }
+
         var result = await UiOps.RunAsync(async () =>
         {
-            await TareasSvc.DeleteListAsync(idLista, CurrentUser);
+            await TareasSvc.DeleteListAsync(lista.IdLista, CurrentUser);
             return true;
         }, "No se pudo eliminar la lista.");
         _feedback = result.Feedback;
         if (result.Success)
         {
-            if (_selectedListId == idLista) _selectedListId = null;
+            if (_selectedListId == lista.IdLista) _selectedListId = null;
             await LoadAsync();
         }
     }
