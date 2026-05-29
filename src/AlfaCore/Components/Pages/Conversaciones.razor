@@ -1045,9 +1045,19 @@
                                           @onfocusin="OnReplyFocusAsync"
                                           @oninput="HandleReplyInputAsync"></textarea>
                             </div>
-                            @if (_pendingAttachments.Count > 0)
+                            @if (_preparingAttachments.Count > 0 || _pendingAttachments.Count > 0)
                             {
                                 <div class="conversations-pending-list conversations-pending-list--reply">
+                                    @foreach (var preparing in _preparingAttachments)
+                                    {
+                                        <div class="conversations-pending-attachment is-loading">
+                                            <i class="bi @GetPendingAttachmentIcon(preparing.TipoArchivo)"></i>
+                                            <span title="@preparing.NombreArchivo">@preparing.NombreArchivo</span>
+                                            <span class="conversations-pending-attachment__loading" aria-label="Preparando adjunto">
+                                                <i></i><i></i><i></i>
+                                            </span>
+                                        </div>
+                                    }
                                     @foreach (var pending in _pendingAttachments)
                                     {
                                         <div class="conversations-pending-attachment @(pending.HasError ? "has-error" : string.Empty)">
@@ -1366,9 +1376,19 @@
                         </label>
                     </div>
 
-                    @if (_templatePendingAttachments.Count > 0)
+                    @if (_templatePreparingAttachments.Count > 0 || _templatePendingAttachments.Count > 0)
                     {
                         <div class="conversations-pending-list">
+                            @foreach (var preparing in _templatePreparingAttachments)
+                            {
+                                <div class="conversations-pending-attachment is-loading">
+                                    <i class="bi @GetPendingAttachmentIcon(preparing.TipoArchivo)"></i>
+                                    <span title="@preparing.NombreArchivo">@preparing.NombreArchivo</span>
+                                    <span class="conversations-pending-attachment__loading" aria-label="Preparando adjunto">
+                                        <i></i><i></i><i></i>
+                                    </span>
+                                </div>
+                            }
                             @foreach (var pending in _templatePendingAttachments)
                             {
                                 <div class="conversations-pending-attachment @(pending.HasError ? "has-error" : string.Empty)">
@@ -1892,6 +1912,8 @@
     private double _previewZoom = 1d;
     private List<PendingAttachment> _pendingAttachments = [];
     private List<PendingAttachment> _templatePendingAttachments = [];
+    private List<PreparingAttachment> _preparingAttachments = [];
+    private List<PreparingAttachment> _templatePreparingAttachments = [];
     private List<ConversacionStickerFavoritoDto> _favoriteStickers = [];
     private bool _showComposerTools;
     private string _composerToolTab = ComposerToolTabs.Emojis;
@@ -1945,7 +1967,7 @@
                 .Where(x => x.Emojis.Count > 0)
                 .ToList();
 
-    private bool _canSendReply => !_busyAction && _selectedConversation is not null && !IsWhatsAppWindowExpired && (HasReplyText || _pendingAttachments.Count > 0);
+    private bool _canSendReply => !_busyAction && !_uploadingFile && !_uploadingAudio && _selectedConversation is not null && !IsWhatsAppWindowExpired && (HasReplyText || _pendingAttachments.Count > 0);
     private bool HasReplyText => !string.IsNullOrWhiteSpace(_replyText);
     private string TypingIndicatorText
     {
@@ -4484,13 +4506,16 @@
     {
         if (_selectedConversation is null) return;
 
+        var files = e.GetMultipleFiles(10).Where(file => file.Size > 0).ToList();
         _uploadingFile = true;
+        _preparingAttachments = BuildPreparingAttachments(files);
         _actionMessage = null;
         _actionError = null;
+        StateHasChanged();
 
         try
         {
-            await AddFilesToPendingAttachmentsAsync(e, _pendingAttachments);
+            await AddFilesToPendingAttachmentsAsync(files, _pendingAttachments);
             foreach (var pending in _pendingAttachments)
                 pending.Error = null;
 
@@ -4507,6 +4532,7 @@
         finally
         {
             _uploadingFile = false;
+            _preparingAttachments = [];
         }
     }
 
@@ -4514,13 +4540,16 @@
     {
         if (_selectedConversation is null) return;
 
+        var files = e.GetMultipleFiles(10).Where(file => file.Size > 0).ToList();
         _uploadingFile = true;
+        _preparingAttachments = BuildPreparingAttachments(files, forcedType: "STICKER");
         _actionMessage = null;
         _actionError = null;
+        StateHasChanged();
 
         try
         {
-            await AddFilesToPendingAttachmentsAsync(e, _pendingAttachments, forcedType: "STICKER");
+            await AddFilesToPendingAttachmentsAsync(files, _pendingAttachments, forcedType: "STICKER");
             MinimizeComposerTools();
 
             _actionMessage = _pendingAttachments.Count == 1
@@ -4534,6 +4563,7 @@
         finally
         {
             _uploadingFile = false;
+            _preparingAttachments = [];
         }
     }
 
@@ -4541,13 +4571,16 @@
     {
         if (_selectedConversation is null) return;
 
+        var files = e.GetMultipleFiles(10).Where(file => file.Size > 0).ToList();
         _uploadingTemplateFile = true;
+        _templatePreparingAttachments = BuildPreparingAttachments(files);
         _actionMessage = null;
         _actionError = null;
+        StateHasChanged();
 
         try
         {
-            await AddFilesToPendingAttachmentsAsync(e, _templatePendingAttachments);
+            await AddFilesToPendingAttachmentsAsync(files, _templatePendingAttachments);
 
             _actionMessage = _templatePendingAttachments.Count == 1
                 ? "Adjunto listo para enviar con la plantilla."
@@ -4560,13 +4593,14 @@
         finally
         {
             _uploadingTemplateFile = false;
+            _templatePreparingAttachments = [];
         }
     }
 
-    private static async Task AddFilesToPendingAttachmentsAsync(InputFileChangeEventArgs e, List<PendingAttachment> target, string? forcedType = null)
+    private static async Task AddFilesToPendingAttachmentsAsync(IReadOnlyList<IBrowserFile> files, List<PendingAttachment> target, string? forcedType = null)
     {
         const long maxSize = 25 * 1024 * 1024;
-        foreach (var file in e.GetMultipleFiles(10))
+        foreach (var file in files)
         {
             if (file.Size == 0)
                 continue;
@@ -4585,6 +4619,16 @@
             });
         }
     }
+
+    private static List<PreparingAttachment> BuildPreparingAttachments(IEnumerable<IBrowserFile> files, string? forcedType = null)
+        => files
+            .Where(file => file.Size > 0)
+            .Select(file => new PreparingAttachment
+            {
+                NombreArchivo = file.Name,
+                TipoArchivo = string.IsNullOrWhiteSpace(forcedType) ? InferTipoArchivo(file.ContentType) : forcedType
+            })
+            .ToList();
 
     private async Task ToggleRecordingAsync()
     {
@@ -6097,6 +6141,12 @@
             "VIDEO" => "Video",
             _ => "Archivo"
         };
+    }
+
+    private sealed class PreparingAttachment
+    {
+        public string NombreArchivo { get; init; } = string.Empty;
+        public string TipoArchivo { get; init; } = string.Empty;
     }
 
     private sealed class RecordedAudioFileResult

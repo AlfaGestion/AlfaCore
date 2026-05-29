@@ -4777,8 +4777,17 @@ html[data-theme="light"] .menu__search-result:hover {
     background: rgba(239, 68, 68, .08);
 }
 
+.conversations-pending-attachment.is-loading {
+    border-color: rgba(14, 165, 233, .42);
+    background: rgba(14, 165, 233, .1);
+}
+
 .conversations-pending-attachment > .bi {
     color: var(--color-primary);
+}
+
+.conversations-pending-attachment.is-loading > .bi {
+    animation: pending-attachment-icon-pulse 1.05s ease-in-out infinite;
 }
 
 .conversations-pending-attachment.has-error > .bi {
@@ -4799,6 +4808,30 @@ html[data-theme="light"] .menu__search-result:hover {
     color: #fecaca;
     font-size: .72rem;
     font-weight: 700;
+}
+
+.conversations-pending-attachment__loading {
+    display: inline-flex;
+    align-items: center;
+    gap: .18rem;
+    padding-inline: .25rem;
+}
+
+.conversations-pending-attachment__loading i {
+    width: .28rem;
+    height: .28rem;
+    border-radius: 999px;
+    background: #67e8f9;
+    opacity: .45;
+    animation: pending-attachment-dot 1s ease-in-out infinite;
+}
+
+.conversations-pending-attachment__loading i:nth-child(2) {
+    animation-delay: .14s;
+}
+
+.conversations-pending-attachment__loading i:nth-child(3) {
+    animation-delay: .28s;
 }
 
 .conversations-pending-attachment .btn {
@@ -4830,6 +4863,31 @@ html[data-theme="light"] .menu__search-result:hover {
     margin: 0;
     line-height: 1;
     vertical-align: 0;
+}
+
+@keyframes pending-attachment-dot {
+    0%,
+    80%,
+    100% {
+        opacity: .35;
+        transform: translateY(0);
+    }
+
+    40% {
+        opacity: 1;
+        transform: translateY(-2px);
+    }
+}
+
+@keyframes pending-attachment-icon-pulse {
+    0%,
+    100% {
+        opacity: .65;
+    }
+
+    50% {
+        opacity: 1;
+    }
 }
 
 .message-contact-list {
