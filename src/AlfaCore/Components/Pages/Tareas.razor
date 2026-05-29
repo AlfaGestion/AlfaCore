@@ -7,7 +7,7 @@
 
 <PageTitle>Tareas | Alfa Gestión</PageTitle>
 
-<section class="page-grid tareas-page" @onclick="DismissFeedbackAsync">
+<section class="page-grid tareas-page" @onclick="HandlePageClickAsync">
     <header class="tareas-header">
         <div>
             <p class="shell__eyebrow">Alfa Gestión</p>
@@ -135,11 +135,12 @@
                     <strong>@SelectedListTitle</strong>
                     <span>@FilteredTasks.Count tarea(s) activa(s)</span>
                 </div>
-                <div class="tareas-assignee-filter">
+                <div class="tareas-assignee-filter" @onclick:stopPropagation @onkeydown="HandleAssignedFilterKeyDown">
                     <button type="button"
                             class="tareas-assignee-filter__button"
                             aria-haspopup="listbox"
                             aria-expanded="@_assignedFilterMenuOpen"
+                            @onkeydown="HandleAssignedFilterKeyDown"
                             @onclick="ToggleAssignedFilterMenu">
                         <span>
                             <i class="bi @SelectedAssignedFilterIcon"></i>
@@ -1317,6 +1318,18 @@
 
     private string GetAssignedFilterOptionClass(string value)
         => IsAssignedFilterSelected(value) ? "tareas-assignee-filter__option is-active" : "tareas-assignee-filter__option";
+
+    private async Task HandlePageClickAsync()
+    {
+        _assignedFilterMenuOpen = false;
+        await DismissFeedbackAsync();
+    }
+
+    private void HandleAssignedFilterKeyDown(KeyboardEventArgs args)
+    {
+        if (string.Equals(args.Key, "Escape", StringComparison.OrdinalIgnoreCase))
+            _assignedFilterMenuOpen = false;
+    }
 
     private async Task DismissFeedbackAsync()
     {
