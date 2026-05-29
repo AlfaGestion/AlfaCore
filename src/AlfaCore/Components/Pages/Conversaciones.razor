@@ -5150,9 +5150,15 @@
     }
 
     private static string GetMessageDisplayText(ConversacionMensajeDto message)
-        => IsUnsupportedMessage(message)
+    {
+        if (!IsUnsupportedMessage(message))
+            return message.Texto;
+
+        var unsupportedType = ExtractUnsupportedType(message.PayloadJson);
+        return string.IsNullOrWhiteSpace(unsupportedType)
             ? "WhatsApp envió un tipo de mensaje que todavía no es compatible con el módulo."
-            : message.Texto;
+            : $"WhatsApp envió un formato no compatible: {unsupportedType}.";
+    }
 
     private static readonly Regex MessageUrlRegex = new(
         @"(?i)\b((?:https?://|www\.)[^\s<]+)",
@@ -5288,6 +5294,10 @@
         if (!string.IsNullOrWhiteSpace(originalType))
             parts.Add($"Tipo recibido: {originalType}");
 
+        var unsupportedType = ExtractUnsupportedType(message.PayloadJson);
+        if (!string.IsNullOrWhiteSpace(unsupportedType))
+            parts.Add($"Formato no compatible: {unsupportedType}");
+
         var metaReason = ExtractUnsupportedReason(message.PayloadJson);
         if (!string.IsNullOrWhiteSpace(metaReason))
             parts.Add(metaReason);
@@ -5325,6 +5335,29 @@
         {
             return string.Empty;
         }
+    }
+
+    private static string ExtractUnsupportedType(string payloadJson)
+    {
+        if (string.IsNullOrWhiteSpace(payloadJson))
+            return string.Empty;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(payloadJson);
+            if (doc.RootElement.TryGetProperty("unsupported", out var unsupported)
+                && unsupported.ValueKind == JsonValueKind.Object
+                && unsupported.TryGetProperty("type", out var typeProp))
+            {
+                return typeProp.GetString() ?? string.Empty;
+            }
+        }
+        catch (JsonException)
+        {
+            return string.Empty;
+        }
+
+        return string.Empty;
     }
 
     private static string ExtractUnsupportedReason(string payloadJson)
