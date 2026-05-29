@@ -9929,7 +9929,7 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
     width: 100%;
     min-height: 38px;
     display: grid;
-    grid-template-columns: 1fr auto;
+    grid-template-columns: 20px minmax(0, 1fr) 18px;
     align-items: center;
     gap: .65rem;
     padding: .45rem .55rem;
@@ -9939,6 +9939,13 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
     color: #dbeafe;
     text-align: left;
     font: inherit;
+}
+
+.tareas-assignee-filter__option > .bi:first-child,
+.tareas-assignee-filter__option > .bi:last-child {
+    display: inline-grid;
+    place-items: center;
+    min-width: 0;
 }
 
 .tareas-assignee-filter__option:hover,
