@@ -125,6 +125,7 @@
                 <select value="@_assignedFilter" @onchange="OnAssignedFilterChanged">
                     <option value="">Todos los asignados</option>
                     <option value="@CurrentUser">Asignadas a mí</option>
+                    <option value="@AssignedByMeFilter">Asignadas por mí</option>
                     @foreach (var user in _page.Usuarios)
                     {
                         <option value="@user.Nombre">@user.Nombre</option>
@@ -533,6 +534,7 @@
     private bool _shareAll;
     private List<string> _shareUsers = [];
     private const long MaxAttachmentBytes = 50L * 1024L * 1024L;
+    private const string AssignedByMeFilter = "__assigned_by_me";
 
     private string CurrentUser => AppUserSession.GetCurrentUserName(Environment.UserName).Trim();
     private int DefaultListId => _page.Listas.FirstOrDefault(x => x.EsDefault)?.IdLista ?? _page.Listas.FirstOrDefault()?.IdLista ?? 0;
@@ -600,6 +602,9 @@
     {
         if (_selectedListId is int listId && tarea.IdLista != listId)
             return false;
+        if (string.Equals(_assignedFilter, AssignedByMeFilter, StringComparison.Ordinal))
+            return string.Equals(tarea.UsuarioAlta, CurrentUser, StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(tarea.UsuarioAsignado, CurrentUser, StringComparison.OrdinalIgnoreCase);
         if (!string.IsNullOrWhiteSpace(_assignedFilter)
             && !string.Equals(tarea.UsuarioAsignado, _assignedFilter, StringComparison.OrdinalIgnoreCase))
             return false;

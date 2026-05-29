@@ -108,6 +108,7 @@ public sealed class TareasService(
                       AND (
                             lv.IdLista IS NOT NULL
                          OR UPPER(LTRIM(RTRIM(ISNULL(t.UsuarioAlta, '')))) = UPPER(LTRIM(RTRIM(@Usuario)))
+                         OR UPPER(LTRIM(RTRIM(ISNULL(t.UsuarioAsignado, '')))) = UPPER(LTRIM(RTRIM(@Usuario)))
                          OR EXISTS
                             (
                                 SELECT 1
@@ -179,6 +180,7 @@ public sealed class TareasService(
                       AND (
                             lv.IdLista IS NOT NULL
                          OR UPPER(LTRIM(RTRIM(ISNULL(t.UsuarioAlta, '')))) = UPPER(LTRIM(RTRIM(@Usuario)))
+                         OR UPPER(LTRIM(RTRIM(ISNULL(t.UsuarioAsignado, '')))) = UPPER(LTRIM(RTRIM(@Usuario)))
                          OR EXISTS
                             (
                                 SELECT 1
@@ -936,6 +938,7 @@ public sealed class TareasService(
                   AND ISNULL(l.Activa, 1) = 1
                   AND (
                         UPPER(LTRIM(RTRIM(ISNULL(t.UsuarioAlta, '')))) = UPPER(LTRIM(RTRIM(@Usuario)))
+                     OR UPPER(LTRIM(RTRIM(ISNULL(t.UsuarioAsignado, '')))) = UPPER(LTRIM(RTRIM(@Usuario)))
                      OR UPPER(LTRIM(RTRIM(ISNULL(l.UsuarioAlta, '')))) = UPPER(LTRIM(RTRIM(@Usuario)))
                      OR EXISTS
                         (
