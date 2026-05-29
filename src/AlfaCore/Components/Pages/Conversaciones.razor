@@ -1657,23 +1657,41 @@
         <div class="conversations-close-ticket-warning__head">
             <i class="bi bi-exclamation-triangle-fill"></i>
             <div>
-                <h3 class="panel-card__title">Antes de cerrar y crear el ticket</h3>
-                <p class="panel-card__subtitle">Esta acción cierra la conversación automáticamente.</p>
+                <h3 class="panel-card__title">@(_closeTicketWarningUnderstood ? "¿Seguro que querés continuar?" : "Antes de cerrar y crear el ticket")</h3>
+                <p class="panel-card__subtitle">@(_closeTicketWarningUnderstood ? "Última confirmación antes de preparar el ticket." : "Esta acción cierra la conversación automáticamente.")</p>
             </div>
         </div>
-        <p>
-            Se creará un ticket cerrado con los últimos 20 mensajes de esta conversación. Es útil para casos repetitivos o consultas que solo necesitan quedar registradas.
-        </p>
-        <p>
-            Usalo únicamente cuando el caso ya esté resuelto y el cliente haya confirmado que quedó todo correcto.
-        </p>
+        @if (_closeTicketWarningUnderstood)
+        {
+            <p>
+                Si continuás, se abrirá el formulario para crear el ticket cerrado con los últimos 20 mensajes y la conversación quedará lista para cerrarse al guardar.
+            </p>
+        }
+        else
+        {
+            <p>
+                Se creará un ticket cerrado con los últimos 20 mensajes de esta conversación. Es útil para casos repetitivos o consultas que solo necesitan quedar registradas.
+            </p>
+            <p>
+                Usalo únicamente cuando el caso ya esté resuelto y el cliente haya confirmado que quedó todo correcto.
+            </p>
+        }
         <div class="actions usuarios-editor__actions">
-            <button type="button" class="btn btn--primary" @onclick="AcceptCloseTicketWarningAsync">
-                <i class="bi bi-check2-circle"></i> Entendido
-            </button>
-            <button type="button" class="btn btn--ghost" @onclick="ContinueCloseTicketWarningOnceAsync">
-                ¿Seguro?
-            </button>
+            @if (_closeTicketWarningUnderstood)
+            {
+                <button type="button" class="btn btn--primary" @onclick="ContinueCloseTicketWarningOnceAsync">
+                    <i class="bi bi-check2-circle"></i> Sí, continuar
+                </button>
+                <button type="button" class="btn btn--ghost" @onclick="ResetCloseTicketWarningStep">
+                    Volver a leer
+                </button>
+            }
+            else
+            {
+                <button type="button" class="btn btn--primary" @onclick="AcceptCloseTicketWarningAsync">
+                    <i class="bi bi-check2-circle"></i> Entendido
+                </button>
+            }
             <button type="button" class="btn btn--ghost" @onclick="CloseCloseTicketWarning">
                 Cancelar
             </button>
@@ -1872,6 +1890,7 @@
     private bool _ticketSelectionMode;
     private bool _showTicketDialog;
     private bool _showCloseTicketWarning;
+    private bool _closeTicketWarningUnderstood;
     private readonly HashSet<long> _selectedTicketMessageIds = [];
     private string _ticketTitle = string.Empty;
     private string _ticketDescription = string.Empty;
@@ -2632,9 +2651,14 @@
         _relatedTicketMatches.Clear();
 
         if (await ShouldShowCloseTicketWarningAsync())
+        {
+            _closeTicketWarningUnderstood = false;
             _showCloseTicketWarning = true;
+        }
         else
+        {
             await OpenTicketDialog();
+        }
     }
 
     private void ToggleTicketMessageSelection(long idMensaje, ChangeEventArgs args)
@@ -2684,15 +2708,19 @@
         {
         }
 
-        await OpenTicketDialog();
+        _closeTicketWarningUnderstood = true;
     }
 
     private async Task ContinueCloseTicketWarningOnceAsync()
         => await OpenTicketDialog();
 
+    private void ResetCloseTicketWarningStep()
+        => _closeTicketWarningUnderstood = false;
+
     private void CloseCloseTicketWarning()
     {
         _showCloseTicketWarning = false;
+        _closeTicketWarningUnderstood = false;
         _closeAndCreateTicketMode = false;
         _selectedTicketMessageIds.Clear();
     }
