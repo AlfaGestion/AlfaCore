@@ -9649,6 +9649,13 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
     align-items: center;
     border-radius: 8px;
     line-height: 1.35;
+    animation: editor-msg-fade-in .18s ease-out both;
+    transition: opacity .18s ease, transform .18s ease;
+}
+
+.tareas-feedback.is-leaving {
+    opacity: 0;
+    transform: translateY(-4px);
 }
 
 .tareas-feedback.editor-msg--warning {
@@ -9663,6 +9670,14 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
     font-size: 1rem;
 }
 
+.tareas-feedback__content {
+    min-width: 0;
+    display: flex;
+    align-items: baseline;
+    gap: .65rem;
+    flex-wrap: wrap;
+}
+
 .tareas-feedback strong,
 .tareas-feedback p,
 .tareas-feedback small {
@@ -9671,6 +9686,27 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
 
 .tareas-feedback p {
     color: inherit;
+}
+
+.tareas-feedback__close {
+    width: 28px;
+    height: 28px;
+    margin-left: auto;
+    display: inline-grid;
+    place-items: center;
+    flex: 0 0 auto;
+    border: 1px solid rgba(251, 191, 36, 0.34);
+    border-radius: 999px;
+    background: rgba(251, 191, 36, 0.08);
+    color: #fde68a;
+}
+
+.tareas-feedback__close:hover,
+.tareas-feedback__close:focus-visible {
+    background: rgba(251, 191, 36, 0.18);
+    border-color: rgba(251, 191, 36, 0.6);
+    color: #ffffff;
+    outline: none;
 }
 
 .tareas-shell {

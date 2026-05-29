@@ -7,7 +7,7 @@
 
 <PageTitle>Tareas | Alfa Gestión</PageTitle>
 
-<section class="page-grid tareas-page">
+<section class="page-grid tareas-page" @onclick="DismissFeedbackAsync">
     <header class="tareas-header">
         <div>
             <p class="shell__eyebrow">Alfa Gestión</p>
@@ -26,14 +26,19 @@
 
     @if (_feedback is not null)
     {
-        <div class="editor-msg tareas-feedback @GetFeedbackClass(_feedback)">
+        <div class="editor-msg tareas-feedback @GetFeedbackClass(_feedback) @(_feedbackLeaving ? "is-leaving" : string.Empty)" @onclick:stopPropagation>
             <i class="bi @GetFeedbackIcon(_feedback)" aria-hidden="true"></i>
-            <strong>@_feedback.Title</strong>
-            <p>@_feedback.Message</p>
-            @if (_feedback.HasCode)
-            {
-                <small>Código: @_feedback.Code</small>
-            }
+            <div class="tareas-feedback__content">
+                <strong>@_feedback.Title</strong>
+                <p>@_feedback.Message</p>
+                @if (_feedback.HasCode)
+                {
+                    <small>Código: @_feedback.Code</small>
+                }
+            </div>
+            <button type="button" class="tareas-feedback__close" title="Cerrar aviso" aria-label="Cerrar aviso" @onclick="DismissFeedbackAsync">
+                <i class="bi bi-x-lg"></i>
+            </button>
         </div>
     }
 
@@ -543,6 +548,7 @@
 @code {
     private TareasPageDto _page = new();
     private AppUiMessage? _feedback;
+    private bool _feedbackLeaving;
     private bool _loading;
     private int? _selectedListId;
     private string _assignedFilter = string.Empty;
@@ -1311,6 +1317,17 @@
 
     private string GetAssignedFilterOptionClass(string value)
         => IsAssignedFilterSelected(value) ? "tareas-assignee-filter__option is-active" : "tareas-assignee-filter__option";
+
+    private async Task DismissFeedbackAsync()
+    {
+        if (_feedback is null || _feedbackLeaving)
+            return;
+
+        _feedbackLeaving = true;
+        await Task.Delay(180);
+        _feedback = null;
+        _feedbackLeaving = false;
+    }
 
     private void OnCompletedToggle()
         => _showCompleted = !_showCompleted;
