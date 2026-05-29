@@ -685,8 +685,18 @@
                         }
                         else
                         {
+                            DateTime? lastMessageDate = null;
                             @foreach (var message in VisibleMessages)
                             {
+                                var messageDate = message.FechaHora.Date;
+                                if (lastMessageDate != messageDate)
+                                {
+                                    lastMessageDate = messageDate;
+                                    <div class="conversation-date-divider">
+                                        <span>@FormatConversationDateDivider(message.FechaHora)</span>
+                                    </div>
+                                }
+
                                 @if (_firstNewMessageId == message.IdMensaje)
                                 {
                                     <div class="message-new-divider">
@@ -2061,6 +2071,14 @@
         try
         {
             await JS.InvokeVoidAsync("conversacionesUi.initAudioPlayers");
+        }
+        catch
+        {
+        }
+
+        try
+        {
+            await JS.InvokeVoidAsync("conversacionesUi.bindDateDividers", _threadElement);
         }
         catch
         {
@@ -5160,6 +5178,23 @@
             return $"Ayer {time}";
 
         return value.ToString("dd/MM HH:mm", System.Globalization.CultureInfo.CurrentCulture);
+    }
+
+    private static string FormatConversationDateDivider(DateTime value)
+    {
+        if (value == DateTime.MinValue)
+            return string.Empty;
+
+        var date = value.Date;
+        var today = DateTime.Today;
+
+        if (date == today)
+            return "Hoy";
+
+        if (date == today.AddDays(-1))
+            return "Ayer";
+
+        return value.ToString("dddd d 'de' MMMM", System.Globalization.CultureInfo.CurrentCulture);
     }
 
     private static bool IsInitializationPending(string? message)

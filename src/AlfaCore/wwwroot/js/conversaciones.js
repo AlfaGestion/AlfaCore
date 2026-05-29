@@ -130,6 +130,7 @@ window.conversacionesUi = {
     _threadWatchers: new WeakMap(),
     _fileDropWatchers: new WeakMap(),
     _previewPanWatchers: new WeakMap(),
+    _dateDividerWatchers: new WeakMap(),
     _notificationBaseTitle: 'AlfaCore - Alfa Gestión',
     _audioPlayersInitialized: false,
     _audioSpeeds: [1, 1.5, 2],
@@ -170,6 +171,37 @@ window.conversacionesUi = {
     scrollToBottom: function (element) {
         if (!element) return;
         element.scrollTop = element.scrollHeight;
+    },
+
+    bindDateDividers: function (element) {
+        if (!element) return false;
+
+        const previous = this._dateDividerWatchers.get(element);
+        if (previous) {
+            previous.disconnect();
+        }
+
+        const dividers = Array.from(element.querySelectorAll('.conversation-date-divider'));
+        if (dividers.length === 0) return false;
+
+        if (!('IntersectionObserver' in window)) {
+            dividers.forEach(divider => divider.classList.add('is-visible'));
+            return true;
+        }
+
+        const observer = new IntersectionObserver(entries => {
+            entries.forEach(entry => {
+                entry.target.classList.toggle('is-visible', entry.isIntersecting);
+            });
+        }, {
+            root: element,
+            threshold: 0.01,
+            rootMargin: '-2px 0px -2px 0px'
+        });
+
+        dividers.forEach(divider => observer.observe(divider));
+        this._dateDividerWatchers.set(element, observer);
+        return true;
     },
 
     initNotifications: function (baseTitle) {

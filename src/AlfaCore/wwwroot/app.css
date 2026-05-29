@@ -4469,6 +4469,41 @@ html[data-theme="light"] .menu__search-result:hover {
     font-weight: 900;
 }
 
+.conversations-page--odoo .conversation-date-divider {
+    position: sticky;
+    top: .55rem;
+    z-index: 4;
+    display: flex;
+    justify-content: center;
+    width: 100%;
+    margin: .35rem 0 .72rem;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(-7px) scale(.96);
+    transition: opacity .2s ease, transform .2s cubic-bezier(.2, .8, .2, 1);
+}
+
+.conversations-page--odoo .conversation-date-divider.is-visible {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+}
+
+.conversations-page--odoo .conversation-date-divider span {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 1.85rem;
+    padding: .32rem .86rem;
+    border-radius: 999px;
+    background: rgba(24, 34, 41, .92);
+    color: rgba(233, 237, 239, .88);
+    font-size: .78rem;
+    font-weight: 700;
+    line-height: 1;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, .24);
+    backdrop-filter: blur(8px);
+}
+
 .conversation-audit-results {
     display: flex;
     flex-direction: column;
