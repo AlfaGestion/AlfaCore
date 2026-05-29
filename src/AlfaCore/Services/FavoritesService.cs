@@ -130,6 +130,42 @@ public sealed class FavoritesService(
         }, "No se pudo verificar el favorito solicitado.", ct);
     }
 
+    public async Task<IReadOnlyList<string>> GetFavoriteKeysAsync(CancellationToken ct = default)
+    {
+        var userName = appUserSession.CurrentUser?.UserName?.Trim();
+        var systemCode = appUserSession.CurrentUser?.SystemCode?.Trim();
+        if (string.IsNullOrWhiteSpace(userName) || string.IsNullOrWhiteSpace(systemCode))
+            return [];
+
+        return await ExecuteLoggedAsync("Shell", "GetFavoriteKeys", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            if (!await TableExistsAsync(cn, "ALFACORE_FAVORITOS", token))
+                return [];
+
+            const string sql = """
+                SELECT LTRIM(RTRIM(Clave)) AS Clave
+                FROM dbo.ALFACORE_FAVORITOS
+                WHERE UPPER(LTRIM(RTRIM(Usuario))) = @Usuario
+                  AND UPPER(LTRIM(RTRIM(Sistema))) = @Sistema
+                ORDER BY ISNULL(Orden, 0), Clave;
+                """;
+
+            var rows = await cn.QueryAsync<string>(new CommandDefinition(sql, new
+            {
+                Usuario = userName.ToUpperInvariant(),
+                Sistema = systemCode.ToUpperInvariant()
+            }, cancellationToken: token));
+
+            return rows
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Select(x => x.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }, "No se pudieron cargar las claves favoritas del shell.", ct);
+    }
+
     public async Task ToggleFavoriteAsync(string menu, string clave, CancellationToken ct = default)
     {
         await ExecuteLoggedAsync("Shell", "ToggleFavorite", async token =>
