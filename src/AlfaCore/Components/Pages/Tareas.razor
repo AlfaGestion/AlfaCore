@@ -129,15 +129,39 @@
                     <strong>@SelectedListTitle</strong>
                     <span>@FilteredTasks.Count tarea(s) activa(s)</span>
                 </div>
-                <select value="@_assignedFilter" @onchange="OnAssignedFilterChanged">
-                    <option value="">Todos los asignados</option>
-                    <option value="@CurrentUser">Asignadas a mí</option>
-                    <option value="@AssignedByMeFilter">Asignadas por mí</option>
-                    @foreach (var user in _page.Usuarios)
+                <div class="tareas-assignee-filter">
+                    <button type="button"
+                            class="tareas-assignee-filter__button"
+                            aria-haspopup="listbox"
+                            aria-expanded="@_assignedFilterMenuOpen"
+                            @onclick="ToggleAssignedFilterMenu">
+                        <span>
+                            <i class="bi @SelectedAssignedFilterIcon"></i>
+                            @SelectedAssignedFilterLabel
+                        </span>
+                        <i class="bi bi-chevron-down"></i>
+                    </button>
+                    @if (_assignedFilterMenuOpen)
                     {
-                        <option value="@user.Nombre">@user.Nombre</option>
+                        <div class="tareas-assignee-filter__menu" role="listbox">
+                            @foreach (var option in AssignedFilterOptions)
+                            {
+                                <button type="button"
+                                        class="@GetAssignedFilterOptionClass(option.Value)"
+                                        role="option"
+                                        aria-selected="@IsAssignedFilterSelected(option.Value)"
+                                        @onclick="() => SelectAssignedFilter(option.Value)">
+                                    <i class="bi @option.Icon"></i>
+                                    <span>@option.Label</span>
+                                    @if (IsAssignedFilterSelected(option.Value))
+                                    {
+                                        <i class="bi bi-check2"></i>
+                                    }
+                                </button>
+                            }
+                        </div>
                     }
-                </select>
+                </div>
             </div>
 
             <section class="tareas-list" aria-label="Tareas activas">
@@ -520,6 +544,7 @@
     private bool _loading;
     private int? _selectedListId;
     private string _assignedFilter = string.Empty;
+    private bool _assignedFilterMenuOpen;
     private string _quickTaskTitle = string.Empty;
     private string _quickNoteText = string.Empty;
     private bool _showTaskModal;
@@ -582,6 +607,28 @@
             return values.Length == 0 ? [CurrentUser] : values;
         }
     }
+
+    private IReadOnlyList<AssignedFilterOption> AssignedFilterOptions
+        => new[]
+            {
+                new AssignedFilterOption(string.Empty, "Todos los asignados", "bi-people"),
+                new AssignedFilterOption(CurrentUser, "Asignadas a mí", "bi-person-check"),
+                new AssignedFilterOption(AssignedByMeFilter, "Asignadas por mí", "bi-send-check")
+            }
+            .Concat(_page.Usuarios
+                .Select(x => x.Nombre)
+                .Where(x => !string.IsNullOrWhiteSpace(x) && !string.Equals(x, CurrentUser, StringComparison.OrdinalIgnoreCase))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(x => x)
+                .Select(x => new AssignedFilterOption(x, x, "bi-person")))
+            .ToArray();
+
+    private AssignedFilterOption SelectedAssignedFilter
+        => AssignedFilterOptions.FirstOrDefault(x => string.Equals(x.Value, _assignedFilter, StringComparison.OrdinalIgnoreCase))
+           ?? AssignedFilterOptions[0];
+
+    private string SelectedAssignedFilterLabel => SelectedAssignedFilter.Label;
+    private string SelectedAssignedFilterIcon => SelectedAssignedFilter.Icon;
 
     private IReadOnlyList<string> ShareUserOptions => _page.Usuarios
         .Select(x => x.Nombre)
@@ -1248,8 +1295,20 @@
         if (result.Success) await LoadAsync();
     }
 
-    private void OnAssignedFilterChanged(ChangeEventArgs args)
-        => _assignedFilter = Convert.ToString(args.Value) ?? string.Empty;
+    private void ToggleAssignedFilterMenu()
+        => _assignedFilterMenuOpen = !_assignedFilterMenuOpen;
+
+    private void SelectAssignedFilter(string value)
+    {
+        _assignedFilter = value;
+        _assignedFilterMenuOpen = false;
+    }
+
+    private bool IsAssignedFilterSelected(string value)
+        => string.Equals(_assignedFilter, value, StringComparison.OrdinalIgnoreCase);
+
+    private string GetAssignedFilterOptionClass(string value)
+        => IsAssignedFilterSelected(value) ? "tareas-assignee-filter__option is-active" : "tareas-assignee-filter__option";
 
     private void OnCompletedToggle()
         => _showCompleted = !_showCompleted;
@@ -1299,6 +1358,8 @@
 
     private static string GetFeedbackIcon(AppUiMessage message)
         => message.Severity == AppUiFeedbackSeverity.Warning ? "bi-exclamation-triangle-fill" : message.Severity == AppUiFeedbackSeverity.Success ? "bi-check-circle-fill" : "bi-x-circle-fill";
+
+    private sealed record AssignedFilterOption(string Value, string Label, string Icon);
 
     private sealed class PendingTaskAttachment
     {

@@ -9830,6 +9830,97 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
     padding: .5rem .7rem;
 }
 
+.tareas-assignee-filter {
+    position: relative;
+    min-width: 220px;
+}
+
+.tareas-assignee-filter__button {
+    width: 100%;
+    min-height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .75rem;
+    padding: .45rem .65rem .45rem .75rem;
+    border: 1px solid rgba(56, 189, 248, .28);
+    border-radius: 8px;
+    background: rgba(8, 47, 73, .24);
+    color: var(--color-text);
+    font: inherit;
+    font-weight: 650;
+}
+
+.tareas-assignee-filter__button > span,
+.tareas-assignee-filter__option span {
+    min-width: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: .45rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.tareas-assignee-filter__button .bi-chevron-down {
+    color: #7dd3fc;
+    font-size: .82rem;
+}
+
+.tareas-assignee-filter__button:hover,
+.tareas-assignee-filter__button:focus-visible {
+    border-color: rgba(56, 189, 248, .48);
+    background: rgba(14, 165, 233, .16);
+    outline: none;
+}
+
+.tareas-assignee-filter__menu {
+    position: absolute;
+    top: calc(100% + .35rem);
+    right: 0;
+    z-index: 25;
+    width: min(280px, 70vw);
+    max-height: 310px;
+    overflow: auto;
+    padding: .35rem;
+    border: 1px solid rgba(80, 118, 180, .28);
+    border-radius: 8px;
+    background: #0d1a2d;
+    box-shadow: 0 18px 46px rgba(2, 8, 23, .44);
+}
+
+.tareas-assignee-filter__option {
+    width: 100%;
+    min-height: 38px;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: .65rem;
+    padding: .45rem .55rem;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: #dbeafe;
+    text-align: left;
+    font: inherit;
+}
+
+.tareas-assignee-filter__option:hover,
+.tareas-assignee-filter__option:focus-visible {
+    background: rgba(14, 165, 233, .16);
+    color: #ffffff;
+    outline: none;
+}
+
+.tareas-assignee-filter__option.is-active {
+    background: rgba(34, 211, 238, .15);
+    color: #e0faff;
+}
+
+.tareas-assignee-filter__option > .bi:last-child {
+    color: #22d3ee;
+}
+
 .tareas-toolbar strong,
 .tareas-quick__head strong {
     display: block;
@@ -17906,6 +17997,10 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
 
 .shell__content .tareas-toolbar {
     padding: 0.7rem 0.85rem;
+}
+
+.shell__content .tareas-assignee-filter {
+    min-width: 230px;
 }
 
 .shell__content .tareas-toolbar select {
