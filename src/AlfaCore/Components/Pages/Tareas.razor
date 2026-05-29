@@ -67,7 +67,12 @@
             <div class="tareas-list-stack">
                 @foreach (var lista in _page.Listas)
                 {
-                    <div class="tareas-list-row">
+                    <div class="tareas-list-row"
+                         @ondragenter="() => SetListDropTarget(lista.IdLista)"
+                         @ondragleave="() => ClearListDropTarget(lista.IdLista)"
+                         @ondragover:preventDefault
+                         @ondrop:preventDefault
+                         @ondrop="() => MoveDraggedTaskToListAsync(lista)">
                         @if (_editingListId == lista.IdLista)
                         {
                             <form class="tareas-list-form" @onsubmit="SaveListAsync">
@@ -84,11 +89,7 @@
                         {
                             <button type="button"
                                     class="@GetListButtonClass(lista.IdLista)"
-                                    @onclick="() => SelectList(lista.IdLista)"
-                                    @ondragenter="() => SetListDropTarget(lista.IdLista)"
-                                    @ondragleave="() => ClearListDropTarget(lista.IdLista)"
-                                    @ondragover:preventDefault
-                                    @ondrop="() => MoveDraggedTaskToListAsync(lista)">
+                                    @onclick="() => SelectList(lista.IdLista)">
                                 <span>
                                     <i class="bi @GetListIcon(lista)" title="@GetListIconTitle(lista)"></i> @lista.Nombre
                                 </span>
@@ -182,6 +183,7 @@
                     @foreach (var tarea in FilteredTasks)
                     {
                         <article class="@GetTaskRowClass(tarea)"
+                                 data-tareas-drag-card="true"
                                  draggable="true"
                                  @ondragstart="() => StartTaskDrag(tarea)"
                                  @ondragend="ClearTaskDrag">
@@ -1073,7 +1075,7 @@
         if (_menusBinding is not null)
             await _menusBinding.InvokeVoidAsync("dispose");
 
-        _menusBinding = await _attachmentsModule.InvokeAsync<IJSObjectReference>("bindTareasMenus");
+        _menusBinding = await _attachmentsModule.InvokeAsync<IJSObjectReference>("bindTareasInteractions");
     }
 
     private async Task DisposeTaskAttachmentBindingAsync()
