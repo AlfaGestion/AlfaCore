@@ -1,0 +1,1078 @@
+USE [ALFANET]
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_web_Alta_Comprobante]    Script Date: 30/5/2026 13:34:24 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+
+
+
+
+CREATE PROCEDURE [dbo].[sp_web_Alta_Comprobante]
+    @pCliente                         nvarchar(15) = null,
+    @pVendedor                        nvarchar(4) = null,
+    @pFecha                           datetime = null,
+    @pObservaciones                   NVARCHAR(250) = null,
+    @pLat                             NVARCHAR(15) = null,
+    @pLng                             NVARCHAR(15) = null,
+    @pTC                              NVARCHAR(4) = null,
+    @pSucursal                        NVARCHAR(4) = null,
+    @pNumero                          NVARCHAR(8) = null,
+    @pLetra                           NVARCHAR(1) = null,
+    @pResultado                       smallint = NULL OUTPUT,
+    @pMensaje                         varchar(255) = NULL OUTPUT,
+    @pIdComprobanteRES                int = NULL OUTPUT
+AS
+DECLARE @IdComprobante NVARCHAR(13)
+DECLARE @nombre NVARCHAR(50)
+DECLARE @domicilio NVARCHAR(50)
+DECLARE @calle NVARCHAR(50)
+DECLARE @numero NVARCHAR(50)
+DECLARE @piso NVARCHAR(50)
+DECLARE @departamento NVARCHAR(50)
+DECLARE @telefono NVARCHAR(100)
+DECLARE @localidad NVARCHAR(50)
+DECLARE @idProvincia NVARCHAR(4)
+DECLARE @codigoPostal NVARCHAR(10)
+DECLARE @documentoTipo NVARCHAR(4)
+DECLARE @documentoNumero NVARCHAR(15)
+DECLARE @condicionIva NVARCHAR(50)
+DECLARE @idCondCpraVta NVARCHAR(4)
+DECLARE @comentarios NVARCHAR(100)
+DECLARE @idLista NVARCHAR(4)
+DECLARE @vendedorCliente NVARCHAR(4)
+DECLARE @clasePrecio INT
+
+SET NOCOUNT ON
+
+IF @pCliente = ''
+    SET @pCliente = (SELECT VALOR FROM TA_CONFIGURACION WHERE CLAVE='CUENTACONSUMIDORFINAL')
+
+SELECT @nombre = ISNULL(RAZON_SOCIAL,''),
+       @calle = ISNULL(CALLE,'.'),
+       @numero = ISNULL(NUMERO,'.'),
+       @piso = ISNULL(PISO,''),
+       @departamento = ISNULL(DEPARTAMENTO,''),
+       @telefono = TELEFONO,
+       @localidad = LOCALIDAD,
+       @idProvincia = PROVINCIA,
+       @codigoPostal = CPOSTAL,
+       @documentoTipo = DOCUMENTO_TIPO,
+       @documentoNumero = NUMERO_DOCUMENTO,
+       @condicionIva = IVA,
+       @idCondCpraVta = IDCOND_CPRA_VTA,
+       --@clasePrecio = TRY_CAST(CLASE AS INT),
+	   @clasePrecio = CASE WHEN ISNUMERIC(CLASE) = 1 THEN CAST(CLASE AS INT) ELSE NULL END,
+       @idLista = IDLISTA,
+       @vendedorCliente = IDVENDEDOR
+FROM VT_CLIENTES
+WHERE CODIGO = @pCliente
+
+SET @domicilio = @calle + ' ' + @numero
+IF (@piso <> '') SET @domicilio = @domicilio + ' ' + LTRIM(RTRIM(@piso)) + ' Piso '
+IF (@departamento <> '') SET @domicilio = @domicilio + ' Dpto: ' + LTRIM(RTRIM(@departamento))
+IF @condicionIva IS NULL SET @condicionIva = '   1'
+IF @documentoTipo = 'None' SET @documentoTipo = '   1'
+
+IF @pNumero IS NULL OR LTRIM(RTRIM(@pNumero)) = ''
+BEGIN
+    DECLARE @ultimoNumero INT
+    --SELECT @ultimoNumero = MAX(TRY_CAST(NUMERO AS INT)) 
+    --FROM V_MV_CPTE 
+    --WHERE TC = @pTC AND SUCURSAL = @pSucursal AND LETRA = @pLetra
+	
+	SELECT @ultimoNumero = MAX(CAST(NUMERO AS INT)) 
+	FROM V_MV_CPTE 
+	WHERE ISNUMERIC(NUMERO) = 1 AND TC = @pTC AND SUCURSAL = @pSucursal AND LETRA = @pLetra
+	
+	
+
+    SET @ultimoNumero = ISNULL(@ultimoNumero, 0) + 1
+    SET @pNumero = RIGHT('00000000' + CAST(@ultimoNumero AS NVARCHAR), 8)
+END
+
+SET @IdComprobante = @pSucursal + @pNumero + @pLetra
+
+IF @clasePrecio IS NULL SET @clasePrecio = 1
+IF @pVendedor = '' OR @pVendedor IS NULL
+    SET @pVendedor = @vendedorCliente
+
+SET @pVendedor = dbo.FN_FMT_LEERCODIGO(LTRIM(RTRIM(@pVendedor)),4)
+SET @idLista = dbo.FN_FMT_LEERCODIGO(LTRIM(RTRIM(@idLista)),4)
+
+SET DATEFORMAT YMD
+SET NOCOUNT ON
+
+BEGIN TRANSACTION
+BEGIN TRY
+
+    INSERT INTO V_MV_CPTE
+    (TC, IDCOMPROBANTE, IDCOMPLEMENTO,
+     FECHA, FECHAESTFIN, FECHAESTINICIO, CUENTA,
+     NOMBRE, DOMICILIO, TELEFONO,
+     LOCALIDAD, IDPROVINCIA, CODIGOPOSTAL,
+     DOCUMENTOTIPO, DOCUMENTONUMERO, CONDICIONIVA,
+     IDCOND_CPRA_VTA, COMENTARIOS, IMPORTE, IMPORTE_S_IVA,
+     MONEDA, IDVENDEDOR, CLASEPRECIO, UNEGOCIO_DESTINO, IdLista, IDMOTIVOCPRAVTA, IDDEPOSITO, AlicIva, ImporteIva, NEtoGravado, NetoNoGravado, Unegocio,
+     FechaHora_Grabacion, SUCURSAL, NUMERO, LETRA)
+    VALUES
+    (
+        @pTC, @IdComprobante, 0,
+        @pFecha, @pFecha, @pFecha, @pCliente,
+        @Nombre, @Domicilio, ISNULL(@Telefono,''),
+        @Localidad, @idProvincia, LTRIM(@codigoPostal),
+        @documentoTipo, LTRIM(@documentoNumero), @condicionIva,
+        @idCondCpraVta, @pObservaciones, 0, 0,
+        '   1', @pVendedor, @clasePrecio, '   1', @idLista,'   1','   1',21,0,0,0,'   1',
+        GETDATE(),@pSucursal,@pNumero,@pLetra
+    )
+
+    COMMIT TRANSACTION
+
+    SET @pResultado = 11
+    SET @pMensaje = 'El Pedido se ha dado de alta con éxito'
+    SET @pIdComprobanteRES = SCOPE_IDENTITY()
+
+    INSERT INTO S_TA_UBICACIONES_VENDEDOR (lat, long, idvendedor, fechahora, idcomprobante)
+    VALUES (@pLat, @pLng, @pVendedor, GETDATE(), @IdComprobante)
+
+END TRY
+BEGIN CATCH
+    ROLLBACK TRANSACTION
+    SET @pIdComprobanteRES = NULL
+    SET @pResultado = ERROR_NUMBER()
+    SET @pMensaje = ERROR_MESSAGE()
+END CATCH
+	
+
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_web_CpteInsumos]    Script Date: 30/5/2026 13:34:24 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+
+
+
+
+
+
+
+
+
+CREATE PROCEDURE [dbo].[sp_web_CpteInsumos]
+	@pIdCpte						 INT = null,
+	@pIdArticulo					 NVARCHAR(25),
+	@pCantidad						 FLOAT,
+	@pImporteUnitario				 MONEY,
+	@pPorcDescuento                  VARCHAR(10),
+	@pResultado 					 SMALLINT = NULL OUTPUT,
+	@pMensaje 						 VARCHAR(255) = NULL OUTPUT,
+	@pIdVMVCpteInsumosRES			 INT = NULL OUTPUT
+AS
+SET NOCOUNT ON
+DECLARE @pPorcDescuentoNumero FLOAT
+DECLARE @tc NVARCHAR(4)
+DECLARE @idComprobante NVARCHAR(13)
+DECLARE @idComplemento INT
+DECLARE @tmpConfigIVA NVARCHAR(2)
+DECLARE @cfgMaestroArticuloCostoConIva NVARCHAR(2)
+DECLARE @idlista NVARCHAR(4)
+DECLARE @descripcion NVARCHAR(50)
+DECLARE @idUnidad NVARCHAR(4)
+DECLARE @importe MONEY
+DECLARE @importeCiva MONEY
+DECLARE @idMoneda NVARCHAR(4)
+DECLARE @total MONEY
+DECLARE @exento BIT
+DECLARE @clasePrecio NVARCHAR(4)
+DECLARE @alicIva FLOAT
+DECLARE @porcDto FLOAT
+DECLARE @importeDto MONEY
+DECLARE @importeSinDto MONEY
+DECLARE @unidadBase NVARCHAR(4)
+DECLARE @cantKG FLOAT
+DECLARE @pedidosPreparados NVARCHAR(2)
+DECLARE @tmpConfig NVARCHAR(50)
+DECLARE @condicionIva NVARCHAR(4)
+DECLARE @err INT
+DECLARE @IdCliente NVARCHAR(15)
+DECLARE @PorcentajeDescuento FLOAT
+DECLARE @Costo FLOAT
+DECLARE @totalInsumo MONEY
+DECLARE @cotiz FLOAT
+
+IF @pPorcDescuento = 'NaN' SET @pPorcDescuento = '0'
+--IF @pCantidadBL = 'NaN' or @pCantidadBL = 0 SET @pCantidadBL = 1  --a--
+
+SET @pPorcDescuentoNumero = CAST(@pPorcDescuento as float)
+--a-29-02-2024 El precio lo grabo sin descuento, el dto va en un campo aparte
+IF @pImporteUnitario is null SET @pImporteUnitario = 0
+ set @importeSinDto = @pImporteUnitario 
+ set @importeDto = 0  --12-06-2024, sino queda en null
+if @pPorcDescuentoNumero > 0
+begin
+
+   set @pImporteUnitario =(@pImporteUnitario / (1-(@pPorcDescuentoNumero/100)) )
+
+   set @importeDto = (@pImporteUnitario  - @importeSinDto ) * @pCantidad
+
+end
+
+SELECT @tc = TC, @idComprobante = IDCOMPROBANTE,
+	@idComplemento = IDCOMPLEMENTO,
+	@clasePrecio = CLASEPRECIO,
+	@condicionIva = CONDICIONIVA,
+	@IdCliente = CUENTA,
+	@idlista = IdLista
+FROM V_MV_CPTE
+WHERE ID = @pIdCpte
+
+SELECT @pedidosPreparados = VALOR FROM TA_CONFIGURACION WHERE CLAVE='V_SoloPedidosPreparados'
+
+SET @pIdArticulo = dbo.FN_FMT_LEERCODIGO(LTRIM(RTRIM(@pIdArticulo)),25)
+
+SELECT @descripcion = DESCRIPCION, @unidadBase = IDUNIDAD, @idUnidad = UD_TTE, @alicIva = TASAIVA, @exento = EXENTO, @idMoneda = MONEDA, @costo = Costo
+FROM V_MA_ARTICULOS
+WHERE LTRIM(IDARTICULO) = LTRIM(@pIdArticulo)
+
+IF ((@alicIva = NULL) OR (@alicIva IS NULL) OR (@alicIva = 0))
+	BEGIN
+		SET @tmpConfig = dbo.FN_OBTIENE_VALOR_CONFIGURACION('PIVA','21')
+		SET @alicIva = CAST(@tmpConfig AS FLOAT )
+	END
+	
+IF (@condicionIva = NULL) OR (@condicionIva IS NULL) SET @condicionIva = '   1'
+IF (@exento = NULL) OR (@exento IS NULL) SET @exento = 0
+
+SET @tmpConfigIVA = dbo.FN_OBTIENE_VALOR_CONFIGURACION('MaestroArticuloConIVA','NO')
+SET @cfgMaestroArticuloCostoConIva =  dbo.FN_OBTIENE_VALOR_CONFIGURACION('MaestroArticuloCostoConIVA','NO')
+
+IF @cfgMaestroArticuloCostoConIva = 'SI' AND (@exento = 0 or @exento ='0' OR @exento is null)
+	SET @Costo = dbo.FN_PRECIO_SIN_IVA(@Costo,@alicIva)
+
+IF ltrim(@idlista) <>''
+	BEGIN
+		--SET @pImporteUnitario = dbo.FN_PRECIO_LISTA(@pIdArticulo,@idlista,@clasePrecio)
+		--SET @importe = @pImporteUnitario
+		IF @tmpConfigIVA = 'SI' 
+			IF @exento=0
+				BEGIN
+					SET @importe = @pImporteUnitario
+					SET @pImporteUnitario =  dbo.FN_PRECIO_SIN_IVA(@pImporteUnitario,@alicIva)
+				END
+           else  --a-- 14/11/2024
+		        BEGIN
+					SET @importe = @pImporteUnitario
+				END
+		ELSE
+			BEGIN
+			    SET @importe = @pImporteUnitario
+			END
+	END
+ELSE
+	BEGIN
+	IF @tmpConfigIVA = 'SI' 
+		IF @exento=0
+			BEGIN
+				SET @pImporteUnitario = dbo.FN_PRECIO_SIN_IVA(@pImporteUnitario,@alicIva)
+				SET @importe =  dbo.FN_PRECIO_CON_IVA(@pImporteUnitario,@alicIva)--@pImporteUnitario
+			END
+		ELSE 
+			BEGIN
+				SET @importe = @pImporteUnitario
+				SET @pImporteUnitario =  dbo.FN_PRECIO_SIN_IVA(@pImporteUnitario,@alicIva)
+			END
+	ELSE
+		BEGIN
+			IF @clasePrecio = 2
+				SET @tmpConfigIVA =  dbo.FN_OBTIENE_VALOR_CONFIGURACION('Clase2ConIVA','NO')
+			
+			if @tmpConfigIVA = 'SI'
+				if @exento=0
+					BEGIN
+						SET @pImporteUnitario =  dbo.FN_PRECIO_SIN_IVA(@pImporteUnitario,@alicIva)
+						SET @importe = dbo.FN_PRECIO_CON_IVA(@pImporteUnitario,@alicIva)
+					END
+				ELSE
+					BEGIN
+						SET @importe = @pImporteUnitario
+						SET @pImporteUnitario =  dbo.FN_PRECIO_SIN_IVA(@pImporteUnitario,@alicIva)
+					END
+			ELSE
+					BEGIN
+						SET @importe = @pImporteUnitario
+					END
+		END
+	END
+
+IF @pImporteUnitario is null SET @pImporteUnitario = 1
+SET @total = (@importe * @pCantidad) - @importeDto --a-14-11-2024 le resto el dto
+
+
+if @pCantidad=0 SET @pCantidad=1
+
+DECLARE @coeficiente FLOAT
+DECLARE @cantidadUD FLOAT
+
+SELECT @coeficiente=ISNULL(COEFICIENTE,1) FROM S_TA_EQUIV
+WHERE IDUNIDAD=@idUnidad AND IDUNIDAD_EQUIV=@unidadBase AND LTRIM(IDARTICULO)= LTRIM(@pIdArticulo)
+
+SET @Costo = @Costo * @coeficiente
+--a-29-02-2024
+if ltrim(@idMoneda) <> '1' 
+   begin
+   --obtiene cotizacion y multiplica el costo
+	if ltrim(@idMoneda) = '2' SET @cotiz = ISNULL((SELECT TOP 1 ISNULL(MONEDA2,1) FROM TA_COTIZACION ORDER BY FECHA_HORA DESC),1) --ISNULL((SELECT ISNULL(MONEDA2,'1') FROM TA_COTIZACION WHERE FECHA_HORA = CONVERT(date,GETDATE())),'1')
+	if ltrim(@idMoneda) = '3' SET @cotiz = ISNULL((SELECT TOP 1 ISNULL(MONEDA3,1) FROM TA_COTIZACION ORDER BY FECHA_HORA DESC),1) -- ISNULL((SELECT ISNULL(MONEDA3,'1') FROM TA_COTIZACION WHERE FECHA_HORA = CONVERT(date,GETDATE())),'1')
+	if ltrim(@idMoneda) = '4' SET @cotiz = ISNULL((SELECT TOP 1 ISNULL(MONEDA4,1) FROM TA_COTIZACION ORDER BY FECHA_HORA DESC),1) --ISNULL((SELECT ISNULL(MONEDA4,'1') FROM TA_COTIZACION WHERE FECHA_HORA = CONVERT(date,GETDATE())),'1')
+	if ltrim(@idMoneda) = '5' SET @cotiz = ISNULL((SELECT TOP 1 ISNULL(MONEDA5,1) FROM TA_COTIZACION ORDER BY FECHA_HORA DESC),1) --ISNULL((SELECT ISNULL(MONEDA5,'1') FROM TA_COTIZACION WHERE FECHA_HORA = CONVERT(date,GETDATE())),'1')
+	
+	SET @Costo = @Costo * @cotiz 
+   end
+
+SET @cantKG = @pCantidad * @coeficiente
+SET @cantidadUD = @cantKG / @pCantidad
+
+IF @tc = 'NP' 
+	SET @totalInsumo = @total --@pImporteUnitario * @pCantidad --SI ES NP ES EL TOTAL SIN IVA
+ELSE
+	SET @totalInsumo = @total
+
+SET DATEFORMAT YMD
+SET NOCOUNT ON
+BEGIN TRANSACTION
+BEGIN TRY
+	INSERT INTO V_MV_CPTEINSUMOS
+	(TC,IDCOMPROBANTE,IDCOMPLEMENTO,CLASEPRECIO,
+	IDARTICULO,DESCRIPCION,IDUNIDAD,ALICIVA,EXENTO,
+	CANTIDADUD,CANTIDAD,
+	IMPORTE_S_IVA,
+	IMPORTE,
+	PORCDTO,
+	IMPORTEDTO,
+	TOTAL,
+	TOTALFINAL,
+	COSTO,
+	IdLista,IDUNIDADBASE,EQUIV_UDBASE,CANT_BL,CANT_KG)
+	VALUES
+	(
+		@tc, @idComprobante, 0, @clasePrecio,
+		@pIdArticulo, @descripcion, @idUnidad, @alicIva, @exento,
+		@cantidadUD, @pCantidad,
+		@pImporteUnitario ,
+		@importe ,
+		@pPorcDescuento,
+		@importeDto,
+		@totalInsumo,
+		@total,
+		@Costo,
+		@idlista, @unidadBase, @pCantidad, 1, @cantKG
+				)
+		IF @@error <> 0 
+			BEGIN
+				ROLLBACK TRANSACTION
+				SET @pIdVMVCpteInsumosRES = NULL
+				SET @pResultado = 21
+				SET @pMensaje = 'No pudo darse de alta EL PEDIDO '
+				RETURN
+			END
+		ELSE
+			BEGIN
+				COMMIT TRANSACTION
+	
+				DECLARE @IMPORTE_C_IVA FLOAT,@IMPORTE_IVA FLOAT,@NETO_GRAVADO FLOAT
+
+				SET @tmpConfigIVA = dbo.FN_OBTIENE_VALOR_CONFIGURACION('MaestroArticuloConIVA','NO')
+				IF @tmpConfigIVA = 'SI' 
+					IF @exento=1
+						BEGIN
+							SET @NETO_GRAVADO = dbo.FN_PRECIO_SIN_IVA(@importe, @alicIva) *@pCantidad
+							SET @IMPORTE_IVA = 0
+						END
+					ELSE 
+						BEGIN
+							SET @NETO_GRAVADO = @pImporteUnitario * @pCantidad
+							SET @IMPORTE_IVA = (@importe * @pCantidad) - @NETO_GRAVADO
+						END
+				ELSE
+					BEGIN
+						IF @clasePrecio = 2
+							SET @tmpConfigIVA =  dbo.FN_OBTIENE_VALOR_CONFIGURACION('Clase2ConIVA','NO')
+			
+						if @tmpConfigIVA = 'SI'
+							if @exento=1
+								BEGIN
+									SET @NETO_GRAVADO = dbo.FN_PRECIO_SIN_IVA(@importe, @alicIva) *@pCantidad
+									SET @IMPORTE_IVA = 0
+								END
+							ELSE
+								BEGIN
+									SET @NETO_GRAVADO = @pImporteUnitario *@pCantidad
+									SET @IMPORTE_IVA = (@importe * @pCantidad) - @NETO_GRAVADO 
+								END
+						ELSE
+							SET @NETO_GRAVADO = @importe *@pCantidad
+					END
+				
+
+				--SET @NETO_GRAVADO = @importe*@pCantidad
+				IF @TC = 'FP' OR @tc = 'NP'
+					SET @IMPORTE_C_IVA = @NETO_GRAVADO + @IMPORTE_IVA
+				ELSE
+					BEGIN
+						SET @IMPORTE_C_IVA = @NETO_GRAVADO * 1.21 
+						SET @IMPORTE_IVA = @IMPORTE_C_IVA - @NETO_GRAVADO
+					END
+
+				UPDATE V_MV_Cpte SET 
+				IMPORTE=isnull(IMPORTE,0)+ @IMPORTE_C_IVA, 
+				IMPORTE_S_IVA=isnull(IMPORTE_S_IVA,0)+(@pImporteUnitario*@pCantidad),
+				ImporteInsumos=isnull(ImporteInsumos,0)+(@totalInsumo),
+				ImporteIva=isnull(ImporteIva,0)+@IMPORTE_IVA,
+				NetoGravado = isnull(NetoGravado,0)+@NETO_GRAVADO,
+				NetoNoGravado = 0
+				WHERE ID=@pIdCpte
+
+				SET @pResultado = 11
+				SET @pMensaje = 'El Pedido se ha dado de alta con exito'
+				SET @pIdVMVCpteInsumosRES = @@IDENTITY
+				
+			END
+END TRY
+BEGIN CATCH
+	ROLLBACK TRANSACTION
+	ROLLBACK TRANSACTION
+	SET @pIdVMVCpteInsumosRES = NULL
+	SET @pResultado = ERROR_NUMBER()
+	SET @pMensaje =  ERROR_MESSAGE()  --'No pudo darse de alta EL PEDIDO correctamente'
+END CATCH
+
+
+
+ 
+
+
+
+
+GO
+
+
+USE [ALFANET]
+GO
+
+/****** Object:  Table [dbo].[V_MV_Cpte]    Script Date: 30/5/2026 13:34:59 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[V_MV_Cpte](
+	[ID] [int] IDENTITY(1,1) NOT FOR REPLICATION NOT NULL,
+	[TC] [nvarchar](4) NOT NULL,
+	[IDCOMPROBANTE] [nvarchar](13) NOT NULL,
+	[IDCOMPLEMENTO] [int] NOT NULL,
+	[FECHA] [datetime] NULL,
+	[FECHAESTINICIO] [datetime] NULL,
+	[FECHAESTFIN] [datetime] NULL,
+	[CUENTA] [nvarchar](15) NULL,
+	[MATRICULA] [nvarchar](20) NULL,
+	[MODELO] [nvarchar](50) NULL,
+	[SERIE] [nvarchar](20) NULL,
+	[NOMBRE] [nvarchar](50) NOT NULL,
+	[DOMICILIO] [nvarchar](50) NULL,
+	[TELEFONO] [nvarchar](100) NULL,
+	[LOCALIDAD] [nvarchar](50) NULL,
+	[IDPROVINCIA] [nvarchar](4) NULL,
+	[CODIGOPOSTAL] [nvarchar](10) NULL,
+	[DOCUMENTOTIPO] [nvarchar](4) NULL,
+	[DOCUMENTONUMERO] [nvarchar](13) NULL,
+	[CONDICIONIVA] [nvarchar](4) NULL,
+	[IDCOND_CPRA_VTA] [nvarchar](4) NULL,
+	[CLASEPRECIO] [int] NULL,
+	[COMENTARIOS] [nvarchar](100) NULL,
+	[IDTECNICO] [nvarchar](4) NULL,
+	[OBSERVACIONES] [ntext] NULL,
+	[SOLICITANTE] [nvarchar](50) NULL,
+	[TCORIGEN] [nvarchar](4) NULL,
+	[COMPROBANTEORIGEN] [nvarchar](15) NULL,
+	[COMPLEMENTOORIGEN] [int] NULL,
+	[IMPORTE] [money] NULL,
+	[IMPORTE_S_IVA] [money] NULL,
+	[FINALIZADA] [bit] NOT NULL,
+	[ANULADA] [bit] NOT NULL,
+	[APROBADO] [bit] NOT NULL,
+	[IDMOTIVOCPRAVTA] [nvarchar](4) NULL,
+	[PorcDescuento1] [float] NULL,
+	[ImpDescuento1] [money] NULL,
+	[PorcDescuento2] [float] NULL,
+	[ImpDescuento2] [money] NULL,
+	[PorcDescuento3] [float] NULL,
+	[ImpDescuento3] [money] NULL,
+	[IdVendedor] [nvarchar](4) NULL,
+	[ImporteInsumos] [money] NULL,
+	[ImporteServicios] [money] NULL,
+	[ImporteOtrosConceptos] [money] NULL,
+	[ImporteIva] [money] NULL,
+	[ImporteIvaRec] [money] NULL,
+	[ImporteImpuestosInternos] [money] NULL,
+	[IdLista] [nvarchar](4) NULL,
+	[NetoGravado] [money] NULL,
+	[NetoNoGravado] [money] NULL,
+	[ExentoIVAServicios] [bit] NOT NULL,
+	[ExentoIVAArticulos] [bit] NOT NULL,
+	[ExentoIVAOtros] [bit] NOT NULL,
+	[FechaFinalizacion] [datetime] NULL,
+	[Complementario] [bit] NOT NULL,
+	[Impreso] [bit] NOT NULL,
+	[Devoluciones] [float] NULL,
+	[IdDeposito] [nvarchar](4) NULL,
+	[IdMotivoStock] [nvarchar](4) NULL,
+	[ImporteIva2] [money] NULL,
+	[AlicIva] [float] NULL,
+	[AlicIvaRec] [float] NULL,
+	[AlicIva2] [float] NULL,
+	[PorcRecargo] [int] NULL,
+	[RETGAN_IdRetencion] [nvarchar](4) NULL,
+	[RETIBR_IdRetencion] [nvarchar](4) NULL,
+	[RETIVA_IdRetencion] [nvarchar](4) NULL,
+	[RETGAN_BaseImponible] [money] NULL,
+	[RETIBR_BaseImponible] [money] NULL,
+	[RETIVA_BaseImponible] [money] NULL,
+	[RETGAN_Importe] [money] NULL,
+	[RETIBR_Importe] [money] NULL,
+	[RETIVA_Importe] [money] NULL,
+	[PorcDescuento4] [float] NULL,
+	[ImpDescuento4] [money] NULL,
+	[AlicIVA3] [float] NULL,
+	[ImpIVA3] [money] NULL,
+	[AlicIVA4] [float] NULL,
+	[ImpIVA4] [money] NULL,
+	[NroComprobanteAsociado] [nvarchar](50) NULL,
+	[Anticipo] [int] NULL,
+	[ImpAnticipo] [money] NULL,
+	[NroAnticipo] [nvarchar](13) NULL,
+	[Moneda] [nvarchar](4) NULL,
+	[Cotizacion] [money] NULL,
+	[CodigoImputacion] [nvarchar](15) NULL,
+	[SucursalCuenta] [int] NULL,
+	[M3] [float] NULL,
+	[KG] [float] NULL,
+	[BL] [float] NULL,
+	[TRANSPORTE] [nvarchar](15) NULL,
+	[TRANSPORTE_NOMBRE] [nvarchar](100) NULL,
+	[TRANSPORTE_DOMICILIO] [nvarchar](100) NULL,
+	[FechaEntrega] [datetime] NULL,
+	[IdPalm] [nvarchar](50) NULL,
+	[FechaEntCpte] [datetime] NULL,
+	[CodigoMant] [nvarchar](25) NULL,
+	[IdReparto] [int] NULL,
+	[SUCURSAL] [nvarchar](4) NULL,
+	[NUMERO] [nvarchar](8) NULL,
+	[LETRA] [nvarchar](1) NULL,
+	[CHOFER] [nvarchar](4) NULL,
+	[BLOQUEADA] [bit] NULL,
+	[CERRADA] [bit] NULL,
+	[UNEGOCIO] [nvarchar](4) NULL,
+	[Usuario] [nvarchar](50) NULL,
+	[FechaPreparacion] [datetime] NULL,
+	[UNEGOCIO_DESTINO] [nvarchar](4) NULL,
+	[EnComodato] [bit] NULL,
+	[IdDepositoDestino] [nvarchar](4) NULL,
+	[Transmision] [int] NULL,
+	[Recepcion] [int] NULL,
+	[ITC] [money] NULL,
+	[RETGAN_NRO] [int] NULL,
+	[RETIBR_NRO] [int] NULL,
+	[RETIVA_NRO] [int] NULL,
+	[NROPLANILLAGENERACION] [nvarchar](13) NULL,
+	[NROORDENDETRABAJO] [nvarchar](13) NULL,
+	[AdicionalDMD] [nvarchar](500) NULL,
+	[PRCOSTO] [nvarchar](13) NULL,
+	[PRVENTA] [nvarchar](13) NULL,
+	[KM] [float] NULL,
+	[HS] [float] NULL,
+	[Repeticion] [int] NULL,
+	[RETSUSS_IdRetencion] [nvarchar](4) NULL,
+	[RETSUSS_BaseImponible] [money] NULL,
+	[RETSUSS_Importe] [money] NULL,
+	[RETSUSS_NRO] [int] NULL,
+	[FechaHora_Grabacion] [datetime] NULL,
+	[FechaHora_Modificacion] [datetime] NULL,
+	[Recomendado_por] [nvarchar](50) NULL,
+	[RETIBR_ALICUOTA] [money] NULL,
+	[RETIVA_ALICUOTA] [money] NULL,
+	[RETGAN_ALICUOTA] [money] NULL,
+	[RETSUSS_ALICUOTA] [money] NULL,
+	[CBU_ALIAS] [nvarchar](50) NULL,
+	[CodCpteAfip] [nvarchar](4) NULL,
+	[idMotivoFalla] [nvarchar](4) NULL,
+ CONSTRAINT [PK_V_MV_Cpte] PRIMARY KEY NONCLUSTERED 
+(
+	[TC] ASC,
+	[IDCOMPROBANTE] ASC,
+	[IDCOMPLEMENTO] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY],
+ CONSTRAINT [IX_V_MV_Cpte_1] UNIQUE NONCLUSTERED 
+(
+	[ID] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[V_TA_Cpte]    Script Date: 30/5/2026 13:34:59 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[V_TA_Cpte](
+	[CODIGO] [nvarchar](4) NOT NULL,
+	[DESCRIPCION] [nvarchar](50) NOT NULL,
+	[SISTEMA] [nvarchar](20) NULL,
+	[DEBEHABER] [nvarchar](1) NULL,
+	[ES] [nvarchar](1) NULL,
+	[PIDEVENCIMIENTO] [bit] NOT NULL,
+	[ModificaNumeracion] [bit] NOT NULL,
+	[A_ULTIMO_NRO] [int] NULL,
+	[A_NRO_DESDE] [int] NULL,
+	[A_NRO_HASTA] [int] NULL,
+	[A_SUC_DEFAULT] [int] NULL,
+	[B_ULTIMO_NRO] [int] NULL,
+	[B_NRO_DESDE] [int] NULL,
+	[B_NRO_HASTA] [int] NULL,
+	[B_SUC_DEFAULT] [int] NULL,
+	[C_ULTIMO_NRO] [int] NULL,
+	[C_NRO_DESDE] [int] NULL,
+	[C_NRO_HASTA] [int] NULL,
+	[C_SUC_DEFAULT] [int] NULL,
+	[E_ULTIMO_NRO] [int] NULL,
+	[E_NRO_DESDE] [int] NULL,
+	[E_NRO_HASTA] [int] NULL,
+	[E_SUC_DEFAULT] [int] NULL,
+	[X_ULTIMO_NRO] [int] NULL,
+	[X_NRO_DESDE] [int] NULL,
+	[X_NRO_HASTA] [int] NULL,
+	[X_SUC_DEFAULT] [int] NULL,
+	[LETRAS] [nvarchar](10) NULL,
+	[FechaHora_Grabacion] [datetime] NULL,
+	[FechaHora_Modificacion] [datetime] NULL,
+	[Signo] [nvarchar](250) NULL,
+	[R_ULTIMO_NRO] [int] NULL,
+	[R_NRO_DESDE] [int] NULL,
+	[R_NRO_HASTA] [int] NULL,
+	[R_SUC_DEFAULT] [int] NULL,
+	[IdDeposito] [nvarchar](4) NULL,
+	[Transmision] [int] NULL,
+	[Recepcion] [int] NULL,
+	[M_ULTIMO_NRO] [int] NULL,
+	[M_NRO_DESDE] [int] NULL,
+	[M_NRO_HASTA] [int] NULL,
+	[M_SUC_DEFAULT] [int] NULL,
+	[VenceM] [datetime] NULL,
+	[ObservacionesM] [nvarchar](100) NULL,
+	[Talonario] [int] NOT NULL,
+	[Externo] [bit] NULL,
+	[VenceA] [datetime] NULL,
+	[VenceB] [datetime] NULL,
+	[VenceC] [datetime] NULL,
+	[VenceE] [datetime] NULL,
+	[VenceX] [datetime] NULL,
+	[VenceR] [datetime] NULL,
+	[ObservacionesA] [nvarchar](100) NULL,
+	[ObservacionesB] [nvarchar](100) NULL,
+	[ObservacionesC] [nvarchar](100) NULL,
+	[ObservacionesE] [nvarchar](100) NULL,
+	[ObservacionesX] [nvarchar](100) NULL,
+	[ObservacionesR] [nvarchar](100) NULL,
+	[CpteDGIA] [nvarchar](2) NULL,
+	[CpteDGIB] [nvarchar](2) NULL,
+	[CpteDGIC] [nvarchar](2) NULL,
+	[CpteDGIE] [nvarchar](2) NULL,
+	[CpteDGIM] [nvarchar](2) NULL,
+	[CpteDGIR] [nvarchar](2) NULL,
+	[CpteDGIX] [nvarchar](2) NULL,
+	[UNEGOCIO] [nvarchar](4) NULL,
+ CONSTRAINT [PK_V_TA_Cpte] PRIMARY KEY NONCLUSTERED 
+(
+	[CODIGO] ASC,
+	[Talonario] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, FILLFACTOR = 90) ON [PRIMARY]
+) ON [PRIMARY]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_Cpte_IDCOMPLEMENTO]  DEFAULT (0) FOR [IDCOMPLEMENTO]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_Cpte_CLASEPRECIO]  DEFAULT (0) FOR [CLASEPRECIO]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_Cpte_COMPLEMENTOORIGEN]  DEFAULT (0) FOR [COMPLEMENTOORIGEN]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_Cpte_IMPORTE]  DEFAULT (0) FOR [IMPORTE]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_Cpte_FINALIZADA]  DEFAULT (0) FOR [FINALIZADA]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_Cpte_ANULADA]  DEFAULT (0) FOR [ANULADA]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_Cpte_APROBADO]  DEFAULT (0) FOR [APROBADO]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_Cpte_PorcDescuento]  DEFAULT (0) FOR [PorcDescuento1]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_Cpte_ImpDescuento1]  DEFAULT (0) FOR [ImpDescuento1]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_Cpte_PorcDescuento2]  DEFAULT (0) FOR [PorcDescuento2]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_Cpte_ImpDescuento2]  DEFAULT (0) FOR [ImpDescuento2]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_Cpte_PorcDescuento3]  DEFAULT (0) FOR [PorcDescuento3]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_Cpte_ImpDescuento3]  DEFAULT (0) FOR [ImpDescuento3]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_Cpte_ImporteInsumos]  DEFAULT (0) FOR [ImporteInsumos]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_Cpte_ImporteServicios]  DEFAULT (0) FOR [ImporteServicios]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_Cpte_ImporteOtrosConceptos]  DEFAULT (0) FOR [ImporteOtrosConceptos]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_Cpte_ExentoIVAServicios]  DEFAULT (0) FOR [ExentoIVAServicios]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_Cpte_ExentoIVAArticulos]  DEFAULT (0) FOR [ExentoIVAArticulos]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_Cpte_ExentoIVAOtros]  DEFAULT (0) FOR [ExentoIVAOtros]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_Cpte_Complementario]  DEFAULT (0) FOR [Complementario]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_Cpte_Impreso]  DEFAULT (0) FOR [Impreso]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_Cpte_Devoluciones]  DEFAULT (0) FOR [Devoluciones]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_Cpte_IdDeposito]  DEFAULT (null) FOR [IdDeposito]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_Cpte_IdMotivoStock]  DEFAULT (null) FOR [IdMotivoStock]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_Cpte_ImporteIva2]  DEFAULT (0) FOR [ImporteIva2]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_Cpte_AlicIva]  DEFAULT (0) FOR [AlicIva]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_Cpte_AlicIvaRec]  DEFAULT (0) FOR [AlicIvaRec]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_Cpte_AlicIva2]  DEFAULT (0) FOR [AlicIva2]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_CPTE_PorcRecargo]  DEFAULT (0) FOR [PorcRecargo]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_Cpte_RETGAN_IdRetenci÷n]  DEFAULT (null) FOR [RETGAN_IdRetencion]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_Cpte_RETIBR_IdRetenci÷n]  DEFAULT (null) FOR [RETIBR_IdRetencion]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_Cpte_RETIVA_IdRetenci÷n]  DEFAULT (null) FOR [RETIVA_IdRetencion]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_Cpte_RETGAN_BaseImponible]  DEFAULT (null) FOR [RETGAN_BaseImponible]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_Cpte_RETIBR_BaseImponible]  DEFAULT (null) FOR [RETIBR_BaseImponible]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_Cpte_RETIVA_BaseImponible]  DEFAULT (null) FOR [RETIVA_BaseImponible]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_Cpte_RETGAN_Importe]  DEFAULT (null) FOR [RETGAN_Importe]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_Cpte_RETIBR_Importe]  DEFAULT (null) FOR [RETIBR_Importe]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_Cpte_RETIVA_Importe]  DEFAULT (null) FOR [RETIVA_Importe]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_CPTE_PorcDescuento4]  DEFAULT (0) FOR [PorcDescuento4]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_CPTE_ImpDescuento4]  DEFAULT (0) FOR [ImpDescuento4]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_CPTE_AlicIVA3]  DEFAULT (0) FOR [AlicIVA3]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_CPTE_ImpIVA3]  DEFAULT (0) FOR [ImpIVA3]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_CPTE_AlicIVA4]  DEFAULT (0) FOR [AlicIVA4]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_CPTE_ImpIVA4]  DEFAULT (0) FOR [ImpIVA4]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_Cpte_Anticipo]  DEFAULT (0) FOR [Anticipo]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_Cpte_ImpAnticipo]  DEFAULT (0) FOR [ImpAnticipo]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_Cpte_NroAnticipo]  DEFAULT (null) FOR [NroAnticipo]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_Cpte_Moneda]  DEFAULT (null) FOR [Moneda]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_Cpte_Cotizacion]  DEFAULT (null) FOR [Cotizacion]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_CPTE_SucursalCuenta]  DEFAULT (0) FOR [SucursalCuenta]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_CPTE_M3]  DEFAULT (0) FOR [M3]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_CPTE_KG]  DEFAULT (0) FOR [KG]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_CPTE_BL]  DEFAULT (0) FOR [BL]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_CPTE_TRANSPORTE]  DEFAULT (0) FOR [TRANSPORTE]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_Cpte_IdReparto]  DEFAULT (0) FOR [IdReparto]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_CPTE_BLOQUEADA]  DEFAULT (0) FOR [BLOQUEADA]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_CPTE_CERRADA]  DEFAULT (0) FOR [CERRADA]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_CPTE_EnComodato]  DEFAULT (0) FOR [EnComodato]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_CPTE_Transmision]  DEFAULT (0) FOR [Transmision]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_CPTE_Recepcion]  DEFAULT (0) FOR [Recepcion]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_CPTE_KM]  DEFAULT (0) FOR [KM]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_CPTE_HS]  DEFAULT (0) FOR [HS]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_CPTE_Repeticion]  DEFAULT (0) FOR [Repeticion]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_CPTE_RETIBR_ALICUOTA]  DEFAULT ((0)) FOR [RETIBR_ALICUOTA]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_CPTE_RETIVA_ALICUOTA]  DEFAULT ((0)) FOR [RETIVA_ALICUOTA]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_CPTE_RETGAN_ALICUOTA]  DEFAULT ((0)) FOR [RETGAN_ALICUOTA]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] ADD  CONSTRAINT [DF_V_MV_CPTE_RETSUSS_ALICUOTA]  DEFAULT ((0)) FOR [RETSUSS_ALICUOTA]
+GO
+
+ALTER TABLE [dbo].[V_TA_Cpte] ADD  CONSTRAINT [DF_V_TA_Cpte_PIDEVENCIMIENTO]  DEFAULT (0) FOR [PIDEVENCIMIENTO]
+GO
+
+ALTER TABLE [dbo].[V_TA_Cpte] ADD  CONSTRAINT [DF_V_TA_Cpte_ModificaNumeracion]  DEFAULT (0) FOR [ModificaNumeracion]
+GO
+
+ALTER TABLE [dbo].[V_TA_Cpte] ADD  CONSTRAINT [DF_V_TA_Cpte_A_ULTIMO_NRO]  DEFAULT (0) FOR [A_ULTIMO_NRO]
+GO
+
+ALTER TABLE [dbo].[V_TA_Cpte] ADD  CONSTRAINT [DF_V_TA_Cpte_A_NRO_DESDE]  DEFAULT (0) FOR [A_NRO_DESDE]
+GO
+
+ALTER TABLE [dbo].[V_TA_Cpte] ADD  CONSTRAINT [DF_V_TA_Cpte_A_NRO_HASTA]  DEFAULT (0) FOR [A_NRO_HASTA]
+GO
+
+ALTER TABLE [dbo].[V_TA_Cpte] ADD  CONSTRAINT [DF_V_TA_Cpte_A_SUC_DEFAULT]  DEFAULT (0) FOR [A_SUC_DEFAULT]
+GO
+
+ALTER TABLE [dbo].[V_TA_Cpte] ADD  CONSTRAINT [DF_V_TA_Cpte_B_ULTIMO_NRO]  DEFAULT (0) FOR [B_ULTIMO_NRO]
+GO
+
+ALTER TABLE [dbo].[V_TA_Cpte] ADD  CONSTRAINT [DF_V_TA_Cpte_B_NRO_DESDE]  DEFAULT (0) FOR [B_NRO_DESDE]
+GO
+
+ALTER TABLE [dbo].[V_TA_Cpte] ADD  CONSTRAINT [DF_V_TA_Cpte_B_NRO_HASTA]  DEFAULT (0) FOR [B_NRO_HASTA]
+GO
+
+ALTER TABLE [dbo].[V_TA_Cpte] ADD  CONSTRAINT [DF_V_TA_Cpte_B_SUC_DEFAULT]  DEFAULT (0) FOR [B_SUC_DEFAULT]
+GO
+
+ALTER TABLE [dbo].[V_TA_Cpte] ADD  CONSTRAINT [DF_V_TA_Cpte_C_ULTIMO_NRO]  DEFAULT (0) FOR [C_ULTIMO_NRO]
+GO
+
+ALTER TABLE [dbo].[V_TA_Cpte] ADD  CONSTRAINT [DF_V_TA_Cpte_C_NRO_DESDE]  DEFAULT (0) FOR [C_NRO_DESDE]
+GO
+
+ALTER TABLE [dbo].[V_TA_Cpte] ADD  CONSTRAINT [DF_V_TA_Cpte_C_NRO_HASTA]  DEFAULT (0) FOR [C_NRO_HASTA]
+GO
+
+ALTER TABLE [dbo].[V_TA_Cpte] ADD  CONSTRAINT [DF_V_TA_Cpte_C_SUC_DEFAULT]  DEFAULT (0) FOR [C_SUC_DEFAULT]
+GO
+
+ALTER TABLE [dbo].[V_TA_Cpte] ADD  CONSTRAINT [DF_V_TA_Cpte_E_ULTIMO_NRO]  DEFAULT (0) FOR [E_ULTIMO_NRO]
+GO
+
+ALTER TABLE [dbo].[V_TA_Cpte] ADD  CONSTRAINT [DF_V_TA_Cpte_E_NRO_DESDE]  DEFAULT (0) FOR [E_NRO_DESDE]
+GO
+
+ALTER TABLE [dbo].[V_TA_Cpte] ADD  CONSTRAINT [DF_V_TA_Cpte_E_NRO_HASTA]  DEFAULT (0) FOR [E_NRO_HASTA]
+GO
+
+ALTER TABLE [dbo].[V_TA_Cpte] ADD  CONSTRAINT [DF_V_TA_Cpte_E_SUC_DEFAULT]  DEFAULT (0) FOR [E_SUC_DEFAULT]
+GO
+
+ALTER TABLE [dbo].[V_TA_Cpte] ADD  CONSTRAINT [DF_V_TA_Cpte_X_ULTIMO_NRO]  DEFAULT (0) FOR [X_ULTIMO_NRO]
+GO
+
+ALTER TABLE [dbo].[V_TA_Cpte] ADD  CONSTRAINT [DF_V_TA_Cpte_X_NRO_DESDE]  DEFAULT (0) FOR [X_NRO_DESDE]
+GO
+
+ALTER TABLE [dbo].[V_TA_Cpte] ADD  CONSTRAINT [DF_V_TA_Cpte_X_NRO_HASTA]  DEFAULT (0) FOR [X_NRO_HASTA]
+GO
+
+ALTER TABLE [dbo].[V_TA_Cpte] ADD  CONSTRAINT [DF_V_TA_Cpte_X_SUC_DEFAULT]  DEFAULT (0) FOR [X_SUC_DEFAULT]
+GO
+
+ALTER TABLE [dbo].[V_TA_Cpte] ADD  CONSTRAINT [DF_V_TA_Cpte_Transmision]  DEFAULT (0) FOR [Transmision]
+GO
+
+ALTER TABLE [dbo].[V_TA_Cpte] ADD  CONSTRAINT [DF_V_TA_Cpte_Recepcion]  DEFAULT (0) FOR [Recepcion]
+GO
+
+ALTER TABLE [dbo].[V_TA_Cpte] ADD  CONSTRAINT [DF_V_TA_Cpte_M_ULTIMO_NRO]  DEFAULT (0) FOR [M_ULTIMO_NRO]
+GO
+
+ALTER TABLE [dbo].[V_TA_Cpte] ADD  CONSTRAINT [DF_V_TA_Cpte_M_NRO_DESDE]  DEFAULT (0) FOR [M_NRO_DESDE]
+GO
+
+ALTER TABLE [dbo].[V_TA_Cpte] ADD  CONSTRAINT [DF_V_TA_Cpte_M_NRO_HASTA]  DEFAULT (0) FOR [M_NRO_HASTA]
+GO
+
+ALTER TABLE [dbo].[V_TA_Cpte] ADD  CONSTRAINT [DF_V_TA_Cpte_M_SUC_DEFAULT]  DEFAULT (0) FOR [M_SUC_DEFAULT]
+GO
+
+ALTER TABLE [dbo].[V_TA_Cpte] ADD  CONSTRAINT [DF_V_TA_Cpte_ObservacionesM]  DEFAULT (0) FOR [ObservacionesM]
+GO
+
+ALTER TABLE [dbo].[V_TA_Cpte] ADD  CONSTRAINT [DF_V_TA_Cpte_Talonario]  DEFAULT (0) FOR [Talonario]
+GO
+
+ALTER TABLE [dbo].[V_TA_Cpte] ADD  CONSTRAINT [DF_V_TA_CPTE_Externo]  DEFAULT (0) FOR [Externo]
+GO
+
+ALTER TABLE [dbo].[V_TA_Cpte] ADD  CONSTRAINT [DF_V_TA_CPTE_UNEGOCIO]  DEFAULT (0) FOR [UNEGOCIO]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte]  WITH NOCHECK ADD  CONSTRAINT [FK_V_MV_Cpte_TA_CONDIVA] FOREIGN KEY([CONDICIONIVA])
+REFERENCES [dbo].[TA_CONDIVA] ([CODIGO])
+NOT FOR REPLICATION 
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] CHECK CONSTRAINT [FK_V_MV_Cpte_TA_CONDIVA]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte]  WITH CHECK ADD  CONSTRAINT [FK_V_MV_Cpte_TA_ESTADOS] FOREIGN KEY([IDPROVINCIA])
+REFERENCES [dbo].[TA_ESTADOS] ([CODIGO])
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] CHECK CONSTRAINT [FK_V_MV_Cpte_TA_ESTADOS]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte]  WITH CHECK ADD  CONSTRAINT [FK_V_MV_Cpte_TA_TIPODOCUMENTO] FOREIGN KEY([DOCUMENTOTIPO])
+REFERENCES [dbo].[TA_TIPODOCUMENTO] ([CODIGO])
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] CHECK CONSTRAINT [FK_V_MV_Cpte_TA_TIPODOCUMENTO]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte]  WITH CHECK ADD  CONSTRAINT [FK_V_MV_Cpte_V_TA_Cpra_Vta] FOREIGN KEY([IDCOND_CPRA_VTA])
+REFERENCES [dbo].[V_TA_Cpra_Vta] ([IDCond_Cpra_Vta])
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] CHECK CONSTRAINT [FK_V_MV_Cpte_V_TA_Cpra_Vta]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte]  WITH CHECK ADD  CONSTRAINT [FK_V_MV_Cpte_V_TA_DEPOSITO] FOREIGN KEY([IdDeposito])
+REFERENCES [dbo].[V_TA_DEPOSITO] ([IdDeposito])
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] CHECK CONSTRAINT [FK_V_MV_Cpte_V_TA_DEPOSITO]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte]  WITH CHECK ADD  CONSTRAINT [FK_V_MV_Cpte_V_TA_MotivoStock] FOREIGN KEY([IdMotivoStock])
+REFERENCES [dbo].[V_TA_MotivoStock] ([IdMotivoStock])
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] CHECK CONSTRAINT [FK_V_MV_Cpte_V_TA_MotivoStock]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte]  WITH NOCHECK ADD  CONSTRAINT [FK_V_MV_Cpte_V_TA_MotivoVta] FOREIGN KEY([IDMOTIVOCPRAVTA])
+REFERENCES [dbo].[V_TA_MotivoVta] ([IdMotivoVta])
+NOT FOR REPLICATION 
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] NOCHECK CONSTRAINT [FK_V_MV_Cpte_V_TA_MotivoVta]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte]  WITH CHECK ADD  CONSTRAINT [FK_V_MV_Cpte_V_TA_Tecnicos] FOREIGN KEY([IDTECNICO])
+REFERENCES [dbo].[V_TA_Tecnicos] ([IdTecnico])
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] CHECK CONSTRAINT [FK_V_MV_Cpte_V_TA_Tecnicos]
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte]  WITH NOCHECK ADD  CONSTRAINT [FK_V_MV_Cpte_V_TA_VENDEDORES] FOREIGN KEY([IdVendedor])
+REFERENCES [dbo].[V_TA_VENDEDORES] ([IdVendedor])
+NOT FOR REPLICATION 
+GO
+
+ALTER TABLE [dbo].[V_MV_Cpte] NOCHECK CONSTRAINT [FK_V_MV_Cpte_V_TA_VENDEDORES]
+GO
+
+

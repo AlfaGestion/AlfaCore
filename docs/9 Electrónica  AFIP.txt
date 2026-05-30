@@ -1,0 +1,57 @@
+9 Electrónica / AFIP
+
+
+USE [ALFANET]
+GO
+
+/****** Object:  Table [dbo].[V_MV_CPTE_ELECTRONICOS]    Script Date: 30/5/2026 13:57:36 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[V_MV_CPTE_ELECTRONICOS](
+	[IdRequerimiento] [nvarchar](100) NOT NULL,
+	[CantReg] [int] NULL,
+	[Presta_Serv] [bit] NULL,
+	[TC] [nvarchar](4) NULL,
+	[IdComprobante] [nvarchar](13) NULL,
+	[Tipo_Doc] [int] NULL,
+	[Nro_Doc] [nvarchar](50) NULL,
+	[Tipo_Cpte] [int] NULL,
+	[Punto_Vta] [int] NULL,
+	[Cpte_Desde] [nvarchar](8) NULL,
+	[Cpte_Hasta] [nvarchar](8) NULL,
+	[Imp_Total] [float] NULL,
+	[Imp_NoGrav] [float] NULL,
+	[Imp_NetoGrav] [float] NULL,
+	[Imp_ImpuestoLiquidado] [float] NULL,
+	[Imp_Impuestos_Rni] [float] NULL,
+	[Imp_OPExentas] [float] NULL,
+	[Fh_Serv_Desde] [datetime] NULL,
+	[Fh_Serv_Hasta] [datetime] NULL,
+	[Fh_Vto] [datetime] NULL,
+	[Fecha_Cpte] [datetime] NULL,
+	[Resultado] [nvarchar](10) NULL,
+	[Motivo] [nvarchar](10) NULL,
+	[CAE] [nvarchar](100) NULL,
+	[Error] [ntext] NULL,
+	[VtoCAE] [datetime] NULL,
+	[CodigoBarraCAE] [nvarchar](100) NULL,
+	[Archivado] [bit] NULL,
+ CONSTRAINT [PK_V_MV_CPTE_ELECTRONICOS] PRIMARY KEY CLUSTERED 
+(
+	[IdRequerimiento] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+ALTER TABLE [dbo].[V_MV_CPTE_ELECTRONICOS] ADD  CONSTRAINT [DF_V_MV_CPTE_ELECTRONICOS_Archivado]  DEFAULT ((0)) FOR [Archivado]
+GO
+
+PREGUNTAS
+si el POS nuevo debe emitir electrónica desde el inicio NO
+qué TCs realmente usa el negocio en mostrador FC
+si se puede arrancar con NP / FP y luego ampliar SI
+

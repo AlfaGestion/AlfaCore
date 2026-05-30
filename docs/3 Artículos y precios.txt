@@ -1,0 +1,792 @@
+3 Artículos y precios
+
+USE [ALFANET]
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_web_getFamiliasArticulos]    Script Date: 30/5/2026 13:45:09 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+
+
+
+
+
+
+
+
+
+
+CREATE PROCEDURE [dbo].[sp_web_getFamiliasArticulos]
+	@idCliente nvarchar(9) = ''
+AS
+
+BEGIN
+
+	SET NOCOUNT ON;
+
+	DECLARE @idLista NVARCHAR(4)
+	DECLARE @padre NVARCHAR(15)
+	DECLARE @codigoAnterior NVARCHAR(15)
+	DECLARE @codigo NVARCHAR(15)
+	DECLARE @descripcion NVARCHAR(100)
+	DECLARE @nCodigo NVARCHAR(15)
+	DECLARE @nDescripcion NVARCHAR(100)
+
+	CREATE TABLE #temp
+	(
+		[codigo] [nvarchar] (15) COLLATE  Latin1_General_CI_AI NOT NULL,
+		[descripcion] [nvarchar] (100) COLLATE  Latin1_General_CI_AI NOT NULL,
+	)
+
+	IF @idCliente <>''
+		SET @idLista = (SELECT isnull(idlista,'')
+	from Vt_Clientes
+	WHERE CODIGO=@idCliente)
+	ELSE
+		SET @idLista = ''
+
+
+	IF @idLista <> ''
+		DECLARE CRS CURSOR FOR
+		SELECT codigo, descripcion
+	FROM (
+		SELECT c.descripcion, ltrim(c.idfamilia) as codigo
+		FROM V_MA_Precios a
+			LEFT JOIN V_MA_ARTICULOS B ON a.IDARTICULO = b.IDARTICULO
+			LEFT JOIN V_TA_FAMILIAS c ON b.idfamilia = c.idfamilia
+		WHERE b.suspendidov<>1 and (b.suspendido=0 or b.suspendido is null) and c.idfamilia<>'' and ltrim(a.idlista)=ltrim(@idlista)
+		) as z
+	GROUP BY codigo,descripcion
+	ORDER BY codigo
+	ELSE
+		DECLARE CRS CURSOR FOR
+		SELECT codigo, descripcion
+	FROM (
+		SELECT c.descripcion, ltrim(c.idfamilia) as codigo
+		from v_ma_articulos b
+			LEFT JOIN V_TA_FAMILIAS c on b.idfamilia = c.idfamilia
+		WHERE b.suspendidov <> 1 and c.idfamilia<>''
+		) as z
+	GROUP BY codigo,descripcion
+	ORDER BY codigo
+
+	OPEN CRS
+	FETCH NEXT FROM CRS INTO @codigo,@descripcion
+	WHILE @@FETCH_STATUS = 0
+		BEGIN
+		IF LEN(@codigo) <= 2
+			BEGIN
+			INSERT INTO #temp
+				(codigo, descripcion)
+			VALUES
+				(@codigo, @descripcion)
+			SET @codigoAnterior = ''
+		END
+		ELSE
+			BEGIN
+			SET @padre = SUBSTRING(@codigo,1,2)
+			IF @padre <> @codigoAnterior
+					INSERT INTO #temp
+				(codigo, descripcion)
+			SELECT ltrim(idfamilia), ltrim(descripcion)
+			from V_TA_FAMILIAS
+			WHERE IdFamilia like @padre + '%'
+			order by IdFamilia
+			SET @codigoAnterior = @padre
+		END
+
+		FETCH NEXT FROM CRS INTO @codigo,@descripcion
+	END
+	CLOSE CRS
+	DEALLOCATE CRS
+
+	SELECT codigo, descripcion
+	FROM #temp
+	GROUP BY codigo,descripcion
+	ORDER BY codigo
+END
+
+
+
+
+
+
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_web_getListaDePrecios_query]    Script Date: 30/5/2026 13:45:09 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+
+
+
+CREATE PROCEDURE [dbo].[sp_web_getListaDePrecios_query]
+	@idlista nvarchar(4),
+	@fechad datetime,
+	@fechah datetime,
+	@idCliente NVARCHAR(13) = null,
+	@query NVARCHAR(MAX) = null
+AS
+
+BEGIN
+
+	SET NOCOUNT ON;
+	DECLARE @clasePrecio NVARCHAR(4)
+	DECLARE @tmpLista NVARCHAR(4)
+	DECLARE @claseDefault NVARCHAR(4)
+	DECLARE @sqlQuery NVARCHAR(MAX)
+
+	SET @fechah = DATEADD(day,1,@fechah)
+
+	SET @claseDefault = (SELECT VALOR
+	FROM TA_CONFIGURACION
+	WHERE CLAVE='ClaseDePrecioDefault')
+
+	SET @clasePrecio = @claseDefault
+
+	IF @idCliente <>''
+		BEGIN
+		SET @tmpLista = (SELECT isnull(ltrim(idlista),'')
+		from Vt_Clientes
+		WHERE CODIGO=@idCliente)
+		SET @clasePrecio = (SELECT isnull(clase,@claseDefault)
+		from Vt_Clientes
+		WHERE CODIGO=@idCliente)
+		END
+	
+	IF @tmpLista <> ''
+		SET @idlista = @tmpLista
+	
+	if @clasePrecio = '' or @clasePrecio is null
+		SET @clasePrecio = '1'
+
+	if @query <>'' 
+		set @query = ' AND ' + @query
+
+	SET @sqlQuery = '
+	SELECT ltrim(IdArticulo) as idarticulo, descripcion, isnull(descadic,'''') as descadic,
+		convert(varchar,convert(decimal(15,2),isnull(precio_venta,0))) AS precio_venta,
+		convert(varchar,convert(decimal(15,2),isnull(cant_of1,0))) as cant_of1,
+		convert(varchar,convert(decimal(15,2),isnull(dto_of1,0))) as dto_of1,
+		convert(varchar,convert(decimal(15,2),isnull(cant_of2,0))) as cant_of2,
+		convert(varchar,convert(decimal(15,2),isnull(dto_of2,0))) as dto_of2,
+		isnull(familia,'''') as familia,
+		ISNULL(CONVERT(NVARCHAR(10),ult_cambio,103),'''') as ult_cambio,
+		convert(varchar,convert(decimal(15,2),venta)) as venta,
+		convert(varchar,convert(decimal(15,2),moneda)) as moneda,
+		isnull(presentacion,'''') as presentacion,
+		convert(varchar,convert(decimal(15,2),Precio_Venta - ((isnull(dto_of1,0) * precio_venta) / 100)))  as preciovtadesc1,
+		convert(varchar,convert(decimal(15,2),Precio_Venta - ((isnull(dto_of2,0) * precio_venta) / 100)))  as preciovtadesc2,
+		convert(varchar,convert(decimal(15,2),tasaiva)) as iva
+	FROM (SELECT IdArticulo, DESCRIPCION, DescAdic, CASE Moneda WHEN 1 THEN Venta WHEN 2 THEN Venta *
+    (SELECT TOP 1
+				moneda2
+			FROM ta_cotizacion
+			ORDER BY FECHA_HORA DESC) WHEN 3 THEN Venta *
+    (SELECT TOP 1
+				moneda3
+			FROM ta_cotizacion
+			ORDER BY FECHA_HORA DESC) WHEN 4 THEN Venta *
+    (SELECT TOP 1
+				moneda4
+			FROM ta_cotizacion
+			ORDER BY FECHA_HORA DESC) WHEN 5 THEN Venta *
+    (SELECT TOP 1
+				moneda5
+			FROM ta_cotizacion
+			ORDER BY FECHA_HORA DESC) END AS Precio_Venta,
+			Cant_Of1, Dto_Of1, Cant_Of2, Dto_Of2, IdFamilia, Familia, CASE WHEN FhCotizacion > Ult_cambio THEN FhCotizacion ELSE Ult_cambio END as Ult_cambio, Venta, Moneda, Presentacion, TasaIVA
+		FROM (SELECT a.IdArticulo, b.DESCRIPCION, b.Procedencia AS DescAdic, CASE WHEN ''' + @clasePrecio + '''= 1 THEN a.Precio1 ELSE CASE WHEN''' +  @clasePrecio + '''= 2 THEN a.Precio2 ELSE CASE WHEN ''' + @clasePrecio + '''= 3 THEN a.Precio3 ELSE
+		CASE WHEN ''' + @clasePrecio + '''= 4 THEN a.Precio4 ELSE CASE WHEN ''' + @clasePrecio + '''= 5 THEN a.PRECIO5 ELSE CASE WHEN ''' + @clasePrecio + '''= 6 THEN a.precio6 ELSE a.precio7 END END END END END END
+		AS Venta, b.Moneda, a.CantidadOf2 AS Cant_Of1, a.PRECIO9 AS Dto_Of1, a.CantidadOf3 AS Cant_Of2, a.PRECIO10 AS Dto_Of2, b.tasaiva , b.IdFamilia,
+				(SELECT TOP (1)
+					Descripcion
+				FROM dbo.V_TA_FAMILIAS AS c
+				WHERE (LEFT(LTRIM(b.IdFamilia), 3) = IdFamilia)) AS Familia, b.FhUltimoCosto AS Ult_cambio, b.Presentacion,
+				CASE WHEN ltrim(b.moneda)=''1'' THEN b.FhUltimoCosto ELSE dbo.FN_OBTENER_ULTIMA_FECHA_COTIZACION(b.Moneda) END as FhCotizacion
+			FROM dbo.V_MA_Precios AS a INNER JOIN
+				dbo.V_MA_ARTICULOS AS b ON a.IdArticulo = b.IDARTICULO
+			WHERE (ltrim(a.IdLista) = ''' + @idlista + ''') and b.SuspendidoV <>1 and b.Suspendido <>1) AS z) AS x
+	WHERE   (ult_cambio>=''' + CONVERT(NVARCHAR(10),@fechad,103) + ''' and ult_cambio<=''' +CONVERT(NVARCHAR(10),@fechah,103) + ''') ' + @query + '
+	ORDER BY  Familia, DESCRIPCION'
+
+	EXEC(@sqlQuery)
+
+
+END
+
+
+/****** Object:  StoredProcedure [dbo].[sp_web_Alta_Comprobante]    Script Date: 18/04/2023 11:39:14 ******/
+SET ANSI_NULLS ON
+GO
+
+
+USE [ALFANET]
+GO
+
+/****** Object:  Table [dbo].[V_MA_ARTICULOS]    Script Date: 30/5/2026 13:43:30 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[V_MA_ARTICULOS](
+	[ID] [int] IDENTITY(1,1) NOT FOR REPLICATION NOT NULL,
+	[IDARTICULO] [nvarchar](25) NOT NULL,
+	[CODIGOBARRA] [nvarchar](25) NULL,
+	[DESCRIPCION] [nvarchar](100) NOT NULL,
+	[CUENTAPROVEEDOR] [nvarchar](15) NULL,
+	[IDUNIDAD] [nvarchar](4) NULL,
+	[IDRUBRO] [nvarchar](4) NULL,
+	[IDTIPO] [nvarchar](4) NULL,
+	[USASERIE] [bit] NOT NULL,
+	[USALOTE] [bit] NOT NULL,
+	[EXENTO] [bit] NOT NULL,
+	[NOTAS] [nvarchar](250) NULL,
+	[PUNTOPEDIDO] [int] NULL,
+	[COSTO] [money] NULL,
+	[IMPUESTOS] [money] NULL,
+	[PRECIO1] [money] NULL,
+	[PRECIO2] [money] NULL,
+	[PRECIO3] [money] NULL,
+	[PRECIO4] [money] NULL,
+	[PRECIO5] [money] NULL,
+	[SUSPENDIDO] [bit] NOT NULL,
+	[PUNTOMAXIMO] [int] NULL,
+	[Imagen] [image] NULL,
+	[PoliticaPrecios] [nvarchar](4) NULL,
+	[TasaIVA] [float] NULL,
+	[Moneda] [nvarchar](4) NULL,
+	[RutaImagen] [nvarchar](100) NULL,
+	[IdPercepcion] [nvarchar](4) NULL,
+	[Usuario] [nvarchar](50) NULL,
+	[Observaciones] [nvarchar](250) NULL,
+	[ActualizaCosto] [bit] NULL,
+	[CuentaContableC] [nvarchar](15) NULL,
+	[CuentaContable] [nvarchar](15) NULL,
+	[IdFamilia] [nvarchar](15) NULL,
+	[UD_CPRA] [nvarchar](4) NULL,
+	[UD_STOCK] [nvarchar](4) NULL,
+	[UD_TTE] [nvarchar](4) NULL,
+	[Presentacion] [nvarchar](50) NULL,
+	[DescripAbrev] [nvarchar](50) NULL,
+	[CostoInsumos] [money] NULL,
+	[DesdeTrigger] [int] NULL,
+	[CodigoBarraDun] [nvarchar](25) NULL,
+	[Perecedero] [bit] NULL,
+	[Pesable] [bit] NULL,
+	[PRECIO6] [money] NULL,
+	[PRECIO7] [money] NULL,
+	[UTILIDAD] [float] NULL,
+	[CODIGOBARRA1] [nvarchar](25) NULL,
+	[CODIGOBARRA2] [nvarchar](25) NULL,
+	[CODIGOBARRA3] [nvarchar](25) NULL,
+	[CODIGOBARRA4] [nvarchar](25) NULL,
+	[UMCB1] [nvarchar](4) NULL,
+	[UMCB2] [nvarchar](4) NULL,
+	[UMCB3] [nvarchar](4) NULL,
+	[UMCB4] [nvarchar](4) NULL,
+	[PRECIO8] [money] NULL,
+	[KILOS] [float] NULL,
+	[M3] [float] NULL,
+	[SuspendidoV] [bit] NULL,
+	[SuspendidoC] [bit] NULL,
+	[Dto1] [float] NULL,
+	[Dto2] [float] NULL,
+	[Dto3] [float] NULL,
+	[Dto4] [float] NULL,
+	[Dto5] [float] NULL,
+	[Rec1] [float] NULL,
+	[Rec2] [float] NULL,
+	[Rec3] [float] NULL,
+	[IdTarifaFlete] [nvarchar](4) NULL,
+	[PorcSeguro] [float] NULL,
+	[Dto6] [float] NULL,
+	[Dto7] [float] NULL,
+	[Dto8] [float] NULL,
+	[Dto9] [float] NULL,
+	[FhUltimoCosto] [datetime] NULL,
+	[FhDtoDesde] [datetime] NULL,
+	[FhDtoHasta] [datetime] NULL,
+	[UsaTalle] [bit] NULL,
+	[CodigoArtProveedor] [nvarchar](25) NULL,
+	[TalleDefault] [nvarchar](50) NULL,
+	[ColorDefault] [nvarchar](50) NULL,
+	[SexoDefault] [nvarchar](1) NULL,
+	[InsumosPorPorcentaje] [bit] NULL,
+	[EnOferta] [bit] NULL,
+	[Espesor] [float] NULL,
+	[Ancho] [float] NULL,
+	[Largo] [float] NULL,
+	[PideMedidas] [bit] NULL,
+	[EnComodato] [bit] NULL,
+	[Transmision] [int] NULL,
+	[PideEquivalencia] [bit] NULL,
+	[ITC] [money] NULL,
+	[FHALTA] [datetime] NULL,
+	[InsertaObserv] [bit] NULL,
+	[NO_CONTROLA_STOCK] [bit] NULL,
+	[URL1] [nvarchar](150) NULL,
+	[Ubicacion_Habitual] [nvarchar](50) NULL,
+	[Procedencia] [nvarchar](150) NULL,
+	[PideDescripcionAdicional] [bit] NULL,
+	[CantidadPropuesta] [float] NULL,
+	[ModificoImagen] [nvarchar](1) NULL,
+	[CostoInsumoIndependiente] [bit] NULL,
+	[StockOferta] [float] NULL,
+ CONSTRAINT [PK_V_MA_ARTICULOS] PRIMARY KEY NONCLUSTERED 
+(
+	[IDARTICULO] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, FILLFACTOR = 90) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[V_MA_Precios]    Script Date: 30/5/2026 13:43:30 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[V_MA_Precios](
+	[IdLista] [nvarchar](4) NOT NULL,
+	[Nombre] [nvarchar](50) NOT NULL,
+	[IdArticulo] [nvarchar](25) NOT NULL,
+	[ConIVA] [bit] NOT NULL,
+	[Precio1] [money] NOT NULL,
+	[Precio2] [money] NOT NULL,
+	[Precio3] [money] NOT NULL,
+	[Precio4] [money] NOT NULL,
+	[Precio5] [money] NOT NULL,
+	[IdMoneda] [nvarchar](4) NULL,
+	[TipoLista] [nvarchar](1) NOT NULL,
+	[FCOSTO] [nvarchar](100) NULL,
+	[FCLASE1] [nvarchar](100) NULL,
+	[FCLASE2] [nvarchar](100) NULL,
+	[FCLASE3] [nvarchar](100) NULL,
+	[FCLASE4] [nvarchar](100) NULL,
+	[FCLASE5] [nvarchar](100) NULL,
+	[COSTO] [money] NULL,
+	[ActualizaBase] [bit] NULL,
+	[POLITICAPRECIOS] [nvarchar](4) NULL,
+	[CUENTAPROVEEDOR] [nvarchar](15) NULL,
+	[IDARTICULOPROVEEDOR] [nvarchar](25) NULL,
+	[DESCRIPCIONARTICULO] [nvarchar](100) NULL,
+	[RUBRO] [nvarchar](4) NULL,
+	[TIPO] [nvarchar](4) NULL,
+	[ID] [int] IDENTITY(1,1) NOT FOR REPLICATION NOT NULL,
+	[IdUnidad] [nvarchar](4) NULL,
+	[DesdeTrigger] [int] NULL,
+	[FhOfertaDesde] [datetime] NULL,
+	[FhOfertaHasta] [datetime] NULL,
+	[CantidadDesde] [float] NULL,
+	[GRUPO] [nvarchar](10) NULL,
+	[Precio0] [money] NULL,
+	[PRECIO6] [money] NULL,
+	[PRECIO7] [money] NULL,
+	[UTILIDAD] [float] NULL,
+	[FCLASE6] [nvarchar](100) NULL,
+	[FCLASE7] [nvarchar](100) NULL,
+	[PRECIO8] [money] NULL,
+	[FCLASE8] [nvarchar](100) NULL,
+	[ModificaPrecios] [nvarchar](25) NULL,
+	[Dto1] [float] NULL,
+	[Dto2] [float] NULL,
+	[Dto3] [float] NULL,
+	[Dto4] [float] NULL,
+	[Dto5] [float] NULL,
+	[Dto6] [float] NULL,
+	[Dto7] [float] NULL,
+	[Dto8] [float] NULL,
+	[Dto9] [float] NULL,
+	[Rec1] [float] NULL,
+	[Rec2] [float] NULL,
+	[Rec3] [float] NULL,
+	[IdTarifaFlete] [nvarchar](4) NULL,
+	[PorcSeguro] [float] NULL,
+	[FhDtoDesde] [datetime] NULL,
+	[FhDtoHasta] [datetime] NULL,
+	[IDCOMPULSA] [int] NULL,
+	[IDINSERT] [int] NULL,
+	[ESTADO] [nvarchar](10) NULL,
+	[MKTeorico] [money] NULL,
+	[CambioCodBarra] [bit] NULL,
+	[Transmision] [int] NULL,
+	[USUARIO] [nvarchar](50) NULL,
+	[FHALTA] [datetime] NULL,
+	[PRECIO9] [money] NULL,
+	[CantidadOf2] [float] NULL,
+	[PRECIO10] [money] NULL,
+	[CantidadOf3] [float] NULL,
+ CONSTRAINT [PK_V_MA_Precios] PRIMARY KEY CLUSTERED 
+(
+	[IdLista] ASC,
+	[IdArticulo] ASC,
+	[TipoLista] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY],
+ CONSTRAINT [IX_V_MA_Precios_9] UNIQUE NONCLUSTERED 
+(
+	[IdLista] ASC,
+	[IdArticulo] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+) ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[V_MA_PreciosCab]    Script Date: 30/5/2026 13:43:30 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[V_MA_PreciosCab](
+	[Id] [int] IDENTITY(1,1) NOT FOR REPLICATION NOT NULL,
+	[IdLista] [nvarchar](4) NOT NULL,
+	[Nombre] [nvarchar](50) NOT NULL,
+	[Grupo] [nvarchar](10) NULL,
+	[VigenciaDesde] [datetime] NULL,
+	[VigenciaHasta] [datetime] NULL,
+	[TipoLista] [nvarchar](1) NOT NULL,
+	[Transmision] [int] NULL,
+ CONSTRAINT [PK_V_MA_PreciosCab] PRIMARY KEY CLUSTERED 
+(
+	[IdLista] ASC,
+	[TipoLista] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+) ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[V_TA_FAMILIAS]    Script Date: 30/5/2026 13:43:30 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[V_TA_FAMILIAS](
+	[IdFamilia] [nvarchar](15) NOT NULL,
+	[Descripcion] [nvarchar](100) NULL,
+	[Transmision] [int] NULL,
+	[MKBase] [money] NULL,
+	[MkReal] [money] NULL,
+	[IdPolitica] [nvarchar](4) NULL,
+ CONSTRAINT [PK_V_TA_FAMILIAS] PRIMARY KEY NONCLUSTERED 
+(
+	[IdFamilia] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, FILLFACTOR = 90) ON [PRIMARY]
+) ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[V_TA_Unidad]    Script Date: 30/5/2026 13:43:30 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[V_TA_Unidad](
+	[ID] [int] IDENTITY(1,1) NOT FOR REPLICATION NOT NULL,
+	[IdUnidad] [nvarchar](4) NOT NULL,
+	[Descripcion] [nvarchar](50) NOT NULL,
+	[FechaHora_Grabacion] [datetime] NULL,
+	[FechaHora_Modificacion] [datetime] NULL,
+	[Transmision] [int] NULL,
+ CONSTRAINT [PK_V_TA_Unidad] PRIMARY KEY NONCLUSTERED 
+(
+	[IdUnidad] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, FILLFACTOR = 90) ON [PRIMARY]
+) ON [PRIMARY]
+GO
+
+ALTER TABLE [dbo].[V_MA_ARTICULOS] ADD  CONSTRAINT [DF_V_MA_ARTICULOS_USASERIE]  DEFAULT (0) FOR [USASERIE]
+GO
+
+ALTER TABLE [dbo].[V_MA_ARTICULOS] ADD  CONSTRAINT [DF_V_MA_ARTICULOS_USALOTE]  DEFAULT (0) FOR [USALOTE]
+GO
+
+ALTER TABLE [dbo].[V_MA_ARTICULOS] ADD  CONSTRAINT [DF_V_MA_ARTICULOS_EXENTO]  DEFAULT (0) FOR [EXENTO]
+GO
+
+ALTER TABLE [dbo].[V_MA_ARTICULOS] ADD  CONSTRAINT [DF_V_MA_ARTICULOS_PUNTOPEDIDO]  DEFAULT (0) FOR [PUNTOPEDIDO]
+GO
+
+ALTER TABLE [dbo].[V_MA_ARTICULOS] ADD  CONSTRAINT [DF_V_MA_ARTICULOS_COSTO]  DEFAULT (0) FOR [COSTO]
+GO
+
+ALTER TABLE [dbo].[V_MA_ARTICULOS] ADD  CONSTRAINT [DF_V_MA_ARTICULOS_IMPUESTOS]  DEFAULT (0) FOR [IMPUESTOS]
+GO
+
+ALTER TABLE [dbo].[V_MA_ARTICULOS] ADD  CONSTRAINT [DF_V_MA_ARTICULOS_PRECIO1]  DEFAULT (0) FOR [PRECIO1]
+GO
+
+ALTER TABLE [dbo].[V_MA_ARTICULOS] ADD  CONSTRAINT [DF_V_MA_ARTICULOS_PRECIO2]  DEFAULT (0) FOR [PRECIO2]
+GO
+
+ALTER TABLE [dbo].[V_MA_ARTICULOS] ADD  CONSTRAINT [DF_V_MA_ARTICULOS_PRECIO3]  DEFAULT (0) FOR [PRECIO3]
+GO
+
+ALTER TABLE [dbo].[V_MA_ARTICULOS] ADD  CONSTRAINT [DF_V_MA_ARTICULOS_PRECIO4]  DEFAULT (0) FOR [PRECIO4]
+GO
+
+ALTER TABLE [dbo].[V_MA_ARTICULOS] ADD  CONSTRAINT [DF_V_MA_ARTICULOS_PRECIO5]  DEFAULT (0) FOR [PRECIO5]
+GO
+
+ALTER TABLE [dbo].[V_MA_ARTICULOS] ADD  CONSTRAINT [DF_V_MA_ARTICULOS_SUSPENDIDO]  DEFAULT (0) FOR [SUSPENDIDO]
+GO
+
+ALTER TABLE [dbo].[V_MA_ARTICULOS] ADD  CONSTRAINT [DF_V_MA_ARTICULOS_PUNTOMAXIMO]  DEFAULT (0) FOR [PUNTOMAXIMO]
+GO
+
+ALTER TABLE [dbo].[V_MA_ARTICULOS] ADD  CONSTRAINT [DF_V_MA_ARTICULOS_TasaIVA]  DEFAULT (0) FOR [TasaIVA]
+GO
+
+ALTER TABLE [dbo].[V_MA_ARTICULOS] ADD  CONSTRAINT [DF_V_MA_ARTICULOS_Moneda]  DEFAULT ('   1') FOR [Moneda]
+GO
+
+ALTER TABLE [dbo].[V_MA_ARTICULOS] ADD  CONSTRAINT [DF_V_MA_Articulos_ActualizaCosto]  DEFAULT (0) FOR [ActualizaCosto]
+GO
+
+ALTER TABLE [dbo].[V_MA_ARTICULOS] ADD  CONSTRAINT [DF_v_ma_articulos_Perecedero]  DEFAULT (0) FOR [Perecedero]
+GO
+
+ALTER TABLE [dbo].[V_MA_ARTICULOS] ADD  CONSTRAINT [DF_v_ma_articulos_Pesable]  DEFAULT (0) FOR [Pesable]
+GO
+
+ALTER TABLE [dbo].[V_MA_ARTICULOS] ADD  CONSTRAINT [DF_V_MA_ARTICULOS_PRECIO6]  DEFAULT (0) FOR [PRECIO6]
+GO
+
+ALTER TABLE [dbo].[V_MA_ARTICULOS] ADD  CONSTRAINT [DF_V_MA_ARTICULOS_PRECIO7]  DEFAULT (0) FOR [PRECIO7]
+GO
+
+ALTER TABLE [dbo].[V_MA_ARTICULOS] ADD  CONSTRAINT [DF_V_MA_ARTICULOS_UTILIDAD]  DEFAULT (0) FOR [UTILIDAD]
+GO
+
+ALTER TABLE [dbo].[V_MA_ARTICULOS] ADD  CONSTRAINT [DF_V_MA_ARTICULOS_PRECIO8]  DEFAULT (0) FOR [PRECIO8]
+GO
+
+ALTER TABLE [dbo].[V_MA_ARTICULOS] ADD  CONSTRAINT [DF_V_MA_ARTICULOS_KILOS]  DEFAULT (0) FOR [KILOS]
+GO
+
+ALTER TABLE [dbo].[V_MA_ARTICULOS] ADD  CONSTRAINT [DF_V_MA_ARTICULOS_M3]  DEFAULT (0) FOR [M3]
+GO
+
+ALTER TABLE [dbo].[V_MA_ARTICULOS] ADD  CONSTRAINT [DF_V_MA_ARTICULOS_SuspendidoV]  DEFAULT (0) FOR [SuspendidoV]
+GO
+
+ALTER TABLE [dbo].[V_MA_ARTICULOS] ADD  CONSTRAINT [DF_V_MA_ARTICULOS_SuspendidoC]  DEFAULT (0) FOR [SuspendidoC]
+GO
+
+ALTER TABLE [dbo].[V_MA_ARTICULOS] ADD  CONSTRAINT [DF_V_MA_Articulos_Dto1]  DEFAULT (0) FOR [Dto1]
+GO
+
+ALTER TABLE [dbo].[V_MA_ARTICULOS] ADD  CONSTRAINT [DF_V_MA_Articulos_Dto2]  DEFAULT (0) FOR [Dto2]
+GO
+
+ALTER TABLE [dbo].[V_MA_ARTICULOS] ADD  CONSTRAINT [DF_V_MA_Articulos_Dto3]  DEFAULT (0) FOR [Dto3]
+GO
+
+ALTER TABLE [dbo].[V_MA_ARTICULOS] ADD  CONSTRAINT [DF_V_MA_Articulos_Dto4]  DEFAULT (0) FOR [Dto4]
+GO
+
+ALTER TABLE [dbo].[V_MA_ARTICULOS] ADD  CONSTRAINT [DF_V_MA_Articulos_Dto5]  DEFAULT (0) FOR [Dto5]
+GO
+
+ALTER TABLE [dbo].[V_MA_ARTICULOS] ADD  CONSTRAINT [DF_V_MA_Articulos_Rec1]  DEFAULT (0) FOR [Rec1]
+GO
+
+ALTER TABLE [dbo].[V_MA_ARTICULOS] ADD  CONSTRAINT [DF_V_MA_Articulos_Rec2]  DEFAULT (0) FOR [Rec2]
+GO
+
+ALTER TABLE [dbo].[V_MA_ARTICULOS] ADD  CONSTRAINT [DF_V_MA_Articulos_Rec3]  DEFAULT (0) FOR [Rec3]
+GO
+
+ALTER TABLE [dbo].[V_MA_ARTICULOS] ADD  CONSTRAINT [DF_v_ma_articulos_PorcSeguro]  DEFAULT (0) FOR [PorcSeguro]
+GO
+
+ALTER TABLE [dbo].[V_MA_ARTICULOS] ADD  CONSTRAINT [DF_v_ma_articulos_Dto6]  DEFAULT (0) FOR [Dto6]
+GO
+
+ALTER TABLE [dbo].[V_MA_ARTICULOS] ADD  CONSTRAINT [DF_v_ma_articulos_Dto7]  DEFAULT (0) FOR [Dto7]
+GO
+
+ALTER TABLE [dbo].[V_MA_ARTICULOS] ADD  CONSTRAINT [DF_v_ma_articulos_Dto8]  DEFAULT (0) FOR [Dto8]
+GO
+
+ALTER TABLE [dbo].[V_MA_ARTICULOS] ADD  CONSTRAINT [DF_v_ma_articulos_Dto9]  DEFAULT (0) FOR [Dto9]
+GO
+
+ALTER TABLE [dbo].[V_MA_ARTICULOS] ADD  CONSTRAINT [DF_v_ma_articulos_UsaTalle]  DEFAULT (0) FOR [UsaTalle]
+GO
+
+ALTER TABLE [dbo].[V_MA_ARTICULOS] ADD  CONSTRAINT [DF_V_MA_ARTICULOS_InsumosPorPorcentaje]  DEFAULT (0) FOR [InsumosPorPorcentaje]
+GO
+
+ALTER TABLE [dbo].[V_MA_ARTICULOS] ADD  CONSTRAINT [DF_V_MA_ARTICULOS_EnOferta]  DEFAULT (0) FOR [EnOferta]
+GO
+
+ALTER TABLE [dbo].[V_MA_ARTICULOS] ADD  CONSTRAINT [DF_V_MA_ARTICULOS_Espesor]  DEFAULT (0) FOR [Espesor]
+GO
+
+ALTER TABLE [dbo].[V_MA_ARTICULOS] ADD  CONSTRAINT [DF_V_MA_ARTICULOS_Ancho]  DEFAULT (0) FOR [Ancho]
+GO
+
+ALTER TABLE [dbo].[V_MA_ARTICULOS] ADD  CONSTRAINT [DF_V_MA_ARTICULOS_Largo]  DEFAULT (0) FOR [Largo]
+GO
+
+ALTER TABLE [dbo].[V_MA_ARTICULOS] ADD  CONSTRAINT [DF_V_MA_ARTICULOS_PideMedidas]  DEFAULT (0) FOR [PideMedidas]
+GO
+
+ALTER TABLE [dbo].[V_MA_ARTICULOS] ADD  CONSTRAINT [DF_V_MA_ARTICULOS_EnComodato]  DEFAULT (0) FOR [EnComodato]
+GO
+
+ALTER TABLE [dbo].[V_MA_ARTICULOS] ADD  CONSTRAINT [DF_V_MA_ARTICULOS_Transmision]  DEFAULT (0) FOR [Transmision]
+GO
+
+ALTER TABLE [dbo].[V_MA_ARTICULOS] ADD  CONSTRAINT [DF_V_MA_ARTICULOS_InsertaObserv]  DEFAULT (0) FOR [InsertaObserv]
+GO
+
+ALTER TABLE [dbo].[V_MA_ARTICULOS] ADD  CONSTRAINT [DF_V_MA_ARTICULOS_NO_CONTROLA_STOCK]  DEFAULT (0) FOR [NO_CONTROLA_STOCK]
+GO
+
+ALTER TABLE [dbo].[V_MA_ARTICULOS] ADD  CONSTRAINT [DF_V_MA_ARTICULOS_PideDescripcionAdicional]  DEFAULT (0) FOR [PideDescripcionAdicional]
+GO
+
+ALTER TABLE [dbo].[V_MA_Precios] ADD  CONSTRAINT [DF_V_MA_Precios_ConIVA]  DEFAULT (0) FOR [ConIVA]
+GO
+
+ALTER TABLE [dbo].[V_MA_Precios] ADD  CONSTRAINT [DF_V_MA_Precios_Precio1]  DEFAULT (0) FOR [Precio1]
+GO
+
+ALTER TABLE [dbo].[V_MA_Precios] ADD  CONSTRAINT [DF_V_MA_Precios_Precio2]  DEFAULT (0) FOR [Precio2]
+GO
+
+ALTER TABLE [dbo].[V_MA_Precios] ADD  CONSTRAINT [DF_V_MA_Precios_Precio3]  DEFAULT (0) FOR [Precio3]
+GO
+
+ALTER TABLE [dbo].[V_MA_Precios] ADD  CONSTRAINT [DF_V_MA_Precios_Precio4]  DEFAULT (0) FOR [Precio4]
+GO
+
+ALTER TABLE [dbo].[V_MA_Precios] ADD  CONSTRAINT [DF_V_MA_Precios_Precio5]  DEFAULT (0) FOR [Precio5]
+GO
+
+ALTER TABLE [dbo].[V_MA_Precios] ADD  CONSTRAINT [DF_V_MA_Precios_IdMoneda]  DEFAULT ('   1') FOR [IdMoneda]
+GO
+
+ALTER TABLE [dbo].[V_MA_Precios] ADD  CONSTRAINT [DF_V_MA_Precios_TipoLista]  DEFAULT ('V') FOR [TipoLista]
+GO
+
+ALTER TABLE [dbo].[V_MA_Precios] ADD  CONSTRAINT [DF_V_MA_PRECIOS_COSTO]  DEFAULT (0) FOR [COSTO]
+GO
+
+ALTER TABLE [dbo].[V_MA_Precios] ADD  CONSTRAINT [DF_V_MA_PRECIOS_ActualizaBase]  DEFAULT (0) FOR [ActualizaBase]
+GO
+
+ALTER TABLE [dbo].[V_MA_Precios] ADD  CONSTRAINT [DF_V_MA_Precios_Precio0]  DEFAULT (0) FOR [Precio0]
+GO
+
+ALTER TABLE [dbo].[V_MA_Precios] ADD  CONSTRAINT [DF_V_MA_PRECIOS_PRECIO6]  DEFAULT (0) FOR [PRECIO6]
+GO
+
+ALTER TABLE [dbo].[V_MA_Precios] ADD  CONSTRAINT [DF_V_MA_PRECIOS_PRECIO7]  DEFAULT (0) FOR [PRECIO7]
+GO
+
+ALTER TABLE [dbo].[V_MA_Precios] ADD  CONSTRAINT [DF_V_MA_PRECIOS_UTILIDAD]  DEFAULT (0) FOR [UTILIDAD]
+GO
+
+ALTER TABLE [dbo].[V_MA_Precios] ADD  CONSTRAINT [DF_V_MA_Precios_PRECIO8]  DEFAULT (0) FOR [PRECIO8]
+GO
+
+ALTER TABLE [dbo].[V_MA_Precios] ADD  CONSTRAINT [DF_V_MA_Precios_Dto1]  DEFAULT (0) FOR [Dto1]
+GO
+
+ALTER TABLE [dbo].[V_MA_Precios] ADD  CONSTRAINT [DF_V_MA_Precios_Dto2]  DEFAULT (0) FOR [Dto2]
+GO
+
+ALTER TABLE [dbo].[V_MA_Precios] ADD  CONSTRAINT [DF_V_MA_Precios_Dto3]  DEFAULT (0) FOR [Dto3]
+GO
+
+ALTER TABLE [dbo].[V_MA_Precios] ADD  CONSTRAINT [DF_V_MA_Precios_Dto4]  DEFAULT (0) FOR [Dto4]
+GO
+
+ALTER TABLE [dbo].[V_MA_Precios] ADD  CONSTRAINT [DF_V_MA_Precios_Dto5]  DEFAULT (0) FOR [Dto5]
+GO
+
+ALTER TABLE [dbo].[V_MA_Precios] ADD  CONSTRAINT [DF_V_MA_Precios_Dto6]  DEFAULT (0) FOR [Dto6]
+GO
+
+ALTER TABLE [dbo].[V_MA_Precios] ADD  CONSTRAINT [DF_V_MA_Precios_Dto7]  DEFAULT (0) FOR [Dto7]
+GO
+
+ALTER TABLE [dbo].[V_MA_Precios] ADD  CONSTRAINT [DF_V_MA_Precios_Dto8]  DEFAULT (0) FOR [Dto8]
+GO
+
+ALTER TABLE [dbo].[V_MA_Precios] ADD  CONSTRAINT [DF_V_MA_Precios_Dto9]  DEFAULT (0) FOR [Dto9]
+GO
+
+ALTER TABLE [dbo].[V_MA_Precios] ADD  CONSTRAINT [DF_V_MA_Precios_Rec1]  DEFAULT (0) FOR [Rec1]
+GO
+
+ALTER TABLE [dbo].[V_MA_Precios] ADD  CONSTRAINT [DF_V_MA_Precios_Rec2]  DEFAULT (0) FOR [Rec2]
+GO
+
+ALTER TABLE [dbo].[V_MA_Precios] ADD  CONSTRAINT [DF_V_MA_Precios_Rec3]  DEFAULT (0) FOR [Rec3]
+GO
+
+ALTER TABLE [dbo].[V_MA_Precios] ADD  CONSTRAINT [DF_V_MA_Precios_PorcSeguro]  DEFAULT (0) FOR [PorcSeguro]
+GO
+
+ALTER TABLE [dbo].[V_MA_Precios] ADD  CONSTRAINT [DF_V_MA_PRECIOS_IDCOMPULSA]  DEFAULT (0) FOR [IDCOMPULSA]
+GO
+
+ALTER TABLE [dbo].[V_MA_Precios] ADD  CONSTRAINT [DF_V_MA_PRECIOS_IDINSERT]  DEFAULT (0) FOR [IDINSERT]
+GO
+
+ALTER TABLE [dbo].[V_MA_Precios] ADD  CONSTRAINT [DF_V_MA_PRECIOS_CambioCodBarra]  DEFAULT (0) FOR [CambioCodBarra]
+GO
+
+ALTER TABLE [dbo].[V_MA_Precios] ADD  CONSTRAINT [DF_V_MA_PRECIOS_Transmision]  DEFAULT (0) FOR [Transmision]
+GO
+
+ALTER TABLE [dbo].[V_MA_PreciosCab] ADD  CONSTRAINT [DF_V_MA_PreciosCab_TipoLista]  DEFAULT ('V') FOR [TipoLista]
+GO
+
+ALTER TABLE [dbo].[V_MA_PreciosCab] ADD  CONSTRAINT [DF_V_MA_PRECIOSCAB_Transmision]  DEFAULT (0) FOR [Transmision]
+GO
+
+ALTER TABLE [dbo].[V_TA_FAMILIAS] ADD  CONSTRAINT [DF_V_TA_FAMILIAS_Transmision]  DEFAULT (0) FOR [Transmision]
+GO
+
+ALTER TABLE [dbo].[V_TA_FAMILIAS] ADD  CONSTRAINT [DF_V_TA_FAMILIAS_MKBase]  DEFAULT (0) FOR [MKBase]
+GO
+
+ALTER TABLE [dbo].[V_TA_Unidad] ADD  CONSTRAINT [DF_V_TA_UNIDAD_Transmision]  DEFAULT (0) FOR [Transmision]
+GO
+
+ALTER TABLE [dbo].[V_MA_Precios]  WITH NOCHECK ADD  CONSTRAINT [FK_V_MA_Precios_V_MA_ARTICULOS] FOREIGN KEY([IdArticulo])
+REFERENCES [dbo].[V_MA_ARTICULOS] ([IDARTICULO])
+NOT FOR REPLICATION 
+GO
+
+ALTER TABLE [dbo].[V_MA_Precios] CHECK CONSTRAINT [FK_V_MA_Precios_V_MA_ARTICULOS]
+GO
+
+
+
+Preguntas:
+
+precio según cliente o lista - ESTAN ASOCIADOS AL CLIENTE
+si el precio viene final o neto - SEGUN CONFIGURACION
+cómo se resuelve IVA - DEPENDE
+cómo se busca por código/barra/descripción 
+si hay artículos pesables o con unidad especial 
+

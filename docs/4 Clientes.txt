@@ -1,0 +1,203 @@
+4 Clientes
+USE [ALFANET]
+GO
+
+/****** Object:  View [dbo].[Vt_Clientes]    Script Date: 30/5/2026 13:49:27 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE VIEW [dbo].[Vt_Clientes]
+AS
+SELECT        dbo.MA_CUENTAS.DESCRIPCION AS RAZON_SOCIAL, dbo.MA_CUENTAS.TipoVista, dbo.MA_CUENTAS.DV, dbo.MA_CUENTAS.TITULO, dbo.MA_CUENTAS.Libro_Iva_Ventas, dbo.MA_CUENTAS.Libro_Iva_Compras, 
+                         dbo.MA_CUENTAS.PideVencimiento, dbo.MA_CUENTAS.Dada_De_Baja, dbo.MA_CUENTAS.CODIGO AS CTACODIGO, dbo.MA_CUENTAS.CODIGO, dbo.MA_CUENTASADIC.CONTACTO, dbo.MA_CUENTASADIC.CALLE, 
+                         dbo.MA_CUENTASADIC.NUMERO, dbo.MA_CUENTASADIC.PISO, dbo.MA_CUENTASADIC.DEPARTAMENTO, dbo.MA_CUENTASADIC.CPOSTAL, dbo.MA_CUENTASADIC.LOCALIDAD, dbo.MA_CUENTASADIC.PROVINCIA, 
+                         dbo.MA_CUENTASADIC.PAIS, dbo.MA_CUENTASADIC.TELEFONO, dbo.MA_CUENTASADIC.FAX, dbo.MA_CUENTASADIC.MAIL, dbo.MA_CUENTASADIC.DOCUMENTO_TIPO, dbo.MA_CUENTASADIC.NUMERO_DOCUMENTO, 
+                         dbo.MA_CUENTASADIC.IVA, dbo.MA_CUENTASADIC.OBSERVACIONES, dbo.MA_CUENTASADIC.Limite_Credito, dbo.MA_CUENTASADIC.idCond_Cpra_Vta, dbo.MA_CUENTASADIC.IDCategoria, 
+                         dbo.MA_CUENTASADIC.FechaHora_Grabacion, dbo.MA_CUENTASADIC.FechaHora_Modificacion, dbo.MA_CUENTASADIC.IdLista, dbo.MA_CUENTASADIC.Clase, dbo.MA_CUENTASADIC.IdVendedor, 
+                         dbo.MA_CUENTASADIC.IdMotivoVta, dbo.MA_CUENTASADIC.IdMotivoCpra, dbo.MA_CUENTASADIC.ExentoIvaServicios, dbo.MA_CUENTASADIC.ExentoIvaArticulos, dbo.MA_CUENTASADIC.ExentoIVAOtros, 
+                         dbo.MA_CUENTASADIC.Descuento, dbo.MA_CUENTASADIC.RETIVA_IdRetencion, dbo.MA_CUENTASADIC.RETIBR_IdRetencion, dbo.MA_CUENTASADIC.RETGAN_IdRetencion, dbo.MA_CUENTASADIC.LugarEntrega, 
+                         dbo.MA_CUENTASADIC.CALLE_FIS, dbo.MA_CUENTASADIC.NUMERO_FIS, dbo.MA_CUENTASADIC.PISO_FIS, dbo.MA_CUENTASADIC.DEPARTAMENTO_FIS, dbo.MA_CUENTASADIC.CPOSTAL_FIS, 
+                         dbo.MA_CUENTASADIC.LOCALIDAD_FIS, dbo.MA_CUENTASADIC.PROVINCIA_FIS, dbo.MA_CUENTASADIC.PAIS_FIS, dbo.MA_CUENTASADIC.TELEFONO_FIS, dbo.MA_CUENTASADIC.FAX_FIS, 
+                         dbo.MA_CUENTASADIC.CodigoImputacion, dbo.MA_CUENTASADIC.Consignacion, dbo.MA_CUENTAS.Moneda, dbo.MA_CUENTAS.MedioDePago, dbo.MA_CUENTAS.CodigoOpcional, dbo.MA_CUENTAS.CajaYBanco, 
+                         dbo.MA_CUENTAS.CuentaPrincipal, dbo.MA_CUENTASADIC.ZONA, dbo.MA_CUENTASADIC.RETIVA_NROINS, dbo.MA_CUENTASADIC.RETIBR_NROINS, dbo.MA_CUENTASADIC.RETGAN_NROINS, dbo.MA_CUENTASADIC.Clave, 
+                         dbo.MA_CUENTASADIC.IdVendedor1, dbo.MA_CUENTASADIC.IdVendedor2, dbo.MA_CUENTASADIC.IdVendedor3, dbo.MA_CUENTASADIC.IdVendedor4, dbo.MA_CUENTASADIC.IdVendedor5, 
+                         dbo.MA_CUENTASADIC.Limite_Credito1, dbo.MA_CUENTASADIC.Limite_Credito2, dbo.MA_CUENTASADIC.Limite_Credito3, dbo.MA_CUENTASADIC.Limite_Credito4, dbo.MA_CUENTASADIC.Limite_Credito5, 
+                         dbo.MA_CUENTASADIC.DatosPago, dbo.MA_CUENTASADIC.WEB, dbo.MA_CUENTASADIC.FCC_Sin_OC, dbo.MA_CUENTAS.BLOQUEO, dbo.MA_CUENTASADIC.Dto1, dbo.MA_CUENTASADIC.Dto2, dbo.MA_CUENTASADIC.Dto3, 
+                         dbo.MA_CUENTASADIC.OCCambiaCosto, dbo.MA_CUENTASADIC.idCond_Cpra_Vta_Vdor1, dbo.MA_CUENTASADIC.idCond_Cpra_Vta_Vdor2, dbo.MA_CUENTASADIC.idCond_Cpra_Vta_Vdor3, 
+                         dbo.MA_CUENTASADIC.idCond_Cpra_Vta_Vdor4, dbo.MA_CUENTASADIC.idCond_Cpra_Vta_Vdor5, dbo.MA_CUENTASADIC.idDepositoEntregaOC, dbo.MA_CUENTASADIC.EmiteSobresPorOP, 
+                         dbo.MA_CUENTASADIC.ProveedorLocal, dbo.MA_CUENTASADIC.ProveedorCompartido, dbo.MA_CUENTASADIC.IdListaRMTRF, dbo.MA_CUENTASADIC.Clasificacion, dbo.MA_CUENTASADIC.OBJETIVO, 
+                         dbo.MA_CUENTASADIC.CBU, dbo.MA_CUENTASADIC.ALIAS, dbo.MA_CUENTASADIC.RETSUSS_IdRetencion, dbo.MA_CUENTASADIC.FhVtoExento, dbo.MA_CUENTASADIC.RETIBR_IdRetencionOnLine, 
+                         dbo.MA_CUENTASADIC.SIAP_IVA_REG_RET_PERC, dbo.MA_CUENTASADIC.X, dbo.MA_CUENTASADIC.Y
+FROM            dbo.MA_CUENTAS LEFT OUTER JOIN
+                         dbo.MA_CUENTASADIC ON dbo.MA_CUENTAS.CODIGO = dbo.MA_CUENTASADIC.CODIGO
+WHERE        (dbo.MA_CUENTAS.TipoVista = N'CL') OR
+                         (dbo.MA_CUENTAS.TipoVista = N'PE')
+GO
+ 
+USE [ALFANET]
+GO
+
+/****** Object:  Table [dbo].[MA_CUENTAS]    Script Date: 30/5/2026 13:48:57 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[MA_CUENTAS](
+	[CODIGO] [nvarchar](15) NOT NULL,
+	[DV] [smallint] NULL,
+	[DESCRIPCION] [nvarchar](50) NOT NULL,
+	[TITULO] [bit] NOT NULL,
+	[AJUSTE] [bit] NOT NULL,
+	[INDICE] [smallint] NULL,
+	[BLOQUEO] [bit] NOT NULL,
+	[MANUAL] [ntext] NULL,
+	[MANUAL_HABER] [nvarchar](500) NULL,
+	[FechaHora_Grabacion] [datetime] NULL,
+	[FechaHora_Modificacion] [datetime] NULL,
+	[Libro_Iva_Compras] [bit] NOT NULL,
+	[Libro_Iva_Ventas] [bit] NOT NULL,
+	[Bienes] [bit] NOT NULL,
+	[Codigo_Deprec_Acumulada] [nvarchar](15) NULL,
+	[Codigo_Deprec_Ejercicio] [nvarchar](15) NULL,
+	[Dada_De_Baja] [bit] NOT NULL,
+	[TipoVista] [nvarchar](2) NULL,
+	[PideVencimiento] [bit] NOT NULL,
+	[CuentaPrincipal] [nvarchar](15) NULL,
+	[CajaYBanco] [bit] NULL,
+	[CodigoOpcional] [nvarchar](15) NULL,
+	[MedioDePago] [nvarchar](4) NULL,
+	[Moneda] [nvarchar](4) NULL,
+	[Transmision] [int] NULL,
+	[Recepcion] [int] NULL,
+	[NoPideDatosTarjeta] [bit] NULL,
+	[Terceros] [bit] NULL,
+	[CodTarjeta_ConcAuto] [nvarchar](15) NULL,
+	[usaCCostos] [bit] NULL,
+	[CC_DIST] [nvarchar](4) NULL,
+ CONSTRAINT [PK_MA_CUENTAS] PRIMARY KEY CLUSTERED 
+(
+	[CODIGO] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[MA_CUENTASADIC]    Script Date: 30/5/2026 13:48:57 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[MA_CUENTASADIC](
+	[CODIGO] [nvarchar](15) NOT NULL,
+	[CONTACTO] [nvarchar](70) NULL,
+	[CALLE] [nvarchar](50) NULL,
+	[NUMERO] [nvarchar](6) NULL,
+	[PISO] [nvarchar](2) NULL,
+	[DEPARTAMENTO] [nvarchar](2) NULL,
+	[CPOSTAL] [nvarchar](10) NULL,
+	[LOCALIDAD] [nvarchar](50) NULL,
+	[PROVINCIA] [nvarchar](4) NULL,
+	[PAIS] [nvarchar](4) NULL,
+	[TELEFONO] [nvarchar](50) NULL,
+	[FAX] [nvarchar](50) NULL,
+	[MAIL] [nvarchar](250) NULL,
+	[DOCUMENTO_TIPO] [nvarchar](4) NULL,
+	[NUMERO_DOCUMENTO] [nvarchar](13) NULL,
+	[IVA] [nvarchar](4) NULL,
+	[OBSERVACIONES] [nvarchar](200) NULL,
+	[Limite_Credito] [money] NULL,
+	[idCond_Cpra_Vta] [nvarchar](4) NULL,
+	[IDCategoria] [nvarchar](4) NULL,
+	[FechaHora_Grabacion] [datetime] NULL,
+	[FechaHora_Modificacion] [datetime] NULL,
+	[IdLista] [nvarchar](4) NULL,
+	[Clase] [smallint] NULL,
+	[IdVendedor] [nvarchar](4) NULL,
+	[IdMotivoVta] [nvarchar](4) NULL,
+	[IdMotivoCpra] [nvarchar](4) NULL,
+	[ExentoIvaServicios] [bit] NOT NULL,
+	[ExentoIvaArticulos] [bit] NOT NULL,
+	[ExentoIVAOtros] [bit] NOT NULL,
+	[Descuento] [float] NULL,
+	[RETIVA_IdRetencion] [nvarchar](4) NULL,
+	[RETIBR_IdRetencion] [nvarchar](4) NULL,
+	[RETGAN_IdRetencion] [nvarchar](4) NULL,
+	[LugarEntrega] [nvarchar](200) NULL,
+	[CALLE_FIS] [nvarchar](50) NULL,
+	[NUMERO_FIS] [nvarchar](6) NULL,
+	[PISO_FIS] [nvarchar](2) NULL,
+	[DEPARTAMENTO_FIS] [nvarchar](2) NULL,
+	[CPOSTAL_FIS] [nvarchar](10) NULL,
+	[LOCALIDAD_FIS] [nvarchar](50) NULL,
+	[PROVINCIA_FIS] [nvarchar](4) NULL,
+	[PAIS_FIS] [nvarchar](4) NULL,
+	[TELEFONO_FIS] [nvarchar](50) NULL,
+	[FAX_FIS] [nvarchar](50) NULL,
+	[CodigoImputacion] [nvarchar](15) NULL,
+	[Consignacion] [money] NULL,
+	[ZONA] [nvarchar](15) NULL,
+	[RETIVA_NROINS] [nvarchar](15) NULL,
+	[RETIBR_NROINS] [nvarchar](15) NULL,
+	[RETGAN_NROINS] [nvarchar](15) NULL,
+	[Clave] [nvarchar](15) NULL,
+	[IdVendedor1] [nvarchar](4) NULL,
+	[IdVendedor2] [nvarchar](4) NULL,
+	[IdVendedor3] [nvarchar](4) NULL,
+	[IdVendedor4] [nvarchar](4) NULL,
+	[IdVendedor5] [nvarchar](4) NULL,
+	[Limite_Credito1] [money] NULL,
+	[Limite_Credito2] [money] NULL,
+	[Limite_Credito3] [money] NULL,
+	[Limite_Credito4] [money] NULL,
+	[Limite_Credito5] [money] NULL,
+	[DatosPago] [nvarchar](150) NULL,
+	[WEB] [nvarchar](250) NULL,
+	[FCC_Sin_OC] [bit] NULL,
+	[Dto1] [float] NULL,
+	[Dto2] [float] NULL,
+	[Dto3] [float] NULL,
+	[OCCambiaCosto] [bit] NULL,
+	[idCond_Cpra_Vta_Vdor1] [nvarchar](4) NULL,
+	[idCond_Cpra_Vta_Vdor2] [nvarchar](4) NULL,
+	[idCond_Cpra_Vta_Vdor3] [nvarchar](4) NULL,
+	[idCond_Cpra_Vta_Vdor4] [nvarchar](4) NULL,
+	[idCond_Cpra_Vta_Vdor5] [nvarchar](4) NULL,
+	[EmiteSobresPorOP] [bit] NULL,
+	[ProveedorLocal] [bit] NULL,
+	[ProveedorCompartido] [bit] NULL,
+	[idDepositoEntregaOC] [nvarchar](4) NULL,
+	[Transmision] [int] NULL,
+	[FhVtoExento] [datetime] NULL,
+	[RETIBR_IdRetencionOnLine] [nvarchar](4) NULL,
+	[SIAP_IVA_REG_RET_PERC] [nvarchar](3) NULL,
+	[IdListaRMTRF] [nvarchar](4) NULL,
+	[Clasificacion] [nvarchar](4) NULL,
+	[RETSUSS_IdRetencion] [nvarchar](4) NULL,
+	[OBJETIVO] [bit] NULL,
+	[CBU] [nvarchar](50) NULL,
+	[ALIAS] [nvarchar](50) NULL,
+	[P_Rubro_Actividad] [nvarchar](150) NULL,
+	[P_RUBRO_ACTIVIDAD_ASOCIADA] [nvarchar](150) NULL,
+	[X] [float] NULL,
+	[Y] [float] NULL,
+ CONSTRAINT [PK_MA_CUENTASADIC] PRIMARY KEY NONCLUSTERED 
+(
+	[CODIGO] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, FILLFACTOR = 90) ON [PRIMARY]
+) ON [PRIMARY]
+GO
+ 
+ 
+ 
+ Preguntas:
+
+cuándo alcanza consumidor final - CONDICION DE IVA 3 CF
+cuándo exige CUIT/DNI POR CONFIGURACIONM PERO ESO YA VIENE EN EL CLIENTE
+cómo se define condición IVA - 
+si el alta rápida crea cuenta completa o parcial - 

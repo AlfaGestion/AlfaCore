@@ -1,0 +1,15 @@
+5 Configuración comercial
+
+TA_CONFIGURACION
+configuración equivalente que hoy usa Company en wsAlfa
+V_TA_CPTE
+Claves/rules a detectar:
+
+TC default del facturador FC
+sucursal default por comprobante  EN V TA CPTE
+sucursal forzada por comprobante
+usa precios finales o netos
+usa factura electrónica o no
+caja por defecto
+comportamiento de stock visible
+Referencia actual: 

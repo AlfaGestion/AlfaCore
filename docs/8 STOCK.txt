@@ -1,0 +1,93 @@
+8 Stock
+
+GO
+
+/****** Object:  Table [dbo].[V_MV_Stock]    Script Date: 30/5/2026 13:54:47 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[V_MV_Stock](
+	[ID] [int] IDENTITY(1,1) NOT NULL,
+	[TC] [nvarchar](4) NOT NULL,
+	[IDCOMPROBANTE] [nvarchar](13) NOT NULL,
+	[IDCOMPLEMENTO] [int] NOT NULL,
+	[SECUENCIA] [int] NOT NULL,
+	[FECHA] [datetime] NULL,
+	[IDArticulo] [nvarchar](25) NOT NULL,
+	[Descripcion] [nvarchar](100) NOT NULL,
+	[IDUnidad] [nvarchar](4) NULL,
+	[CantidadUD] [float] NOT NULL,
+	[Cantidad] [float] NULL,
+	[Costo] [money] NULL,
+	[PrecioVenta] [money] NULL,
+	[IVARI] [money] NULL,
+	[IVARNI] [money] NULL,
+	[IMPUESTOS] [money] NULL,
+	[IdLista] [nvarchar](4) NULL,
+	[ClasePrecio] [smallint] NULL,
+	[CuentaProveedor] [nvarchar](15) NOT NULL,
+	[NroSerie] [nvarchar](25) NULL,
+	[NroLote] [nvarchar](25) NULL,
+	[IdDeposito] [nvarchar](4) NULL,
+	[IdPosicion] [nvarchar](25) NULL,
+	[Estado] [nvarchar](50) NULL,
+	[IdMotivoStock] [nvarchar](4) NULL,
+	[IdOrigen] [nvarchar](4) NULL,
+	[IdDestino] [nvarchar](4) NULL,
+	[Revisado] [bit] NOT NULL,
+	[ControladoPor] [nvarchar](50) NULL,
+	[Anulado] [bit] NOT NULL,
+	[TC_Origen] [nvarchar](4) NULL,
+	[IdComprobante_Origen] [nvarchar](13) NULL,
+	[IdComplemento_Origen] [int] NULL,
+	[Id_Origen] [int] NULL,
+	[IdUnidadBase] [nvarchar](4) NULL,
+	[IdTecnico] [nvarchar](4) NULL,
+	[Transmision] [int] NULL,
+	[Recepcion] [int] NULL,
+	[ArtCotizacion] [money] NULL,
+	[ArtMoneda] [nvarchar](4) NULL,
+	[IDCAJA] [nvarchar](4) NULL,
+	[DtoItem] [float] NULL,
+	[NroFCC] [nvarchar](13) NULL,
+	[EQUIV_UDBASE] [float] NULL,
+	[IDDEPOSITO_DESTINO] [nvarchar](4) NULL,
+	[IdInsert] [int] NULL,
+	[IdCompulsa] [int] NULL,
+	[Oferta] [bit] NULL,
+	[UNEGOCIO] [nvarchar](4) NULL,
+	[IMPORTE_S_IVA] [money] NULL,
+	[IDVENDEDOR] [nvarchar](4) NULL,
+	[UD_PR] [nvarchar](4) NULL,
+	[IMPORTE_UD] [money] NULL,
+	[EnComodato] [bit] NULL,
+	[IdViaje] [nvarchar](13) NULL,
+	[DesdeTrigger] [int] NULL,
+	[CANT_BL] [float] NULL,
+	[CANT_KG] [float] NULL,
+	[CANT_M3] [float] NULL,
+ CONSTRAINT [PK_V_MV_Stock] PRIMARY KEY NONCLUSTERED 
+(
+	[TC] ASC,
+	[IDCOMPROBANTE] ASC,
+	[IDCOMPLEMENTO] ASC,
+	[SECUENCIA] ASC,
+	[IDArticulo] ASC,
+	[CuentaProveedor] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY],
+ CONSTRAINT [IX_V_MV_Stock] UNIQUE NONCLUSTERED 
+(
+	[ID] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, FILLFACTOR = 90) ON [PRIMARY]
+) ON [PRIMARY]
+GO
+ 
+
+Preguntas:
+
+si controla stock negativo NO
+si el stock se descuenta al grabar el comprobante o después AL GRABAR
+si hay depósitos implicados  IDEM A LO QUE ESTA EN PHP 

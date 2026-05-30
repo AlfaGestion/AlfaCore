@@ -1,0 +1,770 @@
+USE [ALFANET]
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_web_CreaAplicacionCobranzaFactura]    Script Date: 30/5/2026 13:39:35 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+
+
+
+
+
+CREATE PROCEDURE [dbo].[sp_web_CreaAplicacionCobranzaFactura]
+	@pIdCobranza					 int,
+	@pIdFactura						 int,
+	@pResultado 					 smallint = NULL OUTPUT,
+	@pMensaje 						 varchar(255) = NULL OUTPUT
+AS
+
+DECLARE @TCFactura NVARCHAR(4)
+DECLARE @SucFactura NVARCHAR(4)
+DECLARE @NumFactura NVARCHAR(8)
+DECLARE @LetFactura NVARCHAR(1)
+DECLARE @ImporteFactura REAL
+DECLARE @Cliente NVARCHAR(13)
+DECLARE @unegocio NVARCHAR(4)
+DECLARE @TcCobranza NVARCHAR(4)
+DECLARE @SucCobranza NVARCHAR(4)
+DECLARE @NumCobranza NVARCHAR(8)
+DECLARE @LetCobranza NVARCHAR(1)
+
+SET NOCOUNT ON
+
+SELECT 
+	@TCFactura = TC,
+	@Cliente = Cuenta,
+	@SucFactura = SUCURSAL,
+	@NumFactura = NUMERO,
+	@LetFactura = LETRA,
+	@unegocio = UNEGOCIO,
+	@ImporteFactura = IMPORTE
+FROM V_MV_CPTE WHERE ID = @pIdFactura
+
+SELECT 
+	@TcCobranza = TC,
+	@SucCobranza = SUCURSAL,
+	@NumCobranza = NUMERO,
+	@LetCobranza = LETRA
+FROM V_MV_CPTE WHERE ID = @pIdCobranza
+
+IF (@unegocio IS NULL) OR (@unegocio='')
+	BEGIN
+		SELECT @unegocio = VALOR FROM TA_CONFIGURACION WHERE CLAVE ='UNEGOCIO'
+		SET @unegocio=dbo.FN_FMT_LEERCODIGO(LTRIM(RTRIM(@unegocio)),4)
+	END
+
+IF (@unegocio IS NULL) OR (@unegocio='') SET @unegocio='   1'
+
+BEGIN TRANSACTION
+
+BEGIN TRY
+	INSERT INTO MV_APLICACION
+	(CUENTA,TC,SUCURSAL,NUMERO,LETRA,IDCOMPROBANTE,TCO_ORIGEN,SUCURSAL_ORIGEN,NUMERO_ORIGEN,LETRA_ORIGEN,
+	IDComprobante_Origen,IDCOMPLEMENTO_ORIGEN,IMPORTE,Transmision,Recepcion,UNegocio,Secuencia)
+	VALUES
+	(@Cliente,@TcCobranza,@SucCobranza,@NumCobranza,@LetCobranza,@SucCobranza+@NumCobranza+@LetCobranza,
+	@TCFactura,@SucFactura,@NumFactura,@LetFactura,@SucFactura+@NumFactura+@LetFactura,0,@ImporteFactura,0,0,@unegocio,0)
+
+
+	IF @@ERROR <> 0 OR @@ROWCOUNT <> 1
+		BEGIN
+			ROLLBACK TRANSACTION
+			SET @pResultado = 21
+			SET @pMensaje = 'No pudo crearse la aplicacion'
+			RETURN
+		END
+	ELSE
+		BEGIN
+			COMMIT TRANSACTION
+
+			SET @pResultado = 11
+			SET @pMensaje = 'Aplicacion creada correctamente'
+		END
+END TRY
+BEGIN CATCH
+	ROLLBACK TRANSACTION
+	SET @pResultado = ERROR_NUMBER()
+	SET @pMensaje = ERROR_MESSAGE()
+END CATCH
+	
+
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_web_CreaCobPorFactura]    Script Date: 30/5/2026 13:39:35 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+
+
+
+
+
+
+
+
+
+
+CREATE PROCEDURE [dbo].[sp_web_CreaCobPorFactura]
+	@pIdCpte						 int,
+	@pResultado 					 smallint = NULL OUTPUT,
+	@pMensaje 						 varchar(255) = NULL OUTPUT,
+	@pIdComprobanteRES				 int = NULL OUTPUT
+AS
+--DECLARE @Tc NVARCHAR(4)
+
+DECLARE @IdComprobanteCobranza NVARCHAR(13)
+DECLARE @nombre NVARCHAR(50)
+DECLARE @domicilio NVARCHAR(50)
+DECLARE @calle NVARCHAR(50)
+DECLARE @numero NVARCHAR(50)
+DECLARE @piso NVARCHAR(50)
+DECLARE @departamento NVARCHAR(50)
+DECLARE @telefono NVARCHAR(100)
+DECLARE @localidad NVARCHAR(50)
+DECLARE @idProvincia NVARCHAR(4)
+DECLARE @codigoPostal NVARCHAR(10)
+DECLARE @documentoTipo NVARCHAR(4)
+DECLARE @documentoNumero NVARCHAR(15)
+DECLARE @condicionIva NVARCHAR(50)
+DECLARE @idCondCpraVta NVARCHAR(4)
+DECLARE @comentarios NVARCHAR(100)
+DECLARE @idLista NVARCHAR(4)
+DECLARE @unegocio NVARCHAR(4)
+DECLARE @clasePrecio int
+
+DECLARE @TCFactura NVARCHAR(4)
+DECLARE @SucFactura NVARCHAR(4)
+DECLARE @NumeroFactura NVARCHAR(8)
+DECLARE @LetraFactura NVARCHAR(1)
+DECLARE @ImporteFactura real
+
+DECLARE @TcCobranza NVARCHAR(4)
+DECLARE @pCliente nvarchar(15) = null
+DECLARE @pVendedor nvarchar(4) = null
+DECLARE @pFecha	datetime = null
+DECLARE @pObservaciones	NVARCHAR(250) = null
+
+SET NOCOUNT ON
+
+SELECT 
+	@TCFactura = TC,
+	@pCliente = Cuenta,
+	@pVendedor = IdVendedor,
+	@unegocio = UNEGOCIO,
+	@SucFactura = SUCURSAL,
+	@NumeroFactura = NUMERO,
+	@LetraFactura = LETRA,
+	@ImporteFactura = IMPORTE
+FROM V_MV_CPTE
+WHERE ID = @pIdCpte
+
+IF @TCFactura = 'FP'
+	SET @TcCobranza = 'CBFP'
+ELSE
+	SET @TcCobranza = 'CBCT'
+
+SET @pFecha = CONVERT(VARCHAR,GETDATE(),103)
+
+IF @pCliente = ''
+	SET @pCliente = (SELECT VALOR FROM TA_CONFIGURACION WHERE CLAVE='CUENTACONSUMIDORFINAL')
+
+SELECT @nombre = isnull(RAZON_SOCIAL,''),
+	@calle = ISNULL(CALLE,'.'),
+	@numero = ISNULL(NUMERO,'.'),
+	@piso = ISNULL(PISO,''),
+	@departamento = ISNULL(DEPARTAMENTO,''),
+	@telefono = TELEFONO,
+	@localidad = LOCALIDAD,
+	@idProvincia = PROVINCIA,
+	@codigoPostal = CPOSTAL,
+	@documentoTipo = DOCUMENTO_TIPO,
+	@documentoNumero = NUMERO_DOCUMENTO,
+	@condicionIva = IVA,
+	@idCondCpraVta = IDCOND_CPRA_VTA,
+	@clasePrecio = CLASE,
+	@idLista = IDLISTA
+FROM VT_CLIENTES
+WHERE CODIGO = @pCliente
+
+SET @domicilio = @calle + ' ' + @numero
+IF (@piso <> '') SET @domicilio= @domicilio+ ' ' + LTRIM(RTRIM(@piso)) + ' Piso '
+IF (@departamento <> '') SET @domicilio= @domicilio+ ' Dpto: ' +  LTRIM(RTRIM(@departamento))
+IF (@condicionIva=NULL) SET @condicionIva = '   1'
+
+SET @IdComprobanteCobranza = dbo.FN_OBTIENE_PROXIMO_NUMERO_CPTE (@TcCobranza,'9999','X')
+
+IF (@clasePrecio IS NULL) OR (@clasePrecio = NULL) SET @clasePrecio = 1
+SET @pVendedor = dbo.FN_FMT_LEERCODIGO(LTRIM(RTRIM(@pVendedor)),4)
+SET @idLista = dbo.FN_FMT_LEERCODIGO(LTRIM(RTRIM(@idLista)),4)
+
+SET DATEFORMAT YMD
+SET NOCOUNT ON
+
+BEGIN TRANSACTION
+
+BEGIN TRY
+	INSERT INTO V_MV_CPTE
+	(TC,IDCOMPROBANTE,IDCOMPLEMENTO,
+	FECHA,FECHAESTFIN,FECHAESTINICIO,CUENTA,
+	NOMBRE,DOMICILIO,TELEFONO,
+	LOCALIDAD,IDPROVINCIA,CODIGOPOSTAL,
+	DOCUMENTOTIPO,DOCUMENTONUMERO,CONDICIONIVA,
+	IDCOND_CPRA_VTA,COMENTARIOS,IMPORTE,IMPORTE_S_IVA,
+	MONEDA,IDVENDEDOR,CLASEPRECIO,UNEGOCIO_DESTINO,IdLista,IDMOTIVOCPRAVTA,IDDEPOSITO,AlicIva,ImporteIva,NEtoGravado,NetoNoGravado,Unegocio,
+	FechaHora_Grabacion)
+	VALUES
+	(
+		@TcCobranza, @IdComprobanteCobranza, 0,
+		@pFecha, @pFecha, @pFecha,@pCliente,
+		@Nombre, @Domicilio, isnull(@Telefono,''),
+		@Localidad, @idProvincia, ltrim(@codigoPostal),
+		@documentoTipo, ltrim(@documentoNumero), @condicionIva,
+		@idCondCpraVta, @pObservaciones, @ImporteFactura, 0,
+		'   1', @pVendedor, @clasePrecio, '   1', @idLista,'   1','   1',21,0,0,0,'   1', GETDATE())
+
+	
+
+	IF @@ERROR <> 0 OR @@ROWCOUNT <> 1
+		BEGIN
+			ROLLBACK TRANSACTION
+			SET @pIdComprobanteRES = NULL
+			SET @pResultado = 21
+			SET @pMensaje = 'No pudo crearse la cobranza'
+			RETURN
+		END
+	ELSE
+		BEGIN
+			COMMIT TRANSACTION
+
+			SET @pResultado = 11
+			SET @pMensaje = 'Cobranza creada correctamente'
+			SET @pIdComprobanteRES = @@IDENTITY
+		END
+END TRY
+BEGIN CATCH
+	ROLLBACK TRANSACTION
+	SET @pIdComprobanteRES = NULL
+	SET @pResultado = ERROR_NUMBER()
+	SET @pMensaje = ERROR_MESSAGE()
+END CATCH
+	
+
+GO
+
+/****** Object:  StoredProcedure [dbo].[sp_web_creaLineaAsiento]    Script Date: 30/5/2026 13:39:35 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+
+
+
+
+
+CREATE PROCEDURE [dbo].[sp_web_creaLineaAsiento]
+	@pIdCobranza					 int = null,
+	@pImporte						 real=0,
+	@pCuentaMp					     varchar(100),
+	@pPrimero						 int,
+	@pChequeNro						 varchar(50) = null,
+	@pResultado 					 smallint = NULL OUTPUT,
+	@pMensaje 						 varchar(255) = NULL OUTPUT
+AS
+
+DECLARE @FechaHoraGrabacion DATETIME
+DECLARE @unegocio NVARCHAR(4)
+DECLARE @USUARIO AS NVARCHAR(50)
+DECLARE @Tc AS NVARCHAR(4)
+DECLARE @IdComprobante AS NVARCHAR(13)
+DECLARE @pCliente as NVARCHAR(13)
+DECLARE @pVendedor AS NVARCHAR(4)
+DECLARE @pFecha AS DATETIME
+DECLARE @secuencia as int
+DECLARE @SucCpte NVARCHAR(4)
+DECLARE @NumCpte NVARCHAR(8)
+DECLARE @LetCpte NVARCHAR(1)
+DECLARE @TotalCpte REAL
+DECLARE @idCaja NVARCHAR(4)
+SET NOCOUNT ON
+
+SELECT 
+	@Tc = TC,
+	@pCliente = Cuenta,
+	@pVendedor = IdVendedor,
+	@unegocio = UNEGOCIO,
+	@IdComprobante = IDCOMPROBANTE,
+	@SucCpte = SUCURSAL,
+	@NumCpte = NUMERO,
+	@LetCpte = LETRA,
+	@TotalCpte = isnull(IMPORTE,0),
+	@pFecha = FECHA
+FROM V_MV_CPTE
+WHERE ID = @pIdCobranza
+
+SELECT @idCaja=isnull(idCaja,'1'), @USUARIO=NOMBRE FROM TA_USUARIOS WHERE ltrim(idvendedor) = ltrim(@pVendedor)
+
+IF @idCaja IS NULL OR @idCaja = '' SET @idCaja = '1'
+IF @USUARIO IS NULL SET @USUARIO = SYSTEM_USER
+
+SET @pVendedor = dbo.FN_FMT_LEERCODIGO(LTRIM(RTRIM(@pVendedor)),4)
+SET @idCaja = dbo.FN_FMT_LEERCODIGO(LTRIM(RTRIM(@idCaja)),4)
+
+IF (@unegocio IS NULL) OR (@unegocio='')
+	BEGIN
+		SELECT @unegocio = VALOR FROM TA_CONFIGURACION WHERE CLAVE ='UNEGOCIO'
+		SET @unegocio=dbo.FN_FMT_LEERCODIGO(LTRIM(RTRIM(@unegocio)),4)
+	END
+
+IF (@unegocio IS NULL) OR (@unegocio='') SET @unegocio='   1'
+
+SET @FechaHoraGrabacion  = GETDATE()
+SET @pFecha = CONVERT(VARCHAR,@FechaHoraGrabacion,103)
+
+DECLARE @pIdReparto INT
+SET @pIdReparto=0
+
+DECLARE @NroAsiento INT
+DECLARE @Periodo NVARCHAR(6)
+DECLARE @CuentaMP NVARCHAR(15)
+DECLARE @Mes_operativo INT
+DECLARE @DEBEHABER NVARCHAR(1)
+
+SET @CuentaMP = @pCuentaMp
+IF @CuentaMP = '' SET @CuentaMP = (SELECT VALOR FROM TA_CONFIGURACION WHERE CLAVE='CUENTA_CAJA')
+--Efectivo
+IF @CuentaMP = '' SET @CuentaMP	= '111010001'
+
+SET @secuencia = 1
+
+DECLARE @SQL NVARCHAR(MAX)
+IF @pPrimero = 1
+	BEGIN
+		--SET @idComprobante = dbo.FN_OBTIENE_PROXIMO_NUMERO_CPTE (@tc,'9999','X')
+		SET @secuencia = 1
+		SET @Mes_operativo = month(@pFecha)
+
+		SET @Periodo = (SELECT top 1 periodo FROM MV_EJERCICIOS WHERE [FECHA DESDE]<=@pFecha and [FECHA HASTA]>=@pFecha)
+		IF (@Periodo is null) SET @Periodo = '0'
+		SET @DEBEHABER = 'H'
+
+		SET @CuentaMP = @pCliente
+		SET @pImporte = @TotalCpte
+
+		SET @NroAsiento = (SELECT MAX([NUMERO ASIENTO])+1
+		FROM MV_ASIENTOS
+		WHERE MES_OPERATIVO=@Mes_operativo AND RTRIM(LTRIM(TIPO_REG))='CB' AND RTRIM(LTRIM(PERIODO))= @Periodo)
+		IF @NroAsiento is null or @NroAsiento = '' SET @NroAsiento = 1
+	END
+ELSE
+	BEGIN
+		SET @DEBEHABER = 'D'
+		SELECT TOP 1 @secuencia=SECUENCIA+1, @Mes_operativo=MES_OPERATIVO,@Periodo=PERIODO,@NroAsiento=[NUMERO ASIENTO] FROM MV_ASIENTOS
+		WHERE TC=@Tc and SUCURSAL=SUBSTRING(@IdComprobante,1,4) AND NUMERO= SUBSTRING(@IdComprobante,5,8) AND LETRA=RIGHT(@IdComprobante,1)
+		ORDER BY SECUENCIA DESC
+	END
+SET NOCOUNT ON
+
+BEGIN TRANSACTION;
+
+	INSERT INTO MV_ASIENTOS
+	(CUENTA,SECUENCIA,MES_OPERATIVO,[NUMERO ASIENTO], FECHA, DETALLE,TC,SUCURSAL,
+	NUMERO,LETRA,[DEBE-HABER],IMPORTE,MONEDA,COTIZACION,PERIODO,CABIMPORTE,TIPO_REG,CONTABILIZADO,
+	FECHAHORA_GRABACION,FechaSubdiario, USUARIO_LOGEADO, IDCAJAS,NroComprobanteBancario,UNEGOCIO)
+	VALUES
+	(@CuentaMP, @secuencia, @Mes_operativo, @NroAsiento, @pFecha, 'Cobranza Web', @Tc, SUBSTRING(@IdComprobante,1,4), 
+	SUBSTRING(@IdComprobante,5,8), RIGHT(@IdComprobante,1), @DEBEHABER, @pImporte, '   1', 1, @Periodo, @TotalCpte,
+	'CB', 0, @pFecha, @FechaHoraGrabacion, @USUARIO, @idCaja,@pChequeNro,@unegocio)
+
+	IF @@ERROR <> 0 OR @@ROWCOUNT <> 1
+		BEGIN
+			ROLLBACK TRANSACTION
+			SET @pResultado = 21
+			SET @pMensaje = 'No pudo darse de alta el registro'
+			RETURN
+		END
+	
+	COMMIT TRANSACTION
+	SET @pResultado = 11
+	SET @pMensaje = 'El registro se ha dado de alta con exito'
+		
+
+
+	
+
+
+GO
+USE [ALFANET]
+GO
+
+/****** Object:  Table [dbo].[MV_APLICACION]    Script Date: 30/5/2026 13:40:00 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[MV_APLICACION](
+	[ID] [int] IDENTITY(1,1) NOT NULL,
+	[CUENTA] [nvarchar](15) NOT NULL,
+	[TC] [nvarchar](4) NOT NULL,
+	[SUCURSAL] [nvarchar](4) NOT NULL,
+	[NUMERO] [nvarchar](8) NOT NULL,
+	[LETRA] [nvarchar](1) NOT NULL,
+	[TCO_ORIGEN] [nvarchar](4) NOT NULL,
+	[SUCURSAL_ORIGEN] [nvarchar](4) NOT NULL,
+	[NUMERO_ORIGEN] [nvarchar](8) NOT NULL,
+	[LETRA_ORIGEN] [nvarchar](1) NOT NULL,
+	[IDCOMPLEMENTO_ORIGEN] [int] NOT NULL,
+	[IMPORTE] [money] NULL,
+	[IDComprobante] [nvarchar](15) NULL,
+	[IDComprobante_Origen] [nvarchar](15) NULL,
+	[TC_Print] [nvarchar](4) NULL,
+	[IdComprobante_Print] [nvarchar](13) NULL,
+	[Transmision] [int] NULL,
+	[Recepcion] [int] NULL,
+	[UNegocio] [nvarchar](4) NULL,
+	[Secuencia] [int] NOT NULL,
+ CONSTRAINT [PK_MV_APLICACION] PRIMARY KEY CLUSTERED 
+(
+	[CUENTA] ASC,
+	[TC] ASC,
+	[SUCURSAL] ASC,
+	[NUMERO] ASC,
+	[LETRA] ASC,
+	[TCO_ORIGEN] ASC,
+	[SUCURSAL_ORIGEN] ASC,
+	[NUMERO_ORIGEN] ASC,
+	[LETRA_ORIGEN] ASC,
+	[IDCOMPLEMENTO_ORIGEN] ASC,
+	[Secuencia] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+) ON [PRIMARY]
+GO
+
+/****** Object:  Table [dbo].[MV_ASIENTOS]    Script Date: 30/5/2026 13:40:00 ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[MV_ASIENTOS](
+	[CUENTA] [nvarchar](15) NOT NULL,
+	[SECUENCIA] [int] NOT NULL,
+	[MES_OPERATIVO] [tinyint] NOT NULL,
+	[NUMERO ASIENTO] [int] NOT NULL,
+	[FECHA] [datetime] NULL,
+	[DETALLE] [nvarchar](200) NULL,
+	[TC] [nvarchar](4) NOT NULL,
+	[SUCURSAL] [nvarchar](4) NOT NULL,
+	[NUMERO] [nvarchar](8) NOT NULL,
+	[LETRA] [nvarchar](1) NOT NULL,
+	[DEBE-HABER] [nvarchar](1) NOT NULL,
+	[IMPORTE] [money] NOT NULL,
+	[MONEDA] [nvarchar](4) NOT NULL,
+	[COTIZACION] [money] NULL,
+	[ID_COTIZ] [int] NULL,
+	[NroComprobanteBancario] [nvarchar](50) NULL,
+	[PERIODO] [nvarchar](6) NOT NULL,
+	[CABIMPORTE] [money] NOT NULL,
+	[VENCIMIENTO] [datetime] NULL,
+	[TIPO_REG] [nvarchar](4) NOT NULL,
+	[CONTABILIZADO] [int] NULL,
+	[FechaHora_Grabacion] [datetime] NULL,
+	[FechaHora_Modificacion] [datetime] NULL,
+	[EsResumen] [bit] NOT NULL,
+	[ES_SALDO_APERTURA] [bit] NOT NULL,
+	[CABCUENTA] [nvarchar](15) NULL,
+	[CABNOMBRE] [nvarchar](50) NULL,
+	[CABCUIT] [nvarchar](13) NULL,
+	[CABCONDIVA] [nvarchar](4) NULL,
+	[LIVA_TIPO] [nvarchar](8) NULL,
+	[LIVA_ImpNetoGrav] [money] NULL,
+	[LIVA_ImpNetoNGrav] [money] NULL,
+	[LIVA_EXENTO] [money] NULL,
+	[LIVA_AlicIVA] [money] NULL,
+	[LIVA_AlicIVAREC] [money] NULL,
+	[LIVA_ImpIVA] [money] NULL,
+	[LIVA_ImpIVARec] [money] NULL,
+	[LIVA_Ret_Perc] [money] NULL,
+	[LIVA_Ret_IBtos] [money] NULL,
+	[LIVA_Ret_Ganancias] [money] NULL,
+	[LIVA_TOTAL] [money] NULL,
+	[EsAjuste] [bit] NOT NULL,
+	[Ajuste_Hasta] [nvarchar](7) NULL,
+	[Nro_Transmision] [int] NULL,
+	[OrdenDeCompra] [nvarchar](50) NULL,
+	[Clearing] [int] NULL,
+	[IdVendedor] [nvarchar](4) NULL,
+	[IdBanco] [nvarchar](4) NULL,
+	[ChPropio] [bit] NOT NULL,
+	[TJ_NroSocio] [nvarchar](25) NULL,
+	[TJ_NroCupon] [nvarchar](25) NULL,
+	[TJ_Cuotas] [int] NULL,
+	[TJ_Autorizo] [nvarchar](50) NULL,
+	[TJ_Observaciones] [nvarchar](200) NULL,
+	[CuentaOrigen] [nvarchar](15) NULL,
+	[CuentaDestino] [nvarchar](15) NULL,
+	[FechaSubdiario] [datetime] NULL,
+	[LIVA_AlicIva2] [float] NULL,
+	[LIVA_ImpIva2] [money] NULL,
+	[LIVA_AlicIVA3] [float] NULL,
+	[LIVA_ImpIVA3] [money] NULL,
+	[LIVA_AlicIVA4] [float] NULL,
+	[LIVA_ImpIVA4] [money] NULL,
+	[USUARIO_LOGEADO] [nvarchar](50) NULL,
+	[EsCierre] [bit] NULL,
+	[TJ_Presentacion] [float] NULL,
+	[TJ_Liquidacion] [float] NULL,
+	[Tc_Origen] [nvarchar](4) NULL,
+	[Cpte_Origen] [nvarchar](13) NULL,
+	[Complemento_Origen] [int] NULL,
+	[FechaPresentacion] [datetime] NULL,
+	[IdCajas] [nvarchar](4) NULL,
+	[FechaVtoPresentacion] [datetime] NULL,
+	[Transmision] [int] NULL,
+	[Recepcion] [int] NULL,
+	[SucursalCuenta] [int] NULL,
+	[Conciliado] [bit] NULL,
+	[UNEGOCIO] [nvarchar](4) NULL,
+	[COD_DESTINO] [nvarchar](4) NULL,
+	[NroLiqUNeg] [int] NULL,
+	[IDMOTIVO] [nvarchar](4) NULL,
+	[CodCpteDGI] [nvarchar](4) NULL,
+	[NroCAI] [nvarchar](14) NULL,
+	[FhVtoCAI] [datetime] NULL,
+	[Estado] [int] NULL,
+	[LIVA_AlicIva1Terceros] [float] NULL,
+	[LIVA_ImpIva1Terceros] [money] NULL,
+	[LIVA_AlicIva2Terceros] [float] NULL,
+	[LIVA_ImpIva2Terceros] [money] NULL,
+	[LIVA_ImpTotal1Terceros] [money] NULL,
+	[LIVA_ImpTotal2Terceros] [money] NULL,
+	[LIVA_TC] [nvarchar](4) NULL,
+	[LIVA_SUC] [nvarchar](4) NULL,
+	[LIVA_NRO] [nvarchar](8) NULL,
+	[LIVA_LET] [nvarchar](1) NULL,
+	[LIVA_ITC] [money] NULL,
+ CONSTRAINT [PK_MV_ASIENTOS] PRIMARY KEY NONCLUSTERED 
+(
+	[CUENTA] ASC,
+	[SECUENCIA] ASC,
+	[MES_OPERATIVO] ASC,
+	[NUMERO ASIENTO] ASC,
+	[TC] ASC,
+	[SUCURSAL] ASC,
+	[NUMERO] ASC,
+	[LETRA] ASC,
+	[PERIODO] ASC,
+	[TIPO_REG] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
+) ON [PRIMARY]
+GO
+
+ALTER TABLE [dbo].[MV_APLICACION] ADD  CONSTRAINT [DF_MV_APLICACION_IDCOMPLEMENTO_ORIGEN]  DEFAULT (0) FOR [IDCOMPLEMENTO_ORIGEN]
+GO
+
+ALTER TABLE [dbo].[MV_APLICACION] ADD  CONSTRAINT [DF_MV_APLICACION_Transmision]  DEFAULT (0) FOR [Transmision]
+GO
+
+ALTER TABLE [dbo].[MV_APLICACION] ADD  CONSTRAINT [DF_MV_APLICACION_Recepcion]  DEFAULT (0) FOR [Recepcion]
+GO
+
+ALTER TABLE [dbo].[MV_APLICACION] ADD  CONSTRAINT [DF_mv_aplicacion_Secuencia]  DEFAULT (0) FOR [Secuencia]
+GO
+
+ALTER TABLE [dbo].[MV_ASIENTOS] ADD  CONSTRAINT [DF_MV_ASIENTOS_SECUENCIA]  DEFAULT ((0)) FOR [SECUENCIA]
+GO
+
+ALTER TABLE [dbo].[MV_ASIENTOS] ADD  CONSTRAINT [DF_MV_ASIENTOS_MES_OPERATIVO]  DEFAULT ((0)) FOR [MES_OPERATIVO]
+GO
+
+ALTER TABLE [dbo].[MV_ASIENTOS] ADD  CONSTRAINT [DF_MV_ASIENTOS_NUMERO ASIENTO]  DEFAULT ((0)) FOR [NUMERO ASIENTO]
+GO
+
+ALTER TABLE [dbo].[MV_ASIENTOS] ADD  CONSTRAINT [DF_MV_ASIENTOS_IMPORTE]  DEFAULT ((0)) FOR [IMPORTE]
+GO
+
+ALTER TABLE [dbo].[MV_ASIENTOS] ADD  CONSTRAINT [DF_MV_ASIENTOS_COTIZACION]  DEFAULT ((0)) FOR [COTIZACION]
+GO
+
+ALTER TABLE [dbo].[MV_ASIENTOS] ADD  CONSTRAINT [DF_MV_ASIENTOS_ID_COTIZ]  DEFAULT ((0)) FOR [ID_COTIZ]
+GO
+
+ALTER TABLE [dbo].[MV_ASIENTOS] ADD  CONSTRAINT [DF_MV_ASIENTOS_CABIMPORTE]  DEFAULT ((0)) FOR [CABIMPORTE]
+GO
+
+ALTER TABLE [dbo].[MV_ASIENTOS] ADD  CONSTRAINT [DF_MV_ASIENTOS_CONTABILIZADO]  DEFAULT ((0)) FOR [CONTABILIZADO]
+GO
+
+ALTER TABLE [dbo].[MV_ASIENTOS] ADD  CONSTRAINT [DF_MV_ASIENTOS_EsResumen]  DEFAULT ((0)) FOR [EsResumen]
+GO
+
+ALTER TABLE [dbo].[MV_ASIENTOS] ADD  CONSTRAINT [DF_MV_ASIENTOS_ES_SALDO_APERTURA]  DEFAULT ((0)) FOR [ES_SALDO_APERTURA]
+GO
+
+ALTER TABLE [dbo].[MV_ASIENTOS] ADD  CONSTRAINT [DF_MV_ASIENTOS_LIVA_ImpNetoGrav]  DEFAULT ((0)) FOR [LIVA_ImpNetoGrav]
+GO
+
+ALTER TABLE [dbo].[MV_ASIENTOS] ADD  CONSTRAINT [DF_MV_ASIENTOS_LIVA_ImpNetoNGrav]  DEFAULT ((0)) FOR [LIVA_ImpNetoNGrav]
+GO
+
+ALTER TABLE [dbo].[MV_ASIENTOS] ADD  CONSTRAINT [DF_MV_ASIENTOS_LIVA_EXENTO]  DEFAULT ((0)) FOR [LIVA_EXENTO]
+GO
+
+ALTER TABLE [dbo].[MV_ASIENTOS] ADD  CONSTRAINT [DF_MV_ASIENTOS_LIVA_AlicIVA]  DEFAULT ((0)) FOR [LIVA_AlicIVA]
+GO
+
+ALTER TABLE [dbo].[MV_ASIENTOS] ADD  CONSTRAINT [DF_MV_ASIENTOS_LIVA_AlicIVAREC]  DEFAULT ((0)) FOR [LIVA_AlicIVAREC]
+GO
+
+ALTER TABLE [dbo].[MV_ASIENTOS] ADD  CONSTRAINT [DF_MV_ASIENTOS_LIVA_ImpIVA]  DEFAULT ((0)) FOR [LIVA_ImpIVA]
+GO
+
+ALTER TABLE [dbo].[MV_ASIENTOS] ADD  CONSTRAINT [DF_MV_ASIENTOS_LIVA_ImpIVARec]  DEFAULT ((0)) FOR [LIVA_ImpIVARec]
+GO
+
+ALTER TABLE [dbo].[MV_ASIENTOS] ADD  CONSTRAINT [DF_MV_ASIENTOS_LIVA_Ret_Perc]  DEFAULT ((0)) FOR [LIVA_Ret_Perc]
+GO
+
+ALTER TABLE [dbo].[MV_ASIENTOS] ADD  CONSTRAINT [DF_MV_ASIENTOS_LIVA_Ret_IBtos]  DEFAULT ((0)) FOR [LIVA_Ret_IBtos]
+GO
+
+ALTER TABLE [dbo].[MV_ASIENTOS] ADD  CONSTRAINT [DF_MV_ASIENTOS_LIVA_Ret_Ganancias]  DEFAULT ((0)) FOR [LIVA_Ret_Ganancias]
+GO
+
+ALTER TABLE [dbo].[MV_ASIENTOS] ADD  CONSTRAINT [DF_MV_ASIENTOS_LIVA_TOTAL]  DEFAULT ((0)) FOR [LIVA_TOTAL]
+GO
+
+ALTER TABLE [dbo].[MV_ASIENTOS] ADD  CONSTRAINT [DF_MV_ASIENTOS_EsAjuste]  DEFAULT ((0)) FOR [EsAjuste]
+GO
+
+ALTER TABLE [dbo].[MV_ASIENTOS] ADD  CONSTRAINT [DF_MV_ASIENTOS_Nro_Transmision]  DEFAULT ((0)) FOR [Nro_Transmision]
+GO
+
+ALTER TABLE [dbo].[MV_ASIENTOS] ADD  CONSTRAINT [DF_MV_ASIENTOS_ChPropio]  DEFAULT ((0)) FOR [ChPropio]
+GO
+
+ALTER TABLE [dbo].[MV_ASIENTOS] ADD  CONSTRAINT [DF_MV_Asientos_TJ_Cuotas]  DEFAULT ((0)) FOR [TJ_Cuotas]
+GO
+
+ALTER TABLE [dbo].[MV_ASIENTOS] ADD  CONSTRAINT [DF_MV_Asientos_FechaSubdiario]  DEFAULT (NULL) FOR [FechaSubdiario]
+GO
+
+ALTER TABLE [dbo].[MV_ASIENTOS] ADD  CONSTRAINT [DF_MV_Asientos_LIVA_AlicIva2]  DEFAULT ((0)) FOR [LIVA_AlicIva2]
+GO
+
+ALTER TABLE [dbo].[MV_ASIENTOS] ADD  CONSTRAINT [DF_MV_Asientos_LIVA_ImpIva2]  DEFAULT ((0)) FOR [LIVA_ImpIva2]
+GO
+
+ALTER TABLE [dbo].[MV_ASIENTOS] ADD  CONSTRAINT [DF_MV_ASIENTOS_LIVA_AlicIVA3]  DEFAULT ((0)) FOR [LIVA_AlicIVA3]
+GO
+
+ALTER TABLE [dbo].[MV_ASIENTOS] ADD  CONSTRAINT [DF_MV_ASIENTOS_LIVA_ImpIVA3]  DEFAULT ((0)) FOR [LIVA_ImpIVA3]
+GO
+
+ALTER TABLE [dbo].[MV_ASIENTOS] ADD  CONSTRAINT [DF_MV_ASIENTOS_LIVA_AlicIVA4]  DEFAULT ((0)) FOR [LIVA_AlicIVA4]
+GO
+
+ALTER TABLE [dbo].[MV_ASIENTOS] ADD  CONSTRAINT [DF_MV_ASIENTOS_LIVA_ImpIVA4]  DEFAULT ((0)) FOR [LIVA_ImpIVA4]
+GO
+
+ALTER TABLE [dbo].[MV_ASIENTOS] ADD  CONSTRAINT [DF_MV_Asientos_EsCierre]  DEFAULT ((0)) FOR [EsCierre]
+GO
+
+ALTER TABLE [dbo].[MV_ASIENTOS] ADD  CONSTRAINT [DF_MV_Asientos_TJ_Presentacion]  DEFAULT ((0)) FOR [TJ_Presentacion]
+GO
+
+ALTER TABLE [dbo].[MV_ASIENTOS] ADD  CONSTRAINT [DF_MV_Asientos_TJ_Liquidacion]  DEFAULT ((0)) FOR [TJ_Liquidacion]
+GO
+
+ALTER TABLE [dbo].[MV_ASIENTOS] ADD  CONSTRAINT [DF_MV_Asientos_Complemento_Origen]  DEFAULT ((0)) FOR [Complemento_Origen]
+GO
+
+ALTER TABLE [dbo].[MV_ASIENTOS] ADD  CONSTRAINT [DF_MV_Asientos_FechaPresentacion]  DEFAULT (NULL) FOR [FechaPresentacion]
+GO
+
+ALTER TABLE [dbo].[MV_ASIENTOS] ADD  CONSTRAINT [DF_MV_ASIENTOS_IdCajas]  DEFAULT (NULL) FOR [IdCajas]
+GO
+
+ALTER TABLE [dbo].[MV_ASIENTOS] ADD  CONSTRAINT [DF_MV_Asientos_FechaVtoPresentacion]  DEFAULT (NULL) FOR [FechaVtoPresentacion]
+GO
+
+ALTER TABLE [dbo].[MV_ASIENTOS] ADD  CONSTRAINT [DF_MV_ASIENTOS_Transmision]  DEFAULT ((0)) FOR [Transmision]
+GO
+
+ALTER TABLE [dbo].[MV_ASIENTOS] ADD  CONSTRAINT [DF_MV_ASIENTOS_Recepcion]  DEFAULT ((0)) FOR [Recepcion]
+GO
+
+ALTER TABLE [dbo].[MV_ASIENTOS] ADD  CONSTRAINT [DF_MV_ASIENTOS_SucursalCuenta]  DEFAULT ((0)) FOR [SucursalCuenta]
+GO
+
+ALTER TABLE [dbo].[MV_ASIENTOS] ADD  CONSTRAINT [DF_MV_ASIENTOS_Conciliado]  DEFAULT ((0)) FOR [Conciliado]
+GO
+
+ALTER TABLE [dbo].[MV_ASIENTOS] ADD  CONSTRAINT [DF_mv_asientos_Bloqueado]  DEFAULT ((0)) FOR [Estado]
+GO
+
+ALTER TABLE [dbo].[MV_ASIENTOS] ADD  CONSTRAINT [DF_MV_ASIENTOS_LIVA_ImpTotal1Terceros]  DEFAULT ((0)) FOR [LIVA_ImpTotal1Terceros]
+GO
+
+ALTER TABLE [dbo].[MV_ASIENTOS] ADD  CONSTRAINT [DF_MV_ASIENTOS_LIVA_ImpTotal2Terceros]  DEFAULT ((0)) FOR [LIVA_ImpTotal2Terceros]
+GO
+
+ALTER TABLE [dbo].[MV_ASIENTOS]  WITH NOCHECK ADD  CONSTRAINT [FK_MV_ASIENTOS_MA_CALENDARIO] FOREIGN KEY([FECHA])
+REFERENCES [dbo].[MA_CALENDARIO] ([Fecha])
+NOT FOR REPLICATION 
+GO
+
+ALTER TABLE [dbo].[MV_ASIENTOS] CHECK CONSTRAINT [FK_MV_ASIENTOS_MA_CALENDARIO]
+GO
+
+ALTER TABLE [dbo].[MV_ASIENTOS]  WITH NOCHECK ADD  CONSTRAINT [FK_MV_ASIENTOS_MA_CUENTAS] FOREIGN KEY([CUENTA])
+REFERENCES [dbo].[MA_CUENTAS] ([CODIGO])
+NOT FOR REPLICATION 
+GO
+
+ALTER TABLE [dbo].[MV_ASIENTOS] CHECK CONSTRAINT [FK_MV_ASIENTOS_MA_CUENTAS]
+GO
+
+ALTER TABLE [dbo].[MV_ASIENTOS]  WITH CHECK ADD  CONSTRAINT [FK_MV_ASIENTOS_V_TA_Bancos] FOREIGN KEY([IdBanco])
+REFERENCES [dbo].[V_TA_Bancos] ([IdBanco])
+GO
+
+ALTER TABLE [dbo].[MV_ASIENTOS] CHECK CONSTRAINT [FK_MV_ASIENTOS_V_TA_Bancos]
+GO
+
+ALTER TABLE [dbo].[MV_ASIENTOS]  WITH CHECK ADD  CONSTRAINT [FK_MV_ASIENTOS_V_TA_UnidadNegocio] FOREIGN KEY([UNEGOCIO])
+REFERENCES [dbo].[V_TA_UnidadNegocio] ([Codigo])
+GO
+
+ALTER TABLE [dbo].[MV_ASIENTOS] CHECK CONSTRAINT [FK_MV_ASIENTOS_V_TA_UnidadNegocio]
+GO
+
+EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'<<ASIENTOS CONTABLES>>' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'MV_ASIENTOS'
+GO
+
+
+
+
+
+
+Preguntas:
+
+si siempre se crea una cobranza separada SI
+cómo se graban múltiples medios de pago LINEAS DENTRO DEL ASIENTO
+qué pasa con efectivo y vuelto   EFECTIVO ES UN MEDIO DE PAGO MAS, UNA CUENTA CONTABLE, EL VUELTO ES UN CALCULO EN PANTALLA
+si hay validaciones por caja o por cuenta  
+qué asientos se generan  SEGUN EL TIPO DE COMPROBANTE, UNA FC Y UNA CBCT O CB
