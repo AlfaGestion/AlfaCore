@@ -130,6 +130,8 @@ window.conversacionesUi = {
     _threadWatchers: new WeakMap(),
     _fileDropWatchers: new WeakMap(),
     _previewPanWatchers: new WeakMap(),
+    _previewKeyboardWatcher: null,
+    _dateDividerWatchers: new WeakMap(),
     _notificationBaseTitle: 'AlfaCore - Alfa Gestión',
     _audioPlayersInitialized: false,
     _audioSpeeds: [1, 1.5, 2],
@@ -140,6 +142,7 @@ window.conversacionesUi = {
     _lastSoundAttemptAt: '',
     _lastSoundError: '',
     _soundInitialized: false,
+    _closeTicketWarningKey: 'alfacore.conversaciones.closeTicketWarningAccepted',
 
     isNearBottom: function (element) {
         if (!element) return false;
@@ -147,9 +150,59 @@ window.conversacionesUi = {
         return distance < 96;
     },
 
+    getCloseTicketWarningAccepted: function () {
+        try {
+            return window.localStorage?.getItem(this._closeTicketWarningKey) === '1';
+        } catch {
+            return false;
+        }
+    },
+
+    setCloseTicketWarningAccepted: function (accepted) {
+        try {
+            if (accepted) {
+                window.localStorage?.setItem(this._closeTicketWarningKey, '1');
+            } else {
+                window.localStorage?.removeItem(this._closeTicketWarningKey);
+            }
+        } catch {
+        }
+    },
+
     scrollToBottom: function (element) {
         if (!element) return;
         element.scrollTop = element.scrollHeight;
+    },
+
+    bindDateDividers: function (element) {
+        if (!element) return false;
+
+        const previous = this._dateDividerWatchers.get(element);
+        if (previous) {
+            previous.disconnect();
+        }
+
+        const dividers = Array.from(element.querySelectorAll('.conversation-date-divider'));
+        if (dividers.length === 0) return false;
+
+        if (!('IntersectionObserver' in window)) {
+            dividers.forEach(divider => divider.classList.add('is-visible'));
+            return true;
+        }
+
+        const observer = new IntersectionObserver(entries => {
+            entries.forEach(entry => {
+                entry.target.classList.toggle('is-visible', entry.isIntersecting);
+            });
+        }, {
+            root: element,
+            threshold: 0.01,
+            rootMargin: '-2px 0px -2px 0px'
+        });
+
+        dividers.forEach(divider => observer.observe(divider));
+        this._dateDividerWatchers.set(element, observer);
+        return true;
     },
 
     initNotifications: function (baseTitle) {
@@ -473,6 +526,17 @@ window.conversacionesUi = {
         return true;
     },
 
+    scrollActiveAttachmentPreviewThumb: function (attachmentId) {
+        if (!attachmentId) return false;
+
+        const strip = document.querySelector('.attachment-preview-strip');
+        const thumb = strip?.querySelector(`[data-preview-attachment-id="${attachmentId}"]`);
+        if (!strip || !thumb) return false;
+
+        thumb.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+        return true;
+    },
+
     bindFileDrop: function (element, inputId) {
         if (!element || !inputId) return false;
 
@@ -633,6 +697,32 @@ window.conversacionesUi = {
         events.forEach(item => element.addEventListener(item.name, item.handler));
         this._previewPanWatchers.set(element, { events: events });
         return true;
+    },
+
+    bindAttachmentPreviewKeyboard: function (dotNetRef) {
+        if (!dotNetRef) return false;
+
+        this.unbindAttachmentPreviewKeyboard();
+
+        const keydown = event => {
+            if (event.key !== 'Escape') return;
+            const overlay = document.querySelector('.attachment-preview-overlay');
+            if (!overlay) return;
+
+            event.preventDefault();
+            dotNetRef.invokeMethodAsync('CloseAttachmentPreviewFromKeyboard').catch(() => {});
+        };
+
+        document.addEventListener('keydown', keydown);
+        this._previewKeyboardWatcher = keydown;
+        return true;
+    },
+
+    unbindAttachmentPreviewKeyboard: function () {
+        if (!this._previewKeyboardWatcher) return;
+
+        document.removeEventListener('keydown', this._previewKeyboardWatcher);
+        this._previewKeyboardWatcher = null;
     },
 
     autoResizeTextarea: function (element, minHeight, maxHeight) {

@@ -7,7 +7,7 @@
 
 <PageTitle>Tareas | Alfa Gestión</PageTitle>
 
-<section class="page-grid tareas-page">
+<section class="page-grid tareas-page" @onclick="HandlePageClickAsync">
     <header class="tareas-header">
         <div>
             <p class="shell__eyebrow">Alfa Gestión</p>
@@ -26,13 +26,19 @@
 
     @if (_feedback is not null)
     {
-        <div class="editor-msg @GetFeedbackClass(_feedback)">
-            <strong>@_feedback.Title</strong>
-            <p>@_feedback.Message</p>
-            @if (_feedback.HasCode)
-            {
-                <small>Código: @_feedback.Code</small>
-            }
+        <div class="editor-msg tareas-feedback @GetFeedbackClass(_feedback) @(_feedbackLeaving ? "is-leaving" : string.Empty)" @onclick:stopPropagation>
+            <i class="bi @GetFeedbackIcon(_feedback)" aria-hidden="true"></i>
+            <div class="tareas-feedback__content">
+                <strong>@_feedback.Title</strong>
+                <p>@_feedback.Message</p>
+                @if (_feedback.HasCode)
+                {
+                    <small>Código: @_feedback.Code</small>
+                }
+            </div>
+            <button type="button" class="tareas-feedback__close" title="Cerrar aviso" aria-label="Cerrar aviso" @onclick="DismissFeedbackAsync">
+                <i class="bi bi-x-lg"></i>
+            </button>
         </div>
     }
 
@@ -66,7 +72,12 @@
             <div class="tareas-list-stack">
                 @foreach (var lista in _page.Listas)
                 {
-                    <div class="tareas-list-row">
+                    <div class="tareas-list-row"
+                         @ondragenter="() => SetListDropTarget(lista.IdLista)"
+                         @ondragleave="() => ClearListDropTarget(lista.IdLista)"
+                         @ondragover:preventDefault
+                         @ondrop:preventDefault
+                         @ondrop="() => MoveDraggedTaskToListAsync(lista)">
                         @if (_editingListId == lista.IdLista)
                         {
                             <form class="tareas-list-form" @onsubmit="SaveListAsync">
@@ -81,22 +92,20 @@
                         }
                         else
                         {
-                            <button type="button" class="@GetListButtonClass(lista.IdLista)" @onclick="() => SelectList(lista.IdLista)">
+                            <button type="button"
+                                    class="@GetListButtonClass(lista.IdLista)"
+                                    @onclick="() => SelectList(lista.IdLista)">
                                 <span>
-                                    <i class="bi @(lista.EsDefault ? "bi-inbox" : "bi-list-ul")"></i> @lista.Nombre
-                                    @if (lista.CompartidaConTodos || lista.UsuariosCompartidos.Count > 0)
-                                    {
-                                        <i class="bi bi-share" title="@GetSharingSummary(lista.CompartidaConTodos, lista.UsuariosCompartidos)"></i>
-                                    }
+                                    <i class="bi @GetListIcon(lista)" title="@GetListIconTitle(lista)"></i> @lista.Nombre
                                 </span>
                                 <strong>@lista.Pendientes</strong>
                             </button>
                             <details class="tareas-menu">
                                 <summary title="Opciones"><i class="bi bi-three-dots-vertical"></i></summary>
                                 <div>
-                                    <button type="button" disabled="@(!lista.EsPropia)" @onclick="() => StartRenameList(lista)">Renombrar</button>
-                                    <button type="button" disabled="@(!lista.EsPropia)" @onclick="() => OpenShareList(lista)">Compartir</button>
-                                    <button type="button" disabled="@(lista.EsDefault || !lista.EsPropia)" @onclick="() => DeleteListAsync(lista.IdLista)">Eliminar</button>
+                                    <button type="button" @onclick="() => StartRenameList(lista)">Renombrar</button>
+                                    <button type="button" @onclick="() => OpenShareList(lista)">Compartir</button>
+                                    <button type="button" @onclick="() => DeleteListAsync(lista)">Eliminar</button>
                                 </div>
                             </details>
                         }
@@ -108,9 +117,13 @@
         <main class="tareas-main">
             <section class="tareas-compose">
                 <i class="bi bi-check2-circle"></i>
-                <input value="@_quickTaskTitle"
-                       @oninput="e => _quickTaskTitle = Convert.ToString(e.Value) ?? string.Empty"
+                <input @bind="_quickTaskTitle"
+                       @bind:event="oninput"
                        @onkeydown="HandleQuickTaskKeyDown"
+                       dir="ltr"
+                       autocomplete="off"
+                       spellcheck="true"
+                       style="direction: ltr; unicode-bidi: plaintext; text-align: left;"
                        placeholder="Añadir una tarea..." />
                 <button type="button" class="btn btn--ghost btn--sm" @onclick="OpenNewTask">
                     Detalles
@@ -122,14 +135,40 @@
                     <strong>@SelectedListTitle</strong>
                     <span>@FilteredTasks.Count tarea(s) activa(s)</span>
                 </div>
-                <select value="@_assignedFilter" @onchange="OnAssignedFilterChanged">
-                    <option value="">Todos los asignados</option>
-                    <option value="@CurrentUser">Asignadas a mí</option>
-                    @foreach (var user in _page.Usuarios)
+                <div class="tareas-assignee-filter" @onclick:stopPropagation @onkeydown="HandleAssignedFilterKeyDown">
+                    <button type="button"
+                            class="tareas-assignee-filter__button"
+                            aria-haspopup="listbox"
+                            aria-expanded="@_assignedFilterMenuOpen"
+                            @onkeydown="HandleAssignedFilterKeyDown"
+                            @onclick="ToggleAssignedFilterMenu">
+                        <span>
+                            <i class="bi @SelectedAssignedFilterIcon"></i>
+                            @SelectedAssignedFilterLabel
+                        </span>
+                        <i class="bi bi-chevron-down"></i>
+                    </button>
+                    @if (_assignedFilterMenuOpen)
                     {
-                        <option value="@user.Nombre">@user.Nombre</option>
+                        <div class="tareas-assignee-filter__menu" role="listbox">
+                            @foreach (var option in AssignedFilterOptions)
+                            {
+                                <button type="button"
+                                        class="@GetAssignedFilterOptionClass(option.Value)"
+                                        role="option"
+                                        aria-selected="@IsAssignedFilterSelected(option.Value)"
+                                        @onclick="() => SelectAssignedFilter(option.Value)">
+                                    <i class="bi @option.Icon"></i>
+                                    <span>@option.Label</span>
+                                    @if (IsAssignedFilterSelected(option.Value))
+                                    {
+                                        <i class="bi bi-check2"></i>
+                                    }
+                                </button>
+                            }
+                        </div>
                     }
-                </select>
+                </div>
             </div>
 
             <section class="tareas-list" aria-label="Tareas activas">
@@ -149,7 +188,11 @@
                 {
                     @foreach (var tarea in FilteredTasks)
                     {
-                        <article class="tareas-row">
+                        <article class="@GetTaskRowClass(tarea)"
+                                 data-tareas-drag-card="true"
+                                 draggable="true"
+                                 @ondragstart="() => StartTaskDrag(tarea)"
+                                 @ondragend="ClearTaskDrag">
                             <button type="button" class="tareas-check" title="Completar" @onclick="() => ChangeStateAsync(tarea, TareaEstadoKeys.Completada)">
                                 <i class="bi bi-circle"></i>
                             </button>
@@ -233,9 +276,13 @@
             </div>
 
             <input class="tareas-quick-input"
-                   value="@_quickNoteText"
-                   @oninput="e => _quickNoteText = Convert.ToString(e.Value) ?? string.Empty"
+                   @bind="_quickNoteText"
+                   @bind:event="oninput"
                    @onkeydown="HandleQuickNoteKeyDown"
+                   dir="ltr"
+                   autocomplete="off"
+                   spellcheck="true"
+                   style="direction: ltr; unicode-bidi: plaintext; text-align: left;"
                    placeholder="Escribí y Enter..." />
 
             <div class="tareas-notes">
@@ -502,9 +549,11 @@
 @code {
     private TareasPageDto _page = new();
     private AppUiMessage? _feedback;
+    private bool _feedbackLeaving;
     private bool _loading;
     private int? _selectedListId;
     private string _assignedFilter = string.Empty;
+    private bool _assignedFilterMenuOpen;
     private string _quickTaskTitle = string.Empty;
     private string _quickNoteText = string.Empty;
     private bool _showTaskModal;
@@ -523,6 +572,7 @@
     private List<PendingTaskAttachment> _pendingTaskAttachments = [];
     private IJSObjectReference? _attachmentsModule;
     private IJSObjectReference? _attachmentsBinding;
+    private IJSObjectReference? _menusBinding;
     private int? _editingListId;
     private string _listDraft = string.Empty;
     private bool _showShareModal;
@@ -531,7 +581,10 @@
     private string _shareTitle = string.Empty;
     private bool _shareAll;
     private List<string> _shareUsers = [];
+    private long? _draggingTaskId;
+    private int? _dragOverListId;
     private const long MaxAttachmentBytes = 50L * 1024L * 1024L;
+    private const string AssignedByMeFilter = "__assigned_by_me";
 
     private string CurrentUser => AppUserSession.GetCurrentUserName(Environment.UserName).Trim();
     private int DefaultListId => _page.Listas.FirstOrDefault(x => x.EsDefault)?.IdLista ?? _page.Listas.FirstOrDefault()?.IdLista ?? 0;
@@ -564,6 +617,28 @@
         }
     }
 
+    private IReadOnlyList<AssignedFilterOption> AssignedFilterOptions
+        => new[]
+            {
+                new AssignedFilterOption(string.Empty, "Todos los asignados", "bi-people"),
+                new AssignedFilterOption(CurrentUser, "Asignadas a mí", "bi-person-check"),
+                new AssignedFilterOption(AssignedByMeFilter, "Asignadas por mí", "bi-send-check")
+            }
+            .Concat(_page.Usuarios
+                .Select(x => x.Nombre)
+                .Where(x => !string.IsNullOrWhiteSpace(x) && !string.Equals(x, CurrentUser, StringComparison.OrdinalIgnoreCase))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(x => x)
+                .Select(x => new AssignedFilterOption(x, x, "bi-person")))
+            .ToArray();
+
+    private AssignedFilterOption SelectedAssignedFilter
+        => AssignedFilterOptions.FirstOrDefault(x => string.Equals(x.Value, _assignedFilter, StringComparison.OrdinalIgnoreCase))
+           ?? AssignedFilterOptions[0];
+
+    private string SelectedAssignedFilterLabel => SelectedAssignedFilter.Label;
+    private string SelectedAssignedFilterIcon => SelectedAssignedFilter.Icon;
+
     private IReadOnlyList<string> ShareUserOptions => _page.Usuarios
         .Select(x => x.Nombre)
         .Where(x => !string.IsNullOrWhiteSpace(x))
@@ -577,6 +652,9 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (firstRender)
+            await BindTaskMenusAsync();
+
         if (_showTaskModal && !_attachmentsPasteBound)
             await BindTaskAttachmentPasteAsync();
     }
@@ -596,6 +674,9 @@
     {
         if (_selectedListId is int listId && tarea.IdLista != listId)
             return false;
+        if (string.Equals(_assignedFilter, AssignedByMeFilter, StringComparison.Ordinal))
+            return string.Equals(tarea.UsuarioAlta, CurrentUser, StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(tarea.UsuarioAsignado, CurrentUser, StringComparison.OrdinalIgnoreCase);
         if (!string.IsNullOrWhiteSpace(_assignedFilter)
             && !string.Equals(tarea.UsuarioAsignado, _assignedFilter, StringComparison.OrdinalIgnoreCase))
             return false;
@@ -606,7 +687,74 @@
         => _selectedListId = idLista;
 
     private string GetListButtonClass(int? idLista)
-        => _selectedListId == idLista ? "tareas-list-button is-active" : "tareas-list-button";
+    {
+        var classes = _selectedListId == idLista ? "tareas-list-button is-active" : "tareas-list-button";
+        if (_draggingTaskId is not null && _dragOverListId == idLista)
+            classes += " is-drop-target";
+        return classes;
+    }
+
+    private string GetTaskRowClass(TareaItemDto tarea)
+        => _draggingTaskId == tarea.IdTarea ? "tareas-row is-dragging" : "tareas-row";
+
+    private static bool IsSharedList(TareaListaDto lista)
+        => lista.CompartidaConTodos || lista.UsuariosCompartidos.Count > 0;
+
+    private static string GetListIcon(TareaListaDto lista)
+        => IsSharedList(lista) ? "bi-share" : lista.EsDefault ? "bi-inbox" : "bi-list-ul";
+
+    private static string GetListIconTitle(TareaListaDto lista)
+        => IsSharedList(lista)
+            ? GetSharingSummary(lista.CompartidaConTodos, lista.UsuariosCompartidos)
+            : lista.EsDefault ? "Lista personal" : "Lista";
+
+    private void StartTaskDrag(TareaItemDto tarea)
+    {
+        _draggingTaskId = tarea.IdTarea;
+        _dragOverListId = null;
+    }
+
+    private void SetListDropTarget(int idLista)
+    {
+        if (_draggingTaskId is not null)
+            _dragOverListId = idLista;
+    }
+
+    private void ClearListDropTarget(int idLista)
+    {
+        if (_dragOverListId == idLista)
+            _dragOverListId = null;
+    }
+
+    private void ClearTaskDrag()
+    {
+        _draggingTaskId = null;
+        _dragOverListId = null;
+    }
+
+    private async Task MoveDraggedTaskToListAsync(TareaListaDto lista)
+    {
+        if (_draggingTaskId is not long idTarea)
+            return;
+
+        var tarea = _page.Tareas.Concat(_page.Completadas).FirstOrDefault(x => x.IdTarea == idTarea);
+        if (tarea is null || tarea.IdLista == lista.IdLista)
+        {
+            ClearTaskDrag();
+            return;
+        }
+
+        var result = await UiOps.RunAsync(async () =>
+        {
+            await TareasSvc.MoveTaskToListAsync(idTarea, lista.IdLista, CurrentUser);
+            return true;
+        }, "No se pudo mover la tarea.");
+
+        _feedback = result.Feedback;
+        ClearTaskDrag();
+        if (result.Success)
+            await LoadAsync();
+    }
 
     private void StartCreateList()
     {
@@ -616,7 +764,18 @@
 
     private void StartRenameList(TareaListaDto lista)
     {
-        if (lista.EsDefault) return;
+        if (!lista.EsPropia)
+        {
+            _feedback = BuildWarning("No se puede renombrar", "No sos dueño de esta lista. Solo el propietario puede renombrarla.");
+            return;
+        }
+
+        if (lista.EsDefault)
+        {
+            _feedback = BuildWarning("No se puede renombrar", "La lista Mis tareas no se puede renombrar.");
+            return;
+        }
+
         _editingListId = lista.IdLista;
         _listDraft = lista.Nombre;
     }
@@ -629,7 +788,12 @@
 
     private void OpenShareList(TareaListaDto lista)
     {
-        if (!lista.EsPropia) return;
+        if (!lista.EsPropia)
+        {
+            _feedback = BuildWarning("No se puede compartir", "No sos dueño de esta lista. Solo el propietario puede compartirla.");
+            return;
+        }
+
         _shareType = TareaObjetoCompartidoTipo.Lista;
         _shareObjectId = lista.IdLista;
         _shareTitle = lista.Nombre;
@@ -719,17 +883,29 @@
         }
     }
 
-    private async Task DeleteListAsync(int idLista)
+    private async Task DeleteListAsync(TareaListaDto lista)
     {
+        if (!lista.EsPropia)
+        {
+            _feedback = BuildWarning("No se puede eliminar", "No sos dueño de esta lista. Solo el propietario puede eliminarla.");
+            return;
+        }
+
+        if (lista.EsDefault)
+        {
+            _feedback = BuildWarning("No se puede eliminar", "La lista Mis tareas no se puede eliminar.");
+            return;
+        }
+
         var result = await UiOps.RunAsync(async () =>
         {
-            await TareasSvc.DeleteListAsync(idLista, CurrentUser);
+            await TareasSvc.DeleteListAsync(lista.IdLista, CurrentUser);
             return true;
         }, "No se pudo eliminar la lista.");
         _feedback = result.Feedback;
         if (result.Success)
         {
-            if (_selectedListId == idLista) _selectedListId = null;
+            if (_selectedListId == lista.IdLista) _selectedListId = null;
             await LoadAsync();
         }
     }
@@ -898,6 +1074,15 @@
             "tareas-attachments-dropzone",
             "tareas-attachments-picker");
         _attachmentsPasteBound = true;
+    }
+
+    private async Task BindTaskMenusAsync()
+    {
+        _attachmentsModule ??= await Js.InvokeAsync<IJSObjectReference>("import", "./js/tareas-attachments.js");
+        if (_menusBinding is not null)
+            await _menusBinding.InvokeVoidAsync("dispose");
+
+        _menusBinding = await _attachmentsModule.InvokeAsync<IJSObjectReference>("bindTareasInteractions");
     }
 
     private async Task DisposeTaskAttachmentBindingAsync()
@@ -1119,8 +1304,43 @@
         if (result.Success) await LoadAsync();
     }
 
-    private void OnAssignedFilterChanged(ChangeEventArgs args)
-        => _assignedFilter = Convert.ToString(args.Value) ?? string.Empty;
+    private void ToggleAssignedFilterMenu()
+        => _assignedFilterMenuOpen = !_assignedFilterMenuOpen;
+
+    private void SelectAssignedFilter(string value)
+    {
+        _assignedFilter = value;
+        _assignedFilterMenuOpen = false;
+    }
+
+    private bool IsAssignedFilterSelected(string value)
+        => string.Equals(_assignedFilter, value, StringComparison.OrdinalIgnoreCase);
+
+    private string GetAssignedFilterOptionClass(string value)
+        => IsAssignedFilterSelected(value) ? "tareas-assignee-filter__option is-active" : "tareas-assignee-filter__option";
+
+    private async Task HandlePageClickAsync()
+    {
+        _assignedFilterMenuOpen = false;
+        await DismissFeedbackAsync();
+    }
+
+    private void HandleAssignedFilterKeyDown(KeyboardEventArgs args)
+    {
+        if (string.Equals(args.Key, "Escape", StringComparison.OrdinalIgnoreCase))
+            _assignedFilterMenuOpen = false;
+    }
+
+    private async Task DismissFeedbackAsync()
+    {
+        if (_feedback is null || _feedbackLeaving)
+            return;
+
+        _feedbackLeaving = true;
+        await Task.Delay(180);
+        _feedback = null;
+        _feedbackLeaving = false;
+    }
 
     private void OnCompletedToggle()
         => _showCompleted = !_showCompleted;
@@ -1152,6 +1372,8 @@
     public async ValueTask DisposeAsync()
     {
         await DisposeTaskAttachmentBindingAsync();
+        if (_menusBinding is not null)
+            await _menusBinding.InvokeVoidAsync("dispose");
         if (_attachmentsModule is not null)
             await _attachmentsModule.DisposeAsync();
     }
@@ -1165,6 +1387,11 @@
 
     private static string GetFeedbackClass(AppUiMessage message)
         => message.Severity == AppUiFeedbackSeverity.Success ? "editor-msg--success" : message.Severity == AppUiFeedbackSeverity.Warning ? "editor-msg--warning" : "editor-msg--error";
+
+    private static string GetFeedbackIcon(AppUiMessage message)
+        => message.Severity == AppUiFeedbackSeverity.Warning ? "bi-exclamation-triangle-fill" : message.Severity == AppUiFeedbackSeverity.Success ? "bi-check-circle-fill" : "bi-x-circle-fill";
+
+    private sealed record AssignedFilterOption(string Value, string Label, string Icon);
 
     private sealed class PendingTaskAttachment
     {

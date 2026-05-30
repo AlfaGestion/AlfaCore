@@ -3,6 +3,7 @@
 @using AlfaCore.Models
 @inject AlfaCore.Services.IWorkspaceService WorkspaceSvc
 @inject AlfaCore.Services.IRecentService RecentSvc
+@inject AlfaCore.Services.IFavoritesService FavoritesSvc
 @inject AlfaCore.Services.ISessionService SessionSvc
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject NavigationManager Nav
@@ -46,13 +47,21 @@ else
                     <div class="launcher__grid">
                         @foreach (var item in workspaceSection.Items)
                         {
-                            <button type="button" class="app-card app-card--button" @onclick="() => OpenNodeAsync(item)">
+                            <article class="app-card app-card--button" role="button" tabindex="0" @onclick="() => OpenNodeAsync(item)" @onkeydown="args => HandleNodeCardKeyDownAsync(args, item)">
+                                <button type="button"
+                                        class="@GetFavoriteButtonClass(item.Clave)"
+                                        title="@(IsFavorite(item.Clave) ? "Quitar de favoritos" : "Agregar a favoritos")"
+                                        aria-label="@(IsFavorite(item.Clave) ? $"Quitar {item.Nombre} de favoritos" : $"Agregar {item.Nombre} a favoritos")"
+                                        @onclick="() => ToggleFavoriteAsync(item.Menu, item.Clave)"
+                                        @onclick:stopPropagation>
+                                    <i class="bi @(IsFavorite(item.Clave) ? "bi-star-fill" : "bi-star")"></i>
+                                </button>
                                 <div class="app-card__icon @ShellNavigationUiHelper.GetNodeIconClass(item)">
                                     <i class="bi @(string.IsNullOrWhiteSpace(item.Icono) ? "bi-box-arrow-up-right" : item.Icono)"></i>
                                 </div>
                                 <span class="app-card__name">@item.Nombre</span>
                                 <span class="app-card__desc">@ShellNavigationUiHelper.GetNodeDescription(item)</span>
-                            </button>
+                            </article>
                         }
                     </div>
                 </section>
@@ -97,6 +106,36 @@ else
     {
         await RecentSvc.RegisterRecentAsync(item.Menu, item.Clave);
         Nav.NavigateTo(item.RutaWeb);
+    }
+
+    private async Task HandleNodeCardKeyDownAsync(KeyboardEventArgs args, ShellMenuNodeDto item)
+    {
+        if (IsActivationKey(args.Key))
+            await OpenNodeAsync(item);
+    }
+
+    private bool IsFavorite(string clave)
+    {
+        return _workspace.Favorites.Any(item => string.Equals(item.Clave, clave, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private string GetFavoriteButtonClass(string clave)
+    {
+        return IsFavorite(clave) ? "app-card__favorite is-active" : "app-card__favorite";
+    }
+
+    private async Task ToggleFavoriteAsync(string menu, string clave)
+    {
+        await FavoritesSvc.ToggleFavoriteAsync(menu, clave);
+        _workspace = await WorkspaceSvc.GetModuleWorkspaceAsync(ModuleKey);
+    }
+
+    private static bool IsActivationKey(string? key)
+    {
+        return string.Equals(key, "Enter", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(key, " ", StringComparison.Ordinal)
+            || string.Equals(key, "Space", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(key, "Spacebar", StringComparison.OrdinalIgnoreCase);
     }
 
     private async void OnContextChanged()
