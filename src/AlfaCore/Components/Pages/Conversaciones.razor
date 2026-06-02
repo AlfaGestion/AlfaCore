@@ -1399,22 +1399,40 @@
 @if (_showContextNotesModal && HasContextNotes)
 {
     <div class="modal-overlay" style="background:rgba(3,7,18,.78);backdrop-filter:blur(2px);" @onclick="CloseContextNotesModal">
-        <div class="modal-card" style="width:min(940px,calc(100vw - 2rem));max-height:min(86vh,780px);overflow:auto;background:#071524;color:#e5f4ff;border:1px solid rgba(34,211,238,.45);box-shadow:0 22px 70px rgba(0,0,0,.65);" @onclick:stopPropagation>
+        <div class="modal-card" style="width:min(1180px,calc(100vw - 2rem));max-height:min(88vh,820px);overflow-y:auto;overflow-x:hidden;background:#071524;color:#e5f4ff;border:1px solid rgba(34,211,238,.45);box-shadow:0 22px 70px rgba(0,0,0,.65);" @onclick:stopPropagation>
             <div class="panel-card__header">
                 <div>
-                    <h3 class="panel-card__title">Observaciones del contexto</h3>
+                    <h3 class="panel-card__title">Observaciones</h3>
                     <p class="panel-card__subtitle">@GetConversationHeader(_selectedConversation!)</p>
                 </div>
                 <button type="button" class="btn btn--ghost btn--sm" @onclick="CloseContextNotesModal" aria-label="Cerrar">
                     <i class="bi bi-x-lg"></i>
                 </button>
             </div>
+            <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1rem;">
+                <button type="button"
+                        class="btn btn--sm @(_contextNotesTab == ContextNotesTabs.Observaciones ? "btn--primary" : "btn--ghost")"
+                        @onclick="() => _contextNotesTab = ContextNotesTabs.Observaciones">
+                    Observaciones (@_contextNotes.ObservationSections.Count)
+                </button>
+                <button type="button"
+                        class="btn btn--sm @(_contextNotesTab == ContextNotesTabs.OtrasNotas ? "btn--primary" : "btn--ghost")"
+                        @onclick="() => _contextNotesTab = ContextNotesTabs.OtrasNotas">
+                    Otras notas (@_contextNotes.OtherSections.Count)
+                </button>
+            </div>
             <div style="display:grid;gap:.85rem;">
-                @foreach (var note in _contextNotes.Sections)
+                @foreach (var note in ActiveContextNoteSections)
                 {
-                    <div class="context-card" style="background:#0b1828;color:#e5f4ff;border-color:rgba(148,163,184,.28);">
+                    <div class="context-card" style="background:#0b1828;color:#e5f4ff;border-color:rgba(148,163,184,.28);min-width:0;max-width:100%;overflow:hidden;">
                         <span class="context-card__label">@note.Label</span>
-                        <div style="white-space:pre-wrap;line-height:1.5;font-size:.95rem;color:#f8fafc;">@note.Text</div>
+                        <div style="white-space:pre-wrap;line-height:1.5;font-size:.95rem;color:#f8fafc;max-width:100%;overflow-wrap:anywhere;word-break:break-word;">@note.Text</div>
+                    </div>
+                }
+                @if (ActiveContextNoteSections.Count == 0)
+                {
+                    <div class="context-card" style="background:#0b1828;color:#cbd5e1;border-color:rgba(148,163,184,.28);">
+                        No hay información cargada en esta solapa.
                     </div>
                 }
             </div>
@@ -2093,6 +2111,7 @@
     private long? _contextTicketsConversationId;
     private bool _loadingContextNotes;
     private bool _showContextNotesModal;
+    private string _contextNotesTab = ContextNotesTabs.Observaciones;
     private ContextNotesVm _contextNotes = ContextNotesVm.Empty;
     private long? _contextNotesConversationId;
     private string? _contextNotesSourceKey;
@@ -3215,13 +3234,23 @@
     private string ContextNotesPreview
         => BuildOneLinePreview(_contextNotes.Preview);
 
+    private IReadOnlyList<ContextNoteSectionVm> ActiveContextNoteSections
+        => _contextNotesTab == ContextNotesTabs.OtrasNotas
+            ? _contextNotes.OtherSections
+            : _contextNotes.ObservationSections;
+
     private void OpenContextPanel()
         => _showContextPanel = true;
 
     private void OpenContextNotesModal()
     {
         if (HasContextNotes)
+        {
+            _contextNotesTab = _contextNotes.ObservationSections.Count > 0
+                ? ContextNotesTabs.Observaciones
+                : ContextNotesTabs.OtrasNotas;
             _showContextNotesModal = true;
+        }
     }
 
     private void CloseContextNotesModal()
@@ -3231,6 +3260,7 @@
     {
         _loadingContextNotes = false;
         _showContextNotesModal = false;
+        _contextNotesTab = ContextNotesTabs.Observaciones;
         _contextNotes = ContextNotesVm.Empty;
         _contextNotesConversationId = null;
         _contextNotesSourceKey = null;
@@ -3266,6 +3296,7 @@
         {
             _contextNotes = ContextNotesVm.Empty;
             _showContextNotesModal = false;
+            _contextNotesTab = ContextNotesTabs.Observaciones;
             _contextNotesLoaded = false;
         }
 
@@ -3292,15 +3323,15 @@
             if (conversation.IdContacto is int idContacto)
             {
                 var contact = await ContactosSvc.GetByIdAsync(idContacto);
-                AddContextNoteSection(sections, "Contacto - Observaciones", contact?.Observaciones);
+                AddContextNoteSection(sections, ContextNoteKind.Observacion, "Contacto - Observaciones", contact?.Observaciones);
             }
 
             if (!string.IsNullOrWhiteSpace(conversation.ClienteCodigo))
             {
                 var client = await CuentasSvc.GetByIdAsync(CuentaComercialTipo.Cliente, conversation.ClienteCodigo);
-                AddContextNoteSection(sections, "Cliente - Observaciones", client?.Observaciones);
-                AddContextNoteSection(sections, "Cliente - Manual interno", client?.Manual);
-                AddContextNoteSection(sections, "Cliente - Nota ampliada", client?.NotaCuenta);
+                AddContextNoteSection(sections, ContextNoteKind.Observacion, "Cliente - Observaciones", client?.Observaciones);
+                AddContextNoteSection(sections, ContextNoteKind.OtraNota, "Cliente - Manual interno", client?.Manual);
+                AddContextNoteSection(sections, ContextNoteKind.OtraNota, "Cliente - Nota ampliada", client?.NotaCuenta);
             }
 
             if (_contextNotesConversationId == idConversacion && _selectedConversation?.IdConversacion == idConversacion)
@@ -3326,11 +3357,11 @@
             ? string.Empty
             : $"{conversation.Canal}|{conversation.IdContacto?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty}|{conversation.ClienteCodigo?.Trim() ?? string.Empty}";
 
-    private static void AddContextNoteSection(List<ContextNoteSectionVm> sections, string label, string? text)
+    private static void AddContextNoteSection(List<ContextNoteSectionVm> sections, ContextNoteKind kind, string label, string? text)
     {
         var clean = NormalizeContextNoteText(text);
         if (!string.IsNullOrWhiteSpace(clean))
-            sections.Add(new ContextNoteSectionVm(label, clean));
+            sections.Add(new ContextNoteSectionVm(kind, label, clean));
     }
 
     private static string NormalizeContextNoteText(string? text)
@@ -6665,17 +6696,35 @@
         List<ConversacionInboxItemDto> Inbox,
         long? SelectedConversationId);
 
-    private sealed record ContextNoteSectionVm(string Label, string Text);
+    private static class ContextNotesTabs
+    {
+        public const string Observaciones = "observaciones";
+        public const string OtrasNotas = "otras_notas";
+    }
+
+    private enum ContextNoteKind
+    {
+        Observacion,
+        OtraNota
+    }
+
+    private sealed record ContextNoteSectionVm(ContextNoteKind Kind, string Label, string Text);
 
     private sealed class ContextNotesVm
     {
         public static ContextNotesVm Empty { get; } = new([]);
         public ContextNotesVm(IReadOnlyList<ContextNoteSectionVm> sections)
-            => Sections = sections;
+        {
+            Sections = sections;
+            ObservationSections = sections.Where(x => x.Kind == ContextNoteKind.Observacion).ToList();
+            OtherSections = sections.Where(x => x.Kind == ContextNoteKind.OtraNota).ToList();
+        }
 
         public IReadOnlyList<ContextNoteSectionVm> Sections { get; }
+        public IReadOnlyList<ContextNoteSectionVm> ObservationSections { get; }
+        public IReadOnlyList<ContextNoteSectionVm> OtherSections { get; }
         public bool HasContent => Sections.Count > 0;
-        public string Preview => Sections.Count == 0 ? string.Empty : Sections[0].Text;
+        public string Preview => ObservationSections.Count > 0 ? ObservationSections[0].Text : Sections.Count == 0 ? string.Empty : Sections[0].Text;
 
         public static ContextNotesVm FromSections(IReadOnlyList<ContextNoteSectionVm> sections)
             => sections.Count == 0 ? Empty : new ContextNotesVm(sections);
