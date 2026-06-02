@@ -912,9 +912,11 @@
 
     private void OpenNewTask()
     {
+        var title = NormalizeTaskTitle(_quickTaskTitle);
         _taskDraft = new TareaSaveRequest
         {
             IdLista = _selectedListId ?? DefaultListId,
+            Titulo = title,
             UsuarioAsignado = CurrentUser,
             UsuarioAccion = CurrentUser,
             UsuariosCompartidos = [],
@@ -928,6 +930,9 @@
         _taskSharePanelOpen = false;
         _showTaskModal = true;
     }
+
+    private static string NormalizeTaskTitle(string? title)
+        => string.Join(" ", (title ?? string.Empty).Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries));
 
     private async Task OpenEditTaskAsync(TareaItemDto tarea)
     {
