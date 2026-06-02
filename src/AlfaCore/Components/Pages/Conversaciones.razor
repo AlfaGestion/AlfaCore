@@ -1087,11 +1087,13 @@
                                             {
                                                 <button type="button"
                                                         class="conversations-pending-attachment__preview-button"
+                                                        style="grid-column:1 / -1;display:block;width:54px;height:42px;min-width:54px;max-width:54px;margin-top:.2rem;padding:0;border:1px solid rgba(56,189,248,.28);border-radius:6px;background:rgba(2,6,23,.34);overflow:hidden;cursor:zoom-in;"
                                                         title="Previsualizar imagen"
                                                         @onclick="() => OpenPendingAttachmentPreview(pending)">
                                                     <img class="conversations-pending-attachment__preview"
                                                          src="@pending.PreviewDataUrl"
                                                          alt="@pending.NombreArchivo"
+                                                         style="display:block;width:100%;height:100%;max-width:100%;max-height:100%;object-fit:contain;"
                                                          loading="lazy" />
                                                 </button>
                                             }
@@ -1621,10 +1623,11 @@
                     </button>
                 </div>
             </header>
-            <div class="attachment-preview-body attachment-preview-body--pending">
-                <div class="attachment-preview-canvas">
+            <div class="attachment-preview-body attachment-preview-body--pending" style="display:block;min-height:0;">
+                <div class="attachment-preview-canvas" style="display:flex;align-items:center;justify-content:center;height:min(72vh,680px);min-height:min(72vh,680px);max-height:calc(92vh - 5.5rem);overflow:hidden;cursor:default;">
                     <img src="@_previewPendingAttachment.PreviewDataUrl"
                          alt="@_previewPendingAttachment.NombreArchivo"
+                         style="display:block;width:100%;height:100%;max-width:100%;max-height:100%;object-fit:contain;transform:none;"
                          draggable="false" />
                 </div>
             </div>
