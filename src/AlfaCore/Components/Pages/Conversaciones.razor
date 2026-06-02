@@ -1106,7 +1106,7 @@
                                             @if (pending.HasError)
                                             {
                                                 <i class="bi bi-exclamation-circle-fill" title="@pending.Error"></i>
-                                                <span class="conversations-pending-attachment__error">@pending.Error</span>
+                                                <span class="conversations-pending-attachment__error" title="@pending.Error">@pending.Error</span>
                                             }
                                             <button type="button" class="btn btn--ghost btn--sm" @onclick="() => RemovePendingAttachment(pending.Id)" title="Quitar adjunto" disabled="@pending.IsUploading">
                                                 <i class="bi bi-x-lg"></i>
