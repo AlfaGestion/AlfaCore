@@ -7,6 +7,90 @@
 
 <PageTitle>Tareas | Alfa Gestión</PageTitle>
 
+<style>
+    .tareas-priority-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: .28rem;
+        width: fit-content;
+        padding: .16rem .45rem;
+        border-radius: 999px;
+        border: 1px solid rgba(148, 163, 184, .2);
+        font-size: .72rem;
+        font-weight: 800;
+    }
+
+    .tareas-priority-badge--alta {
+        border-color: rgba(248, 113, 113, .42);
+        background: rgba(127, 29, 29, .28);
+        color: #fecaca;
+    }
+
+    .tareas-priority-badge--media {
+        border-color: rgba(251, 191, 36, .38);
+        background: rgba(120, 53, 15, .24);
+        color: #fde68a;
+    }
+
+    .tareas-priority-badge--baja {
+        border-color: rgba(45, 212, 191, .35);
+        background: rgba(20, 83, 45, .22);
+        color: #99f6e4;
+    }
+
+    .tareas-row--priority-alta {
+        border-left: 3px solid #f87171 !important;
+    }
+
+    .tareas-row--priority-media {
+        border-left: 3px solid #fbbf24 !important;
+    }
+
+    .tareas-row--priority-baja {
+        border-left: 3px solid #2dd4bf !important;
+    }
+
+    .tareas-confirm {
+        position: fixed;
+        inset: 0;
+        z-index: 1400;
+        display: grid;
+        place-items: center;
+        padding: 1rem;
+        background: rgba(2, 6, 23, .62);
+        backdrop-filter: blur(3px);
+    }
+
+    .tareas-confirm__dialog {
+        width: min(460px, 100%);
+        padding: 1rem;
+        border: 1px solid rgba(56, 189, 248, .22);
+        border-radius: 8px;
+        background: #071426;
+        box-shadow: 0 24px 70px rgba(0, 0, 0, .42);
+    }
+
+    .tareas-confirm__dialog h3 {
+        margin: 0 0 .45rem;
+        color: var(--color-text);
+        font-size: 1rem;
+    }
+
+    .tareas-confirm__dialog p {
+        margin: 0;
+        color: var(--color-muted);
+        line-height: 1.45;
+    }
+
+    .tareas-confirm__actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: .55rem;
+        margin-top: 1rem;
+        flex-wrap: wrap;
+    }
+</style>
+
 <section class="page-grid tareas-page" @onclick="HandlePageClickAsync">
     <header class="tareas-header">
         <div>
@@ -198,6 +282,10 @@
                             </button>
                             <button type="button" class="tareas-row__body" @onclick="() => OpenEditTaskAsync(tarea)">
                                 <strong>@tarea.Titulo</strong>
+                                <span class="@GetPriorityBadgeClass(tarea.Prioridad)">
+                                    <i class="bi @GetPriorityIcon(tarea.Prioridad)"></i>
+                                    @GetPriorityLabel(tarea.Prioridad)
+                                </span>
                                 <span>
                                     @tarea.ListaNombre
                                     @if (!string.IsNullOrWhiteSpace(tarea.UsuarioAsignado))
@@ -247,6 +335,10 @@
                             </button>
                             <button type="button" class="tareas-row__body" @onclick="() => OpenEditTaskAsync(tarea)">
                                 <strong>@tarea.Titulo</strong>
+                                <span class="@GetPriorityBadgeClass(tarea.Prioridad)">
+                                    <i class="bi @GetPriorityIcon(tarea.Prioridad)"></i>
+                                    @GetPriorityLabel(tarea.Prioridad)
+                                </span>
                                 <span>
                                     @tarea.ListaNombre · completada @FormatDateTime(tarea.FechaHoraCompletada)
                                     @if (tarea.Adjuntos > 0)
@@ -322,14 +414,14 @@
 
 @if (_showTaskModal)
 {
-    <button type="button" class="modal-backdrop app-modal-backdrop no-print" aria-label="Cerrar tarea" @onclick="CloseTaskModal"></button>
+    <button type="button" class="modal-backdrop app-modal-backdrop no-print" aria-label="Cerrar tarea" @onclick="RequestCloseTaskModalAsync"></button>
     <section class="tareas-modal panel-card no-print" @onclick:stopPropagation>
         <div class="tareas-modal__head">
             <input class="tareas-title-input"
                    value="@_taskDraft.Titulo"
                    @oninput="e => _taskDraft.Titulo = Convert.ToString(e.Value) ?? string.Empty"
                    placeholder="Añade un título" />
-            <button type="button" class="drawer__close" @onclick="CloseTaskModal" title="Cerrar">
+            <button type="button" class="drawer__close" @onclick="RequestCloseTaskModalAsync" title="Cerrar">
                 <i class="bi bi-x-lg"></i>
             </button>
         </div>
@@ -345,6 +437,14 @@
                     <option value="@TareaEstadoKeys.Pendiente">Pendiente</option>
                     <option value="@TareaEstadoKeys.EnCurso">En curso</option>
                     <option value="@TareaEstadoKeys.Completada">Completada</option>
+                </select>
+            </label>
+            <label>
+                <span>Prioridad</span>
+                <select @bind="_taskDraft.Prioridad">
+                    <option value="@TareaPrioridadKeys.Alta">Alta</option>
+                    <option value="@TareaPrioridadKeys.Media">Media</option>
+                    <option value="@TareaPrioridadKeys.Baja">Baja</option>
                 </select>
             </label>
             <label>
@@ -487,6 +587,24 @@
     </section>
 }
 
+@if (_showCloseTaskConfirm)
+{
+    <section class="tareas-confirm no-print" role="dialog" aria-modal="true" aria-labelledby="tareas-confirm-title">
+        <div class="tareas-confirm__dialog">
+            <h3 id="tareas-confirm-title">Cerrar sin guardar</h3>
+            <p>Hay cambios sin guardar en esta tarea. Si cerras ahora, se pierde lo que cargaste.</p>
+            <div class="tareas-confirm__actions">
+                <button type="button" class="btn btn--ghost" @onclick="CancelCloseTaskModal">
+                    Seguir editando
+                </button>
+                <button type="button" class="btn btn--primary" @onclick="ConfirmCloseTaskModalAsync">
+                    Cerrar sin guardar
+                </button>
+            </div>
+        </div>
+    </section>
+}
+
 @if (_showShareModal)
 {
     <button type="button" class="modal-backdrop app-modal-backdrop no-print" aria-label="Cerrar compartir" @onclick="CloseShareModal"></button>
@@ -557,6 +675,7 @@
     private string _quickTaskTitle = string.Empty;
     private string _quickNoteText = string.Empty;
     private bool _showTaskModal;
+    private bool _showCloseTaskConfirm;
     private bool _taskCanShare;
     private bool _taskSharePanelOpen;
     private bool _savingTask;
@@ -568,6 +687,7 @@
     private string _previewImageName = string.Empty;
     private bool _showCompleted;
     private TareaSaveRequest _taskDraft = new();
+    private TareaDraftSnapshot? _taskDraftSnapshot;
     private List<TareaAdjuntoDto> _taskAttachments = [];
     private List<PendingTaskAttachment> _pendingTaskAttachments = [];
     private IJSObjectReference? _attachmentsModule;
@@ -597,6 +717,10 @@
 
     private List<TareaItemDto> FilteredTasks => _page.Tareas
         .Where(MatchesCurrentFilters)
+        .OrderBy(x => GetPriorityRank(x.Prioridad))
+        .ThenBy(x => x.FechaVencimiento is null)
+        .ThenBy(x => x.FechaVencimiento)
+        .ThenByDescending(x => x.FechaHoraAlta)
         .ToList();
 
     private List<TareaItemDto> FilteredCompleted => _page.Completadas
@@ -695,7 +819,48 @@
     }
 
     private string GetTaskRowClass(TareaItemDto tarea)
-        => _draggingTaskId == tarea.IdTarea ? "tareas-row is-dragging" : "tareas-row";
+    {
+        var classes = $"tareas-row tareas-row--priority-{GetPriorityCssSuffix(tarea.Prioridad)}";
+        if (_draggingTaskId == tarea.IdTarea)
+            classes += " is-dragging";
+        return classes;
+    }
+
+    private static string GetPriorityLabel(string? prioridad)
+        => NormalizePriorityForUi(prioridad) switch
+        {
+            TareaPrioridadKeys.Alta => "Alta",
+            TareaPrioridadKeys.Baja => "Baja",
+            _ => "Media"
+        };
+
+    private static string GetPriorityIcon(string? prioridad)
+        => NormalizePriorityForUi(prioridad) switch
+        {
+            TareaPrioridadKeys.Alta => "bi-exclamation-circle-fill",
+            TareaPrioridadKeys.Baja => "bi-arrow-down-circle",
+            _ => "bi-dash-circle"
+        };
+
+    private static string GetPriorityBadgeClass(string? prioridad)
+        => $"tareas-priority-badge tareas-priority-badge--{GetPriorityCssSuffix(prioridad)}";
+
+    private static string GetPriorityCssSuffix(string? prioridad)
+        => NormalizePriorityForUi(prioridad).ToLowerInvariant();
+
+    private static string NormalizePriorityForUi(string? prioridad)
+    {
+        var value = (prioridad ?? string.Empty).Trim().ToUpperInvariant();
+        return TareaPrioridadKeys.All.Contains(value, StringComparer.Ordinal) ? value : TareaPrioridadKeys.Media;
+    }
+
+    private static int GetPriorityRank(string? prioridad)
+        => NormalizePriorityForUi(prioridad) switch
+        {
+            TareaPrioridadKeys.Alta => 0,
+            TareaPrioridadKeys.Media => 1,
+            _ => 2
+        };
 
     private static bool IsSharedList(TareaListaDto lista)
         => lista.CompartidaConTodos || lista.UsuariosCompartidos.Count > 0;
@@ -912,13 +1077,16 @@
 
     private void OpenNewTask()
     {
+        var title = NormalizeTaskTitle(_quickTaskTitle);
         _taskDraft = new TareaSaveRequest
         {
             IdLista = _selectedListId ?? DefaultListId,
+            Titulo = title,
             UsuarioAsignado = CurrentUser,
             UsuarioAccion = CurrentUser,
             UsuariosCompartidos = [],
-            Estado = TareaEstadoKeys.Pendiente
+            Estado = TareaEstadoKeys.Pendiente,
+            Prioridad = TareaPrioridadKeys.Media
         };
         _taskAttachments = [];
         _pendingTaskAttachments = [];
@@ -926,7 +1094,49 @@
         _attachmentPickerVersion++;
         _taskCanShare = true;
         _taskSharePanelOpen = false;
+        _taskDraftSnapshot = CreateTaskDraftSnapshot();
         _showTaskModal = true;
+    }
+
+    private static string NormalizeTaskTitle(string? title)
+        => string.Join(" ", (title ?? string.Empty).Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries));
+
+    private TareaDraftSnapshot CreateTaskDraftSnapshot()
+        => new(
+            _taskDraft.IdTarea,
+            _taskDraft.IdLista,
+            NormalizeTaskTitle(_taskDraft.Titulo),
+            (_taskDraft.Descripcion ?? string.Empty).Trim(),
+            _taskDraft.FechaVencimiento?.Date,
+            (_taskDraft.UsuarioAsignado ?? string.Empty).Trim(),
+            _taskDraft.Estado,
+            NormalizePriorityForUi(_taskDraft.Prioridad),
+            _taskDraft.CompartirConTodos,
+            _taskDraft.UsuariosCompartidos
+                .Select(x => x.Trim())
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+                .ToArray());
+
+    private bool HasUnsavedTaskModalChanges()
+    {
+        if (_taskDraftSnapshot is null)
+            return false;
+
+        if (_pendingTaskAttachments.Count > 0)
+            return true;
+
+        var current = CreateTaskDraftSnapshot();
+        return current.IdTarea != _taskDraftSnapshot.IdTarea
+               || current.IdLista != _taskDraftSnapshot.IdLista
+               || !string.Equals(current.Titulo, _taskDraftSnapshot.Titulo, StringComparison.Ordinal)
+               || !string.Equals(current.Descripcion, _taskDraftSnapshot.Descripcion, StringComparison.Ordinal)
+               || current.FechaVencimiento != _taskDraftSnapshot.FechaVencimiento
+               || !string.Equals(current.UsuarioAsignado, _taskDraftSnapshot.UsuarioAsignado, StringComparison.OrdinalIgnoreCase)
+               || !string.Equals(current.Estado, _taskDraftSnapshot.Estado, StringComparison.Ordinal)
+               || !string.Equals(current.Prioridad, _taskDraftSnapshot.Prioridad, StringComparison.Ordinal)
+               || current.CompartirConTodos != _taskDraftSnapshot.CompartirConTodos
+               || !current.UsuariosCompartidos.SequenceEqual(_taskDraftSnapshot.UsuariosCompartidos, StringComparer.OrdinalIgnoreCase);
     }
 
     private async Task OpenEditTaskAsync(TareaItemDto tarea)
@@ -940,6 +1150,7 @@
             FechaVencimiento = tarea.FechaVencimiento,
             UsuarioAsignado = string.IsNullOrWhiteSpace(tarea.UsuarioAsignado) ? CurrentUser : tarea.UsuarioAsignado,
             Estado = tarea.Estado,
+            Prioridad = tarea.Prioridad,
             CompartirConTodos = tarea.CompartidaConTodos,
             UsuariosCompartidos = tarea.UsuariosCompartidos.ToList(),
             UsuarioAccion = CurrentUser
@@ -949,6 +1160,7 @@
         _attachmentPickerVersion++;
         _taskCanShare = tarea.EsPropia;
         _taskSharePanelOpen = false;
+        _taskDraftSnapshot = CreateTaskDraftSnapshot();
         _showTaskModal = true;
         _loadingTaskAttachments = true;
         var result = await UiOps.RunAsync(() => TareasSvc.GetTaskAttachmentsAsync(tarea.IdTarea, CurrentUser), "No se pudieron cargar los adjuntos.");
@@ -959,11 +1171,32 @@
         _loadingTaskAttachments = false;
     }
 
+    private async Task RequestCloseTaskModalAsync()
+    {
+        if (HasUnsavedTaskModalChanges())
+        {
+            _showCloseTaskConfirm = true;
+            return;
+        }
+
+        await CloseTaskModal();
+    }
+
+    private void CancelCloseTaskModal()
+        => _showCloseTaskConfirm = false;
+
+    private async Task ConfirmCloseTaskModalAsync()
+    {
+        _showCloseTaskConfirm = false;
+        await CloseTaskModal();
+    }
     private async Task CloseTaskModal()
     {
+        _showCloseTaskConfirm = false;
         _taskSharePanelOpen = false;
         _pendingTaskAttachments = [];
         _taskAttachments = [];
+        _taskDraftSnapshot = null;
         _showTaskModal = false;
         await DisposeTaskAttachmentBindingAsync();
     }
@@ -1197,6 +1430,7 @@
                 IdLista = _selectedListId ?? DefaultListId,
                 Titulo = title,
                 UsuarioAsignado = CurrentUser,
+                Prioridad = TareaPrioridadKeys.Media,
                 UsuarioAccion = CurrentUser
             });
             return true;
@@ -1392,6 +1626,18 @@
         => message.Severity == AppUiFeedbackSeverity.Warning ? "bi-exclamation-triangle-fill" : message.Severity == AppUiFeedbackSeverity.Success ? "bi-check-circle-fill" : "bi-x-circle-fill";
 
     private sealed record AssignedFilterOption(string Value, string Label, string Icon);
+
+    private sealed record TareaDraftSnapshot(
+        long? IdTarea,
+        int IdLista,
+        string Titulo,
+        string Descripcion,
+        DateTime? FechaVencimiento,
+        string UsuarioAsignado,
+        string Estado,
+        string Prioridad,
+        bool CompartirConTodos,
+        string[] UsuariosCompartidos);
 
     private sealed class PendingTaskAttachment
     {

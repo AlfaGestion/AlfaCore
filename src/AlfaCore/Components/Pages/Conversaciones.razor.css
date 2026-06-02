@@ -1,3 +1,116 @@
+.conversations-list,
+.conversations-chat {
+    position: relative;
+}
+
+.conversations-page--odoo {
+    min-height: 100dvh;
+    height: 100dvh;
+}
+
+.conversations-page--odoo .conversations-layout {
+    min-height: 0;
+    height: 100%;
+}
+
+.conversations-page--odoo .conversations-list,
+.conversations-page--odoo .conversations-chat {
+    min-height: 0;
+    height: 100%;
+}
+
+.conversations-page--odoo .conversations-thread-shell,
+.conversations-page--odoo .conversations-thread {
+    min-height: 0;
+}
+
+.conversations-loading-overlay {
+    position: absolute;
+    inset: .65rem;
+    z-index: 12;
+    display: grid;
+    place-items: center;
+    align-content: center;
+    gap: .45rem;
+    border: 1px solid rgba(56, 189, 248, .2);
+    border-radius: 8px;
+    background: rgba(2, 6, 23, .72);
+    color: #bae6fd;
+    font-size: .86rem;
+    font-weight: 800;
+    backdrop-filter: blur(4px);
+}
+
+.conversations-loading-overlay i {
+    font-size: 1.15rem;
+    animation: conversations-spin 1s linear infinite;
+}
+
+.conversations-loading-overlay--chat {
+    inset: .75rem;
+    pointer-events: none;
+}
+
+.conversations-page--odoo .conversations-pending-attachment__preview-button {
+    grid-column: 1 / -1;
+    display: block;
+    width: 54px;
+    height: 42px;
+    margin-top: .2rem;
+    padding: 0;
+    border: 1px solid rgba(56, 189, 248, .22);
+    border-radius: 6px;
+    background: rgba(2, 6, 23, .34);
+    overflow: hidden;
+    cursor: zoom-in;
+}
+
+.conversations-page--odoo .conversations-pending-attachment__preview-button:hover,
+.conversations-page--odoo .conversations-pending-attachment__preview-button:focus-visible {
+    border-color: rgba(56, 189, 248, .62);
+    outline: none;
+}
+
+.conversations-page--odoo .conversations-pending-attachment__preview {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.attachment-preview-modal--pending {
+    width: min(92vw, 920px);
+}
+
+.attachment-preview-body--pending {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.attachment-preview-body--pending .attachment-preview-canvas {
+    min-height: min(72vh, 680px);
+    max-height: calc(92vh - 5.5rem);
+    cursor: default;
+}
+
+.attachment-preview-body--pending .attachment-preview-canvas img {
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    max-height: calc(92vh - 7rem);
+    object-fit: contain;
+}
+
+@keyframes conversations-spin {
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
+}
+
 .attachment-preview-modal {
     border-radius: 18px;
     background: rgba(9, 24, 43, .96);

@@ -26,6 +26,7 @@ public sealed class TareasService(
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
             await EnsureDefaultListAsync(cn, user, token);
+            await EnsureTaskPriorityColumnAsync(cn, token);
             var userActiveFilter = await HasUsuarioActivoColumnAsync(cn, token)
                 ? "AND ISNULL(Activo, 1) = 1"
                 : string.Empty;
@@ -132,6 +133,7 @@ public sealed class TareasService(
                     t.FechaVencimiento,
                     ISNULL(t.UsuarioAsignado, '') AS UsuarioAsignado,
                     ISNULL(t.Estado, 'PENDIENTE') AS Estado,
+                    ISNULL(t.Prioridad, 'MEDIA') AS Prioridad,
                     ISNULL(t.UsuarioAlta, '') AS UsuarioAlta,
                     CONVERT(bit, CASE WHEN UPPER(LTRIM(RTRIM(ISNULL(t.UsuarioAlta, '')))) = UPPER(LTRIM(RTRIM(@Usuario))) THEN 1 ELSE 0 END) AS EsPropia,
                     {attachmentCountSelect} AS Adjuntos,
@@ -146,6 +148,11 @@ public sealed class TareasService(
                   AND ISNULL(l.Activa, 1) = 1
                   AND t.Estado <> 'COMPLETADA'
                 ORDER BY
+                    CASE ISNULL(t.Prioridad, 'MEDIA')
+                        WHEN 'ALTA' THEN 0
+                        WHEN 'MEDIA' THEN 1
+                        ELSE 2
+                    END,
                     CASE WHEN t.FechaVencimiento IS NULL THEN 1 ELSE 0 END,
                     t.FechaVencimiento,
                     t.FechaHoraAlta DESC;
@@ -204,6 +211,7 @@ public sealed class TareasService(
                     t.FechaVencimiento,
                     ISNULL(t.UsuarioAsignado, '') AS UsuarioAsignado,
                     ISNULL(t.Estado, 'PENDIENTE') AS Estado,
+                    ISNULL(t.Prioridad, 'MEDIA') AS Prioridad,
                     ISNULL(t.UsuarioAlta, '') AS UsuarioAlta,
                     CONVERT(bit, CASE WHEN UPPER(LTRIM(RTRIM(ISNULL(t.UsuarioAlta, '')))) = UPPER(LTRIM(RTRIM(@Usuario))) THEN 1 ELSE 0 END) AS EsPropia,
                     {attachmentCountSelect} AS Adjuntos,
@@ -385,11 +393,13 @@ public sealed class TareasService(
                 throw new InvalidOperationException("El título de la tarea es obligatorio.");
 
             var estado = NormalizeState(request.Estado);
+            var prioridad = NormalizePriority(request.Prioridad);
             var user = NormalizeUser(request.UsuarioAccion);
             var asignado = string.IsNullOrWhiteSpace(request.UsuarioAsignado) ? user : request.UsuarioAsignado.Trim();
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
+            await EnsureTaskPriorityColumnAsync(cn, token);
             var defaultId = await EnsureDefaultListAsync(cn, user, token);
             var idLista = request.IdLista <= 0 ? defaultId : request.IdLista;
             if (!await CanAccessListAsync(cn, idLista, user, token))
@@ -411,6 +421,7 @@ public sealed class TareasService(
                         FechaVencimiento = @FechaVencimiento,
                         UsuarioAsignado = @UsuarioAsignado,
                         Estado = @Estado,
+                        Prioridad = @Prioridad,
                         FechaHoraModificacion = GETDATE(),
                         FechaHoraCompletada = CASE
                             WHEN @Estado = 'COMPLETADA' AND Estado <> 'COMPLETADA' THEN GETDATE()
@@ -428,7 +439,8 @@ public sealed class TareasService(
                         Descripcion = EmptyToNull(request.Descripcion),
                         request.FechaVencimiento,
                         UsuarioAsignado = asignado,
-                        Estado = estado
+                        Estado = estado,
+                        Prioridad = prioridad
                     },
                     cancellationToken: token));
                 if (await IsTaskOwnedByUserAsync(cn, id, user, token))
@@ -439,10 +451,10 @@ public sealed class TareasService(
             var newId = await cn.ExecuteScalarAsync<long>(new CommandDefinition(
                 """
                 INSERT INTO dbo.ALFACORE_TAREAS
-                    (IdLista, Titulo, Descripcion, FechaVencimiento, UsuarioAsignado, Estado, UsuarioAlta, FechaHoraAlta, Activa)
+                    (IdLista, Titulo, Descripcion, FechaVencimiento, UsuarioAsignado, Estado, Prioridad, UsuarioAlta, FechaHoraAlta, Activa)
                 OUTPUT INSERTED.IdTarea
                 VALUES
-                    (@IdLista, @Titulo, @Descripcion, @FechaVencimiento, @UsuarioAsignado, @Estado, @UsuarioAlta, GETDATE(), 1);
+                    (@IdLista, @Titulo, @Descripcion, @FechaVencimiento, @UsuarioAsignado, @Estado, @Prioridad, @UsuarioAlta, GETDATE(), 1);
                 """,
                 new
                 {
@@ -452,6 +464,7 @@ public sealed class TareasService(
                     request.FechaVencimiento,
                     UsuarioAsignado = asignado,
                     Estado = estado,
+                    Prioridad = prioridad,
                     UsuarioAlta = user
                 },
                 cancellationToken: token));
@@ -469,6 +482,7 @@ public sealed class TareasService(
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
 
+            await EnsureTaskPriorityColumnAsync(cn, token);
             if (!await CanAccessTaskAsync(cn, idTarea, user, token))
                 throw new InvalidOperationException("No tenés acceso a la tarea seleccionada.");
 
@@ -645,13 +659,14 @@ public sealed class TareasService(
             var user = NormalizeUser(usuarioAccion);
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
+            await EnsureTaskPriorityColumnAsync(cn, token);
             if (!await CanAccessTaskAsync(cn, idTarea, user, token))
                 throw new InvalidOperationException("No tenés acceso a la tarea seleccionada.");
 
             await cn.ExecuteAsync(new CommandDefinition(
                 """
                 INSERT INTO dbo.ALFACORE_TAREAS
-                    (IdLista, Titulo, Descripcion, FechaVencimiento, UsuarioAsignado, Estado, UsuarioAlta, FechaHoraAlta, Activa)
+                    (IdLista, Titulo, Descripcion, FechaVencimiento, UsuarioAsignado, Estado, Prioridad, UsuarioAlta, FechaHoraAlta, Activa)
                 SELECT
                     IdLista,
                     CONCAT(Titulo, N' (copia)'),
@@ -659,6 +674,7 @@ public sealed class TareasService(
                     FechaVencimiento,
                     UsuarioAsignado,
                     'PENDIENTE',
+                    ISNULL(Prioridad, N'MEDIA'),
                     @Usuario,
                     GETDATE(),
                     1
@@ -829,6 +845,24 @@ public sealed class TareasService(
         => await cn.ExecuteScalarAsync<int>(new CommandDefinition(
             "SELECT CASE WHEN OBJECT_ID(N'dbo.ALFACORE_TAREAS_ADJUNTOS', N'U') IS NULL THEN 0 ELSE 1 END;",
             cancellationToken: ct)) == 1;
+
+    private static async Task EnsureTaskPriorityColumnAsync(SqlConnection cn, CancellationToken ct)
+        => await cn.ExecuteAsync(new CommandDefinition(
+            """
+            IF COL_LENGTH(N'dbo.ALFACORE_TAREAS', N'Prioridad') IS NULL
+            BEGIN
+                ALTER TABLE dbo.ALFACORE_TAREAS
+                ADD Prioridad nvarchar(10) NOT NULL
+                    CONSTRAINT DF_ALFACORE_TAREAS_Prioridad DEFAULT (N'MEDIA');
+            END;
+
+            UPDATE dbo.ALFACORE_TAREAS
+            SET Prioridad = N'MEDIA'
+            WHERE Prioridad IS NULL
+               OR LTRIM(RTRIM(Prioridad)) = N''
+               OR UPPER(LTRIM(RTRIM(Prioridad))) NOT IN (N'ALTA', N'MEDIA', N'BAJA');
+            """,
+            cancellationToken: ct));
 
     private static void ApplySharing(TareasPageDto page, IReadOnlyList<TareaShareRow> shares)
     {
@@ -1170,6 +1204,12 @@ public sealed class TareasService(
     {
         var value = (estado ?? string.Empty).Trim().ToUpperInvariant();
         return TareaEstadoKeys.All.Contains(value, StringComparer.Ordinal) ? value : TareaEstadoKeys.Pendiente;
+    }
+
+    private static string NormalizePriority(string? prioridad)
+    {
+        var value = (prioridad ?? string.Empty).Trim().ToUpperInvariant();
+        return TareaPrioridadKeys.All.Contains(value, StringComparer.Ordinal) ? value : TareaPrioridadKeys.Media;
     }
 
     private static string? EmptyToNull(string? value)

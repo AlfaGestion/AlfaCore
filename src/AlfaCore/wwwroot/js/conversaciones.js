@@ -150,6 +150,19 @@ window.conversacionesUi = {
         return distance < 96;
     },
 
+    getThreadScrollState: function (element) {
+        if (!element) {
+            return { nearBottom: false, scrollTop: 0, scrollHeight: 0, clientHeight: 0 };
+        }
+
+        return {
+            nearBottom: this.isNearBottom(element),
+            scrollTop: element.scrollTop || 0,
+            scrollHeight: element.scrollHeight || 0,
+            clientHeight: element.clientHeight || 0
+        };
+    },
+
     getCloseTicketWarningAccepted: function () {
         try {
             return window.localStorage?.getItem(this._closeTicketWarningKey) === '1';
@@ -547,14 +560,67 @@ window.conversacionesUi = {
         }
 
         let dragDepth = 0;
+        let lastPasteKey = '';
+        let lastPasteAt = 0;
         const getInput = () => document.getElementById(inputId);
         const hasFiles = event => event.dataTransfer && Array.from(event.dataTransfer.types || []).includes('Files');
-        const addFilesToInput = files => {
+        const normalizeImageForWhatsApp = file => {
+            return new Promise(resolve => {
+                if (!file || !file.type?.startsWith('image/') || file.type === 'image/gif') {
+                    resolve(file);
+                    return;
+                }
+
+                const image = new Image();
+                const objectUrl = URL.createObjectURL(file);
+                image.onload = () => {
+                    try {
+                        const maxSide = 1600;
+                        const scale = Math.min(1, maxSide / Math.max(image.naturalWidth || image.width, image.naturalHeight || image.height));
+                        const width = Math.max(1, Math.round((image.naturalWidth || image.width) * scale));
+                        const height = Math.max(1, Math.round((image.naturalHeight || image.height) * scale));
+                        const canvas = document.createElement('canvas');
+                        canvas.width = width;
+                        canvas.height = height;
+                        const ctx = canvas.getContext('2d');
+                        ctx.fillStyle = '#ffffff';
+                        ctx.fillRect(0, 0, width, height);
+                        ctx.drawImage(image, 0, 0, width, height);
+                        canvas.toBlob(blob => {
+                            URL.revokeObjectURL(objectUrl);
+                            if (!blob) {
+                                resolve(file);
+                                return;
+                            }
+
+                            const baseName = (file.name || 'imagen').replace(/\.[a-z0-9]{2,5}$/i, '');
+                            resolve(new File([blob], `${baseName}.jpg`, {
+                                type: 'image/jpeg',
+                                lastModified: Date.now()
+                            }));
+                        }, 'image/jpeg', 0.88);
+                    } catch {
+                        URL.revokeObjectURL(objectUrl);
+                        resolve(file);
+                    }
+                };
+                image.onerror = () => {
+                    URL.revokeObjectURL(objectUrl);
+                    resolve(file);
+                };
+                image.src = objectUrl;
+            });
+        };
+
+        const normalizeFilesForWhatsApp = async files => Promise.all(Array.from(files || []).map(normalizeImageForWhatsApp));
+
+        const addFilesToInput = async files => {
             const input = getInput();
             if (!input || !files || files.length === 0) return false;
 
             const transfer = new DataTransfer();
-            Array.from(files).forEach(file => transfer.items.add(file));
+            const normalizedFiles = await normalizeFilesForWhatsApp(files);
+            normalizedFiles.forEach(file => transfer.items.add(file));
             if (transfer.files.length === 0) return false;
 
             input.files = transfer.files;
@@ -590,15 +656,15 @@ window.conversacionesUi = {
             }
         };
 
-        const drop = event => {
+        const drop = async event => {
             if (!prevent(event)) return;
             dragDepth = 0;
             element.classList.remove('is-file-dragging');
 
-            addFilesToInput(event.dataTransfer.files);
+            await addFilesToInput(event.dataTransfer.files);
         };
 
-        const paste = event => {
+        const paste = async event => {
             const items = Array.from(event.clipboardData?.items || []);
             const imageFiles = items
                 .filter(item => item.kind === 'file' && item.type?.startsWith('image/'))
@@ -606,6 +672,16 @@ window.conversacionesUi = {
                 .filter(file => file);
 
             if (imageFiles.length === 0) return;
+
+            const pasteKey = imageFiles
+                .map(file => `${file.name || 'clipboard'}:${file.type}:${file.size}:${file.lastModified || 0}`)
+                .join('|');
+            const now = Date.now();
+            if (pasteKey === lastPasteKey && now - lastPasteAt < 900) {
+                event.preventDefault();
+                event.stopPropagation();
+                return;
+            }
 
             event.preventDefault();
             event.stopPropagation();
@@ -619,7 +695,9 @@ window.conversacionesUi = {
                 return new File([file], name, { type: file.type || 'image/png', lastModified: Date.now() });
             });
 
-            addFilesToInput(files);
+            lastPasteKey = pasteKey;
+            lastPasteAt = now;
+            await addFilesToInput(files);
         };
 
         const events = [

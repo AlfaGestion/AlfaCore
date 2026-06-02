@@ -12,7 +12,7 @@
         </div>
     </section>
 
-    <section class="panel-card filters-card">
+    <section class="panel-card filters-card" @onkeydown="HandleApplyKeyDownAsync">
         <div class="panel-card__header">
             <div>
                 <h3 class="panel-card__title">Período</h3>
@@ -41,6 +41,7 @@
 
         <div class="actions">
             <button class="btn btn--primary" @onclick="LoadAsync">Aplicar filtros</button>
+            <button class="btn btn--ghost" @onclick="ClearAsync">Limpiar</button>
         </div>
     </section>
 
@@ -139,6 +140,14 @@
         await LoadAsync();
     }
 
+    private async Task HandleApplyKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (!string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase) || _loading)
+            return;
+
+        await LoadAsync();
+    }
+
     private async Task LoadAsync()
     {
         _loading = true;
@@ -155,6 +164,14 @@
         }
         catch (Exception ex) { _error = ex.Message; }
         finally { _loading = false; }
+    }
+
+    private async Task ClearAsync()
+    {
+        var today = DateTime.Today;
+        _filters.FechaDesde = new DateTime(today.Year, today.Month, 1);
+        _filters.FechaHasta = today;
+        await LoadAsync();
     }
 
     private async Task ApplyQuickRangeAsync(string key)

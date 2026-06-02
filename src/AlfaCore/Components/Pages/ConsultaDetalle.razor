@@ -247,6 +247,12 @@ else
                                @bind:event="oninput"
                                @onkeydown="OnFiltroBuscarKeyDown"
                                placeholder="Buscar en el resultado… (Enter para filtrar, Esc para limpiar)" />
+                        <button type="button" class="btn btn--primary btn--sm" @onclick="AplicarFiltroResultado">
+                            <i class="bi bi-search"></i> Aplicar
+                        </button>
+                        <button type="button" class="btn btn--ghost btn--sm" @onclick="LimpiarFiltro">
+                            <i class="bi bi-eraser"></i> Limpiar
+                        </button>
                         @if (!string.IsNullOrWhiteSpace(_filtroAplicado))
                         {
                             <span class="result-search__count">@_filasFiltradas.Count filas</span>
@@ -434,6 +440,12 @@ else
                                    @bind:event="oninput"
                                    @onkeydown="OnFiltroBuscarKeyDown"
                                    placeholder="Buscar en el resultado… (Enter para filtrar, Esc para limpiar)" />
+                            <button type="button" class="btn btn--primary btn--sm" @onclick="AplicarFiltroResultado">
+                                <i class="bi bi-search"></i> Aplicar
+                            </button>
+                            <button type="button" class="btn btn--ghost btn--sm" @onclick="LimpiarFiltro">
+                                <i class="bi bi-eraser"></i> Limpiar
+                            </button>
                             @if (!string.IsNullOrWhiteSpace(_filtroAplicado))
                             {
                                 <span class="result-search__count">@_filasFiltradas.Count filas</span>
@@ -492,6 +504,9 @@ else
         if (e.Key == "Enter") AplicarFiltro(_filtroResultado);
         else if (e.Key == "Escape") LimpiarFiltro();
     }
+
+    private void AplicarFiltroResultado()
+        => AplicarFiltro(_filtroResultado);
 
     private void LimpiarFiltro()
     {

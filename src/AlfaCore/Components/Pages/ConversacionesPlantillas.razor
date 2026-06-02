@@ -75,6 +75,9 @@
                 <button type="button" class="btn btn--primary" @onclick="LoadTemplatesAsync" disabled="@_loading">
                     <i class="bi bi-funnel"></i> Aplicar
                 </button>
+                <button type="button" class="btn btn--ghost" @onclick="ClearTemplateFiltersAsync" disabled="@_loading">
+                    <i class="bi bi-eraser"></i> Limpiar
+                </button>
             </div>
         </section>
 
@@ -466,6 +469,12 @@
     {
         if (args.Key == "Enter")
             await LoadTemplatesAsync();
+    }
+
+    private async Task ClearTemplateFiltersAsync()
+    {
+        _filters = new ConversacionPlantillaFilters();
+        await LoadTemplatesAsync();
     }
 
     private async Task SelectTemplateAsync(long idPlantilla)

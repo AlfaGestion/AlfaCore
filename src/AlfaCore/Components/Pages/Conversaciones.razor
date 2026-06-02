@@ -6,6 +6,7 @@
 @using Microsoft.AspNetCore.WebUtilities
 @inject AlfaCore.Services.IConversacionesService ConversacionesSvc
 @inject AlfaCore.Services.IContactosService ContactosSvc
+@inject AlfaCore.Services.ICuentasComercialesService CuentasSvc
 @inject AlfaCore.Services.ITicketsService TicketsSvc
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject AlfaCore.Services.IFloatingWindowService FloatingWindows
@@ -30,7 +31,7 @@
     }
     else
     {
-        <section class="panel-card conversations-filters conversations-mobile-filters mobile-only">
+        <section class="panel-card conversations-filters conversations-mobile-filters mobile-only" @onclick:stopPropagation>
             <div class="conversations-mobile-header">
                 <div>
                     <h2>Conversaciones</h2>
@@ -60,6 +61,10 @@
                         disabled="@(_selectedConversation is null)">
                     <i class="bi bi-layout-sidebar-inset-reverse"></i>
                     <span>Contexto</span>
+                    @if (HasContextNotes)
+                    {
+                        <span class="conversation-badge" style="margin-left:.25rem;border-color:rgba(45,212,191,.85);color:#67e8f9;background:rgba(14,116,144,.28);">Notas</span>
+                    }
                 </button>
                 <button type="button"
                         class="conversations-mobile-action"
@@ -130,10 +135,16 @@
                         }
                     </select>
                 </div>
+                <button type="button" class="btn btn--primary" @onclick="LoadInboxAsync" disabled="@_loadingInbox">
+                    <i class="bi bi-funnel"></i> Aplicar
+                </button>
+                <button type="button" class="btn btn--ghost" @onclick="ClearConversationFiltersAsync" disabled="@_loadingInbox">
+                    <i class="bi bi-eraser"></i> Limpiar
+                </button>
             </div>
         </section>
 
-        <section class="panel-card conversations-filters desktop-only">
+        <section class="panel-card conversations-filters desktop-only" @onclick:stopPropagation>
             <div class="conversations-canal">
                 <button type="button"
                         class="conversations-filter-pill @(_canalActivo == "WHATSAPP" ? "is-active" : string.Empty)"
@@ -157,6 +168,10 @@
                 <button type="button" class="btn btn--ghost btn--sm conversations-context-button" @onclick="ToggleContextPanel" disabled="@(_selectedConversation is null)" title="Contexto">
                     <i class="bi bi-layout-sidebar-inset-reverse"></i>
                     <span>Contexto</span>
+                    @if (HasContextNotes)
+                    {
+                        <span style="width:.55rem;height:.55rem;border-radius:999px;background:#22d3ee;box-shadow:0 0 0 4px rgba(34,211,238,.16),0 0 14px rgba(34,211,238,.9);display:inline-block;margin-left:.15rem;" title="Hay observaciones del cliente o contacto"></span>
+                    }
                 </button>
                 <button type="button" class="btn btn--primary btn--sm conversations-ticket-button" @onclick="StartTicketSelection" disabled="@(_selectedConversation is null || _messages.Count == 0)" title="Crear ticket desde mensajes">
                     <i class="bi bi-life-preserver"></i>
@@ -332,8 +347,11 @@
                     </select>
                 </div>
 
-                <button type="button" class="btn btn--primary" @onclick="LoadInboxAsync" disabled="_loadingInbox">
+                <button type="button" class="btn btn--primary" @onclick="LoadInboxAsync" disabled="@_loadingInbox">
                     <i class="bi bi-funnel"></i> Aplicar
+                </button>
+                <button type="button" class="btn btn--ghost" @onclick="ClearConversationFiltersAsync" disabled="@_loadingInbox">
+                    <i class="bi bi-eraser"></i> Limpiar
                 </button>
             </div>
         </section>
@@ -341,7 +359,7 @@
         @if (_showMobileAdvancedFilters)
         {
             <button type="button" class="conversations-mobile-sheet-backdrop" aria-label="Cerrar filtros" @onclick="CloseMobileAdvancedFilters"></button>
-            <section class="conversations-mobile-filter-sheet" aria-label="Filtros avanzados">
+            <section class="conversations-mobile-filter-sheet" aria-label="Filtros avanzados" @onclick:stopPropagation>
                 <div class="conversations-mobile-filter-sheet__handle"></div>
                 <header>
                     <h3>Filtros</h3>
@@ -418,6 +436,13 @@
 
         <div class="conversations-layout">
             <aside class="panel-card conversations-list">
+                @if (_loadingInbox && _inbox.Count > 0)
+                {
+                    <div class="conversations-loading-overlay" role="status" aria-live="polite">
+                        <i class="bi bi-hourglass-split"></i>
+                        <span>Actualizando conversaciones...</span>
+                    </div>
+                }
                 <div class="conversations-list__header">
                     <div>
                         <h3 class="panel-card__title">Inbox <span class="conversations-mobile-inbox-count mobile-only">@_inbox.Count</span></h3>
@@ -425,7 +450,7 @@
                     </div>
                 </div>
 
-                @if (_loadingInbox)
+                @if (_loadingInbox && _inbox.Count == 0)
                 {
                     <div class="loading">Cargando conversaciones…</div>
                 }
@@ -492,6 +517,13 @@
             </aside>
 
             <section class="panel-card conversations-chat">
+                @if (_loadingConversation || _loadingAuditMessages)
+                {
+                    <div class="conversations-loading-overlay conversations-loading-overlay--chat" role="status" aria-live="polite">
+                        <i class="bi bi-hourglass-split"></i>
+                        <span>@(_loadingConversation ? "Cargando conversacion..." : "Buscando mensajes...")</span>
+                    </div>
+                }
                 @if (_loadingConversation)
                 {
                     <div class="loading">Cargando conversación…</div>
@@ -575,6 +607,16 @@
                                     else
                                     {
                                         <h3 class="panel-card__title">@GetConversationHeader(_selectedConversation)</h3>
+                                        @if (HasContextNotes)
+                                        {
+                                            <button type="button"
+                                                    class="conversation-badge"
+                                                    style="border-color:rgba(45,212,191,.9);color:#67e8f9;background:linear-gradient(90deg,rgba(14,116,144,.34),rgba(15,23,42,.72));box-shadow:0 0 0 3px rgba(34,211,238,.10);cursor:pointer;"
+                                                    title="Hay observaciones del cliente o contacto. Abrir contexto."
+                                                    @onclick="OpenContextPanel">
+                                                <i class="bi bi-info-circle"></i> Observaciones
+                                            </button>
+                                        }
                                         <button type="button"
                                                 class="btn btn--ghost btn--sm conversation-title-editor__button"
                                                 title="Editar nombre"
@@ -1069,6 +1111,20 @@
                                         <div class="conversations-pending-attachment @(pending.IsUploading ? "is-loading" : pending.HasError ? "has-error" : string.Empty)">
                                             <i class="bi @GetPendingAttachmentIcon(pending.TipoArchivo)"></i>
                                             <span title="@pending.NombreArchivo">@pending.NombreArchivo</span>
+                                            @if (CanPreviewPendingAttachment(pending))
+                                            {
+                                                <button type="button"
+                                                        class="conversations-pending-attachment__preview-button"
+                                                        style="grid-column:1 / -1;display:block;width:54px;height:42px;min-width:54px;max-width:54px;margin-top:.2rem;padding:0;border:1px solid rgba(56,189,248,.28);border-radius:6px;background:rgba(2,6,23,.34);overflow:hidden;cursor:zoom-in;"
+                                                        title="Previsualizar imagen"
+                                                        @onclick="() => OpenPendingAttachmentPreview(pending)">
+                                                    <img class="conversations-pending-attachment__preview"
+                                                         src="@pending.PreviewDataUrl"
+                                                         alt="@pending.NombreArchivo"
+                                                         style="display:block;width:100%;height:100%;max-width:100%;max-height:100%;object-fit:contain;"
+                                                         loading="lazy" />
+                                                </button>
+                                            }
                                             @if (pending.IsUploading)
                                             {
                                                 <span class="conversations-pending-attachment__loading" aria-label="Enviando adjunto">
@@ -1078,7 +1134,7 @@
                                             @if (pending.HasError)
                                             {
                                                 <i class="bi bi-exclamation-circle-fill" title="@pending.Error"></i>
-                                                <span class="conversations-pending-attachment__error">@pending.Error</span>
+                                                <span class="conversations-pending-attachment__error" title="@pending.Error">@pending.Error</span>
                                             }
                                             <button type="button" class="btn btn--ghost btn--sm" @onclick="() => RemovePendingAttachment(pending.Id)" title="Quitar adjunto" disabled="@pending.IsUploading">
                                                 <i class="bi bi-x-lg"></i>
@@ -1255,6 +1311,25 @@
                             }
                         </div>
 
+                        @if (_loadingContextNotes)
+                        {
+                            <div class="context-card">
+                                <span class="context-card__label">Observaciones</span>
+                                <span class="context-card__muted">Cargando notas...</span>
+                            </div>
+                        }
+                        else if (HasContextNotes)
+                        {
+                            <button type="button"
+                                    class="context-card"
+                                    style="width:100%;text-align:left;cursor:pointer;border-color:rgba(34,211,238,.78);background:#071524;color:#e5f4ff;box-shadow:inset 3px 0 0 #22d3ee,0 0 0 1px rgba(34,211,238,.14);"
+                                    @onclick="OpenContextNotesModal">
+                                <span class="context-card__label">Observaciones</span>
+                                <strong style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;">@ContextNotesPreview</strong>
+                                <span class="context-card__muted">Ver notas de cliente/contacto</span>
+                            </button>
+                        }
+
                         <div class="conversations-context__section">
                             <h4 class="panel-card__title">Tickets</h4>
                             <p class="panel-card__subtitle">@GetContextTicketsSubtitle()</p>
@@ -1320,6 +1395,50 @@
         </div>
     }
 </section>
+
+@if (_showContextNotesModal && HasContextNotes)
+{
+    <div class="modal-overlay" style="background:rgba(3,7,18,.78);backdrop-filter:blur(2px);" @onclick="CloseContextNotesModal">
+        <div class="modal-card" style="width:min(1180px,calc(100vw - 2rem));max-height:min(88vh,820px);overflow-y:auto;overflow-x:hidden;background:#071524;color:#e5f4ff;border:1px solid rgba(34,211,238,.45);box-shadow:0 22px 70px rgba(0,0,0,.65);" @onclick:stopPropagation>
+            <div class="panel-card__header">
+                <div>
+                    <h3 class="panel-card__title">Observaciones</h3>
+                    <p class="panel-card__subtitle">@GetConversationHeader(_selectedConversation!)</p>
+                </div>
+                <button type="button" class="btn btn--ghost btn--sm" @onclick="CloseContextNotesModal" aria-label="Cerrar">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </div>
+            <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1rem;">
+                <button type="button"
+                        class="btn btn--sm @(_contextNotesTab == ContextNotesTabs.Observaciones ? "btn--primary" : "btn--ghost")"
+                        @onclick="() => _contextNotesTab = ContextNotesTabs.Observaciones">
+                    Observaciones (@_contextNotes.ObservationSections.Count)
+                </button>
+                <button type="button"
+                        class="btn btn--sm @(_contextNotesTab == ContextNotesTabs.OtrasNotas ? "btn--primary" : "btn--ghost")"
+                        @onclick="() => _contextNotesTab = ContextNotesTabs.OtrasNotas">
+                    Otras notas (@_contextNotes.OtherSections.Count)
+                </button>
+            </div>
+            <div style="display:grid;gap:.85rem;">
+                @foreach (var note in ActiveContextNoteSections)
+                {
+                    <div class="context-card" style="background:#0b1828;color:#e5f4ff;border-color:rgba(148,163,184,.28);min-width:0;max-width:100%;overflow:hidden;">
+                        <span class="context-card__label">@note.Label</span>
+                        <div style="white-space:pre-wrap;line-height:1.5;font-size:.95rem;color:#f8fafc;max-width:100%;overflow-wrap:anywhere;word-break:break-word;">@note.Text</div>
+                    </div>
+                }
+                @if (ActiveContextNoteSections.Count == 0)
+                {
+                    <div class="context-card" style="background:#0b1828;color:#cbd5e1;border-color:rgba(148,163,184,.28);">
+                        No hay información cargada en esta solapa.
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+}
 
 @if (_showTemplatePanel)
 {
@@ -1579,6 +1698,30 @@
                     }
                 </div>
             }
+        </div>
+    </div>
+}
+
+@if (_previewPendingAttachment is not null)
+{
+    <div class="attachment-preview-overlay" @onclick="ClosePendingAttachmentPreview">
+        <div class="attachment-preview-modal attachment-preview-modal--pending" @onclick:stopPropagation>
+            <header class="attachment-preview-header">
+                <span>@_previewPendingAttachment.NombreArchivo</span>
+                <div class="attachment-preview-actions">
+                    <button type="button" class="attachment-preview-action" @onclick="ClosePendingAttachmentPreview" title="Cerrar" aria-label="Cerrar">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
+                </div>
+            </header>
+            <div class="attachment-preview-body attachment-preview-body--pending" style="display:block;min-height:0;">
+                <div class="attachment-preview-canvas" style="display:flex;align-items:center;justify-content:center;height:min(72vh,680px);min-height:min(72vh,680px);max-height:calc(92vh - 5.5rem);overflow:hidden;cursor:default;">
+                    <img src="@_previewPendingAttachment.PreviewDataUrl"
+                         alt="@_previewPendingAttachment.NombreArchivo"
+                         style="display:block;width:100%;height:100%;max-width:100%;max-height:100%;object-fit:contain;transform:none;"
+                         draggable="false" />
+                </div>
+            </div>
         </div>
     </div>
 }
@@ -1914,6 +2057,7 @@
     private int _quotedHighlightVersion;
     private long _nextOptimisticMessageId = -1;
     private ConversacionAdjuntoDto? _previewAttachment;
+    private PendingAttachment? _previewPendingAttachment;
     private ElementReference _previewCanvas;
     private bool _bindPreviewPanAfterRender;
     private bool _bindPreviewKeyboardAfterRender;
@@ -1964,6 +2108,15 @@
     private bool _loadingContextTickets;
     private bool _showContextTickets;
     private List<TicketRelatedMatchDto> _contextTicketMatches = [];
+    private long? _contextTicketsConversationId;
+    private bool _loadingContextNotes;
+    private bool _showContextNotesModal;
+    private string _contextNotesTab = ContextNotesTabs.Observaciones;
+    private ContextNotesVm _contextNotes = ContextNotesVm.Empty;
+    private long? _contextNotesConversationId;
+    private string? _contextNotesSourceKey;
+    private bool _contextNotesLoaded;
+    private readonly Dictionary<string, ContextNotesVm> _contextNotesCache = [];
 
     private static readonly TimeSpan PollingInterval = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan TypingPollingInterval = TimeSpan.FromMilliseconds(650);
@@ -2099,6 +2252,9 @@
 
         if (query.TryGetValue("tecnico", out var tecnicoRaw))
             _filters.IdTecnicoActual = tecnicoRaw.ToString();
+
+        if (query.TryGetValue("cliente", out var clienteRaw))
+            _filters.ClienteCodigo = clienteRaw.ToString();
 
         if (query.TryGetValue("buscar", out var buscarRaw))
             _filters.Search = buscarRaw.ToString();
@@ -2330,12 +2486,37 @@
         _filters.Modo = "todas";
         _filters.CodigoEstado = string.Empty;
         _filters.IdTecnicoActual = string.Empty;
+        _filters.ClienteCodigo = string.Empty;
+        _showMobileAdvancedFilters = false;
+        await LoadInboxAsync();
+    }
+
+    private async Task ClearConversationFiltersAsync()
+    {
+        CancelSearchDebounce();
+        CancelContactSearch();
+        _filters.Modo = "todas";
+        _filters.Search = string.Empty;
+        _filters.CodigoEstado = string.Empty;
+        _filters.IdTecnicoActual = string.Empty;
+        _filters.ClienteCodigo = string.Empty;
+        _actionError = null;
+        _showContactSuggestions = false;
         _showMobileAdvancedFilters = false;
         await LoadInboxAsync();
     }
 
     private async Task HandleSearchEnter(KeyboardEventArgs args)
     {
+        if (string.Equals(args.Key, "Escape", StringComparison.OrdinalIgnoreCase))
+        {
+            CancelSearchDebounce();
+            CancelContactSearch();
+            CloseContactSuggestions();
+            CloseMobileAdvancedFilters();
+            return;
+        }
+
         if (args.Key != "Enter")
             return;
 
@@ -2351,6 +2532,7 @@
     private async Task HandleSearchInputAsync(ChangeEventArgs args)
     {
         _filters.Search = Convert.ToString(args.Value, System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
+        _filters.ClienteCodigo = string.Empty;
         _actionError = null;
         if (string.IsNullOrWhiteSpace(_filters.Search))
         {
@@ -2430,7 +2612,11 @@
     private async Task<int> RefreshInboxAsync(bool showLoading, bool allowSelectionChange, bool trackNewMessages = false)
     {
         if (showLoading)
+        {
             _loadingInbox = true;
+            await InvokeAsync(StateHasChanged);
+            await Task.Yield();
+        }
 
         _loadError = null;
         var newMessagesDetected = 0;
@@ -2447,6 +2633,13 @@
 
             if (_selectedConversationId.HasValue && _inbox.Any(x => x.IdConversacion == _selectedConversationId.Value))
                 return newMessagesDetected;
+
+            if (showLoading)
+            {
+                _loadingInbox = false;
+                await InvokeAsync(StateHasChanged);
+                await Task.Yield();
+            }
 
             if (allowSelectionChange && _inbox.Count > 0 && !ShouldKeepAuditResultsOpen)
                 await SelectConversationAsync(_inbox[0].IdConversacion);
@@ -2475,6 +2668,8 @@
         }
 
         _loadingAuditMessages = true;
+        await InvokeAsync(StateHasChanged);
+        await Task.Yield();
         try
         {
             _auditMessages = (await ConversacionesSvc.GetAuditMessagesAsync(_filters)).ToList();
@@ -2620,7 +2815,11 @@
         }
 
         if (showLoading)
+        {
             _loadingConversation = true;
+            await InvokeAsync(StateHasChanged);
+            await Task.Yield();
+        }
 
         _conversationError = null;
         if (clearActionState)
@@ -2676,7 +2875,16 @@
                 ClearTemplateSelection();
             }
 
-            await LoadContextTicketsAsync();
+            if (showLoading)
+            {
+                _loadingConversation = false;
+                await InvokeAsync(StateHasChanged);
+                await Task.Yield();
+                showLoading = false;
+            }
+
+            QueueContextTicketsLoad();
+            QueueContextNotesLoad();
         }
         catch (Exception ex)
         {
@@ -2684,6 +2892,7 @@
             _selectedConversation = null;
             _messages = [];
             _typingUsers = [];
+            ClearContextNotesState();
         }
         finally
         {
@@ -3021,32 +3230,216 @@
                || string.IsNullOrWhiteSpace(message.MessageType);
     }
 
-    private async Task LoadContextTicketsAsync()
+    private bool HasContextNotes => _contextNotes.HasContent;
+
+    private string ContextNotesPreview
+        => BuildOneLinePreview(_contextNotes.Preview);
+
+    private IReadOnlyList<ContextNoteSectionVm> ActiveContextNoteSections
+        => _contextNotesTab == ContextNotesTabs.OtrasNotas
+            ? _contextNotes.OtherSections
+            : _contextNotes.ObservationSections;
+
+    private void OpenContextPanel()
+        => _showContextPanel = true;
+
+    private void OpenContextNotesModal()
     {
-        _contextTicketMatches.Clear();
-        _showContextTickets = false;
-        if (_selectedConversation is null || _selectedConversation.Canal == "INTERNO")
+        if (HasContextNotes)
+        {
+            _contextNotesTab = _contextNotes.ObservationSections.Count > 0
+                ? ContextNotesTabs.Observaciones
+                : ContextNotesTabs.OtrasNotas;
+            _showContextNotesModal = true;
+        }
+    }
+
+    private void CloseContextNotesModal()
+        => _showContextNotesModal = false;
+
+    private void ClearContextNotesState()
+    {
+        _loadingContextNotes = false;
+        _showContextNotesModal = false;
+        _contextNotesTab = ContextNotesTabs.Observaciones;
+        _contextNotes = ContextNotesVm.Empty;
+        _contextNotesConversationId = null;
+        _contextNotesSourceKey = null;
+        _contextNotesLoaded = false;
+    }
+
+    private void QueueContextNotesLoad()
+    {
+        var conversation = _selectedConversation;
+        var idConversacion = conversation?.IdConversacion;
+        var sourceKey = BuildContextNotesSourceKey(conversation);
+        var sameSource = _contextNotesConversationId == idConversacion
+                         && string.Equals(_contextNotesSourceKey, sourceKey, StringComparison.Ordinal);
+
+        if (conversation is null || conversation.Canal == "INTERNO")
+        {
+            if (!sameSource)
+                ClearContextNotesState();
+            return;
+        }
+
+        if (!conversation.IdContacto.HasValue && string.IsNullOrWhiteSpace(conversation.ClienteCodigo))
+        {
+            if (!sameSource)
+                ClearContextNotesState();
+            return;
+        }
+
+        if (sameSource && (_loadingContextNotes || _contextNotesLoaded))
             return;
 
+        if (!sameSource)
+        {
+            _contextNotes = _contextNotesCache.TryGetValue(sourceKey, out var cachedNotes)
+                ? cachedNotes
+                : ContextNotesVm.Empty;
+            _showContextNotesModal = false;
+            _contextNotesTab = _contextNotes.ObservationSections.Count > 0
+                ? ContextNotesTabs.Observaciones
+                : ContextNotesTabs.OtrasNotas;
+            _contextNotesLoaded = false;
+        }
+
+        _contextNotesConversationId = idConversacion;
+        _contextNotesSourceKey = sourceKey;
+        _loadingContextNotes = true;
+        _ = InvokeAsync(async () =>
+        {
+            await LoadContextNotesAsync(idConversacion!.Value);
+            StateHasChanged();
+        });
+    }
+
+    private async Task LoadContextNotesAsync(long idConversacion)
+    {
+        var conversation = _selectedConversation;
+        if (conversation is null || conversation.IdConversacion != idConversacion || conversation.Canal == "INTERNO")
+            return;
+
+        try
+        {
+            var sections = new List<ContextNoteSectionVm>();
+
+            if (conversation.IdContacto is int idContacto)
+            {
+                var contact = await ContactosSvc.GetByIdAsync(idContacto);
+                AddContextNoteSection(sections, ContextNoteKind.Observacion, "Contacto - Observaciones", contact?.Observaciones);
+            }
+
+            if (!string.IsNullOrWhiteSpace(conversation.ClienteCodigo))
+            {
+                var client = await CuentasSvc.GetByIdAsync(CuentaComercialTipo.Cliente, conversation.ClienteCodigo);
+                AddContextNoteSection(sections, ContextNoteKind.Observacion, "Cliente - Observaciones", client?.Observaciones);
+                AddContextNoteSection(sections, ContextNoteKind.OtraNota, "Cliente - Manual interno", client?.Manual);
+                AddContextNoteSection(sections, ContextNoteKind.OtraNota, "Cliente - Nota ampliada", client?.NotaCuenta);
+            }
+
+            if (_contextNotesConversationId == idConversacion && _selectedConversation?.IdConversacion == idConversacion)
+            {
+                var notes = ContextNotesVm.FromSections(sections);
+                _contextNotes = notes;
+                var sourceKey = BuildContextNotesSourceKey(conversation);
+                if (notes.HasContent)
+                    _contextNotesCache[sourceKey] = notes;
+                else
+                    _contextNotesCache.Remove(sourceKey);
+            }
+        }
+        catch
+        {
+            if (_contextNotesConversationId == idConversacion && !_contextNotes.HasContent)
+                _contextNotes = ContextNotesVm.Empty;
+        }
+        finally
+        {
+            if (_contextNotesConversationId == idConversacion)
+            {
+                _loadingContextNotes = false;
+                _contextNotesLoaded = true;
+            }
+        }
+    }
+
+    private static string BuildContextNotesSourceKey(ConversacionDetalleDto? conversation)
+        => conversation is null
+            ? string.Empty
+            : $"{conversation.Canal}|{conversation.IdContacto?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty}|{conversation.ClienteCodigo?.Trim() ?? string.Empty}";
+
+    private static void AddContextNoteSection(List<ContextNoteSectionVm> sections, ContextNoteKind kind, string label, string? text)
+    {
+        var clean = NormalizeContextNoteText(text);
+        if (!string.IsNullOrWhiteSpace(clean))
+            sections.Add(new ContextNoteSectionVm(kind, label, clean));
+    }
+
+    private static string NormalizeContextNoteText(string? text)
+        => AlfaCore.Services.TextoEnriquecidoCompat.NormalizarComoTextoPlano(text)
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n')
+            .Trim();
+
+    private static string BuildOneLinePreview(string text)
+    {
+        var oneLine = Regex.Replace(text ?? string.Empty, @"\s+", " ").Trim();
+        if (oneLine.Length <= 120)
+            return oneLine;
+
+        return $"{oneLine[..120]}...";
+    }
+
+    private void QueueContextTicketsLoad()
+    {
+        var idConversacion = _selectedConversation?.IdConversacion;
+        _contextTicketsConversationId = idConversacion;
+        _contextTicketMatches.Clear();
+        _showContextTickets = false;
+
+        if (_selectedConversation is null || _selectedConversation.Canal == "INTERNO")
+        {
+            _loadingContextTickets = false;
+            return;
+        }
+
         _loadingContextTickets = true;
+        _ = InvokeAsync(async () =>
+        {
+            await LoadContextTicketsAsync(idConversacion!.Value);
+            StateHasChanged();
+        });
+    }
+
+    private async Task LoadContextTicketsAsync(long idConversacion)
+    {
+        var conversation = _selectedConversation;
+        if (conversation is null || conversation.IdConversacion != idConversacion || conversation.Canal == "INTERNO")
+            return;
+
         try
         {
             var matches = await TicketsSvc.FindRelatedOpenTicketsAsync(new TicketRelatedSearchRequest
             {
-                ClienteCodigo = _selectedConversation.ClienteCodigo,
-                IdContacto = _selectedConversation.IdContacto,
-                IdConversacion = _selectedConversation.IdConversacion
+                ClienteCodigo = conversation.ClienteCodigo,
+                IdContacto = conversation.IdContacto,
+                IdConversacion = conversation.IdConversacion
             });
 
-            _contextTicketMatches = matches.ToList();
+            if (_contextTicketsConversationId == idConversacion && _selectedConversation?.IdConversacion == idConversacion)
+                _contextTicketMatches = matches.ToList();
         }
         catch
         {
-            _contextTicketMatches.Clear();
+            if (_contextTicketsConversationId == idConversacion)
+                _contextTicketMatches.Clear();
         }
         finally
         {
-            _loadingContextTickets = false;
+            if (_contextTicketsConversationId == idConversacion)
+                _loadingContextTickets = false;
         }
     }
 
@@ -3164,7 +3557,7 @@
             _messages.ToList(),
             _adjuntosPorMensaje.ToDictionary(x => x.Key, x => x.Value.ToList()));
 
-        const int maxCachedConversations = 8;
+        const int maxCachedConversations = 16;
         if (_conversationCache.Count <= maxCachedConversations)
             return;
 
@@ -3224,6 +3617,7 @@
         {
             Modo = filters.Modo,
             Search = filters.Search,
+            ClienteCodigo = filters.ClienteCodigo,
             IdTecnicoActual = filters.IdTecnicoActual,
             CodigoEstado = filters.CodigoEstado,
             Canal = filters.Canal,
@@ -3334,7 +3728,8 @@
             return;
 
         var selectedId = _selectedConversationId;
-        var shouldKeepAtBottom = await IsThreadNearBottomAsync();
+        var scrollBeforeRefresh = await GetThreadScrollStateAsync();
+        var shouldKeepAtBottom = scrollBeforeRefresh.NearBottom;
         var previousLastMessageId = GetLastMessageId();
 
         var newMessagesDetected = await RefreshInboxAsync(showLoading: false, allowSelectionChange: false, trackNewMessages: true);
@@ -3367,8 +3762,16 @@
 
         if (shouldKeepAtBottom)
         {
-            await ScrollThreadToBottomAsync();
-            MarkSelectedConversationAsRead();
+            var scrollAfterRefresh = await GetThreadScrollStateAsync();
+            if (scrollAfterRefresh.ScrollTop >= scrollBeforeRefresh.ScrollTop - 8)
+            {
+                await ScrollThreadToBottomAsync();
+                MarkSelectedConversationAsRead();
+            }
+            else
+            {
+                _showReturnToLatest = true;
+            }
         }
 
         StateHasChanged();
@@ -3401,6 +3804,21 @@
         catch
         {
             return false;
+        }
+    }
+
+    private async Task<ThreadScrollState> GetThreadScrollStateAsync()
+    {
+        if (_selectedConversationId is null)
+            return ThreadScrollState.Empty;
+
+        try
+        {
+            return await JS.InvokeAsync<ThreadScrollState>("conversacionesUi.getThreadScrollState", _threadElement);
+        }
+        catch
+        {
+            return ThreadScrollState.Empty;
         }
     }
 
@@ -3638,7 +4056,6 @@
     private async Task OnReplyFocusAsync(FocusEventArgs _)
     {
         await AutoResizeReplyTextareaAsync();
-        await ScrollThreadToBottomAsync();
     }
 
     private async Task AutoResizeReplyTextareaAsync()
@@ -3765,7 +4182,7 @@
 
             _actionMessage = "Mensaje registrado correctamente.";
             await SelectConversationAsync(_selectedConversation.IdConversacion);
-            await LoadInboxAsync();
+            await RefreshInboxAsync(showLoading: false, allowSelectionChange: false);
         }
         catch (Exception ex)
         {
@@ -3949,7 +4366,7 @@
                 await UploadPendingAttachmentsAsync(templateAttachmentsToSend, RemoveTemplatePendingAttachment, allowExpiredWhatsAppWindow: true);
 
             await SelectConversationAsync(selectedConversationId);
-            await LoadInboxAsync();
+            await RefreshInboxAsync(showLoading: false, allowSelectionChange: false);
             _actionMessage = templateAttachmentsToSend.Count == 0
                 ? $"Plantilla enviada correctamente: {previewText}"
                 : $"Plantilla y adjunto(s) enviados correctamente: {previewText}";
@@ -3960,7 +4377,7 @@
             if (_selectedConversation is not null)
             {
                 await SelectConversationAsync(_selectedConversation.IdConversacion);
-                await LoadInboxAsync();
+                await RefreshInboxAsync(showLoading: false, allowSelectionChange: false);
             }
 
             _actionError = error;
@@ -3997,7 +4414,7 @@
             _composerToolTab = ComposerToolTabs.Emojis;
             _actionMessage = "Nota interna guardada.";
             await SelectConversationAsync(_selectedConversation.IdConversacion);
-            await LoadInboxAsync();
+            await RefreshInboxAsync(showLoading: false, allowSelectionChange: false);
         }
         catch (Exception ex)
         {
@@ -4049,7 +4466,7 @@
 
             _actionMessage = "Asignación actualizada.";
             await SelectConversationAsync(_selectedConversation.IdConversacion);
-            await LoadInboxAsync();
+            await RefreshInboxAsync(showLoading: false, allowSelectionChange: false);
             return true;
         }
         catch (Exception ex)
@@ -4140,7 +4557,7 @@
             MarkSelectedConversationAsRead();
             _actionMessage = "Estado actualizado.";
             await SelectConversationAsync(_selectedConversation.IdConversacion);
-            await LoadInboxAsync();
+            await RefreshInboxAsync(showLoading: false, allowSelectionChange: false);
             return true;
         }
         catch (Exception ex)
@@ -4188,6 +4605,7 @@
     {
         _showContextPanel = false;
         _showMobileAdvancedFilters = false;
+        _showContextNotesModal = false;
     }
 
     private async Task OpenTemplatePanel()
@@ -4640,16 +5058,33 @@
             await using var stream = file.OpenReadStream(maxSize);
             using var buffer = new MemoryStream();
             await stream.CopyToAsync(buffer);
+            var content = buffer.ToArray();
 
             target.Add(new PendingAttachment
             {
                 NombreArchivo = file.Name,
                 MimeType = file.ContentType,
                 TipoArchivo = string.IsNullOrWhiteSpace(forcedType) ? InferTipoArchivo(file.ContentType) : forcedType,
-                Contenido = buffer.ToArray(),
-                TamanoBytes = file.Size
+                Contenido = content,
+                TamanoBytes = file.Size,
+                PreviewDataUrl = BuildPendingPreviewDataUrl(file.ContentType, content, forcedType)
             });
         }
+    }
+
+    private static string? BuildPendingPreviewDataUrl(string mimeType, byte[] content, string? forcedType)
+    {
+        var type = string.IsNullOrWhiteSpace(forcedType) ? InferTipoArchivo(mimeType) : forcedType;
+        if (!string.Equals(type, "IMAGE", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(type, "STICKER", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var safeMime = string.IsNullOrWhiteSpace(mimeType) || !mimeType.StartsWith("image/", StringComparison.OrdinalIgnoreCase)
+            ? "image/png"
+            : mimeType;
+        return $"data:{safeMime};base64,{Convert.ToBase64String(content)}";
     }
 
     private static List<PreparingAttachment> BuildPreparingAttachments(IEnumerable<IBrowserFile> files, string? forcedType = null)
@@ -4661,6 +5096,20 @@
                 TipoArchivo = string.IsNullOrWhiteSpace(forcedType) ? InferTipoArchivo(file.ContentType) : forcedType
             })
             .ToList();
+
+    private static bool CanPreviewPendingAttachment(PendingAttachment attachment)
+        => !string.IsNullOrWhiteSpace(attachment.PreviewDataUrl);
+
+    private void OpenPendingAttachmentPreview(PendingAttachment attachment)
+    {
+        if (!CanPreviewPendingAttachment(attachment))
+            return;
+
+        _previewPendingAttachment = attachment;
+    }
+
+    private void ClosePendingAttachmentPreview()
+        => _previewPendingAttachment = null;
 
     private async Task ToggleRecordingAsync()
     {
@@ -4709,7 +5158,11 @@
     }
 
     private void RemovePendingAttachment(Guid id)
-        => _pendingAttachments.RemoveAll(x => x.Id == id);
+    {
+        _pendingAttachments.RemoveAll(x => x.Id == id);
+        if (_previewPendingAttachment?.Id == id)
+            _previewPendingAttachment = null;
+    }
 
     private void MarkPendingAttachmentsError(string? message)
     {
@@ -4725,7 +5178,11 @@
     }
 
     private void RemoveTemplatePendingAttachment(Guid id)
-        => _templatePendingAttachments.RemoveAll(x => x.Id == id);
+    {
+        _templatePendingAttachments.RemoveAll(x => x.Id == id);
+        if (_previewPendingAttachment?.Id == id)
+            _previewPendingAttachment = null;
+    }
 
     private async Task SelectEmojiFromPanelAsync(string emoji)
     {
@@ -4930,7 +5387,9 @@
         _showContextPanel = false;
         _showMobileAdvancedFilters = false;
         _showTemplatePanel = false;
+        _showContextNotesModal = false;
         _mobileChatActive = false;
+        ClearContextNotesState();
         ClearTemplateSelection();
         _scrollHandlerConversationId = null;
         _replyEnterHandlerConversationId = null;
@@ -5910,6 +6369,9 @@
 
     private async Task DismissConversationNoticesAsync()
     {
+        CloseContactSuggestions();
+        CloseMobileAdvancedFilters();
+
         if (_showComposerTools)
         {
             _showComposerTools = false;
@@ -6199,6 +6661,7 @@
         public string TipoArchivo { get; init; } = string.Empty;
         public byte[] Contenido { get; init; } = [];
         public long TamanoBytes { get; init; }
+        public string? PreviewDataUrl { get; init; }
         public string? Error { get; set; }
         public bool IsUploading { get; set; }
         public bool HasError => !string.IsNullOrWhiteSpace(Error);
@@ -6245,6 +6708,49 @@
         ConversacionesInboxFilters Filters,
         List<ConversacionInboxItemDto> Inbox,
         long? SelectedConversationId);
+
+    private static class ContextNotesTabs
+    {
+        public const string Observaciones = "observaciones";
+        public const string OtrasNotas = "otras_notas";
+    }
+
+    private enum ContextNoteKind
+    {
+        Observacion,
+        OtraNota
+    }
+
+    private sealed record ContextNoteSectionVm(ContextNoteKind Kind, string Label, string Text);
+
+    private sealed class ContextNotesVm
+    {
+        public static ContextNotesVm Empty { get; } = new([]);
+        public ContextNotesVm(IReadOnlyList<ContextNoteSectionVm> sections)
+        {
+            Sections = sections;
+            ObservationSections = sections.Where(x => x.Kind == ContextNoteKind.Observacion).ToList();
+            OtherSections = sections.Where(x => x.Kind == ContextNoteKind.OtraNota).ToList();
+        }
+
+        public IReadOnlyList<ContextNoteSectionVm> Sections { get; }
+        public IReadOnlyList<ContextNoteSectionVm> ObservationSections { get; }
+        public IReadOnlyList<ContextNoteSectionVm> OtherSections { get; }
+        public bool HasContent => Sections.Count > 0;
+        public string Preview => ObservationSections.Count > 0 ? ObservationSections[0].Text : Sections.Count == 0 ? string.Empty : Sections[0].Text;
+
+        public static ContextNotesVm FromSections(IReadOnlyList<ContextNoteSectionVm> sections)
+            => sections.Count == 0 ? Empty : new ContextNotesVm(sections);
+    }
+
+    private sealed class ThreadScrollState
+    {
+        public static ThreadScrollState Empty { get; } = new();
+        public bool NearBottom { get; set; }
+        public double ScrollTop { get; set; }
+        public double ScrollHeight { get; set; }
+        public double ClientHeight { get; set; }
+    }
 
     private sealed class SoundDiagnosticsVm
     {

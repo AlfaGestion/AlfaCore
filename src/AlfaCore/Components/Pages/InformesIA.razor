@@ -29,7 +29,8 @@
                       class="ia-query-box__input"
                       placeholder="Ej: listado de compras del mes actual, mostrame fecha factura, cuenta, nombre, neto, iva, total y ordenalo por fecha"
                       @bind="_consulta"
-                      @bind:event="oninput"></textarea>
+                      @bind:event="oninput"
+                      @onkeydown="HandleQueryKeyDownAsync"></textarea>
 
             <div class="ia-launcher-options">
                 <label class="ia-check">
@@ -47,7 +48,7 @@
                 <button class="btn btn--ghost" @onclick="ClearQuery">Limpiar</button>
                 <button class="btn btn--primary" @onclick="ExecuteAsync" disabled="@_loading">
                     <i class="bi bi-box-arrow-up-right"></i>
-                    <span>@(_loading ? "Generando..." : "Abrir informe en nueva pestaña")</span>
+                    <span>@(_loading ? "Generando..." : "Aplicar consulta")</span>
                 </button>
             </div>
         </div>
@@ -172,6 +173,14 @@
         {
             _loading = false;
         }
+    }
+
+    private async Task HandleQueryKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (!string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase) || args.ShiftKey || _loading)
+            return;
+
+        await ExecuteAsync();
     }
 
     private Task SaveFilterContextAsync()

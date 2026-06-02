@@ -58,7 +58,8 @@
                        placeholder="Buscar por código, nombre, teléfono, cargo o usuario asociado..."
                        value="@_filters.Texto"
                        @onfocus="OpenSearchPanel"
-                       @oninput="OnSearchInputAsync" />
+                       @oninput="OnSearchInputAsync"
+                       @onkeydown="HandleApplyKeyDownAsync" />
                 <button type="button" class="smart-search__toggle" @onclick="ToggleSearchPanel" aria-label="Mostrar filtros">
                     <i class="bi @(_showSearchPanel ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
                 </button>
@@ -80,7 +81,7 @@
 
             @if (_showSearchPanel)
             {
-                <div class="smart-search__panel">
+                <div class="smart-search__panel" @onkeydown="HandleApplyKeyDownAsync">
                     <div class="smart-search__column">
                         <h4><i class="bi bi-funnel-fill"></i> Filtros</h4>
                         <button type="button" class="@GetSmartOptionClass(_activoFiltro == "1")" @onclick='() => SetStatusFilterAsync("1")'>Activos</button>
@@ -95,6 +96,9 @@
                         <button type="button" class="@GetSmartOptionClass(_viewSettings.AgruparPor == TecnicosViewGroupKeys.Activo)"        @onclick='() => SetGroupAsync(TecnicosViewGroupKeys.Activo)'>Estado</button>
                     </div>
                     <div class="smart-search__column">
+                        <button type="button" class="btn btn--primary btn--sm" @onclick="AplicarFiltrosAsync" disabled="@_loadingList">
+                            <i class="bi bi-search"></i> Aplicar
+                        </button>
                         <h4><i class="bi bi-eraser"></i> Limpiar</h4>
                         <button type="button" @onclick="LimpiarFiltrosAsync">Limpiar búsqueda</button>
                     </div>
@@ -727,6 +731,20 @@
     {
         _filters.PageNumber = 1;
         await BuscarAsync();
+    }
+
+    private async Task HandleApplyKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (string.Equals(args.Key, "Escape", StringComparison.OrdinalIgnoreCase))
+        {
+            _showSearchPanel = false;
+            return;
+        }
+
+        if (!string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase) || _loadingList)
+            return;
+
+        await AplicarFiltrosAsync();
     }
 
     private async Task BuscarAsync()

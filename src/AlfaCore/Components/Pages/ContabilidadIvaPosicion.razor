@@ -12,7 +12,7 @@
         </div>
     </section>
 
-    <section class="panel-card filters-card">
+    <section class="panel-card filters-card" @onkeydown="HandleApplyKeyDownAsync">
         <div class="panel-card__header">
             <div>
                 <h3 class="panel-card__title">Filtros</h3>
@@ -204,6 +204,14 @@
         var today = DateTime.Today;
         _filters.FechaDesde = new DateTime(today.Year, today.Month, 1);
         _filters.FechaHasta = today;
+        await LoadAsync();
+    }
+
+    private async Task HandleApplyKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (!string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase) || _loading)
+            return;
+
         await LoadAsync();
     }
 

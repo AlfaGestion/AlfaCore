@@ -7,6 +7,7 @@ function attachFiles(input, files) {
         transfer.items.add(file);
     }
 
+    input.value = '';
     input.files = transfer.files;
     input.dispatchEvent(new Event('change', { bubbles: true }));
     return true;
@@ -34,12 +35,34 @@ export function bindTareasAttachments(dropzoneId, inputId) {
         return { dispose() { } };
     }
 
+    let lastPasteKey = '';
+    let lastPasteAt = 0;
+
+    const buildPasteKey = files => files
+        .map(file => `${file.name || 'clipboard'}:${file.type}:${file.size}:${file.lastModified || 0}`)
+        .join('|');
+
     const onPaste = event => {
         const files = filesFromPaste(event);
         if (!files.length) return;
-        if (attachFiles(input, files)) {
+
+        const isInsideModal = Boolean(document.querySelector('.tareas-modal'));
+        if (!isInsideModal) return;
+
+        const key = buildPasteKey(files);
+        const now = Date.now();
+        if (key === lastPasteKey && now - lastPasteAt < 900) {
             event.preventDefault();
+            event.stopPropagation();
+            return;
         }
+
+        if (!attachFiles(input, files)) return;
+
+        lastPasteKey = key;
+        lastPasteAt = now;
+        event.preventDefault();
+        event.stopPropagation();
     };
 
     const onDrop = event => {
@@ -65,23 +88,21 @@ export function bindTareasAttachments(dropzoneId, inputId) {
 
     const onClick = () => dropzone.focus();
 
-    dropzone.addEventListener('paste', onPaste);
     dropzone.addEventListener('drop', onDrop);
     dropzone.addEventListener('dragenter', onDragEnter);
     dropzone.addEventListener('dragover', onDragOver);
     dropzone.addEventListener('dragleave', onDragLeave);
     dropzone.addEventListener('click', onClick);
-    document.addEventListener('paste', onPaste);
+    document.addEventListener('paste', onPaste, true);
 
     return {
         dispose() {
-            dropzone.removeEventListener('paste', onPaste);
             dropzone.removeEventListener('drop', onDrop);
             dropzone.removeEventListener('dragenter', onDragEnter);
             dropzone.removeEventListener('dragover', onDragOver);
             dropzone.removeEventListener('dragleave', onDragLeave);
             dropzone.removeEventListener('click', onClick);
-            document.removeEventListener('paste', onPaste);
+            document.removeEventListener('paste', onPaste, true);
         }
     };
 }

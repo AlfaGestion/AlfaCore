@@ -13,7 +13,7 @@
         </div>
     </section>
 
-    <section class="panel-card filters-card">
+    <section class="panel-card filters-card" @onkeydown="HandleApplyKeyDownAsync">
         <div class="panel-card__header">
             <div>
                 <h3 class="panel-card__title">Filtros de caja y bancos</h3>
@@ -191,6 +191,14 @@
     private Task UltimosTresAsync() => ApplyQuickRangeAsync("ultimos-3");
     private Task AnioAsync() => ApplyQuickRangeAsync("anio");
     private void ToggleAdvanced() => _showAdvanced = !_showAdvanced;
+
+    private async Task HandleApplyKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (!string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase) || _loading)
+            return;
+
+        await LoadAsync();
+    }
 
     private async Task ClearAsync()
     {

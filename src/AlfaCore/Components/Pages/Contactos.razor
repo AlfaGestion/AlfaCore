@@ -57,7 +57,8 @@
                        placeholder="Buscar por nombre, contacto, teléfono, email, cargo o localidad..."
                        value="@_filters.Texto"
                        @onfocus="OpenContactSearchPanel"
-                       @oninput="OnContactSearchInput" />
+                       @oninput="OnContactSearchInput"
+                       @onkeydown="HandleContactApplyKeyDownAsync" />
                 <button type="button" class="smart-search__toggle" @onclick="ToggleContactSearchPanel" aria-label="Mostrar filtros">
                     <i class="bi @(_showSearchPanel ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
                 </button>
@@ -78,7 +79,7 @@
 
             @if (_showSearchPanel)
             {
-                <div class="smart-search__panel">
+                <div class="smart-search__panel" @onkeydown="HandleContactApplyKeyDownAsync">
                     <div class="smart-search__column">
                         <h4><i class="bi bi-funnel-fill"></i> Filtros</h4>
                         <button type="button" class='@GetSmartOptionClass(_activoFiltro == "1")' @onclick='() => SetContactStatusFilterAsync("1")'>Personas activas</button>
@@ -112,6 +113,14 @@
                         {
                             <button type="button" @onclick="() => ApplySavedContactFavoriteAsync(favorite)">@favorite.Label</button>
                         }
+                        <div class="actions">
+                            <button type="button" class="btn btn--primary btn--sm" @onclick="AplicarFiltrosAsync" disabled="@_loadingList">
+                                <i class="bi bi-search"></i> Aplicar
+                            </button>
+                            <button type="button" class="btn btn--ghost btn--sm" @onclick="LimpiarFiltros" disabled="@_loadingList">
+                                <i class="bi bi-eraser"></i> Limpiar
+                            </button>
+                        </div>
                     </div>
                     <div class="smart-search__custom">
                         <h4><i class="bi bi-sliders"></i> Filtro personalizado</h4>
@@ -1069,6 +1078,20 @@
     {
         _filters.PageNumber = 1;
         await BuscarAsync();
+    }
+
+    private async Task HandleContactApplyKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (string.Equals(args.Key, "Escape", StringComparison.OrdinalIgnoreCase))
+        {
+            CloseSearchPanel();
+            return;
+        }
+
+        if (!string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase) || _loadingList)
+            return;
+
+        await AplicarFiltrosAsync();
     }
 
     private async Task BuscarAsync()

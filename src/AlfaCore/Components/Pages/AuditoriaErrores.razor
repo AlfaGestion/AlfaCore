@@ -37,7 +37,7 @@ else
             </div>
         }
 
-        <section class="panel-card">
+        <section class="panel-card" @onkeydown="HandleApplyKeyDownAsync">
             <div class="panel-card__header">
                 <div>
                     <h3 class="panel-card__title">Filtros</h3>
@@ -50,7 +50,7 @@ else
                     </button>
                     <button class="btn btn--primary" @onclick="BuscarAsync">
                         <i class="bi bi-search"></i>
-                        <span>Buscar</span>
+                        <span>Aplicar</span>
                     </button>
                 </div>
             </div>
@@ -201,6 +201,14 @@ else
         _pc = string.Empty;
         _errorCodigoText = string.Empty;
         _texto = string.Empty;
+        await BuscarAsync();
+    }
+
+    private async Task HandleApplyKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (!string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase) || _loading)
+            return;
+
         await BuscarAsync();
     }
 

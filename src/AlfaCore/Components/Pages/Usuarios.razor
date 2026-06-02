@@ -54,7 +54,7 @@
             </div>
         </div>
 
-        <div class="filters-grid">
+        <div class="filters-grid" @onkeydown="HandleApplyKeyDownAsync">
             <div class="field field--wide">
                 <label>Buscar</label>
                 <input type="search"
@@ -560,6 +560,14 @@
     {
         _filters.PageNumber = 1;
         await BuscarAsync();
+    }
+
+    private async Task HandleApplyKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (!string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase) || _loadingList)
+            return;
+
+        await AplicarFiltrosAsync();
     }
 
     private async Task BuscarAsync()

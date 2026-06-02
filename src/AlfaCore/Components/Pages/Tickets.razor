@@ -10,7 +10,7 @@
 
 <PageTitle>Tickets de asistencia | Alfa Gestión</PageTitle>
 
-<section class="page-grid tickets-page tickets-page--odoo" @onclick="DismissFeedbackAsync">
+<section class="page-grid tickets-page tickets-page--odoo" @onclick="HandleTicketPageClickAsync">
     <section class="tickets-odoo-header">
         <div>
             <h2 class="tickets-odoo-header__title">Servicio de soporte - Tickets de asistencia</h2>
@@ -67,7 +67,8 @@
                            placeholder="Buscar por ticket, cliente, contacto, teléfono, email o técnico..."
                            value="@_filters.Texto"
                            @onfocus="OpenTicketSearchPanel"
-                           @oninput="OnTicketSearchInput" />
+                           @oninput="OnTicketSearchInput"
+                           @onkeydown="HandleTicketApplyKeyDownAsync" />
                     <button type="button" class="smart-search__toggle" @onclick="ToggleTicketSearchPanel" aria-label="Mostrar filtros">
                         <i class="bi @(_showSearchPanel ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
                     </button>
@@ -88,7 +89,7 @@
 
                 @if (_showSearchPanel)
                 {
-                    <div class="smart-search__panel" @onclick="CloseTicketLookupSuggestions">
+                    <div class="smart-search__panel" @onclick="CloseTicketLookupSuggestions" @onkeydown="HandleTicketApplyKeyDownAsync">
                         <div class="smart-search__column">
                             <h4><i class="bi bi-funnel-fill"></i> Filtros</h4>
                             <button type="button" class="@GetSmartOptionClass(!_filters.IncluirCerrados)" @onclick='() => ToggleTicketClosedAsync(false)'>Abiertos</button>
@@ -175,6 +176,14 @@
                             {
                                 <button type="button" @onclick="() => ApplySavedTicketFavoriteAsync(favorite)">@favorite.Label</button>
                             }
+                            <div class="actions">
+                                <button type="button" class="btn btn--primary btn--sm" @onclick="AplicarFiltrosAsync" disabled="@_loading">
+                                    <i class="bi bi-search"></i> Aplicar
+                                </button>
+                                <button type="button" class="btn btn--ghost btn--sm" @onclick="LimpiarFiltros" disabled="@_loading">
+                                    <i class="bi bi-eraser"></i> Limpiar
+                                </button>
+                            </div>
                         </div>
                         <div class="smart-search__custom">
                             <h4><i class="bi bi-sliders"></i> Filtro personalizado</h4>
@@ -500,12 +509,18 @@
             </section>
         }
     }
-    else if (_loading)
+    else if (_loading && !HasVisibleTicketData())
     {
         <section class="panel-card"><div class="loading">Cargando tickets...</div></section>
     }
     else if (_viewMode == "kanban")
     {
+        @if (IsTicketsUpdating())
+        {
+            <section class="panel-card">
+                <div class="loading"><i class="bi bi-arrow-repeat"></i> Actualizando tickets...</div>
+            </section>
+        }
         <section class="tickets-kanban" @ref="_kanbanRoot">
             @foreach (var state in _lookups.Estados.OrderBy(x => x.Orden))
             {
@@ -566,6 +581,10 @@
         var visibleColumns = GetVisibleColumns();
         var groups = BuildListGroups();
         <section class="panel-card">
+            @if (IsTicketsUpdating())
+            {
+                <div class="loading"><i class="bi bi-arrow-repeat"></i> Actualizando tickets...</div>
+            }
             <div class="panel-card__header">
                 <div>
                     <h3 class="panel-card__title">Listado</h3>
@@ -639,6 +658,7 @@
     private string _prioridadFiltro = string.Empty;
     private string _viewMode = "kanban";
     private bool _loading;
+    private bool _refreshingTickets;
     private bool _saving;
     private bool _showEditor;
     private bool _isNew;
@@ -764,7 +784,7 @@
             _descriptionEditorReady = true;
         }
 
-        if (!_showEditor && _viewMode == "kanban" && !_loading && _ticketsKanbanJs is not null && _kanbanDotNetRef is not null)
+        if (!_showEditor && _viewMode == "kanban" && !_loading && !_refreshingTickets && _ticketsKanbanJs is not null && _kanbanDotNetRef is not null)
             await _ticketsKanbanJs.InvokeVoidAsync("wireKanban", _kanbanRoot, _kanbanDotNetRef);
     }
 
@@ -807,7 +827,7 @@
     private async Task RecargarAsync()
     {
         await CargarLookupsAsync();
-        await BuscarAsync();
+        await BuscarAsync(keepCurrent: true);
         if (_detail is not null)
             await AbrirTicketAsync(_detail.IdTicket);
     }
@@ -816,7 +836,7 @@
     {
         _viewMode = view;
         _showEditor = false;
-        await BuscarAsync();
+        await BuscarAsync(keepCurrent: true);
     }
 
     private void OpenTicketSearchPanel()
@@ -824,6 +844,16 @@
 
     private void ToggleTicketSearchPanel()
         => _showSearchPanel = !_showSearchPanel;
+
+    private void CloseTicketSearchPanel()
+        => _showSearchPanel = false;
+
+    private async Task HandleTicketPageClickAsync()
+    {
+        CloseTicketSearchPanel();
+        CloseTicketLookupSuggestions();
+        await DismissFeedbackAsync();
+    }
 
     private void OnTicketSearchInput(ChangeEventArgs e)
     {
@@ -1046,9 +1076,26 @@
         await BuscarAsync();
     }
 
-    private async Task BuscarAsync()
+    private async Task HandleTicketApplyKeyDownAsync(KeyboardEventArgs args)
     {
-        _loading = true;
+        if (string.Equals(args.Key, "Escape", StringComparison.OrdinalIgnoreCase))
+        {
+            CloseTicketSearchPanel();
+            CloseTicketLookupSuggestions();
+            return;
+        }
+
+        if (!string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase) || _loading)
+            return;
+
+        await AplicarFiltrosAsync();
+    }
+
+    private async Task BuscarAsync(bool keepCurrent = false)
+    {
+        var refreshInPlace = keepCurrent && HasVisibleTicketData();
+        _refreshingTickets = refreshInPlace;
+        _loading = !refreshInPlace;
         SyncFilters();
         try
         {
@@ -1075,6 +1122,7 @@
         finally
         {
             _loading = false;
+            _refreshingTickets = false;
         }
     }
 
@@ -1109,6 +1157,12 @@
 
     private void SyncFilters()
         => _filters.Prioridad = int.TryParse(_prioridadFiltro, out var priority) ? priority : null;
+
+    private bool HasVisibleTicketData()
+        => _viewMode == "kanban" ? _kanbanItems.Count > 0 : _listItems.Count > 0;
+
+    private bool IsTicketsUpdating()
+        => (_loading || _refreshingTickets) && HasVisibleTicketData();
 
     private void NuevoTicket()
     {
@@ -1239,8 +1293,17 @@
             return;
 
         var estadoAnterior = ticket.CodigoEstado;
+        var estadoNombreAnterior = ticket.EstadoNombre;
+        var estadoColorAnterior = ticket.EstadoColor;
+        var estadoOrdenAnterior = ticket.EstadoOrden;
+        var fechaModificacionAnterior = ticket.FechaHoraModificacion;
+        var estadoDestino = _lookups.Estados.FirstOrDefault(x => string.Equals(x.CodigoEstado, codigoEstadoDestino, StringComparison.OrdinalIgnoreCase));
+
         ticket.CodigoEstado = codigoEstadoDestino;
-        ticket.EstadoNombre = _lookups.Estados.FirstOrDefault(x => string.Equals(x.CodigoEstado, codigoEstadoDestino, StringComparison.OrdinalIgnoreCase))?.Nombre ?? ticket.EstadoNombre;
+        ticket.EstadoNombre = estadoDestino?.Nombre ?? ticket.EstadoNombre;
+        ticket.EstadoColor = estadoDestino?.Color ?? ticket.EstadoColor;
+        ticket.EstadoOrden = estadoDestino?.Orden ?? ticket.EstadoOrden;
+        ticket.FechaHoraModificacion = DateTime.Now;
 
         var result = await UiOps.RunAsync(async () =>
         {
@@ -1256,13 +1319,16 @@
         if (!result.Success)
         {
             ticket.CodigoEstado = estadoAnterior;
-            ticket.EstadoNombre = _lookups.Estados.FirstOrDefault(x => string.Equals(x.CodigoEstado, estadoAnterior, StringComparison.OrdinalIgnoreCase))?.Nombre ?? ticket.EstadoNombre;
+            ticket.EstadoNombre = estadoNombreAnterior;
+            ticket.EstadoColor = estadoColorAnterior;
+            ticket.EstadoOrden = estadoOrdenAnterior;
+            ticket.FechaHoraModificacion = fechaModificacionAnterior;
             SetFeedback(result.Feedback);
             return;
         }
 
         SetFeedback(AppUiMessage.Success("Etapa actualizada", "El ticket se movió correctamente."));
-        await BuscarAsync();
+        await BuscarAsync(keepCurrent: true);
     }
 
     private async Task OnDescripcionChangedAsync()

@@ -117,7 +117,6 @@ public sealed class ConversacionesService(
             var items = new List<ConversacionEstadoOptionDto>();
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
-            await ConsolidateExistingDuplicateWhatsAppConversationsAsync(cn, token);
 
             await using var cmd = new SqlCommand(sql, cn);
             await using var rd = await cmd.ExecuteReaderAsync(token);
@@ -381,6 +380,118 @@ public sealed class ConversacionesService(
                     END
                 ORDER BY COUNT(1) DESC;
 
+                WITH ClienteBase AS
+                (
+                    SELECT
+                        c.IdConversacion,
+                        NULLIF(LTRIM(RTRIM(ISNULL(c.ClienteCodigo, N''))), N'') AS ClienteCodigo,
+                        COALESCE(NULLIF(cli.RAZON_SOCIAL, N''), NULLIF(c.NombreVisible, N''), NULLIF(c.TelefonoWhatsApp, N''), N'Sin cliente vinculado') AS ClienteNombre,
+                        c.IdContacto,
+                        c.FechaHoraCierre
+                    FROM #BaseConversaciones c
+                    LEFT JOIN dbo.VT_CLIENTES cli ON cli.CODIGO = c.ClienteCodigo
+                    WHERE EXISTS (SELECT 1 FROM #MensajesRango m WHERE m.IdConversacion = c.IdConversacion)
+                ),
+                ClienteMensajes AS
+                (
+                    SELECT
+                        cb.ClienteCodigo,
+                        cb.ClienteNombre,
+                        COUNT(DISTINCT cb.IdConversacion) AS Conversaciones,
+                        COUNT(DISTINCT cb.IdContacto) AS Contactos,
+                        SUM(CASE WHEN m.Direction = N'ENTRANTE' THEN 1 ELSE 0 END) AS Entrantes,
+                        SUM(CASE WHEN m.Direction = N'SALIENTE' THEN 1 ELSE 0 END) AS Salientes,
+                        SUM(CASE WHEN m.Direction = N'NOTA_INTERNA' THEN 1 ELSE 0 END) AS Internos,
+                        COUNT(1) AS TotalMensajes,
+                        MAX(m.FechaHora) AS UltimoMovimiento
+                    FROM ClienteBase cb
+                    INNER JOIN #MensajesRango m ON m.IdConversacion = cb.IdConversacion
+                    GROUP BY cb.ClienteCodigo, cb.ClienteNombre
+                ),
+                ClienteEntrantes AS
+                (
+                    SELECT cb.ClienteCodigo, cb.ClienteNombre, m.IdConversacion, MIN(m.FechaHora) AS PrimerEntrante
+                    FROM ClienteBase cb
+                    INNER JOIN #MensajesRango m ON m.IdConversacion = cb.IdConversacion
+                    WHERE m.Direction = N'ENTRANTE'
+                    GROUP BY cb.ClienteCodigo, cb.ClienteNombre, m.IdConversacion
+                ),
+                ClientePrimerasRespuestas AS
+                (
+                    SELECT ce.ClienteCodigo, ce.ClienteNombre, ce.IdConversacion, ce.PrimerEntrante, MIN(m.FechaHora) AS PrimeraRespuesta
+                    FROM ClienteEntrantes ce
+                    LEFT JOIN dbo.CONV_MENSAJES m
+                        ON m.IdConversacion = ce.IdConversacion
+                       AND m.Direction = N'SALIENTE'
+                       AND m.FechaHora >= ce.PrimerEntrante
+                    GROUP BY ce.ClienteCodigo, ce.ClienteNombre, ce.IdConversacion, ce.PrimerEntrante
+                ),
+                ClienteTickets AS
+                (
+                    SELECT cb.ClienteCodigo, cb.ClienteNombre, COUNT(1) AS Tickets
+                    FROM @Tickets tk
+                    INNER JOIN ClienteBase cb ON cb.IdConversacion = tk.IdConversacion
+                    GROUP BY cb.ClienteCodigo, cb.ClienteNombre
+                ),
+                ClienteEventos AS
+                (
+                    SELECT
+                        cb.ClienteCodigo,
+                        cb.ClienteNombre,
+                        SUM(CASE WHEN m.Texto LIKE N'%cambiÃ³ el estado de Cerrada a%' OR m.Texto LIKE N'%cambio el estado de Cerrada a%' THEN 1 ELSE 0 END) AS Reabiertas
+                    FROM ClienteBase cb
+                    INNER JOIN #MensajesRango m ON m.IdConversacion = cb.IdConversacion
+                    WHERE m.Direction = N'NOTA_INTERNA'
+                      AND m.MessageType = N'SYSTEM'
+                    GROUP BY cb.ClienteCodigo, cb.ClienteNombre
+                )
+                SELECT TOP (10)
+                    ISNULL(cm.ClienteCodigo, N''),
+                    ISNULL(cm.ClienteNombre, N'Sin cliente vinculado'),
+                    cm.Conversaciones,
+                    cm.Contactos,
+                    cm.Entrantes,
+                    cm.Salientes,
+                    cm.Internos,
+                    cm.TotalMensajes,
+                    ISNULL(pr.PendientesRespuesta, 0),
+                    ISNULL(cierres.Cerradas, 0),
+                    ISNULL(tk.Tickets, 0),
+                    ISNULL(ev.Reabiertas, 0),
+                    pr.PromedioPrimeraRespuesta,
+                    cm.UltimoMovimiento
+                FROM ClienteMensajes cm
+                OUTER APPLY
+                (
+                    SELECT
+                        COUNT(CASE WHEN cpr.PrimeraRespuesta IS NULL THEN 1 END) AS PendientesRespuesta,
+                        AVG(CASE WHEN cpr.PrimeraRespuesta IS NOT NULL THEN CAST(DATEDIFF(second, cpr.PrimerEntrante, cpr.PrimeraRespuesta) AS bigint) END) AS PromedioPrimeraRespuesta
+                    FROM ClientePrimerasRespuestas cpr
+                    WHERE ISNULL(cpr.ClienteCodigo, N'') = ISNULL(cm.ClienteCodigo, N'')
+                      AND cpr.ClienteNombre = cm.ClienteNombre
+                ) pr
+                OUTER APPLY
+                (
+                    SELECT COUNT(1) AS Cerradas
+                    FROM ClienteBase cb
+                    WHERE ISNULL(cb.ClienteCodigo, N'') = ISNULL(cm.ClienteCodigo, N'')
+                      AND cb.ClienteNombre = cm.ClienteNombre
+                      AND cb.FechaHoraCierre >= @Desde
+                      AND cb.FechaHoraCierre < @HastaExclusive
+                ) cierres
+                LEFT JOIN ClienteTickets tk
+                    ON ISNULL(tk.ClienteCodigo, N'') = ISNULL(cm.ClienteCodigo, N'')
+                   AND tk.ClienteNombre = cm.ClienteNombre
+                LEFT JOIN ClienteEventos ev
+                    ON ISNULL(ev.ClienteCodigo, N'') = ISNULL(cm.ClienteCodigo, N'')
+                   AND ev.ClienteNombre = cm.ClienteNombre
+                ORDER BY
+                    ((cm.TotalMensajes * 2) + (cm.Conversaciones * 50) + (cm.Entrantes * 2) + (cm.Contactos * 15) + (ISNULL(tk.Tickets, 0) * 20) + (ISNULL(pr.PendientesRespuesta, 0) * 10) + (ISNULL(ev.Reabiertas, 0) * 10)) DESC,
+                    cm.TotalMensajes DESC,
+                    cm.Conversaciones DESC,
+                    cm.Entrantes DESC,
+                    cm.UltimoMovimiento DESC;
+
                 SELECT TOP (8)
                     c.IdConversacion,
                     c.IdContacto,
@@ -518,6 +629,30 @@ public sealed class ConversacionesService(
             {
                 while (await rd.ReadAsync(token))
                 {
+                    stats.PorCliente.Add(new ConversacionesEstadisticaClienteDto
+                    {
+                        ClienteCodigo = GetString(rd, 0),
+                        ClienteNombre = GetString(rd, 1),
+                        Conversaciones = GetInt(rd, 2),
+                        Contactos = GetInt(rd, 3),
+                        Entrantes = GetInt(rd, 4),
+                        Salientes = GetInt(rd, 5),
+                        Internos = GetInt(rd, 6),
+                        TotalMensajes = GetInt(rd, 7),
+                        PendientesRespuesta = GetInt(rd, 8),
+                        Cerradas = GetInt(rd, 9),
+                        Tickets = GetInt(rd, 10),
+                        Reabiertas = GetInt(rd, 11),
+                        PromedioPrimeraRespuesta = GetNullableTimeSpan(rd, 12),
+                        UltimoMovimiento = rd.GetDateTime(13)
+                    });
+                }
+            }
+
+            if (await rd.NextResultAsync(token))
+            {
+                while (await rd.ReadAsync(token))
+                {
                     stats.TopConversaciones.Add(new ConversacionesEstadisticaConversacionDto
                     {
                         IdConversacion = rd.GetInt64(0),
@@ -557,6 +692,7 @@ public sealed class ConversacionesService(
             var hastaExclusive = filters.Hasta?.Date.AddDays(1);
             var auditoria = NormalizeAuditFilter(filters.Auditoria);
             var tipoMensaje = NormalizeMessageType(filters.TipoMensaje);
+            var clienteCodigo = NormalizeClientCode(filters.ClienteCodigo);
             var usuarioActual = NormalizePinUser(filters.UsuarioActual);
             var sistemaActual = NormalizePinSystem(filters.SistemaActual);
             var sql = $"""
@@ -688,7 +824,13 @@ public sealed class ConversacionesService(
                         OR (@CodigoEstado <> @EstadoSinFinalizar AND c.CodigoEstado = @CodigoEstado)
                     )
                     AND (
+                        @ClienteCodigo IS NULL
+                        OR UPPER(LTRIM(RTRIM(ISNULL(c.ClienteCodigo, N'')))) = @ClienteCodigo
+                        OR contactoCuenta.Cuenta = @ClienteCodigo
+                    )
+                    AND (
                         @Search IS NULL
+                        OR @ClienteCodigo IS NOT NULL
                         OR c.TelefonoWhatsApp LIKE @Search
                         OR c.NombreVisible COLLATE Latin1_General_CI_AI LIKE @Search
                         OR COALESCE(NULLIF(cli.RAZON_SOCIAL, ''), contactoCuenta.RazonSocial) COLLATE Latin1_General_CI_AI LIKE @Search
@@ -817,10 +959,13 @@ public sealed class ConversacionesService(
             await cn.OpenAsync(token);
             await EnsureConversationPinsTableAsync(cn, token);
             await EnsureConversationReadStateTableAsync(cn, token);
-            await EnsureConversationReadBaselinesAsync(cn, usuarioActual, sistemaActual, token);
-            await LinkUnassociatedWhatsAppConversationsByPhoneAsync(cn, token);
-            await ConsolidateExistingDuplicateWhatsAppConversationsAsync(cn, token);
-            await ReopenClosedConversationsWithIncomingAfterCloseAsync(cn, null, token);
+            await EnsureConversationReadBaselinesAsync(cn, usuarioActual, sistemaActual, clienteCodigo, token);
+            if (string.IsNullOrWhiteSpace(clienteCodigo))
+            {
+                await LinkUnassociatedWhatsAppConversationsByPhoneAsync(cn, token);
+                await ConsolidateExistingDuplicateWhatsAppConversationsAsync(cn, token);
+                await ReopenClosedConversationsWithIncomingAfterCloseAsync(cn, null, token);
+            }
 
             await using var cmd = new SqlCommand(sql, cn);
             cmd.Parameters.AddWithValue("@Canal", DbNullable(filters.Canal));
@@ -829,6 +974,7 @@ public sealed class ConversacionesService(
             cmd.Parameters.AddWithValue("@Search", DbNullable(Like(filters.Search)));
             cmd.Parameters.AddWithValue("@SearchPhone", DbNullable(searchPhone));
             cmd.Parameters.AddWithValue("@SearchPhoneTail", DbNullable(searchPhoneTail));
+            cmd.Parameters.AddWithValue("@ClienteCodigo", DbNullable(clienteCodigo));
             cmd.Parameters.AddWithValue("@Modo", NormalizeMode(filters.Modo));
             cmd.Parameters.AddWithValue("@IdTecnicoActual", DbNullable(NormalizeTechnicianId(filters.IdTecnicoActual)));
             cmd.Parameters.AddWithValue("@Desde", desde.HasValue ? desde.Value : DBNull.Value);
@@ -886,6 +1032,7 @@ public sealed class ConversacionesService(
             var hastaExclusive = filters.Hasta?.Date.AddDays(1);
             var auditoria = NormalizeAuditFilter(filters.Auditoria);
             var tipoMensaje = NormalizeMessageType(filters.TipoMensaje);
+            var clienteCodigo = NormalizeClientCode(filters.ClienteCodigo);
 
             var sql = $"""
                 SELECT TOP (200)
@@ -909,6 +1056,7 @@ public sealed class ConversacionesService(
                 WHERE
                     (@Canal IS NULL OR c.Canal = @Canal)
                     AND (@IdTecnicoActual IS NULL OR LTRIM(RTRIM(c.IdTecnico)) = @IdTecnicoActual OR LTRIM(RTRIM(m.IdTecnicoAutor)) = @IdTecnicoActual)
+                    AND (@ClienteCodigo IS NULL OR UPPER(LTRIM(RTRIM(ISNULL(c.ClienteCodigo, N'')))) = @ClienteCodigo)
                     AND (
                         @CodigoEstado IS NULL
                         OR (@CodigoEstado = @EstadoSinFinalizar AND ISNULL(e.EsCerrado, 0) = 0 AND ISNULL(c.Archivada, 0) = 0)
@@ -925,6 +1073,7 @@ public sealed class ConversacionesService(
                     AND (@HastaExclusive IS NULL OR {ConversationMessageVisibleDateSql("m")} < @HastaExclusive)
                     AND (
                         @Search IS NULL
+                        OR @ClienteCodigo IS NOT NULL
                         OR m.Texto COLLATE Latin1_General_CI_AI LIKE @Search
                         OR c.TelefonoWhatsApp LIKE @Search
                         OR c.NombreVisible COLLATE Latin1_General_CI_AI LIKE @Search
@@ -968,6 +1117,7 @@ public sealed class ConversacionesService(
             cmd.Parameters.AddWithValue("@Search", DbNullable(Like(filters.Search)));
             cmd.Parameters.AddWithValue("@SearchPhone", DbNullable(searchPhone));
             cmd.Parameters.AddWithValue("@SearchPhoneTail", DbNullable(searchPhoneTail));
+            cmd.Parameters.AddWithValue("@ClienteCodigo", DbNullable(clienteCodigo));
             cmd.Parameters.AddWithValue("@Modo", NormalizeMode(filters.Modo));
             cmd.Parameters.AddWithValue("@IdTecnicoActual", DbNullable(NormalizeTechnicianId(filters.IdTecnicoActual)));
             cmd.Parameters.AddWithValue("@Desde", desde.HasValue ? desde.Value : DBNull.Value);
@@ -4715,7 +4865,7 @@ public sealed class ConversacionesService(
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
-    private static async Task EnsureConversationReadBaselinesAsync(SqlConnection cn, string usuario, string sistema, CancellationToken ct)
+    private static async Task EnsureConversationReadBaselinesAsync(SqlConnection cn, string usuario, string sistema, string? clienteCodigo, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(usuario))
             return;
@@ -4744,7 +4894,8 @@ public sealed class ConversacionesService(
                 WHERE m.IdConversacion = c.IdConversacion
                   AND m.Direction = N'ENTRANTE'
             ) ult
-            WHERE NOT EXISTS (
+            WHERE (@ClienteCodigo IS NULL OR UPPER(LTRIM(RTRIM(ISNULL(c.ClienteCodigo, N'')))) = @ClienteCodigo)
+              AND NOT EXISTS (
                 SELECT 1
                 FROM dbo.CONV_CONVERSACIONES_LECTURA_USUARIO r
                 WHERE r.Usuario = @Usuario
@@ -4755,6 +4906,7 @@ public sealed class ConversacionesService(
         await using var cmd = new SqlCommand(sql, cn);
         cmd.Parameters.AddWithValue("@Usuario", usuario);
         cmd.Parameters.AddWithValue("@Sistema", sistema);
+        cmd.Parameters.AddWithValue("@ClienteCodigo", DbNullable(NormalizeClientCode(clienteCodigo)));
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
@@ -6348,6 +6500,9 @@ public sealed class ConversacionesService(
 
     private static string NormalizeTechnicianId(string? value)
         => string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+
+    private static string NormalizeClientCode(string? value)
+        => string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim().ToUpperInvariant();
 
     private static string BuildTypingActorKey(long idConversacion, string? clienteId, string? usuario, string? sistema, string? idTecnico)
     {
