@@ -49,6 +49,46 @@
     .tareas-row--priority-baja {
         border-left: 3px solid #2dd4bf !important;
     }
+
+    .tareas-confirm {
+        position: fixed;
+        inset: 0;
+        z-index: 1400;
+        display: grid;
+        place-items: center;
+        padding: 1rem;
+        background: rgba(2, 6, 23, .62);
+        backdrop-filter: blur(3px);
+    }
+
+    .tareas-confirm__dialog {
+        width: min(460px, 100%);
+        padding: 1rem;
+        border: 1px solid rgba(56, 189, 248, .22);
+        border-radius: 8px;
+        background: #071426;
+        box-shadow: 0 24px 70px rgba(0, 0, 0, .42);
+    }
+
+    .tareas-confirm__dialog h3 {
+        margin: 0 0 .45rem;
+        color: var(--color-text);
+        font-size: 1rem;
+    }
+
+    .tareas-confirm__dialog p {
+        margin: 0;
+        color: var(--color-muted);
+        line-height: 1.45;
+    }
+
+    .tareas-confirm__actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: .55rem;
+        margin-top: 1rem;
+        flex-wrap: wrap;
+    }
 </style>
 
 <section class="page-grid tareas-page" @onclick="HandlePageClickAsync">
@@ -547,6 +587,24 @@
     </section>
 }
 
+@if (_showCloseTaskConfirm)
+{
+    <section class="tareas-confirm no-print" role="dialog" aria-modal="true" aria-labelledby="tareas-confirm-title">
+        <div class="tareas-confirm__dialog">
+            <h3 id="tareas-confirm-title">Cerrar sin guardar</h3>
+            <p>Hay cambios sin guardar en esta tarea. Si cerras ahora, se pierde lo que cargaste.</p>
+            <div class="tareas-confirm__actions">
+                <button type="button" class="btn btn--ghost" @onclick="CancelCloseTaskModal">
+                    Seguir editando
+                </button>
+                <button type="button" class="btn btn--primary" @onclick="ConfirmCloseTaskModalAsync">
+                    Cerrar sin guardar
+                </button>
+            </div>
+        </div>
+    </section>
+}
+
 @if (_showShareModal)
 {
     <button type="button" class="modal-backdrop app-modal-backdrop no-print" aria-label="Cerrar compartir" @onclick="CloseShareModal"></button>
@@ -617,6 +675,7 @@
     private string _quickTaskTitle = string.Empty;
     private string _quickNoteText = string.Empty;
     private bool _showTaskModal;
+    private bool _showCloseTaskConfirm;
     private bool _taskCanShare;
     private bool _taskSharePanelOpen;
     private bool _savingTask;
@@ -1116,18 +1175,24 @@
     {
         if (HasUnsavedTaskModalChanges())
         {
-            var confirmed = await Js.InvokeAsync<bool>(
-                "confirm",
-                "Hay cambios sin guardar en esta tarea. ¿Querés cerrar y perder esos cambios?");
-            if (!confirmed)
-                return;
+            _showCloseTaskConfirm = true;
+            return;
         }
 
         await CloseTaskModal();
     }
 
+    private void CancelCloseTaskModal()
+        => _showCloseTaskConfirm = false;
+
+    private async Task ConfirmCloseTaskModalAsync()
+    {
+        _showCloseTaskConfirm = false;
+        await CloseTaskModal();
+    }
     private async Task CloseTaskModal()
     {
+        _showCloseTaskConfirm = false;
         _taskSharePanelOpen = false;
         _pendingTaskAttachments = [];
         _taskAttachments = [];
