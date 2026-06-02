@@ -1085,10 +1085,15 @@
                                             <span title="@pending.NombreArchivo">@pending.NombreArchivo</span>
                                             @if (CanPreviewPendingAttachment(pending))
                                             {
-                                                <img class="conversations-pending-attachment__preview"
-                                                     src="@pending.PreviewDataUrl"
-                                                     alt="@pending.NombreArchivo"
-                                                     loading="lazy" />
+                                                <button type="button"
+                                                        class="conversations-pending-attachment__preview-button"
+                                                        title="Previsualizar imagen"
+                                                        @onclick="() => OpenPendingAttachmentPreview(pending)">
+                                                    <img class="conversations-pending-attachment__preview"
+                                                         src="@pending.PreviewDataUrl"
+                                                         alt="@pending.NombreArchivo"
+                                                         loading="lazy" />
+                                                </button>
                                             }
                                             @if (pending.IsUploading)
                                             {
@@ -1604,6 +1609,29 @@
     </div>
 }
 
+@if (_previewPendingAttachment is not null)
+{
+    <div class="attachment-preview-overlay" @onclick="ClosePendingAttachmentPreview">
+        <div class="attachment-preview-modal attachment-preview-modal--pending" @onclick:stopPropagation>
+            <header class="attachment-preview-header">
+                <span>@_previewPendingAttachment.NombreArchivo</span>
+                <div class="attachment-preview-actions">
+                    <button type="button" class="attachment-preview-action" @onclick="ClosePendingAttachmentPreview" title="Cerrar" aria-label="Cerrar">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
+                </div>
+            </header>
+            <div class="attachment-preview-body attachment-preview-body--pending">
+                <div class="attachment-preview-canvas">
+                    <img src="@_previewPendingAttachment.PreviewDataUrl"
+                         alt="@_previewPendingAttachment.NombreArchivo"
+                         draggable="false" />
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 @if (_showTicketDialog)
 {
     <div class="conversations-modal-backdrop" @onclick="CloseTicketDialog"></div>
@@ -1935,6 +1963,7 @@
     private int _quotedHighlightVersion;
     private long _nextOptimisticMessageId = -1;
     private ConversacionAdjuntoDto? _previewAttachment;
+    private PendingAttachment? _previewPendingAttachment;
     private ElementReference _previewCanvas;
     private bool _bindPreviewPanAfterRender;
     private bool _bindPreviewKeyboardAfterRender;
@@ -4780,6 +4809,17 @@
     private static bool CanPreviewPendingAttachment(PendingAttachment attachment)
         => !string.IsNullOrWhiteSpace(attachment.PreviewDataUrl);
 
+    private void OpenPendingAttachmentPreview(PendingAttachment attachment)
+    {
+        if (!CanPreviewPendingAttachment(attachment))
+            return;
+
+        _previewPendingAttachment = attachment;
+    }
+
+    private void ClosePendingAttachmentPreview()
+        => _previewPendingAttachment = null;
+
     private async Task ToggleRecordingAsync()
     {
         if (_recording)
@@ -4827,7 +4867,11 @@
     }
 
     private void RemovePendingAttachment(Guid id)
-        => _pendingAttachments.RemoveAll(x => x.Id == id);
+    {
+        _pendingAttachments.RemoveAll(x => x.Id == id);
+        if (_previewPendingAttachment?.Id == id)
+            _previewPendingAttachment = null;
+    }
 
     private void MarkPendingAttachmentsError(string? message)
     {
@@ -4843,7 +4887,11 @@
     }
 
     private void RemoveTemplatePendingAttachment(Guid id)
-        => _templatePendingAttachments.RemoveAll(x => x.Id == id);
+    {
+        _templatePendingAttachments.RemoveAll(x => x.Id == id);
+        if (_previewPendingAttachment?.Id == id)
+            _previewPendingAttachment = null;
+    }
 
     private async Task SelectEmojiFromPanelAsync(string emoji)
     {
