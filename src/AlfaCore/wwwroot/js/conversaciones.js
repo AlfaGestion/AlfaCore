@@ -547,6 +547,8 @@ window.conversacionesUi = {
         }
 
         let dragDepth = 0;
+        let lastPasteKey = '';
+        let lastPasteAt = 0;
         const getInput = () => document.getElementById(inputId);
         const hasFiles = event => event.dataTransfer && Array.from(event.dataTransfer.types || []).includes('Files');
         const addFilesToInput = files => {
@@ -607,6 +609,16 @@ window.conversacionesUi = {
 
             if (imageFiles.length === 0) return;
 
+            const pasteKey = imageFiles
+                .map(file => `${file.name || 'clipboard'}:${file.type}:${file.size}:${file.lastModified || 0}`)
+                .join('|');
+            const now = Date.now();
+            if (pasteKey === lastPasteKey && now - lastPasteAt < 900) {
+                event.preventDefault();
+                event.stopPropagation();
+                return;
+            }
+
             event.preventDefault();
             event.stopPropagation();
 
@@ -619,6 +631,8 @@ window.conversacionesUi = {
                 return new File([file], name, { type: file.type || 'image/png', lastModified: Date.now() });
             });
 
+            lastPasteKey = pasteKey;
+            lastPasteAt = now;
             addFilesToInput(files);
         };
 

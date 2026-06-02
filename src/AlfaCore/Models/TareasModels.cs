@@ -9,6 +9,15 @@ public static class TareaEstadoKeys
     public static readonly string[] All = [Pendiente, EnCurso, Completada];
 }
 
+public static class TareaPrioridadKeys
+{
+    public const string Alta = "ALTA";
+    public const string Media = "MEDIA";
+    public const string Baja = "BAJA";
+
+    public static readonly string[] All = [Alta, Media, Baja];
+}
+
 public sealed class TareasPageDto
 {
     public List<TareaListaDto> Listas { get; set; } = [];
@@ -41,6 +50,7 @@ public sealed class TareaItemDto
     public DateTime? FechaVencimiento { get; set; }
     public string UsuarioAsignado { get; set; } = string.Empty;
     public string Estado { get; set; } = TareaEstadoKeys.Pendiente;
+    public string Prioridad { get; set; } = TareaPrioridadKeys.Media;
     public string UsuarioAlta { get; set; } = string.Empty;
     public bool EsPropia { get; set; }
     public bool CompartidaConTodos { get; set; }
@@ -100,6 +110,7 @@ public sealed class TareaSaveRequest
     public DateTime? FechaVencimiento { get; set; }
     public string UsuarioAsignado { get; set; } = string.Empty;
     public string Estado { get; set; } = TareaEstadoKeys.Pendiente;
+    public string Prioridad { get; set; } = TareaPrioridadKeys.Media;
     public bool CompartirConTodos { get; set; }
     public List<string> UsuariosCompartidos { get; set; } = [];
     public string UsuarioAccion { get; set; } = string.Empty;
