@@ -2471,6 +2471,13 @@
             if (_selectedConversationId.HasValue && _inbox.Any(x => x.IdConversacion == _selectedConversationId.Value))
                 return newMessagesDetected;
 
+            if (showLoading)
+            {
+                _loadingInbox = false;
+                await InvokeAsync(StateHasChanged);
+                await Task.Yield();
+            }
+
             if (allowSelectionChange && _inbox.Count > 0 && !ShouldKeepAuditResultsOpen)
                 await SelectConversationAsync(_inbox[0].IdConversacion);
             else if (allowSelectionChange)
@@ -2703,6 +2710,14 @@
             else
             {
                 ClearTemplateSelection();
+            }
+
+            if (showLoading)
+            {
+                _loadingConversation = false;
+                await InvokeAsync(StateHasChanged);
+                await Task.Yield();
+                showLoading = false;
             }
 
             await LoadContextTicketsAsync();

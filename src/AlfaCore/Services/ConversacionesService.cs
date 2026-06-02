@@ -117,7 +117,6 @@ public sealed class ConversacionesService(
             var items = new List<ConversacionEstadoOptionDto>();
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
-            await ConsolidateExistingDuplicateWhatsAppConversationsAsync(cn, token);
 
             await using var cmd = new SqlCommand(sql, cn);
             await using var rd = await cmd.ExecuteReaderAsync(token);
@@ -960,10 +959,13 @@ public sealed class ConversacionesService(
             await cn.OpenAsync(token);
             await EnsureConversationPinsTableAsync(cn, token);
             await EnsureConversationReadStateTableAsync(cn, token);
-            await EnsureConversationReadBaselinesAsync(cn, usuarioActual, sistemaActual, token);
-            await LinkUnassociatedWhatsAppConversationsByPhoneAsync(cn, token);
-            await ConsolidateExistingDuplicateWhatsAppConversationsAsync(cn, token);
-            await ReopenClosedConversationsWithIncomingAfterCloseAsync(cn, null, token);
+            await EnsureConversationReadBaselinesAsync(cn, usuarioActual, sistemaActual, clienteCodigo, token);
+            if (string.IsNullOrWhiteSpace(clienteCodigo))
+            {
+                await LinkUnassociatedWhatsAppConversationsByPhoneAsync(cn, token);
+                await ConsolidateExistingDuplicateWhatsAppConversationsAsync(cn, token);
+                await ReopenClosedConversationsWithIncomingAfterCloseAsync(cn, null, token);
+            }
 
             await using var cmd = new SqlCommand(sql, cn);
             cmd.Parameters.AddWithValue("@Canal", DbNullable(filters.Canal));
@@ -4863,7 +4865,7 @@ public sealed class ConversacionesService(
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
-    private static async Task EnsureConversationReadBaselinesAsync(SqlConnection cn, string usuario, string sistema, CancellationToken ct)
+    private static async Task EnsureConversationReadBaselinesAsync(SqlConnection cn, string usuario, string sistema, string? clienteCodigo, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(usuario))
             return;
@@ -4892,7 +4894,8 @@ public sealed class ConversacionesService(
                 WHERE m.IdConversacion = c.IdConversacion
                   AND m.Direction = N'ENTRANTE'
             ) ult
-            WHERE NOT EXISTS (
+            WHERE (@ClienteCodigo IS NULL OR UPPER(LTRIM(RTRIM(ISNULL(c.ClienteCodigo, N'')))) = @ClienteCodigo)
+              AND NOT EXISTS (
                 SELECT 1
                 FROM dbo.CONV_CONVERSACIONES_LECTURA_USUARIO r
                 WHERE r.Usuario = @Usuario
@@ -4903,6 +4906,7 @@ public sealed class ConversacionesService(
         await using var cmd = new SqlCommand(sql, cn);
         cmd.Parameters.AddWithValue("@Usuario", usuario);
         cmd.Parameters.AddWithValue("@Sistema", sistema);
+        cmd.Parameters.AddWithValue("@ClienteCodigo", DbNullable(NormalizeClientCode(clienteCodigo)));
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
