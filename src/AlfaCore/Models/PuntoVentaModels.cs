@@ -19,6 +19,7 @@ public sealed class PuntoVentaCatalogFiltersDto
     public string Texto { get; set; } = string.Empty;
     public string IdFamilia { get; set; } = string.Empty;
     public int TamanioPagina { get; set; } = 24;
+    public int Pagina { get; set; } = 1;
 }
 
 public sealed class PuntoVentaCatalogDto
@@ -28,6 +29,8 @@ public sealed class PuntoVentaCatalogDto
     public string NombreListaPrecioActual { get; init; } = string.Empty;
     public string ClasePrecioActual { get; init; } = "1";
     public bool UsaPrecioFallback { get; init; }
+    public bool TieneMasResultados { get; init; }
+    public int PaginaActual { get; init; } = 1;
 }
 
 public sealed class PuntoVentaFamilyDto
@@ -141,4 +144,24 @@ public sealed class PuntoVentaReceiptContextDto
     public string Direccion { get; init; } = string.Empty;
     public string Telefono { get; init; } = string.Empty;
     public string EmailSugerido { get; init; } = string.Empty;
+}
+
+public sealed class PuntoVentaReceiptListItemDto
+{
+    public int IdComprobante { get; init; }
+    public string TipoComprobante { get; init; } = string.Empty;
+    public string IdComprobanteTexto { get; init; } = string.Empty;
+    public DateTime? FechaHora { get; init; }
+    public string Cliente { get; init; } = string.Empty;
+    public decimal Total { get; init; }
+    public bool Impreso { get; init; }
+}
+
+public sealed class PuntoVentaReceiptDataDto
+{
+    public PuntoVentaSaleResultDto Resultado { get; init; } = new();
+    public PuntoVentaReceiptContextDto Contexto { get; init; } = new();
+    public IReadOnlyList<PuntoVentaCartItemDto> Items { get; init; } = [];
+    public IReadOnlyList<PuntoVentaPaymentLineDto> Pagos { get; init; } = [];
+    public bool Impreso { get; init; }
 }

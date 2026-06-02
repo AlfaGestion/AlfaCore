@@ -12,6 +12,9 @@ public interface IPuntoVentaService
     Task<PuntoVentaCatalogDto> SearchArticulosAsync(PuntoVentaCatalogFiltersDto filters, CancellationToken ct = default);
     Task<PuntoVentaSaleResultDto> CreateSaleAsync(PuntoVentaSaleRequestDto request, CancellationToken ct = default);
     Task<PuntoVentaReceiptContextDto> GetReceiptContextAsync(string cuentaCliente, CancellationToken ct = default);
+    Task<IReadOnlyList<PuntoVentaReceiptListItemDto>> GetRecentReceiptsAsync(string tipoComprobante, CancellationToken ct = default);
+    Task<PuntoVentaReceiptDataDto> GetReceiptDataAsync(int idComprobante, CancellationToken ct = default);
+    Task MarkReceiptPrintedAsync(int idComprobante, CancellationToken ct = default);
     Task SendReceiptByEmailAsync(PuntoVentaReceiptEmailRequestDto request, CancellationToken ct = default);
     Task<PuntoVentaArticleImageDto?> GetArticleImageForServeAsync(string idArticulo, CancellationToken ct = default);
 }

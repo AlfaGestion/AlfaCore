@@ -1571,7 +1571,7 @@
     .pos-receipt-modal {
         position: fixed;
         inset: 2.5vh 2vw;
-        z-index: 60;
+        z-index: 1110;
         display: grid;
         grid-template-columns: minmax(0, 72%) minmax(320px, 28%);
         gap: 1.2rem;
@@ -1759,6 +1759,19 @@
         color: var(--color-text);
     }
 
+    .pos-receipt-modal__flag {
+        display: inline-flex;
+        align-items: center;
+        margin-left: 0.55rem;
+        padding: 0.16rem 0.45rem;
+        border-radius: 999px;
+        background: rgba(251, 191, 36, 0.18);
+        color: #fbbf24;
+        font-size: 0.74rem;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+    }
+
     .pos-receipt-modal__preview-header {
         padding: 1rem 1rem 0.65rem;
         border-bottom: 1px solid var(--color-border);
@@ -1778,6 +1791,39 @@
         height: 1px;
         opacity: 0;
         pointer-events: none;
+    }
+
+    .pos-reprint-list {
+        display: grid;
+        gap: 0.8rem;
+        max-height: min(70vh, 720px);
+        overflow-y: auto;
+    }
+
+    .pos-reprint-item {
+        width: 100%;
+        display: grid;
+        gap: 0.45rem;
+        padding: 0.95rem 1rem;
+        border: 1px solid var(--color-border);
+        border-radius: 16px;
+        background: var(--color-panel);
+        color: var(--color-text);
+        text-align: left;
+    }
+
+    .pos-reprint-item__header,
+    .pos-reprint-item__meta,
+    .pos-reprint-item__footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.8rem;
+    }
+
+    .pos-reprint-item__meta span,
+    .pos-reprint-item__footer span {
+        color: var(--color-muted);
     }
 
     .pos-ticket-preview {
@@ -1902,6 +1948,14 @@
             frame.contentWindow.print();
         }
     };
+
+    window.alfaPosCatalogNearBottom = function (element) {
+        if (!element) {
+            return false;
+        }
+
+        return (element.scrollTop + element.clientHeight) >= (element.scrollHeight - 120);
+    };
 </script>
 
 <section class="pos-shell">
@@ -1956,6 +2010,10 @@
                             <button type="button" class="pos-topbar__menu-item" @onclick="OpenClearCartConfirm" disabled="@(!_cartItems.Any())">
                                 <i class="bi bi-trash"></i>
                                 Vaciar carrito
+                            </button>
+                            <button type="button" class="pos-topbar__menu-item" @onclick="OpenReprintModalAsync">
+                                <i class="bi bi-printer"></i>
+                                Reimprimir comprobantes
                             </button>
                             <a class="pos-topbar__menu-link" href="/">
                                 <i class="bi bi-box-arrow-left"></i>
@@ -2075,7 +2133,7 @@
                 }
                 else
                 {
-                    <section class="pos-grid">
+                    <section class="pos-grid" @ref="_catalogGridRef" @onscroll="OnCatalogScrolledAsync">
                         @foreach (var article in _catalog.Articulos)
                         {
                             <article class="pos-product" @onclick="() => AddToCart(article)">
@@ -2116,6 +2174,15 @@
                             </article>
                         }
                     </section>
+
+                    @if (_catalogLoadingMore)
+                    {
+                        <div class="pos-grid-status">Cargando más artículos...</div>
+                    }
+                    else if (_catalog.TieneMasResultados)
+                    {
+                        <div class="pos-grid-status">Deslizá hacia abajo para seguir cargando artículos.</div>
+                    }
                 }
             </div>
         </section>
@@ -2285,8 +2352,8 @@
 
 @if (_showReceiptModal && _lastSaleResult is not null)
 {
-    <button type="button" class="pos-item-modal-backdrop" aria-label="Cerrar comprobante" @onclick="CloseReceiptModal"></button>
-    <section class="pos-receipt-modal" aria-label="Comprobante generado">
+    <div class="pos-item-modal-backdrop" aria-hidden="true"></div>
+    <section class="pos-receipt-modal" aria-label="Comprobante generado" @onclick:stopPropagation="true">
         <section class="pos-receipt-modal__actions-panel">
             <div class="pos-receipt-modal__header">
                 <div>
@@ -2329,11 +2396,17 @@
             <div class="pos-receipt-modal__meta">
                 <div class="pos-receipt-modal__meta-row">
                     <span>Comprobante</span>
-                    <strong>@($"{_lastSaleResult.TipoComprobante} {_lastSaleResult.IdComprobanteTexto}")</strong>
+                    <strong>
+                        @($"{_lastSaleResult.TipoComprobante} {_lastSaleResult.IdComprobanteTexto}")
+                        @if (_receiptIsReprint)
+                        {
+                            <span class="pos-receipt-modal__flag">REIMPRESION</span>
+                        }
+                    </strong>
                 </div>
                 <div class="pos-receipt-modal__meta-row">
                     <span>Cobranza</span>
-                    <strong>@_lastSaleResult.IdCobranza</strong>
+                    <strong>@(_lastSaleResult.IdCobranza == 0 ? "-" : _lastSaleResult.IdCobranza)</strong>
                 </div>
             </div>
 
@@ -2347,7 +2420,13 @@
             <div class="pos-receipt-modal__preview-header">
                 <div>
                     <h4>Vista previa del comprobante</h4>
-                    <p>@($"{_lastSaleResult.TipoComprobante} {_lastSaleResult.IdComprobanteTexto}")</p>
+                    <p>
+                        @($"{_lastSaleResult.TipoComprobante} {_lastSaleResult.IdComprobanteTexto}")
+                        @if (_receiptIsReprint)
+                        {
+                            <span class="pos-receipt-modal__flag">REIMPRESION</span>
+                        }
+                    </p>
                 </div>
             </div>
             <div class="pos-ticket-preview">
@@ -2408,6 +2487,53 @@
             </div>
             <iframe id="pos-receipt-frame" class="pos-receipt-modal__frame pos-receipt-modal__frame--hidden" src="@BuildReceiptPreviewUrl()"></iframe>
         </section>
+    </section>
+}
+
+@if (_showReprintModal)
+{
+    <button type="button" class="pos-item-modal-backdrop" aria-label="Cerrar reimpresión" @onclick="CloseReprintModal"></button>
+    <section class="pos-settings-modal" aria-label="Reimprimir comprobantes">
+        <div class="pos-settings-modal__header">
+            <div>
+                <h3>Reimprimir comprobantes</h3>
+                <p>Se listan del más reciente al más viejo.</p>
+            </div>
+            <button type="button" class="pos-settings-modal__close" @onclick="CloseReprintModal">X</button>
+        </div>
+
+        @if (_reprintLoading)
+        {
+            <div class="pos-grid-status">Cargando comprobantes recientes...</div>
+        }
+        else if (!_recentReceipts.Any())
+        {
+            <div class="pos-grid-status">No hay comprobantes recientes para reimprimir.</div>
+        }
+        else
+        {
+            <div class="pos-reprint-list">
+                @foreach (var receipt in _recentReceipts)
+                {
+                    <button type="button" class="pos-reprint-item" @onclick="() => OpenExistingReceiptAsync(receipt.IdComprobante)">
+                        <div class="pos-reprint-item__header">
+                            <strong>@($"{receipt.TipoComprobante} {receipt.IdComprobanteTexto}")</strong>
+                            @if (receipt.Impreso)
+                            {
+                                <span class="pos-receipt-modal__flag">REIMPRESION</span>
+                            }
+                        </div>
+                        <div class="pos-reprint-item__meta">
+                            <span>@DisplayValueOrDash(receipt.Cliente)</span>
+                            <strong>@FmtMoney(receipt.Total)</strong>
+                        </div>
+                        <div class="pos-reprint-item__footer">
+                            <span>@(receipt.FechaHora?.ToString("dd/MM/yyyy HH:mm") ?? "-")</span>
+                        </div>
+                    </button>
+                }
+            </div>
+        }
     </section>
 }
 
@@ -2602,9 +2728,11 @@
     private IReadOnlyList<PuntoVentaFamilyDto> _familias = [];
     private PuntoVentaCatalogDto _catalog = new();
     private PuntoVentaCatalogFiltersDto _filters = new();
+    private IReadOnlyList<PuntoVentaReceiptListItemDto> _recentReceipts = [];
     private readonly List<PuntoVentaCartItemDto> _cartItems = [];
     private readonly List<PuntoVentaPaymentLineDto> _paymentLines = [];
     private readonly HashSet<string> _imageFallbacks = new(StringComparer.OrdinalIgnoreCase);
+    private ElementReference _catalogGridRef;
     private IReadOnlyList<PuntoVentaPaymentMethodDto> _paymentMethods = [];
     private PuntoVentaSettingsDto _settings = new();
     private PuntoVentaSaleResultDto? _lastSaleResult;
@@ -2618,16 +2746,20 @@
     private PuntoVentaReceiptContextDto? _receiptContext;
     private bool _loading = true;
     private bool _catalogLoading;
+    private bool _catalogLoadingMore;
     private bool _showPosMenu;
     private bool _showSettingsModal;
     private bool _showCashDetailModal;
     private bool _showChargeModal;
     private bool _showReceiptModal;
+    private bool _showReprintModal;
     private bool _showClearCartConfirm;
     private bool _settingsSaving;
     private bool _paymentMethodsLoading;
     private bool _chargeSaving;
     private bool _receiptEmailSending;
+    private bool _reprintLoading;
+    private bool _receiptIsReprint;
     private string? _selectedCartItemId;
     private string _chargeAmountInput = string.Empty;
     private string _selectedPaymentCode = string.Empty;
@@ -2650,7 +2782,7 @@
             _context = await PuntoVentaSvc.GetContextAsync();
             _settings = await PuntoVentaSvc.GetSettingsAsync();
             _familias = await PuntoVentaSvc.GetFamiliasAsync();
-            _catalog = await PuntoVentaSvc.SearchArticulosAsync(_filters);
+            await LoadCatalogAsync();
         }
         catch (Exception ex)
         {
@@ -2663,12 +2795,15 @@
     }
 
     private async Task BuscarArticulosAsync()
+        => await LoadCatalogAsync();
+
+    private async Task LoadCatalogAsync()
     {
         try
         {
             _catalogLoading = true;
             _imageFallbacks.Clear();
-            _catalog = await PuntoVentaSvc.SearchArticulosAsync(_filters);
+            _catalog = await PuntoVentaSvc.SearchArticulosAsync(BuildCatalogFilters(1));
         }
         catch (Exception ex)
         {
@@ -2679,6 +2814,64 @@
             _catalogLoading = false;
         }
     }
+
+    private async Task OnCatalogScrolledAsync()
+    {
+        if (_catalogLoading || _catalogLoadingMore || !_catalog.TieneMasResultados)
+            return;
+
+        var nearBottom = await Js.InvokeAsync<bool>("alfaPosCatalogNearBottom", _catalogGridRef);
+        if (!nearBottom)
+            return;
+
+        await LoadMoreCatalogAsync();
+    }
+
+    private async Task LoadMoreCatalogAsync()
+    {
+        if (_catalogLoading || _catalogLoadingMore || !_catalog.TieneMasResultados)
+            return;
+
+        try
+        {
+            _catalogLoadingMore = true;
+
+            var nextPage = Math.Max(_catalog.PaginaActual + 1, 2);
+            var result = await PuntoVentaSvc.SearchArticulosAsync(BuildCatalogFilters(nextPage));
+            var existingIds = new HashSet<string>(_catalog.Articulos.Select(x => x.IdArticulo), StringComparer.OrdinalIgnoreCase);
+            var merged = _catalog.Articulos
+                .Concat(result.Articulos.Where(x => existingIds.Add(x.IdArticulo)))
+                .ToList();
+
+            _catalog = new PuntoVentaCatalogDto
+            {
+                Articulos = merged,
+                ListaPrecioActual = result.ListaPrecioActual,
+                NombreListaPrecioActual = result.NombreListaPrecioActual,
+                ClasePrecioActual = result.ClasePrecioActual,
+                UsaPrecioFallback = result.UsaPrecioFallback,
+                TieneMasResultados = result.TieneMasResultados,
+                PaginaActual = result.PaginaActual
+            };
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _catalogLoadingMore = false;
+        }
+    }
+
+    private PuntoVentaCatalogFiltersDto BuildCatalogFilters(int pagina)
+        => new()
+        {
+            Texto = _filters.Texto,
+            IdFamilia = _filters.IdFamilia,
+            TamanioPagina = _filters.TamanioPagina,
+            Pagina = pagina
+        };
 
     private void AddToCart(PuntoVentaArticleDto article)
     {
@@ -2763,6 +2956,28 @@
     }
 
     private void TogglePosMenu() => _showPosMenu = !_showPosMenu;
+
+    private async Task OpenReprintModalAsync()
+    {
+        try
+        {
+            _showPosMenu = false;
+            _reprintLoading = true;
+            _recentReceipts = await PuntoVentaSvc.GetRecentReceiptsAsync(_context?.TipoComprobanteDefault ?? "FC");
+            _showReprintModal = true;
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _reprintLoading = false;
+        }
+    }
+
+    private void CloseReprintModal()
+        => _showReprintModal = false;
 
     private async Task OpenSettingsAsync()
     {
@@ -2992,7 +3207,32 @@
         _receiptEmail = _receiptContext.EmailSugerido;
         _receiptEmailFeedback = null;
         _receiptEmailError = null;
+        _receiptIsReprint = false;
         _showReceiptModal = true;
+    }
+
+    private async Task OpenExistingReceiptAsync(int idComprobante)
+    {
+        try
+        {
+            var receipt = await PuntoVentaSvc.GetReceiptDataAsync(idComprobante);
+            _showReprintModal = false;
+            _lastSaleResult = receipt.Resultado;
+            _receiptItems.Clear();
+            _receiptItems.AddRange(receipt.Items);
+            _receiptPayments.Clear();
+            _receiptPayments.AddRange(receipt.Pagos);
+            _receiptContext = receipt.Contexto;
+            _receiptEmail = receipt.Contexto.EmailSugerido;
+            _receiptEmailFeedback = null;
+            _receiptEmailError = null;
+            _receiptIsReprint = receipt.Impreso;
+            _showReceiptModal = true;
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
     }
 
     private void CloseReceiptModal()
@@ -3000,6 +3240,7 @@
         _showReceiptModal = false;
         _receiptEmailFeedback = null;
         _receiptEmailError = null;
+        _receiptIsReprint = false;
     }
 
     private void ContinueWithNewReceipt()
@@ -3016,11 +3257,15 @@
         if (_lastSaleResult is null)
             return "about:blank";
 
-        return $"/comprobantes/viewer/{Uri.EscapeDataString(_lastSaleResult.TipoComprobante)}/{Uri.EscapeDataString(_lastSaleResult.IdComprobanteTexto)}?returnUrl=%2Fventas%2Fpunto-venta";
+        var reimpresion = _receiptIsReprint ? "&reimpresion=1" : string.Empty;
+        return $"/comprobantes/viewer/{Uri.EscapeDataString(_lastSaleResult.TipoComprobante)}/{Uri.EscapeDataString(_lastSaleResult.IdComprobanteTexto)}?returnUrl=%2Fventas%2Fpunto-venta{reimpresion}";
     }
 
     private async Task PrintReceiptAsync()
     {
+        if (_lastSaleResult is not null)
+            await PuntoVentaSvc.MarkReceiptPrintedAsync(_lastSaleResult.IdComprobante);
+
         await Js.InvokeVoidAsync("alfaPosPrintFrame", "pos-receipt-frame");
     }
 
@@ -3068,8 +3313,7 @@
 
             await PuntoVentaSvc.SaveSettingsAsync(_settings);
             _settings = await PuntoVentaSvc.GetSettingsAsync();
-            _catalog = await PuntoVentaSvc.SearchArticulosAsync(_filters);
-            _imageFallbacks.Clear();
+            await LoadCatalogAsync();
             _settingsFeedback = "Configuración guardada. El catálogo se recargó sin perder el carrito actual.";
         }
         catch (Exception ex)
