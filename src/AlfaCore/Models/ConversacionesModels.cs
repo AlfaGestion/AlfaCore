@@ -60,6 +60,7 @@ public sealed class ConversacionesEstadisticasDto
     public List<ConversacionesEstadisticaDiaDto> PorDia { get; set; } = [];
     public List<ConversacionesEstadisticaActividadDto> Actividad { get; set; } = [];
     public List<ConversacionesEstadisticaTipoMensajeDto> PorTipoMensaje { get; set; } = [];
+    public List<ConversacionesEstadisticaClienteDto> PorCliente { get; set; } = [];
     public List<ConversacionesEstadisticaConversacionDto> TopConversaciones { get; set; } = [];
     public List<ConversacionesEstadisticaTemaDto> TemasFrecuentes { get; set; } = [];
     public List<ConversacionesEstadisticaTemaDto> FrasesFrecuentes { get; set; } = [];
@@ -108,6 +109,24 @@ public sealed class ConversacionesEstadisticaTemaDto
 {
     public string Texto { get; set; } = string.Empty;
     public int Cantidad { get; set; }
+}
+
+public sealed class ConversacionesEstadisticaClienteDto
+{
+    public string ClienteCodigo { get; set; } = string.Empty;
+    public string ClienteNombre { get; set; } = string.Empty;
+    public int Conversaciones { get; set; }
+    public int Contactos { get; set; }
+    public int Entrantes { get; set; }
+    public int Salientes { get; set; }
+    public int Internos { get; set; }
+    public int TotalMensajes { get; set; }
+    public int PendientesRespuesta { get; set; }
+    public int Cerradas { get; set; }
+    public int Tickets { get; set; }
+    public int Reabiertas { get; set; }
+    public TimeSpan? PromedioPrimeraRespuesta { get; set; }
+    public DateTime UltimoMovimiento { get; set; }
 }
 
 public sealed class ConversacionesEstadisticaConversacionDto

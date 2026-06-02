@@ -49,6 +49,102 @@
         margin: 0 !important;
     }
 
+    .conv-stats-page .conv-stats-client-panel {
+        display: grid !important;
+        gap: .75rem !important;
+    }
+
+    .conv-stats-page .conv-stats-client-focus {
+        display: grid !important;
+        grid-template-columns: minmax(0, 1fr) auto !important;
+        align-items: center !important;
+        gap: 1rem !important;
+        padding: .85rem .95rem !important;
+        border: 1px solid rgba(45, 212, 191, .22) !important;
+        border-radius: 8px !important;
+        background: linear-gradient(135deg, rgba(20, 184, 166, .18), rgba(14, 165, 233, .08)) !important;
+    }
+
+    .conv-stats-page .conv-stats-client-focus span,
+    .conv-stats-page .conv-stats-client-focus small,
+    .conv-stats-page .conv-stats-client-row span {
+        color: var(--color-muted) !important;
+    }
+
+    .conv-stats-page .conv-stats-client-focus strong {
+        display: block !important;
+        margin-top: .18rem !important;
+        color: var(--color-text) !important;
+        font-size: 1.08rem !important;
+    }
+
+    .conv-stats-page .conv-stats-client-focus__numbers {
+        min-width: 96px !important;
+        text-align: right !important;
+    }
+
+    .conv-stats-page .conv-stats-client-focus__numbers strong {
+        font-size: 1.65rem !important;
+    }
+
+    .conv-stats-page .conv-stats-client-list {
+        display: grid !important;
+        gap: .55rem !important;
+    }
+
+    .conv-stats-page .conv-stats-client-row {
+        display: grid !important;
+        grid-template-columns: minmax(0, 1.05fr) minmax(360px, .95fr) !important;
+        align-items: center !important;
+        gap: .9rem !important;
+        padding: .72rem .8rem !important;
+        border: 1px solid rgba(148, 163, 184, .13) !important;
+        border-radius: 8px !important;
+        background: rgba(15, 23, 42, .24) !important;
+    }
+
+    .conv-stats-page .conv-stats-client-row__main {
+        display: grid !important;
+        min-width: 0 !important;
+        gap: .3rem !important;
+    }
+
+    .conv-stats-page .conv-stats-client-row__main strong,
+    .conv-stats-page .conv-stats-client-row__main > span {
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        white-space: nowrap !important;
+    }
+
+    .conv-stats-page .conv-stats-client-row__main strong {
+        color: var(--color-text) !important;
+    }
+
+    .conv-stats-page .conv-stats-client-row__main > span {
+        font-size: .78rem !important;
+    }
+
+    .conv-stats-page .conv-stats-client-row__metrics {
+        display: grid !important;
+        grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+        gap: .45rem !important;
+    }
+
+    .conv-stats-page .conv-stats-client-row__metrics span {
+        min-width: 0 !important;
+        padding: .45rem .5rem !important;
+        border: 1px solid rgba(148, 163, 184, .12) !important;
+        border-radius: 8px !important;
+        background: rgba(2, 6, 23, .22) !important;
+        font-size: .75rem !important;
+    }
+
+    .conv-stats-page .conv-stats-client-row__metrics strong {
+        display: block !important;
+        color: var(--color-text) !important;
+        font-size: .94rem !important;
+    }
+
     @@media (max-width: 1180px) {
         .conv-stats-page .conv-stats-summary {
             grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
@@ -57,11 +153,31 @@
         .conv-stats-page .conv-stats-columns {
             grid-template-columns: 1fr !important;
         }
+
+        .conv-stats-page .conv-stats-client-row {
+            grid-template-columns: 1fr !important;
+        }
+    }
+
+    @@media (max-width: 760px) {
+        .conv-stats-page .conv-stats-client-row__metrics {
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        }
     }
 
     @@media (max-width: 520px) {
         .conv-stats-page .conv-stats-summary {
             grid-template-columns: 1fr !important;
+        }
+
+        .conv-stats-page .conv-stats-client-focus,
+        .conv-stats-page .conv-stats-client-row__metrics {
+            grid-template-columns: 1fr !important;
+        }
+
+        .conv-stats-page .conv-stats-client-focus__numbers {
+            min-width: 0 !important;
+            text-align: left !important;
         }
     }
 </style>
@@ -170,6 +286,55 @@
                     <small>@FormatNumber(_stats.CambiosEstado) cambios de estado</small>
                 </a>
             </section>
+
+            <article class="conv-stats-panel conv-stats-client-panel">
+                <div class="conv-stats-panel__head">
+                    <div>
+                        <h3 class="panel-card__title">Clientes que requieren mas atencion</h3>
+                        <p class="panel-card__subtitle">Ranking por demanda operativa: pendientes, entrantes, tickets y movimiento real del rango.</p>
+                    </div>
+                </div>
+
+                @if (TopCliente is not null)
+                {
+                    <a class="conv-stats-client-focus conv-stats-row-link" href="@GetClientUrl(TopCliente)">
+                        <div>
+                            <span>Mayor demanda actual</span>
+                            <strong>@DisplayOrFallback(TopCliente.ClienteNombre)</strong>
+                            <small>@ClientDemandText(TopCliente)</small>
+                        </div>
+                        <div class="conv-stats-client-focus__numbers">
+                            <strong>@FormatNumber(TopCliente.PendientesRespuesta)</strong>
+                            <span>pendientes</span>
+                        </div>
+                    </a>
+                }
+
+                <div class="conv-stats-client-list">
+                    @foreach (var item in _stats.PorCliente)
+                    {
+                        <a class="conv-stats-client-row conv-stats-row-link" href="@GetClientUrl(item)">
+                            <div class="conv-stats-client-row__main">
+                                <strong>@DisplayOrFallback(item.ClienteNombre)</strong>
+                                <span>@ClientDemandText(item)</span>
+                                <div class="conv-stats-bar">
+                                    <span style="width:@GetPercent(GetClientDemandScore(item), MaxClientDemandScore)%"></span>
+                                </div>
+                            </div>
+                            <div class="conv-stats-client-row__metrics">
+                                <span><strong>@FormatNumber(item.Entrantes)</strong> entrantes</span>
+                                <span><strong>@FormatNumber(item.PendientesRespuesta)</strong> pendientes</span>
+                                <span><strong>@FormatNumber(item.Tickets)</strong> tickets</span>
+                                <span><strong>@FormatDuration(item.PromedioPrimeraRespuesta)</strong> respuesta</span>
+                            </div>
+                        </a>
+                    }
+                    @if (_stats.PorCliente.Count == 0)
+                    {
+                        <div class="conversations-empty">No hay clientes con movimiento en este rango.</div>
+                    }
+                </div>
+            </article>
 
             <section class="conv-stats-columns">
                 <div class="conv-stats-column">
@@ -445,8 +610,10 @@
         }
     }
 
+    private ConversacionesEstadisticaClienteDto? TopCliente => _stats?.PorCliente.FirstOrDefault();
     private int MaxStateCount => Math.Max(1, _stats?.PorEstado.Select(x => x.Cantidad).DefaultIfEmpty(0).Max() ?? 1);
     private int MaxDailyCount => Math.Max(1, _stats?.PorDia.Select(x => Math.Max(Math.Max(x.Entrantes, x.Salientes), x.Cerradas + x.Tickets)).DefaultIfEmpty(0).Max() ?? 1);
+    private int MaxClientDemandScore => Math.Max(1, _stats?.PorCliente.Select(GetClientDemandScore).DefaultIfEmpty(0).Max() ?? 1);
 
     protected override async Task OnInitializedAsync()
     {
@@ -531,6 +698,22 @@
         => string.IsNullOrWhiteSpace(tecnico.IdTecnico)
             ? "/conversaciones?modo=sin_asignar"
             : $"/conversaciones?modo=todas&tecnico={Uri.EscapeDataString(tecnico.IdTecnico)}";
+
+    private string GetClientUrl(ConversacionesEstadisticaClienteDto cliente)
+    {
+        var query = new List<string>
+        {
+            "modo=todas",
+            $"desde={Uri.EscapeDataString(_desdeText)}",
+            $"hasta={Uri.EscapeDataString(_hastaText)}",
+            $"buscar={Uri.EscapeDataString(FirstNonEmpty(cliente.ClienteCodigo, cliente.ClienteNombre))}"
+        };
+
+        if (!string.IsNullOrWhiteSpace(_idTecnico))
+            query.Add($"tecnico={Uri.EscapeDataString(_idTecnico)}");
+
+        return $"/conversaciones?{string.Join("&", query)}";
+    }
 
     private static string GetStateUrl(ConversacionesEstadisticaEstadoDto estado)
         => $"/conversaciones?modo=todas&estado={Uri.EscapeDataString(estado.CodigoEstado)}";
@@ -631,6 +814,15 @@
 
     private static string DisplayOrFallback(string? value)
         => string.IsNullOrWhiteSpace(value) ? "Sin dato" : value.Trim();
+
+    private static int GetClientDemandScore(ConversacionesEstadisticaClienteDto cliente)
+        => (cliente.PendientesRespuesta * 4) + (cliente.Tickets * 3) + (cliente.Entrantes * 2) + cliente.Internos + cliente.Reabiertas;
+
+    private static string ClientDemandText(ConversacionesEstadisticaClienteDto cliente)
+        => $"{FormatNumber(cliente.Conversaciones)} conversaciones, {FormatNumber(cliente.Contactos)} contactos, {FormatNumber(cliente.TotalMensajes)} mensajes, ultimo {cliente.UltimoMovimiento:dd/MM HH:mm}";
+
+    private static string FirstNonEmpty(params string?[] values)
+        => values.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x))?.Trim() ?? string.Empty;
 
     private static class StatsRange
     {

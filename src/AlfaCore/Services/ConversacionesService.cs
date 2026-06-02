@@ -381,6 +381,113 @@ public sealed class ConversacionesService(
                     END
                 ORDER BY COUNT(1) DESC;
 
+                WITH ClienteBase AS
+                (
+                    SELECT
+                        c.IdConversacion,
+                        NULLIF(LTRIM(RTRIM(ISNULL(c.ClienteCodigo, N''))), N'') AS ClienteCodigo,
+                        COALESCE(NULLIF(cli.RAZON_SOCIAL, N''), NULLIF(c.NombreVisible, N''), NULLIF(c.TelefonoWhatsApp, N''), N'Sin cliente vinculado') AS ClienteNombre,
+                        c.IdContacto,
+                        c.FechaHoraCierre
+                    FROM #BaseConversaciones c
+                    LEFT JOIN dbo.VT_CLIENTES cli ON cli.CODIGO = c.ClienteCodigo
+                    WHERE EXISTS (SELECT 1 FROM #MensajesRango m WHERE m.IdConversacion = c.IdConversacion)
+                ),
+                ClienteMensajes AS
+                (
+                    SELECT
+                        cb.ClienteCodigo,
+                        cb.ClienteNombre,
+                        COUNT(DISTINCT cb.IdConversacion) AS Conversaciones,
+                        COUNT(DISTINCT cb.IdContacto) AS Contactos,
+                        SUM(CASE WHEN m.Direction = N'ENTRANTE' THEN 1 ELSE 0 END) AS Entrantes,
+                        SUM(CASE WHEN m.Direction = N'SALIENTE' THEN 1 ELSE 0 END) AS Salientes,
+                        SUM(CASE WHEN m.Direction = N'NOTA_INTERNA' THEN 1 ELSE 0 END) AS Internos,
+                        COUNT(1) AS TotalMensajes,
+                        MAX(m.FechaHora) AS UltimoMovimiento
+                    FROM ClienteBase cb
+                    INNER JOIN #MensajesRango m ON m.IdConversacion = cb.IdConversacion
+                    GROUP BY cb.ClienteCodigo, cb.ClienteNombre
+                ),
+                ClienteEntrantes AS
+                (
+                    SELECT cb.ClienteCodigo, cb.ClienteNombre, m.IdConversacion, MIN(m.FechaHora) AS PrimerEntrante
+                    FROM ClienteBase cb
+                    INNER JOIN #MensajesRango m ON m.IdConversacion = cb.IdConversacion
+                    WHERE m.Direction = N'ENTRANTE'
+                    GROUP BY cb.ClienteCodigo, cb.ClienteNombre, m.IdConversacion
+                ),
+                ClientePrimerasRespuestas AS
+                (
+                    SELECT ce.ClienteCodigo, ce.ClienteNombre, ce.IdConversacion, ce.PrimerEntrante, MIN(m.FechaHora) AS PrimeraRespuesta
+                    FROM ClienteEntrantes ce
+                    LEFT JOIN dbo.CONV_MENSAJES m
+                        ON m.IdConversacion = ce.IdConversacion
+                       AND m.Direction = N'SALIENTE'
+                       AND m.FechaHora >= ce.PrimerEntrante
+                    GROUP BY ce.ClienteCodigo, ce.ClienteNombre, ce.IdConversacion, ce.PrimerEntrante
+                ),
+                ClienteTickets AS
+                (
+                    SELECT cb.ClienteCodigo, cb.ClienteNombre, COUNT(1) AS Tickets
+                    FROM @Tickets tk
+                    INNER JOIN ClienteBase cb ON cb.IdConversacion = tk.IdConversacion
+                    GROUP BY cb.ClienteCodigo, cb.ClienteNombre
+                ),
+                ClienteEventos AS
+                (
+                    SELECT
+                        cb.ClienteCodigo,
+                        cb.ClienteNombre,
+                        SUM(CASE WHEN m.Texto LIKE N'%cambiÃ³ el estado de Cerrada a%' OR m.Texto LIKE N'%cambio el estado de Cerrada a%' THEN 1 ELSE 0 END) AS Reabiertas
+                    FROM ClienteBase cb
+                    INNER JOIN #MensajesRango m ON m.IdConversacion = cb.IdConversacion
+                    WHERE m.Direction = N'NOTA_INTERNA'
+                      AND m.MessageType = N'SYSTEM'
+                    GROUP BY cb.ClienteCodigo, cb.ClienteNombre
+                )
+                SELECT TOP (10)
+                    ISNULL(cm.ClienteCodigo, N''),
+                    ISNULL(cm.ClienteNombre, N'Sin cliente vinculado'),
+                    cm.Conversaciones,
+                    cm.Contactos,
+                    cm.Entrantes,
+                    cm.Salientes,
+                    cm.Internos,
+                    cm.TotalMensajes,
+                    ISNULL(pr.PendientesRespuesta, 0),
+                    ISNULL(cierres.Cerradas, 0),
+                    ISNULL(tk.Tickets, 0),
+                    ISNULL(ev.Reabiertas, 0),
+                    pr.PromedioPrimeraRespuesta,
+                    cm.UltimoMovimiento
+                FROM ClienteMensajes cm
+                OUTER APPLY
+                (
+                    SELECT
+                        COUNT(CASE WHEN cpr.PrimeraRespuesta IS NULL THEN 1 END) AS PendientesRespuesta,
+                        AVG(CASE WHEN cpr.PrimeraRespuesta IS NOT NULL THEN CAST(DATEDIFF(second, cpr.PrimerEntrante, cpr.PrimeraRespuesta) AS bigint) END) AS PromedioPrimeraRespuesta
+                    FROM ClientePrimerasRespuestas cpr
+                    WHERE ISNULL(cpr.ClienteCodigo, N'') = ISNULL(cm.ClienteCodigo, N'')
+                      AND cpr.ClienteNombre = cm.ClienteNombre
+                ) pr
+                OUTER APPLY
+                (
+                    SELECT COUNT(1) AS Cerradas
+                    FROM ClienteBase cb
+                    WHERE ISNULL(cb.ClienteCodigo, N'') = ISNULL(cm.ClienteCodigo, N'')
+                      AND cb.ClienteNombre = cm.ClienteNombre
+                      AND cb.FechaHoraCierre >= @Desde
+                      AND cb.FechaHoraCierre < @HastaExclusive
+                ) cierres
+                LEFT JOIN ClienteTickets tk
+                    ON ISNULL(tk.ClienteCodigo, N'') = ISNULL(cm.ClienteCodigo, N'')
+                   AND tk.ClienteNombre = cm.ClienteNombre
+                LEFT JOIN ClienteEventos ev
+                    ON ISNULL(ev.ClienteCodigo, N'') = ISNULL(cm.ClienteCodigo, N'')
+                   AND ev.ClienteNombre = cm.ClienteNombre
+                ORDER BY ISNULL(pr.PendientesRespuesta, 0) DESC, cm.Entrantes DESC, cm.TotalMensajes DESC, cm.UltimoMovimiento DESC;
+
                 SELECT TOP (8)
                     c.IdConversacion,
                     c.IdContacto,
@@ -510,6 +617,30 @@ public sealed class ConversacionesService(
                     {
                         Tipo = GetString(rd, 0),
                         Cantidad = GetInt(rd, 1)
+                    });
+                }
+            }
+
+            if (await rd.NextResultAsync(token))
+            {
+                while (await rd.ReadAsync(token))
+                {
+                    stats.PorCliente.Add(new ConversacionesEstadisticaClienteDto
+                    {
+                        ClienteCodigo = GetString(rd, 0),
+                        ClienteNombre = GetString(rd, 1),
+                        Conversaciones = GetInt(rd, 2),
+                        Contactos = GetInt(rd, 3),
+                        Entrantes = GetInt(rd, 4),
+                        Salientes = GetInt(rd, 5),
+                        Internos = GetInt(rd, 6),
+                        TotalMensajes = GetInt(rd, 7),
+                        PendientesRespuesta = GetInt(rd, 8),
+                        Cerradas = GetInt(rd, 9),
+                        Tickets = GetInt(rd, 10),
+                        Reabiertas = GetInt(rd, 11),
+                        PromedioPrimeraRespuesta = GetNullableTimeSpan(rd, 12),
+                        UltimoMovimiento = rd.GetDateTime(13)
                     });
                 }
             }
