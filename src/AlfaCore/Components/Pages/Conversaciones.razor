@@ -1083,6 +1083,13 @@
                                         <div class="conversations-pending-attachment @(pending.IsUploading ? "is-loading" : pending.HasError ? "has-error" : string.Empty)">
                                             <i class="bi @GetPendingAttachmentIcon(pending.TipoArchivo)"></i>
                                             <span title="@pending.NombreArchivo">@pending.NombreArchivo</span>
+                                            @if (CanPreviewPendingAttachment(pending))
+                                            {
+                                                <img class="conversations-pending-attachment__preview"
+                                                     src="@pending.PreviewDataUrl"
+                                                     alt="@pending.NombreArchivo"
+                                                     loading="lazy" />
+                                            }
                                             @if (pending.IsUploading)
                                             {
                                                 <span class="conversations-pending-attachment__loading" aria-label="Enviando adjunto">
@@ -1978,6 +1985,7 @@
     private bool _loadingContextTickets;
     private bool _showContextTickets;
     private List<TicketRelatedMatchDto> _contextTicketMatches = [];
+    private long? _contextTicketsConversationId;
 
     private static readonly TimeSpan PollingInterval = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan TypingPollingInterval = TimeSpan.FromMilliseconds(650);
@@ -2720,7 +2728,7 @@
                 showLoading = false;
             }
 
-            await LoadContextTicketsAsync();
+            QueueContextTicketsLoad();
         }
         catch (Exception ex)
         {
@@ -3065,32 +3073,54 @@
                || string.IsNullOrWhiteSpace(message.MessageType);
     }
 
-    private async Task LoadContextTicketsAsync()
+    private void QueueContextTicketsLoad()
     {
+        var idConversacion = _selectedConversation?.IdConversacion;
+        _contextTicketsConversationId = idConversacion;
         _contextTicketMatches.Clear();
         _showContextTickets = false;
+
         if (_selectedConversation is null || _selectedConversation.Canal == "INTERNO")
+        {
+            _loadingContextTickets = false;
             return;
+        }
 
         _loadingContextTickets = true;
+        _ = InvokeAsync(async () =>
+        {
+            await LoadContextTicketsAsync(idConversacion!.Value);
+            StateHasChanged();
+        });
+    }
+
+    private async Task LoadContextTicketsAsync(long idConversacion)
+    {
+        var conversation = _selectedConversation;
+        if (conversation is null || conversation.IdConversacion != idConversacion || conversation.Canal == "INTERNO")
+            return;
+
         try
         {
             var matches = await TicketsSvc.FindRelatedOpenTicketsAsync(new TicketRelatedSearchRequest
             {
-                ClienteCodigo = _selectedConversation.ClienteCodigo,
-                IdContacto = _selectedConversation.IdContacto,
-                IdConversacion = _selectedConversation.IdConversacion
+                ClienteCodigo = conversation.ClienteCodigo,
+                IdContacto = conversation.IdContacto,
+                IdConversacion = conversation.IdConversacion
             });
 
-            _contextTicketMatches = matches.ToList();
+            if (_contextTicketsConversationId == idConversacion && _selectedConversation?.IdConversacion == idConversacion)
+                _contextTicketMatches = matches.ToList();
         }
         catch
         {
-            _contextTicketMatches.Clear();
+            if (_contextTicketsConversationId == idConversacion)
+                _contextTicketMatches.Clear();
         }
         finally
         {
-            _loadingContextTickets = false;
+            if (_contextTicketsConversationId == idConversacion)
+                _loadingContextTickets = false;
         }
     }
 
@@ -3208,7 +3238,7 @@
             _messages.ToList(),
             _adjuntosPorMensaje.ToDictionary(x => x.Key, x => x.Value.ToList()));
 
-        const int maxCachedConversations = 8;
+        const int maxCachedConversations = 16;
         if (_conversationCache.Count <= maxCachedConversations)
             return;
 
@@ -3379,7 +3409,8 @@
             return;
 
         var selectedId = _selectedConversationId;
-        var shouldKeepAtBottom = await IsThreadNearBottomAsync();
+        var scrollBeforeRefresh = await GetThreadScrollStateAsync();
+        var shouldKeepAtBottom = scrollBeforeRefresh.NearBottom;
         var previousLastMessageId = GetLastMessageId();
 
         var newMessagesDetected = await RefreshInboxAsync(showLoading: false, allowSelectionChange: false, trackNewMessages: true);
@@ -3412,8 +3443,16 @@
 
         if (shouldKeepAtBottom)
         {
-            await ScrollThreadToBottomAsync();
-            MarkSelectedConversationAsRead();
+            var scrollAfterRefresh = await GetThreadScrollStateAsync();
+            if (scrollAfterRefresh.ScrollTop >= scrollBeforeRefresh.ScrollTop - 8)
+            {
+                await ScrollThreadToBottomAsync();
+                MarkSelectedConversationAsRead();
+            }
+            else
+            {
+                _showReturnToLatest = true;
+            }
         }
 
         StateHasChanged();
@@ -3446,6 +3485,21 @@
         catch
         {
             return false;
+        }
+    }
+
+    private async Task<ThreadScrollState> GetThreadScrollStateAsync()
+    {
+        if (_selectedConversationId is null)
+            return ThreadScrollState.Empty;
+
+        try
+        {
+            return await JS.InvokeAsync<ThreadScrollState>("conversacionesUi.getThreadScrollState", _threadElement);
+        }
+        catch
+        {
+            return ThreadScrollState.Empty;
         }
     }
 
@@ -3683,7 +3737,6 @@
     private async Task OnReplyFocusAsync(FocusEventArgs _)
     {
         await AutoResizeReplyTextareaAsync();
-        await ScrollThreadToBottomAsync();
     }
 
     private async Task AutoResizeReplyTextareaAsync()
@@ -4685,16 +4738,33 @@
             await using var stream = file.OpenReadStream(maxSize);
             using var buffer = new MemoryStream();
             await stream.CopyToAsync(buffer);
+            var content = buffer.ToArray();
 
             target.Add(new PendingAttachment
             {
                 NombreArchivo = file.Name,
                 MimeType = file.ContentType,
                 TipoArchivo = string.IsNullOrWhiteSpace(forcedType) ? InferTipoArchivo(file.ContentType) : forcedType,
-                Contenido = buffer.ToArray(),
-                TamanoBytes = file.Size
+                Contenido = content,
+                TamanoBytes = file.Size,
+                PreviewDataUrl = BuildPendingPreviewDataUrl(file.ContentType, content, forcedType)
             });
         }
+    }
+
+    private static string? BuildPendingPreviewDataUrl(string mimeType, byte[] content, string? forcedType)
+    {
+        var type = string.IsNullOrWhiteSpace(forcedType) ? InferTipoArchivo(mimeType) : forcedType;
+        if (!string.Equals(type, "IMAGE", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(type, "STICKER", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var safeMime = string.IsNullOrWhiteSpace(mimeType) || !mimeType.StartsWith("image/", StringComparison.OrdinalIgnoreCase)
+            ? "image/png"
+            : mimeType;
+        return $"data:{safeMime};base64,{Convert.ToBase64String(content)}";
     }
 
     private static List<PreparingAttachment> BuildPreparingAttachments(IEnumerable<IBrowserFile> files, string? forcedType = null)
@@ -4706,6 +4776,9 @@
                 TipoArchivo = string.IsNullOrWhiteSpace(forcedType) ? InferTipoArchivo(file.ContentType) : forcedType
             })
             .ToList();
+
+    private static bool CanPreviewPendingAttachment(PendingAttachment attachment)
+        => !string.IsNullOrWhiteSpace(attachment.PreviewDataUrl);
 
     private async Task ToggleRecordingAsync()
     {
@@ -6244,6 +6317,7 @@
         public string TipoArchivo { get; init; } = string.Empty;
         public byte[] Contenido { get; init; } = [];
         public long TamanoBytes { get; init; }
+        public string? PreviewDataUrl { get; init; }
         public string? Error { get; set; }
         public bool IsUploading { get; set; }
         public bool HasError => !string.IsNullOrWhiteSpace(Error);
@@ -6290,6 +6364,15 @@
         ConversacionesInboxFilters Filters,
         List<ConversacionInboxItemDto> Inbox,
         long? SelectedConversationId);
+
+    private sealed class ThreadScrollState
+    {
+        public static ThreadScrollState Empty { get; } = new();
+        public bool NearBottom { get; set; }
+        public double ScrollTop { get; set; }
+        public double ScrollHeight { get; set; }
+        public double ClientHeight { get; set; }
+    }
 
     private sealed class SoundDiagnosticsVm
     {

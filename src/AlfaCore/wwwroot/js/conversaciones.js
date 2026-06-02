@@ -150,6 +150,19 @@ window.conversacionesUi = {
         return distance < 96;
     },
 
+    getThreadScrollState: function (element) {
+        if (!element) {
+            return { nearBottom: false, scrollTop: 0, scrollHeight: 0, clientHeight: 0 };
+        }
+
+        return {
+            nearBottom: this.isNearBottom(element),
+            scrollTop: element.scrollTop || 0,
+            scrollHeight: element.scrollHeight || 0,
+            clientHeight: element.clientHeight || 0
+        };
+    },
+
     getCloseTicketWarningAccepted: function () {
         try {
             return window.localStorage?.getItem(this._closeTicketWarningKey) === '1';

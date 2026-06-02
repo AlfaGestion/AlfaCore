@@ -3,6 +3,27 @@
     position: relative;
 }
 
+.conversations-page--odoo {
+    min-height: 100dvh;
+    height: 100dvh;
+}
+
+.conversations-page--odoo .conversations-layout {
+    min-height: 0;
+    height: 100%;
+}
+
+.conversations-page--odoo .conversations-list,
+.conversations-page--odoo .conversations-chat {
+    min-height: 0;
+    height: 100%;
+}
+
+.conversations-page--odoo .conversations-thread-shell,
+.conversations-page--odoo .conversations-thread {
+    min-height: 0;
+}
+
 .conversations-loading-overlay {
     position: absolute;
     inset: .65rem;
@@ -28,6 +49,18 @@
 .conversations-loading-overlay--chat {
     inset: .75rem;
     pointer-events: none;
+}
+
+.conversations-pending-attachment__preview {
+    grid-column: 1 / -1;
+    display: block;
+    width: min(220px, 100%);
+    max-height: 132px;
+    margin-top: .35rem;
+    border: 1px solid rgba(56, 189, 248, .22);
+    border-radius: 8px;
+    background: rgba(2, 6, 23, .34);
+    object-fit: contain;
 }
 
 @keyframes conversations-spin {
