@@ -1322,7 +1322,7 @@
                         {
                             <button type="button"
                                     class="context-card"
-                                    style="width:100%;text-align:left;cursor:pointer;border-color:rgba(34,211,238,.6);box-shadow:inset 3px 0 0 #22d3ee;"
+                                    style="width:100%;text-align:left;cursor:pointer;border-color:rgba(34,211,238,.78);background:#071524;color:#e5f4ff;box-shadow:inset 3px 0 0 #22d3ee,0 0 0 1px rgba(34,211,238,.14);"
                                     @onclick="OpenContextNotesModal">
                                 <span class="context-card__label">Observaciones</span>
                                 <strong style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;">@ContextNotesPreview</strong>
@@ -1398,8 +1398,8 @@
 
 @if (_showContextNotesModal && HasContextNotes)
 {
-    <div class="modal-overlay" @onclick="CloseContextNotesModal">
-        <div class="modal-card" style="width:min(760px,calc(100vw - 2rem));max-height:min(82vh,760px);overflow:auto;" @onclick:stopPropagation>
+    <div class="modal-overlay" style="background:rgba(3,7,18,.78);backdrop-filter:blur(2px);" @onclick="CloseContextNotesModal">
+        <div class="modal-card" style="width:min(940px,calc(100vw - 2rem));max-height:min(86vh,780px);overflow:auto;background:#071524;color:#e5f4ff;border:1px solid rgba(34,211,238,.45);box-shadow:0 22px 70px rgba(0,0,0,.65);" @onclick:stopPropagation>
             <div class="panel-card__header">
                 <div>
                     <h3 class="panel-card__title">Observaciones del contexto</h3>
@@ -1409,12 +1409,12 @@
                     <i class="bi bi-x-lg"></i>
                 </button>
             </div>
-            <div style="display:grid;gap:.75rem;">
+            <div style="display:grid;gap:.85rem;">
                 @foreach (var note in _contextNotes.Sections)
                 {
-                    <div class="context-card">
+                    <div class="context-card" style="background:#0b1828;color:#e5f4ff;border-color:rgba(148,163,184,.28);">
                         <span class="context-card__label">@note.Label</span>
-                        <div style="white-space:pre-wrap;line-height:1.45;">@note.Text</div>
+                        <div style="white-space:pre-wrap;line-height:1.5;font-size:.95rem;color:#f8fafc;">@note.Text</div>
                     </div>
                 }
             </div>
@@ -3308,7 +3308,10 @@
     }
 
     private static string NormalizeContextNoteText(string? text)
-        => (text ?? string.Empty).Replace("\r\n", "\n").Trim();
+        => AlfaCore.Services.TextoEnriquecidoCompat.NormalizarComoTextoPlano(text)
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n')
+            .Trim();
 
     private static string BuildOneLinePreview(string text)
     {
