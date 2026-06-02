@@ -14,6 +14,14 @@
 @inject AlfaCore.Services.IFloatingWindowService FloatingWindows
 @implements IDisposable
 
+@if (IsPosFullscreenRoute)
+{
+    <div class="pos-layout-host" @onclick="CloseFloatingWindowsAsync">
+        @Body
+    </div>
+}
+else
+{
 <div class="@ShellClass" @onclick="CloseFloatingWindowsAsync">
     @if (_mobileSidebarOpen)
     {
@@ -657,8 +665,9 @@
         </section>
     </main>
 </div>
+}
 
-@if (ShouldShowConversationNotice)
+@if (!IsPosFullscreenRoute && ShouldShowConversationNotice)
 {
     <button type="button"
             class="global-message-notice no-print"
@@ -677,7 +686,7 @@
 
 <SessionDrawer Open="_drawerOpen" OnClose="() => _drawerOpen = false" />
 
-@if (_tasksPanelOpen)
+@if (!IsPosFullscreenRoute && _tasksPanelOpen)
 {
     <button type="button"
             class="tareas-side-backdrop no-print"
@@ -685,6 +694,8 @@
             @onclick="CloseTasksPanel"></button>
 }
 
+@if (!IsPosFullscreenRoute)
+{
 <aside class="tareas-side-panel no-print @(_tasksPanelOpen ? "is-open" : string.Empty)" aria-label="Tareas rápidas">
     <header class="tareas-side-panel__head">
         <div class="tareas-side-panel__title">
@@ -767,6 +778,7 @@
         }
     </section>
 </aside>
+}
 
 @if (_showInstallHelp)
 {
@@ -965,12 +977,13 @@
     private List<NotificacionesPushEndpointResultDto> _pushLastTestResults = [];
     private string CurrentPageTitle => GetCurrentPageTitle();
     private string ShellClass
-        => $"shell {(_sidebarCollapsed ? "shell--collapsed" : string.Empty)} {(_mobileSidebarOpen ? "shell--mobile-open" : string.Empty)} {(IsDirectMode ? "shell--direct" : string.Empty)}";
+        => $"shell {(_sidebarCollapsed ? "shell--collapsed" : string.Empty)} {(_mobileSidebarOpen ? "shell--mobile-open" : string.Empty)} {(IsDirectMode ? "shell--direct" : string.Empty)} {(IsPosFullscreenRoute ? "shell--pos-fullscreen" : string.Empty)}";
     private bool ShowShellContext => string.IsNullOrWhiteSpace(_currentModule);
     private bool ShowLauncherContext => ShowShellContext && !IsDirectMode;
     private bool CanShowLauncherAccess => !IsDirectMode;
     private bool IsLauncherRoute => string.IsNullOrWhiteSpace(Nav.ToBaseRelativePath(Nav.Uri).Split('?')[0].Split('#')[0].Trim('/'));
     private bool IsDirectMode => !string.IsNullOrWhiteSpace(_directModuleKey);
+    private bool IsPosFullscreenRoute => string.Equals(GetNormalizedCurrentPath(), "ventas/punto-venta", StringComparison.OrdinalIgnoreCase);
     private bool ShouldShowConversationMobilePwaActions
         => string.Equals(_currentModule, "conversaciones", StringComparison.OrdinalIgnoreCase);
     private bool CanEnablePush
@@ -1221,7 +1234,7 @@
         if (!IsDirectMode)
             return false;
 
-        var normalizedPath = Nav.ToBaseRelativePath(Nav.Uri).Split('?')[0].Split('#')[0].Trim('/').ToLowerInvariant();
+        var normalizedPath = GetNormalizedCurrentPath();
         var isAllowedModuleRoute = normalizedPath == _directModuleKey
             || normalizedPath.StartsWith($"{_directModuleKey}/", StringComparison.OrdinalIgnoreCase);
 
@@ -2089,8 +2102,7 @@
 
     private string GetCurrentPageTitle()
     {
-        var relative = Nav.ToBaseRelativePath(Nav.Uri);
-        var path = relative.Split('?', '#', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.Trim('/').ToLowerInvariant() ?? string.Empty;
+        var path = GetNormalizedCurrentPath();
 
         return path switch
         {
@@ -2105,6 +2117,7 @@
             "ventas/articulos" => "Artículos",
             "ventas/comprobantes" => "Comprobantes",
             "ventas/comparativo" => "Comparativo",
+            "ventas/punto-venta" => "Punto de Venta",
             "stock" => "Stock",
             "caja-bancos" => "Caja y Bancos",
             "contabilidad" => "Contabilidad",
@@ -2176,6 +2189,13 @@
         "contactos" => "Contactos",
         _ => "Dashboard de Compras"
     };
+
+    private string GetNormalizedCurrentPath()
+        => Nav.ToBaseRelativePath(Nav.Uri)
+            .Split('?')[0]
+            .Split('#')[0]
+            .Trim('/')
+            .ToLowerInvariant();
 
     private sealed class PwaClientState
     {

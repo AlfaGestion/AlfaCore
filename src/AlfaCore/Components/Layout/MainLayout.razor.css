@@ -4,6 +4,20 @@
     overflow: hidden;
 }
 
+.shell--pos-fullscreen {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.shell__main--pos {
+    padding: 0;
+    overflow: hidden;
+}
+
+.shell__main--pos .shell__content {
+    min-height: 100dvh;
+    padding: 0;
+}
+
 .shell__header--hidden {
     display: none;
 }

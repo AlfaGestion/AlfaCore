@@ -1,0 +1,3193 @@
+@page "/ventas/punto-venta"
+@inject AlfaCore.Services.IPuntoVentaService PuntoVentaSvc
+@inject IJSRuntime Js
+
+<PageTitle>Punto de Venta | Ventas</PageTitle>
+
+<style>
+    .pos-shell {
+        min-height: 100dvh;
+        margin: 0;
+        background: linear-gradient(180deg, #eef1f6 0%, #e4e8ef 100%);
+        color: #1f2d3d;
+    }
+
+    .pos-shell .empty-state,
+    .pos-shell .pos-loading {
+        margin: 1rem;
+    }
+
+    .pos-topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1.5rem;
+        padding: 1rem 1.4rem;
+        background: linear-gradient(180deg, #5f95cc 0%, #5a8dc1 100%);
+        border-bottom: 1px solid rgba(33, 58, 84, 0.16);
+        box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.16);
+    }
+
+    .pos-topbar__brand {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+    }
+
+    .pos-topbar__logo {
+        display: grid;
+        place-items: center;
+        width: 3.15rem;
+        height: 3.15rem;
+        border-radius: 1rem;
+        background: #ffffff;
+        color: #3b6ea4;
+        font-weight: 900;
+        letter-spacing: 0.08em;
+        box-shadow: 0 8px 20px rgba(27, 49, 76, 0.12);
+    }
+
+    .pos-topbar__eyebrow {
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.18em;
+        color: rgba(237, 244, 252, 0.88);
+    }
+
+    .pos-topbar h1 {
+        margin: 0.15rem 0 0;
+        color: #ffffff;
+        font-size: 1.9rem;
+        line-height: 1;
+    }
+
+    .pos-topbar__actions {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+    }
+
+    .pos-topbar__ghost,
+    .pos-topbar__cart-link {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.65rem;
+        min-height: 2.9rem;
+        padding: 0.8rem 1.1rem;
+        border: 0;
+        border-radius: 0.4rem;
+        background: rgba(88, 108, 128, 0.74);
+        color: #ffffff;
+        font-size: 0.95rem;
+        font-weight: 700;
+        text-decoration: none;
+    }
+
+    .pos-topbar__cart-link {
+        background: rgba(105, 121, 137, 0.86);
+    }
+
+    .pos-topbar__cart-link strong {
+        font-weight: 800;
+    }
+
+    .pos-topbar__cart-count {
+        position: absolute;
+        top: -0.45rem;
+        right: -0.45rem;
+        display: grid;
+        place-items: center;
+        min-width: 1.55rem;
+        height: 1.55rem;
+        padding: 0 0.35rem;
+        border-radius: 999px;
+        background: #f0495c;
+        color: #ffffff;
+        font-size: 0.78rem;
+        font-weight: 800;
+    }
+
+    .pos-topbar__company {
+        display: grid;
+        gap: 0.18rem;
+        min-width: 17rem;
+        padding: 0.72rem 1rem;
+        border-radius: 0.4rem;
+        background: rgba(255, 255, 255, 0.92);
+        color: #1f2d3d;
+    }
+
+    .pos-topbar__company span {
+        font-size: 0.76rem;
+        color: #5f6c7c;
+    }
+
+    .pos-topbar__company strong {
+        font-size: 1rem;
+    }
+
+    .pos-stage {
+        display: grid;
+        grid-template-columns: 38rem minmax(0, 1fr);
+        min-height: calc(100dvh - 5.4rem);
+    }
+
+    .pos-sidebar {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr) auto auto auto auto;
+        background: #f3f4f7;
+        border-right: 1px solid #d6dce6;
+        min-height: 0;
+    }
+
+    .pos-sidebar__toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.8rem;
+        padding: 0.85rem 0.7rem 0.6rem;
+    }
+
+    .pos-sidebar__link,
+    .pos-sidebar__danger,
+    .pos-sidebar__cash-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        border: 1px solid #b6c0ce;
+        background: #ffffff;
+        color: #3b5e86;
+        border-radius: 0.28rem;
+        min-height: 2.3rem;
+        padding: 0.55rem 0.8rem;
+        font-size: 0.92rem;
+        font-weight: 600;
+    }
+
+    .pos-sidebar__danger {
+        color: #d54f59;
+        border-color: transparent;
+        background: transparent;
+    }
+
+    .pos-sidebar__items {
+        overflow: auto;
+        padding: 0 0.7rem 0.8rem;
+    }
+
+    .pos-sidebar__empty {
+        display: grid;
+        gap: 0.35rem;
+        padding: 1rem;
+        border: 1px dashed #ccd3de;
+        border-radius: 0.35rem;
+        background: #ffffff;
+        color: #5d6979;
+    }
+
+    .pos-line {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 0.55rem 0.9rem;
+        padding: 0.75rem 0.9rem;
+        border-bottom: 1px solid #dadfe7;
+        background: rgba(255, 255, 255, 0.72);
+    }
+
+    .pos-line__main {
+        display: grid;
+        gap: 0.22rem;
+    }
+
+    .pos-line__main strong {
+        color: #243447;
+        font-size: 0.94rem;
+        line-height: 1.25;
+    }
+
+    .pos-line__main span {
+        color: #667483;
+        font-size: 0.88rem;
+    }
+
+    .pos-line__price {
+        align-self: start;
+        font-size: 0.94rem;
+        font-weight: 700;
+        color: #243447;
+    }
+
+    .pos-sidebar__notes {
+        padding: 0.65rem 0.7rem 0;
+    }
+
+    .pos-sidebar__scan {
+        width: 100%;
+        min-height: 2.9rem;
+        border: 1px solid #c8cfda;
+        border-radius: 0.28rem;
+        padding: 0.75rem 0.85rem;
+        background: #ffffff;
+        font-size: 0.95rem;
+    }
+
+    .pos-sidebar__client {
+        padding: 0.65rem 0.7rem 0;
+    }
+
+    .pos-sidebar__client-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        border: 0;
+        background: transparent;
+        color: #2b74e0;
+        font-size: 1rem;
+    }
+
+    .pos-sidebar__footer {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        margin-top: 0.7rem;
+        border-top: 1px solid #ccd3de;
+    }
+
+    .pos-charge {
+        display: grid;
+        justify-items: center;
+        align-content: center;
+        gap: 0.65rem;
+        min-height: 12rem;
+        border: 0;
+        background: #5c94cf;
+        color: #ffffff;
+    }
+
+    .pos-charge__icon {
+        display: grid;
+        place-items: center;
+        width: 5.4rem;
+        height: 5.4rem;
+        border-radius: 999px;
+        background: #ffffff;
+        color: #5c94cf;
+        font-size: 2.6rem;
+        font-weight: 900;
+    }
+
+    .pos-charge__label {
+        font-size: 1.8rem;
+        font-weight: 800;
+    }
+
+    .pos-total-card {
+        display: grid;
+        justify-items: center;
+        align-content: center;
+        gap: 0.8rem;
+        min-height: 12rem;
+        background: #ffffff;
+        color: #2a3440;
+        border-left: 1px solid #d0d7e2;
+    }
+
+    .pos-total-card span {
+        font-size: 1.2rem;
+        font-weight: 700;
+    }
+
+    .pos-total-card strong {
+        font-size: 2.35rem;
+        font-weight: 900;
+    }
+
+    .pos-sidebar__cash-actions {
+        display: flex;
+        justify-content: flex-end;
+        padding: 0 0.7rem 0.7rem;
+    }
+
+    .pos-sidebar__cash-btn {
+        background: #6f7680;
+        border-color: #6f7680;
+        color: #ffffff;
+    }
+
+    .pos-catalog {
+        display: grid;
+        grid-template-rows: auto auto minmax(0, 1fr);
+        min-width: 0;
+        min-height: 0;
+    }
+
+    .pos-catalog__toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 0.85rem 0.95rem 0.55rem;
+        background: #f3f4f7;
+        border-bottom: 1px solid #d6dce6;
+    }
+
+    .pos-catalog__filters {
+        display: flex;
+        align-items: center;
+        gap: 0.8rem;
+        min-width: 0;
+    }
+
+    .pos-select {
+        min-width: 20rem;
+        min-height: 2.9rem;
+        border: 1px solid #c8cfda;
+        border-radius: 0.28rem;
+        background: #ffffff;
+        padding: 0.65rem 0.8rem;
+        font-size: 0.95rem;
+    }
+
+    .pos-context-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+    }
+
+    .pos-context-pill span,
+    .pos-catalog__meta span,
+    .pos-mini-badge {
+        display: inline-flex;
+        align-items: center;
+        min-height: 1.9rem;
+        padding: 0.25rem 0.6rem;
+        border-radius: 999px;
+        background: #dce7f5;
+        color: #4a6988;
+        font-size: 0.8rem;
+        font-weight: 700;
+    }
+
+    .pos-catalog__search {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 0.65rem;
+        min-width: min(34rem, 100%);
+    }
+
+    .pos-search-input {
+        min-height: 2.9rem;
+        border: 1px solid #c8cfda;
+        border-radius: 0.28rem;
+        background: #ffffff;
+        padding: 0.75rem 0.9rem;
+        font-size: 1rem;
+        flex: 1 1 auto;
+    }
+
+    .pos-search-btn {
+        min-height: 2.9rem;
+        border: 0;
+        border-radius: 0.28rem;
+        background: #5c94cf;
+        color: #ffffff;
+        font-size: 0.95rem;
+        font-weight: 700;
+        padding: 0.75rem 1.1rem;
+    }
+
+    .pos-catalog__meta {
+        display: flex;
+        align-items: center;
+        gap: 0.55rem;
+        flex-wrap: wrap;
+        padding: 0.55rem 0.95rem;
+        background: #f3f4f7;
+        border-bottom: 1px solid #dce2eb;
+    }
+
+    .pos-grid-status {
+        display: grid;
+        place-items: center;
+        padding: 2.2rem 1rem;
+        color: #5c6978;
+        font-size: 1rem;
+    }
+
+    .pos-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(185px, 1fr));
+        gap: 0.18rem;
+        align-content: start;
+        overflow: auto;
+        padding: 0.18rem;
+        background: #efeff2;
+    }
+
+    .pos-product {
+        position: relative;
+        display: grid;
+        grid-template-rows: 220px auto auto;
+        gap: 0.5rem;
+        padding: 0;
+        border: 1px solid #e1e4ea;
+        background: #ffffff;
+        cursor: pointer;
+        transition: transform 0.16s ease, box-shadow 0.16s ease;
+    }
+
+    .pos-product:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 12px 22px rgba(58, 73, 92, 0.12);
+        z-index: 1;
+    }
+
+    .pos-product__price {
+        position: absolute;
+        top: 0;
+        right: 0;
+        display: inline-flex;
+        align-items: center;
+        min-height: 2rem;
+        padding: 0.25rem 0.55rem;
+        background: #5c94cf;
+        color: #ffffff;
+        font-size: 0.92rem;
+        font-weight: 800;
+    }
+
+    .pos-product__image-wrap {
+        display: grid;
+        place-items: center;
+        padding: 0.9rem;
+        background: #ffffff;
+        overflow: hidden;
+    }
+
+    .pos-product__image {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        display: block;
+    }
+
+    .pos-product__fallback {
+        display: grid;
+        place-items: center;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(135deg, #f7f8fb 0%, #dde5ef 100%);
+        color: #5f6f83;
+        font-size: 2rem;
+        font-weight: 900;
+        letter-spacing: 0.08em;
+    }
+
+    .pos-product__text {
+        display: grid;
+        gap: 0.25rem;
+        padding: 0 0.8rem;
+    }
+
+    .pos-product__text strong {
+        color: #304255;
+        font-size: 0.92rem;
+        line-height: 1.32;
+        font-weight: 400;
+    }
+
+    .pos-product__text span {
+        color: #6a7686;
+        font-size: 0.84rem;
+    }
+
+    .pos-product__badges {
+        display: flex;
+        gap: 0.4rem;
+        flex-wrap: wrap;
+        padding: 0 0.8rem 0.8rem;
+    }
+
+    .pos-mini-badge--muted {
+        background: #ebedf1;
+        color: #6b7582;
+    }
+
+    .pos-shell {
+        background: radial-gradient(circle at top left, rgba(14, 165, 233, 0.1), transparent 26%), var(--color-bg);
+        color: var(--color-text);
+        font: inherit;
+    }
+
+    .pos-topbar {
+        padding: 0.8rem 1rem;
+        background: rgba(13, 27, 48, 0.92);
+        border-bottom: 1px solid var(--color-border);
+        box-shadow: none;
+    }
+
+    .pos-topbar__logo {
+        width: 2.75rem;
+        height: 2.75rem;
+        border-radius: 0.9rem;
+        background: linear-gradient(135deg, var(--color-primary), var(--color-secondary));
+        color: #ffffff;
+        box-shadow: none;
+    }
+
+    .pos-topbar__eyebrow {
+        color: var(--color-muted);
+    }
+
+    .pos-topbar h1 {
+        color: var(--color-text);
+        font-size: 1.45rem;
+    }
+
+    .pos-topbar__ghost,
+    .pos-topbar__cart-link {
+        min-height: 2.65rem;
+        background: rgba(14, 165, 233, 0.12);
+        border: 1px solid rgba(14, 165, 233, 0.18);
+        color: var(--color-text);
+    }
+
+    .pos-topbar__cart-link strong {
+        color: var(--color-text);
+    }
+
+    .pos-topbar__cart-count {
+        background: var(--color-danger);
+    }
+
+    .pos-stage {
+        grid-template-columns: 24.25rem minmax(0, 1fr);
+        min-height: calc(100dvh - 4.4rem);
+        height: calc(100dvh - 4.4rem);
+        overflow: hidden;
+    }
+
+    .pos-sidebar {
+        grid-template-rows: auto minmax(0, 1fr) auto;
+        background: var(--color-panel);
+        border-right: 1px solid var(--color-border);
+        overflow: hidden;
+        position: sticky;
+        top: 0;
+    }
+
+    .pos-sidebar__toolbar {
+        padding: 0.75rem;
+        border-bottom: 1px solid var(--color-border);
+        justify-content: flex-end;
+    }
+
+    .pos-sidebar__link,
+    .pos-sidebar__danger,
+    .pos-sidebar__cash-btn {
+        border: 1px solid var(--color-border);
+        background: rgba(148, 163, 184, 0.08);
+        color: var(--color-text);
+        border-radius: 14px;
+    }
+
+    .pos-sidebar__danger {
+        color: #fda4af;
+        background: transparent;
+    }
+
+    .pos-sidebar__items {
+        min-height: 0;
+        height: 100%;
+        overflow: hidden;
+        padding: 0;
+    }
+
+    .pos-sidebar__empty {
+        margin: 0.75rem;
+        border: 1px dashed var(--color-border);
+        border-radius: 16px;
+        background: rgba(15, 23, 42, 0.18);
+        color: var(--color-muted);
+    }
+
+    .pos-line {
+        padding: 0.75rem;
+        border-bottom: 1px solid var(--color-border);
+        background: transparent;
+        gap: 0.35rem 0.65rem;
+    }
+
+    .pos-line__main strong,
+    .pos-line__price {
+        color: var(--color-text);
+    }
+
+    .pos-line__main strong {
+        font-size: 0.84rem;
+        line-height: 1.15;
+    }
+
+    .pos-line__main span {
+        color: var(--color-muted);
+        font-size: 0.76rem;
+        line-height: 1.1;
+    }
+
+    .pos-sidebar__checkout {
+        flex: 0 0 auto;
+        display: grid;
+        gap: 0.65rem;
+        padding: 0.75rem;
+        border-top: 1px solid var(--color-border);
+        background: linear-gradient(180deg, rgba(7, 17, 31, 0.35), rgba(10, 20, 35, 0.98));
+    }
+
+    .pos-sidebar__notes,
+    .pos-sidebar__client,
+    .pos-sidebar__cash-actions {
+        padding: 0;
+    }
+
+    .pos-sidebar__notes,
+    .pos-context-pill {
+        display: none;
+    }
+
+    .pos-sidebar__scan {
+        min-height: 3rem;
+        border: 1px solid var(--color-border);
+        border-radius: 16px;
+        padding: 0.85rem 1rem;
+        background: var(--color-panel-strong);
+        color: var(--color-text);
+    }
+
+    .pos-sidebar__scan::placeholder {
+        color: var(--color-muted);
+    }
+
+    .pos-sidebar__client-btn {
+        width: 100%;
+        justify-content: flex-start;
+        padding: 0.75rem 0.9rem;
+        border: 1px solid var(--color-border);
+        border-radius: 16px;
+        background: rgba(14, 165, 233, 0.08);
+        color: var(--color-text);
+    }
+
+    .pos-sidebar__footer {
+        margin-top: 0;
+        border-top: 0;
+        gap: 0.7rem;
+        grid-template-columns: 0.64fr 1.36fr;
+    }
+
+    .pos-charge {
+        min-height: 4.6rem;
+        border-radius: 18px;
+        background: linear-gradient(135deg, rgba(14, 165, 233, 0.16), rgba(15, 23, 42, 0.08));
+        border: 1px solid rgba(56, 189, 248, 0.18);
+        color: var(--color-text);
+    }
+
+    .pos-charge__icon {
+        width: 3rem;
+        height: 3rem;
+        font-size: 1.55rem;
+        color: var(--color-primary);
+    }
+
+    .pos-charge__label {
+        font-size: 1rem;
+    }
+
+    .pos-total-card {
+        min-height: 4.6rem;
+        border-radius: 18px;
+        background: var(--color-panel-strong);
+        color: var(--color-text);
+        border: 1px solid var(--color-border);
+        border-left: 1px solid var(--color-border);
+    }
+
+    .pos-total-card span {
+        font-size: 0.88rem;
+    }
+
+    .pos-total-card strong {
+        font-size: 1.7rem;
+    }
+
+    .pos-sidebar__cash-btn {
+        width: 100%;
+        justify-content: center;
+        min-height: 3.15rem;
+        font-weight: 800;
+        background: linear-gradient(135deg, rgba(14, 165, 233, 0.2), rgba(20, 184, 166, 0.18));
+        border-color: rgba(34, 211, 238, 0.24);
+    }
+
+    .pos-sidebar__cash-actions .pos-sidebar__danger {
+        min-height: 3.15rem;
+        justify-content: center;
+        background: rgba(239, 68, 68, 0.06);
+        border-color: rgba(239, 68, 68, 0.14);
+        color: #fecaca;
+    }
+
+    .pos-sidebar__cash-actions .pos-sidebar__danger:hover:not(:disabled) {
+        background: rgba(239, 68, 68, 0.12);
+        border-color: rgba(239, 68, 68, 0.24);
+    }
+
+    .pos-catalog__toolbar,
+    .pos-catalog__meta {
+        background: rgba(10, 20, 35, 0.72);
+        border-bottom: 1px solid var(--color-border);
+    }
+
+    .pos-catalog__meta {
+        display: none;
+    }
+
+    .pos-catalog {
+        height: 100%;
+        overflow: hidden;
+    }
+
+    .pos-select,
+    .pos-search-input {
+        border: 1px solid var(--color-border);
+        border-radius: 14px;
+        background: var(--color-panel-strong);
+        color: var(--color-text);
+    }
+
+    .pos-search-input::placeholder {
+        color: var(--color-muted);
+    }
+
+    .pos-search-btn {
+        border-radius: 14px;
+        background: linear-gradient(135deg, var(--color-primary), var(--color-secondary));
+    }
+
+    .pos-catalog__search .pos-sidebar__scan {
+        min-width: 15rem;
+        flex: 0 1 17rem;
+    }
+
+    .pos-context-pill span,
+    .pos-catalog__meta span,
+    .pos-mini-badge {
+        background: rgba(14, 165, 233, 0.12);
+        color: var(--color-text);
+    }
+
+    .pos-grid-status {
+        color: var(--color-muted);
+    }
+
+    .pos-grid {
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+        gap: 0.55rem;
+        padding: 0.75rem;
+        background: transparent;
+        height: 100%;
+        overflow-y: auto;
+        overflow-x: hidden;
+    }
+
+    .pos-product {
+        grid-template-rows: 138px minmax(60px, auto);
+        gap: 0.35rem;
+        border: 1px solid var(--color-border);
+        border-radius: 16px;
+        background: var(--color-panel);
+        overflow: hidden;
+        min-height: 206px;
+    }
+
+    .pos-product:hover {
+        box-shadow: 0 16px 30px rgba(0, 0, 0, 0.22);
+    }
+
+    .pos-product__price {
+        min-height: 1.8rem;
+        padding: 0.2rem 0.5rem;
+        background: linear-gradient(135deg, var(--color-primary), #5b95e2);
+        font-size: 0.8rem;
+    }
+
+    .pos-product__image-wrap {
+        padding: 0.65rem;
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(148, 163, 184, 0.08));
+    }
+
+    .pos-product__fallback {
+        background: linear-gradient(135deg, rgba(14, 165, 233, 0.08), rgba(148, 163, 184, 0.12));
+        color: var(--color-muted);
+        font-size: 1.8rem;
+    }
+
+    .pos-product__text {
+        padding: 0 0.7rem 0.65rem;
+        min-height: 60px;
+        align-content: start;
+        display: grid;
+    }
+
+    .pos-product__text strong {
+        color: var(--color-text);
+        font-size: 0.84rem;
+        line-height: 1.24;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        min-height: calc(0.84rem * 1.24 * 2);
+    }
+
+    .pos-item-modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(3, 9, 18, 0.58);
+        z-index: 1100;
+    }
+
+    .pos-item-modal {
+        position: fixed;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        z-index: 1110;
+        width: min(720px, calc(100vw - 2rem));
+        display: grid;
+        grid-template-columns: 180px minmax(0, 1fr);
+        gap: 1rem;
+        padding: 1rem;
+        border-radius: 20px;
+        border: 1px solid var(--color-border);
+        background: var(--color-panel-strong);
+        box-shadow: 0 28px 60px rgba(0, 0, 0, 0.38);
+    }
+
+    .pos-item-modal__image {
+        display: grid;
+        place-items: center;
+        min-height: 180px;
+        border-radius: 16px;
+        background: rgba(148, 163, 184, 0.08);
+        overflow: hidden;
+    }
+
+    .pos-item-modal__image img {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        display: block;
+    }
+
+    .pos-item-modal__fallback {
+        font-size: 2.6rem;
+        font-weight: 900;
+        color: var(--color-muted);
+    }
+
+    .pos-item-modal__body {
+        display: grid;
+        gap: 0.75rem;
+        min-width: 0;
+    }
+
+    .pos-item-modal__top {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 0.75rem;
+    }
+
+    .pos-item-modal__code {
+        color: var(--color-muted);
+        font-size: 0.95rem;
+    }
+
+    .pos-item-modal__title {
+        margin: 0.2rem 0 0;
+        color: var(--color-text);
+        font-size: 1.15rem;
+        line-height: 1.25;
+    }
+
+    .pos-item-modal__price {
+        color: var(--color-text);
+        font-size: 1.9rem;
+        font-weight: 900;
+    }
+
+    .pos-item-modal__close,
+    .pos-item-modal__danger,
+    .pos-item-modal__qty-btn,
+    .pos-item-modal__qty-value {
+        min-height: 3rem;
+        border-radius: 12px;
+        border: 1px solid var(--color-border);
+        background: rgba(148, 163, 184, 0.08);
+        color: var(--color-text);
+    }
+
+    .pos-item-modal__close {
+        min-width: 3rem;
+    }
+
+    .pos-item-modal__danger {
+        padding: 0 1rem;
+        color: #fecaca;
+        background: rgba(239, 68, 68, 0.08);
+        border-color: rgba(239, 68, 68, 0.18);
+    }
+
+    .pos-item-modal__qty-label {
+        color: var(--color-muted);
+        font-size: 0.92rem;
+        font-weight: 700;
+    }
+
+    .pos-item-modal__qty {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto auto;
+        gap: 0.55rem;
+        align-items: center;
+    }
+
+    .pos-item-modal__qty-value {
+        display: inline-flex;
+        align-items: center;
+        justify-content: flex-start;
+        padding: 0 0.9rem;
+        font-size: 1rem;
+        font-weight: 700;
+        min-width: 8rem;
+    }
+
+    .pos-item-modal__qty-btn {
+        min-width: 3.2rem;
+        font-size: 1.2rem;
+        font-weight: 900;
+    }
+
+    .pos-topbar__menu {
+        position: relative;
+    }
+
+    .pos-topbar__menu-panel {
+        position: absolute;
+        top: calc(100% + 0.55rem);
+        right: 0;
+        display: grid;
+        min-width: 15rem;
+        padding: 0.5rem;
+        border: 1px solid var(--color-border);
+        border-radius: 16px;
+        background: var(--color-panel-strong);
+        box-shadow: 0 18px 36px rgba(0, 0, 0, 0.28);
+        z-index: 1200;
+    }
+
+    .pos-topbar__menu-item,
+    .pos-topbar__menu-link {
+        display: flex;
+        align-items: center;
+        gap: 0.65rem;
+        min-height: 2.85rem;
+        padding: 0.7rem 0.85rem;
+        border: 0;
+        border-radius: 12px;
+        background: transparent;
+        color: var(--color-text);
+        text-decoration: none;
+        font-weight: 700;
+        text-align: left;
+    }
+
+    .pos-topbar__menu-item:hover,
+    .pos-topbar__menu-link:hover {
+        background: rgba(14, 165, 233, 0.1);
+    }
+
+    .pos-settings-modal {
+        position: fixed;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        z-index: 1110;
+        width: min(980px, calc(100vw - 2rem));
+        max-height: calc(100vh - 2rem);
+        overflow: auto;
+        display: grid;
+        gap: 1rem;
+        padding: 1rem;
+        border-radius: 20px;
+        border: 1px solid var(--color-border);
+        background: var(--color-panel-strong);
+        box-shadow: 0 28px 60px rgba(0, 0, 0, 0.38);
+    }
+
+    .pos-settings-modal__header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 1rem;
+    }
+
+    .pos-settings-modal__header h3,
+    .pos-settings-modal__section h4 {
+        margin: 0;
+        color: var(--color-text);
+    }
+
+    .pos-settings-modal__header p,
+    .pos-settings-modal__section p,
+    .pos-settings-modal__flow li {
+        color: var(--color-muted);
+    }
+
+    .pos-settings-modal__close {
+        min-width: 3rem;
+        min-height: 3rem;
+        border-radius: 12px;
+        border: 1px solid var(--color-border);
+        background: rgba(148, 163, 184, 0.08);
+        color: var(--color-text);
+    }
+
+    .pos-settings-modal__grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+        gap: 1rem;
+    }
+
+    .pos-settings-modal__section {
+        display: grid;
+        gap: 0.85rem;
+        padding: 1rem;
+        border: 1px solid var(--color-border);
+        border-radius: 16px;
+        background: rgba(15, 23, 42, 0.35);
+    }
+
+    .pos-settings-modal__field {
+        display: grid;
+        gap: 0.4rem;
+    }
+
+    .pos-settings-modal__field label {
+        color: var(--color-text);
+        font-size: 0.9rem;
+        font-weight: 700;
+    }
+
+    .pos-settings-modal__field input,
+    .pos-settings-modal__field select,
+    .pos-settings-modal__readonly {
+        min-height: 2.8rem;
+        border: 1px solid var(--color-border);
+        border-radius: 12px;
+        padding: 0.75rem 0.9rem;
+        background: rgba(148, 163, 184, 0.08);
+        color: var(--color-text);
+    }
+
+    .pos-settings-modal__readonly {
+        display: flex;
+        align-items: center;
+    }
+
+    .pos-settings-modal__flow {
+        margin: 0;
+        padding-left: 1.2rem;
+        display: grid;
+        gap: 0.35rem;
+    }
+
+    .pos-settings-modal__feedback {
+        padding: 0.8rem 0.9rem;
+        border-radius: 14px;
+        border: 1px solid rgba(34, 197, 94, 0.2);
+        background: rgba(34, 197, 94, 0.1);
+        color: #dcfce7;
+    }
+
+    .pos-settings-modal__feedback--error {
+        border-color: rgba(239, 68, 68, 0.22);
+        background: rgba(239, 68, 68, 0.12);
+        color: #fecaca;
+    }
+
+    .pos-settings-modal__actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.75rem;
+    }
+
+    .pos-settings-modal__save,
+    .pos-settings-modal__ghost {
+        min-height: 2.9rem;
+        padding: 0.75rem 1rem;
+        border-radius: 12px;
+        border: 1px solid var(--color-border);
+        font-weight: 800;
+    }
+
+    .pos-settings-modal__save {
+        background: linear-gradient(135deg, var(--color-primary), var(--color-secondary));
+        color: #fff;
+        border: 0;
+    }
+
+    .pos-settings-modal__ghost {
+        background: rgba(148, 163, 184, 0.08);
+        color: var(--color-text);
+    }
+
+    .pos-panel-modal {
+        position: fixed;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        z-index: 1110;
+        width: min(560px, calc(100vw - 2rem));
+        display: grid;
+        gap: 1rem;
+        padding: 1rem;
+        border-radius: 20px;
+        border: 1px solid var(--color-border);
+        background: var(--color-panel-strong);
+        box-shadow: 0 28px 60px rgba(0, 0, 0, 0.38);
+    }
+
+    .pos-panel-modal__grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.75rem;
+    }
+
+    .pos-charge-modal {
+        position: fixed;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        z-index: 1110;
+        width: min(860px, calc(100vw - 2rem));
+        max-height: calc(100dvh - 2rem);
+        display: grid;
+        grid-template-rows: auto auto minmax(0, 1fr) auto;
+        gap: 1rem;
+        padding: 1rem;
+        border-radius: 20px;
+        border: 1px solid var(--color-border);
+        background: var(--color-panel-strong);
+        box-shadow: 0 28px 60px rgba(0, 0, 0, 0.38);
+        overflow: hidden;
+    }
+
+    .pos-charge-modal__header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 1rem;
+    }
+
+    .pos-charge-modal__header h3 {
+        margin: 0;
+        font-size: 1.2rem;
+    }
+
+    .pos-charge-modal__header p {
+        margin: 0.2rem 0 0;
+        color: var(--color-muted);
+    }
+
+    .pos-charge-modal__close {
+        min-width: 2.2rem;
+        min-height: 2.2rem;
+        border-radius: 12px;
+        border: 1px solid var(--color-border);
+        background: transparent;
+        color: var(--color-text);
+        font-weight: 800;
+    }
+
+    .pos-charge-modal__feedback {
+        padding: 0.8rem 0.9rem;
+        border-radius: 14px;
+        border: 1px solid rgba(34, 197, 94, 0.22);
+        background: rgba(34, 197, 94, 0.1);
+        color: #d1fae5;
+    }
+
+    .pos-success-banner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+    }
+
+    .pos-success-banner button {
+        min-width: 2.2rem;
+        min-height: 2.2rem;
+        border-radius: 12px;
+        border: 1px solid rgba(209, 250, 229, 0.18);
+        background: transparent;
+        color: #d1fae5;
+        font-weight: 900;
+        font-size: 1rem;
+        flex: 0 0 auto;
+        cursor: pointer;
+    }
+
+    .pos-success-banner button:hover {
+        background: rgba(209, 250, 229, 0.08);
+    }
+
+    .pos-charge-modal__feedback--error {
+        border-color: rgba(239, 68, 68, 0.24);
+        background: rgba(239, 68, 68, 0.12);
+        color: #fecaca;
+    }
+
+    .pos-charge-modal__body {
+        display: grid;
+        grid-template-columns: minmax(0, 1.1fr) minmax(20rem, 0.9fr);
+        gap: 1rem;
+        min-height: 0;
+    }
+
+    .pos-charge-modal__section {
+        display: grid;
+        gap: 0.7rem;
+        padding: 0.85rem;
+        border-radius: 18px;
+        border: 1px solid var(--color-border);
+        background: rgba(255, 255, 255, 0.02);
+        min-height: 0;
+    }
+
+    .pos-charge-modal__section h4 {
+        margin: 0;
+        font-size: 1rem;
+    }
+
+    .pos-charge-modal__methods-scroll {
+        min-height: 0;
+        overflow: auto;
+        padding-right: 0.2rem;
+        max-height: 20rem;
+    }
+
+    .pos-charge-modal__method-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+        gap: 0.65rem;
+    }
+
+    .pos-charge-modal__method-btn,
+    .pos-charge-modal__action,
+    .pos-charge-modal__ghost {
+        border: 1px solid var(--color-border);
+        border-radius: 14px;
+        background: var(--color-panel);
+        color: var(--color-text);
+    }
+
+    .pos-charge-modal__method-btn {
+        display: grid;
+        gap: 0.15rem;
+        min-height: 4rem;
+        padding: 0.7rem 0.8rem;
+        text-align: left;
+        transition: border-color 0.16s ease, background 0.16s ease, transform 0.16s ease;
+    }
+
+    .pos-charge-modal__method-btn:hover {
+        border-color: rgba(56, 189, 248, 0.35);
+        transform: translateY(-1px);
+    }
+
+    .pos-charge-modal__method-btn--active {
+        border-color: rgba(56, 189, 248, 0.55);
+        background: rgba(56, 189, 248, 0.1);
+    }
+
+    .pos-charge-modal__method-btn strong {
+        font-size: 0.9rem;
+    }
+
+    .pos-charge-modal__method-btn span {
+        color: var(--color-muted);
+        font-size: 0.78rem;
+    }
+
+    .pos-charge-modal__entry {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 0.65rem;
+    }
+
+    .pos-charge-modal__hint {
+        margin: -0.05rem 0 0;
+        color: var(--color-muted);
+        font-size: 0.79rem;
+        line-height: 1.28;
+    }
+
+    .pos-charge-modal__amount {
+        min-height: 3rem;
+        border: 1px solid var(--color-border);
+        border-radius: 14px;
+        background: var(--color-panel);
+        color: var(--color-text);
+        padding: 0.8rem 0.9rem;
+        font-size: 1rem;
+    }
+
+    .pos-charge-modal__action {
+        min-width: 8rem;
+        min-height: 3rem;
+        padding: 0.75rem 1rem;
+        font-weight: 800;
+    }
+
+    .pos-charge-modal__list {
+        display: grid;
+        gap: 0.55rem;
+        min-height: 0;
+        max-height: 18rem;
+        overflow: auto;
+    }
+
+    .pos-charge-modal__line {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto auto;
+        gap: 0.75rem;
+        align-items: center;
+        padding: 0.7rem 0.8rem;
+        border-radius: 14px;
+        border: 1px solid var(--color-border);
+        background: rgba(255, 255, 255, 0.02);
+    }
+
+    .pos-charge-modal__line strong {
+        display: block;
+        font-size: 0.92rem;
+    }
+
+    .pos-charge-modal__line span {
+        color: var(--color-muted);
+        font-size: 0.8rem;
+    }
+
+    .pos-charge-modal__line button {
+        min-width: 2.25rem;
+        min-height: 2.25rem;
+        border-radius: 12px;
+        border: 1px solid rgba(239, 68, 68, 0.24);
+        background: rgba(239, 68, 68, 0.1);
+        color: #fecaca;
+        font-weight: 900;
+    }
+
+    .pos-charge-modal__summary {
+        display: grid;
+        gap: 0.65rem;
+    }
+
+    .pos-charge-modal__summary-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        color: var(--color-muted);
+    }
+
+    .pos-charge-modal__summary-row strong {
+        color: var(--color-text);
+    }
+
+    .pos-charge-modal__summary-row--pending strong {
+        color: var(--color-primary);
+    }
+
+    .pos-charge-modal__actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.7rem;
+    }
+
+    .pos-charge-modal__ghost,
+    .pos-charge-modal__save {
+        min-height: 3rem;
+        padding: 0.75rem 1rem;
+        border-radius: 14px;
+        font-weight: 800;
+    }
+
+    .pos-charge-modal__save {
+        border: 0;
+        background: linear-gradient(135deg, rgba(14, 165, 233, 0.85), rgba(6, 182, 212, 0.95));
+        color: #f8fafc;
+    }
+
+    .pos-product__text span {
+        color: var(--color-muted);
+        font-size: 0.72rem;
+    }
+
+    .pos-product__badges {
+        padding: 0 0.7rem 0.7rem;
+    }
+
+    @@media (max-width: 1280px) {
+        .pos-stage {
+            grid-template-columns: 21rem minmax(0, 1fr);
+        }
+    }
+
+    @@media (max-width: 960px) {
+        .pos-topbar {
+            flex-direction: column;
+            align-items: stretch;
+        }
+
+        .pos-topbar__actions {
+            justify-content: stretch;
+        }
+
+        .pos-stage {
+            grid-template-columns: 1fr;
+            min-height: auto;
+        }
+
+        .pos-sidebar {
+            order: 2;
+        }
+
+        .pos-catalog {
+            order: 1;
+        }
+    }
+
+    @@media (max-width: 640px) {
+        .pos-shell {
+            min-height: auto;
+        }
+
+        .pos-topbar,
+        .pos-catalog__toolbar {
+            padding-inline: 0.75rem;
+        }
+
+        .pos-catalog__toolbar,
+        .pos-catalog__filters,
+        .pos-catalog__search {
+            flex-direction: column;
+            align-items: stretch;
+        }
+
+        .pos-select {
+            min-width: 0;
+            width: 100%;
+        }
+
+        .pos-sidebar__footer {
+            grid-template-columns: 1fr;
+        }
+
+        .pos-total-card {
+            border-left: 0;
+            border-top: 1px solid #d0d7e2;
+        }
+
+        .pos-item-modal {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    /* Ajustes finales POS */
+    .pos-sidebar {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        height: 100%;
+    }
+
+    .pos-sidebar__items {
+        flex: 1 1 auto;
+        min-height: 0;
+        height: auto;
+        overflow-y: auto;
+        overflow-x: hidden;
+    }
+
+    .pos-sidebar__checkout {
+        flex: 0 0 auto;
+        margin-top: auto;
+        position: relative;
+        z-index: 2;
+    }
+
+    .pos-grid {
+        grid-template-columns: repeat(auto-fill, minmax(142px, 1fr));
+    }
+
+    .pos-product {
+        gap: 0;
+        grid-template-rows: 112px 46px;
+        min-height: 158px;
+    }
+
+    .pos-product__text {
+        min-height: 46px;
+        align-content: start;
+        padding: 0.45rem 0.72rem 0.5rem;
+    }
+
+    .pos-product__text strong {
+        display: -webkit-box;
+        overflow: hidden;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        font-size: 0.8rem;
+        line-height: 1.18;
+        min-height: calc(0.8rem * 1.18 * 2);
+    }
+
+    .pos-receipt-modal {
+        position: fixed;
+        inset: 2.5vh 2vw;
+        z-index: 60;
+        display: grid;
+        grid-template-columns: minmax(0, 72%) minmax(320px, 28%);
+        gap: 1.2rem;
+        padding: 1.2rem;
+        background: linear-gradient(180deg, rgba(12, 24, 42, 0.96), rgba(10, 20, 35, 0.98));
+        border: 1px solid var(--color-border);
+        border-radius: 26px;
+        box-shadow: 0 28px 72px rgba(0, 0, 0, 0.45);
+    }
+
+    .pos-receipt-modal__actions-panel,
+    .pos-receipt-modal__preview {
+        min-height: 0;
+        background: var(--color-panel-strong);
+        border: 1px solid var(--color-border);
+        border-radius: 18px;
+        overflow: hidden;
+    }
+
+    .pos-receipt-modal__actions-panel {
+        display: grid;
+        grid-template-rows: auto auto auto 1fr auto;
+        gap: 1rem;
+        padding: 1.35rem;
+    }
+
+    .pos-receipt-modal__preview {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+    }
+
+    .pos-receipt-modal__header,
+    .pos-receipt-modal__preview-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 1rem;
+    }
+
+    .pos-receipt-modal__header h3,
+    .pos-receipt-modal__preview-header h4 {
+        margin: 0;
+        color: var(--color-text);
+    }
+
+    .pos-receipt-modal__header p,
+    .pos-receipt-modal__preview-header p {
+        margin: 0.35rem 0 0;
+        color: var(--color-muted);
+    }
+
+    .pos-receipt-modal__close {
+        min-width: 2.7rem;
+        min-height: 2.7rem;
+        border: 1px solid var(--color-border);
+        border-radius: 14px;
+        background: transparent;
+        color: var(--color-text);
+        font-size: 1.1rem;
+        font-weight: 700;
+    }
+
+    .pos-receipt-modal__total {
+        display: grid;
+        gap: 0.2rem;
+        justify-items: center;
+        text-align: center;
+        padding: 1.15rem 1.1rem;
+        border: 1px solid rgba(34, 211, 238, 0.18);
+        border-radius: 18px;
+        background: rgba(14, 165, 233, 0.08);
+    }
+
+    .pos-receipt-modal__total span {
+        color: var(--color-muted);
+        font-size: 0.9rem;
+    }
+
+    .pos-receipt-modal__total strong {
+        color: var(--color-text);
+        font-size: 2rem;
+    }
+
+    .pos-receipt-modal__print {
+        width: 100%;
+        min-height: 3.2rem;
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        border-radius: 16px;
+        background: rgba(148, 163, 184, 0.22);
+        color: var(--color-text);
+        font-size: 1rem;
+        font-weight: 800;
+    }
+
+    .pos-receipt-modal__mail {
+        display: grid;
+        gap: 0.65rem;
+    }
+
+    .pos-receipt-modal__mail label {
+        color: var(--color-text);
+        font-weight: 700;
+    }
+
+    .pos-receipt-modal__mail-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 0.7rem;
+    }
+
+    .pos-receipt-modal__mail input {
+        min-height: 3rem;
+        border: 1px solid var(--color-border);
+        border-radius: 14px;
+        background: var(--color-panel);
+        color: var(--color-text);
+        padding: 0.85rem 1rem;
+    }
+
+    .pos-receipt-modal__mail button,
+    .pos-receipt-modal__new {
+        min-height: 3rem;
+        border: 0;
+        border-radius: 14px;
+        padding: 0 1.2rem;
+        background: linear-gradient(135deg, var(--color-primary), var(--color-secondary));
+        color: #fff;
+        font-size: 1rem;
+        font-weight: 800;
+    }
+
+    .pos-receipt-modal__new {
+        min-height: 10rem;
+        display: grid;
+        place-items: center;
+        gap: 0.8rem;
+        background: linear-gradient(135deg, rgba(14, 165, 233, 0.82), rgba(59, 130, 246, 0.88));
+        font-size: 1.15rem;
+    }
+
+    .pos-receipt-modal__new-icon {
+        display: grid;
+        place-items: center;
+        width: 5.8rem;
+        height: 5.8rem;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.96);
+        color: var(--color-primary);
+        font-size: 2.8rem;
+        font-weight: 900;
+    }
+
+    .pos-receipt-modal__mail-feedback {
+        border-radius: 14px;
+        padding: 0.8rem 0.95rem;
+        font-size: 0.95rem;
+    }
+
+    .pos-receipt-modal__mail-feedback--ok {
+        background: rgba(16, 185, 129, 0.12);
+        border: 1px solid rgba(16, 185, 129, 0.22);
+        color: #b7f7d6;
+    }
+
+    .pos-receipt-modal__mail-feedback--error {
+        background: rgba(239, 68, 68, 0.12);
+        border: 1px solid rgba(239, 68, 68, 0.22);
+        color: #fecaca;
+    }
+
+    .pos-receipt-modal__meta {
+        display: grid;
+        gap: 0.65rem;
+        align-content: start;
+    }
+
+    .pos-receipt-modal__meta-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        color: var(--color-muted);
+    }
+
+    .pos-receipt-modal__meta-row strong {
+        color: var(--color-text);
+    }
+
+    .pos-receipt-modal__preview-header {
+        padding: 1rem 1rem 0.65rem;
+        border-bottom: 1px solid var(--color-border);
+    }
+
+    .pos-receipt-modal__frame {
+        width: 100%;
+        height: 100%;
+        border: 0;
+        background: #ffffff;
+    }
+
+    .pos-receipt-modal__frame--hidden {
+        position: absolute;
+        left: -9999px;
+        width: 1px;
+        height: 1px;
+        opacity: 0;
+        pointer-events: none;
+    }
+
+    .pos-ticket-preview {
+        display: grid;
+        grid-template-rows: auto auto 1fr auto;
+        min-height: 0;
+        padding: 1rem 1.1rem 1.2rem;
+        background: #ffffff;
+        color: #0f172a;
+        overflow: auto;
+    }
+
+    .pos-ticket-preview__brand {
+        text-align: center;
+        padding-bottom: 0.85rem;
+        border-bottom: 1px solid #e2e8f0;
+    }
+
+    .pos-ticket-preview__brand strong {
+        display: block;
+        font-size: 1.35rem;
+    }
+
+    .pos-ticket-preview__brand span {
+        display: block;
+        color: #475569;
+        margin-top: 0.25rem;
+    }
+
+    .pos-ticket-preview__header {
+        display: grid;
+        gap: 0.35rem;
+        padding: 0.9rem 0;
+        border-bottom: 1px solid #e2e8f0;
+        font-size: 0.95rem;
+    }
+
+    .pos-ticket-preview__line {
+        display: flex;
+        justify-content: space-between;
+        gap: 0.75rem;
+    }
+
+    .pos-ticket-preview__items {
+        display: grid;
+        gap: 0.85rem;
+        padding: 0.9rem 0;
+        align-content: start;
+    }
+
+    .pos-ticket-preview__item {
+        display: grid;
+        gap: 0.18rem;
+        padding-bottom: 0.75rem;
+        border-bottom: 1px solid #edf2f7;
+    }
+
+    .pos-ticket-preview__item strong {
+        font-size: 0.96rem;
+    }
+
+    .pos-ticket-preview__item span,
+    .pos-ticket-preview__payments li {
+        color: #475569;
+        font-size: 0.9rem;
+    }
+
+    .pos-ticket-preview__payments {
+        padding-top: 0.9rem;
+        border-top: 1px solid #e2e8f0;
+    }
+
+    .pos-ticket-preview__payments ul {
+        margin: 0.6rem 0 0;
+        padding: 0;
+        list-style: none;
+        display: grid;
+        gap: 0.45rem;
+    }
+
+    .pos-ticket-preview__total {
+        margin-top: 1rem;
+        padding-top: 0.9rem;
+        border-top: 2px solid #cbd5e1;
+        text-align: right;
+    }
+
+    .pos-ticket-preview__total strong {
+        display: block;
+        font-size: 1.3rem;
+    }
+
+    @@media (max-width: 1180px) {
+        .pos-receipt-modal {
+            grid-template-columns: 1fr;
+        }
+
+        .pos-receipt-modal__preview {
+            min-height: 42vh;
+        }
+
+        .pos-receipt-modal__new {
+            min-height: 4rem;
+            grid-template-columns: auto 1fr;
+            justify-items: start;
+            padding: 1rem 1.1rem;
+        }
+
+        .pos-receipt-modal__new-icon {
+            width: 3rem;
+            height: 3rem;
+            font-size: 1.5rem;
+        }
+    }
+</style>
+
+<script>
+    window.alfaPosPrintFrame = function (frameId) {
+        const frame = document.getElementById(frameId);
+        if (frame && frame.contentWindow) {
+            frame.contentWindow.focus();
+            frame.contentWindow.print();
+        }
+    };
+</script>
+
+<section class="pos-shell">
+    @if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <section class="panel-card empty-state">
+            <p>@_error</p>
+        </section>
+    }
+    else if (_loading)
+    {
+        <section class="panel-card pos-loading">
+            <div class="loading">Leyendo catalogo inicial del punto de venta...</div>
+        </section>
+    }
+    else if (_context is not null)
+    {
+        <header class="pos-topbar">
+            <div class="pos-topbar__brand">
+                <div class="pos-topbar__logo">PV</div>
+                <div>
+                    <div class="pos-topbar__eyebrow">Alfa Gestion</div>
+                    <h1>Punto de Venta</h1>
+                </div>
+            </div>
+
+            <div class="pos-topbar__actions">
+                <div class="pos-topbar__menu">
+                    <button type="button" class="pos-topbar__ghost" @onclick="TogglePosMenu">
+                        <i class="bi bi-list"></i>
+                        Menú POS
+                    </button>
+
+                    @if (_showPosMenu)
+                    {
+                        <div class="pos-topbar__menu-panel">
+                            @if (_context.EsAdministrador)
+                            {
+                                <button type="button" class="pos-topbar__menu-item" @onclick="OpenSettingsAsync">
+                                    <i class="bi bi-sliders"></i>
+                                    Configuración
+                                </button>
+                            }
+                            <button type="button" class="pos-topbar__menu-item" @onclick="OpenCashDetailModal">
+                                <i class="bi bi-journal-text"></i>
+                                Detalle de caja
+                            </button>
+                            <button type="button" class="pos-topbar__menu-item" @onclick="OpenCashDetailModal">
+                                <i class="bi bi-cash-stack"></i>
+                                Ingresos/Egresos de caja
+                            </button>
+                            <button type="button" class="pos-topbar__menu-item" @onclick="OpenClearCartConfirm" disabled="@(!_cartItems.Any())">
+                                <i class="bi bi-trash"></i>
+                                Vaciar carrito
+                            </button>
+                            <a class="pos-topbar__menu-link" href="/">
+                                <i class="bi bi-box-arrow-left"></i>
+                                Salir
+                            </a>
+                        </div>
+                    }
+                </div>
+
+                <button type="button" class="pos-topbar__cart-link">
+                    <span class="pos-topbar__cart-count">@_cartItems.Count</span>
+                    Ver carrito
+                    <strong>@FmtMoney(TotalCarrito)</strong>
+                </button>
+            </div>
+        </header>
+
+        @if (!string.IsNullOrWhiteSpace(_chargeSuccess))
+        {
+            <section class="pos-loading" style="padding-top:0.75rem;">
+                <div class="pos-charge-modal__feedback pos-success-banner">
+                    <span>@_chargeSuccess</span>
+                    <button type="button" @onclick="DismissChargeSuccess">X</button>
+                </div>
+            </section>
+        }
+
+        <section class="pos-stage">
+            <aside class="pos-sidebar">
+                <div class="pos-sidebar__items">
+                    @if (!_cartItems.Any())
+                    {
+                        <div class="pos-sidebar__empty">
+                            <strong>Carrito vacio</strong>
+                            <span>Agrega articulos desde el catalogo para empezar a vender.</span>
+                        </div>
+                    }
+                    else
+                    {
+                        @foreach (var item in _cartItems)
+                        {
+                            <article class="pos-line" @onclick="() => OpenCartItemModal(item.IdArticulo)">
+                                <div class="pos-line__main">
+                                    <strong>@item.Descripcion</strong>
+                                    <span>(@item.IdArticulo) @FmtQty(item.Cantidad) a @FmtMoney(item.PrecioUnitario)</span>
+                                </div>
+                                <div class="pos-line__price">@FmtMoney(item.Subtotal)</div>
+                            </article>
+                        }
+                    }
+                </div>
+
+                <div class="pos-sidebar__checkout">
+                    <div class="pos-sidebar__notes">
+                        <input class="pos-sidebar__scan" placeholder="Codigo rapido o scanner" />
+                    </div>
+
+                    <div class="pos-sidebar__client">
+                        <button type="button" class="pos-sidebar__client-btn">
+                            <i class="bi bi-person-circle"></i>
+                            Cliente
+                        </button>
+                    </div>
+
+                    <div class="pos-sidebar__footer">
+                        <button type="button" class="pos-charge" @onclick="OpenChargeModalAsync" disabled="@(!_cartItems.Any())">
+                            <span class="pos-charge__icon">$</span>
+                            <span class="pos-charge__label">Cobrar</span>
+                        </button>
+
+                        <div class="pos-total-card">
+                            <span>Total</span>
+                            <strong>@FmtMoney(TotalCarrito)</strong>
+                        </div>
+                    </div>
+
+                </div>
+            </aside>
+
+            <div class="pos-catalog">
+                <section class="pos-catalog__toolbar">
+                    <div class="pos-catalog__filters">
+                        <select class="pos-select" @bind="_filters.IdFamilia">
+                            <option value="">Todas las familias</option>
+                            @foreach (var family in _familias)
+                            {
+                                <option value="@family.IdFamilia">@FamilyLabel(family)</option>
+                            }
+                        </select>
+                    </div>
+
+                    <div class="pos-catalog__search">
+                        <input class="pos-sidebar__scan" placeholder="Codigo rapido o scanner" />
+                        <InputText @bind-Value="_filters.Texto" class="pos-search-input" placeholder="Buscar articulos..." />
+                        <button type="button" class="pos-search-btn" @onclick="BuscarArticulosAsync" disabled="@_catalogLoading">
+                            @( _catalogLoading ? "Buscando..." : "Buscar" )
+                        </button>
+                    </div>
+                </section>
+
+                <section class="pos-catalog__meta">
+                    <span>@DisplayListName()</span>
+                    <span>Clase @_catalog.ClasePrecioActual</span>
+                    @if (_catalog.UsaPrecioFallback)
+                    {
+                        <span>Precio base del articulo</span>
+                    }
+                </section>
+
+                @if (_catalogLoading)
+                {
+                    <div class="pos-grid-status">Buscando articulos...</div>
+                }
+                else if (!_catalog.Articulos.Any())
+                {
+                    <div class="pos-grid-status">No hay articulos para mostrar con los filtros actuales.</div>
+                }
+                else
+                {
+                    <section class="pos-grid">
+                        @foreach (var article in _catalog.Articulos)
+                        {
+                            <article class="pos-product" @onclick="() => AddToCart(article)">
+                                <div class="pos-product__price">@FmtMoney(article.PrecioUnitario)</div>
+
+                                <div class="pos-product__image-wrap">
+                                    @if (ShouldShowImage(article))
+                                    {
+                                        <img class="pos-product__image"
+                                             src="@GetProductImageUrl(article)"
+                                             alt="@article.Descripcion"
+                                             loading="lazy"
+                                             @onerror="@EventCallback.Factory.Create(this, () => HandleImageError(article.IdArticulo))" />
+                                    }
+                                    else
+                                    {
+                                        <div class="pos-product__fallback">@ProductInitials(article.Descripcion)</div>
+                                    }
+                                </div>
+
+                                <div class="pos-product__text">
+                                    <strong>@article.Descripcion</strong>
+                                </div>
+
+                                @if (article.Pesable || article.NoControlaStock)
+                                {
+                                    <div class="pos-product__badges">
+                                        @if (article.Pesable)
+                                        {
+                                            <span class="pos-mini-badge">Pesable</span>
+                                        }
+                                        @if (article.NoControlaStock)
+                                        {
+                                            <span class="pos-mini-badge pos-mini-badge--muted">Sin stock</span>
+                                        }
+                                    </div>
+                                }
+                            </article>
+                        }
+                    </section>
+                }
+            </div>
+        </section>
+    }
+</section>
+
+@if (SelectedCartItem is not null)
+{
+    <button type="button" class="pos-item-modal-backdrop" aria-label="Cerrar detalle" @onclick="CloseCartItemModal"></button>
+    <section class="pos-item-modal" aria-label="Editar artículo">
+        <div class="pos-item-modal__image">
+            @if (ShouldShowImage(SelectedCartItem.IdArticulo))
+            {
+                <img src="@GetProductImageUrl(SelectedCartItem.IdArticulo)"
+                     alt="@SelectedCartItem.Descripcion"
+                     loading="lazy"
+                     @onerror="@EventCallback.Factory.Create(this, () => HandleImageError(SelectedCartItem.IdArticulo))" />
+            }
+            else
+            {
+                <div class="pos-item-modal__fallback">@ProductInitials(SelectedCartItem.Descripcion)</div>
+            }
+        </div>
+
+        <div class="pos-item-modal__body">
+            <div class="pos-item-modal__top">
+                <div>
+                    <div class="pos-item-modal__code"># @SelectedCartItem.IdArticulo</div>
+                    <h3 class="pos-item-modal__title">@SelectedCartItem.Descripcion</h3>
+                </div>
+                <button type="button" class="pos-item-modal__close" @onclick="CloseCartItemModal">X</button>
+            </div>
+
+            <div class="pos-item-modal__price">@FmtMoney(SelectedCartItem.Subtotal)</div>
+
+            <button type="button" class="pos-item-modal__danger" @onclick="() => RemoveItemAndClose(SelectedCartItem.IdArticulo)">Eliminar</button>
+
+            <div class="pos-item-modal__qty-label">Cantidad</div>
+            <div class="pos-item-modal__qty">
+                <div class="pos-item-modal__qty-value">@FmtQty(SelectedCartItem.Cantidad)</div>
+                <button type="button" class="pos-item-modal__qty-btn" @onclick="() => ChangeQtyAndRefreshModal(SelectedCartItem.IdArticulo, -1m)">-</button>
+                <button type="button" class="pos-item-modal__qty-btn" @onclick="() => ChangeQtyAndRefreshModal(SelectedCartItem.IdArticulo, 1m)">+</button>
+            </div>
+        </div>
+    </section>
+}
+
+@if (_showChargeModal)
+{
+    <button type="button" class="pos-item-modal-backdrop" aria-label="Cerrar cobranza" @onclick="CloseChargeModal"></button>
+    <section class="pos-charge-modal" aria-label="Cobranza del punto de venta">
+        <div class="pos-charge-modal__header">
+            <div>
+                <h3>Cobranza</h3>
+                <p>Registrá los medios de pago y confirmá la venta actual sin salir del facturador.</p>
+            </div>
+            <button type="button" class="pos-charge-modal__close" @onclick="CloseChargeModal">X</button>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(_chargeError))
+        {
+            <div class="pos-charge-modal__feedback pos-charge-modal__feedback--error">@_chargeError</div>
+        }
+
+        <div class="pos-charge-modal__body">
+            <section class="pos-charge-modal__section">
+                <h4>Agregar medio de pago</h4>
+
+                @if (_paymentMethodsLoading)
+                {
+                    <div class="pos-grid-status">Leyendo medios de pago...</div>
+                }
+                else if (!_paymentMethods.Any())
+                {
+                    <div class="pos-grid-status">No hay medios de pago configurados para esta base.</div>
+                }
+                else
+                {
+                    <div class="pos-charge-modal__methods-scroll">
+                        <div class="pos-charge-modal__method-grid">
+                            @foreach (var method in _paymentMethods)
+                            {
+                                <button type="button"
+                                        class="@(method.Codigo == _selectedPaymentCode ? "pos-charge-modal__method-btn pos-charge-modal__method-btn--active" : "pos-charge-modal__method-btn")"
+                                        @onclick="() => HandlePaymentMethodClickAsync(method.Codigo)">
+                                    <strong>@method.Descripcion</strong>
+                                    <span>@method.Codigo @(!string.IsNullOrWhiteSpace(method.MedioDePago) ? $"· {method.MedioDePago}" : string.Empty)</span>
+                                </button>
+                            }
+                        </div>
+                    </div>
+                }
+
+                <div class="pos-charge-modal__entry">
+                    <input class="pos-charge-modal__amount" @bind="_chargeAmountInput" placeholder="Importe" />
+                    <button type="button" class="pos-charge-modal__action" @onclick="AddSelectedPaymentAsync" disabled="@_paymentMethodsLoading">Agregar</button>
+                </div>
+                <div class="pos-charge-modal__hint">
+                    Tocá un medio de pago para cargar el importe pendiente completo. Si querés dividir el cobro, cambiá el importe y después tocá el medio.
+                </div>
+
+                <div class="pos-charge-modal__summary">
+                    <div class="pos-charge-modal__summary-row">
+                        <span>Cliente actual</span>
+                        <strong>@DisplayValueOrDash(_settings.CuentaConsumidorFinal)</strong>
+                    </div>
+                    <div class="pos-charge-modal__summary-row">
+                        <span>Método seleccionado</span>
+                        <strong>@SelectedPaymentMethodLabel()</strong>
+                    </div>
+                </div>
+            </section>
+
+            <section class="pos-charge-modal__section">
+                <h4>Pagos aplicados</h4>
+
+                @if (!_paymentLines.Any())
+                {
+                    <div class="pos-grid-status">Todavía no agregaste pagos.</div>
+                }
+                else
+                {
+                    <div class="pos-charge-modal__list">
+                        @foreach (var line in _paymentLines.ToList())
+                        {
+                            <div class="pos-charge-modal__line" @key="line">
+                                <div>
+                                    <strong>@line.DescripcionMedioPago</strong>
+                                    <span>@line.CodigoMedioPago</span>
+                                </div>
+                                <strong>@FmtMoney(line.Importe)</strong>
+                                <button type="button" @onclick="() => RemovePaymentLine(line)" @onclick:stopPropagation="true" @onclick:preventDefault="true">X</button>
+                            </div>
+                        }
+                    </div>
+                }
+
+                <div class="pos-charge-modal__summary">
+                    <div class="pos-charge-modal__summary-row">
+                        <span>Total carrito</span>
+                        <strong>@FmtMoney(TotalCarrito)</strong>
+                    </div>
+                    <div class="pos-charge-modal__summary-row">
+                        <span>Total cobrado</span>
+                        <strong>@FmtMoney(TotalPagado)</strong>
+                    </div>
+                    <div class="pos-charge-modal__summary-row pos-charge-modal__summary-row--pending">
+                        <span>Pendiente</span>
+                        <strong>@FmtMoney(PendienteCobro)</strong>
+                    </div>
+                    <div class="pos-charge-modal__summary-row">
+                        <span>Vuelto</span>
+                        <strong>@FmtMoney(VueltoCobro)</strong>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <div class="pos-charge-modal__actions">
+            <button type="button" class="pos-charge-modal__ghost" @onclick="CloseChargeModal" disabled="@_chargeSaving">Cancelar</button>
+            <button type="button" class="pos-charge-modal__save" @onclick="ConfirmChargeAsync" disabled="@(_chargeSaving || !_cartItems.Any())">
+                @(_chargeSaving ? "Grabando..." : "Confirmar cobro")
+            </button>
+        </div>
+    </section>
+}
+
+@if (_showReceiptModal && _lastSaleResult is not null)
+{
+    <button type="button" class="pos-item-modal-backdrop" aria-label="Cerrar comprobante" @onclick="CloseReceiptModal"></button>
+    <section class="pos-receipt-modal" aria-label="Comprobante generado">
+        <section class="pos-receipt-modal__actions-panel">
+            <div class="pos-receipt-modal__header">
+                <div>
+                    <h3>Recibo</h3>
+                    <p>Imprimí el comprobante, envialo por email o seguí con una nueva venta.</p>
+                </div>
+                <button type="button" class="pos-receipt-modal__close" @onclick="CloseReceiptModal">X</button>
+            </div>
+
+            <div class="pos-receipt-modal__total">
+                <span>Total cobrado</span>
+                <strong>@FmtMoney(_lastSaleResult.Total)</strong>
+            </div>
+
+            <button type="button" class="pos-receipt-modal__print" @onclick="PrintReceiptAsync">
+                <i class="bi bi-printer"></i>
+                Imprimir recibo
+            </button>
+
+            <div class="pos-receipt-modal__mail">
+                <label for="pos-receipt-email">Enviar por email</label>
+                <div class="pos-receipt-modal__mail-row">
+                    <input id="pos-receipt-email" type="email" @bind="_receiptEmail" placeholder="cliente@email.com" />
+                    <button type="button" @onclick="SendReceiptEmailAsync" disabled="@_receiptEmailSending">
+                        @(_receiptEmailSending ? "Enviando..." : "Enviar")
+                    </button>
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(_receiptEmailFeedback))
+                {
+                    <div class="pos-receipt-modal__mail-feedback pos-receipt-modal__mail-feedback--ok">@_receiptEmailFeedback</div>
+                }
+
+                @if (!string.IsNullOrWhiteSpace(_receiptEmailError))
+                {
+                    <div class="pos-receipt-modal__mail-feedback pos-receipt-modal__mail-feedback--error">@_receiptEmailError</div>
+                }
+            </div>
+
+            <div class="pos-receipt-modal__meta">
+                <div class="pos-receipt-modal__meta-row">
+                    <span>Comprobante</span>
+                    <strong>@($"{_lastSaleResult.TipoComprobante} {_lastSaleResult.IdComprobanteTexto}")</strong>
+                </div>
+                <div class="pos-receipt-modal__meta-row">
+                    <span>Cobranza</span>
+                    <strong>@_lastSaleResult.IdCobranza</strong>
+                </div>
+            </div>
+
+            <button type="button" class="pos-receipt-modal__new" @onclick="ContinueWithNewReceipt">
+                <span class="pos-receipt-modal__new-icon"><i class="bi bi-arrow-right-circle"></i></span>
+                <span>Nuevo comprobante</span>
+            </button>
+        </section>
+
+        <section class="pos-receipt-modal__preview">
+            <div class="pos-receipt-modal__preview-header">
+                <div>
+                    <h4>Vista previa del comprobante</h4>
+                    <p>@($"{_lastSaleResult.TipoComprobante} {_lastSaleResult.IdComprobanteTexto}")</p>
+                </div>
+            </div>
+            <div class="pos-ticket-preview">
+                <div class="pos-ticket-preview__brand">
+                    <strong>@DisplayValueOrDash(_receiptContext?.Empresa)</strong>
+                    @if (!string.IsNullOrWhiteSpace(_receiptContext?.Telefono))
+                    {
+                        <span>@_receiptContext.Telefono</span>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(_receiptContext?.Direccion))
+                    {
+                        <span>@_receiptContext.Direccion</span>
+                    }
+                </div>
+
+                <div class="pos-ticket-preview__header">
+                    <div class="pos-ticket-preview__line">
+                        <span>Comprobante</span>
+                        <strong>@($"{_lastSaleResult.TipoComprobante} {_lastSaleResult.IdComprobanteTexto}")</strong>
+                    </div>
+                    <div class="pos-ticket-preview__line">
+                        <span>Fecha</span>
+                        <strong>@DateTime.Now.ToString("dd/MM/yyyy HH:mm")</strong>
+                    </div>
+                </div>
+
+                <div class="pos-ticket-preview__items">
+                    @foreach (var item in _receiptItems)
+                    {
+                        <div class="pos-ticket-preview__item">
+                            <strong>@item.Descripcion</strong>
+                            <span>@($"{FmtQty(item.Cantidad)} x {FmtMoney(item.PrecioUnitario)}")</span>
+                            <div class="pos-ticket-preview__line">
+                                <span>@item.IdArticulo</span>
+                                <strong>@FmtMoney(item.Subtotal)</strong>
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                <div class="pos-ticket-preview__payments">
+                    <strong>Medios de pago</strong>
+                    <ul>
+                        @foreach (var payment in _receiptPayments)
+                        {
+                            <li class="pos-ticket-preview__line">
+                                <span>@payment.DescripcionMedioPago</span>
+                                <strong>@FmtMoney(payment.Importe)</strong>
+                            </li>
+                        }
+                    </ul>
+
+                    <div class="pos-ticket-preview__total">
+                        <span>Total</span>
+                        <strong>@FmtMoney(_lastSaleResult.Total)</strong>
+                    </div>
+                </div>
+            </div>
+            <iframe id="pos-receipt-frame" class="pos-receipt-modal__frame pos-receipt-modal__frame--hidden" src="@BuildReceiptPreviewUrl()"></iframe>
+        </section>
+    </section>
+}
+
+@if (_showSettingsModal)
+{
+    <button type="button" class="pos-item-modal-backdrop" aria-label="Cerrar configuración" @onclick="CloseSettingsModal"></button>
+    <section class="pos-settings-modal" aria-label="Configuración del punto de venta">
+        <div class="pos-settings-modal__header">
+            <div>
+                <h3>Configuración</h3>
+                <p>Administrá las claves activas del POS sin perder el carrito ni los filtros cargados.</p>
+            </div>
+            <button type="button" class="pos-settings-modal__close" @onclick="CloseSettingsModal">X</button>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(_settingsFeedback))
+        {
+            <div class="pos-settings-modal__feedback">@_settingsFeedback</div>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(_settingsError))
+        {
+            <div class="pos-settings-modal__feedback pos-settings-modal__feedback--error">@_settingsError</div>
+        }
+
+        <div class="pos-settings-modal__grid">
+            <section class="pos-settings-modal__section">
+                <h4>Claves editables</h4>
+                <p>Estos valores se guardan en <code>TA_CONFIGURACION</code> sobre la base activa.</p>
+
+                <div class="pos-settings-modal__field">
+                    <label>Clase de precio default</label>
+                    <select @bind="_settings.ClasePrecioDefault">
+                        @for (var clase = 1; clase <= 8; clase++)
+                        {
+                            <option value="@clase.ToString()">@clase</option>
+                        }
+                    </select>
+                </div>
+
+                <div class="pos-settings-modal__field">
+                    <label>VERIFICADOR_RUTAIMAGENES</label>
+                    <input @bind="_settings.VerificadorRutaImagenes" placeholder="\\\\SERVER\\C\\NETSISTEMAS\\..." />
+                </div>
+
+                <div class="pos-settings-modal__field">
+                    <label>CUENTACONSUMIDORFINAL</label>
+                    <input @bind="_settings.CuentaConsumidorFinal" placeholder="112010001" />
+                </div>
+
+                <div class="pos-settings-modal__field">
+                    <label>EMAIL_SERVER</label>
+                    <input @bind="_settings.EmailServer" placeholder="smtp.servidor.com" />
+                </div>
+
+                <div class="pos-settings-modal__field">
+                    <label>EMAIL_PORT</label>
+                    <input @bind="_settings.EmailPort" placeholder="587" />
+                </div>
+
+                <div class="pos-settings-modal__field">
+                    <label>EMAIL_CTA</label>
+                    <input @bind="_settings.EmailCuenta" placeholder="noreply@empresa.com" />
+                </div>
+
+                <div class="pos-settings-modal__field">
+                    <label>EMAIL_PASS</label>
+                    <input type="password" @bind="_settings.EmailPassword" placeholder="Contraseña SMTP" />
+                </div>
+
+                <div class="pos-settings-modal__field">
+                    <label>EMAIL_SSL</label>
+                    <select @bind="_settings.EmailSsl">
+                        <option value="">No</option>
+                        <option value="SI">Sí</option>
+                    </select>
+                </div>
+            </section>
+
+            <section class="pos-settings-modal__section">
+                <h4>Lectura actual del POS</h4>
+                <div class="pos-settings-modal__field">
+                    <label>Usuario actual</label>
+                    <div class="pos-settings-modal__readonly">@(_context?.UsuarioActual ?? "-")</div>
+                </div>
+                <div class="pos-settings-modal__field">
+                    <label>Caja actual</label>
+                    <div class="pos-settings-modal__readonly">@(_context?.CajaActual ?? "-")</div>
+                </div>
+                <div class="pos-settings-modal__field">
+                    <label>TC / sucursal</label>
+                    <div class="pos-settings-modal__readonly">@(_context?.TipoComprobanteDefault ?? "FC") / @(_context?.SucursalDefault ?? "0001")</div>
+                </div>
+                <div class="pos-settings-modal__field">
+                    <label>RUTAIMAGENES heredada</label>
+                    <div class="pos-settings-modal__readonly">@DisplayValueOrDash(_settings.RutaImagenesLegacy)</div>
+                </div>
+                <div class="pos-settings-modal__field">
+                    <label>Orden de búsqueda de imágenes</label>
+                    <ol class="pos-settings-modal__flow">
+                        <li><code>VERIFICADOR_RUTAIMAGENES + RutaImagen</code></li>
+                        <li><code>ContentRootPath + RutaImagen</code></li>
+                        <li>Si <code>RutaImagen</code> es absoluta, se usa directamente.</li>
+                    </ol>
+                </div>
+            </section>
+        </div>
+
+        <div class="pos-settings-modal__actions">
+            <button type="button" class="pos-settings-modal__ghost" @onclick="CloseSettingsModal" disabled="@_settingsSaving">Cerrar</button>
+            <button type="button" class="pos-settings-modal__save" @onclick="SavePosSettingsAsync" disabled="@_settingsSaving">
+                @( _settingsSaving ? "Guardando..." : "Guardar configuración" )
+            </button>
+        </div>
+    </section>
+}
+
+@if (_showCashDetailModal)
+{
+    <button type="button" class="pos-item-modal-backdrop" aria-label="Cerrar detalle de caja" @onclick="CloseCashDetailModal"></button>
+    <section class="pos-panel-modal" aria-label="Detalle de caja">
+        <div class="pos-settings-modal__header">
+            <div>
+                <h3>Detalle de caja</h3>
+                <p>Vista operativa inicial del contexto de caja del POS.</p>
+            </div>
+            <button type="button" class="pos-settings-modal__close" @onclick="CloseCashDetailModal">X</button>
+        </div>
+
+        <div class="pos-panel-modal__grid">
+            <div class="pos-settings-modal__field">
+                <label>Base activa</label>
+                <div class="pos-settings-modal__readonly">@(_context?.SesionSqlActiva ?? "-")</div>
+            </div>
+            <div class="pos-settings-modal__field">
+                <label>Usuario</label>
+                <div class="pos-settings-modal__readonly">@(_context?.UsuarioActual ?? "-")</div>
+            </div>
+            <div class="pos-settings-modal__field">
+                <label>Caja</label>
+                <div class="pos-settings-modal__readonly">@(_context?.CajaActual ?? "-")</div>
+            </div>
+            <div class="pos-settings-modal__field">
+                <label>Total carrito</label>
+                <div class="pos-settings-modal__readonly">@FmtMoney(TotalCarrito)</div>
+            </div>
+        </div>
+
+        <div class="pos-settings-modal__actions">
+            <button type="button" class="pos-settings-modal__ghost" @onclick="CloseCashDetailModal">Cerrar</button>
+        </div>
+    </section>
+}
+
+@if (_showClearCartConfirm)
+{
+    <button type="button" class="pos-item-modal-backdrop" aria-label="Cerrar confirmación" @onclick="CloseClearCartConfirm"></button>
+    <section class="pos-panel-modal" aria-label="Confirmar vaciado de carrito">
+        <div class="pos-settings-modal__header">
+            <div>
+                <h3>Vaciar carrito</h3>
+                <p>Se van a eliminar todos los artículos y los pagos cargados en esta venta.</p>
+            </div>
+            <button type="button" class="pos-settings-modal__close" @onclick="CloseClearCartConfirm">X</button>
+        </div>
+
+        <div class="pos-settings-modal__field">
+            <label>Confirmación</label>
+            <div class="pos-settings-modal__readonly">¿Querés vaciar el carrito actual?</div>
+        </div>
+
+        <div class="pos-panel-modal__grid">
+            <div class="pos-settings-modal__field">
+                <label>Ítems cargados</label>
+                <div class="pos-settings-modal__readonly">@_cartItems.Count</div>
+            </div>
+            <div class="pos-settings-modal__field">
+                <label>Total actual</label>
+                <div class="pos-settings-modal__readonly">@FmtMoney(TotalCarrito)</div>
+            </div>
+        </div>
+
+        <div class="pos-settings-modal__actions">
+            <button type="button" class="pos-settings-modal__ghost" @onclick="CloseClearCartConfirm">Cancelar</button>
+            <button type="button" class="pos-settings-modal__save" @onclick="ConfirmClearCart">Vaciar carrito</button>
+        </div>
+    </section>
+}
+
+@code {
+    private PuntoVentaContextDto? _context;
+    private IReadOnlyList<PuntoVentaFamilyDto> _familias = [];
+    private PuntoVentaCatalogDto _catalog = new();
+    private PuntoVentaCatalogFiltersDto _filters = new();
+    private readonly List<PuntoVentaCartItemDto> _cartItems = [];
+    private readonly List<PuntoVentaPaymentLineDto> _paymentLines = [];
+    private readonly HashSet<string> _imageFallbacks = new(StringComparer.OrdinalIgnoreCase);
+    private IReadOnlyList<PuntoVentaPaymentMethodDto> _paymentMethods = [];
+    private PuntoVentaSettingsDto _settings = new();
+    private PuntoVentaSaleResultDto? _lastSaleResult;
+    private string? _error;
+    private string? _settingsFeedback;
+    private string? _settingsError;
+    private string? _chargeError;
+    private string? _chargeSuccess;
+    private string? _receiptEmailFeedback;
+    private string? _receiptEmailError;
+    private PuntoVentaReceiptContextDto? _receiptContext;
+    private bool _loading = true;
+    private bool _catalogLoading;
+    private bool _showPosMenu;
+    private bool _showSettingsModal;
+    private bool _showCashDetailModal;
+    private bool _showChargeModal;
+    private bool _showReceiptModal;
+    private bool _showClearCartConfirm;
+    private bool _settingsSaving;
+    private bool _paymentMethodsLoading;
+    private bool _chargeSaving;
+    private bool _receiptEmailSending;
+    private string? _selectedCartItemId;
+    private string _chargeAmountInput = string.Empty;
+    private string _selectedPaymentCode = string.Empty;
+    private string _receiptEmail = string.Empty;
+    private int _chargeSuccessVersion;
+    private readonly List<PuntoVentaCartItemDto> _receiptItems = [];
+    private readonly List<PuntoVentaPaymentLineDto> _receiptPayments = [];
+
+    private decimal TotalCarrito => _cartItems.Sum(x => x.Subtotal);
+    private decimal TotalPagado => _paymentLines.Sum(x => x.Importe);
+    private decimal PendienteCobro => Math.Max(decimal.Round(TotalCarrito - TotalPagado, 2), 0m);
+    private decimal VueltoCobro => Math.Max(decimal.Round(TotalPagado - TotalCarrito, 2), 0m);
+    private PuntoVentaCartItemDto? SelectedCartItem => _cartItems.FirstOrDefault(x => x.IdArticulo == _selectedCartItemId);
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _loading = true;
+            _context = await PuntoVentaSvc.GetContextAsync();
+            _settings = await PuntoVentaSvc.GetSettingsAsync();
+            _familias = await PuntoVentaSvc.GetFamiliasAsync();
+            _catalog = await PuntoVentaSvc.SearchArticulosAsync(_filters);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task BuscarArticulosAsync()
+    {
+        try
+        {
+            _catalogLoading = true;
+            _imageFallbacks.Clear();
+            _catalog = await PuntoVentaSvc.SearchArticulosAsync(_filters);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _catalogLoading = false;
+        }
+    }
+
+    private void AddToCart(PuntoVentaArticleDto article)
+    {
+        _chargeSuccess = null;
+        var existing = _cartItems.FirstOrDefault(x => x.IdArticulo == article.IdArticulo);
+        if (existing is not null)
+        {
+            existing.Cantidad += 1m;
+            return;
+        }
+
+        _cartItems.Add(new PuntoVentaCartItemDto
+        {
+            IdArticulo = article.IdArticulo,
+            Descripcion = article.Descripcion,
+            Presentacion = article.Presentacion,
+            PrecioUnitario = article.PrecioUnitario,
+            Cantidad = 1m,
+            TasaIva = article.TasaIva,
+            Exento = article.Exento,
+            Familia = article.Familia
+        });
+    }
+
+    private void ChangeQty(string idArticulo, decimal delta)
+    {
+        var item = _cartItems.FirstOrDefault(x => x.IdArticulo == idArticulo);
+        if (item is null)
+            return;
+
+        item.Cantidad += delta;
+        if (item.Cantidad <= 0)
+            _cartItems.Remove(item);
+    }
+
+    private void RemoveItem(string idArticulo)
+    {
+        var item = _cartItems.FirstOrDefault(x => x.IdArticulo == idArticulo);
+        if (item is not null)
+            _cartItems.Remove(item);
+    }
+
+    private void OpenCartItemModal(string idArticulo)
+        => _selectedCartItemId = idArticulo;
+
+    private void CloseCartItemModal()
+        => _selectedCartItemId = null;
+
+    private void ChangeQtyAndRefreshModal(string idArticulo, decimal delta)
+    {
+        ChangeQty(idArticulo, delta);
+        if (!_cartItems.Any(x => x.IdArticulo == idArticulo))
+            _selectedCartItemId = null;
+    }
+
+    private void RemoveItemAndClose(string idArticulo)
+    {
+        RemoveItem(idArticulo);
+        _selectedCartItemId = null;
+    }
+
+    private void VaciarCarrito()
+    {
+        _cartItems.Clear();
+        _paymentLines.Clear();
+        _chargeSuccess = null;
+    }
+
+    private void OpenClearCartConfirm()
+    {
+        _showPosMenu = false;
+        _showClearCartConfirm = true;
+    }
+
+    private void CloseClearCartConfirm()
+        => _showClearCartConfirm = false;
+
+    private void ConfirmClearCart()
+    {
+        VaciarCarrito();
+        _showClearCartConfirm = false;
+    }
+
+    private void TogglePosMenu() => _showPosMenu = !_showPosMenu;
+
+    private async Task OpenSettingsAsync()
+    {
+        if (_context is null || !_context.EsAdministrador)
+        {
+            _chargeError = "Solo un usuario administrador puede abrir la configuración del punto de venta.";
+            _showPosMenu = false;
+            return;
+        }
+
+        _showPosMenu = false;
+        _settingsFeedback = null;
+        _settingsError = null;
+
+        try
+        {
+            _settings = await PuntoVentaSvc.GetSettingsAsync();
+            _showSettingsModal = true;
+        }
+        catch (Exception ex)
+        {
+            _settingsError = ex.Message;
+            _showSettingsModal = true;
+        }
+    }
+
+    private void CloseSettingsModal()
+    {
+        _showSettingsModal = false;
+        _settingsFeedback = null;
+        _settingsError = null;
+    }
+
+    private void OpenCashDetailModal()
+    {
+        _showPosMenu = false;
+        _showCashDetailModal = true;
+    }
+
+    private void CloseCashDetailModal()
+        => _showCashDetailModal = false;
+
+    private async Task OpenChargeModalAsync()
+    {
+        if (!_cartItems.Any())
+            return;
+
+        _chargeError = null;
+        _chargeSuccess = null;
+        _showPosMenu = false;
+        _showChargeModal = true;
+        _selectedPaymentCode = string.Empty;
+        _chargeAmountInput = PendingAmountInput();
+
+        if (_paymentMethods.Any())
+            return;
+
+        try
+        {
+            _paymentMethodsLoading = true;
+            _paymentMethods = await PuntoVentaSvc.GetPaymentMethodsAsync();
+            _selectedPaymentCode = _paymentMethods.FirstOrDefault()?.Codigo ?? string.Empty;
+        }
+        catch (Exception ex)
+        {
+            _chargeError = ex.Message;
+        }
+        finally
+        {
+            _paymentMethodsLoading = false;
+        }
+    }
+
+    private void CloseChargeModal()
+    {
+        _showChargeModal = false;
+        _chargeError = null;
+        _chargeAmountInput = string.Empty;
+        _selectedPaymentCode = string.Empty;
+        _paymentLines.Clear();
+    }
+
+    private void SelectPaymentMethod(string codigo)
+    {
+        _selectedPaymentCode = codigo?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(_chargeAmountInput))
+            _chargeAmountInput = PendingAmountInput();
+    }
+
+    private async Task HandlePaymentMethodClickAsync(string codigo)
+    {
+        SelectPaymentMethod(codigo);
+        await AddSelectedPaymentAsync();
+    }
+
+    private Task AddSelectedPaymentAsync()
+    {
+        _chargeError = null;
+
+        if (string.IsNullOrWhiteSpace(_selectedPaymentCode))
+        {
+            _chargeError = "Seleccioná un medio de pago antes de agregarlo.";
+            return Task.CompletedTask;
+        }
+
+        if (!TryParseMoney(_chargeAmountInput, out var importe) || importe <= 0)
+        {
+            _chargeError = "Ingresá un importe válido para el medio de pago.";
+            return Task.CompletedTask;
+        }
+
+        var method = _paymentMethods.FirstOrDefault(x => x.Codigo == _selectedPaymentCode);
+        if (method is null)
+        {
+            _chargeError = "El medio de pago seleccionado ya no está disponible.";
+            return Task.CompletedTask;
+        }
+
+        _paymentLines.Add(new PuntoVentaPaymentLineDto
+        {
+            CodigoMedioPago = method.Codigo,
+            DescripcionMedioPago = method.Descripcion,
+            Importe = decimal.Round(importe, 2)
+        });
+
+        _chargeAmountInput = PendingAmountInput();
+        return Task.CompletedTask;
+    }
+
+    private void RemovePaymentLine(PuntoVentaPaymentLineDto line)
+    {
+        if (line is null)
+            return;
+
+        _paymentLines.Remove(line);
+        _chargeError = null;
+        _chargeAmountInput = PendingAmountInput();
+    }
+
+    private async Task ConfirmChargeAsync()
+    {
+        _chargeError = null;
+        _chargeSuccess = null;
+
+        if (!_cartItems.Any())
+        {
+            _chargeError = "No hay artículos en el carrito para cobrar.";
+            return;
+        }
+
+        if (!_paymentLines.Any())
+        {
+            _chargeError = "Agregá al menos un medio de pago.";
+            return;
+        }
+
+        if (PendienteCobro > 0.01m)
+        {
+            _chargeError = "El total cobrado debe cubrir al menos el total del carrito.";
+            return;
+        }
+
+        try
+        {
+            _chargeSaving = true;
+            var soldItems = _cartItems
+                .Select(x => new PuntoVentaCartItemDto
+                {
+                    IdArticulo = x.IdArticulo,
+                    Descripcion = x.Descripcion,
+                    Presentacion = x.Presentacion,
+                    PrecioUnitario = x.PrecioUnitario,
+                    Cantidad = x.Cantidad,
+                    TasaIva = x.TasaIva,
+                    Exento = x.Exento,
+                    Familia = x.Familia
+                })
+                .ToList();
+
+            var soldPayments = _paymentLines
+                .Select(x => new PuntoVentaPaymentLineDto
+                {
+                    CodigoMedioPago = x.CodigoMedioPago,
+                    DescripcionMedioPago = x.DescripcionMedioPago,
+                    Importe = x.Importe
+                })
+                .ToList();
+
+            var result = await PuntoVentaSvc.CreateSaleAsync(new PuntoVentaSaleRequestDto
+            {
+                CuentaCliente = _settings.CuentaConsumidorFinal,
+                Fecha = DateTime.Today,
+                TipoComprobante = _context?.TipoComprobanteDefault ?? "FC",
+                Sucursal = _context?.SucursalDefault ?? "0001",
+                Items = soldItems,
+                Pagos = soldPayments
+            });
+
+            _lastSaleResult = result;
+            await ShowChargeSuccessAsync($"Venta registrada: {result.TipoComprobante} {result.Sucursal}-{result.Numero}{result.Letra} · total {FmtMoney(result.Total)}.");
+            _cartItems.Clear();
+            _paymentLines.Clear();
+            _showChargeModal = false;
+            await OpenReceiptModalAsync(result, soldItems, soldPayments);
+        }
+        catch (Exception ex)
+        {
+            _chargeError = ex.Message;
+        }
+        finally
+        {
+            _chargeSaving = false;
+        }
+    }
+
+    private async Task OpenReceiptModalAsync(
+        PuntoVentaSaleResultDto result,
+        IReadOnlyList<PuntoVentaCartItemDto> soldItems,
+        IReadOnlyList<PuntoVentaPaymentLineDto> soldPayments)
+    {
+        _lastSaleResult = result;
+        _receiptItems.Clear();
+        _receiptItems.AddRange(soldItems);
+        _receiptPayments.Clear();
+        _receiptPayments.AddRange(soldPayments);
+        _receiptContext = await PuntoVentaSvc.GetReceiptContextAsync(_settings.CuentaConsumidorFinal);
+        _receiptEmail = _receiptContext.EmailSugerido;
+        _receiptEmailFeedback = null;
+        _receiptEmailError = null;
+        _showReceiptModal = true;
+    }
+
+    private void CloseReceiptModal()
+    {
+        _showReceiptModal = false;
+        _receiptEmailFeedback = null;
+        _receiptEmailError = null;
+    }
+
+    private void ContinueWithNewReceipt()
+    {
+        CloseReceiptModal();
+        _lastSaleResult = null;
+        _receiptItems.Clear();
+        _receiptPayments.Clear();
+        _receiptContext = null;
+    }
+
+    private string BuildReceiptPreviewUrl()
+    {
+        if (_lastSaleResult is null)
+            return "about:blank";
+
+        return $"/comprobantes/viewer/{Uri.EscapeDataString(_lastSaleResult.TipoComprobante)}/{Uri.EscapeDataString(_lastSaleResult.IdComprobanteTexto)}?returnUrl=%2Fventas%2Fpunto-venta";
+    }
+
+    private async Task PrintReceiptAsync()
+    {
+        await Js.InvokeVoidAsync("alfaPosPrintFrame", "pos-receipt-frame");
+    }
+
+    private async Task SendReceiptEmailAsync()
+    {
+        _receiptEmailFeedback = null;
+        _receiptEmailError = null;
+
+        if (_lastSaleResult is null)
+        {
+            _receiptEmailError = "No se encontró el comprobante generado para enviarlo por email.";
+            return;
+        }
+
+        try
+        {
+            _receiptEmailSending = true;
+            await PuntoVentaSvc.SendReceiptByEmailAsync(new PuntoVentaReceiptEmailRequestDto
+            {
+                IdComprobante = _lastSaleResult.IdComprobante,
+                TipoComprobante = _lastSaleResult.TipoComprobante,
+                IdComprobanteTexto = _lastSaleResult.IdComprobanteTexto,
+                Destinatario = _receiptEmail
+            });
+
+            _receiptEmailFeedback = "Comprobante enviado correctamente por email.";
+        }
+        catch (Exception ex)
+        {
+            _receiptEmailError = ex.Message;
+        }
+        finally
+        {
+            _receiptEmailSending = false;
+        }
+    }
+
+    private async Task SavePosSettingsAsync()
+    {
+        try
+        {
+            _settingsSaving = true;
+            _settingsError = null;
+            _settingsFeedback = null;
+
+            await PuntoVentaSvc.SaveSettingsAsync(_settings);
+            _settings = await PuntoVentaSvc.GetSettingsAsync();
+            _catalog = await PuntoVentaSvc.SearchArticulosAsync(_filters);
+            _imageFallbacks.Clear();
+            _settingsFeedback = "Configuración guardada. El catálogo se recargó sin perder el carrito actual.";
+        }
+        catch (Exception ex)
+        {
+            _settingsError = ex.Message;
+        }
+        finally
+        {
+            _settingsSaving = false;
+        }
+    }
+
+    private bool ShouldShowImage(PuntoVentaArticleDto article)
+        => !_imageFallbacks.Contains(article.IdArticulo);
+
+    private bool ShouldShowImage(string idArticulo)
+        => !_imageFallbacks.Contains(idArticulo);
+
+    private void HandleImageError(string idArticulo)
+    {
+        if (!string.IsNullOrWhiteSpace(idArticulo))
+            _imageFallbacks.Add(idArticulo);
+    }
+
+    private string DisplayListName()
+        => string.IsNullOrWhiteSpace(_catalog.ListaPrecioActual)
+            ? "Precio base del articulo"
+            : $"{_catalog.ListaPrecioActual} · {(_catalog.NombreListaPrecioActual.Length == 0 ? "Lista vigente" : _catalog.NombreListaPrecioActual)}";
+
+    private static string FamilyLabel(PuntoVentaFamilyDto family)
+        => string.IsNullOrWhiteSpace(family.Descripcion)
+            ? family.IdFamilia
+            : $"{family.IdFamilia} · {family.Descripcion}";
+
+    private static string ProductInitials(string descripcion)
+    {
+        if (string.IsNullOrWhiteSpace(descripcion))
+            return "PV";
+
+        var parts = descripcion
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Take(2)
+            .Select(x => char.ToUpperInvariant(x[0]));
+
+        return string.Concat(parts);
+    }
+
+    private string SelectedPaymentMethodLabel()
+        => _paymentMethods.FirstOrDefault(x => x.Codigo == _selectedPaymentCode)?.Descripcion
+           ?? "Sin seleccionar";
+
+    private void DismissChargeSuccess()
+    {
+        _chargeSuccess = null;
+        _chargeSuccessVersion++;
+    }
+
+    private async Task ShowChargeSuccessAsync(string message)
+    {
+        _chargeSuccessVersion++;
+        var version = _chargeSuccessVersion;
+        _chargeSuccess = message;
+
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(5));
+            if (version != _chargeSuccessVersion)
+                return;
+
+            _chargeSuccess = null;
+            await InvokeAsync(StateHasChanged);
+        }
+        catch
+        {
+        }
+    }
+
+    private string PendingAmountInput()
+        => PendienteCobro <= 0 ? string.Empty : FmtInputAmount(PendienteCobro);
+
+    private static string FmtInputAmount(decimal value)
+        => value <= 0 ? string.Empty : value.ToString("0.00", System.Globalization.CultureInfo.GetCultureInfo("es-AR"));
+
+    private static bool TryParseMoney(string? value, out decimal parsed)
+    {
+        var normalized = (value ?? string.Empty).Trim();
+        if (normalized.Length == 0)
+        {
+            parsed = 0m;
+            return false;
+        }
+
+        normalized = normalized.Replace("$", string.Empty).Replace(" ", string.Empty);
+
+        return decimal.TryParse(
+                   normalized,
+                   System.Globalization.NumberStyles.Number,
+                   System.Globalization.CultureInfo.GetCultureInfo("es-AR"),
+                   out parsed)
+               || decimal.TryParse(
+                   normalized.Replace(",", "."),
+                   System.Globalization.NumberStyles.Number,
+                   System.Globalization.CultureInfo.InvariantCulture,
+                   out parsed);
+    }
+
+    private static string GetProductImageUrl(PuntoVentaArticleDto article)
+        => $"/api/punto-venta/articulos/{Uri.EscapeDataString(article.IdArticulo)}/imagen";
+
+    private static string GetProductImageUrl(string idArticulo)
+        => $"/api/punto-venta/articulos/{Uri.EscapeDataString(idArticulo)}/imagen";
+
+    private static string DisplayValueOrDash(string? value)
+        => string.IsNullOrWhiteSpace(value) ? "-" : value.Trim();
+
+    private static string FmtMoney(decimal value)
+        => value.ToString("$ #,##0.00", System.Globalization.CultureInfo.GetCultureInfo("es-AR"));
+
+    private static string FmtQty(decimal value)
+        => value.ToString("#,##0.##", System.Globalization.CultureInfo.GetCultureInfo("es-AR"));
+}

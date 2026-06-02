@@ -8,7 +8,9 @@ public sealed class MenuService(
     IConfiguration configuration,
     ISessionService sessionService,
     IPermissionService permissionService,
-    IAppEventService appEvents) : IMenuService
+    IAppEventService appEvents,
+    IActualizacionesService actualizacionesService,
+    IAppUserSessionService appUserSession) : IMenuService
 {
     private const string CrmModuleKey = "D010185";
     private const string CrmSectionKey = "D010185WEB";
@@ -68,7 +70,10 @@ public sealed class MenuService(
         };
     }
 
-    private async Task<MenuSnapshot> LoadVisibleMenuAsync(CancellationToken ct)
+    private Task<MenuSnapshot> LoadVisibleMenuAsync(CancellationToken ct)
+        => LoadVisibleMenuAsync(ct, allowAutoRepair: true);
+
+    private async Task<MenuSnapshot> LoadVisibleMenuAsync(CancellationToken ct, bool allowAutoRepair)
     {
         return await ExecuteLoggedAsync("Shell", "LoadVisibleMenu", async token =>
         {
@@ -76,11 +81,14 @@ public sealed class MenuService(
             await cn.OpenAsync(token);
 
             if (!await TableExistsAsync(cn, "TA_MENU", token) || !await TableExistsAsync(cn, "ALFACORE_MENU_WEB", token))
-                return new MenuSnapshot(
-                    [],
-                    [],
-                    new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
-                    new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
+            {
+                await cn.CloseAsync();
+
+                if (allowAutoRepair && await TryAutoRepairShellMenuAsync(token))
+                    return await LoadVisibleMenuAsync(token, allowAutoRepair: false);
+
+                return EmptySnapshot();
+            }
 
             var hasNombreWeb = await ColumnExistsAsync(cn, "ALFACORE_MENU_WEB", "NombreWeb", token);
             var hasDescripcion = await ColumnExistsAsync(cn, "TA_MENU", "Descripcion", token);
@@ -222,6 +230,39 @@ public sealed class MenuService(
             return new MenuSnapshot(nodes, rootModules, parentByKey, nameByKey);
         }, "No se pudo construir el menú web dinámico.", ct);
     }
+
+    private async Task<bool> TryAutoRepairShellMenuAsync(CancellationToken ct)
+    {
+        try
+        {
+            await actualizacionesService.ExecutePendingAsync(new ActualizacionesRunRequest
+            {
+                UsuarioAccion = appUserSession.GetCurrentUserName("SYSTEM"),
+                PcAccion = Environment.MachineName,
+                EsEjecucionAutomatica = true
+            }, ct);
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            await appEvents.LogErrorAsync(
+                "Shell",
+                "AutoRepairMenuUpdates",
+                ex,
+                "No se pudieron ejecutar automáticamente las actualizaciones del shell web.",
+                ct: ct);
+
+            return false;
+        }
+    }
+
+    private static MenuSnapshot EmptySnapshot()
+        => new(
+            [],
+            [],
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
 
     private static IReadOnlyList<ShellWorkspaceSectionDto> BuildSections(
         IReadOnlyList<ShellMenuNodeDto> nodes,

@@ -6,11 +6,16 @@ public sealed class WorkspaceService(
     IMenuService menuService,
     IFavoritesService favoritesService,
     IRecentService recentService,
-    IAppEventService appEvents) : IWorkspaceService
+    IAppEventService appEvents,
+    IActualizacionesService actualizacionesService,
+    IAppUserSessionService appUserSession) : IWorkspaceService
 {
     public async Task<ShellHomeDto> GetHomeAsync(CancellationToken ct = default)
     {
         var modules = await menuService.GetModulesAsync(ct);
+        if (modules.Count == 0 && await TryAutoRepairShellAsync(ct))
+            modules = await menuService.GetModulesAsync(ct);
+
         var favorites = await SafeGetFavoritesAsync(ct);
         var favoriteKeys = await SafeGetFavoriteKeysAsync(ct);
         IReadOnlyList<ShellMenuSearchItemDto> searchItems = favoriteKeys.Count > 0 ? await menuService.GetSearchItemsAsync(ct) : [];
@@ -44,6 +49,32 @@ public sealed class WorkspaceService(
 
     public Task<ShellRouteContextDto> GetRouteContextAsync(string route, CancellationToken ct = default)
         => menuService.GetRouteContextAsync(route, ct);
+
+    private async Task<bool> TryAutoRepairShellAsync(CancellationToken ct)
+    {
+        try
+        {
+            await actualizacionesService.ExecutePendingAsync(new ActualizacionesRunRequest
+            {
+                UsuarioAccion = appUserSession.GetCurrentUserName("SYSTEM"),
+                PcAccion = Environment.MachineName,
+                EsEjecucionAutomatica = true
+            }, ct);
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            await appEvents.LogErrorAsync(
+                "Shell",
+                "WorkspaceAutoRepairShell",
+                ex,
+                "No se pudieron ejecutar automáticamente las actualizaciones pendientes del shell web.",
+                ct: ct);
+
+            return false;
+        }
+    }
 
     private async Task<IReadOnlyList<ShellMenuNodeDto>> SafeGetFavoritesAsync(CancellationToken ct)
     {

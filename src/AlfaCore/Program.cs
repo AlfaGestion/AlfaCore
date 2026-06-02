@@ -83,6 +83,7 @@ public class Program
         builder.Services.AddSingleton<UsuariosPasswordCodec>();
         builder.Services.AddScoped<IAuditoriaService, AuditoriaService>();
         builder.Services.AddScoped<IGestionDashboardService, GestionDashboardService>();
+        builder.Services.AddScoped<IPuntoVentaService, PuntoVentaService>();
         builder.Services.AddScoped<IAppUiOperationService, AppUiOperationService>();
         builder.Services.AddScoped<IFloatingWindowService, FloatingWindowService>();
         builder.Services.AddScoped<IAuxErrRepository, AuxErrRepository>();
@@ -186,6 +187,18 @@ public class Program
                 return Results.NotFound();
 
             return Results.File(photo.RutaCompleta, photo.MimeType, photo.NombreArchivo);
+        });
+
+        app.MapGet("/api/punto-venta/articulos/{idArticulo}/imagen", async (
+            string idArticulo,
+            IPuntoVentaService puntoVentaSvc,
+            CancellationToken ct) =>
+        {
+            var image = await puntoVentaSvc.GetArticleImageForServeAsync(idArticulo, ct);
+            if (image is null || !File.Exists(image.RutaCompleta))
+                return Results.NotFound();
+
+            return Results.File(image.RutaCompleta, image.MimeType, image.NombreArchivo);
         });
 
         app.MapGet("/api/comprobantes/{tc}/{idComprobante}", async (
