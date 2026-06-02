@@ -2095,6 +2095,8 @@
     private bool _showContextNotesModal;
     private ContextNotesVm _contextNotes = ContextNotesVm.Empty;
     private long? _contextNotesConversationId;
+    private string? _contextNotesSourceKey;
+    private bool _contextNotesLoaded;
 
     private static readonly TimeSpan PollingInterval = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan TypingPollingInterval = TimeSpan.FromMilliseconds(650);
@@ -3231,28 +3233,44 @@
         _showContextNotesModal = false;
         _contextNotes = ContextNotesVm.Empty;
         _contextNotesConversationId = null;
+        _contextNotesSourceKey = null;
+        _contextNotesLoaded = false;
     }
 
     private void QueueContextNotesLoad()
     {
         var conversation = _selectedConversation;
         var idConversacion = conversation?.IdConversacion;
-        _contextNotesConversationId = idConversacion;
-        _contextNotes = ContextNotesVm.Empty;
-        _showContextNotesModal = false;
+        var sourceKey = BuildContextNotesSourceKey(conversation);
+        var sameSource = _contextNotesConversationId == idConversacion
+                         && string.Equals(_contextNotesSourceKey, sourceKey, StringComparison.Ordinal);
 
         if (conversation is null || conversation.Canal == "INTERNO")
         {
-            _loadingContextNotes = false;
+            if (!sameSource)
+                ClearContextNotesState();
             return;
         }
 
         if (!conversation.IdContacto.HasValue && string.IsNullOrWhiteSpace(conversation.ClienteCodigo))
         {
-            _loadingContextNotes = false;
+            if (!sameSource)
+                ClearContextNotesState();
             return;
         }
 
+        if (sameSource && (_loadingContextNotes || _contextNotesLoaded))
+            return;
+
+        if (!sameSource)
+        {
+            _contextNotes = ContextNotesVm.Empty;
+            _showContextNotesModal = false;
+            _contextNotesLoaded = false;
+        }
+
+        _contextNotesConversationId = idConversacion;
+        _contextNotesSourceKey = sourceKey;
         _loadingContextNotes = true;
         _ = InvokeAsync(async () =>
         {
@@ -3290,15 +3308,23 @@
         }
         catch
         {
-            if (_contextNotesConversationId == idConversacion)
+            if (_contextNotesConversationId == idConversacion && !_contextNotes.HasContent)
                 _contextNotes = ContextNotesVm.Empty;
         }
         finally
         {
             if (_contextNotesConversationId == idConversacion)
+            {
                 _loadingContextNotes = false;
+                _contextNotesLoaded = true;
+            }
         }
     }
+
+    private static string BuildContextNotesSourceKey(ConversacionDetalleDto? conversation)
+        => conversation is null
+            ? string.Empty
+            : $"{conversation.Canal}|{conversation.IdContacto?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty}|{conversation.ClienteCodigo?.Trim() ?? string.Empty}";
 
     private static void AddContextNoteSection(List<ContextNoteSectionVm> sections, string label, string? text)
     {
