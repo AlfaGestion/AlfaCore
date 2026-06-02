@@ -6,6 +6,7 @@
 @using Microsoft.AspNetCore.WebUtilities
 @inject AlfaCore.Services.IConversacionesService ConversacionesSvc
 @inject AlfaCore.Services.IContactosService ContactosSvc
+@inject AlfaCore.Services.ICuentasComercialesService CuentasSvc
 @inject AlfaCore.Services.ITicketsService TicketsSvc
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject AlfaCore.Services.IFloatingWindowService FloatingWindows
@@ -60,6 +61,10 @@
                         disabled="@(_selectedConversation is null)">
                     <i class="bi bi-layout-sidebar-inset-reverse"></i>
                     <span>Contexto</span>
+                    @if (HasContextNotes)
+                    {
+                        <span class="conversation-badge" style="margin-left:.25rem;border-color:rgba(45,212,191,.85);color:#67e8f9;background:rgba(14,116,144,.28);">Notas</span>
+                    }
                 </button>
                 <button type="button"
                         class="conversations-mobile-action"
@@ -163,6 +168,10 @@
                 <button type="button" class="btn btn--ghost btn--sm conversations-context-button" @onclick="ToggleContextPanel" disabled="@(_selectedConversation is null)" title="Contexto">
                     <i class="bi bi-layout-sidebar-inset-reverse"></i>
                     <span>Contexto</span>
+                    @if (HasContextNotes)
+                    {
+                        <span style="width:.55rem;height:.55rem;border-radius:999px;background:#22d3ee;box-shadow:0 0 0 4px rgba(34,211,238,.16),0 0 14px rgba(34,211,238,.9);display:inline-block;margin-left:.15rem;" title="Hay observaciones del cliente o contacto"></span>
+                    }
                 </button>
                 <button type="button" class="btn btn--primary btn--sm conversations-ticket-button" @onclick="StartTicketSelection" disabled="@(_selectedConversation is null || _messages.Count == 0)" title="Crear ticket desde mensajes">
                     <i class="bi bi-life-preserver"></i>
@@ -598,6 +607,16 @@
                                     else
                                     {
                                         <h3 class="panel-card__title">@GetConversationHeader(_selectedConversation)</h3>
+                                        @if (HasContextNotes)
+                                        {
+                                            <button type="button"
+                                                    class="conversation-badge"
+                                                    style="border-color:rgba(45,212,191,.9);color:#67e8f9;background:linear-gradient(90deg,rgba(14,116,144,.34),rgba(15,23,42,.72));box-shadow:0 0 0 3px rgba(34,211,238,.10);cursor:pointer;"
+                                                    title="Hay observaciones del cliente o contacto. Abrir contexto."
+                                                    @onclick="OpenContextPanel">
+                                                <i class="bi bi-info-circle"></i> Observaciones
+                                            </button>
+                                        }
                                         <button type="button"
                                                 class="btn btn--ghost btn--sm conversation-title-editor__button"
                                                 title="Editar nombre"
@@ -1292,6 +1311,25 @@
                             }
                         </div>
 
+                        @if (_loadingContextNotes)
+                        {
+                            <div class="context-card">
+                                <span class="context-card__label">Observaciones</span>
+                                <span class="context-card__muted">Cargando notas...</span>
+                            </div>
+                        }
+                        else if (HasContextNotes)
+                        {
+                            <button type="button"
+                                    class="context-card"
+                                    style="width:100%;text-align:left;cursor:pointer;border-color:rgba(34,211,238,.6);box-shadow:inset 3px 0 0 #22d3ee;"
+                                    @onclick="OpenContextNotesModal">
+                                <span class="context-card__label">Observaciones</span>
+                                <strong style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;">@ContextNotesPreview</strong>
+                                <span class="context-card__muted">Ver notas de cliente/contacto</span>
+                            </button>
+                        }
+
                         <div class="conversations-context__section">
                             <h4 class="panel-card__title">Tickets</h4>
                             <p class="panel-card__subtitle">@GetContextTicketsSubtitle()</p>
@@ -1357,6 +1395,32 @@
         </div>
     }
 </section>
+
+@if (_showContextNotesModal && HasContextNotes)
+{
+    <div class="modal-overlay" @onclick="CloseContextNotesModal">
+        <div class="modal-card" style="width:min(760px,calc(100vw - 2rem));max-height:min(82vh,760px);overflow:auto;" @onclick:stopPropagation>
+            <div class="panel-card__header">
+                <div>
+                    <h3 class="panel-card__title">Observaciones del contexto</h3>
+                    <p class="panel-card__subtitle">@GetConversationHeader(_selectedConversation!)</p>
+                </div>
+                <button type="button" class="btn btn--ghost btn--sm" @onclick="CloseContextNotesModal" aria-label="Cerrar">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </div>
+            <div style="display:grid;gap:.75rem;">
+                @foreach (var note in _contextNotes.Sections)
+                {
+                    <div class="context-card">
+                        <span class="context-card__label">@note.Label</span>
+                        <div style="white-space:pre-wrap;line-height:1.45;">@note.Text</div>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+}
 
 @if (_showTemplatePanel)
 {
@@ -2027,6 +2091,10 @@
     private bool _showContextTickets;
     private List<TicketRelatedMatchDto> _contextTicketMatches = [];
     private long? _contextTicketsConversationId;
+    private bool _loadingContextNotes;
+    private bool _showContextNotesModal;
+    private ContextNotesVm _contextNotes = ContextNotesVm.Empty;
+    private long? _contextNotesConversationId;
 
     private static readonly TimeSpan PollingInterval = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan TypingPollingInterval = TimeSpan.FromMilliseconds(650);
@@ -2794,6 +2862,7 @@
             }
 
             QueueContextTicketsLoad();
+            QueueContextNotesLoad();
         }
         catch (Exception ex)
         {
@@ -2801,6 +2870,7 @@
             _selectedConversation = null;
             _messages = [];
             _typingUsers = [];
+            ClearContextNotesState();
         }
         finally
         {
@@ -3136,6 +3206,117 @@
 
         return string.Equals(message.MessageType, "TEXT", StringComparison.OrdinalIgnoreCase)
                || string.IsNullOrWhiteSpace(message.MessageType);
+    }
+
+    private bool HasContextNotes => _contextNotes.HasContent;
+
+    private string ContextNotesPreview
+        => BuildOneLinePreview(_contextNotes.Preview);
+
+    private void OpenContextPanel()
+        => _showContextPanel = true;
+
+    private void OpenContextNotesModal()
+    {
+        if (HasContextNotes)
+            _showContextNotesModal = true;
+    }
+
+    private void CloseContextNotesModal()
+        => _showContextNotesModal = false;
+
+    private void ClearContextNotesState()
+    {
+        _loadingContextNotes = false;
+        _showContextNotesModal = false;
+        _contextNotes = ContextNotesVm.Empty;
+        _contextNotesConversationId = null;
+    }
+
+    private void QueueContextNotesLoad()
+    {
+        var conversation = _selectedConversation;
+        var idConversacion = conversation?.IdConversacion;
+        _contextNotesConversationId = idConversacion;
+        _contextNotes = ContextNotesVm.Empty;
+        _showContextNotesModal = false;
+
+        if (conversation is null || conversation.Canal == "INTERNO")
+        {
+            _loadingContextNotes = false;
+            return;
+        }
+
+        if (!conversation.IdContacto.HasValue && string.IsNullOrWhiteSpace(conversation.ClienteCodigo))
+        {
+            _loadingContextNotes = false;
+            return;
+        }
+
+        _loadingContextNotes = true;
+        _ = InvokeAsync(async () =>
+        {
+            await LoadContextNotesAsync(idConversacion!.Value);
+            StateHasChanged();
+        });
+    }
+
+    private async Task LoadContextNotesAsync(long idConversacion)
+    {
+        var conversation = _selectedConversation;
+        if (conversation is null || conversation.IdConversacion != idConversacion || conversation.Canal == "INTERNO")
+            return;
+
+        try
+        {
+            var sections = new List<ContextNoteSectionVm>();
+
+            if (conversation.IdContacto is int idContacto)
+            {
+                var contact = await ContactosSvc.GetByIdAsync(idContacto);
+                AddContextNoteSection(sections, "Contacto - Observaciones", contact?.Observaciones);
+            }
+
+            if (!string.IsNullOrWhiteSpace(conversation.ClienteCodigo))
+            {
+                var client = await CuentasSvc.GetByIdAsync(CuentaComercialTipo.Cliente, conversation.ClienteCodigo);
+                AddContextNoteSection(sections, "Cliente - Observaciones", client?.Observaciones);
+                AddContextNoteSection(sections, "Cliente - Manual interno", client?.Manual);
+                AddContextNoteSection(sections, "Cliente - Nota ampliada", client?.NotaCuenta);
+            }
+
+            if (_contextNotesConversationId == idConversacion && _selectedConversation?.IdConversacion == idConversacion)
+                _contextNotes = ContextNotesVm.FromSections(sections);
+        }
+        catch
+        {
+            if (_contextNotesConversationId == idConversacion)
+                _contextNotes = ContextNotesVm.Empty;
+        }
+        finally
+        {
+            if (_contextNotesConversationId == idConversacion)
+                _loadingContextNotes = false;
+        }
+    }
+
+    private static void AddContextNoteSection(List<ContextNoteSectionVm> sections, string label, string? text)
+    {
+        var clean = NormalizeContextNoteText(text);
+        if (!string.IsNullOrWhiteSpace(clean))
+            sections.Add(new ContextNoteSectionVm(label, clean));
+    }
+
+    private static string NormalizeContextNoteText(string? text)
+        => (text ?? string.Empty).Replace("\r\n", "\n").Trim();
+
+    private static string BuildOneLinePreview(string text)
+    {
+        var oneLine = Regex.Replace(text ?? string.Empty, @"\s+", " ").Trim();
+        if (oneLine.Length <= 120)
+            return oneLine;
+
+        return $"{oneLine[..120]}...";
     }
 
     private void QueueContextTicketsLoad()
@@ -4351,6 +4532,7 @@
     {
         _showContextPanel = false;
         _showMobileAdvancedFilters = false;
+        _showContextNotesModal = false;
     }
 
     private async Task OpenTemplatePanel()
@@ -5132,7 +5314,9 @@
         _showContextPanel = false;
         _showMobileAdvancedFilters = false;
         _showTemplatePanel = false;
+        _showContextNotesModal = false;
         _mobileChatActive = false;
+        ClearContextNotesState();
         ClearTemplateSelection();
         _scrollHandlerConversationId = null;
         _replyEnterHandlerConversationId = null;
@@ -6451,6 +6635,22 @@
         ConversacionesInboxFilters Filters,
         List<ConversacionInboxItemDto> Inbox,
         long? SelectedConversationId);
+
+    private sealed record ContextNoteSectionVm(string Label, string Text);
+
+    private sealed class ContextNotesVm
+    {
+        public static ContextNotesVm Empty { get; } = new([]);
+        public ContextNotesVm(IReadOnlyList<ContextNoteSectionVm> sections)
+            => Sections = sections;
+
+        public IReadOnlyList<ContextNoteSectionVm> Sections { get; }
+        public bool HasContent => Sections.Count > 0;
+        public string Preview => Sections.Count == 0 ? string.Empty : Sections[0].Text;
+
+        public static ContextNotesVm FromSections(IReadOnlyList<ContextNoteSectionVm> sections)
+            => sections.Count == 0 ? Empty : new ContextNotesVm(sections);
+    }
 
     private sealed class ThreadScrollState
     {
