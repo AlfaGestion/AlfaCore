@@ -143,7 +143,8 @@
                            placeholder="Buscar por usuario, PC, comprobante, cliente, motivo..."
                            @bind="_texto"
                            @bind:event="oninput"
-                           @onfocus="OpenSearchPanelAsync" />
+                           @onfocus="OpenSearchPanelAsync"
+                           @onkeydown="HandleApplyKeyDownAsync" />
                     <button type="button" class="smart-search__toggle" @onclick="ToggleSearchPanel" aria-label="Mostrar filtros">
                         <i class="bi @(_showSearchPanel ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
                     </button>
@@ -164,7 +165,7 @@
 
                 @if (_showSearchPanel)
                 {
-                    <div class="smart-search__panel">
+                    <div class="smart-search__panel" @onkeydown="HandleApplyKeyDownAsync">
                         <div class="smart-search__column">
                             <h4><i class="bi bi-funnel-fill"></i> Filtros</h4>
                             <div class="smart-search__inline">
@@ -1109,6 +1110,14 @@
         _hasSearched = false;
         _rows.Clear();
         _selected = null;
+    }
+
+    private async Task HandleApplyKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (!string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase) || _loadingRows)
+            return;
+
+        await ApplyFiltersAsync();
     }
 
     private async Task ToggleSearchPanel()

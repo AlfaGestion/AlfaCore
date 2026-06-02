@@ -51,7 +51,8 @@
                        placeholder="Buscar por TC, comprobante, cuenta, cliente o motivo..."
                        value="@_texto"
                        @onfocus="OpenSearchPanel"
-                       @oninput="OnSearchInput" />
+                       @oninput="OnSearchInput"
+                       @onkeydown="HandleApplyKeyDownAsync" />
                 <button type="button" class="smart-search__toggle" @onclick="ToggleSearchPanel" aria-label="Mostrar filtros">
                     <i class="bi @(_showSearchPanel ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
                 </button>
@@ -72,7 +73,7 @@
 
             @if (_showSearchPanel)
             {
-                <div class="smart-search__panel">
+                <div class="smart-search__panel" @onkeydown="HandleApplyKeyDownAsync">
                     <div class="smart-search__column">
                         <h4><i class="bi bi-funnel-fill"></i> Período</h4>
                         <div class="smart-search__inline">
@@ -475,6 +476,14 @@
         _showSearchPanel = false;
         await CargarLookupsAsync();
         await BuscarAsync();
+    }
+
+    private async Task HandleApplyKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (!string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase) || _loadingRows)
+            return;
+
+        await ApplyFiltersAsync();
     }
 
     private async Task RemoveChipAsync(string key)
