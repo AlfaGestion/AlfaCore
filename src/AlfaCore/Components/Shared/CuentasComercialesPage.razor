@@ -1470,6 +1470,12 @@
 
     private async Task OnSearchKeyDownAsync(KeyboardEventArgs e)
     {
+        if (string.Equals(e.Key, "Escape", StringComparison.OrdinalIgnoreCase))
+        {
+            CloseSearchPanel();
+            return;
+        }
+
         if (!string.Equals(e.Key, "Enter", StringComparison.OrdinalIgnoreCase))
             return;
 

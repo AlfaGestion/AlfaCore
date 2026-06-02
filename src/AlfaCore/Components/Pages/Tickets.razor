@@ -10,7 +10,7 @@
 
 <PageTitle>Tickets de asistencia | Alfa Gestión</PageTitle>
 
-<section class="page-grid tickets-page tickets-page--odoo" @onclick="DismissFeedbackAsync">
+<section class="page-grid tickets-page tickets-page--odoo" @onclick="HandleTicketPageClickAsync">
     <section class="tickets-odoo-header">
         <div>
             <h2 class="tickets-odoo-header__title">Servicio de soporte - Tickets de asistencia</h2>
@@ -845,6 +845,16 @@
     private void ToggleTicketSearchPanel()
         => _showSearchPanel = !_showSearchPanel;
 
+    private void CloseTicketSearchPanel()
+        => _showSearchPanel = false;
+
+    private async Task HandleTicketPageClickAsync()
+    {
+        CloseTicketSearchPanel();
+        CloseTicketLookupSuggestions();
+        await DismissFeedbackAsync();
+    }
+
     private void OnTicketSearchInput(ChangeEventArgs e)
     {
         _filters.Texto = e.Value?.ToString() ?? string.Empty;
@@ -1068,6 +1078,13 @@
 
     private async Task HandleTicketApplyKeyDownAsync(KeyboardEventArgs args)
     {
+        if (string.Equals(args.Key, "Escape", StringComparison.OrdinalIgnoreCase))
+        {
+            CloseTicketSearchPanel();
+            CloseTicketLookupSuggestions();
+            return;
+        }
+
         if (!string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase) || _loading)
             return;
 

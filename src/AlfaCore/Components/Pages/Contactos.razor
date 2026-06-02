@@ -1082,6 +1082,12 @@
 
     private async Task HandleContactApplyKeyDownAsync(KeyboardEventArgs args)
     {
+        if (string.Equals(args.Key, "Escape", StringComparison.OrdinalIgnoreCase))
+        {
+            CloseSearchPanel();
+            return;
+        }
+
         if (!string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase) || _loadingList)
             return;
 

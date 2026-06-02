@@ -30,7 +30,7 @@
     }
     else
     {
-        <section class="panel-card conversations-filters conversations-mobile-filters mobile-only">
+        <section class="panel-card conversations-filters conversations-mobile-filters mobile-only" @onclick:stopPropagation>
             <div class="conversations-mobile-header">
                 <div>
                     <h2>Conversaciones</h2>
@@ -139,7 +139,7 @@
             </div>
         </section>
 
-        <section class="panel-card conversations-filters desktop-only">
+        <section class="panel-card conversations-filters desktop-only" @onclick:stopPropagation>
             <div class="conversations-canal">
                 <button type="button"
                         class="conversations-filter-pill @(_canalActivo == "WHATSAPP" ? "is-active" : string.Empty)"
@@ -350,7 +350,7 @@
         @if (_showMobileAdvancedFilters)
         {
             <button type="button" class="conversations-mobile-sheet-backdrop" aria-label="Cerrar filtros" @onclick="CloseMobileAdvancedFilters"></button>
-            <section class="conversations-mobile-filter-sheet" aria-label="Filtros avanzados">
+            <section class="conversations-mobile-filter-sheet" aria-label="Filtros avanzados" @onclick:stopPropagation>
                 <div class="conversations-mobile-filter-sheet__handle"></div>
                 <header>
                     <h3>Filtros</h3>
@@ -2418,6 +2418,15 @@
 
     private async Task HandleSearchEnter(KeyboardEventArgs args)
     {
+        if (string.Equals(args.Key, "Escape", StringComparison.OrdinalIgnoreCase))
+        {
+            CancelSearchDebounce();
+            CancelContactSearch();
+            CloseContactSuggestions();
+            CloseMobileAdvancedFilters();
+            return;
+        }
+
         if (args.Key != "Enter")
             return;
 
@@ -6103,6 +6112,9 @@
 
     private async Task DismissConversationNoticesAsync()
     {
+        CloseContactSuggestions();
+        CloseMobileAdvancedFilters();
+
         if (_showComposerTools)
         {
             _showComposerTools = false;

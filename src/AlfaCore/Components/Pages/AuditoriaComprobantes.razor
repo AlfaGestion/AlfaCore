@@ -446,6 +446,7 @@
 
     private void OpenSearchPanel() => _showSearchPanel = true;
     private void ToggleSearchPanel() => _showSearchPanel = !_showSearchPanel;
+    private void CloseSearchPanel() => _showSearchPanel = false;
 
     private Task OnSearchInput(ChangeEventArgs args)
     {
@@ -480,6 +481,12 @@
 
     private async Task HandleApplyKeyDownAsync(KeyboardEventArgs args)
     {
+        if (string.Equals(args.Key, "Escape", StringComparison.OrdinalIgnoreCase))
+        {
+            CloseSearchPanel();
+            return;
+        }
+
         if (!string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase) || _loadingRows)
             return;
 

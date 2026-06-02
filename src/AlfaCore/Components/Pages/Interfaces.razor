@@ -8,7 +8,7 @@
 
 <PageTitle>Interfaces | Alfa Gestión</PageTitle>
 
-<div class="page-grid interfaces-page interfaces-list-page">
+<div class="page-grid interfaces-page interfaces-list-page" @onclick="HandlePageClick">
     <section class="page-intro">
         <div>
             <h2 class="page-intro__title">Recepción documental</h2>
@@ -47,7 +47,7 @@
         </section>
     }
 
-    <div class="interfaces-mobile-toolbar">
+    <div class="interfaces-mobile-toolbar" @onclick:stopPropagation>
         <button type="button" class="btn btn--ghost" @onclick="ToggleMobileFilters">
             <i class="bi bi-funnel"></i> Filtros
         </button>
@@ -684,6 +684,12 @@
 
     private async Task HandleApplyKeyDownAsync(KeyboardEventArgs args)
     {
+        if (string.Equals(args.Key, "Escape", StringComparison.OrdinalIgnoreCase))
+        {
+            CloseMobilePanels();
+            return;
+        }
+
         if (!string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase) || _loadingList)
             return;
 
@@ -925,6 +931,16 @@
     private void ToggleMobileFilters() => _showMobileFilters = !_showMobileFilters;
 
     private void ToggleMobileBulkActions() => _showMobileBulkActions = !_showMobileBulkActions;
+
+    private void CloseMobilePanels()
+    {
+        _showMobileFilters = false;
+        _showMobileBulkActions = false;
+        _openRowActionsId = null;
+    }
+
+    private void HandlePageClick()
+        => CloseMobilePanels();
 
     private void ToggleRowActions(long idComprobanteRecibido)
         => _openRowActionsId = _openRowActionsId == idComprobanteRecibido ? null : idComprobanteRecibido;
