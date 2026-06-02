@@ -51,27 +51,27 @@
     pointer-events: none;
 }
 
-.conversations-pending-attachment__preview-button {
+.conversations-page--odoo .conversations-pending-attachment__preview-button {
     grid-column: 1 / -1;
     display: block;
-    width: 86px;
-    height: 58px;
-    margin-top: .35rem;
+    width: 54px;
+    height: 42px;
+    margin-top: .2rem;
     padding: 0;
     border: 1px solid rgba(56, 189, 248, .22);
-    border-radius: 8px;
+    border-radius: 6px;
     background: rgba(2, 6, 23, .34);
     overflow: hidden;
     cursor: zoom-in;
 }
 
-.conversations-pending-attachment__preview-button:hover,
-.conversations-pending-attachment__preview-button:focus-visible {
+.conversations-page--odoo .conversations-pending-attachment__preview-button:hover,
+.conversations-page--odoo .conversations-pending-attachment__preview-button:focus-visible {
     border-color: rgba(56, 189, 248, .62);
     outline: none;
 }
 
-.conversations-pending-attachment__preview {
+.conversations-page--odoo .conversations-pending-attachment__preview {
     display: block;
     width: 100%;
     height: 100%;
@@ -83,7 +83,22 @@
 }
 
 .attachment-preview-body--pending {
-    display: block;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.attachment-preview-body--pending .attachment-preview-canvas {
+    min-height: min(72vh, 680px);
+    max-height: calc(92vh - 5.5rem);
+    cursor: default;
+}
+
+.attachment-preview-body--pending .attachment-preview-canvas img {
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    max-height: calc(92vh - 7rem);
+    object-fit: contain;
 }
 
 @keyframes conversations-spin {
