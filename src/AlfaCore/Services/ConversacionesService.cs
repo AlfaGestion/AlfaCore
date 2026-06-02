@@ -486,7 +486,12 @@ public sealed class ConversacionesService(
                 LEFT JOIN ClienteEventos ev
                     ON ISNULL(ev.ClienteCodigo, N'') = ISNULL(cm.ClienteCodigo, N'')
                    AND ev.ClienteNombre = cm.ClienteNombre
-                ORDER BY ISNULL(pr.PendientesRespuesta, 0) DESC, cm.Entrantes DESC, cm.TotalMensajes DESC, cm.UltimoMovimiento DESC;
+                ORDER BY
+                    ((cm.TotalMensajes * 2) + (cm.Conversaciones * 50) + (cm.Entrantes * 2) + (cm.Contactos * 15) + (ISNULL(tk.Tickets, 0) * 20) + (ISNULL(pr.PendientesRespuesta, 0) * 10) + (ISNULL(ev.Reabiertas, 0) * 10)) DESC,
+                    cm.TotalMensajes DESC,
+                    cm.Conversaciones DESC,
+                    cm.Entrantes DESC,
+                    cm.UltimoMovimiento DESC;
 
                 SELECT TOP (8)
                     c.IdConversacion,

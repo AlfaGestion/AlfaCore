@@ -304,8 +304,8 @@
                             <small>@ClientDemandText(TopCliente)</small>
                         </div>
                         <div class="conv-stats-client-focus__numbers">
-                            <strong>@FormatNumber(TopCliente.PendientesRespuesta)</strong>
-                            <span>pendientes</span>
+                            <strong>@FormatNumber(TopCliente.TotalMensajes)</strong>
+                            <span>mensajes</span>
                         </div>
                     </a>
                 }
@@ -322,10 +322,10 @@
                                 </div>
                             </div>
                             <div class="conv-stats-client-row__metrics">
+                                <span><strong>@FormatNumber(item.TotalMensajes)</strong> mensajes</span>
+                                <span><strong>@FormatNumber(item.Conversaciones)</strong> conversaciones</span>
                                 <span><strong>@FormatNumber(item.Entrantes)</strong> entrantes</span>
-                                <span><strong>@FormatNumber(item.PendientesRespuesta)</strong> pendientes</span>
                                 <span><strong>@FormatNumber(item.Tickets)</strong> tickets</span>
-                                <span><strong>@FormatDuration(item.PromedioPrimeraRespuesta)</strong> respuesta</span>
                             </div>
                         </a>
                     }
@@ -816,10 +816,16 @@
         => string.IsNullOrWhiteSpace(value) ? "Sin dato" : value.Trim();
 
     private static int GetClientDemandScore(ConversacionesEstadisticaClienteDto cliente)
-        => (cliente.PendientesRespuesta * 4) + (cliente.Tickets * 3) + (cliente.Entrantes * 2) + cliente.Internos + cliente.Reabiertas;
+        => (cliente.TotalMensajes * 2)
+           + (cliente.Conversaciones * 50)
+           + (cliente.Entrantes * 2)
+           + (cliente.Contactos * 15)
+           + (cliente.Tickets * 20)
+           + (cliente.PendientesRespuesta * 10)
+           + (cliente.Reabiertas * 10);
 
     private static string ClientDemandText(ConversacionesEstadisticaClienteDto cliente)
-        => $"{FormatNumber(cliente.Conversaciones)} conversaciones, {FormatNumber(cliente.Contactos)} contactos, {FormatNumber(cliente.TotalMensajes)} mensajes, ultimo {cliente.UltimoMovimiento:dd/MM HH:mm}";
+        => $"{FormatNumber(cliente.Conversaciones)} conversaciones, {FormatNumber(cliente.Contactos)} contactos, {FormatNumber(cliente.Entrantes)} entrantes, {FormatNumber(cliente.PendientesRespuesta)} pendientes, ultimo {cliente.UltimoMovimiento:dd/MM HH:mm}";
 
     private static string FirstNonEmpty(params string?[] values)
         => values.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x))?.Trim() ?? string.Empty;
