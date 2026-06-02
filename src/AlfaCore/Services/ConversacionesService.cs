@@ -693,6 +693,7 @@ public sealed class ConversacionesService(
             var hastaExclusive = filters.Hasta?.Date.AddDays(1);
             var auditoria = NormalizeAuditFilter(filters.Auditoria);
             var tipoMensaje = NormalizeMessageType(filters.TipoMensaje);
+            var clienteCodigo = NormalizeClientCode(filters.ClienteCodigo);
             var usuarioActual = NormalizePinUser(filters.UsuarioActual);
             var sistemaActual = NormalizePinSystem(filters.SistemaActual);
             var sql = $"""
@@ -822,6 +823,11 @@ public sealed class ConversacionesService(
                         @CodigoEstado IS NULL
                         OR (@CodigoEstado = @EstadoSinFinalizar AND ISNULL(e.EsCerrado, 0) = 0 AND ISNULL(c.Archivada, 0) = 0)
                         OR (@CodigoEstado <> @EstadoSinFinalizar AND c.CodigoEstado = @CodigoEstado)
+                    )
+                    AND (
+                        @ClienteCodigo IS NULL
+                        OR UPPER(LTRIM(RTRIM(ISNULL(c.ClienteCodigo, N'')))) = @ClienteCodigo
+                        OR contactoCuenta.Cuenta = @ClienteCodigo
                     )
                     AND (
                         @Search IS NULL
@@ -965,6 +971,7 @@ public sealed class ConversacionesService(
             cmd.Parameters.AddWithValue("@Search", DbNullable(Like(filters.Search)));
             cmd.Parameters.AddWithValue("@SearchPhone", DbNullable(searchPhone));
             cmd.Parameters.AddWithValue("@SearchPhoneTail", DbNullable(searchPhoneTail));
+            cmd.Parameters.AddWithValue("@ClienteCodigo", DbNullable(clienteCodigo));
             cmd.Parameters.AddWithValue("@Modo", NormalizeMode(filters.Modo));
             cmd.Parameters.AddWithValue("@IdTecnicoActual", DbNullable(NormalizeTechnicianId(filters.IdTecnicoActual)));
             cmd.Parameters.AddWithValue("@Desde", desde.HasValue ? desde.Value : DBNull.Value);
@@ -1022,6 +1029,7 @@ public sealed class ConversacionesService(
             var hastaExclusive = filters.Hasta?.Date.AddDays(1);
             var auditoria = NormalizeAuditFilter(filters.Auditoria);
             var tipoMensaje = NormalizeMessageType(filters.TipoMensaje);
+            var clienteCodigo = NormalizeClientCode(filters.ClienteCodigo);
 
             var sql = $"""
                 SELECT TOP (200)
@@ -1045,6 +1053,7 @@ public sealed class ConversacionesService(
                 WHERE
                     (@Canal IS NULL OR c.Canal = @Canal)
                     AND (@IdTecnicoActual IS NULL OR LTRIM(RTRIM(c.IdTecnico)) = @IdTecnicoActual OR LTRIM(RTRIM(m.IdTecnicoAutor)) = @IdTecnicoActual)
+                    AND (@ClienteCodigo IS NULL OR UPPER(LTRIM(RTRIM(ISNULL(c.ClienteCodigo, N'')))) = @ClienteCodigo)
                     AND (
                         @CodigoEstado IS NULL
                         OR (@CodigoEstado = @EstadoSinFinalizar AND ISNULL(e.EsCerrado, 0) = 0 AND ISNULL(c.Archivada, 0) = 0)
@@ -1104,6 +1113,7 @@ public sealed class ConversacionesService(
             cmd.Parameters.AddWithValue("@Search", DbNullable(Like(filters.Search)));
             cmd.Parameters.AddWithValue("@SearchPhone", DbNullable(searchPhone));
             cmd.Parameters.AddWithValue("@SearchPhoneTail", DbNullable(searchPhoneTail));
+            cmd.Parameters.AddWithValue("@ClienteCodigo", DbNullable(clienteCodigo));
             cmd.Parameters.AddWithValue("@Modo", NormalizeMode(filters.Modo));
             cmd.Parameters.AddWithValue("@IdTecnicoActual", DbNullable(NormalizeTechnicianId(filters.IdTecnicoActual)));
             cmd.Parameters.AddWithValue("@Desde", desde.HasValue ? desde.Value : DBNull.Value);
@@ -6484,6 +6494,9 @@ public sealed class ConversacionesService(
 
     private static string NormalizeTechnicianId(string? value)
         => string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+
+    private static string NormalizeClientCode(string? value)
+        => string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim().ToUpperInvariant();
 
     private static string BuildTypingActorKey(long idConversacion, string? clienteId, string? usuario, string? sistema, string? idTecnico)
     {

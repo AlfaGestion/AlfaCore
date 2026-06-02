@@ -2100,6 +2100,9 @@
         if (query.TryGetValue("tecnico", out var tecnicoRaw))
             _filters.IdTecnicoActual = tecnicoRaw.ToString();
 
+        if (query.TryGetValue("cliente", out var clienteRaw))
+            _filters.ClienteCodigo = clienteRaw.ToString();
+
         if (query.TryGetValue("buscar", out var buscarRaw))
             _filters.Search = buscarRaw.ToString();
 
@@ -2330,6 +2333,7 @@
         _filters.Modo = "todas";
         _filters.CodigoEstado = string.Empty;
         _filters.IdTecnicoActual = string.Empty;
+        _filters.ClienteCodigo = string.Empty;
         _showMobileAdvancedFilters = false;
         await LoadInboxAsync();
     }
@@ -2351,6 +2355,7 @@
     private async Task HandleSearchInputAsync(ChangeEventArgs args)
     {
         _filters.Search = Convert.ToString(args.Value, System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
+        _filters.ClienteCodigo = string.Empty;
         _actionError = null;
         if (string.IsNullOrWhiteSpace(_filters.Search))
         {
@@ -3224,6 +3229,7 @@
         {
             Modo = filters.Modo,
             Search = filters.Search,
+            ClienteCodigo = filters.ClienteCodigo,
             IdTecnicoActual = filters.IdTecnicoActual,
             CodigoEstado = filters.CodigoEstado,
             Canal = filters.Canal,

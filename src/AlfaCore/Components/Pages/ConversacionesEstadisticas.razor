@@ -705,9 +705,13 @@
         {
             "modo=todas",
             $"desde={Uri.EscapeDataString(_desdeText)}",
-            $"hasta={Uri.EscapeDataString(_hastaText)}",
-            $"buscar={Uri.EscapeDataString(FirstNonEmpty(cliente.ClienteCodigo, cliente.ClienteNombre))}"
+            $"hasta={Uri.EscapeDataString(_hastaText)}"
         };
+
+        if (!string.IsNullOrWhiteSpace(cliente.ClienteCodigo))
+            query.Add($"cliente={Uri.EscapeDataString(cliente.ClienteCodigo)}");
+        else
+            query.Add($"buscar={Uri.EscapeDataString(cliente.ClienteNombre)}");
 
         if (!string.IsNullOrWhiteSpace(_idTecnico))
             query.Add($"tecnico={Uri.EscapeDataString(_idTecnico)}");
