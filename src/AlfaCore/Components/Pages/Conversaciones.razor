@@ -2116,6 +2116,7 @@
     private long? _contextNotesConversationId;
     private string? _contextNotesSourceKey;
     private bool _contextNotesLoaded;
+    private readonly Dictionary<string, ContextNotesVm> _contextNotesCache = [];
 
     private static readonly TimeSpan PollingInterval = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan TypingPollingInterval = TimeSpan.FromMilliseconds(650);
@@ -3294,9 +3295,13 @@
 
         if (!sameSource)
         {
-            _contextNotes = ContextNotesVm.Empty;
+            _contextNotes = _contextNotesCache.TryGetValue(sourceKey, out var cachedNotes)
+                ? cachedNotes
+                : ContextNotesVm.Empty;
             _showContextNotesModal = false;
-            _contextNotesTab = ContextNotesTabs.Observaciones;
+            _contextNotesTab = _contextNotes.ObservationSections.Count > 0
+                ? ContextNotesTabs.Observaciones
+                : ContextNotesTabs.OtrasNotas;
             _contextNotesLoaded = false;
         }
 
@@ -3335,7 +3340,15 @@
             }
 
             if (_contextNotesConversationId == idConversacion && _selectedConversation?.IdConversacion == idConversacion)
-                _contextNotes = ContextNotesVm.FromSections(sections);
+            {
+                var notes = ContextNotesVm.FromSections(sections);
+                _contextNotes = notes;
+                var sourceKey = BuildContextNotesSourceKey(conversation);
+                if (notes.HasContent)
+                    _contextNotesCache[sourceKey] = notes;
+                else
+                    _contextNotesCache.Remove(sourceKey);
+            }
         }
         catch
         {
