@@ -1,3 +1,45 @@
+.conversations-list,
+.conversations-chat {
+    position: relative;
+}
+
+.conversations-loading-overlay {
+    position: absolute;
+    inset: .65rem;
+    z-index: 12;
+    display: grid;
+    place-items: center;
+    align-content: center;
+    gap: .45rem;
+    border: 1px solid rgba(56, 189, 248, .2);
+    border-radius: 8px;
+    background: rgba(2, 6, 23, .72);
+    color: #bae6fd;
+    font-size: .86rem;
+    font-weight: 800;
+    backdrop-filter: blur(4px);
+}
+
+.conversations-loading-overlay i {
+    font-size: 1.15rem;
+    animation: conversations-spin 1s linear infinite;
+}
+
+.conversations-loading-overlay--chat {
+    inset: .75rem;
+    pointer-events: none;
+}
+
+@keyframes conversations-spin {
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
+}
+
 .attachment-preview-modal {
     border-radius: 18px;
     background: rgba(9, 24, 43, .96);

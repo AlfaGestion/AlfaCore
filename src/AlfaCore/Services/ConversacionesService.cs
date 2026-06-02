@@ -831,6 +831,7 @@ public sealed class ConversacionesService(
                     )
                     AND (
                         @Search IS NULL
+                        OR @ClienteCodigo IS NOT NULL
                         OR c.TelefonoWhatsApp LIKE @Search
                         OR c.NombreVisible COLLATE Latin1_General_CI_AI LIKE @Search
                         OR COALESCE(NULLIF(cli.RAZON_SOCIAL, ''), contactoCuenta.RazonSocial) COLLATE Latin1_General_CI_AI LIKE @Search
@@ -1070,6 +1071,7 @@ public sealed class ConversacionesService(
                     AND (@HastaExclusive IS NULL OR {ConversationMessageVisibleDateSql("m")} < @HastaExclusive)
                     AND (
                         @Search IS NULL
+                        OR @ClienteCodigo IS NOT NULL
                         OR m.Texto COLLATE Latin1_General_CI_AI LIKE @Search
                         OR c.TelefonoWhatsApp LIKE @Search
                         OR c.NombreVisible COLLATE Latin1_General_CI_AI LIKE @Search

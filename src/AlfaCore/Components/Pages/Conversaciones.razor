@@ -418,6 +418,13 @@
 
         <div class="conversations-layout">
             <aside class="panel-card conversations-list">
+                @if (_loadingInbox)
+                {
+                    <div class="conversations-loading-overlay" role="status" aria-live="polite">
+                        <i class="bi bi-hourglass-split"></i>
+                        <span>Cargando conversaciones...</span>
+                    </div>
+                }
                 <div class="conversations-list__header">
                     <div>
                         <h3 class="panel-card__title">Inbox <span class="conversations-mobile-inbox-count mobile-only">@_inbox.Count</span></h3>
@@ -492,6 +499,13 @@
             </aside>
 
             <section class="panel-card conversations-chat">
+                @if (_loadingConversation || _loadingAuditMessages)
+                {
+                    <div class="conversations-loading-overlay conversations-loading-overlay--chat" role="status" aria-live="polite">
+                        <i class="bi bi-hourglass-split"></i>
+                        <span>@(_loadingConversation ? "Cargando conversacion..." : "Buscando mensajes...")</span>
+                    </div>
+                }
                 @if (_loadingConversation)
                 {
                     <div class="loading">Cargando conversación…</div>
@@ -2435,7 +2449,11 @@
     private async Task<int> RefreshInboxAsync(bool showLoading, bool allowSelectionChange, bool trackNewMessages = false)
     {
         if (showLoading)
+        {
             _loadingInbox = true;
+            await InvokeAsync(StateHasChanged);
+            await Task.Yield();
+        }
 
         _loadError = null;
         var newMessagesDetected = 0;
@@ -2480,6 +2498,8 @@
         }
 
         _loadingAuditMessages = true;
+        await InvokeAsync(StateHasChanged);
+        await Task.Yield();
         try
         {
             _auditMessages = (await ConversacionesSvc.GetAuditMessagesAsync(_filters)).ToList();
@@ -2625,7 +2645,11 @@
         }
 
         if (showLoading)
+        {
             _loadingConversation = true;
+            await InvokeAsync(StateHasChanged);
+            await Task.Yield();
+        }
 
         _conversationError = null;
         if (clearActionState)
