@@ -418,11 +418,11 @@
 
         <div class="conversations-layout">
             <aside class="panel-card conversations-list">
-                @if (_loadingInbox)
+                @if (_loadingInbox && _inbox.Count > 0)
                 {
                     <div class="conversations-loading-overlay" role="status" aria-live="polite">
                         <i class="bi bi-hourglass-split"></i>
-                        <span>Cargando conversaciones...</span>
+                        <span>Actualizando conversaciones...</span>
                     </div>
                 }
                 <div class="conversations-list__header">
@@ -432,7 +432,7 @@
                     </div>
                 </div>
 
-                @if (_loadingInbox)
+                @if (_loadingInbox && _inbox.Count == 0)
                 {
                     <div class="loading">Cargando conversaciones…</div>
                 }
@@ -3895,7 +3895,7 @@
 
             _actionMessage = "Mensaje registrado correctamente.";
             await SelectConversationAsync(_selectedConversation.IdConversacion);
-            await LoadInboxAsync();
+            await RefreshInboxAsync(showLoading: false, allowSelectionChange: false);
         }
         catch (Exception ex)
         {
@@ -4079,7 +4079,7 @@
                 await UploadPendingAttachmentsAsync(templateAttachmentsToSend, RemoveTemplatePendingAttachment, allowExpiredWhatsAppWindow: true);
 
             await SelectConversationAsync(selectedConversationId);
-            await LoadInboxAsync();
+            await RefreshInboxAsync(showLoading: false, allowSelectionChange: false);
             _actionMessage = templateAttachmentsToSend.Count == 0
                 ? $"Plantilla enviada correctamente: {previewText}"
                 : $"Plantilla y adjunto(s) enviados correctamente: {previewText}";
@@ -4090,7 +4090,7 @@
             if (_selectedConversation is not null)
             {
                 await SelectConversationAsync(_selectedConversation.IdConversacion);
-                await LoadInboxAsync();
+                await RefreshInboxAsync(showLoading: false, allowSelectionChange: false);
             }
 
             _actionError = error;
@@ -4127,7 +4127,7 @@
             _composerToolTab = ComposerToolTabs.Emojis;
             _actionMessage = "Nota interna guardada.";
             await SelectConversationAsync(_selectedConversation.IdConversacion);
-            await LoadInboxAsync();
+            await RefreshInboxAsync(showLoading: false, allowSelectionChange: false);
         }
         catch (Exception ex)
         {
@@ -4179,7 +4179,7 @@
 
             _actionMessage = "Asignación actualizada.";
             await SelectConversationAsync(_selectedConversation.IdConversacion);
-            await LoadInboxAsync();
+            await RefreshInboxAsync(showLoading: false, allowSelectionChange: false);
             return true;
         }
         catch (Exception ex)
@@ -4270,7 +4270,7 @@
             MarkSelectedConversationAsRead();
             _actionMessage = "Estado actualizado.";
             await SelectConversationAsync(_selectedConversation.IdConversacion);
-            await LoadInboxAsync();
+            await RefreshInboxAsync(showLoading: false, allowSelectionChange: false);
             return true;
         }
         catch (Exception ex)
