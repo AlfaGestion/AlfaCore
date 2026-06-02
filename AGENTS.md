@@ -35,6 +35,7 @@ No cargar este archivo completo si no es necesario.
 - No asumir estructuras no confirmadas
 - Priorizar objetos definidos como “oficiales”
 - Todo error relevante debe registrarse en `AUX_ERR`, usando un servicio centralizado de logging.
+- Si una URL entra con `?directo=1`, AlfaCore debe quedar encerrado en ese módulo: no debe mostrar `Aplicaciones` ni accesos a otros módulos. Esta regla aplica a todos los módulos actuales y a cualquier módulo nuevo.
 ---
 
 ## Regla clave

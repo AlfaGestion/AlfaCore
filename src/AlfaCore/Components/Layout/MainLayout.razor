@@ -1,4 +1,4 @@
-﻿@inherits LayoutComponentBase
+@inherits LayoutComponentBase
 @inject IJSRuntime JS
 @using System.Globalization
 @using AlfaCore.Models
@@ -68,10 +68,8 @@ else
         <div class="menu">
             @if (_currentModule == "consultas")
             {
-                <a class="menu__back" href="/">
-                    <i class="bi bi-grid-3x3-gap-fill"></i>
-                    <span>Aplicaciones</span>
-                </a>
+                @ModuleBackLink
+
                 <p class="menu__section">Consultas</p>
                 <nav class="menu__nav">
                     <NavLink class="menu__link" href="@BuildModuleUrl("/consultas")" Match="NavLinkMatch.All">
@@ -86,10 +84,8 @@ else
             }
             else if (_currentModule == "costos")
             {
-                <a class="menu__back" href="/">
-                    <i class="bi bi-grid-3x3-gap-fill"></i>
-                    <span>Aplicaciones</span>
-                </a>
+                @ModuleBackLink
+
                 <p class="menu__section">Actualización de Costos</p>
                 <nav class="menu__nav">
                     <NavLink class="menu__link" href="@BuildModuleUrl("/costos")" Match="NavLinkMatch.All">
@@ -112,10 +108,8 @@ else
             }
             else if (_currentModule == "auditoria")
             {
-                <a class="menu__back" href="/">
-                    <i class="bi bi-grid-3x3-gap-fill"></i>
-                    <span>Aplicaciones</span>
-                </a>
+                @ModuleBackLink
+
                 <p class="menu__section">Auditoría</p>
                 <nav class="menu__nav">
                     <NavLink class="menu__link" href="@BuildModuleUrl("/auditoria")" Match="NavLinkMatch.All">
@@ -134,10 +128,8 @@ else
             }
             else if (_currentModule == "conversaciones")
             {
-                <a class="menu__back" href="/">
-                    <i class="bi bi-grid-3x3-gap-fill"></i>
-                    <span>Aplicaciones</span>
-                </a>
+                @ModuleBackLink
+
                 <p class="menu__section">Conversaciones</p>
                 <nav class="menu__nav">
                     <NavLink class="menu__link" href="@BuildModuleUrl("/conversaciones")" Match="NavLinkMatch.All">
@@ -160,10 +152,8 @@ else
             }
             else if (_currentModule == "tickets")
             {
-                <a class="menu__back" href="/">
-                    <i class="bi bi-grid-3x3-gap-fill"></i>
-                    <span>Aplicaciones</span>
-                </a>
+                @ModuleBackLink
+
                 <p class="menu__section">Tickets de asistencia</p>
                 <nav class="menu__nav">
                     <NavLink class="menu__link" href="@BuildModuleUrl("/tickets")" Match="NavLinkMatch.All">
@@ -174,10 +164,8 @@ else
             }
             else if (_currentModule == "calendario")
             {
-                <a class="menu__back" href="/">
-                    <i class="bi bi-grid-3x3-gap-fill"></i>
-                    <span>Aplicaciones</span>
-                </a>
+                @ModuleBackLink
+
                 <p class="menu__section">Calendario</p>
                 <nav class="menu__nav">
                     <NavLink class="menu__link" href="@BuildModuleUrl("/calendario")" Match="NavLinkMatch.All">
@@ -188,10 +176,8 @@ else
             }
             else if (_currentModule == "interfaces")
             {
-                <a class="menu__back" href="/">
-                    <i class="bi bi-grid-3x3-gap-fill"></i>
-                    <span>Aplicaciones</span>
-                </a>
+                @ModuleBackLink
+
                 <p class="menu__section">Interfaces</p>
                 <nav class="menu__nav">
                     <NavLink class="menu__link" href="@BuildModuleUrl("/interfaces")" Match="NavLinkMatch.All">
@@ -206,10 +192,8 @@ else
             }
             else if (_currentModule == "actualizaciones")
             {
-                <a class="menu__back" href="/">
-                    <i class="bi bi-grid-3x3-gap-fill"></i>
-                    <span>Aplicaciones</span>
-                </a>
+                @ModuleBackLink
+
                 <p class="menu__section">Actualizaciones</p>
                 <nav class="menu__nav">
                     <NavLink class="menu__link" href="@BuildModuleUrl("/actualizaciones")" Match="NavLinkMatch.All">
@@ -220,10 +204,8 @@ else
             }
             else if (_currentModule == "usuarios")
             {
-                <a class="menu__back" href="/">
-                    <i class="bi bi-grid-3x3-gap-fill"></i>
-                    <span>Aplicaciones</span>
-                </a>
+                @ModuleBackLink
+
                 <p class="menu__section">Usuarios</p>
                 <nav class="menu__nav">
                     <NavLink class="menu__link" href="@BuildModuleUrl("/usuarios")" Match="NavLinkMatch.All">
@@ -234,10 +216,8 @@ else
             }
             else if (_currentModule == "seguridad")
             {
-                <a class="menu__back" href="/">
-                    <i class="bi bi-grid-3x3-gap-fill"></i>
-                    <span>Aplicaciones</span>
-                </a>
+                @ModuleBackLink
+
                 <p class="menu__section">Seguridad</p>
                 <nav class="menu__nav">
                     <NavLink class="menu__link" href="@BuildModuleUrl("/usuarios")">
@@ -256,10 +236,8 @@ else
             }
             else if (_currentModule == "contactos")
             {
-                <a class="menu__back" href="/">
-                    <i class="bi bi-grid-3x3-gap-fill"></i>
-                    <span>Aplicaciones</span>
-                </a>
+                @ModuleBackLink
+
                 <p class="menu__section">Contactos</p>
                 <nav class="menu__nav">
                     <NavLink class="menu__link" href="@BuildModuleUrl("/contactos")" Match="NavLinkMatch.All">
@@ -270,10 +248,8 @@ else
             }
             else if (_currentModule == "clientes")
             {
-                <a class="menu__back" href="/">
-                    <i class="bi bi-grid-3x3-gap-fill"></i>
-                    <span>Aplicaciones</span>
-                </a>
+                @ModuleBackLink
+
                 <p class="menu__section">Clientes</p>
                 <nav class="menu__nav">
                     <NavLink class="menu__link" href="@BuildModuleUrl("/clientes")" Match="NavLinkMatch.All">
@@ -284,10 +260,8 @@ else
             }
             else if (_currentModule == "tecnicos")
             {
-                <a class="menu__back" href="/">
-                    <i class="bi bi-grid-3x3-gap-fill"></i>
-                    <span>Aplicaciones</span>
-                </a>
+                @ModuleBackLink
+
                 <p class="menu__section">Técnicos</p>
                 <nav class="menu__nav">
                     <NavLink class="menu__link" href="@BuildModuleUrl("/tecnicos")" Match="NavLinkMatch.All">
@@ -298,10 +272,8 @@ else
             }
             else if (_currentModule == "ventas")
             {
-                <a class="menu__back" href="/">
-                    <i class="bi bi-grid-3x3-gap-fill"></i>
-                    <span>Aplicaciones</span>
-                </a>
+                @ModuleBackLink
+
                 <p class="menu__section">Ventas</p>
                 <nav class="menu__nav">
                     <NavLink class="menu__link" href="@BuildModuleUrl("/ventas")" Match="NavLinkMatch.All">
@@ -336,10 +308,8 @@ else
             }
             else if (_currentModule == "stock")
             {
-                <a class="menu__back" href="/">
-                    <i class="bi bi-grid-3x3-gap-fill"></i>
-                    <span>Aplicaciones</span>
-                </a>
+                @ModuleBackLink
+
                 <p class="menu__section">Stock</p>
                 <nav class="menu__nav">
                     <NavLink class="menu__link" href="@BuildModuleUrl("/stock")" Match="NavLinkMatch.All">
@@ -350,10 +320,8 @@ else
             }
             else if (_currentModule == "caja-bancos")
             {
-                <a class="menu__back" href="/">
-                    <i class="bi bi-grid-3x3-gap-fill"></i>
-                    <span>Aplicaciones</span>
-                </a>
+                @ModuleBackLink
+
                 <p class="menu__section">Caja y Bancos</p>
                 <nav class="menu__nav">
                     <NavLink class="menu__link" href="@BuildModuleUrl("/caja-bancos")" Match="NavLinkMatch.All">
@@ -364,10 +332,8 @@ else
             }
             else if (_currentModule == "contabilidad")
             {
-                <a class="menu__back" href="/">
-                    <i class="bi bi-grid-3x3-gap-fill"></i>
-                    <span>Aplicaciones</span>
-                </a>
+                @ModuleBackLink
+
                 <p class="menu__section">Contabilidad</p>
                 <nav class="menu__nav">
                     <NavLink class="menu__link" href="@BuildModuleUrl("/contabilidad")" Match="NavLinkMatch.All">
@@ -382,10 +348,8 @@ else
             }
             else if (_currentModule == "proveedores")
             {
-                <a class="menu__back" href="/">
-                    <i class="bi bi-grid-3x3-gap-fill"></i>
-                    <span>Aplicaciones</span>
-                </a>
+                @ModuleBackLink
+
                 <p class="menu__section">Proveedores</p>
                 <nav class="menu__nav">
                     <NavLink class="menu__link" href="@BuildModuleUrl("/proveedores")" Match="NavLinkMatch.All">
@@ -396,10 +360,8 @@ else
             }
             else if (_currentModule == "compras")
             {
-                <a class="menu__back" href="/">
-                    <i class="bi bi-grid-3x3-gap-fill"></i>
-                    <span>Aplicaciones</span>
-                </a>
+                @ModuleBackLink
+
                 <p class="menu__section">Compras</p>
                 <nav class="menu__nav">
                     <NavLink class="menu__link" href="@BuildModuleUrl("/compras")" Match="NavLinkMatch.All">
@@ -537,6 +499,8 @@ else
                 </div>
             }
 
+            @if (!IsDirectMode)
+            {
             <div class="menu__footer">
                 @if (string.IsNullOrWhiteSpace(_currentModule))
                 {
@@ -571,6 +535,7 @@ else
                     <span>Ayuda</span>
                 </NavLink>
             </div>
+            }
         </div>
     </aside>
 
@@ -686,7 +651,7 @@ else
 
 <SessionDrawer Open="_drawerOpen" OnClose="() => _drawerOpen = false" />
 
-@if (!IsPosFullscreenRoute && _tasksPanelOpen)
+@if (!IsPosFullscreenRoute && !IsDirectMode && _tasksPanelOpen)
 {
     <button type="button"
             class="tareas-side-backdrop no-print"
@@ -694,7 +659,7 @@ else
             @onclick="CloseTasksPanel"></button>
 }
 
-@if (!IsPosFullscreenRoute)
+@if (!IsPosFullscreenRoute && !IsDirectMode)
 {
 <aside class="tareas-side-panel no-print @(_tasksPanelOpen ? "is-open" : string.Empty)" aria-label="Tareas rápidas">
     <header class="tareas-side-panel__head">
@@ -976,6 +941,12 @@ else
     private string _pushDiagnosticsLastProviderError = string.Empty;
     private List<NotificacionesPushEndpointResultDto> _pushLastTestResults = [];
     private string CurrentPageTitle => GetCurrentPageTitle();
+    private RenderFragment? ModuleBackLink => !IsDirectMode
+        ? @<a class="menu__back" href="/" @onclick="GoToLauncher">
+                <i class="bi bi-grid-3x3-gap-fill"></i>
+                <span>Aplicaciones</span>
+            </a>
+        : null;
     private string ShellClass
         => $"shell {(_sidebarCollapsed ? "shell--collapsed" : string.Empty)} {(_mobileSidebarOpen ? "shell--mobile-open" : string.Empty)} {(IsDirectMode ? "shell--direct" : string.Empty)} {(IsPosFullscreenRoute ? "shell--pos-fullscreen" : string.Empty)}";
     private bool ShowShellContext => string.IsNullOrWhiteSpace(_currentModule);
@@ -994,7 +965,8 @@ else
     private bool CanSendTestPush
         => CanEnablePush && _pushPreferences.Habilitadas;
     private bool ShouldShowConversationNotice
-        => _globalConversationUnreadCount > 0
+        => !IsDirectMode
+           && _globalConversationUnreadCount > 0
            && !string.Equals(_currentModule, "conversaciones", StringComparison.OrdinalIgnoreCase);
     private string GlobalConversationNoticeTitle
         => _globalConversationUnreadCount == 1 ? "Nuevo mensaje" : $"{_globalConversationUnreadCount} mensajes nuevos";
@@ -2240,6 +2212,7 @@ else
         public List<NotificacionesPushEndpointResultDto> Subscriptions { get; set; } = [];
     }
 }
+
 
 
 

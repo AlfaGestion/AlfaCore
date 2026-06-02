@@ -48,6 +48,7 @@ Name: "launchapp"; Description: "Iniciar AlfaCore al finalizar"; GroupDescriptio
 
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "appsettings.Development.json,appsettings.Production.json,*.pdb,*.log,prereqs\*,App_Data\*"
+Source: "{#SourceDir}\App_Data\updates\*"; DestDir: "{app}\App_Data\updates"; Flags: ignoreversion recursesubdirs createallsubdirs
 #ifdef IncludeHostingBundle
 Source: "{#SourceDir}\prereqs\dotnet-hosting-win.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall; Check: NeedsHostingBundle
 #endif
