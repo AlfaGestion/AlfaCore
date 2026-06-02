@@ -132,7 +132,8 @@
                         <input type="search"
                                placeholder="Nombre, clave, proceso o ruta web..."
                                value="@_searchText"
-                               @oninput="OnSearchChanged" />
+                               @oninput="OnSearchChanged"
+                               @onkeydown="HandleSearchKeyDownAsync" />
                     </div>
 
                     <div class="field field--full">
@@ -144,6 +145,15 @@
                             <option value="@ViewShared">Compartidas</option>
                             <option value="@ViewUnauthorized">Sin autorización</option>
                         </select>
+                    </div>
+
+                    <div class="actions">
+                        <button type="button" class="btn btn--primary btn--sm" @onclick="AplicarFiltrosAsync" disabled="@_loadingTree">
+                            <i class="bi bi-search"></i> Aplicar
+                        </button>
+                        <button type="button" class="btn btn--ghost btn--sm" @onclick="LimpiarFiltrosAsync" disabled="@_loadingTree">
+                            <i class="bi bi-eraser"></i> Limpiar
+                        </button>
                     </div>
 
                     <div class="auth-legend auth-legend--stacked">
@@ -495,6 +505,28 @@
         _searchText = Convert.ToString(args.Value) ?? string.Empty;
         RebuildVisibleTree();
         return Task.CompletedTask;
+    }
+
+    private Task AplicarFiltrosAsync()
+    {
+        RebuildVisibleTree();
+        return Task.CompletedTask;
+    }
+
+    private Task LimpiarFiltrosAsync()
+    {
+        _searchText = string.Empty;
+        _viewMode = ViewWeb;
+        RebuildVisibleTree();
+        return Task.CompletedTask;
+    }
+
+    private async Task HandleSearchKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (!string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        await AplicarFiltrosAsync();
     }
 
     private Task OnViewModeChanged(ChangeEventArgs args)

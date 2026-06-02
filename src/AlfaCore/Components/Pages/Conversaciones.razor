@@ -130,6 +130,12 @@
                         }
                     </select>
                 </div>
+                <button type="button" class="btn btn--primary" @onclick="LoadInboxAsync" disabled="@_loadingInbox">
+                    <i class="bi bi-funnel"></i> Aplicar
+                </button>
+                <button type="button" class="btn btn--ghost" @onclick="ClearConversationFiltersAsync" disabled="@_loadingInbox">
+                    <i class="bi bi-eraser"></i> Limpiar
+                </button>
             </div>
         </section>
 
@@ -332,8 +338,11 @@
                     </select>
                 </div>
 
-                <button type="button" class="btn btn--primary" @onclick="LoadInboxAsync" disabled="_loadingInbox">
+                <button type="button" class="btn btn--primary" @onclick="LoadInboxAsync" disabled="@_loadingInbox">
                     <i class="bi bi-funnel"></i> Aplicar
+                </button>
+                <button type="button" class="btn btn--ghost" @onclick="ClearConversationFiltersAsync" disabled="@_loadingInbox">
+                    <i class="bi bi-eraser"></i> Limpiar
                 </button>
             </div>
         </section>
@@ -2388,6 +2397,21 @@
         _filters.CodigoEstado = string.Empty;
         _filters.IdTecnicoActual = string.Empty;
         _filters.ClienteCodigo = string.Empty;
+        _showMobileAdvancedFilters = false;
+        await LoadInboxAsync();
+    }
+
+    private async Task ClearConversationFiltersAsync()
+    {
+        CancelSearchDebounce();
+        CancelContactSearch();
+        _filters.Modo = "todas";
+        _filters.Search = string.Empty;
+        _filters.CodigoEstado = string.Empty;
+        _filters.IdTecnicoActual = string.Empty;
+        _filters.ClienteCodigo = string.Empty;
+        _actionError = null;
+        _showContactSuggestions = false;
         _showMobileAdvancedFilters = false;
         await LoadInboxAsync();
     }

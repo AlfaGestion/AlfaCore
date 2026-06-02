@@ -34,11 +34,10 @@
                        type="search"
                        placeholder="Ej: artículos, ticket promedio, filtros..."
                        @bind="_search"
-                       @bind:event="oninput" />
-                @if (!string.IsNullOrWhiteSpace(_search))
-                {
-                    <button class="btn btn--ghost" @onclick="ClearSearch">Limpiar</button>
-                }
+                       @bind:event="oninput"
+                       @onkeydown="HandleSearchKeyDownAsync" />
+                <button class="btn btn--primary" @onclick="ApplySearchAsync">Aplicar</button>
+                <button class="btn btn--ghost" @onclick="ClearSearch">Limpiar</button>
             </div>
             <div class="help-search__meta">
                 <span>@SectionCountText</span>
@@ -231,6 +230,20 @@
     }
 
     private void ClearSearch() => _search = string.Empty;
+
+    private Task ApplySearchAsync()
+    {
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    private async Task HandleSearchKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (!string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        await ApplySearchAsync();
+    }
 
     private async Task ScrollTo(string anchor)
     {

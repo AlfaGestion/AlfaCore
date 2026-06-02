@@ -57,7 +57,14 @@ else
                        type="search"
                        placeholder="Buscar por nombre o código…"
                        @bind="_busqueda"
-                       @bind:event="oninput" />
+                       @bind:event="oninput"
+                       @onkeydown="HandleSearchKeyDownAsync" />
+                <button type="button" class="btn btn--primary btn--sm" @onclick="AplicarBusquedaAsync">
+                    <i class="bi bi-search"></i> Aplicar
+                </button>
+                <button type="button" class="btn btn--ghost btn--sm" @onclick="LimpiarBusqueda">
+                    <i class="bi bi-eraser"></i> Limpiar
+                </button>
             </div>
 
             <div class="ctree">
@@ -146,6 +153,23 @@ else
     {
         if (!_expandidos.Remove(clave))
             _expandidos.Add(clave);
+    }
+
+    private Task AplicarBusquedaAsync()
+    {
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    private void LimpiarBusqueda()
+        => _busqueda = string.Empty;
+
+    private async Task HandleSearchKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (!string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        await AplicarBusquedaAsync();
     }
 
     private IEnumerable<(AlfaCore.Models.NodoArbolDto nodo, int nivel)> GetNodosVisibles()

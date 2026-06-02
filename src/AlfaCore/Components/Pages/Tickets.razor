@@ -67,7 +67,8 @@
                            placeholder="Buscar por ticket, cliente, contacto, teléfono, email o técnico..."
                            value="@_filters.Texto"
                            @onfocus="OpenTicketSearchPanel"
-                           @oninput="OnTicketSearchInput" />
+                           @oninput="OnTicketSearchInput"
+                           @onkeydown="HandleTicketApplyKeyDownAsync" />
                     <button type="button" class="smart-search__toggle" @onclick="ToggleTicketSearchPanel" aria-label="Mostrar filtros">
                         <i class="bi @(_showSearchPanel ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
                     </button>
@@ -88,7 +89,7 @@
 
                 @if (_showSearchPanel)
                 {
-                    <div class="smart-search__panel" @onclick="CloseTicketLookupSuggestions">
+                    <div class="smart-search__panel" @onclick="CloseTicketLookupSuggestions" @onkeydown="HandleTicketApplyKeyDownAsync">
                         <div class="smart-search__column">
                             <h4><i class="bi bi-funnel-fill"></i> Filtros</h4>
                             <button type="button" class="@GetSmartOptionClass(!_filters.IncluirCerrados)" @onclick='() => ToggleTicketClosedAsync(false)'>Abiertos</button>
@@ -175,6 +176,14 @@
                             {
                                 <button type="button" @onclick="() => ApplySavedTicketFavoriteAsync(favorite)">@favorite.Label</button>
                             }
+                            <div class="actions">
+                                <button type="button" class="btn btn--primary btn--sm" @onclick="AplicarFiltrosAsync" disabled="@_loading">
+                                    <i class="bi bi-search"></i> Aplicar
+                                </button>
+                                <button type="button" class="btn btn--ghost btn--sm" @onclick="LimpiarFiltros" disabled="@_loading">
+                                    <i class="bi bi-eraser"></i> Limpiar
+                                </button>
+                            </div>
                         </div>
                         <div class="smart-search__custom">
                             <h4><i class="bi bi-sliders"></i> Filtro personalizado</h4>
@@ -1055,6 +1064,14 @@
         SyncFilters();
         _filters.PageNumber = 1;
         await BuscarAsync();
+    }
+
+    private async Task HandleTicketApplyKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (!string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase) || _loading)
+            return;
+
+        await AplicarFiltrosAsync();
     }
 
     private async Task BuscarAsync(bool keepCurrent = false)

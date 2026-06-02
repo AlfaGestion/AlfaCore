@@ -64,9 +64,10 @@
                        placeholder="Buscar por observación, proveedor, usuario o número interno..."
                        @bind="_filters.Texto"
                        @bind:event="oninput"
-                       @bind:after="OnFiltersChangedAsync" />
+                       @bind:after="OnFiltersChangedAsync"
+                       @onkeydown="HandleApplyKeyDownAsync" />
             </div>
-            <div class="smart-search__panel interfaces-filters-panel-grid">
+            <div class="smart-search__panel interfaces-filters-panel-grid" @onkeydown="HandleApplyKeyDownAsync">
                 <div class="smart-search__inline">
                     <label>Desde</label>
                     <input type="date" @bind="_filtersDesde" @bind:after="OnFiltersChangedAsync" />
@@ -94,6 +95,14 @@
                             <option value="@item.IdTipoDocumento">@item.Descripcion</option>
                         }
                     </select>
+                </div>
+                <div class="actions">
+                    <button type="button" class="btn btn--primary btn--sm" @onclick="AplicarFiltrosAsync" disabled="@_loadingList">
+                        <i class="bi bi-search"></i> Aplicar
+                    </button>
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="LimpiarFiltrosAsync" disabled="@_loadingList">
+                        <i class="bi bi-eraser"></i> Limpiar
+                    </button>
                 </div>
             </div>
         </div>
@@ -673,6 +682,14 @@
         await BuscarAsync();
     }
 
+    private async Task HandleApplyKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (!string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase) || _loadingList)
+            return;
+
+        await AplicarFiltrosAsync();
+    }
+
     private async Task OnFiltersChangedAsync()
     {
         _filters.PageNumber = 1;
@@ -896,6 +913,13 @@
         _filters.IdTipoDocumento = null;
         _filtersDesde = DateTime.Today.AddDays(-30);
         _filtersHasta = DateTime.Today;
+    }
+
+    private async Task LimpiarFiltrosAsync()
+    {
+        LimpiarFiltros();
+        _filters.PageNumber = 1;
+        await BuscarAsync();
     }
 
     private void ToggleMobileFilters() => _showMobileFilters = !_showMobileFilters;

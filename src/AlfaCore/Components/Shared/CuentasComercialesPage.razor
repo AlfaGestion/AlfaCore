@@ -76,13 +76,16 @@
 
             @if (_showSearchPanel)
             {
-                <div class="smart-search__panel">
+                <div class="smart-search__panel" @onkeydown="OnSearchKeyDownAsync">
                     <div class="smart-search__column">
                         <h4><i class="bi bi-funnel-fill"></i> Filtros</h4>
                         <button type="button" class="@GetSmartOptionClass(_activoFiltro == "1")" @onclick='() => SetStatusFilterAsync("1")'>Activos</button>
                         <button type="button" class="@GetSmartOptionClass(_activoFiltro == "0")" @onclick='() => SetStatusFilterAsync("0")'>Inactivos</button>
                         <button type="button" class="@GetSmartOptionClass(_bloqueoFiltro == "1")" @onclick='() => SetBlockFilterAsync("1")'>Bloqueados</button>
                         <button type="button" class="@GetSmartOptionClass(_bloqueoFiltro == "0")" @onclick='() => SetBlockFilterAsync("0")'>Sin bloquear</button>
+                        <button type="button" class="btn btn--primary btn--sm" @onclick="AplicarFiltrosAsync">
+                            <i class="bi bi-search"></i> Aplicar
+                        </button>
                     </div>
                     <div class="smart-search__column">
                         <h4><i class="bi bi-stack"></i> Agrupar por</h4>

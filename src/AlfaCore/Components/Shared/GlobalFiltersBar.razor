@@ -1,6 +1,6 @@
 @using AlfaCore.Models
 
-<section class="panel-card filters-card">
+<section class="panel-card filters-card" @onkeydown="HandleApplyKeyDownAsync">
     <div class="panel-card__header">
         <div>
             <h3 class="panel-card__title">@Titulo</h3>
@@ -141,6 +141,13 @@
     private bool _showAdvanced;
 
     private async Task ApplyAsync() => await OnApply.InvokeAsync();
+    private async Task HandleApplyKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (!string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        await ApplyAsync();
+    }
     private Task HoyAsync() => ApplyQuickRangeAsync("hoy");
     private Task SemanaAsync() => ApplyQuickRangeAsync("semana");
     private Task MesAsync() => ApplyQuickRangeAsync("mes");
