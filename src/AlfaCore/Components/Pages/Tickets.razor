@@ -500,12 +500,18 @@
             </section>
         }
     }
-    else if (_loading)
+    else if (_loading && !HasVisibleTicketData())
     {
         <section class="panel-card"><div class="loading">Cargando tickets...</div></section>
     }
     else if (_viewMode == "kanban")
     {
+        @if (IsTicketsUpdating())
+        {
+            <section class="panel-card">
+                <div class="loading"><i class="bi bi-arrow-repeat"></i> Actualizando tickets...</div>
+            </section>
+        }
         <section class="tickets-kanban" @ref="_kanbanRoot">
             @foreach (var state in _lookups.Estados.OrderBy(x => x.Orden))
             {
@@ -566,6 +572,10 @@
         var visibleColumns = GetVisibleColumns();
         var groups = BuildListGroups();
         <section class="panel-card">
+            @if (IsTicketsUpdating())
+            {
+                <div class="loading"><i class="bi bi-arrow-repeat"></i> Actualizando tickets...</div>
+            }
             <div class="panel-card__header">
                 <div>
                     <h3 class="panel-card__title">Listado</h3>
@@ -639,6 +649,7 @@
     private string _prioridadFiltro = string.Empty;
     private string _viewMode = "kanban";
     private bool _loading;
+    private bool _refreshingTickets;
     private bool _saving;
     private bool _showEditor;
     private bool _isNew;
@@ -764,7 +775,7 @@
             _descriptionEditorReady = true;
         }
 
-        if (!_showEditor && _viewMode == "kanban" && !_loading && _ticketsKanbanJs is not null && _kanbanDotNetRef is not null)
+        if (!_showEditor && _viewMode == "kanban" && !_loading && !_refreshingTickets && _ticketsKanbanJs is not null && _kanbanDotNetRef is not null)
             await _ticketsKanbanJs.InvokeVoidAsync("wireKanban", _kanbanRoot, _kanbanDotNetRef);
     }
 
@@ -807,7 +818,7 @@
     private async Task RecargarAsync()
     {
         await CargarLookupsAsync();
-        await BuscarAsync();
+        await BuscarAsync(keepCurrent: true);
         if (_detail is not null)
             await AbrirTicketAsync(_detail.IdTicket);
     }
@@ -816,7 +827,7 @@
     {
         _viewMode = view;
         _showEditor = false;
-        await BuscarAsync();
+        await BuscarAsync(keepCurrent: true);
     }
 
     private void OpenTicketSearchPanel()
@@ -1046,9 +1057,11 @@
         await BuscarAsync();
     }
 
-    private async Task BuscarAsync()
+    private async Task BuscarAsync(bool keepCurrent = false)
     {
-        _loading = true;
+        var refreshInPlace = keepCurrent && HasVisibleTicketData();
+        _refreshingTickets = refreshInPlace;
+        _loading = !refreshInPlace;
         SyncFilters();
         try
         {
@@ -1075,6 +1088,7 @@
         finally
         {
             _loading = false;
+            _refreshingTickets = false;
         }
     }
 
@@ -1109,6 +1123,12 @@
 
     private void SyncFilters()
         => _filters.Prioridad = int.TryParse(_prioridadFiltro, out var priority) ? priority : null;
+
+    private bool HasVisibleTicketData()
+        => _viewMode == "kanban" ? _kanbanItems.Count > 0 : _listItems.Count > 0;
+
+    private bool IsTicketsUpdating()
+        => (_loading || _refreshingTickets) && HasVisibleTicketData();
 
     private void NuevoTicket()
     {
@@ -1239,8 +1259,17 @@
             return;
 
         var estadoAnterior = ticket.CodigoEstado;
+        var estadoNombreAnterior = ticket.EstadoNombre;
+        var estadoColorAnterior = ticket.EstadoColor;
+        var estadoOrdenAnterior = ticket.EstadoOrden;
+        var fechaModificacionAnterior = ticket.FechaHoraModificacion;
+        var estadoDestino = _lookups.Estados.FirstOrDefault(x => string.Equals(x.CodigoEstado, codigoEstadoDestino, StringComparison.OrdinalIgnoreCase));
+
         ticket.CodigoEstado = codigoEstadoDestino;
-        ticket.EstadoNombre = _lookups.Estados.FirstOrDefault(x => string.Equals(x.CodigoEstado, codigoEstadoDestino, StringComparison.OrdinalIgnoreCase))?.Nombre ?? ticket.EstadoNombre;
+        ticket.EstadoNombre = estadoDestino?.Nombre ?? ticket.EstadoNombre;
+        ticket.EstadoColor = estadoDestino?.Color ?? ticket.EstadoColor;
+        ticket.EstadoOrden = estadoDestino?.Orden ?? ticket.EstadoOrden;
+        ticket.FechaHoraModificacion = DateTime.Now;
 
         var result = await UiOps.RunAsync(async () =>
         {
@@ -1256,13 +1285,16 @@
         if (!result.Success)
         {
             ticket.CodigoEstado = estadoAnterior;
-            ticket.EstadoNombre = _lookups.Estados.FirstOrDefault(x => string.Equals(x.CodigoEstado, estadoAnterior, StringComparison.OrdinalIgnoreCase))?.Nombre ?? ticket.EstadoNombre;
+            ticket.EstadoNombre = estadoNombreAnterior;
+            ticket.EstadoColor = estadoColorAnterior;
+            ticket.EstadoOrden = estadoOrdenAnterior;
+            ticket.FechaHoraModificacion = fechaModificacionAnterior;
             SetFeedback(result.Feedback);
             return;
         }
 
         SetFeedback(AppUiMessage.Success("Etapa actualizada", "El ticket se movió correctamente."));
-        await BuscarAsync();
+        await BuscarAsync(keepCurrent: true);
     }
 
     private async Task OnDescripcionChangedAsync()
