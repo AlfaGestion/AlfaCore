@@ -526,10 +526,13 @@ else
                         </button>
                     }
                 }
-                <button type="button" class="menu__link menu__button menu__link--help @(_tasksPanelOpen ? "is-active" : string.Empty)" @onclick="ToggleTasksPanelAsync">
-                    <span class="menu__icon"><i class="bi bi-check2-circle"></i></span>
-                    <span>Tareas</span>
-                </button>
+                @if (CanShowTasksPanel)
+                {
+                    <button type="button" class="menu__link menu__button menu__link--help @(_tasksPanelOpen ? "is-active" : string.Empty)" @onclick="ToggleTasksPanelAsync">
+                        <span class="menu__icon"><i class="bi bi-check2-circle"></i></span>
+                        <span>Tareas</span>
+                    </button>
+                }
                 <NavLink class="menu__link menu__link--help" href="@(_currentModule == "consultas" ? "/ayuda?topic=consultas" : "/ayuda")">
                     <span class="menu__icon"><i class="bi bi-question-circle-fill"></i></span>
                     <span>Ayuda</span>
@@ -651,7 +654,7 @@ else
 
 <SessionDrawer Open="_drawerOpen" OnClose="() => _drawerOpen = false" />
 
-@if (!IsPosFullscreenRoute && !IsDirectMode && _tasksPanelOpen)
+@if (CanShowTasksPanel && _tasksPanelOpen)
 {
     <button type="button"
             class="tareas-side-backdrop no-print"
@@ -659,7 +662,7 @@ else
             @onclick="CloseTasksPanel"></button>
 }
 
-@if (!IsPosFullscreenRoute && !IsDirectMode)
+@if (CanShowTasksPanel)
 {
 <aside class="tareas-side-panel no-print @(_tasksPanelOpen ? "is-open" : string.Empty)" aria-label="Tareas rápidas">
     <header class="tareas-side-panel__head">
@@ -952,6 +955,7 @@ else
     private bool ShowShellContext => string.IsNullOrWhiteSpace(_currentModule);
     private bool ShowLauncherContext => ShowShellContext && !IsDirectMode;
     private bool CanShowLauncherAccess => !IsDirectMode;
+    private bool CanShowTasksPanel => !IsPosFullscreenRoute && !IsDirectMode && AppUserSession.IsAuthenticated;
     private bool IsLauncherRoute => string.IsNullOrWhiteSpace(Nav.ToBaseRelativePath(Nav.Uri).Split('?')[0].Split('#')[0].Trim('/'));
     private bool IsDirectMode => !string.IsNullOrWhiteSpace(_directModuleKey);
     private bool IsPosFullscreenRoute => string.Equals(GetNormalizedCurrentPath(), "ventas/punto-venta", StringComparison.OrdinalIgnoreCase);
@@ -1041,6 +1045,7 @@ else
         {
             _loginPassword = string.Empty;
             _loginShowPassword = false;
+            CloseTasksPanel();
         }
 
         if (ShowShellContext)
@@ -1905,6 +1910,12 @@ else
 
     private async Task ToggleTasksPanelAsync()
     {
+        if (!CanShowTasksPanel)
+        {
+            CloseTasksPanel();
+            return;
+        }
+
         if (_tasksPanelOpen)
         {
             CloseTasksPanel();

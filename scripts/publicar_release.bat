@@ -14,6 +14,9 @@ if exist ".\src\AlfaCore\obj" (
 if exist ".\src\AlfaCoreShell\obj" (
   powershell -NoProfile -ExecutionPolicy Bypass -Command "Remove-Item -Recurse -Force '.\src\AlfaCoreShell\obj' -ErrorAction SilentlyContinue"
 )
+if exist ".\src\AlfaCore\obj\Release\net8.0\apphost.exe" (
+  echo Advertencia: apphost.exe sigue presente despues de limpiar obj. Puede estar bloqueado por otro proceso.
+)
 echo Cerrando instancia anterior si existe...
 for /f "usebackq delims=" %%I in (`powershell -NoProfile -ExecutionPolicy Bypass -Command "$publishDir = (Resolve-Path '%PUBLISH_DIR_FULL%' -ErrorAction SilentlyContinue).Path; $releaseDir = (Resolve-Path '.\src\AlfaCore\bin\Release\net8.0' -ErrorAction SilentlyContinue).Path; $targets = @(); if ($publishDir) { $targets += (Join-Path $publishDir 'AlfaCore.exe') }; if ($releaseDir) { $targets += (Join-Path $releaseDir 'AlfaCore.exe') }; $p = Get-Process AlfaCore -ErrorAction SilentlyContinue | Where-Object { $_.Path -and ($targets -contains $_.Path) } | Select-Object -ExpandProperty Id; foreach ($id in $p) { Write-Output $id }" 2^>nul`) do (
   echo Deteniendo proceso backend PID %%I...
@@ -110,5 +113,11 @@ goto :eof
 
 :error
 echo La publicacion fallo.
+if exist ".\src\AlfaCore\obj\Release\net8.0\apphost.exe" (
+  echo Posible causa: el archivo src\AlfaCore\obj\Release\net8.0\apphost.exe esta bloqueado.
+  echo Cierra Visual Studio, procesos dotnet o antivirus que lo esten usando y reintenta.
+)
+
 exit /b 1
 endlocal
+pause
