@@ -366,3 +366,204 @@ html[data-theme="light"] .pos-charge-modal,
 html[data-theme="light"] .pos-settings-modal {
     color: #1f2937;
 }
+
+/* Conversaciones: overrides finales para el modo claro del layout operativo. */
+html[data-theme="light"] .conversations-page--odoo,
+html[data-theme="light"] .conversations-page--odoo .conversations-layout,
+html[data-theme="light"] .conversations-page--odoo .conversations-list,
+html[data-theme="light"] .conversations-page--odoo .conversations-chat,
+html[data-theme="light"] .conversations-page--odoo .conversations-chat__header,
+html[data-theme="light"] .conversations-page--odoo .conversations-thread-shell,
+html[data-theme="light"] .conversations-page--odoo .conversations-thread,
+html[data-theme="light"] .conversations-page--odoo .conversations-composer,
+html[data-theme="light"] .conversations-page--odoo .conversations-context {
+    background: #ffffff !important;
+    border-color: rgba(15, 23, 42, .14) !important;
+    color: #0f172a !important;
+}
+
+html[data-theme="light"] .conversations-page--odoo .conversations-list {
+    background: #f8fafc !important;
+}
+
+html[data-theme="light"] .conversations-page--odoo .conversation-row {
+    background: transparent !important;
+    color: #0f172a !important;
+}
+
+html[data-theme="light"] .conversations-page--odoo .conversation-row:hover {
+    background: #e0f2fe !important;
+}
+
+html[data-theme="light"] .conversations-page--odoo .conversation-row.is-selected {
+    background: #dff7fb !important;
+    border-color: rgba(8, 145, 178, .28) !important;
+}
+
+html[data-theme="light"] .conversations-page--odoo .conversation-row__name,
+html[data-theme="light"] .conversations-page--odoo .panel-card__title,
+html[data-theme="light"] .conversations-page--odoo .message-card__text {
+    color: #0f172a !important;
+}
+
+html[data-theme="light"] .conversations-page--odoo .conversation-row__summary,
+html[data-theme="light"] .conversations-page--odoo .conversation-row__date,
+html[data-theme="light"] .conversations-page--odoo .panel-card__subtitle,
+html[data-theme="light"] .conversations-page--odoo .message-card__meta,
+html[data-theme="light"] .conversations-page--odoo .message-card__footer,
+html[data-theme="light"] .conversations-page--odoo .attachment-name,
+html[data-theme="light"] .conversations-page--odoo .attachment-link span {
+    color: #64748b !important;
+}
+
+html[data-theme="light"] .conversations-page--odoo .conversation-badge,
+html[data-theme="light"] .conversations-page--odoo .conversations-chat__chips .conversation-badge,
+html[data-theme="light"] .conversations-page--odoo .conversation-badge[style] {
+    background: #e0f2fe !important;
+    border-color: rgba(2, 132, 199, .28) !important;
+    color: #075985 !important;
+}
+
+html[data-theme="light"] .conversations-page--odoo .conversation-badge--state {
+    background: #ecfdf5 !important;
+    border-color: rgba(5, 150, 105, .26) !important;
+    color: #047857 !important;
+}
+
+html[data-theme="light"] .conversations-module-actions .conversations-context-button,
+html[data-theme="light"] .conversations-module-actions .conversations-context-button.btn--ghost {
+    background: #ffffff !important;
+    border-color: rgba(2, 132, 199, .32) !important;
+    color: #075985 !important;
+}
+
+html[data-theme="light"] .conversations-module-actions .conversations-context-button:hover {
+    background: #e0f2fe !important;
+}
+
+html[data-theme="light"] .conversation-pin {
+    background: #e2e8f0 !important;
+    border-color: rgba(100, 116, 139, .35) !important;
+    color: #475569 !important;
+}
+
+html[data-theme="light"] .conversation-pin.is-pinned {
+    background: #fef3c7 !important;
+    border-color: rgba(217, 119, 6, .38) !important;
+    color: #92400e !important;
+}
+
+html[data-theme="light"] .conversation-header-state__row,
+html[data-theme="light"] .conversation-header-state__trigger,
+html[data-theme="light"] .conversation-header-state__close,
+html[data-theme="light"] .conversation-header-state__closed {
+    background: #f8fafc !important;
+    border-color: rgba(15, 23, 42, .14) !important;
+    color: #334155 !important;
+}
+
+html[data-theme="light"] .conversation-header-state__caption {
+    color: #64748b !important;
+}
+
+html[data-theme="light"] .conversation-header-state__trigger span {
+    color: #334155 !important;
+}
+
+html[data-theme="light"] .conversation-header-state__menu {
+    background: #ffffff !important;
+    border-color: rgba(15, 23, 42, .16) !important;
+    box-shadow: 0 18px 42px rgba(15, 23, 42, .14) !important;
+}
+
+html[data-theme="light"] .conversation-header-state__option {
+    color: #334155 !important;
+}
+
+html[data-theme="light"] .conversation-header-state__option:hover,
+html[data-theme="light"] .conversation-header-state__option.is-active {
+    background: #e0f2fe !important;
+    color: #075985 !important;
+}
+
+html[data-theme="light"] .conversations-window-banner {
+    background: #fef3c7 !important;
+    border-color: rgba(217, 119, 6, .32) !important;
+    color: #78350f !important;
+    box-shadow: inset 0 -1px 0 rgba(217, 119, 6, .18) !important;
+}
+
+html[data-theme="light"] .conversations-ticket-selection {
+    background: #ccfbf1 !important;
+    border-color: rgba(13, 148, 136, .28) !important;
+    color: #115e59 !important;
+}
+
+html[data-theme="light"] .conversations-page--odoo .conversation-date-divider span {
+    background: #334155 !important;
+    color: #ffffff !important;
+    box-shadow: 0 8px 20px rgba(15, 23, 42, .18) !important;
+}
+
+html[data-theme="light"] .conversations-latest-button {
+    background: #ffffff !important;
+    border-color: rgba(2, 132, 199, .26) !important;
+    color: #075985 !important;
+    box-shadow: 0 14px 30px rgba(15, 23, 42, .14) !important;
+}
+
+html[data-theme="light"] .conversations-latest-button strong {
+    background: #e0f2fe !important;
+    color: #075985 !important;
+}
+
+html[data-theme="light"] .conversations-page--odoo .message-card {
+    color: #0f172a !important;
+    box-shadow: 0 6px 18px rgba(15, 23, 42, .08) !important;
+}
+
+html[data-theme="light"] .conversations-page--odoo .message-card--incoming {
+    background: #f1f5f9 !important;
+    border: 1px solid rgba(15, 23, 42, .10) !important;
+}
+
+html[data-theme="light"] .conversations-page--odoo .message-card--outgoing {
+    background: #dff3ff !important;
+    border: 1px solid rgba(2, 132, 199, .22) !important;
+}
+
+html[data-theme="light"] .conversations-page--odoo .message-card--internal {
+    background: #f5f3ff !important;
+    border: 1px dashed rgba(124, 58, 237, .28) !important;
+}
+
+html[data-theme="light"] .conversations-page--odoo .message-card__delivery,
+html[data-theme="light"] .conversations-page--odoo .message-card__delivery span,
+html[data-theme="light"] .conversations-page--odoo .message-card__delivery .bi {
+    color: #0284c7 !important;
+}
+
+html[data-theme="light"] .conversations-page--odoo .message-action-button {
+    background: #ffffff !important;
+    border-color: rgba(15, 23, 42, .16) !important;
+    color: #334155 !important;
+}
+
+html[data-theme="light"] .conversations-page--odoo .message-action-button:hover {
+    background: #e0f2fe !important;
+    border-color: rgba(2, 132, 199, .34) !important;
+    color: #075985 !important;
+}
+
+html[data-theme="light"] .conversations-page--odoo .conversations-composer textarea,
+html[data-theme="light"] .conversations-page--odoo .conversations-composer input,
+html[data-theme="light"] .conversations-page--odoo .conversations-composer select {
+    background: #ffffff !important;
+    border-color: rgba(15, 23, 42, .18) !important;
+    color: #0f172a !important;
+}
+
+html[data-theme="light"] .conversations-page--odoo .conversations-composer textarea::placeholder,
+html[data-theme="light"] .conversations-page--odoo .conversations-composer input::placeholder {
+    color: #94a3b8 !important;
+}
