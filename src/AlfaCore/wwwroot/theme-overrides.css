@@ -1,9 +1,23 @@
 /* Light theme compatibility layer. Keep component code untouched; normalize surfaces,
    text, controls and overlays that still use dark fixed colors in module styles. */
+html[data-theme="dark"] {
+    color-scheme: dark;
+}
+
+html[data-theme="light"] {
+    color-scheme: light;
+}
+
 html[data-theme="light"] body,
 html[data-theme="light"] .page-grid,
 html[data-theme="light"] .shell__content {
     color: var(--color-text);
+}
+
+html[data-theme="light"] .shell,
+html[data-theme="light"] .shell__main,
+html[data-theme="light"] .shell__content {
+    background: #eef4f9 !important;
 }
 
 html[data-theme="light"] .page-intro__title,
@@ -100,6 +114,13 @@ html[data-theme="light"] .tickets-rich-editor__surface {
     background: #ffffff;
     border-color: rgba(15, 23, 42, 0.18);
     color: #0f172a;
+}
+
+html[data-theme="light"] select,
+html[data-theme="light"] option {
+    color-scheme: light;
+    background-color: #ffffff !important;
+    color: #0f172a !important;
 }
 
 html[data-theme="light"] input::placeholder,
@@ -566,4 +587,217 @@ html[data-theme="light"] .conversations-page--odoo .conversations-composer selec
 html[data-theme="light"] .conversations-page--odoo .conversations-composer textarea::placeholder,
 html[data-theme="light"] .conversations-page--odoo .conversations-composer input::placeholder {
     color: #94a3b8 !important;
+}
+
+/* Tareas: modo claro completo. */
+html[data-theme="light"] .tareas-page,
+html[data-theme="light"] .shell__content .tareas-page {
+    background: transparent !important;
+    color: #0f172a !important;
+}
+
+html[data-theme="light"] .tareas-header,
+html[data-theme="light"] .shell__content .tareas-header {
+    background: #ffffff !important;
+    border: 1px solid rgba(15, 23, 42, .12) !important;
+    color: #0f172a !important;
+    box-shadow: 0 8px 26px rgba(15, 23, 42, .08) !important;
+}
+
+html[data-theme="light"] .tareas-header h2,
+html[data-theme="light"] .tareas-toolbar strong,
+html[data-theme="light"] .tareas-quick__head strong,
+html[data-theme="light"] .tareas-row__body strong,
+html[data-theme="light"] .tareas-side-row__body strong {
+    color: #0f172a !important;
+}
+
+html[data-theme="light"] .tareas-header span,
+html[data-theme="light"] .tareas-muted,
+html[data-theme="light"] .tareas-toolbar span,
+html[data-theme="light"] .tareas-row__body span,
+html[data-theme="light"] .tareas-note small,
+html[data-theme="light"] .tareas-side-row__body span {
+    color: #64748b !important;
+}
+
+html[data-theme="light"] .tareas-lists,
+html[data-theme="light"] .tareas-main,
+html[data-theme="light"] .tareas-quick,
+html[data-theme="light"] .tareas-modal,
+html[data-theme="light"] .tareas-side-panel,
+html[data-theme="light"] .shell__content .tareas-lists,
+html[data-theme="light"] .shell__content .tareas-main,
+html[data-theme="light"] .shell__content .tareas-quick {
+    background: #ffffff !important;
+    border-color: rgba(15, 23, 42, .12) !important;
+    color: #0f172a !important;
+    box-shadow: 0 8px 26px rgba(15, 23, 42, .08) !important;
+}
+
+html[data-theme="light"] .tareas-compose,
+html[data-theme="light"] .tareas-toolbar,
+html[data-theme="light"] .tareas-row,
+html[data-theme="light"] .tareas-note,
+html[data-theme="light"] .tareas-list-button,
+html[data-theme="light"] .tareas-side-row,
+html[data-theme="light"] .shell__content .tareas-compose,
+html[data-theme="light"] .shell__content .tareas-toolbar,
+html[data-theme="light"] .shell__content .tareas-row,
+html[data-theme="light"] .shell__content .tareas-note,
+html[data-theme="light"] .shell__content .tareas-list-button {
+    background: #ffffff !important;
+    border-color: rgba(15, 23, 42, .12) !important;
+    color: #0f172a !important;
+}
+
+html[data-theme="light"] .tareas-compose,
+html[data-theme="light"] .tareas-toolbar,
+html[data-theme="light"] .shell__content .tareas-compose,
+html[data-theme="light"] .shell__content .tareas-toolbar {
+    background: #f8fafc !important;
+}
+
+html[data-theme="light"] .tareas-row:hover,
+html[data-theme="light"] .tareas-list-button:hover,
+html[data-theme="light"] .tareas-list-button.is-active,
+html[data-theme="light"] .tareas-side-row:hover,
+html[data-theme="light"] .shell__content .tareas-row:hover,
+html[data-theme="light"] .shell__content .tareas-list-button:hover,
+html[data-theme="light"] .shell__content .tareas-list-button.is-active {
+    background: #e0f2fe !important;
+    border-color: rgba(2, 132, 199, .28) !important;
+}
+
+html[data-theme="light"] .tareas-compose input,
+html[data-theme="light"] .tareas-quick-input,
+html[data-theme="light"] .tareas-title-input,
+html[data-theme="light"] .tareas-form-grid input,
+html[data-theme="light"] .tareas-form-grid select,
+html[data-theme="light"] .tareas-description textarea,
+html[data-theme="light"] .tareas-side-panel__add input,
+html[data-theme="light"] .shell__content .tareas-compose input,
+html[data-theme="light"] .shell__content .tareas-row select {
+    background: #ffffff !important;
+    border-color: rgba(15, 23, 42, .18) !important;
+    color: #0f172a !important;
+}
+
+html[data-theme="light"] .tareas-compose input::placeholder,
+html[data-theme="light"] .tareas-quick-input::placeholder,
+html[data-theme="light"] .tareas-title-input::placeholder,
+html[data-theme="light"] .tareas-description textarea::placeholder,
+html[data-theme="light"] .tareas-side-panel__add input::placeholder {
+    color: #94a3b8 !important;
+}
+
+html[data-theme="light"] .tareas-assignee-filter__button,
+html[data-theme="light"] .tareas-assignee-filter__menu,
+html[data-theme="light"] .tareas-menu summary,
+html[data-theme="light"] .tareas-menu > div,
+html[data-theme="light"] .tareas-icon-action,
+html[data-theme="light"] .tareas-side-panel__actions a,
+html[data-theme="light"] .tareas-side-panel__actions button {
+    background: #ffffff !important;
+    border-color: rgba(15, 23, 42, .16) !important;
+    color: #334155 !important;
+}
+
+html[data-theme="light"] .tareas-assignee-filter__option {
+    background: transparent !important;
+    color: #334155 !important;
+}
+
+html[data-theme="light"] .tareas-assignee-filter__option:hover,
+html[data-theme="light"] .tareas-assignee-filter__option.is-active,
+html[data-theme="light"] .tareas-menu button:hover,
+html[data-theme="light"] .tareas-icon-action:hover {
+    background: #e0f2fe !important;
+    color: #075985 !important;
+}
+
+html[data-theme="light"] .tareas-check,
+html[data-theme="light"] .tareas-side-check {
+    background: #ffffff !important;
+    border-color: rgba(37, 99, 235, .34) !important;
+    color: #2563eb !important;
+}
+
+html[data-theme="light"] .tareas-check.is-done,
+html[data-theme="light"] .tareas-side-check.is-done {
+    background: #dcfce7 !important;
+    border-color: rgba(22, 163, 74, .34) !important;
+    color: #15803d !important;
+}
+
+html[data-theme="light"] .tareas-priority-badge--alta {
+    background: #fee2e2 !important;
+    border-color: rgba(220, 38, 38, .30) !important;
+    color: #991b1b !important;
+}
+
+html[data-theme="light"] .tareas-priority-badge--media {
+    background: #fef3c7 !important;
+    border-color: rgba(217, 119, 6, .32) !important;
+    color: #92400e !important;
+}
+
+html[data-theme="light"] .tareas-priority-badge--baja {
+    background: #ccfbf1 !important;
+    border-color: rgba(13, 148, 136, .32) !important;
+    color: #115e59 !important;
+}
+
+html[data-theme="light"] .tareas-confirm {
+    background: rgba(15, 23, 42, .38) !important;
+}
+
+html[data-theme="light"] .tareas-confirm__dialog,
+html[data-theme="light"] .tareas-share-all,
+html[data-theme="light"] .tareas-task-share,
+html[data-theme="light"] .tareas-task-share-panel,
+html[data-theme="light"] .tareas-attachments,
+html[data-theme="light"] .tareas-attachment-card,
+html[data-theme="light"] .tareas-image-preview {
+    background: #ffffff !important;
+    border-color: rgba(15, 23, 42, .14) !important;
+    color: #0f172a !important;
+}
+
+html[data-theme="light"] .tareas-modal__head,
+html[data-theme="light"] .tareas-modal__actions,
+html[data-theme="light"] .tareas-side-panel__head {
+    border-color: rgba(15, 23, 42, .12) !important;
+}
+
+html[data-theme="light"] .tareas-empty,
+html[data-theme="light"] .tareas-side-panel__empty,
+html[data-theme="light"] .tareas-attachments__empty {
+    color: #64748b !important;
+}
+
+/* Cobertura global de claro para módulos con clases nuevas o menos frecuentes. */
+html[data-theme="light"] [class*="panel"],
+html[data-theme="light"] [class*="card"],
+html[data-theme="light"] [class*="modal"],
+html[data-theme="light"] [class*="drawer"],
+html[data-theme="light"] [class*="toolbar"],
+html[data-theme="light"] [class*="filters"],
+html[data-theme="light"] [class*="table"],
+html[data-theme="light"] [class*="row"] {
+    border-color: rgba(15, 23, 42, .12);
+}
+
+html[data-theme="light"] [class*="__title"],
+html[data-theme="light"] [class*="-title"],
+html[data-theme="light"] [class*="__name"] {
+    color: #0f172a;
+}
+
+html[data-theme="light"] [class*="__subtitle"],
+html[data-theme="light"] [class*="-subtitle"],
+html[data-theme="light"] [class*="__muted"],
+html[data-theme="light"] [class*="-muted"],
+html[data-theme="light"] small {
+    color: #64748b;
 }
