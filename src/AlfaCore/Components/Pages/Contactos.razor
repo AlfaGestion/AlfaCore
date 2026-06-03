@@ -813,6 +813,7 @@
     private ContactoTab _activeTab = ContactoTab.Datos;
     private int? _startupEditId;
     private bool _startupOpenMerge;
+    private string? _returnUrl;
     private long? _selectedConversationId;
     private bool _showSearchPanel;
     private bool _showMergeModal;
@@ -1202,6 +1203,7 @@
     private void ApplyStartupQuery()
     {
         var query = QueryHelpers.ParseQuery(Nav.ToAbsoluteUri(Nav.Uri).Query);
+        _returnUrl = ReadSafeReturnUrl(query);
         if (query.TryGetValue("editar", out var editRaw)
             && int.TryParse(editRaw.ToString(), out var editId)
             && editId > 0)
@@ -1236,10 +1238,41 @@
 
     private void CerrarEditor()
     {
+        if (!string.IsNullOrWhiteSpace(_returnUrl))
+        {
+            Nav.NavigateTo(_returnUrl);
+            return;
+        }
+
         ClearFieldErrors();
         CloseMergeModal();
         _showEditor = false;
         _linkedAccounts.Clear();
+    }
+
+    private string? ReadSafeReturnUrl(Dictionary<string, Microsoft.Extensions.Primitives.StringValues> query)
+    {
+        if (!query.TryGetValue("returnUrl", out var raw))
+            return null;
+
+        var value = raw.ToString();
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        if (Uri.TryCreate(value, UriKind.Absolute, out var absolute))
+        {
+            var baseUri = Nav.ToAbsoluteUri(Nav.BaseUri);
+            if (!string.Equals(absolute.Scheme, baseUri.Scheme, StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(absolute.Host, baseUri.Host, StringComparison.OrdinalIgnoreCase)
+                || absolute.Port != baseUri.Port)
+                return null;
+
+            return absolute.PathAndQuery + absolute.Fragment;
+        }
+
+        return value.StartsWith("/", StringComparison.Ordinal)
+            ? value
+            : null;
     }
 
     private void ResetForm()

@@ -1971,13 +1971,34 @@
 
         var contactoId = _contactoPreview.Id;
         CerrarVistaContacto();
-        Nav.NavigateTo($"/contactos?editar={contactoId}");
+        Nav.NavigateTo(BuildContactEditUrl(contactoId));
     }
 
     private void AbrirContactoCompleto(CuentaComercialContactoDto contacto)
     {
         var contactoId = contacto.Id;
-        Nav.NavigateTo($"/contactos?editar={contactoId}");
+        Nav.NavigateTo(BuildContactEditUrl(contactoId));
+    }
+
+    private string BuildContactEditUrl(int contactoId, bool openMerge = false)
+    {
+        var query = new Dictionary<string, string?>
+        {
+            ["editar"] = contactoId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["returnUrl"] = BuildCurrentRelativeUrl()
+        };
+        if (openMerge)
+            query["unificar"] = "1";
+
+        return QueryHelpers.AddQueryString("/contactos", query);
+    }
+
+    private string BuildCurrentRelativeUrl()
+    {
+        var relative = Nav.ToBaseRelativePath(Nav.Uri);
+        return string.IsNullOrWhiteSpace(relative)
+            ? "/"
+            : $"/{relative}";
     }
 
     private void AbrirUnificarContacto()
@@ -1987,7 +2008,7 @@
 
         var contactoId = _contactoPreview.Id;
         CerrarVistaContacto();
-        Nav.NavigateTo($"/contactos?editar={contactoId}&unificar=1");
+        Nav.NavigateTo(BuildContactEditUrl(contactoId, openMerge: true));
     }
 
     private async Task GuardarDatosRapidosContactoAsync()

@@ -942,7 +942,7 @@ else
     private List<NotificacionesPushEndpointResultDto> _pushLastTestResults = [];
     private string CurrentPageTitle => GetCurrentPageTitle();
     private RenderFragment? ModuleBackLink => !IsDirectMode
-        ? @<a class="menu__back" href="/" @onclick="GoToLauncher">
+        ? @<a class="menu__back" href="/" @onclick:preventDefault="true" @onclick="GoBackOrLauncherAsync">
                 <i class="bi bi-grid-3x3-gap-fill"></i>
                 <span>Aplicaciones</span>
             </a>
@@ -1084,6 +1084,23 @@ else
 
     private void GoToLauncher()
         => Nav.NavigateTo("/");
+
+    private async Task GoBackOrLauncherAsync()
+    {
+        try
+        {
+            if (await JS.InvokeAsync<bool>("alfaCoreNavigation.canGoBack"))
+            {
+                await JS.InvokeVoidAsync("alfaCoreNavigation.goBack");
+                return;
+            }
+        }
+        catch
+        {
+        }
+
+        GoToLauncher();
+    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {

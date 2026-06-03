@@ -44,6 +44,14 @@
         window.alfaCorePwaFunctionExists = function (name) {
             return !!(window.alfaCorePwa && typeof window.alfaCorePwa[name] === 'function');
         };
+        window.alfaCoreNavigation = {
+            canGoBack: function () {
+                return window.history.length > 1;
+            },
+            goBack: function () {
+                window.history.back();
+            }
+        };
     </script>
     <HeadOutlet />
 </head>
