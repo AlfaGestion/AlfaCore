@@ -81,7 +81,7 @@
                     <p class="panel-card__subtitle">Complemento: @c.IdComplemento · Fecha: @FormatDate(c.Fecha) · Usuario: @c.Usuario</p>
                 </div>
                 <div class="comprobante-viewer__badges">
-                    @foreach (var badge in BuildEstadoBadges(c))
+                    @foreach (var badge in BuildEstadoBadges(c, IsReimpresion()))
                     {
                         <span class="comprobante-badge @badge.Css">@badge.Label</span>
                     }
@@ -210,6 +210,7 @@
     [Parameter] public string IdComprobante { get; set; } = string.Empty;
     [Parameter] public int IdComplemento { get; set; }
     [Parameter] public string? ReturnUrl { get; set; }
+    [SupplyParameterFromQuery(Name = "reimpresion")] public string? Reimpresion { get; set; }
 
     private static readonly (string Key, string Label)[] Tabs =
     [
@@ -388,12 +389,18 @@
             ? "Consultá cabecera, detalle, observaciones, aplicaciones, documentos e historial del comprobante."
             : $"Visor genérico del comprobante {_dto.Cabecera.Tc} {_dto.Cabecera.IdComprobante} con navegación entre comprobantes relacionados.";
 
-    private static IEnumerable<(string Label, string Css)> BuildEstadoBadges(ComprobanteCabeceraDto c)
+    private bool IsReimpresion()
+        => string.Equals(Reimpresion, "1", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(Reimpresion, "true", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(Reimpresion, "si", StringComparison.OrdinalIgnoreCase);
+
+    private static IEnumerable<(string Label, string Css)> BuildEstadoBadges(ComprobanteCabeceraDto c, bool reimpresion)
     {
         if (c.Anulada) yield return ("ANULADO", "is-danger");
         if (c.Finalizada) yield return ("FINALIZADO", "is-success");
         if (c.Aprobada) yield return ("APROBADO", "is-info");
-        if (c.Impresa) yield return ("IMPRESO", "is-neutral");
+        if (reimpresion) yield return ("REIMPRESION", "is-warning");
+        else if (c.Impresa) yield return ("IMPRESO", "is-neutral");
         if (c.Bloqueada) yield return ("BLOQUEADO", "is-warning");
         if (c.Cerrada) yield return ("CERRADO", "is-neutral");
     }

@@ -528,14 +528,7 @@ No se identificaron stored procedures invocados directamente desde el código ac
 ### MenuService
 
 - Tipo: Service
-- Propósito:
-  Construye el árbol dinámico del sistema reutilizando TA_MENU y TA_TAREAS.
-
-- Datos que usa:
-  TA_MENU
-  TA_TAREAS
-  ALFACORE_MENU_WEB
-
-- Observaciones:
-  La navegación web reutiliza la estructura funcional legacy.
-  Las rutas web se resuelven mediante ALFACORE_MENU_WEB.
+- Ubicación: `src/AlfaCore/Services/MenuService.cs`
+- Propósito: construye el árbol dinámico de navegación web reutilizando `TA_MENU`, permisos y mapeos de `ALFACORE_MENU_WEB`.
+- Datos que usa: `TA_MENU`, `TA_TAREAS`, `ALFACORE_MENU_WEB`, `IActualizacionesService`, `IPermissionService`
+- Observaciones: intenta auto-reparar el shell web ejecutando actualizaciones pendientes si faltan tablas o mapeos; centraliza módulos, secciones, nodos y búsqueda del menú.

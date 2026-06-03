@@ -57,6 +57,16 @@ if %ROBOCODE% GEQ 8 (
   goto :error
 )
 
+if exist "%SOURCE_DIR_FULL%\App_Data\updates" (
+  if not exist "%INPUT_DIR_FULL%\App_Data\updates" mkdir "%INPUT_DIR_FULL%\App_Data\updates"
+  robocopy "%SOURCE_DIR_FULL%\App_Data\updates" "%INPUT_DIR_FULL%\App_Data\updates" /MIR >nul
+  set "ROBOCODE=%ERRORLEVEL%"
+  if %ROBOCODE% GEQ 8 (
+    echo Robocopy devolvio error %ROBOCODE% al copiar App_Data\updates.
+    goto :error
+  )
+)
+
 echo [2.5/5] Limpiando datos de conexion del instalador...
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "$f = '%INPUT_DIR_FULL%\appsettings.json'; $j = Get-Content $f -Raw | ConvertFrom-Json; $j.ConnectionStrings.AlfaGestion = ''; $j | ConvertTo-Json -Depth 10 | Set-Content $f -Encoding UTF8"

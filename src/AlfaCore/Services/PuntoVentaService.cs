@@ -423,6 +423,140 @@ public sealed class PuntoVentaService(
             };
         }, "No se pudo cargar el contexto de cierre del comprobante.", ct);
 
+    public Task<IReadOnlyList<PuntoVentaReceiptListItemDto>> GetRecentReceiptsAsync(string tipoComprobante, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "GetRecentReceipts", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            var tc = string.IsNullOrWhiteSpace(tipoComprobante) ? DefaultTc : tipoComprobante.Trim();
+            var rows = await cn.QueryAsync<PuntoVentaReceiptListItemDto>(new CommandDefinition(
+                """
+                SELECT TOP (40)
+                    ID AS IdComprobante,
+                    ISNULL(LTRIM(RTRIM(TC)), '') AS TipoComprobante,
+                    ISNULL(LTRIM(RTRIM(IDCOMPROBANTE)), '') AS IdComprobanteTexto,
+                    ISNULL(FechaHora_Grabacion, FECHA) AS FechaHora,
+                    ISNULL(LTRIM(RTRIM(NOMBRE)), '') AS Cliente,
+                    ISNULL(CONVERT(decimal(15,2), IMPORTE), 0) AS Total,
+                    CAST(ISNULL(Impreso, 0) AS bit) AS Impreso
+                FROM dbo.V_MV_CPTE
+                WHERE UPPER(LTRIM(RTRIM(TC))) = @Tc
+                  AND ISNULL(ANULADA, 0) = 0
+                ORDER BY ISNULL(FechaHora_Grabacion, FECHA) DESC, ID DESC;
+                """,
+                new { Tc = tc.ToUpperInvariant() },
+                cancellationToken: token));
+
+            return (IReadOnlyList<PuntoVentaReceiptListItemDto>)rows.ToList();
+        }, "No se pudieron cargar los comprobantes recientes del punto de venta.", ct);
+
+    public Task<PuntoVentaReceiptDataDto> GetReceiptDataAsync(int idComprobante, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "GetReceiptData", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            var header = await cn.QuerySingleOrDefaultAsync<ReceiptHeaderRow>(new CommandDefinition(
+                """
+                SELECT TOP (1)
+                    ID AS IdComprobante,
+                    ISNULL(LTRIM(RTRIM(TC)), '') AS Tc,
+                    ISNULL(LTRIM(RTRIM(IDCOMPROBANTE)), '') AS IdComprobanteTexto,
+                    ISNULL(CONVERT(decimal(15,2), IMPORTE), 0) AS Importe,
+                    FECHA AS Fecha,
+                    ISNULL(LTRIM(RTRIM(NOMBRE)), '') AS Nombre,
+                    ISNULL(LTRIM(RTRIM(CUENTA)), '') AS Cuenta,
+                    CAST(ISNULL(Impreso, 0) AS bit) AS Impreso,
+                    ISNULL(LTRIM(RTRIM(SUCURSAL)), '') AS Sucursal,
+                    ISNULL(LTRIM(RTRIM(NUMERO)), '') AS Numero,
+                    ISNULL(LTRIM(RTRIM(LETRA)), '') AS Letra
+                FROM dbo.V_MV_CPTE
+                WHERE ID = @IdComprobante;
+                """,
+                new { IdComprobante = idComprobante },
+                cancellationToken: token));
+
+            if (header is null)
+                throw new InvalidOperationException("No se encontró el comprobante solicitado para reimpresión.");
+
+            var items = (await cn.QueryAsync<PuntoVentaCartItemDto>(new CommandDefinition(
+                """
+                SELECT
+                    ISNULL(LTRIM(RTRIM(IDARTICULO)), '') AS IdArticulo,
+                    ISNULL(LTRIM(RTRIM(DESCRIPCION)), '') AS Descripcion,
+                    ISNULL(LTRIM(RTRIM(IDUNIDAD)), '') AS Presentacion,
+                    ISNULL(CONVERT(decimal(15,2), IMPORTE), 0) AS PrecioUnitario,
+                    ISNULL(CONVERT(decimal(15,2), CANTIDAD), 0) AS Cantidad
+                FROM dbo.V_MV_CpteInsumos
+                WHERE IDCOMPROBANTE = @IdComprobanteTexto
+                  AND TC = @Tc
+                ORDER BY ISNULL(SECUENCIA, 0), ISNULL(ID, 0);
+                """,
+                new { header.IdComprobanteTexto, header.Tc },
+                cancellationToken: token))).ToList();
+
+            var payments = (await cn.QueryAsync<PuntoVentaPaymentLineDto>(new CommandDefinition(
+                """
+                SELECT
+                    ISNULL(b.CUENTA, '') AS CodigoMedioPago,
+                    ISNULL(c.DESCRIPCION, ISNULL(b.CUENTA, '')) AS DescripcionMedioPago,
+                    ISNULL(b.importe, 0) AS Importe
+                FROM dbo.MV_APLICACION a
+                LEFT JOIN dbo.MV_ASIENTOS b
+                    ON a.TC = b.TC
+                   AND a.SUCURSAL = b.SUCURSAL
+                   AND a.NUMERO = b.NUMERO
+                   AND a.LETRA = b.LETRA
+                LEFT JOIN dbo.MA_CUENTAS c
+                    ON b.CUENTA = c.CODIGO
+                WHERE a.TCO_ORIGEN = @Tc
+                  AND a.IDComprobante_ORIGEN = @IdComprobanteTexto
+                  AND b.[DEBE-HABER] = 'D';
+                """,
+                new { header.Tc, header.IdComprobanteTexto },
+                cancellationToken: token))).ToList();
+
+            var context = await GetReceiptContextAsync(header.Cuenta, token);
+
+            return new PuntoVentaReceiptDataDto
+            {
+                Resultado = new PuntoVentaSaleResultDto
+                {
+                    IdComprobante = header.IdComprobante,
+                    IdCobranza = 0,
+                    TipoComprobante = header.Tc,
+                    Sucursal = header.Sucursal,
+                    Numero = header.Numero,
+                    Letra = header.Letra,
+                    IdComprobanteTexto = header.IdComprobanteTexto,
+                    Total = header.Importe
+                },
+                Contexto = context,
+                Items = items,
+                Pagos = payments,
+                Impreso = header.Impreso
+            };
+        }, "No se pudo cargar el comprobante para reimpresión.", ct);
+
+    public Task MarkReceiptPrintedAsync(int idComprobante, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "MarkReceiptPrinted", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            await cn.ExecuteAsync(new CommandDefinition(
+                """
+                UPDATE dbo.V_MV_CPTE
+                SET Impreso = 1
+                WHERE ID = @IdComprobante;
+                """,
+                new { IdComprobante = idComprobante },
+                cancellationToken: token));
+
+            return true;
+        }, "No se pudo actualizar el estado de impresión del comprobante.", ct);
+
     public Task<PuntoVentaCatalogDto> SearchArticulosAsync(PuntoVentaCatalogFiltersDto filters, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "SearchArticulos", async token =>
         {
@@ -437,10 +571,13 @@ public sealed class PuntoVentaService(
             var familyFilter = filters.IdFamilia.Trim();
             var search = filters.Texto.Trim();
             var take = filters.TamanioPagina <= 0 ? 24 : Math.Min(filters.TamanioPagina, 100);
+            var pagina = filters.Pagina <= 0 ? 1 : filters.Pagina;
+            var skip = (pagina - 1) * take;
+            var fetch = take + 1;
 
             var rows = await cn.QueryAsync<PuntoVentaArticleRow>(new CommandDefinition(
                 """
-                SELECT TOP (@Take)
+                SELECT
                     LTRIM(RTRIM(a.IDARTICULO)) AS IdArticulo,
                     ISNULL(LTRIM(RTRIM(a.CODIGOBARRA)), '') AS CodigoBarra,
                     ISNULL(LTRIM(RTRIM(a.DESCRIPCION)), '') AS Descripcion,
@@ -483,11 +620,14 @@ public sealed class PuntoVentaService(
                         OR UPPER(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA3, '')))) LIKE @TextoLike
                         OR UPPER(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA4, '')))) LIKE @TextoLike
                   )
-                ORDER BY a.DESCRIPCION, a.IDARTICULO;
+                ORDER BY a.DESCRIPCION, a.IDARTICULO
+                OFFSET @Skip ROWS
+                FETCH NEXT @Fetch ROWS ONLY;
                 """,
                 new
                 {
-                    Take = take,
+                    Skip = skip,
+                    Fetch = fetch,
                     IdLista = pricing.ListaPrecioActual,
                     IdFamilia = familyFilter,
                     Texto = search,
@@ -495,7 +635,12 @@ public sealed class PuntoVentaService(
                 },
                 cancellationToken: token));
 
-            var articles = rows
+            var materializedRows = rows.ToList();
+            var tieneMasResultados = materializedRows.Count > take;
+            if (tieneMasResultados)
+                materializedRows.RemoveAt(materializedRows.Count - 1);
+
+            var articles = materializedRows
                 .Select(row => new PuntoVentaArticleDto
                 {
                     IdArticulo = row.IdArticulo,
@@ -523,7 +668,9 @@ public sealed class PuntoVentaService(
                 ListaPrecioActual = pricing.ListaPrecioActual,
                 NombreListaPrecioActual = pricing.NombreListaPrecioActual,
                 ClasePrecioActual = pricing.ClasePrecioActual,
-                UsaPrecioFallback = usaFallback
+                UsaPrecioFallback = usaFallback,
+                TieneMasResultados = tieneMasResultados,
+                PaginaActual = pagina
             };
         }, "No se pudieron cargar los artículos del punto de venta.", ct);
 
@@ -1479,6 +1626,11 @@ public sealed class PuntoVentaService(
         public decimal Importe { get; init; }
         public DateTime Fecha { get; init; }
         public string Nombre { get; init; } = string.Empty;
+        public string Cuenta { get; init; } = string.Empty;
+        public bool Impreso { get; init; }
+        public string Sucursal { get; init; } = string.Empty;
+        public string Numero { get; init; } = string.Empty;
+        public string Letra { get; init; } = string.Empty;
     }
 
     private sealed class ReceiptDetailRow
