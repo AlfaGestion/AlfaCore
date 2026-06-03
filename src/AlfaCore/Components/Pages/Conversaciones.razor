@@ -3368,18 +3368,25 @@
         {
             var sections = new List<ContextNoteSectionVm>();
 
-            var contact = await ResolveContextContactAsync(conversation);
-            if (contact is not null)
+            var hasContactObservation = AddContextNoteSection(sections, ContextNoteKind.Observacion, "Contacto - Observaciones", conversation.ContactoObservaciones);
+            if (!hasContactObservation)
             {
+                var contact = await ResolveContextContactAsync(conversation);
                 AddContextNoteSection(sections, ContextNoteKind.Observacion, "Contacto - Observaciones", contact?.Observaciones);
             }
 
             if (!string.IsNullOrWhiteSpace(conversation.ClienteCodigo))
             {
+                var hasClientObservation = AddContextNoteSection(sections, ContextNoteKind.Observacion, "Cliente - Observaciones", conversation.ClienteObservaciones);
+                var hasClientExpandedNote = AddContextNoteSection(sections, ContextNoteKind.OtraNota, "Cliente - Nota ampliada", conversation.ClienteNotaCuenta);
+
                 var client = await CuentasSvc.GetByIdAsync(CuentaComercialTipo.Cliente, conversation.ClienteCodigo);
-                AddContextNoteSection(sections, ContextNoteKind.Observacion, "Cliente - Observaciones", client?.Observaciones);
+
+                if (!hasClientObservation)
+                    AddContextNoteSection(sections, ContextNoteKind.Observacion, "Cliente - Observaciones", client?.Observaciones);
                 AddContextNoteSection(sections, ContextNoteKind.OtraNota, "Cliente - Manual interno", client?.Manual);
-                AddContextNoteSection(sections, ContextNoteKind.OtraNota, "Cliente - Nota ampliada", client?.NotaCuenta);
+                if (!hasClientExpandedNote)
+                    AddContextNoteSection(sections, ContextNoteKind.OtraNota, "Cliente - Nota ampliada", client?.NotaCuenta);
             }
 
             if (_contextNotesConversationId == idConversacion && _selectedConversation?.IdConversacion == idConversacion)
@@ -3496,11 +3503,14 @@
            || (left.Length >= 8 && right.EndsWith(left[^Math.Min(left.Length, 10)..], StringComparison.Ordinal))
            || (right.Length >= 8 && left.EndsWith(right[^Math.Min(right.Length, 10)..], StringComparison.Ordinal));
 
-    private static void AddContextNoteSection(List<ContextNoteSectionVm> sections, ContextNoteKind kind, string label, string? text)
+    private static bool AddContextNoteSection(List<ContextNoteSectionVm> sections, ContextNoteKind kind, string label, string? text)
     {
         var clean = NormalizeContextNoteText(text);
-        if (!string.IsNullOrWhiteSpace(clean))
-            sections.Add(new ContextNoteSectionVm(kind, label, clean));
+        if (string.IsNullOrWhiteSpace(clean))
+            return false;
+
+        sections.Add(new ContextNoteSectionVm(kind, label, clean));
+        return true;
     }
 
     private static string NormalizeContextNoteText(string? text)

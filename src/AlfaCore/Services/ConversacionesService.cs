@@ -1175,7 +1175,10 @@ public sealed class ConversacionesService(
                     c.FechaHoraPrimerMensaje,
                     ISNULL(ultMsg.FechaHoraVisible, c.FechaHoraUltimoMensaje),
                     ultCliente.FechaHoraUltimoMensajeCliente,
-                    c.FechaHoraCierre
+                    c.FechaHoraCierre,
+                    ISNULL(CAST(mc.Observaciones AS nvarchar(max)), ''),
+                    ISNULL(clienteNotas.Observaciones, ''),
+                    ISNULL(cuentaObs.Nota, '')
                 FROM dbo.CONV_CONVERSACIONES c
                 INNER JOIN dbo.CONV_ESTADOS e
                     ON e.CodigoEstado = c.CodigoEstado
@@ -1204,6 +1207,21 @@ public sealed class ConversacionesService(
                         ON UPPER(LTRIM(RTRIM(cliCuenta.CODIGO))) = cuenta.Cuenta
                     ORDER BY cuenta.Orden, cliCuenta.RAZON_SOCIAL
                 ) contactoCuenta
+                OUTER APPLY (
+                    SELECT TOP (1)
+                        ISNULL(CAST(cliNotas.OBSERVACIONES AS nvarchar(max)), '') AS Observaciones
+                    FROM dbo.VT_CLIENTES cliNotas
+                    WHERE UPPER(LTRIM(RTRIM(cliNotas.CODIGO))) =
+                        UPPER(LTRIM(RTRIM(COALESCE(NULLIF(c.ClienteCodigo, ''), contactoCuenta.Cuenta, ''))))
+                ) clienteNotas
+                OUTER APPLY (
+                    SELECT TOP (1)
+                        ISNULL(CAST(obs.Nota AS nvarchar(max)), '') AS Nota
+                    FROM dbo.MA_CUENTASOBS obs
+                    WHERE UPPER(LTRIM(RTRIM(obs.Codigo))) =
+                        UPPER(LTRIM(RTRIM(COALESCE(NULLIF(c.ClienteCodigo, ''), contactoCuenta.Cuenta, ''))))
+                      AND ISNULL(obs.Sucursal, 0) = 0
+                ) cuentaObs
                 LEFT JOIN dbo.V_TA_Tecnicos t
                     ON LTRIM(RTRIM(t.IdTecnico)) = LTRIM(RTRIM(c.IdTecnico))
                 OUTER APPLY (
@@ -1258,7 +1276,10 @@ public sealed class ConversacionesService(
                 FechaHoraPrimerMensaje = rd.IsDBNull(20) ? null : NormalizeStoredConversationTime(rd.GetDateTime(20)),
                 FechaHoraUltimoMensaje = rd.IsDBNull(21) ? DateTime.MinValue : NormalizeStoredConversationTime(rd.GetDateTime(21)),
                 FechaHoraUltimoMensajeCliente = rd.IsDBNull(22) ? null : NormalizeStoredConversationTime(rd.GetDateTime(22)),
-                FechaHoraCierre = rd.IsDBNull(23) ? null : rd.GetDateTime(23)
+                FechaHoraCierre = rd.IsDBNull(23) ? null : rd.GetDateTime(23),
+                ContactoObservaciones = GetString(rd, 24),
+                ClienteObservaciones = GetString(rd, 25),
+                ClienteNotaCuenta = GetString(rd, 26)
             };
 
             ApplyWhatsAppWindow(item);
