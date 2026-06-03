@@ -60,6 +60,16 @@ h1:focus {
     --color-warning: #f59e0b;
     --color-danger: #ef4444;
     --color-success: #10b981;
+    --text-main: var(--color-text);
+    --text-muted: var(--color-muted);
+    --text-soft: #b7c6d8;
+    --accent: var(--color-primary);
+    --surface-1: var(--color-panel);
+    --surface-2: var(--color-panel-strong);
+    --surface-3: rgba(15, 23, 42, 0.55);
+    --input-bg: rgba(7, 17, 31, 0.82);
+    --input-border: rgba(148, 163, 184, 0.22);
+    --hover-bg: rgba(14, 165, 233, 0.12);
     --shadow-soft: 0 20px 50px rgba(2, 6, 23, 0.35);
     --radius-xl: 24px;
     --radius-lg: 18px;
@@ -77,6 +87,16 @@ html[data-theme="light"] {
     --color-warning: #d97706;
     --color-danger: #dc2626;
     --color-success: #059669;
+    --text-main: var(--color-text);
+    --text-muted: var(--color-muted);
+    --text-soft: #475569;
+    --accent: var(--color-primary);
+    --surface-1: #ffffff;
+    --surface-2: #f8fafc;
+    --surface-3: #f1f5f9;
+    --input-bg: #ffffff;
+    --input-border: rgba(15, 23, 42, 0.18);
+    --hover-bg: rgba(2, 132, 199, 0.10);
     --shadow-soft: 0 4px 24px rgba(15, 23, 42, 0.09);
 }
 
@@ -19654,4 +19674,373 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
         border-left: 0;
         border-top: 1px solid #d0d7e2;
     }
+}
+
+/* Light theme compatibility layer. Keep component code untouched; normalize surfaces,
+   text, controls and overlays that still use dark fixed colors in module styles. */
+html[data-theme="light"] body,
+html[data-theme="light"] .page-grid,
+html[data-theme="light"] .shell__content {
+    color: var(--color-text);
+}
+
+html[data-theme="light"] .page-intro__title,
+html[data-theme="light"] .panel-card__title,
+html[data-theme="light"] .modal-card__title,
+html[data-theme="light"] .cuentas-modal__header h3,
+html[data-theme="light"] .smart-search h4,
+html[data-theme="light"] .usuarios-table strong,
+html[data-theme="light"] .data-table strong {
+    color: #0f172a;
+}
+
+html[data-theme="light"] .page-intro__text,
+html[data-theme="light"] .panel-card__subtitle,
+html[data-theme="light"] .context-card__muted,
+html[data-theme="light"] .empty-state,
+html[data-theme="light"] .smart-search__hint,
+html[data-theme="light"] .usuarios-empty,
+html[data-theme="light"] .cuentas-modal__eyebrow,
+html[data-theme="light"] .cuentas-contactos-header p,
+html[data-theme="light"] .cuentas-partner-summary__meta,
+html[data-theme="light"] .cuentas-partner-summary__address {
+    color: #64748b;
+}
+
+html[data-theme="light"] .panel-card,
+html[data-theme="light"] .context-card,
+html[data-theme="light"] .modal-card,
+html[data-theme="light"] .cuentas-modal,
+html[data-theme="light"] .tickets-detail,
+html[data-theme="light"] .tickets-board,
+html[data-theme="light"] .tickets-column,
+html[data-theme="light"] .tickets-card,
+html[data-theme="light"] .usuarios-view-settings,
+html[data-theme="light"] .templates-preview,
+html[data-theme="light"] .templates-variable-guide {
+    background: #ffffff;
+    border-color: rgba(15, 23, 42, 0.12);
+    color: #0f172a;
+    box-shadow: 0 8px 26px rgba(15, 23, 42, 0.08);
+}
+
+html[data-theme="light"] .context-card,
+html[data-theme="light"] .tickets-card,
+html[data-theme="light"] .usuarios-view-settings__item {
+    background: #f8fafc;
+}
+
+html[data-theme="light"] .btn {
+    color: #0f172a;
+}
+
+html[data-theme="light"] .btn--primary,
+html[data-theme="light"] .btn-primary,
+html[data-theme="light"] .smart-search .btn--primary,
+html[data-theme="light"] .result-pagination__btn--active,
+html[data-theme="light"] .cuentas-tab.is-active {
+    color: #ffffff;
+}
+
+html[data-theme="light"] .btn--ghost,
+html[data-theme="light"] .btn--secondary,
+html[data-theme="light"] .menu__back,
+html[data-theme="light"] .result-pagination__btn,
+html[data-theme="light"] .smart-search__toggle,
+html[data-theme="light"] .tickets-kanban-filter,
+html[data-theme="light"] .conversation-badge,
+html[data-theme="light"] .cuentas-action-reveal {
+    background: #f8fafc;
+    border-color: rgba(15, 23, 42, 0.14);
+    color: #334155;
+}
+
+html[data-theme="light"] .btn--ghost:hover,
+html[data-theme="light"] .btn--secondary:hover,
+html[data-theme="light"] .menu__back:hover,
+html[data-theme="light"] .result-pagination__btn:not(:disabled):hover,
+html[data-theme="light"] .smart-search__toggle:hover,
+html[data-theme="light"] .cuentas-action-reveal:hover {
+    background: #e0f2fe;
+    border-color: rgba(2, 132, 199, 0.28);
+    color: #075985;
+}
+
+html[data-theme="light"] input,
+html[data-theme="light"] select,
+html[data-theme="light"] textarea,
+html[data-theme="light"] .usuarios-input,
+html[data-theme="light"] .smart-search select,
+html[data-theme="light"] .smart-search input[type="text"],
+html[data-theme="light"] .smart-search__bar,
+html[data-theme="light"] .ia-query-box__input,
+html[data-theme="light"] .tickets-rich-editor__surface {
+    background: #ffffff;
+    border-color: rgba(15, 23, 42, 0.18);
+    color: #0f172a;
+}
+
+html[data-theme="light"] input::placeholder,
+html[data-theme="light"] textarea::placeholder,
+html[data-theme="light"] .usuarios-input::placeholder,
+html[data-theme="light"] .smart-search__bar input::placeholder {
+    color: #94a3b8;
+}
+
+html[data-theme="light"] input:focus,
+html[data-theme="light"] select:focus,
+html[data-theme="light"] textarea:focus,
+html[data-theme="light"] .usuarios-input:focus,
+html[data-theme="light"] .smart-search__bar:focus-within,
+html[data-theme="light"] .tickets-rich-editor__surface:focus {
+    border-color: rgba(2, 132, 199, 0.55);
+    box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.12);
+    outline: none;
+}
+
+html[data-theme="light"] .smart-search-card,
+html[data-theme="light"] .smart-search__panel,
+html[data-theme="light"] .smart-search__custom,
+html[data-theme="light"] .filters-summary,
+html[data-theme="light"] .tickets-smart-search {
+    background: #ffffff;
+    border-color: rgba(15, 23, 42, 0.12);
+    color: #0f172a;
+    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+}
+
+html[data-theme="light"] .smart-search__bar > i,
+html[data-theme="light"] .smart-search__inline label,
+html[data-theme="light"] .field label {
+    color: #475569;
+}
+
+html[data-theme="light"] .smart-search__column button,
+html[data-theme="light"] .smart-search__custom button,
+html[data-theme="light"] .smart-chip {
+    color: #334155;
+}
+
+html[data-theme="light"] .smart-search__column button:hover,
+html[data-theme="light"] .smart-search__custom button:hover,
+html[data-theme="light"] .smart-chip:hover {
+    background: rgba(2, 132, 199, 0.10);
+    color: #0369a1;
+}
+
+html[data-theme="light"] .data-table,
+html[data-theme="light"] .usuarios-table,
+html[data-theme="light"] .interfaces-table {
+    background: #ffffff;
+    color: #0f172a;
+}
+
+html[data-theme="light"] .data-table thead,
+html[data-theme="light"] .usuarios-table thead,
+html[data-theme="light"] .interfaces-table thead {
+    background: #f1f5f9;
+    color: #334155;
+}
+
+html[data-theme="light"] .data-table th,
+html[data-theme="light"] .data-table td,
+html[data-theme="light"] .usuarios-table th,
+html[data-theme="light"] .usuarios-table td,
+html[data-theme="light"] .interfaces-table th,
+html[data-theme="light"] .interfaces-table td {
+    border-color: rgba(15, 23, 42, 0.10);
+    color: inherit;
+}
+
+html[data-theme="light"] .usuarios-table__row:hover,
+html[data-theme="light"] .usuarios-table__row.is-selected,
+html[data-theme="light"] .data-table tbody tr:hover {
+    background: rgba(2, 132, 199, 0.08);
+}
+
+html[data-theme="light"] .contactos-tabs,
+html[data-theme="light"] .contactos-form,
+html[data-theme="light"] .cuentas-contactos-panel,
+html[data-theme="light"] .cuentas-contactos-list,
+html[data-theme="light"] .cuentas-link-results {
+    background: #ffffff;
+    border-color: rgba(15, 23, 42, 0.12);
+    color: #0f172a;
+}
+
+html[data-theme="light"] .cuentas-tab {
+    background: #f1f5f9;
+    border-color: rgba(15, 23, 42, 0.14);
+    color: #475569;
+}
+
+html[data-theme="light"] .cuentas-tab:hover {
+    color: #0f172a;
+}
+
+html[data-theme="light"] .cuentas-tab.is-active {
+    background: #ffffff;
+    border-color: rgba(2, 132, 199, 0.28);
+    color: #0284c7;
+}
+
+html[data-theme="light"] .cuentas-contacto-item,
+html[data-theme="light"] .cuentas-smart-stat,
+html[data-theme="light"] .cuentas-link-result {
+    background: #f8fafc;
+    border-color: rgba(15, 23, 42, 0.12);
+    color: #0f172a;
+}
+
+html[data-theme="light"] .cuentas-contacto-item:hover,
+html[data-theme="light"] .cuentas-smart-stat:hover,
+html[data-theme="light"] .cuentas-smart-stat.is-active,
+html[data-theme="light"] .cuentas-link-result:hover {
+    background: #eef9ff;
+    border-color: rgba(2, 132, 199, 0.28);
+}
+
+html[data-theme="light"] .cuentas-modal-backdrop,
+html[data-theme="light"] .modal-overlay,
+html[data-theme="light"] .calendario-modal-backdrop,
+html[data-theme="light"] .pos-item-modal-backdrop {
+    background: rgba(15, 23, 42, 0.38);
+}
+
+html[data-theme="light"] .cuentas-modal__header,
+html[data-theme="light"] .cuentas-modal__actions,
+html[data-theme="light"] .modal-card__actions,
+html[data-theme="light"] .calendario-modal > header,
+html[data-theme="light"] .calendario-modal > footer {
+    border-color: rgba(15, 23, 42, 0.12);
+}
+
+html[data-theme="light"] .cuentas-modal__close,
+html[data-theme="light"] .modal-card .btn--ghost,
+html[data-theme="light"] .attachment-preview-action,
+html[data-theme="light"] .attachment-preview-nav {
+    background: #f1f5f9;
+    color: #334155;
+}
+
+html[data-theme="light"] .attachment-preview-modal,
+html[data-theme="light"] .attachment-preview-canvas {
+    background: #ffffff;
+    color: #0f172a;
+}
+
+html[data-theme="light"] .attachment-preview-action:hover,
+html[data-theme="light"] .attachment-preview-nav:not(:disabled):hover {
+    background: #dbeafe;
+    color: #075985;
+}
+
+html[data-theme="light"] .conversations-page--odoo,
+html[data-theme="light"] .conversations-layout,
+html[data-theme="light"] .conversations-list,
+html[data-theme="light"] .conversations-chat,
+html[data-theme="light"] .conversations-thread-shell,
+html[data-theme="light"] .conversations-thread,
+html[data-theme="light"] .conversations-composer,
+html[data-theme="light"] .conversations-context {
+    background: #ffffff;
+    border-color: rgba(15, 23, 42, 0.12);
+    color: #0f172a;
+}
+
+html[data-theme="light"] .conversation-item,
+html[data-theme="light"] .conversation-card,
+html[data-theme="light"] .message-card,
+html[data-theme="light"] .conversations-pending-attachment,
+html[data-theme="light"] .conversations-close-ticket-warning,
+html[data-theme="light"] .conversations-close-ticket-warning__summary {
+    background: #f8fafc;
+    border-color: rgba(15, 23, 42, 0.12);
+    color: #0f172a;
+}
+
+html[data-theme="light"] .conversation-item.is-active,
+html[data-theme="light"] .conversation-card.is-active,
+html[data-theme="light"] .message-card--outgoing {
+    background: #e0f2fe;
+    border-color: rgba(2, 132, 199, 0.28);
+}
+
+html[data-theme="light"] .message-card--incoming {
+    background: #f1f5f9;
+}
+
+html[data-theme="light"] .conversations-loading-overlay {
+    background: rgba(255, 255, 255, 0.82);
+    color: #075985;
+    border-color: rgba(2, 132, 199, 0.20);
+}
+
+html[data-theme="light"] .tickets-column__header,
+html[data-theme="light"] .tickets-detail__section,
+html[data-theme="light"] .ticket-comment,
+html[data-theme="light"] .ticket-timeline-item,
+html[data-theme="light"] .templates-list-item,
+html[data-theme="light"] .templates-editor-panel {
+    background: #f8fafc;
+    border-color: rgba(15, 23, 42, 0.12);
+    color: #0f172a;
+}
+
+html[data-theme="light"] .calendario-modal,
+html[data-theme="light"] .calendario-event,
+html[data-theme="light"] .calendario-day,
+html[data-theme="light"] .calendario-toolbar {
+    background: #ffffff;
+    border-color: rgba(15, 23, 42, 0.12);
+    color: #0f172a;
+}
+
+html[data-theme="light"] .calendario-event {
+    background: color-mix(in srgb, var(--event-color, #0284c7) 12%, #ffffff);
+}
+
+html[data-theme="light"] .autorizacion-panel,
+html[data-theme="light"] .auth-tree,
+html[data-theme="light"] .auth-tree-node,
+html[data-theme="light"] .auth-assignment,
+html[data-theme="light"] .interfaces-detail,
+html[data-theme="light"] .interfaces-card,
+html[data-theme="light"] .comprobante-viewer,
+html[data-theme="light"] .viewer-card {
+    background: #ffffff;
+    border-color: rgba(15, 23, 42, 0.12);
+    color: #0f172a;
+}
+
+html[data-theme="light"] .editor-msg--warning,
+html[data-theme="light"] .editor-msg--warn {
+    background: #fffbeb;
+    border-color: rgba(217, 119, 6, 0.24);
+    color: #92400e;
+}
+
+html[data-theme="light"] .editor-msg--error,
+html[data-theme="light"] .conversations-inline--error {
+    background: #fef2f2;
+    border-color: rgba(220, 38, 38, 0.24);
+    color: #991b1b;
+}
+
+html[data-theme="light"] .editor-msg--ok,
+html[data-theme="light"] .conversations-inline--ok {
+    background: #ecfdf5;
+    border-color: rgba(5, 150, 105, 0.24);
+    color: #065f46;
+}
+
+html[data-theme="light"] .pos-shell,
+html[data-theme="light"] .pos-stage,
+html[data-theme="light"] .pos-sidebar,
+html[data-theme="light"] .pos-catalog,
+html[data-theme="light"] .pos-card,
+html[data-theme="light"] .pos-item-modal,
+html[data-theme="light"] .pos-charge-modal,
+html[data-theme="light"] .pos-settings-modal {
+    color: #1f2937;
 }
