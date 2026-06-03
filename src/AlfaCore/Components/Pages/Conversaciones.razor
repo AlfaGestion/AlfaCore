@@ -3283,7 +3283,9 @@
             return;
         }
 
-        if (!conversation.IdContacto.HasValue && string.IsNullOrWhiteSpace(conversation.ClienteCodigo))
+        if (!conversation.IdContacto.HasValue
+            && string.IsNullOrWhiteSpace(conversation.ClienteCodigo)
+            && !HasContactLookupData(conversation))
         {
             if (!sameSource)
                 ClearContextNotesState();
@@ -3325,9 +3327,9 @@
         {
             var sections = new List<ContextNoteSectionVm>();
 
-            if (conversation.IdContacto is int idContacto)
+            var contact = await ResolveContextContactAsync(conversation);
+            if (contact is not null)
             {
-                var contact = await ContactosSvc.GetByIdAsync(idContacto);
                 AddContextNoteSection(sections, ContextNoteKind.Observacion, "Contacto - Observaciones", contact?.Observaciones);
             }
 
@@ -3368,7 +3370,90 @@
     private static string BuildContextNotesSourceKey(ConversacionDetalleDto? conversation)
         => conversation is null
             ? string.Empty
-            : $"{conversation.Canal}|{conversation.IdContacto?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty}|{conversation.ClienteCodigo?.Trim() ?? string.Empty}";
+            : $"{conversation.Canal}|{conversation.IdContacto?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty}|{conversation.ClienteCodigo?.Trim() ?? string.Empty}|{NormalizePhoneForCompare(conversation.TelefonoWhatsApp)}|{NormalizePhoneForCompare(conversation.ContactoCelular)}|{NormalizePhoneForCompare(conversation.ContactoTelefono)}|{conversation.ContactoEmail?.Trim().ToUpperInvariant() ?? string.Empty}";
+
+    private async Task<ContactoDetailDto?> ResolveContextContactAsync(ConversacionDetalleDto conversation)
+    {
+        if (conversation.IdContacto is int idContacto)
+            return await ContactosSvc.GetByIdAsync(idContacto);
+
+        var candidate = await FindContextContactCandidateAsync(conversation);
+        return candidate is null ? null : await ContactosSvc.GetByIdAsync(candidate.Id);
+    }
+
+    private async Task<ContactoGridItemDto?> FindContextContactCandidateAsync(ConversacionDetalleDto conversation)
+    {
+        foreach (var term in GetContextContactLookupTerms(conversation))
+        {
+            var result = await ContactosSvc.SearchAsync(new ContactosFilters
+            {
+                Texto = term,
+                Activo = true,
+                PageNumber = 1,
+                PageSize = 8
+            });
+
+            var match = result.Items.FirstOrDefault(item => IsSameContextContact(item, conversation));
+            if (match is not null)
+                return match;
+        }
+
+        return null;
+    }
+
+    private static bool HasContactLookupData(ConversacionDetalleDto conversation)
+        => GetContextContactLookupTerms(conversation).Any();
+
+    private static IEnumerable<string> GetContextContactLookupTerms(ConversacionDetalleDto conversation)
+    {
+        foreach (var value in new[]
+        {
+            conversation.TelefonoWhatsApp,
+            conversation.ContactoCelular,
+            conversation.ContactoTelefono,
+            conversation.ContactoEmail
+        })
+        {
+            var clean = (value ?? string.Empty).Trim();
+            if (clean.Length >= 4)
+                yield return clean;
+        }
+    }
+
+    private static bool IsSameContextContact(ContactoGridItemDto item, ConversacionDetalleDto conversation)
+    {
+        var targetPhones = new[]
+        {
+            conversation.TelefonoWhatsApp,
+            conversation.ContactoCelular,
+            conversation.ContactoTelefono
+        }
+            .Select(NormalizePhoneForCompare)
+            .Where(static value => value.Length >= 6)
+            .ToHashSet(StringComparer.Ordinal);
+
+        if (targetPhones.Count > 0)
+        {
+            var itemPhones = new[] { item.Celular, item.Telefono }
+                .Select(NormalizePhoneForCompare)
+                .Where(static value => value.Length >= 6);
+
+            if (itemPhones.Any(phone => targetPhones.Any(target => PhonesLookEquivalent(target, phone))))
+                return true;
+        }
+
+        return !string.IsNullOrWhiteSpace(conversation.ContactoEmail)
+               && !string.IsNullOrWhiteSpace(item.Email)
+               && string.Equals(conversation.ContactoEmail.Trim(), item.Email.Trim(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string NormalizePhoneForCompare(string? phone)
+        => Regex.Replace(phone ?? string.Empty, @"\D+", string.Empty);
+
+    private static bool PhonesLookEquivalent(string left, string right)
+        => left == right
+           || (left.Length >= 8 && right.EndsWith(left[^Math.Min(left.Length, 10)..], StringComparison.Ordinal))
+           || (right.Length >= 8 && left.EndsWith(right[^Math.Min(right.Length, 10)..], StringComparison.Ordinal));
 
     private static void AddContextNoteSection(List<ContextNoteSectionVm> sections, ContextNoteKind kind, string label, string? text)
     {
