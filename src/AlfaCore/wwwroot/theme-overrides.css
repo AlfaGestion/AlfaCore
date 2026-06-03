@@ -388,6 +388,139 @@ html[data-theme="light"] .pos-settings-modal {
     color: #1f2937;
 }
 
+/* POS / Punto de venta: modo claro completo. */
+html[data-theme="light"] .pos-layout-host,
+html[data-theme="light"] .pos-shell {
+    background: #eef4f9 !important;
+    color: #0f172a !important;
+}
+
+html[data-theme="light"] .pos-topbar {
+    background: #ffffff !important;
+    border-color: rgba(15, 23, 42, .12) !important;
+    color: #0f172a !important;
+    box-shadow: 0 8px 26px rgba(15, 23, 42, .08) !important;
+}
+
+html[data-theme="light"] .pos-topbar h1,
+html[data-theme="light"] .pos-line__main strong,
+html[data-theme="light"] .pos-total-card strong,
+html[data-theme="light"] .pos-product__text strong {
+    color: #0f172a !important;
+}
+
+html[data-theme="light"] .pos-topbar__eyebrow,
+html[data-theme="light"] .pos-topbar__company span,
+html[data-theme="light"] .pos-sidebar__empty,
+html[data-theme="light"] .pos-line__main span,
+html[data-theme="light"] .pos-total-card span,
+html[data-theme="light"] .pos-product__text span,
+html[data-theme="light"] .pos-catalog__meta span,
+html[data-theme="light"] .pos-context-pill span,
+html[data-theme="light"] .pos-mini-badge {
+    color: #64748b !important;
+}
+
+html[data-theme="light"] .pos-stage,
+html[data-theme="light"] .pos-sidebar,
+html[data-theme="light"] .pos-catalog,
+html[data-theme="light"] .pos-sidebar__empty,
+html[data-theme="light"] .pos-line,
+html[data-theme="light"] .pos-total-card,
+html[data-theme="light"] .pos-catalog__toolbar,
+html[data-theme="light"] .pos-context-pill,
+html[data-theme="light"] .pos-grid-status,
+html[data-theme="light"] .pos-product,
+html[data-theme="light"] .pos-item-modal,
+html[data-theme="light"] .pos-charge-modal,
+html[data-theme="light"] .pos-settings-modal {
+    background: #ffffff !important;
+    border-color: rgba(15, 23, 42, .12) !important;
+    color: #0f172a !important;
+}
+
+html[data-theme="light"] .pos-stage {
+    background: #f8fafc !important;
+}
+
+html[data-theme="light"] .pos-catalog {
+    background: #f8fafc !important;
+}
+
+html[data-theme="light"] .pos-product:hover {
+    background: #e0f2fe !important;
+    border-color: rgba(2, 132, 199, .30) !important;
+}
+
+html[data-theme="light"] .pos-product__image-wrap,
+html[data-theme="light"] .pos-product__fallback {
+    background: #eaf3f8 !important;
+    color: #64748b !important;
+}
+
+html[data-theme="light"] .pos-product__price,
+html[data-theme="light"] .pos-search-btn,
+html[data-theme="light"] .pos-charge,
+html[data-theme="light"] .pos-charge__icon {
+    background: #0284c7 !important;
+    border-color: #0284c7 !important;
+    color: #ffffff !important;
+}
+
+html[data-theme="light"] .pos-topbar__ghost,
+html[data-theme="light"] .pos-topbar__cart-link,
+html[data-theme="light"] .pos-sidebar__link,
+html[data-theme="light"] .pos-sidebar__cash-btn,
+html[data-theme="light"] .pos-icon-btn,
+html[data-theme="light"] .pos-sidebar__client,
+html[data-theme="light"] .pos-sidebar__client-btn {
+    background: #ffffff !important;
+    border-color: rgba(2, 132, 199, .26) !important;
+    color: #075985 !important;
+}
+
+html[data-theme="light"] .pos-topbar__ghost:hover,
+html[data-theme="light"] .pos-topbar__cart-link:hover,
+html[data-theme="light"] .pos-sidebar__link:hover,
+html[data-theme="light"] .pos-sidebar__cash-btn:hover,
+html[data-theme="light"] .pos-icon-btn:hover,
+html[data-theme="light"] .pos-sidebar__client-btn:hover {
+    background: #e0f2fe !important;
+    color: #075985 !important;
+}
+
+html[data-theme="light"] .pos-sidebar__danger {
+    background: #fef2f2 !important;
+    border-color: rgba(220, 38, 38, .24) !important;
+    color: #991b1b !important;
+}
+
+html[data-theme="light"] .pos-select,
+html[data-theme="light"] .pos-search-input,
+html[data-theme="light"] .pos-sidebar__notes,
+html[data-theme="light"] .pos-sidebar__scan {
+    background: #ffffff !important;
+    border-color: rgba(15, 23, 42, .18) !important;
+    color: #0f172a !important;
+}
+
+html[data-theme="light"] .pos-search-input::placeholder,
+html[data-theme="light"] .pos-sidebar__notes::placeholder,
+html[data-theme="light"] .pos-sidebar__scan::placeholder {
+    color: #94a3b8 !important;
+}
+
+html[data-theme="light"] .pos-mini-badge,
+html[data-theme="light"] .pos-mini-badge--muted {
+    background: #f1f5f9 !important;
+    border-color: rgba(15, 23, 42, .12) !important;
+}
+
+html[data-theme="light"] .pos-topbar__cart-count {
+    background: #ef4444 !important;
+    color: #ffffff !important;
+}
+
 /* Conversaciones: overrides finales para el modo claro del layout operativo. */
 html[data-theme="light"] .conversations-page--odoo,
 html[data-theme="light"] .conversations-page--odoo .conversations-layout,
@@ -800,4 +933,177 @@ html[data-theme="light"] [class*="__muted"],
 html[data-theme="light"] [class*="-muted"],
 html[data-theme="light"] small {
     color: #64748b;
+}
+
+/* Pasada final por familias de módulos: consultas, calendario, interfaces, costos,
+   autorizaciones, updates y viewers. */
+html[data-theme="light"] .consultas-layout,
+html[data-theme="light"] .consultas-sidebar,
+html[data-theme="light"] .consultas-content,
+html[data-theme="light"] .consultas-search,
+html[data-theme="light"] .consulta-card,
+html[data-theme="light"] .consulta-result,
+html[data-theme="light"] .consulta-detalle,
+html[data-theme="light"] .consulta-params,
+html[data-theme="light"] .consulta-table,
+html[data-theme="light"] .calendario-page,
+html[data-theme="light"] .calendario-topbar,
+html[data-theme="light"] .calendario-toolbar,
+html[data-theme="light"] .calendario-shell,
+html[data-theme="light"] .calendario-side,
+html[data-theme="light"] .calendario-side-section,
+html[data-theme="light"] .calendario-day,
+html[data-theme="light"] .calendario-modal,
+html[data-theme="light"] .interfaces-page,
+html[data-theme="light"] .interfaces-list-page,
+html[data-theme="light"] .interfaces-editor-page,
+html[data-theme="light"] .interfaces-workspace,
+html[data-theme="light"] .interfaces-hero,
+html[data-theme="light"] .interfaces-card,
+html[data-theme="light"] .interfaces-detail,
+html[data-theme="light"] .interfaces-detail-modal,
+html[data-theme="light"] .interfaces-inbox-panel,
+html[data-theme="light"] .interfaces-filters-panel,
+html[data-theme="light"] .interfaces-section,
+html[data-theme="light"] .interfaces-editor-panel,
+html[data-theme="light"] .interfaces-editor-ribbon,
+html[data-theme="light"] .interfaces-docs-panel,
+html[data-theme="light"] .interfaces-mobile-card,
+html[data-theme="light"] .interfaces-attachment-row,
+html[data-theme="light"] .interfaces-pending-file,
+html[data-theme="light"] .costos-lote,
+html[data-theme="light"] .costos-nueva,
+html[data-theme="light"] .costos-perfiles,
+html[data-theme="light"] .autorizacion-panel,
+html[data-theme="light"] .auth-tree,
+html[data-theme="light"] .auth-tree-node,
+html[data-theme="light"] .auth-assignment,
+html[data-theme="light"] .updates-overview,
+html[data-theme="light"] .updates-script-list,
+html[data-theme="light"] .updates-history-list,
+html[data-theme="light"] .updates-script-item,
+html[data-theme="light"] .updates-history-item,
+html[data-theme="light"] .comprobante-viewer,
+html[data-theme="light"] .viewer-card {
+    background: #ffffff !important;
+    border-color: rgba(15, 23, 42, .12) !important;
+    color: #0f172a !important;
+}
+
+html[data-theme="light"] .consultas-empty,
+html[data-theme="light"] .consultas-loading,
+html[data-theme="light"] .interfaces-empty-state,
+html[data-theme="light"] .interfaces-editor-empty,
+html[data-theme="light"] .interfaces-empty-upload,
+html[data-theme="light"] .calendario-empty,
+html[data-theme="light"] .calendario-loading,
+html[data-theme="light"] .empty-state {
+    background: #f8fafc !important;
+    border-color: rgba(15, 23, 42, .12) !important;
+    color: #64748b !important;
+}
+
+html[data-theme="light"] .interfaces-table,
+html[data-theme="light"] .interfaces-docs-table-wrap,
+html[data-theme="light"] .data-table,
+html[data-theme="light"] .consulta-table table,
+html[data-theme="light"] .usuarios-table,
+html[data-theme="light"] .contactos-table {
+    background: #ffffff !important;
+    color: #0f172a !important;
+}
+
+html[data-theme="light"] .interfaces-table thead,
+html[data-theme="light"] .data-table thead,
+html[data-theme="light"] .consulta-table thead,
+html[data-theme="light"] .usuarios-table thead,
+html[data-theme="light"] .contactos-table thead {
+    background: #f1f5f9 !important;
+    color: #334155 !important;
+}
+
+html[data-theme="light"] .interfaces-table th,
+html[data-theme="light"] .interfaces-table td,
+html[data-theme="light"] .data-table th,
+html[data-theme="light"] .data-table td,
+html[data-theme="light"] .consulta-table th,
+html[data-theme="light"] .consulta-table td,
+html[data-theme="light"] .usuarios-table th,
+html[data-theme="light"] .usuarios-table td,
+html[data-theme="light"] .contactos-table th,
+html[data-theme="light"] .contactos-table td {
+    border-color: rgba(15, 23, 42, .10) !important;
+    color: inherit !important;
+}
+
+html[data-theme="light"] .interfaces-field-shell,
+html[data-theme="light"] .interfaces-prompt-editor,
+html[data-theme="light"] .interfaces-filters-panel input,
+html[data-theme="light"] .interfaces-filters-panel select,
+html[data-theme="light"] .interfaces-filters-panel textarea,
+html[data-theme="light"] .consulta-params input,
+html[data-theme="light"] .consulta-params select,
+html[data-theme="light"] .consulta-params textarea,
+html[data-theme="light"] .consultas-search input,
+html[data-theme="light"] .calendario-page input,
+html[data-theme="light"] .calendario-page select,
+html[data-theme="light"] .calendario-page textarea,
+html[data-theme="light"] .costos-lote input,
+html[data-theme="light"] .costos-lote select,
+html[data-theme="light"] .costos-lote textarea,
+html[data-theme="light"] .costos-nueva input,
+html[data-theme="light"] .costos-nueva select,
+html[data-theme="light"] .costos-nueva textarea,
+html[data-theme="light"] .costos-perfiles input,
+html[data-theme="light"] .costos-perfiles select,
+html[data-theme="light"] .costos-perfiles textarea {
+    background: #ffffff !important;
+    border-color: rgba(15, 23, 42, .18) !important;
+    color: #0f172a !important;
+}
+
+html[data-theme="light"] .interfaces-status-pill--success,
+html[data-theme="light"] .conv-config-status--ok {
+    background: #ecfdf5 !important;
+    border-color: rgba(5, 150, 105, .24) !important;
+    color: #065f46 !important;
+}
+
+html[data-theme="light"] .interfaces-status-pill--warning,
+html[data-theme="light"] .conv-config-status--pending {
+    background: #fffbeb !important;
+    border-color: rgba(217, 119, 6, .24) !important;
+    color: #92400e !important;
+}
+
+html[data-theme="light"] .interfaces-status-pill--danger {
+    background: #fef2f2 !important;
+    border-color: rgba(220, 38, 38, .24) !important;
+    color: #991b1b !important;
+}
+
+html[data-theme="light"] .interfaces-status-pill--info,
+html[data-theme="light"] .interfaces-priority-chip,
+html[data-theme="light"] .interfaces-summary-chip,
+html[data-theme="light"] .calendario-event-chip,
+html[data-theme="light"] .calendario-reminder-state {
+    background: #e0f2fe !important;
+    border-color: rgba(2, 132, 199, .24) !important;
+    color: #075985 !important;
+}
+
+html[data-theme="light"] .calendario-event,
+html[data-theme="light"] .calendario-side-event {
+    background: color-mix(in srgb, var(--event-color, #0284c7) 14%, #ffffff) !important;
+    border-color: color-mix(in srgb, var(--event-color, #0284c7) 34%, #dbeafe) !important;
+    color: #0f172a !important;
+}
+
+html[data-theme="light"] .interfaces-upload-dropzone,
+html[data-theme="light"] .interfaces-file-trigger,
+html[data-theme="light"] .interfaces-empty-upload,
+html[data-theme="light"] .interfaces-pending-preview {
+    background: #f8fafc !important;
+    border-color: rgba(2, 132, 199, .24) !important;
+    color: #334155 !important;
 }
