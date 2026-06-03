@@ -717,7 +717,7 @@ public sealed class ConversacionesService(
                     c.IdConversacion,
                     ISNULL(c.TelefonoWhatsApp, ''),
                     ISNULL(c.NombreVisible, ''),
-                    ISNULL(COALESCE(NULLIF(LTRIM(RTRIM(c.ClienteCodigo)), ''), contactoCuenta.Cuenta), ''),
+                    ISNULL(clienteContexto.Codigo, ''),
                     ISNULL(COALESCE(NULLIF(cli.RAZON_SOCIAL, ''), contactoCuenta.RazonSocial), ''),
                     c.IdContacto,
                     ISNULL(mc.Nombre_y_Apellido, ''),
@@ -750,7 +750,7 @@ public sealed class ConversacionesService(
                         p.FechaHora_Grabacion DESC
                 ) pin
                 LEFT JOIN dbo.VT_CLIENTES cli
-                    ON cli.CODIGO = c.ClienteCodigo
+                    ON UPPER(LTRIM(RTRIM(cli.CODIGO))) = UPPER(LTRIM(RTRIM(ISNULL(c.ClienteCodigo, ''))))
                 LEFT JOIN dbo.MA_CONTACTOS mc
                     ON mc.id = c.IdContacto
                 OUTER APPLY (
@@ -1208,18 +1208,19 @@ public sealed class ConversacionesService(
                     ORDER BY cuenta.Orden, cliCuenta.RAZON_SOCIAL
                 ) contactoCuenta
                 OUTER APPLY (
+                    SELECT COALESCE(NULLIF(LTRIM(RTRIM(c.ClienteCodigo)), ''), contactoCuenta.Cuenta, '') AS Codigo
+                ) clienteContexto
+                OUTER APPLY (
                     SELECT TOP (1)
                         ISNULL(CAST(cliNotas.OBSERVACIONES AS nvarchar(max)), '') AS Observaciones
                     FROM dbo.VT_CLIENTES cliNotas
-                    WHERE UPPER(LTRIM(RTRIM(cliNotas.CODIGO))) =
-                        UPPER(LTRIM(RTRIM(COALESCE(NULLIF(c.ClienteCodigo, ''), contactoCuenta.Cuenta, ''))))
+                    WHERE UPPER(LTRIM(RTRIM(cliNotas.CODIGO))) = UPPER(LTRIM(RTRIM(clienteContexto.Codigo)))
                 ) clienteNotas
                 OUTER APPLY (
                     SELECT TOP (1)
                         ISNULL(CAST(obs.Nota AS nvarchar(max)), '') AS Nota
                     FROM dbo.MA_CUENTASOBS obs
-                    WHERE UPPER(LTRIM(RTRIM(obs.Codigo))) =
-                        UPPER(LTRIM(RTRIM(COALESCE(NULLIF(c.ClienteCodigo, ''), contactoCuenta.Cuenta, ''))))
+                    WHERE UPPER(LTRIM(RTRIM(obs.Codigo))) = UPPER(LTRIM(RTRIM(clienteContexto.Codigo)))
                       AND ISNULL(obs.Sucursal, 0) = 0
                 ) cuentaObs
                 LEFT JOIN dbo.V_TA_Tecnicos t

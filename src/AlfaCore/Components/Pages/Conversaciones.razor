@@ -3418,7 +3418,15 @@
     private static string BuildContextNotesSourceKey(ConversacionDetalleDto? conversation)
         => conversation is null
             ? string.Empty
-            : $"{conversation.Canal}|{conversation.IdContacto?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty}|{conversation.ClienteCodigo?.Trim() ?? string.Empty}|{NormalizePhoneForCompare(conversation.TelefonoWhatsApp)}|{NormalizePhoneForCompare(conversation.ContactoCelular)}|{NormalizePhoneForCompare(conversation.ContactoTelefono)}|{conversation.ContactoEmail?.Trim().ToUpperInvariant() ?? string.Empty}";
+            : $"{conversation.Canal}|{conversation.IdContacto?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty}|{conversation.ClienteCodigo?.Trim() ?? string.Empty}|{NormalizePhoneForCompare(conversation.TelefonoWhatsApp)}|{NormalizePhoneForCompare(conversation.ContactoCelular)}|{NormalizePhoneForCompare(conversation.ContactoTelefono)}|{conversation.ContactoEmail?.Trim().ToUpperInvariant() ?? string.Empty}|{BuildContextNotesVersion(conversation.ContactoObservaciones)}|{BuildContextNotesVersion(conversation.ClienteObservaciones)}|{BuildContextNotesVersion(conversation.ClienteNotaCuenta)}";
+
+    private static string BuildContextNotesVersion(string? value)
+    {
+        var clean = NormalizeContextNoteText(value);
+        return clean.Length == 0
+            ? "0"
+            : $"{clean.Length}:{clean.GetHashCode(StringComparison.Ordinal)}";
+    }
 
     private async Task<ContactoDetailDto?> ResolveContextContactAsync(ConversacionDetalleDto conversation)
     {
