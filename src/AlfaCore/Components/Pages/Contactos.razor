@@ -844,7 +844,7 @@
         await BuscarAsync();
         if (_startupEditId is int id)
         {
-            await AbrirEditorAsync(id);
+            await AbrirEditorAsync(id, updateUrl: false);
             if (_startupOpenMerge && _selectedId > 0)
                 await OpenMergeModalAsync();
         }
@@ -859,7 +859,28 @@
     }
 
     private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
-        => _ = InvokeAsync(DismissFeedbackAsync);
+    {
+        _ = InvokeAsync(DismissFeedbackAsync);
+        _ = InvokeAsync(ApplyCurrentLocationAsync);
+    }
+
+    private async Task ApplyCurrentLocationAsync()
+    {
+        var query = QueryHelpers.ParseQuery(Nav.ToAbsoluteUri(Nav.Uri).Query);
+        _returnUrl = ReadSafeReturnUrl(query);
+
+        if (query.TryGetValue("editar", out var editRaw)
+            && int.TryParse(editRaw.ToString(), out var editId)
+            && editId > 0)
+        {
+            if (!_showEditor || _selectedId != editId)
+                await AbrirEditorAsync(editId, updateUrl: false);
+            return;
+        }
+
+        if (_showEditor && !_isNewMode)
+            CerrarEditor(useReturnUrl: false);
+    }
 
     private void OnAppUserSessionChanged()
     {
@@ -1237,8 +1258,11 @@
     }
 
     private void CerrarEditor()
+        => CerrarEditor(useReturnUrl: true);
+
+    private void CerrarEditor(bool useReturnUrl)
     {
-        if (!string.IsNullOrWhiteSpace(_returnUrl))
+        if (useReturnUrl && !string.IsNullOrWhiteSpace(_returnUrl))
         {
             Nav.NavigateTo(_returnUrl);
             return;
@@ -1436,10 +1460,23 @@
         }
     }
 
-    private async Task AbrirEditorAsync(int id)
+    private async Task AbrirEditorAsync(int id, bool updateUrl = true)
     {
+        if (updateUrl && NavigateToContactUrl(id))
+            return;
+
         _showEditor = true;
         await SeleccionarAsync(id);
+    }
+
+    private bool NavigateToContactUrl(int id)
+    {
+        var target = QueryHelpers.AddQueryString("/contactos", "editar", id.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        if (string.Equals(Nav.ToBaseRelativePath(Nav.Uri), target.TrimStart('/'), StringComparison.Ordinal))
+            return false;
+
+        Nav.NavigateTo(target);
+        return true;
     }
 
     private void ToggleRowSelection(int id, ChangeEventArgs args)

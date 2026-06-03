@@ -2220,17 +2220,39 @@
     protected override async Task OnInitializedAsync()
     {
         _floatingWindowRegistration = FloatingWindows.Register(AlfaCore.Services.FloatingWindowType.DropdownMenu, CloseFloatingWindowsAsync);
+        Nav.LocationChanged += OnLocationChanged;
         ApplyStartupQuery();
         await Task.WhenAll(LoadLookupsAsync(), LoadFavoriteStickersAsync());
         if (_loadError is null)
         {
             await LoadInboxAsync();
             if (_startupConversationId.HasValue)
-                await SelectConversationAsync(_startupConversationId.Value, showMobileChat: true);
+                await SelectConversationAsync(_startupConversationId.Value, showMobileChat: true, updateUrl: false);
         }
 
         StartPolling();
         StartTypingPolling();
+    }
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+        => _ = InvokeAsync(ApplyCurrentLocationAsync);
+
+    private async Task ApplyCurrentLocationAsync()
+    {
+        var query = QueryHelpers.ParseQuery(Nav.ToAbsoluteUri(Nav.Uri).Query);
+        if (query.TryGetValue("id", out var idRaw)
+            && long.TryParse(idRaw.ToString(), out var id)
+            && id > 0)
+        {
+            if (_selectedConversationId != id)
+                await SelectConversationAsync(id, showMobileChat: true, updateUrl: false);
+            return;
+        }
+
+        if (_selectedConversationId.HasValue && _inbox.Count > 0 && !ShouldKeepAuditResultsOpen)
+            await SelectConversationAsync(_inbox[0].IdConversacion, updateUrl: false);
+        else if (_selectedConversationId.HasValue)
+            ClearSelection();
     }
 
     private void ApplyStartupQuery()
@@ -2453,7 +2475,7 @@
         _actionError = null;
         await LoadInboxAsync();
         if (_selectedConversationId.HasValue)
-            await SelectConversationAsync(_selectedConversationId.Value);
+            await SelectConversationAsync(_selectedConversationId.Value, updateUrl: false);
     }
 
     private async Task ChangeModeAsync(string mode)
@@ -2642,7 +2664,7 @@
             }
 
             if (allowSelectionChange && _inbox.Count > 0 && !ShouldKeepAuditResultsOpen)
-                await SelectConversationAsync(_inbox[0].IdConversacion);
+                await SelectConversationAsync(_inbox[0].IdConversacion, updateUrl: false);
             else if (allowSelectionChange)
                 ClearSelection();
         }
@@ -2784,8 +2806,11 @@
            && DateTime.Now - value <= LateIncomingNotificationWindow
            && value <= DateTime.Now.AddMinutes(2);
 
-    private async Task SelectConversationAsync(long idConversacion, bool showMobileChat = false)
+    private async Task SelectConversationAsync(long idConversacion, bool showMobileChat = false, bool updateUrl = true)
     {
+        if (updateUrl && NavigateToConversationUrl(idConversacion))
+            return;
+
         if (showMobileChat)
             _mobileChatActive = true;
 
@@ -2794,6 +2819,22 @@
         _showStatusMenu = false;
         CancelTicketSelection();
         await LoadConversationAsync(idConversacion, showLoading: true, clearActionState: true);
+    }
+
+    private bool NavigateToConversationUrl(long idConversacion)
+    {
+        var uri = Nav.ToAbsoluteUri(Nav.Uri);
+        var values = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in QueryHelpers.ParseQuery(uri.Query))
+            values[item.Key] = item.Value.ToString();
+
+        values["id"] = idConversacion.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var target = QueryHelpers.AddQueryString(uri.AbsolutePath, values);
+        if (string.Equals(Nav.ToBaseRelativePath(Nav.Uri), target.TrimStart('/'), StringComparison.Ordinal))
+            return false;
+
+        Nav.NavigateTo(target);
+        return true;
     }
 
     private async Task LoadConversationAsync(long idConversacion, bool showLoading, bool clearActionState)
@@ -4266,7 +4307,7 @@
             await UploadPendingAttachmentsAsync(attachmentsToSend, RemovePendingAttachment);
 
             _actionMessage = "Mensaje registrado correctamente.";
-            await SelectConversationAsync(_selectedConversation.IdConversacion);
+            await SelectConversationAsync(_selectedConversation.IdConversacion, updateUrl: false);
             await RefreshInboxAsync(showLoading: false, allowSelectionChange: false);
         }
         catch (Exception ex)
@@ -4277,7 +4318,7 @@
                 RemoveOptimisticMessage(optimisticMessageId.Value);
 
             if (_selectedConversation is not null)
-                await SelectConversationAsync(_selectedConversation.IdConversacion);
+                await SelectConversationAsync(_selectedConversation.IdConversacion, updateUrl: false);
 
             foreach (var pending in _pendingAttachments)
                 pending.Error ??= "No se pudo enviar. Reintentá con el botón de enviar.";
@@ -4450,7 +4491,7 @@
             if (templateAttachmentsToSend.Count > 0)
                 await UploadPendingAttachmentsAsync(templateAttachmentsToSend, RemoveTemplatePendingAttachment, allowExpiredWhatsAppWindow: true);
 
-            await SelectConversationAsync(selectedConversationId);
+            await SelectConversationAsync(selectedConversationId, updateUrl: false);
             await RefreshInboxAsync(showLoading: false, allowSelectionChange: false);
             _actionMessage = templateAttachmentsToSend.Count == 0
                 ? $"Plantilla enviada correctamente: {previewText}"
@@ -4461,7 +4502,7 @@
             var error = ex.Message;
             if (_selectedConversation is not null)
             {
-                await SelectConversationAsync(_selectedConversation.IdConversacion);
+                await SelectConversationAsync(_selectedConversation.IdConversacion, updateUrl: false);
                 await RefreshInboxAsync(showLoading: false, allowSelectionChange: false);
             }
 
@@ -4498,7 +4539,7 @@
             _showComposerTools = false;
             _composerToolTab = ComposerToolTabs.Emojis;
             _actionMessage = "Nota interna guardada.";
-            await SelectConversationAsync(_selectedConversation.IdConversacion);
+            await SelectConversationAsync(_selectedConversation.IdConversacion, updateUrl: false);
             await RefreshInboxAsync(showLoading: false, allowSelectionChange: false);
         }
         catch (Exception ex)
@@ -4550,7 +4591,7 @@
             });
 
             _actionMessage = "Asignación actualizada.";
-            await SelectConversationAsync(_selectedConversation.IdConversacion);
+            await SelectConversationAsync(_selectedConversation.IdConversacion, updateUrl: false);
             await RefreshInboxAsync(showLoading: false, allowSelectionChange: false);
             return true;
         }
@@ -4641,7 +4682,7 @@
 
             MarkSelectedConversationAsRead();
             _actionMessage = "Estado actualizado.";
-            await SelectConversationAsync(_selectedConversation.IdConversacion);
+            await SelectConversationAsync(_selectedConversation.IdConversacion, updateUrl: false);
             await RefreshInboxAsync(showLoading: false, allowSelectionChange: false);
             return true;
         }
@@ -4904,7 +4945,7 @@
             _clientSearchText = string.Empty;
             _clientSearchExecuted = false;
             await RefreshInboxAsync(showLoading: false, allowSelectionChange: false);
-            await SelectConversationAsync(_selectedConversation.IdConversacion);
+            await SelectConversationAsync(_selectedConversation.IdConversacion, updateUrl: false);
         }
         catch (Exception ex)
         {
@@ -5329,7 +5370,7 @@
             });
 
             _openReactionMessageId = null;
-            await SelectConversationAsync(_selectedConversation.IdConversacion);
+            await SelectConversationAsync(_selectedConversation.IdConversacion, updateUrl: false);
             await LoadInboxAsync();
             _actionMessage = $"Reacción enviada: {emoji}";
         }
@@ -5392,7 +5433,7 @@
                 CurrentMessageTechnicianId,
                 CurrentUserNameForAudit,
                 CurrentUserSystemForAudit);
-            await SelectConversationAsync(_selectedConversation.IdConversacion);
+            await SelectConversationAsync(_selectedConversation.IdConversacion, updateUrl: false);
             await LoadInboxAsync();
             _actionMessage = "Sticker enviado.";
             MinimizeComposerTools();
@@ -6676,6 +6717,7 @@
 
     public async ValueTask DisposeAsync()
     {
+        Nav.LocationChanged -= OnLocationChanged;
         await ClearTypingAsync();
         CancelSearchDebounce();
         CancelContactSearch();
@@ -6855,3 +6897,4 @@
         public const string Notas = "notas";
     }
 }
+

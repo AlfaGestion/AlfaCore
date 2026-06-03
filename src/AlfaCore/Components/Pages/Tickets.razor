@@ -800,6 +800,7 @@
     private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
     {
         _ = InvokeAsync(DismissFeedbackAsync);
+        _ = InvokeAsync(ApplyCurrentLocationAsync);
     }
 
     private void ApplyStartupQuery()
@@ -807,6 +808,20 @@
         var query = QueryHelpers.ParseQuery(Nav.ToAbsoluteUri(Nav.Uri).Query);
         if (query.TryGetValue("id", out var rawId) && long.TryParse(rawId.ToString(), out var id) && id > 0)
             _startupTicketId = id;
+    }
+
+    private async Task ApplyCurrentLocationAsync()
+    {
+        var query = QueryHelpers.ParseQuery(Nav.ToAbsoluteUri(Nav.Uri).Query);
+        if (query.TryGetValue("id", out var rawId) && long.TryParse(rawId.ToString(), out var id) && id > 0)
+        {
+            if (!_showEditor || _detail?.IdTicket != id)
+                await AbrirTicketAsync(id, updateUrl: false);
+            return;
+        }
+
+        if (_showEditor && !_isNew)
+            CerrarEditor();
     }
 
     private async Task CargarLookupsAsync()
@@ -829,7 +844,7 @@
         await CargarLookupsAsync();
         await BuscarAsync(keepCurrent: true);
         if (_detail is not null)
-            await AbrirTicketAsync(_detail.IdTicket);
+            await AbrirTicketAsync(_detail.IdTicket, updateUrl: false);
     }
 
     private async Task CambiarVistaAsync(string view)
@@ -1179,8 +1194,11 @@
         ClearTicketRelations();
     }
 
-    private async Task AbrirTicketAsync(long idTicket)
+    private async Task AbrirTicketAsync(long idTicket, bool updateUrl = true)
     {
+        if (updateUrl && NavigateToTicketUrl(idTicket))
+            return;
+
         var result = await UiOps.RunAsync(() => TicketsSvc.GetByIdAsync(idTicket), "No se pudo cargar el ticket.");
         if (!result.Success)
         {
@@ -1216,6 +1234,16 @@
         _showEditor = true;
         _newNote = string.Empty;
         _descriptionEditorReady = false;
+    }
+
+    private bool NavigateToTicketUrl(long idTicket)
+    {
+        var target = QueryHelpers.AddQueryString("/tickets", "id", idTicket.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        if (string.Equals(Nav.ToBaseRelativePath(Nav.Uri), target.TrimStart('/'), StringComparison.Ordinal))
+            return false;
+
+        Nav.NavigateTo(target);
+        return true;
     }
 
     private async Task AbrirTicketDesdeKanbanAsync(long idTicket)
@@ -1473,7 +1501,7 @@
                 if (!result.Success) { SetFeedback(result.Feedback); return; }
                 SetFeedback(AppUiMessage.Success("Ticket guardado", "Los cambios quedaron registrados."));
                 await BuscarAsync();
-                await AbrirTicketAsync(_form.IdTicket);
+                await AbrirTicketAsync(_form.IdTicket, updateUrl: false);
             }
         }
         finally
@@ -1497,7 +1525,7 @@
             }, "No se pudo registrar la nota.");
             if (!result.Success) { SetFeedback(result.Feedback); return; }
             _newNote = string.Empty;
-            await AbrirTicketAsync(_detail.IdTicket);
+            await AbrirTicketAsync(_detail.IdTicket, updateUrl: false);
         }
         finally
         {
@@ -1509,7 +1537,7 @@
     {
         _showDescriptionCommands = false;
         if (_isNew) NuevoTicket();
-        else if (_detail is not null) _ = AbrirTicketAsync(_detail.IdTicket);
+        else if (_detail is not null) _ = AbrirTicketAsync(_detail.IdTicket, updateUrl: false);
     }
 
     private void CerrarEditor()

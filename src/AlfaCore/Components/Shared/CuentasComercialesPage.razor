@@ -1362,6 +1362,7 @@
     protected override async Task OnInitializedAsync()
     {
         AppUserSession.StateChanged += OnAppUserSessionChanged;
+        Nav.LocationChanged += OnLocationChanged;
         await LoadLookupsAsync();
         await EnsureViewSettingsLoadedAsync();
         await BuscarAsync();
@@ -1380,8 +1381,32 @@
     public void Dispose()
     {
         AppUserSession.StateChanged -= OnAppUserSessionChanged;
+        Nav.LocationChanged -= OnLocationChanged;
         _searchDebounceCts?.Cancel();
         _searchDebounceCts?.Dispose();
+    }
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+        => _ = InvokeAsync(ApplyCurrentLocationAsync);
+
+    private async Task ApplyCurrentLocationAsync()
+    {
+        var query = QueryHelpers.ParseQuery(Nav.ToAbsoluteUri(Nav.Uri).Query);
+        var codigo = query.TryGetValue("editar", out var editRaw)
+            ? editRaw.ToString()
+            : query.TryGetValue("codigo", out var codigoRaw)
+                ? codigoRaw.ToString()
+                : string.Empty;
+
+        if (string.IsNullOrWhiteSpace(codigo))
+        {
+            if (_showEditor && !_isNewMode)
+                CerrarEditor();
+            return;
+        }
+
+        if (!_showEditor || !string.Equals(_selectedCodigo, codigo, StringComparison.OrdinalIgnoreCase))
+            await AbrirEditorAsync(codigo, updateUrl: false);
     }
 
     public async ValueTask DisposeAsync()
@@ -1692,7 +1717,7 @@
         if (string.IsNullOrWhiteSpace(codigo))
             return;
 
-        await AbrirEditorAsync(codigo);
+        await AbrirEditorAsync(codigo, updateUrl: false);
     }
 
     private void SeleccionarFila(string codigo)
@@ -1722,8 +1747,17 @@
         }
     }
 
-    private async Task AbrirEditorAsync(string codigo)
+    private async Task AbrirEditorAsync(string codigo, bool updateUrl = true)
     {
+        if (updateUrl)
+        {
+            var target = QueryHelpers.AddQueryString(Nav.ToAbsoluteUri(Nav.Uri).AbsolutePath, "editar", codigo);
+            var current = Nav.ToBaseRelativePath(Nav.Uri);
+            var next = target.TrimStart('/');
+            if (!string.Equals(current, next, StringComparison.Ordinal))
+                Nav.NavigateTo(target);
+        }
+
         _showEditor = true;
         _showViewSettings = false;
         _showSearchPanel = false;
