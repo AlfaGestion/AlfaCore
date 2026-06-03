@@ -717,7 +717,7 @@ public sealed class ConversacionesService(
                     c.IdConversacion,
                     ISNULL(c.TelefonoWhatsApp, ''),
                     ISNULL(c.NombreVisible, ''),
-                    ISNULL(clienteContexto.Codigo, ''),
+                    ISNULL(COALESCE(NULLIF(LTRIM(RTRIM(c.ClienteCodigo)), ''), contactoCuenta.Cuenta), ''),
                     ISNULL(COALESCE(NULLIF(cli.RAZON_SOCIAL, ''), contactoCuenta.RazonSocial), ''),
                     c.IdContacto,
                     ISNULL(mc.Nombre_y_Apellido, ''),
