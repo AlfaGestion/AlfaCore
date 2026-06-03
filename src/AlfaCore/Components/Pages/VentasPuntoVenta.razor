@@ -1949,6 +1949,23 @@
         }
     };
 
+    window.alfaPosPrintHtml = function (frameId, html) {
+        const frame = document.getElementById(frameId);
+        if (!frame || !frame.contentWindow) {
+            return;
+        }
+
+        const doc = frame.contentWindow.document;
+        doc.open();
+        doc.write(html || "");
+        doc.close();
+
+        window.setTimeout(() => {
+            frame.contentWindow.focus();
+            frame.contentWindow.print();
+        }, 180);
+    };
+
     window.alfaPosCatalogNearBottom = function (element) {
         if (!element) {
             return false;
@@ -2485,7 +2502,7 @@
                     </div>
                 </div>
             </div>
-            <iframe id="pos-receipt-frame" class="pos-receipt-modal__frame pos-receipt-modal__frame--hidden" src="@BuildReceiptPreviewUrl()"></iframe>
+            <iframe id="pos-receipt-frame" class="pos-receipt-modal__frame pos-receipt-modal__frame--hidden" title="Impresión ticket POS"></iframe>
         </section>
     </section>
 }
@@ -3263,10 +3280,13 @@
 
     private async Task PrintReceiptAsync()
     {
+        var html = BuildReceiptPrintHtml(_receiptIsReprint);
+
         if (_lastSaleResult is not null)
             await PuntoVentaSvc.MarkReceiptPrintedAsync(_lastSaleResult.IdComprobante);
 
-        await Js.InvokeVoidAsync("alfaPosPrintFrame", "pos-receipt-frame");
+        await Js.InvokeVoidAsync("alfaPosPrintHtml", "pos-receipt-frame", html);
+        _receiptIsReprint = true;
     }
 
     private async Task SendReceiptEmailAsync()
@@ -3425,6 +3445,93 @@
 
     private static string GetProductImageUrl(string idArticulo)
         => $"/api/punto-venta/articulos/{Uri.EscapeDataString(idArticulo)}/imagen";
+
+    private string BuildReceiptPrintHtml(bool showReprint)
+    {
+        if (_lastSaleResult is null)
+            return "<html><body></body></html>";
+
+        var empresa = HtmlEncode(DisplayValueOrDash(_receiptContext?.Empresa));
+        var telefono = HtmlEncode(_receiptContext?.Telefono ?? string.Empty);
+        var direccion = HtmlEncode(_receiptContext?.Direccion ?? string.Empty);
+        var comprobante = HtmlEncode($"{_lastSaleResult.TipoComprobante} {_lastSaleResult.IdComprobanteTexto}");
+        var fecha = HtmlEncode(DateTime.Now.ToString("dd/MM/yyyy HH:mm"));
+        var reimpresion = showReprint ? "<div class='reprint'>REIMPRESION</div>" : string.Empty;
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("<!DOCTYPE html>");
+        sb.AppendLine("<html lang='es'>");
+        sb.AppendLine("<head>");
+        sb.AppendLine("<meta charset='utf-8' />");
+        sb.AppendLine("<title>Ticket POS</title>");
+        sb.AppendLine("<style>");
+        sb.AppendLine("@@page { size: 80mm auto; margin: 0; }");
+        sb.AppendLine("html, body { margin: 0; padding: 0; background: #fff; }");
+        sb.AppendLine("body { width: 80mm; font-family: 'Segoe UI', Arial, sans-serif; color: #111827; font-size: 10.5px; line-height: 1.28; }");
+        sb.AppendLine(".ticket { width: 80mm; box-sizing: border-box; padding: 3.2mm 3.6mm 4.2mm; }");
+        sb.AppendLine(".brand { text-align: center; padding-bottom: 2.4mm; }");
+        sb.AppendLine(".brand strong { display: block; font-size: 14px; font-weight: 900; letter-spacing: 0.03em; }");
+        sb.AppendLine(".brand div { margin-top: 1.2mm; color: #374151; }");
+        sb.AppendLine(".separator { margin: 2.2mm 0; border-top: 1px dashed #6b7280; height: 0; }");
+        sb.AppendLine(".reprint { margin-top: 2mm; display: inline-block; padding: 0.8mm 2.2mm; border: 1px solid #111827; font-size: 9px; font-weight: 900; letter-spacing: 0.08em; }");
+        sb.AppendLine(".header { padding: 1mm 0 0.4mm; }");
+        sb.AppendLine(".row, .item-row, .pay-row, .total { display: flex; justify-content: space-between; gap: 3mm; align-items: flex-start; }");
+        sb.AppendLine(".row { margin: 0.8mm 0; }");
+        sb.AppendLine(".row span { color: #374151; }");
+        sb.AppendLine(".row strong { font-size: 11px; text-align: right; }");
+        sb.AppendLine(".item { padding: 2.2mm 0; }");
+        sb.AppendLine(".item-desc { font-weight: 800; font-size: 11.5px; }");
+        sb.AppendLine(".item-meta { margin-top: 0.8mm; color: #4b5563; }");
+        sb.AppendLine(".item-row, .pay-row { margin-top: 0.8mm; }");
+        sb.AppendLine(".item-row strong, .pay-row strong { text-align: right; }");
+        sb.AppendLine(".section-title { margin: 3mm 0 1.4mm; font-size: 11px; font-weight: 900; text-transform: uppercase; }");
+        sb.AppendLine(".total { margin-top: 3.2mm; padding-top: 2.6mm; font-size: 13px; font-weight: 900; }");
+        sb.AppendLine(".total span, .total strong { font-size: 13px; }");
+        sb.AppendLine(".footer-note { margin-top: 3.2mm; text-align: center; font-size: 9px; color: #4b5563; }");
+        sb.AppendLine("</style>");
+        sb.AppendLine("</head>");
+        sb.AppendLine("<body>");
+        sb.AppendLine("<div class='ticket'>");
+        sb.AppendLine("<div class='brand'>");
+        sb.AppendLine($"<strong>{empresa}</strong>");
+        if (!string.IsNullOrWhiteSpace(telefono))
+            sb.AppendLine($"<div>{telefono}</div>");
+        if (!string.IsNullOrWhiteSpace(direccion))
+            sb.AppendLine($"<div>{direccion}</div>");
+        if (reimpresion.Length > 0)
+            sb.AppendLine(reimpresion);
+        sb.AppendLine("</div>");
+        sb.AppendLine("<div class='separator'></div>");
+        sb.AppendLine("<div class='header'>");
+        sb.AppendLine($"<div class='row'><span>Comprobante</span><strong>{comprobante}</strong></div>");
+        sb.AppendLine($"<div class='row'><span>Fecha</span><strong>{fecha}</strong></div>");
+        sb.AppendLine("</div>");
+        sb.AppendLine("<div class='separator'></div>");
+
+        foreach (var item in _receiptItems)
+        {
+            sb.AppendLine("<div class='item'>");
+            sb.AppendLine($"<div class='item-desc'>{HtmlEncode(item.Descripcion)}</div>");
+            sb.AppendLine($"<div class='item-meta'>{HtmlEncode($"{FmtQty(item.Cantidad)} x {FmtMoney(item.PrecioUnitario)}")}</div>");
+            sb.AppendLine($"<div class='item-row'><span>{HtmlEncode(item.IdArticulo)}</span><strong>{HtmlEncode(FmtMoney(item.Subtotal))}</strong></div>");
+            sb.AppendLine("</div>");
+        }
+
+        sb.AppendLine("<div class='separator'></div>");
+        sb.AppendLine("<div class='section-title'>Medios de pago</div>");
+        foreach (var payment in _receiptPayments)
+            sb.AppendLine($"<div class='pay-row'><span>{HtmlEncode(payment.DescripcionMedioPago)}</span><strong>{HtmlEncode(FmtMoney(payment.Importe))}</strong></div>");
+
+        sb.AppendLine("<div class='separator'></div>");
+        sb.AppendLine($"<div class='total'><span>Total</span><strong>{HtmlEncode(FmtMoney(_lastSaleResult.Total))}</strong></div>");
+        sb.AppendLine("<div class='footer-note'>Gracias por su compra</div>");
+        sb.AppendLine("</div>");
+        sb.AppendLine("</body>");
+        sb.AppendLine("</html>");
+        return sb.ToString();
+    }
+
+    private static string HtmlEncode(string value)
+        => System.Net.WebUtility.HtmlEncode(value ?? string.Empty);
 
     private static string DisplayValueOrDash(string? value)
         => string.IsNullOrWhiteSpace(value) ? "-" : value.Trim();
