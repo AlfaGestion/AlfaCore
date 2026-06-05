@@ -497,7 +497,7 @@ public sealed class CuentasComercialesService(
                         Dada_De_Baja = 0,
                         CodigoOpcional = @CodigoOpcional,
                         FechaHora_Modificacion = GETDATE()
-                    WHERE UPPER(LTRIM(RTRIM(CODIGO))) = @Codigo;
+                    WHERE UPPER(LTRIM(RTRIM(CODIGO))) = UPPER(LTRIM(RTRIM(@Codigo)));
                     """
                     : """
                     UPDATE dbo.MA_CUENTAS
@@ -509,7 +509,7 @@ public sealed class CuentasComercialesService(
                         Dada_De_Baja = 0,
                         CodigoOpcional = @CodigoOpcional,
                         FechaHora_Modificacion = GETDATE()
-                    WHERE UPPER(LTRIM(RTRIM(CODIGO))) = @Codigo;
+                    WHERE UPPER(LTRIM(RTRIM(CODIGO))) = UPPER(LTRIM(RTRIM(@Codigo)));
                     """;
 
                 await using var cmd = new SqlCommand(updateAccountSql, cn, (SqlTransaction)tx);
@@ -651,12 +651,14 @@ public sealed class CuentasComercialesService(
                         ProveedorCompartido = @ProveedorCompartido,
                         Clasificacion = @Clasificacion,
                         FechaHora_Modificacion = GETDATE()
-                    WHERE UPPER(LTRIM(RTRIM(CODIGO))) = @Codigo;
+                    WHERE UPPER(LTRIM(RTRIM(CODIGO))) = UPPER(LTRIM(RTRIM(@Codigo)));
                     """;
 
                 await using var cmd = new SqlCommand(updateAdicSql, cn, (SqlTransaction)tx);
                 FillCuentaAdicParameters(cmd, normalized, defaultDocumentoTipo, defaultIva, defaultPais, defaultProvincia, defaultCond, defaultClase, defaultMotivo, tipo);
-                await cmd.ExecuteNonQueryAsync(token);
+                var affected = await cmd.ExecuteNonQueryAsync(token);
+                if (affected == 0)
+                    throw new InvalidOperationException("No se pudo actualizar MA_CUENTASADIC para la cuenta indicada.");
             }
 
             await UpsertCuentaObsAsync(cn, (SqlTransaction)tx, normalized, token);
@@ -1280,7 +1282,7 @@ public sealed class CuentasComercialesService(
         string motivoDefault,
         CuentaComercialTipo tipo)
     {
-        cmd.Parameters.AddWithValue("@Codigo", request.Codigo);
+        cmd.Parameters.AddWithValue("@Codigo", request.Codigo.Trim().ToUpperInvariant());
         cmd.Parameters.AddWithValue("@Contacto", DbNullable(request.Contacto));
         cmd.Parameters.AddWithValue("@Calle", DbNullable(request.Calle));
         cmd.Parameters.AddWithValue("@Numero", DbNullable(request.Numero));
