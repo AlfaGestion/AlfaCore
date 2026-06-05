@@ -169,6 +169,7 @@
         box-shadow: none;
         font-weight: 800;
         text-align: left;
+        cursor: pointer;
     }
 
     .shell__content .tareas-field-button:hover,
@@ -334,6 +335,71 @@
         color: #7dd3fc;
         font-size: .78rem;
         font-weight: 900;
+    }
+
+    .shell__content .tareas-assignment-line {
+        grid-column: 1 / -1;
+        display: grid;
+        grid-template-columns: minmax(0, 420px) auto;
+        align-items: end;
+        gap: .75rem;
+    }
+
+    .shell__content .tareas-assignment-line .tareas-assignment-picker {
+        grid-column: auto;
+    }
+
+    .shell__content .tareas-share-icon {
+        width: 40px;
+        height: 40px;
+        padding: 0;
+        justify-content: center;
+        align-self: end;
+    }
+
+    .shell__content .tareas-share-icon span {
+        display: none;
+    }
+
+    .shell__content .tareas-attachments {
+        gap: .38rem;
+        padding: .55rem .7rem;
+    }
+
+    .shell__content .tareas-attachments__head {
+        gap: .55rem;
+    }
+
+    .shell__content .tareas-attachments__head strong {
+        font-size: .82rem;
+    }
+
+    .shell__content .tareas-attachments__head span {
+        display: none;
+    }
+
+    .shell__content .tareas-attachments__empty {
+        font-size: .76rem;
+        margin: 0;
+    }
+
+    .shell__content .tareas-attachments__grid {
+        grid-template-columns: repeat(auto-fill, minmax(96px, 116px));
+        gap: .45rem;
+    }
+
+    .shell__content .tareas-attachment-card {
+        grid-template-rows: 58px auto;
+    }
+
+    @@media (max-width: 680px) {
+        .shell__content .tareas-assignment-line {
+            grid-template-columns: minmax(0, 1fr);
+        }
+
+        .shell__content .tareas-share-icon {
+            justify-self: start;
+        }
     }
 
     .shell__content .tareas-assignment-dropdown__menu {
@@ -995,19 +1061,18 @@
         </div>
 
         <div class="tareas-form-grid">
-            <div class="tareas-field-picker" @onclick:stopPropagation @onkeydown="HandleFieldMenuKeyDown">
+            <div class="tareas-field-picker" @onclick:stopPropagation @onclick="OpenDueDateMenu" @onkeydown="HandleFieldMenuKeyDown">
                 <span>Vencimiento</span>
                 <button type="button"
                         class="tareas-field-button"
                         aria-haspopup="dialog"
-                        aria-expanded="@_dueDateMenuOpen"
-                        @onclick="ToggleDueDateMenu">
+                        aria-expanded="@_dueDateMenuOpen">
                     <span>@FormatDueDateForPicker(_taskDraft.FechaVencimiento)</span>
                     <i class="bi bi-calendar3"></i>
                 </button>
                 @if (_dueDateMenuOpen)
                 {
-                    <div class="tareas-field-menu tareas-date-menu" role="dialog" aria-label="Seleccionar vencimiento">
+                    <div class="tareas-field-menu tareas-date-menu" role="dialog" aria-label="Seleccionar vencimiento" @onclick:stopPropagation>
                         <div class="tareas-calendar">
                             <div class="tareas-calendar__head">
                                 <strong>@GetCalendarTitle()</strong>
@@ -1132,59 +1197,60 @@
                     </div>
                 }
             </div>
-            <div class="tareas-assignment-picker">
-                <span>Asignado a</span>
-                <div class="tareas-assignment-dropdown" @onclick:stopPropagation @onkeydown="HandleAssignmentKeyDown">
-                    <button type="button"
-                            class="tareas-assignment-dropdown__button"
-                            aria-haspopup="listbox"
-                            aria-expanded="@_assigneeMenuOpen"
-                            @onclick="ToggleAssigneeMenu">
-                        <span>@GetAssigneeSummary(_taskDraft.UsuarioAsignado)</span>
-                        <i class="bi bi-chevron-down"></i>
-                    </button>
-                    @if (_assigneeMenuOpen)
-                    {
-                        <div class="tareas-assignment-dropdown__menu" role="listbox">
-                            <button type="button" class="tareas-assignment-dropdown__config" @onclick="OpenGroupsModal">
-                                <i class="bi bi-sliders"></i>
-                                <span>Configurar grupos</span>
-                            </button>
-                            @foreach (var user in AssigneeOptions)
-                            {
-                                <button type="button"
-                                        class="@GetAssigneeOptionClass(user)"
-                                        role="option"
-                                        aria-selected="@IsAssigneeSelected(user)"
-                                        @onclick="() => ToggleAssigneeSelection(user)">
-                                    <span class="tareas-assignment-option__box">
-                                        <i class="bi bi-check2"></i>
-                                    </span>
-                                    <span>@user</span>
-                                    @if (IsAssigneeSelected(user))
-                                    {
-                                        <i class="bi bi-check2"></i>
-                                    }
-                                    else if (IsGroupLikeAssignee(user))
-                                    {
-                                        <i class="bi bi-diagram-3 tareas-assignment-option__type"></i>
-                                    }
+            <div class="tareas-assignment-line">
+                <div class="tareas-assignment-picker">
+                    <span>Asignado a</span>
+                    <div class="tareas-assignment-dropdown" @onclick:stopPropagation @onkeydown="HandleAssignmentKeyDown">
+                        <button type="button"
+                                class="tareas-assignment-dropdown__button"
+                                aria-haspopup="listbox"
+                                aria-expanded="@_assigneeMenuOpen"
+                                @onclick="ToggleAssigneeMenu">
+                            <span>@GetAssigneeSummary(_taskDraft.UsuarioAsignado)</span>
+                            <i class="bi bi-chevron-down"></i>
+                        </button>
+                        @if (_assigneeMenuOpen)
+                        {
+                            <div class="tareas-assignment-dropdown__menu" role="listbox">
+                                <button type="button" class="tareas-assignment-dropdown__config" @onclick="OpenGroupsModal">
+                                    <i class="bi bi-sliders"></i>
+                                    <span>Configurar grupos</span>
                                 </button>
-                            }
-                        </div>
-                    }
+                                @foreach (var user in AssigneeOptions)
+                                {
+                                    <button type="button"
+                                            class="@GetAssigneeOptionClass(user)"
+                                            role="option"
+                                            aria-selected="@IsAssigneeSelected(user)"
+                                            @onclick="() => ToggleAssigneeSelection(user)">
+                                        <span class="tareas-assignment-option__box">
+                                            <i class="bi bi-check2"></i>
+                                        </span>
+                                        <span>@user</span>
+                                        @if (IsAssigneeSelected(user))
+                                        {
+                                            <i class="bi bi-check2"></i>
+                                        }
+                                        else if (IsGroupLikeAssignee(user))
+                                        {
+                                            <i class="bi bi-diagram-3 tareas-assignment-option__type"></i>
+                                        }
+                                    </button>
+                                }
+                            </div>
+                        }
+                    </div>
                 </div>
+                <button type="button"
+                        class="btn btn--ghost btn--sm tareas-share-icon"
+                        disabled="@(!_taskCanShare)"
+                        title="@GetSharingSummary(_taskDraft.CompartirConTodos, _taskDraft.UsuariosCompartidos)"
+                        aria-label="Compartir"
+                        @onclick="ToggleTaskSharePanel">
+                    <i class="bi bi-share"></i>
+                    <span>Compartir</span>
+                </button>
             </div>
-        </div>
-
-        <div class="tareas-task-share">
-            <button type="button" class="btn btn--ghost btn--sm" disabled="@(!_taskCanShare)" @onclick="ToggleTaskSharePanel">
-                <i class="bi bi-share"></i> Compartir
-            </button>
-            @if (_taskDraft.CompartirConTodos || _taskDraft.UsuariosCompartidos.Count > 0)
-            {
-                <span>@GetSharingSummary(_taskDraft.CompartirConTodos, _taskDraft.UsuariosCompartidos)</span>
-            }
         </div>
 
         @if (_taskSharePanelOpen)
@@ -2685,6 +2751,17 @@
             _dueCalendarMonth = new DateTime(baseDate.Year, baseDate.Month, 1);
         }
         _dueDateMenuOpen = next;
+    }
+
+    private void OpenDueDateMenu()
+    {
+        if (_dueDateMenuOpen)
+            return;
+
+        CloseTaskFieldMenus();
+        var baseDate = _taskDraft.FechaVencimiento ?? DateTime.Today;
+        _dueCalendarMonth = new DateTime(baseDate.Year, baseDate.Month, 1);
+        _dueDateMenuOpen = true;
     }
 
     private void ToggleStateMenu()
