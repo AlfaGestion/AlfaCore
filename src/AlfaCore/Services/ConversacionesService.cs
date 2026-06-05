@@ -685,6 +685,7 @@ public sealed class ConversacionesService(
         => ExecuteLoggedAsync("Conversaciones", "GetInbox", async token =>
         {
             filters ??= new();
+            await AutoCloseExpiredOpenWhatsAppConversationsAsync(null, token);
             var items = new List<ConversacionInboxItemDto>();
             var searchPhone = NormalizePhone(filters.Search);
             var searchPhoneTail = GetPhoneComparableTail(searchPhone);
@@ -1150,6 +1151,7 @@ public sealed class ConversacionesService(
     public Task<ConversacionDetalleDto?> GetConversationAsync(long conversationId, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetConversation", async token =>
         {
+            await AutoCloseExpiredOpenWhatsAppConversationsAsync(conversationId, token);
             var sql = $"""
                 SELECT
                     c.IdConversacion,
@@ -1315,6 +1317,7 @@ public sealed class ConversacionesService(
     public Task<IReadOnlyList<ConversacionMensajeDto>> GetMessagesAsync(long conversationId, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetMessages", async token =>
         {
+            await AutoCloseExpiredOpenWhatsAppConversationsAsync(conversationId, token);
             var sql = $"""
                 SELECT
                     m.IdMensaje,
@@ -2373,7 +2376,9 @@ public sealed class ConversacionesService(
             {
                 var actorName = await BuildActionActorNameAsync(request.IdTecnicoAutor, request.NombreTecnicoAccion, request.UsuarioAccion, token);
                 var nextStateName = FirstNonEmpty(await TryGetStateNameAsync(state, token), state);
-                var eventText = isClosed && !wasClosed
+                var eventText = !string.IsNullOrWhiteSpace(request.Observaciones)
+                    ? request.Observaciones.Trim()
+                    : isClosed && !wasClosed
                     ? $"{actorName} cerr\u00f3 la conversaci\u00f3n."
                     : $"{actorName} cambi\u00f3 el estado de {FirstNonEmpty(previousState.Descripcion, previousState.CodigoEstado, "Sin estado")} a {nextStateName}.";
 
@@ -3711,6 +3716,61 @@ public sealed class ConversacionesService(
         return BusinessNow() <= NormalizeStoredConversationTime(lastClientMessage).AddHours(24);
     }
 
+    private async Task AutoCloseExpiredOpenWhatsAppConversationsAsync(long? idConversacion, CancellationToken ct)
+    {
+        var closedState = await GetFirstClosedConversationStateAsync(ct);
+        if (string.IsNullOrWhiteSpace(closedState))
+            return;
+
+        var sql = $"""
+            SELECT TOP (50) c.IdConversacion
+            FROM dbo.CONV_CONVERSACIONES c
+            OUTER APPLY (
+                SELECT TOP (1) {ConversationMessageVisibleDateSql("m")} AS FechaHoraUltimoMensajeCliente
+                FROM dbo.CONV_MENSAJES m
+                WHERE m.IdConversacion = c.IdConversacion
+                  AND m.Direction = N'ENTRANTE'
+                ORDER BY {ConversationMessageVisibleDateSql("m")} DESC, m.IdMensaje DESC
+            ) ultCliente
+            WHERE c.Canal = N'WHATSAPP'
+              AND UPPER(LTRIM(RTRIM(ISNULL(c.CodigoEstado, N'')))) = N'ABIERTA'
+              AND (@IdConversacion IS NULL OR c.IdConversacion = @IdConversacion)
+              AND ultCliente.FechaHoraUltimoMensajeCliente IS NOT NULL
+              AND DATEADD(hour, 24, ultCliente.FechaHoraUltimoMensajeCliente) < {BusinessNowSql}
+            ORDER BY ultCliente.FechaHoraUltimoMensajeCliente, c.IdConversacion;
+            """;
+
+        var ids = new List<long>();
+        await using (var cn = new SqlConnection(ConnectionString))
+        {
+            await cn.OpenAsync(ct);
+            await using var cmd = new SqlCommand(sql, cn);
+            cmd.Parameters.AddWithValue("@IdConversacion", idConversacion.HasValue ? idConversacion.Value : DBNull.Value);
+            await using var rd = await cmd.ExecuteReaderAsync(ct);
+            while (await rd.ReadAsync(ct))
+                ids.Add(rd.GetInt64(0));
+        }
+
+        if (ids.Count == 0)
+            return;
+
+        var now = BusinessNow();
+        var eventText = $"AlfaCore ha cerrado la conversaci\u00f3n el {now:dd/MM/yyyy HH:mm} porque super\u00f3 la ventana de 24 horas de WhatsApp.";
+
+        foreach (var id in ids)
+        {
+            await ChangeStatusAsync(new ConversacionEstadoRequest
+            {
+                IdConversacion = id,
+                CodigoEstado = closedState,
+                NombreTecnicoAccion = "AlfaCore",
+                UsuarioAccion = "AlfaCore",
+                SistemaAccion = "AlfaCore",
+                Observaciones = eventText
+            }, ct);
+        }
+    }
+
     private async Task<long> InsertMessageAsync(PendingMessageInsert message, CancellationToken ct)
     {
         const string sql = """
@@ -5008,6 +5068,27 @@ public sealed class ConversacionesService(
             throw new InvalidOperationException("El estado indicado no existe.");
 
         return Convert.ToBoolean(result, CultureInfo.InvariantCulture);
+    }
+
+    private async Task<string> GetFirstClosedConversationStateAsync(CancellationToken ct)
+    {
+        const string sql = """
+            SELECT TOP (1) ISNULL(CodigoEstado, '')
+            FROM dbo.CONV_ESTADOS
+            WHERE ISNULL(EsCerrado, 0) = 1
+              AND ISNULL(Activo, 1) = 1
+            ORDER BY ISNULL(Orden, 999), CodigoEstado;
+            """;
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        await using var cmd = new SqlCommand(sql, cn);
+        var result = await cmd.ExecuteScalarAsync(ct);
+        var state = result is null || result is DBNull
+            ? string.Empty
+            : Convert.ToString(result, CultureInfo.InvariantCulture) ?? string.Empty;
+
+        return string.IsNullOrWhiteSpace(state) ? "CERRADA" : state.Trim().ToUpperInvariant();
     }
 
     private async Task<bool> GetConversationClosedFlagAsync(long idConversacion, CancellationToken ct)
