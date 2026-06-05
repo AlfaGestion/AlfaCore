@@ -139,4 +139,5 @@ echo ===============================================
 echo No se pudo generar el instalador.
 echo Revisa los mensajes anteriores.
 echo ===============================================
+PAUSE
 exit /b 1

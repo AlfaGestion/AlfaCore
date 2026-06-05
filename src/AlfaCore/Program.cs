@@ -82,6 +82,8 @@ public class Program
         builder.Services.AddSingleton<AppUserSessionStore>();
         builder.Services.AddScoped<IAppUserSessionService, AppUserSessionService>();
         builder.Services.AddSingleton<UsuariosPasswordCodec>();
+        builder.Services.AddSingleton<Vb6BridgeTicketStore>();
+        builder.Services.AddScoped<IVb6BridgeService, Vb6BridgeService>();
         builder.Services.AddScoped<IAuditoriaService, AuditoriaService>();
         builder.Services.AddScoped<IGestionDashboardService, GestionDashboardService>();
         builder.Services.AddScoped<IPuntoVentaService, PuntoVentaService>();
@@ -224,6 +226,66 @@ public class Program
             var file = await comprobanteViewerSvc.GetDocumentoArchivoAsync(tc, idComprobante, idComplemento ?? 0, documento, ct);
             if (file is null) return Results.NotFound();
             return Results.File(file.RutaCompleta, file.MimeType, file.NombreArchivo);
+        });
+
+        app.MapPost("/api/vb6/auth-ticket", async (
+            HttpRequest request,
+            IVb6BridgeService vb6BridgeSvc,
+            CancellationToken ct) =>
+        {
+            if (!request.HasFormContentType)
+                return Results.BadRequest("Se esperaba application/x-www-form-urlencoded.");
+
+            var form = await request.ReadFormAsync(ct);
+            var vb6Request = new Vb6AuthTicketRequest
+            {
+                Servidor = form["servidor"].ToString(),
+                BaseDatos = form["baseDatos"].ToString(),
+                UsuarioSql = form["usuarioSql"].ToString(),
+                PasswordSql = form["passwordSql"].ToString(),
+                UsuarioSistema = form["usuarioSistema"].ToString(),
+                PasswordSistema = form["passwordSistema"].ToString(),
+                Modulo = form["modulo"].ToString(),
+                NombreSesion = string.IsNullOrWhiteSpace(form["nombreSesion"]) ? null : form["nombreSesion"].ToString()
+            };
+
+            try
+            {
+                var ticket = await vb6BridgeSvc.CreateTicketAsync(vb6Request, ct);
+                return Results.Text(ticket, "text/plain; charset=utf-8");
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.BadRequest(ex.Message);
+            }
+            catch (Exception ex)
+            {
+                return Results.Problem(ex.Message, statusCode: StatusCodes.Status500InternalServerError);
+            }
+        });
+
+        app.MapGet("/vb6/consume", async (
+            HttpRequest request,
+            IVb6BridgeService vb6BridgeSvc,
+            CancellationToken ct) =>
+        {
+            var ticket = request.Query["t"].ToString();
+            if (string.IsNullOrWhiteSpace(ticket))
+                return Results.BadRequest("Falta el ticket.");
+
+            try
+            {
+                var result = await vb6BridgeSvc.ConsumeTicketAsync(ticket, ct);
+                return Results.Content(BuildVb6ConsumeHtml(result), "text/html; charset=utf-8");
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Content(BuildVb6ErrorHtml(ex.Message), "text/html; charset=utf-8");
+            }
+            catch (Exception ex)
+            {
+                return Results.Content(BuildVb6ErrorHtml(ex.Message), "text/html; charset=utf-8");
+            }
         });
 
         app.MapGet("/consultas/{id:int}/descargar-excel", async (
@@ -879,6 +941,69 @@ public class Program
             },
             statusCode: StatusCodes.Status500InternalServerError);
     }
+
+    private static string BuildVb6ConsumeHtml(Vb6ConsumeTicketResult result)
+    {
+        var sessionId = HtmlEncode(result.SqlSessionId);
+        var token = JsStringEncode(result.UserToken);
+        var redirectUrl = JsStringEncode(result.RedirectUrl);
+
+        return string.Concat(
+            "<!doctype html>",
+            "<html lang=\"es\">",
+            "<head>",
+            "<meta charset=\"utf-8\" />",
+            "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />",
+            "<title>AlfaCore</title>",
+            "</head>",
+            "<body>",
+            "<script>",
+            "(function () {",
+            "try {",
+            "if (window.alfaCoreSqlSession && typeof window.alfaCoreSqlSession.setActive === 'function') {",
+            "window.alfaCoreSqlSession.setActive('", sessionId, "');",
+            "} else {",
+            "document.cookie = 'AlfaCore.SqlSessionId=", sessionId, "; path=/; max-age=31536000; samesite=lax';",
+            "localStorage.setItem('alfacore.sqlSessionId', '", sessionId, "');",
+            "}",
+            "localStorage.setItem('alfacore_user_token', '", token, "');",
+            "window.location.replace('", redirectUrl, "');",
+            "} catch (error) {",
+            "document.body.innerHTML = '<pre>No se pudo preparar la sesion: ' + (error && error.message ? error.message : error) + '</pre>';",
+            "}",
+            "})();",
+            "</script>",
+            "<noscript>Necesitas JavaScript habilitado para continuar.</noscript>",
+            "</body>",
+            "</html>");
+    }
+
+    private static string BuildVb6ErrorHtml(string message)
+    {
+        var safeMessage = HtmlEncode(message);
+        return string.Concat(
+            "<!doctype html>",
+            "<html lang=\"es\">",
+            "<head>",
+            "<meta charset=\"utf-8\" />",
+            "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />",
+            "<title>AlfaCore - Error</title>",
+            "</head>",
+            "<body>",
+            "<pre>", safeMessage, "</pre>",
+            "</body>",
+            "</html>");
+    }
+
+    private static string HtmlEncode(string value)
+        => System.Net.WebUtility.HtmlEncode(value ?? string.Empty);
+
+    private static string JsStringEncode(string value)
+        => (value ?? string.Empty)
+            .Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("'", "\\'", StringComparison.Ordinal)
+            .Replace("\r", string.Empty, StringComparison.Ordinal)
+            .Replace("\n", string.Empty, StringComparison.Ordinal);
 
     private static void WriteStartupError(string message, Exception exception)
     {
