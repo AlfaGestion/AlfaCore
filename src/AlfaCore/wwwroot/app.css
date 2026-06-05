@@ -4237,7 +4237,7 @@ html[data-theme="light"] .menu__search-result:hover {
 }
 
 .conversation-header-state__row.is-open {
-    z-index: 60;
+    z-index: 120;
     border-color: rgba(14, 165, 233, 0.52);
     box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.12);
 }
@@ -4290,7 +4290,7 @@ html[data-theme="light"] .menu__search-result:hover {
     position: absolute;
     top: calc(100% + .32rem);
     right: 0;
-    z-index: 70;
+    z-index: 130;
     min-width: 178px;
     padding: .28rem;
     border: 1px solid rgba(14, 165, 233, 0.28);
@@ -5662,7 +5662,7 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
 .conversations-page--odoo .conversations-chat__header,
 .templates-page--odoo .conversations-chat__header {
     position: relative;
-    z-index: 4;
+    z-index: 90;
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: start;
