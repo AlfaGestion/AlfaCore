@@ -28,7 +28,7 @@
 
     @if (_feedback is not null)
     {
-        <section class="panel-card">
+        <section id="cuentas-feedback" class="panel-card" @onclick:stopPropagation>
             <div class="editor-msg @GetFeedbackClass(_feedback)">
                 <div>
                     <strong>@_feedback.Title</strong>
@@ -42,6 +42,9 @@
                         <small>Código: @_feedback.Code</small>
                     }
                 </div>
+                <button type="button" class="btn btn--ghost btn--sm" title="Cerrar aviso" aria-label="Cerrar aviso" @onclick="DismissFeedback">
+                    <i class="bi bi-x-lg"></i>
+                </button>
             </div>
         </section>
     }
@@ -1305,6 +1308,8 @@
     private CuentaComercialLookupDataDto _lookups = new();
     private CuentaComercialViewSettingsDto _viewSettings = new();
     private AppUiMessage? _feedback;
+    private DateTime _feedbackSetAtUtc = DateTime.MinValue;
+    private bool _scrollFeedbackAfterRender;
     private bool _loadingList;
     private bool _loadingContactos;
     private bool _saving;
@@ -1408,6 +1413,12 @@
 
         if (_showEditor && _activeTab == CuentaComercialTab.Notas && !_notesEditorsReady && _richEditorJs is not null)
             await InitializeNotesEditorsAsync();
+
+        if (_scrollFeedbackAfterRender && _feedback is not null)
+        {
+            _scrollFeedbackAfterRender = false;
+            await Js.InvokeVoidAsync("eval", "document.getElementById('cuentas-feedback')?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });");
+        }
     }
 
     public void Dispose()
@@ -1459,6 +1470,7 @@
     private async Task HandlePageClickAsync()
     {
         CloseSearchPanel();
+        DismissFeedbackFromOutside();
         await Task.CompletedTask;
     }
 
@@ -2815,7 +2827,25 @@
         => !_isNewMode && string.Equals(_selectedCodigo, item.Codigo, StringComparison.OrdinalIgnoreCase);
 
     private void SetFeedback(AppUiMessage? message)
-        => _feedback = message;
+    {
+        _feedback = message;
+        _feedbackSetAtUtc = message is null ? DateTime.MinValue : DateTime.UtcNow;
+        _scrollFeedbackAfterRender = message?.Severity is AppUiFeedbackSeverity.Warning or AppUiFeedbackSeverity.Error;
+    }
+
+    private void DismissFeedback()
+        => SetFeedback(null);
+
+    private void DismissFeedbackFromOutside()
+    {
+        if (_feedback is null)
+            return;
+
+        if (DateTime.UtcNow - _feedbackSetAtUtc < TimeSpan.FromMilliseconds(250))
+            return;
+
+        SetFeedback(null);
+    }
 
     private static string FormatDate(DateTime? value)
         => value.HasValue ? value.Value.ToString("dd/MM/yyyy HH:mm") : "—";
