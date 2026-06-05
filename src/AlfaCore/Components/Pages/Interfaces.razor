@@ -595,6 +595,56 @@
         </div>
     }
 
+    @if (_showBulkDeleteConfirm)
+    {
+        <div class="modal-overlay" @onclick="CloseBulkDeleteConfirm">
+            <section class="modal-card interfaces-detail-modal" role="dialog" aria-modal="true" aria-labelledby="interfaces-delete-confirm-title" @onclick:stopPropagation="true">
+                <div class="panel-card__header">
+                    <div>
+                        <h3 id="interfaces-delete-confirm-title" class="panel-card__title">Eliminar documentos</h3>
+                        <p class="panel-card__subtitle">Se eliminarán @_bulkDeleteConfirmCount documento(s), adjuntos e historial relacionados.</p>
+                    </div>
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="CloseBulkDeleteConfirm" aria-label="Cerrar">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
+                </div>
+                <div class="actions">
+                    <button type="button" class="btn btn--danger" @onclick="ConfirmBulkDeleteAsync">
+                        <i class="bi bi-trash"></i> Confirmar eliminación
+                    </button>
+                    <button type="button" class="btn btn--ghost" @onclick="CloseBulkDeleteConfirm">
+                        Cancelar
+                    </button>
+                </div>
+            </section>
+        </div>
+    }
+
+    @if (_showCancelQueueConfirm)
+    {
+        <div class="modal-overlay" @onclick="CloseCancelQueueConfirm">
+            <section class="modal-card interfaces-detail-modal" role="dialog" aria-modal="true" aria-labelledby="interfaces-cancel-queue-title" @onclick:stopPropagation="true">
+                <div class="panel-card__header">
+                    <div>
+                        <h3 id="interfaces-cancel-queue-title" class="panel-card__title">Cancelar procesamiento</h3>
+                        <p class="panel-card__subtitle">Se va a cancelar o solicitar la cancelación del procesamiento seleccionado.</p>
+                    </div>
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="CloseCancelQueueConfirm" aria-label="Cerrar">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
+                </div>
+                <div class="actions">
+                    <button type="button" class="btn btn--danger" @onclick="ConfirmCancelQueueAsync">
+                        <i class="bi bi-x-octagon"></i> Confirmar cancelación
+                    </button>
+                    <button type="button" class="btn btn--ghost" @onclick="CloseCancelQueueConfirm">
+                        Cancelar
+                    </button>
+                </div>
+            </section>
+        </div>
+    }
+
 </div>
 @code {
     private readonly InterfacesFilters _filters = new();
@@ -622,7 +672,11 @@
     private bool _hasNext;
     private bool _showMobileFilters;
     private bool _showMobileBulkActions;
+    private bool _showBulkDeleteConfirm;
+    private bool _showCancelQueueConfirm;
     private long? _openRowActionsId;
+    private int _bulkDeleteConfirmCount;
+    private int _cancelQueueConfirmId;
     private string _draftAgruparPor = InterfacesViewGroupKeys.None;
     private string _viewSettingsUserName = string.Empty;
     private string _bulkAction = BulkActionDelete;
@@ -965,7 +1019,7 @@
         }
     }
 
-    private async Task EjecutarAccionSeleccionadaAsync()
+    private void EjecutarAccionSeleccionadaAsync()
     {
         if (_selectedIds.Count == 0 || _loadingList)
             return;
@@ -973,16 +1027,25 @@
         if (!string.Equals(_bulkAction, BulkActionDelete, StringComparison.OrdinalIgnoreCase))
             return;
 
-        var confirm = await Js.InvokeAsync<bool>(
-            "confirm",
-            $"Se van a eliminar {_selectedIds.Count} documento(s) seleccionados junto con adjuntos e historial relacionados. ¿Querés continuar?");
+        _bulkDeleteConfirmCount = _selectedIds.Count;
+        _showBulkDeleteConfirm = true;
+    }
 
-        if (!confirm)
+    private void CloseBulkDeleteConfirm()
+        => _showBulkDeleteConfirm = false;
+
+    private async Task ConfirmBulkDeleteAsync()
+    {
+        var selectedIds = _selectedIds.OrderBy(id => id).ToArray();
+        if (selectedIds.Length == 0)
+        {
+            _showBulkDeleteConfirm = false;
             return;
+        }
 
+        _showBulkDeleteConfirm = false;
         var user = AppUserSession.GetCurrentUserName(Environment.UserName);
         var pc = Environment.MachineName;
-        var selectedIds = _selectedIds.OrderBy(id => id).ToArray();
 
         var result = await UiOps.RunAsync(
             () => InterfacesSvc.DeleteAsync(new InterfacesEliminarComprobantesRequest
@@ -1017,12 +1080,31 @@
         });
     }
 
-    private async Task CancelarColaAsync(int id)
+    private void CancelarColaAsync(int id)
     {
-        var confirm = await Js.InvokeAsync<bool>("confirm", "Se va a cancelar o solicitar la cancelación del procesamiento seleccionado. ¿Querés continuar?");
-        if (!confirm)
+        if (id <= 0)
             return;
 
+        _cancelQueueConfirmId = id;
+        _showCancelQueueConfirm = true;
+    }
+
+    private void CloseCancelQueueConfirm()
+    {
+        _showCancelQueueConfirm = false;
+        _cancelQueueConfirmId = 0;
+    }
+
+    private async Task ConfirmCancelQueueAsync()
+    {
+        var id = _cancelQueueConfirmId;
+        if (id <= 0)
+        {
+            CloseCancelQueueConfirm();
+            return;
+        }
+
+        CloseCancelQueueConfirm();
         var result = await UiOps.RunAsync(async () =>
         {
             await InterfacesSvc.CancelCompraDetectionAsync(new InterfacesCompraIaAccionRequest

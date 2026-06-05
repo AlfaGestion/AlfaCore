@@ -1287,6 +1287,39 @@
     </div>
 }
 
+@if (_showBulkDeactivateConfirm)
+{
+    <div class="cuentas-modal-backdrop" @onclick="CloseBulkDeactivateConfirm">
+        <section class="cuentas-modal cuentas-modal--compact" role="dialog" aria-modal="true" aria-labelledby="cuentas-bulk-deactivate-title" @onclick:stopPropagation="true">
+            <header class="cuentas-modal__header">
+                <div>
+                    <span class="cuentas-modal__eyebrow">Confirmación</span>
+                    <h3 id="cuentas-bulk-deactivate-title">Dar de baja @PluralLabelLower</h3>
+                </div>
+                <button type="button" class="cuentas-modal__close" @onclick="CloseBulkDeactivateConfirm" disabled="@_saving" aria-label="Cerrar">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </header>
+            <div class="cuentas-modal__body">
+                <div class="context-card">
+                    <span class="context-card__label">Acción masiva</span>
+                    <strong>@_bulkDeactivateConfirmCount @PluralLabelLower</strong>
+                    <span class="context-card__muted">Se darán de baja los registros seleccionados.</span>
+                </div>
+            </div>
+            <footer class="cuentas-modal__actions">
+                <button type="button" class="btn btn--danger" @onclick="ConfirmBulkDeactivateAsync" disabled="@_saving">
+                    <i class="bi bi-person-dash"></i>
+                    @(_saving ? "Procesando..." : "Confirmar baja")
+                </button>
+                <button type="button" class="btn btn--ghost" @onclick="CloseBulkDeactivateConfirm" disabled="@_saving">
+                    Cancelar
+                </button>
+            </footer>
+        </section>
+    </div>
+}
+
 @code {
     [Parameter] public CuentaComercialTipo Tipo { get; set; }
 
@@ -1321,6 +1354,7 @@
     private bool _showLinkContactoModal;
     private bool _showViewSettings;
     private bool _showSearchPanel;
+    private bool _showBulkDeactivateConfirm;
     private bool _notesEditorsReady;
     private bool _isNewMode = true;
     private bool _selectedActivo = true;
@@ -1345,6 +1379,7 @@
     private CancellationTokenSource? _searchDebounceCts;
     private CuentaComercialTab _activeTab = CuentaComercialTab.Datos;
     private string _bulkAction = BulkActionDeactivate;
+    private int _bulkDeactivateConfirmCount;
     private static readonly IReadOnlyList<RichTextCommandOption> NotesToolbarCommands =
     [
         new("Título", "bi-type-h1", "h1"),
@@ -2217,7 +2252,7 @@
         }
     }
 
-    private async Task EjecutarAccionSeleccionadaAsync()
+    private void EjecutarAccionSeleccionadaAsync()
     {
         if (_selectedCodes.Count == 0 || _loadingList)
             return;
@@ -2225,14 +2260,36 @@
         if (!string.Equals(_bulkAction, BulkActionDeactivate, StringComparison.OrdinalIgnoreCase))
             return;
 
-        var codigos = _selectedCodes.OrderBy(codigo => codigo, StringComparer.OrdinalIgnoreCase).ToArray();
-        var confirm = await Js.InvokeAsync<bool>(
-            "confirm",
-            $"Se van a dar de baja {codigos.Length} {PluralLabelLower}. ¿Querés continuar?");
+        OpenBulkDeactivateConfirm();
+    }
 
-        if (!confirm)
+    private void OpenBulkDeactivateConfirm()
+    {
+        if (_selectedCodes.Count == 0 || _saving)
             return;
 
+        _bulkDeactivateConfirmCount = _selectedCodes.Count;
+        _showBulkDeactivateConfirm = true;
+    }
+
+    private void CloseBulkDeactivateConfirm()
+    {
+        if (_saving)
+            return;
+
+        _showBulkDeactivateConfirm = false;
+    }
+
+    private async Task ConfirmBulkDeactivateAsync()
+    {
+        var codigos = _selectedCodes.OrderBy(codigo => codigo, StringComparer.OrdinalIgnoreCase).ToArray();
+        if (codigos.Length == 0 || _saving)
+        {
+            _showBulkDeactivateConfirm = false;
+            return;
+        }
+
+        _showBulkDeactivateConfirm = false;
         _saving = true;
         try
         {

@@ -626,6 +626,60 @@
     </section>
 }
 
+@if (_showDeactivateConfirm)
+{
+    <button type="button" class="modal-backdrop app-modal-backdrop" aria-label="Cancelar" @onclick="CloseDeactivateConfirm"></button>
+    <section class="panel-card app-modal no-print" @onclick:stopPropagation>
+        <div class="panel-card__header">
+            <div>
+                <h3 class="panel-card__title">Dar de baja técnico</h3>
+                <p class="panel-card__subtitle">Se dará de baja @_form.Nombre.</p>
+            </div>
+            <button type="button" class="btn btn--ghost btn--sm" @onclick="CloseDeactivateConfirm" disabled="@_saving" title="Cerrar">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        </div>
+        <div class="actions">
+            <button type="button" class="btn btn--danger" @onclick="ConfirmDeactivateAsync" disabled="@_saving">
+                <i class="bi bi-person-dash"></i> @(_saving ? "Procesando..." : "Confirmar baja")
+            </button>
+            <button type="button" class="btn btn--ghost" @onclick="CloseDeactivateConfirm" disabled="@_saving">
+                Cancelar
+            </button>
+        </div>
+    </section>
+}
+
+@if (_showPendingUserCleanupConfirm)
+{
+    <button type="button" class="modal-backdrop app-modal-backdrop" aria-label="Mantener usuario" @onclick="() => ResolvePendingUserCleanupAsync(false)"></button>
+    <section class="panel-card app-modal no-print" @onclick:stopPropagation>
+        <div class="panel-card__header">
+            <div>
+                <h3 class="panel-card__title">Usuario sin técnico guardado</h3>
+                <p class="panel-card__subtitle">Se creó el usuario @_pendingCleanupUserName, pero el técnico no fue guardado.</p>
+            </div>
+            <button type="button" class="btn btn--ghost btn--sm" @onclick="() => ResolvePendingUserCleanupAsync(false)" title="Cerrar">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        </div>
+        <div class="editor-msg editor-msg--warning" style="margin-bottom:1rem;">
+            <div>
+                <strong>Acceso pendiente</strong>
+                <p>Podés desactivar ese usuario para evitar dejar un acceso sin completar, o mantenerlo y continuar.</p>
+            </div>
+        </div>
+        <div class="actions">
+            <button type="button" class="btn btn--danger" @onclick="() => ResolvePendingUserCleanupAsync(true)">
+                <i class="bi bi-person-dash"></i> Desactivar usuario
+            </button>
+            <button type="button" class="btn btn--ghost" @onclick="() => ResolvePendingUserCleanupAsync(false)">
+                Mantener usuario
+            </button>
+        </div>
+    </section>
+}
+
 @code {
     // ── Estado de lista ──────────────────────────────────────────────────────
     private readonly TecnicosFilters          _filters          = new();
@@ -639,6 +693,7 @@
     private bool _showEditor;
     private bool _showViewSettings;
     private bool _showSearchPanel;
+    private bool _showDeactivateConfirm;
     private bool _viewSettingsLoaded;
     private int  _pagedTotal;
     private int  _pageNumber  = 1;
@@ -668,6 +723,10 @@
     private string _modalConfirmacion     = string.Empty;
     private string _editorUserCreatedNote = string.Empty;
     private string _pendingCreatedUserName = string.Empty;
+    private bool _showPendingUserCleanupConfirm;
+    private string _pendingCleanupUserName = string.Empty;
+    private string _pendingCleanupAction = string.Empty;
+    private string _pendingCleanupTargetId = string.Empty;
     private readonly Dictionary<string, string> _modalErrors = new(StringComparer.OrdinalIgnoreCase);
 
     // ── Datos de combos ───────────────────────────────────────────────────────
@@ -898,7 +957,14 @@
 
     private async Task BeginNewAsync()
     {
-        await CheckAndCleanPendingUserAsync();
+        if (TryOpenPendingUserCleanup("begin-new"))
+            return;
+
+        await BeginNewCoreAsync();
+    }
+
+    private async Task BeginNewCoreAsync()
+    {
         ResetFormState();
         _showEditor       = true;
         _showViewSettings = false;
@@ -913,7 +979,15 @@
 
     private async Task CerrarEditor()
     {
-        await CheckAndCleanPendingUserAsync();
+        if (TryOpenPendingUserCleanup("close-editor"))
+            return;
+
+        CloseEditorCore();
+        await Task.CompletedTask;
+    }
+
+    private void CloseEditorCore()
+    {
         ClearFieldErrors();
         _editorUserCreatedNote = string.Empty;
         _showEditor = false;
@@ -932,7 +1006,14 @@
 
     private async Task AbrirEditorAsync(string idTecnico)
     {
-        await CheckAndCleanPendingUserAsync();
+        if (TryOpenPendingUserCleanup("open-editor", idTecnico))
+            return;
+
+        await OpenEditorCoreAsync(idTecnico);
+    }
+
+    private async Task OpenEditorCoreAsync(string idTecnico)
+    {
         _showEditor       = true;
         _showViewSettings = false;
         await CargarEditorAsync(idTecnico);
@@ -1004,10 +1085,27 @@
         if (_isNewMode || string.IsNullOrWhiteSpace(_selectedIdTecnico))
             return;
 
-        var confirm = await Js.InvokeAsync<bool>("confirm", $"¿Dar de baja al técnico {_form.Nombre}?");
-        if (!confirm)
+        _showDeactivateConfirm = true;
+        await Task.CompletedTask;
+    }
+
+    private void CloseDeactivateConfirm()
+    {
+        if (_saving)
             return;
 
+        _showDeactivateConfirm = false;
+    }
+
+    private async Task ConfirmDeactivateAsync()
+    {
+        if (_isNewMode || string.IsNullOrWhiteSpace(_selectedIdTecnico))
+        {
+            _showDeactivateConfirm = false;
+            return;
+        }
+
+        _showDeactivateConfirm = false;
         _saving = true;
         try
         {
@@ -1112,17 +1210,48 @@
         _modalErrors.Clear();
     }
 
-    private async Task CheckAndCleanPendingUserAsync()
+    private bool TryOpenPendingUserCleanup(string action, string? targetId = null)
     {
-        if (string.IsNullOrEmpty(_pendingCreatedUserName)) return;
+        if (string.IsNullOrEmpty(_pendingCreatedUserName))
+            return false;
+
         var name = _pendingCreatedUserName;
         _pendingCreatedUserName = string.Empty;
-        var confirm = await Js.InvokeAsync<bool>("confirm",
-            $"Se creó el usuario '{name}' pero el técnico no fue guardado. ¿Querés desactivar el usuario para evitar dejar un acceso sin completar?");
-        if (confirm)
+        _pendingCleanupUserName = name;
+        _pendingCleanupAction = action;
+        _pendingCleanupTargetId = targetId ?? string.Empty;
+        _showPendingUserCleanupConfirm = true;
+        return true;
+    }
+
+    private async Task ResolvePendingUserCleanupAsync(bool deactivate)
+    {
+        var name = _pendingCleanupUserName;
+        var action = _pendingCleanupAction;
+        var targetId = _pendingCleanupTargetId;
+
+        _showPendingUserCleanupConfirm = false;
+        _pendingCleanupUserName = string.Empty;
+        _pendingCleanupAction = string.Empty;
+        _pendingCleanupTargetId = string.Empty;
+
+        if (deactivate && !string.IsNullOrWhiteSpace(name))
         {
             await UiOps.RunAsync(() => UsuariosSvc.DeactivateAsync(name), "No se pudo desactivar el usuario.");
             await RecargarUsuariosAsync();
+        }
+
+        switch (action)
+        {
+            case "begin-new":
+                await BeginNewCoreAsync();
+                break;
+            case "close-editor":
+                CloseEditorCore();
+                break;
+            case "open-editor":
+                await OpenEditorCoreAsync(targetId);
+                break;
         }
     }
 
