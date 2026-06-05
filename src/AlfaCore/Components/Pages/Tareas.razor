@@ -1804,6 +1804,8 @@
         if (result.Success && result.Value is not null)
         {
             _page = result.Value;
+            if (_selectedListId is int selected && _page.Listas.All(x => x.IdLista != selected))
+                _selectedListId = DefaultListId == 0 ? null : DefaultListId;
             if (!AssignedFilterOptions.Any(x => string.Equals(x.Value, _assignedFilter, StringComparison.OrdinalIgnoreCase)))
                 _assignedFilter = string.Empty;
         }
@@ -2370,7 +2372,7 @@
         var title = NormalizeTaskTitle(_quickTaskTitle);
         _taskDraft = new TareaSaveRequest
         {
-            IdLista = _selectedListId ?? DefaultListId,
+            IdLista = ResolveTargetListIdForNewTask(),
             Titulo = title,
             UsuarioAsignado = CurrentUser,
             UsuarioAccion = CurrentUser,
@@ -2748,7 +2750,7 @@
         {
             await TareasSvc.SaveTaskAsync(new TareaSaveRequest
             {
-                IdLista = _selectedListId ?? DefaultListId,
+                IdLista = ResolveTargetListIdForNewTask(),
                 Titulo = title,
                 UsuarioAsignado = CurrentUser,
                 Prioridad = TareaPrioridadKeys.Media,
@@ -2762,6 +2764,25 @@
             _quickTaskTitle = string.Empty;
             await LoadAsync();
         }
+    }
+
+    private int ResolveTargetListIdForNewTask()
+    {
+        if (_selectedListId is int selectedId)
+        {
+            var selected = _page.Listas.FirstOrDefault(x => x.IdLista == selectedId);
+            if (selected is not null)
+            {
+                if (!selected.EsDefault || selected.EsPropia)
+                    return selected.IdLista;
+
+                var ownDefault = _page.Listas.FirstOrDefault(x => x.EsDefault && x.EsPropia);
+                if (ownDefault is not null)
+                    return ownDefault.IdLista;
+            }
+        }
+
+        return DefaultListId;
     }
 
     private async Task ChangeStateAsync(TareaItemDto tarea, string estado)

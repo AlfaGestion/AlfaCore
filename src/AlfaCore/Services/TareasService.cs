@@ -516,6 +516,9 @@ public sealed class TareasService(
             await EnsureTaskPriorityColumnAsync(cn, token);
             var defaultId = await EnsureDefaultListAsync(cn, user, token);
             var idLista = request.IdLista <= 0 ? defaultId : request.IdLista;
+            if (!await CanAccessListAsync(cn, idLista, user, token)
+                && await IsDefaultPersonalListAsync(cn, idLista, token))
+                idLista = defaultId;
             if (!await CanAccessListAsync(cn, idLista, user, token))
                 throw new InvalidOperationException("No tenés acceso a la lista seleccionada.");
             if (HasSharingSelection(request.CompartirConTodos, request.UsuariosCompartidos))
@@ -1134,6 +1137,23 @@ public sealed class TareasService(
             THEN 1 ELSE 0 END;
             """,
             new { IdLista = idLista, Usuario = usuario },
+            cancellationToken: ct)) == 1;
+
+    private static async Task<bool> IsDefaultPersonalListAsync(SqlConnection cn, int idLista, CancellationToken ct)
+        => await cn.ExecuteScalarAsync<int>(new CommandDefinition(
+            """
+            SELECT CASE WHEN EXISTS
+            (
+                SELECT 1
+                FROM dbo.ALFACORE_TAREAS_LISTAS
+                WHERE IdLista = @IdLista
+                  AND ISNULL(Activa, 1) = 1
+                  AND ISNULL(EsDefault, 0) = 1
+                  AND UPPER(LTRIM(RTRIM(ISNULL(Nombre, '')))) = N'MIS TAREAS'
+            )
+            THEN 1 ELSE 0 END;
+            """,
+            new { IdLista = idLista },
             cancellationToken: ct)) == 1;
 
     private static async Task<bool> CanAccessTaskAsync(SqlConnection cn, long idTarea, string usuario, CancellationToken ct)
