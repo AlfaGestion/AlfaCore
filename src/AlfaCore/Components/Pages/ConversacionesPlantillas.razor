@@ -19,7 +19,7 @@
                 </button>
                 @if (_mostrarMenuCrear)
                 {
-                    <div style="position: absolute; right: 0; top: calc(100% + .45rem); z-index: 40; min-width: 170px; padding: .35rem; border: 1px solid rgba(71, 85, 105, .95); border-radius: 12px; background: #0f172a; box-shadow: 0 16px 36px rgba(0, 0, 0, .32);">
+                    <div style="position: absolute; right: 0; top: calc(100% + .45rem); z-index: 40; min-width: 220px; padding: .35rem; border: 1px solid rgba(71, 85, 105, .95); border-radius: 12px; background: #0f172a; box-shadow: 0 16px 36px rgba(0, 0, 0, .32);">
                         <button type="button" class="btn btn--ghost" style="width: 100%; justify-content: flex-start; margin-bottom: .25rem;" @onclick="CrearPlantillaBase">
                             <i class="bi bi-file-text"></i> Plantilla
                         </button>
@@ -29,10 +29,10 @@
                         <button type="button" class="btn btn--ghost" style="width: 100%; justify-content: flex-start; margin-bottom: .25rem;" @onclick="AplicarPlantillaCobranzaAsync">
                             <i class="bi bi-receipt"></i> Cobranza
                         </button>
-                        <button type="button" class="btn btn--ghost" style="width: 100%; justify-content: flex-start; margin-bottom: .25rem;" @onclick="AplicarPlantillaTareaAsignadaAsync">
+                        <button type="button" class="btn btn--ghost" style="width: 100%; justify-content: flex-start; margin-bottom: .25rem; white-space: nowrap;" @onclick="AplicarPlantillaTareaAsignadaAsync">
                             <i class="bi bi-person-check"></i> Tarea asignada
                         </button>
-                        <button type="button" class="btn btn--ghost" style="width: 100%; justify-content: flex-start;" @onclick="AplicarPlantillaTareaFinalizadaAsync">
+                        <button type="button" class="btn btn--ghost" style="width: 100%; justify-content: flex-start; white-space: nowrap;" @onclick="AplicarPlantillaTareaFinalizadaAsync">
                             <i class="bi bi-check2-circle"></i> Tarea finalizada
                         </button>
                     </div>
@@ -350,16 +350,16 @@
     [
         "Se te asigno la tarea \"{{1}}\".",
         string.Empty,
-        "Asignada a: {{2}}",
-        "Asignada por: {{3}}",
-        "Fecha: {{4}}"
+        "El tecnico asignado es {{2}}.",
+        "La asignacion fue realizada por {{3}}.",
+        "Fecha y hora de registro: {{4}}."
     ]);
 
     private static readonly string TareaFinalizadaTemplateBody = string.Join(Environment.NewLine,
     [
         "La tarea \"{{1}}\" asignada a \"{{2}}\" ha sido finalizada por \"{{3}}\".",
         string.Empty,
-        "Fecha: {{4}}"
+        "Fecha y hora de cierre: {{4}}."
     ]);
 
     private string PreviewBody => RenderPreview(_form.CuerpoTexto, ParseExamples(_examplesText));
@@ -609,19 +609,7 @@
         _error = null;
         try
         {
-            var id = await ConversacionesSvc.SaveTemplateDraftAsync(new ConversacionPlantillaSaveRequest
-            {
-                IdPlantilla = _selectedId,
-                NombreVisible = _form.NombreVisible,
-                NombreMeta = _form.NombreMeta,
-                Categoria = _form.Categoria,
-                Idioma = _form.Idioma,
-                EncabezadoTexto = _form.EncabezadoTexto,
-                CuerpoTexto = _form.CuerpoTexto,
-                PieTexto = _form.PieTexto,
-                EjemplosVariablesJson = _examplesText,
-                Activa = _form.Activa
-            });
+            var id = await ConversacionesSvc.SaveTemplateDraftAsync(BuildSaveRequest());
 
             _feedback = "Plantilla guardada.";
             await LoadTemplatesAsync();
@@ -653,9 +641,20 @@
                 return;
             }
 
+            if (string.IsNullOrWhiteSpace(_form.NombreVisible) ||
+                string.IsNullOrWhiteSpace(_form.NombreMeta) ||
+                string.IsNullOrWhiteSpace(_form.CuerpoTexto))
+            {
+                _error = "Completá nombre, nombre Meta y cuerpo antes de enviar a aprobación.";
+                return;
+            }
+
+            var savedId = await ConversacionesSvc.SaveTemplateDraftAsync(BuildSaveRequest());
+            _selectedId = savedId;
+
             await ConversacionesSvc.SubmitTemplateForApprovalAsync(new ConversacionPlantillaSubmitRequest
             {
-                IdPlantilla = _selectedId
+                IdPlantilla = savedId
             });
 
             _feedback = "Plantilla enviada a aprobación de Meta.";
@@ -671,6 +670,21 @@
             _busy = false;
         }
     }
+
+    private ConversacionPlantillaSaveRequest BuildSaveRequest()
+        => new()
+        {
+            IdPlantilla = _selectedId,
+            NombreVisible = _form.NombreVisible,
+            NombreMeta = _form.NombreMeta,
+            Categoria = _form.Categoria,
+            Idioma = _form.Idioma,
+            EncabezadoTexto = _form.EncabezadoTexto,
+            CuerpoTexto = _form.CuerpoTexto,
+            PieTexto = _form.PieTexto,
+            EjemplosVariablesJson = _examplesText,
+            Activa = _form.Activa
+        };
 
     private async Task SyncAsync()
     {

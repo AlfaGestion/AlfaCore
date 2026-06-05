@@ -6168,6 +6168,18 @@ public sealed class ConversacionesService(
         var examples = ParseTemplateExamples(template.EjemplosVariablesJson);
         if (variableCount > 0 && examples.Count < variableCount)
             throw new InvalidOperationException("Las variables de la plantilla necesitan valores de ejemplo para enviarse a aprobación.");
+        if (StartsOrEndsWithTemplateVariable(template.CuerpoTexto))
+            throw new InvalidOperationException("Meta no permite variables al principio ni al final del cuerpo. Agregá texto fijo antes y después de la variable.");
+    }
+
+    private static bool StartsOrEndsWithTemplateVariable(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return false;
+
+        var trimmed = text.Trim();
+        return Regex.IsMatch(trimmed, @"^\{\{\s*\d+\s*\}\}", RegexOptions.CultureInvariant)
+               || Regex.IsMatch(trimmed, @"\{\{\s*\d+\s*\}\}$", RegexOptions.CultureInvariant);
     }
 
     private static Dictionary<string, object?> BuildMetaTemplateCreatePayload(ConversacionPlantillaDto template)
