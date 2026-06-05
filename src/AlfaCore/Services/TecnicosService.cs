@@ -210,7 +210,6 @@ public sealed class TecnicosService(
                 const string updateSql = """
                     UPDATE dbo.V_TA_Tecnicos
                     SET
-                        IdTecnico       = @IdTecnico,
                         Nombre          = @Nombre,
                         Cargo           = @Cargo,
                         Domicilio       = @Domicilio,
