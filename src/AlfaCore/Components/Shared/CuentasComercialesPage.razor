@@ -645,7 +645,13 @@
                                 @foreach (var contacto in _contactosCuenta)
                                 {
                                     <button type="button" class="cuentas-contacto-item" @onclick="() => MostrarVistaContacto(contacto)">
-                                        <div class="cuentas-contacto-item__avatar @GetContactAvatarClass(contacto)">
+                                        <div class="cuentas-contacto-item__avatar @GetContactAvatarClass(contacto)"
+                                             role="button"
+                                             tabindex="0"
+                                             title="Abrir contacto"
+                                             style="cursor:pointer;"
+                                             @onclick:stopPropagation="true"
+                                             @onclick="() => AbrirContactoCompleto(contacto)">
                                             @GetContactInitial(contacto)
                                         </div>
                                         <div class="cuentas-contacto-item__content">
@@ -1112,7 +1118,12 @@
                 }
 
                 <div class="cuentas-contacto-preview">
-                    <div class="cuentas-contacto-item__avatar @GetContactAvatarClass(_contactoPreview)">
+                    <div class="cuentas-contacto-item__avatar @GetContactAvatarClass(_contactoPreview)"
+                         role="button"
+                         tabindex="0"
+                         title="Abrir contacto"
+                         style="cursor:pointer;"
+                         @onclick="AbrirContactoCompleto">
                         @GetContactInitial(_contactoPreview)
                     </div>
                     <div>
@@ -1960,6 +1971,12 @@
 
         var contactoId = _contactoPreview.Id;
         CerrarVistaContacto();
+        Nav.NavigateTo($"/contactos?editar={contactoId}");
+    }
+
+    private void AbrirContactoCompleto(CuentaComercialContactoDto contacto)
+    {
+        var contactoId = contacto.Id;
         Nav.NavigateTo($"/contactos?editar={contactoId}");
     }
 
