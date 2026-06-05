@@ -1,0 +1,406 @@
+.reuniones-publicas {
+    min-height: 100dvh;
+    padding: 1.4rem clamp(1rem, 3vw, 3rem) 2rem;
+}
+
+.reuniones-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    max-width: 1180px;
+    margin: 0 auto 2rem;
+    padding: .85rem 1rem;
+    border: 1px solid rgba(148, 163, 184, .2);
+    border-radius: 999px;
+    background: rgba(15, 23, 42, .74);
+    box-shadow: 0 18px 44px rgba(0, 0, 0, .24);
+}
+
+.reuniones-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: .7rem;
+    color: #f8fafc;
+    font-weight: 900;
+    text-decoration: none;
+}
+
+.reuniones-brand img {
+    width: 46px;
+    height: 46px;
+    border-radius: 14px;
+    background: #fff;
+    object-fit: contain;
+}
+
+.reuniones-steps {
+    display: inline-flex;
+    align-items: center;
+    gap: .6rem;
+    color: #94a3b8;
+    font-size: .86rem;
+    font-weight: 800;
+}
+
+.reuniones-steps span {
+    padding: .42rem .72rem;
+    border-radius: 999px;
+}
+
+.reuniones-steps .is-active {
+    background: rgba(34, 211, 238, .16);
+    color: #67e8f9;
+}
+
+.reuniones-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 320px;
+    gap: 2rem;
+    max-width: 1180px;
+    margin: 0 auto;
+}
+
+.reuniones-main {
+    display: grid;
+    gap: 1.2rem;
+}
+
+.reuniones-main h1,
+.reuniones-confirmacion h1 {
+    margin: .45rem 0 0;
+    color: #f8fafc;
+    font-size: clamp(1.75rem, 3vw, 2.45rem);
+    letter-spacing: 0;
+}
+
+.reuniones-back {
+    color: #67e8f9;
+    font-size: .88rem;
+    font-weight: 800;
+    text-decoration: none;
+}
+
+.reuniones-picker {
+    display: grid;
+    grid-template-columns: minmax(300px, 560px) minmax(220px, 1fr);
+    gap: 1rem;
+    align-items: start;
+}
+
+.reuniones-calendar,
+.reuniones-slots,
+.reuniones-card,
+.reuniones-detail {
+    border: 1px solid rgba(56, 189, 248, .2);
+    border-radius: 12px;
+    background: rgba(8, 17, 31, .88);
+    box-shadow: 0 18px 48px rgba(0, 0, 0, .22);
+}
+
+.reuniones-calendar {
+    overflow: hidden;
+}
+
+.reuniones-calendar header {
+    display: grid;
+    grid-template-columns: 42px 1fr 42px;
+    align-items: center;
+    gap: .7rem;
+    padding: .9rem;
+    border-bottom: 1px solid rgba(148, 163, 184, .16);
+}
+
+.reuniones-calendar header strong {
+    text-align: center;
+    text-transform: capitalize;
+}
+
+.reuniones-calendar button,
+.reuniones-slots button,
+.reuniones-btn {
+    border: 1px solid rgba(56, 189, 248, .24);
+    border-radius: 8px;
+    background: rgba(15, 23, 42, .82);
+    color: #e2e8f0;
+    font-weight: 850;
+    cursor: pointer;
+}
+
+.reuniones-calendar header button {
+    height: 42px;
+}
+
+.reuniones-calendar button:not(:disabled):hover,
+.reuniones-slots button:hover {
+    border-color: rgba(34, 211, 238, .64);
+    background: rgba(8, 145, 178, .18);
+}
+
+.reuniones-weekdays,
+.reuniones-days {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.reuniones-weekdays {
+    padding: .65rem .8rem .25rem;
+    color: #9fb4cc;
+    font-size: .76rem;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.reuniones-weekdays span {
+    text-align: center;
+}
+
+.reuniones-days {
+    gap: .55rem;
+    padding: .8rem;
+}
+
+.reuniones-day {
+    aspect-ratio: 1 / .72;
+    min-height: 42px;
+}
+
+.reuniones-day:disabled {
+    opacity: .34;
+    cursor: not-allowed;
+}
+
+.reuniones-day.is-available {
+    background: rgba(15, 23, 42, .92);
+    color: #bae6fd;
+}
+
+.reuniones-day.is-selected {
+    border-color: rgba(34, 211, 238, .9);
+    background: linear-gradient(135deg, #0891b2, #14b8a6);
+    color: #fff;
+}
+
+.reuniones-day.is-today span {
+    border-bottom: 2px solid #f43f5e;
+}
+
+.reuniones-day.is-muted {
+    opacity: .42;
+}
+
+.reuniones-timezone {
+    display: grid;
+    gap: .35rem;
+    padding: 0 .8rem .9rem;
+    color: #9fb4cc;
+    font-size: .8rem;
+    font-weight: 800;
+}
+
+.reuniones-timezone select,
+.reuniones-form input,
+.reuniones-form select,
+.reuniones-form textarea {
+    min-height: 42px;
+    border: 1px solid rgba(148, 163, 184, .2);
+    border-radius: 8px;
+    background: #08111f;
+    color: #f8fafc;
+    padding: .62rem .72rem;
+}
+
+.reuniones-slots {
+    display: grid;
+    gap: .65rem;
+    padding: .95rem;
+}
+
+.reuniones-slots > span {
+    color: #9fb4cc;
+    font-size: .82rem;
+    font-weight: 900;
+}
+
+.reuniones-slots div {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: .55rem;
+}
+
+.reuniones-slots button {
+    min-height: 42px;
+}
+
+.reuniones-slots button.is-selected {
+    border-color: rgba(34, 211, 238, .9);
+    background: rgba(8, 145, 178, .3);
+    color: #fff;
+}
+
+.reuniones-card {
+    display: grid;
+    gap: 1rem;
+    padding: 1rem;
+}
+
+.reuniones-eyebrow {
+    color: #67e8f9;
+    font-size: .76rem;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.reuniones-form h2 {
+    margin: .2rem 0 0;
+    font-size: 1.2rem;
+    text-transform: capitalize;
+}
+
+.reuniones-form-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: .85rem;
+}
+
+.reuniones-form label {
+    display: grid;
+    gap: .35rem;
+    color: #9fb4cc;
+    font-size: .82rem;
+    font-weight: 850;
+}
+
+.reuniones-form .is-wide {
+    grid-column: 1 / -1;
+}
+
+.reuniones-form textarea {
+    min-height: 92px;
+    resize: vertical;
+}
+
+.reuniones-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: .45rem;
+    min-height: 44px;
+    padding: .65rem 1rem;
+}
+
+.reuniones-btn--primary {
+    width: fit-content;
+    border: 0;
+    background: linear-gradient(135deg, #0ea5e9, #14b8a6);
+    color: #fff;
+}
+
+.reuniones-btn:disabled {
+    opacity: .6;
+    cursor: wait;
+}
+
+.reuniones-detail {
+    position: sticky;
+    top: 1rem;
+    align-self: start;
+    display: grid;
+    gap: .8rem;
+    padding: 1rem;
+}
+
+.reuniones-detail img {
+    width: 70px;
+    height: 70px;
+    border-radius: 16px;
+    background: #fff;
+    object-fit: contain;
+}
+
+.reuniones-detail h2 {
+    margin: 0;
+    font-size: 1.45rem;
+}
+
+.reuniones-detail p {
+    margin: 0;
+    color: #b6c5d8;
+    line-height: 1.5;
+}
+
+.reuniones-detail dl,
+.reuniones-confirmacion dl {
+    display: grid;
+    gap: .8rem;
+    margin: .4rem 0 0;
+}
+
+.reuniones-detail dt,
+.reuniones-confirmacion dt {
+    color: #93a4ba;
+    font-size: .78rem;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.reuniones-detail dd,
+.reuniones-confirmacion dd {
+    margin: .18rem 0 0;
+    color: #f8fafc;
+    font-weight: 800;
+}
+
+.reuniones-alert {
+    display: grid;
+    gap: .2rem;
+    padding: .85rem 1rem;
+    border: 1px solid rgba(248, 113, 113, .45);
+    border-radius: 10px;
+    background: rgba(127, 29, 29, .32);
+    color: #fecaca;
+}
+
+.reuniones-loading,
+.reuniones-empty,
+.reuniones-confirmacion {
+    max-width: 760px;
+    margin: 4rem auto;
+}
+
+@media (max-width: 960px) {
+    .reuniones-header,
+    .reuniones-grid,
+    .reuniones-picker {
+        grid-template-columns: 1fr;
+    }
+
+    .reuniones-header {
+        display: grid;
+        border-radius: 16px;
+    }
+
+    .reuniones-steps {
+        overflow-x: auto;
+    }
+
+    .reuniones-detail {
+        position: static;
+    }
+}
+
+@media (max-width: 560px) {
+    .reuniones-form-grid,
+    .reuniones-slots div {
+        grid-template-columns: 1fr;
+    }
+
+    .reuniones-days {
+        gap: .35rem;
+        padding: .55rem;
+    }
+
+    .reuniones-day {
+        min-height: 38px;
+    }
+}

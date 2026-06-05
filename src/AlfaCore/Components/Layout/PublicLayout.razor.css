@@ -1,0 +1,7 @@
+.public-layout {
+    min-height: 100dvh;
+    background:
+        radial-gradient(circle at top left, rgba(34, 211, 238, .12), transparent 34rem),
+        linear-gradient(135deg, #071426 0%, #08111f 58%, #0f172a 100%);
+    color: #f8fafc;
+}

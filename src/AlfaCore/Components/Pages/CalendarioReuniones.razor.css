@@ -1,0 +1,318 @@
+.cal-reuniones-page {
+    display: grid;
+    gap: 1rem;
+    min-height: 100dvh;
+    padding: 1rem 1.25rem 1.25rem;
+    overflow: auto;
+}
+
+.cal-reuniones-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding-bottom: .7rem;
+    border-bottom: 1px solid rgba(56, 189, 248, .16);
+}
+
+.cal-reuniones-topbar > div:last-child {
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    flex-wrap: wrap;
+}
+
+.cal-reuniones-eyebrow {
+    margin: 0 0 .1rem;
+    color: #22d3ee;
+    font-size: .72rem;
+    font-weight: 900;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+}
+
+.cal-reuniones-topbar h2 {
+    margin: 0;
+    font-size: 1.35rem;
+}
+
+.cal-reuniones-topbar span {
+    color: #8ea5bd;
+    font-size: .9rem;
+}
+
+.cal-reuniones-layout {
+    display: grid;
+    grid-template-columns: 280px minmax(0, 1fr);
+    gap: 1rem;
+    align-items: start;
+}
+
+.cal-reuniones-list,
+.cal-reuniones-editor,
+.cal-reuniones-reservas {
+    border: 1px solid rgba(56, 189, 248, .18);
+    border-radius: 10px;
+    background: rgba(8, 17, 31, .82);
+}
+
+.cal-reuniones-list {
+    display: grid;
+    gap: .55rem;
+    padding: .75rem;
+}
+
+.cal-reuniones-list header,
+.cal-reuniones-editor header,
+.cal-reuniones-editor footer,
+.cal-reuniones-reservas header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .75rem;
+}
+
+.cal-reuniones-list header,
+.cal-reuniones-editor header,
+.cal-reuniones-reservas header {
+    padding: .85rem;
+    border-bottom: 1px solid rgba(56, 189, 248, .14);
+}
+
+.cal-reuniones-list header span,
+.cal-reuniones-editor header span,
+.cal-reuniones-reservas header span {
+    color: #67e8f9;
+    font-size: .76rem;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.cal-reuniones-list button {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: .16rem .55rem;
+    width: 100%;
+    padding: .7rem;
+    border: 1px solid rgba(148, 163, 184, .14);
+    border-radius: 8px;
+    background: rgba(15, 23, 42, .72);
+    color: #f8fafc;
+    text-align: left;
+}
+
+.cal-reuniones-list button > span:first-child {
+    grid-row: span 2;
+    width: .75rem;
+    height: .75rem;
+    margin-top: .25rem;
+    border-radius: 999px;
+}
+
+.cal-reuniones-list button small {
+    color: #8ea5bd;
+}
+
+.cal-reuniones-list button.is-active {
+    border-color: rgba(34, 211, 238, .58);
+    background: rgba(8, 145, 178, .18);
+}
+
+.cal-reuniones-form {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: .75rem;
+    padding: .85rem;
+}
+
+.cal-reuniones-form label,
+.cal-reuniones-days {
+    display: grid;
+    gap: .34rem;
+    color: #8fb9d6;
+    font-size: .78rem;
+    font-weight: 850;
+}
+
+.cal-reuniones-form input,
+.cal-reuniones-form textarea {
+    min-height: 38px;
+    border: 1px solid rgba(56, 189, 248, .22);
+    border-radius: 8px;
+    background: #081426;
+    color: #f8fafc;
+    padding: .52rem .65rem;
+}
+
+.cal-reuniones-form textarea {
+    min-height: 96px;
+    resize: vertical;
+}
+
+.cal-reuniones-form .is-wide,
+.cal-reuniones-days {
+    grid-column: 1 / -1;
+}
+
+.cal-reuniones-check {
+    align-content: end;
+    grid-template-columns: auto 1fr;
+    align-items: center;
+    min-height: 62px;
+}
+
+.cal-reuniones-check input {
+    min-height: auto;
+}
+
+.cal-reuniones-days {
+    grid-template-columns: repeat(7, minmax(0, auto));
+    align-items: center;
+    justify-content: start;
+    gap: .5rem;
+}
+
+.cal-reuniones-days > span {
+    grid-column: 1 / -1;
+}
+
+.cal-reuniones-days label {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    min-height: 34px;
+    padding: .35rem .55rem;
+    border: 1px solid rgba(56, 189, 248, .18);
+    border-radius: 999px;
+    background: rgba(15, 23, 42, .64);
+}
+
+.cal-reuniones-days input {
+    min-height: auto;
+}
+
+.cal-reuniones-editor footer {
+    padding: .85rem;
+    border-top: 1px solid rgba(56, 189, 248, .14);
+}
+
+.cal-reuniones-editor footer span {
+    min-width: 0;
+    color: #8ea5bd;
+    overflow-wrap: anywhere;
+}
+
+.cal-reuniones-reservas {
+    display: grid;
+}
+
+.cal-reuniones-reservas > p {
+    margin: 0;
+    padding: 1rem;
+    color: #8ea5bd;
+}
+
+.cal-reuniones-table {
+    display: grid;
+}
+
+.cal-reuniones-table article {
+    display: grid;
+    grid-template-columns: 1.2fr 1fr 1.4fr auto;
+    gap: .8rem;
+    align-items: center;
+    padding: .78rem .85rem;
+    border-top: 1px solid rgba(56, 189, 248, .1);
+}
+
+.cal-reuniones-table article:first-child {
+    border-top: 0;
+}
+
+.cal-reuniones-table article div {
+    min-width: 0;
+}
+
+.cal-reuniones-table strong {
+    display: block;
+    color: #f8fafc;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cal-reuniones-table span {
+    display: block;
+    color: #8ea5bd;
+    font-size: .82rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cal-reuniones-state {
+    width: fit-content;
+    padding: .25rem .45rem;
+    border: 1px solid rgba(34, 211, 238, .22);
+    border-radius: 999px;
+    color: #67e8f9 !important;
+    font-weight: 900;
+}
+
+.cal-reuniones-feedback {
+    display: grid;
+    gap: .15rem;
+    padding: .78rem .9rem;
+    border-radius: 10px;
+}
+
+.cal-reuniones-feedback--success {
+    border: 1px solid rgba(20, 184, 166, .42);
+    background: rgba(20, 184, 166, .12);
+    color: #99f6e4;
+}
+
+.cal-reuniones-feedback--error {
+    border: 1px solid rgba(248, 113, 113, .42);
+    background: rgba(127, 29, 29, .24);
+    color: #fecaca;
+}
+
+.cal-reuniones-loading {
+    display: inline-flex;
+    align-items: center;
+    gap: .55rem;
+    color: #8ea5bd;
+}
+
+@media (max-width: 1120px) {
+    .cal-reuniones-layout,
+    .cal-reuniones-form {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .cal-reuniones-list {
+        grid-column: 1 / -1;
+    }
+}
+
+@media (max-width: 760px) {
+    .cal-reuniones-page {
+        padding: .75rem;
+    }
+
+    .cal-reuniones-topbar,
+    .cal-reuniones-layout,
+    .cal-reuniones-form,
+    .cal-reuniones-table article {
+        grid-template-columns: 1fr;
+    }
+
+    .cal-reuniones-topbar {
+        align-items: stretch;
+    }
+
+    .cal-reuniones-days {
+        grid-template-columns: repeat(4, minmax(0, auto));
+    }
+}

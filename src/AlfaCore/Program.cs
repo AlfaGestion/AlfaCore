@@ -56,6 +56,7 @@ public class Program
         builder.Services.AddScoped<IConversacionesConfigService, ConversacionesConfigService>();
         builder.Services.AddScoped<INotificacionesPushService, NotificacionesPushService>();
         builder.Services.AddScoped<ICalendarioService, CalendarioService>();
+        builder.Services.AddScoped<IReunionesPublicasService, ReunionesPublicasService>();
         builder.Services.AddScoped<ITicketsService, TicketsService>();
         builder.Services.AddScoped<ITareasService, TareasService>();
         builder.Services.AddScoped<IInterfacesService, InterfacesService>();

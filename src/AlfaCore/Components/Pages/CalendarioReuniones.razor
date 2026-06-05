@@ -1,0 +1,391 @@
+@page "/calendario/reuniones"
+@using System.Globalization
+@inject AlfaCore.Services.IReunionesPublicasService ReunionesSvc
+@inject AlfaCore.Services.IAppUiOperationService UiOps
+@inject AlfaCore.Services.IAppUserSessionService AppUserSession
+@inject NavigationManager Nav
+
+<PageTitle>Reuniones | Calendario</PageTitle>
+
+<section class="cal-reuniones-page" @onclick="DismissFeedback">
+    <header class="cal-reuniones-topbar">
+        <div>
+            <p class="cal-reuniones-eyebrow">Calendario</p>
+            <h2>Reuniones públicas</h2>
+            <span>Agendas para que los clientes reserven capacitaciones online.</span>
+        </div>
+        <div>
+            <a class="btn btn--ghost" href="/calendario">
+                <i class="bi bi-calendar3"></i>
+                <span>Calendario</span>
+            </a>
+            <button type="button" class="btn btn--primary" @onclick="NewTipo">
+                <i class="bi bi-plus-circle"></i>
+                <span>Nueva agenda</span>
+            </button>
+        </div>
+    </header>
+
+    @if (!string.IsNullOrWhiteSpace(_feedbackText))
+    {
+        <div class="cal-reuniones-feedback cal-reuniones-feedback--@_feedbackKind">
+            <strong>@_feedbackTitle</strong>
+            <span>@_feedbackText</span>
+        </div>
+    }
+
+    @if (_loading)
+    {
+        <div class="cal-reuniones-loading">
+            <span class="spinner-border spinner-border-sm"></span>
+            <span>Cargando reuniones...</span>
+        </div>
+    }
+    else
+    {
+        <div class="cal-reuniones-layout">
+            <aside class="cal-reuniones-list">
+                <header>
+                    <span>Agendas</span>
+                    <small>@_admin.Tipos.Count</small>
+                </header>
+                @foreach (var tipo in _admin.Tipos)
+                {
+                    <button type="button" class="@TipoClass(tipo)" @onclick="() => EditTipo(tipo)">
+                        <span style="background:@tipo.Color"></span>
+                        <strong>@tipo.Titulo</strong>
+                        <small>@(tipo.Activo ? "Activa" : "Inactiva") · @tipo.DuracionMinutos min</small>
+                    </button>
+                }
+            </aside>
+
+            <section class="cal-reuniones-editor">
+                <header>
+                    <div>
+                        <span>Configuración</span>
+                        <strong>@(_form.IdTipoReunion > 0 ? _form.Titulo : "Nueva agenda")</strong>
+                    </div>
+                    @if (_form.IdTipoReunion > 0)
+                    {
+                        <a class="btn btn--ghost" href="@PublicUrl(_form)" target="_blank">
+                            <i class="bi bi-box-arrow-up-right"></i>
+                            <span>Ver pública</span>
+                        </a>
+                    }
+                </header>
+
+                <div class="cal-reuniones-form">
+                    <label class="is-wide">
+                        <span>Título de la cita</span>
+                        <input @bind="_form.Titulo" disabled="@_saving" />
+                    </label>
+                    <label>
+                        <span>Slug público</span>
+                        <input @bind="_form.Slug" disabled="@_saving" placeholder="capacitacion-online" />
+                    </label>
+                    <label>
+                        <span>Duración</span>
+                        <input type="number" min="15" max="480" step="15" @bind="_form.DuracionMinutos" disabled="@_saving" />
+                    </label>
+                    <label>
+                        <span>Modalidad</span>
+                        <input @bind="_form.Modalidad" disabled="@_saving" />
+                    </label>
+                    <label>
+                        <span>Enlace / herramienta</span>
+                        <input @bind="_form.EnlaceVideollamada" disabled="@_saving" placeholder="Google Meet" />
+                    </label>
+                    <label>
+                        <span>Operador</span>
+                        <input @bind="_form.TecnicoNombre" disabled="@_saving" />
+                    </label>
+                    <label>
+                        <span>Id técnico</span>
+                        <input @bind="_form.IdTecnico" disabled="@_saving" />
+                    </label>
+                    <label>
+                        <span>WhatsApp</span>
+                        <input @bind="_form.TelefonoWhatsApp" disabled="@_saving" />
+                    </label>
+                    <label>
+                        <span>Email</span>
+                        <input type="email" @bind="_form.EmailOperador" disabled="@_saving" />
+                    </label>
+                    <label>
+                        <span>Hora desde</span>
+                        <input type="time" value="@_horaDesde" @onchange="OnHoraDesdeChanged" disabled="@_saving" />
+                    </label>
+                    <label>
+                        <span>Hora hasta</span>
+                        <input type="time" value="@_horaHasta" @onchange="OnHoraHastaChanged" disabled="@_saving" />
+                    </label>
+                    <label>
+                        <span>Reservas hasta</span>
+                        <input type="number" min="1" max="180" @bind="_form.ReservasHastaDias" disabled="@_saving" />
+                    </label>
+                    <label>
+                        <span>Anticipación mínima</span>
+                        <input type="number" min="0" max="720" @bind="_form.AnticipacionMinHoras" disabled="@_saving" />
+                    </label>
+                    <label>
+                        <span>Color</span>
+                        <input type="color" @bind="_form.Color" disabled="@_saving" />
+                    </label>
+                    <label class="cal-reuniones-check">
+                        <input type="checkbox" @bind="_form.Activo" disabled="@_saving" />
+                        <span>Agenda activa</span>
+                    </label>
+
+                    <div class="cal-reuniones-days is-wide">
+                        <span>Días disponibles</span>
+                        @foreach (var day in Days)
+                        {
+                            <label>
+                                <input type="checkbox" checked="@_selectedDays.Contains(day.Value)" @onchange="evt => ToggleDay(day.Value, evt)" disabled="@_saving" />
+                                <span>@day.Label</span>
+                            </label>
+                        }
+                    </div>
+
+                    <label class="is-wide">
+                        <span>Descripción pública</span>
+                        <textarea @bind="_form.Descripcion" disabled="@_saving"></textarea>
+                    </label>
+                </div>
+
+                <footer>
+                    <span>@(_form.IdTipoReunion > 0 ? PublicUrl(_form) : "Guardá para generar el link público.")</span>
+                    <button type="button" class="btn btn--primary" @onclick="SaveAsync" disabled="@_saving">
+                        <i class="bi bi-save"></i>
+                        <span>@(_saving ? "Guardando..." : "Guardar agenda")</span>
+                    </button>
+                </footer>
+            </section>
+        </div>
+
+        <section class="cal-reuniones-reservas">
+            <header>
+                <div>
+                    <span>Reservas recientes</span>
+                    <strong>@_admin.Reservas.Count</strong>
+                </div>
+            </header>
+            @if (_admin.Reservas.Count == 0)
+            {
+                <p>Todavía no hay reservas públicas.</p>
+            }
+            else
+            {
+                <div class="cal-reuniones-table">
+                    @foreach (var reserva in _admin.Reservas)
+                    {
+                        <article>
+                            <div>
+                                <strong>@reserva.ClienteNombre</strong>
+                                <span>@reserva.RazonSocial</span>
+                            </div>
+                            <div>
+                                <strong>@reserva.FechaInicio.ToString("dd/MM HH:mm", Culture)</strong>
+                                <span>@reserva.Titulo</span>
+                            </div>
+                            <div>
+                                <strong>@reserva.TipoCapacitacion</strong>
+                                <span>@reserva.Email · @reserva.Telefono</span>
+                            </div>
+                            <div>
+                                <span class="cal-reuniones-state">@reserva.Estado</span>
+                                @if (reserva.Estado == "CONFIRMADA")
+                                {
+                                    <button type="button" class="btn btn--ghost btn--icon" title="Cancelar reserva" @onclick="() => CancelAsync(reserva.IdReserva)">
+                                        <i class="bi bi-x-circle"></i>
+                                    </button>
+                                }
+                            </div>
+                        </article>
+                    }
+                </div>
+            }
+        </section>
+    }
+</section>
+
+@code {
+    private static readonly CultureInfo Culture = CultureInfo.GetCultureInfo("es-AR");
+    private static readonly (int Value, string Label)[] Days =
+    [
+        (1, "Lun"),
+        (2, "Mar"),
+        (3, "Mié"),
+        (4, "Jue"),
+        (5, "Vie"),
+        (6, "Sáb"),
+        (7, "Dom")
+    ];
+
+    private ReunionPublicaAdminDto _admin = new();
+    private ReunionPublicaTipoDto _form = new();
+    private HashSet<int> _selectedDays = [1, 2, 3, 4, 5];
+    private bool _loading = true;
+    private bool _saving;
+    private string _horaDesde = "10:00";
+    private string _horaHasta = "16:00";
+    private string _feedbackTitle = string.Empty;
+    private string _feedbackText = string.Empty;
+    private string _feedbackKind = "success";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        var result = await UiOps.RunAsync(() => ReunionesSvc.GetAdminAsync(), "No se pudieron cargar las reuniones.");
+        if (result.Success && result.Value is not null)
+        {
+            _admin = result.Value;
+            EditTipo(_admin.Tipos.FirstOrDefault() ?? BuildNewTipo());
+        }
+        else
+        {
+            SetFeedback("No se pudieron cargar las reuniones", result.Feedback?.Message ?? "Revisá la base activa.", "error");
+        }
+        _loading = false;
+    }
+
+    private void NewTipo()
+        => EditTipo(BuildNewTipo());
+
+    private void EditTipo(ReunionPublicaTipoDto tipo)
+    {
+        _form = Copy(tipo);
+        _horaDesde = ToTimeInput(_form.HoraDesde);
+        _horaHasta = ToTimeInput(_form.HoraHasta);
+        _selectedDays = ParseDays(_form.DiasDisponibles);
+    }
+
+    private async Task SaveAsync()
+    {
+        _saving = true;
+        _form.HoraDesde = ParseTime(_horaDesde, TimeSpan.FromHours(10));
+        _form.HoraHasta = ParseTime(_horaHasta, TimeSpan.FromHours(16));
+        _form.DiasDisponibles = string.Join(',', _selectedDays.OrderBy(x => x));
+        var user = AppUserSession.CurrentUser?.UserName;
+        var result = await UiOps.RunAsync(() => ReunionesSvc.SaveTipoAsync(_form, user), "No se pudo guardar la agenda.");
+        if (result.Success)
+        {
+            SetFeedback("Agenda guardada", "La página pública quedó actualizada.", "success");
+            await LoadAsync();
+        }
+        else
+        {
+            SetFeedback(result.Feedback?.Title ?? "No se pudo guardar", result.Feedback?.Message ?? "Revisá los datos.", "error");
+        }
+        _saving = false;
+    }
+
+    private async Task CancelAsync(long idReserva)
+    {
+        var user = AppUserSession.CurrentUser?.UserName;
+        var result = await UiOps.RunAsync(() => ReunionesSvc.CancelReservationAsync(idReserva, user), "No se pudo cancelar la reserva.");
+        if (result.Success)
+        {
+            SetFeedback("Reserva cancelada", "La reserva y el evento asociado fueron dados de baja.", "success");
+            await LoadAsync();
+        }
+        else
+        {
+            SetFeedback(result.Feedback?.Title ?? "No se pudo cancelar", result.Feedback?.Message ?? "Revisá la reserva.", "error");
+        }
+    }
+
+    private void ToggleDay(int day, ChangeEventArgs evt)
+    {
+        var enabled = evt.Value is bool value && value;
+        if (enabled)
+            _selectedDays.Add(day);
+        else if (_selectedDays.Count > 1)
+            _selectedDays.Remove(day);
+    }
+
+    private void OnHoraDesdeChanged(ChangeEventArgs evt)
+        => _horaDesde = Convert.ToString(evt.Value, CultureInfo.InvariantCulture) ?? "10:00";
+
+    private void OnHoraHastaChanged(ChangeEventArgs evt)
+        => _horaHasta = Convert.ToString(evt.Value, CultureInfo.InvariantCulture) ?? "16:00";
+
+    private string PublicUrl(ReunionPublicaTipoDto tipo)
+        => $"{Nav.BaseUri.TrimEnd('/')}/reuniones/{(string.IsNullOrWhiteSpace(tipo.Slug) ? "capacitacion-online" : tipo.Slug.Trim())}";
+
+    private string TipoClass(ReunionPublicaTipoDto tipo)
+        => _form.IdTipoReunion == tipo.IdTipoReunion ? "is-active" : string.Empty;
+
+    private void SetFeedback(string title, string text, string kind)
+    {
+        _feedbackTitle = title;
+        _feedbackText = text;
+        _feedbackKind = kind;
+    }
+
+    private void DismissFeedback()
+    {
+        _feedbackTitle = string.Empty;
+        _feedbackText = string.Empty;
+    }
+
+    private static ReunionPublicaTipoDto BuildNewTipo()
+        => new()
+        {
+            Slug = "capacitacion-online",
+            Titulo = "Capacitación Online",
+            Descripcion = "Espacio para que los clientes reserven una capacitación online con el equipo de AlfaNet.",
+            Modalidad = "Reunión en línea",
+            EnlaceVideollamada = "Google Meet",
+            TecnicoNombre = "Equipo AlfaNet",
+            DuracionMinutos = 60,
+            DiasDisponibles = "1,2,3,4,5",
+            HoraDesde = TimeSpan.FromHours(10),
+            HoraHasta = TimeSpan.FromHours(16),
+            ReservasHastaDias = 30,
+            AnticipacionMinHoras = 24,
+            Activo = true,
+            Color = "#22d3ee"
+        };
+
+    private static ReunionPublicaTipoDto Copy(ReunionPublicaTipoDto tipo)
+        => new()
+        {
+            IdTipoReunion = tipo.IdTipoReunion,
+            Slug = tipo.Slug,
+            Titulo = tipo.Titulo,
+            Descripcion = tipo.Descripcion,
+            DuracionMinutos = tipo.DuracionMinutos,
+            Modalidad = tipo.Modalidad,
+            EnlaceVideollamada = tipo.EnlaceVideollamada,
+            IdTecnico = tipo.IdTecnico,
+            TecnicoNombre = tipo.TecnicoNombre,
+            TelefonoWhatsApp = tipo.TelefonoWhatsApp,
+            EmailOperador = tipo.EmailOperador,
+            DiasDisponibles = tipo.DiasDisponibles,
+            HoraDesde = tipo.HoraDesde,
+            HoraHasta = tipo.HoraHasta,
+            ReservasHastaDias = tipo.ReservasHastaDias,
+            AnticipacionMinHoras = tipo.AnticipacionMinHoras,
+            Activo = tipo.Activo,
+            Color = tipo.Color
+        };
+
+    private static HashSet<int> ParseDays(string value)
+        => value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(x => int.TryParse(x, CultureInfo.InvariantCulture, out var day) ? day : 0)
+            .Where(x => x is >= 1 and <= 7)
+            .DefaultIfEmpty(1)
+            .ToHashSet();
+
+    private static string ToTimeInput(TimeSpan value)
+        => $"{(int)value.TotalHours:00}:{value.Minutes:00}";
+
+    private static TimeSpan ParseTime(string value, TimeSpan fallback)
+        => TimeSpan.TryParse(value, CultureInfo.InvariantCulture, out var parsed) ? parsed : fallback;
+}
