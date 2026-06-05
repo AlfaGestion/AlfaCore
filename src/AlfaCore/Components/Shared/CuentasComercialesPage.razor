@@ -746,7 +746,7 @@
 
                     <div class="field field--full">
                         <label>Observaciones</label>
-                        <textarea rows="4" class="@GetFieldInputClass("observaciones")" maxlength="200" @bind="_form.Observaciones" disabled="@_saving"></textarea>
+                        <textarea rows="4" class="@GetFieldInputClass("observaciones")" maxlength="200" @bind="_form.Observaciones" @bind:event="oninput" disabled="@_saving"></textarea>
                         @if (HasFieldError("observaciones"))
                         {
                             <small class="usuarios-field-error">@GetFieldError("observaciones")</small>

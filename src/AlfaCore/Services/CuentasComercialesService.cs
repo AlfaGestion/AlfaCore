@@ -191,7 +191,7 @@ public sealed class CuentasComercialesService(
                     ISNULL(base.DOCUMENTO_TIPO, ''),
                     ISNULL(base.NUMERO_DOCUMENTO, ''),
                     ISNULL(base.IVA, ''),
-                    ISNULL(base.OBSERVACIONES, ''),
+                    COALESCE(NULLIF(ISNULL(base.OBSERVACIONES, ''), ''), NULLIF(ISNULL(adic.OBSERVACIONES, ''), ''), ''),
                     base.Limite_Credito,
                     ISNULL(base.idCond_Cpra_Vta, ''),
                     ISNULL(base.IdLista, ''),
@@ -218,6 +218,8 @@ public sealed class CuentasComercialesService(
                 FROM dbo.{descriptor.ViewName} base
                 LEFT JOIN dbo.MA_CUENTAS acc
                     ON UPPER(LTRIM(RTRIM(acc.CODIGO))) = UPPER(LTRIM(RTRIM(ISNULL(base.CODIGO, ''))))
+                LEFT JOIN dbo.MA_CUENTASADIC adic
+                    ON UPPER(LTRIM(RTRIM(adic.CODIGO))) = UPPER(LTRIM(RTRIM(ISNULL(base.CODIGO, ''))))
                 WHERE UPPER(LTRIM(RTRIM(base.CODIGO))) = @Codigo;
                 """;
 
