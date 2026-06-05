@@ -240,9 +240,6 @@ public sealed class CuentasComercialesValidator(
         if (!string.IsNullOrWhiteSpace(codigoImputacion))
             await ValidateCuentaImputacionAsync(cn, codigoImputacion, result, ct);
 
-        if (!string.IsNullOrWhiteSpace(numeroDocumento))
-            await ValidateDuplicateDocumentAsync(cn, codigo, numeroDocumento, result, ct);
-
         if (tipo == CuentaComercialTipo.Proveedor)
             await ValidateCondicionesProveedorAsync(cn, request.DescuentosCondicion ?? [], result, ct);
 
@@ -329,25 +326,6 @@ public sealed class CuentasComercialesValidator(
 
         if (!string.IsNullOrWhiteSpace(GetString(rd, 3)))
             result.Add("codigo-imputacion", "La cuenta de imputación no puede estar reservada para medios de pago.");
-    }
-
-    private static async Task ValidateDuplicateDocumentAsync(SqlConnection cn, string codigoActual, string numeroDocumento, ValidationResult result, CancellationToken ct)
-    {
-        const string sql = """
-            SELECT TOP (1) ISNULL(CODIGO, '')
-            FROM dbo.MA_CUENTASADIC
-            WHERE UPPER(LTRIM(RTRIM(NUMERO_DOCUMENTO))) = @NumeroDocumento
-              AND UPPER(LTRIM(RTRIM(CODIGO))) <> @Codigo;
-            """;
-
-        await using var cmd = new SqlCommand(sql, cn);
-        cmd.Parameters.AddWithValue("@NumeroDocumento", numeroDocumento.Trim().ToUpperInvariant());
-        cmd.Parameters.AddWithValue("@Codigo", codigoActual.Trim().ToUpperInvariant());
-        var duplicate = Convert.ToString(await cmd.ExecuteScalarAsync(ct)) ?? string.Empty;
-        if (!string.IsNullOrWhiteSpace(duplicate))
-        {
-            result.Add("numero-documento", $"El CUIT / documento informado ya figura en la cuenta {duplicate}.");
-        }
     }
 
     private static async Task<bool> ExistsByCodeAsync(SqlConnection cn, string codigo, CancellationToken ct)
