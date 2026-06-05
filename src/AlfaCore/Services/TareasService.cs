@@ -565,7 +565,7 @@ public sealed class TareasService(
                 if (previous is not null
                     && !string.Equals(previous.Estado, TareaEstadoKeys.Completada, StringComparison.OrdinalIgnoreCase)
                     && string.Equals(estado, TareaEstadoKeys.Completada, StringComparison.OrdinalIgnoreCase))
-                    await NotifyTaskCompletionAsync(cn, id, titulo, asignado, user, token);
+                    await NotifyTaskCompletionAsync(cn, id, titulo, asignado, previous.UsuarioAlta, user, token);
                 return id;
             }
 
@@ -592,7 +592,7 @@ public sealed class TareasService(
             await SaveSharingRulesAsync(cn, "TAREA", newId, request.CompartirConTodos, request.UsuariosCompartidos, user, null, token);
             await NotifyTaskAssignmentAsync(cn, newId, titulo, asignado, user, token);
             if (string.Equals(estado, TareaEstadoKeys.Completada, StringComparison.OrdinalIgnoreCase))
-                await NotifyTaskCompletionAsync(cn, newId, titulo, asignado, user, token);
+                await NotifyTaskCompletionAsync(cn, newId, titulo, asignado, user, user, token);
             return newId;
         }, "No se pudo guardar la tarea.", ct);
 
@@ -780,7 +780,7 @@ public sealed class TareasService(
             if (previous is not null
                 && !string.Equals(previous.Estado, TareaEstadoKeys.Completada, StringComparison.OrdinalIgnoreCase)
                 && string.Equals(normalizedState, TareaEstadoKeys.Completada, StringComparison.OrdinalIgnoreCase))
-                await NotifyTaskCompletionAsync(cn, idTarea, previous.Titulo, previous.UsuarioAsignado, user, token);
+                await NotifyTaskCompletionAsync(cn, idTarea, previous.Titulo, previous.UsuarioAsignado, previous.UsuarioAlta, user, token);
         }, "No se pudo cambiar el estado de la tarea.", ct);
 
     public Task DuplicateTaskAsync(long idTarea, string usuarioAccion, CancellationToken ct = default)
@@ -1434,10 +1434,10 @@ public sealed class TareasService(
     private async Task NotifyTaskAssignmentAsync(SqlConnection cn, long idTarea, string titulo, string usuarioAsignado, string usuarioAccion, CancellationToken ct)
         => await NotifyTaskByWhatsAppAsync(cn, "NotifyTaskAssignment", TaskAssignmentTemplateConfigKey, TaskAssignmentTemplateMetaName, idTarea, titulo, usuarioAsignado, usuarioAccion, ct);
 
-    private async Task NotifyTaskCompletionAsync(SqlConnection cn, long idTarea, string titulo, string usuarioAsignado, string usuarioAccion, CancellationToken ct)
-        => await NotifyTaskByWhatsAppAsync(cn, "NotifyTaskCompletion", TaskCompletionTemplateConfigKey, TaskCompletionTemplateMetaName, idTarea, titulo, usuarioAsignado, usuarioAccion, ct);
+    private async Task NotifyTaskCompletionAsync(SqlConnection cn, long idTarea, string titulo, string usuarioAsignado, string usuarioDestino, string usuarioAccion, CancellationToken ct)
+        => await NotifyTaskByWhatsAppAsync(cn, "NotifyTaskCompletion", TaskCompletionTemplateConfigKey, TaskCompletionTemplateMetaName, idTarea, titulo, usuarioAsignado, usuarioAccion, ct, usuarioDestino);
 
-    private async Task NotifyTaskByWhatsAppAsync(SqlConnection cn, string action, string templateConfigKey, string defaultTemplateMetaName, long idTarea, string titulo, string usuarioAsignado, string usuarioAccion, CancellationToken ct)
+    private async Task NotifyTaskByWhatsAppAsync(SqlConnection cn, string action, string templateConfigKey, string defaultTemplateMetaName, long idTarea, string titulo, string usuarioAsignado, string usuarioAccion, CancellationToken ct, string? usuarioDestino = null)
     {
         try
         {
@@ -1449,7 +1449,7 @@ public sealed class TareasService(
             if (template is null)
                 return;
 
-            var recipients = await GetTaskNotificationRecipientsAsync(cn, usuarioAsignado, ct);
+            var recipients = await GetTaskNotificationRecipientsAsync(cn, string.IsNullOrWhiteSpace(usuarioDestino) ? usuarioAsignado : usuarioDestino, ct);
             if (recipients.Count == 0)
                 return;
 
@@ -1485,7 +1485,7 @@ public sealed class TareasService(
                 action,
                 ex,
                 "No se pudo enviar la notificacion de WhatsApp de la tarea.",
-                new { idTarea, titulo, usuarioAsignado, usuarioAccion, templateConfigKey, defaultTemplateMetaName },
+                new { idTarea, titulo, usuarioAsignado, usuarioDestino, usuarioAccion, templateConfigKey, defaultTemplateMetaName },
                 AppEventSeverity.Warning,
                 ct);
         }
@@ -1541,6 +1541,7 @@ public sealed class TareasService(
             SELECT
                 ISNULL(Titulo, '') AS Titulo,
                 ISNULL(UsuarioAsignado, '') AS UsuarioAsignado,
+                ISNULL(UsuarioAlta, '') AS UsuarioAlta,
                 ISNULL(Estado, 'PENDIENTE') AS Estado
             FROM dbo.ALFACORE_TAREAS
             WHERE IdTarea = @IdTarea
@@ -1754,6 +1755,7 @@ public sealed class TareasService(
     {
         public string Titulo { get; set; } = string.Empty;
         public string UsuarioAsignado { get; set; } = string.Empty;
+        public string UsuarioAlta { get; set; } = string.Empty;
         public string Estado { get; set; } = string.Empty;
     }
 
