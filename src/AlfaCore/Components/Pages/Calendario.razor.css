@@ -154,6 +154,7 @@
 }
 
 .calendario-count-button {
+    appearance: none;
     display: inline-grid;
     place-items: center;
     min-width: 1.7rem;
@@ -163,7 +164,9 @@
     border-radius: 999px;
     background: rgba(8, 145, 178, .14);
     color: #67e8f9;
+    font-size: .78rem;
     font-weight: 900;
+    cursor: pointer;
 }
 
 .calendario-count-button:hover {

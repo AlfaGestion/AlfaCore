@@ -121,7 +121,7 @@
                                   style="--event-color:@EventColor(item)"
                                   title="@item.Titulo"
                                   @onclick:stopPropagation
-                                  @onclick="() => OpenEvent(item.IdEvento)">
+                                  @onclick="() => OpenCalendarItem(item)">
                                 <span>@item.Titulo</span>
                                 @if (!string.IsNullOrWhiteSpace(item.TecnicoNombre))
                                 {
@@ -448,6 +448,20 @@
         .OrderBy(x => x.FechaInicio)
         .Take(10)
         .ToList();
+    private List<CalendarioEventoDto> OfficialHolidayEvents => OfficialArgentinaHolidays
+        .Select(x => new CalendarioEventoDto
+        {
+            IdEvento = 0,
+            Titulo = x.Titulo,
+            Tipo = CalendarioEventoTipos.Feriado,
+            FechaInicio = x.FechaInicio,
+            FechaFin = x.FechaFin,
+            TodoElDia = true,
+            Estado = CalendarioEventoEstados.Confirmado,
+            Color = x.Color,
+            Descripcion = "Feriado oficial de Argentina."
+        })
+        .ToList();
     private List<UpcomingCalendarItem> UpcomingEvents
     {
         get
@@ -582,7 +596,26 @@
     }
 
     private IEnumerable<CalendarioEventoDto> EventsFor(DateTime day)
-        => _events.Where(x => x.FechaInicio.Date <= day.Date && x.FechaFin.Date >= day.Date);
+        => _events
+            .Concat(OfficialHolidayEvents.Where(ShouldShowOfficialHoliday))
+            .Where(x => x.FechaInicio.Date <= day.Date && x.FechaFin.Date >= day.Date)
+            .OrderBy(x => x.FechaInicio)
+            .ThenBy(x => x.Tipo == CalendarioEventoTipos.Feriado ? 0 : 1)
+            .ThenBy(x => x.Titulo);
+
+    private bool ShouldShowOfficialHoliday(CalendarioEventoDto item)
+    {
+        if (_request.Tipo != CalendarioEventoTipos.Todos && _request.Tipo != CalendarioEventoTipos.Feriado)
+            return false;
+        if (!string.IsNullOrWhiteSpace(_request.IdTecnico))
+            return false;
+        if (string.IsNullOrWhiteSpace(_request.Search))
+            return true;
+
+        var search = _request.Search.Trim();
+        return item.Titulo.Contains(search, StringComparison.OrdinalIgnoreCase)
+               || item.Descripcion.Contains(search, StringComparison.OrdinalIgnoreCase);
+    }
 
     private string DayCellClass(DateTime day)
     {
@@ -629,6 +662,17 @@
             IdPlantillaWhatsApp = result.Value.Recordatorio?.IdPlantillaWhatsApp
         };
         _showEditor = true;
+    }
+
+    private async Task OpenCalendarItem(CalendarioEventoDto item)
+    {
+        if (item.IdEvento > 0)
+        {
+            await OpenEvent(item.IdEvento);
+            return;
+        }
+
+        SetFeedback("Feriado oficial", $"{item.Titulo} - {item.FechaInicio.ToString("dd/MM", Culture)}.", "success");
     }
 
     private async Task OpenEventFromPanel(long idEvento)

@@ -901,6 +901,27 @@ select {
     font-size: .72rem;
 }
 
+.calendario-count-button {
+    appearance: none;
+    display: inline-grid;
+    place-items: center;
+    min-width: 1.7rem;
+    height: 1.7rem;
+    padding: 0 .35rem;
+    border: 1px solid rgba(56, 189, 248, .28);
+    border-radius: 999px;
+    background: rgba(8, 145, 178, .14);
+    color: #67e8f9;
+    font-size: .78rem;
+    font-weight: 900;
+    cursor: pointer;
+}
+
+.calendario-count-button:hover {
+    border-color: rgba(56, 189, 248, .55);
+    background: rgba(8, 145, 178, .24);
+}
+
 .calendario-dot {
     flex: 0 0 auto;
     width: .56rem;
