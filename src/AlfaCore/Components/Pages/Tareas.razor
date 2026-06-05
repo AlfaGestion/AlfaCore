@@ -89,6 +89,207 @@
         margin-top: 1rem;
         flex-wrap: wrap;
     }
+
+    .tareas-assignment-dropdown__menu {
+        width: min(360px, calc(100vw - 2.5rem));
+        padding: .35rem;
+    }
+
+    .tareas-assignment-option {
+        display: grid;
+        grid-template-columns: 18px minmax(0, 1fr) 18px;
+        align-items: center;
+        gap: .55rem;
+        width: 100%;
+        min-height: 36px;
+        padding: .45rem .55rem;
+        border: 1px solid transparent;
+        border-radius: 7px;
+        background: transparent;
+        color: var(--color-text);
+        font-weight: 800;
+        text-align: left;
+        cursor: pointer;
+    }
+
+    .tareas-assignment-option:hover {
+        background: rgba(8, 145, 178, .16);
+    }
+
+    .tareas-assignment-option.is-selected {
+        border-color: rgba(45, 212, 191, .42);
+        background: rgba(20, 184, 166, .18);
+        color: #ccfbf1;
+    }
+
+    .tareas-assignment-option__box,
+    .tareas-group-users__box {
+        display: inline-grid;
+        place-items: center;
+        width: 16px;
+        height: 16px;
+        border: 1px solid rgba(125, 211, 252, .45);
+        border-radius: 999px;
+        color: transparent;
+        font-size: .7rem;
+    }
+
+    .tareas-assignment-option.is-selected .tareas-assignment-option__box,
+    .tareas-group-user.is-selected .tareas-group-users__box {
+        border-color: rgba(45, 212, 191, .9);
+        background: #14b8a6;
+        color: #052e2b;
+    }
+
+    .tareas-assignment-option span:nth-child(2) {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .tareas-groups-modal {
+        width: min(760px, calc(100vw - 1rem));
+        max-height: calc(100vh - 2rem);
+        overflow: auto;
+    }
+
+    .tareas-groups-create {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: .55rem;
+        margin-bottom: .85rem;
+    }
+
+    .tareas-groups-create input {
+        min-height: 38px;
+        padding: 0 .75rem;
+        border: 1px solid rgba(148, 163, 184, .22);
+        border-radius: 8px;
+        background: rgba(15, 23, 42, .3);
+        color: var(--color-text);
+    }
+
+    .tareas-groups-list {
+        display: grid;
+        gap: .65rem;
+    }
+
+    .tareas-group-card {
+        border: 1px solid rgba(148, 163, 184, .18);
+        border-radius: 8px;
+        background: rgba(15, 23, 42, .24);
+        overflow: hidden;
+    }
+
+    .tareas-group-card summary {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto auto;
+        align-items: center;
+        gap: .65rem;
+        padding: .75rem .85rem;
+        cursor: pointer;
+        list-style: none;
+    }
+
+    .tareas-group-card summary::-webkit-details-marker {
+        display: none;
+    }
+
+    .tareas-group-card summary strong,
+    .tareas-group-card summary small {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .tareas-group-card summary small {
+        color: var(--color-muted);
+        font-weight: 700;
+    }
+
+    .tareas-group-card__body {
+        display: grid;
+        gap: .65rem;
+        padding: 0 .85rem .85rem;
+    }
+
+    .tareas-group-users {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: .4rem;
+    }
+
+    .tareas-group-user {
+        display: grid;
+        grid-template-columns: 18px minmax(0, 1fr) 18px;
+        align-items: center;
+        gap: .45rem;
+        min-height: 34px;
+        padding: .4rem .5rem;
+        border: 1px solid transparent;
+        border-radius: 7px;
+        background: transparent;
+        color: var(--color-text);
+        font-weight: 700;
+        text-align: left;
+        cursor: pointer;
+    }
+
+    .tareas-group-user:hover {
+        background: rgba(8, 145, 178, .18);
+    }
+
+    .tareas-group-user.is-selected {
+        border-color: rgba(45, 212, 191, .42);
+        background: rgba(20, 184, 166, .18);
+        color: #ccfbf1;
+    }
+
+    .tareas-group-user span:nth-child(2) {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    html[data-theme="light"] .tareas-assignment-option,
+    html[data-theme="light"] .tareas-group-user {
+        color: #0f172a;
+    }
+
+    html[data-theme="light"] .tareas-assignment-option:hover,
+    html[data-theme="light"] .tareas-group-user:hover {
+        background: #e0f2fe;
+    }
+
+    html[data-theme="light"] .tareas-assignment-option.is-selected,
+    html[data-theme="light"] .tareas-group-user.is-selected {
+        border-color: rgba(13, 148, 136, .38);
+        background: #ccfbf1;
+        color: #115e59;
+    }
+
+    .tareas-group-delete {
+        width: 34px;
+        height: 34px;
+        border: 0;
+        border-radius: 8px;
+        background: rgba(248, 113, 113, .12);
+        color: #fecaca;
+    }
+
+    @@media (max-width: 680px) {
+        .tareas-groups-create,
+        .tareas-group-card summary {
+            grid-template-columns: minmax(0, 1fr);
+        }
+
+        .tareas-group-users {
+            grid-template-columns: 1fr;
+        }
+    }
 </style>
 
 <section class="page-grid tareas-page" @onclick="HandlePageClickAsync">
@@ -480,16 +681,20 @@
                             </button>
                             @foreach (var user in AssigneeOptions)
                             {
-                                <label class="@GetAssigneeOptionClass(user)">
-                                    <input type="checkbox"
-                                           checked="@IsAssigneeSelected(user)"
-                                           @onchange="e => ToggleAssignee(user, e)" />
+                                <button type="button"
+                                        class="@GetAssigneeOptionClass(user)"
+                                        role="option"
+                                        aria-selected="@IsAssigneeSelected(user)"
+                                        @onclick="() => ToggleAssigneeSelection(user)">
+                                    <span class="tareas-assignment-option__box">
+                                        <i class="bi bi-check2"></i>
+                                    </span>
                                     <span>@user</span>
                                     @if (IsAssigneeSelected(user))
                                     {
                                         <i class="bi bi-check2"></i>
                                     }
-                                </label>
+                                </button>
                             }
                         </div>
                     }
@@ -695,25 +900,60 @@
             </button>
         </div>
 
-        <div class="tareas-groups-grid">
-            @foreach (var group in TeamAssigneeOptions.Where(IsTeamGroup))
+        <div class="tareas-groups-create">
+            <input value="@_newGroupName"
+                   @oninput="e => _newGroupName = Convert.ToString(e.Value) ?? string.Empty"
+                   @onkeydown="HandleNewGroupKeyDown"
+                   placeholder="Nuevo grupo" />
+            <button type="button" class="btn btn--ghost" @onclick="AddGroupDraft">
+                <i class="bi bi-plus-lg"></i> Crear grupo
+            </button>
+        </div>
+
+        @if (_groupDrafts.Count == 0)
+        {
+            <div class="tareas-empty">
+                <i class="bi bi-diagram-3"></i>
+                <strong>No hay grupos</strong>
+                <span>Creá un grupo y elegí sus usuarios.</span>
+            </div>
+        }
+        else
+        {
+            <div class="tareas-groups-list">
+            @foreach (var group in _groupDrafts.OrderBy(x => x.Grupo))
             {
-                <section class="tareas-group-box">
-                    <strong>@group</strong>
-                    <div class="tareas-share-users">
+                <details class="tareas-group-card" open>
+                    <summary>
+                        <strong>@group.Grupo</strong>
+                        <small>@GetGroupMemberSummary(group)</small>
+                        <button type="button" class="tareas-group-delete" title="Eliminar grupo" aria-label="Eliminar grupo" @onclick:stopPropagation @onclick="() => RemoveGroupDraft(group.Grupo)">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </summary>
+                    <div class="tareas-group-card__body">
+                        <div class="tareas-group-users">
                         @foreach (var user in UserAssigneeOptions)
                         {
-                            <label>
-                                <input type="checkbox"
-                                       checked="@IsGroupMemberSelected(group, user)"
-                                       @onchange="e => ToggleGroupMember(group, user, e)" />
+                            <button type="button"
+                                    class="@GetGroupMemberOptionClass(group.Grupo, user)"
+                                    @onclick="() => ToggleGroupMemberSelection(group.Grupo, user)">
+                                <span class="tareas-group-users__box">
+                                    <i class="bi bi-check2"></i>
+                                </span>
                                 <span>@user</span>
-                            </label>
+                                @if (IsGroupMemberSelected(group.Grupo, user))
+                                {
+                                    <i class="bi bi-check2"></i>
+                                }
+                            </button>
                         }
+                        </div>
                     </div>
-                </section>
+                </details>
             }
-        </div>
+            </div>
+        }
 
         <div class="tareas-modal__actions">
             <button type="button" class="btn btn--ghost" @onclick="CloseGroupsModal">
@@ -781,11 +1021,12 @@
     private bool _shareAll;
     private List<string> _shareUsers = [];
     private List<TareaGrupoDto> _groupDrafts = [];
+    private string _newGroupName = string.Empty;
     private long? _draggingTaskId;
     private int? _dragOverListId;
     private const long MaxAttachmentBytes = 50L * 1024L * 1024L;
     private const string AssignedByMeFilter = "__assigned_by_me";
-    private static readonly string[] TeamAssigneeOptions = ["Todos", "Soporte", "Programación"];
+    private const string EveryoneAssignee = "Todos";
 
     private string CurrentUser => AppUserSession.GetCurrentUserName(Environment.UserName).Trim();
     private int DefaultListId => _page.Listas.FirstOrDefault(x => x.EsDefault)?.IdLista ?? _page.Listas.FirstOrDefault()?.IdLista ?? 0;
@@ -812,7 +1053,8 @@
     {
         get
         {
-            var values = TeamAssigneeOptions
+            var values = new[] { EveryoneAssignee }
+                .Concat(_page.Grupos.Select(x => x.Grupo))
                 .Concat(_page.Usuarios.Select(x => x.Nombre))
                 .Append(CurrentUser)
                 .Concat(ParseAssignees(_taskDraft.UsuarioAsignado))
@@ -839,7 +1081,13 @@
                 new AssignedFilterOption(CurrentUser, "Asignadas a mí", "bi-person-check"),
                 new AssignedFilterOption(AssignedByMeFilter, "Asignadas por mí", "bi-send-check")
             }
-            .Concat(TeamAssigneeOptions.Select(x => new AssignedFilterOption(x, x, x == "Todos" ? "bi-broadcast" : "bi-diagram-3")))
+            .Concat(new[] { new AssignedFilterOption(EveryoneAssignee, EveryoneAssignee, "bi-broadcast") })
+            .Concat(_page.Grupos
+                .Select(x => x.Grupo)
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(x => x)
+                .Select(x => new AssignedFilterOption(x, x, "bi-diagram-3")))
             .Concat(_page.Usuarios
                 .Select(x => x.Nombre)
                 .Where(x => !string.IsNullOrWhiteSpace(x) && !string.Equals(x, CurrentUser, StringComparison.OrdinalIgnoreCase))
@@ -880,7 +1128,11 @@
         _loading = true;
         var result = await UiOps.RunAsync(() => TareasSvc.GetPageAsync(CurrentUser), "No se pudieron cargar las tareas.");
         if (result.Success && result.Value is not null)
+        {
             _page = result.Value;
+            if (!AssignedFilterOptions.Any(x => string.Equals(x.Value, _assignedFilter, StringComparison.OrdinalIgnoreCase)))
+                _assignedFilter = string.Empty;
+        }
         else
             _feedback = result.Feedback;
         _loading = false;
@@ -970,11 +1222,10 @@
         if (assignees.Any(x => string.Equals(x, assignee, StringComparison.OrdinalIgnoreCase)))
             return true;
 
-        var assigneeIsTeam = TeamAssigneeOptions.Any(x => string.Equals(x, assignee, StringComparison.OrdinalIgnoreCase));
-        if (assigneeIsTeam)
+        if (IsGroupAssignee(assignee) || string.Equals(assignee, EveryoneAssignee, StringComparison.OrdinalIgnoreCase))
             return false;
 
-        return assignees.Any(x => string.Equals(x, "Todos", StringComparison.OrdinalIgnoreCase))
+        return assignees.Any(x => string.Equals(x, EveryoneAssignee, StringComparison.OrdinalIgnoreCase))
             || _page.Grupos.Any(group =>
                 group.Usuarios.Contains(assignee, StringComparer.OrdinalIgnoreCase)
                 && assignees.Any(x => string.Equals(x, group.Grupo, StringComparison.OrdinalIgnoreCase)));
@@ -990,7 +1241,18 @@
         => AssignmentHasExact(_taskDraft.UsuarioAsignado, assignee);
 
     private string GetAssigneeOptionClass(string assignee)
-        => IsAssigneeSelected(assignee) ? "is-selected" : string.Empty;
+        => IsAssigneeSelected(assignee) ? "tareas-assignment-option is-selected" : "tareas-assignment-option";
+
+    private void ToggleAssigneeSelection(string assignee)
+    {
+        var values = ParseAssignees(_taskDraft.UsuarioAsignado).ToList();
+        if (values.Contains(assignee, StringComparer.OrdinalIgnoreCase))
+            values.RemoveAll(x => string.Equals(x, assignee, StringComparison.OrdinalIgnoreCase));
+        else
+            values.Add(assignee);
+
+        _taskDraft.UsuarioAsignado = string.Join(", ", values);
+    }
 
     private void ToggleAssignee(string assignee, ChangeEventArgs args)
     {
@@ -1005,21 +1267,20 @@
         _taskDraft.UsuarioAsignado = string.Join(", ", values);
     }
 
-    private static bool IsTeamGroup(string value)
-        => !string.Equals(value, "Todos", StringComparison.OrdinalIgnoreCase);
+    private bool IsGroupAssignee(string value)
+        => _page.Grupos.Any(x => string.Equals(x.Grupo, value, StringComparison.OrdinalIgnoreCase));
 
     private void OpenGroupsModal()
     {
-        _groupDrafts = TeamAssigneeOptions
-            .Where(IsTeamGroup)
+        _groupDrafts = _page.Grupos
             .Select(group => new TareaGrupoDto
             {
-                Grupo = group,
-                Usuarios = _page.Grupos
-                    .FirstOrDefault(x => string.Equals(x.Grupo, group, StringComparison.OrdinalIgnoreCase))
-                    ?.Usuarios.ToList() ?? []
+                Grupo = group.Grupo,
+                Usuarios = group.Usuarios.ToList()
             })
+            .OrderBy(x => x.Grupo)
             .ToList();
+        _newGroupName = string.Empty;
         _assigneeMenuOpen = false;
         _showGroupsModal = true;
     }
@@ -1031,6 +1292,24 @@
         => _groupDrafts
             .FirstOrDefault(x => string.Equals(x.Grupo, group, StringComparison.OrdinalIgnoreCase))
             ?.Usuarios.Contains(user, StringComparer.OrdinalIgnoreCase) == true;
+
+    private string GetGroupMemberOptionClass(string group, string user)
+        => IsGroupMemberSelected(group, user) ? "tareas-group-user is-selected" : "tareas-group-user";
+
+    private void ToggleGroupMemberSelection(string group, string user)
+    {
+        var draft = _groupDrafts.FirstOrDefault(x => string.Equals(x.Grupo, group, StringComparison.OrdinalIgnoreCase));
+        if (draft is null)
+        {
+            draft = new TareaGrupoDto { Grupo = group };
+            _groupDrafts.Add(draft);
+        }
+
+        if (draft.Usuarios.Contains(user, StringComparer.OrdinalIgnoreCase))
+            draft.Usuarios.RemoveAll(x => string.Equals(x, user, StringComparison.OrdinalIgnoreCase));
+        else
+            draft.Usuarios.Add(user);
+    }
 
     private void ToggleGroupMember(string group, string user, ChangeEventArgs args)
     {
@@ -1046,6 +1325,51 @@
             draft.Usuarios.Add(user);
         if (!selected)
             draft.Usuarios.RemoveAll(x => string.Equals(x, user, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private void AddGroupDraft()
+    {
+        var groupName = NormalizeGroupNameForUi(_newGroupName);
+        if (string.IsNullOrWhiteSpace(groupName))
+            return;
+
+        if (string.Equals(groupName, EveryoneAssignee, StringComparison.OrdinalIgnoreCase))
+        {
+            _feedback = BuildWarning("Nombre reservado", "Todos ya existe como asignación general.");
+            return;
+        }
+
+        if (_groupDrafts.Any(x => string.Equals(x.Grupo, groupName, StringComparison.OrdinalIgnoreCase)))
+        {
+            _feedback = BuildWarning("Grupo repetido", "Ya existe un grupo con ese nombre.");
+            return;
+        }
+
+        _groupDrafts.Add(new TareaGrupoDto { Grupo = groupName });
+        _newGroupName = string.Empty;
+    }
+
+    private void RemoveGroupDraft(string groupName)
+    {
+        _groupDrafts.RemoveAll(x => string.Equals(x.Grupo, groupName, StringComparison.OrdinalIgnoreCase));
+        var assigned = ParseAssignees(_taskDraft.UsuarioAsignado)
+            .Where(x => !string.Equals(x, groupName, StringComparison.OrdinalIgnoreCase));
+        _taskDraft.UsuarioAsignado = string.Join(", ", assigned);
+    }
+
+    private static string GetGroupMemberSummary(TareaGrupoDto group)
+        => group.Usuarios.Count == 0 ? "Sin usuarios" : $"{group.Usuarios.Count} usuario(s)";
+
+    private void HandleNewGroupKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter")
+            AddGroupDraft();
+    }
+
+    private static string NormalizeGroupNameForUi(string? value)
+    {
+        var clean = string.Join(" ", (value ?? string.Empty).Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries));
+        return clean.Length <= 50 ? clean : clean[..50];
     }
 
     private async Task SaveGroupsAsync()
