@@ -92,12 +92,16 @@ public sealed class MenuService(
 
             var hasNombreWeb = await ColumnExistsAsync(cn, "ALFACORE_MENU_WEB", "NombreWeb", token);
             var hasDescripcion = await ColumnExistsAsync(cn, "TA_MENU", "Descripcion", token);
+            var hasOrden = await ColumnExistsAsync(cn, "TA_MENU", "Orden", token);
             var nombreExpression = hasNombreWeb
                 ? "ISNULL(NULLIF(w.NombreWeb, ''), ISNULL(m.Nombre, ''))"
                 : "ISNULL(m.Nombre, '')";
             var descripcionExpression = hasDescripcion
                 ? "ISNULL(CAST(m.Descripcion AS nvarchar(max)), '')"
                 : "''";
+            var ordenExpression = hasOrden
+                ? "COALESCE(CONVERT(nvarchar(50), m.Orden), m.Clave)"
+                : "ISNULL(m.Clave, '')";
 
             var sql = $"""
                 SELECT
@@ -108,7 +112,7 @@ public sealed class MenuService(
                     {descripcionExpression} AS Descripcion,
                     ISNULL(m.Proceso, '') AS Proceso,
                     ISNULL(m.Habilitado, 1) AS Habilitado,
-                    ISNULL(m.Orden, m.Clave) AS OrdenMenu,
+                    {ordenExpression} AS OrdenMenu,
                     ISNULL(w.RutaWeb, '') AS RutaWeb,
                     ISNULL(w.Componente, '') AS Componente,
                     ISNULL(w.Icono, '') AS Icono,

@@ -294,6 +294,8 @@ Tarea de inicio que abre el navegador automáticamente (configurable).
 | `scripts\publicar_release.bat` | Publica la app en `publish\AlfaCoreLAN` |
 | `scripts\publicar_instalador.bat [version]` | Genera el Setup.exe completo con Inno Setup |
 | `scripts\actualizar_instalacion.bat` | Actualiza una instalación existente sin pisar JSON ni configuraciones |
+| `scripts\diagnostico_alfacore.bat` | Muestra servicio, proceso y archivos clave de la instalación |
+| `scripts\detener_servicio.bat` | Detiene el servicio de Windows de AlfaCore (requiere admin) |
 | `scripts\instalar_servicio.bat` | Instala el servicio de Windows (requiere admin) |
 | `scripts\desinstalar_servicio.bat` | Desinstala el servicio de Windows (requiere admin) |
 

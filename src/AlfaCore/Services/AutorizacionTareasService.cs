@@ -77,6 +77,10 @@ public sealed class AutorizacionTareasService(
             var idDeposito = ResolveOptionalCatalogValue(userData.IdDeposito, depositos);
 
             var hasDescripcionMenu = await ColumnExistsAsync(cn, "TA_MENU", "Descripcion", token);
+            var hasOrdenMenu = await ColumnExistsAsync(cn, "TA_MENU", "Orden", token);
+            var ordenExpression = hasOrdenMenu
+                ? "COALESCE(CONVERT(nvarchar(50), m.Orden), m.Clave)"
+                : "ISNULL(m.Clave, '')";
             var sql = $"""
                 SELECT
                     m.Menu,
@@ -86,7 +90,7 @@ public sealed class AutorizacionTareasService(
                     {(hasDescripcionMenu ? "ISNULL(CAST(m.Descripcion AS nvarchar(max)), '')" : "''")} AS Descripcion,
                     ISNULL(m.Proceso, '') AS Proceso,
                     ISNULL(m.Habilitado, 1) AS Habilitado,
-                    ISNULL(m.Orden, m.Clave) AS OrdenMenu,
+                    {ordenExpression} AS OrdenMenu,
                     ISNULL(w.RutaWeb, '') AS RutaWeb,
                     ISNULL(w.HabilitadoWeb, 0) AS HabilitadoWeb,
                     CASE WHEN t.TAREA IS NULL THEN CAST(0 AS bit) ELSE CAST(1 AS bit) END AS Autorizado
@@ -99,7 +103,7 @@ public sealed class AutorizacionTareasService(
                    AND UPPER(LTRIM(RTRIM(t.SISTEMA))) = @SistemaPermisos
                    AND UPPER(LTRIM(RTRIM(t.TAREA))) = UPPER(LTRIM(RTRIM(m.Clave)))
                 WHERE UPPER(LTRIM(RTRIM(m.Menu))) = @MenuSistema
-                ORDER BY m.Orden, m.Clave, m.Nombre;
+                ORDER BY {ordenExpression}, m.Clave, m.Nombre;
                 """;
 
             var rows = (await cn.QueryAsync<MenuAutorizacionRow>(new CommandDefinition(sql, new
