@@ -1178,7 +1178,7 @@ public sealed class ConversacionesService(
                     c.FechaHoraCierre,
                     ISNULL(CAST(mc.Observaciones AS nvarchar(max)), ''),
                     ISNULL(contactoNotas.Notas, ''),
-                    ISNULL(clienteNotas.Observaciones, ''),
+                    COALESCE(NULLIF(clienteNotas.Observaciones, ''), NULLIF(clienteAdicNotas.Observaciones, ''), ''),
                     ISNULL(cuentaObs.Nota, '')
                 FROM dbo.CONV_CONVERSACIONES c
                 INNER JOIN dbo.CONV_ESTADOS e
@@ -1218,7 +1218,11 @@ public sealed class ConversacionesService(
                             FROM dbo.MA_CONTACTOS_ADIC adic
                             WHERE c.IdContacto IS NOT NULL
                               AND mc.id IS NOT NULL
-                              AND adic.IdContacto = ISNULL(NULLIF(mc.idContacto, 0), mc.id)
+                              AND (
+                                    adic.id = mc.id
+                                 OR adic.IdContacto = mc.id
+                                 OR adic.IdContacto = ISNULL(NULLIF(mc.idContacto, 0), mc.id)
+                              )
                               AND LTRIM(RTRIM(ISNULL(CAST(adic.DescrAdic AS nvarchar(max)), ''))) <> ''
                             ORDER BY adic.id
                             FOR XML PATH(''), TYPE
@@ -1230,6 +1234,12 @@ public sealed class ConversacionesService(
                     FROM dbo.VT_CLIENTES cliNotas
                     WHERE UPPER(LTRIM(RTRIM(cliNotas.CODIGO))) = UPPER(LTRIM(RTRIM(clienteContexto.Codigo)))
                 ) clienteNotas
+                OUTER APPLY (
+                    SELECT TOP (1)
+                        ISNULL(CAST(adic.OBSERVACIONES AS nvarchar(max)), '') AS Observaciones
+                    FROM dbo.MA_CUENTASADIC adic
+                    WHERE UPPER(LTRIM(RTRIM(adic.CODIGO))) = UPPER(LTRIM(RTRIM(clienteContexto.Codigo)))
+                ) clienteAdicNotas
                 OUTER APPLY (
                     SELECT TOP (1)
                         ISNULL(CAST(obs.Nota AS nvarchar(max)), '') AS Nota
