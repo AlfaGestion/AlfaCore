@@ -1355,6 +1355,32 @@
         new("Emoji", "bi-emoji-smile", "emoji")
     ];
 
+    private static readonly HashSet<string> ValidationConditionFields = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "condicion-comercial",
+        "lista-precio",
+        "vendedor",
+        "cuenta-principal",
+        "codigo-imputacion",
+        "codigo-opcional",
+        "moneda",
+        "clasificacion",
+        "lugar-entrega",
+        "datos-pago",
+        "descuentos"
+    };
+
+    private static readonly HashSet<string> ValidationNoteFields = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "manual",
+        "observaciones",
+        "nota-cuenta",
+        "situacion-ib",
+        "convenio-ib",
+        "concepto-ib",
+        "nro-constancia-ib"
+    };
+
     private string SingularLabel => Tipo == CuentaComercialTipo.Cliente ? "Cliente" : "Proveedor";
     private string SingularLabelLower => SingularLabel.ToLowerInvariant();
     private string PluralLabel => Tipo == CuentaComercialTipo.Cliente ? "Clientes" : "Proveedores";
@@ -1811,11 +1837,12 @@
             catch (AppValidationException validationEx)
             {
                 ApplyFieldErrors(validationEx.Validation);
+                await ShowValidationTabAsync(validationEx.Validation);
                 SetFeedback(new AppUiMessage
                 {
                     Severity = AppUiFeedbackSeverity.Warning,
                     Title = $"Revisá los datos del {SingularLabelLower}",
-                    Message = validationEx.UserMessage,
+                    Message = BuildValidationMessage(validationEx),
                     Suggestion = "Corregí los campos marcados y volvé a intentar."
                 });
             }
@@ -2735,6 +2762,44 @@
             if (!string.IsNullOrWhiteSpace(issue.FieldKey))
                 _fieldErrors[issue.FieldKey.Trim()] = issue.Message;
         }
+    }
+
+    private async Task ShowValidationTabAsync(ValidationResult validation)
+    {
+        var firstKey = validation.Issues
+            .Select(issue => issue.FieldKey)
+            .FirstOrDefault(key => !string.IsNullOrWhiteSpace(key));
+
+        if (string.IsNullOrWhiteSpace(firstKey))
+            return;
+
+        await SetActiveTabAsync(GetValidationTab(firstKey));
+    }
+
+    private static string BuildValidationMessage(AppValidationException validationEx)
+    {
+        var issues = validationEx.Validation.Issues
+            .Select(issue => issue.Message)
+            .Where(message => !string.IsNullOrWhiteSpace(message))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(3)
+            .ToList();
+
+        return issues.Count == 0
+            ? validationEx.UserMessage
+            : string.Join(" ", issues);
+    }
+
+    private static CuentaComercialTab GetValidationTab(string fieldKey)
+    {
+        var key = fieldKey.Trim();
+        if (ValidationNoteFields.Contains(key))
+            return CuentaComercialTab.Notas;
+
+        if (ValidationConditionFields.Contains(key))
+            return CuentaComercialTab.Condiciones;
+
+        return CuentaComercialTab.Datos;
     }
 
     private bool HasFieldError(string key)
