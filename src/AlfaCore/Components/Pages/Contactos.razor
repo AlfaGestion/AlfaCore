@@ -776,6 +776,39 @@
     </div>
 }
 
+@if (_showBulkTemplateConfirm)
+{
+    <div class="cuentas-modal-backdrop" @onclick="CloseBulkTemplateConfirm">
+        <section class="cuentas-modal cuentas-modal--compact" role="dialog" aria-modal="true" aria-labelledby="contactos-bulk-template-confirm-title" @onclick:stopPropagation="true">
+            <header class="cuentas-modal__header">
+                <div>
+                    <span class="cuentas-modal__eyebrow">Confirmación</span>
+                    <h3 id="contactos-bulk-template-confirm-title">Enviar plantilla</h3>
+                </div>
+                <button type="button" class="cuentas-modal__close" @onclick="CloseBulkTemplateConfirm" disabled="@_sendingBulkTemplate" aria-label="Cerrar">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </header>
+            <div class="cuentas-modal__body">
+                <div class="context-card">
+                    <span class="context-card__label">Plantilla</span>
+                    <strong>@_bulkTemplateConfirmName</strong>
+                    <span class="context-card__muted">Se enviará a @_bulkTemplateConfirmCount contacto(s). La entrega final puede confirmarse después por WhatsApp.</span>
+                </div>
+            </div>
+            <footer class="cuentas-modal__actions">
+                <button type="button" class="btn btn--primary" @onclick="ConfirmBulkTemplateSendAsync" disabled="@_sendingBulkTemplate">
+                    <i class="bi bi-send"></i>
+                    @(_sendingBulkTemplate ? "Enviando..." : "Confirmar envío")
+                </button>
+                <button type="button" class="btn btn--ghost" @onclick="CloseBulkTemplateConfirm" disabled="@_sendingBulkTemplate">
+                    Cancelar
+                </button>
+            </footer>
+        </section>
+    </div>
+}
+
 @code {
     private readonly ContactosFilters _filters = new();
     private readonly ContactoSaveRequest _form = new();
@@ -823,11 +856,14 @@
     private string _mergeSearchText = string.Empty;
     private string _mergeError = string.Empty;
     private bool _showBulkTemplateModal;
+    private bool _showBulkTemplateConfirm;
     private bool _loadingBulkTemplates;
     private bool _sendingBulkTemplate;
     private long _bulkTemplateId;
     private string _bulkTemplateValuesText = string.Empty;
     private string _bulkTemplateError = string.Empty;
+    private string _bulkTemplateConfirmName = string.Empty;
+    private int _bulkTemplateConfirmCount;
     private CancellationTokenSource? _searchDebounceCts;
     private SearchRuleDto _contactRuleDraft = new() { Campo = "nombre", Operador = "contains" };
     private readonly List<SavedContactSearch> _contactFavorites = [];
@@ -1649,8 +1685,17 @@
         if (_sendingBulkTemplate)
             return;
 
+        _showBulkTemplateConfirm = false;
         _showBulkTemplateModal = false;
         _bulkTemplateError = string.Empty;
+    }
+
+    private void CloseBulkTemplateConfirm()
+    {
+        if (_sendingBulkTemplate)
+            return;
+
+        _showBulkTemplateConfirm = false;
     }
 
     private async Task LoadBulkTemplatesAsync()
@@ -1680,7 +1725,7 @@
         }
     }
 
-    private async Task SendBulkTemplateAsync()
+    private void SendBulkTemplateAsync()
     {
         var template = SelectedBulkTemplate;
         if (template is null)
@@ -1704,10 +1749,32 @@
             return;
         }
 
-        var confirm = await Js.InvokeAsync<bool>("confirm", $"Se enviarÃ¡ la plantilla \"{template.NombreVisible}\" a {contacts.Count} contacto(s). Â¿QuerÃ©s continuar?");
-        if (!confirm)
-            return;
+        _bulkTemplateError = string.Empty;
+        _bulkTemplateConfirmName = template.NombreVisible;
+        _bulkTemplateConfirmCount = contacts.Count;
+        _showBulkTemplateConfirm = true;
+    }
 
+    private async Task ConfirmBulkTemplateSendAsync()
+    {
+        var template = SelectedBulkTemplate;
+        if (template is null)
+        {
+            _showBulkTemplateConfirm = false;
+            _bulkTemplateError = "SeleccionÃ¡ una plantilla aprobada.";
+            return;
+        }
+
+        var values = ParseTemplateValues(_bulkTemplateValuesText).ToList();
+        var contacts = GetSelectedContactsWithPhone().ToList();
+        if (contacts.Count == 0)
+        {
+            _showBulkTemplateConfirm = false;
+            _bulkTemplateError = "No hay contactos seleccionados con telÃ©fono o celular.";
+            return;
+        }
+
+        _showBulkTemplateConfirm = false;
         _sendingBulkTemplate = true;
         _bulkTemplateError = string.Empty;
         var acceptedByMeta = 0;
