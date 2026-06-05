@@ -20,7 +20,7 @@
 }
 
 .calendario-toolbar {
-    grid-template-columns: minmax(245px, auto) minmax(260px, 1fr);
+    grid-template-columns: minmax(245px, auto) minmax(220px, .5fr) minmax(320px, .72fr);
     align-items: stretch;
     gap: .85rem;
     padding: .45rem 0 .65rem;
@@ -50,12 +50,25 @@
 }
 
 .calendario-filters {
-    grid-column: 1 / -1;
     display: grid;
-    grid-template-columns: minmax(320px, 1fr) minmax(180px, .34fr) minmax(180px, .34fr);
+    grid-template-columns: minmax(150px, 1fr) minmax(150px, 1fr);
     align-items: end;
     gap: .65rem;
     min-width: 0;
+}
+
+.calendario-search-panel {
+    display: grid;
+    grid-template-columns: minmax(220px, 460px) auto;
+    align-items: end;
+    gap: .55rem;
+    width: fit-content;
+    max-width: 100%;
+    padding: .65rem;
+    border: 1px solid rgba(56, 189, 248, .22);
+    border-radius: 8px;
+    background: rgba(7, 20, 38, .92);
+    box-shadow: 0 16px 36px rgba(0, 0, 0, .28);
 }
 
 .calendario-filters .field,
@@ -116,31 +129,78 @@
 
 .calendario-side {
     position: fixed;
-    top: max(.6rem, env(safe-area-inset-top));
-    right: max(.6rem, env(safe-area-inset-right));
-    bottom: max(.6rem, env(safe-area-inset-bottom));
-    width: min(340px, calc(100vw - 1.2rem));
-    max-height: calc(100dvh - 1.2rem);
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 1200;
+    width: min(360px, 100vw);
+    max-height: 100dvh;
     padding: .95rem;
     border: 1px solid rgba(56, 189, 248, .22);
-    border-radius: 10px;
+    border-radius: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
+}
+
+.calendario-side-section {
+    position: relative;
 }
 
 .calendario-panel-backdrop {
     position: fixed;
     inset: 0;
+    z-index: 1190;
+    background: rgba(2, 6, 23, .22);
+}
+
+.calendario-count-button {
+    display: inline-grid;
+    place-items: center;
+    min-width: 1.7rem;
+    height: 1.7rem;
+    padding: 0 .35rem;
+    border: 1px solid rgba(56, 189, 248, .28);
+    border-radius: 999px;
+    background: rgba(8, 145, 178, .14);
+    color: #67e8f9;
+    font-weight: 900;
+}
+
+.calendario-count-button:hover {
+    border-color: rgba(56, 189, 248, .55);
+    background: rgba(8, 145, 178, .24);
+}
+
+.calendario-upcoming-popover {
+    position: absolute;
+    right: .9rem;
+    left: .9rem;
+    z-index: 2;
+    display: grid;
+    gap: .45rem;
+    margin-top: .55rem;
+    padding: .65rem;
+    border: 1px solid rgba(56, 189, 248, .32);
+    border-radius: 8px;
+    background: #071426;
+    box-shadow: 0 18px 50px rgba(0, 0, 0, .42);
+}
+
+.calendario-upcoming-popover header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .75rem;
 }
 
 @media (max-width: 1280px) {
     .calendario-toolbar {
-        grid-template-columns: minmax(220px, auto) minmax(240px, 1fr);
+        grid-template-columns: minmax(220px, auto) minmax(220px, 1fr);
     }
 
     .calendario-filters {
         grid-column: 1 / -1;
-        grid-template-columns: minmax(260px, 1fr) minmax(150px, .45fr) minmax(150px, .45fr);
+        grid-template-columns: minmax(150px, 1fr) minmax(150px, 1fr);
     }
 }
 
@@ -159,6 +219,11 @@
     .calendario-toolbar,
     .calendario-filters {
         grid-template-columns: 1fr;
+    }
+
+    .calendario-search-panel {
+        width: 100%;
+        grid-template-columns: 1fr auto;
     }
 
     .calendario-active-guard {
