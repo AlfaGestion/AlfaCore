@@ -20186,3 +20186,8 @@ html[data-theme="light"] .pos-settings-modal {
 .conversations-page--odoo .conversations-window-banner {
     z-index: 1 !important;
 }
+
+.conversations-window-banner.is-status-menu-open {
+    opacity: 0;
+    pointer-events: none;
+}

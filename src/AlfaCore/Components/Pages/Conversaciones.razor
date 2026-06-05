@@ -694,7 +694,7 @@
 
                     @if (IsWhatsAppWindowExpired)
                     {
-                        <div class="conversations-window-banner">
+                        <div class="conversations-window-banner @(_showStatusMenu ? "is-status-menu-open" : string.Empty)">
                             <span>Esta conversación superó la ventana de 24 horas de WhatsApp.</span>
                             <button type="button" class="btn btn--primary btn--sm" @onclick="OpenTemplatePanel" disabled="@(!CanOpenTemplatePanel)">
                                 <i class="bi bi-send-fill"></i> Enviar plantilla
