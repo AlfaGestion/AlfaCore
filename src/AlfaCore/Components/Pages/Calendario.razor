@@ -144,114 +144,6 @@
 
     </section>
 
-    @if (_showSidePanel)
-    {
-        <button type="button" class="calendario-panel-backdrop" @onclick="CloseSidePanel" aria-label="Cerrar panel lateral"></button>
-        <aside class="calendario-side is-open" @onclick:stopPropagation>
-            <header class="calendario-side-title">
-                <div>
-                    <span>Calendario</span>
-                    <strong>Contexto</strong>
-                </div>
-                <button type="button" class="btn btn--ghost btn--icon" @onclick="CloseSidePanel" title="Cerrar">
-                    <i class="bi bi-x-lg"></i>
-                </button>
-            </header>
-
-            <div class="calendario-mini">
-                <strong>@DateTime.Today.ToString("dddd dd", Culture)</strong>
-                <span>@DateTime.Today.ToString("MMMM yyyy", Culture)</span>
-            </div>
-
-            <section class="calendario-side-section">
-                <div class="calendario-side-head">
-                    <span>Guardias del rango</span>
-                    <small>@ActiveGuards.Count</small>
-                </div>
-                @if (ActiveGuards.Count == 0)
-                {
-                    <p class="calendario-empty">Sin guardias para este rango.</p>
-                }
-                else
-                {
-                    @foreach (var guardia in ActiveGuards)
-                    {
-                        <button type="button" class="calendario-side-event" @onclick="() => OpenEventFromPanel(guardia.IdEvento)">
-                            <span class="calendario-dot" style="background:@EventColor(guardia)"></span>
-                            <span>
-                                <strong>@guardia.Titulo</strong>
-                                <small>@guardia.FechaInicio.ToString("dd/MM", Culture) - @guardia.FechaFin.ToString("dd/MM", Culture)</small>
-                            </span>
-                        </button>
-                    }
-                }
-            </section>
-
-            <section class="calendario-side-section">
-                <div class="calendario-side-head">
-                    <span>Próximamente</span>
-                    <button type="button" class="calendario-count-button" @onclick="ToggleUpcomingPopover">@UpcomingEvents.Count</button>
-                </div>
-                @if (UpcomingEvents.Count == 0)
-                {
-                    <p class="calendario-empty">Sin vacaciones, ausencias o feriados en el rango.</p>
-                }
-                else
-                {
-                    @foreach (var evento in UpcomingEvents.Take(5))
-                    {
-                        <button type="button" class="calendario-side-event" @onclick="() => OpenUpcomingFromPanel(evento)">
-                            <span class="calendario-dot" style="background:@evento.Color"></span>
-                            <span>
-                                <strong>@evento.Titulo</strong>
-                                <small>@evento.Tipo · @evento.FechaInicio.ToString("dd/MM", Culture)</small>
-                            </span>
-                        </button>
-                    }
-                }
-                @if (_showUpcomingPopover)
-                {
-                    <div class="calendario-upcoming-popover">
-                        <header>
-                            <strong>Lo que se viene</strong>
-                            <button type="button" class="btn btn--ghost btn--icon" title="Cerrar" @onclick="ToggleUpcomingPopover">
-                                <i class="bi bi-x-lg"></i>
-                            </button>
-                        </header>
-                        @foreach (var item in UpcomingEvents)
-                        {
-                            <button type="button" class="calendario-side-event" @onclick="() => OpenUpcomingFromPanel(item)">
-                                <span class="calendario-dot" style="background:@item.Color"></span>
-                                <span>
-                                    <strong>@item.Titulo</strong>
-                                    <small>@item.Tipo · @FormatUpcomingDate(item)</small>
-                                </span>
-                            </button>
-                        }
-                    </div>
-                }
-            </section>
-
-            <section class="calendario-side-section">
-                <div class="calendario-side-head">
-                    <span>Tecnicos</span>
-                    <small>@_tecnicos.Count</small>
-                </div>
-                <div class="calendario-technicians">
-                    @foreach (var tecnico in _tecnicos)
-                    {
-                        <button type="button"
-                                class="@(_request.IdTecnico == tecnico.IdTecnico ? "is-active" : string.Empty)"
-                                @onclick="() => FilterTechnicianFromPanelAsync(tecnico.IdTecnico)">
-                            <span class="calendario-dot" style="background:@TechnicianColor(tecnico.IdTecnico)"></span>
-                            <span>@tecnico.Nombre</span>
-                        </button>
-                    }
-                </div>
-            </section>
-        </aside>
-    }
-
     @if (_loading)
     {
         <div class="calendario-loading">
@@ -260,6 +152,116 @@
         </div>
     }
 </section>
+
+@if (_showSidePanel)
+{
+    <button type="button" class="calendario-panel-backdrop" @onclick="CloseSidePanel" aria-label="Cerrar panel lateral"></button>
+    <aside class="calendario-side is-open" @onclick:stopPropagation>
+        <header class="calendario-side-title">
+            <div>
+                <span>Calendario</span>
+                <strong>Contexto</strong>
+            </div>
+            <button type="button" class="btn btn--ghost btn--icon" @onclick="CloseSidePanel" title="Cerrar">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        </header>
+
+        <div class="calendario-mini">
+            <strong>@DateTime.Today.ToString("dddd dd", Culture)</strong>
+            <span>@DateTime.Today.ToString("MMMM yyyy", Culture)</span>
+        </div>
+
+        <section class="calendario-side-section">
+            <div class="calendario-side-head">
+                <span>Guardias del rango</span>
+                <small>@ActiveGuards.Count</small>
+            </div>
+            @if (ActiveGuards.Count == 0)
+            {
+                <p class="calendario-empty">Sin guardias para este rango.</p>
+            }
+            else
+            {
+                @foreach (var guardia in ActiveGuards)
+                {
+                    <button type="button" class="calendario-side-event" @onclick="() => OpenEventFromPanel(guardia.IdEvento)">
+                        <span class="calendario-dot" style="background:@EventColor(guardia)"></span>
+                        <span>
+                            <strong>@guardia.Titulo</strong>
+                            <small>@guardia.FechaInicio.ToString("dd/MM", Culture) - @guardia.FechaFin.ToString("dd/MM", Culture)</small>
+                        </span>
+                    </button>
+                }
+            }
+        </section>
+
+        <section class="calendario-side-section">
+            <div class="calendario-side-head">
+                <span>Próximamente</span>
+                <button type="button" class="calendario-count-button" @onclick="ToggleUpcomingPopover">@UpcomingEvents.Count</button>
+            </div>
+            @if (UpcomingEvents.Count == 0)
+            {
+                <p class="calendario-empty">Sin vacaciones, ausencias o feriados en el rango.</p>
+            }
+            else
+            {
+                @foreach (var evento in UpcomingEvents.Take(5))
+                {
+                    <button type="button" class="calendario-side-event" @onclick="() => OpenUpcomingFromPanel(evento)">
+                        <span class="calendario-dot" style="background:@evento.Color"></span>
+                        <span>
+                            <strong>@evento.Titulo</strong>
+                            <small>@evento.Tipo · @evento.FechaInicio.ToString("dd/MM", Culture)</small>
+                        </span>
+                    </button>
+                }
+            }
+        </section>
+
+        <section class="calendario-side-section">
+            <div class="calendario-side-head">
+                <span>Tecnicos</span>
+                <small>@_tecnicos.Count</small>
+            </div>
+            <div class="calendario-technicians">
+                @foreach (var tecnico in _tecnicos)
+                {
+                    <button type="button"
+                            class="@(_request.IdTecnico == tecnico.IdTecnico ? "is-active" : string.Empty)"
+                            @onclick="() => FilterTechnicianFromPanelAsync(tecnico.IdTecnico)">
+                        <span class="calendario-dot" style="background:@TechnicianColor(tecnico.IdTecnico)"></span>
+                        <span>@tecnico.Nombre</span>
+                    </button>
+                }
+            </div>
+        </section>
+    </aside>
+}
+
+@if (_showUpcomingPopover)
+{
+    <button type="button" class="calendario-upcoming-backdrop" @onclick="ToggleUpcomingPopover" aria-label="Cerrar próximos eventos"></button>
+    <section class="calendario-upcoming-popover" @onclick:stopPropagation>
+        <header>
+            <strong>Lo que se viene</strong>
+            <button type="button" class="btn btn--ghost btn--icon" title="Cerrar" @onclick="ToggleUpcomingPopover">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        </header>
+        @foreach (var item in UpcomingEvents)
+        {
+            <button type="button" class="calendario-side-event" @onclick="() => OpenUpcomingFromPanel(item)">
+                <span class="calendario-dot" style="background:@item.Color"></span>
+                <span>
+                    <strong>@item.Titulo</strong>
+                    <small>@item.Tipo · @FormatUpcomingDate(item)</small>
+                </span>
+            </button>
+        }
+    </section>
+}
 
 @if (_showEditor)
 {
@@ -446,13 +448,29 @@
         .OrderBy(x => x.FechaInicio)
         .Take(10)
         .ToList();
-    private List<UpcomingCalendarItem> UpcomingEvents => CorporateEvents
-        .Select(UpcomingCalendarItem.FromEvent)
-        .Concat(OfficialArgentinaHolidays
-            .Where(x => x.FechaInicio.Date >= DateTime.Today.Date && x.FechaInicio.Date <= GridStart.AddDays(42).Date))
-        .OrderBy(x => x.FechaInicio)
-        .Take(14)
-        .ToList();
+    private List<UpcomingCalendarItem> UpcomingEvents
+    {
+        get
+        {
+            var monthStart = new DateTime(_request.Year, _request.Month, 1);
+            var monthEnd = monthStart.AddMonths(1).AddDays(-1);
+            var allUpcoming = CorporateEvents
+                .Select(UpcomingCalendarItem.FromEvent)
+                .Concat(OfficialArgentinaHolidays)
+                .Where(x => x.FechaFin.Date >= DateTime.Today.Date)
+                .OrderBy(x => x.FechaInicio)
+                .ToList();
+
+            var currentMonth = allUpcoming
+                .Where(x => x.FechaInicio.Date <= monthEnd && x.FechaFin.Date >= monthStart)
+                .Take(14)
+                .ToList();
+
+            return currentMonth.Count > 0
+                ? currentMonth
+                : allUpcoming.Take(5).ToList();
+        }
+    }
     private CalendarioEventoDto? CurrentGuard => _events
         .Where(x => x.Tipo == CalendarioEventoTipos.Guardia
                     && x.Estado != CalendarioEventoEstados.Cancelado
