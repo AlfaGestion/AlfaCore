@@ -20,8 +20,8 @@
 }
 
 .calendario-toolbar {
-    grid-template-columns: minmax(245px, auto) minmax(280px, .45fr) minmax(560px, 1fr);
-    align-items: end;
+    grid-template-columns: minmax(245px, auto) minmax(260px, 1fr);
+    align-items: stretch;
     gap: .85rem;
     padding: .45rem 0 .65rem;
     border: 0;
@@ -44,11 +44,15 @@
 .calendario-active-guard {
     min-height: 48px;
     padding: .55rem .75rem;
+    width: 100%;
+    max-width: 420px;
+    justify-self: end;
 }
 
 .calendario-filters {
+    grid-column: 1 / -1;
     display: grid;
-    grid-template-columns: minmax(280px, 1fr) minmax(150px, .42fr) minmax(150px, .42fr);
+    grid-template-columns: minmax(320px, 1fr) minmax(180px, .34fr) minmax(180px, .34fr);
     align-items: end;
     gap: .65rem;
     min-width: 0;
@@ -131,11 +135,12 @@
 
 @media (max-width: 1280px) {
     .calendario-toolbar {
-        grid-template-columns: minmax(230px, auto) minmax(260px, 1fr);
+        grid-template-columns: minmax(220px, auto) minmax(240px, 1fr);
     }
 
     .calendario-filters {
         grid-column: 1 / -1;
+        grid-template-columns: minmax(260px, 1fr) minmax(150px, .45fr) minmax(150px, .45fr);
     }
 }
 
@@ -158,5 +163,7 @@
 
     .calendario-active-guard {
         min-width: 0;
+        max-width: none;
+        justify-self: stretch;
     }
 }

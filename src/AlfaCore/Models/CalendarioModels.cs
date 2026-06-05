@@ -82,6 +82,9 @@ public static class CalendarioEventoTipos
 {
     public const string Todos = "TODOS";
     public const string Guardia = "GUARDIA";
+    public const string Vacaciones = "VACACIONES";
+    public const string Ausencia = "AUSENCIA";
+    public const string Feriado = "FERIADO";
     public const string Reunion = "REUNION";
     public const string Capacitacion = "CAPACITACION";
     public const string Otro = "OTRO";

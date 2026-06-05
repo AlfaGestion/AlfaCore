@@ -444,8 +444,11 @@ public sealed class CalendarioService(
         => (tipo ?? string.Empty).ToUpperInvariant() switch
         {
             CalendarioEventoTipos.Guardia => "#14b8a6",
+            CalendarioEventoTipos.Vacaciones => "#22c55e",
+            CalendarioEventoTipos.Ausencia => "#f472b6",
+            CalendarioEventoTipos.Feriado => "#f59e0b",
             CalendarioEventoTipos.Reunion => "#38bdf8",
-            CalendarioEventoTipos.Capacitacion => "#f59e0b",
+            CalendarioEventoTipos.Capacitacion => "#a78bfa",
             _ => "#a78bfa"
         };
 

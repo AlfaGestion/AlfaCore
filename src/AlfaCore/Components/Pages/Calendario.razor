@@ -76,6 +76,9 @@
                 <select @bind="_request.Tipo" @bind:after="LoadAsync">
                     <option value="@CalendarioEventoTipos.Todos">Todos</option>
                     <option value="@CalendarioEventoTipos.Guardia">Guardias</option>
+                    <option value="@CalendarioEventoTipos.Vacaciones">Vacaciones</option>
+                    <option value="@CalendarioEventoTipos.Ausencia">Ausencias</option>
+                    <option value="@CalendarioEventoTipos.Feriado">Feriados</option>
                     <option value="@CalendarioEventoTipos.Reunion">Reuniones</option>
                     <option value="@CalendarioEventoTipos.Capacitacion">Capacitaciones</option>
                     <option value="@CalendarioEventoTipos.Otro">Otros</option>
@@ -110,6 +113,10 @@
                                 @if (!string.IsNullOrWhiteSpace(item.TecnicoNombre))
                                 {
                                     <small>@item.TecnicoNombre</small>
+                                }
+                                else
+                                {
+                                    <small>@TypeLabel(item.Tipo)</small>
                                 }
                             </span>
                         }
@@ -169,6 +176,30 @@
 
             <section class="calendario-side-section">
                 <div class="calendario-side-head">
+                    <span>Corporativo próximo</span>
+                    <small>@CorporateEvents.Count</small>
+                </div>
+                @if (CorporateEvents.Count == 0)
+                {
+                    <p class="calendario-empty">Sin vacaciones, ausencias o feriados en el rango.</p>
+                }
+                else
+                {
+                    @foreach (var evento in CorporateEvents)
+                    {
+                        <button type="button" class="calendario-side-event" @onclick="() => OpenEventFromPanel(evento.IdEvento)">
+                            <span class="calendario-dot" style="background:@EventColor(evento)"></span>
+                            <span>
+                                <strong>@evento.Titulo</strong>
+                                <small>@TypeLabel(evento.Tipo) · @evento.FechaInicio.ToString("dd/MM", Culture) - @evento.FechaFin.ToString("dd/MM", Culture)</small>
+                            </span>
+                        </button>
+                    }
+                }
+            </section>
+
+            <section class="calendario-side-section">
+                <div class="calendario-side-head">
                     <span>Tecnicos</span>
                     <small>@_tecnicos.Count</small>
                 </div>
@@ -203,7 +234,7 @@
         <header>
             <div>
                 <span>@(_form.IdEvento > 0 ? "Editar evento" : "Nuevo evento")</span>
-                <strong>@(_form.IdEvento > 0 ? _form.Titulo : "Guardia / reunion")</strong>
+                <strong>@(_form.IdEvento > 0 ? _form.Titulo : "Calendario corporativo")</strong>
             </div>
             <button type="button" class="btn btn--ghost btn--icon" @onclick="CloseEditor" title="Cerrar">
                 <i class="bi bi-x-lg"></i>
@@ -220,8 +251,11 @@
                 <label>Tipo</label>
                 <select @bind="_form.Tipo" @bind:after="ApplyTypeDefaults" disabled="@_saving">
                     <option value="@CalendarioEventoTipos.Guardia">Guardia</option>
-                    <option value="@CalendarioEventoTipos.Reunion">Reunion</option>
-                    <option value="@CalendarioEventoTipos.Capacitacion">Capacitacion</option>
+                    <option value="@CalendarioEventoTipos.Vacaciones">Vacaciones</option>
+                    <option value="@CalendarioEventoTipos.Ausencia">Ausencia</option>
+                    <option value="@CalendarioEventoTipos.Feriado">Feriado</option>
+                    <option value="@CalendarioEventoTipos.Reunion">Reunión</option>
+                    <option value="@CalendarioEventoTipos.Capacitacion">Capacitación</option>
                     <option value="@CalendarioEventoTipos.Otro">Otro</option>
                 </select>
             </div>
@@ -370,6 +404,11 @@
         .Where(x => x.Tipo == CalendarioEventoTipos.Guardia && x.Estado != CalendarioEventoEstados.Cancelado)
         .OrderBy(x => x.FechaInicio)
         .Take(8)
+        .ToList();
+    private List<CalendarioEventoDto> CorporateEvents => _events
+        .Where(x => IsCorporateType(x.Tipo) && x.Estado != CalendarioEventoEstados.Cancelado)
+        .OrderBy(x => x.FechaInicio)
+        .Take(10)
         .ToList();
     private CalendarioEventoDto? CurrentGuard => _events
         .Where(x => x.Tipo == CalendarioEventoTipos.Guardia
@@ -606,9 +645,9 @@
         _form.IdTecnico = id;
         var tecnico = _tecnicos.FirstOrDefault(x => x.IdTecnico == id);
         _form.TecnicoNombre = tecnico?.Nombre;
-        if (_form.Tipo == CalendarioEventoTipos.Guardia && tecnico is not null)
-            _form.Titulo = $"GUARDIA {tecnico.Nombre}".Trim();
-        _form.Color = TechnicianColor(id);
+        if (tecnico is not null && IsDefaultEditableTitle(_form.Titulo))
+            _form.Titulo = DefaultTitleForType(_form.Tipo, tecnico.Nombre);
+        _form.Color = ColorForTypeOrTechnician(_form.Tipo, id);
     }
 
     private void ApplyTypeDefaults()
@@ -619,6 +658,19 @@
             if (_form.FechaFin <= _form.FechaInicio)
                 _form.FechaFin = _form.FechaInicio.AddDays(7);
         }
+
+        if (_form.Tipo == CalendarioEventoTipos.Vacaciones || _form.Tipo == CalendarioEventoTipos.Ausencia || _form.Tipo == CalendarioEventoTipos.Feriado)
+        {
+            _form.TodoElDia = true;
+            _form.CrearRecordatorioWhatsApp = false;
+            if (_form.FechaFin <= _form.FechaInicio)
+                _form.FechaFin = _form.FechaInicio.Date.AddDays(1).AddHours(9);
+        }
+
+        if (IsDefaultEditableTitle(_form.Titulo))
+            _form.Titulo = DefaultTitleForType(_form.Tipo, _form.TecnicoNombre);
+
+        _form.Color = ColorForTypeOrTechnician(_form.Tipo, _form.IdTecnico);
     }
 
     private void SetFeedback(string title, string text, string kind)
@@ -681,4 +733,58 @@
         var colors = new[] { "#14b8a6", "#38bdf8", "#f472b6", "#f59e0b", "#a78bfa", "#22c55e" };
         return colors[Math.Abs(hash) % colors.Length];
     }
+
+    private string ColorForTypeOrTechnician(string? tipo, string? idTecnico)
+        => tipo switch
+        {
+            CalendarioEventoTipos.Guardia when !string.IsNullOrWhiteSpace(idTecnico) => TechnicianColor(idTecnico),
+            CalendarioEventoTipos.Vacaciones => "#22c55e",
+            CalendarioEventoTipos.Ausencia => "#f472b6",
+            CalendarioEventoTipos.Feriado => "#f59e0b",
+            CalendarioEventoTipos.Reunion => "#38bdf8",
+            CalendarioEventoTipos.Capacitacion => "#a78bfa",
+            _ => "#14b8a6"
+        };
+
+    private static bool IsCorporateType(string? tipo)
+        => tipo is CalendarioEventoTipos.Vacaciones
+            or CalendarioEventoTipos.Ausencia
+            or CalendarioEventoTipos.Feriado
+            or CalendarioEventoTipos.Reunion
+            or CalendarioEventoTipos.Capacitacion
+            or CalendarioEventoTipos.Otro;
+
+    private static string TypeLabel(string? tipo)
+        => tipo switch
+        {
+            CalendarioEventoTipos.Guardia => "Guardia",
+            CalendarioEventoTipos.Vacaciones => "Vacaciones",
+            CalendarioEventoTipos.Ausencia => "Ausencia",
+            CalendarioEventoTipos.Feriado => "Feriado",
+            CalendarioEventoTipos.Reunion => "Reunión",
+            CalendarioEventoTipos.Capacitacion => "Capacitación",
+            _ => "Otro"
+        };
+
+    private static string DefaultTitleForType(string? tipo, string? tecnicoNombre)
+        => tipo switch
+        {
+            CalendarioEventoTipos.Guardia => string.IsNullOrWhiteSpace(tecnicoNombre) ? "GUARDIA" : $"GUARDIA {tecnicoNombre}",
+            CalendarioEventoTipos.Vacaciones => string.IsNullOrWhiteSpace(tecnicoNombre) ? "Vacaciones" : $"Vacaciones {tecnicoNombre}",
+            CalendarioEventoTipos.Ausencia => string.IsNullOrWhiteSpace(tecnicoNombre) ? "Ausencia" : $"Ausencia {tecnicoNombre}",
+            CalendarioEventoTipos.Feriado => "Feriado",
+            CalendarioEventoTipos.Reunion => "Reunión",
+            CalendarioEventoTipos.Capacitacion => "Capacitación",
+            _ => "Evento"
+        };
+
+    private static bool IsDefaultEditableTitle(string? titulo)
+        => string.IsNullOrWhiteSpace(titulo)
+           || string.Equals(titulo, "GUARDIA", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(titulo, "Vacaciones", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(titulo, "Ausencia", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(titulo, "Feriado", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(titulo, "Reunión", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(titulo, "Capacitación", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(titulo, "Evento", StringComparison.OrdinalIgnoreCase);
 }
