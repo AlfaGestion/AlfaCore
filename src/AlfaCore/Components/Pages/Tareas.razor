@@ -357,6 +357,74 @@
         align-self: end;
     }
 
+    .shell__content .tareas-share-picker {
+        position: relative;
+        align-self: end;
+    }
+
+    .shell__content .tareas-share-menu {
+        position: absolute;
+        top: calc(100% + .45rem);
+        right: 0;
+        z-index: 1410;
+        display: grid;
+        gap: .35rem;
+        width: min(420px, calc(100vw - 3rem));
+        max-height: min(320px, 46vh);
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        padding: .45rem;
+        border: 1px solid rgba(56, 189, 248, .28);
+        border-radius: 8px;
+        background: #071426;
+        box-shadow: 0 22px 60px rgba(0, 0, 0, .48);
+    }
+
+    .shell__content .tareas-share-option {
+        display: grid;
+        grid-template-columns: 18px minmax(0, 1fr) 18px;
+        align-items: center;
+        gap: .55rem;
+        width: 100%;
+        min-height: 36px;
+        padding: .45rem .55rem;
+        border: 1px solid transparent;
+        border-radius: 7px;
+        background: transparent !important;
+        color: #edf6ff !important;
+        box-shadow: none;
+        font-weight: 800;
+        text-align: left;
+        cursor: pointer;
+    }
+
+    .shell__content .tareas-share-option:hover {
+        background: rgba(8, 145, 178, .18) !important;
+    }
+
+    .shell__content .tareas-share-option.is-selected {
+        border-color: rgba(45, 212, 191, .42);
+        background: rgba(20, 184, 166, .18) !important;
+        color: #ccfbf1 !important;
+    }
+
+    .tareas-share-option__box {
+        display: inline-grid;
+        place-items: center;
+        width: 16px;
+        height: 16px;
+        border: 1px solid rgba(125, 211, 252, .45);
+        border-radius: 999px;
+        color: transparent;
+        font-size: .7rem;
+    }
+
+    .tareas-share-option.is-selected .tareas-share-option__box {
+        border-color: rgba(45, 212, 191, .9);
+        background: #14b8a6;
+        color: #052e2b;
+    }
+
     .shell__content .tareas-share-icon span {
         display: none;
     }
@@ -399,6 +467,11 @@
 
         .shell__content .tareas-share-icon {
             justify-self: start;
+        }
+
+        .shell__content .tareas-share-menu {
+            right: auto;
+            left: 0;
         }
     }
 
@@ -648,6 +721,12 @@
         box-shadow: 0 22px 52px rgba(15, 23, 42, .18);
     }
 
+    html[data-theme="light"] .shell__content .tareas-share-menu {
+        border-color: #bae6fd;
+        background: #fff;
+        box-shadow: 0 22px 52px rgba(15, 23, 42, .18);
+    }
+
     html[data-theme="light"] .shell__content .tareas-field-menu {
         border-color: #bae6fd;
         background: #fff;
@@ -676,18 +755,21 @@
 
     html[data-theme="light"] .shell__content .tareas-assignment-option,
     html[data-theme="light"] .shell__content .tareas-field-option,
+    html[data-theme="light"] .shell__content .tareas-share-option,
     html[data-theme="light"] .tareas-group-user {
         color: #0f172a !important;
     }
 
     html[data-theme="light"] .shell__content .tareas-assignment-option:hover,
     html[data-theme="light"] .shell__content .tareas-field-option:hover,
+    html[data-theme="light"] .shell__content .tareas-share-option:hover,
     html[data-theme="light"] .tareas-group-user:hover {
         background: #e0f2fe !important;
     }
 
     html[data-theme="light"] .shell__content .tareas-assignment-option.is-selected,
     html[data-theme="light"] .shell__content .tareas-field-option.is-selected,
+    html[data-theme="light"] .shell__content .tareas-share-option.is-selected,
     html[data-theme="light"] .tareas-group-user.is-selected {
         border-color: rgba(13, 148, 136, .38);
         background: #ccfbf1 !important;
@@ -1049,7 +1131,7 @@
 @if (_showTaskModal)
 {
     <button type="button" class="modal-backdrop app-modal-backdrop no-print" aria-label="Cerrar tarea" @onclick="RequestCloseTaskModalAsync"></button>
-    <section class="tareas-modal panel-card no-print" @onclick:stopPropagation>
+    <section class="tareas-modal panel-card no-print" @onclick:stopPropagation @onclick="CloseTaskPopups">
         <div class="tareas-modal__head">
             <input class="tareas-title-input"
                    value="@_taskDraft.Titulo"
@@ -1241,42 +1323,57 @@
                         }
                     </div>
                 </div>
-                <button type="button"
-                        class="btn btn--ghost btn--sm tareas-share-icon"
-                        disabled="@(!_taskCanShare)"
-                        title="@GetSharingSummary(_taskDraft.CompartirConTodos, _taskDraft.UsuariosCompartidos)"
-                        aria-label="Compartir"
-                        @onclick="ToggleTaskSharePanel">
-                    <i class="bi bi-share"></i>
-                    <span>Compartir</span>
-                </button>
+                <div class="tareas-share-picker" @onclick:stopPropagation @onkeydown="HandleFieldMenuKeyDown">
+                    <button type="button"
+                            class="btn btn--ghost btn--sm tareas-share-icon"
+                            disabled="@(!_taskCanShare)"
+                            title="@GetSharingSummary(_taskDraft.CompartirConTodos, _taskDraft.UsuariosCompartidos)"
+                            aria-label="Compartir"
+                            aria-haspopup="listbox"
+                            aria-expanded="@_taskSharePanelOpen"
+                            @onclick="ToggleTaskSharePanel">
+                        <i class="bi bi-share"></i>
+                        <span>Compartir</span>
+                    </button>
+                    @if (_taskSharePanelOpen)
+                    {
+                        <div class="tareas-share-menu" role="listbox">
+                            <button type="button"
+                                    class="@GetShareAllOptionClass()"
+                                    role="option"
+                                    aria-selected="@_taskDraft.CompartirConTodos"
+                                    @onclick="ToggleTaskShareAll">
+                                <span class="tareas-share-option__box"><i class="bi bi-check2"></i></span>
+                                <span>Compartir con todos los usuarios</span>
+                                @if (_taskDraft.CompartirConTodos)
+                                {
+                                    <i class="bi bi-check2"></i>
+                                }
+                            </button>
+
+                            @if (!_taskDraft.CompartirConTodos)
+                            {
+                                @foreach (var user in ShareUserOptions)
+                                {
+                                    <button type="button"
+                                            class="@GetTaskShareUserOptionClass(user)"
+                                            role="option"
+                                            aria-selected="@_taskDraft.UsuariosCompartidos.Contains(user, StringComparer.OrdinalIgnoreCase)"
+                                            @onclick="() => ToggleTaskShareUserSelection(user)">
+                                        <span class="tareas-share-option__box"><i class="bi bi-check2"></i></span>
+                                        <span>@user</span>
+                                        @if (_taskDraft.UsuariosCompartidos.Contains(user, StringComparer.OrdinalIgnoreCase))
+                                        {
+                                            <i class="bi bi-check2"></i>
+                                        }
+                                    </button>
+                                }
+                            }
+                        </div>
+                    }
+                </div>
             </div>
         </div>
-
-        @if (_taskSharePanelOpen)
-        {
-            <section class="tareas-task-share-panel">
-                <label class="tareas-share-all">
-                    <input type="checkbox" checked="@_taskDraft.CompartirConTodos" @onchange="OnTaskShareAllChanged" />
-                    <span>Compartir con todos los usuarios</span>
-                </label>
-
-                @if (!_taskDraft.CompartirConTodos)
-                {
-                    <div class="tareas-share-users">
-                        @foreach (var user in ShareUserOptions)
-                        {
-                            <label>
-                                <input type="checkbox"
-                                       checked="@_taskDraft.UsuariosCompartidos.Contains(user, StringComparer.OrdinalIgnoreCase)"
-                                       @onchange="e => ToggleTaskShareUser(user, e)" />
-                                <span>@user</span>
-                            </label>
-                        }
-                    </div>
-                }
-            </section>
-        }
 
         <label class="tareas-description">
             <span>Descripcion</span>
@@ -2397,8 +2494,13 @@
     private void ToggleTaskSharePanel()
     {
         if (!_taskCanShare) return;
-        _taskSharePanelOpen = !_taskSharePanelOpen;
+        var next = !_taskSharePanelOpen;
+        CloseTaskFieldMenus();
+        _taskSharePanelOpen = next;
     }
+
+    private void CloseTaskPopups()
+        => CloseTaskFieldMenus();
 
     private void OnTaskShareAllChanged(ChangeEventArgs args)
     {
@@ -2414,6 +2516,32 @@
             _taskDraft.UsuariosCompartidos.Add(user);
         if (!selected)
             _taskDraft.UsuariosCompartidos.RemoveAll(x => string.Equals(x, user, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private string GetShareAllOptionClass()
+        => _taskDraft.CompartirConTodos ? "tareas-share-option is-selected" : "tareas-share-option";
+
+    private string GetTaskShareUserOptionClass(string user)
+        => _taskDraft.UsuariosCompartidos.Contains(user, StringComparer.OrdinalIgnoreCase)
+            ? "tareas-share-option is-selected"
+            : "tareas-share-option";
+
+    private void ToggleTaskShareAll()
+    {
+        _taskDraft.CompartirConTodos = !_taskDraft.CompartirConTodos;
+        if (_taskDraft.CompartirConTodos)
+            _taskDraft.UsuariosCompartidos = [];
+    }
+
+    private void ToggleTaskShareUserSelection(string user)
+    {
+        if (_taskDraft.CompartirConTodos)
+            return;
+
+        if (_taskDraft.UsuariosCompartidos.Contains(user, StringComparer.OrdinalIgnoreCase))
+            _taskDraft.UsuariosCompartidos.RemoveAll(x => string.Equals(x, user, StringComparison.OrdinalIgnoreCase));
+        else
+            _taskDraft.UsuariosCompartidos.Add(user);
     }
 
     private async Task SaveTaskAsync()
@@ -2810,6 +2938,7 @@
         _priorityMenuOpen = false;
         _listMenuOpen = false;
         _assigneeMenuOpen = false;
+        _taskSharePanelOpen = false;
     }
 
     private void SelectAssignedFilter(string value)
