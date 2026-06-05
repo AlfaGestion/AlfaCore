@@ -3374,6 +3374,7 @@
                 var contact = await ResolveContextContactAsync(conversation);
                 AddContextNoteSection(sections, ContextNoteKind.Observacion, "Contacto - Observaciones", contact?.Observaciones);
             }
+            AddContextNoteSection(sections, ContextNoteKind.OtraNota, "Contacto - Notas", conversation.ContactoNotas);
 
             if (!string.IsNullOrWhiteSpace(conversation.ClienteCodigo))
             {
@@ -3418,7 +3419,7 @@
     private static string BuildContextNotesSourceKey(ConversacionDetalleDto? conversation)
         => conversation is null
             ? string.Empty
-            : $"{conversation.Canal}|{conversation.IdContacto?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty}|{conversation.ClienteCodigo?.Trim() ?? string.Empty}|{NormalizePhoneForCompare(conversation.TelefonoWhatsApp)}|{NormalizePhoneForCompare(conversation.ContactoCelular)}|{NormalizePhoneForCompare(conversation.ContactoTelefono)}|{conversation.ContactoEmail?.Trim().ToUpperInvariant() ?? string.Empty}|{BuildContextNotesVersion(conversation.ContactoObservaciones)}|{BuildContextNotesVersion(conversation.ClienteObservaciones)}|{BuildContextNotesVersion(conversation.ClienteNotaCuenta)}";
+            : $"{conversation.Canal}|{conversation.IdContacto?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty}|{conversation.ClienteCodigo?.Trim() ?? string.Empty}|{NormalizePhoneForCompare(conversation.TelefonoWhatsApp)}|{NormalizePhoneForCompare(conversation.ContactoCelular)}|{NormalizePhoneForCompare(conversation.ContactoTelefono)}|{conversation.ContactoEmail?.Trim().ToUpperInvariant() ?? string.Empty}|{BuildContextNotesVersion(conversation.ContactoObservaciones)}|{BuildContextNotesVersion(conversation.ContactoNotas)}|{BuildContextNotesVersion(conversation.ClienteObservaciones)}|{BuildContextNotesVersion(conversation.ClienteNotaCuenta)}";
 
     private static string BuildContextNotesVersion(string? value)
     {

@@ -185,6 +185,7 @@ public sealed class ConversacionDetalleDto
     public string ContactoEmail { get; set; } = string.Empty;
     public string ContactoCargo { get; set; } = string.Empty;
     public string ContactoObservaciones { get; set; } = string.Empty;
+    public string ContactoNotas { get; set; } = string.Empty;
     public string ClienteObservaciones { get; set; } = string.Empty;
     public string ClienteNotaCuenta { get; set; } = string.Empty;
     public string CodigoEstado { get; set; } = string.Empty;

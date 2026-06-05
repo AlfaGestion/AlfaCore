@@ -1177,6 +1177,7 @@ public sealed class ConversacionesService(
                     ultCliente.FechaHoraUltimoMensajeCliente,
                     c.FechaHoraCierre,
                     ISNULL(CAST(mc.Observaciones AS nvarchar(max)), ''),
+                    ISNULL(contactoNotas.Notas, ''),
                     ISNULL(clienteNotas.Observaciones, ''),
                     ISNULL(cuentaObs.Nota, '')
                 FROM dbo.CONV_CONVERSACIONES c
@@ -1210,6 +1211,19 @@ public sealed class ConversacionesService(
                 OUTER APPLY (
                     SELECT COALESCE(NULLIF(LTRIM(RTRIM(c.ClienteCodigo)), ''), contactoCuenta.Cuenta, '') AS Codigo
                 ) clienteContexto
+                OUTER APPLY (
+                    SELECT
+                        STUFF((
+                            SELECT CHAR(10) + LTRIM(RTRIM(CAST(adic.DescrAdic AS nvarchar(max))))
+                            FROM dbo.MA_CONTACTOS_ADIC adic
+                            WHERE c.IdContacto IS NOT NULL
+                              AND mc.id IS NOT NULL
+                              AND adic.IdContacto = ISNULL(NULLIF(mc.idContacto, 0), mc.id)
+                              AND LTRIM(RTRIM(ISNULL(CAST(adic.DescrAdic AS nvarchar(max)), ''))) <> ''
+                            ORDER BY adic.id
+                            FOR XML PATH(''), TYPE
+                        ).value('.', 'nvarchar(max)'), 1, 1, '') AS Notas
+                ) contactoNotas
                 OUTER APPLY (
                     SELECT TOP (1)
                         ISNULL(CAST(cliNotas.OBSERVACIONES AS nvarchar(max)), '') AS Observaciones
@@ -1279,8 +1293,9 @@ public sealed class ConversacionesService(
                 FechaHoraUltimoMensajeCliente = rd.IsDBNull(22) ? null : NormalizeStoredConversationTime(rd.GetDateTime(22)),
                 FechaHoraCierre = rd.IsDBNull(23) ? null : rd.GetDateTime(23),
                 ContactoObservaciones = GetString(rd, 24),
-                ClienteObservaciones = GetString(rd, 25),
-                ClienteNotaCuenta = GetString(rd, 26)
+                ContactoNotas = GetString(rd, 25),
+                ClienteObservaciones = GetString(rd, 26),
+                ClienteNotaCuenta = GetString(rd, 27)
             };
 
             ApplyWhatsAppWindow(item);
