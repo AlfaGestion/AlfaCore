@@ -1,16 +1,23 @@
 using AlfaCore.Models;
 using Dapper;
 using Microsoft.Data.SqlClient;
+using System.Globalization;
 
 namespace AlfaCore.Services;
 
 public sealed class TareasService(
     IConfiguration configuration,
     ISessionService sessionService,
-    IAppEventService appEvents) : ITareasService
+    IAppEventService appEvents,
+    IConversacionesService conversacionesService) : ITareasService
 {
     private const string ModuleName = "Tareas";
     private const string SistemaFijo = "CN000PR";
+    private const string TaskAssignmentTemplateMetaName = "tarea_asignada";
+    private const string TaskCompletionTemplateMetaName = "tarea_finalizada";
+    private const string TaskAssignmentTemplateConfigKey = "TAREAS-WHATSAPP-PLANTILLA-ASIGNACION";
+    private const string TaskCompletionTemplateConfigKey = "TAREAS-WHATSAPP-PLANTILLA-FINALIZACION";
+    private const string TaskWhatsAppEnabledConfigKey = "TAREAS-WHATSAPP-NOTIFICACIONES";
     private const long MaxAttachmentBytes = 50L * 1024L * 1024L;
     private static readonly string[] AllowedAttachmentPrefixes = ["image/", "audio/", "video/"];
 
@@ -519,6 +526,7 @@ public sealed class TareasService(
                 if (!await CanAccessTaskAsync(cn, id, user, token))
                     throw new InvalidOperationException("No tenés acceso a la tarea seleccionada.");
 
+                var previous = await GetTaskNotificationSnapshotAsync(cn, id, token);
                 await cn.ExecuteAsync(new CommandDefinition(
                     """
                     UPDATE dbo.ALFACORE_TAREAS
@@ -552,6 +560,12 @@ public sealed class TareasService(
                     cancellationToken: token));
                 if (await IsTaskOwnedByUserAsync(cn, id, user, token))
                     await SaveSharingRulesAsync(cn, "TAREA", id, request.CompartirConTodos, request.UsuariosCompartidos, user, null, token);
+                if (previous is not null && !AssignmentsEquivalent(previous.UsuarioAsignado, asignado))
+                    await NotifyTaskAssignmentAsync(cn, id, titulo, asignado, user, token);
+                if (previous is not null
+                    && !string.Equals(previous.Estado, TareaEstadoKeys.Completada, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(estado, TareaEstadoKeys.Completada, StringComparison.OrdinalIgnoreCase))
+                    await NotifyTaskCompletionAsync(cn, id, titulo, asignado, user, token);
                 return id;
             }
 
@@ -576,6 +590,9 @@ public sealed class TareasService(
                 },
                 cancellationToken: token));
             await SaveSharingRulesAsync(cn, "TAREA", newId, request.CompartirConTodos, request.UsuariosCompartidos, user, null, token);
+            await NotifyTaskAssignmentAsync(cn, newId, titulo, asignado, user, token);
+            if (string.Equals(estado, TareaEstadoKeys.Completada, StringComparison.OrdinalIgnoreCase))
+                await NotifyTaskCompletionAsync(cn, newId, titulo, asignado, user, token);
             return newId;
         }, "No se pudo guardar la tarea.", ct);
 
@@ -747,6 +764,8 @@ public sealed class TareasService(
             if (!await CanAccessTaskAsync(cn, idTarea, user, token))
                 throw new InvalidOperationException("No tenés acceso a la tarea seleccionada.");
 
+            var previous = await GetTaskNotificationSnapshotAsync(cn, idTarea, token);
+            var normalizedState = NormalizeState(estado);
             await cn.ExecuteAsync(new CommandDefinition(
                 """
                 UPDATE dbo.ALFACORE_TAREAS
@@ -756,8 +775,12 @@ public sealed class TareasService(
                 WHERE IdTarea = @IdTarea
                   AND ISNULL(Activa, 1) = 1;
                 """,
-                new { IdTarea = idTarea, Estado = NormalizeState(estado) },
+                new { IdTarea = idTarea, Estado = normalizedState },
                 cancellationToken: token));
+            if (previous is not null
+                && !string.Equals(previous.Estado, TareaEstadoKeys.Completada, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(normalizedState, TareaEstadoKeys.Completada, StringComparison.OrdinalIgnoreCase))
+                await NotifyTaskCompletionAsync(cn, idTarea, previous.Titulo, previous.UsuarioAsignado, user, token);
         }, "No se pudo cambiar el estado de la tarea.", ct);
 
     public Task DuplicateTaskAsync(long idTarea, string usuarioAccion, CancellationToken ct = default)
@@ -1408,6 +1431,217 @@ public sealed class TareasService(
             throw new InvalidOperationException("Solo se permiten imágenes, audios y videos en tareas.");
     }
 
+    private async Task NotifyTaskAssignmentAsync(SqlConnection cn, long idTarea, string titulo, string usuarioAsignado, string usuarioAccion, CancellationToken ct)
+        => await NotifyTaskByWhatsAppAsync(cn, "NotifyTaskAssignment", TaskAssignmentTemplateConfigKey, TaskAssignmentTemplateMetaName, idTarea, titulo, usuarioAsignado, usuarioAccion, ct);
+
+    private async Task NotifyTaskCompletionAsync(SqlConnection cn, long idTarea, string titulo, string usuarioAsignado, string usuarioAccion, CancellationToken ct)
+        => await NotifyTaskByWhatsAppAsync(cn, "NotifyTaskCompletion", TaskCompletionTemplateConfigKey, TaskCompletionTemplateMetaName, idTarea, titulo, usuarioAsignado, usuarioAccion, ct);
+
+    private async Task NotifyTaskByWhatsAppAsync(SqlConnection cn, string action, string templateConfigKey, string defaultTemplateMetaName, long idTarea, string titulo, string usuarioAsignado, string usuarioAccion, CancellationToken ct)
+    {
+        try
+        {
+            if (!await TaskWhatsAppNotificationsEnabledAsync(cn, ct))
+                return;
+
+            var templateName = await ReadTaskConfigValueAsync(cn, templateConfigKey, ct);
+            var template = await FindTaskTemplateAsync(string.IsNullOrWhiteSpace(templateName) ? defaultTemplateMetaName : templateName, ct);
+            if (template is null)
+                return;
+
+            var recipients = await GetTaskNotificationRecipientsAsync(cn, usuarioAsignado, ct);
+            if (recipients.Count == 0)
+                return;
+
+            var values = new List<string>
+            {
+                titulo,
+                DisplayAssignees(usuarioAsignado),
+                usuarioAccion,
+                DateTime.Now.ToString("dd/MM/yyyy HH:mm", CultureInfo.GetCultureInfo("es-AR"))
+            };
+
+            foreach (var recipient in recipients)
+            {
+                var conversation = await conversacionesService.CreateOrGetWhatsAppConversationAsync(new ConversacionCrearWhatsAppRequest
+                {
+                    TelefonoWhatsApp = recipient.TelefonoWhatsApp
+                }, ct);
+
+                await conversacionesService.SendTemplateMessageAsync(new ConversacionPlantillaSendRequest
+                {
+                    IdConversacion = conversation.IdConversacion,
+                    IdPlantilla = template.IdPlantilla,
+                    ValoresVariables = values,
+                    UsuarioAccion = usuarioAccion,
+                    SistemaAccion = SistemaFijo
+                }, ct);
+            }
+        }
+        catch (Exception ex)
+        {
+            await appEvents.LogErrorAsync(
+                ModuleName,
+                action,
+                ex,
+                "No se pudo enviar la notificacion de WhatsApp de la tarea.",
+                new { idTarea, titulo, usuarioAsignado, usuarioAccion, templateConfigKey, defaultTemplateMetaName },
+                AppEventSeverity.Warning,
+                ct);
+        }
+    }
+
+    private async Task<ConversacionPlantillaDto?> FindTaskTemplateAsync(string templateNameOrId, CancellationToken ct)
+    {
+        var value = (templateNameOrId ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        if (long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var idPlantilla) && idPlantilla > 0)
+            return await conversacionesService.GetTemplateAsync(idPlantilla, ct);
+
+        var matches = await conversacionesService.GetTemplatesAsync(new ConversacionPlantillaFilters
+        {
+            Search = value,
+            IncluirInactivas = false
+        }, ct);
+
+        return matches.FirstOrDefault(x =>
+            string.Equals(x.NombreMeta, value, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(x.NombreVisible, value, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static async Task<bool> TaskWhatsAppNotificationsEnabledAsync(SqlConnection cn, CancellationToken ct)
+    {
+        var value = await ReadTaskConfigValueAsync(cn, TaskWhatsAppEnabledConfigKey, ct);
+        return string.IsNullOrWhiteSpace(value)
+               || !new[] { "NO", "N", "FALSE", "0" }.Contains(value.Trim().ToUpperInvariant(), StringComparer.Ordinal);
+    }
+
+    private static async Task<string> ReadTaskConfigValueAsync(SqlConnection cn, string key, CancellationToken ct)
+    {
+        if (await cn.ExecuteScalarAsync<int>(new CommandDefinition(
+                "SELECT CASE WHEN OBJECT_ID(N'dbo.TA_CONFIGURACION', N'U') IS NULL THEN 0 ELSE 1 END;",
+                cancellationToken: ct)) != 1)
+            return string.Empty;
+
+        return await cn.ExecuteScalarAsync<string?>(new CommandDefinition(
+            """
+            SELECT TOP 1 ISNULL(VALOR, N'')
+            FROM dbo.TA_CONFIGURACION
+            WHERE CLAVE = @Clave;
+            """,
+            new { Clave = key },
+            cancellationToken: ct)) ?? string.Empty;
+    }
+
+    private static async Task<TareaNotificationSnapshot?> GetTaskNotificationSnapshotAsync(SqlConnection cn, long idTarea, CancellationToken ct)
+        => await cn.QueryFirstOrDefaultAsync<TareaNotificationSnapshot>(new CommandDefinition(
+            """
+            SELECT
+                ISNULL(Titulo, '') AS Titulo,
+                ISNULL(UsuarioAsignado, '') AS UsuarioAsignado,
+                ISNULL(Estado, 'PENDIENTE') AS Estado
+            FROM dbo.ALFACORE_TAREAS
+            WHERE IdTarea = @IdTarea
+              AND ISNULL(Activa, 1) = 1;
+            """,
+            new { IdTarea = idTarea },
+            cancellationToken: ct));
+
+    private static async Task<IReadOnlyList<TaskNotificationRecipient>> GetTaskNotificationRecipientsAsync(SqlConnection cn, string usuarioAsignado, CancellationToken ct)
+    {
+        var tokens = ParseAssignees(usuarioAsignado).ToList();
+        if (tokens.Count == 0)
+            return Array.Empty<TaskNotificationRecipient>();
+
+        await EnsureTaskGroupsReadyAsync(cn, ct);
+
+        var technicians = (await cn.QueryAsync<TaskTechnicianRow>(new CommandDefinition(
+            """
+            SELECT
+                ISNULL(Nombre, '') AS Nombre,
+                ISNULL(Telefono, '') AS TelefonoWhatsApp,
+                ISNULL(UsuarioAsociado, '') AS UsuarioAsociado
+            FROM dbo.V_TA_Tecnicos
+            WHERE ISNULL(Baja, 0) = 0;
+            """,
+            cancellationToken: ct))).ToList();
+
+        var groups = (await cn.QueryAsync<TareaGroupMemberRow>(new CommandDefinition(
+            """
+            SELECT
+                ISNULL(g.Nombre, '') AS Grupo,
+                ISNULL(gm.Usuario, '') AS Usuario
+            FROM dbo.ALFACORE_TAREAS_GRUPOS g
+            INNER JOIN dbo.ALFACORE_TAREAS_GRUPOS_MIEMBROS gm ON gm.IdGrupo = g.IdGrupo
+                AND ISNULL(gm.Activa, 1) = 1
+            WHERE ISNULL(g.Activa, 1) = 1;
+            """,
+            cancellationToken: ct))).ToList();
+
+        var selectedUsers = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var token in tokens)
+        {
+            if (string.Equals(token, "Todos", StringComparison.OrdinalIgnoreCase))
+            {
+                foreach (var tech in technicians)
+                    selectedUsers.Add(FirstNonEmpty(tech.UsuarioAsociado, tech.Nombre));
+                continue;
+            }
+
+            var groupMembers = groups
+                .Where(x => string.Equals(x.Grupo, token, StringComparison.OrdinalIgnoreCase))
+                .Select(x => x.Usuario)
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .ToArray();
+
+            if (groupMembers.Length > 0)
+            {
+                foreach (var member in groupMembers)
+                    selectedUsers.Add(member);
+            }
+            else
+            {
+                selectedUsers.Add(token);
+            }
+        }
+
+        return technicians
+            .Where(x => selectedUsers.Contains(x.Nombre) || selectedUsers.Contains(x.UsuarioAsociado))
+            .Where(x => !string.IsNullOrWhiteSpace(x.TelefonoWhatsApp))
+            .GroupBy(x => NormalizePhoneForDistinct(x.TelefonoWhatsApp), StringComparer.OrdinalIgnoreCase)
+            .Where(x => !string.IsNullOrWhiteSpace(x.Key))
+            .Select(x => x.First())
+            .Select(x => new TaskNotificationRecipient
+            {
+                Nombre = FirstNonEmpty(x.Nombre, x.UsuarioAsociado),
+                TelefonoWhatsApp = x.TelefonoWhatsApp
+            })
+            .ToList();
+    }
+
+    private static IEnumerable<string> ParseAssignees(string? usuarios)
+        => (usuarios ?? string.Empty)
+            .Split([',', ';', '|'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(x => !string.IsNullOrWhiteSpace(x));
+
+    private static bool AssignmentsEquivalent(string? left, string? right)
+    {
+        var a = ParseAssignees(left).OrderBy(x => x, StringComparer.OrdinalIgnoreCase);
+        var b = ParseAssignees(right).OrderBy(x => x, StringComparer.OrdinalIgnoreCase);
+        return a.SequenceEqual(b, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static string DisplayAssignees(string usuarioAsignado)
+        => string.Join(", ", ParseAssignees(usuarioAsignado));
+
+    private static string FirstNonEmpty(params string?[] values)
+        => values.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x))?.Trim() ?? string.Empty;
+
+    private static string NormalizePhoneForDistinct(string? value)
+        => new((value ?? string.Empty).Where(char.IsDigit).ToArray());
+
     private static string Truncate(string? value, int maxLength)
     {
         var clean = string.IsNullOrWhiteSpace(value) ? "adjunto" : value.Trim();
@@ -1514,5 +1748,25 @@ public sealed class TareasService(
         public byte[] Contenido { get; set; } = [];
         public string UsuarioAlta { get; set; } = string.Empty;
         public DateTime FechaHoraAlta { get; set; }
+    }
+
+    private sealed class TareaNotificationSnapshot
+    {
+        public string Titulo { get; set; } = string.Empty;
+        public string UsuarioAsignado { get; set; } = string.Empty;
+        public string Estado { get; set; } = string.Empty;
+    }
+
+    private sealed class TaskTechnicianRow
+    {
+        public string Nombre { get; set; } = string.Empty;
+        public string TelefonoWhatsApp { get; set; } = string.Empty;
+        public string UsuarioAsociado { get; set; } = string.Empty;
+    }
+
+    private sealed class TaskNotificationRecipient
+    {
+        public string Nombre { get; set; } = string.Empty;
+        public string TelefonoWhatsApp { get; set; } = string.Empty;
     }
 }

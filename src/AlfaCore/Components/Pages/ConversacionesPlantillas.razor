@@ -26,8 +26,14 @@
                         <button type="button" class="btn btn--ghost" style="width: 100%; justify-content: flex-start; margin-bottom: .25rem;" @onclick="AplicarPlantillaFacturaMantenimientoAsync">
                             <i class="bi bi-file-earmark-text"></i> Factura
                         </button>
-                        <button type="button" class="btn btn--ghost" style="width: 100%; justify-content: flex-start;" @onclick="AplicarPlantillaCobranzaAsync">
+                        <button type="button" class="btn btn--ghost" style="width: 100%; justify-content: flex-start; margin-bottom: .25rem;" @onclick="AplicarPlantillaCobranzaAsync">
                             <i class="bi bi-receipt"></i> Cobranza
+                        </button>
+                        <button type="button" class="btn btn--ghost" style="width: 100%; justify-content: flex-start; margin-bottom: .25rem;" @onclick="AplicarPlantillaTareaAsignadaAsync">
+                            <i class="bi bi-person-check"></i> Tarea asignada
+                        </button>
+                        <button type="button" class="btn btn--ghost" style="width: 100%; justify-content: flex-start;" @onclick="AplicarPlantillaTareaFinalizadaAsync">
+                            <i class="bi bi-check2-circle"></i> Tarea finalizada
                         </button>
                     </div>
                 }
@@ -179,12 +185,16 @@
                     </div>
                     <div class="templates-variable-guide">
                         <span class="context-card__label">Variables automáticas sugeridas</span>
-                        <button type="button" class="templates-variable-chip" @onclick='() => InsertVariable("{{1}}")'>@("{{1}} Nombre")</button>
-                        <button type="button" class="templates-variable-chip" @onclick='() => InsertVariable("{{2}}")'>@($"{{{{2}}}} {(EsFormularioFacturaMantenimiento ? "Periodo" : "Detalle de deuda")}")</button>
-                        <button type="button" class="templates-variable-chip" @onclick='() => InsertVariable("{{3}}")'>@($"{{{{3}}}} {(EsFormularioFacturaMantenimiento ? "Detalle factura" : "Forma de pago")}")</button>
+                        <button type="button" class="templates-variable-chip" @onclick='() => InsertVariable("{{1}}")'>@($"{{{{1}}}} {VariableLabel(1)}")</button>
+                        <button type="button" class="templates-variable-chip" @onclick='() => InsertVariable("{{2}}")'>@($"{{{{2}}}} {VariableLabel(2)}")</button>
+                        <button type="button" class="templates-variable-chip" @onclick='() => InsertVariable("{{3}}")'>@($"{{{{3}}}} {VariableLabel(3)}")</button>
                         @if (EsFormularioFacturaMantenimiento)
                         {
                             <button type="button" class="templates-variable-chip" @onclick='() => InsertVariable("{{4}}")'>@("{{4}} Forma de pago")</button>
+                        }
+                        @if (EsFormularioTareas)
+                        {
+                            <button type="button" class="templates-variable-chip" @onclick='() => InsertVariable("{{4}}")'>@("{{4}} Fecha y hora")</button>
                         }
                     </div>
                     <label class="field">
@@ -336,16 +346,35 @@
         "Titular: ALFA NET Soluciones Informáticas"
     ]);
 
+    private static readonly string TareaAsignadaTemplateBody = string.Join(Environment.NewLine,
+    [
+        "Se te asigno la tarea \"{{1}}\".",
+        string.Empty,
+        "Asignada a: {{2}}",
+        "Asignada por: {{3}}",
+        "Fecha: {{4}}"
+    ]);
+
+    private static readonly string TareaFinalizadaTemplateBody = string.Join(Environment.NewLine,
+    [
+        "La tarea \"{{1}}\" asignada a \"{{2}}\" ha sido finalizada por \"{{3}}\".",
+        string.Empty,
+        "Fecha: {{4}}"
+    ]);
+
     private string PreviewBody => RenderPreview(_form.CuerpoTexto, ParseExamples(_examplesText));
     private int BodyLength => _form.CuerpoTexto?.Length ?? 0;
     private bool IsBodyTooLong => BodyLength > MetaBodyMaxLength;
     private bool EsFormularioFacturaMantenimiento => EsPlantillaFacturaMantenimiento(_form);
+    private bool EsFormularioTareas => EsPlantillaTareas(_form);
     private string CrearButtonLabel => _crearSeleccion;
     private string CrearButtonIcon => _crearSeleccion switch
     {
         CrearOpciones.Plantilla => "bi-file-text",
         CrearOpciones.Factura => "bi-file-earmark-text",
         CrearOpciones.Cobranza => "bi-receipt",
+        CrearOpciones.TareaAsignada => "bi-person-check",
+        CrearOpciones.TareaFinalizada => "bi-check2-circle",
         _ => "bi-plus-circle-fill"
     };
     private string CrearButtonStyle
@@ -463,6 +492,49 @@
         _error = null;
 
         await Task.CompletedTask;
+    }
+
+    private async Task AplicarPlantillaTareaAsignadaAsync()
+    {
+        _mostrarMenuCrear = false;
+        MarcarOpcionCrear(CrearOpciones.TareaAsignada);
+        AplicarFiltroModeloSeleccionado();
+        AplicarModeloTarea(NewTareaAsignadaForm(), "Tarea asignada");
+
+        await Task.CompletedTask;
+    }
+
+    private async Task AplicarPlantillaTareaFinalizadaAsync()
+    {
+        _mostrarMenuCrear = false;
+        MarcarOpcionCrear(CrearOpciones.TareaFinalizada);
+        AplicarFiltroModeloSeleccionado();
+        AplicarModeloTarea(NewTareaFinalizadaForm(), "Tarea finalizada");
+
+        await Task.CompletedTask;
+    }
+
+    private void AplicarModeloTarea(ConversacionPlantillaDto model, string nombre)
+    {
+        var existing = _allTemplates.FirstOrDefault(x =>
+            string.Equals(x.NombreMeta, model.NombreMeta, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(x.Idioma, model.Idioma, StringComparison.OrdinalIgnoreCase));
+
+        _selectedId = existing?.IdPlantilla ?? 0;
+        model.IdPlantilla = _selectedId;
+        _form = model;
+        _examplesText = JoinMultilineValues(
+        [
+            "Actualizar servidor AlfaCore",
+            "Evelyn",
+            "Administrador",
+            "05/06/2026 15:30"
+        ]);
+        _formEstadoMeta = string.IsNullOrWhiteSpace(existing?.EstadoMeta) ? "DRAFT" : existing.EstadoMeta;
+        _feedback = _selectedId > 0
+            ? $"{nombre} cargada sobre la existente. Revisa los datos y guarda los cambios."
+            : $"{nombre} cargada. Revisa los ejemplos y guarda el borrador.";
+        _error = null;
     }
 
     private async Task HandleSearchEnter(KeyboardEventArgs args)
@@ -659,6 +731,51 @@
             CuerpoTexto = CobranzaTemplateBody
         };
 
+    private static ConversacionPlantillaDto NewTareaAsignadaForm()
+        => new()
+        {
+            NombreVisible = "Tarea asignada",
+            NombreMeta = "tarea_asignada",
+            Categoria = ConversacionPlantillaCategorias.Utility,
+            Idioma = "es_AR",
+            Activa = true,
+            EstadoMeta = "DRAFT",
+            CuerpoTexto = TareaAsignadaTemplateBody
+        };
+
+    private static ConversacionPlantillaDto NewTareaFinalizadaForm()
+        => new()
+        {
+            NombreVisible = "Tarea finalizada",
+            NombreMeta = "tarea_finalizada",
+            Categoria = ConversacionPlantillaCategorias.Utility,
+            Idioma = "es_AR",
+            Activa = true,
+            EstadoMeta = "DRAFT",
+            CuerpoTexto = TareaFinalizadaTemplateBody
+        };
+
+    private string VariableLabel(int index)
+    {
+        if (EsFormularioTareas)
+            return index switch
+            {
+                1 => "Titulo de tarea",
+                2 => "Tecnico asignado",
+                3 => EsPlantillaTareaFinalizada(_form) ? "Finalizada por" : "Asignada por",
+                4 => "Fecha y hora",
+                _ => $"Dato {index}"
+            };
+
+        return index switch
+        {
+            1 => "Nombre",
+            2 => EsFormularioFacturaMantenimiento ? "Periodo" : "Detalle de deuda",
+            3 => EsFormularioFacturaMantenimiento ? "Detalle factura" : "Forma de pago",
+            _ => $"Dato {index}"
+        };
+    }
+
     private static string RenderPreview(string text, IReadOnlyList<string> values)
     {
         var result = string.IsNullOrWhiteSpace(text) ? "Escribí el cuerpo de la plantilla." : text;
@@ -755,8 +872,10 @@
         {
             CrearOpciones.Factura => _allTemplates.Where(EsPlantillaFacturaMantenimiento).ToList(),
             CrearOpciones.Cobranza => _allTemplates.Where(EsPlantillaCobranza).ToList(),
+            CrearOpciones.TareaAsignada => _allTemplates.Where(EsPlantillaTareaAsignada).ToList(),
+            CrearOpciones.TareaFinalizada => _allTemplates.Where(EsPlantillaTareaFinalizada).ToList(),
             CrearOpciones.Plantilla => _allTemplates
-                .Where(x => !EsPlantillaFacturaMantenimiento(x) && !EsPlantillaCobranza(x))
+                .Where(x => !EsPlantillaFacturaMantenimiento(x) && !EsPlantillaCobranza(x) && !EsPlantillaTareas(x))
                 .ToList(),
             _ => _allTemplates.ToList()
         };
@@ -774,9 +893,27 @@
     {
         var text = $"{item.NombreVisible} {item.NombreMeta} {item.CuerpoTexto}".ToUpperInvariant();
         return !EsPlantillaFacturaMantenimiento(item)
+               && !EsPlantillaTareas(item)
                && (text.Contains("DEUDA", StringComparison.Ordinal)
                    || text.Contains("COBRANZA", StringComparison.Ordinal)
                    || text.Contains("TRANSFERENCIA", StringComparison.Ordinal));
+    }
+
+    private static bool EsPlantillaTareas(ConversacionPlantillaDto item)
+        => EsPlantillaTareaAsignada(item) || EsPlantillaTareaFinalizada(item);
+
+    private static bool EsPlantillaTareaAsignada(ConversacionPlantillaDto item)
+    {
+        var text = $"{item.NombreVisible} {item.NombreMeta} {item.CuerpoTexto}".ToUpperInvariant();
+        return text.Contains("TAREA_ASIGNADA", StringComparison.Ordinal)
+               || (text.Contains("TAREA", StringComparison.Ordinal) && text.Contains("ASIGNADA", StringComparison.Ordinal));
+    }
+
+    private static bool EsPlantillaTareaFinalizada(ConversacionPlantillaDto item)
+    {
+        var text = $"{item.NombreVisible} {item.NombreMeta} {item.CuerpoTexto}".ToUpperInvariant();
+        return text.Contains("TAREA_FINALIZADA", StringComparison.Ordinal)
+               || (text.Contains("TAREA", StringComparison.Ordinal) && text.Contains("FINALIZADA", StringComparison.Ordinal));
     }
 
     private static string FormatDate(DateTime value)
@@ -796,6 +933,8 @@
         public const string Plantilla = "Plantilla";
         public const string Factura = "Factura";
         public const string Cobranza = "Cobranza";
+        public const string TareaAsignada = "Tarea asignada";
+        public const string TareaFinalizada = "Tarea finalizada";
     }
 
 }
