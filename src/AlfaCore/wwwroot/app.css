@@ -20162,3 +20162,24 @@ html[data-theme="light"] .pos-charge-modal,
 html[data-theme="light"] .pos-settings-modal {
     color: #1f2937;
 }
+
+.conversations-page--odoo .conversations-chat__header {
+    z-index: 520;
+    overflow: visible;
+}
+
+.conversations-page--odoo .conversation-header-state {
+    z-index: 540;
+}
+
+.conversations-page--odoo .conversation-header-state__row.is-open {
+    z-index: 560;
+}
+
+.conversations-page--odoo .conversation-header-state__menu {
+    z-index: 580;
+}
+
+.conversations-page--odoo .conversations-window-banner {
+    z-index: 20;
+}
