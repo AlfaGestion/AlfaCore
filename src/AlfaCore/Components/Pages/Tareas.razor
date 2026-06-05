@@ -240,6 +240,102 @@
         white-space: nowrap;
     }
 
+    .shell__content .tareas-date-menu {
+        width: min(320px, calc(100vw - 3rem));
+        max-height: none;
+        overflow: visible;
+    }
+
+    .tareas-calendar {
+        display: grid;
+        gap: .6rem;
+    }
+
+    .tareas-calendar__head {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto auto;
+        align-items: center;
+        gap: .35rem;
+    }
+
+    .tareas-calendar__head strong {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: #e0f2fe;
+        font-size: .9rem;
+    }
+
+    .tareas-calendar__nav {
+        width: 30px;
+        height: 30px;
+        border: 1px solid rgba(56, 189, 248, .22);
+        border-radius: 8px;
+        background: rgba(8, 47, 73, .35);
+        color: #bae6fd;
+    }
+
+    .tareas-calendar__week,
+    .tareas-calendar__days {
+        display: grid;
+        grid-template-columns: repeat(7, minmax(0, 1fr));
+        gap: .25rem;
+    }
+
+    .tareas-calendar__week span {
+        color: #93c5fd;
+        font-size: .7rem;
+        font-weight: 900;
+        text-align: center;
+    }
+
+    .tareas-calendar__day {
+        display: grid;
+        place-items: center;
+        aspect-ratio: 1;
+        border: 1px solid transparent;
+        border-radius: 8px;
+        background: transparent;
+        color: #edf6ff;
+        font-size: .8rem;
+        font-weight: 800;
+    }
+
+    .tareas-calendar__day:hover {
+        background: rgba(8, 145, 178, .2);
+    }
+
+    .tareas-calendar__day.is-muted {
+        color: rgba(226, 232, 240, .45);
+    }
+
+    .tareas-calendar__day.is-today {
+        border-color: rgba(56, 189, 248, .42);
+        color: #bae6fd;
+    }
+
+    .tareas-calendar__day.is-selected {
+        border-color: rgba(45, 212, 191, .55);
+        background: rgba(20, 184, 166, .22);
+        color: #ccfbf1;
+    }
+
+    .tareas-calendar__actions {
+        display: flex;
+        justify-content: space-between;
+        gap: .5rem;
+        padding-top: .15rem;
+    }
+
+    .tareas-calendar__link {
+        border: 0;
+        background: transparent;
+        color: #7dd3fc;
+        font-size: .78rem;
+        font-weight: 900;
+    }
+
     .shell__content .tareas-assignment-dropdown__menu {
         position: absolute;
         top: calc(100% + .45rem);
@@ -490,6 +586,20 @@
         border-color: #bae6fd;
         background: #fff;
         box-shadow: 0 22px 52px rgba(15, 23, 42, .18);
+    }
+
+    html[data-theme="light"] .tareas-calendar__head strong,
+    html[data-theme="light"] .tareas-calendar__day {
+        color: #0f172a;
+    }
+
+    html[data-theme="light"] .tareas-calendar__day.is-muted {
+        color: #94a3b8;
+    }
+
+    html[data-theme="light"] .tareas-calendar__day.is-selected {
+        background: #ccfbf1;
+        color: #115e59;
     }
 
     html[data-theme="light"] .shell__content .tareas-assignment-dropdown__config {
@@ -885,10 +995,53 @@
         </div>
 
         <div class="tareas-form-grid">
-            <label class="tareas-field-picker">
+            <div class="tareas-field-picker" @onclick:stopPropagation @onkeydown="HandleFieldMenuKeyDown">
                 <span>Vencimiento</span>
-                <input class="tareas-field-date" type="date" value="@DateToInput(_taskDraft.FechaVencimiento)" @onchange="OnDraftDueDateChanged" />
-            </label>
+                <button type="button"
+                        class="tareas-field-button"
+                        aria-haspopup="dialog"
+                        aria-expanded="@_dueDateMenuOpen"
+                        @onclick="ToggleDueDateMenu">
+                    <span>@FormatDueDateForPicker(_taskDraft.FechaVencimiento)</span>
+                    <i class="bi bi-calendar3"></i>
+                </button>
+                @if (_dueDateMenuOpen)
+                {
+                    <div class="tareas-field-menu tareas-date-menu" role="dialog" aria-label="Seleccionar vencimiento">
+                        <div class="tareas-calendar">
+                            <div class="tareas-calendar__head">
+                                <strong>@GetCalendarTitle()</strong>
+                                <button type="button" class="tareas-calendar__nav" title="Mes anterior" @onclick="() => MoveCalendarMonth(-1)">
+                                    <i class="bi bi-chevron-left"></i>
+                                </button>
+                                <button type="button" class="tareas-calendar__nav" title="Mes siguiente" @onclick="() => MoveCalendarMonth(1)">
+                                    <i class="bi bi-chevron-right"></i>
+                                </button>
+                            </div>
+                            <div class="tareas-calendar__week" aria-hidden="true">
+                                @foreach (var dayName in CalendarDayNames)
+                                {
+                                    <span>@dayName</span>
+                                }
+                            </div>
+                            <div class="tareas-calendar__days">
+                                @foreach (var day in CalendarDays)
+                                {
+                                    <button type="button"
+                                            class="@GetCalendarDayClass(day)"
+                                            @onclick="() => SelectDueDate(day)">
+                                        @day.Day
+                                    </button>
+                                }
+                            </div>
+                            <div class="tareas-calendar__actions">
+                                <button type="button" class="tareas-calendar__link" @onclick="ClearDueDate">Borrar</button>
+                                <button type="button" class="tareas-calendar__link" @onclick="SelectTodayDueDate">Hoy</button>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
             <div class="tareas-field-picker" @onclick:stopPropagation @onkeydown="HandleFieldMenuKeyDown">
                 <span>Estado</span>
                 <button type="button"
@@ -1311,6 +1464,7 @@
     private string _assignedFilter = string.Empty;
     private bool _assignedFilterMenuOpen;
     private bool _assigneeMenuOpen;
+    private bool _dueDateMenuOpen;
     private bool _stateMenuOpen;
     private bool _priorityMenuOpen;
     private bool _listMenuOpen;
@@ -1330,6 +1484,7 @@
     private bool _showCompleted;
     private TareaSaveRequest _taskDraft = new();
     private TareaDraftSnapshot? _taskDraftSnapshot;
+    private DateTime _dueCalendarMonth = new(DateTime.Today.Year, DateTime.Today.Month, 1);
     private List<TareaAdjuntoDto> _taskAttachments = [];
     private List<PendingTaskAttachment> _pendingTaskAttachments = [];
     private IJSObjectReference? _attachmentsModule;
@@ -1352,6 +1507,12 @@
     private const long MaxAttachmentBytes = 50L * 1024L * 1024L;
     private const string AssignedByMeFilter = "__assigned_by_me";
     private const string EveryoneAssignee = "Todos";
+    private static readonly string[] CalendarDayNames = ["LU", "MA", "MI", "JU", "VI", "SA", "DO"];
+    private static readonly string[] CalendarMonthNames =
+    [
+        "enero", "febrero", "marzo", "abril", "mayo", "junio",
+        "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"
+    ];
     private static readonly FieldOption[] StateOptions =
     [
         new(TareaEstadoKeys.Pendiente, "Pendiente"),
@@ -1540,6 +1701,56 @@
         => _page.Listas.FirstOrDefault(x => x.IdLista == idLista)?.Nombre
            ?? _page.Listas.FirstOrDefault()?.Nombre
            ?? "Sin lista";
+
+    private IReadOnlyList<DateTime> CalendarDays
+    {
+        get
+        {
+            var first = new DateTime(_dueCalendarMonth.Year, _dueCalendarMonth.Month, 1);
+            var offset = ((int)first.DayOfWeek + 6) % 7;
+            var start = first.AddDays(-offset);
+            return Enumerable.Range(0, 42)
+                .Select(i => start.AddDays(i))
+                .ToArray();
+        }
+    }
+
+    private string GetCalendarTitle()
+        => $"{CalendarMonthNames[_dueCalendarMonth.Month - 1]} de {_dueCalendarMonth.Year}";
+
+    private string GetCalendarDayClass(DateTime day)
+    {
+        var classes = "tareas-calendar__day";
+        if (day.Month != _dueCalendarMonth.Month)
+            classes += " is-muted";
+        if (day.Date == DateTime.Today)
+            classes += " is-today";
+        if (_taskDraft.FechaVencimiento?.Date == day.Date)
+            classes += " is-selected";
+        return classes;
+    }
+
+    private static string FormatDueDateForPicker(DateTime? value)
+        => value?.ToString("dd/MM/yyyy") ?? "dd/mm/aaaa";
+
+    private void MoveCalendarMonth(int delta)
+        => _dueCalendarMonth = _dueCalendarMonth.AddMonths(delta);
+
+    private void SelectDueDate(DateTime day)
+    {
+        _taskDraft.FechaVencimiento = day.Date;
+        _dueCalendarMonth = new DateTime(day.Year, day.Month, 1);
+        _dueDateMenuOpen = false;
+    }
+
+    private void SelectTodayDueDate()
+        => SelectDueDate(DateTime.Today);
+
+    private void ClearDueDate()
+    {
+        _taskDraft.FechaVencimiento = null;
+        _dueDateMenuOpen = false;
+    }
 
     private static string GetFieldOptionClass<T>(T currentValue, T optionValue)
         => EqualityComparer<T>.Default.Equals(currentValue, optionValue)
@@ -2464,6 +2675,18 @@
         _assigneeMenuOpen = next;
     }
 
+    private void ToggleDueDateMenu()
+    {
+        var next = !_dueDateMenuOpen;
+        CloseTaskFieldMenus();
+        if (next)
+        {
+            var baseDate = _taskDraft.FechaVencimiento ?? DateTime.Today;
+            _dueCalendarMonth = new DateTime(baseDate.Year, baseDate.Month, 1);
+        }
+        _dueDateMenuOpen = next;
+    }
+
     private void ToggleStateMenu()
     {
         var next = !_stateMenuOpen;
@@ -2505,6 +2728,7 @@
 
     private void CloseTaskFieldMenus()
     {
+        _dueDateMenuOpen = false;
         _stateMenuOpen = false;
         _priorityMenuOpen = false;
         _listMenuOpen = false;
