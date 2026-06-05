@@ -20164,22 +20164,25 @@ html[data-theme="light"] .pos-settings-modal {
 }
 
 .conversations-page--odoo .conversations-chat__header {
-    z-index: 520;
-    overflow: visible;
+    position: relative !important;
+    z-index: 10000 !important;
+    overflow: visible !important;
 }
 
 .conversations-page--odoo .conversation-header-state {
-    z-index: 540;
+    position: relative !important;
+    z-index: 10020 !important;
 }
 
 .conversations-page--odoo .conversation-header-state__row.is-open {
-    z-index: 560;
+    position: relative !important;
+    z-index: 10040 !important;
 }
 
 .conversations-page--odoo .conversation-header-state__menu {
-    z-index: 580;
+    z-index: 10060 !important;
 }
 
 .conversations-page--odoo .conversations-window-banner {
-    z-index: 20;
+    z-index: 1 !important;
 }
