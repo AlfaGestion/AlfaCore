@@ -977,6 +977,19 @@ select {
     animation: calendario-modal-in .18s cubic-bezier(.2, .8, .2, 1) both;
 }
 
+.calendario-modal--info {
+    width: min(520px, calc(100vw - 2rem));
+}
+
+.calendario-modal--info .calendario-form {
+    grid-template-columns: 1fr;
+}
+
+.calendario-modal--info textarea[readonly] {
+    min-height: 86px;
+    resize: none;
+}
+
 .calendario-modal > header,
 .calendario-modal > footer {
     display: flex;

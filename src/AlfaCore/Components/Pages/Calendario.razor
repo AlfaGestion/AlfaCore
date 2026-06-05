@@ -408,6 +408,42 @@
     </section>
 }
 
+@if (_selectedHolidayInfo is not null)
+{
+    <div class="calendario-modal-backdrop" @onclick="CloseHolidayInfo"></div>
+    <section class="calendario-modal calendario-modal--info" @onclick:stopPropagation>
+        <header>
+            <div>
+                <span>Feriado oficial</span>
+                <strong>@_selectedHolidayInfo.Titulo</strong>
+            </div>
+            <button type="button" class="btn btn--ghost btn--icon" @onclick="CloseHolidayInfo" title="Cerrar">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        </header>
+
+        <div class="calendario-form">
+            <div class="field field--wide">
+                <label>Fecha</label>
+                <input value="@FormatUpcomingDate(_selectedHolidayInfo)" readonly />
+            </div>
+            <div class="field field--wide">
+                <label>Tipo</label>
+                <input value="@_selectedHolidayInfo.Tipo" readonly />
+            </div>
+            <div class="field field--wide">
+                <label>Detalle</label>
+                <textarea readonly>Feriado nacional de Argentina cargado como referencia del calendario oficial.</textarea>
+            </div>
+        </div>
+
+        <footer>
+            <span></span>
+            <button type="button" class="btn btn--primary" @onclick="CloseHolidayInfo">Cerrar</button>
+        </footer>
+    </section>
+}
+
 @code {
     private static readonly CultureInfo Culture = CultureInfo.GetCultureInfo("es-AR");
     private readonly string[] _dayNames = ["Lun", "Mar", "Mie", "Jue", "Vie", "Sab", "Dom"];
@@ -416,6 +452,7 @@
     private List<ConversacionTecnicoOptionDto> _tecnicos = [];
     private List<ConversacionPlantillaDto> _plantillas = [];
     private CalendarioEventoDto? _selectedEvent;
+    private UpcomingCalendarItem? _selectedHolidayInfo;
     private CalendarioEventoSaveRequest _form = NewForm(DateTime.Today);
     private bool _loading;
     private bool _saving;
@@ -627,6 +664,7 @@
 
     private void OpenNewEvent(DateTime day)
     {
+        _selectedHolidayInfo = null;
         _selectedEvent = null;
         _form = NewForm(day);
         _showEditor = true;
@@ -634,6 +672,7 @@
 
     private async Task OpenEvent(long idEvento)
     {
+        _selectedHolidayInfo = null;
         _showSidePanel = false;
         var result = await UiOps.RunAsync(() => CalendarioSvc.GetByIdAsync(idEvento), "No se pudo cargar el evento.");
         if (!result.Success || result.Value is null)
@@ -672,7 +711,7 @@
             return;
         }
 
-        SetFeedback("Feriado oficial", $"{item.Titulo} - {item.FechaInicio.ToString("dd/MM", Culture)}.", "success");
+        OpenHolidayInfo(item);
     }
 
     private async Task OpenEventFromPanel(long idEvento)
@@ -691,7 +730,16 @@
         }
 
         _showUpcomingPopover = false;
+        _selectedHolidayInfo = item;
     }
+
+    private void OpenHolidayInfo(CalendarioEventoDto item)
+    {
+        _selectedHolidayInfo = new UpcomingCalendarItem(TypeLabel(item.Tipo), item.Titulo, item.FechaInicio, item.FechaFin, EventColor(item), null);
+    }
+
+    private void CloseHolidayInfo()
+        => _selectedHolidayInfo = null;
 
     private async Task OpenActiveGuardAsync()
     {
