@@ -32,8 +32,11 @@
                         <button type="button" class="btn btn--ghost" style="width: 100%; justify-content: flex-start; margin-bottom: .25rem; white-space: nowrap;" @onclick="AplicarPlantillaTareaAsignadaAsync">
                             <i class="bi bi-person-check"></i> Tarea asignada
                         </button>
-                        <button type="button" class="btn btn--ghost" style="width: 100%; justify-content: flex-start; white-space: nowrap;" @onclick="AplicarPlantillaTareaFinalizadaAsync">
+                        <button type="button" class="btn btn--ghost" style="width: 100%; justify-content: flex-start; margin-bottom: .25rem; white-space: nowrap;" @onclick="AplicarPlantillaTareaFinalizadaAsync">
                             <i class="bi bi-check2-circle"></i> Tarea finalizada
+                        </button>
+                        <button type="button" class="btn btn--ghost" style="width: 100%; justify-content: flex-start; white-space: nowrap;" @onclick="AplicarPlantillaGuardiaAsync">
+                            <i class="bi bi-calendar-week"></i> Guardia
                         </button>
                     </div>
                 }
@@ -384,11 +387,28 @@
         "Fecha y hora de cierre: {{4}}."
     ]);
 
+    private static readonly string GuardiaTemplateBody = string.Join(Environment.NewLine,
+    [
+        "🛡️ *Aviso de guardia*",
+        string.Empty,
+        "Hola {{1}}, te recordamos que esta semana te corresponde estar de guardia.",
+        string.Empty,
+        "📅 Inicio: {{2}}",
+        "🏁 Fin: {{3}}",
+        string.Empty,
+        "Por favor, asegurate de estar disponible ante cualquier eventualidad que pueda surgir.",
+        "Ante cualquier duda, podés contactar al equipo de *AlfaNet*.",
+        string.Empty,
+        "¡Gracias por tu compromiso!",
+        "AlfaNet | Soluciones Informáticas"
+    ]);
+
     private string PreviewBody => RenderPreview(_form.CuerpoTexto, ParseExamples(_examplesText));
     private int BodyLength => _form.CuerpoTexto?.Length ?? 0;
     private bool IsBodyTooLong => BodyLength > MetaBodyMaxLength;
     private bool EsFormularioFacturaMantenimiento => EsPlantillaFacturaMantenimiento(_form);
     private bool EsFormularioTareas => EsPlantillaTareas(_form);
+    private bool EsFormularioGuardia => EsPlantillaGuardia(_form);
     private string CrearButtonLabel => _crearSeleccion;
     private string CrearButtonIcon => _crearSeleccion switch
     {
@@ -397,6 +417,7 @@
         CrearOpciones.Cobranza => "bi-receipt",
         CrearOpciones.TareaAsignada => "bi-person-check",
         CrearOpciones.TareaFinalizada => "bi-check2-circle",
+        CrearOpciones.Guardia => "bi-calendar-week",
         _ => "bi-plus-circle-fill"
     };
     private string CrearButtonStyle
@@ -532,6 +553,34 @@
         MarcarOpcionCrear(CrearOpciones.TareaFinalizada);
         AplicarFiltroModeloSeleccionado();
         AplicarModeloTarea(NewTareaFinalizadaForm(), "Tarea finalizada");
+
+        await Task.CompletedTask;
+    }
+
+    private async Task AplicarPlantillaGuardiaAsync()
+    {
+        _mostrarMenuCrear = false;
+        MarcarOpcionCrear(CrearOpciones.Guardia);
+        AplicarFiltroModeloSeleccionado();
+        var model = NewGuardiaForm();
+        var existing = _allTemplates.FirstOrDefault(x =>
+            string.Equals(x.NombreMeta, model.NombreMeta, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(x.Idioma, model.Idioma, StringComparison.OrdinalIgnoreCase));
+
+        _selectedId = existing?.IdPlantilla ?? 0;
+        model.IdPlantilla = _selectedId;
+        _form = model;
+        _examplesText = JoinMultilineValues(
+        [
+            "Evelyn",
+            "05/06/2026 09:00",
+            "12/06/2026 09:00"
+        ]);
+        _formEstadoMeta = string.IsNullOrWhiteSpace(existing?.EstadoMeta) ? "DRAFT" : existing.EstadoMeta;
+        _feedback = _selectedId > 0
+            ? "Plantilla de guardia cargada sobre la existente. Revisa los datos y guarda los cambios."
+            : "Plantilla de guardia cargada. Revisa los ejemplos y guarda el borrador.";
+        ClearError();
 
         await Task.CompletedTask;
     }
@@ -1009,8 +1058,29 @@
             CuerpoTexto = TareaFinalizadaTemplateBody
         };
 
+    private static ConversacionPlantillaDto NewGuardiaForm()
+        => new()
+        {
+            NombreVisible = "Aviso de guardia",
+            NombreMeta = "calendar_attendee",
+            Categoria = ConversacionPlantillaCategorias.Utility,
+            Idioma = "es_AR",
+            Activa = true,
+            EstadoMeta = "DRAFT",
+            CuerpoTexto = GuardiaTemplateBody
+        };
+
     private string VariableLabel(int index)
     {
+        if (EsFormularioGuardia)
+            return index switch
+            {
+                1 => "Tecnico",
+                2 => "Inicio",
+                3 => "Fin",
+                _ => $"Dato {index}"
+            };
+
         if (EsFormularioTareas)
             return index switch
             {
@@ -1128,8 +1198,9 @@
             CrearOpciones.Cobranza => _allTemplates.Where(EsPlantillaCobranza).ToList(),
             CrearOpciones.TareaAsignada => _allTemplates.Where(EsPlantillaTareaAsignada).ToList(),
             CrearOpciones.TareaFinalizada => _allTemplates.Where(EsPlantillaTareaFinalizada).ToList(),
+            CrearOpciones.Guardia => _allTemplates.Where(EsPlantillaGuardia).ToList(),
             CrearOpciones.Plantilla => _allTemplates
-                .Where(x => !EsPlantillaFacturaMantenimiento(x) && !EsPlantillaCobranza(x) && !EsPlantillaTareas(x))
+                .Where(x => !EsPlantillaFacturaMantenimiento(x) && !EsPlantillaCobranza(x) && !EsPlantillaTareas(x) && !EsPlantillaGuardia(x))
                 .ToList(),
             _ => _allTemplates.ToList()
         };
@@ -1155,6 +1226,13 @@
 
     private static bool EsPlantillaTareas(ConversacionPlantillaDto item)
         => EsPlantillaTareaAsignada(item) || EsPlantillaTareaFinalizada(item);
+
+    private static bool EsPlantillaGuardia(ConversacionPlantillaDto item)
+    {
+        var text = $"{item.NombreVisible} {item.NombreMeta} {item.CuerpoTexto}".ToUpperInvariant();
+        return text.Contains("CALENDAR_ATTENDEE", StringComparison.Ordinal)
+               || text.Contains("GUARDIA", StringComparison.Ordinal);
+    }
 
     private static bool EsPlantillaTareaAsignada(ConversacionPlantillaDto item)
     {
@@ -1189,6 +1267,7 @@
         public const string Cobranza = "Cobranza";
         public const string TareaAsignada = "Tarea asignada";
         public const string TareaFinalizada = "Tarea finalizada";
+        public const string Guardia = "Guardia";
     }
 
 }
