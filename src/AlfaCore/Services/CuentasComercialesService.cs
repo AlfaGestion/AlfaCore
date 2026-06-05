@@ -191,7 +191,11 @@ public sealed class CuentasComercialesService(
                     ISNULL(base.DOCUMENTO_TIPO, ''),
                     ISNULL(base.NUMERO_DOCUMENTO, ''),
                     ISNULL(base.IVA, ''),
-                    COALESCE(NULLIF(ISNULL(base.OBSERVACIONES, ''), ''), NULLIF(ISNULL(adic.OBSERVACIONES, ''), ''), ''),
+                    COALESCE(
+                        NULLIF(LTRIM(RTRIM(CAST(adic.OBSERVACIONES AS nvarchar(max)))), ''),
+                        NULLIF(LTRIM(RTRIM(CAST(base.OBSERVACIONES AS nvarchar(max)))), ''),
+                        ''
+                    ),
                     base.Limite_Credito,
                     ISNULL(base.idCond_Cpra_Vta, ''),
                     ISNULL(base.IdLista, ''),
@@ -661,6 +665,7 @@ public sealed class CuentasComercialesService(
                     throw new InvalidOperationException("No se pudo actualizar MA_CUENTASADIC para la cuenta indicada.");
             }
 
+            await EnsureCuentaAdicObservacionesSavedAsync(cn, (SqlTransaction)tx, normalized, token);
             await UpsertCuentaObsAsync(cn, (SqlTransaction)tx, normalized, token);
             if (tipo == CuentaComercialTipo.Proveedor)
                 await ReplaceDescuentosProveedorAsync(cn, (SqlTransaction)tx, normalized, token);
@@ -1461,6 +1466,23 @@ public sealed class CuentasComercialesService(
         cmd.Parameters.AddWithValue("@ConceptoIb", DbNullable(request.ConceptoIb));
         cmd.Parameters.AddWithValue("@NroConstanciaIb", DbNullable(request.NroConstanciaIb));
         await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    private static async Task EnsureCuentaAdicObservacionesSavedAsync(SqlConnection cn, SqlTransaction tx, CuentaComercialSaveRequest request, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT TOP (1) ISNULL(CAST(OBSERVACIONES AS nvarchar(max)), '')
+            FROM dbo.MA_CUENTASADIC
+            WHERE UPPER(LTRIM(RTRIM(CODIGO))) = @Codigo;
+            """;
+
+        await using var cmd = new SqlCommand(sql, cn, tx);
+        cmd.Parameters.AddWithValue("@Codigo", request.Codigo.Trim().ToUpperInvariant());
+        var stored = Convert.ToString(await cmd.ExecuteScalarAsync(ct))?.Trim() ?? string.Empty;
+        var expected = request.Observaciones?.Trim() ?? string.Empty;
+
+        if (!string.Equals(stored, expected, StringComparison.Ordinal))
+            throw new InvalidOperationException("La observacion del cliente no quedo guardada en MA_CUENTASADIC.");
     }
 
     private static async Task ReplaceDescuentosProveedorAsync(SqlConnection cn, SqlTransaction tx, CuentaComercialSaveRequest request, CancellationToken ct)
