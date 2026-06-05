@@ -1710,7 +1710,8 @@
 
         _sendingBulkTemplate = true;
         _bulkTemplateError = string.Empty;
-        var sent = 0;
+        var acceptedByMeta = 0;
+        var pendingConfirmation = 0;
         var failed = 0;
         try
         {
@@ -1720,13 +1721,21 @@
                 try
                 {
                     var conversation = await ConversacionesSvc.CreateOrGetWhatsAppConversationAsync(new ConversacionCrearWhatsAppRequest { TelefonoWhatsApp = phone });
-                    await ConversacionesSvc.SendTemplateMessageAsync(new ConversacionPlantillaSendRequest
+                    var result = await ConversacionesSvc.SendTemplateMessageAsync(new ConversacionPlantillaSendRequest
                     {
                         IdConversacion = conversation.IdConversacion,
                         IdPlantilla = template.IdPlantilla,
                         ValoresVariables = values
                     });
-                    sent++;
+
+                    if (IsKnownFailedDeliveryState(result.EstadoEnvio))
+                        failed++;
+                    else
+                    {
+                        acceptedByMeta++;
+                        if (!IsKnownDeliveredDeliveryState(result.EstadoEnvio))
+                            pendingConfirmation++;
+                    }
                 }
                 catch
                 {
@@ -1736,7 +1745,7 @@
 
             _sendingBulkTemplate = false;
             CloseBulkTemplateModal();
-            SetFeedback(AppUiMessage.Success("EnvÃ­o masivo finalizado", $"Plantillas enviadas: {sent}. Fallidas: {failed}."));
+            SetFeedback(BuildBulkTemplateFeedback(acceptedByMeta, failed, pendingConfirmation));
         }
         finally
         {
@@ -2114,6 +2123,42 @@
             .Where(x => x.Length > 0)
             .ToList();
     }
+
+    private static AppUiMessage BuildBulkTemplateFeedback(int acceptedByMeta, int failed, int pendingConfirmation)
+    {
+        var hasUnconfirmed = pendingConfirmation > 0;
+        return new AppUiMessage
+        {
+            Severity = failed > 0 || hasUnconfirmed ? AppUiFeedbackSeverity.Warning : AppUiFeedbackSeverity.Success,
+            Title = "Envío masivo finalizado",
+            Message = BuildBulkTemplateResultMessage(acceptedByMeta, failed, pendingConfirmation),
+            Suggestion = hasUnconfirmed
+                ? "La entrega final puede actualizarse después cuando WhatsApp informe el estado."
+                : string.Empty
+        };
+    }
+
+    private static string BuildBulkTemplateResultMessage(int acceptedByMeta, int failed, int pendingConfirmation)
+    {
+        var parts = new List<string>
+        {
+            $"Solicitudes aceptadas por Meta: {acceptedByMeta}.",
+            $"Fallidas al intentar enviar: {failed}."
+        };
+
+        if (pendingConfirmation > 0)
+            parts.Add($"Pendientes de confirmación de entrega: {pendingConfirmation}.");
+
+        return string.Join(" ", parts);
+    }
+
+    private static bool IsKnownFailedDeliveryState(string? state)
+        => !string.IsNullOrWhiteSpace(state)
+           && state.Contains("ERROR", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsKnownDeliveredDeliveryState(string? state)
+        => string.Equals(state, "ENTREGADO", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(state, "LEIDO", StringComparison.OrdinalIgnoreCase);
 
     private static void AddTemplateValueBlock(List<string> result, List<string> lines)
     {
