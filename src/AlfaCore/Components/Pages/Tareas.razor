@@ -290,7 +290,7 @@
                                     @tarea.ListaNombre
                                     @if (!string.IsNullOrWhiteSpace(tarea.UsuarioAsignado))
                                     {
-                                        <span> · @tarea.UsuarioAsignado</span>
+                                        <span> · @GetAssigneeSummary(tarea.UsuarioAsignado)</span>
                                     }
                                     @if (tarea.FechaVencimiento is not null)
                                     {
@@ -341,6 +341,10 @@
                                 </span>
                                 <span>
                                     @tarea.ListaNombre · completada @FormatDateTime(tarea.FechaHoraCompletada)
+                                    @if (!string.IsNullOrWhiteSpace(tarea.UsuarioAsignado))
+                                    {
+                                        <span> · @GetAssigneeSummary(tarea.UsuarioAsignado)</span>
+                                    }
                                     @if (tarea.Adjuntos > 0)
                                     {
                                         <span> · <i class="bi bi-paperclip"></i> @tarea.Adjuntos</span>
@@ -456,15 +460,41 @@
                     }
                 </select>
             </label>
-            <label>
+            <div class="tareas-assignment-picker">
                 <span>Asignado a</span>
-                <select @bind="_taskDraft.UsuarioAsignado">
-                    @foreach (var user in AssigneeOptions)
+                <div class="tareas-assignment-dropdown" @onclick:stopPropagation @onkeydown="HandleAssignmentKeyDown">
+                    <button type="button"
+                            class="tareas-assignment-dropdown__button"
+                            aria-haspopup="listbox"
+                            aria-expanded="@_assigneeMenuOpen"
+                            @onclick="ToggleAssigneeMenu">
+                        <span>@GetAssigneeSummary(_taskDraft.UsuarioAsignado)</span>
+                        <i class="bi bi-chevron-down"></i>
+                    </button>
+                    @if (_assigneeMenuOpen)
                     {
-                        <option value="@user">@user</option>
+                        <div class="tareas-assignment-dropdown__menu" role="listbox">
+                            <button type="button" class="tareas-assignment-dropdown__config" @onclick="OpenGroupsModal">
+                                <i class="bi bi-sliders"></i>
+                                <span>Configurar grupos</span>
+                            </button>
+                            @foreach (var user in AssigneeOptions)
+                            {
+                                <label class="@GetAssigneeOptionClass(user)">
+                                    <input type="checkbox"
+                                           checked="@IsAssigneeSelected(user)"
+                                           @onchange="e => ToggleAssignee(user, e)" />
+                                    <span>@user</span>
+                                    @if (IsAssigneeSelected(user))
+                                    {
+                                        <i class="bi bi-check2"></i>
+                                    }
+                                </label>
+                            }
+                        </div>
                     }
-                </select>
-            </label>
+                </div>
+            </div>
         </div>
 
         <div class="tareas-task-share">
@@ -651,6 +681,52 @@
     </section>
 }
 
+@if (_showGroupsModal)
+{
+    <button type="button" class="modal-backdrop app-modal-backdrop no-print" aria-label="Cerrar grupos" @onclick="CloseGroupsModal"></button>
+    <section class="tareas-modal tareas-groups-modal panel-card no-print" @onclick:stopPropagation>
+        <div class="tareas-modal__head">
+            <div>
+                <span class="tareas-modal-kicker">Asignaciones</span>
+                <h3>Grupos de tareas</h3>
+            </div>
+            <button type="button" class="drawer__close" @onclick="CloseGroupsModal" title="Cerrar">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        </div>
+
+        <div class="tareas-groups-grid">
+            @foreach (var group in TeamAssigneeOptions.Where(IsTeamGroup))
+            {
+                <section class="tareas-group-box">
+                    <strong>@group</strong>
+                    <div class="tareas-share-users">
+                        @foreach (var user in UserAssigneeOptions)
+                        {
+                            <label>
+                                <input type="checkbox"
+                                       checked="@IsGroupMemberSelected(group, user)"
+                                       @onchange="e => ToggleGroupMember(group, user, e)" />
+                                <span>@user</span>
+                            </label>
+                        }
+                    </div>
+                </section>
+            }
+        </div>
+
+        <div class="tareas-modal__actions">
+            <button type="button" class="btn btn--ghost" @onclick="CloseGroupsModal">
+                Cancelar
+            </button>
+            <span></span>
+            <button type="button" class="btn btn--primary" @onclick="SaveGroupsAsync" disabled="@_savingGroups">
+                <i class="bi bi-save"></i> @(_savingGroups ? "Guardando..." : "Guardar grupos")
+            </button>
+        </div>
+    </section>
+}
+
 @if (_showImagePreview)
 {
     <button type="button" class="modal-backdrop app-modal-backdrop no-print" aria-label="Cerrar imagen" @onclick="CloseImagePreview"></button>
@@ -672,6 +748,7 @@
     private int? _selectedListId;
     private string _assignedFilter = string.Empty;
     private bool _assignedFilterMenuOpen;
+    private bool _assigneeMenuOpen;
     private string _quickTaskTitle = string.Empty;
     private string _quickNoteText = string.Empty;
     private bool _showTaskModal;
@@ -696,15 +773,19 @@
     private int? _editingListId;
     private string _listDraft = string.Empty;
     private bool _showShareModal;
+    private bool _showGroupsModal;
+    private bool _savingGroups;
     private TareaObjetoCompartidoTipo _shareType;
     private long _shareObjectId;
     private string _shareTitle = string.Empty;
     private bool _shareAll;
     private List<string> _shareUsers = [];
+    private List<TareaGrupoDto> _groupDrafts = [];
     private long? _draggingTaskId;
     private int? _dragOverListId;
     private const long MaxAttachmentBytes = 50L * 1024L * 1024L;
     private const string AssignedByMeFilter = "__assigned_by_me";
+    private static readonly string[] TeamAssigneeOptions = ["Todos", "Soporte", "Programación"];
 
     private string CurrentUser => AppUserSession.GetCurrentUserName(Environment.UserName).Trim();
     private int DefaultListId => _page.Listas.FirstOrDefault(x => x.EsDefault)?.IdLista ?? _page.Listas.FirstOrDefault()?.IdLista ?? 0;
@@ -731,8 +812,10 @@
     {
         get
         {
-            var values = _page.Usuarios.Select(x => x.Nombre)
+            var values = TeamAssigneeOptions
+                .Concat(_page.Usuarios.Select(x => x.Nombre))
                 .Append(CurrentUser)
+                .Concat(ParseAssignees(_taskDraft.UsuarioAsignado))
                 .Where(x => !string.IsNullOrWhiteSpace(x))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .OrderBy(x => x)
@@ -741,6 +824,14 @@
         }
     }
 
+    private IReadOnlyList<string> UserAssigneeOptions => _page.Usuarios
+        .Select(x => x.Nombre)
+        .Append(CurrentUser)
+        .Where(x => !string.IsNullOrWhiteSpace(x))
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .OrderBy(x => x)
+        .ToArray();
+
     private IReadOnlyList<AssignedFilterOption> AssignedFilterOptions
         => new[]
             {
@@ -748,6 +839,7 @@
                 new AssignedFilterOption(CurrentUser, "Asignadas a mí", "bi-person-check"),
                 new AssignedFilterOption(AssignedByMeFilter, "Asignadas por mí", "bi-send-check")
             }
+            .Concat(TeamAssigneeOptions.Select(x => new AssignedFilterOption(x, x, x == "Todos" ? "bi-broadcast" : "bi-diagram-3")))
             .Concat(_page.Usuarios
                 .Select(x => x.Nombre)
                 .Where(x => !string.IsNullOrWhiteSpace(x) && !string.Equals(x, CurrentUser, StringComparison.OrdinalIgnoreCase))
@@ -800,9 +892,9 @@
             return false;
         if (string.Equals(_assignedFilter, AssignedByMeFilter, StringComparison.Ordinal))
             return string.Equals(tarea.UsuarioAlta, CurrentUser, StringComparison.OrdinalIgnoreCase)
-                && !string.Equals(tarea.UsuarioAsignado, CurrentUser, StringComparison.OrdinalIgnoreCase);
+                && !AssignmentMatchesFilter(tarea.UsuarioAsignado, CurrentUser);
         if (!string.IsNullOrWhiteSpace(_assignedFilter)
-            && !string.Equals(tarea.UsuarioAsignado, _assignedFilter, StringComparison.OrdinalIgnoreCase))
+            && !AssignmentMatchesFilter(tarea.UsuarioAsignado, _assignedFilter))
             return false;
         return true;
     }
@@ -861,6 +953,118 @@
             TareaPrioridadKeys.Media => 1,
             _ => 2
         };
+
+    private static string[] ParseAssignees(string? value)
+        => (value ?? string.Empty)
+            .Split([',', ';', '|'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+    private static bool AssignmentHasExact(string? assignedTo, string assignee)
+        => ParseAssignees(assignedTo).Any(x => string.Equals(x, assignee, StringComparison.OrdinalIgnoreCase));
+
+    private bool AssignmentMatchesFilter(string? assignedTo, string assignee)
+    {
+        var assignees = ParseAssignees(assignedTo);
+        if (assignees.Any(x => string.Equals(x, assignee, StringComparison.OrdinalIgnoreCase)))
+            return true;
+
+        var assigneeIsTeam = TeamAssigneeOptions.Any(x => string.Equals(x, assignee, StringComparison.OrdinalIgnoreCase));
+        if (assigneeIsTeam)
+            return false;
+
+        return assignees.Any(x => string.Equals(x, "Todos", StringComparison.OrdinalIgnoreCase))
+            || _page.Grupos.Any(group =>
+                group.Usuarios.Contains(assignee, StringComparer.OrdinalIgnoreCase)
+                && assignees.Any(x => string.Equals(x, group.Grupo, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    private static string GetAssigneeSummary(string? assignedTo)
+    {
+        var assignees = ParseAssignees(assignedTo);
+        return assignees.Length == 0 ? "Sin asignar" : string.Join(", ", assignees);
+    }
+
+    private bool IsAssigneeSelected(string assignee)
+        => AssignmentHasExact(_taskDraft.UsuarioAsignado, assignee);
+
+    private string GetAssigneeOptionClass(string assignee)
+        => IsAssigneeSelected(assignee) ? "is-selected" : string.Empty;
+
+    private void ToggleAssignee(string assignee, ChangeEventArgs args)
+    {
+        var selected = Convert.ToBoolean(args.Value);
+        var values = ParseAssignees(_taskDraft.UsuarioAsignado).ToList();
+
+        if (selected && !values.Contains(assignee, StringComparer.OrdinalIgnoreCase))
+            values.Add(assignee);
+        if (!selected)
+            values.RemoveAll(x => string.Equals(x, assignee, StringComparison.OrdinalIgnoreCase));
+
+        _taskDraft.UsuarioAsignado = string.Join(", ", values);
+    }
+
+    private static bool IsTeamGroup(string value)
+        => !string.Equals(value, "Todos", StringComparison.OrdinalIgnoreCase);
+
+    private void OpenGroupsModal()
+    {
+        _groupDrafts = TeamAssigneeOptions
+            .Where(IsTeamGroup)
+            .Select(group => new TareaGrupoDto
+            {
+                Grupo = group,
+                Usuarios = _page.Grupos
+                    .FirstOrDefault(x => string.Equals(x.Grupo, group, StringComparison.OrdinalIgnoreCase))
+                    ?.Usuarios.ToList() ?? []
+            })
+            .ToList();
+        _assigneeMenuOpen = false;
+        _showGroupsModal = true;
+    }
+
+    private void CloseGroupsModal()
+        => _showGroupsModal = false;
+
+    private bool IsGroupMemberSelected(string group, string user)
+        => _groupDrafts
+            .FirstOrDefault(x => string.Equals(x.Grupo, group, StringComparison.OrdinalIgnoreCase))
+            ?.Usuarios.Contains(user, StringComparer.OrdinalIgnoreCase) == true;
+
+    private void ToggleGroupMember(string group, string user, ChangeEventArgs args)
+    {
+        var draft = _groupDrafts.FirstOrDefault(x => string.Equals(x.Grupo, group, StringComparison.OrdinalIgnoreCase));
+        if (draft is null)
+        {
+            draft = new TareaGrupoDto { Grupo = group };
+            _groupDrafts.Add(draft);
+        }
+
+        var selected = Convert.ToBoolean(args.Value);
+        if (selected && !draft.Usuarios.Contains(user, StringComparer.OrdinalIgnoreCase))
+            draft.Usuarios.Add(user);
+        if (!selected)
+            draft.Usuarios.RemoveAll(x => string.Equals(x, user, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private async Task SaveGroupsAsync()
+    {
+        _savingGroups = true;
+        var result = await UiOps.RunAsync(() => TareasSvc.SaveGroupsAsync(new TareaGruposSaveRequest
+        {
+            Grupos = _groupDrafts,
+            UsuarioAccion = CurrentUser
+        }), "No se pudieron guardar los grupos.");
+        _savingGroups = false;
+
+        _feedback = result.Feedback;
+        if (result.Success)
+        {
+            _showGroupsModal = false;
+            await LoadAsync();
+        }
+    }
 
     private static bool IsSharedList(TareaListaDto lista)
         => lista.CompartidaConTodos || lista.UsuariosCompartidos.Count > 0;
@@ -1541,6 +1745,9 @@
     private void ToggleAssignedFilterMenu()
         => _assignedFilterMenuOpen = !_assignedFilterMenuOpen;
 
+    private void ToggleAssigneeMenu()
+        => _assigneeMenuOpen = !_assigneeMenuOpen;
+
     private void SelectAssignedFilter(string value)
     {
         _assignedFilter = value;
@@ -1556,6 +1763,7 @@
     private async Task HandlePageClickAsync()
     {
         _assignedFilterMenuOpen = false;
+        _assigneeMenuOpen = false;
         await DismissFeedbackAsync();
     }
 
@@ -1563,6 +1771,12 @@
     {
         if (string.Equals(args.Key, "Escape", StringComparison.OrdinalIgnoreCase))
             _assignedFilterMenuOpen = false;
+    }
+
+    private void HandleAssignmentKeyDown(KeyboardEventArgs args)
+    {
+        if (string.Equals(args.Key, "Escape", StringComparison.OrdinalIgnoreCase))
+            _assigneeMenuOpen = false;
     }
 
     private async Task DismissFeedbackAsync()

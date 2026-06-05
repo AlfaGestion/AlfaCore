@@ -12,6 +12,7 @@ public sealed class TareasService(
     private const string ModuleName = "Tareas";
     private const string SistemaFijo = "CN000PR";
     private const long MaxAttachmentBytes = 50L * 1024L * 1024L;
+    private static readonly string[] TeamAssigneeGroups = ["Soporte", "Programación"];
     private static readonly string[] AllowedAttachmentPrefixes = ["image/", "audio/", "video/"];
 
     private string ConnectionString => sessionService.GetConnectionString().Length > 0
@@ -27,6 +28,7 @@ public sealed class TareasService(
             await cn.OpenAsync(token);
             await EnsureDefaultListAsync(cn, user, token);
             await EnsureTaskPriorityColumnAsync(cn, token);
+            await EnsureTaskGroupsReadyAsync(cn, token);
             var userActiveFilter = await HasUsuarioActivoColumnAsync(cn, token)
                 ? "AND ISNULL(Activo, 1) = 1"
                 : string.Empty;
@@ -109,7 +111,16 @@ public sealed class TareasService(
                       AND (
                             lv.IdLista IS NOT NULL
                          OR UPPER(LTRIM(RTRIM(ISNULL(t.UsuarioAlta, '')))) = UPPER(LTRIM(RTRIM(@Usuario)))
-                         OR UPPER(LTRIM(RTRIM(ISNULL(t.UsuarioAsignado, '')))) = UPPER(LTRIM(RTRIM(@Usuario)))
+                         OR CHARINDEX(N'|' + UPPER(LTRIM(RTRIM(@Usuario))) + N'|', N'|' + REPLACE(REPLACE(UPPER(LTRIM(RTRIM(ISNULL(t.UsuarioAsignado, '')))), N';', N'|'), N',', N'|') + N'|') > 0
+                         OR CHARINDEX(N'|TODOS|', N'|' + REPLACE(REPLACE(UPPER(LTRIM(RTRIM(ISNULL(t.UsuarioAsignado, '')))), N';', N'|'), N',', N'|') + N'|') > 0
+                         OR EXISTS
+                            (
+                                SELECT 1
+                                FROM dbo.ALFACORE_TAREAS_GRUPOS_MIEMBROS gm
+                                WHERE ISNULL(gm.Activa, 1) = 1
+                                  AND UPPER(LTRIM(RTRIM(ISNULL(gm.Usuario, '')))) = UPPER(LTRIM(RTRIM(@Usuario)))
+                                  AND CHARINDEX(N'|' + UPPER(LTRIM(RTRIM(gm.Grupo))) + N'|', N'|' + REPLACE(REPLACE(UPPER(LTRIM(RTRIM(ISNULL(t.UsuarioAsignado, '')))), N';', N'|'), N',', N'|') + N'|') > 0
+                            )
                          OR EXISTS
                             (
                                 SELECT 1
@@ -187,7 +198,16 @@ public sealed class TareasService(
                       AND (
                             lv.IdLista IS NOT NULL
                          OR UPPER(LTRIM(RTRIM(ISNULL(t.UsuarioAlta, '')))) = UPPER(LTRIM(RTRIM(@Usuario)))
-                         OR UPPER(LTRIM(RTRIM(ISNULL(t.UsuarioAsignado, '')))) = UPPER(LTRIM(RTRIM(@Usuario)))
+                         OR CHARINDEX(N'|' + UPPER(LTRIM(RTRIM(@Usuario))) + N'|', N'|' + REPLACE(REPLACE(UPPER(LTRIM(RTRIM(ISNULL(t.UsuarioAsignado, '')))), N';', N'|'), N',', N'|') + N'|') > 0
+                         OR CHARINDEX(N'|TODOS|', N'|' + REPLACE(REPLACE(UPPER(LTRIM(RTRIM(ISNULL(t.UsuarioAsignado, '')))), N';', N'|'), N',', N'|') + N'|') > 0
+                         OR EXISTS
+                            (
+                                SELECT 1
+                                FROM dbo.ALFACORE_TAREAS_GRUPOS_MIEMBROS gm
+                                WHERE ISNULL(gm.Activa, 1) = 1
+                                  AND UPPER(LTRIM(RTRIM(ISNULL(gm.Usuario, '')))) = UPPER(LTRIM(RTRIM(@Usuario)))
+                                  AND CHARINDEX(N'|' + UPPER(LTRIM(RTRIM(gm.Grupo))) + N'|', N'|' + REPLACE(REPLACE(UPPER(LTRIM(RTRIM(ISNULL(t.UsuarioAsignado, '')))), N';', N'|'), N',', N'|') + N'|') > 0
+                            )
                          OR EXISTS
                             (
                                 SELECT 1
@@ -265,6 +285,13 @@ public sealed class TareasService(
                 ORDER BY NOMBRE;
 
                 SELECT
+                    ISNULL(Grupo, '') AS Grupo,
+                    ISNULL(Usuario, '') AS Usuario
+                FROM dbo.ALFACORE_TAREAS_GRUPOS_MIEMBROS
+                WHERE ISNULL(Activa, 1) = 1
+                ORDER BY Grupo, Usuario;
+
+                SELECT
                     TipoObjeto,
                     IdObjeto,
                     CONVERT(bit, ISNULL(EsPublico, 0)) AS EsPublico,
@@ -284,6 +311,7 @@ public sealed class TareasService(
                 Usuarios = (await multi.ReadAsync<TareaUsuarioDto>()).ToList()
             };
 
+            page.Grupos = BuildTaskGroups((await multi.ReadAsync<TareaGroupMemberRow>()).ToList());
             ApplySharing(page, (await multi.ReadAsync<TareaShareRow>()).ToList());
             return page;
         }, "No se pudieron cargar las tareas.", ct);
@@ -384,6 +412,57 @@ public sealed class TareasService(
                 cancellationToken: token));
         }, "No se pudo eliminar la lista de tareas.", ct);
 
+    public Task SaveGroupsAsync(TareaGruposSaveRequest request, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "SaveGroups", async token =>
+        {
+            ArgumentNullException.ThrowIfNull(request);
+            var user = NormalizeUser(request.UsuarioAccion);
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await EnsureTaskGroupsReadyAsync(cn, token);
+
+            foreach (var groupName in TeamAssigneeGroups)
+            {
+                var members = request.Grupos
+                    .FirstOrDefault(x => string.Equals(x.Grupo, groupName, StringComparison.OrdinalIgnoreCase))
+                    ?.Usuarios ?? [];
+                var normalizedMembers = members
+                    .Select(NormalizeUser)
+                    .Where(x => !string.IsNullOrWhiteSpace(x))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+
+                using var tx = cn.BeginTransaction();
+                await cn.ExecuteAsync(new CommandDefinition(
+                    """
+                    UPDATE dbo.ALFACORE_TAREAS_GRUPOS_MIEMBROS
+                    SET Activa = 0,
+                        FechaHoraModificacion = GETDATE(),
+                        UsuarioModificacion = @UsuarioAccion
+                    WHERE UPPER(LTRIM(RTRIM(Grupo))) = UPPER(LTRIM(RTRIM(@Grupo)));
+                    """,
+                    new { Grupo = groupName, UsuarioAccion = user },
+                    transaction: tx,
+                    cancellationToken: token));
+
+                foreach (var member in normalizedMembers)
+                {
+                    await cn.ExecuteAsync(new CommandDefinition(
+                        """
+                        INSERT INTO dbo.ALFACORE_TAREAS_GRUPOS_MIEMBROS
+                            (Grupo, Usuario, UsuarioAlta, FechaHoraAlta, Activa)
+                        VALUES
+                            (@Grupo, @Usuario, @UsuarioAccion, GETDATE(), 1);
+                        """,
+                        new { Grupo = groupName, Usuario = member, UsuarioAccion = user },
+                        transaction: tx,
+                        cancellationToken: token));
+                }
+
+                tx.Commit();
+            }
+        }, "No se pudieron guardar los grupos de tareas.", ct);
+
     public Task<long> SaveTaskAsync(TareaSaveRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "SaveTask", async token =>
         {
@@ -395,7 +474,7 @@ public sealed class TareasService(
             var estado = NormalizeState(request.Estado);
             var prioridad = NormalizePriority(request.Prioridad);
             var user = NormalizeUser(request.UsuarioAccion);
-            var asignado = string.IsNullOrWhiteSpace(request.UsuarioAsignado) ? user : request.UsuarioAsignado.Trim();
+            var asignado = NormalizeAssignees(request.UsuarioAsignado, user);
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
@@ -909,6 +988,21 @@ public sealed class TareasService(
         }
     }
 
+    private static List<TareaGrupoDto> BuildTaskGroups(IReadOnlyList<TareaGroupMemberRow> rows)
+        => TeamAssigneeGroups
+            .Select(groupName => new TareaGrupoDto
+            {
+                Grupo = groupName,
+                Usuarios = rows
+                    .Where(x => string.Equals(x.Grupo, groupName, StringComparison.OrdinalIgnoreCase))
+                    .Select(x => x.Usuario)
+                    .Where(x => !string.IsNullOrWhiteSpace(x))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(x => x)
+                    .ToList()
+            })
+            .ToList();
+
     private static async Task<bool> IsListOwnedByUserAsync(SqlConnection cn, int idLista, string usuario, CancellationToken ct)
         => await cn.ExecuteScalarAsync<int>(new CommandDefinition(
             """
@@ -988,7 +1082,9 @@ public sealed class TareasService(
             cancellationToken: ct)) == 1;
 
     private static async Task<bool> CanAccessTaskAsync(SqlConnection cn, long idTarea, string usuario, CancellationToken ct)
-        => await cn.ExecuteScalarAsync<int>(new CommandDefinition(
+    {
+        await EnsureTaskGroupsReadyAsync(cn, ct);
+        return await cn.ExecuteScalarAsync<int>(new CommandDefinition(
             """
             SELECT CASE WHEN EXISTS
             (
@@ -1000,7 +1096,16 @@ public sealed class TareasService(
                   AND ISNULL(l.Activa, 1) = 1
                   AND (
                         UPPER(LTRIM(RTRIM(ISNULL(t.UsuarioAlta, '')))) = UPPER(LTRIM(RTRIM(@Usuario)))
-                     OR UPPER(LTRIM(RTRIM(ISNULL(t.UsuarioAsignado, '')))) = UPPER(LTRIM(RTRIM(@Usuario)))
+                     OR CHARINDEX(N'|' + UPPER(LTRIM(RTRIM(@Usuario))) + N'|', N'|' + REPLACE(REPLACE(UPPER(LTRIM(RTRIM(ISNULL(t.UsuarioAsignado, '')))), N';', N'|'), N',', N'|') + N'|') > 0
+                     OR CHARINDEX(N'|TODOS|', N'|' + REPLACE(REPLACE(UPPER(LTRIM(RTRIM(ISNULL(t.UsuarioAsignado, '')))), N';', N'|'), N',', N'|') + N'|') > 0
+                     OR EXISTS
+                        (
+                            SELECT 1
+                            FROM dbo.ALFACORE_TAREAS_GRUPOS_MIEMBROS gm
+                            WHERE ISNULL(gm.Activa, 1) = 1
+                              AND UPPER(LTRIM(RTRIM(ISNULL(gm.Usuario, '')))) = UPPER(LTRIM(RTRIM(@Usuario)))
+                              AND CHARINDEX(N'|' + UPPER(LTRIM(RTRIM(gm.Grupo))) + N'|', N'|' + REPLACE(REPLACE(UPPER(LTRIM(RTRIM(ISNULL(t.UsuarioAsignado, '')))), N';', N'|'), N',', N'|') + N'|') > 0
+                        )
                      OR UPPER(LTRIM(RTRIM(ISNULL(l.UsuarioAlta, '')))) = UPPER(LTRIM(RTRIM(@Usuario)))
                      OR EXISTS
                         (
@@ -1032,6 +1137,7 @@ public sealed class TareasService(
             """,
             new { IdTarea = idTarea, Usuario = usuario },
             cancellationToken: ct)) == 1;
+    }
 
     private static string ToSharedObjectType(TareaObjetoCompartidoTipo tipo)
         => tipo switch
@@ -1135,6 +1241,29 @@ public sealed class TareasService(
             throw new InvalidOperationException("La base activa todavía no tiene aplicada la actualización para adjuntos de tareas. Ejecutá Actualizaciones y volvé a guardar la tarea.");
     }
 
+    private static async Task EnsureTaskGroupsReadyAsync(SqlConnection cn, CancellationToken ct)
+        => await cn.ExecuteAsync(new CommandDefinition(
+            """
+            IF OBJECT_ID(N'dbo.ALFACORE_TAREAS_GRUPOS_MIEMBROS', N'U') IS NULL
+            BEGIN
+                CREATE TABLE dbo.ALFACORE_TAREAS_GRUPOS_MIEMBROS
+                (
+                    IdGrupoMiembro bigint IDENTITY(1,1) NOT NULL PRIMARY KEY,
+                    Grupo nvarchar(50) NOT NULL,
+                    Usuario nvarchar(120) NOT NULL,
+                    UsuarioAlta nvarchar(120) NULL,
+                    FechaHoraAlta datetime NOT NULL CONSTRAINT DF_ALFACORE_TAREAS_GRUPOS_MIEMBROS_FechaAlta DEFAULT (GETDATE()),
+                    UsuarioModificacion nvarchar(120) NULL,
+                    FechaHoraModificacion datetime NULL,
+                    Activa bit NOT NULL CONSTRAINT DF_ALFACORE_TAREAS_GRUPOS_MIEMBROS_Activa DEFAULT (1)
+                );
+
+                CREATE INDEX IX_ALFACORE_TAREAS_GRUPOS_MIEMBROS_GrupoUsuario
+                    ON dbo.ALFACORE_TAREAS_GRUPOS_MIEMBROS (Grupo, Usuario, Activa);
+            END;
+            """,
+            cancellationToken: ct));
+
     private static void ValidateAttachment(TareaAdjuntoUploadDto adjunto)
     {
         if (adjunto.Contenido.Length == 0 || adjunto.TamanoBytes <= 0)
@@ -1200,6 +1329,17 @@ public sealed class TareasService(
     private static string NormalizeUser(string? usuario)
         => string.IsNullOrWhiteSpace(usuario) ? Environment.UserName : usuario.Trim();
 
+    private static string NormalizeAssignees(string? usuarios, string fallbackUser)
+    {
+        var values = (usuarios ?? string.Empty)
+            .Split([',', ';', '|'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        return values.Length == 0 ? fallbackUser : string.Join(",", values);
+    }
+
     private static string NormalizeState(string? estado)
     {
         var value = (estado ?? string.Empty).Trim().ToUpperInvariant();
@@ -1221,6 +1361,12 @@ public sealed class TareasService(
         public long IdObjeto { get; set; }
         public bool EsPublico { get; set; }
         public string UsuarioDestino { get; set; } = string.Empty;
+    }
+
+    private sealed class TareaGroupMemberRow
+    {
+        public string Grupo { get; set; } = string.Empty;
+        public string Usuario { get; set; } = string.Empty;
     }
 
     private sealed class TareaAdjuntoRecord

@@ -25,6 +25,7 @@ public sealed class TareasPageDto
     public List<TareaItemDto> Completadas { get; set; } = [];
     public List<TareaNotaRapidaDto> NotasRapidas { get; set; } = [];
     public List<TareaUsuarioDto> Usuarios { get; set; } = [];
+    public List<TareaGrupoDto> Grupos { get; set; } = [];
 }
 
 public sealed class TareaListaDto
@@ -101,6 +102,12 @@ public sealed class TareaUsuarioDto
     public string Email { get; set; } = string.Empty;
 }
 
+public sealed class TareaGrupoDto
+{
+    public string Grupo { get; set; } = string.Empty;
+    public List<string> Usuarios { get; set; } = [];
+}
+
 public sealed class TareaSaveRequest
 {
     public long? IdTarea { get; set; }
@@ -129,6 +136,12 @@ public sealed class TareaCompartirRequest
     public long IdObjeto { get; set; }
     public bool CompartirConTodos { get; set; }
     public List<string> Usuarios { get; set; } = [];
+    public string UsuarioAccion { get; set; } = string.Empty;
+}
+
+public sealed class TareaGruposSaveRequest
+{
+    public List<TareaGrupoDto> Grupos { get; set; } = [];
     public string UsuarioAccion { get; set; } = string.Empty;
 }
 

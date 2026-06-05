@@ -3977,7 +3977,13 @@ html[data-theme="light"] .menu__search-result:hover {
 .conversations-list__header,
 .conversations-chat__header,
 .conversations-context__section {
+    position: relative;
     margin-bottom: .65rem;
+}
+
+.conversations-chat__header {
+    z-index: 80;
+    overflow: visible;
 }
 
 .conversations-list__items,
@@ -4208,6 +4214,8 @@ html[data-theme="light"] .menu__search-result:hover {
 }
 
 .conversation-header-state {
+    position: relative;
+    z-index: 12;
     display: flex;
     flex-direction: column;
     align-items: flex-end;
@@ -4229,6 +4237,7 @@ html[data-theme="light"] .menu__search-result:hover {
 }
 
 .conversation-header-state__row.is-open {
+    z-index: 60;
     border-color: rgba(14, 165, 233, 0.52);
     box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.12);
 }
@@ -4281,7 +4290,7 @@ html[data-theme="light"] .menu__search-result:hover {
     position: absolute;
     top: calc(100% + .32rem);
     right: 0;
-    z-index: 30;
+    z-index: 70;
     min-width: 178px;
     padding: .28rem;
     border: 1px solid rgba(14, 165, 233, 0.28);
@@ -10267,6 +10276,7 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
 }
 
 .tareas-form-grid label,
+.tareas-assignment-picker,
 .tareas-description {
     display: grid;
     gap: .55rem;
@@ -10279,6 +10289,114 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
 .tareas-form-grid select {
     min-height: 38px;
     padding: 0 .75rem;
+}
+
+.tareas-assignment-picker {
+    grid-column: 1 / -1;
+    position: relative;
+}
+
+.tareas-assignment-dropdown {
+    position: relative;
+}
+
+.tareas-assignment-dropdown__button {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .75rem;
+    min-height: 38px;
+    width: 100%;
+    padding: 0 .75rem;
+    border: 1px solid rgba(148, 163, 184, .2);
+    border-radius: 8px;
+    background: rgba(15, 23, 42, .3);
+    color: var(--color-text);
+    font-weight: 800;
+    text-align: left;
+}
+
+.tareas-assignment-dropdown__button span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.tareas-assignment-dropdown__menu {
+    position: absolute;
+    top: calc(100% + .35rem);
+    left: 0;
+    z-index: 20;
+    display: grid;
+    gap: .2rem;
+    width: min(360px, 100%);
+    max-height: 280px;
+    overflow: auto;
+    padding: .35rem;
+    border: 1px solid rgba(56, 189, 248, .24);
+    border-radius: 8px;
+    background: #071426;
+    box-shadow: 0 18px 46px rgba(0, 0, 0, .36);
+}
+
+.tareas-assignment-dropdown__menu label,
+.tareas-assignment-dropdown__config {
+    display: grid;
+    grid-template-columns: 18px minmax(0, 1fr) 18px;
+    align-items: center;
+    gap: .5rem;
+    min-height: 34px;
+    padding: .45rem .55rem;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--color-text);
+    font-weight: 700;
+    text-align: left;
+    cursor: pointer;
+}
+
+.tareas-assignment-dropdown__config {
+    width: 100%;
+    margin-bottom: .15rem;
+    color: #7dd3fc;
+}
+
+.tareas-assignment-dropdown__menu label:hover,
+.tareas-assignment-dropdown__menu label.is-selected,
+.tareas-assignment-dropdown__config:hover {
+    background: rgba(8, 145, 178, .22);
+}
+
+.tareas-assignment-dropdown__menu input {
+    width: 16px;
+    height: 16px;
+    min-height: auto;
+    accent-color: var(--accent);
+}
+
+.tareas-groups-modal {
+    width: min(760px, calc(100vw - 2rem));
+}
+
+.tareas-groups-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+}
+
+.tareas-group-box {
+    display: grid;
+    gap: .75rem;
+    padding: .8rem;
+    border: 1px solid rgba(148, 163, 184, .18);
+    border-radius: 8px;
+    background: rgba(15, 23, 42, .24);
+}
+
+.tareas-group-box > strong {
+    color: var(--color-text);
 }
 
 .tareas-description textarea {

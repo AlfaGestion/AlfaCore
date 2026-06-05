@@ -807,12 +807,31 @@ html[data-theme="light"] .tareas-quick-input,
 html[data-theme="light"] .tareas-title-input,
 html[data-theme="light"] .tareas-form-grid input,
 html[data-theme="light"] .tareas-form-grid select,
+html[data-theme="light"] .tareas-assignment-dropdown__button,
+html[data-theme="light"] .tareas-assignment-dropdown__menu,
+html[data-theme="light"] .tareas-group-box,
 html[data-theme="light"] .tareas-description textarea,
 html[data-theme="light"] .tareas-side-panel__add input,
 html[data-theme="light"] .shell__content .tareas-compose input,
 html[data-theme="light"] .shell__content .tareas-row select {
     background: #ffffff !important;
     border-color: rgba(15, 23, 42, .18) !important;
+    color: #0f172a !important;
+}
+
+html[data-theme="light"] .tareas-assignment-dropdown__menu label,
+html[data-theme="light"] .tareas-assignment-dropdown__config {
+    color: #334155 !important;
+}
+
+html[data-theme="light"] .tareas-assignment-dropdown__menu label:hover,
+html[data-theme="light"] .tareas-assignment-dropdown__menu label.is-selected,
+html[data-theme="light"] .tareas-assignment-dropdown__config:hover {
+    background: #e0f2fe !important;
+    color: #075985 !important;
+}
+
+html[data-theme="light"] .tareas-group-box > strong {
     color: #0f172a !important;
 }
 
