@@ -676,7 +676,7 @@
                     <div class="cuentas-link-results">
                         @foreach (var candidate in _mergeCandidates)
                         {
-                            <button type="button" class="cuentas-link-result" @onclick="() => MergeWithCandidateAsync(candidate)" disabled="@_mergingContact">
+                            <button type="button" class="cuentas-link-result" @onclick="() => OpenMergeConfirm(candidate)" disabled="@_mergingContact">
                                 <span class="cuentas-contacto-item__avatar cuentas-contacto-item__avatar--2">
                                     @GetInitial(candidate.NombreApellido)
                                 </span>
@@ -698,6 +698,39 @@
             <footer class="cuentas-modal__actions">
                 <button type="button" class="btn btn--ghost" @onclick="CloseMergeModal" disabled="@_mergingContact">
                     Cerrar
+                </button>
+            </footer>
+        </section>
+    </div>
+}
+
+@if (_showMergeConfirm && _mergeConfirmCandidate is not null)
+{
+    <div class="cuentas-modal-backdrop" @onclick="CloseMergeConfirm">
+        <section class="cuentas-modal cuentas-modal--compact" role="dialog" aria-modal="true" aria-labelledby="contactos-merge-confirm-title" @onclick:stopPropagation="true">
+            <header class="cuentas-modal__header">
+                <div>
+                    <span class="cuentas-modal__eyebrow">Confirmación</span>
+                    <h3 id="contactos-merge-confirm-title">Unificar contactos</h3>
+                </div>
+                <button type="button" class="cuentas-modal__close" @onclick="CloseMergeConfirm" disabled="@_mergingContact" aria-label="Cerrar">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </header>
+            <div class="cuentas-modal__body">
+                <div class="context-card">
+                    <span class="context-card__label">Contacto duplicado</span>
+                    <strong>@_mergeConfirmCandidate.NombreApellido</strong>
+                    <span class="context-card__muted">Se unificará dentro de @_form.NombreApellido. Se conservarán los datos y relaciones del contacto principal.</span>
+                </div>
+            </div>
+            <footer class="cuentas-modal__actions">
+                <button type="button" class="btn btn--primary" @onclick="ConfirmMergeAsync" disabled="@_mergingContact">
+                    <i class="bi bi-intersect"></i>
+                    @(_mergingContact ? "Unificando..." : "Confirmar unificación")
+                </button>
+                <button type="button" class="btn btn--ghost" @onclick="CloseMergeConfirm" disabled="@_mergingContact">
+                    Cancelar
                 </button>
             </footer>
         </section>
@@ -770,6 +803,39 @@
                 </button>
                 <button type="button" class="btn btn--ghost" @onclick="CloseBulkTemplateModal" disabled="@_sendingBulkTemplate">
                     Cerrar
+                </button>
+            </footer>
+        </section>
+    </div>
+}
+
+@if (_showBulkDeactivateConfirm)
+{
+    <div class="cuentas-modal-backdrop" @onclick="CloseBulkDeactivateConfirm">
+        <section class="cuentas-modal cuentas-modal--compact" role="dialog" aria-modal="true" aria-labelledby="contactos-bulk-deactivate-title" @onclick:stopPropagation="true">
+            <header class="cuentas-modal__header">
+                <div>
+                    <span class="cuentas-modal__eyebrow">Confirmación</span>
+                    <h3 id="contactos-bulk-deactivate-title">Dar de baja contactos</h3>
+                </div>
+                <button type="button" class="cuentas-modal__close" @onclick="CloseBulkDeactivateConfirm" disabled="@_saving" aria-label="Cerrar">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </header>
+            <div class="cuentas-modal__body">
+                <div class="context-card">
+                    <span class="context-card__label">Acción masiva</span>
+                    <strong>@_bulkDeactivateConfirmCount contacto(s)</strong>
+                    <span class="context-card__muted">Se darán de baja los contactos seleccionados.</span>
+                </div>
+            </div>
+            <footer class="cuentas-modal__actions">
+                <button type="button" class="btn btn--danger" @onclick="ConfirmBulkDeactivateAsync" disabled="@_saving">
+                    <i class="bi bi-person-dash"></i>
+                    @(_saving ? "Procesando..." : "Confirmar baja")
+                </button>
+                <button type="button" class="btn btn--ghost" @onclick="CloseBulkDeactivateConfirm" disabled="@_saving">
+                    Cancelar
                 </button>
             </footer>
         </section>
@@ -850,11 +916,15 @@
     private long? _selectedConversationId;
     private bool _showSearchPanel;
     private bool _showMergeModal;
+    private bool _showMergeConfirm;
     private bool _loadingMergeCandidates;
     private bool _mergeSearchExecuted;
     private bool _mergingContact;
+    private ContactoMergeCandidateDto? _mergeConfirmCandidate;
     private string _mergeSearchText = string.Empty;
     private string _mergeError = string.Empty;
+    private bool _showBulkDeactivateConfirm;
+    private int _bulkDeactivateConfirmCount;
     private bool _showBulkTemplateModal;
     private bool _showBulkTemplateConfirm;
     private bool _loadingBulkTemplates;
@@ -1368,10 +1438,21 @@
             return;
 
         _showMergeModal = false;
+        _showMergeConfirm = false;
         _loadingMergeCandidates = false;
         _mergeSearchExecuted = false;
+        _mergeConfirmCandidate = null;
         _mergeCandidates.Clear();
         _mergeError = string.Empty;
+    }
+
+    private void CloseMergeConfirm()
+    {
+        if (_mergingContact)
+            return;
+
+        _showMergeConfirm = false;
+        _mergeConfirmCandidate = null;
     }
 
     private async Task OnMergeSearchKeyDownAsync(KeyboardEventArgs e)
@@ -1416,17 +1497,23 @@
         }
     }
 
-    private async Task MergeWithCandidateAsync(ContactoMergeCandidateDto candidate)
+    private void OpenMergeConfirm(ContactoMergeCandidateDto candidate)
     {
         if (_selectedId <= 0 || candidate.Id <= 0 || _mergingContact)
             return;
 
-        var confirm = await Js.InvokeAsync<bool>(
-            "confirm",
-            $"Se va a unificar \"{candidate.NombreApellido}\" dentro de \"{_form.NombreApellido}\". Se conservarán los datos y relaciones del contacto principal. ¿Querés continuar?");
-        if (!confirm)
+        _mergeError = string.Empty;
+        _mergeConfirmCandidate = candidate;
+        _showMergeConfirm = true;
+    }
+
+    private async Task ConfirmMergeAsync()
+    {
+        var candidate = _mergeConfirmCandidate;
+        if (_selectedId <= 0 || candidate is null || candidate.Id <= 0 || _mergingContact)
             return;
 
+        _showMergeConfirm = false;
         _mergeError = string.Empty;
         _mergingContact = true;
         try
@@ -1584,11 +1671,36 @@
         if (!string.Equals(_bulkAction, BulkActionDeactivate, StringComparison.OrdinalIgnoreCase))
             return;
 
-        var ids = _selectedIds.OrderBy(id => id).ToArray();
-        var confirm = await Js.InvokeAsync<bool>("confirm", $"Se van a dar de baja {ids.Length} contacto(s) seleccionados. ¿Querés continuar?");
-        if (!confirm)
+        OpenBulkDeactivateConfirm();
+    }
+
+    private void OpenBulkDeactivateConfirm()
+    {
+        if (_selectedIds.Count == 0 || _saving)
             return;
 
+        _bulkDeactivateConfirmCount = _selectedIds.Count;
+        _showBulkDeactivateConfirm = true;
+    }
+
+    private void CloseBulkDeactivateConfirm()
+    {
+        if (_saving)
+            return;
+
+        _showBulkDeactivateConfirm = false;
+    }
+
+    private async Task ConfirmBulkDeactivateAsync()
+    {
+        var ids = _selectedIds.OrderBy(id => id).ToArray();
+        if (ids.Length == 0 || _saving)
+        {
+            _showBulkDeactivateConfirm = false;
+            return;
+        }
+
+        _showBulkDeactivateConfirm = false;
         _saving = true;
         try
         {
