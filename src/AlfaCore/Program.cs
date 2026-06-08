@@ -49,6 +49,7 @@ public class Program
             .AddInteractiveServerComponents();
         builder.Services.AddScoped<ISessionService, SessionService>();
         builder.Services.AddScoped<IComprasDashboardService, ComprasDashboardService>();
+        builder.Services.AddScoped<IReporteComprasService, ReporteComprasService>();
         builder.Services.AddScoped<IInformesIaService, InformesIaService>();
         builder.Services.AddScoped<IConsultasService, ConsultasService>();
         builder.Services.AddScoped<ICostosService, CostosService>();
