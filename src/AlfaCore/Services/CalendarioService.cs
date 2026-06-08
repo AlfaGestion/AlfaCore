@@ -7,6 +7,7 @@ namespace AlfaCore.Services;
 public sealed class CalendarioService(
     IConfiguration configuration,
     ISessionService sessionService,
+    IAppUserSessionService appUserSession,
     IAppEventService appEvents,
     IConversacionesService conversacionesService) : ICalendarioService
 {
@@ -243,12 +244,15 @@ public sealed class CalendarioService(
             if (string.IsNullOrWhiteSpace(detail.TelefonoWhatsApp))
                 throw new InvalidOperationException("El evento no tiene telefono WhatsApp para enviar el recordatorio.");
 
+            var usuarioAutor = ResolveConversationAuthorUser();
+            var sistemaAutor = ResolveConversationAuthorSystem(usuarioAutor);
+
             var conv = await conversacionesService.CreateOrGetWhatsAppConversationAsync(new ConversacionCrearWhatsAppRequest
             {
                 TelefonoWhatsApp = detail.TelefonoWhatsApp,
                 IdTecnico = detail.IdTecnico,
-                UsuarioAccion = NormalizeUser(usuarioAccion),
-                SistemaAccion = ModuleName
+                UsuarioAccion = usuarioAutor,
+                SistemaAccion = sistemaAutor
             }, token);
 
             var message = await conversacionesService.SendTemplateMessageAsync(new ConversacionPlantillaSendRequest
@@ -256,8 +260,8 @@ public sealed class CalendarioService(
                 IdConversacion = conv.IdConversacion,
                 IdPlantilla = detail.IdPlantillaWhatsApp.Value,
                 IdTecnicoAutor = detail.IdTecnico,
-                UsuarioAccion = NormalizeUser(usuarioAccion),
-                SistemaAccion = ModuleName,
+                UsuarioAccion = usuarioAutor,
+                SistemaAccion = sistemaAutor,
                 ValoresVariables =
                 [
                     FirstNonEmpty(detail.TecnicoNombre, detail.Titulo),
@@ -397,6 +401,8 @@ public sealed class CalendarioService(
 
     private async Task MarkReminderSentAsync(long idRecordatorio, string estadoEnvio, CancellationToken ct)
     {
+        var estadoRecordatorio = NormalizeReminderDeliveryStatus(estadoEnvio);
+
         const string sql = """
             UPDATE dbo.CAL_RECORDATORIOS
                SET EstadoEnvio = @EstadoEnvio,
@@ -410,7 +416,7 @@ public sealed class CalendarioService(
         await cn.OpenAsync(ct);
         await using var cmd = new SqlCommand(sql, cn);
         cmd.Parameters.AddWithValue("@IdRecordatorio", idRecordatorio);
-        cmd.Parameters.AddWithValue("@EstadoEnvio", FirstNonEmpty(estadoEnvio, CalendarioRecordatorioEstados.Enviado));
+        cmd.Parameters.AddWithValue("@EstadoEnvio", estadoRecordatorio);
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
@@ -457,6 +463,30 @@ public sealed class CalendarioService(
 
     private static string NormalizeUser(string? value)
         => string.IsNullOrWhiteSpace(value) ? Environment.UserName : value.Trim();
+
+    private string? ResolveConversationAuthorUser()
+    {
+        var userName = appUserSession.CurrentUser?.UserName;
+        return string.IsNullOrWhiteSpace(userName) ? null : userName.Trim();
+    }
+
+    private string? ResolveConversationAuthorSystem(string? usuarioAutor)
+    {
+        if (string.IsNullOrWhiteSpace(usuarioAutor))
+            return null;
+
+        var systemCode = appUserSession.CurrentUser?.SystemCode;
+        return string.IsNullOrWhiteSpace(systemCode) ? null : systemCode.Trim();
+    }
+
+    private static string NormalizeReminderDeliveryStatus(string? estadoEnvio)
+        => (estadoEnvio ?? string.Empty).Trim().ToUpperInvariant() switch
+        {
+            "ERROR" or "ERROR_ENVIO" or "FAILED" => CalendarioRecordatorioEstados.Error,
+            "OMITIDO" => CalendarioRecordatorioEstados.Omitido,
+            "PENDIENTE" => CalendarioRecordatorioEstados.Pendiente,
+            _ => CalendarioRecordatorioEstados.Enviado
+        };
 
     private static string FirstNonEmpty(params string?[] values)
         => values.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x))?.Trim() ?? string.Empty;
