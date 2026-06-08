@@ -12,7 +12,7 @@
 
 <PageTitle>Informes | Alfa Gestion</PageTitle>
 <HeadContent>
-    <link rel="stylesheet" href="/css/informes.css?v=20260608-wysiwyg" />
+    <link rel="stylesheet" href="/css/informes.css?v=20260608-editorfix" />
 </HeadContent>
 
 <section class="informes-shell">
@@ -184,7 +184,7 @@
                     </label>
                 </div>
 
-                <div class="informes-rich-editor">
+                <div class="informes-rich-editor" @ref="_editorRoot">
                     <div class="informes-editor-surface"
                          @ref="_contentEditor"
                          contenteditable="@(!_saving && !_draft.Bloqueado)"
@@ -325,14 +325,17 @@
     private List<InformesPlantillaDto> _templates = [];
     private List<InformesComentarioDto> _comments = [];
     private List<InformesVersionDto> _versions = [];
+    private ElementReference _editorRoot;
     private ElementReference _contentEditor;
     private IJSObjectReference? _editorJs;
+    private IJSObjectReference? _informesEditorJs;
     private bool _loading;
     private bool _saving;
     private bool _showTrash;
     private bool _showTemplatePicker;
     private bool _showCommandMenu;
     private bool _editorReady;
+    private bool _editorRootWired;
     private string _search = string.Empty;
     private string _feedback = string.Empty;
     private string _newComment = string.Empty;
@@ -384,17 +387,36 @@
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
+        {
             _editorJs = await JS.InvokeAsync<IJSObjectReference>("import", "/js/tickets-rich-editor.js?v=20260519i");
+            _informesEditorJs = await JS.InvokeAsync<IJSObjectReference>("import", "/js/informes-editor.js?v=20260608-editorfix");
+        }
 
         if (_selected is not null && !_editorReady && _editorJs is not null)
         {
             await _editorJs.InvokeVoidAsync("setHtml", _contentEditor, NormalizeEditorHtml(_draft.Contenido));
+            if (_informesEditorJs is not null)
+            {
+                if (!_editorRootWired)
+                {
+                    await _informesEditorJs.InvokeVoidAsync("wireInformesEditor", _editorRoot);
+                    _editorRootWired = true;
+                }
+                await _informesEditorJs.InvokeVoidAsync("normalizeInformesBlocks", _contentEditor);
+            }
             _editorReady = true;
         }
     }
 
     public async ValueTask DisposeAsync()
     {
+        if (_informesEditorJs is not null)
+        {
+            if (_editorRootWired)
+                await _informesEditorJs.InvokeVoidAsync("disposeInformesEditor", _editorRoot);
+            await _informesEditorJs.DisposeAsync();
+        }
+
         if (_editorJs is not null)
             await _editorJs.DisposeAsync();
     }
@@ -497,6 +519,7 @@
     private async Task SaveAsync()
     {
         _saving = true;
+        await CloseEditorPopupsAsync();
         await SyncContentFromEditorAsync();
         _draft.UsuarioAccion = CurrentUser;
         var result = await UiOps.RunAsync(() => InformesSvc.SaveArticleAsync(_draft), "No se pudo guardar el articulo.");
@@ -669,7 +692,12 @@
         if (_editorJs is null || _selected is null)
             return;
 
+        if (_informesEditorJs is not null && option.Command is not "emoji" and not "link" and not "button")
+            await _informesEditorJs.InvokeVoidAsync("closeInformesPopups", _editorRoot);
+
         await _editorJs.InvokeVoidAsync("runCommand", _contentEditor, option.Command);
+        if (_informesEditorJs is not null)
+            await _informesEditorJs.InvokeVoidAsync("normalizeInformesBlocks", _contentEditor);
         await SyncContentFromEditorAsync();
         _showCommandMenu = false;
     }
@@ -684,9 +712,18 @@
 
     private async Task OnContentChangedAsync()
     {
+        if (_informesEditorJs is not null)
+            await _informesEditorJs.InvokeVoidAsync("normalizeInformesBlocks", _contentEditor);
         await SyncContentFromEditorAsync();
         if (_editorJs is not null)
             _showCommandMenu = await _editorJs.InvokeAsync<bool>("shouldShowCommands", _contentEditor);
+    }
+
+    private async Task CloseEditorPopupsAsync()
+    {
+        if (_informesEditorJs is not null)
+            await _informesEditorJs.InvokeVoidAsync("closeInformesPopups", _editorRoot);
+        _showCommandMenu = false;
     }
 
     private async Task OnContentFocusAsync()

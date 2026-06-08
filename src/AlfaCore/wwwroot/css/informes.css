@@ -485,18 +485,27 @@
 
 .informes-editor-surface .ticket-editor-todo {
     list-style: none;
-    padding-left: .2rem;
+    display: grid;
+    gap: .35rem;
+    padding-left: .1rem;
 }
 
 .informes-editor-surface .ticket-editor-todo li {
-    display: flex;
-    align-items: flex-start;
-    gap: .45rem;
+    display: grid;
+    grid-template-columns: 18px minmax(0, 1fr);
+    align-items: start;
+    gap: .5rem;
     margin: .25rem 0;
+    min-height: 1.5rem;
+    line-height: 1.45;
 }
 
 .informes-editor-surface input[type="checkbox"],
 .informes-meta input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    min-width: 16px;
+    margin: .16rem 0 0;
     accent-color: var(--inf-primary);
 }
 
@@ -541,13 +550,30 @@
 .informes-editor-surface .ticket-editor-banner {
     display: grid;
     grid-template-columns: 28px minmax(0, 1fr);
+    align-items: start;
     gap: .65rem;
     padding: .8rem .9rem;
+    padding-left: .9rem;
+    min-height: 0;
 }
 
 .informes-editor-surface .ticket-editor-banner__icon {
+    position: static;
+    inset: auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
     margin-top: .15rem;
     color: #38bdf8;
+    pointer-events: none;
+    user-select: none;
+}
+
+.informes-editor-surface .ticket-editor-banner__body {
+    min-width: 0;
+    grid-column: 2;
 }
 
 .informes-editor-surface .ticket-editor-banner--success {
@@ -567,6 +593,9 @@
 
 .informes-editor-surface .ticket-editor-banner p {
     margin: 0;
+    overflow-wrap: break-word;
+    word-break: normal;
+    white-space: normal;
 }
 
 .informes-editor-surface .ticket-editor-file,
@@ -651,8 +680,12 @@
 .informes-rich-editor .ticket-link-popover,
 .informes-rich-editor .ticket-editor-emoji-picker {
     position: absolute;
+    left: .6rem;
+    bottom: 4.1rem;
     z-index: 55;
     width: min(360px, calc(100% - 1rem));
+    max-height: min(360px, 55vh);
+    overflow: auto;
     padding: .8rem;
     border: 1px solid var(--inf-border-strong);
     border-radius: 8px;
@@ -700,9 +733,13 @@
 .informes-rich-editor .ticket-editor-emoji-picker__grid button {
     width: 32px;
     height: 32px;
+    min-height: 32px;
     display: grid;
     place-items: center;
+    padding: 0;
     border-radius: 8px;
+    font-size: 1.05rem;
+    line-height: 1;
 }
 
 .informes-rich-editor .ticket-editor-emoji-picker__grid button:hover {
