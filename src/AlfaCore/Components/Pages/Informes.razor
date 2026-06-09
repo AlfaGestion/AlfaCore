@@ -13,7 +13,7 @@
 
 <PageTitle>Informes | Alfa Gestion</PageTitle>
 <HeadContent>
-    <link rel="stylesheet" href="/css/informes.css?v=20260609-knowledge" />
+    <link rel="stylesheet" href="/css/informes.css?v=20260609-cover-menu" />
 </HeadContent>
 
 <section class="@ShellClass">
@@ -171,8 +171,22 @@
                             <img src="@_draft.PortadaValor" alt="" />
                         }
                         <div class="informes-cover__actions">
-                            <button type="button" @onclick="OpenCoverPicker"><i class="bi bi-image"></i> Agregar portada</button>
-                            <button type="button" @onclick="() => SetCover(InformesPortadas.Ninguna, string.Empty)"><i class="bi bi-x-lg"></i> Quitar</button>
+                            <button type="button" class="informes-cover__menu-button" @onclick="ToggleCoverMenu" title="Opciones de portada">
+                                <i class="bi bi-three-dots"></i>
+                            </button>
+                            @if (_coverMenuOpen)
+                            {
+                                <div class="informes-cover__menu">
+                                    <button type="button" @onclick="OpenCoverPicker">
+                                        <i class="bi bi-image"></i>
+                                        <span>Agregar portada</span>
+                                    </button>
+                                    <button type="button" @onclick="RemoveCover">
+                                        <i class="bi bi-x-lg"></i>
+                                        <span>Quitar</span>
+                                    </button>
+                                </div>
+                            }
                         </div>
                     </section>
 
@@ -388,6 +402,19 @@
             </div>
 
             <footer>
+                @if (!string.IsNullOrWhiteSpace(_pendingCoverPreviewUrl))
+                {
+                    <div class="informes-cover-picker__pending">
+                        <img src="@_pendingCoverPreviewUrl" alt="" />
+                        <span>@_pendingCoverFileName</span>
+                        <button type="button" @onclick="ConfirmPendingCoverAsync" title="Guardar portada">
+                            <i class="bi bi-floppy"></i>
+                        </button>
+                        <button type="button" @onclick="ClearPendingCover" title="Quitar imagen">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                    </div>
+                }
                 <label class="btn btn--primary">
                     <i class="bi bi-upload"></i>
                     <span>Agregar desde PC</span>
@@ -428,6 +455,11 @@
     private string _selectedTemplateKey = "agenda";
     private long? _openArticleMenuId;
     private string _coverSearch = string.Empty;
+    private bool _coverMenuOpen;
+    private byte[]? _pendingCoverBytes;
+    private string? _pendingCoverPreviewUrl;
+    private string? _pendingCoverFileName;
+    private string? _pendingCoverContentType;
 
     private static readonly IReadOnlyList<EditorCommandOption> EditorCommands =
     [
@@ -825,16 +857,31 @@
     private void OpenCoverPicker()
     {
         _coverSearch = string.Empty;
+        _coverMenuOpen = false;
+        ClearPendingCover();
         _showCoverPicker = true;
     }
 
     private void CloseCoverPicker()
-        => _showCoverPicker = false;
+    {
+        ClearPendingCover();
+        _showCoverPicker = false;
+    }
 
     private void SelectCover(string type, string value)
     {
+        ClearPendingCover();
         SetCover(type, value);
         _showCoverPicker = false;
+    }
+
+    private void ToggleCoverMenu()
+        => _coverMenuOpen = !_coverMenuOpen;
+
+    private void RemoveCover()
+    {
+        _coverMenuOpen = false;
+        SetCover(InformesPortadas.Ninguna, string.Empty);
     }
 
     private async Task HandleCoverFileSelectedAsync(InputFileChangeEventArgs args)
@@ -846,19 +893,59 @@
         var result = await UiOps.RunAsync(async () =>
         {
             await using var stream = file.OpenReadStream(MaxCoverImageBytes);
-            return await InformesSvc.SaveCoverImageAsync(stream, file.Name, file.ContentType, CurrentUser);
+            using var memory = new MemoryStream();
+            await stream.CopyToAsync(memory);
+            return memory.ToArray();
         }, "No se pudo cargar la portada.");
 
-        if (result.Success && !string.IsNullOrWhiteSpace(result.Value))
+        if (result.Success && result.Value is { Length: > 0 } bytes)
         {
-            SetCover(InformesPortadas.Url, result.Value);
-            _showCoverPicker = false;
-            _feedback = "Portada cargada. Guardá el articulo para conservar el cambio.";
+            _pendingCoverBytes = bytes;
+            _pendingCoverFileName = file.Name;
+            _pendingCoverContentType = string.IsNullOrWhiteSpace(file.ContentType) ? "image/jpeg" : file.ContentType;
+            _pendingCoverPreviewUrl = $"data:{_pendingCoverContentType};base64,{Convert.ToBase64String(bytes)}";
+            _feedback = string.Empty;
         }
         else
         {
             _feedback = FeedbackText(result.Feedback);
         }
+    }
+
+    private async Task ConfirmPendingCoverAsync()
+    {
+        if (_pendingCoverBytes is null || _pendingCoverBytes.Length == 0)
+            return;
+
+        var result = await UiOps.RunAsync(async () =>
+        {
+            using var stream = new MemoryStream(_pendingCoverBytes);
+            return await InformesSvc.SaveCoverImageAsync(
+                stream,
+                _pendingCoverFileName ?? "portada.jpg",
+                _pendingCoverContentType ?? "image/jpeg",
+                CurrentUser);
+        }, "No se pudo guardar la portada.");
+
+        if (result.Success && !string.IsNullOrWhiteSpace(result.Value))
+        {
+            SetCover(InformesPortadas.Url, result.Value);
+            ClearPendingCover();
+            _showCoverPicker = false;
+            _feedback = "Portada cargada. Guarda el articulo para conservar el cambio.";
+        }
+        else
+        {
+            _feedback = FeedbackText(result.Feedback);
+        }
+    }
+
+    private void ClearPendingCover()
+    {
+        _pendingCoverBytes = null;
+        _pendingCoverPreviewUrl = null;
+        _pendingCoverFileName = null;
+        _pendingCoverContentType = null;
     }
 
     private void SelectTemplate(string key)
