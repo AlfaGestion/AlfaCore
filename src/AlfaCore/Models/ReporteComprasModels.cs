@@ -61,11 +61,11 @@ public sealed class DetalleComprasFilaDto
     public string IdComprobante { get; init; } = string.Empty;
     public string Cuenta { get; init; } = string.Empty;
     public string RazonSocial { get; init; } = string.Empty;
+    public string DescMotivo { get; init; } = string.Empty;
     public decimal Neto { get; init; }
     public decimal Iva { get; init; }
     public decimal Total { get; init; }
     public string Usuario { get; init; } = string.Empty;
-    public string EstadoComprobante { get; init; } = string.Empty;
 }
 
 public sealed class DetalleComprasResultDto

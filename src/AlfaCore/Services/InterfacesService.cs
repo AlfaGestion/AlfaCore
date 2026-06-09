@@ -505,9 +505,10 @@ public sealed class InterfacesService(
                     var extension = NormalizeExtension(Path.GetExtension(attachment.NombreArchivo));
                     var savedName = $"{order:0000}_{Guid.NewGuid():N}{extension}";
                     var relativePath = CombineStoragePath(relativeFolder, savedName);
+                    string contentHash;
                     try
                     {
-                        await SaveAttachmentAsync(settings, relativePath, attachment, savedFiles, token);
+                        contentHash = await SaveAttachmentAsync(settings, relativePath, attachment, savedFiles, token);
                     }
                     catch (Exception ex)
                     {
@@ -525,6 +526,7 @@ public sealed class InterfacesService(
                             Extension,
                             MimeType,
                             TamanoBytes,
+                            ContentHash,
                             EsPrincipal,
                             Eliminado,
                             UsuarioAlta,
@@ -540,6 +542,7 @@ public sealed class InterfacesService(
                             @Extension,
                             @MimeType,
                             @TamanoBytes,
+                            @ContentHash,
                             @EsPrincipal,
                             0,
                             @UsuarioAlta,
@@ -556,6 +559,7 @@ public sealed class InterfacesService(
                     attachmentCmd.Parameters.AddWithValue("@Extension", DbNullable(extension, 20));
                     attachmentCmd.Parameters.AddWithValue("@MimeType", DbNullable(attachment.MimeType, 100));
                     attachmentCmd.Parameters.AddWithValue("@TamanoBytes", attachment.TamanoBytes);
+                    attachmentCmd.Parameters.AddWithValue("@ContentHash", DbNullable(contentHash, 64));
                     attachmentCmd.Parameters.AddWithValue("@EsPrincipal", order == 1);
                     attachmentCmd.Parameters.AddWithValue("@UsuarioAlta", user);
                     attachmentCmd.Parameters.AddWithValue("@PcAlta", pc);
@@ -768,9 +772,10 @@ public sealed class InterfacesService(
                     var extension = NormalizeExtension(Path.GetExtension(attachment.NombreArchivo));
                     var savedName = $"{nextOrder:0000}_{Guid.NewGuid():N}{extension}";
                     var relativePath = CombineStoragePath(relativeFolder, savedName);
+                    string contentHash;
                     try
                     {
-                        await SaveAttachmentAsync(settings, relativePath, attachment, savedFiles, token);
+                        contentHash = await SaveAttachmentAsync(settings, relativePath, attachment, savedFiles, token);
                     }
                     catch (Exception ex)
                     {
@@ -788,6 +793,7 @@ public sealed class InterfacesService(
                             Extension,
                             MimeType,
                             TamanoBytes,
+                            ContentHash,
                             EsPrincipal,
                             Eliminado,
                             UsuarioAlta,
@@ -803,6 +809,7 @@ public sealed class InterfacesService(
                             @Extension,
                             @MimeType,
                             @TamanoBytes,
+                            @ContentHash,
                             0,
                             0,
                             @UsuarioAlta,
@@ -819,6 +826,7 @@ public sealed class InterfacesService(
                     attachmentCmd.Parameters.AddWithValue("@Extension", DbNullable(extension, 20));
                     attachmentCmd.Parameters.AddWithValue("@MimeType", DbNullable(attachment.MimeType, 100));
                     attachmentCmd.Parameters.AddWithValue("@TamanoBytes", attachment.TamanoBytes);
+                    attachmentCmd.Parameters.AddWithValue("@ContentHash", DbNullable(contentHash, 64));
                     attachmentCmd.Parameters.AddWithValue("@UsuarioAlta", user);
                     attachmentCmd.Parameters.AddWithValue("@PcAlta", pc);
                     await attachmentCmd.ExecuteNonQueryAsync(token);
@@ -1358,6 +1366,55 @@ public sealed class InterfacesService(
                 NombreArchivo = GetString(rd, 3)
             };
         }, "No se pudo obtener el adjunto solicitado.", ct);
+
+    public Task<IReadOnlyList<InterfacesAdjuntoDuplicadoDto>> FindFilesByHashAsync(IReadOnlyList<string> contentHashes, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Interfaces", "FindFilesByHash", async token =>
+        {
+            var validHashes = contentHashes
+                .Where(static h => !string.IsNullOrWhiteSpace(h))
+                .Select(static h => h.Trim().ToLowerInvariant())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (validHashes.Count == 0)
+                return (IReadOnlyList<InterfacesAdjuntoDuplicadoDto>)[];
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            // Build IN clause with individual parameters to avoid injection
+            var paramNames = validHashes.Select(static (_, i) => $"@h{i}").ToList();
+            var sql = $"""
+                SELECT
+                    a.IdAdjunto,
+                    a.IdComprobanteRecibido,
+                    ISNULL(a.NombreOriginal, ''),
+                    ISNULL(a.ContentHash, '')
+                FROM dbo.INT_COMPROBANTE_RECIBIDO_ADJUNTO a
+                WHERE ISNULL(a.Eliminado, 0) = 0
+                  AND a.ContentHash IN ({string.Join(", ", paramNames)})
+                ORDER BY a.IdComprobanteRecibido DESC
+                """;
+
+            await using var cmd = new SqlCommand(sql, cn);
+            for (var i = 0; i < validHashes.Count; i++)
+                cmd.Parameters.AddWithValue($"@h{i}", validHashes[i]);
+
+            await using var rd = await cmd.ExecuteReaderAsync(token);
+            var results = new List<InterfacesAdjuntoDuplicadoDto>();
+            while (await rd.ReadAsync(token))
+            {
+                results.Add(new InterfacesAdjuntoDuplicadoDto
+                {
+                    IdAdjunto = GetLong(rd, 0),
+                    IdComprobanteRecibido = GetLong(rd, 1),
+                    NombreOriginal = GetString(rd, 2),
+                    ContentHash = GetString(rd, 3)
+                });
+            }
+
+            return (IReadOnlyList<InterfacesAdjuntoDuplicadoDto>)results;
+        }, "No se pudo verificar duplicados.", ct);
 
     private static async Task UpdateAttachmentCountAsync(SqlConnection cn, SqlTransaction tx, long idComprobante, int count, CancellationToken ct)
     {
@@ -2031,26 +2088,35 @@ public sealed class InterfacesService(
         return normalized.Length > 150 ? (string.Empty, normalized) : (normalized, string.Empty);
     }
 
-    private static async Task SaveAttachmentAsync(
+    private static async Task<string> SaveAttachmentAsync(
         InterfacesUploadSettingsDto settings,
         string relativePath,
         InterfacesCrearAdjuntoRequest attachment,
         List<string> savedFiles,
         CancellationToken ct)
     {
+        // Buffer once so we can compute hash and write without double-reading
+        await using var buffer = new MemoryStream();
+        await attachment.Contenido.CopyToAsync(buffer, ct);
+        var bytes = buffer.ToArray();
+        var hash = !string.IsNullOrWhiteSpace(attachment.ContentHash)
+            ? attachment.ContentHash
+            : Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+
         if (settings.UsaFtp)
         {
             var remoteUrl = settings.BuildFtpBaseUrl().TrimEnd('/') + "/" + relativePath.Replace('\\', '/').TrimStart('/');
             await EnsureFtpDirectoriesAsync(settings, relativePath, ct);
-            await UploadToFtpAsync(settings, remoteUrl, attachment.Contenido, ct);
+            await UploadToFtpAsync(settings, remoteUrl, new MemoryStream(bytes, writable: false), ct);
             savedFiles.Add(remoteUrl);
-            return;
+            return hash;
         }
 
         var absolutePath = Path.Combine(settings.RutaBase, relativePath);
         await using var fs = File.Create(absolutePath);
-        await attachment.Contenido.CopyToAsync(fs, ct);
+        await fs.WriteAsync(bytes, ct);
         savedFiles.Add(absolutePath);
+        return hash;
     }
 
     private static async Task CleanupSavedFilesAsync(InterfacesUploadSettingsDto settings, IReadOnlyList<string> savedFiles, CancellationToken ct)
@@ -3002,6 +3068,8 @@ public sealed class InterfacesService(
         }
 
         var sourcePath = BuildStoredFileReference(ResolveStoredBase(settings), attachment.RutaRelativa);
+        if (!File.Exists(sourcePath))
+            throw new InvalidOperationException($"El archivo adjunto no se encontró en la ruta configurada: {sourcePath}. Verificá que la carpeta de almacenamiento sea accesible desde este servidor.");
         await using var source = File.OpenRead(sourcePath);
         await using var target = File.Create(outputPath);
         await source.CopyToAsync(target, ct);
@@ -3888,7 +3956,17 @@ public sealed class InterfacesService(
     }
 
     private static string ReadJsonString(JsonObject? obj, string key)
-        => obj?[key]?.GetValue<string>()?.Trim() ?? string.Empty;
+    {
+        var node = obj?[key];
+        if (node is null) return string.Empty;
+        if (node is JsonValue jv && jv.TryGetValue<string>(out var str)) return str?.Trim() ?? string.Empty;
+        // Fallback: if the script returned a number, object, or array, convert to string
+        var raw = node.ToJsonString();
+        // Strip outer quotes if it's a quoted JSON string
+        if (raw.StartsWith('"') && raw.EndsWith('"') && raw.Length >= 2)
+            return System.Text.Json.JsonSerializer.Deserialize<string>(raw)?.Trim() ?? string.Empty;
+        return raw.Trim();
+    }
 
     private static decimal? ReadJsonDecimal(JsonObject? obj, string key)
         => ParseFlexibleDecimal(ReadJsonString(obj, key));

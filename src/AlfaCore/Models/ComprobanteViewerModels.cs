@@ -17,6 +17,10 @@ public sealed class ComprobanteCabeceraDto
     public string Tc { get; init; } = string.Empty;
     public string IdComprobante { get; init; } = string.Empty;
     public int IdComplemento { get; init; }
+    // "VENTAS" | "COMPRAS" | "STOCK" | "CONTABLE"
+    public string SistemaOrigen { get; init; } = string.Empty;
+    // "ReciboCobros" | "ReciboPagos" | ""
+    public string TipoFormato { get; init; } = string.Empty;
     public DateTime? Fecha { get; init; }
     public string Cuenta { get; init; } = string.Empty;
     public string Nombre { get; init; } = string.Empty;

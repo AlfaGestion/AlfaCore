@@ -18,12 +18,12 @@ public sealed class ReporteComprasService(
         : configuration.GetConnectionString("AlfaGestion")
           ?? throw new InvalidOperationException("No se configuró la cadena de conexión 'ConnectionStrings:AlfaGestion'.");
 
-    // Cláusula WHERE compartida para las queries sobre vw_compras_cabecera_dashboard
-    private const string CabeceraWhere = """
-        WHERE (@FechaDesde IS NULL OR c.FECHA >= @FechaDesde)
-          AND (@FechaHasta IS NULL OR c.FECHA < DATEADD(day, 1, @FechaHasta))
-          AND (@Proveedor IS NULL OR c.CUENTA LIKE '%' + @Proveedor + '%' OR c.RAZON_SOCIAL LIKE '%' + @Proveedor + '%')
-          AND (@TipoComprobante IS NULL OR c.TC = @TipoComprobante)
+    // Cláusula WHERE compartida para las queries sobre Libro_ComprasConFP (alias l)
+    private const string LibroWhere = """
+        WHERE (@FechaDesde IS NULL OR l.FECHA >= @FechaDesde)
+          AND (@FechaHasta IS NULL OR l.FECHA < DATEADD(day, 1, @FechaHasta))
+          AND (@Proveedor IS NULL OR l.CUENTA LIKE '%' + @Proveedor + '%' OR l.RAZON_SOCIAL LIKE '%' + @Proveedor + '%')
+          AND (@TipoComprobante IS NULL OR l.TC = @TipoComprobante)
         """;
 
     private async Task<SqlConnection> OpenConnectionAsync(CancellationToken ct)
@@ -78,7 +78,7 @@ public sealed class ReporteComprasService(
             await using var conn = await OpenConnectionAsync(ct);
             var tcs = new List<string>();
             await using var cmd = CreateCommand(conn,
-                "SELECT DISTINCT TC FROM vw_compras_cabecera_dashboard WHERE TC IS NOT NULL AND TC <> '' ORDER BY TC");
+                "SELECT DISTINCT TC FROM dbo.Libro_ComprasConFP WHERE TC IS NOT NULL AND TC <> '' ORDER BY TC");
             await using var reader = await cmd.ExecuteReaderAsync(ct);
             while (await reader.ReadAsync(ct))
             {
@@ -105,13 +105,13 @@ public sealed class ReporteComprasService(
 
         await using (var cmdTot = CreateCommand(conn, $"""
             SELECT
-                ISNULL(SUM(c.ImporteDashboard), 0) AS TotalComprado,
-                ISNULL(SUM(c.NetoDashboard), 0)    AS NetoTotal,
-                ISNULL(SUM(c.IvaDashboard), 0)     AS IvaTotal,
-                COUNT(*)                            AS CantidadComprobantes,
-                COUNT(DISTINCT c.CUENTA)            AS CantidadProveedores
-            FROM vw_compras_cabecera_dashboard c
-            {CabeceraWhere}
+                ISNULL(SUM(l.IMPORTE),     0) AS TotalComprado,
+                ISNULL(SUM(l.NetoSignado), 0) AS NetoTotal,
+                ISNULL(SUM(l.IvaSignado),  0) AS IvaTotal,
+                COUNT(*)                       AS CantidadComprobantes,
+                COUNT(DISTINCT l.CUENTA)       AS CantidadProveedores
+            FROM dbo.Libro_ComprasConFP l
+            {LibroWhere}
             """))
         {
             AddFiltrosParams(cmdTot, filtros);
@@ -131,16 +131,16 @@ public sealed class ReporteComprasService(
 
         await using (var cmdFilas = CreateCommand(conn, $"""
             SELECT
-                c.CUENTA AS Cuenta,
-                COALESCE(NULLIF(c.RAZON_SOCIAL, ''), c.CUENTA) AS RazonSocial,
+                l.CUENTA AS Cuenta,
+                COALESCE(NULLIF(l.RAZON_SOCIAL, ''), l.CUENTA) AS RazonSocial,
                 COUNT(*)                           AS CantidadComprobantes,
-                ISNULL(SUM(c.NetoDashboard), 0)   AS Neto,
-                ISNULL(SUM(c.IvaDashboard), 0)    AS Iva,
-                ISNULL(SUM(c.ImporteDashboard), 0) AS Total
-            FROM vw_compras_cabecera_dashboard c
-            {CabeceraWhere}
-            GROUP BY c.CUENTA, c.RAZON_SOCIAL
-            ORDER BY SUM(c.ImporteDashboard) DESC
+                ISNULL(SUM(l.NetoSignado), 0)      AS Neto,
+                ISNULL(SUM(l.IvaSignado),  0)      AS Iva,
+                ISNULL(SUM(l.IMPORTE),     0)      AS Total
+            FROM dbo.Libro_ComprasConFP l
+            {LibroWhere}
+            GROUP BY l.CUENTA, l.RAZON_SOCIAL
+            ORDER BY SUM(l.IMPORTE) DESC
             """))
         {
             AddFiltrosParams(cmdFilas, filtros);
@@ -182,8 +182,8 @@ public sealed class ReporteComprasService(
         int totalRegistros = 0;
         await using (var cmdCount = CreateCommand(conn, $"""
             SELECT COUNT(*)
-            FROM vw_compras_cabecera_dashboard c
-            {CabeceraWhere}
+            FROM dbo.Libro_ComprasConFP l
+            {LibroWhere}
             """))
         {
             AddFiltrosParams(cmdCount, filtros);
@@ -194,19 +194,19 @@ public sealed class ReporteComprasService(
         var items = new List<DetalleComprasFilaDto>();
         await using (var cmdItems = CreateCommand(conn, $"""
             SELECT
-                c.FECHA                                         AS Fecha,
-                c.TC                                           AS Tc,
-                c.IDCOMPROBANTE                                AS IdComprobante,
-                c.CUENTA                                       AS Cuenta,
-                COALESCE(NULLIF(c.RAZON_SOCIAL, ''), c.CUENTA) AS RazonSocial,
-                ISNULL(c.NetoDashboard, 0)                     AS Neto,
-                ISNULL(c.IvaDashboard, 0)                      AS Iva,
-                ISNULL(c.ImporteDashboard, 0)                  AS Total,
-                ISNULL(c.USUARIO, '')                          AS Usuario,
-                ISNULL(c.EstadoComprobante, '')                AS EstadoComprobante
-            FROM vw_compras_cabecera_dashboard c
-            {CabeceraWhere}
-            ORDER BY c.FECHA DESC, c.IDCOMPROBANTE DESC
+                l.FECHA                                         AS Fecha,
+                l.TC                                           AS Tc,
+                l.IdComprobante                                AS IdComprobante,
+                l.CUENTA                                       AS Cuenta,
+                COALESCE(NULLIF(l.RAZON_SOCIAL, ''), l.CUENTA) AS RazonSocial,
+                ISNULL(l.DESC_MOTIVO, '')                      AS DescMotivo,
+                ISNULL(l.NetoSignado, 0)                       AS Neto,
+                ISNULL(l.IvaSignado, 0)                        AS Iva,
+                ISNULL(l.IMPORTE, 0)                           AS Total,
+                ISNULL(l.USUARIO_LOGEADO, '')                  AS Usuario
+            FROM dbo.Libro_ComprasConFP l
+            {LibroWhere}
+            ORDER BY l.FECHA DESC, l.IdComprobante DESC
             OFFSET @Skip ROWS FETCH NEXT @PageSize ROWS ONLY
             """))
         {
@@ -218,16 +218,16 @@ public sealed class ReporteComprasService(
             {
                 items.Add(new DetalleComprasFilaDto
                 {
-                    Fecha               = r.GetDateTime(r.GetOrdinal("Fecha")),
-                    Tc                  = SafeString(r, "Tc"),
-                    IdComprobante       = SafeString(r, "IdComprobante"),
-                    Cuenta              = SafeString(r, "Cuenta"),
-                    RazonSocial         = SafeString(r, "RazonSocial"),
-                    Neto                = SafeDecimal(r, "Neto"),
-                    Iva                 = SafeDecimal(r, "Iva"),
-                    Total               = SafeDecimal(r, "Total"),
-                    Usuario             = SafeString(r, "Usuario"),
-                    EstadoComprobante   = SafeString(r, "EstadoComprobante")
+                    Fecha         = r.GetDateTime(r.GetOrdinal("Fecha")),
+                    Tc            = SafeString(r, "Tc"),
+                    IdComprobante = SafeString(r, "IdComprobante"),
+                    Cuenta        = SafeString(r, "Cuenta"),
+                    RazonSocial   = SafeString(r, "RazonSocial"),
+                    DescMotivo    = SafeString(r, "DescMotivo"),
+                    Neto          = SafeDecimal(r, "Neto"),
+                    Iva           = SafeDecimal(r, "Iva"),
+                    Total         = SafeDecimal(r, "Total"),
+                    Usuario       = SafeString(r, "Usuario")
                 });
             }
         }
@@ -246,10 +246,6 @@ public sealed class ReporteComprasService(
     // Convención de signo para proveedor:
     //   DEBEHABER = 'H' → el proveedor nos facturó  → suma (positivo / deuda)
     //   DEBEHABER = 'D' → pagamos / nota de crédito → resta (negativo)
-    //
-    // Nota: los nombres de columna de MV_ASIENTOS pueden variar según la versión
-    // de la base. Se asumen: Cuenta, Fecha, TC, IDCOMPROBANTE, DEBEHABER, Importe.
-    // La razón social se obtiene de MA_CUENTAS (campo NOMBRE o RAZON_SOCIAL).
 
     public async Task<CuentaCorrienteResultDto> GetCuentaCorrienteAsync(FiltrosReporteCompras filtros, CancellationToken ct = default)
     {
