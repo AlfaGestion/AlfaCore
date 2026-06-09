@@ -547,7 +547,7 @@
         if (firstRender)
         {
             _editorJs = await JS.InvokeAsync<IJSObjectReference>("import", "/js/tickets-rich-editor.js?v=20260519i");
-            _informesEditorJs = await JS.InvokeAsync<IJSObjectReference>("import", "/js/informes-editor.js?v=20260609-banners");
+            _informesEditorJs = await JS.InvokeAsync<IJSObjectReference>("import", "/js/informes-editor.js?v=20260609-image-paste");
         }
 
         if (_selected is not null && !_editorReady && _editorJs is not null)

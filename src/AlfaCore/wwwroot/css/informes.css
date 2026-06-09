@@ -796,6 +796,22 @@
     padding: .8rem .9rem;
 }
 
+.informes-editor-surface .ticket-editor-file--media.ticket-editor-file--has-preview {
+    padding: 0;
+}
+
+.informes-editor-surface .ticket-editor-file--media.ticket-editor-file--has-preview img {
+    cursor: zoom-in;
+}
+
+.informes-editor-surface .ticket-editor-file__resize {
+    opacity: .72;
+}
+
+.informes-image-preview__body {
+    grid-template-columns: minmax(0, 1fr);
+}
+
 .informes-editor-surface .ticket-editor-button {
     display: inline-flex;
     align-items: center;
