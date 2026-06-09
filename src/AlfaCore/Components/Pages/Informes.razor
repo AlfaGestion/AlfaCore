@@ -13,7 +13,7 @@
 
 <PageTitle>Informes | Alfa Gestion</PageTitle>
 <HeadContent>
-    <link rel="stylesheet" href="/css/informes.css?v=20260609-cover-menu-overflow" />
+    <link rel="stylesheet" href="/css/informes.css?v=20260609-tree-collapse" />
 </HeadContent>
 
 <section class="@ShellClass">
@@ -456,6 +456,7 @@
     private long? _openArticleMenuId;
     private string _coverSearch = string.Empty;
     private bool _coverMenuOpen;
+    private HashSet<long> _collapsedArticleIds = [];
     private byte[]? _pendingCoverBytes;
     private string? _pendingCoverPreviewUrl;
     private string? _pendingCoverFileName;
@@ -1052,26 +1053,39 @@
     }
 
     private static IEnumerable<ArticleTreeRow> BuildFlatRows(IEnumerable<InformesArticuloResumenDto> articles)
-        => articles.OrderBy(x => x.Titulo).Select(x => new ArticleTreeRow(x, 0));
+        => articles.OrderBy(x => x.Titulo).Select(x => new ArticleTreeRow(x, 0, false));
 
-    private static IEnumerable<ArticleTreeRow> Flatten(List<InformesArticuloResumenDto> source, long? parentId, int level)
+    private IEnumerable<ArticleTreeRow> Flatten(List<InformesArticuloResumenDto> source, long? parentId, int level)
     {
         foreach (var item in source.Where(x => x.IdPadre == parentId).OrderBy(x => x.Orden).ThenBy(x => x.Titulo))
         {
-            yield return new ArticleTreeRow(item, level);
-            foreach (var child in Flatten(source, item.IdArticulo, level + 1))
-                yield return child;
+            yield return new ArticleTreeRow(item, level, true);
+            if (!_collapsedArticleIds.Contains(item.IdArticulo))
+            {
+                foreach (var child in Flatten(source, item.IdArticulo, level + 1))
+                    yield return child;
+            }
         }
 
         if (parentId is null)
         {
             foreach (var orphan in source.Where(x => x.IdPadre is not null && source.All(p => p.IdArticulo != x.IdPadre)).OrderBy(x => x.Titulo))
-                yield return new ArticleTreeRow(orphan, 0);
+                yield return new ArticleTreeRow(orphan, 0, false);
         }
     }
 
     private RenderFragment ArticleButton(ArticleTreeRow row) => @<div class="informes-tree-row" style="@($"--level:{row.Level}")">
         <button type="button" class="@(row.Item.IdArticulo == _selected?.IdArticulo ? "is-selected" : "")" @onclick="() => SelectArticleAsync(row.Item.IdArticulo)">
+            @if (row.CanCollapse && HasChildren(row.Item))
+            {
+                <span class="informes-tree-row__toggle" role="button" title="@(_collapsedArticleIds.Contains(row.Item.IdArticulo) ? "Mostrar subarticulos" : "Ocultar subarticulos")" @onclick:stopPropagation @onclick="() => ToggleArticleCollapse(row.Item.IdArticulo)">
+                    <i class="bi @(_collapsedArticleIds.Contains(row.Item.IdArticulo) ? "bi-chevron-right" : "bi-chevron-down")"></i>
+                </span>
+            }
+            else
+            {
+                <span class="informes-tree-row__toggle informes-tree-row__toggle--empty"></span>
+            }
             <i class="bi @IconClass(row.Item.Emoji)"></i>
             <span>@row.Item.Titulo</span>
             @if (row.Item.Bloqueado)
@@ -1108,6 +1122,15 @@
             </div>
         }
     </div>;
+
+    private void ToggleArticleCollapse(long idArticulo)
+    {
+        if (!_collapsedArticleIds.Add(idArticulo))
+            _collapsedArticleIds.Remove(idArticulo);
+    }
+
+    private bool HasChildren(InformesArticuloResumenDto article)
+        => _page.Articulos.Any(x => x.IdPadre == article.IdArticulo && x.Archivado == article.Archivado && x.Categoria == article.Categoria);
 
     private static string IconClass(string? value)
         => string.IsNullOrWhiteSpace(value) ? "bi-file-earmark-text" : value.Trim();
@@ -1264,7 +1287,7 @@
             _ => "--cover-bg: linear-gradient(135deg, rgba(14, 165, 233, .22), transparent 35%), linear-gradient(115deg, #09213a 0%, #0e365e 32%, #12253f 32%, #07111f 100%);"
         };
 
-    private sealed record ArticleTreeRow(InformesArticuloResumenDto Item, int Level);
+    private sealed record ArticleTreeRow(InformesArticuloResumenDto Item, int Level, bool CanCollapse);
     private sealed record EditorCommandOption(string Group, string Title, string Description, string Icon, string Command);
     private sealed record CoverOption(string Nombre, string Url, string Tags = "");
 }

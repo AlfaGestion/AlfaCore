@@ -244,15 +244,34 @@
 
 .informes-tree-row > button:first-child {
     display: grid;
-    grid-template-columns: 20px minmax(0, 1fr) auto;
+    grid-template-columns: 16px 20px minmax(0, 1fr) auto;
     align-items: center;
-    gap: .45rem;
+    gap: .34rem;
     min-height: 34px;
     padding: 0 .55rem;
     border: 1px solid transparent;
     border-radius: 6px;
     color: var(--inf-soft);
     text-align: left;
+}
+
+.informes-tree-row__toggle {
+    width: 16px;
+    height: 24px;
+    display: grid;
+    place-items: center;
+    border-radius: 5px;
+    color: #7dd3fc;
+    font-size: .78rem;
+}
+
+.informes-tree-row__toggle:not(.informes-tree-row__toggle--empty):hover {
+    background: rgba(14, 165, 233, .16);
+    color: #ffffff;
+}
+
+.informes-tree-row__toggle--empty {
+    visibility: hidden;
 }
 
 .informes-tree-row > button:first-child span {
