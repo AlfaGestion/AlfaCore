@@ -426,9 +426,10 @@
     overflow: hidden;
     border: 1px solid var(--inf-border);
     border-radius: 8px 8px 0 0;
-    background:
+    background: var(--cover-bg,
         linear-gradient(135deg, rgba(14, 165, 233, .22), transparent 35%),
-        linear-gradient(115deg, #09213a 0%, #0e365e 32%, #12253f 32%, #07111f 100%);
+        linear-gradient(115deg, #09213a 0%, #0e365e 32%, #12253f 32%, #07111f 100%));
+    background-size: var(--cover-bg-size, auto);
 }
 
 .informes-cover--none {
@@ -1117,13 +1118,39 @@
     width: min(980px, 100%);
     max-height: min(760px, calc(100vh - 2rem));
     display: grid;
-    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
     overflow: hidden;
     border: 1px solid var(--inf-border-strong);
     border-radius: 8px;
     background: #071426;
     color: var(--inf-text);
     box-shadow: 0 30px 90px rgba(0, 0, 0, .54);
+}
+
+.informes-cover-search {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    min-height: 42px;
+    margin: .85rem 1rem 0;
+    padding: 0 .75rem;
+    border: 1px solid rgba(148, 163, 184, .18);
+    border-radius: 8px;
+    background: rgba(2, 8, 23, .48);
+    color: var(--inf-muted);
+}
+
+.informes-cover-search input {
+    width: 100%;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: var(--inf-text);
+    font: inherit;
+}
+
+.informes-cover-search input::placeholder {
+    color: rgba(142, 166, 194, .74);
 }
 
 .informes-cover-picker header,
@@ -1230,6 +1257,45 @@
     background:
         linear-gradient(135deg, rgba(14, 165, 233, .36), transparent 38%),
         linear-gradient(115deg, #09213a 0%, #0e365e 32%, #12253f 32%, #07111f 100%);
+}
+
+.informes-cover-option--texture::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+}
+
+.informes-cover-option--alfa-ondas::before {
+    background:
+        radial-gradient(circle at 8% 25%, rgba(34, 211, 238, .40), transparent 22%),
+        radial-gradient(circle at 68% 20%, rgba(20, 184, 166, .24), transparent 24%),
+        linear-gradient(135deg, #06101d 0%, #0b2e4d 45%, #07111f 100%);
+}
+
+.informes-cover-option--alfa-diagonal::before {
+    background: linear-gradient(120deg, #0e4f75 0 28%, #09213a 28% 52%, #12375a 52% 70%, #07111f 70% 100%);
+}
+
+.informes-cover-option--alfa-malla::before {
+    background:
+        radial-gradient(circle, rgba(125, 211, 252, .25) 1px, transparent 1px),
+        linear-gradient(135deg, #07111f, #0b3556);
+    background-size: 22px 22px, auto;
+}
+
+.informes-cover-option--alfa-circuito::before {
+    background:
+        linear-gradient(90deg, rgba(34, 211, 238, .22) 1px, transparent 1px),
+        linear-gradient(0deg, rgba(20, 184, 166, .18) 1px, transparent 1px),
+        linear-gradient(135deg, #06101d, #0d2a45);
+    background-size: 44px 44px, 44px 44px, auto;
+}
+
+.informes-cover-option--alfa-calma::before {
+    background:
+        radial-gradient(circle at 20% 10%, rgba(14, 165, 233, .38), transparent 30%),
+        radial-gradient(circle at 78% 54%, rgba(20, 184, 166, .28), transparent 32%),
+        linear-gradient(135deg, #081426, #07111f);
 }
 
 .informes-cover-picker__file {
