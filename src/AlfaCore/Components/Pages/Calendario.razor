@@ -951,7 +951,16 @@
         => (value ?? string.Empty).Trim().ToUpperInvariant().Replace(" DE ", " ", StringComparison.Ordinal);
 
     private static string EventColor(CalendarioEventoDto item)
-        => string.IsNullOrWhiteSpace(item.Color) ? "#14b8a6" : item.Color;
+    {
+        if (item.Tipo == CalendarioEventoTipos.Guardia)
+        {
+            var fixedColor = FixedTechnicianColor(item.IdTecnico, item.TecnicoNombre);
+            if (!string.IsNullOrWhiteSpace(fixedColor))
+                return fixedColor;
+        }
+
+        return string.IsNullOrWhiteSpace(item.Color) ? "#14b8a6" : item.Color;
+    }
 
     private static string FirstNonEmpty(params string?[] values)
         => values.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x))?.Trim() ?? string.Empty;
