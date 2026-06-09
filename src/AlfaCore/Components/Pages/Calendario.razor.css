@@ -125,17 +125,6 @@
 
 .calendario-event-chip {
     padding: .28rem .42rem;
-    border-left-color: var(--event-color);
-    background: color-mix(in srgb, var(--event-color) 68%, #08111f);
-    color: #ffffff;
-}
-
-.calendario-event-chip:hover {
-    background: color-mix(in srgb, var(--event-color) 78%, #08111f);
-}
-
-.calendario-event-chip small {
-    color: rgba(255, 255, 255, .88);
 }
 
 .calendario-side {

@@ -123,7 +123,7 @@
                         @foreach (var item in dayEvents.Take(4))
                         {
                             <span class="calendario-event-chip"
-                                  style="--event-color:@EventColor(item)"
+                                  style="@EventChipStyle(item)"
                                   title="@item.Titulo"
                                   @onclick:stopPropagation
                                   @onclick="() => OpenCalendarItem(item)">
@@ -962,6 +962,12 @@
         return string.IsNullOrWhiteSpace(item.Color) ? "#14b8a6" : item.Color;
     }
 
+    private static string EventChipStyle(CalendarioEventoDto item)
+    {
+        var color = EventColor(item);
+        return $"--event-color:{color};border-left-color:{color};";
+    }
+
     private static string FirstNonEmpty(params string?[] values)
         => values.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x))?.Trim() ?? string.Empty;
 
@@ -997,7 +1003,7 @@
 
     private static string FixedTechnicianColor(string? idTecnico, string? tecnicoNombre = null)
     {
-        var value = NormalizeTechnicianKey(FirstNonEmpty(idTecnico, tecnicoNombre));
+        var value = NormalizeTechnicianKey($"{tecnicoNombre} {idTecnico}");
         return value switch
         {
             var x when x.Contains("FAVIO", StringComparison.Ordinal) => "#ef4444",
