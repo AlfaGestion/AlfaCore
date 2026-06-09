@@ -15,9 +15,15 @@
     <link rel="stylesheet" href="/css/informes.css?v=20260609-knowledge" />
 </HeadContent>
 
-<section class="informes-shell">
+<section class="@ShellClass">
     <aside class="informes-sidebar">
         <div class="informes-brand">
+            <button type="button"
+                    class="informes-sidebar-toggle"
+                    title="@(_sidebarCollapsed ? "Abrir panel de articulos" : "Minimizar panel de articulos")"
+                    @onclick="ToggleSidebar">
+                <i class="bi @(_sidebarCollapsed ? "bi-layout-sidebar-inset" : "bi-layout-sidebar-inset-reverse")"></i>
+            </button>
             <span>Alfa Gestion</span>
             <strong>Informes</strong>
         </div>
@@ -127,6 +133,10 @@
                     }
                 </div>
                 <div class="informes-actions">
+                    <button type="button" @onclick="ToggleCollaborationPanel" title="Comentarios y versiones">
+                        <i class="bi bi-chat-square-text"></i>
+                        <span>Actividad</span>
+                    </button>
                     <button type="button" @onclick="ToggleShareAsync" title="Compartir">
                         <i class="bi bi-share"></i>
                         <span>Compartir</span>
@@ -259,7 +269,21 @@
                     </section>
                 </div>
 
-                <aside class="informes-panel">
+                @if (_collaborationOpen)
+                {
+                    <button type="button" class="informes-panel-backdrop" aria-label="Cerrar actividad" @onclick="CloseCollaborationPanel"></button>
+                }
+
+                <aside class="@CollaborationPanelClass">
+                    <header class="informes-panel__header">
+                        <div>
+                            <span>Actividad</span>
+                            <strong>Comentarios y versiones</strong>
+                        </div>
+                        <button type="button" title="Cerrar" @onclick="CloseCollaborationPanel">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                    </header>
                     <section>
                         <h3>Comentarios</h3>
                         <div class="informes-comment-form">
@@ -348,6 +372,8 @@
     private bool _showTrash;
     private bool _showTemplatePicker;
     private bool _showCommandMenu;
+    private bool _sidebarCollapsed;
+    private bool _collaborationOpen;
     private bool _editorReady;
     private bool _editorRootWired;
     private string _search = string.Empty;
@@ -386,6 +412,8 @@
     ];
 
     private string CurrentUser => AppUserSession.GetCurrentUserName(Environment.UserName).Trim();
+    private string ShellClass => "informes-shell" + (_sidebarCollapsed ? " informes-shell--sidebar-collapsed" : string.Empty);
+    private string CollaborationPanelClass => "informes-panel" + (_collaborationOpen ? " is-open" : string.Empty);
     private IEnumerable<ArticleTreeRow> WorkspaceRows => BuildRows(InformesCategorias.EspacioTrabajo, false);
     private IEnumerable<ArticleTreeRow> PrivateRows => BuildRows(InformesCategorias.Privado, false);
     private IEnumerable<ArticleTreeRow> TrashRows => BuildRows(null, true);
@@ -700,6 +728,15 @@
 
     private void ToggleCommandMenu()
         => _showCommandMenu = !_showCommandMenu;
+
+    private void ToggleSidebar()
+        => _sidebarCollapsed = !_sidebarCollapsed;
+
+    private void ToggleCollaborationPanel()
+        => _collaborationOpen = !_collaborationOpen;
+
+    private void CloseCollaborationPanel()
+        => _collaborationOpen = false;
 
     private async Task RunEditorCommandAsync(EditorCommandOption option)
     {
