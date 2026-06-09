@@ -126,7 +126,7 @@
                 <div class="informes-breadcrumb">
                     <i class="bi @IconClass(_selected.Emoji)"></i>
                     <span>@_selected.Titulo</span>
-                    <small>@CategoryLabel(_selected.Categoria)</small>
+                    <small>@ArticleVisibilityLabel(_selected)</small>
                     @if (_selected.EsCompartido)
                     {
                         <i class="bi bi-cloud-check-fill" title="Compartido"></i>
@@ -139,7 +139,7 @@
                     </button>
                     <button type="button" @onclick="ToggleShareAsync" title="Compartir">
                         <i class="bi bi-share"></i>
-                        <span>Compartir</span>
+                        <span>@(_selected.EsCompartido ? "Pasar a privado" : "Compartir")</span>
                     </button>
                     <button type="button" class="@(_selected.EsFavorito ? "is-active" : "")" @onclick="ToggleFavoriteAsync" title="Favorito">
                         <i class="bi bi-star-fill"></i>
@@ -881,7 +881,7 @@
                     <div class="informes-tree-row__menu">
                         <button type="button" @onclick="() => ToggleShareArticleAsync(row.Item.IdArticulo)">
                             <i class="bi bi-share"></i>
-                            <span>@(row.Item.EsCompartido ? "Quitar compartir" : "Compartir")</span>
+                            <span>@(row.Item.EsCompartido ? "Pasar a privado" : "Compartir")</span>
                         </button>
                         <button type="button" @onclick="() => DuplicateArticleAsync(row.Item.IdArticulo)">
                             <i class="bi bi-copy"></i>
@@ -899,6 +899,11 @@
 
     private static string IconClass(string? value)
         => string.IsNullOrWhiteSpace(value) ? "bi-file-earmark-text" : value.Trim();
+
+    private static string ArticleVisibilityLabel(InformesArticuloResumenDto article)
+        => article.EsCompartido
+            ? "Compartido"
+            : CategoryLabel(article.Categoria);
 
     private static string CategoryLabel(string? value)
         => string.Equals(value, InformesCategorias.Privado, StringComparison.OrdinalIgnoreCase)
