@@ -121,7 +121,7 @@
             <header class="informes-toolbar">
                 <div class="informes-breadcrumb">
                     <i class="bi @IconClass(_selected.Emoji)"></i>
-                    <span>@_selected.Titulo</span>
+                    <span>@_draft.Titulo</span>
                     <small>@ArticleVisibilityLabel(_selected)</small>
                     @if (_selected.EsCompartido)
                     {
@@ -129,6 +129,10 @@
                     }
                 </div>
                 <div class="informes-actions">
+                    <span class="@AutoSaveStatusClass" title="@AutoSaveStatusText">
+                        <i class="bi @AutoSaveStatusIcon"></i>
+                        <span>@AutoSaveStatusText</span>
+                    </span>
                     <button type="button" @onclick="ToggleCollaborationPanel" title="Comentarios y versiones">
                         <i class="bi bi-chat-square-text"></i>
                         <span>Actividad</span>
@@ -195,15 +199,15 @@
                             <button type="button" class="informes-emoji" @onclick="CycleIcon" title="Cambiar icono">
                                 <i class="bi @IconClass(_draft.Emoji)"></i>
                             </button>
-                            <input class="informes-title" @bind="_draft.Titulo" placeholder="Titulo 1" disabled="@_saving" />
+                            <input class="informes-title" @bind="_draft.Titulo" @bind:event="oninput" @bind:after="ScheduleAutosave" placeholder="Titulo 1" disabled="@_saving" />
                         </div>
 
                         <div class="informes-meta">
-                            <select @bind="_draft.Categoria" disabled="@_saving">
+                            <select @bind="_draft.Categoria" @bind:after="ScheduleAutosave" disabled="@_saving">
                                 <option value="@InformesCategorias.EspacioTrabajo">Espacio de trabajo</option>
                                 <option value="@InformesCategorias.Privado">Privado</option>
                             </select>
-                            <select @bind="_draft.IdPadre" disabled="@_saving">
+                            <select @bind="_draft.IdPadre" @bind:after="ScheduleAutosave" disabled="@_saving">
                                 <option value="">Sin articulo padre</option>
                                 @foreach (var article in ParentOptions)
                                 {
@@ -211,7 +215,7 @@
                                 }
                             </select>
                             <label>
-                                <input type="checkbox" @bind="_draft.Bloqueado" disabled="@_saving" />
+                                <input type="checkbox" @bind="_draft.Bloqueado" @bind:after="ScheduleAutosave" disabled="@_saving" />
                                 Bloquear edicion
                             </label>
                         </div>
@@ -265,7 +269,7 @@
                         <footer class="informes-savebar">
                             <button type="button" class="btn btn--primary" disabled="@_saving" @onclick="SaveAsync">
                                 <i class="bi bi-save"></i>
-                                <span>Guardar</span>
+                                <span>Guardar ahora</span>
                             </button>
                             <button type="button" class="btn btn--ghost" disabled="@_saving" @onclick="OpenTemplatePicker">
                                 <i class="bi bi-brush"></i>
@@ -429,6 +433,7 @@
 
 @code {
     private const long MaxCoverImageBytes = 5 * 1024 * 1024;
+    private const int AutoSaveDelayMs = 900;
     private InformesPageDto _page = new();
     private InformesArticuloDetalleDto? _selected;
     private InformesArticuloSaveRequest _draft = new();
@@ -455,6 +460,12 @@
     private string _selectedTemplateKey = "agenda";
     private long? _openArticleMenuId;
     private string _coverSearch = string.Empty;
+    private string _autoSaveState = AutoSaveStates.Saved;
+    private string _lastSavedSignature = string.Empty;
+    private CancellationTokenSource? _autoSaveCts;
+    private bool _autoSaveRunning;
+    private bool _autoSaveRequested;
+    private DateTime? _lastAutoSavedAt;
     private bool _coverMenuOpen;
     private HashSet<long> _collapsedArticleIds = [];
     private byte[]? _pendingCoverBytes;
@@ -538,6 +549,21 @@
     private string CoverStyle => _draft.PortadaTipo == InformesPortadas.Gradiente ? AlfaCoverStyle(_draft.PortadaValor) : string.Empty;
     private IEnumerable<CoverOption> FilteredAlfaTextures => FilterCoverOptions(AlfaTextureOptions);
     private IEnumerable<CoverOption> FilteredCoverOptions => FilterCoverOptions(DefaultCoverOptions);
+    private string AutoSaveStatusClass => $"informes-autosave informes-autosave--{_autoSaveState}";
+    private string AutoSaveStatusIcon => _autoSaveState switch
+    {
+        AutoSaveStates.Pending => "bi-dot",
+        AutoSaveStates.Saving => "bi-arrow-repeat",
+        AutoSaveStates.Error => "bi-exclamation-triangle",
+        _ => "bi-cloud-check"
+    };
+    private string AutoSaveStatusText => _autoSaveState switch
+    {
+        AutoSaveStates.Pending => "Cambios pendientes",
+        AutoSaveStates.Saving => "Guardando",
+        AutoSaveStates.Error => "No se pudo guardar",
+        _ => _lastAutoSavedAt.HasValue ? $"Guardado {_lastAutoSavedAt:HH:mm}" : "Guardado"
+    };
 
     protected override async Task OnInitializedAsync()
         => await LoadAsync(GetInitialArticleId());
@@ -568,6 +594,7 @@
 
     public async ValueTask DisposeAsync()
     {
+        CancelPendingAutosave();
         if (_informesEditorJs is not null)
         {
             if (_editorRootWired)
@@ -601,11 +628,14 @@
 
     private void SetSelected(InformesArticuloDetalleDto? article)
     {
+        CancelPendingAutosave();
         _selected = article;
         if (article is null)
         {
             _draft = new();
             _editorReady = false;
+            _lastSavedSignature = string.Empty;
+            _autoSaveState = AutoSaveStates.Saved;
             return;
         }
 
@@ -622,11 +652,15 @@
             Bloqueado = article.Bloqueado,
             UsuarioAccion = CurrentUser
         };
+        _lastSavedSignature = BuildSaveSignature();
+        _lastAutoSavedAt = article.FechaHoraModificacion == default ? null : article.FechaHoraModificacion;
+        _autoSaveState = AutoSaveStates.Saved;
         _editorReady = false;
     }
 
     private async Task SelectArticleAsync(long id)
     {
+        await FlushAutosaveAsync();
         _feedback = string.Empty;
         await LoadAsync(id);
     }
@@ -677,21 +711,59 @@
     private async Task SaveAsync()
     {
         _saving = true;
-        await CloseEditorPopupsAsync();
+        await SaveArticleAsync(reloadAfterSave: true, showFeedback: true, closePopups: true);
+        _saving = false;
+    }
+
+    private async Task<bool> SaveArticleAsync(bool reloadAfterSave, bool showFeedback, bool closePopups)
+    {
+        if (closePopups)
+            await CloseEditorPopupsAsync();
         await SyncContentFromEditorAsync();
-        _draft.UsuarioAccion = CurrentUser;
-        var result = await UiOps.RunAsync(() => InformesSvc.SaveArticleAsync(_draft), "No se pudo guardar el articulo.");
-        if (result.Success)
+
+        var request = SnapshotDraft();
+        var currentSignature = BuildSaveSignature(request);
+        if (string.Equals(currentSignature, _lastSavedSignature, StringComparison.Ordinal))
         {
-            await LoadAsync(result.Value);
-            _feedback = "Cambios guardados.";
-        }
-        else
-        {
-            _feedback = FeedbackText(result.Feedback);
+            _autoSaveState = AutoSaveStates.Saved;
+            return true;
         }
 
-        _saving = false;
+        request.UsuarioAccion = CurrentUser;
+        var result = await UiOps.RunAsync(() => InformesSvc.SaveArticleAsync(request), "No se pudo guardar el articulo.");
+        if (result.Success)
+        {
+            request.IdArticulo = result.Value;
+            if (_draft.IdArticulo == request.IdArticulo || _draft.IdArticulo <= 0)
+                _draft.IdArticulo = result.Value;
+
+            var liveSignature = BuildSaveSignature();
+            var savedSignature = BuildSaveSignature(request);
+            if (string.Equals(liveSignature, savedSignature, StringComparison.Ordinal))
+            {
+                _lastSavedSignature = savedSignature;
+                _autoSaveState = AutoSaveStates.Saved;
+            }
+            else
+            {
+                _autoSaveState = AutoSaveStates.Pending;
+                _autoSaveRequested = true;
+            }
+
+            _lastAutoSavedAt = DateTime.Now;
+            ApplySavedRequestToCurrentArticle(request);
+
+            if (reloadAfterSave)
+                await LoadAsync(result.Value);
+
+            if (showFeedback)
+                _feedback = "Cambios guardados.";
+            return true;
+        }
+
+        _autoSaveState = AutoSaveStates.Error;
+        _feedback = FeedbackText(result.Feedback);
+        return false;
     }
 
     private async Task DeleteAsync()
@@ -933,7 +1005,7 @@
             SetCover(InformesPortadas.Url, result.Value);
             ClearPendingCover();
             _showCoverPicker = false;
-            _feedback = "Portada cargada. Guarda el articulo para conservar el cambio.";
+            _feedback = "Portada cargada.";
         }
         else
         {
@@ -986,6 +1058,7 @@
                 await _informesEditorJs.InvokeVoidAsync("placeCaretAfterInformesBanner", _contentEditor);
         }
         await SyncContentFromEditorAsync();
+        ScheduleAutosave();
         _showCommandMenu = false;
     }
 
@@ -1004,6 +1077,7 @@
         await SyncContentFromEditorAsync();
         if (_editorJs is not null)
             _showCommandMenu = await _editorJs.InvokeAsync<bool>("shouldShowCommands", _contentEditor);
+        ScheduleAutosave();
     }
 
     private async Task CloseEditorPopupsAsync()
@@ -1023,6 +1097,7 @@
     {
         _draft.PortadaTipo = type;
         _draft.PortadaValor = value;
+        ScheduleAutosave();
     }
 
     private void CycleIcon()
@@ -1030,7 +1105,157 @@
         string[] icons = ["bi-file-earmark-text", "bi-chat-square-text", "bi-heart-fill", "bi-lightbulb", "bi-tools", "bi-rocket-takeoff", "bi-question-circle", "bi-graph-up-arrow"];
         var current = Array.IndexOf(icons, _draft.Emoji);
         _draft.Emoji = icons[(current + 1 + icons.Length) % icons.Length];
+        ScheduleAutosave();
     }
+
+    private void ScheduleAutosave()
+    {
+        if (_selected is null || _draft.IdArticulo <= 0)
+            return;
+
+        _autoSaveCts?.Cancel();
+        _autoSaveCts?.Dispose();
+        _autoSaveCts = new CancellationTokenSource();
+
+        if (!string.Equals(BuildSaveSignature(), _lastSavedSignature, StringComparison.Ordinal))
+            _autoSaveState = AutoSaveStates.Pending;
+
+        var token = _autoSaveCts.Token;
+        _ = RunAutosaveDebouncedAsync(token);
+    }
+
+    private async Task RunAutosaveDebouncedAsync(CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(AutoSaveDelayMs, token);
+            await InvokeAsync(async () => await AutosaveAsync(token));
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task AutosaveAsync(CancellationToken token)
+    {
+        if (token.IsCancellationRequested || _selected is null)
+            return;
+
+        if (_autoSaveRunning)
+        {
+            _autoSaveRequested = true;
+            return;
+        }
+
+        var signature = BuildSaveSignature();
+        if (string.Equals(signature, _lastSavedSignature, StringComparison.Ordinal))
+        {
+            _autoSaveState = AutoSaveStates.Saved;
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        _autoSaveRunning = true;
+        _autoSaveState = AutoSaveStates.Saving;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            await SaveArticleAsync(reloadAfterSave: false, showFeedback: false, closePopups: false);
+        }
+        finally
+        {
+            _autoSaveRunning = false;
+        }
+
+        if (_autoSaveRequested)
+        {
+            _autoSaveRequested = false;
+            ScheduleAutosave();
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task FlushAutosaveAsync()
+    {
+        _autoSaveCts?.Cancel();
+        while (_autoSaveRunning)
+        {
+            _autoSaveRequested = true;
+            await Task.Delay(50);
+        }
+
+        if (_selected is not null && !string.Equals(BuildSaveSignature(), _lastSavedSignature, StringComparison.Ordinal))
+            await AutosaveAsync(CancellationToken.None);
+    }
+
+    private void CancelPendingAutosave()
+    {
+        _autoSaveCts?.Cancel();
+        _autoSaveCts?.Dispose();
+        _autoSaveCts = null;
+        _autoSaveRunning = false;
+        _autoSaveRequested = false;
+    }
+
+    private InformesArticuloSaveRequest SnapshotDraft()
+        => new()
+        {
+            IdArticulo = _draft.IdArticulo,
+            IdPadre = _draft.IdPadre,
+            Categoria = _draft.Categoria,
+            Titulo = _draft.Titulo,
+            Emoji = _draft.Emoji,
+            Contenido = _draft.Contenido,
+            PortadaTipo = _draft.PortadaTipo,
+            PortadaValor = _draft.PortadaValor,
+            Bloqueado = _draft.Bloqueado,
+            UsuarioAccion = CurrentUser
+        };
+
+    private void ApplySavedRequestToCurrentArticle(InformesArticuloSaveRequest request)
+    {
+        if (_selected is null || _selected.IdArticulo != request.IdArticulo)
+            return;
+
+        ApplyRequestToArticle(_selected, request);
+        var row = _page.Articulos.FirstOrDefault(x => x.IdArticulo == request.IdArticulo);
+        if (row is not null)
+            ApplyRequestToArticle(row, request);
+    }
+
+    private static void ApplyRequestToArticle(InformesArticuloResumenDto article, InformesArticuloSaveRequest request)
+    {
+        article.IdPadre = request.IdPadre;
+        article.Categoria = request.Categoria;
+        article.Titulo = string.IsNullOrWhiteSpace(request.Titulo) ? "Sin titulo" : request.Titulo;
+        article.Emoji = request.Emoji;
+        article.Bloqueado = request.Bloqueado;
+        article.FechaHoraModificacion = DateTime.Now;
+
+        if (article is InformesArticuloDetalleDto detail)
+        {
+            detail.Contenido = request.Contenido;
+            detail.PortadaTipo = request.PortadaTipo;
+            detail.PortadaValor = request.PortadaValor;
+        }
+    }
+
+    private string BuildSaveSignature()
+        => BuildSaveSignature(_draft);
+
+    private static string BuildSaveSignature(InformesArticuloSaveRequest request)
+        => string.Join('\u001f',
+            request.IdArticulo.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            request.IdPadre?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty,
+            request.Categoria ?? string.Empty,
+            request.Titulo ?? string.Empty,
+            request.Emoji ?? string.Empty,
+            request.Contenido ?? string.Empty,
+            request.PortadaTipo ?? string.Empty,
+            request.PortadaValor ?? string.Empty,
+            request.Bloqueado ? "1" : "0");
 
     private static string FeedbackText(AppUiMessage? feedback)
     {
@@ -1290,4 +1515,12 @@
     private sealed record ArticleTreeRow(InformesArticuloResumenDto Item, int Level, bool CanCollapse);
     private sealed record EditorCommandOption(string Group, string Title, string Description, string Icon, string Command);
     private sealed record CoverOption(string Nombre, string Url, string Tags = "");
+
+    private static class AutoSaveStates
+    {
+        public const string Saved = "saved";
+        public const string Pending = "pending";
+        public const string Saving = "saving";
+        public const string Error = "error";
+    }
 }
