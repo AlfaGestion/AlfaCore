@@ -380,6 +380,7 @@
     private string _feedback = string.Empty;
     private string _newComment = string.Empty;
     private string _selectedTemplateKey = "agenda";
+    private long? _openArticleMenuId;
 
     private static readonly IReadOnlyList<EditorCommandOption> EditorCommands =
     [
@@ -583,7 +584,13 @@
         if (_selected is null)
             return;
 
-        var result = await UiOps.RunAsync(async () => { await InformesSvc.DeleteArticleAsync(_selected.IdArticulo, CurrentUser); return true; }, "No se pudo enviar a papelera.");
+        await DeleteArticleAsync(_selected.IdArticulo);
+    }
+
+    private async Task DeleteArticleAsync(long idArticulo)
+    {
+        _openArticleMenuId = null;
+        var result = await UiOps.RunAsync(async () => { await InformesSvc.DeleteArticleAsync(idArticulo, CurrentUser); return true; }, "No se pudo enviar a papelera.");
         _feedback = result.Success ? "Articulo enviado a la papelera." : FeedbackText(result.Feedback);
         await LoadAsync();
     }
@@ -604,7 +611,13 @@
         if (_selected is null)
             return;
 
-        var result = await UiOps.RunAsync(() => InformesSvc.DuplicateArticleAsync(_selected.IdArticulo, CurrentUser), "No se pudo duplicar.");
+        await DuplicateArticleAsync(_selected.IdArticulo);
+    }
+
+    private async Task DuplicateArticleAsync(long idArticulo)
+    {
+        _openArticleMenuId = null;
+        var result = await UiOps.RunAsync(() => InformesSvc.DuplicateArticleAsync(idArticulo, CurrentUser), "No se pudo duplicar.");
         if (result.Success)
         {
             await LoadAsync(result.Value);
@@ -634,12 +647,19 @@
         if (_selected is null)
             return;
 
-        var value = !_selected.EsCompartido;
-        var result = await UiOps.RunAsync(async () => { await InformesSvc.ToggleShareAsync(_selected.IdArticulo, CurrentUser, value); return true; }, "No se pudo compartir.");
+        await ToggleShareArticleAsync(_selected.IdArticulo, !_selected.EsCompartido);
+    }
+
+    private async Task ToggleShareArticleAsync(long idArticulo, bool? value = null)
+    {
+        _openArticleMenuId = null;
+        var article = _page.Articulos.FirstOrDefault(x => x.IdArticulo == idArticulo);
+        var share = value ?? !(article?.EsCompartido ?? false);
+        var result = await UiOps.RunAsync(async () => { await InformesSvc.ToggleShareAsync(idArticulo, CurrentUser, share); return true; }, "No se pudo compartir.");
         if (result.Success)
         {
-            await LoadAsync(_selected.IdArticulo);
-            _feedback = value ? "Articulo compartido." : "Articulo privado nuevamente.";
+            await LoadAsync(idArticulo);
+            _feedback = share ? "Articulo compartido." : "Articulo privado nuevamente.";
         }
         else
         {
@@ -737,6 +757,9 @@
 
     private void CloseCollaborationPanel()
         => _collaborationOpen = false;
+
+    private void ToggleArticleMenu(long idArticulo)
+        => _openArticleMenuId = _openArticleMenuId == idArticulo ? null : idArticulo;
 
     private async Task RunEditorCommandAsync(EditorCommandOption option)
     {
@@ -846,9 +869,31 @@
         </button>
         @if (!row.Item.Archivado)
         {
-            <button type="button" class="informes-tree-row__add" title="Crear subarticulo" @onclick="() => CreateArticleAsync(row.Item.IdArticulo, row.Item.Categoria)">
-                <i class="bi bi-plus-lg"></i>
-            </button>
+            <div class="informes-tree-row__tools">
+                <button type="button" class="informes-tree-row__add" title="Crear subarticulo" @onclick="() => CreateArticleAsync(row.Item.IdArticulo, row.Item.Categoria)">
+                    <i class="bi bi-plus-lg"></i>
+                </button>
+                <button type="button" class="informes-tree-row__menu-button" title="Acciones" @onclick="() => ToggleArticleMenu(row.Item.IdArticulo)">
+                    <i class="bi bi-three-dots"></i>
+                </button>
+                @if (_openArticleMenuId == row.Item.IdArticulo)
+                {
+                    <div class="informes-tree-row__menu">
+                        <button type="button" @onclick="() => ToggleShareArticleAsync(row.Item.IdArticulo)">
+                            <i class="bi bi-share"></i>
+                            <span>@(row.Item.EsCompartido ? "Quitar compartir" : "Compartir")</span>
+                        </button>
+                        <button type="button" @onclick="() => DuplicateArticleAsync(row.Item.IdArticulo)">
+                            <i class="bi bi-copy"></i>
+                            <span>Duplicar</span>
+                        </button>
+                        <button type="button" @onclick="() => DeleteArticleAsync(row.Item.IdArticulo)">
+                            <i class="bi bi-trash3"></i>
+                            <span>Eliminar</span>
+                        </button>
+                    </div>
+                }
+            </div>
         }
     </div>;
 
