@@ -12,11 +12,16 @@
 
 <PageTitle>Informes | Alfa Gestion</PageTitle>
 <HeadContent>
-    <link rel="stylesheet" href="/css/informes.css?v=20260608-editorfix" />
+    <link rel="stylesheet" href="/css/informes.css?v=20260609-knowledge" />
 </HeadContent>
 
 <section class="informes-shell">
     <aside class="informes-sidebar">
+        <div class="informes-brand">
+            <span>Alfa Gestion</span>
+            <strong>Informes</strong>
+        </div>
+
         <div class="informes-sidebar__top">
             <button type="button" class="informes-new" @onclick="() => CreateArticleAsync(null, InformesCategorias.EspacioTrabajo)">
                 <i class="bi bi-plus-lg"></i>
@@ -35,6 +40,7 @@
         <div class="informes-tree">
             <div class="informes-tree__section">
                 <span>Favoritos</span>
+                <small>@FavoriteRows.Count()</small>
             </div>
             @foreach (var row in FavoriteRows)
             {
@@ -43,6 +49,7 @@
 
             <div class="informes-tree__section informes-tree__section--with-action">
                 <span>Espacio de trabajo</span>
+                <small>@WorkspaceRows.Count()</small>
                 <button type="button" title="Crear articulo" @onclick="() => CreateArticleAsync(null, InformesCategorias.EspacioTrabajo)">
                     <i class="bi bi-plus-lg"></i>
                 </button>
@@ -54,6 +61,7 @@
 
             <div class="informes-tree__section informes-tree__section--with-action">
                 <span>Privado</span>
+                <small>@PrivateRows.Count()</small>
                 <button type="button" title="Crear articulo privado" @onclick="() => CreateArticleAsync(null, InformesCategorias.Privado)">
                     <i class="bi bi-plus-lg"></i>
                 </button>
@@ -67,6 +75,7 @@
             {
                 <div class="informes-tree__section">
                     <span>Papelera</span>
+                    <small>@TrashRows.Count()</small>
                 </div>
                 @foreach (var row in TrashRows)
                 {
@@ -111,6 +120,7 @@
                 <div class="informes-breadcrumb">
                     <i class="bi @IconClass(_selected.Emoji)"></i>
                     <span>@_selected.Titulo</span>
+                    <small>@CategoryLabel(_selected.Categoria)</small>
                     @if (_selected.EsCompartido)
                     {
                         <i class="bi bi-cloud-check-fill" title="Compartido"></i>
@@ -147,133 +157,137 @@
                 <div class="informes-feedback">@_feedback</div>
             }
 
-            <section class="@CoverClass">
-                @if (_draft.PortadaTipo == InformesPortadas.Url && !string.IsNullOrWhiteSpace(_draft.PortadaValor))
-                {
-                    <img src="@_draft.PortadaValor" alt="" />
-                }
-                <div class="informes-cover__actions">
-                    <button type="button" @onclick='() => SetCover(InformesPortadas.Gradiente, "alfa")'><i class="bi bi-image"></i> Portada Alfa</button>
-                    <button type="button" @onclick="() => SetCover(InformesPortadas.Ninguna, string.Empty)"><i class="bi bi-x-lg"></i> Quitar</button>
-                </div>
-            </section>
-
-            <section class="informes-document">
-                <div class="informes-title-row">
-                    <button type="button" class="informes-emoji" @onclick="CycleIcon" title="Cambiar icono">
-                        <i class="bi @IconClass(_draft.Emoji)"></i>
-                    </button>
-                    <input class="informes-title" @bind="_draft.Titulo" placeholder="Titulo 1" disabled="@_saving" />
-                </div>
-
-                <div class="informes-meta">
-                    <select @bind="_draft.Categoria" disabled="@_saving">
-                        <option value="@InformesCategorias.EspacioTrabajo">Espacio de trabajo</option>
-                        <option value="@InformesCategorias.Privado">Privado</option>
-                    </select>
-                    <select @bind="_draft.IdPadre" disabled="@_saving">
-                        <option value="">Sin articulo padre</option>
-                        @foreach (var article in ParentOptions)
+            <div class="informes-workspace">
+                <div class="informes-editor-column">
+                    <section class="@CoverClass">
+                        @if (_draft.PortadaTipo == InformesPortadas.Url && !string.IsNullOrWhiteSpace(_draft.PortadaValor))
                         {
-                            <option value="@article.IdArticulo">@article.Titulo</option>
+                            <img src="@_draft.PortadaValor" alt="" />
                         }
-                    </select>
-                    <label>
-                        <input type="checkbox" @bind="_draft.Bloqueado" disabled="@_saving" />
-                        Bloquear edicion
-                    </label>
-                </div>
+                        <div class="informes-cover__actions">
+                            <button type="button" @onclick='() => SetCover(InformesPortadas.Gradiente, "alfa")'><i class="bi bi-image"></i> Portada Alfa</button>
+                            <button type="button" @onclick="() => SetCover(InformesPortadas.Ninguna, string.Empty)"><i class="bi bi-x-lg"></i> Quitar</button>
+                        </div>
+                    </section>
 
-                <div class="informes-rich-editor" @ref="_editorRoot">
-                    <div class="informes-editor-surface"
-                         @ref="_contentEditor"
-                         contenteditable="@(!_saving && !_draft.Bloqueado)"
-                         data-placeholder="Escribi / para comandos"
-                         @oninput="OnContentChangedAsync"
-                         @onkeyup="OnContentChangedAsync"
-                         @onfocus="OnContentFocusAsync"></div>
-                    <div class="informes-blockbar">
-                        @foreach (var option in ToolbarCommands)
-                        {
-                            <button type="button"
-                                    title="@option.Title"
-                                    disabled="@(_saving || _draft.Bloqueado)"
-                                    @onclick="() => RunEditorCommandAsync(option)">
-                                <i class="bi @option.Icon"></i>
+                    <section class="informes-document">
+                        <div class="informes-title-row">
+                            <button type="button" class="informes-emoji" @onclick="CycleIcon" title="Cambiar icono">
+                                <i class="bi @IconClass(_draft.Emoji)"></i>
                             </button>
-                        }
-                        <button type="button"
-                                title="Comandos"
-                                disabled="@(_saving || _draft.Bloqueado)"
-                                @onclick="ToggleCommandMenu">
-                            <i class="bi bi-three-dots-vertical"></i>
-                        </button>
-                    </div>
-                    @if (_showCommandMenu)
-                    {
-                        <div class="informes-command-menu">
-                            @foreach (var group in EditorCommands.GroupBy(x => x.Group))
+                            <input class="informes-title" @bind="_draft.Titulo" placeholder="Titulo 1" disabled="@_saving" />
+                        </div>
+
+                        <div class="informes-meta">
+                            <select @bind="_draft.Categoria" disabled="@_saving">
+                                <option value="@InformesCategorias.EspacioTrabajo">Espacio de trabajo</option>
+                                <option value="@InformesCategorias.Privado">Privado</option>
+                            </select>
+                            <select @bind="_draft.IdPadre" disabled="@_saving">
+                                <option value="">Sin articulo padre</option>
+                                @foreach (var article in ParentOptions)
+                                {
+                                    <option value="@article.IdArticulo">@article.Titulo</option>
+                                }
+                            </select>
+                            <label>
+                                <input type="checkbox" @bind="_draft.Bloqueado" disabled="@_saving" />
+                                Bloquear edicion
+                            </label>
+                        </div>
+
+                        <div class="informes-rich-editor" @ref="_editorRoot">
+                            <div class="informes-editor-surface"
+                                 @ref="_contentEditor"
+                                 contenteditable="@(!_saving && !_draft.Bloqueado)"
+                                 data-placeholder="Escribi / para comandos"
+                                 @oninput="OnContentChangedAsync"
+                                 @onkeyup="OnContentChangedAsync"
+                                 @onfocus="OnContentFocusAsync"></div>
+                            <div class="informes-blockbar">
+                                @foreach (var option in ToolbarCommands)
+                                {
+                                    <button type="button"
+                                            title="@option.Title"
+                                            disabled="@(_saving || _draft.Bloqueado)"
+                                            @onclick="() => RunEditorCommandAsync(option)">
+                                        <i class="bi @option.Icon"></i>
+                                    </button>
+                                }
+                                <button type="button"
+                                        title="Comandos"
+                                        disabled="@(_saving || _draft.Bloqueado)"
+                                        @onclick="ToggleCommandMenu">
+                                    <i class="bi bi-three-dots-vertical"></i>
+                                </button>
+                            </div>
+                            @if (_showCommandMenu)
                             {
-                                <div class="informes-command-menu__group">
-                                    <span>@group.Key</span>
-                                    @foreach (var option in group)
+                                <div class="informes-command-menu">
+                                    @foreach (var group in EditorCommands.GroupBy(x => x.Group))
                                     {
-                                        <button type="button" @onclick="() => RunEditorCommandAsync(option)">
-                                            <i class="bi @option.Icon"></i>
-                                            <strong>@option.Title</strong>
-                                            <small>@option.Description</small>
-                                        </button>
+                                        <div class="informes-command-menu__group">
+                                            <span>@group.Key</span>
+                                            @foreach (var option in group)
+                                            {
+                                                <button type="button" @onclick="() => RunEditorCommandAsync(option)">
+                                                    <i class="bi @option.Icon"></i>
+                                                    <strong>@option.Title</strong>
+                                                    <small>@option.Description</small>
+                                                </button>
+                                            }
+                                        </div>
                                     }
                                 </div>
                             }
                         </div>
-                    }
+
+                        <footer class="informes-savebar">
+                            <button type="button" class="btn btn--primary" disabled="@_saving" @onclick="SaveAsync">
+                                <i class="bi bi-save"></i>
+                                <span>Guardar</span>
+                            </button>
+                            <button type="button" class="btn btn--ghost" disabled="@_saving" @onclick="OpenTemplatePicker">
+                                <i class="bi bi-brush"></i>
+                                <span>Plantillas</span>
+                            </button>
+                            @if (_selected.EsCompartido && _selected.TokenPublico is not null)
+                            {
+                                <span class="informes-share-link">@BuildShareUrl(_selected.TokenPublico.Value)</span>
+                            }
+                        </footer>
+                    </section>
                 </div>
 
-                <footer class="informes-savebar">
-                    <button type="button" class="btn btn--primary" disabled="@_saving" @onclick="SaveAsync">
-                        <i class="bi bi-save"></i>
-                        <span>Guardar</span>
-                    </button>
-                    <button type="button" class="btn btn--ghost" disabled="@_saving" @onclick="OpenTemplatePicker">
-                        <i class="bi bi-brush"></i>
-                        <span>Plantillas</span>
-                    </button>
-                    @if (_selected.EsCompartido && _selected.TokenPublico is not null)
-                    {
-                        <span class="informes-share-link">@BuildShareUrl(_selected.TokenPublico.Value)</span>
-                    }
-                </footer>
-            </section>
-
-            <aside class="informes-panel">
-                <section>
-                    <h3>Comentarios</h3>
-                    <div class="informes-comment-form">
-                        <input @bind="_newComment" placeholder="Agregar comentario" />
-                        <button type="button" @onclick="AddCommentAsync"><i class="bi bi-send"></i></button>
-                    </div>
-                    @foreach (var comment in _comments)
-                    {
-                        <div class="@("informes-comment" + (comment.Resuelto ? " is-resolved" : ""))">
-                            <p>@comment.Texto</p>
-                            <small>@comment.UsuarioAlta - @comment.FechaHoraAlta.ToString("dd/MM HH:mm")</small>
-                            <button type="button" @onclick="() => ToggleCommentAsync(comment)">@((comment.Resuelto ? "Reabrir" : "Resolver"))</button>
+                <aside class="informes-panel">
+                    <section>
+                        <h3>Comentarios</h3>
+                        <div class="informes-comment-form">
+                            <input @bind="_newComment" placeholder="Agregar comentario" />
+                            <button type="button" @onclick="AddCommentAsync"><i class="bi bi-send"></i></button>
                         </div>
-                    }
-                </section>
+                        @foreach (var comment in _comments)
+                        {
+                            <div class="@("informes-comment" + (comment.Resuelto ? " is-resolved" : ""))">
+                                <p>@comment.Texto</p>
+                                <small>@comment.UsuarioAlta - @comment.FechaHoraAlta.ToString("dd/MM HH:mm")</small>
+                                <button type="button" @onclick="() => ToggleCommentAsync(comment)">@((comment.Resuelto ? "Reabrir" : "Resolver"))</button>
+                            </div>
+                        }
+                    </section>
 
-                <section>
-                    <h3>Versiones</h3>
-                    @foreach (var version in _versions)
-                    {
-                        <button type="button" class="informes-version" @onclick="() => RestoreVersionAsync(version.IdVersion)">
-                            <span>@version.Titulo</span>
-                            <small>@version.Usuario - @version.FechaHora.ToString("dd/MM HH:mm")</small>
-                        </button>
-                    }
-                </section>
-            </aside>
+                    <section>
+                        <h3>Versiones</h3>
+                        @foreach (var version in _versions)
+                        {
+                            <button type="button" class="informes-version" @onclick="() => RestoreVersionAsync(version.IdVersion)">
+                                <span>@version.Titulo</span>
+                                <small>@version.Usuario - @version.FechaHora.ToString("dd/MM HH:mm")</small>
+                            </button>
+                        }
+                    </section>
+                </aside>
+            </div>
         }
     </main>
 </section>
@@ -803,6 +817,11 @@
 
     private static string IconClass(string? value)
         => string.IsNullOrWhiteSpace(value) ? "bi-file-earmark-text" : value.Trim();
+
+    private static string CategoryLabel(string? value)
+        => string.Equals(value, InformesCategorias.Privado, StringComparison.OrdinalIgnoreCase)
+            ? "Privado"
+            : "Espacio de trabajo";
 
     private string BuildShareUrl(Guid token)
         => Nav.ToAbsoluteUri($"/informes?articulo={_selected?.IdArticulo}&share={token}").ToString();
