@@ -1,6 +1,7 @@
 @page "/calendario"
 @using System.Globalization
 @inject AlfaCore.Services.ICalendarioService CalendarioSvc
+@inject AlfaCore.Services.ITecnicosService TecnicosSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 
@@ -327,7 +328,7 @@
 
             <div class="field">
                 <label>Tecnico responsable</label>
-                <select value="@_form.IdTecnico" @onchange="OnTechnicianChanged" disabled="@_saving">
+                <select value="@_form.IdTecnico" @onchange="OnTechnicianChangedAsync" disabled="@_saving">
                     <option value="">Sin asignar</option>
                     @foreach (var tecnico in _tecnicos)
                     {
@@ -671,6 +672,7 @@
         _selectedHolidayInfo = null;
         _selectedEvent = null;
         _form = NewForm(day);
+        ApplyGuardiaTemplateDefault();
         _showEditor = true;
     }
 
@@ -824,12 +826,29 @@
         _saving = false;
     }
 
-    private void OnTechnicianChanged(ChangeEventArgs args)
+    private async Task OnTechnicianChangedAsync(ChangeEventArgs args)
     {
         var id = args.Value?.ToString() ?? string.Empty;
         _form.IdTecnico = id;
         var tecnico = _tecnicos.FirstOrDefault(x => x.IdTecnico == id);
         _form.TecnicoNombre = tecnico?.Nombre;
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            _form.TelefonoWhatsApp = string.Empty;
+        }
+        else
+        {
+            var detail = await UiOps.RunAsync(() => TecnicosSvc.GetByIdAsync(id), "No se pudo cargar el telefono del tecnico.");
+            if (detail.Success && detail.Value is not null && !string.IsNullOrWhiteSpace(detail.Value.Telefono))
+            {
+                _form.TelefonoWhatsApp = detail.Value.Telefono.Trim();
+            }
+            else if (!detail.Success)
+            {
+                SetFeedback("No se pudo cargar el telefono", FeedbackText(detail.Feedback), "error");
+            }
+        }
+
         if (tecnico is not null && IsDefaultEditableTitle(_form.Titulo))
             _form.Titulo = DefaultTitleForType(_form.Tipo, tecnico.Nombre);
         _form.Color = ColorForTypeOrTechnician(_form.Tipo, id);
@@ -865,8 +884,21 @@
     private void ApplyGuardiaDefaults()
     {
         _form.TodoElDia = true;
+        _form.CrearRecordatorioWhatsApp = true;
         _form.FechaInicio = GuardiaStart(_form.FechaInicio);
         _form.FechaFin = GuardiaEnd(_form.FechaInicio);
+        ApplyGuardiaTemplateDefault();
+    }
+
+    private void ApplyGuardiaTemplateDefault()
+    {
+        if (_form.Tipo != CalendarioEventoTipos.Guardia || _plantillas.Count == 0)
+            return;
+
+        var plantilla = _plantillas.FirstOrDefault(x => IsGuardiaTemplateExact(x.NombreVisible) || IsGuardiaTemplateExact(x.NombreMeta))
+            ?? _plantillas.FirstOrDefault(x => IsGuardiaTemplateFallback(x.NombreVisible) || IsGuardiaTemplateFallback(x.NombreMeta));
+        if (plantilla is not null)
+            _form.IdPlantillaWhatsApp = plantilla.IdPlantilla;
     }
 
     private void SetFeedback(string title, string text, string kind)
@@ -904,6 +936,19 @@
 
     private static DateTime GuardiaEnd(DateTime value)
         => value.Date.AddDays(6).AddHours(22);
+
+    private static bool IsGuardiaTemplateExact(string? value)
+        => string.Equals(NormalizeTemplateName(value), "AVISO GUARDIA", StringComparison.Ordinal);
+
+    private static bool IsGuardiaTemplateFallback(string? value)
+    {
+        var normalized = NormalizeTemplateName(value);
+        return normalized.Contains("AVISO", StringComparison.Ordinal)
+               && normalized.Contains("GUARDIA", StringComparison.Ordinal);
+    }
+
+    private static string NormalizeTemplateName(string? value)
+        => (value ?? string.Empty).Trim().ToUpperInvariant().Replace(" DE ", " ", StringComparison.Ordinal);
 
     private static string EventColor(CalendarioEventoDto item)
         => string.IsNullOrWhiteSpace(item.Color) ? "#14b8a6" : item.Color;
