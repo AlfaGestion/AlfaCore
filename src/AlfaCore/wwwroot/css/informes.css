@@ -446,6 +446,7 @@
 
 .informes-cover--none {
     height: 56px;
+    overflow: visible;
     background: rgba(8, 18, 33, .72);
 }
 
@@ -460,7 +461,7 @@
     right: .85rem;
     top: .8rem;
     bottom: auto;
-    z-index: 8;
+    z-index: 30;
     display: flex;
     gap: .45rem;
     flex-wrap: wrap;
@@ -478,7 +479,7 @@
     position: absolute;
     top: 38px;
     right: 0;
-    z-index: 12;
+    z-index: 40;
     width: 184px;
     padding: .35rem;
     border: 1px solid var(--inf-border-strong);
