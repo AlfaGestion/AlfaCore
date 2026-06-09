@@ -423,8 +423,8 @@
 }
 
 .informes-feedback {
-    width: min(980px, calc(100% - 2rem));
-    margin: .85rem auto 0;
+    width: calc(100% - 1rem);
+    margin: .5rem .5rem 0;
     padding: .62rem .75rem;
     border: 1px solid rgba(20, 184, 166, .28);
     border-radius: 8px;
@@ -436,8 +436,8 @@
 .informes-workspace {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-    width: min(1040px, calc(100% - 2rem));
-    margin: 1rem auto 2rem;
+    width: calc(100% - 1rem);
+    margin: .5rem .5rem 1rem;
     align-items: start;
 }
 
