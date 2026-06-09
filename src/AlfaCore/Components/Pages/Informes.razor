@@ -546,7 +546,7 @@
         if (firstRender)
         {
             _editorJs = await JS.InvokeAsync<IJSObjectReference>("import", "/js/tickets-rich-editor.js?v=20260519i");
-            _informesEditorJs = await JS.InvokeAsync<IJSObjectReference>("import", "/js/informes-editor.js?v=20260608-editorfix");
+            _informesEditorJs = await JS.InvokeAsync<IJSObjectReference>("import", "/js/informes-editor.js?v=20260609-banners");
         }
 
         if (_selected is not null && !_editorReady && _editorJs is not null)
@@ -979,7 +979,11 @@
 
         await _editorJs.InvokeVoidAsync("runCommand", _contentEditor, option.Command);
         if (_informesEditorJs is not null)
+        {
             await _informesEditorJs.InvokeVoidAsync("normalizeInformesBlocks", _contentEditor);
+            if (option.Command is "infoBanner" or "warningBanner")
+                await _informesEditorJs.InvokeVoidAsync("placeCaretAfterInformesBanner", _contentEditor);
+        }
         await SyncContentFromEditorAsync();
         _showCommandMenu = false;
     }

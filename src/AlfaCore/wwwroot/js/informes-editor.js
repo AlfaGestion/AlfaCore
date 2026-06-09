@@ -71,3 +71,67 @@ export function normalizeInformesBlocks(editor) {
         }
     });
 }
+
+export function placeCaretAfterInformesBanner(editor) {
+    if (!editor) {
+        return;
+    }
+
+    const banners = Array.from(editor.querySelectorAll('.ticket-editor-banner'));
+    const banner = findActiveBanner(editor) ?? banners[banners.length - 1];
+    if (!banner) {
+        return;
+    }
+
+    const paragraph = ensureParagraphAfter(banner);
+    placeCaretInside(paragraph);
+}
+
+function findActiveBanner(editor) {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) {
+        return null;
+    }
+
+    const node = selection.anchorNode;
+    if (!node || !editor.contains(node)) {
+        return null;
+    }
+
+    const element = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
+    return element?.closest?.('.ticket-editor-banner') ?? null;
+}
+
+function ensureParagraphAfter(block) {
+    let next = block.nextSibling;
+    while (next && next.nodeType === Node.TEXT_NODE && !next.textContent.trim()) {
+        next = next.nextSibling;
+    }
+
+    if (next instanceof HTMLParagraphElement) {
+        if (!next.innerHTML.trim()) {
+            next.innerHTML = '<br>';
+        }
+
+        return next;
+    }
+
+    const paragraph = document.createElement('p');
+    paragraph.innerHTML = '<br>';
+    block.parentNode.insertBefore(paragraph, next);
+    return paragraph;
+}
+
+function placeCaretInside(element) {
+    element.focus?.();
+    const selection = window.getSelection();
+    if (!selection) {
+        return;
+    }
+
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+}
