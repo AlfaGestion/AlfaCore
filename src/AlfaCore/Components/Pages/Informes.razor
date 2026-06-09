@@ -13,7 +13,7 @@
 
 <PageTitle>Informes | Alfa Gestion</PageTitle>
 <HeadContent>
-    <link rel="stylesheet" href="/css/informes.css?v=20260609-compact-layout" />
+    <link rel="stylesheet" href="/css/informes.css?v=20260609-cover-clean" />
 </HeadContent>
 
 <section class="@ShellClass">
@@ -388,15 +388,15 @@
                 {
                     <button type="button"
                             class="@($"informes-cover-option informes-cover-option--texture informes-cover-option--{texture.Url}")"
+                            title="@texture.Nombre"
+                            aria-label="@texture.Nombre"
                             @onclick="() => SelectCover(InformesPortadas.Gradiente, texture.Url)">
-                        <span>@texture.Nombre</span>
                     </button>
                 }
                 @foreach (var cover in FilteredCoverOptions)
                 {
-                    <button type="button" class="informes-cover-option" @onclick="() => SelectCover(InformesPortadas.Url, cover.Url)">
+                    <button type="button" class="informes-cover-option" title="@cover.Nombre" aria-label="@cover.Nombre" @onclick="() => SelectCover(InformesPortadas.Url, cover.Url)">
                         <img src="@cover.Url" alt="" loading="lazy" />
-                        <span>@cover.Nombre</span>
                     </button>
                 }
             </div>

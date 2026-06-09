@@ -1279,19 +1279,6 @@
     transition: transform .18s ease;
 }
 
-.informes-cover-option span {
-    position: absolute;
-    left: .65rem;
-    bottom: .55rem;
-    padding: .18rem .45rem;
-    border: 1px solid rgba(255, 255, 255, .18);
-    border-radius: 999px;
-    background: rgba(2, 8, 23, .72);
-    color: #ffffff;
-    font-size: .78rem;
-    font-weight: 900;
-}
-
 .informes-cover-option:hover {
     border-color: var(--inf-border-strong);
 }
