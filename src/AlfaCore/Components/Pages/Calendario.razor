@@ -312,7 +312,7 @@
 
             <div class="field">
                 <label>Inicio</label>
-                <InputDate Type="InputDateType.DateTimeLocal" @bind-Value="_form.FechaInicio" disabled="@_saving" />
+                <InputDate Type="InputDateType.DateTimeLocal" @bind-Value="_form.FechaInicio" @bind-Value:after="ApplyStartDefaults" disabled="@_saving" />
             </div>
 
             <div class="field">
@@ -839,9 +839,7 @@
     {
         if (_form.Tipo == CalendarioEventoTipos.Guardia)
         {
-            _form.TodoElDia = true;
-            if (_form.FechaFin <= _form.FechaInicio)
-                _form.FechaFin = _form.FechaInicio.AddDays(7);
+            ApplyGuardiaDefaults();
         }
 
         if (_form.Tipo == CalendarioEventoTipos.Vacaciones || _form.Tipo == CalendarioEventoTipos.Ausencia || _form.Tipo == CalendarioEventoTipos.Feriado)
@@ -856,6 +854,19 @@
             _form.Titulo = DefaultTitleForType(_form.Tipo, _form.TecnicoNombre);
 
         _form.Color = ColorForTypeOrTechnician(_form.Tipo, _form.IdTecnico);
+    }
+
+    private void ApplyStartDefaults()
+    {
+        if (_form.Tipo == CalendarioEventoTipos.Guardia)
+            ApplyGuardiaDefaults();
+    }
+
+    private void ApplyGuardiaDefaults()
+    {
+        _form.TodoElDia = true;
+        _form.FechaInicio = GuardiaStart(_form.FechaInicio);
+        _form.FechaFin = GuardiaEnd(_form.FechaInicio);
     }
 
     private void SetFeedback(string title, string text, string kind)
@@ -879,14 +890,20 @@
         {
             Titulo = "GUARDIA",
             Tipo = CalendarioEventoTipos.Guardia,
-            FechaInicio = day.Date.AddHours(9),
-            FechaFin = day.Date.AddDays(7).AddHours(9),
+            FechaInicio = GuardiaStart(day),
+            FechaFin = GuardiaEnd(day),
             TodoElDia = true,
             Estado = CalendarioEventoEstados.Confirmado,
             Color = "#14b8a6",
             CrearRecordatorioWhatsApp = true,
             MinutosAntesRecordatorio = 1440
         };
+
+    private static DateTime GuardiaStart(DateTime value)
+        => value.Date.AddHours(8);
+
+    private static DateTime GuardiaEnd(DateTime value)
+        => value.Date.AddDays(6).AddHours(22);
 
     private static string EventColor(CalendarioEventoDto item)
         => string.IsNullOrWhiteSpace(item.Color) ? "#14b8a6" : item.Color;
