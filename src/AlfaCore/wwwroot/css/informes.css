@@ -1,3 +1,15 @@
+.shell__main:has(.informes-shell) {
+    padding: 0;
+}
+
+.shell__main:has(.informes-shell) > .shell__header {
+    display: none;
+}
+
+.shell__content:has(.informes-shell) {
+    min-height: 100dvh;
+}
+
 .informes-shell {
     --inf-bg: #08111f;
     --inf-panel: rgba(8, 18, 33, .94);
@@ -14,9 +26,9 @@
     --inf-warning: #f59e0b;
     display: grid;
     grid-template-columns: 280px minmax(0, 1fr);
-    min-height: calc(100dvh - 92px);
+    min-height: 100dvh;
     border: 1px solid var(--inf-border);
-    border-radius: 8px;
+    border-radius: 0;
     overflow: hidden;
     background: #07111f;
     color: var(--inf-text);
