@@ -18,18 +18,13 @@
 
 <section class="@ShellClass">
     <aside class="informes-sidebar">
-        <div class="informes-brand">
+        <div class="informes-sidebar__top">
             <button type="button"
                     class="informes-sidebar-toggle"
                     title="@(_sidebarCollapsed ? "Abrir panel de articulos" : "Minimizar panel de articulos")"
                     @onclick="ToggleSidebar">
                 <i class="bi @(_sidebarCollapsed ? "bi-layout-sidebar-inset" : "bi-layout-sidebar-inset-reverse")"></i>
             </button>
-            <span>Alfa Gestion</span>
-            <strong>Informes</strong>
-        </div>
-
-        <div class="informes-sidebar__top">
             <button type="button" class="informes-new" @onclick="() => CreateArticleAsync(null, InformesCategorias.EspacioTrabajo)">
                 <i class="bi bi-plus-lg"></i>
                 <span>Nuevo articulo</span>
