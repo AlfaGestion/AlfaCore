@@ -9,9 +9,17 @@ namespace AlfaCore.Services;
 public sealed class InformesService(
     IConfiguration configuration,
     ISessionService sessionService,
-    IAppEventService appEvents) : IInformesService
+    IAppEventService appEvents,
+    IWebHostEnvironment environment) : IInformesService
 {
     private const string ModuleName = "Informes";
+    private static readonly HashSet<string> AllowedCoverContentTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+        "image/gif"
+    };
 
     private string ConnectionString => sessionService.GetConnectionString().Length > 0
         ? sessionService.GetConnectionString()
@@ -341,6 +349,35 @@ public sealed class InformesService(
             await cn.ExecuteAsync(new CommandDefinition(sql, new { IdVersion = idVersion, Usuario = NormalizeUser(usuarioAccion) }, cancellationToken: token));
         }, "No se pudo restaurar la version.", ct);
 
+    public Task<string> SaveCoverImageAsync(Stream content, string fileName, string contentType, string usuarioAccion, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "SaveCoverImage", async token =>
+        {
+            if (content is null || !content.CanRead)
+                throw new InvalidOperationException("No se recibio una imagen valida para la portada.");
+
+            if (!AllowedCoverContentTypes.Contains(contentType))
+                throw new InvalidOperationException("La portada debe ser una imagen JPG, PNG, WebP o GIF.");
+
+            var extension = ResolveCoverExtension(contentType, fileName);
+            var safeUser = Regex.Replace(NormalizeUser(usuarioAccion), @"[^a-zA-Z0-9_-]+", "-").Trim('-');
+            if (string.IsNullOrWhiteSpace(safeUser))
+                safeUser = "usuario";
+
+            var rawFileBase = $"{DateTime.UtcNow:yyyyMMddHHmmssfff}-{safeUser}-{Guid.NewGuid():N}";
+            var fileBase = rawFileBase.Length <= 80 ? rawFileBase : rawFileBase[..80];
+            var relativePath = $"/uploads/informes-covers/{fileBase}{extension}";
+            var webRoot = string.IsNullOrWhiteSpace(environment.WebRootPath)
+                ? Path.Combine(environment.ContentRootPath, "wwwroot")
+                : environment.WebRootPath;
+            var directory = Path.Combine(webRoot, "uploads", "informes-covers");
+            Directory.CreateDirectory(directory);
+
+            var physicalPath = Path.Combine(directory, $"{fileBase}{extension}");
+            await using var output = File.Create(physicalPath);
+            await content.CopyToAsync(output, token);
+            return relativePath;
+        }, "No se pudo guardar la imagen de portada.", ct);
+
     private static string ArticleListSql(string? busqueda)
     {
         var searchFilter = string.IsNullOrWhiteSpace(busqueda)
@@ -534,6 +571,21 @@ public sealed class InformesService(
             InformesPortadas.Url => InformesPortadas.Url,
             _ => InformesPortadas.Ninguna
         };
+
+    private static string ResolveCoverExtension(string contentType, string fileName)
+    {
+        var extension = Path.GetExtension(fileName ?? string.Empty).ToLowerInvariant();
+        if (extension is ".jpg" or ".jpeg" or ".png" or ".webp" or ".gif")
+            return extension == ".jpeg" ? ".jpg" : extension;
+
+        return contentType.ToLowerInvariant() switch
+        {
+            "image/png" => ".png",
+            "image/webp" => ".webp",
+            "image/gif" => ".gif",
+            _ => ".jpg"
+        };
+    }
 
     private static string FirstNonEmpty(params string?[] values)
         => values.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x))?.Trim() ?? string.Empty;

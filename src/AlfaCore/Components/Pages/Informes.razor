@@ -7,6 +7,7 @@
 @using System.Net
 @using System.Text
 @using System.Text.RegularExpressions
+@using Microsoft.AspNetCore.Components.Forms
 @using Microsoft.AspNetCore.WebUtilities
 @implements IAsyncDisposable
 
@@ -175,7 +176,7 @@
                             <img src="@_draft.PortadaValor" alt="" />
                         }
                         <div class="informes-cover__actions">
-                            <button type="button" @onclick='() => SetCover(InformesPortadas.Gradiente, "alfa")'><i class="bi bi-image"></i> Portada Alfa</button>
+                            <button type="button" @onclick="OpenCoverPicker"><i class="bi bi-image"></i> Agregar portada</button>
                             <button type="button" @onclick="() => SetCover(InformesPortadas.Ninguna, string.Empty)"><i class="bi bi-x-lg"></i> Quitar</button>
                         </div>
                     </section>
@@ -356,7 +357,46 @@
     </div>
 }
 
+@if (_showCoverPicker)
+{
+    <div class="informes-modal" role="dialog" aria-modal="true">
+        <section class="informes-cover-picker">
+            <header>
+                <div>
+                    <span>Portada</span>
+                    <h2>Agregar portada</h2>
+                </div>
+                <button type="button" @onclick="CloseCoverPicker" title="Cerrar"><i class="bi bi-x-lg"></i></button>
+            </header>
+
+            <div class="informes-cover-picker__grid">
+                <button type="button" class="informes-cover-option informes-cover-option--alfa" @onclick='() => SelectCover(InformesPortadas.Gradiente, "alfa")'>
+                    <span>Alfa</span>
+                </button>
+                @foreach (var cover in DefaultCoverOptions)
+                {
+                    <button type="button" class="informes-cover-option" @onclick="() => SelectCover(InformesPortadas.Url, cover.Url)">
+                        <img src="@cover.Url" alt="" loading="lazy" />
+                        <span>@cover.Nombre</span>
+                    </button>
+                }
+            </div>
+
+            <footer>
+                <label class="btn btn--primary">
+                    <i class="bi bi-upload"></i>
+                    <span>Agregar desde PC</span>
+                    <InputFile class="informes-cover-picker__file" OnChange="HandleCoverFileSelectedAsync" accept="image/jpeg,image/png,image/webp,image/gif" />
+                </label>
+                <button type="button" class="btn btn--ghost" @onclick="CloseCoverPicker">Cancelar</button>
+                <small>Fotos predeterminadas provistas por Unsplash.</small>
+            </footer>
+        </section>
+    </div>
+}
+
 @code {
+    private const long MaxCoverImageBytes = 5 * 1024 * 1024;
     private InformesPageDto _page = new();
     private InformesArticuloDetalleDto? _selected;
     private InformesArticuloSaveRequest _draft = new();
@@ -371,6 +411,7 @@
     private bool _saving;
     private bool _showTrash;
     private bool _showTemplatePicker;
+    private bool _showCoverPicker;
     private bool _showCommandMenu;
     private bool _sidebarCollapsed;
     private bool _collaborationOpen;
@@ -410,6 +451,16 @@
         EditorCommands[8],
         EditorCommands[9],
         EditorCommands[11]
+    ];
+
+    private static readonly IReadOnlyList<CoverOption> DefaultCoverOptions =
+    [
+        new("Oficina", "https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=1400&q=80"),
+        new("Equipo", "https://images.unsplash.com/photo-1556761175-b413da4baf72?auto=format&fit=crop&w=1400&q=80"),
+        new("Procesos", "https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?auto=format&fit=crop&w=1400&q=80"),
+        new("Tecnologia", "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=1400&q=80"),
+        new("Analisis", "https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=1400&q=80"),
+        new("Trabajo", "https://images.unsplash.com/photo-1519389950473-47ba0277781c?auto=format&fit=crop&w=1400&q=80")
     ];
 
     private string CurrentUser => AppUserSession.GetCurrentUserName(Environment.UserName).Trim();
@@ -740,6 +791,42 @@
     private void CloseTemplatePicker()
         => _showTemplatePicker = false;
 
+    private void OpenCoverPicker()
+        => _showCoverPicker = true;
+
+    private void CloseCoverPicker()
+        => _showCoverPicker = false;
+
+    private void SelectCover(string type, string value)
+    {
+        SetCover(type, value);
+        _showCoverPicker = false;
+    }
+
+    private async Task HandleCoverFileSelectedAsync(InputFileChangeEventArgs args)
+    {
+        var file = args.File;
+        if (file is null)
+            return;
+
+        var result = await UiOps.RunAsync(async () =>
+        {
+            await using var stream = file.OpenReadStream(MaxCoverImageBytes);
+            return await InformesSvc.SaveCoverImageAsync(stream, file.Name, file.ContentType, CurrentUser);
+        }, "No se pudo cargar la portada.");
+
+        if (result.Success && !string.IsNullOrWhiteSpace(result.Value))
+        {
+            SetCover(InformesPortadas.Url, result.Value);
+            _showCoverPicker = false;
+            _feedback = "Portada cargada. Guardá el articulo para conservar el cambio.";
+        }
+        else
+        {
+            _feedback = FeedbackText(result.Feedback);
+        }
+    }
+
     private void SelectTemplate(string key)
         => _selectedTemplateKey = key;
 
@@ -1033,4 +1120,5 @@
 
     private sealed record ArticleTreeRow(InformesArticuloResumenDto Item, int Level);
     private sealed record EditorCommandOption(string Group, string Title, string Description, string Icon, string Command);
+    private sealed record CoverOption(string Nombre, string Url);
 }

@@ -16,4 +16,5 @@ public interface IInformesService
     Task AddCommentAsync(InformesComentarioRequest request, CancellationToken ct = default);
     Task ToggleCommentResolvedAsync(long idComentario, string usuarioAccion, bool resuelto, CancellationToken ct = default);
     Task RestoreVersionAsync(long idVersion, string usuarioAccion, CancellationToken ct = default);
+    Task<string> SaveCoverImageAsync(Stream content, string fileName, string contentType, string usuarioAccion, CancellationToken ct = default);
 }
