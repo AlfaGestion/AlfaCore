@@ -179,58 +179,87 @@ public sealed class InterfacesConfigService(
     }
 
     public Task<string?> BrowseLocalFolderAsync(CancellationToken ct = default)
-        => ExecuteLoggedAsync("Interfaces", "BrowseLocalFolder", async token =>
+        => ExecuteLoggedAsync("Interfaces", "BrowseLocalFolder",
+            token => RunBrowseDialogAsync(BuildFolderBrowserScript(), token),
+            "No se pudo abrir el selector de carpetas.", ct);
+
+    public Task<string?> BrowseLocalFileAsync(string filter = "*.*", CancellationToken ct = default)
+        => ExecuteLoggedAsync("Interfaces", "BrowseLocalFile",
+            token => RunBrowseDialogAsync(BuildFileBrowserScript(filter), token),
+            "No se pudo abrir el selector de archivos.", ct);
+
+    private static string BuildFolderBrowserScript() =>
+        "Add-Type -AssemblyName System.Windows.Forms\n" +
+        "$dialog = New-Object System.Windows.Forms.FolderBrowserDialog\n" +
+        "$dialog.Description = 'Selecciona la carpeta'\n" +
+        "$dialog.ShowNewFolderButton = $true\n" +
+        "if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {\n" +
+        "    [Console]::Out.Write($dialog.SelectedPath)\n" +
+        "}\n";
+
+    private static string BuildFileBrowserScript(string filter) =>
+        "Add-Type -AssemblyName System.Windows.Forms\n" +
+        "$dialog = New-Object System.Windows.Forms.OpenFileDialog\n" +
+        "$dialog.Filter = '" + filter.Replace("'", "''", StringComparison.Ordinal) + "'\n" +
+        "$dialog.Title = 'Selecciona el archivo'\n" +
+        "if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {\n" +
+        "    [Console]::Out.Write($dialog.FileName)\n" +
+        "}\n";
+
+    private static async Task<string?> RunBrowseDialogAsync(string script, CancellationToken ct)
+    {
+        if (!OperatingSystem.IsWindows())
+            throw new InvalidOperationException("La búsqueda de carpetas o archivos solo está disponible en Windows.");
+        if (!Environment.UserInteractive)
+            throw new InvalidOperationException("La búsqueda de carpetas o archivos requiere una sesión interactiva en el equipo donde corre AlfaCore.");
+
+        var psExe = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.System),
+            @"WindowsPowerShell\v1.0\powershell.exe");
+        if (!File.Exists(psExe))
+            psExe = "powershell.exe";
+
+        var tempScript = Path.Combine(Path.GetTempPath(), $"alfacore_browse_{Guid.NewGuid():N}.ps1");
+        try
         {
-            if (!OperatingSystem.IsWindows())
-                throw new InvalidOperationException("La búsqueda de carpetas solo está disponible en Windows.");
-            if (!Environment.UserInteractive)
-                throw new InvalidOperationException("La búsqueda de carpetas requiere una sesión interactiva en el servidor o equipo donde corre AlfaCore.");
-
-            var psExe = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), @"WindowsPowerShell\v1.0\powershell.exe");
-            if (!File.Exists(psExe))
-                psExe = "powershell.exe";
-
-            const string command = """
-Add-Type -AssemblyName System.Windows.Forms
-$dialog = New-Object System.Windows.Forms.FolderBrowserDialog
-$dialog.Description = 'Seleccioná la carpeta de destino para Interfaces'
-$dialog.ShowNewFolderButton = $true
-if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
-    [Console]::Out.Write($dialog.SelectedPath)
-}
-""";
+            await File.WriteAllTextAsync(tempScript, script, System.Text.Encoding.UTF8, ct);
 
             using var process = new Process
             {
                 StartInfo = new ProcessStartInfo
                 {
                     FileName = psExe,
-                    Arguments = $"-NoProfile -STA -Command \"{command.Replace("\"", "\\\"", StringComparison.Ordinal)}\"",
+                    Arguments = $"-NoProfile -ExecutionPolicy Bypass -STA -WindowStyle Hidden -File \"{tempScript}\"",
                     UseShellExecute = false,
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
-                    CreateNoWindow = false
+                    CreateNoWindow = true
                 }
             };
 
             if (!process.Start())
-                throw new InvalidOperationException("No se pudo abrir el selector de carpetas del sistema.");
+                throw new InvalidOperationException("No se pudo iniciar el selector del sistema.");
 
-            var stdoutTask = process.StandardOutput.ReadToEndAsync(token);
-            var stderrTask = process.StandardError.ReadToEndAsync(token);
-            await process.WaitForExitAsync(token);
-            var selectedPath = (await stdoutTask).Trim();
+            var stdoutTask = process.StandardOutput.ReadToEndAsync(ct);
+            var stderrTask = process.StandardError.ReadToEndAsync(ct);
+            await process.WaitForExitAsync(ct);
+            var selected = (await stdoutTask).Trim();
             var stderr = (await stderrTask).Trim();
 
             if (process.ExitCode != 0)
             {
                 throw new InvalidOperationException(string.IsNullOrWhiteSpace(stderr)
-                    ? "No se pudo abrir el selector de carpetas del sistema."
-                    : $"El selector de carpetas devolvió un error: {stderr}");
+                    ? "El selector del sistema terminó con error."
+                    : $"El selector del sistema devolvió un error: {stderr}");
             }
 
-            return string.IsNullOrWhiteSpace(selectedPath) ? null : selectedPath;
-        }, "No se pudo abrir el selector de carpetas.", ct);
+            return string.IsNullOrWhiteSpace(selected) ? null : selected;
+        }
+        finally
+        {
+            try { File.Delete(tempScript); } catch { /* best-effort cleanup */ }
+        }
+    }
 
     public Task<InterfacesCompraIaSettingsDto> GetCompraIaSettingsAsync(CancellationToken ct = default)
         => ExecuteLoggedAsync("Interfaces", "GetCompraIaSettings", async token =>
@@ -350,14 +379,16 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
 
             if (!normalized.Habilitado)
                 throw new InvalidOperationException("La detección automática de compras está deshabilitada. Activala antes de probar la configuración.");
-            if (string.IsNullOrWhiteSpace(normalized.PythonExe) || !File.Exists(normalized.PythonExe))
-                throw new InvalidOperationException("No se encontró el ejecutable Python configurado.");
+
+            var resolvedPython = ResolveExePath(normalized.PythonExe);
+            if (resolvedPython is null)
+                throw new InvalidOperationException("No se encontró el ejecutable Python configurado. Verificá que la ruta sea correcta o que Python esté en el PATH del sistema.");
             if (string.IsNullOrWhiteSpace(normalized.ScriptPath) || !File.Exists(normalized.ScriptPath))
                 throw new InvalidOperationException("No se encontró el script configurado para la lectura automática.");
             if (string.IsNullOrWhiteSpace(normalized.WorkDir) || !Directory.Exists(normalized.WorkDir))
                 throw new InvalidOperationException("No existe la carpeta de trabajo configurada para la lectura automática.");
 
-            var version = await GetPythonVersionAsync(normalized.PythonExe, normalized.WorkDir, token);
+            var version = await GetPythonVersionAsync(resolvedPython, normalized.WorkDir, token);
 
             return new InterfacesCompraIaProbeResultDto
             {
@@ -554,6 +585,23 @@ if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
 
     private static string ResolveStoredValue(string value, string auxValue)
         => !string.IsNullOrWhiteSpace(value) ? value.Trim() : auxValue.Trim();
+
+    private static string? ResolveExePath(string? exe)
+    {
+        if (string.IsNullOrWhiteSpace(exe)) return null;
+        exe = exe.Trim();
+        if (File.Exists(exe)) return exe;
+
+        var pathEnv = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
+        foreach (var dir in pathEnv.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+        {
+            var candidate = Path.Combine(dir.Trim(), exe);
+            if (File.Exists(candidate)) return candidate;
+            if (!exe.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) && File.Exists(candidate + ".exe"))
+                return candidate + ".exe";
+        }
+        return null;
+    }
 
     private static async Task<string> GetPythonVersionAsync(string pythonExe, string workDir, CancellationToken ct)
     {

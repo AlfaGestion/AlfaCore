@@ -247,11 +247,18 @@
                             </div>
 
                             <div class="interfaces-mobile-card__actions" @onclick:stopPropagation="true">
-                                @if (CanProcessNowInboxItem(item))
+                                @if (_procesandoAhoraId == item.IdComprobanteRecibido)
+                                {
+                                    <button type="button" class="btn btn--ghost btn--sm interfaces-table__edit" disabled>
+                                        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Procesando…
+                                    </button>
+                                }
+                                else if (CanProcessNowInboxItem(item))
                                 {
                                     <button type="button"
                                             class="btn btn--ghost btn--sm interfaces-table__edit"
-                                            @onclick="() => ProcesarDocumentoAhoraAsync(item.IdComprobanteRecibido)">
+                                            @onclick="() => ProcesarDocumentoAhoraAsync(item.IdComprobanteRecibido)"
+                                            disabled="@_procesandoAhoraId.HasValue">
                                         <i class="bi bi-play-circle"></i> Procesar ahora
                                     </button>
                                 }
@@ -399,12 +406,20 @@
                                         @if (_openRowActionsId == item.IdComprobanteRecibido)
                                         {
                                             <div class="interfaces-row-actions-menu">
-                                                @if (CanProcessNowInboxItem(item))
+                                                @if (_procesandoAhoraId == item.IdComprobanteRecibido)
+                                                {
+                                                    <button type="button" class="btn btn--ghost btn--sm interfaces-table__edit" disabled>
+                                                        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                                                        <span>Procesando…</span>
+                                                    </button>
+                                                }
+                                                else if (CanProcessNowInboxItem(item))
                                                 {
                                                     <button type="button"
                                                             class="btn btn--ghost btn--sm interfaces-table__edit"
                                                             title="Ejecutar ahora la lectura automática"
-                                                            @onclick="() => ProcesarDocumentoAhoraAsync(item.IdComprobanteRecibido)">
+                                                            @onclick="() => ProcesarDocumentoAhoraAsync(item.IdComprobanteRecibido)"
+                                                            disabled="@_procesandoAhoraId.HasValue">
                                                         <i class="bi bi-play-circle"></i>
                                                         <span>Procesar ahora</span>
                                                     </button>
@@ -482,6 +497,126 @@
             </div>
         }
     </section>
+
+    @if (_queueSnapshot.Items.Count > 0 || _queueSnapshot.Pendientes > 0 || _colaIaExpandida)
+    {
+        <section class="panel-card">
+            <div class="panel-card__header">
+                <div>
+                    <h3 class="panel-card__title">
+                        Cola de lectura IA
+                        @if (_queueSnapshot.Procesando > 0)
+                        {
+                            <span class="interfaces-queue-badge interfaces-queue-badge--active">@_queueSnapshot.Procesando procesando</span>
+                        }
+                        @if (_queueSnapshot.Pendientes > 0)
+                        {
+                            <span class="interfaces-queue-badge">@_queueSnapshot.Pendientes pendiente(s)</span>
+                        }
+                        @if (_queueSnapshot.ConError > 0)
+                        {
+                            <span class="interfaces-queue-badge interfaces-queue-badge--error">@_queueSnapshot.ConError con error</span>
+                        }
+                    </h3>
+                    <p class="panel-card__subtitle">Worker: @GetWorkerTitle() · @(_queueSnapshot.Worker.ProximoIntento.HasValue ? $"Próximo intento: {_queueSnapshot.Worker.ProximoIntento.Value:HH:mm:ss}" : "Sin próximo intento programado")</p>
+                </div>
+                <div class="actions">
+                    @if (_loadingQueue)
+                    {
+                        <span class="panel-card__subtitle">Actualizando…</span>
+                    }
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="() => _colaIaExpandida = !_colaIaExpandida">
+                        <i class="bi @(_colaIaExpandida ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
+                        @(_colaIaExpandida ? "Ocultar" : "Ver detalle")
+                    </button>
+                </div>
+            </div>
+
+            <div class="@GetWorkerFeedbackClass()">
+                <div>
+                    <strong>@GetWorkerTitle()</strong>
+                    <p>@GetWorkerMessage()</p>
+                </div>
+            </div>
+
+            @if (_colaIaExpandida && _queueSnapshot.Items.Count > 0)
+            {
+                <div class="usuarios-table-wrap interfaces-docs-table-wrap">
+                    <table class="data-table usuarios-table">
+                        <thead>
+                            <tr>
+                                <th>Doc.</th>
+                                <th>Archivo</th>
+                                <th>Estado</th>
+                                <th>Encolado</th>
+                                <th>Inicio</th>
+                                <th>Fin</th>
+                                <th>Int.</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var qi in _queueSnapshot.Items)
+                            {
+                                <tr class="usuarios-table__row">
+                                    <td>@if (qi.IdComprobanteRecibido.HasValue) { <a href="/interfaces/@qi.IdComprobanteRecibido">#@qi.IdComprobanteRecibido</a> } else { <span>—</span> }</td>
+                                    <td title="@qi.ArchivoNombreOriginal">@(string.IsNullOrWhiteSpace(qi.ArchivoNombreOriginal) ? "—" : qi.ArchivoNombreOriginal.Length > 30 ? qi.ArchivoNombreOriginal[..28] + "…" : qi.ArchivoNombreOriginal)</td>
+                                    <td>
+                                        <div class="interfaces-queue-progress">
+                                            <div class="interfaces-queue-progress__track">
+                                                <div class="interfaces-queue-progress__fill @GetQueueProgressCssClass(qi)" style="width:@(GetQueueProgressPercent(qi))%"></div>
+                                            </div>
+                                            <span class="interfaces-queue-progress__label">@GetQueueProgressLabel(qi)</span>
+                                        </div>
+                                    </td>
+                                    <td>@qi.FechaHoraProceso.ToString("dd/MM HH:mm")</td>
+                                    <td>@(qi.FechaHoraInicio?.ToString("HH:mm:ss") ?? "—")</td>
+                                    <td>@(qi.FechaHoraFin?.ToString("HH:mm:ss") ?? "—")</td>
+                                    <td>@qi.Intentos</td>
+                                    <td class="interfaces-table__actions interfaces-table__actions--inline">
+                                        @if (CanProcessNowQueueJob(qi))
+                                        {
+                                            <button type="button" class="btn btn--ghost btn--sm" title="Ejecutar ahora"
+                                                    @onclick="() => ProcesarColaAhoraAsync(qi.Id)"
+                                                    disabled="@(_loadingQueue || _procesandoAhoraId.HasValue)">
+                                                <i class="bi bi-play-circle"></i>
+                                            </button>
+                                        }
+                                        @if (CanCancelQueueJob(qi))
+                                        {
+                                            <button type="button" class="btn btn--ghost btn--sm" title="Cancelar"
+                                                    @onclick="() => CancelarColaAsync(qi.Id)"
+                                                    disabled="@_loadingQueue">
+                                                <i class="bi bi-stop-circle"></i>
+                                            </button>
+                                        }
+                                        @if (CanRetryQueueJob(qi))
+                                        {
+                                            <button type="button" class="btn btn--ghost btn--sm" title="Reintentar"
+                                                    @onclick="() => ReintentarColaAsync(qi.Id)"
+                                                    disabled="@_loadingQueue">
+                                                <i class="bi bi-arrow-repeat"></i>
+                                            </button>
+                                        }
+                                        @if (!string.IsNullOrWhiteSpace(qi.LectorError))
+                                        {
+                                            <span class="context-card__label" title="@qi.LectorError">
+                                                <i class="bi bi-exclamation-triangle"></i> Error
+                                            </span>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+            else if (_colaIaExpandida && _queueSnapshot.Items.Count == 0)
+            {
+                <div class="usuarios-empty">No hay items en la cola en este momento.</div>
+            }
+        </section>
+    }
 
     @if (_showDetalleLecturaModal)
     {
@@ -660,6 +795,8 @@
     private bool _loadingList;
     private bool _loadingQueue;
     private bool _loadingDetalleLectura;
+    private long? _procesandoAhoraId;
+    private bool _colaIaExpandida;
     private bool _showDetalleLecturaModal;
     private bool _showViewSettings;
     private bool _viewSettingsLoaded;
@@ -702,8 +839,16 @@
         AppUserSession.StateChanged -= OnAppUserSessionChanged;
         _filtersDebounceCts?.Cancel();
         _filtersDebounceCts?.Dispose();
-        _queueAutoRefreshCts?.Cancel();
-        _queueAutoRefreshCts?.Dispose();
+        CancelAndDisposeQueueCts();
+    }
+
+    private void CancelAndDisposeQueueCts()
+    {
+        var cts = _queueAutoRefreshCts;
+        _queueAutoRefreshCts = null;
+        if (cts is null) return;
+        try { cts.Cancel(); } catch (ObjectDisposedException) { }
+        try { cts.Dispose(); } catch (ObjectDisposedException) { }
     }
 
     private async Task CargarCatalogosAsync()
@@ -831,6 +976,8 @@
             }
 
             _queueSnapshot = result.Value;
+            if (HasQueueWorkInProgress())
+                _colaIaExpandida = true;
             EnsureQueueAutoRefreshLoop();
         }
         finally
@@ -847,15 +994,14 @@
     {
         if (!HasQueueWorkInProgress())
         {
-            _queueAutoRefreshCts?.Cancel();
+            try { _queueAutoRefreshCts?.Cancel(); } catch (ObjectDisposedException) { }
             return;
         }
 
         if (_queueAutoRefreshTask is { IsCompleted: false })
             return;
 
-        _queueAutoRefreshCts?.Cancel();
-        _queueAutoRefreshCts?.Dispose();
+        CancelAndDisposeQueueCts();
         _queueAutoRefreshCts = new CancellationTokenSource();
         _queueAutoRefreshTask = RunQueueAutoRefreshLoopAsync(_queueAutoRefreshCts.Token);
     }
@@ -879,7 +1025,7 @@
                     if (!HasQueueWorkInProgress())
                     {
                         await BuscarAsync();
-                        _queueAutoRefreshCts?.Cancel();
+                        try { _queueAutoRefreshCts?.Cancel(); } catch (ObjectDisposedException) { }
                     }
                 });
             }
@@ -1151,6 +1297,17 @@
 
     private async Task ProcesarDocumentoAhoraAsync(long idComprobanteRecibido)
     {
+        _procesandoAhoraId = idComprobanteRecibido;
+        _colaIaExpandida = true;
+        _openRowActionsId = null;
+
+        SetFeedback(new AppUiMessage
+        {
+            Severity = AppUiFeedbackSeverity.Info,
+            Title = $"Procesando documento #{idComprobanteRecibido}…",
+            Message = "Se encoló y se lanzó la lectura automática. Esto puede tardar unos segundos según el tamaño del adjunto."
+        });
+
         var result = await UiOps.RunAsync(async () =>
         {
             var queued = await InterfacesSvc.QueueCompraDetectionAsync(new InterfacesDetectarCompraRequest
@@ -1170,13 +1327,17 @@
             return true;
         }, "No se pudo ejecutar ahora la lectura automática del documento.");
 
+        _procesandoAhoraId = null;
+
         if (!result.Success)
         {
             SetFeedback(result.Feedback);
             return;
         }
 
-        SetFeedback(AppUiMessage.Success("Procesamiento lanzado", $"El documento #{idComprobanteRecibido} se envió a lectura automática inmediata."));
+        SetFeedback(AppUiMessage.Success(
+            $"Documento #{idComprobanteRecibido} procesado",
+            "La lectura automática terminó. Revisá el resultado en la columna Progreso o abriendo la ficha."));
         await BuscarAsync();
         await CargarColaAsync();
     }

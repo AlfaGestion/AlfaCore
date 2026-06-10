@@ -13576,6 +13576,38 @@ html[data-theme="light"] .interfaces-detail-modal {
     }
 }
 
+.interfaces-queue-badge {
+    display: inline-flex;
+    align-items: center;
+    font-size: .72rem;
+    font-weight: 600;
+    padding: .18rem .52rem;
+    border-radius: 999px;
+    margin-left: .5rem;
+    background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+    color: var(--color-primary);
+    border: 1px solid color-mix(in srgb, var(--color-primary) 28%, transparent);
+}
+
+.interfaces-queue-badge--active {
+    background: color-mix(in srgb, #0ea5e9 14%, transparent);
+    color: #0369a1;
+    border-color: color-mix(in srgb, #0ea5e9 35%, transparent);
+}
+
+.interfaces-queue-badge--error {
+    background: color-mix(in srgb, #ef4444 12%, transparent);
+    color: #b91c1c;
+    border-color: color-mix(in srgb, #ef4444 30%, transparent);
+}
+
+.interfaces-table__actions--inline {
+    display: flex;
+    gap: .25rem;
+    align-items: center;
+    flex-wrap: nowrap;
+}
+
 .interfaces-mobile-toolbar,
 .interfaces-mobile-list {
     display: none;
@@ -21019,4 +21051,26 @@ html[data-theme="light"] .pos-settings-modal {
     .reuniones-day {
         min-height: 38px;
     }
+}
+
+/* ── Reporte de Compras ───────────────────────────────────────────────── */
+
+.smart-chip--clear {
+    border-color: rgba(148, 163, 184, .25);
+    background: rgba(148, 163, 184, .08);
+    color: var(--color-text-muted);
+}
+
+.smart-chip--clear:hover {
+    border-color: rgba(239, 68, 68, .45);
+    color: #fca5a5;
+    background: rgba(239, 68, 68, .08);
+}
+
+.data-table__totals td {
+    background: rgba(8, 197, 218, .06);
+    border-top: 2px solid rgba(8, 197, 218, .25);
+    padding-top: .6rem;
+    padding-bottom: .6rem;
+    font-size: .82rem;
 }

@@ -49,6 +49,7 @@ public class Program
             .AddInteractiveServerComponents();
         builder.Services.AddScoped<ISessionService, SessionService>();
         builder.Services.AddScoped<IComprasDashboardService, ComprasDashboardService>();
+        builder.Services.AddScoped<IReporteComprasService, ReporteComprasService>();
         builder.Services.AddScoped<IInformesIaService, InformesIaService>();
         builder.Services.AddScoped<IInformesService, InformesService>();
         builder.Services.AddScoped<IConsultasService, ConsultasService>();
@@ -94,6 +95,7 @@ public class Program
         builder.Services.AddScoped<IAppEventService, AppEventService>();
         builder.Services.AddSingleton<ConsultasExcelExporter>();
         builder.Services.AddSingleton<AuditoriaExcelExporter>();
+        builder.Services.AddSingleton<ReporteComprasExcelExporter>();
         builder.Services.AddSingleton<InformesIaHistoryStore>();
         builder.Services.AddSingleton<InformesIaResultStore>();
         builder.Services.AddScoped<FilterStateService>();
@@ -435,6 +437,61 @@ public class Program
                 bytes,
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 filename);
+        });
+
+        app.MapGet("/compras/reportes/descargar-excel", async (
+            HttpRequest request,
+            IReporteComprasService reporteSvc,
+            ReporteComprasExcelExporter exporter,
+            CancellationToken ct) =>
+        {
+            static DateTime? ParseDate(string? v)
+                => DateTime.TryParse(v, out var d) ? d : null;
+
+            static string? NullIfEmpty(string? v)
+                => string.IsNullOrWhiteSpace(v) ? null : v.Trim();
+
+            var tipo = request.Query["tipo"].ToString(); // "resumen" | "detalle"
+
+            var filtros = new FiltrosReporteCompras
+            {
+                FechaDesde      = ParseDate(request.Query["fechaDesde"]),
+                FechaHasta      = ParseDate(request.Query["fechaHasta"]),
+                Proveedor       = NullIfEmpty(request.Query["proveedor"]),
+                TipoComprobante = NullIfEmpty(request.Query["tc"]),
+                TamanioPagina   = 500
+            };
+
+            if (string.Equals(tipo, "detalle", StringComparison.OrdinalIgnoreCase))
+            {
+                var allItems = new List<DetalleComprasFilaDto>();
+                int totalRegistros = 0;
+                int pagina = 1;
+
+                while (true)
+                {
+                    filtros.Pagina = pagina;
+                    var result = await reporteSvc.GetDetalleComprasAsync(filtros, ct);
+                    totalRegistros = result.TotalRegistros;
+                    if (result.Items.Count == 0) break;
+                    allItems.AddRange(result.Items);
+                    if (allItems.Count >= result.TotalRegistros || result.Items.Count < filtros.TamanioPagina) break;
+                    pagina++;
+                }
+
+                var bytes = exporter.ExportarDetalle(allItems, filtros, totalRegistros);
+                return Results.File(bytes,
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    ReporteComprasExcelExporter.NombreArchivoDetalle());
+            }
+            else
+            {
+                var resumen = await reporteSvc.GetResumenAsync(filtros, ct);
+                var bytes = exporter.ExportarResumen(resumen, filtros);
+                return Results.File(bytes,
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    ReporteComprasExcelExporter.NombreArchivoResumen());
+            }
         });
 
         app.MapGet("/api/conversaciones", async (

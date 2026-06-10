@@ -154,17 +154,32 @@
 
                 <div class="field conv-config-fields__full">
                     <label>Ejecutable Python</label>
-                    <input @bind="_compraIaConfig.PythonExe" placeholder="C:\Python311\python.exe" />
+                    <div class="actions" style="gap:12px; align-items:center;">
+                        <input @bind="_compraIaConfig.PythonExe" placeholder="C:\Python311\python.exe  (o simplemente: python)" />
+                        <button type="button" class="btn btn--ghost" @onclick="BuscarPythonExeAsync" disabled="@(Loading || Saving)">
+                            <i class="bi bi-file-earmark-code"></i> Buscar
+                        </button>
+                    </div>
                 </div>
 
                 <div class="field conv-config-fields__full">
                     <label>Script del lector</label>
-                    <input @bind="_compraIaConfig.ScriptPath" placeholder="C:\dev\IA_ProcesarDocumentos\lector_facturas_to_json_v5.py" />
+                    <div class="actions" style="gap:12px; align-items:center;">
+                        <input @bind="_compraIaConfig.ScriptPath" placeholder="C:\dev\IA_ProcesarDocumentos\lector_facturas_to_json_v5.py" />
+                        <button type="button" class="btn btn--ghost" @onclick="BuscarScriptAsync" disabled="@(Loading || Saving)">
+                            <i class="bi bi-file-earmark-code"></i> Buscar
+                        </button>
+                    </div>
                 </div>
 
                 <div class="field conv-config-fields__full">
                     <label>Carpeta de trabajo</label>
-                    <input @bind="_compraIaConfig.WorkDir" placeholder="C:\dev\IA_ProcesarDocumentos" />
+                    <div class="actions" style="gap:12px; align-items:center;">
+                        <input @bind="_compraIaConfig.WorkDir" placeholder="C:\dev\IA_ProcesarDocumentos" />
+                        <button type="button" class="btn btn--ghost" @onclick="BuscarWorkDirAsync" disabled="@(Loading || Saving)">
+                            <i class="bi bi-folder2-open"></i> Buscar carpeta
+                        </button>
+                    </div>
                 </div>
 
                 <div class="field">
@@ -317,6 +332,45 @@
 
         if (!string.IsNullOrWhiteSpace(result.Value))
             _config.RutaBase = result.Value;
+    }
+
+    private async Task BuscarPythonExeAsync()
+    {
+        _feedback = null;
+        var result = await UiOps.RunAsync(
+            () => ConfigSvc.BrowseLocalFileAsync("Ejecutable Python|python.exe|Ejecutables|*.exe|Todos|*.*"),
+            "No se pudo abrir el selector de archivos.");
+
+        if (!result.Success)
+            _feedback = result.Feedback;
+        else if (!string.IsNullOrWhiteSpace(result.Value))
+            _compraIaConfig.PythonExe = result.Value;
+    }
+
+    private async Task BuscarScriptAsync()
+    {
+        _feedback = null;
+        var result = await UiOps.RunAsync(
+            () => ConfigSvc.BrowseLocalFileAsync("Scripts Python|*.py|Todos|*.*"),
+            "No se pudo abrir el selector de archivos.");
+
+        if (!result.Success)
+            _feedback = result.Feedback;
+        else if (!string.IsNullOrWhiteSpace(result.Value))
+            _compraIaConfig.ScriptPath = result.Value;
+    }
+
+    private async Task BuscarWorkDirAsync()
+    {
+        _feedback = null;
+        var result = await UiOps.RunAsync(
+            () => ConfigSvc.BrowseLocalFolderAsync(),
+            "No se pudo abrir el selector de carpetas.");
+
+        if (!result.Success)
+            _feedback = result.Feedback;
+        else if (!string.IsNullOrWhiteSpace(result.Value))
+            _compraIaConfig.WorkDir = result.Value;
     }
 
     private async Task SaveCompraIaAsync()
