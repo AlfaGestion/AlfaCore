@@ -15396,6 +15396,66 @@ html[data-theme="light"] .interfaces-bulkbar {
     font-weight: 700;
 }
 
+.tickets-tag-picker,
+.tickets-tags-manager__list {
+    display: grid;
+    gap: .45rem;
+}
+
+.tickets-tag-option {
+    display: flex;
+    align-items: center;
+    gap: .45rem;
+    margin: 0;
+    color: var(--color-text);
+    font-size: .82rem;
+    font-weight: 700;
+}
+
+.tickets-tag-option input {
+    width: 16px;
+    height: 16px;
+    accent-color: #14b8a6;
+}
+
+.tickets-tag-chip {
+    display: inline-flex;
+    align-items: center;
+    width: fit-content;
+    max-width: 100%;
+    min-height: 1.65rem;
+    padding: .2rem .55rem;
+    border: 1px solid currentColor;
+    border-radius: 6px;
+    font-size: .76rem;
+    font-weight: 800;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+}
+
+.tickets-tags-manager__body {
+    display: grid;
+    grid-template-columns: minmax(240px, .36fr) minmax(0, 1fr);
+    gap: .9rem;
+    align-items: start;
+}
+
+.tickets-tags-manager__form {
+    display: grid;
+    gap: .75rem;
+}
+
+.tickets-tags-manager__item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .75rem;
+    padding: .62rem .7rem;
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    background: rgba(15, 23, 42, .32);
+}
+
 .tickets-card__footer {
     color: var(--color-muted);
     font-size: .72rem;

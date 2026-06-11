@@ -131,6 +131,16 @@
                                     <option value="0">Sin prioridad</option>
                                 </select>
                             </div>
+                            <div class="smart-search__inline">
+                                <label>Etiqueta</label>
+                                <select value="@_filters.IdEtiqueta" @onchange="OnTicketTagFilterChangedAsync">
+                                    <option value="">Todas</option>
+                                    @foreach (var tag in _lookups.Etiquetas)
+                                    {
+                                        <option value="@tag.IdEtiqueta">@tag.Nombre</option>
+                                    }
+                                </select>
+                            </div>
                         </div>
                         <div class="smart-search__column">
                             <h4><i class="bi bi-building"></i> Cliente / usuario</h4>
@@ -172,6 +182,7 @@
                             <button type="button" @onclick='() => ApplyTicketFavoriteAsync("urgentes")'>Alta prioridad abiertos</button>
                             <button type="button" @onclick='() => ApplyTicketFavoriteAsync("seguimiento")'>Seguimiento soporte</button>
                             <button type="button" @onclick="SaveTicketFavorite">Guardar búsqueda actual</button>
+                            <button type="button" @onclick="OpenTagManager">Administrar etiquetas</button>
                             @foreach (var favorite in _ticketFavorites)
                             {
                                 <button type="button" @onclick="() => ApplySavedTicketFavoriteAsync(favorite)">@favorite.Label</button>
@@ -251,6 +262,57 @@
                     <button type="button" class="btn btn--ghost" @onclick="() => _showViewSettings = false">
                         <i class="bi bi-x-circle"></i> Cancelar
                     </button>
+                </div>
+            </div>
+        </section>
+    }
+
+    @if (_showTagManager)
+    {
+        <section class="panel-card tickets-tags-manager">
+            <div class="panel-card__header">
+                <div>
+                    <h3 class="panel-card__title">Etiquetas</h3>
+                    <p class="panel-card__subtitle">Clasificá tickets por programación, soporte, capacitación u otros criterios.</p>
+                </div>
+                <button type="button" class="btn btn--ghost" @onclick="CloseTagManager">
+                    <i class="bi bi-x-circle"></i> Cerrar
+                </button>
+            </div>
+            <div class="tickets-tags-manager__body">
+                <div class="tickets-tags-manager__form">
+                    <div class="field">
+                        <label>Nombre</label>
+                        <input type="text" maxlength="60" @bind="_tagDraftName" placeholder="Ej.: Soporte" disabled="@_saving" />
+                    </div>
+                    <div class="field">
+                        <label>Color</label>
+                        <input type="color" @bind="_tagDraftColor" disabled="@_saving" />
+                    </div>
+                    <div class="actions">
+                        <button type="button" class="btn btn--primary" @onclick="GuardarEtiquetaAsync" disabled="@(_saving || string.IsNullOrWhiteSpace(_tagDraftName))">
+                            <i class="bi bi-floppy"></i> @(_tagDraftId > 0 ? "Guardar etiqueta" : "Crear etiqueta")
+                        </button>
+                        <button type="button" class="btn btn--ghost" @onclick="NuevaEtiqueta" disabled="@_saving">
+                            <i class="bi bi-plus-circle"></i> Nueva
+                        </button>
+                    </div>
+                </div>
+                <div class="tickets-tags-manager__list">
+                    @foreach (var tag in _lookups.Etiquetas)
+                    {
+                        <div class="tickets-tags-manager__item">
+                            <span class="tickets-tag-chip" style="border-color:@tag.Color;color:@tag.Color">@tag.Nombre</span>
+                            <div class="actions">
+                                <button type="button" class="btn btn--ghost btn--sm" @onclick="() => EditarEtiqueta(tag)" disabled="@_saving">
+                                    <i class="bi bi-pencil"></i> Editar
+                                </button>
+                                <button type="button" class="btn btn--ghost btn--sm" @onclick="() => EliminarEtiquetaAsync(tag)" disabled="@_saving">
+                                    <i class="bi bi-trash"></i> Eliminar
+                                </button>
+                            </div>
+                        </div>
+                    }
                 </div>
             </div>
         </section>
@@ -370,6 +432,28 @@
                                 <option value="@tech.IdTecnico">@tech.Nombre</option>
                             }
                         </select>
+                    </div>
+                    <div class="field">
+                        <label>Etiquetas</label>
+                        <div class="tickets-tag-picker">
+                            @foreach (var tag in _lookups.Etiquetas)
+                            {
+                                <label class="tickets-tag-option">
+                                    <input type="checkbox"
+                                           checked="@_formTagIds.Contains(tag.IdEtiqueta)"
+                                           @onchange="args => ToggleTicketTag(tag.IdEtiqueta, args)"
+                                           disabled="@_saving" />
+                                    <span class="tickets-tag-chip" style="border-color:@tag.Color;color:@tag.Color">@tag.Nombre</span>
+                                </label>
+                            }
+                            @if (_lookups.Etiquetas.Count == 0)
+                            {
+                                <span class="panel-card__subtitle">Todavía no hay etiquetas.</span>
+                            }
+                        </div>
+                        <button type="button" class="btn btn--ghost btn--sm" @onclick="OpenTagManager" disabled="@_saving">
+                            <i class="bi bi-tags"></i> Administrar etiquetas
+                        </button>
                     </div>
                     <div class="field tickets-lookup">
                         <label>Cliente / empresa</label>
@@ -663,6 +747,7 @@
     private bool _showEditor;
     private bool _isNew;
     private bool _showViewSettings;
+    private bool _showTagManager;
     private List<TicketGridItemDto> _kanbanItems = [];
     private List<TicketGridItemDto> _listItems = [];
     private TicketDetailDto? _detail;
@@ -670,6 +755,7 @@
     private bool _feedbackLeaving;
     private DateTime _feedbackSetAtUtc = DateTime.MinValue;
     private TicketUpdateRequest _form = new();
+    private List<int> _formTagIds = [];
     private string _newNote = string.Empty;
     private int _pagedTotal;
     private int _pageNumber = 1;
@@ -708,6 +794,9 @@
     private string _filterContactLabel = string.Empty;
     private List<TicketClienteOptionDto> _filterClientSuggestions = [];
     private List<TicketContactoOptionDto> _filterContactSuggestions = [];
+    private int _tagDraftId;
+    private string _tagDraftName = string.Empty;
+    private string _tagDraftColor = "#14B8A6";
 
     private static readonly IReadOnlyList<DescriptionCommandOption> DescriptionCommands =
     [
@@ -943,6 +1032,12 @@
         await AplicarFiltrosAsync();
     }
 
+    private async Task OnTicketTagFilterChangedAsync(ChangeEventArgs e)
+    {
+        _filters.IdEtiqueta = int.TryParse(e.Value?.ToString(), out var id) && id > 0 ? id : null;
+        await AplicarFiltrosAsync();
+    }
+
     private async Task OnFilterClientSearchInputAsync(ChangeEventArgs e)
     {
         _filterClientSearch = e.Value?.ToString() ?? string.Empty;
@@ -1020,6 +1115,9 @@
                 _filters.IdContacto = null;
                 _filterContactLabel = string.Empty;
                 _filterContactSearch = string.Empty;
+                break;
+            case "etiqueta":
+                _filters.IdEtiqueta = null;
                 break;
             case "prioridad":
                 _prioridadFiltro = string.Empty;
@@ -1167,6 +1265,7 @@
         _filterContactLabel = string.Empty;
         _filterClientSuggestions = [];
         _filterContactSuggestions = [];
+        _showTagManager = false;
         await BuscarAsync();
     }
 
@@ -1191,6 +1290,7 @@
             CodigoEstado = _lookups.Estados.FirstOrDefault()?.CodigoEstado ?? TicketEstadoKeys.Nuevo,
             Prioridad = 1
         };
+        _formTagIds = [];
         ClearTicketRelations();
     }
 
@@ -1224,6 +1324,7 @@
             ClienteCodigo = _detail.ClienteCodigo,
             IdContacto = _detail.IdContacto
         };
+        _formTagIds = _detail.Etiquetas.Select(x => x.IdEtiqueta).Distinct().ToList();
         _selectedClientLabel = _detail.ClienteNombre;
         _selectedContactLabel = _detail.ContactoNombre;
         _ticketClientSearch = _detail.ClienteNombre;
@@ -1469,6 +1570,112 @@
         _ticketContactSuggestions = [];
     }
 
+    private void ToggleTicketTag(int idEtiqueta, ChangeEventArgs args)
+    {
+        var selected = args.Value is bool flag && flag;
+        if (selected)
+        {
+            if (!_formTagIds.Contains(idEtiqueta))
+                _formTagIds.Add(idEtiqueta);
+        }
+        else
+        {
+            _formTagIds.Remove(idEtiqueta);
+        }
+    }
+
+    private void OpenTagManager()
+    {
+        _showTagManager = true;
+        _showSearchPanel = false;
+        if (_tagDraftId == 0 && string.IsNullOrWhiteSpace(_tagDraftName))
+            NuevaEtiqueta();
+    }
+
+    private void CloseTagManager()
+    {
+        _showTagManager = false;
+        NuevaEtiqueta();
+    }
+
+    private void NuevaEtiqueta()
+    {
+        _tagDraftId = 0;
+        _tagDraftName = string.Empty;
+        _tagDraftColor = "#14B8A6";
+    }
+
+    private void EditarEtiqueta(TicketEtiquetaDto tag)
+    {
+        _tagDraftId = tag.IdEtiqueta;
+        _tagDraftName = tag.Nombre;
+        _tagDraftColor = string.IsNullOrWhiteSpace(tag.Color) ? "#14B8A6" : tag.Color;
+    }
+
+    private async Task GuardarEtiquetaAsync()
+    {
+        _saving = true;
+        try
+        {
+            var result = await UiOps.RunAsync(() => TicketsSvc.SaveEtiquetaAsync(new TicketEtiquetaSaveRequest
+            {
+                IdEtiqueta = _tagDraftId,
+                Nombre = _tagDraftName,
+                Color = _tagDraftColor,
+                UsuarioAccion = CurrentUserName
+            }), "No se pudo guardar la etiqueta.");
+
+            if (!result.Success)
+            {
+                SetFeedback(result.Feedback);
+                return;
+            }
+
+            await CargarLookupsAsync();
+            NuevaEtiqueta();
+            SetFeedback(AppUiMessage.Success("Etiqueta guardada", "La etiqueta quedÃ³ disponible para clasificar tickets."));
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task EliminarEtiquetaAsync(TicketEtiquetaDto tag)
+    {
+        _saving = true;
+        try
+        {
+            var result = await UiOps.RunAsync(async () =>
+            {
+                await TicketsSvc.DeleteEtiquetaAsync(new TicketEtiquetaDeleteRequest
+                {
+                    IdEtiqueta = tag.IdEtiqueta,
+                    UsuarioAccion = CurrentUserName
+                });
+                return true;
+            }, "No se pudo eliminar la etiqueta.");
+
+            if (!result.Success)
+            {
+                SetFeedback(result.Feedback);
+                return;
+            }
+
+            _formTagIds.Remove(tag.IdEtiqueta);
+            if (_filters.IdEtiqueta == tag.IdEtiqueta)
+                _filters.IdEtiqueta = null;
+            await CargarLookupsAsync();
+            await BuscarAsync(keepCurrent: true);
+            NuevaEtiqueta();
+            SetFeedback(AppUiMessage.Success("Etiqueta eliminada", "La etiqueta se desactivÃ³ y ya no aparece para nuevos filtros."));
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
     private async Task GuardarAsync()
     {
         _saving = true;
@@ -1486,6 +1693,7 @@
                     IdTecnico = _form.IdTecnico,
                     ClienteCodigo = _form.ClienteCodigo,
                     IdContacto = _form.IdContacto,
+                    IdEtiquetas = _formTagIds.ToList(),
                     UsuarioAccion = CurrentUserName
                 };
                 var result = await UiOps.RunAsync(() => TicketsSvc.CreateAsync(create), "No se pudo crear el ticket.");
@@ -1497,6 +1705,7 @@
             else
             {
                 _form.UsuarioAccion = CurrentUserName;
+                _form.IdEtiquetas = _formTagIds.ToList();
                 var result = await UiOps.RunAsync(async () => { await TicketsSvc.UpdateAsync(_form); return true; }, "No se pudo guardar el ticket.");
                 if (!result.Success) { SetFeedback(result.Feedback); return; }
                 SetFeedback(AppUiMessage.Success("Ticket guardado", "Los cambios quedaron registrados."));
@@ -1635,6 +1844,9 @@
 
     private MarkupString RenderColumn(TicketGridItemDto item, string key)
     {
+        if (string.Equals(key, TicketViewColumnKeys.Etiquetas, StringComparison.OrdinalIgnoreCase))
+            return RenderTicketTags(item.Etiquetas);
+
         var text = key switch
         {
             TicketViewColumnKeys.Numero => item.CodigoVisible,
@@ -1649,6 +1861,21 @@
             _ => string.Empty
         };
         return new MarkupString(System.Net.WebUtility.HtmlEncode(text));
+    }
+
+    private static MarkupString RenderTicketTags(IReadOnlyList<TicketEtiquetaDto> tags)
+    {
+        if (tags.Count == 0)
+            return new MarkupString("<span class=\"panel-card__subtitle\">-</span>");
+
+        var parts = tags.Select(tag =>
+        {
+            var name = System.Net.WebUtility.HtmlEncode(tag.Nombre);
+            var color = System.Net.WebUtility.HtmlEncode(string.IsNullOrWhiteSpace(tag.Color) ? "#94A3B8" : tag.Color);
+            return $"<span class=\"tickets-tag-chip\" style=\"border-color:{color};color:{color}\">{name}</span>";
+        });
+
+        return new MarkupString($"<div class=\"tickets-tags\">{string.Join(string.Empty, parts)}</div>");
     }
 
     private string CurrentUserName => AppUserSession.GetCurrentUserName(string.Empty).Trim();
@@ -1669,6 +1896,8 @@
             chips.Add(new("cliente", $"Cliente: {DisplayOrFallback(_filterClientLabel, _filters.ClienteCodigo)}"));
         if (_filters.IdContacto.HasValue)
             chips.Add(new("contacto", $"Contacto: {DisplayOrFallback(_filterContactLabel, _filters.IdContacto.Value.ToString())}"));
+        if (_filters.IdEtiqueta.HasValue)
+            chips.Add(new("etiqueta", $"Etiqueta: {_lookups.Etiquetas.FirstOrDefault(x => x.IdEtiqueta == _filters.IdEtiqueta.Value)?.Nombre ?? _filters.IdEtiqueta.Value.ToString()}"));
         if (!string.IsNullOrWhiteSpace(_prioridadFiltro) && int.TryParse(_prioridadFiltro, out var priority))
             chips.Add(new("prioridad", $"Prioridad: {RenderPriority(priority)}"));
         if (_filters.IncluirCerrados)
@@ -1737,6 +1966,7 @@
             TieneMensajes = source.TieneMensajes,
             ClienteCodigo = source.ClienteCodigo,
             IdContacto = source.IdContacto,
+            IdEtiqueta = source.IdEtiqueta,
             FechaRapida = source.FechaRapida,
             PageNumber = 1,
             PageSize = source.PageSize,
@@ -1756,8 +1986,9 @@
                 new() { Key = TicketViewColumnKeys.Asignado, Label = "Asignado", Visible = true, Order = 4 },
                 new() { Key = TicketViewColumnKeys.Cliente, Label = "Cliente", Visible = true, Order = 5 },
                 new() { Key = TicketViewColumnKeys.Contacto, Label = "Contacto", Visible = false, Order = 6 },
-                new() { Key = TicketViewColumnKeys.Mensajes, Label = "Mensajes", Visible = true, Order = 7 },
-                new() { Key = TicketViewColumnKeys.Fecha, Label = "Fecha", Visible = true, Order = 8 }
+                new() { Key = TicketViewColumnKeys.Etiquetas, Label = "Etiquetas", Visible = true, Order = 7 },
+                new() { Key = TicketViewColumnKeys.Mensajes, Label = "Mensajes", Visible = true, Order = 8 },
+                new() { Key = TicketViewColumnKeys.Fecha, Label = "Fecha", Visible = true, Order = 9 }
             ]
         };
 

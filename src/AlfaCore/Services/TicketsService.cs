@@ -410,6 +410,7 @@ public sealed class TicketsService(
             var state = string.IsNullOrWhiteSpace(request.CodigoEstado) ? TicketEstadoKeys.Nuevo : request.CodigoEstado.Trim().ToUpperInvariant();
             var user = NormalizeUser(request.UsuarioAccion);
             var messageIds = request.IdMensajes.Where(x => x > 0).Distinct().ToList();
+            var tagIds = NormalizeTagIds(request.IdEtiquetas);
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
@@ -460,6 +461,7 @@ public sealed class TicketsService(
             var idTicket = Convert.ToInt64(await cmd.ExecuteScalarAsync(token), CultureInfo.InvariantCulture);
 
             await InsertTicketMessagesAsync(cn, (SqlTransaction)tx, idTicket, messageIds, token);
+            await SyncTicketEtiquetasAsync(cn, (SqlTransaction)tx, idTicket, tagIds, token);
             await InsertActivityAsync(cn, (SqlTransaction)tx, idTicket, "CREACION", $"Ticket creado: {title}", user, token);
 
             await tx.CommitAsync(token);
@@ -470,7 +472,7 @@ public sealed class TicketsService(
                 "TICK_TICKETS",
                 idTicket.ToString(CultureInfo.InvariantCulture),
                 "Ticket de asistencia creado.",
-                new { IdTicket = idTicket, title, request.IdConversacion, Mensajes = messageIds },
+                new { IdTicket = idTicket, title, request.IdConversacion, Mensajes = messageIds, Etiquetas = tagIds },
                 token);
 
             return idTicket;
@@ -487,6 +489,7 @@ public sealed class TicketsService(
             var priority = Math.Clamp(request.Prioridad, 0, 3);
             var state = string.IsNullOrWhiteSpace(request.CodigoEstado) ? TicketEstadoKeys.Nuevo : request.CodigoEstado.Trim().ToUpperInvariant();
             var user = NormalizeUser(request.UsuarioAccion);
+            var tagIds = NormalizeTagIds(request.IdEtiquetas);
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
@@ -520,6 +523,7 @@ public sealed class TicketsService(
             if (affected == 0)
                 throw new InvalidOperationException("El ticket seleccionado ya no existe en la base activa.");
 
+            await SyncTicketEtiquetasAsync(cn, (SqlTransaction)tx, request.IdTicket, tagIds, token);
             await InsertActivityAsync(cn, (SqlTransaction)tx, request.IdTicket, "EDICION", "Ticket actualizado.", user, token);
             await tx.CommitAsync(token);
         }, "No se pudo actualizar el ticket.", ct);
@@ -585,6 +589,122 @@ public sealed class TicketsService(
             await InsertActivityAsync(cn, (SqlTransaction)tx, request.IdTicket, "NOTA", request.Texto.Trim(), NormalizeUser(request.UsuarioAccion), token);
             await tx.CommitAsync(token);
         }, "No se pudo agregar la nota al ticket.", ct);
+
+    public Task<int> SaveEtiquetaAsync(TicketEtiquetaSaveRequest request, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "SaveEtiqueta", async token =>
+        {
+            ArgumentNullException.ThrowIfNull(request);
+            var name = NormalizeEtiquetaName(request.Nombre);
+            var color = NormalizeEtiquetaColor(request.Color);
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var tx = await cn.BeginTransactionAsync(token);
+
+            int idEtiqueta;
+            if (request.IdEtiqueta > 0)
+            {
+                const string updateSql = """
+                    UPDATE dbo.TICK_ETIQUETAS
+                    SET Nombre = @Nombre,
+                        Color = @Color,
+                        Activa = 1
+                    WHERE IdEtiqueta = @IdEtiqueta;
+
+                    SELECT CASE WHEN @@ROWCOUNT = 0 THEN 0 ELSE @IdEtiqueta END;
+                    """;
+
+                await using var cmd = new SqlCommand(updateSql, cn, (SqlTransaction)tx);
+                cmd.Parameters.AddWithValue("@IdEtiqueta", request.IdEtiqueta);
+                cmd.Parameters.AddWithValue("@Nombre", name);
+                cmd.Parameters.AddWithValue("@Color", color);
+                var result = await cmd.ExecuteScalarAsync(token);
+                idEtiqueta = Convert.ToInt32(result, CultureInfo.InvariantCulture);
+                if (idEtiqueta <= 0)
+                    throw new InvalidOperationException("La etiqueta seleccionada ya no existe.");
+            }
+            else
+            {
+                const string upsertSql = """
+                    DECLARE @IdEtiqueta int;
+
+                    SELECT @IdEtiqueta = IdEtiqueta
+                    FROM dbo.TICK_ETIQUETAS
+                    WHERE UPPER(LTRIM(RTRIM(Nombre))) = UPPER(@Nombre);
+
+                    IF @IdEtiqueta IS NULL
+                    BEGIN
+                        INSERT INTO dbo.TICK_ETIQUETAS (Nombre, Color, Activa)
+                        VALUES (@Nombre, @Color, 1);
+
+                        SET @IdEtiqueta = CAST(SCOPE_IDENTITY() AS int);
+                    END
+                    ELSE
+                    BEGIN
+                        UPDATE dbo.TICK_ETIQUETAS
+                        SET Nombre = @Nombre,
+                            Color = @Color,
+                            Activa = 1
+                        WHERE IdEtiqueta = @IdEtiqueta;
+                    END
+
+                    SELECT @IdEtiqueta;
+                    """;
+
+                await using var cmd = new SqlCommand(upsertSql, cn, (SqlTransaction)tx);
+                cmd.Parameters.AddWithValue("@Nombre", name);
+                cmd.Parameters.AddWithValue("@Color", color);
+                idEtiqueta = Convert.ToInt32(await cmd.ExecuteScalarAsync(token), CultureInfo.InvariantCulture);
+            }
+
+            await tx.CommitAsync(token);
+
+            await appEvents.LogAuditAsync(
+                ModuleName,
+                "SaveEtiqueta",
+                "TICK_ETIQUETAS",
+                idEtiqueta.ToString(CultureInfo.InvariantCulture),
+                "Etiqueta de ticket guardada.",
+                new { IdEtiqueta = idEtiqueta, Nombre = name, Color = color },
+                token);
+
+            return idEtiqueta;
+        }, "No se pudo guardar la etiqueta.", ct);
+
+    public Task DeleteEtiquetaAsync(TicketEtiquetaDeleteRequest request, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "DeleteEtiqueta", async token =>
+        {
+            ArgumentNullException.ThrowIfNull(request);
+            if (request.IdEtiqueta <= 0)
+                throw new InvalidOperationException("No se recibiÃ³ la etiqueta a eliminar.");
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var tx = await cn.BeginTransactionAsync(token);
+
+            const string sql = """
+                UPDATE dbo.TICK_ETIQUETAS
+                SET Activa = 0
+                WHERE IdEtiqueta = @IdEtiqueta;
+                """;
+
+            await using var cmd = new SqlCommand(sql, cn, (SqlTransaction)tx);
+            cmd.Parameters.AddWithValue("@IdEtiqueta", request.IdEtiqueta);
+            var affected = await cmd.ExecuteNonQueryAsync(token);
+            if (affected == 0)
+                throw new InvalidOperationException("La etiqueta seleccionada ya no existe.");
+
+            await tx.CommitAsync(token);
+
+            await appEvents.LogAuditAsync(
+                ModuleName,
+                "DeleteEtiqueta",
+                "TICK_ETIQUETAS",
+                request.IdEtiqueta.ToString(CultureInfo.InvariantCulture),
+                "Etiqueta de ticket desactivada.",
+                new { request.IdEtiqueta },
+                token);
+        }, "No se pudo eliminar la etiqueta.", ct);
 
     public Task<TicketViewSettingsDto> GetViewSettingsAsync(string userName, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "GetViewSettings", async token =>
@@ -788,6 +908,14 @@ public sealed class TicketsService(
                 AND (@Prioridad IS NULL OR t.Prioridad = @Prioridad)
                 AND (@ClienteCodigo = '' OR COALESCE(NULLIF(LTRIM(RTRIM(t.ClienteCodigo)), ''), contactoCuenta.Cuenta) = @ClienteCodigo)
                 AND (@IdContacto IS NULL OR t.IdContacto = @IdContacto)
+                AND (@IdEtiqueta IS NULL OR EXISTS (
+                    SELECT 1
+                    FROM dbo.TICK_TICKET_ETIQUETAS teFiltro
+                    INNER JOIN dbo.TICK_ETIQUETAS eFiltro ON eFiltro.IdEtiqueta = teFiltro.IdEtiqueta
+                    WHERE teFiltro.IdTicket = t.IdTicket
+                      AND teFiltro.IdEtiqueta = @IdEtiqueta
+                      AND ISNULL(eFiltro.Activa, 1) = 1
+                ))
                 AND (@IncluirCerrados = 1 OR ISNULL(e.EsCerrado, 0) = 0)
                 AND (@TieneAsignado IS NULL OR CASE WHEN NULLIF(LTRIM(RTRIM(ISNULL(t.IdTecnico, ''))), '') IS NULL THEN CAST(0 AS bit) ELSE CAST(1 AS bit) END = @TieneAsignado)
                 AND (@TieneMensajes IS NULL OR CASE WHEN ISNULL(msg.CantidadMensajes, 0) > 0 THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END = @TieneMensajes)
@@ -846,6 +974,7 @@ public sealed class TicketsService(
         cmd.Parameters.AddWithValue("@Prioridad", filters.Prioridad.HasValue ? filters.Prioridad.Value : DBNull.Value);
         cmd.Parameters.AddWithValue("@ClienteCodigo", (filters.ClienteCodigo ?? string.Empty).Trim().ToUpperInvariant());
         cmd.Parameters.AddWithValue("@IdContacto", filters.IdContacto.HasValue ? filters.IdContacto.Value : DBNull.Value);
+        cmd.Parameters.AddWithValue("@IdEtiqueta", filters.IdEtiqueta.HasValue ? filters.IdEtiqueta.Value : DBNull.Value);
         cmd.Parameters.AddWithValue("@IncluirCerrados", filters.IncluirCerrados);
         cmd.Parameters.AddWithValue("@TieneAsignado", filters.TieneAsignado.HasValue ? filters.TieneAsignado.Value : DBNull.Value);
         cmd.Parameters.AddWithValue("@TieneMensajes", filters.TieneMensajes.HasValue ? filters.TieneMensajes.Value : DBNull.Value);
@@ -1148,6 +1277,7 @@ public sealed class TicketsService(
             FROM dbo.TICK_TICKET_ETIQUETAS te
             INNER JOIN dbo.TICK_ETIQUETAS e ON e.IdEtiqueta = te.IdEtiqueta
             WHERE te.IdTicket IN ({string.Join(", ", parameterNames)})
+              AND ISNULL(e.Activa, 1) = 1
             ORDER BY e.Nombre;
             """;
 
@@ -1368,6 +1498,40 @@ public sealed class TicketsService(
         }
     }
 
+    private static async Task SyncTicketEtiquetasAsync(SqlConnection cn, SqlTransaction tx, long idTicket, IReadOnlyList<int> idEtiquetas, CancellationToken ct)
+    {
+        await using (var deleteCmd = new SqlCommand("DELETE FROM dbo.TICK_TICKET_ETIQUETAS WHERE IdTicket = @IdTicket;", cn, tx))
+        {
+            deleteCmd.Parameters.AddWithValue("@IdTicket", idTicket);
+            await deleteCmd.ExecuteNonQueryAsync(ct);
+        }
+
+        if (idEtiquetas.Count == 0)
+            return;
+
+        const string sql = """
+            INSERT INTO dbo.TICK_TICKET_ETIQUETAS (IdTicket, IdEtiqueta)
+            SELECT @IdTicket, e.IdEtiqueta
+            FROM dbo.TICK_ETIQUETAS e
+            WHERE e.IdEtiqueta = @IdEtiqueta
+              AND ISNULL(e.Activa, 1) = 1
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM dbo.TICK_TICKET_ETIQUETAS te
+                  WHERE te.IdTicket = @IdTicket
+                    AND te.IdEtiqueta = e.IdEtiqueta
+              );
+            """;
+
+        foreach (var idEtiqueta in idEtiquetas)
+        {
+            await using var cmd = new SqlCommand(sql, cn, tx);
+            cmd.Parameters.AddWithValue("@IdTicket", idTicket);
+            cmd.Parameters.AddWithValue("@IdEtiqueta", idEtiqueta);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+    }
+
     private static async Task InsertActivityAsync(SqlConnection cn, SqlTransaction tx, long idTicket, string type, string description, string user, CancellationToken ct)
     {
         const string sql = """
@@ -1396,8 +1560,9 @@ public sealed class TicketsService(
                 new() { Key = TicketViewColumnKeys.Asignado, Label = "Asignado", Visible = true, Order = 4 },
                 new() { Key = TicketViewColumnKeys.Cliente, Label = "Cliente", Visible = true, Order = 5 },
                 new() { Key = TicketViewColumnKeys.Contacto, Label = "Contacto", Visible = false, Order = 6 },
-                new() { Key = TicketViewColumnKeys.Mensajes, Label = "Mensajes", Visible = true, Order = 7 },
-                new() { Key = TicketViewColumnKeys.Fecha, Label = "Fecha", Visible = true, Order = 8 }
+                new() { Key = TicketViewColumnKeys.Etiquetas, Label = "Etiquetas", Visible = true, Order = 7 },
+                new() { Key = TicketViewColumnKeys.Mensajes, Label = "Mensajes", Visible = true, Order = 8 },
+                new() { Key = TicketViewColumnKeys.Fecha, Label = "Fecha", Visible = true, Order = 9 }
             ]
         };
 
@@ -1481,6 +1646,31 @@ public sealed class TicketsService(
 
         return title.Length <= 180 ? title : title[..180];
     }
+
+    private static string NormalizeEtiquetaName(string? value)
+    {
+        var name = WhitespaceRegex.Replace(value?.Trim() ?? string.Empty, " ");
+        if (name.Length == 0)
+            throw new InvalidOperationException("El nombre de la etiqueta es obligatorio.");
+
+        return name.Length <= 60 ? name : name[..60];
+    }
+
+    private static string NormalizeEtiquetaColor(string? value)
+    {
+        var color = string.IsNullOrWhiteSpace(value) ? "#14b8a6" : value.Trim();
+        return Regex.IsMatch(color, "^#[0-9a-fA-F]{6}$", RegexOptions.CultureInvariant)
+            ? color.ToUpperInvariant()
+            : "#14B8A6";
+    }
+
+    private static List<int> NormalizeTagIds(IEnumerable<int>? values)
+        => values?
+            .Where(x => x > 0)
+            .Distinct()
+            .Take(20)
+            .ToList()
+           ?? [];
 
     private static string NormalizeUser(string? value)
         => string.IsNullOrWhiteSpace(value) ? Environment.UserName : value.Trim();
