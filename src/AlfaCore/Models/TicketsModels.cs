@@ -214,6 +214,7 @@ public sealed class TicketViewColumnDto
     public string Label { get; set; } = string.Empty;
     public bool Visible { get; set; }
     public int Order { get; set; }
+    public int WidthPx { get; set; }
 }
 
 public static class TicketEstadoKeys

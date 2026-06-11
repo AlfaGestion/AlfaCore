@@ -223,12 +223,16 @@
 
     @if (_showViewSettings && _viewMode == "lista" && !_showEditor)
     {
-        <section class="panel-card">
+        <div class="tickets-view-settings-layer" @ref="_viewSettingsLayer" @onclick="CloseViewSettings" @onkeydown="HandleViewSettingsKeyDown" tabindex="-1">
+        <section class="panel-card tickets-view-settings-modal" @onclick:stopPropagation>
             <div class="panel-card__header">
                 <div>
                     <h3 class="panel-card__title">Configuración de vista</h3>
                     <p class="panel-card__subtitle">Columnas visibles, orden y agrupación del listado.</p>
                 </div>
+                <button type="button" class="btn btn--ghost" @onclick="CloseViewSettings">
+                    <i class="bi bi-x-circle"></i> Cerrar
+                </button>
             </div>
             <div class="usuarios-view-settings">
                 <div class="field">
@@ -259,12 +263,13 @@
                     <button type="button" class="btn btn--primary" @onclick="GuardarConfiguracionVistaAsync">
                         <i class="bi bi-floppy"></i> Guardar vista
                     </button>
-                    <button type="button" class="btn btn--ghost" @onclick="() => _showViewSettings = false">
+                    <button type="button" class="btn btn--ghost" @onclick="CloseViewSettings">
                         <i class="bi bi-x-circle"></i> Cancelar
                     </button>
                 </div>
             </div>
         </section>
+        </div>
     }
 
     @if (_showTagManager)
@@ -688,13 +693,29 @@
             }
             else
             {
-                <div class="usuarios-table-wrap">
-                    <table class="data-table usuarios-table tickets-table">
+                <div class="usuarios-table-wrap tickets-table-wrap"
+                     @onpointermove="ResizeTicketColumn"
+                     @onpointerup="FinishTicketColumnResizeAsync"
+                     @onpointercancel="FinishTicketColumnResizeAsync">
+                    <table class="data-table usuarios-table tickets-table" style="@GetTicketsTableStyle(visibleColumns)">
+                        <colgroup>
+                            @foreach (var col in visibleColumns)
+                            {
+                                <col style="width:@GetColumnWidth(col)px" />
+                            }
+                        </colgroup>
                         <thead>
                             <tr>
                                 @foreach (var col in visibleColumns)
                                 {
-                                    <th>@col.Label</th>
+                                    <th style="width:@GetColumnWidth(col)px">
+                                        <span>@col.Label</span>
+                                        <span class="tickets-column-resizer"
+                                              title="Arrastrar para ajustar columna"
+                                              @onpointerdown="args => StartTicketColumnResize(col.Key, args)"
+                                              @onpointerdown:stopPropagation="true"
+                                              @onclick:stopPropagation="true"></span>
+                                    </th>
                                 }
                             </tr>
                         </thead>
@@ -782,8 +803,13 @@
     private bool _descriptionEditorReady;
     private bool _showSearchPanel;
     private CancellationTokenSource? _searchDebounceCts;
+    private ElementReference _viewSettingsLayer;
+    private bool _viewSettingsFocusPending;
     private ElementReference _tagManagerLayer;
     private bool _tagManagerFocusPending;
+    private string _resizingColumnKey = string.Empty;
+    private double _resizeStartX;
+    private int _resizeStartWidth;
     private SearchRuleDto _ticketRuleDraft = new() { Campo = "titulo", Operador = "contains" };
     private readonly List<SavedTicketSearch> _ticketFavorites = [];
     private string _ticketClientSearch = string.Empty;
@@ -884,6 +910,12 @@
         {
             _tagManagerFocusPending = false;
             await _tagManagerLayer.FocusAsync();
+        }
+
+        if (_showViewSettings && _viewSettingsFocusPending)
+        {
+            _viewSettingsFocusPending = false;
+            await _viewSettingsLayer.FocusAsync();
         }
     }
 
@@ -1808,9 +1840,22 @@
     private void AbrirConfiguracionVista()
     {
         _showViewSettings = true;
+        _viewSettingsFocusPending = true;
         _draftAgruparPor = _viewSettings.AgruparPor;
         _viewSettingsDraft.Clear();
         _viewSettingsDraft.AddRange(CloneColumns(_viewSettings.Columnas));
+    }
+
+    private void CloseViewSettings()
+    {
+        _showViewSettings = false;
+        _viewSettingsFocusPending = false;
+    }
+
+    private void HandleViewSettingsKeyDown(KeyboardEventArgs args)
+    {
+        if (string.Equals(args.Key, "Escape", StringComparison.OrdinalIgnoreCase))
+            CloseViewSettings();
     }
 
     private void ToggleViewColumn(string key, ChangeEventArgs args)
@@ -1847,12 +1892,68 @@
         var result = await UiOps.RunAsync(async () => { await TicketsSvc.SaveViewSettingsAsync(CurrentUserName, settings); return true; }, "No se pudo guardar la configuración de vista.");
         if (!result.Success) { SetFeedback(result.Feedback); return; }
         ApplyViewSettings(settings, CurrentUserName);
-        _showViewSettings = false;
+        CloseViewSettings();
         SetFeedback(AppUiMessage.Success("Vista guardada", "La configuración del listado quedó actualizada para tu usuario."));
     }
 
     private IReadOnlyList<TicketViewColumnDto> GetVisibleColumns()
         => _viewSettings.Columnas.Where(c => c.Visible).OrderBy(c => c.Order).ToList();
+
+    private static int GetColumnWidth(TicketViewColumnDto column)
+        => NormalizeColumnWidth(column.WidthPx, GetDefaultColumnWidth(column.Key));
+
+    private static string GetTicketsTableStyle(IReadOnlyList<TicketViewColumnDto> columns)
+    {
+        var width = columns.Sum(GetColumnWidth);
+        return $"min-width:{width.ToString(System.Globalization.CultureInfo.InvariantCulture)}px";
+    }
+
+    private void StartTicketColumnResize(string key, PointerEventArgs args)
+    {
+        var column = _viewSettings.Columnas.FirstOrDefault(c => string.Equals(c.Key, key, StringComparison.OrdinalIgnoreCase));
+        if (column is null)
+            return;
+
+        _resizingColumnKey = column.Key;
+        _resizeStartX = args.ClientX;
+        _resizeStartWidth = GetColumnWidth(column);
+    }
+
+    private void ResizeTicketColumn(PointerEventArgs args)
+    {
+        if (string.IsNullOrWhiteSpace(_resizingColumnKey))
+            return;
+
+        var delta = (int)Math.Round(args.ClientX - _resizeStartX, MidpointRounding.AwayFromZero);
+        var width = NormalizeColumnWidth(_resizeStartWidth + delta, _resizeStartWidth);
+        SetTicketColumnWidth(_viewSettings.Columnas, _resizingColumnKey, width);
+        SetTicketColumnWidth(_viewSettingsDraft, _resizingColumnKey, width);
+    }
+
+    private async Task FinishTicketColumnResizeAsync(PointerEventArgs args)
+    {
+        if (string.IsNullOrWhiteSpace(_resizingColumnKey))
+            return;
+
+        _resizingColumnKey = string.Empty;
+        if (!string.IsNullOrWhiteSpace(CurrentUserName))
+            await SaveCurrentViewSettingsQuietlyAsync();
+    }
+
+    private async Task SaveCurrentViewSettingsQuietlyAsync()
+    {
+        var settings = new TicketViewSettingsDto { AgruparPor = _viewSettings.AgruparPor, Columnas = CloneColumns(_viewSettings.Columnas) };
+        var result = await UiOps.RunAsync(async () => { await TicketsSvc.SaveViewSettingsAsync(CurrentUserName, settings); return true; }, "No se pudo guardar el ancho de columnas.");
+        if (!result.Success)
+            SetFeedback(result.Feedback);
+    }
+
+    private static void SetTicketColumnWidth(IEnumerable<TicketViewColumnDto> columns, string key, int width)
+    {
+        var column = columns.FirstOrDefault(c => string.Equals(c.Key, key, StringComparison.OrdinalIgnoreCase));
+        if (column is not null)
+            column.WidthPx = width;
+    }
 
     private IReadOnlyList<TicketGridGroup> BuildListGroups()
     {
@@ -2002,21 +2103,47 @@
             AgruparPor = TicketViewGroupKeys.Estado,
             Columnas =
             [
-                new() { Key = TicketViewColumnKeys.Numero, Label = "Nro.", Visible = true, Order = 0 },
-                new() { Key = TicketViewColumnKeys.Titulo, Label = "Ticket", Visible = true, Order = 1 },
-                new() { Key = TicketViewColumnKeys.Prioridad, Label = "Prioridad", Visible = true, Order = 2 },
-                new() { Key = TicketViewColumnKeys.Estado, Label = "Etapa", Visible = true, Order = 3 },
-                new() { Key = TicketViewColumnKeys.Asignado, Label = "Asignado", Visible = true, Order = 4 },
-                new() { Key = TicketViewColumnKeys.Cliente, Label = "Cliente", Visible = true, Order = 5 },
-                new() { Key = TicketViewColumnKeys.Contacto, Label = "Contacto", Visible = false, Order = 6 },
-                new() { Key = TicketViewColumnKeys.Etiquetas, Label = "Etiquetas", Visible = true, Order = 7 },
-                new() { Key = TicketViewColumnKeys.Mensajes, Label = "Mensajes", Visible = true, Order = 8 },
-                new() { Key = TicketViewColumnKeys.Fecha, Label = "Fecha", Visible = true, Order = 9 }
+                new() { Key = TicketViewColumnKeys.Numero, Label = "Nro.", Visible = true, Order = 0, WidthPx = 84 },
+                new() { Key = TicketViewColumnKeys.Titulo, Label = "Ticket", Visible = true, Order = 1, WidthPx = 300 },
+                new() { Key = TicketViewColumnKeys.Prioridad, Label = "Prioridad", Visible = true, Order = 2, WidthPx = 118 },
+                new() { Key = TicketViewColumnKeys.Estado, Label = "Etapa", Visible = true, Order = 3, WidthPx = 128 },
+                new() { Key = TicketViewColumnKeys.Asignado, Label = "Asignado", Visible = true, Order = 4, WidthPx = 150 },
+                new() { Key = TicketViewColumnKeys.Cliente, Label = "Cliente", Visible = true, Order = 5, WidthPx = 210 },
+                new() { Key = TicketViewColumnKeys.Contacto, Label = "Contacto", Visible = true, Order = 6, WidthPx = 190 },
+                new() { Key = TicketViewColumnKeys.Etiquetas, Label = "Etiquetas", Visible = true, Order = 7, WidthPx = 180 },
+                new() { Key = TicketViewColumnKeys.Mensajes, Label = "Mensajes", Visible = true, Order = 8, WidthPx = 112 },
+                new() { Key = TicketViewColumnKeys.Fecha, Label = "Fecha", Visible = true, Order = 9, WidthPx = 160 }
             ]
         };
 
     private static List<TicketViewColumnDto> CloneColumns(IEnumerable<TicketViewColumnDto> columns)
-        => columns.OrderBy(c => c.Order).Select(c => new TicketViewColumnDto { Key = c.Key, Label = c.Label, Visible = c.Visible, Order = c.Order }).ToList();
+        => columns.OrderBy(c => c.Order).Select(c => new TicketViewColumnDto
+        {
+            Key = c.Key,
+            Label = c.Label,
+            Visible = c.Visible,
+            Order = c.Order,
+            WidthPx = NormalizeColumnWidth(c.WidthPx, GetDefaultColumnWidth(c.Key))
+        }).ToList();
+
+    private static int GetDefaultColumnWidth(string key)
+        => key switch
+        {
+            TicketViewColumnKeys.Numero => 84,
+            TicketViewColumnKeys.Titulo => 300,
+            TicketViewColumnKeys.Prioridad => 118,
+            TicketViewColumnKeys.Estado => 128,
+            TicketViewColumnKeys.Asignado => 150,
+            TicketViewColumnKeys.Cliente => 210,
+            TicketViewColumnKeys.Contacto => 190,
+            TicketViewColumnKeys.Etiquetas => 180,
+            TicketViewColumnKeys.Mensajes => 112,
+            TicketViewColumnKeys.Fecha => 160,
+            _ => 150
+        };
+
+    private static int NormalizeColumnWidth(int width, int fallback)
+        => Math.Clamp(width > 0 ? width : fallback, 72, 520);
 
     private static string RenderPriority(int priority)
         => priority switch

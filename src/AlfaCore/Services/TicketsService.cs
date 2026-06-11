@@ -1553,16 +1553,16 @@ public sealed class TicketsService(
             AgruparPor = TicketViewGroupKeys.Estado,
             Columnas =
             [
-                new() { Key = TicketViewColumnKeys.Numero, Label = "Nro.", Visible = true, Order = 0 },
-                new() { Key = TicketViewColumnKeys.Titulo, Label = "Ticket", Visible = true, Order = 1 },
-                new() { Key = TicketViewColumnKeys.Prioridad, Label = "Prioridad", Visible = true, Order = 2 },
-                new() { Key = TicketViewColumnKeys.Estado, Label = "Etapa", Visible = true, Order = 3 },
-                new() { Key = TicketViewColumnKeys.Asignado, Label = "Asignado", Visible = true, Order = 4 },
-                new() { Key = TicketViewColumnKeys.Cliente, Label = "Cliente", Visible = true, Order = 5 },
-                new() { Key = TicketViewColumnKeys.Contacto, Label = "Contacto", Visible = false, Order = 6 },
-                new() { Key = TicketViewColumnKeys.Etiquetas, Label = "Etiquetas", Visible = true, Order = 7 },
-                new() { Key = TicketViewColumnKeys.Mensajes, Label = "Mensajes", Visible = true, Order = 8 },
-                new() { Key = TicketViewColumnKeys.Fecha, Label = "Fecha", Visible = true, Order = 9 }
+                new() { Key = TicketViewColumnKeys.Numero, Label = "Nro.", Visible = true, Order = 0, WidthPx = 84 },
+                new() { Key = TicketViewColumnKeys.Titulo, Label = "Ticket", Visible = true, Order = 1, WidthPx = 300 },
+                new() { Key = TicketViewColumnKeys.Prioridad, Label = "Prioridad", Visible = true, Order = 2, WidthPx = 118 },
+                new() { Key = TicketViewColumnKeys.Estado, Label = "Etapa", Visible = true, Order = 3, WidthPx = 128 },
+                new() { Key = TicketViewColumnKeys.Asignado, Label = "Asignado", Visible = true, Order = 4, WidthPx = 150 },
+                new() { Key = TicketViewColumnKeys.Cliente, Label = "Cliente", Visible = true, Order = 5, WidthPx = 210 },
+                new() { Key = TicketViewColumnKeys.Contacto, Label = "Contacto", Visible = true, Order = 6, WidthPx = 190 },
+                new() { Key = TicketViewColumnKeys.Etiquetas, Label = "Etiquetas", Visible = true, Order = 7, WidthPx = 180 },
+                new() { Key = TicketViewColumnKeys.Mensajes, Label = "Mensajes", Visible = true, Order = 8, WidthPx = 112 },
+                new() { Key = TicketViewColumnKeys.Fecha, Label = "Fecha", Visible = true, Order = 9, WidthPx = 160 }
             ]
         };
 
@@ -1591,9 +1591,16 @@ public sealed class TicketsService(
                 .Select(defaultCol =>
                 {
                     if (!incoming.TryGetValue(defaultCol.Key, out var source))
-                        return new TicketViewColumnDto { Key = defaultCol.Key, Label = defaultCol.Label, Visible = defaultCol.Visible, Order = defaultCol.Order };
+                        return new TicketViewColumnDto { Key = defaultCol.Key, Label = defaultCol.Label, Visible = defaultCol.Visible, Order = defaultCol.Order, WidthPx = defaultCol.WidthPx };
 
-                    return new TicketViewColumnDto { Key = defaultCol.Key, Label = defaultCol.Label, Visible = source.Visible, Order = source.Order };
+                    return new TicketViewColumnDto
+                    {
+                        Key = defaultCol.Key,
+                        Label = defaultCol.Label,
+                        Visible = source.Visible,
+                        Order = source.Order,
+                        WidthPx = NormalizeColumnWidth(source.WidthPx, defaultCol.WidthPx)
+                    };
                 })
                 .OrderBy(c => c.Order)
                 .ThenBy(c => c.Label, StringComparer.CurrentCultureIgnoreCase)
@@ -1606,6 +1613,9 @@ public sealed class TicketsService(
 
         return normalized;
     }
+
+    private static int NormalizeColumnWidth(int width, int fallback)
+        => Math.Clamp(width > 0 ? width : fallback, 72, 520);
 
     private static async Task<string> ResolveConfigDetailColumnAsync(SqlConnection cn, CancellationToken ct)
     {

@@ -15559,10 +15559,33 @@ html[data-theme="light"] .interfaces-bulkbar {
     backdrop-filter: blur(2px);
 }
 
+.tickets-view-settings-layer {
+    position: fixed;
+    inset: 0;
+    z-index: 1180;
+    display: grid;
+    place-items: center;
+    padding: 1rem;
+    background: rgba(2, 6, 23, .62);
+    backdrop-filter: blur(3px);
+}
+
 .tickets-tags-manager {
     position: relative;
     width: min(760px, calc(100vw - 2rem));
     max-height: min(82dvh, 720px);
+    margin: 0;
+    padding: 1rem;
+    border-color: rgba(56, 189, 248, .26);
+    background: rgba(8, 18, 33, .98);
+    box-shadow: 0 28px 90px rgba(0, 0, 0, .62);
+    overflow: auto;
+}
+
+.tickets-view-settings-modal {
+    position: relative;
+    width: min(760px, calc(100vw - 2rem));
+    max-height: min(86dvh, 760px);
     margin: 0;
     padding: 1rem;
     border-color: rgba(56, 189, 248, .26);
@@ -16382,8 +16405,70 @@ html[data-theme="light"] .interfaces-bulkbar {
     border-radius: 8px;
 }
 
+.tickets-table-wrap {
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: visible;
+    scrollbar-gutter: stable;
+}
+
+.tickets-table {
+    table-layout: fixed;
+    width: max-content;
+}
+
+.tickets-table th,
+.tickets-table td {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.tickets-table th {
+    position: relative;
+    user-select: none;
+}
+
+.tickets-table th span:first-child {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .tickets-table td {
     cursor: pointer;
+}
+
+.tickets-column-resizer {
+    position: absolute;
+    top: .4rem;
+    right: 0;
+    bottom: .4rem;
+    width: 10px;
+    cursor: col-resize;
+    touch-action: none;
+}
+
+.tickets-column-resizer::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 4px;
+    width: 2px;
+    height: 100%;
+    border-radius: 999px;
+    background: rgba(56, 189, 248, .32);
+    opacity: 0;
+    transition: opacity .16s ease, background .16s ease;
+}
+
+.tickets-table th:hover .tickets-column-resizer::after,
+.tickets-column-resizer:hover::after {
+    opacity: 1;
+}
+
+.tickets-column-resizer:hover::after {
+    background: rgba(34, 211, 238, .88);
 }
 
 .tickets-table__row--closed td {
@@ -16400,6 +16485,7 @@ html[data-theme="light"] .interfaces-bulkbar {
 
 html[data-theme="light"] .tickets-kanban-column,
 html[data-theme="light"] .tickets-card,
+html[data-theme="light"] .tickets-view-settings-modal,
 html[data-theme="light"] .tickets-message,
 html[data-theme="light"] .tickets-activity__item {
     background: rgba(248, 250, 252, .9);
