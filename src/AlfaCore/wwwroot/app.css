@@ -2890,6 +2890,7 @@ html[data-theme="light"] .costos-lote__table th {
     position: relative;
     z-index: 1;
     justify-content: center;
+    gap: 0;
     width: 3.75rem;
     min-height: 3.75rem;
     padding: .55rem;
@@ -2928,14 +2929,13 @@ html[data-theme="light"] .shell--collapsed .menu__link:hover {
 
 .sidebar-hover-label {
     position: fixed;
-    z-index: 1300;
+    z-index: 1099;
     display: inline-flex;
     align-items: center;
-    max-width: min(13rem, calc(100vw - 7rem));
-    padding: .45rem .9rem .45rem 1rem;
+    max-width: min(14rem, calc(100vw - 1rem));
+    padding: .45rem .9rem;
     border: 1px solid rgba(34, 211, 238, .28);
-    border-left: 0;
-    border-radius: 0 16px 16px 0;
+    border-radius: 16px;
     background: linear-gradient(135deg, rgba(8, 18, 33, .98), rgba(11, 31, 52, .98));
     color: #e5f3ff;
     box-shadow: 14px 16px 36px rgba(2, 6, 23, .34), 0 0 0 1px rgba(255, 255, 255, .03) inset;
@@ -2947,7 +2947,7 @@ html[data-theme="light"] .shell--collapsed .menu__link:hover {
     white-space: nowrap;
     pointer-events: none;
     opacity: 0;
-    transform: translate(-10px, -50%) scaleX(.92);
+    transform: translate(-8px, -50%) scaleX(.94);
     transform-origin: left center;
     transition: opacity .18s ease, transform .18s cubic-bezier(.2, .8, .2, 1);
 }
