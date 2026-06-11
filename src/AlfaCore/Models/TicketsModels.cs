@@ -6,7 +6,7 @@ public sealed class TicketsFilters
     public string? CodigoEstado { get; set; }
     public string? IdTecnico { get; set; }
     public int? Prioridad { get; set; }
-    public bool IncluirCerrados { get; set; }
+    public bool IncluirCerrados { get; set; } = true;
     public bool? TieneAsignado { get; set; }
     public bool? TieneMensajes { get; set; }
     public string? ClienteCodigo { get; set; }

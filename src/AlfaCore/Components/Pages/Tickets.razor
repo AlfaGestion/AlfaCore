@@ -92,8 +92,8 @@
                     <div class="smart-search__panel" @onclick="CloseTicketLookupSuggestions" @onkeydown="HandleTicketApplyKeyDownAsync">
                         <div class="smart-search__column">
                             <h4><i class="bi bi-funnel-fill"></i> Filtros</h4>
+                            <button type="button" class="@GetSmartOptionClass(_filters.IncluirCerrados)" @onclick='() => ToggleTicketClosedAsync(true)'>Todos</button>
                             <button type="button" class="@GetSmartOptionClass(!_filters.IncluirCerrados)" @onclick='() => ToggleTicketClosedAsync(false)'>Abiertos</button>
-                            <button type="button" class="@GetSmartOptionClass(_filters.IncluirCerrados)" @onclick='() => ToggleTicketClosedAsync(true)'>Incluir cerrados</button>
                             <button type="button" class="@GetSmartOptionClass(_filters.TieneAsignado == false)" @onclick='() => ToggleTicketBoolFilterAsync("sin-asignar")'>Sin asignar</button>
                             <button type="button" class="@GetSmartOptionClass(_filters.TieneMensajes == true)" @onclick='() => ToggleTicketBoolFilterAsync("mensajes")'>Con mensajes</button>
                             <button type="button" class='@GetSmartOptionClass(_filters.FechaRapida == "hoy")' @onclick='() => SetTicketDateFilterAsync("hoy")'>Creados hoy</button>
@@ -1134,7 +1134,7 @@
                 _filters.Prioridad = null;
                 break;
             case "cerrados":
-                _filters.IncluirCerrados = false;
+                _filters.IncluirCerrados = true;
                 break;
             case "asignado":
                 _filters.TieneAsignado = null;
@@ -1917,8 +1917,8 @@
             chips.Add(new("etiqueta", $"Etiqueta: {_lookups.Etiquetas.FirstOrDefault(x => x.IdEtiqueta == _filters.IdEtiqueta.Value)?.Nombre ?? _filters.IdEtiqueta.Value.ToString()}"));
         if (!string.IsNullOrWhiteSpace(_prioridadFiltro) && int.TryParse(_prioridadFiltro, out var priority))
             chips.Add(new("prioridad", $"Prioridad: {RenderPriority(priority)}"));
-        if (_filters.IncluirCerrados)
-            chips.Add(new("cerrados", "Incluye cerrados"));
+        if (!_filters.IncluirCerrados)
+            chips.Add(new("cerrados", "Solo abiertos"));
         if (_filters.TieneAsignado.HasValue)
             chips.Add(new("asignado", _filters.TieneAsignado.Value ? "Con asignado" : "Sin asignar"));
         if (_filters.TieneMensajes.HasValue)
