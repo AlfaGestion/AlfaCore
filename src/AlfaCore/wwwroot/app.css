@@ -161,6 +161,12 @@ html[data-theme="light"] .sidebar-toggle:hover {
     border-color: rgba(2, 132, 199, 0.25);
 }
 
+html[data-theme="light"] .sidebar-toggle.sidebar-toggle--static:hover {
+    background: rgba(15, 23, 42, 0.06);
+    color: #475569;
+    border-color: rgba(15, 23, 42, 0.14);
+}
+
 html[data-theme="light"] .filters-summary {
     background: rgba(15, 23, 42, 0.04);
     border-color: rgba(15, 23, 42, 0.10);
@@ -2468,9 +2474,10 @@ html[data-theme="light"] .costos-lote__table th {
 
 /* ── Shell / Layout ─────────────────────────────────────────── */
 .shell {
-    min-height: 100vh;
+    min-height: 100dvh;
     display: grid;
     grid-template-columns: 300px 1fr;
+    align-items: start;
     transition: grid-template-columns 0.22s ease;
     background:
         radial-gradient(circle at top left, rgba(45, 212, 191, 0.18), transparent 24%),
@@ -2485,11 +2492,15 @@ html[data-theme="light"] .costos-lote__table th {
 .shell__sidebar {
     position: sticky;
     top: 0;
-    height: 100vh;
+    height: 100dvh;
+    max-height: 100dvh;
     border-right: 1px solid rgba(148, 163, 184, 0.12);
     background: rgba(8, 15, 28, 0.8);
     backdrop-filter: blur(14px);
     overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
 }
 
 .shell__main {
@@ -2752,6 +2763,16 @@ html[data-theme="light"] .costos-lote__table th {
     transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease;
 }
 
+.sidebar-toggle--static {
+    cursor: default;
+}
+
+.sidebar-toggle.sidebar-toggle--static:hover {
+    background: rgba(15, 23, 42, 0.45);
+    color: var(--color-muted);
+    border-color: rgba(148, 163, 184, 0.16);
+}
+
 .sidebar-toggle:hover {
     background: rgba(30, 41, 59, 0.9);
     color: white;
@@ -2760,6 +2781,9 @@ html[data-theme="light"] .costos-lote__table th {
 
 .menu {
     padding: 0 1rem 1.5rem;
+    display: flex;
+    flex-direction: column;
+    min-height: calc(100dvh - 6.5rem);
 }
 
 .menu__section {
