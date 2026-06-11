@@ -1960,6 +1960,39 @@ public sealed class ConversacionesService(
             return normalized.IdPlantilla;
         }, "No se pudo guardar la plantilla de WhatsApp.", ct);
 
+    public Task ArchiveTemplateAsync(long idPlantilla, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "ArchiveTemplate", async token =>
+        {
+            if (idPlantilla <= 0)
+                throw new InvalidOperationException("La plantilla es obligatoria.");
+
+            const string sql = """
+                UPDATE dbo.CONV_PLANTILLAS
+                SET Activa = 0,
+                    FechaHora_Modificacion = GETDATE()
+                WHERE IdPlantilla = @IdPlantilla;
+                """;
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var cmd = new SqlCommand(sql, cn);
+            cmd.Parameters.AddWithValue("@IdPlantilla", idPlantilla);
+            var affected = await cmd.ExecuteNonQueryAsync(token);
+            if (affected == 0)
+                throw new InvalidOperationException("La plantilla indicada no existe.");
+
+            await _appEvents.LogAuditAsync(
+                "Conversaciones",
+                "ArchiveTemplate",
+                "CONV_PLANTILLAS",
+                idPlantilla.ToString(CultureInfo.InvariantCulture),
+                "Plantilla de WhatsApp archivada.",
+                new { IdPlantilla = idPlantilla },
+                token);
+
+            return true;
+        }, "No se pudo archivar la plantilla de WhatsApp.", ct);
+
     public Task SubmitTemplateForApprovalAsync(ConversacionPlantillaSubmitRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "SubmitTemplateForApproval", async token =>
         {

@@ -214,6 +214,9 @@
                         <button type="button" class="btn btn--ghost" @onclick="SyncAsync" disabled="@(_busy || _selectedId <= 0)">
                             <i class="bi bi-arrow-repeat"></i> Sincronizar
                         </button>
+                        <button type="button" class="btn btn--ghost" @onclick="ArchiveAsync" disabled="@(_busy || _selectedId <= 0 || !_form.Activa)">
+                            <i class="bi bi-archive"></i> @(_confirmArchive ? "Confirmar archivo" : "Archivar")
+                        </button>
                     </div>
 
                     @if (_feedback is not null)
@@ -293,6 +296,7 @@
     private string? _errorDetail;
     private bool _showErrorDetail;
     private bool _mostrarMenuCrear;
+    private bool _confirmArchive;
     private string _crearSeleccion = CrearOpciones.Crear;
     private int _crearPulseVersion;
 
@@ -638,6 +642,7 @@
             _form = item;
             _examplesText = ExamplesToText(item.EjemplosVariablesJson);
             _formEstadoMeta = string.IsNullOrWhiteSpace(item.EstadoMeta) ? "DRAFT" : item.EstadoMeta;
+            _confirmArchive = false;
         }
         catch (Exception ex)
         {
@@ -657,6 +662,7 @@
         _examplesText = "Evelyn";
         _formEstadoMeta = "DRAFT";
         _feedback = null;
+        _confirmArchive = false;
         ClearError();
     }
 
@@ -671,6 +677,7 @@
         _form.CuerpoTexto = string.IsNullOrWhiteSpace(_form.CuerpoTexto)
             ? variable
             : $"{_form.CuerpoTexto}{Environment.NewLine}{variable}";
+        _confirmArchive = false;
     }
 
     private async Task SaveAsync()
@@ -771,6 +778,44 @@
             _feedback = "Estado sincronizado con Meta.";
             await LoadTemplatesAsync();
             await SelectTemplateAsync(_selectedId);
+        }
+        catch (Exception ex)
+        {
+            SetError(ex);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task ArchiveAsync()
+    {
+        if (_selectedId <= 0 || !_form.Activa)
+            return;
+
+        if (!_confirmArchive)
+        {
+            _confirmArchive = true;
+            _feedback = "VolvÃ© a presionar Confirmar archivo para ocultar esta plantilla.";
+            ClearError();
+            return;
+        }
+
+        _busy = true;
+        _feedback = null;
+        ClearError();
+        try
+        {
+            await ConversacionesSvc.ArchiveTemplateAsync(_selectedId);
+            _feedback = "Plantilla archivada.";
+            _confirmArchive = false;
+            var archivedId = _selectedId;
+            await LoadTemplatesAsync();
+            if (_filters.IncluirInactivas)
+                await SelectTemplateAsync(archivedId);
+            else
+                NuevaPlantilla();
         }
         catch (Exception ex)
         {
