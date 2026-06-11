@@ -2929,7 +2929,7 @@ html[data-theme="light"] .shell--collapsed .menu__link:hover {
 
 .sidebar-hover-label {
     position: fixed;
-    z-index: 1300;
+    z-index: 1099;
     display: inline-flex;
     align-items: center;
     max-width: min(16.25rem, calc(100vw - 1rem));
