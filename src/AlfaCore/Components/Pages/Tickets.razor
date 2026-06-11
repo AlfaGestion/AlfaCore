@@ -627,7 +627,7 @@
                          @ondrop="() => SoltarTicketAsync(state.CodigoEstado)">
                         @foreach (var item in items)
                         {
-                            <article class="tickets-card"
+                            <article class="@GetTicketCardClass(item)"
                                      draggable="true"
                                      data-ticket-id="@item.IdTicket"
                                      title="Arrastrá para cambiar de etapa"
@@ -707,7 +707,7 @@
                                 }
                                 @foreach (var item in group.Items)
                                 {
-                                    <tr class="usuarios-table__row" @onclick="() => AbrirTicketAsync(item.IdTicket)">
+                                    <tr class="@GetTicketRowClass(item)" @onclick="() => AbrirTicketAsync(item.IdTicket)">
                                         @foreach (var col in visibleColumns)
                                         {
                                             <td>@RenderColumn(item, col.Key)</td>
@@ -1400,6 +1400,12 @@
                 : " tickets-kanban-column--drag-target";
         return classes;
     }
+
+    private static string GetTicketCardClass(TicketGridItemDto item)
+        => item.FechaHoraCierre.HasValue ? "tickets-card tickets-card--closed" : "tickets-card";
+
+    private static string GetTicketRowClass(TicketGridItemDto item)
+        => item.FechaHoraCierre.HasValue ? "usuarios-table__row tickets-table__row--closed" : "usuarios-table__row";
 
     [JSInvokable]
     public async Task MoveTicketFromKanbanAsync(long idTicket, string codigoEstadoDestino)

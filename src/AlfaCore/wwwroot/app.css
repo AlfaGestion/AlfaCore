@@ -15347,6 +15347,38 @@ html[data-theme="light"] .interfaces-bulkbar {
     background: rgba(20, 184, 166, .07);
 }
 
+.tickets-card--closed {
+    opacity: .62;
+    filter: grayscale(.72);
+    border-color: rgba(148, 163, 184, .1);
+    background: rgba(15, 23, 42, .22);
+}
+
+.tickets-card--closed:hover {
+    opacity: .82;
+    filter: grayscale(.35);
+    border-color: rgba(148, 163, 184, .24);
+    background: rgba(15, 23, 42, .36);
+}
+
+.tickets-card--closed .tickets-card__head::after {
+    content: "Cerrado";
+    order: 3;
+    flex: 0 0 auto;
+    align-self: flex-start;
+    padding: .12rem .42rem;
+    border: 1px solid rgba(148, 163, 184, .28);
+    border-radius: 999px;
+    color: rgba(203, 213, 225, .78);
+    font-size: .66rem;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.tickets-card--closed .tickets-card__head span {
+    order: 2;
+}
+
 .tickets-card--dragging {
     opacity: .58;
     border-color: rgba(34, 211, 238, .55);
@@ -16321,6 +16353,18 @@ html[data-theme="light"] .interfaces-bulkbar {
 
 .tickets-table td {
     cursor: pointer;
+}
+
+.tickets-table__row--closed td {
+    opacity: .62;
+    filter: grayscale(.7);
+    background: rgba(15, 23, 42, .18);
+}
+
+.tickets-table__row--closed:hover td {
+    opacity: .84;
+    filter: grayscale(.35);
+    background: rgba(15, 23, 42, .3);
 }
 
 html[data-theme="light"] .tickets-kanban-column,
