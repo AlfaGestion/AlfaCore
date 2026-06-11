@@ -138,8 +138,13 @@
                 <button type="button" class="btn btn--primary" @onclick="LoadInboxAsync" disabled="@_loadingInbox">
                     <i class="bi bi-funnel"></i> Aplicar
                 </button>
-                <button type="button" class="btn btn--ghost" @onclick="ClearConversationFiltersAsync" disabled="@_loadingInbox">
-                    <i class="bi bi-eraser"></i> Limpiar
+                <button type="button"
+                        class="btn btn--ghost conversations-filter-clear"
+                        title="Limpiar filtros"
+                        aria-label="Limpiar filtros"
+                        @onclick="ClearConversationFiltersAsync"
+                        disabled="@_loadingInbox">
+                    <i class="bi bi-eraser"></i>
                 </button>
             </div>
         </section>
@@ -350,8 +355,13 @@
                 <button type="button" class="btn btn--primary" @onclick="LoadInboxAsync" disabled="@_loadingInbox">
                     <i class="bi bi-funnel"></i> Aplicar
                 </button>
-                <button type="button" class="btn btn--ghost" @onclick="ClearConversationFiltersAsync" disabled="@_loadingInbox">
-                    <i class="bi bi-eraser"></i> Limpiar
+                <button type="button"
+                        class="btn btn--ghost conversations-filter-clear"
+                        title="Limpiar filtros"
+                        aria-label="Limpiar filtros"
+                        @onclick="ClearConversationFiltersAsync"
+                        disabled="@_loadingInbox">
+                    <i class="bi bi-eraser"></i>
                 </button>
             </div>
         </section>

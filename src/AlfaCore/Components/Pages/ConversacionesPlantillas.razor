@@ -84,8 +84,13 @@
                 <button type="button" class="btn btn--primary" @onclick="LoadTemplatesAsync" disabled="@_loading">
                     <i class="bi bi-funnel"></i> Aplicar
                 </button>
-                <button type="button" class="btn btn--ghost" @onclick="ClearTemplateFiltersAsync" disabled="@_loading">
-                    <i class="bi bi-eraser"></i> Limpiar
+                <button type="button"
+                        class="btn btn--ghost conversations-filter-clear"
+                        title="Limpiar filtros"
+                        aria-label="Limpiar filtros"
+                        @onclick="ClearTemplateFiltersAsync"
+                        disabled="@_loading">
+                    <i class="bi bi-eraser"></i>
                 </button>
             </div>
         </section>

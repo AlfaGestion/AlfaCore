@@ -4053,7 +4053,7 @@ html[data-theme="light"] .menu__search-result:hover {
 .conversations-filters__fields {
     grid-column: 1 / -1;
     display: grid;
-    grid-template-columns: minmax(220px, 1.7fr) repeat(2, minmax(180px, 1fr)) auto;
+    grid-template-columns: minmax(220px, 1.7fr) repeat(2, minmax(180px, 1fr)) auto auto;
     gap: .5rem;
     align-items: end;
 }
@@ -4076,6 +4076,13 @@ html[data-theme="light"] .menu__search-result:hover {
 .conversations-filters__fields .btn {
     min-height: 32px;
     padding: .38rem .7rem;
+}
+
+.conversations-filters__fields .conversations-filter-clear {
+    width: 32px;
+    min-width: 32px;
+    padding: 0;
+    justify-content: center;
 }
 
 .conversations-layout {
@@ -5506,7 +5513,7 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
 }
 
 .templates-page--odoo .conversations-filters__fields {
-    grid-template-columns: minmax(260px, 1.35fr) minmax(180px, .7fr) auto auto;
+    grid-template-columns: minmax(260px, 1.35fr) minmax(180px, .7fr) auto auto auto;
     align-items: end;
 }
 
