@@ -2929,10 +2929,10 @@ html[data-theme="light"] .shell--collapsed .menu__link:hover {
 
 .sidebar-hover-label {
     position: fixed;
-    z-index: 1099;
+    z-index: 1300;
     display: inline-flex;
     align-items: center;
-    max-width: min(14rem, calc(100vw - 1rem));
+    max-width: min(16.25rem, calc(100vw - 1rem));
     padding: .45rem .9rem;
     border: 1px solid rgba(34, 211, 238, .28);
     border-radius: 16px;

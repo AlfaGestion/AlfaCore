@@ -31,13 +31,13 @@ window.alfaCoreSidebarHover = (function () {
 
         const rect = link.getBoundingClientRect();
         const bubble = ensureLabel();
-        const width = Math.min(220, Math.max(150, window.innerWidth - rect.left - 8));
+        const width = Math.min(260, Math.max(190, window.innerWidth - rect.left - 8));
         bubble.textContent = text;
         bubble.style.left = `${rect.left}px`;
         bubble.style.top = `${rect.top + (rect.height / 2)}px`;
         bubble.style.width = `${width}px`;
         bubble.style.minHeight = `${Math.max(42, rect.height - 2)}px`;
-        bubble.style.paddingLeft = `${Math.max(58, rect.width + 10)}px`;
+        bubble.style.paddingLeft = `${Math.max(82, rect.width + 24)}px`;
         bubble.classList.add('is-visible');
     }
 
