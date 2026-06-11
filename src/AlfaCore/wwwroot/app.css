@@ -20472,9 +20472,7 @@ html[data-theme="light"] .conversations-context {
 html[data-theme="light"] .conversation-item,
 html[data-theme="light"] .conversation-card,
 html[data-theme="light"] .message-card,
-html[data-theme="light"] .conversations-pending-attachment,
-html[data-theme="light"] .conversations-close-ticket-warning,
-html[data-theme="light"] .conversations-close-ticket-warning__summary {
+html[data-theme="light"] .conversations-pending-attachment {
     background: #f8fafc;
     border-color: rgba(15, 23, 42, 0.12);
     color: #0f172a;
