@@ -6661,6 +6661,34 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
     opacity: 1;
 }
 
+@media (min-width: 901px) {
+    .conversations-page--odoo .conversations-layout:has(.conversations-context-drawer.is-open) {
+        grid-template-columns: minmax(235px, 300px) minmax(0, 1fr) minmax(300px, 350px);
+    }
+
+    .conversations-page--odoo .conversations-context-drawer {
+        position: relative;
+        top: auto;
+        right: auto;
+        bottom: auto;
+        grid-column: 3;
+        width: 100%;
+        min-width: 0;
+        height: 100%;
+        transform: none;
+        opacity: 1;
+        display: none;
+        border-width: 0 0 0 1px;
+        box-shadow: none;
+    }
+
+    .conversations-page--odoo .conversations-context-drawer.is-open {
+        display: flex;
+        transform: none;
+        opacity: 1;
+    }
+}
+
 .conversations-tools-panel {
     position: absolute;
     right: 1rem;
