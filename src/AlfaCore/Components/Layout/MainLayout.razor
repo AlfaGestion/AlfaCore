@@ -1138,6 +1138,14 @@ else
 
         try
         {
+            await JS.InvokeVoidAsync("alfaCoreSidebarHover.init");
+        }
+        catch
+        {
+        }
+
+        try
+        {
             var theme = await JS.InvokeAsync<string>("dashboardTheme.get");
             _isDark = !string.Equals(theme, "light", StringComparison.OrdinalIgnoreCase);
         }
