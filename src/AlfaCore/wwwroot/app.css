@@ -15485,19 +15485,26 @@ html[data-theme="light"] .interfaces-bulkbar {
     overflow-wrap: anywhere;
 }
 
-.tickets-tags-manager {
+.tickets-tags-modal-layer {
     position: fixed;
-    left: 50%;
-    top: 50%;
+    inset: 0;
     z-index: 1200;
+    display: grid;
+    place-items: center;
+    padding: 1rem;
+    background: rgba(2, 6, 23, .68);
+    backdrop-filter: blur(2px);
+}
+
+.tickets-tags-manager {
+    position: relative;
     width: min(760px, calc(100vw - 2rem));
     max-height: min(82dvh, 720px);
     margin: 0;
     padding: 1rem;
-    transform: translate(-50%, -50%);
     border-color: rgba(56, 189, 248, .26);
     background: rgba(8, 18, 33, .98);
-    box-shadow: 0 28px 90px rgba(0, 0, 0, .62), 0 0 0 9999px rgba(2, 6, 23, .58);
+    box-shadow: 0 28px 90px rgba(0, 0, 0, .62);
     overflow: auto;
 }
 

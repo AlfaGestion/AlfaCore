@@ -269,7 +269,8 @@
 
     @if (_showTagManager)
     {
-        <section class="panel-card tickets-tags-manager">
+        <div class="tickets-tags-modal-layer" @ref="_tagManagerLayer" @onclick="CloseTagManager" @onkeydown="HandleTagManagerKeyDown" tabindex="-1">
+        <section class="panel-card tickets-tags-manager" @onclick:stopPropagation>
             <div class="panel-card__header">
                 <div>
                     <h3 class="panel-card__title">Etiquetas</h3>
@@ -316,6 +317,7 @@
                 </div>
             </div>
         </section>
+        </div>
     }
 
     @if (_showEditor)
@@ -780,6 +782,8 @@
     private bool _descriptionEditorReady;
     private bool _showSearchPanel;
     private CancellationTokenSource? _searchDebounceCts;
+    private ElementReference _tagManagerLayer;
+    private bool _tagManagerFocusPending;
     private SearchRuleDto _ticketRuleDraft = new() { Campo = "titulo", Operador = "contains" };
     private readonly List<SavedTicketSearch> _ticketFavorites = [];
     private string _ticketClientSearch = string.Empty;
@@ -875,6 +879,12 @@
 
         if (!_showEditor && _viewMode == "kanban" && !_loading && !_refreshingTickets && _ticketsKanbanJs is not null && _kanbanDotNetRef is not null)
             await _ticketsKanbanJs.InvokeVoidAsync("wireKanban", _kanbanRoot, _kanbanDotNetRef);
+
+        if (_showTagManager && _tagManagerFocusPending)
+        {
+            _tagManagerFocusPending = false;
+            await _tagManagerLayer.FocusAsync();
+        }
     }
 
     private void OnAppUserSessionChanged()
@@ -1587,6 +1597,7 @@
     private void OpenTagManager()
     {
         _showTagManager = true;
+        _tagManagerFocusPending = true;
         _showSearchPanel = false;
         if (_tagDraftId == 0 && string.IsNullOrWhiteSpace(_tagDraftName))
             NuevaEtiqueta();
@@ -1596,6 +1607,12 @@
     {
         _showTagManager = false;
         NuevaEtiqueta();
+    }
+
+    private void HandleTagManagerKeyDown(KeyboardEventArgs args)
+    {
+        if (string.Equals(args.Key, "Escape", StringComparison.OrdinalIgnoreCase))
+            CloseTagManager();
     }
 
     private void NuevaEtiqueta()
