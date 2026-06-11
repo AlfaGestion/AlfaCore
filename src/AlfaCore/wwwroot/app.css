@@ -2512,6 +2512,10 @@ html[data-theme="light"] .costos-lote__table th {
     width: 92px;
 }
 
+.shell--collapsed .shell__sidebar:has(.menu__link:hover) {
+    overflow: visible;
+}
+
 .shell__main {
     grid-column: 2;
     min-width: 0;
@@ -2901,18 +2905,19 @@ html[data-theme="light"] .costos-lote__table th {
 
 .shell--collapsed .menu__link:hover {
     z-index: 20;
-    justify-content: center;
-    width: 3.75rem;
+    justify-content: flex-start;
+    gap: .9rem;
+    width: min(13.5rem, calc(100vw - 7rem));
     background: linear-gradient(135deg, rgba(8, 18, 33, .98), rgba(11, 31, 52, .98));
     border: 1px solid rgba(34, 211, 238, .28);
-    box-shadow: 0 10px 24px rgba(2, 6, 23, .26), 0 0 0 1px rgba(255, 255, 255, .03) inset;
+    box-shadow: 0 18px 42px rgba(2, 6, 23, .42), 0 0 0 1px rgba(255, 255, 255, .03) inset;
     transform: none;
 }
 
 .shell--collapsed .menu__link:hover span:not(.menu__icon) {
-    max-width: 0;
-    opacity: 0;
-    transform: translateX(-.35rem);
+    max-width: 9.8rem;
+    opacity: 1;
+    transform: translateX(0);
 }
 
 .shell--collapsed .menu__icon {
@@ -2924,44 +2929,7 @@ html[data-theme="light"] .shell--collapsed .menu__link:hover {
     background: linear-gradient(135deg, rgba(255, 255, 255, .98), rgba(240, 249, 255, .98));
     border-color: rgba(2, 132, 199, .18);
     color: #0f172a;
-    box-shadow: 0 10px 24px rgba(15, 23, 42, .14), 0 0 0 1px rgba(255, 255, 255, .7) inset;
-}
-
-.sidebar-hover-label {
-    position: fixed;
-    z-index: 1399;
-    display: inline-flex;
-    align-items: center;
-    max-width: min(16.25rem, calc(100vw - 1rem));
-    padding: .45rem .9rem;
-    border: 1px solid rgba(34, 211, 238, .28);
-    border-radius: 16px;
-    background: linear-gradient(135deg, rgba(8, 18, 33, .98), rgba(11, 31, 52, .98));
-    color: #e5f3ff;
-    box-shadow: 14px 16px 36px rgba(2, 6, 23, .34), 0 0 0 1px rgba(255, 255, 255, .03) inset;
-    font-size: .9rem;
-    font-weight: 800;
-    line-height: 1.1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    pointer-events: none;
-    opacity: 0;
-    transform: translate(-8px, -50%) scaleX(.94);
-    transform-origin: left center;
-    transition: opacity .18s ease, transform .18s cubic-bezier(.2, .8, .2, 1);
-}
-
-.sidebar-hover-label.is-visible {
-    opacity: 1;
-    transform: translate(0, -50%) scaleX(1);
-}
-
-html[data-theme="light"] .sidebar-hover-label {
-    background: linear-gradient(135deg, rgba(255, 255, 255, .98), rgba(240, 249, 255, .98));
-    border-color: rgba(2, 132, 199, .18);
-    color: #0f172a;
-    box-shadow: 14px 16px 32px rgba(15, 23, 42, .16), 0 0 0 1px rgba(255, 255, 255, .7) inset;
+    box-shadow: 0 18px 38px rgba(15, 23, 42, .18), 0 0 0 1px rgba(255, 255, 255, .7) inset;
 }
 
 @media (max-width: 640px) {
