@@ -15398,27 +15398,79 @@ html[data-theme="light"] .interfaces-bulkbar {
 
 .tickets-tag-picker,
 .tickets-tags-manager__list {
-    display: grid;
-    gap: .45rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem;
 }
 
 .tickets-tag-option {
-    display: flex;
+    position: relative;
+    display: inline-flex;
     align-items: center;
-    gap: .45rem;
+    max-width: 100%;
     margin: 0;
-    color: var(--color-text);
-    font-size: .82rem;
-    font-weight: 700;
+    cursor: pointer;
 }
 
 .tickets-tag-option input {
-    width: 16px;
-    height: 16px;
-    accent-color: #14b8a6;
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+}
+
+.tickets-tag-option .tickets-tag-chip {
+    min-height: 2rem;
+    padding: .34rem .72rem .34rem 2rem;
+    border-color: rgba(148, 163, 184, .3) !important;
+    background: rgba(15, 23, 42, .5);
+    transition: border-color .16s ease, background .16s ease, color .16s ease, box-shadow .16s ease, transform .16s ease;
+}
+
+.tickets-tag-option .tickets-tag-chip::before {
+    content: "";
+    position: absolute;
+    left: .62rem;
+    top: 50%;
+    width: .78rem;
+    height: .78rem;
+    transform: translateY(-50%);
+    border: 1px solid currentColor;
+    border-radius: 999px;
+    opacity: .7;
+}
+
+.tickets-tag-option:has(input:checked) .tickets-tag-chip {
+    border-color: currentColor !important;
+    background: color-mix(in srgb, currentColor 13%, rgba(15, 23, 42, .72));
+    box-shadow: 0 0 0 1px color-mix(in srgb, currentColor 32%, transparent), 0 10px 22px rgba(2, 6, 23, .28);
+}
+
+.tickets-tag-option:has(input:checked) .tickets-tag-chip::before {
+    border-color: currentColor;
+    background: currentColor;
+    opacity: 1;
+}
+
+.tickets-tag-option:has(input:checked) .tickets-tag-chip::after {
+    content: "";
+    position: absolute;
+    left: .86rem;
+    top: 50%;
+    width: .22rem;
+    height: .48rem;
+    transform: translateY(-58%) rotate(45deg);
+    border: solid #020617;
+    border-width: 0 2px 2px 0;
+}
+
+.tickets-tag-option:hover .tickets-tag-chip {
+    transform: translateY(-1px);
+    border-color: rgba(148, 163, 184, .5) !important;
 }
 
 .tickets-tag-chip {
+    position: relative;
     display: inline-flex;
     align-items: center;
     width: fit-content;
@@ -15433,16 +15485,56 @@ html[data-theme="light"] .interfaces-bulkbar {
     overflow-wrap: anywhere;
 }
 
+.tickets-tags-manager {
+    position: fixed;
+    left: 50%;
+    top: 50%;
+    z-index: 1200;
+    width: min(760px, calc(100vw - 2rem));
+    max-height: min(82dvh, 720px);
+    margin: 0;
+    padding: 1rem;
+    transform: translate(-50%, -50%);
+    border-color: rgba(56, 189, 248, .26);
+    background: rgba(8, 18, 33, .98);
+    box-shadow: 0 28px 90px rgba(0, 0, 0, .62), 0 0 0 9999px rgba(2, 6, 23, .58);
+    overflow: auto;
+}
+
+.tickets-tags-manager .panel-card__header {
+    align-items: start;
+    padding-bottom: .85rem;
+    border-bottom: 1px solid rgba(148, 163, 184, .12);
+}
+
 .tickets-tags-manager__body {
     display: grid;
-    grid-template-columns: minmax(240px, .36fr) minmax(0, 1fr);
-    gap: .9rem;
+    grid-template-columns: minmax(230px, .42fr) minmax(0, 1fr);
+    gap: 1rem;
     align-items: start;
 }
 
 .tickets-tags-manager__form {
     display: grid;
     gap: .75rem;
+    padding: .85rem;
+    border: 1px solid rgba(148, 163, 184, .14);
+    border-radius: 8px;
+    background: rgba(15, 23, 42, .42);
+}
+
+.tickets-tags-manager__form input[type="color"] {
+    min-height: 2.45rem;
+    padding: .2rem;
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+.tickets-tags-manager__list {
+    display: grid;
+    max-height: min(56dvh, 460px);
+    overflow: auto;
+    padding-right: .25rem;
 }
 
 .tickets-tags-manager__item {
@@ -15454,6 +15546,16 @@ html[data-theme="light"] .interfaces-bulkbar {
     border: 1px solid var(--color-border);
     border-radius: 8px;
     background: rgba(15, 23, 42, .32);
+}
+
+.tickets-tags-manager__item .actions {
+    flex: 0 0 auto;
+    gap: .3rem;
+}
+
+.tickets-tags-manager__item .btn {
+    min-width: 2.2rem;
+    padding-inline: .55rem;
 }
 
 .tickets-card__footer {
