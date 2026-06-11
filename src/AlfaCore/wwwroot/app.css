@@ -2517,7 +2517,8 @@ html[data-theme="light"] .costos-lote__table th {
     width: 92px;
 }
 
-.shell--collapsed .shell__sidebar:has(.menu__link:hover) {
+.shell--collapsed .shell__sidebar:has(.menu__link:hover),
+.shell--collapsed .shell__sidebar.is-hover-leaving {
     overflow: visible;
 }
 
