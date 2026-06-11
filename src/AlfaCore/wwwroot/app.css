@@ -2501,7 +2501,7 @@ html[data-theme="light"] .costos-lote__table th {
     border-right: 1px solid rgba(148, 163, 184, 0.12);
     background: rgba(8, 15, 28, 0.8);
     backdrop-filter: blur(14px);
-    overflow-x: hidden;
+    overflow-x: visible;
     overflow-y: auto;
     overscroll-behavior: contain;
     scrollbar-gutter: stable;
@@ -2510,6 +2510,10 @@ html[data-theme="light"] .costos-lote__table th {
 
 .shell--collapsed .shell__sidebar {
     width: 92px;
+}
+
+.shell--collapsed .shell__sidebar:has(.menu__link:hover) {
+    overflow: visible;
 }
 
 .shell__main {
@@ -2900,8 +2904,6 @@ html[data-theme="light"] .costos-lote__table th {
 }
 
 .shell--collapsed .menu__link:hover {
-    position: fixed;
-    left: .6rem;
     z-index: 20;
     justify-content: flex-start;
     gap: .9rem;
