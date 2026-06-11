@@ -2490,8 +2490,12 @@ html[data-theme="light"] .costos-lote__table th {
 }
 
 .shell__sidebar {
-    position: sticky;
+    position: fixed;
     top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: 900;
+    width: 300px;
     height: 100dvh;
     max-height: 100dvh;
     border-right: 1px solid rgba(148, 163, 184, 0.12);
@@ -2503,7 +2507,12 @@ html[data-theme="light"] .costos-lote__table th {
     scrollbar-gutter: stable;
 }
 
+.shell--collapsed .shell__sidebar {
+    width: 92px;
+}
+
 .shell__main {
+    grid-column: 2;
     min-width: 0;
     padding: 2rem;
 }
