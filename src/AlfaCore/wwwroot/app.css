@@ -2508,6 +2508,11 @@ html[data-theme="light"] .costos-lote__table th {
     transition: width .2s cubic-bezier(.2, .8, .2, 1), box-shadow .18s ease;
 }
 
+.shell__sidebar::-webkit-scrollbar:horizontal {
+    height: 0;
+    display: none;
+}
+
 .shell--collapsed .shell__sidebar {
     width: 92px;
 }
