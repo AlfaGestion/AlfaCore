@@ -80,6 +80,8 @@ public class Program
         builder.Services.AddScoped<IContactosValidator, ContactosValidator>();
         builder.Services.AddScoped<ICuentasComercialesService, CuentasComercialesService>();
         builder.Services.AddScoped<ICuentasComercialesValidator, CuentasComercialesValidator>();
+        builder.Services.AddScoped<ICargaViajesService, CargaViajesService>();
+        builder.Services.AddScoped<ICargaViajesValidator, CargaViajesValidator>();
         builder.Services.AddScoped<IComprobanteViewerService, ComprobanteViewerService>();
         builder.Services.AddSingleton<AppUserSessionStore>();
         builder.Services.AddScoped<IAppUserSessionService, AppUserSessionService>();

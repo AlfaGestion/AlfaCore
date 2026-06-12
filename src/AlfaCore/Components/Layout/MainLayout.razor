@@ -177,6 +177,38 @@ else
                     </NavLink>
                 </nav>
             }
+            else if (_currentModule == "carga-viajes")
+            {
+                @ModuleBackLink
+
+                <p class="menu__section">Logística</p>
+                <nav class="menu__nav">
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/carga-viajes")" Match="NavLinkMatch.All">
+                        <span class="menu__icon"><i class="bi bi-truck"></i></span>
+                        <span>Viajes</span>
+                    </NavLink>
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/carga-viajes/nuevo")" Match="NavLinkMatch.Prefix">
+                        <span class="menu__icon"><i class="bi bi-plus-circle"></i></span>
+                        <span>Nuevo viaje</span>
+                    </NavLink>
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/carga-viajes/tarifas")" Match="NavLinkMatch.Prefix">
+                        <span class="menu__icon"><i class="bi bi-tags"></i></span>
+                        <span>Tarifas</span>
+                    </NavLink>
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/carga-viajes/choferes")" Match="NavLinkMatch.Prefix">
+                        <span class="menu__icon"><i class="bi bi-person-badge"></i></span>
+                        <span>Choferes</span>
+                    </NavLink>
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/carga-viajes/destinos")" Match="NavLinkMatch.Prefix">
+                        <span class="menu__icon"><i class="bi bi-geo-alt"></i></span>
+                        <span>Destinos</span>
+                    </NavLink>
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/carga-viajes/configuracion")" Match="NavLinkMatch.Prefix">
+                        <span class="menu__icon"><i class="bi bi-sliders"></i></span>
+                        <span>Configurar carga de viaje</span>
+                    </NavLink>
+                </nav>
+            }
             else if (_currentModule == "informes")
             {
                 @ModuleBackLink
@@ -2122,6 +2154,12 @@ else
             "tickets" => "Tickets de asistencia",
             "tareas" => "Tareas",
             "calendario" => "Calendario",
+            "carga-viajes" => "Carga de Viajes",
+            "carga-viajes/tarifas" => "Tarifas",
+            "carga-viajes/nuevo" => "Nuevo viaje",
+            "carga-viajes/choferes" => "Choferes",
+            "carga-viajes/destinos" => "Destinos",
+            "carga-viajes/configuracion" => "Configurar Carga de Viaje",
             "informes" => "Informes",
             "interfaces" => "Recepción documental",
             "interfaces/configuracion" => "Configuración de Interfaces",
@@ -2169,6 +2207,8 @@ else
         "tickets" => "Tickets de asistencia",
         "tareas" => "Tareas",
         "calendario" => "Calendario",
+        "carga-viajes" => "Carga de Viajes",
+        "carga-viajes/configuracion" => "Configurar Carga de Viaje",
         "informes" => "Informes",
         "interfaces" => "Interfaces",
         "actualizaciones" => "Actualizaciones",
