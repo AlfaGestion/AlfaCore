@@ -56,13 +56,12 @@ else
                     <span class="brand__title">Alfa Gestión</span>
                 }
             </div>
-            <button type="button"
-                    class="sidebar-toggle"
-                    @onclick="ToggleSidebar"
-                    title="@(_sidebarCollapsed ? "Mostrar menú" : "Ocultar menú")"
-                    aria-label="@(_sidebarCollapsed ? "Mostrar menú lateral" : "Ocultar menú lateral")">
-                <i class="bi @(_sidebarCollapsed ? "bi-layout-sidebar-inset" : "bi-layout-sidebar")"></i>
-            </button>
+            @if (ShowLauncherContext)
+            {
+                <span class="sidebar-toggle sidebar-toggle--static" title="Menú principal desplegado" aria-hidden="true">
+                    <i class="bi bi-layout-sidebar"></i>
+                </span>
+            }
         </div>
 
         <div class="menu">
@@ -175,6 +174,38 @@ else
                     <NavLink class="menu__link" href="@BuildModuleUrl("/calendario/reuniones")" Match="NavLinkMatch.All">
                         <span class="menu__icon"><i class="bi bi-camera-video"></i></span>
                         <span>Reuniones</span>
+                    </NavLink>
+                </nav>
+            }
+            else if (_currentModule == "carga-viajes")
+            {
+                @ModuleBackLink
+
+                <p class="menu__section">Logística</p>
+                <nav class="menu__nav">
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/carga-viajes")" Match="NavLinkMatch.All">
+                        <span class="menu__icon"><i class="bi bi-truck"></i></span>
+                        <span>Viajes</span>
+                    </NavLink>
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/carga-viajes/nuevo")" Match="NavLinkMatch.Prefix">
+                        <span class="menu__icon"><i class="bi bi-plus-circle"></i></span>
+                        <span>Nuevo viaje</span>
+                    </NavLink>
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/carga-viajes/tarifas")" Match="NavLinkMatch.Prefix">
+                        <span class="menu__icon"><i class="bi bi-tags"></i></span>
+                        <span>Tarifas</span>
+                    </NavLink>
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/carga-viajes/choferes")" Match="NavLinkMatch.Prefix">
+                        <span class="menu__icon"><i class="bi bi-person-badge"></i></span>
+                        <span>Choferes</span>
+                    </NavLink>
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/carga-viajes/destinos")" Match="NavLinkMatch.Prefix">
+                        <span class="menu__icon"><i class="bi bi-geo-alt"></i></span>
+                        <span>Destinos</span>
+                    </NavLink>
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/carga-viajes/configuracion")" Match="NavLinkMatch.Prefix">
+                        <span class="menu__icon"><i class="bi bi-sliders"></i></span>
+                        <span>Configurar carga de viaje</span>
                     </NavLink>
                 </nav>
             }
@@ -928,8 +959,6 @@ else
                  OnOpenSqlSessions="OpenSqlSessionDrawerAsync" />
 
 @code {
-    private bool _sidebarCollapsed;
-    private bool _sidebarInitialized;
     private bool _mobileSidebarOpen;
     private bool _isDark = false;
     private bool _drawerOpen;
@@ -967,10 +996,11 @@ else
             </a>
         : null;
     private string ShellClass
-        => $"shell {(_sidebarCollapsed ? "shell--collapsed" : string.Empty)} {(_mobileSidebarOpen ? "shell--mobile-open" : string.Empty)} {(IsDirectMode ? "shell--direct" : string.Empty)} {(IsPosFullscreenRoute ? "shell--pos-fullscreen" : string.Empty)}";
+        => $"shell {(IsSidebarCollapsed ? "shell--collapsed" : string.Empty)} {(_mobileSidebarOpen ? "shell--mobile-open" : string.Empty)} {(IsDirectMode ? "shell--direct" : string.Empty)} {(IsPosFullscreenRoute ? "shell--pos-fullscreen" : string.Empty)}";
     private bool ShowShellContext => string.IsNullOrWhiteSpace(_currentModule);
     private bool ShowLauncherContext => ShowShellContext && !IsDirectMode;
     private bool CanShowLauncherAccess => !IsDirectMode;
+    private bool IsSidebarCollapsed => !ShowLauncherContext;
     private bool CanShowTasksPanel => !IsPosFullscreenRoute && !IsDirectMode && AppUserSession.IsAuthenticated;
     private bool IsLauncherRoute => string.IsNullOrWhiteSpace(Nav.ToBaseRelativePath(Nav.Uri).Split('?')[0].Split('#')[0].Trim('/'));
     private bool IsDirectMode => !string.IsNullOrWhiteSpace(_directModuleKey);
@@ -1132,16 +1162,6 @@ else
 
         try
         {
-            var sidebar = await JS.InvokeAsync<string?>("localStorage.getItem", "dashboard.sidebar.collapsed");
-            _sidebarCollapsed = string.Equals(sidebar, "true", StringComparison.OrdinalIgnoreCase);
-        }
-        catch
-        {
-            _sidebarCollapsed = false;
-        }
-
-        try
-        {
             await JS.InvokeVoidAsync("conversacionesUi.initNotifications", "AlfaCore - Alfa Gestión");
         }
         catch
@@ -1198,7 +1218,6 @@ else
             catch { }
         }
 
-        _sidebarInitialized = true;
         if (ShowShellContext)
             await EnsureMenuSearchCatalogAsync();
         StateHasChanged();
@@ -1548,23 +1567,6 @@ else
 
     private static string FirstNonEmpty(params string?[] values)
         => values.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x))?.Trim() ?? string.Empty;
-
-    private async Task ToggleSidebar()
-    {
-        _sidebarCollapsed = !_sidebarCollapsed;
-
-        if (!_sidebarInitialized)
-            return;
-
-        try
-        {
-            await JS.InvokeVoidAsync("localStorage.setItem", "dashboard.sidebar.collapsed", _sidebarCollapsed ? "true" : "false");
-        }
-        catch
-        {
-            // Si localStorage no está disponible, dejamos el estado solo en memoria.
-        }
-    }
 
     private void ToggleMobileSidebar()
         => _mobileSidebarOpen = !_mobileSidebarOpen;
@@ -2152,6 +2154,12 @@ else
             "tickets" => "Tickets de asistencia",
             "tareas" => "Tareas",
             "calendario" => "Calendario",
+            "carga-viajes" => "Carga de Viajes",
+            "carga-viajes/tarifas" => "Tarifas",
+            "carga-viajes/nuevo" => "Nuevo viaje",
+            "carga-viajes/choferes" => "Choferes",
+            "carga-viajes/destinos" => "Destinos",
+            "carga-viajes/configuracion" => "Configurar Carga de Viaje",
             "informes" => "Informes",
             "interfaces" => "Recepción documental",
             "interfaces/configuracion" => "Configuración de Interfaces",
@@ -2199,6 +2207,8 @@ else
         "tickets" => "Tickets de asistencia",
         "tareas" => "Tareas",
         "calendario" => "Calendario",
+        "carga-viajes" => "Carga de Viajes",
+        "carga-viajes/configuracion" => "Configurar Carga de Viaje",
         "informes" => "Informes",
         "interfaces" => "Interfaces",
         "actualizaciones" => "Actualizaciones",

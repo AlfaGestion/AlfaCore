@@ -16,6 +16,8 @@ public interface ITicketsService
     Task UpdateAsync(TicketUpdateRequest request, CancellationToken ct = default);
     Task QuickUpdateAsync(TicketQuickUpdateRequest request, CancellationToken ct = default);
     Task AddNoteAsync(TicketNotaRequest request, CancellationToken ct = default);
+    Task<int> SaveEtiquetaAsync(TicketEtiquetaSaveRequest request, CancellationToken ct = default);
+    Task DeleteEtiquetaAsync(TicketEtiquetaDeleteRequest request, CancellationToken ct = default);
     Task<TicketViewSettingsDto> GetViewSettingsAsync(string userName, CancellationToken ct = default);
     Task SaveViewSettingsAsync(string userName, TicketViewSettingsDto settings, CancellationToken ct = default);
 }

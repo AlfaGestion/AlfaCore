@@ -19,9 +19,9 @@ public static class ShellNavigationUiHelper
         if (route == "/contactos" || name.Contains("contacto"))
             return "Agenda web de contactos.";
         if (route.StartsWith("/interfaces"))
-            return "Recepción documental web.";
+            return "Recepcion documental web.";
         if (route.StartsWith("/consultas"))
-            return "Diseñador de consultas web.";
+            return "Disenador de consultas web.";
         if (route.StartsWith("/auditoria"))
             return "Control y trazabilidad operativa.";
         if (route.StartsWith("/tickets"))
@@ -30,8 +30,10 @@ public static class ShellNavigationUiHelper
             return "Inbox operativo de conversaciones.";
         if (route.StartsWith("/calendario"))
             return "Calendario operativo web.";
+        if (route.StartsWith("/carga-viajes"))
+            return "Gestion operativa de viajes y logistica.";
         if (route.StartsWith("/usuarios"))
-            return "Gestión web de usuarios.";
+            return "Gestion web de usuarios.";
         if (route.StartsWith("/actualizaciones"))
             return "Actualizaciones y mantenimiento de base.";
         if (route.StartsWith("/seguridad/autorizacion-tareas"))
@@ -41,11 +43,11 @@ public static class ShellNavigationUiHelper
         if (route.StartsWith("/ventas"))
             return "Acceso web al circuito de ventas.";
         if (route.StartsWith("/stock"))
-            return "Consultas y gestión de stock.";
+            return "Consultas y gestion de stock.";
         if (route.StartsWith("/caja-bancos"))
             return "Consultas operativas de caja y bancos.";
         if (route.StartsWith("/contabilidad"))
-            return "Consultas y gestión contable.";
+            return "Consultas y gestion contable.";
 
         return "Acceso web disponible dentro de AlfaCore.";
     }
@@ -59,7 +61,7 @@ public static class ShellNavigationUiHelper
             return "app-card__icon--compras";
         if (route.StartsWith("/ventas") || route == "/clientes" || name.Contains("cliente"))
             return "app-card__icon--ventas";
-        if (route.StartsWith("/stock") || name.Contains("stock") || name.Contains("artículo") || name.Contains("articulo"))
+        if (route.StartsWith("/stock") || name.Contains("stock") || name.Contains("articulo"))
             return "app-card__icon--stock";
         if (route.StartsWith("/caja-bancos") || name.Contains("caja") || name.Contains("banco"))
             return "app-card__icon--caja";
@@ -73,6 +75,8 @@ public static class ShellNavigationUiHelper
             return "app-card__icon--contactos";
         if (route.StartsWith("/calendario"))
             return "app-card__icon--calendario";
+        if (route.StartsWith("/carga-viajes") || name.Contains("viaje") || name.Contains("logistica"))
+            return "app-card__icon--logistica";
         if (route.StartsWith("/tickets") || route.StartsWith("/auditoria") || route.StartsWith("/conversaciones"))
             return "app-card__icon--tickets";
         if (route.StartsWith("/shell/d010185") || name.Contains("crm"))
@@ -100,6 +104,8 @@ public static class ShellNavigationUiHelper
             return "app-card__icon--usuarios";
         if (key == "D01" || name.Contains("archivo"))
             return "app-card__icon--contactos";
+        if (key == "D010180" || name.Contains("logistica") || name.Contains("viaje"))
+            return "app-card__icon--logistica";
         if (key == "D010185" || name.Contains("crm"))
             return "app-card__icon--tickets";
 

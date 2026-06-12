@@ -142,7 +142,6 @@ window.conversacionesUi = {
     _lastSoundAttemptAt: '',
     _lastSoundError: '',
     _soundInitialized: false,
-    _closeTicketWarningKey: 'alfacore.conversaciones.closeTicketWarningAccepted',
 
     isNearBottom: function (element) {
         if (!element) return false;
@@ -161,25 +160,6 @@ window.conversacionesUi = {
             scrollHeight: element.scrollHeight || 0,
             clientHeight: element.clientHeight || 0
         };
-    },
-
-    getCloseTicketWarningAccepted: function () {
-        try {
-            return window.localStorage?.getItem(this._closeTicketWarningKey) === '1';
-        } catch {
-            return false;
-        }
-    },
-
-    setCloseTicketWarningAccepted: function (accepted) {
-        try {
-            if (accepted) {
-                window.localStorage?.setItem(this._closeTicketWarningKey, '1');
-            } else {
-                window.localStorage?.removeItem(this._closeTicketWarningKey);
-            }
-        } catch {
-        }
     },
 
     scrollToBottom: function (element) {

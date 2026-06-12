@@ -13,7 +13,8 @@ public sealed class TareasService(
 {
     private const string ModuleName = "Tareas";
     private const string SistemaFijo = "CN000PR";
-    private const string TaskAssignmentTemplateMetaName = "tarea_asignada";
+    private const string TaskAssignmentTemplateMetaName = "nueva_tarea_asignada";
+    private const string TaskAssignmentLegacyTemplateMetaName = "tarea_asignada";
     private const string TaskCompletionTemplateMetaName = "tarea_finalizada";
     private const string TaskAssignmentTemplateConfigKey = "TAREAS-WHATSAPP-PLANTILLA-ASIGNACION";
     private const string TaskCompletionTemplateConfigKey = "TAREAS-WHATSAPP-PLANTILLA-FINALIZACION";
@@ -1452,12 +1453,12 @@ public sealed class TareasService(
     }
 
     private async Task NotifyTaskAssignmentAsync(SqlConnection cn, long idTarea, string titulo, string usuarioAsignado, string usuarioAccion, CancellationToken ct)
-        => await NotifyTaskByWhatsAppAsync(cn, "NotifyTaskAssignment", TaskAssignmentTemplateConfigKey, TaskAssignmentTemplateMetaName, idTarea, titulo, usuarioAsignado, usuarioAccion, ct);
+        => await NotifyTaskByWhatsAppAsync(cn, "NotifyTaskAssignment", TaskAssignmentTemplateConfigKey, TaskAssignmentTemplateMetaName, idTarea, titulo, usuarioAsignado, usuarioAccion, ct, null, TaskAssignmentLegacyTemplateMetaName);
 
     private async Task NotifyTaskCompletionAsync(SqlConnection cn, long idTarea, string titulo, string usuarioAsignado, string usuarioDestino, string usuarioAccion, CancellationToken ct)
         => await NotifyTaskByWhatsAppAsync(cn, "NotifyTaskCompletion", TaskCompletionTemplateConfigKey, TaskCompletionTemplateMetaName, idTarea, titulo, usuarioAsignado, usuarioAccion, ct, usuarioDestino);
 
-    private async Task NotifyTaskByWhatsAppAsync(SqlConnection cn, string action, string templateConfigKey, string defaultTemplateMetaName, long idTarea, string titulo, string usuarioAsignado, string usuarioAccion, CancellationToken ct, string? usuarioDestino = null)
+    private async Task NotifyTaskByWhatsAppAsync(SqlConnection cn, string action, string templateConfigKey, string defaultTemplateMetaName, long idTarea, string titulo, string usuarioAsignado, string usuarioAccion, CancellationToken ct, string? usuarioDestino = null, params string[] fallbackTemplateNames)
     {
         try
         {
@@ -1465,7 +1466,7 @@ public sealed class TareasService(
                 return;
 
             var templateName = await ReadTaskConfigValueAsync(cn, templateConfigKey, ct);
-            var template = await FindTaskTemplateAsync(string.IsNullOrWhiteSpace(templateName) ? defaultTemplateMetaName : templateName, ct);
+            var template = await FindTaskTemplateAsync(BuildTaskTemplateCandidates(templateName, defaultTemplateMetaName, fallbackTemplateNames), ct);
             if (template is null)
                 return;
 
@@ -1505,31 +1506,51 @@ public sealed class TareasService(
                 action,
                 ex,
                 "No se pudo enviar la notificacion de WhatsApp de la tarea.",
-                new { idTarea, titulo, usuarioAsignado, usuarioDestino, usuarioAccion, templateConfigKey, defaultTemplateMetaName },
+                new { idTarea, titulo, usuarioAsignado, usuarioDestino, usuarioAccion, templateConfigKey, defaultTemplateMetaName, fallbackTemplateNames },
                 AppEventSeverity.Warning,
                 ct);
         }
     }
 
-    private async Task<ConversacionPlantillaDto?> FindTaskTemplateAsync(string templateNameOrId, CancellationToken ct)
+    private async Task<ConversacionPlantillaDto?> FindTaskTemplateAsync(IEnumerable<string> templateNameOrIds, CancellationToken ct)
     {
-        var value = (templateNameOrId ?? string.Empty).Trim();
-        if (string.IsNullOrWhiteSpace(value))
-            return null;
-
-        if (long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var idPlantilla) && idPlantilla > 0)
-            return await conversacionesService.GetTemplateAsync(idPlantilla, ct);
-
-        var matches = await conversacionesService.GetTemplatesAsync(new ConversacionPlantillaFilters
+        foreach (var templateNameOrId in templateNameOrIds)
         {
-            Search = value,
-            IncluirInactivas = false
-        }, ct);
+            var value = (templateNameOrId ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(value))
+                continue;
 
-        return matches.FirstOrDefault(x =>
-            string.Equals(x.NombreMeta, value, StringComparison.OrdinalIgnoreCase)
-            || string.Equals(x.NombreVisible, value, StringComparison.OrdinalIgnoreCase));
+            if (long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var idPlantilla) && idPlantilla > 0)
+            {
+                var byId = await conversacionesService.GetTemplateAsync(idPlantilla, ct);
+                if (byId is not null)
+                    return byId;
+                continue;
+            }
+
+            var matches = await conversacionesService.GetTemplatesAsync(new ConversacionPlantillaFilters
+            {
+                Search = value,
+                IncluirInactivas = false
+            }, ct);
+
+            var match = matches.FirstOrDefault(x =>
+                string.Equals(x.NombreMeta, value, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(x.NombreVisible, value, StringComparison.OrdinalIgnoreCase));
+            if (match is not null)
+                return match;
+        }
+
+        return null;
     }
+
+    private static IReadOnlyList<string> BuildTaskTemplateCandidates(string configuredValue, string defaultTemplateMetaName, IEnumerable<string> fallbackTemplateNames)
+        => new[] { configuredValue, defaultTemplateMetaName }
+            .Concat(fallbackTemplateNames)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
 
     private static async Task<bool> TaskWhatsAppNotificationsEnabledAsync(SqlConnection cn, CancellationToken ct)
     {
