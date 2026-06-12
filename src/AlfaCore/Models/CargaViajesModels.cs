@@ -11,6 +11,7 @@ public sealed class CargaViajesFilters
     public string TipoVehiculo { get; set; } = string.Empty;
     public string TarifaFletero { get; set; } = string.Empty;
     public string Activo { get; set; } = string.Empty;
+    public string Disponible { get; set; } = string.Empty;
     public string Estado { get; set; } = string.Empty;
     public string Usuario { get; set; } = string.Empty;
     public string IdComprobante { get; set; } = string.Empty;
@@ -43,6 +44,11 @@ public sealed class CargaViajesDetailDto : CargaViajesGridItemDto
 {
     public string Lista { get; set; } = string.Empty;
     public string ListaDescripcion { get; set; } = string.Empty;
+    public string ClienteDisplay { get; set; } = string.Empty;
+    public string ChoferDisplay { get; set; } = string.Empty;
+    public string DestinoDisplay { get; set; } = string.Empty;
+    public string TipoVehiculoDisplay { get; set; } = string.Empty;
+    public string ListaDisplay { get; set; } = string.Empty;
     public decimal Peaje { get; set; }
     public int CantidadViajes { get; set; } = 1;
     public decimal PorcentajeAdic { get; set; }
@@ -75,6 +81,11 @@ public sealed class CargaViajeSaveRequest
     public string Destino { get; set; } = string.Empty;
     public string TipoVehiculo { get; set; } = string.Empty;
     public string Lista { get; set; } = string.Empty;
+    public string ClienteDisplay { get; set; } = string.Empty;
+    public string ChoferDisplay { get; set; } = string.Empty;
+    public string DestinoDisplay { get; set; } = string.Empty;
+    public string TipoVehiculoDisplay { get; set; } = string.Empty;
+    public string ListaDisplay { get; set; } = string.Empty;
     public decimal ImporteCliente { get; set; }
     public decimal ImporteFletero { get; set; }
     public decimal Peaje { get; set; }
@@ -147,6 +158,7 @@ public sealed class CargaViajeChoferGridItemDto
     public string Codigo { get; set; } = string.Empty;
     public string Nombre { get; set; } = string.Empty;
     public bool Activo { get; set; } = true;
+    public bool Disponible { get; set; } = true;
 }
 
 public sealed class CargaViajeChoferSaveRequest
@@ -168,6 +180,47 @@ public sealed class CargaViajeDestinoSaveRequest
     public string Codigo { get; set; } = string.Empty;
     public string Descripcion { get; set; } = string.Empty;
     public bool Activo { get; set; } = true;
+}
+
+public sealed class CargaViajeTipoVehiculoGridItemDto
+{
+    public string Codigo { get; set; } = string.Empty;
+    public string Descripcion { get; set; } = string.Empty;
+    public bool? Activo { get; set; }
+}
+
+public sealed class CargaViajeTipoVehiculoSaveRequest
+{
+    public string Codigo { get; set; } = string.Empty;
+    public string Descripcion { get; set; } = string.Empty;
+    public bool Activo { get; set; } = true;
+}
+
+public sealed class CargaViajeTipoVehiculoViewSettingsDto
+{
+    public string AgruparPor { get; set; } = CargaViajeTipoVehiculoViewGroupKeys.None;
+    public List<CargaViajeTipoVehiculoViewColumnDto> Columnas { get; set; } = [];
+}
+
+public sealed class CargaViajeTipoVehiculoViewColumnDto
+{
+    public string Key { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
+    public bool Visible { get; set; }
+    public int Order { get; set; }
+}
+
+public static class CargaViajeTipoVehiculoViewColumnKeys
+{
+    public const string Codigo = "codigo";
+    public const string Descripcion = "descripcion";
+    public const string Activo = "activo";
+}
+
+public static class CargaViajeTipoVehiculoViewGroupKeys
+{
+    public const string None = "none";
+    public const string Activo = "activo";
 }
 
 public sealed class CargaViajesViewSettingsDto
@@ -212,6 +265,7 @@ public static class CargaViajesViewGroupKeys
     public const string None = "none";
     public const string Estado = "estado";
     public const string Usuario = "usuario";
+    public const string Activo = "activo";
 }
 
 public static class CargaViajeEstadoKeys

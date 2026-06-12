@@ -24,6 +24,12 @@ public interface ICargaViajesService
     Task<string> SaveDestinoAsync(CargaViajeDestinoSaveRequest request, CancellationToken ct = default);
     Task BajaDestinoAsync(string codigo, CancellationToken ct = default);
 
+    Task<PagedResult<CargaViajeTipoVehiculoGridItemDto>> SearchTipoVehiculosAsync(CargaViajesFilters filters, CancellationToken ct = default);
+    Task<CargaViajeTipoVehiculoGridItemDto?> GetTipoVehiculoByIdAsync(string codigo, CancellationToken ct = default);
+    Task<string> SaveTipoVehiculoAsync(CargaViajeTipoVehiculoSaveRequest request, CancellationToken ct = default);
+    Task BajaTipoVehiculoAsync(string codigo, CancellationToken ct = default);
+    Task<bool> TipoVehiculoTieneActivoAsync(CancellationToken ct = default);
+
     Task<IReadOnlyList<CargaViajeLookupOptionDto>> SearchClientesAsync(string texto, CancellationToken ct = default);
     Task<IReadOnlyList<CargaViajeLookupOptionDto>> SearchChoferLookupAsync(string texto, CancellationToken ct = default);
     Task<IReadOnlyList<CargaViajeLookupOptionDto>> SearchDestinosLookupAsync(string texto, CancellationToken ct = default);
@@ -34,6 +40,8 @@ public interface ICargaViajesService
 
     Task<CargaViajesViewSettingsDto> GetViewSettingsAsync(string userName, CancellationToken ct = default);
     Task SaveViewSettingsAsync(string userName, CargaViajesViewSettingsDto settings, CancellationToken ct = default);
+    Task<CargaViajeTipoVehiculoViewSettingsDto> GetTipoVehiculoViewSettingsAsync(string userName, CancellationToken ct = default);
+    Task SaveTipoVehiculoViewSettingsAsync(string userName, CargaViajeTipoVehiculoViewSettingsDto settings, CancellationToken ct = default);
     Task<CargaViajesConfigDto> GetConfiguracionAsync(CancellationToken ct = default);
     Task SaveConfiguracionAsync(CargaViajesConfigDto config, CancellationToken ct = default);
 

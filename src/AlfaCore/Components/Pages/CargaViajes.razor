@@ -1,4 +1,4 @@
-@page "/carga-viajes"
+﻿@page "/carga-viajes"
 @page "/carga-viajes/{Vista}"
 @using AlfaCore.Models
 @using AlfaCore.Services
@@ -9,149 +9,175 @@
 
 <PageTitle>Carga de Viajes | Alfa Gestión</PageTitle>
 
-<div class="page-grid" @onclick="HandlePageClickAsync">
-    <section class="page-intro">
-        <div>
-            <h2 class="page-intro__title">Carga de Viajes</h2>
-            <p class="page-intro__text">Administrá viajes, tarifas, choferes y destinos desde un único módulo operativo.</p>
+<div class="page-grid carga-viajes-page" @onclick="HandlePageClickAsync">
+    <header class="carga-viajes-brand">
+        <span class="carga-viajes-brand__eyebrow">ALFA GESTIÓN</span>
+        <h1 class="carga-viajes-brand__title">Carga de Viajes</h1>
+    </header>
+
+    <section class="carga-viajes-tabs">
+        <div class="actions carga-viajes-tabs__actions">
+            <button type="button" class="btn btn--sm @(_activeSection == SectionViajes ? "btn--primary" : "btn--ghost")" @onclick="() => NavigateSectionAsync(SectionViajes)">Viajes</button>
+            <button type="button" class="btn btn--sm @(_activeSection == SectionTarifas ? "btn--primary" : "btn--ghost")" @onclick="() => NavigateSectionAsync(SectionTarifas)">Tarifas</button>
+            <button type="button" class="btn btn--sm @(_activeSection == SectionChoferes ? "btn--primary" : "btn--ghost")" @onclick="() => NavigateSectionAsync(SectionChoferes)">Choferes</button>
+            <button type="button" class="btn btn--sm @(_activeSection == SectionDestinos ? "btn--primary" : "btn--ghost")" @onclick="() => NavigateSectionAsync(SectionDestinos)">Destinos</button>
+            <button type="button" class="btn btn--sm @(_activeSection == SectionTipoVehiculo ? "btn--primary" : "btn--ghost")" @onclick="() => NavigateSectionAsync(SectionTipoVehiculo)">Tipo vehículo</button>
+            <button type="button" class="btn btn--sm @(_activeSection == SectionConfiguracion ? "btn--primary" : "btn--ghost")" @onclick="() => NavigateSectionAsync(SectionConfiguracion)">Configuración</button>
         </div>
     </section>
 
     @if (_feedback is not null)
     {
-        <section class="panel-card">
-            <div class="editor-msg @GetFeedbackClass(_feedback)">
-                <div>
-                    <strong>@_feedback.Title</strong>
-                    <p>@_feedback.Message</p>
+        <section class="carga-viajes-feedback">
+            <div class="editor-msg carga-viajes-feedback__box @GetFeedbackClass(_feedback)">
+                <div class="carga-viajes-feedback__content">
+                    @if (ShouldShowFeedbackTitle(_feedback))
+                    {
+                        <strong class="carga-viajes-feedback__title">@_feedback.Title</strong>
+                    }
+                    <div class="carga-viajes-feedback__line">
+                        <span>@FormatFeedbackMessage(_feedback)</span>
+                    </div>
                     @if (_feedback.HasSuggestion)
                     {
-                        <small>@_feedback.Suggestion</small>
-                    }
-                    @if (_feedback.HasCode)
-                    {
-                        <small>Código: @_feedback.Code</small>
+                        <small class="carga-viajes-feedback__suggestion">@_feedback.Suggestion</small>
                     }
                 </div>
             </div>
         </section>
     }
 
-    @if (_activeSection == SectionViajes)
+    @if (_activeSection == SectionViajes || _activeSection == SectionNuevo)
     {
-        <section class="panel-card filters-card" @onkeydown="HandleViajesFilterKeyDownAsync">
+        <section class="panel-card carga-viajes-section carga-viajes-section--filters" @onkeydown="HandleViajesFilterKeyDownAsync">
             <div class="panel-card__header">
                 <div>
-                    <h3 class="panel-card__title">Filtros de viajes</h3>
-                    <p class="panel-card__subtitle">Usá el mismo patrón de filtros globales del resto del sistema para acotar el listado.</p>
+                    <h3 class="panel-card__title">Viajes</h3>
                 </div>
                 <div class="actions">
-                    <button type="button" class="btn btn--ghost" @onclick="AbrirNuevoViajeAsync">Nuevo viaje</button>
-                    <button type="button" class="btn btn--ghost" @onclick="AbrirConfiguracionVista">Configurar vista</button>
+                    <button type="button" class="btn btn--primary btn--sm" @onclick="AbrirNuevoViajeAsync"><i class="bi bi-plus-lg"></i> Nuevo viaje</button>
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="RecargarViajesAsync" disabled="@_viajesLoading">Recargar</button>
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="AbrirConfiguracionVista">Configurar vista</button>
                 </div>
             </div>
 
-            <div class="filters-grid filters-grid--wide">
-                <div class="field">
-                    <label>Fecha desde</label>
-                    <InputDate @bind-Value="_viajesFilters.FechaDesde" />
+            <div class="carga-viajes-toolbar">
+                <div class="field field--wide carga-viajes-toolbar__search">
+                    <label>Búsqueda general</label>
+                    <input type="search" @bind="_viajesFilters.Texto" @bind:event="oninput" />
                 </div>
-                <div class="field">
-                    <label>Fecha hasta</label>
-                    <InputDate @bind-Value="_viajesFilters.FechaHasta" />
-                </div>
-                <div class="field">
-                    <label>Cliente</label>
-                    <LookupAutocomplete Label="" Placeholder="Buscar cliente..." Text="@_clienteFiltroTexto" TextChanged="OnClienteFiltroTextoChangedAsync" SelectedChanged="OnClienteSeleccionadoAsync" SearchFunc="CargaViajesSvc.SearchClientesAsync" />
-                </div>
-                <div class="field">
-                    <label>Chofer</label>
-                    <LookupAutocomplete Label="" Placeholder="Buscar chofer..." Text="@_choferFiltroTexto" TextChanged="OnChoferFiltroTextoChangedAsync" SelectedChanged="OnChoferSeleccionadoAsync" SearchFunc="CargaViajesSvc.SearchChoferLookupAsync" />
-                </div>
-                <div class="field">
-                    <label>Destino</label>
-                    <LookupAutocomplete Label="" Placeholder="Buscar destino..." Text="@_destinoFiltroTexto" TextChanged="OnDestinoFiltroTextoChangedAsync" SelectedChanged="OnDestinoSeleccionadoAsync" SearchFunc="CargaViajesSvc.SearchDestinosLookupAsync" />
-                </div>
-                <div class="field">
-                    <label>Estado</label>
-                    <select @bind="_viajesFilters.Estado">
-                        <option value="">Todos</option>
-                        @foreach (var estado in _lookups.Estados)
-                        {
-                            <option value="@estado">@estado</option>
-                        }
-                    </select>
-                </div>
-                <div class="field">
-                    <label>Usuario</label>
-                    <input type="text" @bind="_viajesFilters.Usuario" @bind:event="oninput" />
-                </div>
-                <div class="field">
-                    <label>Id comprobante</label>
-                    <input type="text" @bind="_viajesFilters.IdComprobante" @bind:event="oninput" />
+                <div class="carga-viajes-toolbar__actions">
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="ToggleViajesAdvancedFilters" aria-expanded="@_showViajesAdvancedFilters" aria-controls="carga-viajes-viajes-filtros-avanzados">
+                        @(_showViajesAdvancedFilters ? "Ocultar filtros" : "Filtros")
+                    </button>
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="LimpiarFiltrosViajesAsync" disabled="@_viajesLoading">Limpiar</button>
                 </div>
             </div>
 
-            <div class="actions">
-                <button type="button" class="btn btn--primary" @onclick="AplicarFiltrosViajesAsync" disabled="@_viajesLoading">Aplicar filtros</button>
-                <button type="button" class="btn btn--ghost" @onclick="LimpiarFiltrosViajesAsync" disabled="@_viajesLoading">Limpiar</button>
-            </div>
+            @if (_showViajesAdvancedFilters)
+            {
+                <div id="carga-viajes-viajes-filtros-avanzados" class="carga-viajes-advanced-grid">
+                    <div class="field">
+                        <label>Fecha desde</label>
+                        <InputDate @bind-Value="_viajesFilters.FechaDesde" />
+                    </div>
+                    <div class="field">
+                        <label>Fecha hasta</label>
+                        <InputDate @bind-Value="_viajesFilters.FechaHasta" />
+                    </div>
+                    <div class="field">
+                        <label>Cliente</label>
+                        <LookupAutocomplete Label="" Placeholder="Buscar cliente..." Text="@_clienteFiltroTexto" TextChanged="OnClienteFiltroTextoChangedAsync" SelectedChanged="OnClienteSeleccionadoAsync" SearchFunc="CargaViajesSvc.SearchClientesAsync" />
+                    </div>
+                    <div class="field">
+                        <label>Chofer</label>
+                        <LookupAutocomplete Label="" Placeholder="Buscar chofer..." Text="@_choferFiltroTexto" TextChanged="OnChoferFiltroTextoChangedAsync" SelectedChanged="OnChoferSeleccionadoAsync" SearchFunc="CargaViajesSvc.SearchChoferLookupAsync" />
+                    </div>
+                    <div class="field">
+                        <label>Destino</label>
+                        <LookupAutocomplete Label="" Placeholder="Buscar destino..." Text="@_destinoFiltroTexto" TextChanged="OnDestinoFiltroTextoChangedAsync" SelectedChanged="OnDestinoSeleccionadoAsync" SearchFunc="CargaViajesSvc.SearchDestinosLookupAsync" />
+                    </div>
+                    <div class="field">
+                        <label>Estado</label>
+                        <select @bind="_viajesFilters.Estado">
+                            <option value="">Todos</option>
+                            @foreach (var estado in _lookups.Estados)
+                            {
+                                <option value="@estado">@estado</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label>Usuario</label>
+                        <input type="text" @bind="_viajesFilters.Usuario" @bind:event="oninput" />
+                    </div>
+                    <div class="field">
+                        <label>Id comprobante</label>
+                        <input type="text" @bind="_viajesFilters.IdComprobante" @bind:event="oninput" />
+                    </div>
+                </div>
+            }
         </section>
 
         @if (_showViewSettings)
         {
-            <div class="drawer-overlay" @onclick="CancelarConfiguracionVista"></div>
-            <section class="drawer carga-viajes-drawer carga-viajes-drawer--wide" @onclick:stopPropagation="true">
-                <div class="panel-card__header">
-                    <div>
-                        <h3 class="panel-card__title">Configuración de vista</h3>
-                        <p class="panel-card__subtitle">Activá columnas, reordenalas y elegí agrupación por estado o usuario.</p>
-                    </div>
-                    <button type="button" class="btn btn--ghost btn--sm" @onclick="CancelarConfiguracionVista">Cerrar</button>
-                </div>
+            <div class="cuentas-modal-backdrop carga-viajes-modal-backdrop" @onclick="CancelarConfiguracionVista">
+                <section class="cuentas-modal carga-viajes-modal carga-viajes-modal--wide" role="dialog" aria-modal="true" aria-labelledby="carga-viajes-view-settings-title" @onclick:stopPropagation="true" @onkeydown="HandleModalKeyDownAsync" tabindex="0">
+                    <header class="cuentas-modal__header">
+                        <div>
+                            <span class="cuentas-modal__eyebrow">Viajes</span>
+                            <h3 id="carga-viajes-view-settings-title">Configuración de vista</h3>
+                        </div>
+                        <button type="button" class="cuentas-modal__close" @onclick="CancelarConfiguracionVista" aria-label="Cerrar">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                    </header>
 
-                <div class="usuarios-view-settings">
-                    <div class="field">
-                        <label>Agrupar por</label>
-                        <select @bind="_draftAgruparPor">
-                            <option value="@CargaViajesViewGroupKeys.None">Sin agrupar</option>
-                            <option value="@CargaViajesViewGroupKeys.Estado">Estado</option>
-                            <option value="@CargaViajesViewGroupKeys.Usuario">Usuario</option>
-                        </select>
-                    </div>
-
-                    <div class="usuarios-view-settings__list">
-                        @foreach (var column in _viewSettingsDraft.Columnas.OrderBy(c => c.Order))
-                        {
-                            <div class="usuarios-view-settings__item">
-                                <label class="checkbox">
-                                    <input type="checkbox" checked="@column.Visible" @onchange="args => ToggleViewColumn(column.Key, args)" />
-                                    <span>@column.Label</span>
-                                </label>
-                                <div class="actions">
-                                    <button type="button" class="btn btn--ghost btn--sm" @onclick="() => MoveViewColumn(column.Key, -1)">↑</button>
-                                    <button type="button" class="btn btn--ghost btn--sm" @onclick="() => MoveViewColumn(column.Key, 1)">↓</button>
-                                </div>
+                    <div class="cuentas-modal__body">
+                        <div class="usuarios-view-settings">
+                            <div class="field">
+                                <label>Agrupar por</label>
+                                <select @bind="_draftAgruparPor">
+                                    <option value="@CargaViajesViewGroupKeys.None">Sin agrupar</option>
+                                    <option value="@CargaViajesViewGroupKeys.Estado">Estado</option>
+                                    <option value="@CargaViajesViewGroupKeys.Usuario">Usuario</option>
+                                </select>
                             </div>
-                        }
+
+                            <div class="usuarios-view-settings__list">
+                                @foreach (var column in _viewSettingsDraft.Columnas.OrderBy(c => c.Order))
+                                {
+                                    <div class="usuarios-view-settings__item">
+                                        <label class="checkbox">
+                                            <input type="checkbox" checked="@column.Visible" @onchange="args => ToggleViewColumn(column.Key, args)" />
+                                            <span>@column.Label</span>
+                                        </label>
+                                        <div class="actions">
+                                            <button type="button" class="btn btn--ghost btn--sm" @onclick="() => MoveViewColumn(column.Key, -1)">â†‘</button>
+                                            <button type="button" class="btn btn--ghost btn--sm" @onclick="() => MoveViewColumn(column.Key, 1)">â†“</button>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        </div>
                     </div>
 
-                    <div class="actions">
+                    <footer class="cuentas-modal__actions">
                         <button type="button" class="btn btn--primary" @onclick="GuardarConfiguracionVistaAsync">Guardar vista</button>
                         <button type="button" class="btn btn--ghost" @onclick="CancelarConfiguracionVista">Cancelar</button>
-                    </div>
-                </div>
-            </section>
+                    </footer>
+                </section>
+            </div>
         }
 
         <section class="panel-card">
             <div class="panel-card__header">
                 <div>
                     <h3 class="panel-card__title">Viajes</h3>
-                    <p class="panel-card__subtitle">@_viajesTotal registro(s) · Página @_viajesPage de @_viajesTotalPages</p>
+                    <span class="panel-card__subtitle">@_viajesTotal registro(s) · Página @_viajesPage de @_viajesTotalPages</span>
                 </div>
                 <div class="actions">
-                    <button type="button" class="btn btn--ghost" @onclick="RecargarViajesAsync" disabled="@_viajesLoading">Recargar</button>
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="RecargarViajesAsync" disabled="@_viajesLoading">Recargar</button>
                 </div>
             </div>
 
@@ -220,68 +246,72 @@
     }
     else if (_activeSection == SectionTarifas)
     {
-        <section class="panel-card">
+        <section class="panel-card carga-viajes-section carga-viajes-section--filters">
             <div class="panel-card__header">
                 <div>
                     <h3 class="panel-card__title">Tarifas</h3>
-                    <p class="panel-card__subtitle">ABM sobre TA_TARIFA con baja lógica y tarifas cliente/fletero.</p>
-                </div>
-                <div class="actions">
-                    <button type="button" class="btn btn--primary" @onclick="NuevaTarifaAsync">Nueva tarifa</button>
-                    <button type="button" class="btn btn--ghost" @onclick="RecargarTarifasAsync">Recargar</button>
                 </div>
             </div>
 
-            <div class="carga-viajes-filters-grid">
-                <div class="field field--wide">
+            <div class="carga-viajes-toolbar">
+                <div class="field field--wide carga-viajes-toolbar__search">
                     <label>Búsqueda general</label>
                     <input type="search" @bind="_tarifasFilters.Texto" @bind:event="oninput" />
                 </div>
-                <div class="field">
-                    <label>Cliente</label>
-                    <LookupAutocomplete Label="" Placeholder="Buscar cliente..." Text="@_tarifasFilters.Cliente" TextChanged="OnTarifaClienteFiltroChangedAsync" SelectedChanged="OnTarifaClienteFiltroSelectedAsync" SearchFunc="CargaViajesSvc.SearchClientesAsync" />
-                </div>
-                <div class="field">
-                    <label>Chofer</label>
-                    <LookupAutocomplete Label="" Placeholder="Buscar chofer..." Text="@_tarifasFilters.Chofer" TextChanged="OnTarifaChoferFiltroChangedAsync" SelectedChanged="OnTarifaChoferFiltroSelectedAsync" SearchFunc="CargaViajesSvc.SearchChoferLookupAsync" />
-                </div>
-                <div class="field">
-                    <label>Destino</label>
-                    <LookupAutocomplete Label="" Placeholder="Buscar destino..." Text="@_tarifasFilters.Destino" TextChanged="OnTarifaDestinoFiltroChangedAsync" SelectedChanged="OnTarifaDestinoFiltroSelectedAsync" SearchFunc="CargaViajesSvc.SearchDestinosLookupAsync" />
-                </div>
-                <div class="field">
-                    <label>Tipo vehículo</label>
-                    <LookupAutocomplete Label="" Placeholder="Buscar tipo..." Text="@_tarifasFilters.TipoVehiculo" TextChanged="OnTarifaTipoVehiculoFiltroChangedAsync" SelectedChanged="OnTarifaTipoVehiculoFiltroSelectedAsync" SearchFunc="CargaViajesSvc.SearchTipoVehiculosLookupAsync" />
-                </div>
-                <div class="field">
-                    <label>Tarifa fletero</label>
-                    <select @bind="_tarifasFilters.TarifaFletero">
-                        <option value="">Todas</option>
-                        <option value="0">Cliente</option>
-                        <option value="1">Fletero</option>
-                    </select>
-                </div>
-                <div class="field">
-                    <label>Activo</label>
-                    <select @bind="_tarifasFilters.Activo">
-                        <option value="">Todos</option>
-                        <option value="1">Sí</option>
-                        <option value="0">No</option>
-                    </select>
+                <div class="carga-viajes-toolbar__actions">
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="ToggleTarifasAdvancedFilters" aria-expanded="@_showTarifasAdvancedFilters" aria-controls="carga-viajes-tarifas-filtros-avanzados">
+                        @(_showTarifasAdvancedFilters ? "Ocultar filtros" : "Filtros")
+                    </button>
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="LimpiarFiltrosTarifasAsync">Limpiar</button>
+                    <button type="button" class="btn btn--primary btn--sm" @onclick="NuevaTarifaAsync">Nueva tarifa</button>
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="RecargarTarifasAsync">Recargar</button>
                 </div>
             </div>
 
-            <div class="actions">
-                <button type="button" class="btn btn--primary" @onclick="AplicarFiltrosTarifasAsync">Aplicar</button>
-                <button type="button" class="btn btn--ghost" @onclick="LimpiarFiltrosTarifasAsync">Limpiar</button>
-            </div>
+            @if (_showTarifasAdvancedFilters)
+            {
+                <div id="carga-viajes-tarifas-filtros-avanzados" class="carga-viajes-advanced-grid">
+                    <div class="field">
+                        <label>Cliente</label>
+                        <LookupAutocomplete Label="" Placeholder="Buscar cliente..." Text="@_tarifasFilters.Cliente" TextChanged="OnTarifaClienteFiltroChangedAsync" SelectedChanged="OnTarifaClienteFiltroSelectedAsync" SearchFunc="CargaViajesSvc.SearchClientesAsync" />
+                    </div>
+                    <div class="field">
+                        <label>Chofer</label>
+                        <LookupAutocomplete Label="" Placeholder="Buscar chofer..." Text="@_tarifasFilters.Chofer" TextChanged="OnTarifaChoferFiltroChangedAsync" SelectedChanged="OnTarifaChoferFiltroSelectedAsync" SearchFunc="CargaViajesSvc.SearchChoferLookupAsync" />
+                    </div>
+                    <div class="field">
+                        <label>Destino</label>
+                        <LookupAutocomplete Label="" Placeholder="Buscar destino..." Text="@_tarifasFilters.Destino" TextChanged="OnTarifaDestinoFiltroChangedAsync" SelectedChanged="OnTarifaDestinoFiltroSelectedAsync" SearchFunc="CargaViajesSvc.SearchDestinosLookupAsync" />
+                    </div>
+                    <div class="field">
+                        <label>Tipo vehículo</label>
+                        <LookupAutocomplete Label="" Placeholder="Buscar tipo..." Text="@_tarifasFilters.TipoVehiculo" TextChanged="OnTarifaTipoVehiculoFiltroChangedAsync" SelectedChanged="OnTarifaTipoVehiculoFiltroSelectedAsync" SearchFunc="CargaViajesSvc.SearchTipoVehiculosLookupAsync" />
+                    </div>
+                    <div class="field">
+                        <label>Tarifa fletero</label>
+                        <select @bind="_tarifasFilters.TarifaFletero">
+                            <option value="">Todas</option>
+                            <option value="0">Cliente</option>
+                            <option value="1">Fletero</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label>Activo</label>
+                        <select @bind="_tarifasFilters.Activo">
+                            <option value="">Todos</option>
+                            <option value="1">Sí</option>
+                            <option value="0">No</option>
+                        </select>
+                    </div>
+                </div>
+            }
         </section>
 
         <section class="panel-card">
             <div class="panel-card__header">
                 <div>
                     <h3 class="panel-card__title">Listado de tarifas</h3>
-                    <p class="panel-card__subtitle">@_tarifasTotal registro(s)</p>
+                    <span class="panel-card__subtitle">@_tarifasTotal registro(s)</span>
                 </div>
             </div>
             @if (_tarifasLoading)
@@ -329,69 +359,81 @@
 
         @if (_showTarifaEditor)
         {
-            <div class="drawer-overlay" @onclick="CerrarTarifaEditorAsync"></div>
-            <section class="drawer carga-viajes-drawer" @onclick:stopPropagation="true">
-                <div class="panel-card__header">
-                    <div>
-                        <h3 class="panel-card__title">@(_isNewTarifa ? "Nueva tarifa" : $"Editar tarifa {_tarifaForm.IdLista}")</h3>
-                        <p class="panel-card__subtitle">Configurá precio, origen de tarifa y adicionales.</p>
+            <div class="cuentas-modal-backdrop carga-viajes-modal-backdrop" @onclick="CerrarTarifaEditorAsync">
+                <section class="cuentas-modal carga-viajes-modal carga-viajes-modal--wide" role="dialog" aria-modal="true" aria-labelledby="carga-viajes-tarifa-title" @onclick:stopPropagation="true" @onkeydown="HandleModalKeyDownAsync" tabindex="0">
+                    <header class="cuentas-modal__header">
+                        <div>
+                            <span class="cuentas-modal__eyebrow">Tarifas</span>
+                            <h3 id="carga-viajes-tarifa-title">@(_isNewTarifa ? "Nueva tarifa" : $"Editar tarifa {_tarifaForm.IdLista}")</h3>
+                        </div>
+                        <button type="button" class="cuentas-modal__close" @onclick="CerrarTarifaEditorAsync" aria-label="Cerrar">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                    </header>
+                    <div class="cuentas-modal__body">
+                        <div class="carga-viajes-form-grid">
+                            <div class="field"><label>IdLista</label><input type="text" @bind="_tarifaForm.IdLista" disabled="@(!_isNewTarifa)" /></div>
+                            <div class="field"><label>Nombre</label><input type="text" @bind="_tarifaForm.Nombre" /></div>
+                            <div class="field"><label>Importe</label><input type="number" step="0.01" @bind="_tarifaForm.Importe" /></div>
+                            <div class="field"><label>Cliente</label><input type="text" @bind="_tarifaForm.Cliente" /></div>
+                            <div class="field"><label>Chofer</label><input type="text" @bind="_tarifaForm.Chofer" /></div>
+                            <div class="field"><label>Destino</label><input type="text" @bind="_tarifaForm.Destino" /></div>
+                            <div class="field"><label>Tipo vehículo</label><input type="text" @bind="_tarifaForm.TipoVehiculo" /></div>
+                            <div class="field"><label>Tarifa fletero</label><select @bind="_tarifaForm.TarifaFletero"><option value="false">Tarifa cliente</option><option value="true">Tarifa chofer/fletero</option></select></div>
+                            <div class="field"><label>PorcentajeAdic</label><input type="number" step="0.01" @bind="_tarifaForm.PorcentajeAdic" /></div>
+                            <div class="field"><label>PorcentajeAdic1</label><input type="number" step="0.01" @bind="_tarifaForm.PorcentajeAdic1" /></div>
+                            <div class="field"><label>PorcentajeAdic2</label><input type="number" step="0.01" @bind="_tarifaForm.PorcentajeAdic2" /></div>
+                            <div class="field"><label>PorcentajeAdic3</label><input type="number" step="0.01" @bind="_tarifaForm.PorcentajeAdic3" /></div>
+                            <div class="field"><label>PorcentajeAdic4</label><input type="number" step="0.01" @bind="_tarifaForm.PorcentajeAdic4" /></div>
+                            <div class="field"><label>Activo</label><input type="checkbox" @bind="_tarifaForm.Activo" /></div>
+                        </div>
                     </div>
-                    <div class="actions">
+                    <footer class="cuentas-modal__actions">
+                        <button type="button" class="btn btn--primary" @onclick="GuardarTarifaAsync">Guardar tarifa</button>
                         <button type="button" class="btn btn--ghost" @onclick="CerrarTarifaEditorAsync">Cerrar</button>
-                    </div>
-                </div>
-                <div class="filters-grid filters-grid--wide">
-                    <div class="field"><label>IdLista</label><input type="text" @bind="_tarifaForm.IdLista" disabled="@(!_isNewTarifa)" /></div>
-                    <div class="field"><label>Nombre</label><input type="text" @bind="_tarifaForm.Nombre" /></div>
-                    <div class="field"><label>Importe</label><input type="number" step="0.01" @bind="_tarifaForm.Importe" /></div>
-                    <div class="field"><label>Cliente</label><input type="text" @bind="_tarifaForm.Cliente" /></div>
-                    <div class="field"><label>Chofer</label><input type="text" @bind="_tarifaForm.Chofer" /></div>
-                    <div class="field"><label>Destino</label><input type="text" @bind="_tarifaForm.Destino" /></div>
-                    <div class="field"><label>Tipo vehículo</label><input type="text" @bind="_tarifaForm.TipoVehiculo" /></div>
-                    <div class="field"><label>Tarifa fletero</label><select @bind="_tarifaForm.TarifaFletero"><option value="false">Tarifa cliente</option><option value="true">Tarifa chofer/fletero</option></select></div>
-                    <div class="field"><label>PorcentajeAdic</label><input type="number" step="0.01" @bind="_tarifaForm.PorcentajeAdic" /></div>
-                    <div class="field"><label>PorcentajeAdic1</label><input type="number" step="0.01" @bind="_tarifaForm.PorcentajeAdic1" /></div>
-                    <div class="field"><label>PorcentajeAdic2</label><input type="number" step="0.01" @bind="_tarifaForm.PorcentajeAdic2" /></div>
-                    <div class="field"><label>PorcentajeAdic3</label><input type="number" step="0.01" @bind="_tarifaForm.PorcentajeAdic3" /></div>
-                    <div class="field"><label>PorcentajeAdic4</label><input type="number" step="0.01" @bind="_tarifaForm.PorcentajeAdic4" /></div>
-                    <div class="field"><label>Activo</label><input type="checkbox" @bind="_tarifaForm.Activo" /></div>
-                </div>
-                <div class="actions">
-                    <button type="button" class="btn btn--primary" @onclick="GuardarTarifaAsync">Guardar tarifa</button>
-                </div>
-            </section>
+                    </footer>
+                </section>
+            </div>
         }
     }
     else if (_activeSection == SectionChoferes)
     {
-        <section class="panel-card">
+        <section class="panel-card carga-viajes-section carga-viajes-section--filters">
             <div class="panel-card__header">
                 <div>
                     <h3 class="panel-card__title">Choferes</h3>
-                    <p class="panel-card__subtitle">ABM sobre TA_CHOFERES / MA_CHOFERES con baja lógica.</p>
-                </div>
-                <div class="actions">
-                    <button type="button" class="btn btn--primary" @onclick="NuevoChoferAsync">Nuevo chofer</button>
-                    <button type="button" class="btn btn--ghost" @onclick="RecargarChoferesAsync">Recargar</button>
                 </div>
             </div>
 
-            <div class="filters-grid filters-grid--wide">
-                <div class="field field--wide"><label>Buscar</label><input type="search" @bind="_choferesFiltroTexto" @bind:event="oninput" /></div>
+            <div class="carga-viajes-toolbar">
+                <div class="field field--wide carga-viajes-toolbar__search"><label>Búsqueda general</label><input type="search" @bind="_choferesFilters.Texto" @bind:event="oninput" /></div>
+                <div class="carga-viajes-toolbar__actions">
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="ToggleChoferesAdvancedFilters" aria-expanded="@_showChoferesAdvancedFilters" aria-controls="carga-viajes-choferes-filtros-avanzados">
+                        @(_showChoferesAdvancedFilters ? "Ocultar filtros" : "Filtros")
+                    </button>
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="LimpiarFiltrosChoferesAsync">Limpiar</button>
+                    <button type="button" class="btn btn--primary btn--sm" @onclick="NuevoChoferAsync">Nuevo chofer</button>
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="RecargarChoferesAsync">Recargar</button>
+                </div>
             </div>
-            <div class="actions">
-                <button type="button" class="btn btn--primary" @onclick="AplicarFiltrosChoferesAsync">Aplicar</button>
-                <button type="button" class="btn btn--ghost" @onclick="LimpiarFiltrosChoferesAsync">Limpiar</button>
-            </div>
+
+            @if (_showChoferesAdvancedFilters)
+            {
+                <div id="carga-viajes-choferes-filtros-avanzados" class="carga-viajes-advanced-grid">
+                    <div class="field"><label>Activo</label><select @bind="_choferesFilters.Activo"><option value="">Todos</option><option value="1">Sí</option><option value="0">No</option></select></div>
+                    <div class="field"><label>Disponible</label><select @bind="_choferesFilters.Disponible"><option value="">Todos</option><option value="1">Sí</option><option value="0">No</option></select></div>
+                    <div class="field"><label>Tipo vehículo</label><LookupAutocomplete Label="" Placeholder="Buscar tipo..." Text="@_choferesTipoVehiculoTexto" TextChanged="OnChoferTipoVehiculoChangedAsync" SelectedChanged="OnChoferTipoVehiculoSelectedAsync" SearchFunc="CargaViajesSvc.SearchTipoVehiculosLookupAsync" /></div>
+                </div>
+            }
         </section>
 
         <section class="panel-card">
             <div class="panel-card__header">
-                <div><h3 class="panel-card__title">Listado de choferes</h3><p class="panel-card__subtitle">@_choferesTotal registro(s)</p></div>
+                <div><h3 class="panel-card__title">Listado de choferes</h3><span class="panel-card__subtitle">@_choferesTotal registro(s)</span></div>
             </div>
             <div class="usuarios-table-wrap">
                 <table class="data-table">
-                    <thead><tr><th>Código</th><th>Nombre</th><th>Activo</th><th>Acciones</th></tr></thead>
+                    <thead><tr><th>Código</th><th>Nombre</th><th>Activo</th><th>Disponible</th><th>Acciones</th></tr></thead>
                     <tbody>
                         @foreach (var row in _choferes)
                         {
@@ -407,47 +449,64 @@
 
         @if (_showChoferEditor)
         {
-            <div class="drawer-overlay" @onclick="CerrarChoferEditorAsync"></div>
-            <section class="drawer carga-viajes-drawer carga-viajes-drawer--compact" @onclick:stopPropagation="true">
-                <div class="panel-card__header">
-                    <div><h3 class="panel-card__title">@(_isNewChofer ? "Nuevo chofer" : $"Editar chofer {_choferForm.Codigo}")</h3><p class="panel-card__subtitle">Datos básicos del chofer.</p></div>
-                    <div class="actions"><button type="button" class="btn btn--ghost" @onclick="CerrarChoferEditorAsync">Cerrar</button></div>
-                </div>
-                <div class="filters-grid filters-grid--wide">
-                    <div class="field"><label>Código</label><input type="text" @bind="_choferForm.Codigo" disabled="@(!_isNewChofer)" /></div>
-                    <div class="field field--wide"><label>Nombre</label><input type="text" @bind="_choferForm.Nombre" /></div>
-                    <div class="field"><label>Activo</label><input type="checkbox" @bind="_choferForm.Activo" /></div>
-                </div>
-                <div class="actions"><button type="button" class="btn btn--primary" @onclick="GuardarChoferAsync">Guardar chofer</button></div>
-            </section>
+            <div class="cuentas-modal-backdrop carga-viajes-modal-backdrop" @onclick="CerrarChoferEditorAsync">
+                <section class="cuentas-modal carga-viajes-modal carga-viajes-modal--compact" role="dialog" aria-modal="true" aria-labelledby="carga-viajes-chofer-title" @onclick:stopPropagation="true" @onkeydown="HandleModalKeyDownAsync" tabindex="0">
+                    <header class="cuentas-modal__header">
+                        <div>
+                            <span class="cuentas-modal__eyebrow">Choferes</span>
+                            <h3 id="carga-viajes-chofer-title">@(_isNewChofer ? "Nuevo chofer" : $"Editar chofer {_choferForm.Codigo}")</h3>
+                        </div>
+                        <button type="button" class="cuentas-modal__close" @onclick="CerrarChoferEditorAsync" aria-label="Cerrar">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                    </header>
+                    <div class="cuentas-modal__body">
+                        <div class="carga-viajes-form-grid">
+                            <div class="field"><label>Código</label><input type="text" @bind="_choferForm.Codigo" disabled="@(!_isNewChofer)" /></div>
+                            <div class="field field--wide"><label>Nombre</label><input type="text" @bind="_choferForm.Nombre" /></div>
+                            <div class="field"><label>Activo</label><input type="checkbox" @bind="_choferForm.Activo" /></div>
+                        </div>
+                    </div>
+                    <footer class="cuentas-modal__actions">
+                        <button type="button" class="btn btn--primary" @onclick="GuardarChoferAsync">Guardar chofer</button>
+                        <button type="button" class="btn btn--ghost" @onclick="CerrarChoferEditorAsync">Cerrar</button>
+                    </footer>
+                </section>
+            </div>
         }
     }
     else if (_activeSection == SectionDestinos)
     {
-        <section class="panel-card">
+        <section class="panel-card carga-viajes-section carga-viajes-section--filters">
             <div class="panel-card__header">
                 <div>
                     <h3 class="panel-card__title">Destinos</h3>
-                    <p class="panel-card__subtitle">ABM sobre TA_DESTINOS / V_TA_DESTINO con baja lógica.</p>
-                </div>
-                <div class="actions">
-                    <button type="button" class="btn btn--primary" @onclick="NuevoDestinoAsync">Nuevo destino</button>
-                    <button type="button" class="btn btn--ghost" @onclick="RecargarDestinosAsync">Recargar</button>
                 </div>
             </div>
 
-            <div class="filters-grid filters-grid--wide">
-                <div class="field field--wide"><label>Buscar</label><input type="search" @bind="_destinosFiltroTexto" @bind:event="oninput" /></div>
+            <div class="carga-viajes-toolbar">
+                <div class="field field--wide carga-viajes-toolbar__search"><label>Búsqueda general</label><input type="search" @bind="_destinosFilters.Texto" @bind:event="oninput" /></div>
+                <div class="carga-viajes-toolbar__actions">
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="ToggleDestinosAdvancedFilters" aria-expanded="@_showDestinosAdvancedFilters" aria-controls="carga-viajes-destinos-filtros-avanzados">
+                        @(_showDestinosAdvancedFilters ? "Ocultar filtros" : "Filtros")
+                    </button>
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="LimpiarFiltrosDestinosAsync">Limpiar</button>
+                    <button type="button" class="btn btn--primary btn--sm" @onclick="NuevoDestinoAsync">Nuevo destino</button>
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="RecargarDestinosAsync">Recargar</button>
+                </div>
             </div>
-            <div class="actions">
-                <button type="button" class="btn btn--primary" @onclick="AplicarFiltrosDestinosAsync">Aplicar</button>
-                <button type="button" class="btn btn--ghost" @onclick="LimpiarFiltrosDestinosAsync">Limpiar</button>
-            </div>
+
+            @if (_showDestinosAdvancedFilters)
+            {
+                <div id="carga-viajes-destinos-filtros-avanzados" class="carga-viajes-advanced-grid">
+                    <div class="field"><label>Activo</label><select @bind="_destinosFilters.Activo"><option value="">Todos</option><option value="1">Sí</option><option value="0">No</option></select></div>
+                </div>
+            }
         </section>
 
         <section class="panel-card">
             <div class="panel-card__header">
-                <div><h3 class="panel-card__title">Listado de destinos</h3><p class="panel-card__subtitle">@_destinosTotal registro(s)</p></div>
+                <div><h3 class="panel-card__title">Listado de destinos</h3><span class="panel-card__subtitle">@_destinosTotal registro(s)</span></div>
             </div>
             <div class="usuarios-table-wrap">
                 <table class="data-table">
@@ -467,19 +526,228 @@
 
         @if (_showDestinoEditor)
         {
-            <div class="drawer-overlay" @onclick="CerrarDestinoEditorAsync"></div>
-            <section class="drawer carga-viajes-drawer carga-viajes-drawer--compact" @onclick:stopPropagation="true">
-                <div class="panel-card__header">
-                    <div><h3 class="panel-card__title">@(_isNewDestino ? "Nuevo destino" : $"Editar destino {_destinoForm.Codigo}")</h3><p class="panel-card__subtitle">Datos básicos del destino.</p></div>
-                    <div class="actions"><button type="button" class="btn btn--ghost" @onclick="CerrarDestinoEditorAsync">Cerrar</button></div>
+            <div class="cuentas-modal-backdrop carga-viajes-modal-backdrop" @onclick="CerrarDestinoEditorAsync">
+                <section class="cuentas-modal carga-viajes-modal carga-viajes-modal--compact" role="dialog" aria-modal="true" aria-labelledby="carga-viajes-destino-title" @onclick:stopPropagation="true" @onkeydown="HandleModalKeyDownAsync" tabindex="0">
+                    <header class="cuentas-modal__header">
+                        <div>
+                            <span class="cuentas-modal__eyebrow">Destinos</span>
+                            <h3 id="carga-viajes-destino-title">@(_isNewDestino ? "Nuevo destino" : $"Editar destino {_destinoForm.Codigo}")</h3>
+                        </div>
+                        <button type="button" class="cuentas-modal__close" @onclick="CerrarDestinoEditorAsync" aria-label="Cerrar">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                    </header>
+                    <div class="cuentas-modal__body">
+                        <div class="carga-viajes-form-grid">
+                            <div class="field"><label>Código</label><input type="text" @bind="_destinoForm.Codigo" disabled="@(!_isNewDestino)" /></div>
+                            <div class="field field--wide"><label>Descripción</label><input type="text" @bind="_destinoForm.Descripcion" /></div>
+                            <div class="field"><label>Activo</label><input type="checkbox" @bind="_destinoForm.Activo" /></div>
+                        </div>
+                    </div>
+                    <footer class="cuentas-modal__actions">
+                        <button type="button" class="btn btn--primary" @onclick="GuardarDestinoAsync">Guardar destino</button>
+                        <button type="button" class="btn btn--ghost" @onclick="CerrarDestinoEditorAsync">Cerrar</button>
+                    </footer>
+                </section>
+            </div>
+        }
+    }
+    else if (_activeSection == SectionTipoVehiculo)
+    {
+        <section class="panel-card carga-viajes-section carga-viajes-section--filters">
+            <div class="panel-card__header">
+                <div>
+                    <h3 class="panel-card__title">Tipos de vehículo</h3>
                 </div>
-                <div class="filters-grid filters-grid--wide">
-                    <div class="field"><label>Código</label><input type="text" @bind="_destinoForm.Codigo" disabled="@(!_isNewDestino)" /></div>
-                    <div class="field field--wide"><label>Descripción</label><input type="text" @bind="_destinoForm.Descripcion" /></div>
-                    <div class="field"><label>Activo</label><input type="checkbox" @bind="_destinoForm.Activo" /></div>
+            </div>
+
+            <div class="carga-viajes-toolbar">
+                <div class="field field--wide carga-viajes-toolbar__search">
+                    <label>Búsqueda general</label>
+                    <input type="search" @bind="_tipoVehiculosFilters.Texto" @bind:event="oninput" />
                 </div>
-                <div class="actions"><button type="button" class="btn btn--primary" @onclick="GuardarDestinoAsync">Guardar destino</button></div>
-            </section>
+                <div class="carga-viajes-toolbar__actions">
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="ToggleTipoVehiculosAdvancedFilters" aria-expanded="@_showTipoVehiculosAdvancedFilters" aria-controls="carga-viajes-tipo-vehiculos-filtros-avanzados">
+                        @(_showTipoVehiculosAdvancedFilters ? "Ocultar filtros" : "Filtros")
+                    </button>
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="LimpiarFiltrosTipoVehiculosAsync">Limpiar</button>
+                    <button type="button" class="btn btn--primary btn--sm" @onclick="NuevoTipoVehiculoAsync">Nuevo tipo de vehículo</button>
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="RecargarTipoVehiculosAsync">Recargar</button>
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="AbrirConfiguracionTipoVehiculoVista">Configurar vista</button>
+                </div>
+            </div>
+
+            @if (_showTipoVehiculosAdvancedFilters)
+            {
+                <div id="carga-viajes-tipo-vehiculos-filtros-avanzados" class="carga-viajes-advanced-grid">
+                    @if (_tipoVehiculosHasActivo)
+                    {
+                        <div class="field">
+                            <label>Activo</label>
+                            <select @bind="_tipoVehiculosFilters.Activo">
+                                <option value="">Todos</option>
+                                <option value="1">Sí</option>
+                                <option value="0">No</option>
+                            </select>
+                        </div>
+                    }
+                </div>
+            }
+        </section>
+
+        <section class="panel-card">
+            <div class="panel-card__header">
+                <div>
+                    <h3 class="panel-card__title">Listado de tipos de vehículo</h3>
+                    <span class="panel-card__subtitle">@_tipoVehiculosTotal registro(s)</span>
+                </div>
+            </div>
+
+            @if (_tipoVehiculosLoading)
+            {
+                <div class="usuarios-empty">Cargando tipos de vehículo...</div>
+            }
+            else if (_tipoVehiculos.Count == 0)
+            {
+                <div class="usuarios-empty">Sin tipos de vehículo para mostrar.</div>
+            }
+            else
+            {
+                var visibleColumns = GetVisibleTipoVehiculoColumns();
+                var groups = BuildTipoVehiculoGroups();
+                <div class="usuarios-table-wrap">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                @foreach (var column in visibleColumns)
+                                {
+                                    <th>@column.Label</th>
+                                }
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        @foreach (var group in groups)
+                        {
+                            <tbody>
+                                @if (group.ShowHeader)
+                                {
+                                    <tr class="usuarios-group-row">
+                                        <td colspan="@(visibleColumns.Count + 1)">@group.Label</td>
+                                    </tr>
+                                }
+                                @foreach (var row in group.Items)
+                                {
+                                    <tr class="data-grid__row">
+                                        @foreach (var col in visibleColumns)
+                                        {
+                                            <td>@RenderTipoVehiculoColumn(row, col.Key)</td>
+                                        }
+                                        <td>
+                                            <div class="actions">
+                                                <button type="button" class="btn btn--ghost btn--sm" @onclick="() => EditarTipoVehiculoAsync(row.Codigo)">Editar</button>
+                                                <button type="button" class="btn btn--ghost btn--sm" @onclick="() => BajaTipoVehiculoAsync(row.Codigo)">Baja</button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        }
+                    </table>
+                </div>
+            }
+        </section>
+
+        @if (_showTipoVehiculoViewSettings)
+        {
+            <div class="cuentas-modal-backdrop carga-viajes-modal-backdrop" @onclick="CancelarConfiguracionTipoVehiculoVista">
+                <section class="cuentas-modal carga-viajes-modal carga-viajes-modal--wide" role="dialog" aria-modal="true" aria-labelledby="carga-viajes-tipo-vehiculo-view-settings-title" @onclick:stopPropagation="true" @onkeydown="HandleModalKeyDownAsync" tabindex="0">
+                    <header class="cuentas-modal__header">
+                        <div>
+                            <span class="cuentas-modal__eyebrow">Tipo vehículo</span>
+                            <h3 id="carga-viajes-tipo-vehiculo-view-settings-title">Configuración de vista</h3>
+                        </div>
+                        <button type="button" class="cuentas-modal__close" @onclick="CancelarConfiguracionTipoVehiculoVista" aria-label="Cerrar">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                    </header>
+
+                    <div class="cuentas-modal__body">
+                        <div class="usuarios-view-settings">
+                            <div class="field">
+                                <label>Agrupar por</label>
+                                <select @bind="_tipoVehiculoDraftAgruparPor">
+                                    <option value="@CargaViajeTipoVehiculoViewGroupKeys.None">Sin agrupar</option>
+                                    @if (_tipoVehiculosHasActivo)
+                                    {
+                                        <option value="@CargaViajeTipoVehiculoViewGroupKeys.Activo">Activo / Inactivo</option>
+                                    }
+                                </select>
+                            </div>
+
+                            <div class="usuarios-view-settings__list">
+                                @foreach (var column in _tipoVehiculoViewSettingsDraft.Columnas.OrderBy(c => c.Order))
+                                {
+                                    <div class="usuarios-view-settings__item">
+                                        <label class="checkbox">
+                                            <input type="checkbox" checked="@column.Visible" @onchange="args => ToggleTipoVehiculoViewColumn(column.Key, args)" />
+                                            <span>@column.Label</span>
+                                        </label>
+                                        <div class="actions">
+                                            <button type="button" class="btn btn--ghost btn--sm" @onclick="() => MoveTipoVehiculoViewColumn(column.Key, -1)">↑</button>
+                                            <button type="button" class="btn btn--ghost btn--sm" @onclick="() => MoveTipoVehiculoViewColumn(column.Key, 1)">↓</button>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    </div>
+
+                    <footer class="cuentas-modal__actions">
+                        <button type="button" class="btn btn--primary" @onclick="GuardarConfiguracionTipoVehiculoVistaAsync">Guardar vista</button>
+                        <button type="button" class="btn btn--ghost" @onclick="CancelarConfiguracionTipoVehiculoVista">Cancelar</button>
+                    </footer>
+                </section>
+            </div>
+        }
+
+        @if (_showTipoVehiculoEditor)
+        {
+            <div class="cuentas-modal-backdrop carga-viajes-modal-backdrop" @onclick="CerrarTipoVehiculoEditorAsync">
+                <section class="cuentas-modal carga-viajes-modal carga-viajes-modal--compact" role="dialog" aria-modal="true" aria-labelledby="carga-viajes-tipo-vehiculo-title" @onclick:stopPropagation="true" @onkeydown="HandleModalKeyDownAsync" tabindex="0">
+                    <header class="cuentas-modal__header">
+                        <div>
+                            <span class="cuentas-modal__eyebrow">Tipo vehículo</span>
+                            <h3 id="carga-viajes-tipo-vehiculo-title">@(_isNewTipoVehiculo ? "Nuevo tipo de vehículo" : $"Editar tipo de vehículo {_tipoVehiculoForm.Codigo}")</h3>
+                        </div>
+                        <button type="button" class="cuentas-modal__close" @onclick="CerrarTipoVehiculoEditorAsync" aria-label="Cerrar">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                    </header>
+                    <div class="cuentas-modal__body">
+                        <div class="carga-viajes-form-grid">
+                            <div class="field"><label>Código</label><input type="text" @bind="_tipoVehiculoForm.Codigo" disabled="@(!_isNewTipoVehiculo)" /></div>
+                            <div class="field field--wide"><label>Descripción</label><input type="text" @bind="_tipoVehiculoForm.Descripcion" /></div>
+                            @if (_tipoVehiculosHasActivo)
+                            {
+                                <div class="field field--wide">
+                                    <label>Activo</label>
+                                    <label class="carga-viajes-switch">
+                                        <input type="checkbox" @bind="_tipoVehiculoForm.Activo" />
+                                        <span class="carga-viajes-switch__track">
+                                            <span class="carga-viajes-switch__thumb"></span>
+                                        </span>
+                                        <span>Activo</span>
+                                    </label>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                    <footer class="cuentas-modal__actions">
+                        <button type="button" class="btn btn--primary" @onclick="GuardarTipoVehiculoAsync">Guardar tipo de vehículo</button>
+                        <button type="button" class="btn btn--ghost" @onclick="CerrarTipoVehiculoEditorAsync">Cerrar</button>
+                    </footer>
+                </section>
+            </div>
         }
     }
     else if (_activeSection == SectionConfiguracion)
@@ -487,8 +755,7 @@
         <section class="panel-card">
             <div class="panel-card__header">
                 <div>
-                    <h3 class="panel-card__title">Configurar Carga de Viaje</h3>
-                    <p class="panel-card__subtitle">Parámetros funcionales del módulo guardados en TA_CONFIGURACION.</p>
+                    <h3 class="panel-card__title">Configuración</h3>
                 </div>
                 <div class="actions">
                     <button type="button" class="btn btn--primary" @onclick="AbrirConfiguracionModuloAsync">Editar configuración</button>
@@ -499,95 +766,123 @@
                 <article class="panel-card carga-viajes-config-summary__item">
                     <span class="panel-card__tag">SUCURSAL</span>
                     <h3 class="panel-card__title">@_config.Sucursal</h3>
-                    <p class="panel-card__subtitle">Usada para numeración de comprobantes.</p>
                 </article>
                 <article class="panel-card carga-viajes-config-summary__item">
                     <span class="panel-card__tag">LETRA</span>
                     <h3 class="panel-card__title">@_config.Letra</h3>
-                    <p class="panel-card__subtitle">Sufijo del IDCOMPROBANTE.</p>
                 </article>
                 <article class="panel-card carga-viajes-config-summary__item">
                     <span class="panel-card__tag">ADICIONALES</span>
                     <h3 class="panel-card__title">5 configurables</h3>
-                    <p class="panel-card__subtitle">Nombres y porcentajes por defecto.</p>
                 </article>
             </div>
         </section>
     }
-    else if (_activeSection == SectionNuevo)
+
+    @if (_showViajeEditor)
     {
-        <section class="panel-card carga-viajes-drawer carga-viajes-drawer--wide carga-viajes-drawer--static">
-            <div class="panel-card__header">
-                <div>
-                    <h3 class="panel-card__title">Nuevo viaje</h3>
-                    <p class="panel-card__subtitle">Carga del viaje con autocompletado para cliente, chofer, destino y tipo de vehículo.</p>
-                </div>
-                <div class="actions">
-                    <button type="button" class="btn btn--ghost" @onclick="() => NavigateSectionAsync(SectionViajes)">Volver al listado</button>
-                </div>
-            </div>
+        <div class="cuentas-modal-backdrop carga-viajes-modal-backdrop" @onclick="CerrarViajeEditorAsync">
+            <section class="cuentas-modal carga-viajes-modal carga-viajes-modal--wide" role="dialog" aria-modal="true" aria-labelledby="carga-viajes-viaje-title" @onclick:stopPropagation="true" @onkeydown="HandleModalKeyDownAsync" tabindex="0">
+                <header class="cuentas-modal__header">
+                    <div>
+                        <span class="cuentas-modal__eyebrow">Viajes</span>
+                        <h3 id="carga-viajes-viaje-title">@(_isNewViaje ? "Nuevo viaje" : _viajeReadOnly ? "Detalle de viaje" : $"Editar viaje {_viajeForm.IdComprobante}")</h3>
+                    </div>
+                    <button type="button" class="cuentas-modal__close" @onclick="CerrarViajeEditorAsync" aria-label="Cerrar">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
+                </header>
 
-            <div class="filters-grid filters-grid--wide">
-                <div class="field"><label>Fecha</label><InputDate @bind-Value="_viajeForm.Fecha" /></div>
-                <div class="field"><label>Cliente</label><LookupAutocomplete Label="" Placeholder="Buscar cliente..." Text="@_viajeClienteTexto" TextChanged="OnViajeClienteTextoChangedAsync" SelectedChanged="OnViajeClienteSelectedAsync" SearchFunc="CargaViajesSvc.SearchClientesAsync" /></div>
-                <div class="field"><label>Chofer</label><LookupAutocomplete Label="" Placeholder="Buscar chofer..." Text="@_viajeChoferTexto" TextChanged="OnViajeChoferTextoChangedAsync" SelectedChanged="OnViajeChoferSelectedAsync" SearchFunc="CargaViajesSvc.SearchChoferLookupAsync" /></div>
-                <div class="field"><label>Destino</label><LookupAutocomplete Label="" Placeholder="Buscar destino..." Text="@_viajeDestinoTexto" TextChanged="OnViajeDestinoTextoChangedAsync" SelectedChanged="OnViajeDestinoSelectedAsync" SearchFunc="CargaViajesSvc.SearchDestinosLookupAsync" /></div>
-                <div class="field"><label>Tipo vehículo</label><LookupAutocomplete Label="" Placeholder="Buscar tipo..." Text="@_viajeTipoVehiculoTexto" TextChanged="OnViajeTipoVehiculoTextoChangedAsync" SelectedChanged="OnViajeTipoVehiculoSelectedAsync" SearchFunc="CargaViajesSvc.SearchTipoVehiculosLookupAsync" /></div>
-                <div class="field"><label>Lista</label><input type="text" value="@_viajeForm.Lista" readonly /></div>
-                <div class="field"><label>Importe cliente</label><input type="number" step="0.01" @bind="_viajeForm.ImporteCliente" /></div>
-                <div class="field"><label>Importe fletero</label><input type="number" step="0.01" @bind="_viajeForm.ImporteFletero" /></div>
-                <div class="field"><label>Peaje</label><input type="number" step="0.01" @bind="_viajeForm.Peaje" /></div>
-                <div class="field"><label>Cantidad viajes</label><input type="number" step="1" @bind="_viajeForm.CantidadViajes" /></div>
-                <div class="field"><label>@GetAdicionalLabel(0)</label><input type="number" step="0.01" @bind="_viajeForm.PorcentajeAdic" /></div>
-                <div class="field"><label>@GetAdicionalLabel(1)</label><input type="number" step="0.01" @bind="_viajeForm.PorcentajeAdic1" /></div>
-                <div class="field"><label>@GetAdicionalLabel(2)</label><input type="number" step="0.01" @bind="_viajeForm.PorcentajeAdic2" /></div>
-                <div class="field"><label>@GetAdicionalLabel(3)</label><input type="number" step="0.01" @bind="_viajeForm.PorcentajeAdic3" /></div>
-                <div class="field"><label>@GetAdicionalLabel(4)</label><input type="number" step="0.01" @bind="_viajeForm.PorcentajeAdic4" /></div>
-                <div class="field field--wide"><label>Observaciones</label><textarea rows="4" @bind="_viajeForm.Observaciones"></textarea></div>
-            </div>
+                <div class="cuentas-modal__body">
+                    @if (_viajeEditorFeedback is not null)
+                    {
+                        <div class="editor-msg carga-viajes-modal-feedback @GetFeedbackClass(_viajeEditorFeedback)">
+                            <div class="carga-viajes-feedback__content">
+                                @if (ShouldShowFeedbackTitle(_viajeEditorFeedback))
+                                {
+                                    <strong class="carga-viajes-feedback__title">@_viajeEditorFeedback.Title</strong>
+                                }
+                                <div class="carga-viajes-feedback__line">
+                                    <span>@FormatFeedbackMessage(_viajeEditorFeedback)</span>
+                                </div>
+                                @if (_viajeEditorFeedback.HasSuggestion)
+                                {
+                                    <small class="carga-viajes-feedback__suggestion">@_viajeEditorFeedback.Suggestion</small>
+                                }
+                            </div>
+                        </div>
+                    }
 
-            <div class="actions">
-                <button type="button" class="btn btn--primary" @onclick="GuardarViajeAsync">Guardar viaje</button>
-                <button type="button" class="btn btn--ghost" @onclick="LimpiarViajeFormAsync">Limpiar</button>
-            </div>
-        </section>
+                    <div class="carga-viajes-form-grid">
+                        <div class="field"><label>Fecha</label><InputDate @bind-Value="_viajeForm.Fecha" disabled="@_viajeReadOnly" /></div>
+                        <div class="field"><label>Cliente</label><LookupAutocomplete Label="" Placeholder="Buscar cliente..." Text="@_viajeClienteTexto" TextChanged="OnViajeClienteTextoChangedAsync" SelectedChanged="OnViajeClienteSelectedAsync" SearchFunc="CargaViajesSvc.SearchClientesAsync" Disabled="@_viajeReadOnly" /></div>
+                        <div class="field"><label>Chofer</label><LookupAutocomplete Label="" Placeholder="Buscar chofer..." Text="@_viajeChoferTexto" TextChanged="OnViajeChoferTextoChangedAsync" SelectedChanged="OnViajeChoferSelectedAsync" SearchFunc="CargaViajesSvc.SearchChoferLookupAsync" Disabled="@_viajeReadOnly" /></div>
+                        <div class="field"><label>Destino</label><LookupAutocomplete Label="" Placeholder="Buscar destino..." Text="@_viajeDestinoTexto" TextChanged="OnViajeDestinoTextoChangedAsync" SelectedChanged="OnViajeDestinoSelectedAsync" SearchFunc="CargaViajesSvc.SearchDestinosLookupAsync" Disabled="@_viajeReadOnly" /></div>
+                        <div class="field"><label>Tipo vehículo</label><LookupAutocomplete Label="" Placeholder="Buscar tipo..." Text="@_viajeTipoVehiculoTexto" TextChanged="OnViajeTipoVehiculoTextoChangedAsync" SelectedChanged="OnViajeTipoVehiculoSelectedAsync" SearchFunc="CargaViajesSvc.SearchTipoVehiculosLookupAsync" Disabled="@_viajeReadOnly" /></div>
+                        <div class="field"><label>Lista</label><input type="text" value="@_viajeForm.ListaDisplay" readonly /></div>
+                        <div class="field"><label>Importe cliente</label><input type="number" step="0.01" @bind="_viajeForm.ImporteCliente" disabled="@_viajeReadOnly" /></div>
+                        <div class="field"><label>Importe fletero</label><input type="number" step="0.01" @bind="_viajeForm.ImporteFletero" disabled="@_viajeReadOnly" /></div>
+                        <div class="field"><label>Peaje</label><input type="number" step="0.01" @bind="_viajeForm.Peaje" disabled="@_viajeReadOnly" /></div>
+                        <div class="field"><label>Cantidad viajes</label><input type="number" step="1" @bind="_viajeForm.CantidadViajes" disabled="@_viajeReadOnly" /></div>
+                        <div class="field"><label>@GetAdicionalLabel(0)</label><input type="number" step="0.01" @bind="_viajeForm.PorcentajeAdic" disabled="@_viajeReadOnly" /></div>
+                        <div class="field"><label>@GetAdicionalLabel(1)</label><input type="number" step="0.01" @bind="_viajeForm.PorcentajeAdic1" disabled="@_viajeReadOnly" /></div>
+                        <div class="field"><label>@GetAdicionalLabel(2)</label><input type="number" step="0.01" @bind="_viajeForm.PorcentajeAdic2" disabled="@_viajeReadOnly" /></div>
+                        <div class="field"><label>@GetAdicionalLabel(3)</label><input type="number" step="0.01" @bind="_viajeForm.PorcentajeAdic3" disabled="@_viajeReadOnly" /></div>
+                        <div class="field"><label>@GetAdicionalLabel(4)</label><input type="number" step="0.01" @bind="_viajeForm.PorcentajeAdic4" disabled="@_viajeReadOnly" /></div>
+                        <div class="field field--wide"><label>Observaciones</label><textarea rows="4" @bind="_viajeForm.Observaciones" disabled="@_viajeReadOnly"></textarea></div>
+                    </div>
+                </div>
+
+                <footer class="cuentas-modal__actions">
+                    @if (!_viajeReadOnly)
+                    {
+                        <button type="button" class="btn btn--primary" @onclick="GuardarViajeAsync" disabled="@_savingViaje">Guardar viaje</button>
+                        <button type="button" class="btn btn--ghost" @onclick="LimpiarViajeFormAsync">Limpiar</button>
+                    }
+                    <button type="button" class="btn btn--ghost" @onclick="CerrarViajeEditorAsync">Cerrar</button>
+                </footer>
+            </section>
+        </div>
     }
-
     @if (_showConfigEditor)
     {
-        <div class="drawer-overlay" @onclick="CerrarConfiguracionModulo"></div>
-        <section class="drawer carga-viajes-drawer carga-viajes-drawer--wide carga-viajes-drawer--config" @onclick:stopPropagation="true">
-            <div class="panel-card__header">
-                <div>
-                    <h3 class="panel-card__title">Configurar Carga de Viaje</h3>
-                    <p class="panel-card__subtitle">Parámetros funcionales, numeración y adicionales visibles.</p>
+        <div class="cuentas-modal-backdrop carga-viajes-modal-backdrop" @onclick="CerrarConfiguracionModulo">
+            <section class="cuentas-modal carga-viajes-modal carga-viajes-modal--config" role="dialog" aria-modal="true" aria-labelledby="carga-viajes-config-title" @onclick:stopPropagation="true" @onkeydown="HandleModalKeyDownAsync" tabindex="0">
+                <header class="cuentas-modal__header">
+                    <div>
+                        <span class="cuentas-modal__eyebrow">Configuración</span>
+                        <h3 id="carga-viajes-config-title">Configurar Carga de Viaje</h3>
+                    </div>
+                    <button type="button" class="cuentas-modal__close" @onclick="CerrarConfiguracionModulo" aria-label="Cerrar">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
+                </header>
+
+                <div class="cuentas-modal__body">
+                    <div class="carga-viajes-config-grid">
+                        <div class="field"><label>Sucursal</label><input type="text" maxlength="4" @bind="_config.Sucursal" /></div>
+                        <div class="field"><label>Letra</label><input type="text" maxlength="1" @bind="_config.Letra" /></div>
+                        @for (var i = 0; i < _config.NombresAdicionales.Count; i++)
+                        {
+                            var index = i;
+                            <div class="field">
+                                <label>Nombre adicional @(index + 1)</label>
+                                <input type="text" @bind="_config.NombresAdicionales[index]" />
+                            </div>
+                            <div class="field">
+                                <label>Porcentaje adicional @(index + 1)</label>
+                                <input type="number" step="0.01" @bind="_config.PorcentajesAdicionales[index]" />
+                            </div>
+                        }
+                    </div>
                 </div>
-                <div class="actions">
+
+                <footer class="cuentas-modal__actions">
+                    <button type="button" class="btn btn--primary" @onclick="GuardarConfiguracionModuloAsync">Guardar configuración</button>
                     <button type="button" class="btn btn--ghost" @onclick="CerrarConfiguracionModulo">Cerrar</button>
-                </div>
-            </div>
-
-            <div class="carga-viajes-config-grid">
-                <div class="field"><label>Sucursal</label><input type="text" maxlength="4" @bind="_config.Sucursal" /></div>
-                <div class="field"><label>Letra</label><input type="text" maxlength="1" @bind="_config.Letra" /></div>
-                @for (var i = 0; i < _config.NombresAdicionales.Count; i++)
-                {
-                    var index = i;
-                    <div class="field">
-                        <label>Nombre adicional @(index + 1)</label>
-                        <input type="text" @bind="_config.NombresAdicionales[index]" />
-                    </div>
-                    <div class="field">
-                        <label>Porcentaje adicional @(index + 1)</label>
-                        <input type="number" step="0.01" @bind="_config.PorcentajesAdicionales[index]" />
-                    </div>
-                }
-            </div>
-
-            <div class="actions">
-                <button type="button" class="btn btn--primary" @onclick="GuardarConfiguracionModuloAsync">Guardar configuración</button>
-            </div>
-        </section>
+                </footer>
+            </section>
+        </div>
     }
 </div>
 
@@ -599,11 +894,12 @@
     private const string SectionNuevo = "nuevo";
     private const string SectionChoferes = "choferes";
     private const string SectionDestinos = "destinos";
+    private const string SectionTipoVehiculo = "tipo-vehiculo";
     private const string SectionConfiguracion = "configuracion";
 
     private string _activeSection = SectionViajes;
-    private bool _loading;
     private AppUiMessage? _feedback;
+    private AppUiMessage? _viajeEditorFeedback;
 
     private CargaViajesLookupDto _lookups = new();
     private CargaViajesFilters _viajesFilters = new();
@@ -622,14 +918,39 @@
     private CargaViajesConfigDto _config = new();
     private bool _configLoaded;
     private bool _showConfigEditor;
+    private bool _savingViaje;
+    private bool _showViajesAdvancedFilters;
+    private bool _showTarifasAdvancedFilters;
+    private bool _showChoferesAdvancedFilters;
+    private bool _showDestinosAdvancedFilters;
+    private bool _showTipoVehiculosAdvancedFilters;
+    private bool _tipoVehiculoSchemaLoaded;
+    private bool _tipoVehiculosHasActivo;
+    private bool _showTipoVehiculoEditor;
+    private bool _isNewTipoVehiculo = true;
+    private bool _tipoVehiculoViewSettingsLoaded;
+    private bool _showTipoVehiculoViewSettings;
+    private CargaViajeTipoVehiculoViewSettingsDto _tipoVehiculoViewSettings = new();
+    private CargaViajeTipoVehiculoViewSettingsDto _tipoVehiculoViewSettingsDraft = new();
+    private string _tipoVehiculoDraftAgruparPor = CargaViajeTipoVehiculoViewGroupKeys.None;
+    private string _tipoVehiculoViewSettingsUserName = string.Empty;
 
     private string _clienteFiltroTexto = string.Empty;
     private string _choferFiltroTexto = string.Empty;
     private string _destinoFiltroTexto = string.Empty;
+    private string _tipoVehiculoFiltroTexto = string.Empty;
     private string _viajeClienteTexto = string.Empty;
     private string _viajeChoferTexto = string.Empty;
     private string _viajeDestinoTexto = string.Empty;
     private string _viajeTipoVehiculoTexto = string.Empty;
+    private string _choferesTipoVehiculoTexto = string.Empty;
+    private CargaViajesFilters _choferesFilters = new() { PageNumber = 1, PageSize = 50 };
+    private CargaViajesFilters _destinosFilters = new() { PageNumber = 1, PageSize = 50 };
+    private CargaViajesFilters _tipoVehiculosFilters = new() { PageNumber = 1, PageSize = 50 };
+    private readonly List<CargaViajeTipoVehiculoGridItemDto> _tipoVehiculos = [];
+    private int _tipoVehiculosTotal;
+    private bool _tipoVehiculosLoading = true;
+    private CargaViajeTipoVehiculoSaveRequest _tipoVehiculoForm = new();
 
     private readonly List<CargaViajeTarifaGridItemDto> _tarifas = [];
     private int _tarifasTotal;
@@ -641,7 +962,6 @@
 
     private readonly List<CargaViajeChoferGridItemDto> _choferes = [];
     private int _choferesTotal;
-    private string _choferesFiltroTexto = string.Empty;
     private bool _choferesLoading = true;
     private bool _showChoferEditor;
     private bool _isNewChofer = true;
@@ -649,7 +969,6 @@
 
     private readonly List<CargaViajeDestinoGridItemDto> _destinos = [];
     private int _destinosTotal;
-    private string _destinosFiltroTexto = string.Empty;
     private bool _destinosLoading = true;
     private bool _showDestinoEditor;
     private bool _isNewDestino = true;
@@ -657,6 +976,7 @@
 
     private bool _showViajeEditor;
     private bool _isNewViaje = true;
+    private bool _viajeReadOnly;
     private CargaViajeSaveRequest _viajeForm = new()
     {
         Fecha = DateTime.Today,
@@ -669,12 +989,28 @@
         _activeSection = NormalizeSection(Vista);
         await EnsureLookupsLoadedAsync();
         await EnsureViewSettingsLoadedAsync();
+        await EnsureTipoVehiculoSchemaLoadedAsync();
         await EnsureConfigLoadedAsync();
         await LoadActiveSectionAsync();
     }
 
     private async Task LoadActiveSectionAsync()
     {
+        _showViewSettings = false;
+        _showConfigEditor = false;
+        _showTarifaEditor = false;
+        _showChoferEditor = false;
+        _showDestinoEditor = false;
+        _showTipoVehiculoEditor = false;
+        _showTipoVehiculoViewSettings = false;
+        _showViajeEditor = false;
+        _viajeReadOnly = false;
+        _showViajesAdvancedFilters = false;
+        _showTarifasAdvancedFilters = false;
+        _showChoferesAdvancedFilters = false;
+        _showDestinosAdvancedFilters = false;
+        _showTipoVehiculosAdvancedFilters = false;
+
         switch (_activeSection)
         {
             case SectionTarifas:
@@ -686,11 +1022,20 @@
             case SectionDestinos:
                 await RecargarDestinosAsync();
                 break;
+            case SectionTipoVehiculo:
+                await EnsureTipoVehiculoViewSettingsLoadedAsync();
+                await RecargarTipoVehiculosAsync();
+                break;
             case SectionConfiguracion:
                 await Task.CompletedTask;
                 break;
             case SectionNuevo:
                 _showViajeEditor = true;
+                _isNewViaje = true;
+                _viajeReadOnly = false;
+                _viajeSeleccionado = null;
+                _viajeForm = BuildDefaultViajeForm(_config);
+                _viajeClienteTexto = _viajeChoferTexto = _viajeDestinoTexto = _viajeTipoVehiculoTexto = string.Empty;
                 await Task.CompletedTask;
                 break;
             default:
@@ -714,13 +1059,15 @@
     private async Task EnsureViewSettingsLoadedAsync()
     {
         var currentUser = AppUserSession.GetCurrentUserName(string.Empty).Trim();
-        if (!string.IsNullOrWhiteSpace(_viewSettingsUserName) && string.Equals(_viewSettingsUserName, currentUser, StringComparison.OrdinalIgnoreCase))
+        if (_viewSettingsLoaded && string.Equals(_viewSettingsUserName, currentUser, StringComparison.OrdinalIgnoreCase))
             return;
 
         if (string.IsNullOrWhiteSpace(currentUser))
         {
             _viewSettings = BuildDefaultViewSettings();
             _viewSettingsDraft = BuildDefaultViewSettings();
+            _viewSettingsUserName = currentUser;
+            _viewSettingsLoaded = true;
             return;
         }
 
@@ -730,6 +1077,39 @@
         _draftAgruparPor = _viewSettings.AgruparPor;
         _viewSettingsUserName = currentUser;
         _viewSettingsLoaded = true;
+    }
+
+    private async Task EnsureTipoVehiculoSchemaLoadedAsync()
+    {
+        if (_tipoVehiculoSchemaLoaded)
+            return;
+
+        var result = await UiOps.RunAsync(() => CargaViajesSvc.TipoVehiculoTieneActivoAsync(), "No se pudo verificar la estructura de tipos de vehículo.");
+        _tipoVehiculosHasActivo = result.Success && result.Value;
+        _tipoVehiculoSchemaLoaded = true;
+    }
+
+    private async Task EnsureTipoVehiculoViewSettingsLoadedAsync()
+    {
+        var currentUser = AppUserSession.GetCurrentUserName(string.Empty).Trim();
+        if (_tipoVehiculoViewSettingsLoaded && string.Equals(_tipoVehiculoViewSettingsUserName, currentUser, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        if (string.IsNullOrWhiteSpace(currentUser))
+        {
+            _tipoVehiculoViewSettings = BuildDefaultTipoVehiculoViewSettings();
+            _tipoVehiculoViewSettingsDraft = BuildDefaultTipoVehiculoViewSettings();
+            _tipoVehiculoViewSettingsUserName = currentUser;
+            _tipoVehiculoViewSettingsLoaded = true;
+            return;
+        }
+
+        var result = await UiOps.RunAsync(() => CargaViajesSvc.GetTipoVehiculoViewSettingsAsync(currentUser), "No se pudo cargar la configuración de vista de tipo de vehículo.");
+        _tipoVehiculoViewSettings = result.Success && result.Value is not null ? result.Value : BuildDefaultTipoVehiculoViewSettings();
+        _tipoVehiculoViewSettingsDraft = CloneTipoVehiculoViewSettings(_tipoVehiculoViewSettings);
+        _tipoVehiculoDraftAgruparPor = _tipoVehiculoViewSettings.AgruparPor;
+        _tipoVehiculoViewSettingsUserName = currentUser;
+        _tipoVehiculoViewSettingsLoaded = true;
     }
 
     private async Task EnsureConfigLoadedAsync()
@@ -777,8 +1157,11 @@
         _clienteFiltroTexto = string.Empty;
         _choferFiltroTexto = string.Empty;
         _destinoFiltroTexto = string.Empty;
+        _showViajesAdvancedFilters = false;
         await RecargarViajesAsync();
     }
+
+    private void ToggleViajesAdvancedFilters() => _showViajesAdvancedFilters = !_showViajesAdvancedFilters;
 
     private async Task CambiarPaginaViajesAsync(int page)
     {
@@ -801,42 +1184,97 @@
         _viajeSeleccionado = result.Value;
         _showViajeEditor = true;
         _isNewViaje = false;
+        _viajeReadOnly = true;
         MapViajeToForm(result.Value);
-        await NavigateSectionAsync(SectionNuevo);
     }
 
-    private async Task EditarViajeAsync(int id) => await VerViajeAsync(id);
-
-    private async Task AbrirNuevoViajeAsync()
+    private async Task EditarViajeAsync(int id)
     {
-        _showViajeEditor = true;
-        _isNewViaje = true;
-        _viajeSeleccionado = null;
-        _viajeForm = BuildDefaultViajeForm(_config);
-        _viajeClienteTexto = _viajeChoferTexto = _viajeDestinoTexto = _viajeTipoVehiculoTexto = string.Empty;
-        await NavigateSectionAsync(SectionNuevo);
-    }
-
-    private async Task GuardarViajeAsync()
-    {
-        var result = await UiOps.RunAsync(async () =>
-        {
-            var id = await CargaViajesSvc.SaveViajeAsync(_viajeForm);
-            return id;
-        }, "No se pudo guardar el viaje.");
-
-        if (!result.Success)
+        var result = await UiOps.RunAsync(() => CargaViajesSvc.GetViajeByIdAsync(id), "No se pudo cargar el viaje.");
+        if (!result.Success || result.Value is null)
         {
             _feedback = result.Feedback;
             return;
         }
 
-        _feedback = AppUiMessage.Success("Viaje guardado", "El viaje quedó registrado correctamente.");
-        await RecargarViajesAsync();
-        await NavigateSectionAsync(SectionViajes);
+        _viajeSeleccionado = result.Value;
+        _showViajeEditor = true;
+        _isNewViaje = false;
+        _viajeReadOnly = false;
+        MapViajeToForm(result.Value);
+    }
+
+    private async Task AbrirNuevoViajeAsync()
+    {
+        _showViajeEditor = true;
+        _isNewViaje = true;
+        _viajeReadOnly = false;
+        _viajeSeleccionado = null;
+        _viajeForm = BuildDefaultViajeForm(_config);
+        _viajeClienteTexto = _viajeChoferTexto = _viajeDestinoTexto = _viajeTipoVehiculoTexto = string.Empty;
+        _viajeForm.ClienteDisplay = string.Empty;
+        _viajeForm.ChoferDisplay = string.Empty;
+        _viajeForm.DestinoDisplay = string.Empty;
+        _viajeForm.TipoVehiculoDisplay = string.Empty;
+        _viajeForm.ListaDisplay = string.Empty;
+        _viajeEditorFeedback = null;
+        await Task.CompletedTask;
+    }
+
+    private async Task GuardarViajeAsync()
+    {
+        if (_savingViaje)
+            return;
+
+        _savingViaje = true;
+        _viajeEditorFeedback = new AppUiMessage
+        {
+            Severity = AppUiFeedbackSeverity.Info,
+            Title = "Guardando viaje",
+            Message = "Se está registrando el viaje. No cierres el modal."
+        };
+
+        try
+        {
+            var result = await UiOps.RunAsync(async () =>
+            {
+                var id = await CargaViajesSvc.SaveViajeAsync(_viajeForm);
+                return id;
+            }, "No se pudo guardar el viaje.");
+
+            if (!result.Success)
+            {
+                _viajeEditorFeedback = result.Feedback;
+                _feedback = result.Feedback;
+                return;
+            }
+
+            var savedId = result.Value is int id ? id.ToString() : string.Empty;
+            _viajeEditorFeedback = AppUiMessage.Success("Viaje guardado correctamente", string.IsNullOrWhiteSpace(savedId) ? "El viaje quedó registrado correctamente." : $"El viaje #{savedId} quedó registrado correctamente.");
+            _feedback = _viajeEditorFeedback;
+            _showViajeEditor = false;
+            _viajeReadOnly = false;
+            _viajeEditorFeedback = null;
+            _viajesFilters.PageNumber = 1;
+            await RecargarViajesAsync();
+            await NavigateSectionAsync(SectionViajes);
+        }
+        finally
+        {
+            _savingViaje = false;
+        }
     }
 
     private async Task LimpiarViajeFormAsync() => await AbrirNuevoViajeAsync();
+
+    private async Task CerrarViajeEditorAsync()
+    {
+        _showViajeEditor = false;
+        _viajeReadOnly = false;
+        _viajeEditorFeedback = null;
+        if (_activeSection == SectionNuevo)
+            await NavigateSectionAsync(SectionViajes);
+    }
 
     private async Task AnularViajeAsync(int id)
     {
@@ -886,6 +1324,25 @@
         return string.IsNullOrWhiteSpace(name) ? $"Adicional {index + 1}" : name.Trim();
     }
 
+    private static string FormatLookupDisplay(string code, string description)
+    {
+        var cleanCode = (code ?? string.Empty).Trim();
+        var cleanDescription = (description ?? string.Empty).Trim();
+
+        if (string.IsNullOrWhiteSpace(cleanCode))
+            return cleanDescription;
+
+        return string.IsNullOrWhiteSpace(cleanDescription)
+            ? cleanCode
+            : $"{cleanCode} - {cleanDescription}";
+    }
+
+    private static string FormatListaDisplay(string lista, string descripcion)
+    {
+        var display = FormatLookupDisplay(lista, descripcion);
+        return string.IsNullOrWhiteSpace(display) ? string.Empty : display;
+    }
+
     private void MapViajeToForm(CargaViajesDetailDto detail)
     {
         _viajeForm = new CargaViajeSaveRequest
@@ -899,6 +1356,11 @@
             Destino = detail.DestinoCodigo,
             TipoVehiculo = detail.TipoVehiculoCodigo,
             Lista = detail.Lista,
+            ClienteDisplay = FormatLookupDisplay(detail.ClienteCodigo, detail.ClienteNombre),
+            ChoferDisplay = FormatLookupDisplay(detail.ChoferCodigo, detail.ChoferNombre),
+            DestinoDisplay = FormatLookupDisplay(detail.DestinoCodigo, detail.DestinoDescripcion),
+            TipoVehiculoDisplay = FormatLookupDisplay(detail.TipoVehiculoCodigo, detail.TipoVehiculoDescripcion),
+            ListaDisplay = FormatListaDisplay(detail.Lista, detail.ListaDescripcion),
             ImporteCliente = detail.TotalImporte,
             ImporteFletero = detail.TotalFlete,
             Peaje = detail.Peaje,
@@ -912,10 +1374,10 @@
             Estado = detail.Estado
         };
 
-        _viajeClienteTexto = detail.ClienteCodigo;
-        _viajeChoferTexto = detail.ChoferCodigo;
-        _viajeDestinoTexto = detail.DestinoCodigo;
-        _viajeTipoVehiculoTexto = detail.TipoVehiculoCodigo;
+        _viajeClienteTexto = _viajeForm.ClienteDisplay;
+        _viajeChoferTexto = _viajeForm.ChoferDisplay;
+        _viajeDestinoTexto = _viajeForm.DestinoDisplay;
+        _viajeTipoVehiculoTexto = _viajeForm.TipoVehiculoDisplay;
     }
 
     private async Task OnClienteFiltroTextoChangedAsync(string text) { _clienteFiltroTexto = text; _viajesFilters.Cliente = text; await Task.CompletedTask; }
@@ -924,24 +1386,82 @@
     private async Task OnClienteSeleccionadoAsync(CargaViajeLookupOptionDto item) { _viajesFilters.Cliente = item.Codigo; _clienteFiltroTexto = item.Codigo; await Task.CompletedTask; }
     private async Task OnChoferSeleccionadoAsync(CargaViajeLookupOptionDto item) { _viajesFilters.Chofer = item.Codigo; _choferFiltroTexto = item.Codigo; await Task.CompletedTask; }
     private async Task OnDestinoSeleccionadoAsync(CargaViajeLookupOptionDto item) { _viajesFilters.Destino = item.Codigo; _destinoFiltroTexto = item.Codigo; await Task.CompletedTask; }
+    private async Task OnChoferTipoVehiculoChangedAsync(string text) { _choferesFilters.TipoVehiculo = text; _choferesTipoVehiculoTexto = text; await Task.CompletedTask; }
+    private async Task OnChoferTipoVehiculoSelectedAsync(CargaViajeLookupOptionDto item) { _choferesFilters.TipoVehiculo = item.Codigo; _choferesTipoVehiculoTexto = item.Codigo; await Task.CompletedTask; }
 
-    private async Task OnViajeClienteTextoChangedAsync(string text) { _viajeClienteTexto = text; _viajeForm.Cliente = text; await Task.CompletedTask; }
-    private async Task OnViajeChoferTextoChangedAsync(string text) { _viajeChoferTexto = text; _viajeForm.Chofer = text; await Task.CompletedTask; }
-    private async Task OnViajeDestinoTextoChangedAsync(string text) { _viajeDestinoTexto = text; _viajeForm.Destino = text; await Task.CompletedTask; }
-    private async Task OnViajeTipoVehiculoTextoChangedAsync(string text) { _viajeTipoVehiculoTexto = text; _viajeForm.TipoVehiculo = text; await Task.CompletedTask; }
+    private async Task OnViajeClienteTextoChangedAsync(string text)
+    {
+        _viajeClienteTexto = text;
+        _viajeForm.Cliente = string.Empty;
+        _viajeForm.ClienteDisplay = text;
+        _viajeForm.Lista = string.Empty;
+        _viajeForm.ListaDisplay = string.Empty;
+        await Task.CompletedTask;
+    }
+
+    private async Task OnViajeChoferTextoChangedAsync(string text)
+    {
+        _viajeChoferTexto = text;
+        _viajeForm.Chofer = string.Empty;
+        _viajeForm.ChoferDisplay = text;
+        await Task.CompletedTask;
+    }
+
+    private async Task OnViajeDestinoTextoChangedAsync(string text)
+    {
+        _viajeDestinoTexto = text;
+        _viajeForm.Destino = string.Empty;
+        _viajeForm.DestinoDisplay = text;
+        await Task.CompletedTask;
+    }
+
+    private async Task OnViajeTipoVehiculoTextoChangedAsync(string text)
+    {
+        _viajeTipoVehiculoTexto = text;
+        _viajeForm.TipoVehiculo = string.Empty;
+        _viajeForm.TipoVehiculoDisplay = text;
+        await Task.CompletedTask;
+    }
 
     private async Task OnViajeClienteSelectedAsync(CargaViajeLookupOptionDto item)
     {
         _viajeForm.Cliente = item.Codigo;
         _viajeForm.Lista = item.Lista;
-        _viajeClienteTexto = item.Codigo;
+        _viajeForm.ClienteDisplay = FormatLookupDisplay(item.Codigo, item.Titulo);
+        _viajeForm.ListaDisplay = string.IsNullOrWhiteSpace(item.Subtitulo) ? item.Lista : item.Subtitulo;
+        _viajeClienteTexto = _viajeForm.ClienteDisplay;
         await ActualizarTarifaClienteAsync();
         await Task.CompletedTask;
     }
 
-    private async Task OnViajeChoferSelectedAsync(CargaViajeLookupOptionDto item) { _viajeForm.Chofer = item.Codigo; _viajeChoferTexto = item.Codigo; await ActualizarTarifaFleteroAsync(); await Task.CompletedTask; }
-    private async Task OnViajeDestinoSelectedAsync(CargaViajeLookupOptionDto item) { _viajeForm.Destino = item.Codigo; _viajeDestinoTexto = item.Codigo; await ActualizarTarifaClienteAsync(); await ActualizarTarifaFleteroAsync(); await Task.CompletedTask; }
-    private async Task OnViajeTipoVehiculoSelectedAsync(CargaViajeLookupOptionDto item) { _viajeForm.TipoVehiculo = item.Codigo; _viajeTipoVehiculoTexto = item.Codigo; await ActualizarTarifaClienteAsync(); await ActualizarTarifaFleteroAsync(); await Task.CompletedTask; }
+    private async Task OnViajeChoferSelectedAsync(CargaViajeLookupOptionDto item)
+    {
+        _viajeForm.Chofer = item.Codigo;
+        _viajeForm.ChoferDisplay = FormatLookupDisplay(item.Codigo, item.Titulo);
+        _viajeChoferTexto = _viajeForm.ChoferDisplay;
+        await ActualizarTarifaFleteroAsync();
+        await Task.CompletedTask;
+    }
+
+    private async Task OnViajeDestinoSelectedAsync(CargaViajeLookupOptionDto item)
+    {
+        _viajeForm.Destino = item.Codigo;
+        _viajeForm.DestinoDisplay = FormatLookupDisplay(item.Codigo, item.Titulo);
+        _viajeDestinoTexto = _viajeForm.DestinoDisplay;
+        await ActualizarTarifaClienteAsync();
+        await ActualizarTarifaFleteroAsync();
+        await Task.CompletedTask;
+    }
+
+    private async Task OnViajeTipoVehiculoSelectedAsync(CargaViajeLookupOptionDto item)
+    {
+        _viajeForm.TipoVehiculo = item.Codigo;
+        _viajeForm.TipoVehiculoDisplay = FormatLookupDisplay(item.Codigo, item.Titulo);
+        _viajeTipoVehiculoTexto = _viajeForm.TipoVehiculoDisplay;
+        await ActualizarTarifaClienteAsync();
+        await ActualizarTarifaFleteroAsync();
+        await Task.CompletedTask;
+    }
 
     private async Task ActualizarTarifaClienteAsync()
     {
@@ -983,8 +1503,11 @@
     private async Task LimpiarFiltrosTarifasAsync()
     {
         _tarifasFilters = new CargaViajesFilters { PageNumber = 1, PageSize = 50 };
+        _showTarifasAdvancedFilters = false;
         await RecargarTarifasAsync();
     }
+
+    private void ToggleTarifasAdvancedFilters() => _showTarifasAdvancedFilters = !_showTarifasAdvancedFilters;
 
     private async Task OnTarifaClienteFiltroChangedAsync(string text) { _tarifasFilters.Cliente = text; await Task.CompletedTask; }
     private async Task OnTarifaClienteFiltroSelectedAsync(CargaViajeLookupOptionDto item) { _tarifasFilters.Cliente = item.Codigo; await Task.CompletedTask; }
@@ -1064,13 +1587,25 @@
 
     private Task CerrarTarifaEditorAsync() { _showTarifaEditor = false; return Task.CompletedTask; }
 
-    private async Task AplicarFiltrosChoferesAsync() { await RecargarChoferesAsync(); }
-    private async Task LimpiarFiltrosChoferesAsync() { _choferesFiltroTexto = string.Empty; await RecargarChoferesAsync(); }
+    private async Task AplicarFiltrosChoferesAsync()
+    {
+        _choferesFilters.PageNumber = 1;
+        await RecargarChoferesAsync();
+    }
+    private async Task LimpiarFiltrosChoferesAsync()
+    {
+        _choferesFilters = new CargaViajesFilters { PageNumber = 1, PageSize = 50 };
+        _choferesTipoVehiculoTexto = string.Empty;
+        _showChoferesAdvancedFilters = false;
+        await RecargarChoferesAsync();
+    }
+
+    private void ToggleChoferesAdvancedFilters() => _showChoferesAdvancedFilters = !_showChoferesAdvancedFilters;
     private async Task RecargarChoferesAsync()
     {
         _choferesLoading = true;
-        var filtros = new CargaViajesFilters { Cliente = _choferesFiltroTexto, PageSize = 50, PageNumber = 1 };
-        var result = await UiOps.RunAsync(() => CargaViajesSvc.SearchChoferesAsync(filtros), "No se pudieron cargar los choferes.");
+        _choferesFilters.PageSize = 50;
+        var result = await UiOps.RunAsync(() => CargaViajesSvc.SearchChoferesAsync(_choferesFilters), "No se pudieron cargar los choferes.");
         if (result.Success && result.Value is not null)
         {
             _choferes.Clear();
@@ -1107,13 +1642,24 @@
     }
     private Task CerrarChoferEditorAsync() { _showChoferEditor = false; return Task.CompletedTask; }
 
-    private async Task AplicarFiltrosDestinosAsync() { await RecargarDestinosAsync(); }
-    private async Task LimpiarFiltrosDestinosAsync() { _destinosFiltroTexto = string.Empty; await RecargarDestinosAsync(); }
+    private async Task AplicarFiltrosDestinosAsync()
+    {
+        _destinosFilters.PageNumber = 1;
+        await RecargarDestinosAsync();
+    }
+    private async Task LimpiarFiltrosDestinosAsync()
+    {
+        _destinosFilters = new CargaViajesFilters { PageNumber = 1, PageSize = 50 };
+        _showDestinosAdvancedFilters = false;
+        await RecargarDestinosAsync();
+    }
+
+    private void ToggleDestinosAdvancedFilters() => _showDestinosAdvancedFilters = !_showDestinosAdvancedFilters;
     private async Task RecargarDestinosAsync()
     {
         _destinosLoading = true;
-        var filtros = new CargaViajesFilters { Cliente = _destinosFiltroTexto, PageSize = 50, PageNumber = 1 };
-        var result = await UiOps.RunAsync(() => CargaViajesSvc.SearchDestinosAsync(filtros), "No se pudieron cargar los destinos.");
+        _destinosFilters.PageSize = 50;
+        var result = await UiOps.RunAsync(() => CargaViajesSvc.SearchDestinosAsync(_destinosFilters), "No se pudieron cargar los destinos.");
         if (result.Success && result.Value is not null)
         {
             _destinos.Clear();
@@ -1149,10 +1695,170 @@
     }
     private Task CerrarDestinoEditorAsync() { _showDestinoEditor = false; return Task.CompletedTask; }
 
+    private async Task AplicarFiltrosTipoVehiculosAsync()
+    {
+        _tipoVehiculosFilters.PageNumber = 1;
+        await RecargarTipoVehiculosAsync();
+    }
+
+    private async Task LimpiarFiltrosTipoVehiculosAsync()
+    {
+        _tipoVehiculosFilters = new CargaViajesFilters { PageNumber = 1, PageSize = 50 };
+        _tipoVehiculoFiltroTexto = string.Empty;
+        _showTipoVehiculosAdvancedFilters = false;
+        await RecargarTipoVehiculosAsync();
+    }
+
+    private void ToggleTipoVehiculosAdvancedFilters() => _showTipoVehiculosAdvancedFilters = !_showTipoVehiculosAdvancedFilters;
+
+    private async Task RecargarTipoVehiculosAsync()
+    {
+        _tipoVehiculosLoading = true;
+        _tipoVehiculosFilters.PageSize = 50;
+        var result = await UiOps.RunAsync(() => CargaViajesSvc.SearchTipoVehiculosAsync(_tipoVehiculosFilters), "No se pudieron cargar los tipos de vehículo.");
+        if (result.Success && result.Value is not null)
+        {
+            _tipoVehiculos.Clear();
+            _tipoVehiculos.AddRange(result.Value.Items);
+            _tipoVehiculosTotal = result.Value.Total;
+        }
+        else _feedback = result.Feedback;
+        _tipoVehiculosLoading = false;
+    }
+
+    private async Task NuevoTipoVehiculoAsync()
+    {
+        _tipoVehiculoForm = new CargaViajeTipoVehiculoSaveRequest { Activo = true };
+        _showTipoVehiculoEditor = true;
+        _isNewTipoVehiculo = true;
+        await Task.CompletedTask;
+    }
+
+    private async Task EditarTipoVehiculoAsync(string codigo)
+    {
+        var result = await UiOps.RunAsync(() => CargaViajesSvc.GetTipoVehiculoByIdAsync(codigo), "No se pudo cargar el tipo de vehículo.");
+        if (result.Success && result.Value is not null)
+        {
+            _tipoVehiculoForm = new CargaViajeTipoVehiculoSaveRequest
+            {
+                Codigo = result.Value.Codigo,
+                Descripcion = result.Value.Descripcion,
+                Activo = result.Value.Activo ?? true
+            };
+            _showTipoVehiculoEditor = true;
+            _isNewTipoVehiculo = false;
+        }
+    }
+
+    private async Task GuardarTipoVehiculoAsync()
+    {
+        var request = new CargaViajeTipoVehiculoSaveRequest
+        {
+            Codigo = _tipoVehiculoForm.Codigo,
+            Descripcion = _tipoVehiculoForm.Descripcion,
+            Activo = _tipoVehiculosHasActivo && _tipoVehiculoForm.Activo
+        };
+
+        var result = await UiOps.RunAsync(async () => { await CargaViajesSvc.SaveTipoVehiculoAsync(request); return true; }, "No se pudo guardar el tipo de vehículo.");
+        if (!result.Success) { _feedback = result.Feedback; return; }
+
+        _showTipoVehiculoEditor = false;
+        await RecargarTipoVehiculosAsync();
+    }
+
+    private async Task BajaTipoVehiculoAsync(string codigo)
+    {
+        var result = await UiOps.RunAsync(() => CargaViajesSvc.BajaTipoVehiculoAsync(codigo), "No se pudo dar de baja el tipo de vehículo.");
+        if (!result.Success) { _feedback = result.Feedback; return; }
+        await RecargarTipoVehiculosAsync();
+    }
+
+    private Task CerrarTipoVehiculoEditorAsync()
+    {
+        _showTipoVehiculoEditor = false;
+        return Task.CompletedTask;
+    }
+
+    private void AbrirConfiguracionTipoVehiculoVista()
+    {
+        _showTipoVehiculoViewSettings = true;
+        _tipoVehiculoDraftAgruparPor = _tipoVehiculoViewSettings.AgruparPor;
+        _tipoVehiculoViewSettingsDraft = CloneTipoVehiculoViewSettings(_tipoVehiculoViewSettings);
+    }
+
+    private void CancelarConfiguracionTipoVehiculoVista() => _showTipoVehiculoViewSettings = false;
+
+    private void ToggleTipoVehiculoViewColumn(string key, ChangeEventArgs args)
+    {
+        var column = _tipoVehiculoViewSettingsDraft.Columnas.FirstOrDefault(c => string.Equals(c.Key, key, StringComparison.OrdinalIgnoreCase));
+        if (column is null)
+            return;
+
+        column.Visible = args.Value is bool flag && flag;
+        if (!_tipoVehiculoViewSettingsDraft.Columnas.Any(c => c.Visible))
+            column.Visible = true;
+    }
+
+    private void MoveTipoVehiculoViewColumn(string key, int offset)
+    {
+        var ordered = _tipoVehiculoViewSettingsDraft.Columnas.OrderBy(c => c.Order).ToList();
+        var index = ordered.FindIndex(c => string.Equals(c.Key, key, StringComparison.OrdinalIgnoreCase));
+        if (index < 0)
+            return;
+
+        var target = index + offset;
+        if (target < 0 || target >= ordered.Count)
+            return;
+
+        (ordered[index], ordered[target]) = (ordered[target], ordered[index]);
+        for (var i = 0; i < ordered.Count; i++) ordered[i].Order = i;
+        _tipoVehiculoViewSettingsDraft.Columnas = ordered;
+    }
+
+    private async Task GuardarConfiguracionTipoVehiculoVistaAsync()
+    {
+        var currentUser = AppUserSession.GetCurrentUserName(string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(currentUser))
+        {
+            _feedback = new AppUiMessage { Severity = AppUiFeedbackSeverity.Warning, Title = "Sesión requerida", Message = "Necesitás iniciar sesión para guardar la configuración de vista." };
+            return;
+        }
+
+        var settings = new CargaViajeTipoVehiculoViewSettingsDto { AgruparPor = _tipoVehiculoDraftAgruparPor, Columnas = CloneTipoVehiculoViewSettings(_tipoVehiculoViewSettingsDraft).Columnas };
+        var result = await UiOps.RunAsync(async () => { await CargaViajesSvc.SaveTipoVehiculoViewSettingsAsync(currentUser, settings); return true; }, "No se pudo guardar la configuración de vista del tipo de vehículo.");
+        if (!result.Success) { _feedback = result.Feedback; return; }
+
+        _tipoVehiculoViewSettings = settings;
+        _showTipoVehiculoViewSettings = false;
+    }
+
     private async Task HandleViajesFilterKeyDownAsync(KeyboardEventArgs args)
     {
         if (string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase))
             await AplicarFiltrosViajesAsync();
+    }
+
+    private async Task HandleModalKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (!string.Equals(args.Key, "Escape", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        if (_showViewSettings)
+            CancelarConfiguracionVista();
+        else if (_showConfigEditor)
+            CerrarConfiguracionModulo();
+        else if (_showTarifaEditor)
+            await CerrarTarifaEditorAsync();
+        else if (_showChoferEditor)
+            await CerrarChoferEditorAsync();
+        else if (_showDestinoEditor)
+            await CerrarDestinoEditorAsync();
+        else if (_showTipoVehiculoViewSettings)
+            CancelarConfiguracionTipoVehiculoVista();
+        else if (_showTipoVehiculoEditor)
+            await CerrarTipoVehiculoEditorAsync();
+        else if (_showViajeEditor)
+            await CerrarViajeEditorAsync();
     }
 
     private async Task NavigateSectionAsync(string section)
@@ -1322,6 +2028,53 @@
             Columnas = source.Columnas.OrderBy(c => c.Order).Select(c => new CargaViajesViewColumnDto { Key = c.Key, Label = c.Label, Visible = c.Visible, Order = c.Order }).ToList()
         };
 
+    private static CargaViajeTipoVehiculoViewSettingsDto BuildDefaultTipoVehiculoViewSettings()
+        => new()
+        {
+            AgruparPor = CargaViajeTipoVehiculoViewGroupKeys.None,
+            Columnas =
+            [
+                new() { Key = CargaViajeTipoVehiculoViewColumnKeys.Codigo, Label = "Código", Visible = true, Order = 0 },
+                new() { Key = CargaViajeTipoVehiculoViewColumnKeys.Descripcion, Label = "Descripción", Visible = true, Order = 1 },
+                new() { Key = CargaViajeTipoVehiculoViewColumnKeys.Activo, Label = "Activo", Visible = true, Order = 2 }
+            ]
+        };
+
+    private static CargaViajeTipoVehiculoViewSettingsDto CloneTipoVehiculoViewSettings(CargaViajeTipoVehiculoViewSettingsDto source)
+        => new()
+        {
+            AgruparPor = source.AgruparPor,
+            Columnas = source.Columnas.OrderBy(c => c.Order).Select(c => new CargaViajeTipoVehiculoViewColumnDto { Key = c.Key, Label = c.Label, Visible = c.Visible, Order = c.Order }).ToList()
+        };
+
+    private IReadOnlyList<CargaViajeTipoVehiculoViewColumnDto> GetVisibleTipoVehiculoColumns()
+        => _tipoVehiculoViewSettingsDraft.Columnas
+            .Where(c => c.Visible && (_tipoVehiculosHasActivo || !string.Equals(c.Key, CargaViajeTipoVehiculoViewColumnKeys.Activo, StringComparison.OrdinalIgnoreCase)))
+            .OrderBy(c => c.Order)
+            .ToList();
+
+    private IReadOnlyList<CargaViajeTipoVehiculoGroupDto> BuildTipoVehiculoGroups()
+    {
+        if (_tipoVehiculoViewSettings.AgruparPor == CargaViajeTipoVehiculoViewGroupKeys.Activo && _tipoVehiculosHasActivo)
+        {
+            return _tipoVehiculos
+                .GroupBy(x => x.Activo == true ? "Activo" : "Inactivo")
+                .Select(g => new CargaViajeTipoVehiculoGroupDto { Label = g.Key, ShowHeader = true, Items = g.ToList() })
+                .ToList();
+        }
+
+        return [new CargaViajeTipoVehiculoGroupDto { Label = string.Empty, ShowHeader = false, Items = _tipoVehiculos.ToList() }];
+    }
+
+    private static string RenderTipoVehiculoColumn(CargaViajeTipoVehiculoGridItemDto row, string key)
+        => key switch
+        {
+            CargaViajeTipoVehiculoViewColumnKeys.Codigo => row.Codigo,
+            CargaViajeTipoVehiculoViewColumnKeys.Descripcion => row.Descripcion,
+            CargaViajeTipoVehiculoViewColumnKeys.Activo => !row.Activo.HasValue ? string.Empty : (row.Activo.Value ? "Sí" : "No"),
+            _ => string.Empty
+        };
+
     private static string GetFeedbackClass(AppUiMessage message)
         => message.Severity switch
         {
@@ -1330,6 +2083,33 @@
             AppUiFeedbackSeverity.Warning => "editor-msg--warning",
             _ => "editor-msg--error"
         };
+
+    private static bool ShouldShowFeedbackTitle(AppUiMessage message)
+    {
+        if (string.IsNullOrWhiteSpace(message.Title))
+            return false;
+
+        if (string.IsNullOrWhiteSpace(message.Message))
+            return true;
+
+        return !string.Equals(message.Title.Trim(), message.Message.Trim(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string FormatFeedbackMessage(AppUiMessage message)
+    {
+        var baseMessage = (message.Message ?? string.Empty).Trim();
+        if (message.HasCode)
+        {
+            if (!string.IsNullOrWhiteSpace(baseMessage) && !baseMessage.EndsWith(".", StringComparison.Ordinal) && !baseMessage.EndsWith("!", StringComparison.Ordinal) && !baseMessage.EndsWith("?", StringComparison.Ordinal))
+                baseMessage += ".";
+
+            return string.IsNullOrWhiteSpace(baseMessage)
+                ? $"Código: {message.Code}"
+                : $"{baseMessage} Código: {message.Code}";
+        }
+
+        return baseMessage;
+    }
 
     private void SetFeedback(AppUiMessage? message) => _feedback = message;
 
@@ -1342,9 +2122,17 @@
             SectionNuevo => SectionNuevo,
             SectionChoferes => SectionChoferes,
             SectionDestinos => SectionDestinos,
+            SectionTipoVehiculo => SectionTipoVehiculo,
             SectionConfiguracion => SectionConfiguracion,
             _ => SectionViajes
         };
+
+    private sealed class CargaViajeTipoVehiculoGroupDto
+    {
+        public string Label { get; init; } = string.Empty;
+        public bool ShowHeader { get; init; }
+        public List<CargaViajeTipoVehiculoGridItemDto> Items { get; init; } = [];
+    }
 
     private void OnViajeClienteTextoChanged(string text) { _viajeClienteTexto = text; _viajeForm.Cliente = text; }
     private void OnViajeChoferTextoChanged(string text) { _viajeChoferTexto = text; _viajeForm.Chofer = text; }
@@ -1365,3 +2153,8 @@
         _activeSection = NormalizeSection(Vista);
     }
 }
+
+
+
+
+

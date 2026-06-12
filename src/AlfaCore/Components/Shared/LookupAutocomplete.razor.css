@@ -1,55 +1,149 @@
 .lookup-autocomplete {
     position: relative;
-    display: grid;
-    gap: 0.35rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    min-width: 0;
+    overflow: visible;
 }
 
 .lookup-autocomplete__input {
     width: 100%;
+    min-width: 0;
+    min-height: 2.15rem;
+    padding: 0.42rem 0.7rem;
+    border: 1px solid rgba(148, 163, 184, 0.32);
+    border-radius: 0.75rem;
+    background: linear-gradient(180deg, rgba(15, 23, 42, 0.98), rgba(15, 23, 42, 0.94));
+    color: var(--text-primary, #f8fafc);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    outline: none;
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    transition: border-color .16s ease, box-shadow .16s ease, background-color .16s ease, transform .16s ease;
+}
+
+.lookup-autocomplete__input::placeholder {
+    color: rgba(226, 232, 240, 0.58);
+}
+
+.lookup-autocomplete__input:focus,
+.lookup-autocomplete__input:focus-visible {
+    border-color: rgba(56, 189, 248, 0.82);
+    box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.lookup-autocomplete__input:disabled {
+    opacity: .7;
+    cursor: not-allowed;
 }
 
 .lookup-autocomplete__dropdown {
     position: absolute;
-    top: calc(100% + 0.3rem);
+    top: 100%;
     left: 0;
     right: 0;
-    z-index: 520;
-    max-height: 18rem;
+    z-index: 7000;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.25rem;
+    margin-top: 0.3rem;
+    max-height: 260px;
     overflow-y: auto;
-    border: 1px solid rgba(255,255,255,0.08);
+    overflow-x: hidden;
+    border: 1px solid rgba(148, 163, 184, 0.22);
     border-radius: 0.9rem;
-    background: var(--surface-2, rgba(20, 24, 33, 0.98));
-    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.32);
+    background: linear-gradient(180deg, rgba(15, 23, 42, 0.98), rgba(17, 24, 39, 0.98));
+    color: #f8fafc;
+    box-shadow: 0 24px 52px rgba(0, 0, 0, 0.42), 0 0 0 1px rgba(15, 23, 42, 0.34);
     padding: 0.35rem;
+    backdrop-filter: blur(10px);
 }
 
 .lookup-autocomplete__item {
     width: 100%;
-    display: grid;
-    gap: 0.15rem;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
     text-align: left;
-    padding: 0.65rem 0.75rem;
+    padding: 0.55rem 0.7rem;
     border: 0;
     border-radius: 0.7rem;
     background: transparent;
-    color: inherit;
+    color: #f8fafc;
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+    transition: background-color .14s ease, color .14s ease, transform .14s ease, box-shadow .14s ease;
+}
+
+.lookup-autocomplete__item > * {
+    display: block;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .lookup-autocomplete__item:hover,
 .lookup-autocomplete__item--active {
-    background: rgba(255,255,255,0.08);
+    background: rgba(56, 189, 248, 0.18);
+    color: #ffffff;
+    box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.14);
 }
 
 .lookup-autocomplete__title {
     font-weight: 600;
+    font-size: 0.92rem;
 }
 
 .lookup-autocomplete__subtitle,
 .lookup-autocomplete__empty {
     font-size: 0.85rem;
-    opacity: 0.75;
+    color: rgba(226, 232, 240, 0.72);
 }
 
 .lookup-autocomplete__empty {
     padding: 0.5rem 0.75rem;
+}
+
+:root[data-theme="light"] .lookup-autocomplete__input,
+.light-theme .lookup-autocomplete__input {
+    background: #ffffff;
+    color: #0f172a;
+}
+
+:root[data-theme="light"] .lookup-autocomplete__input::placeholder,
+.light-theme .lookup-autocomplete__input::placeholder {
+    color: rgba(100, 116, 139, 0.75);
+}
+
+:root[data-theme="light"] .lookup-autocomplete__dropdown,
+.light-theme .lookup-autocomplete__dropdown {
+    background: #ffffff;
+    color: #0f172a;
+}
+
+:root[data-theme="light"] .lookup-autocomplete__item,
+.light-theme .lookup-autocomplete__item {
+    color: #0f172a;
+}
+
+:root[data-theme="light"] .lookup-autocomplete__item:hover,
+:root[data-theme="light"] .lookup-autocomplete__item--active,
+.light-theme .lookup-autocomplete__item:hover,
+.light-theme .lookup-autocomplete__item--active {
+    background: rgba(14, 165, 233, 0.12);
+}
+
+:root[data-theme="light"] .lookup-autocomplete__subtitle,
+:root[data-theme="light"] .lookup-autocomplete__empty,
+.light-theme .lookup-autocomplete__subtitle,
+.light-theme .lookup-autocomplete__empty {
+    color: rgba(51, 65, 85, 0.78);
 }

@@ -33,17 +33,16 @@
                 {
                     var index = i;
                     var option = _items[index];
-                    <button type="button"
-                            class="@GetItemClass(index)"
-                            role="option"
-                            aria-selected="@(index == _highlightIndex)"
-                            @onmousedown="() => SelectAsync(option)">
-                        <span class="lookup-autocomplete__title">@option.Codigo - @option.Titulo</span>
+                    <div class="@GetItemClass(index)"
+                         role="option"
+                         aria-selected="@(index == _highlightIndex)"
+                         @onmousedown="() => SelectAsync(option)">
+                        <span class="lookup-autocomplete__title">@BuildDisplayText(option)</span>
                         @if (!string.IsNullOrWhiteSpace(option.Subtitulo))
                         {
                             <span class="lookup-autocomplete__subtitle">@option.Subtitulo</span>
                         }
-                    </button>
+                    </div>
                 }
             }
         </div>
@@ -130,7 +129,7 @@
 
     private async Task SelectAsync(CargaViajeLookupOptionDto option)
     {
-        Text = option.Codigo;
+        Text = BuildDisplayText(option);
         await TextChanged.InvokeAsync(Text);
         await SelectedChanged.InvokeAsync(option);
         CloseDropdown();
@@ -152,4 +151,16 @@
         => index == _highlightIndex
             ? "lookup-autocomplete__item lookup-autocomplete__item--active"
             : "lookup-autocomplete__item";
+
+    private static string BuildDisplayText(CargaViajeLookupOptionDto option)
+    {
+        var code = (option?.Codigo ?? string.Empty).Trim();
+        var title = (option?.Titulo ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(code))
+            return title;
+
+        return string.IsNullOrWhiteSpace(title)
+            ? code
+            : $"{code} - {title}";
+    }
 }
