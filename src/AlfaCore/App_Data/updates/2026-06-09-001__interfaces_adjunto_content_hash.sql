@@ -12,11 +12,12 @@ GO
 SET QUOTED_IDENTIFIER ON;
 GO
 
-IF NOT EXISTS (
-    SELECT 1 FROM sys.columns
-    WHERE object_id = OBJECT_ID(N'dbo.INT_COMPROBANTE_RECIBIDO_ADJUNTO')
-      AND name = N'ContentHash'
-)
+IF OBJECT_ID(N'dbo.INT_COMPROBANTE_RECIBIDO_ADJUNTO', N'U') IS NOT NULL
+   AND NOT EXISTS (
+       SELECT 1 FROM sys.columns
+       WHERE object_id = OBJECT_ID(N'dbo.INT_COMPROBANTE_RECIBIDO_ADJUNTO')
+         AND name = N'ContentHash'
+   )
 BEGIN
     ALTER TABLE dbo.INT_COMPROBANTE_RECIBIDO_ADJUNTO
         ADD ContentHash nvarchar(64) NULL;

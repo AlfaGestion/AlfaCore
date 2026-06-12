@@ -1303,11 +1303,13 @@ public sealed class GestionDashboardService(
                     for (var i = 0; i < 8; i++) c[i] = GetDecimal(rd, i);
             }
 
-            // Total IVA = suma por tipo de contribuyente (RI + MONO + CF).
-            // IVA_21, IVA_105, etc. son sub-detalles por alícuota para otros listados,
-            // no deben sumarse aquí porque representan el mismo IVA desde otro ángulo.
-            var totalV = v[4] + v[5] + v[6];
-            var totalC = c[4] + c[5] + c[6];
+            // EX. = registros donde ninguna columna de condición tiene IVA pero sí hay
+            // IVA por alícuota (IVA_21 + IVA_105 + IVA_27 + IVA_1735). El resumen por
+            // alícuota los muestra como "EX." — el total debe coincidir con ese resumen.
+            var exV = (v[0] + v[1] + v[2] + v[3]) - (v[4] + v[5] + v[6]);
+            var exC = (c[0] + c[1] + c[2] + c[3]) - (c[4] + c[5] + c[6]);
+            var totalV = v[4] + v[5] + v[6] + exV;
+            var totalC = c[4] + c[5] + c[6] + exC;
 
             var filas = new List<PosicionIvaFilaDto>
             {
@@ -1315,6 +1317,8 @@ public sealed class GestionDashboardService(
                 new() { Concepto = "IVA Monotributo",     Ventas = v[5], Compras = c[5] },
                 new() { Concepto = "IVA Cons. Final",     Ventas = v[6], Compras = c[6] },
             };
+            if (exV != 0 || exC != 0)
+                filas.Add(new() { Concepto = "EX. / Sin condición", Ventas = exV, Compras = exC });
 
             const string monthlyWhere = """
                 WHERE FECHA >= DATEADD(MONTH, -11, DATEADD(day, 1 - DAY(GETDATE()), CAST(GETDATE() AS date)))
@@ -1324,7 +1328,7 @@ public sealed class GestionDashboardService(
                 """;
             const string monthlySelect = """
                 SELECT CONVERT(char(7), FECHA, 126),
-                       ISNULL(SUM(IVA_RESP_INSC + IVA_MONOTRIBUTO + IVA_CONS_FINAL), 0)
+                       ISNULL(SUM(IVA_21 + IVA_105 + IVA_27 + IVA_1735), 0)
                 FROM dbo.
                 """;
 
