@@ -78,17 +78,13 @@
 
                     <div class="field field--full">
                         <label>Usuario del sistema</label>
-                        <input list="auth-users"
-                               type="text"
-                               placeholder="Seleccioná un usuario..."
-                               @bind="_selectedUser"
-                               @bind:event="oninput" />
-                        <datalist id="auth-users">
+                        <select @bind="_selectedUser" disabled="@(_loadingUsers || _loadingTree)">
+                            <option value="">— Seleccioná un usuario —</option>
                             @foreach (var item in _users)
                             {
                                 <option value="@item.Nombre">@item.Nombre</option>
                             }
-                        </datalist>
+                        </select>
                     </div>
 
                     <div class="auth-sidebar__actions">
@@ -148,20 +144,15 @@
                     </div>
 
                     <div class="actions">
-                        <button type="button" class="btn btn--primary btn--sm" @onclick="AplicarFiltrosAsync" disabled="@_loadingTree">
-                            <i class="bi bi-search"></i> Aplicar
-                        </button>
                         <button type="button" class="btn btn--ghost btn--sm" @onclick="LimpiarFiltrosAsync" disabled="@_loadingTree">
-                            <i class="bi bi-eraser"></i> Limpiar
+                            <i class="bi bi-eraser"></i> Limpiar filtros
                         </button>
                     </div>
 
                     <div class="auth-legend auth-legend--stacked">
-                        <span class="auth-badge auth-badge--web">Web</span>
-                        <span class="auth-badge auth-badge--desktop">Desktop</span>
-                        <span class="auth-badge auth-badge--shared">Desktop + Web</span>
-                        <span class="auth-badge auth-badge--group">Agrupador</span>
-                        <span class="auth-badge auth-badge--partial">Parcial</span>
+                        <span class="auth-badge auth-badge--shared">D+W = Desktop + Web</span>
+                        <span class="auth-badge auth-badge--desktop">Dsk = Solo Desktop</span>
+                        <span class="auth-badge auth-badge--partial">Parcial = selección parcial</span>
                     </div>
                 </div>
 

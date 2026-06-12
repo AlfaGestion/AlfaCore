@@ -1,3 +1,5 @@
+/* ── Layout ──────────────────────────────────────────────────────────── */
+
 .auth-page .auth-shell__layout {
     display: grid;
     grid-template-columns: minmax(18rem, 22rem) minmax(0, 1fr);
@@ -25,6 +27,8 @@
     justify-content: space-between;
     gap: 1rem;
 }
+
+/* ── Stats ───────────────────────────────────────────────────────────── */
 
 .auth-page .auth-shell__stats {
     gap: .75rem;
@@ -54,6 +58,8 @@
     font-size: 1.05rem;
 }
 
+/* ── Sidebar ─────────────────────────────────────────────────────────── */
+
 .auth-page .auth-sidebar {
     display: flex;
     flex-direction: column;
@@ -74,6 +80,14 @@
 .auth-page .auth-panel__title {
     margin: 0 0 .85rem;
     font-size: 1rem;
+}
+
+.auth-page .auth-panel__title-wrap {
+    margin-bottom: .85rem;
+}
+
+.auth-page .auth-panel__title-wrap .auth-panel__title {
+    margin: 0;
 }
 
 .auth-page .auth-panel--footer {
@@ -97,6 +111,28 @@
     font-weight: 600;
 }
 
+.auth-page .auth-legend {
+    flex-wrap: wrap;
+    gap: .45rem;
+}
+
+.auth-page .auth-legend--stacked {
+    margin-top: .2rem;
+}
+
+.auth-page .auth-code-select--numeric {
+    text-align: right;
+    font-family: var(--font-mono, "Consolas", monospace);
+}
+
+.auth-page .field small {
+    display: block;
+    margin-top: .25rem;
+    color: rgba(186, 208, 233, .65);
+}
+
+/* ── Toolbar + panel ─────────────────────────────────────────────────── */
+
 .auth-page .auth-tree-toolbar {
     gap: .65rem;
     flex-wrap: wrap;
@@ -105,9 +141,9 @@
 
 .auth-page .auth-tree-panel {
     min-height: 28rem;
-    max-height: 64vh;
+    max-height: 72vh;
     overflow: auto;
-    padding: .75rem;
+    padding: .5rem .65rem;
     border-radius: 1rem;
     border: 1px solid rgba(102, 171, 255, .12);
     background: rgba(5, 16, 31, .5);
@@ -125,171 +161,44 @@
     padding: 1.5rem;
 }
 
-.auth-page .auth-legend {
-    flex-wrap: wrap;
-    gap: .45rem;
-}
-
-.auth-page .auth-legend--stacked {
-    margin-top: .2rem;
-}
-
 .auth-page .auth-tree {
     display: flex;
     flex-direction: column;
-    gap: .22rem;
+    gap: 0;
 }
 
-.auth-page .auth-tree-node__row {
-    display: flex;
-    align-items: flex-start;
-    gap: .6rem;
-    padding: .42rem .5rem;
-    border-radius: .75rem;
-    border: 1px solid transparent;
-    background: transparent;
-}
-
-.auth-page .auth-tree-node__row:hover {
-    border-color: rgba(102, 171, 255, .12);
-    background: rgba(11, 24, 46, .5);
-}
-
-.auth-page .auth-tree-node__row.is-disabled {
-    opacity: .55;
-}
-
-.auth-page .auth-tree-node__expand {
-    width: 1.5rem;
-    height: 1.5rem;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: .45rem;
-    border: 1px solid rgba(102, 171, 255, .1);
-    background: transparent;
-    color: inherit;
-}
-
-.auth-page .auth-tree-node__spacer {
-    width: 1.5rem;
-    flex: 0 0 1.5rem;
-}
-
-.auth-page .auth-tree-node__check {
-    display: flex;
-    align-items: flex-start;
-    gap: .55rem;
-    min-width: 0;
-    flex: 1 1 auto;
-}
-
-.auth-page .auth-tree-node__content {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-}
-
-.auth-page .auth-tree-node__name {
-    font-weight: 600;
-    line-height: 1.2;
-}
-
-.auth-page .auth-tree-node__meta {
-    display: flex;
-    gap: .55rem;
-    flex-wrap: wrap;
-    margin-top: .12rem;
-    font-size: .76rem;
-    color: rgba(186, 208, 233, .72);
-}
-
-.auth-page .auth-tree-node__key {
-    font-family: var(--font-mono, "Consolas", monospace);
-    color: rgba(119, 225, 214, .9);
-}
-
-.auth-page .auth-tree-node__desc {
-    max-width: 46rem;
-}
-
-.auth-page .auth-tree-node__badges {
-    display: flex;
-    flex-wrap: wrap;
-    gap: .35rem;
-    align-self: center;
-}
-
-.auth-page .auth-tree-node__hint {
-    color: rgba(194, 211, 230, .75);
-    align-self: center;
-}
-
-.auth-page .auth-tree-node__children {
-    margin-left: 1.15rem;
-    padding-left: .75rem;
-    border-left: 1px dashed rgba(102, 171, 255, .15);
-    display: flex;
-    flex-direction: column;
-    gap: .18rem;
-}
+/* ── Badges (legend in sidebar) ──────────────────────────────────────── */
 
 .auth-page .auth-badge {
-    padding: .18rem .52rem;
+    padding: .1rem .38rem;
     border-radius: 999px;
-    font-size: .68rem;
-    letter-spacing: .05em;
+    font-size: .63rem;
+    letter-spacing: .04em;
     text-transform: uppercase;
     border: 1px solid transparent;
     white-space: nowrap;
+    line-height: 1.4;
 }
 
 .auth-page .auth-badge--desktop {
-    background: rgba(122, 136, 255, .12);
-    color: #cfd7ff;
-    border-color: rgba(122, 136, 255, .2);
-}
-
-.auth-page .auth-badge--web {
-    background: rgba(34, 211, 238, .12);
-    color: #baf4ff;
-    border-color: rgba(34, 211, 238, .22);
+    background: rgba(122, 136, 255, .1);
+    color: #b8c2ff;
+    border-color: rgba(122, 136, 255, .18);
 }
 
 .auth-page .auth-badge--shared {
-    background: rgba(34, 197, 94, .12);
-    color: #bdf9d3;
-    border-color: rgba(34, 197, 94, .24);
-}
-
-.auth-page .auth-badge--group {
-    background: rgba(148, 163, 184, .12);
-    color: #dbe6f3;
-    border-color: rgba(148, 163, 184, .24);
+    background: rgba(34, 197, 94, .1);
+    color: #a8f0c8;
+    border-color: rgba(34, 197, 94, .2);
 }
 
 .auth-page .auth-badge--partial {
-    background: rgba(245, 158, 11, .14);
-    color: #ffd58a;
-    border-color: rgba(245, 158, 11, .22);
+    background: rgba(245, 158, 11, .12);
+    color: #ffd080;
+    border-color: rgba(245, 158, 11, .2);
 }
 
-.auth-page .auth-badge--disabled {
-    background: rgba(244, 63, 94, .14);
-    color: #ffc0cc;
-    border-color: rgba(244, 63, 94, .22);
-}
-
-.auth-page .auth-code-select--numeric {
-    text-align: right;
-    font-family: var(--font-mono, "Consolas", monospace);
-}
-
-.auth-page .field small {
-    display: block;
-    margin-top: .25rem;
-    color: rgba(186, 208, 233, .65);
-}
+/* ── Responsive ──────────────────────────────────────────────────────── */
 
 @media (max-width: 1100px) {
     .auth-page .auth-shell__layout {
@@ -306,18 +215,5 @@
     .auth-page .auth-panel__title-wrap {
         flex-direction: column;
         align-items: stretch;
-    }
-
-    .auth-page .auth-tree-node__row {
-        flex-wrap: wrap;
-    }
-
-    .auth-page .auth-tree-node__badges {
-        width: 100%;
-        margin-left: 2.1rem;
-    }
-
-    .auth-page .auth-tree-node__hint {
-        margin-left: 2.1rem;
     }
 }
