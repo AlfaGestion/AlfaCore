@@ -9833,6 +9833,16 @@ html[data-theme="light"] .editor-builder__col-grid {
     display: grid;
     gap: .85rem;
     grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: start;
+}
+
+.carga-viajes-form-grid .field {
+    align-self: start;
+}
+
+.carga-viajes-form-grid .lookup-autocomplete {
+    width: 100%;
+    align-self: start;
 }
 
 .carga-viajes-form-grid .field--wide {

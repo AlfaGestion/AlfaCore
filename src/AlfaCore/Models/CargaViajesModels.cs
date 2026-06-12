@@ -119,6 +119,7 @@ public sealed class CargaViajesLookupDto
 
 public sealed class CargaViajeTarifaGridItemDto
 {
+    public int Id { get; set; }
     public string IdLista { get; set; } = string.Empty;
     public string Nombre { get; set; } = string.Empty;
     public decimal Importe { get; set; }

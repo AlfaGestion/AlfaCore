@@ -1,4 +1,4 @@
-using AlfaCore.Models;
+﻿using AlfaCore.Models;
 using Dapper;
 using Microsoft.Data.SqlClient;
 
@@ -11,7 +11,7 @@ public sealed class CargaViajesValidator(
     private string ConnectionString => sessionService.GetConnectionString().Length > 0
         ? sessionService.GetConnectionString()
         : configuration.GetConnectionString("AlfaGestion")
-          ?? throw new InvalidOperationException("No se configuró la cadena de conexión 'ConnectionStrings:AlfaGestion'.");
+          ?? throw new InvalidOperationException("No se configurÃ³ la cadena de conexiÃ³n 'ConnectionStrings:AlfaGestion'.");
 
     public async Task<ValidationResult> ValidateViajeForSaveAsync(CargaViajeSaveRequest request, CancellationToken ct = default)
     {
@@ -32,7 +32,7 @@ public sealed class CargaViajesValidator(
             result.Add("cantidad-viajes", "La cantidad de viajes debe ser mayor a cero.");
 
         if (!string.IsNullOrWhiteSpace(request.Estado) && !CargaViajeEstadoKeys.All.Contains(request.Estado.Trim().ToUpperInvariant()))
-            result.Add("estado", "El estado seleccionado no es válido.");
+            result.Add("estado", "El estado seleccionado no es vÃ¡lido.");
 
         if (!result.IsValid)
             return result;
@@ -81,7 +81,7 @@ public sealed class CargaViajesValidator(
 
         var result = new ValidationResult();
         if (string.IsNullOrWhiteSpace(request.Codigo))
-            result.Add("codigo", "El código es obligatorio.");
+            result.Add("codigo", "El cÃ³digo es obligatorio.");
         if (string.IsNullOrWhiteSpace(request.Nombre))
             result.Add("nombre", "El nombre es obligatorio.");
         return Task.FromResult(result);
@@ -93,22 +93,22 @@ public sealed class CargaViajesValidator(
 
         var result = new ValidationResult();
         if (string.IsNullOrWhiteSpace(request.Codigo))
-            result.Add("codigo", "El código es obligatorio.");
+            result.Add("codigo", "El cÃ³digo es obligatorio.");
         if (string.IsNullOrWhiteSpace(request.Descripcion))
-            result.Add("descripcion", "La descripción es obligatoria.");
+            result.Add("descripcion", "La descripciÃ³n es obligatoria.");
         return Task.FromResult(result);
     }
 
     private static void ValidateCommonCodeFields(string cliente, string chofer, string destino, string tipoVehiculo, ValidationResult result)
     {
         if (string.IsNullOrWhiteSpace(cliente))
-            result.Add("cliente", "Seleccioná un cliente.");
+            result.Add("cliente", "Debe seleccionar un cliente.");
         if (string.IsNullOrWhiteSpace(chofer))
-            result.Add("chofer", "Seleccioná un chofer.");
+            result.Add("chofer", "Debe seleccionar un chofer.");
         if (string.IsNullOrWhiteSpace(destino))
-            result.Add("destino", "Seleccioná un destino.");
+            result.Add("destino", "Debe seleccionar un destino.");
         if (string.IsNullOrWhiteSpace(tipoVehiculo))
-            result.Add("tipo-vehiculo", "Seleccioná un tipo de vehículo.");
+            result.Add("tipo-vehiculo", "Debe seleccionar un tipo de vehículo.");
     }
 
     private static void ValidateMoney(decimal value, string fieldKey, ValidationResult result)
@@ -182,3 +182,5 @@ public sealed class CargaViajesValidator(
         return candidates.First();
     }
 }
+
+

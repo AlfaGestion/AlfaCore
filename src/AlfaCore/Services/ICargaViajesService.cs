@@ -11,30 +11,36 @@ public interface ICargaViajesService
 
     Task<PagedResult<CargaViajeTarifaGridItemDto>> SearchTarifasAsync(CargaViajesFilters filters, CancellationToken ct = default);
     Task<CargaViajeTarifaGridItemDto?> GetTarifaByIdAsync(string idLista, CancellationToken ct = default);
+    Task<CargaViajeTarifaGridItemDto?> GetTarifaByIdAsync(int id, CancellationToken ct = default);
+    Task ActualizarTarifaImporteAsync(int id, string idLista, decimal importe, CancellationToken ct = default);
     Task<string> SaveTarifaAsync(CargaViajeTarifaSaveRequest request, CancellationToken ct = default);
     Task BajaTarifaAsync(string idLista, CancellationToken ct = default);
+    Task BajaTarifaAsync(int id, string idLista, CancellationToken ct = default);
 
     Task<PagedResult<CargaViajeChoferGridItemDto>> SearchChoferesAsync(CargaViajesFilters filters, CancellationToken ct = default);
     Task<CargaViajeChoferGridItemDto?> GetChoferByIdAsync(string codigo, CancellationToken ct = default);
     Task<string> SaveChoferAsync(CargaViajeChoferSaveRequest request, CancellationToken ct = default);
     Task BajaChoferAsync(string codigo, CancellationToken ct = default);
+    Task<string> GetNextCodigoChoferAsync(CancellationToken ct = default);
 
     Task<PagedResult<CargaViajeDestinoGridItemDto>> SearchDestinosAsync(CargaViajesFilters filters, CancellationToken ct = default);
     Task<CargaViajeDestinoGridItemDto?> GetDestinoByIdAsync(string codigo, CancellationToken ct = default);
     Task<string> SaveDestinoAsync(CargaViajeDestinoSaveRequest request, CancellationToken ct = default);
     Task BajaDestinoAsync(string codigo, CancellationToken ct = default);
+    Task<string> GetNextCodigoDestinoAsync(CancellationToken ct = default);
 
     Task<PagedResult<CargaViajeTipoVehiculoGridItemDto>> SearchTipoVehiculosAsync(CargaViajesFilters filters, CancellationToken ct = default);
     Task<CargaViajeTipoVehiculoGridItemDto?> GetTipoVehiculoByIdAsync(string codigo, CancellationToken ct = default);
     Task<string> SaveTipoVehiculoAsync(CargaViajeTipoVehiculoSaveRequest request, CancellationToken ct = default);
     Task BajaTipoVehiculoAsync(string codigo, CancellationToken ct = default);
+    Task<string> GetNextCodigoTipoVehiculoAsync(CancellationToken ct = default);
     Task<bool> TipoVehiculoTieneActivoAsync(CancellationToken ct = default);
 
     Task<IReadOnlyList<CargaViajeLookupOptionDto>> SearchClientesAsync(string texto, CancellationToken ct = default);
     Task<IReadOnlyList<CargaViajeLookupOptionDto>> SearchChoferLookupAsync(string texto, CancellationToken ct = default);
     Task<IReadOnlyList<CargaViajeLookupOptionDto>> SearchDestinosLookupAsync(string texto, CancellationToken ct = default);
     Task<IReadOnlyList<CargaViajeLookupOptionDto>> SearchTipoVehiculosLookupAsync(string texto, CancellationToken ct = default);
-    Task<decimal> GetTarifaClienteAsync(string cliente, string destino, string tipoVehiculo, CancellationToken ct = default);
+    Task<CargaViajeTarifaGridItemDto?> GetTarifaClienteAsync(string cliente, string destino, string tipoVehiculo, CancellationToken ct = default);
     Task<decimal> GetTarifaFleteroAsync(string chofer, string destino, string tipoVehiculo, CancellationToken ct = default);
     Task<CargaViajesLookupDto> GetLookupsAsync(CancellationToken ct = default);
 

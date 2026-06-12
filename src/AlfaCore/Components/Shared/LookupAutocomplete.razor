@@ -7,6 +7,7 @@
     }
 
     <input type="text"
+           @ref="_inputRef"
            class="lookup-autocomplete__input"
            value="@Text"
            @oninput="HandleInputAsync"
@@ -56,6 +57,7 @@
     [Parameter] public EventCallback<string> TextChanged { get; set; }
     [Parameter] public Func<string, CancellationToken, Task<IReadOnlyList<CargaViajeLookupOptionDto>>> SearchFunc { get; set; } = default!;
     [Parameter] public EventCallback<CargaViajeLookupOptionDto> SelectedChanged { get; set; }
+    [Parameter] public EventCallback OnEnterCommitted { get; set; }
     [Parameter] public bool Disabled { get; set; }
     [Parameter] public int MinimumCharacters { get; set; } = 1;
 
@@ -63,6 +65,13 @@
     private bool _loading;
     private int _highlightIndex = -1;
     private List<CargaViajeLookupOptionDto> _items = [];
+    private ElementReference _inputRef;
+
+    public async Task FocusAsync()
+    {
+        if (!Disabled)
+            await _inputRef.FocusAsync(preventScroll: true);
+    }
 
     private async Task HandleInputAsync(ChangeEventArgs args)
     {
@@ -80,21 +89,33 @@
     private async Task HandleKeyDownAsync(KeyboardEventArgs args)
     {
         if (_items.Count == 0 && !string.Equals(args.Key, "Escape", StringComparison.OrdinalIgnoreCase))
+        {
+            if (string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase))
+                await OnEnterCommitted.InvokeAsync();
             return;
+        }
 
         switch (args.Key)
         {
             case "ArrowDown":
-                _highlightIndex = Math.Min(_highlightIndex + 1, _items.Count - 1);
+                _highlightIndex = _highlightIndex < 0
+                    ? 0
+                    : Math.Min(_highlightIndex + 1, _items.Count - 1);
                 _isOpen = true;
                 break;
             case "ArrowUp":
-                _highlightIndex = Math.Max(_highlightIndex - 1, 0);
+                _highlightIndex = _highlightIndex < 0
+                    ? _items.Count - 1
+                    : Math.Max(_highlightIndex - 1, 0);
                 _isOpen = true;
                 break;
             case "Enter":
-                if (_highlightIndex >= 0 && _highlightIndex < _items.Count)
-                    await SelectAsync(_items[_highlightIndex]);
+                if (_items.Count > 0)
+                {
+                    var index = _highlightIndex >= 0 && _highlightIndex < _items.Count ? _highlightIndex : 0;
+                    await SelectAsync(_items[index]);
+                }
+                await OnEnterCommitted.InvokeAsync();
                 break;
             case "Escape":
                 CloseDropdown();
@@ -104,7 +125,8 @@
 
     private async Task SearchAsync(string text)
     {
-        if (SearchFunc is null || Disabled)
+        var searchFunc = SearchFunc;
+        if (searchFunc is null || Disabled)
             return;
 
         if ((text ?? string.Empty).Trim().Length < MinimumCharacters)
@@ -119,7 +141,7 @@
         _highlightIndex = -1;
         try
         {
-            _items = (await SearchFunc(text, CancellationToken.None)).ToList();
+            _items = (await searchFunc(text ?? string.Empty, CancellationToken.None)).ToList();
         }
         finally
         {
