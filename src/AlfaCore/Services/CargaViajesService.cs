@@ -288,14 +288,35 @@ public sealed class CargaViajesService(
             if (!string.Equals(request.Tc, DefaultTc, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException("El TC del módulo de carga de viajes es fijo y debe ser VJ.");
 
+            var cliente = (request.Cliente ?? string.Empty).Trim();
+            var chofer = (request.Chofer ?? string.Empty).Trim();
+            var destino = (request.Destino ?? string.Empty).Trim();
+            var tipoVehiculo = (request.TipoVehiculo ?? string.Empty).Trim();
+            var listaRequest = (request.Lista ?? string.Empty).Trim();
+            var observaciones = (request.Observaciones ?? string.Empty).Trim();
+            var estado = string.IsNullOrWhiteSpace(request.Estado) ? CargaViajeEstadoKeys.Pendiente : request.Estado.Trim().ToUpperInvariant();
+            var destinoDisplay = (request.DestinoDisplay ?? string.Empty).Trim();
+            var choferDisplay = (request.ChoferDisplay ?? string.Empty).Trim();
+
+            request.Cliente = cliente;
+            request.Chofer = chofer;
+            request.Destino = destino;
+            request.TipoVehiculo = tipoVehiculo;
+            request.Lista = listaRequest;
+            request.Observaciones = observaciones;
+            request.Estado = estado;
+            request.DestinoDisplay = destinoDisplay;
+            request.ChoferDisplay = choferDisplay;
+            request.IdComprobante = string.IsNullOrWhiteSpace(request.IdComprobante) ? null : request.IdComprobante.Trim();
+
             logger.LogInformation(
                 "SaveViaje start Id={Id} IdComprobante={IdComprobante} Cliente={Cliente} Chofer={Chofer} Destino={Destino} TipoVehiculo={TipoVehiculo} Fecha={Fecha:yyyy-MM-dd}",
                 request.Id,
                 request.IdComprobante,
-                request.Cliente,
-                request.Chofer,
-                request.Destino,
-                request.TipoVehiculo,
+                cliente,
+                chofer,
+                destino,
+                tipoVehiculo,
                 request.Fecha);
 
             var validation = await validator.ValidateViajeForSaveAsync(request, token);
@@ -322,7 +343,7 @@ public sealed class CargaViajesService(
             var listaCodigo = (request.Lista ?? string.Empty).Trim();
             if (string.IsNullOrWhiteSpace(listaCodigo))
             {
-                var clienteLista = await GetListaRMTRFAsync(cn, request.Cliente, token);
+                var clienteLista = await GetListaRMTRFAsync(cn, cliente, token);
                 listaCodigo = clienteLista.ListaCodigo;
             }
 
@@ -346,10 +367,10 @@ public sealed class CargaViajesService(
                 "SaveViaje payload Tc={Tc} IdComprobante={IdComprobante} IdCliente={IdCliente} IdDestino={IdDestino} IdTipoVehiculo={IdTipoVehiculo} IdChofer={IdChofer} IdLista={IdLista} TotalImporte={TotalImporte} TotalFlete={TotalFlete} Peaje={Peaje} CantidadViajes={CantidadViajes}",
                 request.Tc,
                 nextIdComp,
-                request.Cliente,
-                request.Destino,
-                request.TipoVehiculo,
-                request.Chofer,
+                cliente,
+                destino,
+                tipoVehiculo,
+                chofer,
                 listaCodigo,
                 totals.TotalImporte,
                 totals.TotalFlete,
@@ -362,13 +383,13 @@ public sealed class CargaViajesService(
             parameters.Add("@Tc", request.Tc);
             parameters.Add("@IdComprobante", nextIdComp);
             parameters.Add("@Fecha", request.Fecha);
-            parameters.Add("@Cliente", request.Cliente.Trim());
-            parameters.Add("@Destino", request.Destino.Trim());
-            parameters.Add("@Chofer", request.Chofer.Trim());
-            parameters.Add("@TipoVehiculo", request.TipoVehiculo.Trim());
+            parameters.Add("@Cliente", cliente);
+            parameters.Add("@Destino", destino);
+            parameters.Add("@Chofer", chofer);
+            parameters.Add("@TipoVehiculo", tipoVehiculo);
             parameters.Add("@IdLista", listaCodigo);
-            parameters.Add("@DescripcionDestino", ExtractDescripcionFromDisplay(request.DestinoDisplay));
-            parameters.Add("@NombreChofer", ExtractDescripcionFromDisplay(request.ChoferDisplay));
+            parameters.Add("@DescripcionDestino", ExtractDescripcionFromDisplay(destinoDisplay));
+            parameters.Add("@NombreChofer", ExtractDescripcionFromDisplay(choferDisplay));
             parameters.Add("@ImporteCliente", request.ImporteCliente);
             parameters.Add("@ImporteFletero", request.ImporteFletero);
             parameters.Add("@Peaje", request.Peaje);
@@ -386,8 +407,8 @@ public sealed class CargaViajesService(
             parameters.Add("@TotalAdicionales", totals.TotalAdicionales);
             parameters.Add("@TotalImporte", totals.TotalImporte);
             parameters.Add("@TotalFlete", totals.TotalFlete);
-            parameters.Add("@Observaciones", (request.Observaciones ?? string.Empty).Trim());
-            parameters.Add("@Estado", string.IsNullOrWhiteSpace(request.Estado) ? CargaViajeEstadoKeys.Pendiente : request.Estado.Trim().ToUpperInvariant());
+            parameters.Add("@Observaciones", observaciones);
+            parameters.Add("@Estado", estado);
             parameters.Add("@Usuario", NormalizeUser(request.UsuarioAccion));
 
             await using var tx = await cn.BeginTransactionAsync(token);
@@ -1777,8 +1798,11 @@ public sealed class CargaViajesService(
             WHERE UPPER(LTRIM(RTRIM(cli.CODIGO))) = @Codigo
             """;
 
-        var row = await cn.QuerySingleOrDefaultAsync<(string Lista, string Texto)>(new CommandDefinition(sql, new { Codigo = clienteCodigo.Trim().ToUpperInvariant() }, cancellationToken: ct));
-        return (row.Lista.Trim(), row.Texto.Trim());
+        var row = await cn.QuerySingleOrDefaultAsync<ListaTextoRow>(new CommandDefinition(sql, new { Codigo = clienteCodigo.Trim().ToUpperInvariant() }, cancellationToken: ct));
+        if (row is null)
+            return (string.Empty, string.Empty);
+
+        return ((row.ListaCodigo ?? string.Empty).Trim(), (row.ListaTexto ?? string.Empty).Trim());
     }
 
     private async Task<(string ListaCodigo, string ListaTexto)> GetListaTextoAsync(SqlConnection cn, string listaCodigo, CancellationToken ct)
@@ -1798,8 +1822,11 @@ public sealed class CargaViajesService(
             ORDER BY Nombre, IdLista;
             """;
 
-        var row = await cn.QuerySingleOrDefaultAsync<(string Lista, string Texto)>(new CommandDefinition(sql, new { Codigo = listaCodigo.Trim().ToUpperInvariant() }, cancellationToken: ct));
-        return (row.Lista.Trim(), row.Texto.Trim());
+        var row = await cn.QuerySingleOrDefaultAsync<ListaTextoRow>(new CommandDefinition(sql, new { Codigo = listaCodigo.Trim().ToUpperInvariant() }, cancellationToken: ct));
+        if (row is null)
+            return (string.Empty, string.Empty);
+
+        return ((row.ListaCodigo ?? string.Empty).Trim(), (row.ListaTexto ?? string.Empty).Trim());
     }
 
     private static decimal ParseDecimal(string? value)
@@ -2246,6 +2273,14 @@ public sealed class CargaViajesService(
         {
             return await operation(ct);
         }
+        catch (AppValidationException)
+        {
+            throw;
+        }
+        catch (AppUserFacingException)
+        {
+            throw;
+        }
         catch (InvalidOperationException)
         {
             throw;
@@ -2263,6 +2298,14 @@ public sealed class CargaViajesService(
         {
             await operation(ct);
         }
+        catch (AppValidationException)
+        {
+            throw;
+        }
+        catch (AppUserFacingException)
+        {
+            throw;
+        }
         catch (InvalidOperationException)
         {
             throw;
@@ -2274,5 +2317,9 @@ public sealed class CargaViajesService(
         }
     }
 
-    private sealed record ListaInfo(decimal ListaCodigo, string ListaTexto);
+    private sealed class ListaTextoRow
+    {
+        public string ListaCodigo { get; set; } = string.Empty;
+        public string ListaTexto { get; set; } = string.Empty;
+    }
 }
