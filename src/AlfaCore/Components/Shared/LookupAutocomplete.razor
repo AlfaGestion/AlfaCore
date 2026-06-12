@@ -27,6 +27,15 @@
             else if (_items.Count == 0)
             {
                 <div class="lookup-autocomplete__empty">Sin resultados</div>
+                @if (OnCreateRequested.HasDelegate && !string.IsNullOrWhiteSpace(Text))
+                {
+                    <button type="button"
+                            class="lookup-autocomplete__item lookup-autocomplete__item--create"
+                            @onmousedown="() => RequestCreateAsync()">
+                        <span class="lookup-autocomplete__title">Crear "@Text"</span>
+                        <span class="lookup-autocomplete__subtitle">Alta rápida</span>
+                    </button>
+                }
             }
             else
             {
@@ -58,6 +67,7 @@
     [Parameter] public Func<string, CancellationToken, Task<IReadOnlyList<CargaViajeLookupOptionDto>>> SearchFunc { get; set; } = default!;
     [Parameter] public EventCallback<CargaViajeLookupOptionDto> SelectedChanged { get; set; }
     [Parameter] public EventCallback OnEnterCommitted { get; set; }
+    [Parameter] public EventCallback<string> OnCreateRequested { get; set; }
     [Parameter] public bool Disabled { get; set; }
     [Parameter] public int MinimumCharacters { get; set; } = 1;
 
@@ -88,38 +98,47 @@
 
     private async Task HandleKeyDownAsync(KeyboardEventArgs args)
     {
-        if (_items.Count == 0 && !string.Equals(args.Key, "Escape", StringComparison.OrdinalIgnoreCase))
-        {
-            if (string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase))
-                await OnEnterCommitted.InvokeAsync();
-            return;
-        }
-
-        switch (args.Key)
+        var key = args.Key ?? string.Empty;
+        switch (key)
         {
             case "ArrowDown":
+                if (_items.Count == 0)
+                    return;
                 _highlightIndex = _highlightIndex < 0
                     ? 0
                     : Math.Min(_highlightIndex + 1, _items.Count - 1);
                 _isOpen = true;
                 break;
             case "ArrowUp":
+                if (_items.Count == 0)
+                    return;
                 _highlightIndex = _highlightIndex < 0
                     ? _items.Count - 1
                     : Math.Max(_highlightIndex - 1, 0);
                 _isOpen = true;
                 break;
             case "Enter":
+            case "NumpadEnter":
                 if (_items.Count > 0)
                 {
                     var index = _highlightIndex >= 0 && _highlightIndex < _items.Count ? _highlightIndex : 0;
                     await SelectAsync(_items[index]);
+                    await OnEnterCommitted.InvokeAsync();
+                    return;
+                }
+                CloseDropdown();
+                if (!string.IsNullOrWhiteSpace(Text) && OnCreateRequested.HasDelegate)
+                {
+                    await RequestCreateAsync();
+                    return;
                 }
                 await OnEnterCommitted.InvokeAsync();
                 break;
             case "Escape":
                 CloseDropdown();
                 break;
+            default:
+                return;
         }
     }
 
@@ -155,6 +174,14 @@
         await TextChanged.InvokeAsync(Text);
         await SelectedChanged.InvokeAsync(option);
         CloseDropdown();
+    }
+
+    private async Task RequestCreateAsync()
+    {
+        if (!OnCreateRequested.HasDelegate || string.IsNullOrWhiteSpace(Text))
+            return;
+
+        await OnCreateRequested.InvokeAsync(Text);
     }
 
     private async Task HandleBlurAsync(FocusEventArgs _)

@@ -4,6 +4,7 @@
 @using AlfaCore.Services
 @inject ICargaViajesService CargaViajesSvc
 @inject IAppUiOperationService UiOps
+@inject IAppUiDialogService AppDialogs
 @inject IAppUserSessionService AppUserSession
 @inject IJSRuntime Js
 @inject ILogger<CargaViajes> Logger
@@ -11,7 +12,7 @@
 
 <PageTitle>Carga de Viajes | Alfa Gestión</PageTitle>
 
-<div class="page-grid carga-viajes-page" @onclick="HandlePageClickAsync">
+<div class="page-grid carga-viajes-page @(IsAnyOverlayOpen() ? "carga-viajes-page--overlay-open" : string.Empty)" @onclick="HandlePageClickAsync">
     <header class="carga-viajes-brand">
         <span class="carga-viajes-brand__eyebrow">ALFA GESTIÓN</span>
         <h1 class="carga-viajes-brand__title">Carga de Viajes</h1>
@@ -30,7 +31,7 @@
 
     @if (_feedback is not null)
     {
-        <section class="carga-viajes-feedback">
+        <section class="carga-viajes-feedback" hidden="@IsAnyOverlayOpen()">
             <div class="editor-msg carga-viajes-feedback__box @GetFeedbackClass(_feedback)">
                 <div class="carga-viajes-feedback__content">
                     @if (ShouldShowFeedbackTitle(_feedback))
@@ -830,25 +831,6 @@
                 </header>
 
                 <div class="cuentas-modal__body">
-                    @if (_viajeEditorFeedback is not null)
-                    {
-                        <div class="editor-msg carga-viajes-modal-feedback @GetFeedbackClass(_viajeEditorFeedback)">
-                            <div class="carga-viajes-feedback__content">
-                                @if (ShouldShowFeedbackTitle(_viajeEditorFeedback))
-                                {
-                                    <strong class="carga-viajes-feedback__title">@_viajeEditorFeedback.Title</strong>
-                                }
-                                <div class="carga-viajes-feedback__line">
-                                    <span>@FormatFeedbackMessage(_viajeEditorFeedback)</span>
-                                </div>
-                                @if (_viajeEditorFeedback.HasSuggestion)
-                                {
-                                    <small class="carga-viajes-feedback__suggestion">@_viajeEditorFeedback.Suggestion</small>
-                                }
-                            </div>
-                        </div>
-                    }
-
                     <div class="carga-viajes-form-grid" @oninput="MarkViajeDirty" @onchange="MarkViajeDirty">
                         <div class="field">
                             <label>Fecha</label>
@@ -856,19 +838,19 @@
                         </div>
                         <div class="field">
                             <label>Cliente</label>
-                            <LookupAutocomplete @ref="_viajeClienteLookup" Label="" Placeholder="Buscar cliente..." Text="@_viajeClienteTexto" TextChanged="OnViajeClienteTextoChangedAsync" SelectedChanged="OnViajeClienteSelectedAsync" OnEnterCommitted="FocusViajeChoferAsync" SearchFunc="CargaViajesSvc.SearchClientesAsync" Disabled="@_viajeReadOnly" />
+                            <LookupAutocomplete @ref="_viajeClienteLookup" Label="" Placeholder="Buscar cliente..." Text="@_viajeClienteTexto" TextChanged="OnViajeClienteTextoChangedAsync" SelectedChanged="OnViajeClienteSelectedAsync" OnEnterCommitted="FocusViajeChoferAsync" OnCreateRequested="OnViajeClienteCreateRequestedAsync" SearchFunc="CargaViajesSvc.SearchClientesAsync" Disabled="@_viajeReadOnly" />
                         </div>
                         <div class="field">
                             <label>Chofer</label>
-                            <LookupAutocomplete @ref="_viajeChoferLookup" Label="" Placeholder="Buscar chofer..." Text="@_viajeChoferTexto" TextChanged="OnViajeChoferTextoChangedAsync" SelectedChanged="OnViajeChoferSelectedAsync" OnEnterCommitted="FocusViajeDestinoAsync" SearchFunc="CargaViajesSvc.SearchChoferLookupAsync" Disabled="@_viajeReadOnly" />
+                            <LookupAutocomplete @ref="_viajeChoferLookup" Label="" Placeholder="Buscar chofer..." Text="@_viajeChoferTexto" TextChanged="OnViajeChoferTextoChangedAsync" SelectedChanged="OnViajeChoferSelectedAsync" OnEnterCommitted="FocusViajeDestinoAsync" OnCreateRequested="OnViajeChoferCreateRequestedAsync" SearchFunc="CargaViajesSvc.SearchChoferLookupAsync" Disabled="@_viajeReadOnly" />
                         </div>
                         <div class="field">
                             <label>Destino</label>
-                            <LookupAutocomplete @ref="_viajeDestinoLookup" Label="" Placeholder="Buscar destino..." Text="@_viajeDestinoTexto" TextChanged="OnViajeDestinoTextoChangedAsync" SelectedChanged="OnViajeDestinoSelectedAsync" OnEnterCommitted="FocusViajeTipoVehiculoAsync" SearchFunc="CargaViajesSvc.SearchDestinosLookupAsync" Disabled="@_viajeReadOnly" />
+                            <LookupAutocomplete @ref="_viajeDestinoLookup" Label="" Placeholder="Buscar destino..." Text="@_viajeDestinoTexto" TextChanged="OnViajeDestinoTextoChangedAsync" SelectedChanged="OnViajeDestinoSelectedAsync" OnEnterCommitted="FocusViajeTipoVehiculoAsync" OnCreateRequested="OnViajeDestinoCreateRequestedAsync" SearchFunc="CargaViajesSvc.SearchDestinosLookupAsync" Disabled="@_viajeReadOnly" />
                         </div>
                         <div class="field">
                             <label>Tipo vehículo</label>
-                            <LookupAutocomplete @ref="_viajeTipoVehiculoLookup" Label="" Placeholder="Buscar tipo..." Text="@_viajeTipoVehiculoTexto" TextChanged="OnViajeTipoVehiculoTextoChangedAsync" SelectedChanged="OnViajeTipoVehiculoSelectedAsync" OnEnterCommitted="FocusViajeImporteClienteAsync" SearchFunc="CargaViajesSvc.SearchTipoVehiculosLookupAsync" Disabled="@_viajeReadOnly" />
+                            <LookupAutocomplete @ref="_viajeTipoVehiculoLookup" Label="" Placeholder="Buscar tipo..." Text="@_viajeTipoVehiculoTexto" TextChanged="OnViajeTipoVehiculoTextoChangedAsync" SelectedChanged="OnViajeTipoVehiculoSelectedAsync" OnEnterCommitted="FocusViajeImporteClienteAsync" OnCreateRequested="OnViajeTipoVehiculoCreateRequestedAsync" SearchFunc="CargaViajesSvc.SearchTipoVehiculosLookupAsync" Disabled="@_viajeReadOnly" />
                         </div>
                         <div class="field">
                             <label>Lista</label>
@@ -896,7 +878,8 @@
                                 @for (var i = 0; i < 5; i++)
                                 {
                                     var index = i;
-                                    <label class="carga-viajes-adicionales__item">
+                                    <label class="carga-viajes-adicionales__item @(GetViajeAdicionalChecked(index) ? "carga-viajes-adicionales__item--active" : string.Empty)">
+                                        <span class="carga-viajes-adicionales__check">
                                         @if (index == 0)
                                         {
                                             <input @ref="_viajeAdicional0Input" type="checkbox" checked="@GetViajeAdicionalChecked(index)" disabled="@_viajeReadOnly" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusViajeAdicional1Async)" @onchange="args => OnViajeAdicionalChangedAsync(index, args)" />
@@ -917,8 +900,12 @@
                                         {
                                             <input @ref="_viajeAdicional4Input" type="checkbox" checked="@GetViajeAdicionalChecked(index)" disabled="@_viajeReadOnly" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusViajeObservacionesAsync)" @onchange="args => OnViajeAdicionalChangedAsync(index, args)" />
                                         }
+                                        <span class="carga-viajes-adicionales__box" aria-hidden="true"></span>
+                                        </span>
+                                        <span class="carga-viajes-adicionales__content">
                                         <span class="carga-viajes-adicionales__name">@GetAdicionalLabel(index)</span>
                                         <span class="carga-viajes-adicionales__percent">@GetViajeAdicionalPercentText(index)</span>
+                                        </span>
                                     </label>
                                 }
                             </div>
@@ -981,18 +968,19 @@
 
     @if (_showPendingChangesConfirm)
     {
-        <section class="carga-viajes-confirm no-print" role="dialog" aria-modal="true" aria-labelledby="carga-viajes-confirm-title">
-            <button type="button" class="carga-viajes-confirm__backdrop" aria-label="Cerrar confirmación" @onclick="CancelPendingChangesConfirm"></button>
-            <div class="carga-viajes-confirm__dialog">
-                <h3 id="carga-viajes-confirm-title">@PendingCloseTitle</h3>
+        <div class="carga-viajes-confirm-backdrop" @onclick="CancelPendingChangesConfirmAsync">
+            <section class="carga-viajes-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="carga-viajes-confirm-title" @onclick:stopPropagation="true" @onkeydown="HandlePendingChangesKeyDownAsync" tabindex="0">
+                <h3 id="carga-viajes-confirm-title">@_pendingChangesTitle</h3>
                 <p>@_pendingChangesMessage</p>
-                <div class="carga-viajes-confirm__actions">
-                    <button type="button" class="btn btn--ghost" autofocus @onclick="CancelPendingChangesConfirm">@_pendingChangesSecondaryLabel</button>
+
+                <div class="actions carga-viajes-confirm-modal__actions">
+                    <button type="button" class="btn btn--ghost" autofocus @onclick="CancelPendingChangesConfirmAsync">@_pendingChangesSecondaryLabel</button>
                     <button type="button" class="btn btn--primary" @onclick="ConfirmPendingChangesAsync">@_pendingChangesPrimaryLabel</button>
                 </div>
-            </div>
-        </section>
+            </section>
+        </div>
     }
+
 </div>
 
 @code {
@@ -1012,6 +1000,12 @@
     private AppUiMessage? _feedback;
     private AppUiMessage? _viajeEditorFeedback;
     private CancellationTokenSource? _feedbackAutoClearCts;
+    private bool _showPendingChangesConfirm;
+    private string _pendingChangesTitle = PendingCloseTitle;
+    private string _pendingChangesMessage = string.Empty;
+    private string _pendingChangesPrimaryLabel = "Abandonar";
+    private string _pendingChangesSecondaryLabel = "Continuar editando";
+    private TaskCompletionSource<bool>? _pendingChangesTcs;
 
     private CargaViajesLookupDto _lookups = new();
     private CargaViajesFilters _viajesFilters = new();
@@ -1148,11 +1142,6 @@
     private string _configSnapshot = string.Empty;
     private string _viewSettingsSnapshot = string.Empty;
     private string _tipoVehiculoViewSettingsSnapshot = string.Empty;
-    private bool _showPendingChangesConfirm;
-    private string _pendingChangesMessage = string.Empty;
-    private string _pendingChangesPrimaryLabel = "Abandonar";
-    private string _pendingChangesSecondaryLabel = "Continuar editando";
-    private Func<Task>? _pendingChangesAction;
     private CargaViajeSaveRequest _viajeForm = new()
     {
         Fecha = DateTime.Today,
@@ -1374,6 +1363,7 @@
 
     private async Task AbrirNuevoViajeAsync()
     {
+        ClearMessages();
         _showViajeEditor = true;
         _isNewViaje = true;
         _viajeReadOnly = false;
@@ -1398,40 +1388,39 @@
             return;
 
         _savingViaje = true;
-        _viajeEditorFeedback = new AppUiMessage
-        {
-            Severity = AppUiFeedbackSeverity.Info,
-            Title = "Guardando viaje",
-            Message = "Se está registrando el viaje. No cierres el modal."
-        };
+        await AppDialogs.ShowBusyAsync("Generando viaje", "Estamos registrando el viaje. No cierres esta ventana.");
 
         try
         {
             ApplyViajeAdicionalesToFormForSave();
             LogViajeDraftBeforeSave();
             var savedId = await CargaViajesSvc.SaveViajeAsync(_viajeForm);
-            var successMessage = AppUiMessage.Success("Viaje guardado correctamente", $"El viaje #{savedId} quedó registrado correctamente.");
             _showViajeEditor = false;
             _viajeReadOnly = false;
             _viajeSnapshot = string.Empty;
             _viajeDirty = false;
             _viajesFilters.PageNumber = 1;
             await RecargarViajesAsync();
-            await NavigateSectionAsync(SectionViajes);
-            _viajeEditorFeedback = successMessage;
-            SetFeedback(successMessage);
+            await NavigateSectionAsync(SectionViajes, preserveDialog: true);
+            await AppDialogs.ShowSuccessAsync("Viaje guardado correctamente", $"El viaje #{savedId} quedó registrado correctamente.");
         }
         catch (AppValidationException validationEx)
         {
             var message = BuildValidationFeedback(validationEx);
-            _viajeEditorFeedback = message;
-            _feedback = message;
+            await AppDialogs.ShowMessageAsync(
+                message.Severity,
+                message.Title,
+                FormatFeedbackMessage(message),
+                message.HasSuggestion ? message.Suggestion : string.Empty);
         }
         catch (Exception ex)
         {
             var message = UiOps.BuildMessage(ex, "No se pudo guardar el viaje.");
-            _viajeEditorFeedback = message;
-            _feedback = message;
+            await AppDialogs.ShowMessageAsync(
+                message.Severity,
+                message.Title,
+                FormatFeedbackMessage(message),
+                message.HasSuggestion ? message.Suggestion : string.Empty);
         }
         finally
         {
@@ -1443,11 +1432,14 @@
     {
         if (_showViajeEditor && HasViajePendingChanges())
         {
-            await ShowPendingChangesConfirmAsync(
+            var abandon = await ShowPendingChangesConfirmAsync(
                 "Se perderán todos los datos ingresados.\n¿Desea continuar?",
                 "Limpiar",
-                "Cancelar",
-                AbrirNuevoViajeAsync);
+                "Cancelar");
+            if (!abandon)
+                return;
+
+            await AbrirNuevoViajeAsync();
             return;
         }
 
@@ -1458,11 +1450,14 @@
     {
         if (_showViajeEditor && HasViajePendingChanges())
         {
-            await ShowPendingChangesConfirmAsync(
+            var abandon = await ShowPendingChangesConfirmAsync(
                 "Tiene cambios sin guardar.\n¿Desea abandonar la carga?",
                 "Abandonar",
-                "Continuar editando",
-                ForceCerrarViajeEditorAsync);
+                "Continuar editando");
+            if (!abandon)
+                return;
+
+            await ForceCerrarViajeEditorAsync();
             return;
         }
 
@@ -1886,37 +1881,41 @@
     private bool HasTipoVehiculoViewSettingsPendingChanges()
         => !string.Equals(_tipoVehiculoViewSettingsSnapshot, CaptureTipoVehiculoViewSettingsSnapshot(_tipoVehiculoViewSettingsDraft), StringComparison.Ordinal);
 
-    private Task ShowPendingChangesConfirmAsync(string message, string primaryLabel, string secondaryLabel, Func<Task> confirmAction)
+    private async Task<bool> ShowConfirmDialogAsync(string title, string message, string primaryLabel, string secondaryLabel)
     {
+        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _pendingChangesTcs?.TrySetResult(false);
+        _pendingChangesTcs = tcs;
+        _pendingChangesTitle = title;
         _pendingChangesMessage = message;
         _pendingChangesPrimaryLabel = primaryLabel;
         _pendingChangesSecondaryLabel = secondaryLabel;
-        _pendingChangesAction = confirmAction;
         _showPendingChangesConfirm = true;
-        return Task.CompletedTask;
+        await InvokeAsync(StateHasChanged);
+        return await tcs.Task;
     }
+
+    private Task<bool> ShowPendingChangesConfirmAsync(string message, string primaryLabel, string secondaryLabel)
+        => ShowConfirmDialogAsync(PendingCloseTitle, message, primaryLabel, secondaryLabel);
 
     private async Task ConfirmPendingChangesAsync()
-    {
-        var action = _pendingChangesAction;
-        HidePendingChangesConfirm();
+        => await HidePendingChangesConfirmAsync(true);
 
-        if (action is not null)
-            await action();
-    }
+    private async Task CancelPendingChangesConfirmAsync()
+        => await HidePendingChangesConfirmAsync(false);
 
-    private void CancelPendingChangesConfirm()
-    {
-        HidePendingChangesConfirm();
-    }
-
-    private void HidePendingChangesConfirm()
+    private async Task HidePendingChangesConfirmAsync(bool confirm)
     {
         _showPendingChangesConfirm = false;
+        _pendingChangesTitle = PendingCloseTitle;
         _pendingChangesMessage = string.Empty;
         _pendingChangesPrimaryLabel = "Abandonar";
         _pendingChangesSecondaryLabel = "Continuar editando";
-        _pendingChangesAction = null;
+
+        var tcs = _pendingChangesTcs;
+        _pendingChangesTcs = null;
+        tcs?.TrySetResult(confirm);
+        await InvokeAsync(StateHasChanged);
     }
 
     private async Task OnClienteFiltroTextoChangedAsync(string text) { _clienteFiltroTexto = text; _viajesFilters.Cliente = text; await Task.CompletedTask; }
@@ -2015,6 +2014,71 @@
         await ActualizarTarifaClienteAsync();
         await ActualizarTarifaFleteroAsync();
         await Task.CompletedTask;
+    }
+
+    private Task OnViajeClienteCreateRequestedAsync(string text)
+    {
+        var normalized = (text ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(normalized))
+            return Task.CompletedTask;
+
+        var message = new AppUiMessage
+        {
+            Severity = AppUiFeedbackSeverity.Warning,
+            Title = "Cliente no disponible",
+            Message = "El cliente debe existir previamente."
+        };
+        _viajeEditorFeedback = message;
+        SetFeedback(message);
+        return FocusViajeClienteAsync();
+    }
+
+    private Task OnViajeChoferCreateRequestedAsync(string text)
+        => CreateAndSelectChoferAsync(text);
+
+    private Task OnViajeDestinoCreateRequestedAsync(string text)
+        => CreateAndSelectDestinoAsync(text);
+
+    private Task OnViajeTipoVehiculoCreateRequestedAsync(string text)
+        => CreateAndSelectTipoVehiculoAsync(text);
+
+    private async Task CreateAndSelectChoferAsync(string text)
+    {
+        var result = await UiOps.RunAsync(() => CargaViajesSvc.CreateChoferRapidoAsync(text ?? string.Empty), "No se pudo crear el chofer.");
+        if (!result.Success || result.Value is null)
+        {
+            _viajeEditorFeedback = result.Feedback;
+            return;
+        }
+
+        await OnViajeChoferSelectedAsync(result.Value);
+        await FocusViajeDestinoAsync();
+    }
+
+    private async Task CreateAndSelectDestinoAsync(string text)
+    {
+        var result = await UiOps.RunAsync(() => CargaViajesSvc.CreateDestinoRapidoAsync(text ?? string.Empty), "No se pudo crear el destino.");
+        if (!result.Success || result.Value is null)
+        {
+            _viajeEditorFeedback = result.Feedback;
+            return;
+        }
+
+        await OnViajeDestinoSelectedAsync(result.Value);
+        await FocusViajeTipoVehiculoAsync();
+    }
+
+    private async Task CreateAndSelectTipoVehiculoAsync(string text)
+    {
+        var result = await UiOps.RunAsync(() => CargaViajesSvc.CreateTipoVehiculoRapidoAsync(text ?? string.Empty), "No se pudo crear el tipo de vehículo.");
+        if (!result.Success || result.Value is null)
+        {
+            _viajeEditorFeedback = result.Feedback;
+            return;
+        }
+
+        await OnViajeTipoVehiculoSelectedAsync(result.Value);
+        await FocusViajeImporteClienteAsync();
     }
 
     private async Task ActualizarTarifaClienteAsync()
@@ -2279,11 +2343,14 @@
     {
         if (_showTarifaEditor && HasTarifaPendingChanges())
         {
-            await ShowPendingChangesConfirmAsync(
+            var abandon = await ShowPendingChangesConfirmAsync(
                 "Tiene cambios sin guardar.\n¿Desea abandonar la carga?",
                 "Abandonar",
-                "Continuar editando",
-                ForceCerrarTarifaEditorAsync);
+                "Continuar editando");
+            if (!abandon)
+                return;
+
+            await ForceCerrarTarifaEditorAsync();
             return;
         }
 
@@ -2375,11 +2442,14 @@
     {
         if (_showChoferEditor && HasChoferPendingChanges())
         {
-            await ShowPendingChangesConfirmAsync(
+            var abandon = await ShowPendingChangesConfirmAsync(
                 "Tiene cambios sin guardar.\n¿Desea abandonar la carga?",
                 "Abandonar",
-                "Continuar editando",
-                ForceCerrarChoferEditorAsync);
+                "Continuar editando");
+            if (!abandon)
+                return;
+
+            await ForceCerrarChoferEditorAsync();
             return;
         }
 
@@ -2469,11 +2539,14 @@
     {
         if (_showDestinoEditor && HasDestinoPendingChanges())
         {
-            await ShowPendingChangesConfirmAsync(
+            var abandon = await ShowPendingChangesConfirmAsync(
                 "Tiene cambios sin guardar.\n¿Desea abandonar la carga?",
                 "Abandonar",
-                "Continuar editando",
-                ForceCerrarDestinoEditorAsync);
+                "Continuar editando");
+            if (!abandon)
+                return;
+
+            await ForceCerrarDestinoEditorAsync();
             return;
         }
 
@@ -2585,11 +2658,14 @@
     {
         if (_showTipoVehiculoEditor && HasTipoVehiculoPendingChanges())
         {
-            await ShowPendingChangesConfirmAsync(
+            var abandon = await ShowPendingChangesConfirmAsync(
                 "Tiene cambios sin guardar.\n¿Desea abandonar la carga?",
                 "Abandonar",
-                "Continuar editando",
-                ForceCerrarTipoVehiculoEditorAsync);
+                "Continuar editando");
+            if (!abandon)
+                return;
+
+            await ForceCerrarTipoVehiculoEditorAsync();
             return;
         }
 
@@ -2615,11 +2691,14 @@
     {
         if (_showTipoVehiculoViewSettings && HasTipoVehiculoViewSettingsPendingChanges())
         {
-            await ShowPendingChangesConfirmAsync(
+            var abandon = await ShowPendingChangesConfirmAsync(
                 "Tiene cambios sin guardar.\n¿Desea abandonar la carga?",
                 "Abandonar",
-                "Continuar editando",
-                ForceCancelarConfiguracionTipoVehiculoVistaAsync);
+                "Continuar editando");
+            if (!abandon)
+                return;
+
+            await ForceCancelarConfiguracionTipoVehiculoVistaAsync();
             return;
         }
 
@@ -2697,12 +2776,6 @@
         if (!string.Equals(args.Key, "Escape", StringComparison.OrdinalIgnoreCase))
             return;
 
-        if (_showPendingChangesConfirm)
-        {
-            CancelPendingChangesConfirm();
-            return;
-        }
-
         if (_showViewSettings)
             await CancelarConfiguracionVista();
         else if (_showConfigEditor)
@@ -2721,18 +2794,36 @@
             await CerrarViajeEditorAsync();
     }
 
-    private async Task NavigateSectionAsync(string section)
+    private async Task HandlePendingChangesKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (string.Equals(args.Key, "Escape", StringComparison.OrdinalIgnoreCase))
+        {
+            await CancelPendingChangesConfirmAsync();
+            return;
+        }
+
+        if (string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase) || string.Equals(args.Key, "NumpadEnter", StringComparison.OrdinalIgnoreCase))
+            await ConfirmPendingChangesAsync();
+    }
+
+    private async Task NavigateSectionAsync(string section, bool preserveDialog = false)
     {
         var normalized = NormalizeSection(section);
         if (HasAnyPendingChanges())
         {
-            await ShowPendingChangesConfirmAsync(
+            var abandon = await ShowPendingChangesConfirmAsync(
                 "Tiene cambios sin guardar.\n¿Desea abandonar la carga?",
                 "Abandonar",
-                "Continuar editando",
-                () => ForceNavigateSectionAsync(normalized));
+                "Continuar editando");
+            if (!abandon)
+                return;
+
+            await ForceNavigateSectionAsync(normalized);
             return;
         }
+
+        if (!preserveDialog)
+            await HidePendingChangesConfirmAsync(false);
 
         await ForceNavigateSectionAsync(normalized);
     }
@@ -2746,7 +2837,6 @@
 
     private Task ForceCloseAllEditorsAsync()
     {
-        HidePendingChangesConfirm();
         _showViewSettings = false;
         _showConfigEditor = false;
         _showTarifaEditor = false;
@@ -2807,11 +2897,14 @@
     {
         if (_showViewSettings && HasViewSettingsPendingChanges())
         {
-            await ShowPendingChangesConfirmAsync(
+            var abandon = await ShowPendingChangesConfirmAsync(
                 "Tiene cambios sin guardar.\n¿Desea abandonar la carga?",
                 "Abandonar",
-                "Continuar editando",
-                ForceCancelarConfiguracionVistaAsync);
+                "Continuar editando");
+            if (!abandon)
+                return;
+
+            await ForceCancelarConfiguracionVistaAsync();
             return;
         }
 
@@ -2903,11 +2996,14 @@
     {
         if (_showConfigEditor && HasConfigPendingChanges())
         {
-            await ShowPendingChangesConfirmAsync(
+            var abandon = await ShowPendingChangesConfirmAsync(
                 "Tiene cambios sin guardar.\n¿Desea abandonar la carga?",
                 "Abandonar",
-                "Continuar editando",
-                ForceCerrarConfiguracionModuloAsync);
+                "Continuar editando");
+            if (!abandon)
+                return;
+
+            await ForceCerrarConfiguracionModuloAsync();
             return;
         }
 
@@ -3134,6 +3230,16 @@
 
     private void SetSuccessFeedback(string title, string message)
         => SetFeedback(AppUiMessage.Success(title, message));
+
+    private bool IsAnyOverlayOpen()
+        => _showViewSettings
+           || _showTarifaEditor
+           || _showChoferEditor
+           || _showDestinoEditor
+           || _showTipoVehiculoViewSettings
+           || _showTipoVehiculoEditor
+           || _showViajeEditor
+           || _showConfigEditor;
 
     private static string NormalizeSectionFromUri(string? vista) => NormalizeSection(vista);
 

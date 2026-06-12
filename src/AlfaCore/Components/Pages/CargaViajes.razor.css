@@ -199,6 +199,10 @@
     margin-top: -.05rem;
 }
 
+.carga-viajes-page--overlay-open .carga-viajes-feedback {
+    display: none;
+}
+
 .carga-viajes-modal-feedback {
     margin-bottom: .65rem;
 }
@@ -321,79 +325,196 @@
     border-color: rgba(34, 197, 94, .55);
 }
 
-.carga-viajes-confirm {
+.carga-viajes-confirm-backdrop {
     position: fixed;
     inset: 0;
-    z-index: 5000;
-    display: grid;
-    place-items: center;
-    padding: 1rem;
+    z-index: 200000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(2, 6, 23, .72);
+    backdrop-filter: blur(4px);
+    isolation: isolate;
 }
 
-.carga-viajes-confirm__backdrop {
-    position: absolute;
-    inset: 0;
-    border: 0;
-    background: rgba(4, 8, 16, .72);
+.carga-viajes-confirm-modal {
+    width: min(420px, calc(100vw - 32px));
+    background: #0f172a;
+    border: 1px solid rgba(148, 163, 184, .35);
+    border-radius: 18px;
+    box-shadow: 0 24px 80px rgba(0, 0, 0, .65);
+    padding: 24px;
+    color: #e5e7eb;
+    z-index: 200001;
 }
 
-.carga-viajes-confirm__dialog {
-    position: relative;
-    z-index: 1;
-    width: min(520px, 100%);
-    padding: 1rem 1.05rem;
-    border: 1px solid rgba(148, 163, 184, .22);
-    border-radius: 1rem;
-    background: linear-gradient(180deg, rgba(18, 24, 38, .98), rgba(12, 17, 28, .98));
-    box-shadow: 0 18px 48px rgba(0, 0, 0, .45);
+.carga-viajes-confirm-modal h3 {
+    margin: 0 0 .5rem 0;
+    font-size: 1.02rem;
+}
+
+.carga-viajes-confirm-modal p {
+    margin: 0;
+    color: rgba(226, 232, 240, .92);
+    line-height: 1.45;
+}
+
+.carga-viajes-confirm-modal__actions {
+    margin-top: 1rem;
+    display: flex;
+    justify-content: flex-end;
+    gap: .5rem;
+    flex-wrap: wrap;
 }
 
 .carga-viajes-adicionales {
-    gap: .45rem;
+    gap: .5rem;
 }
 
 .carga-viajes-adicionales__list {
     display: grid;
-    gap: .35rem;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: .45rem;
 }
 
 .carga-viajes-adicionales__item {
-    align-items: center;
+    align-items: flex-start;
     display: flex;
-    gap: .65rem;
-    justify-content: space-between;
-    min-height: 2.35rem;
-    padding: .45rem .65rem;
+    gap: .6rem;
+    flex-direction: column;
+    justify-content: flex-start;
+    min-height: 4.85rem;
+    padding: .72rem .78rem .68rem;
     border: 1px solid rgba(148, 163, 184, .18);
-    border-radius: .8rem;
-    background: rgba(15, 23, 42, .22);
+    border-radius: 1.05rem;
+    background:
+        linear-gradient(180deg, rgba(15, 23, 42, .96), rgba(8, 15, 28, .92)),
+        rgba(15, 23, 42, .22);
     cursor: pointer;
     user-select: none;
+    transition: transform .16s ease, border-color .16s ease, box-shadow .16s ease, background-color .16s ease;
+}
+
+.carga-viajes-adicionales__item:hover {
+    transform: translateY(-1px);
+    border-color: rgba(56, 189, 248, .36);
+    box-shadow: 0 12px 30px rgba(2, 8, 23, .28);
+}
+
+.carga-viajes-adicionales__item--active {
+    border-color: rgba(56, 189, 248, .58);
+    background:
+        linear-gradient(180deg, rgba(14, 116, 144, .34), rgba(8, 15, 28, .92)),
+        rgba(15, 23, 42, .22);
+    box-shadow: 0 14px 32px rgba(8, 145, 178, .2);
 }
 
 .carga-viajes-adicionales__item input[type="checkbox"] {
-    width: 1rem;
-    height: 1rem;
-    margin: 0;
-    accent-color: var(--accent, #22d3ee);
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.carga-viajes-adicionales__check {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: .45rem;
+    width: 100%;
+    min-height: 2rem;
+}
+
+.carga-viajes-adicionales__box {
+    width: 1.45rem;
+    height: 1.45rem;
+    border-radius: .55rem;
     flex: 0 0 auto;
+    border: 1px solid rgba(148, 163, 184, .28);
+    background:
+        linear-gradient(180deg, rgba(31, 41, 55, .98), rgba(15, 23, 42, .94));
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, .04),
+        0 3px 10px rgba(0, 0, 0, .22);
+    position: relative;
+    transition: border-color .16s ease, background .16s ease, box-shadow .16s ease, transform .16s ease;
+}
+
+.carga-viajes-adicionales__box::after {
+    content: "";
+    position: absolute;
+    inset: .33rem .4rem .38rem .34rem;
+    border-right: 2px solid transparent;
+    border-bottom: 2px solid transparent;
+    transform: rotate(45deg) scale(.7);
+    transition: border-color .16s ease, transform .16s ease;
+}
+
+.carga-viajes-adicionales__item input[type="checkbox"]:checked + .carga-viajes-adicionales__box {
+    border-color: rgba(34, 211, 238, .75);
+    background:
+        linear-gradient(180deg, rgba(8, 145, 178, .45), rgba(15, 23, 42, .92));
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, .08),
+        0 6px 16px rgba(8, 145, 178, .22);
+}
+
+.carga-viajes-adicionales__item input[type="checkbox"]:checked + .carga-viajes-adicionales__box::after {
+    border-right-color: #e0f2fe;
+    border-bottom-color: #e0f2fe;
+    transform: rotate(45deg) scale(1);
+}
+
+.carga-viajes-adicionales__item input[type="checkbox"]:focus-visible + .carga-viajes-adicionales__box {
+    outline: 2px solid rgba(56, 189, 248, .9);
+    outline-offset: 2px;
+}
+
+.carga-viajes-adicionales__content {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .55rem;
+    min-width: 0;
 }
 
 .carga-viajes-adicionales__name {
     flex: 1 1 auto;
     min-width: 0;
-    font-weight: 600;
+    font-weight: 650;
+    font-size: .84rem;
+    line-height: 1.15;
+    white-space: normal;
 }
 
 .carga-viajes-adicionales__percent {
     flex: 0 0 auto;
-    color: rgba(226, 232, 240, .78);
+    color: rgba(226, 232, 240, .94);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
-    padding: .14rem .45rem;
+    padding: .24rem .56rem;
     border-radius: 999px;
-    background: rgba(255, 255, 255, .04);
-    border: 1px solid rgba(148, 163, 184, .14);
+    background: rgba(255, 255, 255, .06);
+    border: 1px solid rgba(148, 163, 184, .18);
+    font-size: .77rem;
+    align-self: center;
+}
+
+.carga-viajes-adicionales__item--active .carga-viajes-adicionales__percent {
+    background: rgba(14, 165, 233, .16);
+    border-color: rgba(14, 165, 233, .28);
+}
+
+@media (max-width: 1180px) {
+    .carga-viajes-adicionales__list {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 720px) {
+    .carga-viajes-adicionales__list {
+        grid-template-columns: 1fr;
+    }
 }
 
 .carga-viajes-confirm__dialog h3 {

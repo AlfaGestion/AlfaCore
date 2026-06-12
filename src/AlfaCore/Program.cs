@@ -93,6 +93,7 @@ public class Program
         builder.Services.AddScoped<IGestionDashboardService, GestionDashboardService>();
         builder.Services.AddScoped<IPuntoVentaService, PuntoVentaService>();
         builder.Services.AddScoped<IAppUiOperationService, AppUiOperationService>();
+        builder.Services.AddScoped<IAppUiDialogService, AppUiDialogService>();
         builder.Services.AddScoped<IFloatingWindowService, FloatingWindowService>();
         builder.Services.AddScoped<IAuxErrRepository, AuxErrRepository>();
         builder.Services.AddScoped<IAppEventService, AppEventService>();

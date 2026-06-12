@@ -1,0 +1,142 @@
+.app-ui-dialog-host {
+    position: fixed;
+    inset: 0;
+    z-index: 2147483647;
+    display: grid;
+    place-items: center;
+    padding: 1rem;
+    isolation: isolate;
+}
+
+.app-ui-dialog-host__backdrop {
+    position: absolute;
+    inset: 0;
+    border: 0;
+    background:
+        radial-gradient(circle at top, rgba(56, 189, 248, .18), transparent 38%),
+        rgba(2, 6, 23, .72);
+    backdrop-filter: blur(10px);
+}
+
+.app-ui-dialog-host__panel {
+    position: relative;
+    z-index: 1;
+    width: min(560px, calc(100vw - 2rem));
+    display: grid;
+    gap: .95rem;
+    padding: 1.15rem 1.15rem 1rem;
+    border: 1px solid rgba(148, 163, 184, .22);
+    border-radius: 1.25rem;
+    background: linear-gradient(180deg, rgba(15, 23, 42, .98), rgba(7, 12, 24, .98));
+    box-shadow: 0 28px 70px rgba(0, 0, 0, .56);
+}
+
+.app-ui-dialog-host__panel--success {
+    border-color: rgba(34, 197, 94, .26);
+}
+
+.app-ui-dialog-host__panel--warning {
+    border-color: rgba(245, 158, 11, .28);
+}
+
+.app-ui-dialog-host__panel--error {
+    border-color: rgba(248, 113, 113, .3);
+}
+
+.app-ui-dialog-host__panel--loading {
+    border-color: rgba(56, 189, 248, .28);
+}
+
+.app-ui-dialog-host__icon {
+    width: 3rem;
+    height: 3rem;
+    display: grid;
+    place-items: center;
+    border-radius: 999px;
+    color: #e2e8f0;
+    background: rgba(148, 163, 184, .12);
+    box-shadow: inset 0 0 0 1px rgba(148, 163, 184, .14);
+}
+
+.app-ui-dialog-host__panel--success .app-ui-dialog-host__icon {
+    color: #86efac;
+    background: rgba(34, 197, 94, .12);
+}
+
+.app-ui-dialog-host__panel--warning .app-ui-dialog-host__icon {
+    color: #fbbf24;
+    background: rgba(245, 158, 11, .14);
+}
+
+.app-ui-dialog-host__panel--error .app-ui-dialog-host__icon {
+    color: #fca5a5;
+    background: rgba(248, 113, 113, .14);
+}
+
+.app-ui-dialog-host__panel--loading .app-ui-dialog-host__icon {
+    color: #67e8f9;
+    background: rgba(56, 189, 248, .14);
+}
+
+.app-ui-dialog-host__spinner {
+    width: 1.35rem;
+    height: 1.35rem;
+    border-radius: 999px;
+    border: 2px solid rgba(103, 232, 249, .2);
+    border-top-color: currentColor;
+    animation: app-ui-dialog-spin .85s linear infinite;
+}
+
+.app-ui-dialog-host__content {
+    display: grid;
+    gap: .35rem;
+}
+
+.app-ui-dialog-host__eyebrow {
+    margin: 0;
+    color: rgba(148, 163, 184, .82);
+    font-size: .74rem;
+    font-weight: 700;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+}
+
+.app-ui-dialog-host__title {
+    margin: 0;
+    font-size: 1.1rem;
+    line-height: 1.2;
+    color: #f8fafc;
+}
+
+.app-ui-dialog-host__message {
+    margin: 0;
+    color: rgba(226, 232, 240, .94);
+    line-height: 1.45;
+}
+
+.app-ui-dialog-host__detail {
+    padding: .7rem .8rem;
+    border-radius: .85rem;
+    border: 1px solid rgba(148, 163, 184, .16);
+    background: rgba(15, 23, 42, .62);
+    color: rgba(203, 213, 225, .92);
+    white-space: pre-line;
+}
+
+.app-ui-dialog-host__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: .5rem;
+    flex-wrap: wrap;
+}
+
+.app-ui-dialog-host__actions .btn {
+    min-height: 2.35rem;
+    padding-inline: .95rem;
+}
+
+@keyframes app-ui-dialog-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}

@@ -1147,8 +1147,8 @@ public sealed class CargaViajesService(
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
-            var table = await ResolveExistingTableAsync(cn, token, "TA_DESTINOS", "V_TA_DESTINO");
-            var codeColumn = table.Equals("TA_DESTINOS", StringComparison.OrdinalIgnoreCase) ? "CODIGO" : "IdDestino";
+            const string table = "TA_DESTINOS";
+            var codeColumn = "CODIGO";
             var textoLike = SearchTextHelper.LikeContains(filters.Texto);
             var activoFiltro = ParseNullableBitFilter(filters.Activo);
             var sql = $"""
@@ -1208,8 +1208,8 @@ public sealed class CargaViajesService(
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
-            var table = await ResolveExistingTableAsync(cn, token, "TA_DESTINOS", "V_TA_DESTINO");
-            var codeColumn = table.Equals("TA_DESTINOS", StringComparison.OrdinalIgnoreCase) ? "CODIGO" : "IdDestino";
+            const string table = "TA_DESTINOS";
+            var codeColumn = "CODIGO";
             var sql = $"""
                 SELECT TOP (1)
                     LTRIM(RTRIM(ISNULL({codeColumn}, ''))),
@@ -1232,8 +1232,8 @@ public sealed class CargaViajesService(
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
-            var table = await ResolveExistingTableAsync(cn, token, "TA_DESTINOS", "V_TA_DESTINO");
-            var codeColumn = table.Equals("TA_DESTINOS", StringComparison.OrdinalIgnoreCase) ? "CODIGO" : "IdDestino";
+            const string table = "TA_DESTINOS";
+            var codeColumn = "CODIGO";
             var isNew = !await ExistsByCodeAsync(cn, table, codeColumn, request.Codigo, token);
             var sql = isNew
                 ? $"""
@@ -1267,8 +1267,8 @@ public sealed class CargaViajesService(
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
-            var table = await ResolveExistingTableAsync(cn, token, "TA_DESTINOS", "V_TA_DESTINO");
-            var codeColumn = table.Equals("TA_DESTINOS", StringComparison.OrdinalIgnoreCase) ? "CODIGO" : "IdDestino";
+            const string table = "TA_DESTINOS";
+            var codeColumn = "CODIGO";
             if (!await ColumnExistsAsync(cn, table, "Activo", token))
                 throw new InvalidOperationException($"La tabla {table} no tiene columna Activo para hacer baja lÃ³gica.");
 
@@ -1540,8 +1540,8 @@ public sealed class CargaViajesService(
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
-            var table = await ResolveExistingTableAsync(cn, token, "TA_DESTINOS", "V_TA_DESTINO");
-            var codeColumn = table.Equals("TA_DESTINOS", StringComparison.OrdinalIgnoreCase) ? "CODIGO" : "IdDestino";
+            const string table = "TA_DESTINOS";
+            var codeColumn = "CODIGO";
             var sql = $"""
                 SELECT TOP (12)
                     LTRIM(RTRIM(ISNULL({codeColumn}, ''))) AS Codigo,
@@ -1580,6 +1580,131 @@ public sealed class CargaViajesService(
             var rows = (await cn.QueryAsync<CargaViajeLookupOptionDto>(new CommandDefinition(sql, new { Search = SearchTextHelper.LikeContains(search) }, cancellationToken: token))).ToList();
             return (IReadOnlyList<CargaViajeLookupOptionDto>)rows;
         }, "No se pudieron buscar tipos de vehÃ­culo.", ct);
+
+    public Task<CargaViajeLookupOptionDto> CreateDestinoRapidoAsync(string descripcion, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "CreateDestinoRapido", async token =>
+        {
+            var normalized = SearchTextHelper.Normalize(descripcion);
+            var validation = new ValidationResult();
+            if (string.IsNullOrWhiteSpace(normalized))
+                validation.Add("Descripcion", "Debe ingresar un destino.");
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            const string table = "TA_DESTINOS";
+            if (!await TableExistsAsync(cn, table, token))
+                throw new InvalidOperationException("La tabla TA_DESTINOS no existe en la base activa.");
+
+            var maxLength = await GetColumnCharacterLengthAsync(cn, table, "DESCRIPCION", token, 100);
+            if (maxLength > 0 && normalized.Length > maxLength)
+                validation.Add("Descripcion", $"El destino no puede superar {maxLength} caracteres.");
+
+            if (!validation.IsValid)
+                throw new AppValidationException(BuildValidationMessage(validation), validation);
+
+            var existing = await FindLookupByDescriptionAsync(cn, table, "CODIGO", "DESCRIPCION", normalized, token);
+            if (existing is not null)
+                return existing;
+
+            var codigo = await GetNextCodigoDisponibleAsync(cn, table, "CODIGO", token);
+            var hasActivo = await ColumnExistsAsync(cn, table, "ACTIVO", token);
+            var sql = BuildCreateMaestraSql(table, "CODIGO", "DESCRIPCION", hasActivo);
+            var affected = await cn.ExecuteAsync(new CommandDefinition(sql, new
+            {
+                Codigo = codigo,
+                Descripcion = normalized,
+                Activo = true
+            }, cancellationToken: token));
+            if (affected <= 0)
+                throw new InvalidOperationException("No se pudo crear el destino.");
+
+            logger.LogInformation("CreateDestinoRapido OK Codigo={Codigo} Descripcion={Descripcion}", codigo, normalized);
+            return new CargaViajeLookupOptionDto { Codigo = codigo, Titulo = normalized };
+        }, "No se pudo crear el destino.", ct);
+
+    public Task<CargaViajeLookupOptionDto> CreateTipoVehiculoRapidoAsync(string descripcion, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "CreateTipoVehiculoRapido", async token =>
+        {
+            var normalized = SearchTextHelper.Normalize(descripcion);
+            var validation = new ValidationResult();
+            if (string.IsNullOrWhiteSpace(normalized))
+                validation.Add("Descripcion", "Debe ingresar un tipo de vehículo.");
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            const string table = "TA_TIPOVEHICULO";
+            if (!await TableExistsAsync(cn, table, token))
+                throw new InvalidOperationException("La tabla TA_TIPOVEHICULO no existe en la base activa.");
+
+            var maxLength = await GetColumnCharacterLengthAsync(cn, table, "DESCRIPCION", token, 100);
+            if (maxLength > 0 && normalized.Length > maxLength)
+                validation.Add("Descripcion", $"El tipo de vehículo no puede superar {maxLength} caracteres.");
+
+            if (!validation.IsValid)
+                throw new AppValidationException(BuildValidationMessage(validation), validation);
+
+            var existing = await FindLookupByDescriptionAsync(cn, table, "CODIGO", "DESCRIPCION", normalized, token);
+            if (existing is not null)
+                return existing;
+
+            var codigo = await GetNextCodigoDisponibleAsync(cn, table, "CODIGO", token);
+            var hasActivo = await ColumnExistsAsync(cn, table, "ACTIVO", token);
+            var sql = BuildCreateMaestraSql(table, "CODIGO", "DESCRIPCION", hasActivo);
+            var affected = await cn.ExecuteAsync(new CommandDefinition(sql, new
+            {
+                Codigo = codigo,
+                Descripcion = normalized,
+                Activo = true
+            }, cancellationToken: token));
+            if (affected <= 0)
+                throw new InvalidOperationException("No se pudo crear el tipo de vehículo.");
+
+            logger.LogInformation("CreateTipoVehiculoRapido OK Codigo={Codigo} Descripcion={Descripcion}", codigo, normalized);
+            return new CargaViajeLookupOptionDto { Codigo = codigo, Titulo = normalized };
+        }, "No se pudo crear el tipo de vehículo.", ct);
+
+    public Task<CargaViajeLookupOptionDto> CreateChoferRapidoAsync(string nombre, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "CreateChoferRapido", async token =>
+        {
+            var normalized = SearchTextHelper.Normalize(nombre);
+            var validation = new ValidationResult();
+            if (string.IsNullOrWhiteSpace(normalized))
+                validation.Add("Nombre", "Debe ingresar un chofer.");
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            const string table = "TA_CHOFERES";
+            if (!await TableExistsAsync(cn, table, token))
+                throw new InvalidOperationException("La tabla TA_CHOFERES no existe en la base activa.");
+
+            var maxLength = await GetColumnCharacterLengthAsync(cn, table, "NOMBRES", token, 100);
+            if (maxLength > 0 && normalized.Length > maxLength)
+                validation.Add("Nombre", $"El chofer no puede superar {maxLength} caracteres.");
+
+            if (!validation.IsValid)
+                throw new AppValidationException(BuildValidationMessage(validation), validation);
+
+            var existing = await FindLookupByDescriptionAsync(cn, table, "CODIGO", "NOMBRES", normalized, token);
+            if (existing is not null)
+                return existing;
+
+            var codigo = await GetNextCodigoDisponibleAsync(cn, table, "CODIGO", token);
+            var hasActivo = await ColumnExistsAsync(cn, table, "ACTIVO", token);
+            var hasDisponible = await ColumnExistsAsync(cn, table, "DISPONIBLE", token);
+            var sql = BuildCreateChoferSql(table, hasActivo, hasDisponible);
+            var affected = await cn.ExecuteAsync(new CommandDefinition(sql, new
+            {
+                Codigo = codigo,
+                Nombre = normalized,
+                Activo = true,
+                Disponible = true
+            }, cancellationToken: token));
+            if (affected <= 0)
+                throw new InvalidOperationException("No se pudo crear el chofer.");
+
+            logger.LogInformation("CreateChoferRapido OK Codigo={Codigo} Nombre={Nombre}", codigo, normalized);
+            return new CargaViajeLookupOptionDto { Codigo = codigo, Titulo = normalized };
+        }, "No se pudo crear el chofer.", ct);
 
     public Task<CargaViajeTarifaGridItemDto?> GetTarifaClienteAsync(string cliente, string destino, string tipoVehiculo, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "GetTarifaCliente", async token =>
@@ -1896,25 +2021,122 @@ public sealed class CargaViajesService(
             return $"{sucursal}{next.ToString().PadLeft(8, '0')}{letra}";
         }, "No se pudo obtener la numeraciÃ³n del viaje.", ct);
 
+    private static async Task<CargaViajeLookupOptionDto?> FindLookupByDescriptionAsync(
+        SqlConnection cn,
+        string table,
+        string codeColumn,
+        string descriptionColumn,
+        string description,
+        CancellationToken ct)
+    {
+        var sql = $"""
+            SELECT TOP (1)
+                LTRIM(RTRIM(ISNULL({codeColumn}, ''))) AS Codigo,
+                LTRIM(RTRIM(ISNULL({descriptionColumn}, ''))) AS Titulo,
+                '' AS Subtitulo
+            FROM dbo.{table}
+            WHERE LTRIM(RTRIM(ISNULL({descriptionColumn}, ''))) COLLATE Latin1_General_CI_AI = @Descripcion;
+            """;
+
+        return await cn.QuerySingleOrDefaultAsync<CargaViajeLookupOptionDto>(new CommandDefinition(sql, new { Descripcion = description }, cancellationToken: ct));
+    }
+
+    private static async Task<string> GetNextCodigoDisponibleAsync(SqlConnection cn, string table, string column, CancellationToken ct)
+    {
+        var next = await GetNextCodigoFromTableCoreAsync(cn, table, column, ct);
+        var attempts = 0;
+        while (await ExistsByCodeAsync(cn, table, column, next, ct))
+        {
+            attempts++;
+            if (attempts > 10000)
+                throw new InvalidOperationException($"No se pudo calcular un código libre para {table}.");
+
+            var parsed = int.Parse(next, System.Globalization.CultureInfo.InvariantCulture);
+            next = (parsed + 1).ToString().PadLeft(4, '0');
+        }
+
+        return next;
+    }
+
+    private static async Task<string> GetNextCodigoFromTableCoreAsync(SqlConnection cn, string table, string column, CancellationToken ct)
+    {
+        var sql = $"""
+            SELECT ISNULL(MAX(CAST(LTRIM(RTRIM({column})) AS int)), 0) + 1
+            FROM dbo.{table}
+            WHERE {column} IS NOT NULL
+              AND LTRIM(RTRIM({column})) <> ''
+              AND LTRIM(RTRIM({column})) NOT LIKE '%[^0-9]%';
+            """;
+
+        var next = await cn.ExecuteScalarAsync<int>(new CommandDefinition(sql, cancellationToken: ct));
+        return next <= 0 ? "0001" : next.ToString().PadLeft(4, '0');
+    }
+
+    private static string BuildCreateMaestraSql(string table, string codeColumn, string descriptionColumn, bool hasActivoDefault)
+    {
+        if (!hasActivoDefault)
+            return $"""
+                INSERT INTO dbo.{table} ({codeColumn}, {descriptionColumn})
+                VALUES (@Codigo, @Descripcion);
+                """;
+
+        return $"""
+            INSERT INTO dbo.{table} ({codeColumn}, {descriptionColumn}, ACTIVO)
+            VALUES (@Codigo, @Descripcion, @Activo);
+            """;
+    }
+
+    private static string BuildCreateChoferSql(string table, bool hasActivo, bool hasDisponible)
+    {
+        var columns = new List<string> { "CODIGO", "NOMBRES" };
+        var values = new List<string> { "@Codigo", "@Nombre" };
+        if (hasActivo)
+        {
+            columns.Add("ACTIVO");
+            values.Add("@Activo");
+        }
+        if (hasDisponible)
+        {
+            columns.Add("DISPONIBLE");
+            values.Add("@Disponible");
+        }
+
+        return $"""
+            INSERT INTO dbo.{table} ({string.Join(", ", columns)})
+            VALUES ({string.Join(", ", values)});
+            """;
+    }
+
+    private static async Task<int> GetColumnCharacterLengthAsync(SqlConnection cn, string table, string column, CancellationToken ct, int defaultValue)
+    {
+        const string sql = """
+            SELECT TOP (1)
+                CASE
+                    WHEN c.max_length = -1 THEN -1
+                    WHEN t.name LIKE 'n%' THEN c.max_length / 2
+                    ELSE c.max_length
+                END AS MaxChars
+            FROM sys.columns c
+            INNER JOIN sys.types t ON t.user_type_id = c.user_type_id
+            WHERE c.object_id = OBJECT_ID(@FullName)
+              AND UPPER(c.name) = UPPER(@ColumnName);
+            """;
+
+        var raw = await cn.ExecuteScalarAsync<int?>(new CommandDefinition(sql, new { FullName = $"dbo.{table}", ColumnName = column }, cancellationToken: ct));
+        if (raw is null)
+            return defaultValue;
+
+        return raw.Value < 0 ? 4000 : Math.Max(1, raw.Value);
+    }
+
     private Task<string> GetNextCodigoFromTableAsync(string table, string column, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, $"GetNextCodigo_{table}", async token =>
         {
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
 
-            var sql = $"""
-                SELECT ISNULL(MAX(CAST(LTRIM(RTRIM({column})) AS int)), 0) + 1
-                FROM dbo.{table}
-                WHERE {column} IS NOT NULL
-                  AND LTRIM(RTRIM({column})) <> ''
-                  AND LTRIM(RTRIM({column})) NOT LIKE '%[^0-9]%';
-                """;
-
-            var next = await cn.ExecuteScalarAsync<int>(new CommandDefinition(sql, cancellationToken: token));
-            if (next <= 0)
-                next = 1;
-
-            var formatted = next.ToString().PadLeft(4, '0');
+            var formatted = await GetNextCodigoFromTableCoreAsync(cn, table, column, token);
+            var next = int.Parse(formatted, System.Globalization.CultureInfo.InvariantCulture);
             logger.LogInformation("GetNextCodigo OK Tabla={Tabla} Columna={Columna} Next={Next} Formatted={Formatted}", table, column, next, formatted);
             return formatted;
         }, $"No se pudo obtener la próxima numeración de {table}.", ct);

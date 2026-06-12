@@ -28,6 +28,7 @@ public interface ICargaViajesService
     Task<string> SaveDestinoAsync(CargaViajeDestinoSaveRequest request, CancellationToken ct = default);
     Task BajaDestinoAsync(string codigo, CancellationToken ct = default);
     Task<string> GetNextCodigoDestinoAsync(CancellationToken ct = default);
+    Task<CargaViajeLookupOptionDto> CreateDestinoRapidoAsync(string descripcion, CancellationToken ct = default);
 
     Task<PagedResult<CargaViajeTipoVehiculoGridItemDto>> SearchTipoVehiculosAsync(CargaViajesFilters filters, CancellationToken ct = default);
     Task<CargaViajeTipoVehiculoGridItemDto?> GetTipoVehiculoByIdAsync(string codigo, CancellationToken ct = default);
@@ -35,11 +36,13 @@ public interface ICargaViajesService
     Task BajaTipoVehiculoAsync(string codigo, CancellationToken ct = default);
     Task<string> GetNextCodigoTipoVehiculoAsync(CancellationToken ct = default);
     Task<bool> TipoVehiculoTieneActivoAsync(CancellationToken ct = default);
+    Task<CargaViajeLookupOptionDto> CreateTipoVehiculoRapidoAsync(string descripcion, CancellationToken ct = default);
 
     Task<IReadOnlyList<CargaViajeLookupOptionDto>> SearchClientesAsync(string texto, CancellationToken ct = default);
     Task<IReadOnlyList<CargaViajeLookupOptionDto>> SearchChoferLookupAsync(string texto, CancellationToken ct = default);
     Task<IReadOnlyList<CargaViajeLookupOptionDto>> SearchDestinosLookupAsync(string texto, CancellationToken ct = default);
     Task<IReadOnlyList<CargaViajeLookupOptionDto>> SearchTipoVehiculosLookupAsync(string texto, CancellationToken ct = default);
+    Task<CargaViajeLookupOptionDto> CreateChoferRapidoAsync(string nombre, CancellationToken ct = default);
     Task<CargaViajeTarifaGridItemDto?> GetTarifaClienteAsync(string cliente, string destino, string tipoVehiculo, CancellationToken ct = default);
     Task<decimal> GetTarifaFleteroAsync(string chofer, string destino, string tipoVehiculo, CancellationToken ct = default);
     Task<CargaViajesLookupDto> GetLookupsAsync(CancellationToken ct = default);
