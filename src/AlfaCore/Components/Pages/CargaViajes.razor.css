@@ -325,48 +325,6 @@
     border-color: rgba(34, 197, 94, .55);
 }
 
-.carga-viajes-confirm-backdrop {
-    position: fixed;
-    inset: 0;
-    z-index: 200000;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: rgba(2, 6, 23, .72);
-    backdrop-filter: blur(4px);
-    isolation: isolate;
-}
-
-.carga-viajes-confirm-modal {
-    width: min(420px, calc(100vw - 32px));
-    background: #0f172a;
-    border: 1px solid rgba(148, 163, 184, .35);
-    border-radius: 18px;
-    box-shadow: 0 24px 80px rgba(0, 0, 0, .65);
-    padding: 24px;
-    color: #e5e7eb;
-    z-index: 200001;
-}
-
-.carga-viajes-confirm-modal h3 {
-    margin: 0 0 .5rem 0;
-    font-size: 1.02rem;
-}
-
-.carga-viajes-confirm-modal p {
-    margin: 0;
-    color: rgba(226, 232, 240, .92);
-    line-height: 1.45;
-}
-
-.carga-viajes-confirm-modal__actions {
-    margin-top: 1rem;
-    display: flex;
-    justify-content: flex-end;
-    gap: .5rem;
-    flex-wrap: wrap;
-}
-
 .carga-viajes-adicionales {
     gap: .5rem;
 }

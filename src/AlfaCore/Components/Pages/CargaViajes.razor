@@ -966,21 +966,6 @@
         </div>
     }
 
-    @if (_showPendingChangesConfirm)
-    {
-        <div class="carga-viajes-confirm-backdrop" @onclick="CancelPendingChangesConfirmAsync">
-            <section class="carga-viajes-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="carga-viajes-confirm-title" @onclick:stopPropagation="true" @onkeydown="HandlePendingChangesKeyDownAsync" tabindex="0">
-                <h3 id="carga-viajes-confirm-title">@_pendingChangesTitle</h3>
-                <p>@_pendingChangesMessage</p>
-
-                <div class="actions carga-viajes-confirm-modal__actions">
-                    <button type="button" class="btn btn--ghost" autofocus @onclick="CancelPendingChangesConfirmAsync">@_pendingChangesSecondaryLabel</button>
-                    <button type="button" class="btn btn--primary" @onclick="ConfirmPendingChangesAsync">@_pendingChangesPrimaryLabel</button>
-                </div>
-            </section>
-        </div>
-    }
-
 </div>
 
 @code {
@@ -1000,13 +985,6 @@
     private AppUiMessage? _feedback;
     private AppUiMessage? _viajeEditorFeedback;
     private CancellationTokenSource? _feedbackAutoClearCts;
-    private bool _showPendingChangesConfirm;
-    private string _pendingChangesTitle = PendingCloseTitle;
-    private string _pendingChangesMessage = string.Empty;
-    private string _pendingChangesPrimaryLabel = "Abandonar";
-    private string _pendingChangesSecondaryLabel = "Continuar editando";
-    private TaskCompletionSource<bool>? _pendingChangesTcs;
-
     private CargaViajesLookupDto _lookups = new();
     private CargaViajesFilters _viajesFilters = new();
     private List<CargaViajesGridItemDto> _viajes = [];
@@ -1881,42 +1859,13 @@
     private bool HasTipoVehiculoViewSettingsPendingChanges()
         => !string.Equals(_tipoVehiculoViewSettingsSnapshot, CaptureTipoVehiculoViewSettingsSnapshot(_tipoVehiculoViewSettingsDraft), StringComparison.Ordinal);
 
-    private async Task<bool> ShowConfirmDialogAsync(string title, string message, string primaryLabel, string secondaryLabel)
-    {
-        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        _pendingChangesTcs?.TrySetResult(false);
-        _pendingChangesTcs = tcs;
-        _pendingChangesTitle = title;
-        _pendingChangesMessage = message;
-        _pendingChangesPrimaryLabel = primaryLabel;
-        _pendingChangesSecondaryLabel = secondaryLabel;
-        _showPendingChangesConfirm = true;
-        await InvokeAsync(StateHasChanged);
-        return await tcs.Task;
-    }
-
     private Task<bool> ShowPendingChangesConfirmAsync(string message, string primaryLabel, string secondaryLabel)
-        => ShowConfirmDialogAsync(PendingCloseTitle, message, primaryLabel, secondaryLabel);
-
-    private async Task ConfirmPendingChangesAsync()
-        => await HidePendingChangesConfirmAsync(true);
-
-    private async Task CancelPendingChangesConfirmAsync()
-        => await HidePendingChangesConfirmAsync(false);
-
-    private async Task HidePendingChangesConfirmAsync(bool confirm)
-    {
-        _showPendingChangesConfirm = false;
-        _pendingChangesTitle = PendingCloseTitle;
-        _pendingChangesMessage = string.Empty;
-        _pendingChangesPrimaryLabel = "Abandonar";
-        _pendingChangesSecondaryLabel = "Continuar editando";
-
-        var tcs = _pendingChangesTcs;
-        _pendingChangesTcs = null;
-        tcs?.TrySetResult(confirm);
-        await InvokeAsync(StateHasChanged);
-    }
+        => AppDialogs.ShowConfirmAsync(
+            PendingCloseTitle,
+            message,
+            primaryLabel,
+            secondaryLabel,
+            iconClass: "bi bi-exclamation-triangle");
 
     private async Task OnClienteFiltroTextoChangedAsync(string text) { _clienteFiltroTexto = text; _viajesFilters.Cliente = text; await Task.CompletedTask; }
     private async Task OnChoferFiltroTextoChangedAsync(string text) { _choferFiltroTexto = text; _viajesFilters.Chofer = text; await Task.CompletedTask; }
@@ -2794,18 +2743,6 @@
             await CerrarViajeEditorAsync();
     }
 
-    private async Task HandlePendingChangesKeyDownAsync(KeyboardEventArgs args)
-    {
-        if (string.Equals(args.Key, "Escape", StringComparison.OrdinalIgnoreCase))
-        {
-            await CancelPendingChangesConfirmAsync();
-            return;
-        }
-
-        if (string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase) || string.Equals(args.Key, "NumpadEnter", StringComparison.OrdinalIgnoreCase))
-            await ConfirmPendingChangesAsync();
-    }
-
     private async Task NavigateSectionAsync(string section, bool preserveDialog = false)
     {
         var normalized = NormalizeSection(section);
@@ -2823,7 +2760,7 @@
         }
 
         if (!preserveDialog)
-            await HidePendingChangesConfirmAsync(false);
+            await AppDialogs.HideAsync();
 
         await ForceNavigateSectionAsync(normalized);
     }
