@@ -12,13 +12,32 @@
 
 <PageTitle>Partes de horas | Alfa Gestión</PageTitle>
 
-<div class="page-grid">
-    <section class="page-intro">
-        <div>
-            <h2 class="page-intro__title">Partes de horas</h2>
-            <p class="page-intro__text">Registro y control de horas invertidas por cliente, ticket y técnico.</p>
+<div class="page-grid partes-horas-page">
+    <section class="partes-hero">
+        <div class="partes-hero__main">
+            <span class="partes-hero__eyebrow">Control operativo</span>
+            <h2 class="partes-hero__title">Partes de horas</h2>
+            <p class="partes-hero__text">Registro de tiempo por cliente, ticket y técnico, con lectura rápida de excedentes mensuales.</p>
         </div>
-        <div class="actions">
+        <div class="partes-hero__metrics">
+            <article class="partes-metric">
+                <span>Total</span>
+                <strong>@FormatMinutes(_dashboard.MinutosTrabajados)</strong>
+            </article>
+            <article class="partes-metric">
+                <span>Facturable</span>
+                <strong>@FormatMinutes(_dashboard.MinutosFacturables)</strong>
+            </article>
+            <article class="partes-metric partes-metric--warn">
+                <span>Excedente</span>
+                <strong>@FormatMinutes(_dashboard.MinutosExcedentes)</strong>
+            </article>
+            <article class="partes-metric">
+                <span>Pendientes</span>
+                <strong>@_dashboard.PartesPendientes</strong>
+            </article>
+        </div>
+        <div class="partes-hero__actions">
             <button type="button" class="btn btn--primary" @onclick="NuevoParte">Nuevo parte</button>
             <button type="button" class="btn btn--ghost" @onclick="RecargarAsync" disabled="@_loading">Recargar</button>
         </div>
@@ -44,88 +63,103 @@
         </section>
     }
 
-    <section class="metrics-grid">
-        <article class="metric-card">
-            <span>Total trabajado</span>
-            <strong>@FormatMinutes(_dashboard.MinutosTrabajados)</strong>
-        </article>
-        <article class="metric-card">
-            <span>Facturable</span>
-            <strong>@FormatMinutes(_dashboard.MinutosFacturables)</strong>
-        </article>
-        <article class="metric-card">
-            <span>Excedente</span>
-            <strong>@FormatMinutes(_dashboard.MinutosExcedentes)</strong>
-        </article>
-        <article class="metric-card">
-            <span>Pendientes</span>
-            <strong>@_dashboard.PartesPendientes</strong>
-        </article>
-    </section>
-
-    <section class="panel-card filters-card">
-        <div class="panel-card__header">
-            <div>
-                <h3 class="panel-card__title">Filtros</h3>
-                <p class="panel-card__subtitle">Acotá el análisis por período, cliente, técnico, estado o tipo de trabajo.</p>
+    <section class="panel-card partes-search-card">
+        <div class="partes-search">
+            <div class="partes-search__input">
+                <i class="bi bi-search partes-search__icon" aria-hidden="true"></i>
+                <input type="search"
+                       value="@_quickSearch"
+                       @oninput="OnQuickSearchChanged"
+                       @onfocus="OpenFiltros"
+                       @onkeydown="HandleQuickSearchKeyDownAsync"
+                       placeholder="Buscar por cliente o número de ticket" />
             </div>
-        </div>
-        <div class="filters-grid filters-grid--wide">
-            <div class="field">
-                <label>Fecha desde</label>
-                <InputDate @bind-Value="_filters.FechaDesde" />
-            </div>
-            <div class="field">
-                <label>Fecha hasta</label>
-                <InputDate @bind-Value="_filters.FechaHasta" />
-            </div>
-            <div class="field">
-                <label>Cliente</label>
-                <input type="text" @bind="_filters.ClienteCodigo" @bind:event="oninput" placeholder="Código cliente" />
-            </div>
-            <div class="field">
-                <label>Técnico</label>
-                <select @bind="_filters.IdTecnico">
-                    <option value="">Todos</option>
-                    @foreach (var tecnico in _lookups.Tecnicos)
-                    {
-                        <option value="@tecnico.Codigo">@tecnico.Codigo - @tecnico.Titulo</option>
-                    }
-                </select>
-            </div>
-            <div class="field">
-                <label>Estado</label>
-                <select @bind="_filters.Estado">
-                    <option value="">Todos</option>
-                    @foreach (var estado in _lookups.Estados)
-                    {
-                        <option value="@estado">@LabelEstado(estado)</option>
-                    }
-                </select>
-            </div>
-            <div class="field">
-                <label>Tipo</label>
-                <select @bind="_filters.TipoTrabajo">
-                    <option value="">Todos</option>
-                    @foreach (var tipo in _lookups.TiposTrabajo)
-                    {
-                        <option value="@tipo">@LabelTipo(tipo)</option>
-                    }
-                </select>
-            </div>
-            <label class="checkbox">
-                <input type="checkbox" @bind="_filters.SoloFacturables" />
-                <span>Solo facturables</span>
-            </label>
-            <label class="checkbox">
-                <input type="checkbox" @bind="_filters.SoloExcedentes" />
-                <span>Solo excedentes</span>
-            </label>
-        </div>
-        <div class="actions">
-            <button type="button" class="btn btn--primary" @onclick="AplicarFiltrosAsync" disabled="@_loading">Aplicar</button>
+            <button type="button" class="btn btn--primary" @onclick="AplicarBusquedaAsync" disabled="@_loading">Buscar</button>
+            <button type="button" class="btn btn--ghost" @onclick="ToggleFiltros">@(_filtersExpanded ? "Ocultar filtros" : "Filtros")</button>
             <button type="button" class="btn btn--ghost" @onclick="LimpiarFiltrosAsync" disabled="@_loading">Limpiar</button>
         </div>
+
+        <div class="partes-filter-summary">
+            <span>@FormatDateRange()</span>
+            @if (!string.IsNullOrWhiteSpace(_filters.ClienteCodigo))
+            {
+                <span>Cliente @_filters.ClienteCodigo</span>
+            }
+            @if (!string.IsNullOrWhiteSpace(_filters.IdTecnico))
+            {
+                <span>Técnico @_filters.IdTecnico</span>
+            }
+            @if (_filters.SoloFacturables)
+            {
+                <span>Facturables</span>
+            }
+            @if (_filters.SoloExcedentes)
+            {
+                <span>Excedentes</span>
+            }
+        </div>
+
+        @if (_filtersExpanded)
+        {
+            <div class="partes-filters-panel">
+                <div class="field">
+                    <label>Fecha desde</label>
+                    <InputDate @bind-Value="_filters.FechaDesde" />
+                </div>
+                <div class="field">
+                    <label>Fecha hasta</label>
+                    <InputDate @bind-Value="_filters.FechaHasta" />
+                </div>
+                <div class="field">
+                    <label>Cliente</label>
+                    <input type="text" @bind="_filters.ClienteCodigo" @bind:event="oninput" placeholder="Código cliente" />
+                </div>
+                <div class="field">
+                    <label>Técnico</label>
+                    <select @bind="_filters.IdTecnico">
+                        <option value="">Todos</option>
+                        @foreach (var tecnico in _lookups.Tecnicos)
+                        {
+                            <option value="@tecnico.Codigo">@tecnico.Codigo - @tecnico.Titulo</option>
+                        }
+                    </select>
+                </div>
+                <div class="field">
+                    <label>Estado</label>
+                    <select @bind="_filters.Estado">
+                        <option value="">Todos</option>
+                        @foreach (var estado in _lookups.Estados)
+                        {
+                            <option value="@estado">@LabelEstado(estado)</option>
+                        }
+                    </select>
+                </div>
+                <div class="field">
+                    <label>Tipo</label>
+                    <select @bind="_filters.TipoTrabajo">
+                        <option value="">Todos</option>
+                        @foreach (var tipo in _lookups.TiposTrabajo)
+                        {
+                            <option value="@tipo">@LabelTipo(tipo)</option>
+                        }
+                    </select>
+                </div>
+                <div class="partes-filter-checks">
+                    <label class="checkbox">
+                        <input type="checkbox" @bind="_filters.SoloFacturables" />
+                        <span>Solo facturables</span>
+                    </label>
+                    <label class="checkbox">
+                        <input type="checkbox" @bind="_filters.SoloExcedentes" />
+                        <span>Solo excedentes</span>
+                    </label>
+                </div>
+                <div class="actions partes-filters-panel__actions">
+                    <button type="button" class="btn btn--primary" @onclick="AplicarFiltrosAsync" disabled="@_loading">Aplicar filtros</button>
+                    <button type="button" class="btn btn--ghost" @onclick="LimpiarFiltrosAsync" disabled="@_loading">Limpiar</button>
+                </div>
+            </div>
+        }
     </section>
 
     @if (_showEditor)
@@ -395,6 +429,8 @@
     private bool _loading;
     private bool _saving;
     private bool _showEditor;
+    private bool _filtersExpanded;
+    private string _quickSearch = string.Empty;
     private int? _ticketNumeroBusqueda;
 
     protected override async Task OnInitializedAsync()
@@ -440,6 +476,7 @@
 
     private async Task AplicarFiltrosAsync()
     {
+        _filters.Texto = _quickSearch.Trim();
         _filters.PageNumber = 1;
         await BuscarAsync();
     }
@@ -447,8 +484,27 @@
     private async Task LimpiarFiltrosAsync()
     {
         _filters = new PartesHorasFilters();
+        _quickSearch = string.Empty;
         await BuscarAsync();
     }
+
+    private void ToggleFiltros()
+        => _filtersExpanded = !_filtersExpanded;
+
+    private void OpenFiltros()
+        => _filtersExpanded = true;
+
+    private void OnQuickSearchChanged(ChangeEventArgs args)
+        => _quickSearch = Convert.ToString(args.Value) ?? string.Empty;
+
+    private async Task HandleQuickSearchKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase))
+            await AplicarBusquedaAsync();
+    }
+
+    private Task AplicarBusquedaAsync()
+        => AplicarFiltrosAsync();
 
     private async Task CambiarPaginaAsync(int page)
     {
@@ -597,6 +653,13 @@
 
     private static string FormatMinutes(int minutes)
         => $"{minutes / 60}h {minutes % 60:00}m";
+
+    private string FormatDateRange()
+    {
+        var desde = _filters.FechaDesde?.ToString("dd/MM/yyyy") ?? "Sin inicio";
+        var hasta = _filters.FechaHasta?.ToString("dd/MM/yyyy") ?? "Sin fin";
+        return $"{desde} - {hasta}";
+    }
 
     private static string LabelEstado(string value) => value switch
     {

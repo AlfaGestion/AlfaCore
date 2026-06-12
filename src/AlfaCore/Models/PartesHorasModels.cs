@@ -25,6 +25,7 @@ public static class ParteHoraTipoTrabajoKeys
 
 public sealed class PartesHorasFilters
 {
+    public string Texto { get; set; } = string.Empty;
     public DateTime? FechaDesde { get; set; } = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
     public DateTime? FechaHasta { get; set; } = DateTime.Today;
     public string ClienteCodigo { get; set; } = string.Empty;

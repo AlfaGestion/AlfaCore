@@ -429,6 +429,14 @@ public sealed class PartesHorasService(
           AND (@IdTicket IS NULL OR p.IdTicket = @IdTicket)
           AND (@SoloFacturables = 0 OR p.Facturable = 1)
           AND (@SoloExcedentes = 0 OR p.Excedente = 1)
+          AND (
+                @Texto = ''
+                OR ISNULL(p.ClienteCodigo, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                OR ISNULL(cli.RAZON_SOCIAL, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                OR ISNULL(t.Titulo, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                OR CONVERT(varchar(20), ISNULL(t.Numero, 0)) LIKE @TextoLike
+                OR ISNULL(p.Descripcion, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+              )
         """;
 
     private static object BuildFilterArgs(PartesHorasFilters filters, int skip, int pageSize) => new
@@ -443,6 +451,8 @@ public sealed class PartesHorasService(
         filters.IdTicket,
         filters.SoloFacturables,
         filters.SoloExcedentes,
+        Texto = (filters.Texto ?? string.Empty).Trim(),
+        TextoLike = SearchTextHelper.LikeContains((filters.Texto ?? string.Empty).Trim()),
         Skip = skip,
         PageSize = pageSize
     };
