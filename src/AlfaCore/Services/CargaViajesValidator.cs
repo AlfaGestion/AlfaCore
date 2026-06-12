@@ -149,8 +149,8 @@ public sealed class CargaViajesValidator(
     private static async Task<string> ResolveChoferCodeColumnAsync(SqlConnection cn, CancellationToken ct)
         => await ResolveExistingColumnAsync(cn, ct, await ResolveChoferTableAsync(cn, ct), "CODIGO", "CODIGO");
 
-    private static Task<string> ResolveDestinoCodeColumnAsync(SqlConnection cn, CancellationToken ct)
-        => Task.FromResult("IdDestino");
+    private static async Task<string> ResolveDestinoCodeColumnAsync(SqlConnection cn, CancellationToken ct)
+        => await ResolveExistingColumnAsync(cn, ct, await ResolveDestinoTableAsync(cn, ct), "CODIGO", "IDDESTINO", "IdDestino");
 
     private static async Task<string> ResolveExistingTableAsync(SqlConnection cn, CancellationToken ct, params string[] candidates)
     {
