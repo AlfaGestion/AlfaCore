@@ -12,5 +12,6 @@ public interface IAppUiDialogService
     Task ShowBusyAsync(string title, string message, string? detail = null);
     Task ShowMessageAsync(AppUiFeedbackSeverity severity, string title, string message, string? detail = null, string? iconClass = null);
     Task ShowSuccessAsync(string title, string message, string? detail = null);
+    Task<bool> ConfirmAsync(string title, string message, string primaryLabel, string secondaryLabel, string? detail = null, string? iconClass = null);
     Task<bool> ShowConfirmAsync(string title, string message, string primaryLabel, string secondaryLabel, string? detail = null, string? iconClass = null);
 }

@@ -111,6 +111,9 @@ public sealed class AppUiDialogService : IAppUiDialogService
             AutoCloseAfter = TimeSpan.FromSeconds(3)
         });
 
+    public Task<bool> ConfirmAsync(string title, string message, string primaryLabel, string secondaryLabel, string? detail = null, string? iconClass = null)
+        => ShowConfirmAsync(title, message, primaryLabel, secondaryLabel, detail, iconClass);
+
     public async Task<bool> ShowConfirmAsync(string title, string message, string primaryLabel, string secondaryLabel, string? detail = null, string? iconClass = null)
     {
         TaskCompletionSource<bool> pending;

@@ -475,26 +475,6 @@
     }
 }
 
-.carga-viajes-confirm__dialog h3 {
-    margin: 0 0 .5rem 0;
-    font-size: 1rem;
-}
-
-.carga-viajes-confirm__dialog p {
-    margin: 0;
-    color: rgba(226, 232, 240, .86);
-    line-height: 1.45;
-    white-space: pre-line;
-}
-
-.carga-viajes-confirm__actions {
-    margin-top: .95rem;
-    display: flex;
-    justify-content: flex-end;
-    gap: .55rem;
-    flex-wrap: wrap;
-}
-
 .carga-viajes-switch input:checked + .carga-viajes-switch__track .carga-viajes-switch__thumb {
     transform: translateX(1.2rem);
 }
