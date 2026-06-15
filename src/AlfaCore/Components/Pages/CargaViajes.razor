@@ -151,9 +151,10 @@
                                 @foreach (var column in _viewSettingsDraft.Columnas.OrderBy(c => c.Order))
                                 {
                                     <div class="usuarios-view-settings__item">
-                                        <label class="checkbox">
-                                            <input type="checkbox" checked="@column.Visible" @onchange="args => ToggleViewColumn(column.Key, args)" />
-                                            <span>@column.Label</span>
+                                        <label class="carga-viajes-check">
+                                            <input class="carga-viajes-check__input" type="checkbox" checked="@column.Visible" @onchange="args => ToggleViewColumn(column.Key, args)" />
+                                            <span class="carga-viajes-check__box" aria-hidden="true"></span>
+                                            <span class="carga-viajes-check__text">@column.Label</span>
                                         </label>
                                         <div class="actions">
                                             <button type="button" class="btn btn--ghost btn--sm" @onclick="() => MoveViewColumn(column.Key, -1)">â†‘</button>
@@ -265,9 +266,10 @@
                     <input type="search" @bind="_tarifasFilters.Texto" @bind:event="oninput" />
                 </div>
                 <div class="carga-viajes-toolbar__actions">
-                    <label class="carga-viajes-quick-edit-toggle">
-                        <input type="checkbox" @bind="_tarifasQuickImportEditMode" />
-                        <span>Editar solo importes</span>
+                    <label class="carga-viajes-check carga-viajes-quick-edit-toggle">
+                        <input class="carga-viajes-check__input" type="checkbox" @bind="_tarifasQuickImportEditMode" />
+                        <span class="carga-viajes-check__box" aria-hidden="true"></span>
+                        <span class="carga-viajes-check__text">Editar solo importes</span>
                     </label>
                     <button type="button" class="btn btn--ghost btn--sm" @onclick="ToggleTarifasAdvancedFilters" aria-expanded="@_showTarifasAdvancedFilters" aria-controls="carga-viajes-tarifas-filtros-avanzados">
                         @(_showTarifasAdvancedFilters ? "Ocultar filtros" : "Filtros")
@@ -351,7 +353,8 @@
                                         {
                                             <input id="@GetTarifaImporteInputId(item.row.Id)"
                                                    class="carga-viajes-tarifas__importe-editor"
-                                                   type="number"
+                                                   type="text"
+                                                   inputmode="decimal"
                                                    step="0.01"
                                                    @bind-value="_tarifasQuickImportValue"
                                                    @bind-value:event="oninput"
@@ -416,7 +419,13 @@
                             <div class="field"><label>PorcentajeAdic2</label><input @ref="_tarifaPorcentajeAdic2Input" type="number" step="0.01" @bind="_tarifaForm.PorcentajeAdic2" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusTarifaPorcentajeAdic3Async)" /></div>
                             <div class="field"><label>PorcentajeAdic3</label><input @ref="_tarifaPorcentajeAdic3Input" type="number" step="0.01" @bind="_tarifaForm.PorcentajeAdic3" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusTarifaPorcentajeAdic4Async)" /></div>
                             <div class="field"><label>PorcentajeAdic4</label><input @ref="_tarifaPorcentajeAdic4Input" type="number" step="0.01" @bind="_tarifaForm.PorcentajeAdic4" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusTarifaActivoAsync)" /></div>
-                            <div class="field"><label>Activo</label><input @ref="_tarifaActivoInput" type="checkbox" @bind="_tarifaForm.Activo" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusTarifaGuardarAsync)" /></div>
+                            <div class="field">
+                                <label class="carga-viajes-check">
+                                    <input class="carga-viajes-check__input" @ref="_tarifaActivoInput" type="checkbox" @bind="_tarifaForm.Activo" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusTarifaGuardarAsync)" />
+                                    <span class="carga-viajes-check__box" aria-hidden="true"></span>
+                                    <span class="carga-viajes-check__text">Activo</span>
+                                </label>
+                            </div>
                         </div>
                     </div>
                     <footer class="cuentas-modal__actions">
@@ -497,7 +506,13 @@
                         <div class="carga-viajes-form-grid">
                             <div class="field"><label>Código</label><input @ref="_choferCodigoInput" type="text" @bind="_choferForm.Codigo" disabled="@(!_isNewChofer)" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusChoferNombreAsync)" /></div>
                             <div class="field field--wide"><label>Nombre</label><input @ref="_choferNombreInput" type="text" @bind="_choferForm.Nombre" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusChoferActivoAsync)" /></div>
-                            <div class="field"><label>Activo</label><input @ref="_choferActivoInput" type="checkbox" @bind="_choferForm.Activo" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusChoferGuardarAsync)" /></div>
+                            <div class="field">
+                                <label class="carga-viajes-check">
+                                    <input class="carga-viajes-check__input" @ref="_choferActivoInput" type="checkbox" @bind="_choferForm.Activo" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusChoferGuardarAsync)" />
+                                    <span class="carga-viajes-check__box" aria-hidden="true"></span>
+                                    <span class="carga-viajes-check__text">Activo</span>
+                                </label>
+                            </div>
                         </div>
                     </div>
                     <footer class="cuentas-modal__actions">
@@ -576,7 +591,13 @@
                         <div class="carga-viajes-form-grid">
                             <div class="field"><label>Código</label><input @ref="_destinoCodigoInput" type="text" @bind="_destinoForm.Codigo" disabled="@(!_isNewDestino)" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusDestinoDescripcionAsync)" /></div>
                             <div class="field field--wide"><label>Descripción</label><input @ref="_destinoDescripcionInput" type="text" @bind="_destinoForm.Descripcion" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusDestinoActivoAsync)" /></div>
-                            <div class="field"><label>Activo</label><input @ref="_destinoActivoInput" type="checkbox" @bind="_destinoForm.Activo" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusDestinoGuardarAsync)" /></div>
+                            <div class="field">
+                                <label class="carga-viajes-check">
+                                    <input class="carga-viajes-check__input" @ref="_destinoActivoInput" type="checkbox" @bind="_destinoForm.Activo" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusDestinoGuardarAsync)" />
+                                    <span class="carga-viajes-check__box" aria-hidden="true"></span>
+                                    <span class="carga-viajes-check__text">Activo</span>
+                                </label>
+                            </div>
                         </div>
                     </div>
                     <footer class="cuentas-modal__actions">
@@ -767,13 +788,10 @@
                             @if (_tipoVehiculosHasActivo)
                             {
                                 <div class="field field--wide">
-                                    <label>Activo</label>
-                                    <label class="carga-viajes-switch">
-                                        <input @ref="_tipoVehiculoActivoInput" type="checkbox" @bind="_tipoVehiculoForm.Activo" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusTipoVehiculoGuardarAsync)" />
-                                        <span class="carga-viajes-switch__track">
-                                            <span class="carga-viajes-switch__thumb"></span>
-                                        </span>
-                                        <span>Activo</span>
+                                    <label class="carga-viajes-check">
+                                        <input class="carga-viajes-check__input" @ref="_tipoVehiculoActivoInput" type="checkbox" @bind="_tipoVehiculoForm.Activo" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusTipoVehiculoGuardarAsync)" />
+                                        <span class="carga-viajes-check__box" aria-hidden="true"></span>
+                                        <span class="carga-viajes-check__text">Activo</span>
                                     </label>
                                 </div>
                             }
@@ -878,30 +896,28 @@
                                 @for (var i = 0; i < 5; i++)
                                 {
                                     var index = i;
-                                    <label class="carga-viajes-adicionales__item @(GetViajeAdicionalChecked(index) ? "carga-viajes-adicionales__item--active" : string.Empty)">
-                                        <span class="carga-viajes-adicionales__check">
+                                    <label class="carga-viajes-check carga-viajes-adicionales__item @(GetViajeAdicionalChecked(index) ? "carga-viajes-adicionales__item--active" : string.Empty)">
                                         @if (index == 0)
                                         {
-                                            <input @ref="_viajeAdicional0Input" type="checkbox" checked="@GetViajeAdicionalChecked(index)" disabled="@_viajeReadOnly" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusViajeAdicional1Async)" @onchange="args => OnViajeAdicionalChangedAsync(index, args)" />
+                                            <input class="carga-viajes-adicionales__input" @ref="_viajeAdicional0Input" type="checkbox" checked="@GetViajeAdicionalChecked(index)" disabled="@_viajeReadOnly" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusViajeAdicional1Async)" @onchange="args => OnViajeAdicionalChangedAsync(index, args)" />
                                         }
                                         else if (index == 1)
                                         {
-                                            <input @ref="_viajeAdicional1Input" type="checkbox" checked="@GetViajeAdicionalChecked(index)" disabled="@_viajeReadOnly" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusViajeAdicional2Async)" @onchange="args => OnViajeAdicionalChangedAsync(index, args)" />
+                                            <input class="carga-viajes-adicionales__input" @ref="_viajeAdicional1Input" type="checkbox" checked="@GetViajeAdicionalChecked(index)" disabled="@_viajeReadOnly" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusViajeAdicional2Async)" @onchange="args => OnViajeAdicionalChangedAsync(index, args)" />
                                         }
                                         else if (index == 2)
                                         {
-                                            <input @ref="_viajeAdicional2Input" type="checkbox" checked="@GetViajeAdicionalChecked(index)" disabled="@_viajeReadOnly" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusViajeAdicional3Async)" @onchange="args => OnViajeAdicionalChangedAsync(index, args)" />
+                                            <input class="carga-viajes-adicionales__input" @ref="_viajeAdicional2Input" type="checkbox" checked="@GetViajeAdicionalChecked(index)" disabled="@_viajeReadOnly" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusViajeAdicional3Async)" @onchange="args => OnViajeAdicionalChangedAsync(index, args)" />
                                         }
                                         else if (index == 3)
                                         {
-                                            <input @ref="_viajeAdicional3Input" type="checkbox" checked="@GetViajeAdicionalChecked(index)" disabled="@_viajeReadOnly" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusViajeAdicional4Async)" @onchange="args => OnViajeAdicionalChangedAsync(index, args)" />
+                                            <input class="carga-viajes-adicionales__input" @ref="_viajeAdicional3Input" type="checkbox" checked="@GetViajeAdicionalChecked(index)" disabled="@_viajeReadOnly" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusViajeAdicional4Async)" @onchange="args => OnViajeAdicionalChangedAsync(index, args)" />
                                         }
                                         else
                                         {
-                                            <input @ref="_viajeAdicional4Input" type="checkbox" checked="@GetViajeAdicionalChecked(index)" disabled="@_viajeReadOnly" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusViajeObservacionesAsync)" @onchange="args => OnViajeAdicionalChangedAsync(index, args)" />
+                                            <input class="carga-viajes-adicionales__input" @ref="_viajeAdicional4Input" type="checkbox" checked="@GetViajeAdicionalChecked(index)" disabled="@_viajeReadOnly" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusViajeObservacionesAsync)" @onchange="args => OnViajeAdicionalChangedAsync(index, args)" />
                                         }
                                         <span class="carga-viajes-adicionales__box" aria-hidden="true"></span>
-                                        </span>
                                         <span class="carga-viajes-adicionales__content">
                                         <span class="carga-viajes-adicionales__name">@GetAdicionalLabel(index)</span>
                                         <span class="carga-viajes-adicionales__percent">@GetViajeAdicionalPercentText(index)</span>
