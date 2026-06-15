@@ -40,11 +40,15 @@ public interface ICargaViajesService
 
     Task<IReadOnlyList<CargaViajeLookupOptionDto>> SearchClientesAsync(string texto, CancellationToken ct = default);
     Task<IReadOnlyList<CargaViajeLookupOptionDto>> SearchChoferLookupAsync(string texto, CancellationToken ct = default);
+    Task<IReadOnlyList<CargaViajeLookupOptionDto>> SearchFleterosLookupAsync(string texto, CancellationToken ct = default);
     Task<IReadOnlyList<CargaViajeLookupOptionDto>> SearchDestinosLookupAsync(string texto, CancellationToken ct = default);
     Task<IReadOnlyList<CargaViajeLookupOptionDto>> SearchTipoVehiculosLookupAsync(string texto, CancellationToken ct = default);
+    Task<IReadOnlyList<CargaViajeLookupOptionDto>> SearchTarifasLookupAsync(string texto, CancellationToken ct = default);
     Task<CargaViajeLookupOptionDto> CreateChoferRapidoAsync(string nombre, CancellationToken ct = default);
     Task<CargaViajeTarifaGridItemDto?> GetTarifaClienteAsync(string cliente, string destino, string tipoVehiculo, CancellationToken ct = default);
     Task<decimal> GetTarifaFleteroAsync(string chofer, string destino, string tipoVehiculo, CancellationToken ct = default);
+    Task<CargaViajeTarifaGridItemDto?> ClonarTarifaParaViajeAsync(string idListaBase, CargaViajeSaveRequest viaje, CancellationToken ct = default);
+    Task<IReadOnlyList<CargaViajeReporteLiquidacionRowDto>> SearchLiquidacionChoferesAsync(CargaViajesReporteLiquidacionFilters filters, CancellationToken ct = default);
     Task<CargaViajesLookupDto> GetLookupsAsync(CancellationToken ct = default);
 
     Task<CargaViajesViewSettingsDto> GetViewSettingsAsync(string userName, CancellationToken ct = default);

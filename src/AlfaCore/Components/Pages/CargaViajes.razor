@@ -25,6 +25,7 @@
             <button type="button" class="btn btn--sm @(_activeSection == SectionChoferes ? "btn--primary" : "btn--ghost")" @onclick="() => NavigateSectionAsync(SectionChoferes)">Choferes</button>
             <button type="button" class="btn btn--sm @(_activeSection == SectionDestinos ? "btn--primary" : "btn--ghost")" @onclick="() => NavigateSectionAsync(SectionDestinos)">Destinos</button>
             <button type="button" class="btn btn--sm @(_activeSection == SectionTipoVehiculo ? "btn--primary" : "btn--ghost")" @onclick="() => NavigateSectionAsync(SectionTipoVehiculo)">Tipo vehículo</button>
+            <button type="button" class="btn btn--sm @(_activeSection == SectionReportes ? "btn--primary" : "btn--ghost")" @onclick="() => NavigateSectionAsync(SectionReportes)">Reportes</button>
             <button type="button" class="btn btn--sm @(_activeSection == SectionConfiguracion ? "btn--primary" : "btn--ghost")" @onclick="() => NavigateSectionAsync(SectionConfiguracion)">Configuración</button>
         </div>
     </section>
@@ -266,7 +267,7 @@
                     <input type="search" @bind="_tarifasFilters.Texto" @bind:event="oninput" />
                 </div>
                 <div class="carga-viajes-toolbar__actions">
-                    <label class="carga-viajes-check carga-viajes-quick-edit-toggle">
+                    <label class="carga-viajes-check carga-viajes-quick-edit-toggle @(_tarifasQuickImportEditMode ? "carga-viajes-check--active" : string.Empty)">
                         <input class="carga-viajes-check__input" type="checkbox" @bind="_tarifasQuickImportEditMode" />
                         <span class="carga-viajes-check__box" aria-hidden="true"></span>
                         <span class="carga-viajes-check__text">Editar solo importes</span>
@@ -414,13 +415,13 @@
                             <div class="field"><label>Destino</label><input @ref="_tarifaDestinoInput" type="text" @bind="_tarifaForm.Destino" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusTarifaTipoVehiculoAsync)" /></div>
                             <div class="field"><label>Tipo vehículo</label><input @ref="_tarifaTipoVehiculoInput" type="text" @bind="_tarifaForm.TipoVehiculo" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusTarifaTarifaFleteroAsync)" /></div>
                             <div class="field"><label>Tarifa fletero</label><select @ref="_tarifaTarifaFleteroInput" @bind="_tarifaForm.TarifaFletero" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusTarifaPorcentajeAdicAsync)"><option value="false">Tarifa cliente</option><option value="true">Tarifa chofer/fletero</option></select></div>
-                            <div class="field"><label>PorcentajeAdic</label><input @ref="_tarifaPorcentajeAdicInput" type="number" step="0.01" @bind="_tarifaForm.PorcentajeAdic" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusTarifaPorcentajeAdic1Async)" /></div>
-                            <div class="field"><label>PorcentajeAdic1</label><input @ref="_tarifaPorcentajeAdic1Input" type="number" step="0.01" @bind="_tarifaForm.PorcentajeAdic1" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusTarifaPorcentajeAdic2Async)" /></div>
-                            <div class="field"><label>PorcentajeAdic2</label><input @ref="_tarifaPorcentajeAdic2Input" type="number" step="0.01" @bind="_tarifaForm.PorcentajeAdic2" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusTarifaPorcentajeAdic3Async)" /></div>
-                            <div class="field"><label>PorcentajeAdic3</label><input @ref="_tarifaPorcentajeAdic3Input" type="number" step="0.01" @bind="_tarifaForm.PorcentajeAdic3" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusTarifaPorcentajeAdic4Async)" /></div>
-                            <div class="field"><label>PorcentajeAdic4</label><input @ref="_tarifaPorcentajeAdic4Input" type="number" step="0.01" @bind="_tarifaForm.PorcentajeAdic4" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusTarifaActivoAsync)" /></div>
+                            <div class="field carga-viajes-percent-field"><label>@GetAdicionalLabel(0)</label><div class="carga-viajes-percent-field__control"><input @ref="_tarifaPorcentajeAdicInput" class="carga-viajes-percent-field__input" type="text" inputmode="decimal" @bind="_tarifaForm.PorcentajeAdic" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusTarifaPorcentajeAdic1Async)" /><span class="carga-viajes-percent-field__suffix">%</span></div></div>
+                            <div class="field carga-viajes-percent-field"><label>@GetAdicionalLabel(1)</label><div class="carga-viajes-percent-field__control"><input @ref="_tarifaPorcentajeAdic1Input" class="carga-viajes-percent-field__input" type="text" inputmode="decimal" @bind="_tarifaForm.PorcentajeAdic1" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusTarifaPorcentajeAdic2Async)" /><span class="carga-viajes-percent-field__suffix">%</span></div></div>
+                            <div class="field carga-viajes-percent-field"><label>@GetAdicionalLabel(2)</label><div class="carga-viajes-percent-field__control"><input @ref="_tarifaPorcentajeAdic2Input" class="carga-viajes-percent-field__input" type="text" inputmode="decimal" @bind="_tarifaForm.PorcentajeAdic2" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusTarifaPorcentajeAdic3Async)" /><span class="carga-viajes-percent-field__suffix">%</span></div></div>
+                            <div class="field carga-viajes-percent-field"><label>@GetAdicionalLabel(3)</label><div class="carga-viajes-percent-field__control"><input @ref="_tarifaPorcentajeAdic3Input" class="carga-viajes-percent-field__input" type="text" inputmode="decimal" @bind="_tarifaForm.PorcentajeAdic3" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusTarifaPorcentajeAdic4Async)" /><span class="carga-viajes-percent-field__suffix">%</span></div></div>
+                            <div class="field carga-viajes-percent-field"><label>@GetAdicionalLabel(4)</label><div class="carga-viajes-percent-field__control"><input @ref="_tarifaPorcentajeAdic4Input" class="carga-viajes-percent-field__input" type="text" inputmode="decimal" @bind="_tarifaForm.PorcentajeAdic4" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusTarifaActivoAsync)" /><span class="carga-viajes-percent-field__suffix">%</span></div></div>
                             <div class="field">
-                                <label class="carga-viajes-check">
+                                <label class="carga-viajes-check @(_tarifaForm.Activo ? "carga-viajes-check--active" : string.Empty)">
                                     <input class="carga-viajes-check__input" @ref="_tarifaActivoInput" type="checkbox" @bind="_tarifaForm.Activo" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusTarifaGuardarAsync)" />
                                     <span class="carga-viajes-check__box" aria-hidden="true"></span>
                                     <span class="carga-viajes-check__text">Activo</span>
@@ -464,6 +465,7 @@
                 <div id="carga-viajes-choferes-filtros-avanzados" class="carga-viajes-advanced-grid">
                     <div class="field"><label>Activo</label><select @bind="_choferesFilters.Activo"><option value="">Todos</option><option value="1">Sí</option><option value="0">No</option></select></div>
                     <div class="field"><label>Disponible</label><select @bind="_choferesFilters.Disponible"><option value="">Todos</option><option value="1">Sí</option><option value="0">No</option></select></div>
+                    <div class="field"><label>Es fletero</label><select @bind="_choferesFilters.EsFletero"><option value="">Todos</option><option value="1">Sí</option><option value="0">No</option></select></div>
                     <div class="field"><label>Tipo vehículo</label><LookupAutocomplete Label="" Placeholder="Buscar tipo..." Text="@_choferesTipoVehiculoTexto" TextChanged="OnChoferTipoVehiculoChangedAsync" SelectedChanged="OnChoferTipoVehiculoSelectedAsync" SearchFunc="CargaViajesSvc.SearchTipoVehiculosLookupAsync" /></div>
                 </div>
             }
@@ -475,12 +477,12 @@
             </div>
             <div class="usuarios-table-wrap">
                 <table class="data-table">
-                    <thead><tr><th>Código</th><th>Nombre</th><th>Activo</th><th>Disponible</th><th>Acciones</th></tr></thead>
+                    <thead><tr><th>Código</th><th>Nombre</th><th>Activo</th><th>Disponible</th><th>Es fletero</th><th>Acciones</th></tr></thead>
                     <tbody>
                                 @foreach (var row in _choferes)
                                 {
                             <tr @ondblclick="() => EditarChoferAsync(row.Codigo)">
-                                <td>@row.Codigo</td><td>@row.Nombre</td><td>@(row.Activo ? "Sí" : "No")</td>
+                                <td>@row.Codigo</td><td>@row.Nombre</td><td>@(row.Activo ? "Sí" : "No")</td><td>@(row.Disponible ? "Sí" : "No")</td><td>@(row.EsFletero ? "Sí" : "No")</td>
                                 <td><div class="actions"><button type="button" class="btn btn--ghost btn--sm" @onclick="() => EditarChoferAsync(row.Codigo)">Editar</button><button type="button" class="btn btn--ghost btn--sm" @onclick="() => BajaChoferAsync(row.Codigo)">Baja</button></div></td>
                             </tr>
                         }
@@ -507,10 +509,17 @@
                             <div class="field"><label>Código</label><input @ref="_choferCodigoInput" type="text" @bind="_choferForm.Codigo" disabled="@(!_isNewChofer)" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusChoferNombreAsync)" /></div>
                             <div class="field field--wide"><label>Nombre</label><input @ref="_choferNombreInput" type="text" @bind="_choferForm.Nombre" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusChoferActivoAsync)" /></div>
                             <div class="field">
-                                <label class="carga-viajes-check">
+                                <label class="carga-viajes-check @(_choferForm.Activo ? "carga-viajes-check--active" : string.Empty)">
                                     <input class="carga-viajes-check__input" @ref="_choferActivoInput" type="checkbox" @bind="_choferForm.Activo" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusChoferGuardarAsync)" />
                                     <span class="carga-viajes-check__box" aria-hidden="true"></span>
                                     <span class="carga-viajes-check__text">Activo</span>
+                                </label>
+                            </div>
+                            <div class="field">
+                                <label class="carga-viajes-check @(_choferForm.EsFletero ? "carga-viajes-check--active" : string.Empty)">
+                                    <input class="carga-viajes-check__input" type="checkbox" @bind="_choferForm.EsFletero" />
+                                    <span class="carga-viajes-check__box" aria-hidden="true"></span>
+                                    <span class="carga-viajes-check__text">Es fletero</span>
                                 </label>
                             </div>
                         </div>
@@ -592,7 +601,7 @@
                             <div class="field"><label>Código</label><input @ref="_destinoCodigoInput" type="text" @bind="_destinoForm.Codigo" disabled="@(!_isNewDestino)" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusDestinoDescripcionAsync)" /></div>
                             <div class="field field--wide"><label>Descripción</label><input @ref="_destinoDescripcionInput" type="text" @bind="_destinoForm.Descripcion" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusDestinoActivoAsync)" /></div>
                             <div class="field">
-                                <label class="carga-viajes-check">
+                                <label class="carga-viajes-check @(_destinoForm.Activo ? "carga-viajes-check--active" : string.Empty)">
                                     <input class="carga-viajes-check__input" @ref="_destinoActivoInput" type="checkbox" @bind="_destinoForm.Activo" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusDestinoGuardarAsync)" />
                                     <span class="carga-viajes-check__box" aria-hidden="true"></span>
                                     <span class="carga-viajes-check__text">Activo</span>
@@ -746,9 +755,10 @@
                                 @foreach (var column in _tipoVehiculoViewSettingsDraft.Columnas.OrderBy(c => c.Order))
                                 {
                                     <div class="usuarios-view-settings__item">
-                                        <label class="checkbox">
-                                            <input type="checkbox" checked="@column.Visible" @onchange="args => ToggleTipoVehiculoViewColumn(column.Key, args)" />
-                                            <span>@column.Label</span>
+                                        <label class="carga-viajes-checkbox @(column.Visible ? "carga-viajes-check--active" : string.Empty)">
+                                            <input class="carga-viajes-checkbox__input" type="checkbox" checked="@column.Visible" @onchange="args => ToggleTipoVehiculoViewColumn(column.Key, args)" />
+                                            <span class="carga-viajes-checkbox__box" aria-hidden="true"></span>
+                                            <span class="carga-viajes-checkbox__label">@column.Label</span>
                                         </label>
                                         <div class="actions">
                                             <button type="button" class="btn btn--ghost btn--sm" @onclick="() => MoveTipoVehiculoViewColumn(column.Key, -1)">↑</button>
@@ -788,7 +798,7 @@
                             @if (_tipoVehiculosHasActivo)
                             {
                                 <div class="field field--wide">
-                                    <label class="carga-viajes-check">
+                                    <label class="carga-viajes-check @(_tipoVehiculoForm.Activo ? "carga-viajes-check--active" : string.Empty)">
                                         <input class="carga-viajes-check__input" @ref="_tipoVehiculoActivoInput" type="checkbox" @bind="_tipoVehiculoForm.Activo" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusTipoVehiculoGuardarAsync)" />
                                         <span class="carga-viajes-check__box" aria-hidden="true"></span>
                                         <span class="carga-viajes-check__text">Activo</span>
@@ -804,6 +814,165 @@
                 </section>
             </div>
         }
+    }
+    else if (_activeSection == SectionReportes)
+    {
+        <section class="panel-card carga-viajes-section carga-viajes-section--filters">
+            <div class="panel-card__header">
+                <div>
+                    <h3 class="panel-card__title">Reportes</h3>
+                    <span class="panel-card__subtitle">Liquidación de choferes y fleteros</span>
+                </div>
+                <div class="actions">
+                    <button type="button" class="btn btn--primary btn--sm" @onclick="BuscarReporteLiquidacionAsync" disabled="@_reportesLoading">Buscar / Generar</button>
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="LimpiarFiltrosReporteAsync" disabled="@_reportesLoading">Limpiar filtros</button>
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="ExportarReporteExcelAsync" disabled="@_reportesLoading">Exportar Excel</button>
+                </div>
+            </div>
+
+            <div class="carga-viajes-toolbar">
+                <div class="field">
+                    <label>Fecha desde</label>
+                    <InputDate @bind-Value="_reporteLiquidacionFilters.FechaDesde" />
+                </div>
+                <div class="field">
+                    <label>Fecha hasta</label>
+                        <InputDate @bind-Value="_reporteLiquidacionFilters.FechaHasta" />
+                    </div>
+                <div class="field field--wide">
+                    <label>Tipo de reporte</label>
+                    <div class="carga-viajes-reportes__modes">
+                        <button type="button"
+                                class="carga-viajes-reportes__mode @(IsReporteChoferes() ? "carga-viajes-reportes__mode--active" : string.Empty)"
+                                aria-pressed="@IsReporteChoferes()"
+                                @onclick="() => SetReporteTipoAsync(CargaViajesReporteTipoKeys.LiquidacionChoferes)">
+                            <span class="carga-viajes-reportes__mode-dot" aria-hidden="true"></span>
+                            <span class="carga-viajes-reportes__mode-body">
+                                <span class="carga-viajes-reportes__mode-eyebrow">Consulta</span>
+                                <span class="carga-viajes-reportes__mode-label">Choferes</span>
+                                <span class="carga-viajes-reportes__mode-note">Busca por chofer y muestra la liquidación por chofer.</span>
+                            </span>
+                        </button>
+                        <button type="button"
+                                class="carga-viajes-reportes__mode @(IsReporteFleteros() ? "carga-viajes-reportes__mode--active" : string.Empty)"
+                                aria-pressed="@IsReporteFleteros()"
+                                @onclick="() => SetReporteTipoAsync(CargaViajesReporteTipoKeys.LiquidacionFleteros)">
+                            <span class="carga-viajes-reportes__mode-dot" aria-hidden="true"></span>
+                            <span class="carga-viajes-reportes__mode-body">
+                                <span class="carga-viajes-reportes__mode-eyebrow">Consulta</span>
+                                <span class="carga-viajes-reportes__mode-label">Fleteros</span>
+                                <span class="carga-viajes-reportes__mode-note">Busca solo fleteros y muestra la liquidación por fletero.</span>
+                            </span>
+                        </button>
+                    </div>
+                    <div class="carga-viajes-reportes__legend">
+                        <span>Consulta: <strong>@GetReporteConsultaTexto()</strong></span>
+                        <span>Se muestra: <strong>@GetReporteVistaTexto()</strong></span>
+                    </div>
+                </div>
+                @if (IsReporteFleteros())
+                {
+                    <div class="field">
+                        <label>Fletero</label>
+                        <LookupAutocomplete Label="" Placeholder="Buscar fletero..." Text="@_reporteFleteroTexto" TextChanged="OnReporteFleteroTextoChangedAsync" SelectedChanged="OnReporteFleteroSeleccionadoAsync" SearchFunc="CargaViajesSvc.SearchFleterosLookupAsync" />
+                    </div>
+                }
+                else
+                {
+                    <div class="field">
+                        <label>Chofer</label>
+                        <LookupAutocomplete Label="" Placeholder="Buscar chofer..." Text="@_reporteChoferTexto" TextChanged="OnReporteChoferTextoChangedAsync" SelectedChanged="OnReporteChoferSeleccionadoAsync" SearchFunc="CargaViajesSvc.SearchChoferLookupAsync" />
+                    </div>
+                }
+            </div>
+        </section>
+
+        <section class="panel-card">
+            <div class="panel-card__header">
+                <div>
+                    <h3 class="panel-card__title">@GetReporteTitulo()</h3>
+                    <span class="panel-card__subtitle">@_reporteLiquidacionRows.Count viaje(s) | Total a pagar: @_reporteTotalFlete.ToString("N2")</span>
+                </div>
+            </div>
+
+            <div class="carga-viajes-reportes__chart">
+                <HorizontalBarChart Data="@GetReporteLiquidacionChartData()" Titulo="@GetReporteChartTitle()" Subtitulo="@GetReporteChartSubtitle()" Formato="moneda" />
+            </div>
+
+            @if (_reportesLoading)
+            {
+                <div class="usuarios-empty">Generando reporte...</div>
+            }
+            else if (_reporteLiquidacionRows.Count == 0)
+            {
+                <div class="usuarios-empty">No se encontraron viajes para los filtros seleccionados.</div>
+            }
+            else
+            {
+                if (ShouldShowReporteResumenPorChofer())
+                {
+                    <div class="usuarios-table-wrap">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Chofer</th>
+                                    <th>Nombre</th>
+                                    <th>Es fletero</th>
+                                    <th>Cantidad viajes</th>
+                                    <th>Total flete</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var resumen in GetReporteLiquidacionResumen())
+                                {
+                                    <tr>
+                                        <td>@resumen.ChoferCodigo</td>
+                                        <td>@resumen.ChoferNombre</td>
+                                        <td>@(resumen.EsFletero ? "Sí" : "No")</td>
+                                        <td>@resumen.CantidadViajes</td>
+                                        <td>@resumen.TotalFlete.ToString("N2")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+
+                <div class="usuarios-table-wrap">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Fecha</th>
+                                <th>Comprobante</th>
+                                <th>Chofer</th>
+                                <th>Es fletero</th>
+                                <th>Cliente</th>
+                                <th>Destino</th>
+                                <th>Tipo vehículo</th>
+                                <th>Cantidad viajes</th>
+                                <th>Total flete</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in _reporteLiquidacionRows)
+                            {
+                                <tr>
+                                    <td>@row.Fecha.ToString("dd/MM/yyyy")</td>
+                                    <td>@row.IdComprobante</td>
+                                    <td>@($"{row.ChoferCodigo} - {row.ChoferNombre}")</td>
+                                    <td>@(row.EsFletero ? "Sí" : "No")</td>
+                                    <td>@($"{row.ClienteCodigo} - {row.ClienteNombre}")</td>
+                                    <td>@($"{row.DestinoCodigo} - {row.DestinoDescripcion}")</td>
+                                    <td>@($"{row.TipoVehiculoCodigo} - {row.TipoVehiculoDescripcion}")</td>
+                                    <td>@row.CantidadViajes</td>
+                                    <td>@row.TotalFlete.ToString("N2")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
     }
     else if (_activeSection == SectionConfiguracion)
     {
@@ -825,6 +994,10 @@
                 <article class="panel-card carga-viajes-config-summary__item">
                     <span class="panel-card__tag">LETRA</span>
                     <h3 class="panel-card__title">@_config.Letra</h3>
+                </article>
+                <article class="panel-card carga-viajes-config-summary__item">
+                    <span class="panel-card__tag">CHOFER GENERAL</span>
+                    <h3 class="panel-card__title">@(!string.IsNullOrWhiteSpace(_config.ChoferGeneral) ? _config.ChoferGeneral : "Sin configurar")</h3>
                 </article>
                 <article class="panel-card carga-viajes-config-summary__item">
                     <span class="panel-card__tag">ADICIONALES</span>
@@ -872,7 +1045,14 @@
                         </div>
                         <div class="field">
                             <label>Lista</label>
-                            <input type="text" value="@_viajeForm.ListaDisplay" readonly />
+                            <LookupAutocomplete Label=""
+                                                Placeholder="Buscar tarifa..."
+                                                Text="@_viajeListaTexto"
+                                                TextChanged="OnViajeListaTextoChangedAsync"
+                                                SelectedChanged="OnViajeTarifaSeleccionadaAsync"
+                                                OnEnterCommitted="FocusViajeImporteClienteAsync"
+                                                SearchFunc="CargaViajesSvc.SearchTarifasLookupAsync"
+                                                Disabled="@_viajeReadOnly" />
                         </div>
                         <div class="field">
                             <label>Importe cliente</label>
@@ -896,7 +1076,7 @@
                                 @for (var i = 0; i < 5; i++)
                                 {
                                     var index = i;
-                                    <label class="carga-viajes-check carga-viajes-adicionales__item @(GetViajeAdicionalChecked(index) ? "carga-viajes-adicionales__item--active" : string.Empty)">
+                                    <label class="carga-viajes-check carga-viajes-adicionales__item @(GetViajeAdicionalChecked(index) ? "carga-viajes-check--active" : string.Empty)">
                                         @if (index == 0)
                                         {
                                             <input class="carga-viajes-adicionales__input" @ref="_viajeAdicional0Input" type="checkbox" checked="@GetViajeAdicionalChecked(index)" disabled="@_viajeReadOnly" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusViajeAdicional1Async)" @onchange="args => OnViajeAdicionalChangedAsync(index, args)" />
@@ -919,8 +1099,16 @@
                                         }
                                         <span class="carga-viajes-adicionales__box" aria-hidden="true"></span>
                                         <span class="carga-viajes-adicionales__content">
-                                        <span class="carga-viajes-adicionales__name">@GetAdicionalLabel(index)</span>
-                                        <span class="carga-viajes-adicionales__percent">@GetViajeAdicionalPercentText(index)</span>
+                                            <span class="carga-viajes-adicionales__name">@GetAdicionalLabel(index)</span>
+                                            <div class="carga-viajes-adicionales__percent-row">
+                                                <input class="carga-viajes-adicionales__percent-input"
+                                                       type="text"
+                                                       inputmode="decimal"
+                                                       value="@GetViajeAdicionalPercentInputText(index)"
+                                                       disabled="@_viajeReadOnly"
+                                                       @onchange="args => OnViajeAdicionalPercentChangedAsync(index, args)" />
+                                                <span class="carga-viajes-adicionales__percent-suffix">%</span>
+                                            </div>
                                         </span>
                                     </label>
                                 }
@@ -956,9 +1144,10 @@
                 </header>
 
                     <div class="cuentas-modal__body">
-                        <div class="carga-viajes-config-grid">
+                    <div class="carga-viajes-config-grid">
                         <div class="field"><label>Sucursal</label><input @ref="_configSucursalInput" type="text" maxlength="4" @bind="_config.Sucursal" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusConfigLetraAsync)" /></div>
-                        <div class="field"><label>Letra</label><input @ref="_configLetraInput" type="text" maxlength="1" @bind="_config.Letra" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusConfigGuardarAsync)" /></div>
+                        <div class="field"><label>Letra</label><input @ref="_configLetraInput" type="text" maxlength="1" @bind="_config.Letra" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusConfigChoferGeneralAsync)" /></div>
+                        <div class="field field--wide"><label>Chofer general</label><input @ref="_configChoferGeneralInput" type="text" @bind="_config.ChoferGeneral" placeholder="Código del chofer general" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusConfigGuardarAsync)" /></div>
                         @for (var i = 0; i < _config.NombresAdicionales.Count; i++)
                         {
                             var index = i;
@@ -993,6 +1182,7 @@
     private const string SectionChoferes = "choferes";
     private const string SectionDestinos = "destinos";
     private const string SectionTipoVehiculo = "tipo-vehiculo";
+    private const string SectionReportes = "reportes";
     private const string SectionConfiguracion = "configuracion";
     private const string PendingCloseTitle = "Cambios sin guardar";
 
@@ -1024,6 +1214,7 @@
     private bool _showChoferesAdvancedFilters;
     private bool _showDestinosAdvancedFilters;
     private bool _showTipoVehiculosAdvancedFilters;
+    private bool _reportesLoading;
     private bool _tipoVehiculoSchemaLoaded;
     private bool _tipoVehiculosHasActivo;
     private bool _showTipoVehiculoEditor;
@@ -1034,6 +1225,16 @@
     private CargaViajeTipoVehiculoViewSettingsDto _tipoVehiculoViewSettingsDraft = new();
     private string _tipoVehiculoDraftAgruparPor = CargaViajeTipoVehiculoViewGroupKeys.None;
     private string _tipoVehiculoViewSettingsUserName = string.Empty;
+    private CargaViajesReporteLiquidacionFilters _reporteLiquidacionFilters = CreateDefaultReporteLiquidacionFilters();
+    private readonly List<CargaViajeReporteLiquidacionRowDto> _reporteLiquidacionRows = [];
+    private decimal _reporteTotalFlete;
+    private readonly List<CargaViajesReportTypeOptionDto> _reportTypes =
+    [
+        new() { Value = CargaViajesReporteTipoKeys.LiquidacionChoferes, Label = "Liquidación de choferes" },
+        new() { Value = CargaViajesReporteTipoKeys.LiquidacionFleteros, Label = "Liquidación de fleteros" }
+    ];
+    private string _reporteChoferTexto = string.Empty;
+    private string _reporteFleteroTexto = string.Empty;
 
     private string _clienteFiltroTexto = string.Empty;
     private string _choferFiltroTexto = string.Empty;
@@ -1043,6 +1244,8 @@
     private string _viajeChoferTexto = string.Empty;
     private string _viajeDestinoTexto = string.Empty;
     private string _viajeTipoVehiculoTexto = string.Empty;
+    private string _viajeListaTexto = string.Empty;
+    private bool _viajeListaManualOverride;
     private string _choferesTipoVehiculoTexto = string.Empty;
     private readonly bool[] _viajeAdicionalesActivos = [false, false, false, false, false];
     private LookupAutocomplete? _viajeClienteLookup;
@@ -1088,6 +1291,7 @@
     private ElementReference _tipoVehiculoGuardarButton;
     private ElementReference _configSucursalInput;
     private ElementReference _configLetraInput;
+    private ElementReference _configChoferGeneralInput;
     private ElementReference _configGuardarButton;
     private CargaViajesFilters _choferesFilters = new() { PageNumber = 1, PageSize = 50 };
     private CargaViajesFilters _destinosFilters = new() { PageNumber = 1, PageSize = 50 };
@@ -1176,6 +1380,9 @@
             case SectionTipoVehiculo:
                 await EnsureTipoVehiculoViewSettingsLoadedAsync();
                 await RecargarTipoVehiculosAsync();
+                break;
+            case SectionReportes:
+                await RecargarReporteLiquidacionAsync();
                 break;
             case SectionConfiguracion:
                 await Task.CompletedTask;
@@ -1364,6 +1571,8 @@
         _viajeSeleccionado = null;
         _viajeForm = BuildDefaultViajeForm(_config);
         _viajeClienteTexto = _viajeChoferTexto = _viajeDestinoTexto = _viajeTipoVehiculoTexto = string.Empty;
+        _viajeListaTexto = string.Empty;
+        _viajeListaManualOverride = false;
         _viajeForm.ClienteDisplay = string.Empty;
         _viajeForm.ChoferDisplay = string.Empty;
         _viajeForm.DestinoDisplay = string.Empty;
@@ -1396,7 +1605,8 @@
             _viajesFilters.PageNumber = 1;
             await RecargarViajesAsync();
             await NavigateSectionAsync(SectionViajes, preserveDialog: true);
-            await AppDialogs.ShowSuccessAsync("Viaje guardado correctamente", $"El viaje #{savedId} quedó registrado correctamente.");
+            var idComprobante = string.IsNullOrWhiteSpace(_viajeForm.IdComprobante) ? $"#{savedId}" : _viajeForm.IdComprobante;
+            await AppDialogs.ShowSuccessAsync("Viaje guardado correctamente", $"El viaje {idComprobante} quedó registrado correctamente.");
         }
         catch (AppValidationException validationEx)
         {
@@ -1519,6 +1729,9 @@
         return string.IsNullOrWhiteSpace(name) ? $"Adicional {index + 1}" : name.Trim();
     }
 
+    private decimal GetConfiguredAdicionalPercent(int index)
+        => _config.PorcentajesAdicionales.ElementAtOrDefault(index);
+
     private static string FormatLookupDisplay(string code, string description)
     {
         var cleanCode = (code ?? string.Empty).Trim();
@@ -1536,6 +1749,19 @@
     {
         var display = FormatLookupDisplay(lista, descripcion);
         return string.IsNullOrWhiteSpace(display) ? string.Empty : display;
+    }
+
+    private static string ExtractCodeFromDisplay(string? display)
+    {
+        var value = (display ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(value))
+            return string.Empty;
+
+        var separator = value.IndexOf(" - ", StringComparison.Ordinal);
+        if (separator <= 0)
+            return value;
+
+        return value[..separator].Trim();
     }
 
     private static AppUiMessage BuildValidationFeedback(AppValidationException validationEx)
@@ -1587,14 +1813,20 @@
         };
 
     private string GetViajeAdicionalPercentText(int index)
+        => $"{GetViajeAdicionalPercent(index):0.##}%";
+
+    private string GetViajeAdicionalPercentInputText(int index)
+        => GetViajeAdicionalPercent(index).ToString("0.##", System.Globalization.CultureInfo.CurrentCulture);
+
+    private decimal GetViajeAdicionalPercent(int index)
         => index switch
         {
-            0 => $"{_viajeForm.PorcentajeAdic:0.##} %",
-            1 => $"{_viajeForm.PorcentajeAdic1:0.##} %",
-            2 => $"{_viajeForm.PorcentajeAdic2:0.##} %",
-            3 => $"{_viajeForm.PorcentajeAdic3:0.##} %",
-            4 => $"{_viajeForm.PorcentajeAdic4:0.##} %",
-            _ => "0 %"
+            0 => _viajeForm.PorcentajeAdic,
+            1 => _viajeForm.PorcentajeAdic1,
+            2 => _viajeForm.PorcentajeAdic2,
+            3 => _viajeForm.PorcentajeAdic3,
+            4 => _viajeForm.PorcentajeAdic4,
+            _ => 0m
         };
 
     private async Task OnViajeAdicionalChangedAsync(int index, ChangeEventArgs args)
@@ -1613,14 +1845,60 @@
         await Task.CompletedTask;
     }
 
+    private async Task OnViajeAdicionalPercentChangedAsync(int index, ChangeEventArgs args)
+    {
+        var raw = Convert.ToString(args.Value, System.Globalization.CultureInfo.CurrentCulture) ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            SetViajeAdicionalPercent(index, 0m);
+            MarkViajeDirty();
+            await Task.CompletedTask;
+            return;
+        }
+
+        if (!decimal.TryParse(raw, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.CurrentCulture, out var value)
+            && !decimal.TryParse(raw, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out value))
+        {
+            return;
+        }
+
+        SetViajeAdicionalPercent(index, value);
+        SyncViajeAdicionalesFromForm();
+        MarkViajeDirty();
+        await Task.CompletedTask;
+    }
+
+    private void SetViajeAdicionalPercent(int index, decimal value)
+    {
+        switch (index)
+        {
+            case 0: _viajeForm.PorcentajeAdic = value; break;
+            case 1: _viajeForm.PorcentajeAdic1 = value; break;
+            case 2: _viajeForm.PorcentajeAdic2 = value; break;
+            case 3: _viajeForm.PorcentajeAdic3 = value; break;
+            case 4: _viajeForm.PorcentajeAdic4 = value; break;
+        }
+    }
+
     private void SyncViajeAdicionalesFromForm()
     {
-        _viajeAdicionalesActivos[0] = _viajeForm.PorcentajeAdic > 0m;
-        _viajeAdicionalesActivos[1] = _viajeForm.PorcentajeAdic1 > 0m;
-        _viajeAdicionalesActivos[2] = _viajeForm.PorcentajeAdic2 > 0m;
-        _viajeAdicionalesActivos[3] = _viajeForm.PorcentajeAdic3 > 0m;
-        _viajeAdicionalesActivos[4] = _viajeForm.PorcentajeAdic4 > 0m;
+        _viajeAdicionalesActivos[0] = GetViajeAdicionalRawPercent(0) > 0m;
+        _viajeAdicionalesActivos[1] = GetViajeAdicionalRawPercent(1) > 0m;
+        _viajeAdicionalesActivos[2] = GetViajeAdicionalRawPercent(2) > 0m;
+        _viajeAdicionalesActivos[3] = GetViajeAdicionalRawPercent(3) > 0m;
+        _viajeAdicionalesActivos[4] = GetViajeAdicionalRawPercent(4) > 0m;
     }
+
+    private decimal GetViajeAdicionalRawPercent(int index)
+        => index switch
+        {
+            0 => _viajeForm.PorcentajeAdic,
+            1 => _viajeForm.PorcentajeAdic1,
+            2 => _viajeForm.PorcentajeAdic2,
+            3 => _viajeForm.PorcentajeAdic3,
+            4 => _viajeForm.PorcentajeAdic4,
+            _ => 0m
+        };
 
     private void ApplyViajeAdicionalesToFormForSave()
     {
@@ -1749,6 +2027,7 @@
     private async Task FocusTipoVehiculoGuardarAsync() => await _tipoVehiculoGuardarButton.FocusAsync(preventScroll: true);
 
     private async Task FocusConfigLetraAsync() => await _configLetraInput.FocusAsync(preventScroll: true);
+    private async Task FocusConfigChoferGeneralAsync() => await _configChoferGeneralInput.FocusAsync(preventScroll: true);
     private async Task FocusConfigGuardarAsync() => await _configGuardarButton.FocusAsync(preventScroll: true);
 
     private void MapViajeToForm(CargaViajesDetailDto detail)
@@ -1769,8 +2048,8 @@
             DestinoDisplay = FormatLookupDisplay(detail.DestinoCodigo, detail.DestinoDescripcion),
             TipoVehiculoDisplay = FormatLookupDisplay(detail.TipoVehiculoCodigo, detail.TipoVehiculoDescripcion),
             ListaDisplay = FormatListaDisplay(detail.Lista, detail.ListaDescripcion),
-            ImporteCliente = detail.TotalImporte,
-            ImporteFletero = detail.TotalFlete,
+            ImporteCliente = detail.TotalCliente,
+            ImporteFletero = detail.TotalFletero,
             Peaje = detail.Peaje,
             CantidadViajes = detail.CantidadViajes,
             PorcentajeAdic = detail.PorcentajeAdic,
@@ -1786,6 +2065,8 @@
         _viajeChoferTexto = _viajeForm.ChoferDisplay;
         _viajeDestinoTexto = _viajeForm.DestinoDisplay;
         _viajeTipoVehiculoTexto = _viajeForm.TipoVehiculoDisplay;
+        _viajeListaTexto = _viajeForm.ListaDisplay;
+        _viajeListaManualOverride = false;
         SyncViajeAdicionalesFromForm();
         _viajeSnapshot = CaptureViajeSnapshot(_viajeForm);
         _viajeDirty = false;
@@ -1891,6 +2172,19 @@
     private async Task OnDestinoSeleccionadoAsync(CargaViajeLookupOptionDto item) { _viajesFilters.Destino = item.Codigo; _destinoFiltroTexto = item.Codigo; await Task.CompletedTask; }
     private async Task OnChoferTipoVehiculoChangedAsync(string text) { _choferesFilters.TipoVehiculo = text; _choferesTipoVehiculoTexto = text; await Task.CompletedTask; }
     private async Task OnChoferTipoVehiculoSelectedAsync(CargaViajeLookupOptionDto item) { _choferesFilters.TipoVehiculo = item.Codigo; _choferesTipoVehiculoTexto = item.Codigo; await Task.CompletedTask; }
+    private async Task SetReporteTipoAsync(string tipoReporte)
+    {
+        _reporteLiquidacionFilters.TipoReporte = tipoReporte ?? string.Empty;
+        _reporteLiquidacionFilters.Chofer = string.Empty;
+        _reporteLiquidacionFilters.Fletero = string.Empty;
+        _reporteChoferTexto = string.Empty;
+        _reporteFleteroTexto = string.Empty;
+        await RecargarReporteLiquidacionAsync();
+    }
+    private async Task OnReporteChoferTextoChangedAsync(string text) { _reporteChoferTexto = text; _reporteLiquidacionFilters.Chofer = text; await Task.CompletedTask; }
+    private async Task OnReporteChoferSeleccionadoAsync(CargaViajeLookupOptionDto item) { _reporteLiquidacionFilters.Chofer = item.Codigo; _reporteChoferTexto = FormatLookupDisplay(item.Codigo, item.Titulo); await Task.CompletedTask; }
+    private async Task OnReporteFleteroTextoChangedAsync(string text) { _reporteFleteroTexto = text; _reporteLiquidacionFilters.Fletero = text; await Task.CompletedTask; }
+    private async Task OnReporteFleteroSeleccionadoAsync(CargaViajeLookupOptionDto item) { _reporteLiquidacionFilters.Fletero = item.Codigo; _reporteFleteroTexto = FormatLookupDisplay(item.Codigo, item.Titulo); await Task.CompletedTask; }
 
     private async Task OnViajeClienteTextoChangedAsync(string text)
     {
@@ -1933,6 +2227,16 @@
         _viajeTipoVehiculoTexto = text;
         _viajeForm.TipoVehiculo = string.Empty;
         _viajeForm.TipoVehiculoDisplay = text;
+        _viajeDirty = true;
+        await Task.CompletedTask;
+    }
+
+    private async Task OnViajeListaTextoChangedAsync(string text)
+    {
+        _viajeListaTexto = text;
+        _viajeForm.Lista = string.Empty;
+        _viajeForm.ListaDisplay = text;
+        _viajeListaManualOverride = false;
         _viajeDirty = true;
         await Task.CompletedTask;
     }
@@ -1980,6 +2284,179 @@
         await ActualizarTarifaFleteroAsync();
         await Task.CompletedTask;
     }
+
+    private async Task OnViajeTarifaSeleccionadaAsync(CargaViajeLookupOptionDto item)
+    {
+        var baseIdLista = (item.Codigo ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(baseIdLista))
+            return;
+
+        var result = await UiOps.RunAsync(() => CargaViajesSvc.ClonarTarifaParaViajeAsync(baseIdLista, _viajeForm), "No se pudo duplicar la tarifa seleccionada para el viaje.");
+        if (!result.Success || result.Value is null)
+        {
+            _viajeEditorFeedback = result.Feedback;
+            return;
+        }
+
+        var tarifa = result.Value;
+        _viajeForm.Lista = tarifa.IdLista;
+        _viajeForm.ListaDisplay = FormatListaDisplay(tarifa.IdLista, tarifa.Nombre);
+        _viajeListaTexto = _viajeForm.ListaDisplay;
+        _viajeListaManualOverride = true;
+
+        if (tarifa.TarifaFletero)
+            _viajeForm.ImporteFletero = tarifa.Importe;
+        else
+            _viajeForm.ImporteCliente = tarifa.Importe;
+
+        _viajeForm.PorcentajeAdic = tarifa.PorcentajeAdic;
+        _viajeForm.PorcentajeAdic1 = tarifa.PorcentajeAdic1;
+        _viajeForm.PorcentajeAdic2 = tarifa.PorcentajeAdic2;
+        _viajeForm.PorcentajeAdic3 = tarifa.PorcentajeAdic3;
+        _viajeForm.PorcentajeAdic4 = tarifa.PorcentajeAdic4;
+        SyncViajeAdicionalesFromForm();
+        _viajeDirty = true;
+        await FocusViajeImporteClienteAsync();
+    }
+
+    private async Task BuscarReporteLiquidacionAsync()
+    {
+        if (!ValidateReporteLiquidacion())
+            return;
+
+        await RecargarReporteLiquidacionAsync();
+    }
+
+    private async Task LimpiarFiltrosReporteAsync()
+    {
+        _reporteLiquidacionFilters = CreateDefaultReporteLiquidacionFilters();
+        _reporteChoferTexto = string.Empty;
+        _reporteFleteroTexto = string.Empty;
+        await RecargarReporteLiquidacionAsync();
+    }
+
+    private async Task RecargarReporteLiquidacionAsync()
+    {
+        _reportesLoading = true;
+        _reporteLiquidacionRows.Clear();
+        _reporteTotalFlete = 0m;
+        try
+        {
+            if (_reporteLiquidacionFilters.FechaDesde is null || _reporteLiquidacionFilters.FechaHasta is null)
+                _reporteLiquidacionFilters = CreateDefaultReporteLiquidacionFilters();
+
+            var result = await UiOps.RunAsync(() => CargaViajesSvc.SearchLiquidacionChoferesAsync(_reporteLiquidacionFilters), "No se pudo generar la liquidación de choferes y fleteros.");
+            if (result.Success && result.Value is not null)
+            {
+                _reporteLiquidacionRows.Clear();
+                _reporteLiquidacionRows.AddRange(result.Value);
+                _reporteTotalFlete = _reporteLiquidacionRows.Sum(x => x.TotalFlete);
+            }
+            else
+            {
+                _reporteLiquidacionRows.Clear();
+                _reporteTotalFlete = 0m;
+                _feedback = result.Feedback;
+            }
+        }
+        finally
+        {
+            _reportesLoading = false;
+        }
+    }
+
+    private Task ExportarReporteExcelAsync()
+    {
+        _feedback = new AppUiMessage
+        {
+            Severity = AppUiFeedbackSeverity.Info,
+            Title = "Exportación pendiente",
+            Message = "El exportador Excel del reporte se agregará en la siguiente iteración."
+        };
+        return Task.CompletedTask;
+    }
+
+    private bool ValidateReporteLiquidacion()
+    {
+        if (_reporteLiquidacionFilters.FechaDesde is null)
+        {
+            _feedback = new AppUiMessage { Severity = AppUiFeedbackSeverity.Warning, Title = "Fecha desde obligatoria", Message = "Debe ingresar una fecha desde." };
+            return false;
+        }
+
+        if (_reporteLiquidacionFilters.FechaHasta is null)
+        {
+            _feedback = new AppUiMessage { Severity = AppUiFeedbackSeverity.Warning, Title = "Fecha hasta obligatoria", Message = "Debe ingresar una fecha hasta." };
+            return false;
+        }
+
+        if (_reporteLiquidacionFilters.FechaHasta.Value.Date < _reporteLiquidacionFilters.FechaDesde.Value.Date)
+        {
+            _feedback = new AppUiMessage { Severity = AppUiFeedbackSeverity.Warning, Title = "Rango inválido", Message = "La fecha hasta no puede ser menor que la fecha desde." };
+            return false;
+        }
+
+        return true;
+    }
+
+    private bool ShouldShowReporteResumenPorChofer()
+        => string.IsNullOrWhiteSpace((_reporteLiquidacionFilters.Chofer ?? string.Empty).Trim())
+           && string.IsNullOrWhiteSpace((_reporteLiquidacionFilters.Fletero ?? string.Empty).Trim());
+
+    private bool IsReporteChoferes()
+        => !IsReporteFleteros();
+
+    private bool IsReporteFleteros()
+        => string.Equals((_reporteLiquidacionFilters.TipoReporte ?? string.Empty).Trim(), CargaViajesReporteTipoKeys.LiquidacionFleteros, StringComparison.OrdinalIgnoreCase);
+
+    private string GetReporteConsultaTexto()
+        => IsReporteFleteros() ? "Fleteros" : "Choferes";
+
+    private string GetReporteVistaTexto()
+        => IsReporteFleteros() ? "Liquidación por fletero" : "Liquidación por chofer";
+
+    private string GetReporteTitulo()
+        => IsReporteFleteros()
+            ? "Liquidación de fleteros"
+            : "Liquidación de choferes";
+
+    private string GetReporteChartTitle()
+        => IsReporteFleteros()
+            ? "Distribución por fletero"
+            : "Distribución por chofer";
+
+    private string GetReporteChartSubtitle()
+        => IsReporteFleteros()
+            ? "Total a pagar por fletero"
+            : "Total a pagar por chofer";
+
+    private IReadOnlyList<CategoryTotalDto> GetReporteLiquidacionChartData()
+        => GetReporteLiquidacionResumen()
+            .Select(x => new CategoryTotalDto
+            {
+                Codigo = x.ChoferCodigo,
+                Categoria = string.IsNullOrWhiteSpace(x.ChoferNombre)
+                    ? x.ChoferCodigo
+                    : $"{x.ChoferCodigo} - {x.ChoferNombre}",
+                Total = x.TotalFlete,
+                Participacion = 0m
+            })
+            .ToList();
+
+    private IReadOnlyList<CargaViajeReporteLiquidacionResumenDto> GetReporteLiquidacionResumen()
+        => _reporteLiquidacionRows
+            .GroupBy(x => new { x.ChoferCodigo, x.ChoferNombre, x.EsFletero })
+            .Select(g => new CargaViajeReporteLiquidacionResumenDto
+            {
+                ChoferCodigo = g.Key.ChoferCodigo,
+                ChoferNombre = g.Key.ChoferNombre,
+                EsFletero = g.Key.EsFletero,
+                CantidadViajes = g.Sum(x => Math.Max(1, x.CantidadViajes)),
+                TotalFlete = g.Sum(x => x.TotalFlete)
+            })
+            .OrderBy(x => x.ChoferNombre)
+            .ThenBy(x => x.ChoferCodigo)
+            .ToList();
 
     private Task OnViajeClienteCreateRequestedAsync(string text)
     {
@@ -2048,6 +2525,9 @@
 
     private async Task ActualizarTarifaClienteAsync()
     {
+        if (_viajeListaManualOverride)
+            return;
+
         if (string.IsNullOrWhiteSpace(_viajeForm.Cliente) || string.IsNullOrWhiteSpace(_viajeForm.Destino) || string.IsNullOrWhiteSpace(_viajeForm.TipoVehiculo))
         {
             _viajeForm.ImporteCliente = 0m;
@@ -2070,6 +2550,7 @@
 
         _viajeForm.Lista = tarifa.IdLista;
         _viajeForm.ListaDisplay = FormatListaDisplay(tarifa.IdLista, tarifa.Nombre);
+        _viajeListaTexto = _viajeForm.ListaDisplay;
         _viajeForm.ImporteCliente = tarifa.Importe;
         _viajeForm.PorcentajeAdic = tarifa.PorcentajeAdic;
         _viajeForm.PorcentajeAdic1 = tarifa.PorcentajeAdic1;
@@ -2081,6 +2562,9 @@
 
     private async Task ActualizarTarifaFleteroAsync()
     {
+        if (_viajeListaManualOverride)
+            return;
+
         if (string.IsNullOrWhiteSpace(_viajeForm.Chofer) || string.IsNullOrWhiteSpace(_viajeForm.Destino) || string.IsNullOrWhiteSpace(_viajeForm.TipoVehiculo))
         {
             _viajeForm.ImporteFletero = 0m;
@@ -2134,6 +2618,7 @@
     private async Task NuevaTarifaAsync()
     {
         _tarifaForm = BuildDefaultTarifaForm(_config);
+        ApplyTarifaDefaultPercents(_tarifaForm);
         _showTarifaEditor = true;
         _isNewTarifa = true;
         _tarifaSnapshot = CaptureTarifaSnapshot(_tarifaForm);
@@ -2165,10 +2650,34 @@
                 PorcentajeAdic4 = item.PorcentajeAdic4,
                 Activo = item.Activo
             };
+            ApplyTarifaDefaultPercents(_tarifaForm);
             _showTarifaEditor = true;
             _isNewTarifa = false;
             _tarifaSnapshot = CaptureTarifaSnapshot(_tarifaForm);
+            return;
         }
+
+        _tarifaForm = new CargaViajeTarifaSaveRequest
+        {
+            IdLista = row.IdLista,
+            Nombre = row.Nombre,
+            Importe = row.Importe,
+            Cliente = ExtractCodeFromDisplay(row.Cliente),
+            Chofer = ExtractCodeFromDisplay(row.Chofer),
+            Destino = ExtractCodeFromDisplay(row.Destino),
+            TipoVehiculo = ExtractCodeFromDisplay(row.TipoVehiculo),
+            TarifaFletero = row.TarifaFletero,
+            PorcentajeAdic = row.PorcentajeAdic,
+            PorcentajeAdic1 = row.PorcentajeAdic1,
+            PorcentajeAdic2 = row.PorcentajeAdic2,
+            PorcentajeAdic3 = row.PorcentajeAdic3,
+            PorcentajeAdic4 = row.PorcentajeAdic4,
+            Activo = row.Activo
+        };
+        ApplyTarifaDefaultPercents(_tarifaForm);
+        _showTarifaEditor = true;
+        _isNewTarifa = false;
+        _tarifaSnapshot = CaptureTarifaSnapshot(_tarifaForm);
     }
 
     private async Task GuardarTarifaAsync()
@@ -2360,7 +2869,7 @@
 
     private async Task NuevoChoferAsync()
     {
-        _choferForm = new CargaViajeChoferSaveRequest { Activo = true };
+        _choferForm = new CargaViajeChoferSaveRequest { Activo = true, EsFletero = false };
         var next = await UiOps.RunAsync(() => CargaViajesSvc.GetNextCodigoChoferAsync(), "No se pudo sugerir el código del chofer.");
         if (next.Success && !string.IsNullOrWhiteSpace(next.Value))
             _choferForm.Codigo = next.Value;
@@ -2376,7 +2885,7 @@
         var result = await UiOps.RunAsync(() => CargaViajesSvc.GetChoferByIdAsync(codigo), "No se pudo cargar el chofer.");
         if (result.Success && result.Value is not null)
         {
-            _choferForm = new CargaViajeChoferSaveRequest { Codigo = result.Value.Codigo, Nombre = result.Value.Nombre, Activo = result.Value.Activo };
+            _choferForm = new CargaViajeChoferSaveRequest { Codigo = result.Value.Codigo, Nombre = result.Value.Nombre, Activo = result.Value.Activo, EsFletero = result.Value.EsFletero };
             _showChoferEditor = true;
             _isNewChofer = false;
             _choferSnapshot = CaptureChoferSnapshot(_choferForm);
@@ -2834,6 +3343,7 @@
             SectionChoferes => SectionChoferes,
             SectionDestinos => SectionDestinos,
             SectionTipoVehiculo => SectionTipoVehiculo,
+            SectionReportes => SectionReportes,
             SectionConfiguracion => SectionConfiguracion,
             _ => SectionViajes
         };
@@ -2979,18 +3489,26 @@
 
     private static CargaViajeSaveRequest BuildDefaultViajeForm(CargaViajesConfigDto? config = null)
     {
-        var dto = config ?? CreateDefaultConfiguracionForUi();
         return new CargaViajeSaveRequest
         {
             Fecha = DateTime.Today,
             Estado = CargaViajeEstadoKeys.Pendiente,
             CantidadViajes = 1,
-            PorcentajeAdic = dto.PorcentajesAdicionales.ElementAtOrDefault(0),
-            PorcentajeAdic1 = dto.PorcentajesAdicionales.ElementAtOrDefault(1),
-            PorcentajeAdic2 = dto.PorcentajesAdicionales.ElementAtOrDefault(2),
-            PorcentajeAdic3 = dto.PorcentajesAdicionales.ElementAtOrDefault(3),
-            PorcentajeAdic4 = dto.PorcentajesAdicionales.ElementAtOrDefault(4)
+            PorcentajeAdic = 0m,
+            PorcentajeAdic1 = 0m,
+            PorcentajeAdic2 = 0m,
+            PorcentajeAdic3 = 0m,
+            PorcentajeAdic4 = 0m
         };
+    }
+
+    private void ApplyViajeDefaultPercents(CargaViajeSaveRequest form)
+    {
+        form.PorcentajeAdic = ResolvePercentOrDefault(form.PorcentajeAdic, 0);
+        form.PorcentajeAdic1 = ResolvePercentOrDefault(form.PorcentajeAdic1, 1);
+        form.PorcentajeAdic2 = ResolvePercentOrDefault(form.PorcentajeAdic2, 2);
+        form.PorcentajeAdic3 = ResolvePercentOrDefault(form.PorcentajeAdic3, 3);
+        form.PorcentajeAdic4 = ResolvePercentOrDefault(form.PorcentajeAdic4, 4);
     }
 
     private static CargaViajeTarifaSaveRequest BuildDefaultTarifaForm(CargaViajesConfigDto? config = null)
@@ -3007,6 +3525,18 @@
         };
     }
 
+    private void ApplyTarifaDefaultPercents(CargaViajeTarifaSaveRequest form)
+    {
+        form.PorcentajeAdic = ResolvePercentOrDefault(form.PorcentajeAdic, 0);
+        form.PorcentajeAdic1 = ResolvePercentOrDefault(form.PorcentajeAdic1, 1);
+        form.PorcentajeAdic2 = ResolvePercentOrDefault(form.PorcentajeAdic2, 2);
+        form.PorcentajeAdic3 = ResolvePercentOrDefault(form.PorcentajeAdic3, 3);
+        form.PorcentajeAdic4 = ResolvePercentOrDefault(form.PorcentajeAdic4, 4);
+    }
+
+    private decimal ResolvePercentOrDefault(decimal value, int index)
+        => value > 0m ? value : GetConfiguredAdicionalPercent(index);
+
     private static CargaViajesConfigDto CreateDefaultConfiguracionForUi()
         => new()
         {
@@ -3015,6 +3545,19 @@
             NombresAdicionales = ["Adicional 1", "Adicional 2", "Adicional 3", "Adicional 4", "Adicional 5"],
             PorcentajesAdicionales = [0m, 0m, 0m, 0m, 0m]
         };
+
+    private static CargaViajesReporteLiquidacionFilters CreateDefaultReporteLiquidacionFilters()
+    {
+        var today = DateTime.Today;
+        var firstDay = new DateTime(today.Year, today.Month, 1);
+        var lastDay = firstDay.AddMonths(1).AddDays(-1);
+        return new CargaViajesReporteLiquidacionFilters
+        {
+            FechaDesde = firstDay,
+            FechaHasta = lastDay,
+            TipoReporte = CargaViajesReporteTipoKeys.LiquidacionChoferes
+        };
+    }
 
     private static CargaViajesViewSettingsDto BuildDefaultViewSettings()
         => new()

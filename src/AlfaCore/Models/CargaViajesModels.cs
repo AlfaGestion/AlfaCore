@@ -12,6 +12,7 @@ public sealed class CargaViajesFilters
     public string TarifaFletero { get; set; } = string.Empty;
     public string Activo { get; set; } = string.Empty;
     public string Disponible { get; set; } = string.Empty;
+    public string EsFletero { get; set; } = string.Empty;
     public string Estado { get; set; } = string.Empty;
     public string Usuario { get; set; } = string.Empty;
     public string IdComprobante { get; set; } = string.Empty;
@@ -160,6 +161,7 @@ public sealed class CargaViajeChoferGridItemDto
     public string Nombre { get; set; } = string.Empty;
     public bool Activo { get; set; } = true;
     public bool Disponible { get; set; } = true;
+    public bool EsFletero { get; set; }
 }
 
 public sealed class CargaViajeChoferSaveRequest
@@ -167,6 +169,7 @@ public sealed class CargaViajeChoferSaveRequest
     public string Codigo { get; set; } = string.Empty;
     public string Nombre { get; set; } = string.Empty;
     public bool Activo { get; set; } = true;
+    public bool EsFletero { get; set; }
 }
 
 public sealed class CargaViajeDestinoGridItemDto
@@ -234,6 +237,7 @@ public sealed class CargaViajesConfigDto
 {
     public string Sucursal { get; set; } = "0001";
     public string Letra { get; set; } = "X";
+    public string ChoferGeneral { get; set; } = string.Empty;
     public List<string> NombresAdicionales { get; set; } = ["Adicional 1", "Adicional 2", "Adicional 3", "Adicional 4", "Adicional 5"];
     public List<decimal> PorcentajesAdicionales { get; set; } = [0m, 0m, 0m, 0m, 0m];
 }
@@ -276,4 +280,53 @@ public static class CargaViajeEstadoKeys
     public const string Anulado = "ANULADO";
 
     public static readonly IReadOnlyList<string> All = [Pendiente, Finalizado, Anulado];
+}
+
+public sealed class CargaViajesReporteLiquidacionFilters
+{
+    public DateTime? FechaDesde { get; set; }
+    public DateTime? FechaHasta { get; set; }
+    public string Chofer { get; set; } = string.Empty;
+    public string Fletero { get; set; } = string.Empty;
+    public string TipoReporte { get; set; } = CargaViajesReporteTipoKeys.LiquidacionChoferes;
+}
+
+public sealed class CargaViajeReporteLiquidacionRowDto
+{
+    public int Id { get; set; }
+    public DateTime Fecha { get; set; }
+    public string IdComprobante { get; set; } = string.Empty;
+    public string ChoferCodigo { get; set; } = string.Empty;
+    public string ChoferNombre { get; set; } = string.Empty;
+    public bool EsFletero { get; set; }
+    public string ClienteCodigo { get; set; } = string.Empty;
+    public string ClienteNombre { get; set; } = string.Empty;
+    public string DestinoCodigo { get; set; } = string.Empty;
+    public string DestinoDescripcion { get; set; } = string.Empty;
+    public string TipoVehiculoCodigo { get; set; } = string.Empty;
+    public string TipoVehiculoDescripcion { get; set; } = string.Empty;
+    public int CantidadViajes { get; set; }
+    public decimal TotalFlete { get; set; }
+}
+
+public sealed class CargaViajeReporteLiquidacionResumenDto
+{
+    public string ChoferCodigo { get; set; } = string.Empty;
+    public string ChoferNombre { get; set; } = string.Empty;
+    public bool EsFletero { get; set; }
+    public int CantidadViajes { get; set; }
+    public decimal TotalFlete { get; set; }
+}
+
+public sealed class CargaViajesReportTypeOptionDto
+{
+    public string Value { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
+}
+
+public static class CargaViajesReporteTipoKeys
+{
+    public const string LiquidacionChoferesFleteros = "liquidacion-choferes-fleteros";
+    public const string LiquidacionChoferes = "liquidacion-choferes";
+    public const string LiquidacionFleteros = "liquidacion-fleteros";
 }
