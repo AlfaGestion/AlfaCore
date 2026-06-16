@@ -2058,6 +2058,14 @@ public sealed class CargaViajesService(
             if (fechaHasta < fechaDesde)
                 (fechaDesde, fechaHasta) = (fechaHasta, fechaDesde);
 
+            logger.LogInformation(
+                "SearchLiquidacionChoferes start desde={Desde:yyyy-MM-dd} hasta={Hasta:yyyy-MM-dd} choferes={Choferes} fleteros={Fleteros} chofer={Chofer}",
+                fechaDesde,
+                fechaHasta,
+                filters.IncluirChoferes,
+                filters.IncluirFleteros,
+                filters.ChoferCodigo);
+
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
             const string viajeTable = "MV_VIAJES_CARGA";
@@ -2109,7 +2117,9 @@ public sealed class CargaViajesService(
                 IncluirChoferes = filters.IncluirChoferes ? 1 : 0,
                 IncluirFleteros = filters.IncluirFleteros ? 1 : 0,
                 ChoferCodigo = TrimUpper(filters.ChoferCodigo)
-            }, cancellationToken: token))).ToList();
+            }, cancellationToken: token, commandTimeout: 60))).ToList();
+
+            logger.LogInformation("SearchLiquidacionChoferes end rows={Rows}", rows.Count);
 
             return (IReadOnlyList<CargaViajeReporteLiquidacionRowDto>)rows;
         }, "No se pudo generar la liquidación de choferes y fleteros.", ct);
@@ -2195,7 +2205,7 @@ public sealed class CargaViajesService(
                 IncluirFleteros = incluirFleteros ? 1 : 0,
                 ChoferCodigo = TrimUpper(filters.ChoferCodigo),
                 EstadoPago = NormalizeLiquidacionEstadoPago(filters.EstadoPago)
-            }, cancellationToken: token))).ToList();
+            }, cancellationToken: token, commandTimeout: 60))).ToList();
 
             return (IReadOnlyList<CargaViajeLiquidacionRowDto>)rows;
         }, "No se pudieron cargar las liquidaciones de fletes.", ct);
@@ -2217,7 +2227,7 @@ public sealed class CargaViajesService(
                 UPDATE dbo.MV_VIAJES_CARGA
                 SET
                     FLETE_PAGADO = 1,
-                    FECHA_PAGO_FLETE = GETDATE(),
+                    FECHA_PAGO_FLETE = @FechaPago,
                     USUARIO_PAGO_FLETE = @Usuario,
                     OBSERVACION_PAGO_FLETE = @Observacion,
                     FECHAHORA_MODIFICACION = GETDATE()
@@ -2228,9 +2238,10 @@ public sealed class CargaViajesService(
             var rows = await cn.ExecuteAsync(new CommandDefinition(sql, new
             {
                 Ids = ids,
+                FechaPago = request.FechaPago.Date,
                 Usuario = string.IsNullOrWhiteSpace(request.Usuario) ? null : request.Usuario.Trim(),
                 Observacion = DbNullable(TrimToLength(request.Observacion, 250))
-            }, cancellationToken: token));
+            }, cancellationToken: token, commandTimeout: 60));
 
             await appEvents.LogAuditAsync(
                 ModuleName,
@@ -2238,7 +2249,7 @@ public sealed class CargaViajesService(
                 "MV_VIAJES_CARGA",
                 string.Join(",", ids),
                 "Fletes marcados como pagados.",
-                new { request.Usuario, request.Observacion, TotalIds = ids.Count, Actualizados = rows },
+                new { request.Usuario, request.Observacion, request.FechaPago, TotalIds = ids.Count, Actualizados = rows },
                 token);
 
             return rows;
@@ -3299,8 +3310,10 @@ public sealed class CargaViajesService(
         return normalized;
     }
 
-    private static string ResolveStoredValue(string value, string auxValue)
-        => !string.IsNullOrWhiteSpace(value) ? value.Trim() : auxValue.Trim();
+    private static string ResolveStoredValue(string? value, string? auxValue)
+        => !string.IsNullOrWhiteSpace(value)
+            ? value.Trim()
+            : (auxValue ?? string.Empty).Trim();
 
     private static async Task UpsertConfigValueAsync(SqlConnection cn, SqlTransaction tx, string detailColumn, string key, string value, string group, CancellationToken ct)
     {
@@ -3476,6 +3489,11 @@ public sealed class CargaViajesService(
         {
             return await operation(ct);
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            logger.LogInformation("Operacion cancelada {Module}.{Action}", module, action);
+            throw;
+        }
         catch (AppValidationException)
         {
             throw;
@@ -3500,6 +3518,11 @@ public sealed class CargaViajesService(
         try
         {
             await operation(ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            logger.LogInformation("Operacion cancelada {Module}.{Action}", module, action);
+            throw;
         }
         catch (AppValidationException)
         {

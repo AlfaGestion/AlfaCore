@@ -346,6 +346,7 @@ public sealed class CargaViajeLiquidacionRowDto
 public sealed class CargaViajesMarcarPagadoRequest
 {
     public List<int> Ids { get; set; } = [];
+    public DateTime FechaPago { get; set; } = DateTime.Today;
     public string? Observacion { get; set; }
     public string? Usuario { get; set; }
 }

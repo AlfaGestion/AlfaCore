@@ -82,13 +82,15 @@
             @if (_showViajesAdvancedFilters)
             {
                 <div id="carga-viajes-viajes-filtros-avanzados" class="carga-viajes-advanced-grid">
-                    <div class="field">
-                        <label>Fecha desde</label>
-                        <InputDate @bind-Value="_viajesFilters.FechaDesde" />
-                    </div>
-                    <div class="field">
-                        <label>Fecha hasta</label>
-                        <InputDate @bind-Value="_viajesFilters.FechaHasta" />
+                    <div class="carga-viajes-date-row field--wide">
+                        <div class="field">
+                            <label>Fecha desde</label>
+                            <InputDate @bind-Value="_viajesFilters.FechaDesde" />
+                        </div>
+                        <div class="field">
+                            <label>Fecha hasta</label>
+                            <InputDate @bind-Value="_viajesFilters.FechaHasta" />
+                        </div>
                     </div>
                     <div class="field">
                         <label>Cliente</label>
@@ -314,8 +316,8 @@
                         <label>Activo</label>
                         <select @bind="_tarifasFilters.Activo">
                             <option value="">Todos</option>
-                            <option value="1">Sí</option>
-                            <option value="0">No</option>
+                            <option value="1">Activo</option>
+                            <option value="0">Desactivado</option>
                         </select>
                     </div>
                 </div>
@@ -380,7 +382,7 @@
                                     <td>@item.row.Chofer</td>
                                     <td>@item.row.Destino</td>
                                     <td>@item.row.TipoVehiculo</td>
-                                    <td>@(item.row.Activo ? "Sí" : "No")</td>
+                                    <td>@(item.row.Activo ? "Activo" : "Desactivado")</td>
                                     <td>
                                         <div class="actions">
                                             <button type="button" class="btn btn--ghost btn--sm" @onclick="() => EditarTarifaAsync(item.row)">Editar</button>
@@ -429,7 +431,7 @@
                                         aria-pressed="@_tarifaForm.Activo"
                                         @onclick="ToggleTarifaActivoAsync"
                                         @onkeydown="args => HandleEnterAdvanceAsync(args, FocusTarifaGuardarAsync)">
-                                    <span class="carga-viajes-check__text">Activo</span>
+                                    <span class="carga-viajes-check__text">@(_tarifaForm.Activo ? "Activo" : "Desactivado")</span>
                                     <span class="carga-viajes-switch__pill" aria-hidden="true">
                                         <span class="carga-viajes-switch__thumb"></span>
                                     </span>
@@ -471,9 +473,9 @@
             @if (_showChoferesAdvancedFilters)
             {
                 <div id="carga-viajes-choferes-filtros-avanzados" class="carga-viajes-advanced-grid">
-                    <div class="field"><label>Activo</label><select @bind="_choferesFilters.Activo"><option value="">Todos</option><option value="1">Sí</option><option value="0">No</option></select></div>
-                    <div class="field"><label>Disponible</label><select @bind="_choferesFilters.Disponible"><option value="">Todos</option><option value="1">Sí</option><option value="0">No</option></select></div>
-                    <div class="field"><label>Es fletero</label><select @bind="_choferesFilters.EsFletero"><option value="">Todos</option><option value="1">Sí</option><option value="0">No</option></select></div>
+                    <div class="field"><label>Activo</label><select @bind="_choferesFilters.Activo"><option value="">Todos</option><option value="1">Activo</option><option value="0">Desactivado</option></select></div>
+                    <div class="field"><label>Disponible</label><select @bind="_choferesFilters.Disponible"><option value="">Todos</option><option value="1">Disponible</option><option value="0">No disponible</option></select></div>
+                    <div class="field"><label>Es fletero</label><select @bind="_choferesFilters.EsFletero"><option value="">Todos</option><option value="1">Fletero</option><option value="0">No fletero</option></select></div>
                     <div class="field"><label>Tipo vehículo</label><LookupAutocomplete Label="" Placeholder="Buscar tipo..." Text="@_choferesTipoVehiculoTexto" TextChanged="OnChoferTipoVehiculoChangedAsync" SelectedChanged="OnChoferTipoVehiculoSelectedAsync" SearchFunc="CargaViajesSvc.SearchTipoVehiculosLookupAsync" /></div>
                 </div>
             }
@@ -490,7 +492,7 @@
                                 @foreach (var row in _choferes)
                                 {
                             <tr @ondblclick="() => EditarChoferAsync(row.Codigo)">
-                                <td>@row.Codigo</td><td>@row.Nombre</td><td>@(row.Activo ? "Sí" : "No")</td><td>@(row.Disponible ? "Sí" : "No")</td><td>@(row.EsFletero ? "Sí" : "No")</td>
+                                <td>@row.Codigo</td><td>@row.Nombre</td><td>@(row.Activo ? "Activo" : "Desactivado")</td><td>@(row.Disponible ? "Disponible" : "No disponible")</td><td>@(row.EsFletero ? "Fletero" : "Chofer")</td>
                                 <td><div class="actions"><button type="button" class="btn btn--ghost btn--sm" @onclick="() => EditarChoferAsync(row.Codigo)">Editar</button><button type="button" class="btn btn--ghost btn--sm" @onclick="() => BajaChoferAsync(row.Codigo)">Baja</button></div></td>
                             </tr>
                         }
@@ -518,13 +520,13 @@
                             <div class="field field--wide"><label>Nombre</label><input @ref="_choferNombreInput" type="text" @bind="_choferForm.Nombre" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusChoferGuardarAsync)" /></div>
                             <div class="field">
                                 <button type="button" class="carga-viajes-switch @(_choferForm.Activo ? "carga-viajes-check--active" : string.Empty)" aria-pressed="@_choferForm.Activo" @onclick="ToggleChoferActivoAsync" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusChoferGuardarAsync)">
-                                    <span class="carga-viajes-check__text">Activo</span>
+                                    <span class="carga-viajes-check__text">@(_choferForm.Activo ? "Activo" : "Desactivado")</span>
                                     <span class="carga-viajes-switch__pill" aria-hidden="true"><span class="carga-viajes-switch__thumb"></span></span>
                                 </button>
                             </div>
                             <div class="field">
                                 <button type="button" class="carga-viajes-switch @(_choferForm.EsFletero ? "carga-viajes-check--active" : string.Empty)" aria-pressed="@_choferForm.EsFletero" @onclick="ToggleChoferEsFleteroAsync">
-                                    <span class="carga-viajes-check__text">Es fletero</span>
+                                    <span class="carga-viajes-check__text">@(_choferForm.EsFletero ? "Fletero" : "Chofer")</span>
                                     <span class="carga-viajes-switch__pill" aria-hidden="true"><span class="carga-viajes-switch__thumb"></span></span>
                                 </button>
                             </div>
@@ -564,7 +566,7 @@
             @if (_showDestinosAdvancedFilters)
             {
                 <div id="carga-viajes-destinos-filtros-avanzados" class="carga-viajes-advanced-grid">
-                    <div class="field"><label>Activo</label><select @bind="_destinosFilters.Activo"><option value="">Todos</option><option value="1">Sí</option><option value="0">No</option></select></div>
+                    <div class="field"><label>Activo</label><select @bind="_destinosFilters.Activo"><option value="">Todos</option><option value="1">Activo</option><option value="0">Desactivado</option></select></div>
                 </div>
             }
         </section>
@@ -580,7 +582,7 @@
                         @foreach (var row in _destinos)
                         {
                             <tr @ondblclick="() => EditarDestinoAsync(row.Codigo)">
-                                <td>@row.Codigo</td><td>@row.Descripcion</td><td>@(row.Activo ? "Sí" : "No")</td>
+                                <td>@row.Codigo</td><td>@row.Descripcion</td><td>@(row.Activo ? "Activo" : "Desactivado")</td>
                                 <td><div class="actions"><button type="button" class="btn btn--ghost btn--sm" @onclick="() => EditarDestinoAsync(row.Codigo)">Editar</button><button type="button" class="btn btn--ghost btn--sm" @onclick="() => BajaDestinoAsync(row.Codigo)">Baja</button></div></td>
                             </tr>
                         }
@@ -612,7 +614,7 @@
                                         aria-pressed="@_destinoForm.Activo"
                                         @onclick="ToggleDestinoActivoAsync"
                                         @onkeydown="args => HandleEnterAdvanceAsync(args, FocusDestinoGuardarAsync)">
-                                    <span class="carga-viajes-check__text">Activo</span>
+                                    <span class="carga-viajes-check__text">@(_destinoForm.Activo ? "Activo" : "Desactivado")</span>
                                     <span class="carga-viajes-switch__pill" aria-hidden="true">
                                         <span class="carga-viajes-switch__thumb"></span>
                                     </span>
@@ -663,7 +665,7 @@
                     <div class="field">
                         <label>Activo</label>
                         <button type="button" class="carga-viajes-switch @(_tipoVehiculosFilters.Activo == "1" ? "carga-viajes-check--active" : string.Empty)" aria-pressed="@(_tipoVehiculosFilters.Activo == "1")" @onclick="ToggleTipoVehiculosActivoAsync">
-                            <span class="carga-viajes-check__text">Solo activos</span>
+                            <span class="carga-viajes-check__text">@(_tipoVehiculosFilters.Activo == "1" ? "Solo activos" : "Mostrar todos")</span>
                             <span class="carga-viajes-switch__pill" aria-hidden="true"><span class="carga-viajes-switch__thumb"></span></span>
                         </button>
                     </div>
@@ -812,7 +814,7 @@
                                             aria-pressed="@_tipoVehiculoForm.Activo"
                                             @onclick="ToggleTipoVehiculoActivoAsync"
                                             @onkeydown="args => HandleEnterAdvanceAsync(args, FocusTipoVehiculoGuardarAsync)">
-                                        <span class="carga-viajes-check__text">Activo</span>
+                                        <span class="carga-viajes-check__text">@(_tipoVehiculoForm.Activo ? "Activo" : "Desactivado")</span>
                                         <span class="carga-viajes-switch__pill" aria-hidden="true">
                                             <span class="carga-viajes-switch__thumb"></span>
                                         </span>
@@ -845,30 +847,32 @@
             </div>
 
             <div class="carga-viajes-reportes__filters">
-                <div class="field">
-                    <label>Fecha desde</label>
-                    <InputDate @bind-Value="_reporteLiquidacionFilters.FechaDesde" />
-                </div>
-                <div class="field">
-                    <label>Fecha hasta</label>
-                    <InputDate @bind-Value="_reporteLiquidacionFilters.FechaHasta" />
+                <div class="carga-viajes-date-row field--wide">
+                    <div class="field">
+                        <label>Fecha desde</label>
+                        <InputDate @bind-Value="_reporteLiquidacionFilters.FechaDesde" />
+                    </div>
+                    <div class="field">
+                        <label>Fecha hasta</label>
+                        <InputDate @bind-Value="_reporteLiquidacionFilters.FechaHasta" />
+                    </div>
                 </div>
                 <div class="field">
                     <label>Mostrar</label>
                     <div class="carga-viajes-reportes__chips" role="group" aria-label="Mostrar reportes">
                         <button type="button"
-                                class="carga-viajes-reportes__pill @(_reporteLiquidacionFilters.IncluirChoferes ? "carga-viajes-reportes__pill--active" : string.Empty)"
+                                class="carga-viajes-filter-pill @(_reporteLiquidacionFilters.IncluirChoferes ? "carga-viajes-filter-pill--active" : string.Empty)"
                                 aria-pressed="@_reporteLiquidacionFilters.IncluirChoferes"
                                 @onclick="ToggleReporteChoferesAsync">
-                            <i class="bi bi-check-lg"></i>
                             Choferes
+                            <span class="carga-viajes-filter-pill__icon" aria-hidden="true"><i class="bi bi-check-lg"></i></span>
                         </button>
                         <button type="button"
-                                class="carga-viajes-reportes__pill @(_reporteLiquidacionFilters.IncluirFleteros ? "carga-viajes-reportes__pill--active" : string.Empty)"
+                                class="carga-viajes-filter-pill @(_reporteLiquidacionFilters.IncluirFleteros ? "carga-viajes-filter-pill--active" : string.Empty)"
                                 aria-pressed="@_reporteLiquidacionFilters.IncluirFleteros"
                                 @onclick="ToggleReporteFleterosAsync">
-                            <i class="bi bi-check-lg"></i>
                             Fleteros
+                            <span class="carga-viajes-filter-pill__icon" aria-hidden="true"><i class="bi bi-check-lg"></i></span>
                         </button>
                     </div>
                 </div>
@@ -888,13 +892,30 @@
             <div class="panel-card__header">
                 <div>
                     <h3 class="panel-card__title">@GetReporteTitulo()</h3>
-                    <span class="panel-card__subtitle">@_reporteLiquidacionRows.Count viaje(s) | Total a pagar: @_reporteTotalFlete.ToString("N2")</span>
+                    <span class="panel-card__subtitle">Viajes agrupados por chofer/fletero con total a pagar</span>
                 </div>
             </div>
 
             @if (_reportesLoading)
             {
-                <div class="usuarios-empty">Generando reporte...</div>
+                <div class="carga-viajes-reportes__busy">
+                    <div class="carga-viajes-reportes__busy-card">
+                        <div class="carga-viajes-reportes__busy-icon" aria-hidden="true">
+                            <i class="bi bi-arrow-repeat"></i>
+                        </div>
+                        <div class="carga-viajes-reportes__busy-body">
+                            <span class="carga-viajes-reportes__busy-eyebrow">En proceso</span>
+                            <strong>@_reportesBusyTitle</strong>
+                            <span>@_reportesBusyMessage</span>
+                            <div class="carga-viajes-reportes__busy-actions">
+                                <button type="button" class="btn btn--ghost btn--sm carga-viajes-reportes__busy-cancel" @onclick="CancelarReporteLiquidacionAsync">
+                                    <i class="bi bi-x-lg"></i>
+                                    <span>Cancelar</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             }
             else if (!_reporteLiquidacionConsultada)
             {
@@ -906,6 +927,21 @@
             }
             else
             {
+                <div class="carga-viajes-reportes__summary">
+                    <div class="carga-viajes-reportes__summary-item">
+                        <span>Viajes</span>
+                        <strong>@_reporteLiquidacionRows.Count</strong>
+                    </div>
+                    <div class="carga-viajes-reportes__summary-item">
+                        <span>Total a pagar</span>
+                        <strong>@_reporteTotalFlete.ToString("N2")</strong>
+                    </div>
+                    <div class="carga-viajes-reportes__summary-item">
+                        <span>Choferes/Fleteros</span>
+                        <strong>@GetReporteLiquidacionResumen().Count</strong>
+                    </div>
+                </div>
+
                 if (_reporteLiquidacionFilters.IncluirChoferes)
                 {
                     @RenderReporteGrupo("CHOFERES", false)
@@ -918,8 +954,8 @@
 
                 if (_reporteLiquidacionFilters.IncluirChoferes && _reporteLiquidacionFilters.IncluirFleteros)
                 {
-                    <div class="carga-viajes-reportes__total-general">
-                        <span class="carga-viajes-reportes__total-general-label">TOTAL GENERAL</span>
+                    <div class="carga-viajes-reportes__footer-total">
+                        <span>Total general</span>
                         <strong>@GetReporteTotalGeneral().ToString("N2")</strong>
                     </div>
                 }
@@ -937,30 +973,36 @@
                 <div class="actions">
                     <button type="button" class="btn btn--primary btn--sm" @onclick="BuscarLiquidacionesAsync" disabled="@_liquidacionesLoading">Buscar</button>
                     <button type="button" class="btn btn--ghost btn--sm" @onclick="LimpiarFiltrosLiquidacionesAsync" disabled="@_liquidacionesLoading">Limpiar filtros</button>
-                    <button type="button" class="btn btn--ghost btn--sm" @onclick="SeleccionarPendientesVisiblesAsync" disabled="@(_liquidacionesLoading || _liquidacionesRows.Count == 0)">Seleccionar pendientes visibles</button>
-                    <button type="button" class="btn btn--primary btn--sm" @onclick="MarcarSeleccionadosComoPagadosAsync" disabled="@(_liquidacionesLoading || _liquidacionesSeleccionadas.Count == 0)">Marcar seleccionados como pagados</button>
+                    <button type="button"
+                            class="btn btn--ghost btn--sm"
+                            @onclick="SeleccionarPendientesVisiblesAsync"
+                            disabled="@(_liquidacionesLoading || _liquidacionesRows.Count == 0)">
+                        @GetLiquidacionesPendientesVisiblesActionLabel()
+                    </button>
                 </div>
             </div>
 
             <div class="carga-viajes-liquidaciones__filters">
-                <div class="field">
-                    <label>Fecha desde</label>
-                    <InputDate @bind-Value="_liquidacionesFilters.FechaDesde" />
-                </div>
-                <div class="field">
-                    <label>Fecha hasta</label>
-                    <InputDate @bind-Value="_liquidacionesFilters.FechaHasta" />
+                <div class="carga-viajes-date-row field--wide">
+                    <div class="field">
+                        <label>Fecha desde</label>
+                        <InputDate @bind-Value="_liquidacionesFilters.FechaDesde" />
+                    </div>
+                    <div class="field">
+                        <label>Fecha hasta</label>
+                        <InputDate @bind-Value="_liquidacionesFilters.FechaHasta" />
+                    </div>
                 </div>
                 <div class="field">
                     <label>Mostrar</label>
                     <div class="carga-viajes-reportes__chips" role="group" aria-label="Mostrar liquidaciones">
-                        <button type="button" class="carga-viajes-reportes__pill @(_liquidacionesFilters.IncluirChoferes ? "carga-viajes-reportes__pill--active" : string.Empty)" aria-pressed="@_liquidacionesFilters.IncluirChoferes" @onclick="ToggleLiquidacionesChoferesAsync">
-                            <i class="bi bi-check-lg"></i>
+                        <button type="button" class="carga-viajes-filter-pill @(_liquidacionesFilters.IncluirChoferes ? "carga-viajes-filter-pill--active" : string.Empty)" aria-pressed="@_liquidacionesFilters.IncluirChoferes" @onclick="ToggleLiquidacionesChoferesAsync">
                             Choferes
+                            <span class="carga-viajes-filter-pill__icon" aria-hidden="true"><i class="bi bi-check-lg"></i></span>
                         </button>
-                        <button type="button" class="carga-viajes-reportes__pill @(_liquidacionesFilters.IncluirFleteros ? "carga-viajes-reportes__pill--active" : string.Empty)" aria-pressed="@_liquidacionesFilters.IncluirFleteros" @onclick="ToggleLiquidacionesFleterosAsync">
-                            <i class="bi bi-check-lg"></i>
+                        <button type="button" class="carga-viajes-filter-pill @(_liquidacionesFilters.IncluirFleteros ? "carga-viajes-filter-pill--active" : string.Empty)" aria-pressed="@_liquidacionesFilters.IncluirFleteros" @onclick="ToggleLiquidacionesFleterosAsync">
                             Fleteros
+                            <span class="carga-viajes-filter-pill__icon" aria-hidden="true"><i class="bi bi-check-lg"></i></span>
                         </button>
                     </div>
                 </div>
@@ -981,10 +1023,6 @@
                         <option value="@CargaViajesLiquidacionEstadoPagoKeys.Todos">Todos</option>
                     </select>
                 </div>
-                <div class="field field--wide">
-                    <label>Observación de pago</label>
-                    <textarea rows="2" maxlength="250" @bind="_liquidacionesObservacionPago" @bind:event="oninput"></textarea>
-                </div>
             </div>
         </section>
 
@@ -992,31 +1030,16 @@
             <div class="panel-card__header">
                 <div>
                     <h3 class="panel-card__title">Resumen</h3>
-                    <span class="panel-card__subtitle">@_liquidacionesRows.Count viaje(s) encontrados</span>
+                    <span class="panel-card__subtitle">Selección y pendientes en una sola barra compacta</span>
                 </div>
             </div>
 
-            <div class="carga-viajes-liquidaciones__summary-grid">
-                <article class="panel-card carga-viajes-liquidaciones__summary-card">
-                    <span class="panel-card__tag">ENCONTRADOS</span>
-                    <h3 class="panel-card__title">@GetLiquidacionesEncontradosCount()</h3>
-                </article>
-                <article class="panel-card carga-viajes-liquidaciones__summary-card">
-                    <span class="panel-card__tag">PENDIENTES</span>
-                    <h3 class="panel-card__title">@GetLiquidacionesPendientesCount()</h3>
-                </article>
-                <article class="panel-card carga-viajes-liquidaciones__summary-card">
-                    <span class="panel-card__tag">SELECCIONADOS</span>
-                    <h3 class="panel-card__title">@_liquidacionesSeleccionadas.Count</h3>
-                </article>
-                <article class="panel-card carga-viajes-liquidaciones__summary-card">
-                    <span class="panel-card__tag">TOTAL SELECCIONADO</span>
-                    <h3 class="panel-card__title">@_liquidacionesTotalSeleccionado.ToString("N2")</h3>
-                </article>
-                <article class="panel-card carga-viajes-liquidaciones__summary-card">
-                    <span class="panel-card__tag">TOTAL PENDIENTE VISIBLE</span>
-                    <h3 class="panel-card__title">@GetLiquidacionesTotalPendienteVisible().ToString("N2")</h3>
-                </article>
+            <div class="carga-viajes-liquidaciones__summary-bar">
+                <span><strong>Encontrados:</strong> @GetLiquidacionesEncontradosCount()</span>
+                <span><strong>Pendientes:</strong> @GetLiquidacionesPendientesCount()</span>
+                <span><strong>Seleccionados:</strong> @_liquidacionesSeleccionadas.Count</span>
+                <span><strong>Total seleccionado:</strong> @_liquidacionesTotalSeleccionado.ToString("N2")</span>
+                <span><strong>Total pendiente:</strong> @GetLiquidacionesTotalPendienteVisible().ToString("N2")</span>
             </div>
 
             @if (_liquidacionesLoading)
@@ -1043,7 +1066,7 @@
                                 <span>@group.Items.Count viaje(s) · Total: @group.Items.Sum(x => x.TotalFlete).ToString("N2")</span>
                             </div>
                             <div class="actions">
-                                <button type="button" class="btn btn--ghost btn--sm" @onclick="() => SeleccionarPendientesDelGrupoAsync(group.EsFletero)">Seleccionar pendientes</button>
+                                <button type="button" class="carga-viajes-row-selector carga-viajes-liquidaciones__group-action" @onclick="() => SeleccionarPendientesDelGrupoAsync(group.EsFletero)">@GetLiquidacionesGrupoActionLabel(group.EsFletero)</button>
                             </div>
                         </div>
 
@@ -1091,7 +1114,7 @@
                                             <td>@(!string.IsNullOrWhiteSpace(row.TipoVehiculoDescripcion) ? $"{row.TipoVehiculoCodigo} - {row.TipoVehiculoDescripcion}" : row.TipoVehiculoCodigo)</td>
                                             <td>@row.CantidadViajes</td>
                                             <td>@row.TotalFlete.ToString("N2")</td>
-                                            <td>@(row.FletePagado ? "Sí" : "No")</td>
+                                            <td>@(row.FletePagado ? "Pagado" : "Pendiente")</td>
                                             <td>@(row.FechaPagoFlete.HasValue ? row.FechaPagoFlete.Value.ToString("dd/MM/yyyy HH:mm") : string.Empty)</td>
                                             <td>@row.UsuarioPagoFlete</td>
                                             <td>@row.ObservacionPagoFlete</td>
@@ -1105,7 +1128,79 @@
             }
         </section>
     }
-    else if (_activeSection == SectionConfiguracion)
+    @if (_showLiquidacionesPagoModal)
+    {
+        <div class="cuentas-modal-backdrop carga-viajes-modal-backdrop" @onclick="CerrarLiquidacionesPagoModalAsync">
+            <section class="cuentas-modal carga-viajes-modal carga-viajes-modal--wide carga-viajes-liquidaciones__modal" role="dialog" aria-modal="true" aria-labelledby="carga-viajes-liquidaciones-pago-title" @onclick:stopPropagation="true" @onkeydown="HandleModalKeyDownAsync" tabindex="0">
+                <header class="cuentas-modal__header">
+                    <div>
+                        <span class="cuentas-modal__eyebrow">Liquidaciones</span>
+                        <h3 id="carga-viajes-liquidaciones-pago-title">Grabar pago</h3>
+                    </div>
+                    <button type="button" class="cuentas-modal__close" @onclick="CerrarLiquidacionesPagoModalAsync" aria-label="Cerrar">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
+                </header>
+
+                <div class="cuentas-modal__body">
+                    <div class="carga-viajes-liquidaciones__modal-summary">
+                        <span><strong>Viajes:</strong> @GetLiquidacionesPagoModalRows().Count</span>
+                        <span><strong>Total a pagar:</strong> @GetLiquidacionesPagoModalTotal().ToString("N2")</span>
+                    </div>
+
+                    <div class="carga-viajes-liquidaciones__modal-filters">
+                        <div class="field">
+                            <label>Fecha de pago</label>
+                            <InputDate @bind-Value="_liquidacionesPagoFecha" />
+                        </div>
+                        <div class="field field--wide">
+                            <label>Observación</label>
+                            <textarea rows="3" maxlength="250" @bind="_liquidacionesPagoObservacion" @bind:event="oninput"></textarea>
+                        </div>
+                    </div>
+
+                    <div class="usuarios-table-wrap carga-viajes-liquidaciones__modal-table-wrap">
+                        <table class="data-table carga-viajes-liquidaciones__table">
+                            <thead>
+                                <tr>
+                                    <th></th>
+                                    <th>Comprobante</th>
+                                    <th>Fecha</th>
+                                    <th>Cliente</th>
+                                    <th>Chofer</th>
+                                    <th>Total fletero</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var row in GetLiquidacionesPagoModalRows())
+                                {
+                                    <tr class="data-grid__row">
+                                        <td>
+                                            <button type="button" class="carga-viajes-liquidaciones__remove-pill" @onclick="() => ToggleLiquidacionSeleccionAsync(row.Id)">
+                                                <i class="bi bi-x-lg"></i>
+                                                Quitar
+                                            </button>
+                                        </td>
+                                        <td>@row.Comprobante</td>
+                                        <td>@row.Fecha.ToString("dd/MM/yyyy")</td>
+                                        <td>@(!string.IsNullOrWhiteSpace(row.ClienteNombre) ? $"{row.ClienteCodigo} - {row.ClienteNombre}" : row.ClienteCodigo)</td>
+                                        <td>@(!string.IsNullOrWhiteSpace(row.ChoferNombre) ? $"{row.ChoferCodigo} - {row.ChoferNombre}" : row.ChoferCodigo)</td>
+                                        <td>@row.TotalFlete.ToString("N2")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <footer class="cuentas-modal__actions carga-viajes-liquidaciones__modal-actions">
+                    <button type="button" class="btn btn--primary" @onclick="ConfirmarLiquidacionesPagoAsync" disabled="@(!_liquidacionesSeleccionadas.Any())">Confirmar pago</button>
+                    <button type="button" class="btn btn--ghost" @onclick="CerrarLiquidacionesPagoModalAsync">Cancelar</button>
+                </footer>
+            </section>
+        </div>
+    }
+    @if (_activeSection == SectionConfiguracion)
     {
         <section class="panel-card">
             <div class="panel-card__header">
@@ -1207,43 +1302,23 @@
                                 @for (var i = 0; i < 5; i++)
                                 {
                                     var index = i;
-                                    <label class="carga-viajes-check carga-viajes-adicionales__item @(GetViajeAdicionalChecked(index) ? "carga-viajes-check--active" : string.Empty)">
-                                        @if (index == 0)
-                                        {
-                                            <input class="carga-viajes-adicionales__input" @ref="_viajeAdicional0Input" type="checkbox" checked="@GetViajeAdicionalChecked(index)" disabled="@_viajeReadOnly" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusViajeAdicional1Async)" @onchange="args => OnViajeAdicionalChangedAsync(index, args)" />
-                                        }
-                                        else if (index == 1)
-                                        {
-                                            <input class="carga-viajes-adicionales__input" @ref="_viajeAdicional1Input" type="checkbox" checked="@GetViajeAdicionalChecked(index)" disabled="@_viajeReadOnly" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusViajeAdicional2Async)" @onchange="args => OnViajeAdicionalChangedAsync(index, args)" />
-                                        }
-                                        else if (index == 2)
-                                        {
-                                            <input class="carga-viajes-adicionales__input" @ref="_viajeAdicional2Input" type="checkbox" checked="@GetViajeAdicionalChecked(index)" disabled="@_viajeReadOnly" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusViajeAdicional3Async)" @onchange="args => OnViajeAdicionalChangedAsync(index, args)" />
-                                        }
-                                        else if (index == 3)
-                                        {
-                                            <input class="carga-viajes-adicionales__input" @ref="_viajeAdicional3Input" type="checkbox" checked="@GetViajeAdicionalChecked(index)" disabled="@_viajeReadOnly" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusViajeAdicional4Async)" @onchange="args => OnViajeAdicionalChangedAsync(index, args)" />
-                                        }
-                                        else
-                                        {
-                                            <input class="carga-viajes-adicionales__input" @ref="_viajeAdicional4Input" type="checkbox" checked="@GetViajeAdicionalChecked(index)" disabled="@_viajeReadOnly" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusViajeObservacionesAsync)" @onchange="args => OnViajeAdicionalChangedAsync(index, args)" />
-                                        }
-                                        <span class="carga-viajes-adicionales__box" aria-hidden="true"></span>
+                                    <button type="button"
+                                            class="carga-viajes-adicionales__item @(GetViajeAdicionalChecked(index) ? "carga-viajes-adicionales__item--active" : string.Empty)"
+                                            aria-pressed="@GetViajeAdicionalChecked(index)"
+                                            disabled="@_viajeReadOnly"
+                                            @onclick="() => ToggleViajeAdicionalAsync(index)">
+                                        <span class="carga-viajes-adicionales__check" aria-hidden="true">
+                                            <i class="bi @(GetViajeAdicionalChecked(index) ? "bi-check-lg" : "bi-plus-lg")"></i>
+                                        </span>
                                         <span class="carga-viajes-adicionales__content">
                                             <span class="carga-viajes-adicionales__name">@GetAdicionalLabel(index)</span>
-                                            <div class="carga-viajes-adicionales__percent-row">
-                                                <input class="carga-viajes-adicionales__percent-input"
-                                                       type="text"
-                                                       inputmode="decimal"
-                                                       value="@GetViajeAdicionalPercentInputText(index)"
-                                                       disabled="@_viajeReadOnly"
-                                                       @onchange="args => OnViajeAdicionalPercentChangedAsync(index, args)" />
-                                                <span class="carga-viajes-adicionales__percent-suffix">%</span>
-                                            </div>
+                                            <span class="carga-viajes-adicionales__percent">@GetViajeAdicionalPercentText(index)</span>
+                                            <span class="carga-viajes-adicionales__amount">+@GetViajeAdicionalImporte(index).ToString("C2")</span>
                                         </span>
-                                    </label>
+                                    </button>
                                 }
                             </div>
+                            <div class="carga-viajes-adicionales__total">Total adicionales: @GetViajeTotalAdicionales().ToString("C2")</div>
                         </div>
                         <div class="field field--wide"><label>Observaciones</label><textarea @ref="_viajeObservacionesInput" rows="4" @bind="_viajeForm.Observaciones" disabled="@_viajeReadOnly"></textarea></div>
                     </div>
@@ -1301,6 +1376,18 @@
             </section>
         </div>
     }
+    @if (_activeSection == SectionLiquidaciones && _liquidacionesSeleccionadas.Count > 0 && !_showLiquidacionesPagoModal)
+    {
+        <button type="button"
+                class="carga-viajes-liquidaciones__floating-pay carga-viajes-floating-action"
+                @onclick="MarcarSeleccionadosComoPagadosAsync">
+            <span class="carga-viajes-liquidaciones__floating-pay-icon" aria-hidden="true"><i class="bi bi-cash-coin"></i></span>
+            <span class="carga-viajes-liquidaciones__floating-pay-body">
+                <span class="carga-viajes-liquidaciones__floating-pay-title">Grabar pago</span>
+                <span class="carga-viajes-liquidaciones__floating-pay-meta">@GetLiquidacionesFloatingPayLabel()</span>
+            </span>
+        </button>
+    }
 
 </div>
 
@@ -1347,6 +1434,9 @@
     private bool _showDestinosAdvancedFilters;
     private bool _showTipoVehiculosAdvancedFilters;
     private bool _reportesLoading;
+    private string _reportesBusyTitle = "Buscando reporte";
+    private string _reportesBusyMessage = "Estamos consultando los viajes agrupados por chofer y total a pagar.";
+    private CancellationTokenSource? _reportesCancellationCts;
     private bool _reporteLiquidacionConsultada;
     private bool _liquidacionesLoading;
     private bool _liquidacionesConsultada;
@@ -1369,7 +1459,9 @@
     private readonly HashSet<int> _liquidacionesSeleccionadas = new();
     private decimal _liquidacionesTotalSeleccionado;
     private string _liquidacionesChoferFleteroTexto = string.Empty;
-    private string _liquidacionesObservacionPago = string.Empty;
+    private bool _showLiquidacionesPagoModal;
+    private DateTime _liquidacionesPagoFecha = DateTime.Today;
+    private string _liquidacionesPagoObservacion = string.Empty;
 
     private string _clienteFiltroTexto = string.Empty;
     private string _choferFiltroTexto = string.Empty;
@@ -1949,19 +2041,28 @@
     private string GetViajeAdicionalPercentText(int index)
         => $"{GetViajeAdicionalPercent(index):0.##}%";
 
-    private string GetViajeAdicionalPercentInputText(int index)
-        => GetViajeAdicionalPercent(index).ToString("0.##", System.Globalization.CultureInfo.CurrentCulture);
-
     private decimal GetViajeAdicionalPercent(int index)
         => index switch
         {
-            0 => _viajeForm.PorcentajeAdic,
-            1 => _viajeForm.PorcentajeAdic1,
-            2 => _viajeForm.PorcentajeAdic2,
-            3 => _viajeForm.PorcentajeAdic3,
-            4 => _viajeForm.PorcentajeAdic4,
+            0 => ResolvePercentOrDefault(_viajeForm.PorcentajeAdic, 0),
+            1 => ResolvePercentOrDefault(_viajeForm.PorcentajeAdic1, 1),
+            2 => ResolvePercentOrDefault(_viajeForm.PorcentajeAdic2, 2),
+            3 => ResolvePercentOrDefault(_viajeForm.PorcentajeAdic3, 3),
+            4 => ResolvePercentOrDefault(_viajeForm.PorcentajeAdic4, 4),
             _ => 0m
         };
+
+    private decimal GetViajeAdicionalImporte(int index)
+    {
+        if (!_viajeAdicionalesActivos[index])
+            return 0m;
+
+        var baseImporte = Math.Max(0m, _viajeForm.ImporteCliente) * Math.Max(1, _viajeForm.CantidadViajes);
+        return baseImporte * GetViajeAdicionalPercent(index) / 100m;
+    }
+
+    private decimal GetViajeTotalAdicionales()
+        => Enumerable.Range(0, 5).Sum(GetViajeAdicionalImporte);
 
     private async Task OnViajeAdicionalChangedAsync(int index, ChangeEventArgs args)
     {
@@ -1979,25 +2080,9 @@
         await Task.CompletedTask;
     }
 
-    private async Task OnViajeAdicionalPercentChangedAsync(int index, ChangeEventArgs args)
+    private async Task ToggleViajeAdicionalAsync(int index)
     {
-        var raw = Convert.ToString(args.Value, System.Globalization.CultureInfo.CurrentCulture) ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(raw))
-        {
-            SetViajeAdicionalPercent(index, 0m);
-            MarkViajeDirty();
-            await Task.CompletedTask;
-            return;
-        }
-
-        if (!decimal.TryParse(raw, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.CurrentCulture, out var value)
-            && !decimal.TryParse(raw, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out value))
-        {
-            return;
-        }
-
-        SetViajeAdicionalPercent(index, value);
-        SyncViajeAdicionalesFromForm();
+        _viajeAdicionalesActivos[index] = !_viajeAdicionalesActivos[index];
         MarkViajeDirty();
         await Task.CompletedTask;
     }
@@ -2016,11 +2101,7 @@
 
     private void SyncViajeAdicionalesFromForm()
     {
-        _viajeAdicionalesActivos[0] = GetViajeAdicionalRawPercent(0) > 0m;
-        _viajeAdicionalesActivos[1] = GetViajeAdicionalRawPercent(1) > 0m;
-        _viajeAdicionalesActivos[2] = GetViajeAdicionalRawPercent(2) > 0m;
-        _viajeAdicionalesActivos[3] = GetViajeAdicionalRawPercent(3) > 0m;
-        _viajeAdicionalesActivos[4] = GetViajeAdicionalRawPercent(4) > 0m;
+        Array.Fill(_viajeAdicionalesActivos, false);
     }
 
     private decimal GetViajeAdicionalRawPercent(int index)
@@ -2036,11 +2117,11 @@
 
     private void ApplyViajeAdicionalesToFormForSave()
     {
-        _viajeForm.PorcentajeAdic = _viajeAdicionalesActivos[0] ? _viajeForm.PorcentajeAdic : 0m;
-        _viajeForm.PorcentajeAdic1 = _viajeAdicionalesActivos[1] ? _viajeForm.PorcentajeAdic1 : 0m;
-        _viajeForm.PorcentajeAdic2 = _viajeAdicionalesActivos[2] ? _viajeForm.PorcentajeAdic2 : 0m;
-        _viajeForm.PorcentajeAdic3 = _viajeAdicionalesActivos[3] ? _viajeForm.PorcentajeAdic3 : 0m;
-        _viajeForm.PorcentajeAdic4 = _viajeAdicionalesActivos[4] ? _viajeForm.PorcentajeAdic4 : 0m;
+        _viajeForm.PorcentajeAdic = _viajeAdicionalesActivos[0] ? GetViajeAdicionalPercent(0) : 0m;
+        _viajeForm.PorcentajeAdic1 = _viajeAdicionalesActivos[1] ? GetViajeAdicionalPercent(1) : 0m;
+        _viajeForm.PorcentajeAdic2 = _viajeAdicionalesActivos[2] ? GetViajeAdicionalPercent(2) : 0m;
+        _viajeForm.PorcentajeAdic3 = _viajeAdicionalesActivos[3] ? GetViajeAdicionalPercent(3) : 0m;
+        _viajeForm.PorcentajeAdic4 = _viajeAdicionalesActivos[4] ? GetViajeAdicionalPercent(4) : 0m;
     }
 
     private async Task HandleEnterAdvanceAsync(KeyboardEventArgs args, Func<Task> nextFocusAsync)
@@ -2098,27 +2179,27 @@
 
     private async Task FocusViajeAdicional0Async()
     {
-        await _viajeAdicional0Input.FocusAsync(preventScroll: true);
+        await FocusViajeObservacionesAsync();
     }
 
     private async Task FocusViajeAdicional1Async()
     {
-        await _viajeAdicional1Input.FocusAsync(preventScroll: true);
+        await FocusViajeObservacionesAsync();
     }
 
     private async Task FocusViajeAdicional2Async()
     {
-        await _viajeAdicional2Input.FocusAsync(preventScroll: true);
+        await FocusViajeObservacionesAsync();
     }
 
     private async Task FocusViajeAdicional3Async()
     {
-        await _viajeAdicional3Input.FocusAsync(preventScroll: true);
+        await FocusViajeObservacionesAsync();
     }
 
     private async Task FocusViajeAdicional4Async()
     {
-        await _viajeAdicional4Input.FocusAsync(preventScroll: true);
+        await FocusViajeObservacionesAsync();
     }
 
     private async Task FocusViajeObservacionesAsync()
@@ -2394,7 +2475,9 @@
     {
         _liquidacionesFilters = CreateDefaultLiquidacionesFilters();
         _liquidacionesChoferFleteroTexto = string.Empty;
-        _liquidacionesObservacionPago = string.Empty;
+        _showLiquidacionesPagoModal = false;
+        _liquidacionesPagoFecha = DateTime.Today;
+        _liquidacionesPagoObservacion = string.Empty;
         _liquidacionesRows.Clear();
         _liquidacionesSeleccionadas.Clear();
         _liquidacionesTotalSeleccionado = 0m;
@@ -2455,9 +2538,24 @@
 
     private async Task SeleccionarPendientesVisiblesAsync()
     {
-        _liquidacionesSeleccionadas.Clear();
-        foreach (var row in _liquidacionesRows.Where(x => !x.FletePagado))
-            _liquidacionesSeleccionadas.Add(row.Id);
+        var pendingVisible = _liquidacionesRows.Where(x => !x.FletePagado).ToList();
+        if (pendingVisible.Count == 0)
+        {
+            await Task.CompletedTask;
+            return;
+        }
+
+        var allSelected = pendingVisible.All(x => _liquidacionesSeleccionadas.Contains(x.Id));
+        if (allSelected)
+        {
+            foreach (var row in pendingVisible)
+                _liquidacionesSeleccionadas.Remove(row.Id);
+        }
+        else
+        {
+            foreach (var row in pendingVisible)
+                _liquidacionesSeleccionadas.Add(row.Id);
+        }
 
         RecalcularTotalSeleccionado();
         await Task.CompletedTask;
@@ -2466,8 +2564,23 @@
     private async Task SeleccionarPendientesDelGrupoAsync(bool esFletero)
     {
         var rows = _liquidacionesRows.Where(x => x.EsFletero == esFletero && !x.FletePagado).ToList();
-        foreach (var row in rows)
-            _liquidacionesSeleccionadas.Add(row.Id);
+        if (rows.Count == 0)
+        {
+            await Task.CompletedTask;
+            return;
+        }
+
+        var allSelected = rows.All(x => _liquidacionesSeleccionadas.Contains(x.Id));
+        if (allSelected)
+        {
+            foreach (var row in rows)
+                _liquidacionesSeleccionadas.Remove(row.Id);
+        }
+        else
+        {
+            foreach (var row in rows)
+                _liquidacionesSeleccionadas.Add(row.Id);
+        }
 
         RecalcularTotalSeleccionado();
         await Task.CompletedTask;
@@ -2475,35 +2588,69 @@
 
     private async Task MarcarSeleccionadosComoPagadosAsync()
     {
-        if (!ValidateLiquidacionesMarcado())
+        if (_liquidacionesSeleccionadas.Count == 0)
+        {
+            _feedback = new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Warning,
+                Title = "Seleccione viajes",
+                Message = "Debe seleccionar al menos un viaje para continuar."
+            };
+            return;
+        }
+
+        _showLiquidacionesPagoModal = true;
+        _liquidacionesPagoFecha = DateTime.Today;
+        _liquidacionesPagoObservacion = string.Empty;
+        await Task.CompletedTask;
+    }
+
+    private async Task CerrarLiquidacionesPagoModalAsync()
+    {
+        _showLiquidacionesPagoModal = false;
+        await Task.CompletedTask;
+    }
+
+    private IReadOnlyList<CargaViajeLiquidacionRowDto> GetLiquidacionesPagoModalRows()
+        => _liquidacionesRows.Where(x => _liquidacionesSeleccionadas.Contains(x.Id) && !x.FletePagado).ToList();
+
+    private decimal GetLiquidacionesPagoModalTotal()
+        => GetLiquidacionesPagoModalRows().Sum(x => x.TotalFlete);
+
+    private async Task ConfirmarLiquidacionesPagoAsync()
+    {
+        if (!ValidateLiquidacionesPagoModal())
             return;
 
-        var selectedRows = _liquidacionesRows.Where(x => _liquidacionesSeleccionadas.Contains(x.Id) && !x.FletePagado).ToList();
+        var selectedRows = GetLiquidacionesPagoModalRows();
         if (selectedRows.Count == 0)
         {
             _feedback = new AppUiMessage
             {
                 Severity = AppUiFeedbackSeverity.Warning,
-                Title = "Sin viajes pendientes",
-                Message = "Los viajes seleccionados ya están pagados o no siguen disponibles para liquidar."
+                Title = "Sin viajes seleccionados",
+                Message = "Debés dejar al menos un viaje seleccionado para confirmar el pago."
             };
             return;
         }
 
-        var total = selectedRows.Sum(x => x.TotalFlete);
-        var confirm = await AppDialogs.ShowConfirmAsync(
-            "Confirmar pago de fletes",
-            $"Se marcarán como pagados {selectedRows.Count} viaje(s) por un total de ${total:N2}.\n¿Desea continuar?",
-            "Confirmar pago",
-            "Cancelar");
-        if (!confirm)
+        if (selectedRows.Any(x => x.FletePagado))
+        {
+            _feedback = new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Warning,
+                Title = "Viajes ya pagados",
+                Message = "No se puede confirmar el pago con viajes que ya fueron pagados."
+            };
             return;
+        }
 
         var userName = AppUserSession.GetCurrentUserName(string.Empty);
         var result = await UiOps.RunAsync(() => CargaViajesSvc.MarcarFletesPagadosAsync(new CargaViajesMarcarPagadoRequest
         {
             Ids = selectedRows.Select(x => x.Id).ToList(),
-            Observacion = _liquidacionesObservacionPago,
+            FechaPago = _liquidacionesPagoFecha,
+            Observacion = _liquidacionesPagoObservacion,
             Usuario = userName
         }), "No se pudieron marcar los fletes como pagados.");
 
@@ -2514,6 +2661,7 @@
         }
 
         var actualizados = result.Value;
+        _showLiquidacionesPagoModal = false;
         _liquidacionesSeleccionadas.Clear();
         _liquidacionesTotalSeleccionado = 0m;
 
@@ -2694,15 +2842,32 @@
     private async Task RecargarReporteLiquidacionAsync()
     {
         _reportesLoading = true;
+        _reportesBusyTitle = "Buscando reporte";
+        _reportesBusyMessage = "Estamos consultando los viajes agrupados por chofer y total a pagar.";
         _reporteLiquidacionConsultada = true;
-        _reporteLiquidacionRows.Clear();
-        _reporteTotalFlete = 0m;
+        _reportesCancellationCts?.Dispose();
+        using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        _reportesCancellationCts = CancellationTokenSource.CreateLinkedTokenSource(timeoutCts.Token);
+        var reportesToken = _reportesCancellationCts.Token;
+        await InvokeAsync(StateHasChanged);
         try
         {
             if (_reporteLiquidacionFilters.FechaDesde is null || _reporteLiquidacionFilters.FechaHasta is null)
                 _reporteLiquidacionFilters = CreateDefaultReporteLiquidacionFilters();
 
-            var result = await UiOps.RunAsync(() => CargaViajesSvc.SearchLiquidacionChoferesAsync(_reporteLiquidacionFilters), "No se pudo generar la liquidación de choferes y fleteros.");
+            Logger.LogInformation(
+                "Reportes liquidación start desde={Desde:yyyy-MM-dd} hasta={Hasta:yyyy-MM-dd} choferes={Choferes} fleteros={Fleteros} chofer={Chofer}",
+                _reporteLiquidacionFilters.FechaDesde,
+                _reporteLiquidacionFilters.FechaHasta,
+                _reporteLiquidacionFilters.IncluirChoferes,
+                _reporteLiquidacionFilters.IncluirFleteros,
+                _reporteLiquidacionFilters.ChoferCodigo);
+
+            var result = await UiOps.RunAsync(() => CargaViajesSvc.SearchLiquidacionChoferesAsync(_reporteLiquidacionFilters, reportesToken), "No se pudo generar la liquidación de choferes y fleteros.");
+            Logger.LogInformation(
+                "Reportes liquidación end success={Success} count={Count}",
+                result.Success,
+                result.Value?.Count ?? 0);
             if (result.Success && result.Value is not null)
             {
                 _reporteLiquidacionRows.Clear();
@@ -2716,10 +2881,40 @@
                 _feedback = result.Feedback;
             }
         }
+        catch (OperationCanceledException) when (reportesToken.IsCancellationRequested)
+        {
+            Logger.LogInformation("Reportes liquidación cancelado por el usuario.");
+            _reportesBusyTitle = "Consulta cancelada";
+            _reportesBusyMessage = "La búsqueda se canceló antes de completar la liquidación.";
+            _feedback = new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Info,
+                Title = "Consulta cancelada",
+                Message = "La generación del reporte fue cancelada."
+            };
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Reportes liquidación falló.");
+            _reportesBusyTitle = "No se pudo generar el reporte";
+            _reportesBusyMessage = "Se produjo un error al consultar la liquidación. Revisá el mensaje de soporte.";
+            _reporteLiquidacionRows.Clear();
+            _reporteTotalFlete = 0m;
+            _feedback = UiOps.BuildMessage(ex, "No se pudo generar la liquidación de choferes y fleteros.");
+        }
         finally
         {
             _reportesLoading = false;
+            _reportesCancellationCts?.Dispose();
+            _reportesCancellationCts = null;
+            Logger.LogInformation("Reportes liquidación finalizó. Loading={Loading}", _reportesLoading);
         }
+    }
+
+    private Task CancelarReporteLiquidacionAsync()
+    {
+        _reportesCancellationCts?.Cancel();
+        return Task.CompletedTask;
     }
 
     private Task ExportarReporteExcelAsync()
@@ -2801,9 +2996,58 @@
             return false;
         }
 
-        if (_liquidacionesObservacionPago.Length > 250)
+        if (_liquidacionesPagoObservacion.Length > 250)
         {
             _feedback = new AppUiMessage { Severity = AppUiFeedbackSeverity.Warning, Title = "Observación demasiado larga", Message = "La observación de pago no puede superar los 250 caracteres." };
+            return false;
+        }
+
+        return true;
+    }
+
+    private bool ValidateLiquidacionesPagoModal()
+    {
+        if (_liquidacionesSeleccionadas.Count == 0)
+        {
+            _feedback = new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Warning,
+                Title = "Seleccione viajes",
+                Message = "Debe seleccionar al menos un viaje para continuar."
+            };
+            return false;
+        }
+
+        if (_liquidacionesPagoFecha == default)
+        {
+            _feedback = new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Warning,
+                Title = "Fecha obligatoria",
+                Message = "Debe informar la fecha de pago."
+            };
+            return false;
+        }
+
+        if (_liquidacionesPagoObservacion.Length > 250)
+        {
+            _feedback = new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Warning,
+                Title = "Observación demasiado larga",
+                Message = "La observación de pago no puede superar los 250 caracteres."
+            };
+            return false;
+        }
+
+        if (GetLiquidacionesPagoModalRows().Count == 0)
+        {
+            _feedback = new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Warning,
+                Title = "Sin viajes válidos",
+                Message = "No quedan viajes seleccionados para confirmar el pago."
+            };
             return false;
         }
 
@@ -2867,6 +3111,28 @@
     private decimal GetLiquidacionesTotalPendienteVisible()
         => _liquidacionesRows.Where(x => !x.FletePagado).Sum(x => x.TotalFlete);
 
+    private string GetLiquidacionesResumenTexto()
+        => $"{GetLiquidacionesEncontradosCount()} viaje(s) encontrados | {GetLiquidacionesPendientesCount()} pendientes | {_liquidacionesSeleccionadas.Count} seleccionados | Total seleccionado: {_liquidacionesTotalSeleccionado.ToString("N2")} | Total pendiente: {GetLiquidacionesTotalPendienteVisible().ToString("N2")}";
+
+    private string GetLiquidacionesPendientesVisiblesActionLabel()
+        => _liquidacionesRows.Where(x => !x.FletePagado).Any(x => !_liquidacionesSeleccionadas.Contains(x.Id))
+            ? "Seleccionar pendientes"
+            : "Desmarcar pendientes";
+
+    private string GetLiquidacionesGrupoActionLabel(bool esFletero)
+    {
+        var rows = _liquidacionesRows.Where(x => x.EsFletero == esFletero && !x.FletePagado).ToList();
+        if (rows.Count == 0)
+            return "Seleccionar pendientes";
+
+        return rows.All(x => _liquidacionesSeleccionadas.Contains(x.Id))
+            ? "Desmarcar pendientes"
+            : "Seleccionar pendientes";
+    }
+
+    private string GetLiquidacionesFloatingPayLabel()
+        => $"Grabar pago ({_liquidacionesSeleccionadas.Count}) - {_liquidacionesTotalSeleccionado.ToString("C2")}";
+
     private void RecalcularTotalSeleccionado()
         => _liquidacionesTotalSeleccionado = _liquidacionesRows.Where(x => _liquidacionesSeleccionadas.Contains(x.Id) && !x.FletePagado).Sum(x => x.TotalFlete);
 
@@ -2880,21 +3146,21 @@
 
     private string GetReporteTitulo()
         => _reporteLiquidacionFilters.IncluirChoferes && _reporteLiquidacionFilters.IncluirFleteros
-            ? "Liquidación de choferes y fleteros"
+            ? "Viajes por chofer y fletero"
             : _reporteLiquidacionFilters.IncluirFleteros
-                ? "Liquidación de fleteros"
-                : "Liquidación de choferes";
+                ? "Viajes por fleteros"
+                : "Viajes por choferes";
 
     private string GetReporteChartTitle()
         => _reporteLiquidacionFilters.IncluirChoferes && _reporteLiquidacionFilters.IncluirFleteros
-            ? "Distribución general por chofer"
+            ? "Distribución general"
             : _reporteLiquidacionFilters.IncluirFleteros
                 ? "Distribución por fletero"
                 : "Distribución por chofer";
 
     private string GetReporteChartSubtitle()
         => _reporteLiquidacionFilters.IncluirChoferes && _reporteLiquidacionFilters.IncluirFleteros
-            ? "Total a pagar por chofer/fletero"
+            ? "Total a pagar por grupo"
             : _reporteLiquidacionFilters.IncluirFleteros
                 ? "Total a pagar por fletero"
                 : "Total a pagar por chofer";
@@ -2972,7 +3238,20 @@
     {
         var seq = 0;
         var rows = GetReporteRows(esFletero);
-        var resumen = GetReporteResumen(esFletero);
+        var driverGroups = rows
+            .GroupBy(x => new { x.ChoferCodigo, x.ChoferNombre, x.EsFletero })
+            .Select(g => new
+            {
+                g.Key.ChoferCodigo,
+                g.Key.ChoferNombre,
+                g.Key.EsFletero,
+                Items = g.OrderBy(x => x.Fecha).ThenBy(x => x.IdComprobante).ToList(),
+                CantidadViajes = g.Sum(x => Math.Max(1, x.CantidadViajes)),
+                TotalFlete = g.Sum(x => x.TotalFlete)
+            })
+            .OrderBy(x => x.ChoferNombre)
+            .ThenBy(x => x.ChoferCodigo)
+            .ToList();
         var subtotal = rows.Sum(x => x.TotalFlete);
         var cantidad = rows.Sum(x => Math.Max(1, x.CantidadViajes));
 
@@ -2981,83 +3260,105 @@
 
         builder.OpenElement(seq++, "div");
         builder.AddAttribute(seq++, "class", "carga-viajes-reportes__group-header");
+
         builder.OpenElement(seq++, "div");
-        builder.OpenElement(seq++, "h4");
+
+        builder.OpenElement(seq++, "span");
+        builder.AddAttribute(seq++, "class", "carga-viajes-reportes__group-eyebrow");
         builder.AddContent(seq++, titulo);
         builder.CloseElement();
-        builder.AddMarkupContent(seq++, $"<span class=\"carga-viajes-reportes__group-meta\">{cantidad} viaje(s) · Total: {subtotal:N2}</span>");
+
+        builder.OpenElement(seq++, "h4");
+        builder.AddContent(seq++, "Viajes agrupados");
+        builder.CloseElement();
+
+        builder.OpenElement(seq++, "span");
+        builder.AddAttribute(seq++, "class", "carga-viajes-reportes__group-meta");
+        builder.AddContent(seq++, $"{cantidad} viaje(s) · {driverGroups.Count} chofer(es) · Total: {subtotal:N2}");
+        builder.CloseElement();
+
         builder.CloseElement();
         builder.CloseElement();
 
         builder.OpenElement(seq++, "div");
-        builder.AddAttribute(seq++, "class", "carga-viajes-reportes__chart");
-        builder.OpenComponent<HorizontalBarChart>(seq++);
-        builder.AddAttribute(seq++, "Data", GetReporteChartData(esFletero));
-        builder.AddAttribute(seq++, "Titulo", GetReporteChartTitle(esFletero));
-        builder.AddAttribute(seq++, "Subtitulo", GetReporteChartSubtitle(esFletero));
-        builder.AddAttribute(seq++, "Formato", "moneda");
-        builder.CloseComponent();
-        builder.CloseElement();
-
-        if (resumen.Count > 0)
+        builder.AddAttribute(seq++, "class", "carga-viajes-reportes__driver-grid");
+        foreach (var driver in driverGroups)
         {
+            builder.OpenElement(seq++, "article");
+            builder.AddAttribute(seq++, "class", "carga-viajes-reportes__driver-card");
+
             builder.OpenElement(seq++, "div");
-            builder.AddAttribute(seq++, "class", "usuarios-table-wrap");
+            builder.AddAttribute(seq++, "class", "carga-viajes-reportes__driver-card-header");
+
+            builder.OpenElement(seq++, "div");
+
+            builder.OpenElement(seq++, "span");
+            builder.AddAttribute(seq++, "class", "carga-viajes-reportes__driver-badge");
+            builder.AddContent(seq++, driver.EsFletero ? "FLETERO" : "CHOFER");
+            builder.CloseElement();
+
+            builder.CloseElement();
+
+            builder.OpenElement(seq++, "div");
+            builder.AddAttribute(seq++, "class", "carga-viajes-reportes__driver-metrics");
+
+            builder.OpenElement(seq++, "div");
+            builder.AddAttribute(seq++, "class", "carga-viajes-reportes__metric");
+            builder.AddContent(seq++, "Viajes");
+            builder.OpenElement(seq++, "strong");
+            builder.AddContent(seq++, driver.CantidadViajes);
+            builder.CloseElement();
+            builder.CloseElement();
+
+            builder.OpenElement(seq++, "div");
+            builder.AddAttribute(seq++, "class", "carga-viajes-reportes__metric");
+            builder.AddContent(seq++, "Total");
+            builder.OpenElement(seq++, "strong");
+            builder.AddContent(seq++, driver.TotalFlete.ToString("N2"));
+            builder.CloseElement();
+            builder.CloseElement();
+
+            builder.CloseElement();
+            builder.CloseElement();
+            builder.CloseElement();
+
+            builder.OpenElement(seq++, "div");
+            builder.AddAttribute(seq++, "class", "carga-viajes-reportes__driver-title");
+            builder.AddContent(seq++, string.IsNullOrWhiteSpace(driver.ChoferNombre)
+                ? driver.ChoferCodigo
+                : $"{driver.ChoferCodigo} - {driver.ChoferNombre}");
+            builder.CloseElement();
+
+            builder.OpenElement(seq++, "div");
+            builder.AddAttribute(seq++, "class", "usuarios-table-wrap carga-viajes-reportes__driver-table-wrap");
+
             builder.OpenElement(seq++, "table");
-            builder.AddAttribute(seq++, "class", "data-table");
+            builder.AddAttribute(seq++, "class", "data-table carga-viajes-reportes__driver-table");
+
             builder.OpenElement(seq++, "thead");
             builder.OpenElement(seq++, "tr");
-            builder.OpenElement(seq++, "th"); builder.AddContent(seq++, "Chofer"); builder.CloseElement();
-            builder.OpenElement(seq++, "th"); builder.AddContent(seq++, "Nombre"); builder.CloseElement();
-            builder.OpenElement(seq++, "th"); builder.AddContent(seq++, "Cantidad viajes"); builder.CloseElement();
-            builder.OpenElement(seq++, "th"); builder.AddContent(seq++, "Total flete"); builder.CloseElement();
+            builder.OpenElement(seq++, "th"); builder.AddContent(seq++, "Fecha"); builder.CloseElement();
+            builder.OpenElement(seq++, "th"); builder.AddContent(seq++, "Comprobante"); builder.CloseElement();
+            builder.OpenElement(seq++, "th"); builder.AddContent(seq++, "Cliente"); builder.CloseElement();
+            builder.OpenElement(seq++, "th"); builder.AddContent(seq++, "Destino"); builder.CloseElement();
+            builder.OpenElement(seq++, "th"); builder.AddContent(seq++, "Total"); builder.CloseElement();
             builder.CloseElement();
             builder.CloseElement();
 
             builder.OpenElement(seq++, "tbody");
-            foreach (var item in resumen)
+            foreach (var row in driver.Items)
             {
                 builder.OpenElement(seq++, "tr");
-                builder.OpenElement(seq++, "td"); builder.AddContent(seq++, item.ChoferCodigo); builder.CloseElement();
-                builder.OpenElement(seq++, "td"); builder.AddContent(seq++, item.ChoferNombre); builder.CloseElement();
-                builder.OpenElement(seq++, "td"); builder.AddContent(seq++, item.CantidadViajes); builder.CloseElement();
-                builder.OpenElement(seq++, "td"); builder.AddContent(seq++, item.TotalFlete.ToString("N2")); builder.CloseElement();
+                builder.OpenElement(seq++, "td"); builder.AddContent(seq++, row.Fecha.ToString("dd/MM/yyyy")); builder.CloseElement();
+                builder.OpenElement(seq++, "td"); builder.AddContent(seq++, row.IdComprobante); builder.CloseElement();
+                builder.OpenElement(seq++, "td"); builder.AddContent(seq++, string.IsNullOrWhiteSpace(row.ClienteNombre) ? row.ClienteCodigo : $"{row.ClienteCodigo} - {row.ClienteNombre}"); builder.CloseElement();
+                builder.OpenElement(seq++, "td"); builder.AddContent(seq++, string.IsNullOrWhiteSpace(row.DestinoDescripcion) ? row.DestinoCodigo : $"{row.DestinoCodigo} - {row.DestinoDescripcion}"); builder.CloseElement();
+                builder.OpenElement(seq++, "td"); builder.AddContent(seq++, row.TotalFlete.ToString("N2")); builder.CloseElement();
                 builder.CloseElement();
             }
             builder.CloseElement();
             builder.CloseElement();
             builder.CloseElement();
-        }
-
-        builder.OpenElement(seq++, "div");
-        builder.AddAttribute(seq++, "class", "usuarios-table-wrap");
-        builder.OpenElement(seq++, "table");
-        builder.AddAttribute(seq++, "class", "data-table");
-        builder.OpenElement(seq++, "thead");
-        builder.OpenElement(seq++, "tr");
-        builder.OpenElement(seq++, "th"); builder.AddContent(seq++, "Fecha"); builder.CloseElement();
-        builder.OpenElement(seq++, "th"); builder.AddContent(seq++, "Comprobante"); builder.CloseElement();
-        builder.OpenElement(seq++, "th"); builder.AddContent(seq++, "Chofer"); builder.CloseElement();
-        builder.OpenElement(seq++, "th"); builder.AddContent(seq++, "Cliente"); builder.CloseElement();
-        builder.OpenElement(seq++, "th"); builder.AddContent(seq++, "Destino"); builder.CloseElement();
-        builder.OpenElement(seq++, "th"); builder.AddContent(seq++, "Tipo vehículo"); builder.CloseElement();
-        builder.OpenElement(seq++, "th"); builder.AddContent(seq++, "Cantidad viajes"); builder.CloseElement();
-        builder.OpenElement(seq++, "th"); builder.AddContent(seq++, "Total flete"); builder.CloseElement();
-        builder.CloseElement();
-        builder.CloseElement();
-
-        builder.OpenElement(seq++, "tbody");
-        foreach (var row in rows)
-        {
-            builder.OpenElement(seq++, "tr");
-            builder.OpenElement(seq++, "td"); builder.AddContent(seq++, row.Fecha.ToString("dd/MM/yyyy")); builder.CloseElement();
-            builder.OpenElement(seq++, "td"); builder.AddContent(seq++, row.IdComprobante); builder.CloseElement();
-            builder.OpenElement(seq++, "td"); builder.AddContent(seq++, $"{row.ChoferCodigo} - {row.ChoferNombre}"); builder.CloseElement();
-            builder.OpenElement(seq++, "td"); builder.AddContent(seq++, $"{row.ClienteCodigo} - {row.ClienteNombre}"); builder.CloseElement();
-            builder.OpenElement(seq++, "td"); builder.AddContent(seq++, $"{row.DestinoCodigo} - {row.DestinoDescripcion}"); builder.CloseElement();
-            builder.OpenElement(seq++, "td"); builder.AddContent(seq++, $"{row.TipoVehiculoCodigo} - {row.TipoVehiculoDescripcion}"); builder.CloseElement();
-            builder.OpenElement(seq++, "td"); builder.AddContent(seq++, row.CantidadViajes); builder.CloseElement();
-            builder.OpenElement(seq++, "td"); builder.AddContent(seq++, row.TotalFlete.ToString("N2")); builder.CloseElement();
             builder.CloseElement();
         }
         builder.CloseElement();
@@ -3871,6 +4172,8 @@
             await CancelarConfiguracionTipoVehiculoVista();
         else if (_showTipoVehiculoEditor)
             await CerrarTipoVehiculoEditorAsync();
+        else if (_showLiquidacionesPagoModal)
+            await CerrarLiquidacionesPagoModalAsync();
         else if (_showViajeEditor)
             await CerrarViajeEditorAsync();
     }
@@ -3914,6 +4217,7 @@
         _showTipoVehiculoViewSettings = false;
         _showTipoVehiculoEditor = false;
         _showViajeEditor = false;
+        _showLiquidacionesPagoModal = false;
         _viajeReadOnly = false;
         _viajeDirty = false;
         _viajeSnapshot = string.Empty;
@@ -4279,7 +4583,7 @@
         {
             CargaViajeTipoVehiculoViewColumnKeys.Codigo => row.Codigo,
             CargaViajeTipoVehiculoViewColumnKeys.Descripcion => row.Descripcion,
-            CargaViajeTipoVehiculoViewColumnKeys.Activo => !row.Activo.HasValue ? string.Empty : (row.Activo.Value ? "Sí" : "No"),
+            CargaViajeTipoVehiculoViewColumnKeys.Activo => !row.Activo.HasValue ? string.Empty : (row.Activo.Value ? "Activo" : "Desactivado"),
             _ => string.Empty
         };
 
@@ -4385,7 +4689,8 @@
            || _showTipoVehiculoViewSettings
            || _showTipoVehiculoEditor
            || _showViajeEditor
-           || _showConfigEditor;
+           || _showConfigEditor
+           || _showLiquidacionesPagoModal;
 
     private static string NormalizeSectionFromUri(string? vista) => NormalizeSection(vista);
 
