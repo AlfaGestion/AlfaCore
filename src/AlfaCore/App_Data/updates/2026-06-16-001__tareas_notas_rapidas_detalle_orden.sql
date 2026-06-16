@@ -22,23 +22,24 @@ BEGIN TRY
             CONSTRAINT DF_ALFACORE_TAREAS_NOTAS_Orden DEFAULT (0);
     END;
 
-    ;WITH Pendientes AS
-    (
-        SELECT
-            IdNota,
-            ROW_NUMBER() OVER
-            (
-                PARTITION BY UPPER(LTRIM(RTRIM(Usuario))), ISNULL(Completada, 0)
-                ORDER BY FechaHoraAlta DESC, IdNota DESC
-            ) AS RowNum
-        FROM dbo.ALFACORE_TAREAS_NOTAS_RAPIDAS
-        WHERE ISNULL(Activa, 1) = 1
-          AND ISNULL(Orden, 0) = 0
-    )
-    UPDATE n
-    SET Orden = p.RowNum * 10
-    FROM dbo.ALFACORE_TAREAS_NOTAS_RAPIDAS n
-    INNER JOIN Pendientes p ON p.IdNota = n.IdNota;
+    EXEC sys.sp_executesql N'
+        ;WITH Pendientes AS
+        (
+            SELECT
+                IdNota,
+                ROW_NUMBER() OVER
+                (
+                    PARTITION BY UPPER(LTRIM(RTRIM(Usuario))), ISNULL(Completada, 0)
+                    ORDER BY FechaHoraAlta DESC, IdNota DESC
+                ) AS RowNum
+            FROM dbo.ALFACORE_TAREAS_NOTAS_RAPIDAS
+            WHERE ISNULL(Activa, 1) = 1
+              AND ISNULL(Orden, 0) = 0
+        )
+        UPDATE n
+        SET Orden = p.RowNum * 10
+        FROM dbo.ALFACORE_TAREAS_NOTAS_RAPIDAS n
+        INNER JOIN Pendientes p ON p.IdNota = n.IdNota;';
 
     IF NOT EXISTS
     (
@@ -48,8 +49,9 @@ BEGIN TRY
           AND object_id = OBJECT_ID(N'dbo.ALFACORE_TAREAS_NOTAS_RAPIDAS')
     )
     BEGIN
-        CREATE INDEX IX_ALFACORE_TAREAS_NOTAS_USUARIO_ORDEN
-        ON dbo.ALFACORE_TAREAS_NOTAS_RAPIDAS (Usuario, Activa, Completada, Orden, FechaHoraAlta);
+        EXEC sys.sp_executesql N'
+            CREATE INDEX IX_ALFACORE_TAREAS_NOTAS_USUARIO_ORDEN
+            ON dbo.ALFACORE_TAREAS_NOTAS_RAPIDAS (Usuario, Activa, Completada, Orden, FechaHoraAlta);';
     END;
 
     COMMIT TRAN;
