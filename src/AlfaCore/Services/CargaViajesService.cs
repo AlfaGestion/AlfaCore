@@ -23,6 +23,7 @@ public sealed class CargaViajesService(
     private const string LegacySucursalConfigKey = "CARGA_VIAJES_SUCURSAL";
     private const string LetraConfigKey = "VIAJES-LETRA";
     private const string ChoferGeneralConfigKey = "VIAJES-CHOFER-GENERAL";
+    private const string PorcentajesAdicionalesHabilitadosConfigKey = "VIAJES-PORCENTAJES-ADICIONALES-HABILITADOS";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -212,6 +213,16 @@ public sealed class CargaViajesService(
                 """;
             var peajeExpr = $"ISNULL(v.{peajeColumn}, 0)";
             var cantidadViajesExpr = $"ISNULL(v.{cantidadViajesColumn}, 1)";
+            var hasAdicionalFijo1Descripcion = columns.Contains("adicional_fijo1_descripcion");
+            var hasAdicionalFijo1Importe = columns.Contains("adicional_fijo1_importe");
+            var hasAdicionalFijo1Aplicado = columns.Contains("adicional_fijo1_aplicado");
+            var hasAdicionalFijo2Descripcion = columns.Contains("adicional_fijo2_descripcion");
+            var hasAdicionalFijo2Importe = columns.Contains("adicional_fijo2_importe");
+            var hasAdicionalFijo2Aplicado = columns.Contains("adicional_fijo2_aplicado");
+            var hasAdicionalFijo3Descripcion = columns.Contains("adicional_fijo3_descripcion");
+            var hasAdicionalFijo3Importe = columns.Contains("adicional_fijo3_importe");
+            var hasAdicionalFijo3Aplicado = columns.Contains("adicional_fijo3_aplicado");
+            var hasTotalAdicionalesFijos = columns.Contains("total_adicionales_fijos");
             var sql = $"""
                 SELECT TOP (1)
                     v.ID AS Id,
@@ -246,6 +257,16 @@ public sealed class CargaViajesService(
                     ISNULL(v.{FirstExistingColumn(columns, "TOTAL_ADIC3")}, 0) AS TotalAdic3,
                     ISNULL(v.{FirstExistingColumn(columns, "TOTAL_ADIC4")}, 0) AS TotalAdic4,
                     ISNULL(v.{FirstExistingColumn(columns, "TOTAL_ADICIONALES")}, 0) AS TotalAdicionales,
+                    {(hasAdicionalFijo1Descripcion ? "ISNULL(v.ADICIONAL_FIJO1_DESCRIPCION, '')" : "CAST('' AS nvarchar(100))")} AS AdicionalFijo1Descripcion,
+                    {(hasAdicionalFijo1Importe ? "ISNULL(v.ADICIONAL_FIJO1_IMPORTE, 0)" : "CAST(0 AS money)")} AS AdicionalFijo1Importe,
+                    {(hasAdicionalFijo1Aplicado ? "ISNULL(v.ADICIONAL_FIJO1_APLICADO, 0)" : "CAST(0 AS bit)")} AS AdicionalFijo1Aplicado,
+                    {(hasAdicionalFijo2Descripcion ? "ISNULL(v.ADICIONAL_FIJO2_DESCRIPCION, '')" : "CAST('' AS nvarchar(100))")} AS AdicionalFijo2Descripcion,
+                    {(hasAdicionalFijo2Importe ? "ISNULL(v.ADICIONAL_FIJO2_IMPORTE, 0)" : "CAST(0 AS money)")} AS AdicionalFijo2Importe,
+                    {(hasAdicionalFijo2Aplicado ? "ISNULL(v.ADICIONAL_FIJO2_APLICADO, 0)" : "CAST(0 AS bit)")} AS AdicionalFijo2Aplicado,
+                    {(hasAdicionalFijo3Descripcion ? "ISNULL(v.ADICIONAL_FIJO3_DESCRIPCION, '')" : "CAST('' AS nvarchar(100))")} AS AdicionalFijo3Descripcion,
+                    {(hasAdicionalFijo3Importe ? "ISNULL(v.ADICIONAL_FIJO3_IMPORTE, 0)" : "CAST(0 AS money)")} AS AdicionalFijo3Importe,
+                    {(hasAdicionalFijo3Aplicado ? "ISNULL(v.ADICIONAL_FIJO3_APLICADO, 0)" : "CAST(0 AS bit)")} AS AdicionalFijo3Aplicado,
+                    {(hasTotalAdicionalesFijos ? "ISNULL(v.TOTAL_ADICIONALES_FIJOS, 0)" : "CAST(0 AS money)")} AS TotalAdicionalesFijos,
                     ISNULL(v.{FirstExistingColumn(columns, "OBSERVACIONES")}, '') AS Observaciones
                 FROM dbo.{viajeTable} v
                 {clienteJoin}
@@ -617,6 +638,12 @@ public sealed class CargaViajesService(
                     ELSE {tipoVehiculoCodeExpr} + ' - ' + LTRIM(RTRIM(tv.DESCRIPCION))
                 END
                 """;
+            var hasAdicionalFijo1Descripcion = columns.Contains("adicionalfijo1descripcion");
+            var hasAdicionalFijo1Importe = columns.Contains("adicionalfijo1importe");
+            var hasAdicionalFijo2Descripcion = columns.Contains("adicionalfijo2descripcion");
+            var hasAdicionalFijo2Importe = columns.Contains("adicionalfijo2importe");
+            var hasAdicionalFijo3Descripcion = columns.Contains("adicionalfijo3descripcion");
+            var hasAdicionalFijo3Importe = columns.Contains("adicionalfijo3importe");
             var idSelectExpr = string.IsNullOrWhiteSpace(idColumn) ? "CAST(0 AS int) AS Id" : $"ISNULL(t.{idColumn}, 0) AS Id";
 
             var sql = $"""
@@ -635,6 +662,12 @@ public sealed class CargaViajesService(
                     ISNULL(t.PorcentajeAdic2, 0) AS PorcentajeAdic2,
                     ISNULL(t.PorcentajeAdic3, 0) AS PorcentajeAdic3,
                     ISNULL(t.PorcentajeAdic4, 0) AS PorcentajeAdic4,
+                    {(hasAdicionalFijo1Descripcion ? "ISNULL(t.AdicionalFijo1Descripcion, '')" : "CAST('' AS nvarchar(100))")} AS AdicionalFijo1Descripcion,
+                    {(hasAdicionalFijo1Importe ? "ISNULL(t.AdicionalFijo1Importe, 0)" : "CAST(0 AS money)")} AS AdicionalFijo1Importe,
+                    {(hasAdicionalFijo2Descripcion ? "ISNULL(t.AdicionalFijo2Descripcion, '')" : "CAST('' AS nvarchar(100))")} AS AdicionalFijo2Descripcion,
+                    {(hasAdicionalFijo2Importe ? "ISNULL(t.AdicionalFijo2Importe, 0)" : "CAST(0 AS money)")} AS AdicionalFijo2Importe,
+                    {(hasAdicionalFijo3Descripcion ? "ISNULL(t.AdicionalFijo3Descripcion, '')" : "CAST('' AS nvarchar(100))")} AS AdicionalFijo3Descripcion,
+                    {(hasAdicionalFijo3Importe ? "ISNULL(t.AdicionalFijo3Importe, 0)" : "CAST(0 AS money)")} AS AdicionalFijo3Importe,
                     ISNULL(t.Activo, 1) AS Activo
                 FROM dbo.TA_TARIFA t
                 LEFT JOIN dbo.Vt_Clientes cli ON UPPER(LTRIM(RTRIM(cli.CODIGO))) = UPPER(LTRIM(RTRIM({clienteCodeExpr})))
@@ -716,7 +749,13 @@ public sealed class CargaViajesService(
                     PorcentajeAdic2 = GetDecimal(rd, 11),
                     PorcentajeAdic3 = GetDecimal(rd, 12),
                     PorcentajeAdic4 = GetDecimal(rd, 13),
-                    Activo = GetBool(rd, 14)
+                    AdicionalFijo1Descripcion = GetString(rd, 14),
+                    AdicionalFijo1Importe = GetDecimal(rd, 15),
+                    AdicionalFijo2Descripcion = GetString(rd, 16),
+                    AdicionalFijo2Importe = GetDecimal(rd, 17),
+                    AdicionalFijo3Descripcion = GetString(rd, 18),
+                    AdicionalFijo3Importe = GetDecimal(rd, 19),
+                    Activo = GetBool(rd, 20)
                 });
             }
 
@@ -747,6 +786,12 @@ public sealed class CargaViajesService(
             var choferColumn = FirstExistingColumn(columns, "IDCHOFER", "CHOFER");
             var destinoColumn = FirstExistingColumn(columns, "IDDESTINO", "DESTINO");
             var tipoVehiculoColumn = FirstExistingColumn(columns, "IDTIPOVEHICULO", "TIPOVEHICULO");
+            var hasAdicionalFijo1Descripcion = columns.Contains("adicionalfijo1descripcion");
+            var hasAdicionalFijo1Importe = columns.Contains("adicionalfijo1importe");
+            var hasAdicionalFijo2Descripcion = columns.Contains("adicionalfijo2descripcion");
+            var hasAdicionalFijo2Importe = columns.Contains("adicionalfijo2importe");
+            var hasAdicionalFijo3Descripcion = columns.Contains("adicionalfijo3descripcion");
+            var hasAdicionalFijo3Importe = columns.Contains("adicionalfijo3importe");
             var sql = $"""
                 SELECT TOP (1)
                     {(string.IsNullOrWhiteSpace(idColumn) ? "CAST(0 AS int)" : $"ISNULL({idColumn}, 0)") } AS Id,
@@ -763,6 +808,12 @@ public sealed class CargaViajesService(
                     ISNULL(t.PorcentajeAdic2, 0) AS PorcentajeAdic2,
                     ISNULL(t.PorcentajeAdic3, 0) AS PorcentajeAdic3,
                     ISNULL(t.PorcentajeAdic4, 0) AS PorcentajeAdic4,
+                    {(hasAdicionalFijo1Descripcion ? "ISNULL(t.AdicionalFijo1Descripcion, '')" : "CAST('' AS nvarchar(100))")} AS AdicionalFijo1Descripcion,
+                    {(hasAdicionalFijo1Importe ? "ISNULL(t.AdicionalFijo1Importe, 0)" : "CAST(0 AS money)")} AS AdicionalFijo1Importe,
+                    {(hasAdicionalFijo2Descripcion ? "ISNULL(t.AdicionalFijo2Descripcion, '')" : "CAST('' AS nvarchar(100))")} AS AdicionalFijo2Descripcion,
+                    {(hasAdicionalFijo2Importe ? "ISNULL(t.AdicionalFijo2Importe, 0)" : "CAST(0 AS money)")} AS AdicionalFijo2Importe,
+                    {(hasAdicionalFijo3Descripcion ? "ISNULL(t.AdicionalFijo3Descripcion, '')" : "CAST('' AS nvarchar(100))")} AS AdicionalFijo3Descripcion,
+                    {(hasAdicionalFijo3Importe ? "ISNULL(t.AdicionalFijo3Importe, 0)" : "CAST(0 AS money)")} AS AdicionalFijo3Importe,
                     ISNULL(t.Activo, 1) AS Activo
                 FROM dbo.TA_TARIFA t
                 LEFT JOIN dbo.Vt_Clientes cli ON UPPER(LTRIM(RTRIM(cli.CODIGO))) = UPPER(LTRIM(RTRIM(ISNULL(t.{clienteColumn}, ''))))
@@ -794,6 +845,12 @@ public sealed class CargaViajesService(
                 : null;
             if (string.IsNullOrWhiteSpace(idColumn))
                 return null;
+            var hasAdicionalFijo1Descripcion = columns.Contains("adicionalfijo1descripcion");
+            var hasAdicionalFijo1Importe = columns.Contains("adicionalfijo1importe");
+            var hasAdicionalFijo2Descripcion = columns.Contains("adicionalfijo2descripcion");
+            var hasAdicionalFijo2Importe = columns.Contains("adicionalfijo2importe");
+            var hasAdicionalFijo3Descripcion = columns.Contains("adicionalfijo3descripcion");
+            var hasAdicionalFijo3Importe = columns.Contains("adicionalfijo3importe");
 
             var row = await cn.QuerySingleOrDefaultAsync<CargaViajeTarifaGridItemDto>(new CommandDefinition($"""
                 SELECT TOP (1)
@@ -811,6 +868,12 @@ public sealed class CargaViajesService(
                     ISNULL(t.PorcentajeAdic2, 0) AS PorcentajeAdic2,
                     ISNULL(t.PorcentajeAdic3, 0) AS PorcentajeAdic3,
                     ISNULL(t.PorcentajeAdic4, 0) AS PorcentajeAdic4,
+                    {(hasAdicionalFijo1Descripcion ? "ISNULL(t.AdicionalFijo1Descripcion, '')" : "CAST('' AS nvarchar(100))")} AS AdicionalFijo1Descripcion,
+                    {(hasAdicionalFijo1Importe ? "ISNULL(t.AdicionalFijo1Importe, 0)" : "CAST(0 AS money)")} AS AdicionalFijo1Importe,
+                    {(hasAdicionalFijo2Descripcion ? "ISNULL(t.AdicionalFijo2Descripcion, '')" : "CAST('' AS nvarchar(100))")} AS AdicionalFijo2Descripcion,
+                    {(hasAdicionalFijo2Importe ? "ISNULL(t.AdicionalFijo2Importe, 0)" : "CAST(0 AS money)")} AS AdicionalFijo2Importe,
+                    {(hasAdicionalFijo3Descripcion ? "ISNULL(t.AdicionalFijo3Descripcion, '')" : "CAST('' AS nvarchar(100))")} AS AdicionalFijo3Descripcion,
+                    {(hasAdicionalFijo3Importe ? "ISNULL(t.AdicionalFijo3Importe, 0)" : "CAST(0 AS money)")} AS AdicionalFijo3Importe,
                     ISNULL(t.Activo, 1) AS Activo
                 FROM dbo.TA_TARIFA t
                 LEFT JOIN dbo.Vt_Clientes cli ON UPPER(LTRIM(RTRIM(cli.CODIGO))) = UPPER(LTRIM(RTRIM(ISNULL(t.{FirstExistingColumn(columns, "IDCLIENTE", "CLIENTE")}, ''))))
@@ -902,12 +965,16 @@ public sealed class CargaViajesService(
                 INSERT INTO dbo.TA_TARIFA
                 (
                     {idListaColumn}, Nombre, Importe, {clienteColumn}, {choferColumn}, {destinoColumn}, {tipoVehiculoColumn},
-                    TarifaFletero, PorcentajeAdic, PorcentajeAdic1, PorcentajeAdic2, PorcentajeAdic3, PorcentajeAdic4, Activo
+                    TarifaFletero, PorcentajeAdic, PorcentajeAdic1, PorcentajeAdic2, PorcentajeAdic3, PorcentajeAdic4,
+                    AdicionalFijo1Descripcion, AdicionalFijo1Importe, AdicionalFijo2Descripcion, AdicionalFijo2Importe, AdicionalFijo3Descripcion, AdicionalFijo3Importe,
+                    Activo
                 )
                 VALUES
                 (
                     @IdLista, @Nombre, @Importe, @Cliente, @Chofer, @Destino, @TipoVehiculo,
-                    @TarifaFletero, @PorcentajeAdic, @PorcentajeAdic1, @PorcentajeAdic2, @PorcentajeAdic3, @PorcentajeAdic4, @Activo
+                    @TarifaFletero, @PorcentajeAdic, @PorcentajeAdic1, @PorcentajeAdic2, @PorcentajeAdic3, @PorcentajeAdic4,
+                    @AdicionalFijo1Descripcion, @AdicionalFijo1Importe, @AdicionalFijo2Descripcion, @AdicionalFijo2Importe, @AdicionalFijo3Descripcion, @AdicionalFijo3Importe,
+                    @Activo
                 );
                 """
                 : $"""
@@ -926,6 +993,12 @@ public sealed class CargaViajesService(
                     PorcentajeAdic2 = @PorcentajeAdic2,
                     PorcentajeAdic3 = @PorcentajeAdic3,
                     PorcentajeAdic4 = @PorcentajeAdic4,
+                    AdicionalFijo1Descripcion = @AdicionalFijo1Descripcion,
+                    AdicionalFijo1Importe = @AdicionalFijo1Importe,
+                    AdicionalFijo2Descripcion = @AdicionalFijo2Descripcion,
+                    AdicionalFijo2Importe = @AdicionalFijo2Importe,
+                    AdicionalFijo3Descripcion = @AdicionalFijo3Descripcion,
+                    AdicionalFijo3Importe = @AdicionalFijo3Importe,
                     Activo = @Activo
                 WHERE UPPER(LTRIM(RTRIM({idListaColumn}))) = @OriginalIdLista;
                 """;
@@ -946,6 +1019,12 @@ public sealed class CargaViajesService(
                 PorcentajeAdic2 = request.PorcentajeAdic2,
                 PorcentajeAdic3 = request.PorcentajeAdic3,
                 PorcentajeAdic4 = request.PorcentajeAdic4,
+                AdicionalFijo1Descripcion = (request.AdicionalFijo1Descripcion ?? string.Empty).Trim(),
+                AdicionalFijo1Importe = request.AdicionalFijo1Importe,
+                AdicionalFijo2Descripcion = (request.AdicionalFijo2Descripcion ?? string.Empty).Trim(),
+                AdicionalFijo2Importe = request.AdicionalFijo2Importe,
+                AdicionalFijo3Descripcion = (request.AdicionalFijo3Descripcion ?? string.Empty).Trim(),
+                AdicionalFijo3Importe = request.AdicionalFijo3Importe,
                 request.Activo
             }, cancellationToken: token));
 
@@ -1536,7 +1615,7 @@ public sealed class CargaViajesService(
                     LTRIM(RTRIM(ISNULL(cli.IdListaRMTRF, ''))) AS Lista,
                     CASE
                         WHEN ISNULL(t.Nombre, '') = '' THEN ''
-                        ELSE CONCAT(LTRIM(RTRIM(ISNULL(cli.IdListaRMTRF, ''))), ' - ', LTRIM(RTRIM(t.Nombre)))
+                        ELSE LTRIM(RTRIM(t.Nombre))
                     END AS Subtitulo
                 FROM dbo.Vt_Clientes cli
                 OUTER APPLY (
@@ -1847,6 +1926,12 @@ public sealed class CargaViajesService(
             var clienteColumn = FirstExistingColumn(columns, "IDCLIENTE", "CLIENTE");
             var destinoColumn = FirstExistingColumn(columns, "IDDESTINO", "DESTINO");
             var tipoVehiculoColumn = FirstExistingColumn(columns, "IDTIPOVEHICULO", "TIPOVEHICULO");
+            var hasAdicionalFijo1Descripcion = columns.Contains("adicionalfijo1descripcion");
+            var hasAdicionalFijo1Importe = columns.Contains("adicionalfijo1importe");
+            var hasAdicionalFijo2Descripcion = columns.Contains("adicionalfijo2descripcion");
+            var hasAdicionalFijo2Importe = columns.Contains("adicionalfijo2importe");
+            var hasAdicionalFijo3Descripcion = columns.Contains("adicionalfijo3descripcion");
+            var hasAdicionalFijo3Importe = columns.Contains("adicionalfijo3importe");
             var sql = $"""
                 SELECT TOP (1)
                     LTRIM(RTRIM(ISNULL({idListaColumn}, ''))) AS IdLista,
@@ -1862,6 +1947,12 @@ public sealed class CargaViajesService(
                     ISNULL(PorcentajeAdic2, 0) AS PorcentajeAdic2,
                     ISNULL(PorcentajeAdic3, 0) AS PorcentajeAdic3,
                     ISNULL(PorcentajeAdic4, 0) AS PorcentajeAdic4,
+                    {(hasAdicionalFijo1Descripcion ? "ISNULL(AdicionalFijo1Descripcion, '')" : "CAST('' AS nvarchar(100))")} AS AdicionalFijo1Descripcion,
+                    {(hasAdicionalFijo1Importe ? "ISNULL(AdicionalFijo1Importe, 0)" : "CAST(0 AS money)")} AS AdicionalFijo1Importe,
+                    {(hasAdicionalFijo2Descripcion ? "ISNULL(AdicionalFijo2Descripcion, '')" : "CAST('' AS nvarchar(100))")} AS AdicionalFijo2Descripcion,
+                    {(hasAdicionalFijo2Importe ? "ISNULL(AdicionalFijo2Importe, 0)" : "CAST(0 AS money)")} AS AdicionalFijo2Importe,
+                    {(hasAdicionalFijo3Descripcion ? "ISNULL(AdicionalFijo3Descripcion, '')" : "CAST('' AS nvarchar(100))")} AS AdicionalFijo3Descripcion,
+                    {(hasAdicionalFijo3Importe ? "ISNULL(AdicionalFijo3Importe, 0)" : "CAST(0 AS money)")} AS AdicionalFijo3Importe,
                     ISNULL(Activo, 1) AS Activo
                 FROM dbo.TA_TARIFA
                 WHERE ISNULL(Activo, 1) = 1
@@ -1960,6 +2051,12 @@ public sealed class CargaViajesService(
             var hasPorc2 = columns.Contains("porcentaje_adic2");
             var hasPorc3 = columns.Contains("porcentaje_adic3");
             var hasPorc4 = columns.Contains("porcentaje_adic4");
+            var hasAdicFijo1Desc = columns.Contains("adicionalfijo1descripcion");
+            var hasAdicFijo1Importe = columns.Contains("adicionalfijo1importe");
+            var hasAdicFijo2Desc = columns.Contains("adicionalfijo2descripcion");
+            var hasAdicFijo2Importe = columns.Contains("adicionalfijo2importe");
+            var hasAdicFijo3Desc = columns.Contains("adicionalfijo3descripcion");
+            var hasAdicFijo3Importe = columns.Contains("adicionalfijo3importe");
 
             var parameters = new DynamicParameters();
             parameters.Add("@IdLista", derivedIdLista);
@@ -1975,6 +2072,12 @@ public sealed class CargaViajesService(
             parameters.Add("@PorcentajeAdic2", source.PorcentajeAdic2);
             parameters.Add("@PorcentajeAdic3", source.PorcentajeAdic3);
             parameters.Add("@PorcentajeAdic4", source.PorcentajeAdic4);
+            parameters.Add("@AdicionalFijo1Descripcion", (source.AdicionalFijo1Descripcion ?? string.Empty).Trim());
+            parameters.Add("@AdicionalFijo1Importe", source.AdicionalFijo1Importe);
+            parameters.Add("@AdicionalFijo2Descripcion", (source.AdicionalFijo2Descripcion ?? string.Empty).Trim());
+            parameters.Add("@AdicionalFijo2Importe", source.AdicionalFijo2Importe);
+            parameters.Add("@AdicionalFijo3Descripcion", (source.AdicionalFijo3Descripcion ?? string.Empty).Trim());
+            parameters.Add("@AdicionalFijo3Importe", source.AdicionalFijo3Importe);
             parameters.Add("@Activo", true);
             var existing = await GetTarifaByIdAsync(derivedIdLista, token);
             var insertColumns = new List<string>();
@@ -1992,6 +2095,12 @@ public sealed class CargaViajesService(
             AddColumnPair(insertColumns, insertValues, hasPorc2 ? "PorcentajeAdic2" : null, "@PorcentajeAdic2");
             AddColumnPair(insertColumns, insertValues, hasPorc3 ? "PorcentajeAdic3" : null, "@PorcentajeAdic3");
             AddColumnPair(insertColumns, insertValues, hasPorc4 ? "PorcentajeAdic4" : null, "@PorcentajeAdic4");
+            AddColumnPair(insertColumns, insertValues, hasAdicFijo1Desc ? "AdicionalFijo1Descripcion" : null, "@AdicionalFijo1Descripcion");
+            AddColumnPair(insertColumns, insertValues, hasAdicFijo1Importe ? "AdicionalFijo1Importe" : null, "@AdicionalFijo1Importe");
+            AddColumnPair(insertColumns, insertValues, hasAdicFijo2Desc ? "AdicionalFijo2Descripcion" : null, "@AdicionalFijo2Descripcion");
+            AddColumnPair(insertColumns, insertValues, hasAdicFijo2Importe ? "AdicionalFijo2Importe" : null, "@AdicionalFijo2Importe");
+            AddColumnPair(insertColumns, insertValues, hasAdicFijo3Desc ? "AdicionalFijo3Descripcion" : null, "@AdicionalFijo3Descripcion");
+            AddColumnPair(insertColumns, insertValues, hasAdicFijo3Importe ? "AdicionalFijo3Importe" : null, "@AdicionalFijo3Importe");
             AddColumnPair(insertColumns, insertValues, hasActivo ? "Activo" : null, "@Activo");
 
             var updateParts = new List<string>();
@@ -2008,6 +2117,12 @@ public sealed class CargaViajesService(
             AddUpdatePart(updateParts, hasPorc2 ? "PorcentajeAdic2" : null, "@PorcentajeAdic2");
             AddUpdatePart(updateParts, hasPorc3 ? "PorcentajeAdic3" : null, "@PorcentajeAdic3");
             AddUpdatePart(updateParts, hasPorc4 ? "PorcentajeAdic4" : null, "@PorcentajeAdic4");
+            AddUpdatePart(updateParts, hasAdicFijo1Desc ? "AdicionalFijo1Descripcion" : null, "@AdicionalFijo1Descripcion");
+            AddUpdatePart(updateParts, hasAdicFijo1Importe ? "AdicionalFijo1Importe" : null, "@AdicionalFijo1Importe");
+            AddUpdatePart(updateParts, hasAdicFijo2Desc ? "AdicionalFijo2Descripcion" : null, "@AdicionalFijo2Descripcion");
+            AddUpdatePart(updateParts, hasAdicFijo2Importe ? "AdicionalFijo2Importe" : null, "@AdicionalFijo2Importe");
+            AddUpdatePart(updateParts, hasAdicFijo3Desc ? "AdicionalFijo3Descripcion" : null, "@AdicionalFijo3Descripcion");
+            AddUpdatePart(updateParts, hasAdicFijo3Importe ? "AdicionalFijo3Importe" : null, "@AdicionalFijo3Importe");
             AddUpdatePart(updateParts, hasActivo ? "Activo" : null, "@Activo");
 
             var sql = existing is null
@@ -2654,6 +2769,7 @@ public sealed class CargaViajesService(
             SucursalConfigKey,
             LegacySucursalConfigKey,
             LetraConfigKey,
+            PorcentajesAdicionalesHabilitadosConfigKey,
             "VIAJES-ADIC-NOMBRE-0",
             "VIAJES-ADIC-NOMBRE-1",
             "VIAJES-ADIC-NOMBRE-2",
@@ -2748,6 +2864,7 @@ public sealed class CargaViajesService(
         request.IdComprobante = nextIdComp;
 
         var totals = CalculateTotals(request);
+        var totalAdicionalesFijos = CalculateTotalAdicionalesFijos(request);
         logger.LogInformation(
             "SaveViaje before insert Tc={Tc} IdComprobante={IdComprobante} IdCliente={IdCliente} IdDestino={IdDestino} IdTipoVehiculo={IdTipoVehiculo} IdChofer={IdChofer} IdLista={IdLista} TotalImporte={TotalImporte} TotalFlete={TotalFlete} TotalPeaje={TotalPeaje} TotalViajes={TotalViajes}",
             tc,
@@ -2795,6 +2912,16 @@ public sealed class CargaViajesService(
                     TOTAL_ADIC3,
                     TOTAL_ADIC4,
                     TOTAL_ADICIONALES,
+                    ADICIONAL_FIJO1_DESCRIPCION,
+                    ADICIONAL_FIJO1_IMPORTE,
+                    ADICIONAL_FIJO1_APLICADO,
+                    ADICIONAL_FIJO2_DESCRIPCION,
+                    ADICIONAL_FIJO2_IMPORTE,
+                    ADICIONAL_FIJO2_APLICADO,
+                    ADICIONAL_FIJO3_DESCRIPCION,
+                    ADICIONAL_FIJO3_IMPORTE,
+                    ADICIONAL_FIJO3_APLICADO,
+                    TOTAL_ADICIONALES_FIJOS,
                     FECHAHORA_ALTA,
                     FECHAHORA_MODIFICACION
                 )
@@ -2828,6 +2955,16 @@ public sealed class CargaViajesService(
                     @TotalAdic3,
                     @TotalAdic4,
                     @TotalAdicionales,
+                    @AdicionalFijo1Descripcion,
+                    @AdicionalFijo1Importe,
+                    @AdicionalFijo1Aplicado,
+                    @AdicionalFijo2Descripcion,
+                    @AdicionalFijo2Importe,
+                    @AdicionalFijo2Aplicado,
+                    @AdicionalFijo3Descripcion,
+                    @AdicionalFijo3Importe,
+                    @AdicionalFijo3Aplicado,
+                    @TotalAdicionalesFijos,
                     GETDATE(),
                     GETDATE()
                 );
@@ -2864,6 +3001,16 @@ public sealed class CargaViajesService(
                     TOTAL_ADIC3 = @TotalAdic3,
                     TOTAL_ADIC4 = @TotalAdic4,
                     TOTAL_ADICIONALES = @TotalAdicionales,
+                    ADICIONAL_FIJO1_DESCRIPCION = @AdicionalFijo1Descripcion,
+                    ADICIONAL_FIJO1_IMPORTE = @AdicionalFijo1Importe,
+                    ADICIONAL_FIJO1_APLICADO = @AdicionalFijo1Aplicado,
+                    ADICIONAL_FIJO2_DESCRIPCION = @AdicionalFijo2Descripcion,
+                    ADICIONAL_FIJO2_IMPORTE = @AdicionalFijo2Importe,
+                    ADICIONAL_FIJO2_APLICADO = @AdicionalFijo2Aplicado,
+                    ADICIONAL_FIJO3_DESCRIPCION = @AdicionalFijo3Descripcion,
+                    ADICIONAL_FIJO3_IMPORTE = @AdicionalFijo3Importe,
+                    ADICIONAL_FIJO3_APLICADO = @AdicionalFijo3Aplicado,
+                    TOTAL_ADICIONALES_FIJOS = @TotalAdicionalesFijos,
                     FECHAHORA_MODIFICACION = GETDATE()
                 WHERE ID = @Id;
                 SELECT CAST(@Id AS int);
@@ -2903,7 +3050,17 @@ public sealed class CargaViajesService(
                 TotalAdic2 = totals.TotalAdic2,
                 TotalAdic3 = totals.TotalAdic3,
                 TotalAdic4 = totals.TotalAdic4,
-                TotalAdicionales = totals.TotalAdicionales
+                TotalAdicionales = totals.TotalAdicionales,
+                AdicionalFijo1Descripcion = (request.AdicionalFijo1Descripcion ?? string.Empty).Trim(),
+                AdicionalFijo1Importe = request.AdicionalFijo1Importe,
+                AdicionalFijo1Aplicado = request.AdicionalFijo1Aplicado,
+                AdicionalFijo2Descripcion = (request.AdicionalFijo2Descripcion ?? string.Empty).Trim(),
+                AdicionalFijo2Importe = request.AdicionalFijo2Importe,
+                AdicionalFijo2Aplicado = request.AdicionalFijo2Aplicado,
+                AdicionalFijo3Descripcion = (request.AdicionalFijo3Descripcion ?? string.Empty).Trim(),
+                AdicionalFijo3Importe = request.AdicionalFijo3Importe,
+                AdicionalFijo3Aplicado = request.AdicionalFijo3Aplicado,
+                TotalAdicionalesFijos = totalAdicionalesFijos
             }, transaction: (SqlTransaction)tx, cancellationToken: ct));
 
             if (isNew && affectedId <= 0)
@@ -2936,10 +3093,7 @@ public sealed class CargaViajesService(
         const string sql = """
             SELECT TOP (1)
                 ISNULL(LTRIM(RTRIM(ISNULL(cli.IdListaRMTRF, ''))), '') AS ListaCodigo,
-                CASE
-                    WHEN ISNULL(t.Nombre, '') = '' THEN ''
-                    ELSE CONCAT(LTRIM(RTRIM(ISNULL(cli.IdListaRMTRF, ''))), ' - ', LTRIM(RTRIM(t.Nombre)))
-                END AS ListaTexto
+                LTRIM(RTRIM(ISNULL(t.Nombre, ''))) AS ListaTexto
             FROM dbo.Vt_Clientes cli
             OUTER APPLY (
                 SELECT TOP (1)
@@ -2966,10 +3120,7 @@ public sealed class CargaViajesService(
         const string sql = """
             SELECT TOP (1)
                 ISNULL(LTRIM(RTRIM(IdLista)), '') AS ListaCodigo,
-                CASE
-                    WHEN ISNULL(Nombre, '') = '' THEN ''
-                    ELSE CONCAT(LTRIM(RTRIM(IdLista)), ' - ', LTRIM(RTRIM(Nombre)))
-                END AS ListaTexto
+                LTRIM(RTRIM(ISNULL(Nombre, ''))) AS ListaTexto
             FROM dbo.TA_TARIFA
             WHERE UPPER(LTRIM(RTRIM(ISNULL(IdLista, '')))) = @Codigo
             ORDER BY Nombre, IdLista;
@@ -3064,6 +3215,18 @@ public sealed class CargaViajesService(
         return (totalImporte, totalFlete, totalAdic, totalAdic1, totalAdic2, totalAdic3, totalAdic4, totalAdicionales);
     }
 
+    private static decimal CalculateTotalAdicionalesFijos(CargaViajeSaveRequest request)
+    {
+        var total = 0m;
+        if (request.AdicionalFijo1Aplicado)
+            total += Math.Max(0m, request.AdicionalFijo1Importe);
+        if (request.AdicionalFijo2Aplicado)
+            total += Math.Max(0m, request.AdicionalFijo2Importe);
+        if (request.AdicionalFijo3Aplicado)
+            total += Math.Max(0m, request.AdicionalFijo3Importe);
+        return total;
+    }
+
     private static decimal ResolvePercentOrDefault(decimal value, decimal defaultValue)
         => value > 0m ? value : defaultValue;
 
@@ -3105,6 +3268,7 @@ public sealed class CargaViajesService(
             Sucursal = "0001",
             Letra = "X",
             ChoferGeneral = string.Empty,
+            PorcentajesAdicionalesHabilitados = 3,
             NombresAdicionales = ["Adicional 1", "Adicional 2", "Adicional 3", "Adicional 4", "Adicional 5"],
             PorcentajesAdicionales = [0m, 0m, 0m, 0m, 0m]
         };
@@ -3115,6 +3279,7 @@ public sealed class CargaViajesService(
         dto.Sucursal = ResolveSucursal(values);
         dto.Letra = ResolveLetra(values);
         dto.ChoferGeneral = ResolveChoferGeneral(values);
+        dto.PorcentajesAdicionalesHabilitados = ResolveAdicionalesHabilitados(values);
 
         for (var i = 0; i < 5; i++)
         {
@@ -3134,6 +3299,7 @@ public sealed class CargaViajesService(
         yield return (SucursalConfigKey, config.Sucursal);
         yield return (LetraConfigKey, config.Letra);
         yield return (ChoferGeneralConfigKey, config.ChoferGeneral ?? string.Empty);
+        yield return (PorcentajesAdicionalesHabilitadosConfigKey, ResolveAdicionalesHabilitados(config.PorcentajesAdicionalesHabilitados).ToString(System.Globalization.CultureInfo.InvariantCulture));
 
         for (var i = 0; i < 5; i++)
         {
@@ -3150,6 +3316,7 @@ public sealed class CargaViajesService(
             Sucursal = ResolveSucursal(config.Sucursal),
             Letra = ResolveLetra(config.Letra),
             ChoferGeneral = ResolveChoferGeneral(config.ChoferGeneral),
+            PorcentajesAdicionalesHabilitados = ResolveAdicionalesHabilitados(config.PorcentajesAdicionalesHabilitados),
             NombresAdicionales = Enumerable.Range(0, 5)
                 .Select(i =>
                 {
@@ -3161,6 +3328,25 @@ public sealed class CargaViajesService(
                 .Select(i => config.PorcentajesAdicionales.ElementAtOrDefault(i))
                 .ToList()
         };
+    }
+
+    private static int ResolveAdicionalesHabilitados(Dictionary<string, string> values)
+    {
+        if (values.TryGetValue(PorcentajesAdicionalesHabilitadosConfigKey, out var raw))
+            return ResolveAdicionalesHabilitados(raw);
+
+        return 3;
+    }
+
+    private static int ResolveAdicionalesHabilitados(int value)
+        => value > 0 ? Math.Min(5, value) : 3;
+
+    private static int ResolveAdicionalesHabilitados(string? value)
+    {
+        if (int.TryParse((value ?? string.Empty).Trim(), out var parsed))
+            return ResolveAdicionalesHabilitados(parsed);
+
+        return 3;
     }
 
     private static string ResolveSucursal(Dictionary<string, string> values)

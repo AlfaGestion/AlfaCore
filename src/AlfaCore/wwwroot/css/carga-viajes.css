@@ -614,13 +614,17 @@
 
 .carga-viajes-adicionales__content {
     min-width: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: .15rem;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+        "name percent"
+        "amount amount";
+    align-items: center;
+    gap: .15rem .45rem;
 }
 
 .carga-viajes-adicionales__name {
+    grid-area: name;
     min-width: 0;
     font-weight: 800;
     font-size: .92rem;
@@ -629,17 +633,99 @@
 }
 
 .carga-viajes-adicionales__amount {
+    grid-area: amount;
     font-size: .88rem;
     font-weight: 800;
     color: #f8fafc;
 }
 
 .carga-viajes-adicionales__percent {
+    grid-area: percent;
     justify-self: end;
     font-weight: 800;
     font-size: .84rem;
     color: #a5f3fc;
     white-space: nowrap;
+}
+
+.carga-viajes-adicionales__item--fixed .carga-viajes-adicionales__content {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+        "name percent"
+        "amount amount";
+}
+
+.carga-viajes-adicionales__item--fixed .carga-viajes-adicionales__amount {
+    font-size: .75rem;
+    font-weight: 700;
+    color: #94a3b8;
+}
+
+.carga-viajes-adicionales__section-label {
+    display: inline-flex;
+    margin-top: .6rem;
+    margin-bottom: .35rem;
+    font-size: .78rem;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: #a5f3fc;
+}
+
+.carga-viajes-adicionales__list--fixed {
+    grid-template-columns: repeat(1, minmax(0, 1fr));
+}
+
+.carga-viajes-adicionales__totals {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: .45rem;
+    margin-top: .55rem;
+}
+
+.carga-viajes-adicionales__total--grand {
+    grid-column: 1 / -1;
+    border-color: rgba(34, 211, 238, .34);
+    background: linear-gradient(180deg, rgba(8, 145, 178, .22), rgba(15, 23, 42, .92));
+}
+
+.carga-viajes-tarifa-editor__fixed {
+    margin-top: .15rem;
+}
+
+.carga-viajes-tarifa-editor__fixed-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: .6rem;
+}
+
+.carga-viajes-tarifa-editor__fixed-item {
+    display: grid;
+    gap: .45rem;
+    padding: .7rem;
+    border: 1px solid rgba(148, 163, 184, .14);
+    border-radius: 1rem;
+    background: linear-gradient(180deg, rgba(15, 23, 42, .7), rgba(8, 15, 28, .64));
+}
+
+.carga-viajes-tarifa-editor__fixed-item .field {
+    gap: .18rem;
+}
+
+.carga-viajes-tarifa-editor__fixed-item label {
+    font-size: .72rem;
+}
+
+.carga-viajes-tarifa-editor__fixed-hint {
+    margin-top: .45rem;
+    font-size: .76rem;
+    color: #94a3b8;
+}
+
+@media (max-width: 1120px) {
+    .carga-viajes-tarifa-editor__fixed-grid {
+        grid-template-columns: 1fr;
+    }
 }
 
 .carga-viajes-adicionales__total {
@@ -660,6 +746,10 @@
 
 @media (max-width: 720px) {
     .carga-viajes-adicionales__list {
+        grid-template-columns: 1fr;
+    }
+
+    .carga-viajes-adicionales__totals {
         grid-template-columns: 1fr;
     }
 }

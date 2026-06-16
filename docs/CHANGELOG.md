@@ -4,6 +4,17 @@ Formato: `[versión] — fecha — descripción`
 
 ---
 
+## [1.6.2] — 2026-06-16
+
+### Carga de Viajes: autocomplete compacto
+
+- El componente reutilizable `LookupAutocomplete` fue ajustado para mostrar resultados en un dropdown compacto sin empujar el layout.
+- Los resultados ahora se renderizan en una sola línea por opción, con altura máxima y scroll interno.
+- Se agregó debounce simple y cancelación de búsquedas en curso para evitar consultas por cada tecla.
+- Los errores de consulta se presentan como mensaje controlado dentro del desplegable.
+
+---
+
 ## [1.6.1] — 2026-04-30
 
 ### Renombrado técnico y de instalación a AlfaCore

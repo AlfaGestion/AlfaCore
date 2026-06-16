@@ -27,6 +27,9 @@ public sealed class CargaViajesValidator(
         ValidatePercent(request.PorcentajeAdic2, "porcentaje-adic2", result);
         ValidatePercent(request.PorcentajeAdic3, "porcentaje-adic3", result);
         ValidatePercent(request.PorcentajeAdic4, "porcentaje-adic4", result);
+        ValidateTarifaAdicionalFijo(request.AdicionalFijo1Descripcion, request.AdicionalFijo1Importe, "adicional-fijo-1", result);
+        ValidateTarifaAdicionalFijo(request.AdicionalFijo2Descripcion, request.AdicionalFijo2Importe, "adicional-fijo-2", result);
+        ValidateTarifaAdicionalFijo(request.AdicionalFijo3Descripcion, request.AdicionalFijo3Importe, "adicional-fijo-3", result);
 
         if (request.CantidadViajes <= 0)
             result.Add("cantidad-viajes", "La cantidad de viajes debe ser mayor a cero.");
@@ -172,6 +175,16 @@ public sealed class CargaViajesValidator(
     {
         if (value < 0 || value > 100)
             result.Add(fieldKey, "El porcentaje debe estar entre 0 y 100.");
+    }
+
+    private static void ValidateTarifaAdicionalFijo(string? descripcion, decimal importe, string fieldKey, ValidationResult result)
+    {
+        var text = (descripcion ?? string.Empty).Trim();
+        if (importe < 0)
+            result.Add(fieldKey, "El importe no puede ser negativo.");
+
+        if (importe > 0m && string.IsNullOrWhiteSpace(text))
+            result.Add(fieldKey, "Debe indicar la descripción del adicional fijo.");
     }
 
     private static async Task<bool> ExistsAsync(SqlConnection cn, string tableName, string columnName, string value, CancellationToken ct)

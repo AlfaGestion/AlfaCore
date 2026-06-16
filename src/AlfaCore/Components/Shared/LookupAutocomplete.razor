@@ -1,5 +1,7 @@
 @using AlfaCore.Models
 
+@implements IDisposable
+
 <div class="lookup-autocomplete" @onfocusout="HandleBlurAsync">
     @if (!string.IsNullOrWhiteSpace(Label))
     {
@@ -24,6 +26,10 @@
             {
                 <div class="lookup-autocomplete__empty">Buscando...</div>
             }
+            else if (!string.IsNullOrWhiteSpace(_errorMessage))
+            {
+                <div class="lookup-autocomplete__empty lookup-autocomplete__empty--error">@_errorMessage</div>
+            }
             else if (_items.Count == 0)
             {
                 <div class="lookup-autocomplete__empty">Sin resultados</div>
@@ -43,16 +49,19 @@
                 {
                     var index = i;
                     var option = _items[index];
-                    <div class="@GetItemClass(index)"
-                         role="option"
-                         aria-selected="@(index == _highlightIndex)"
-                         @onmousedown="() => SelectAsync(option)">
-                        <span class="lookup-autocomplete__title">@BuildDisplayText(option)</span>
-                        @if (!string.IsNullOrWhiteSpace(option.Subtitulo))
-                        {
-                            <span class="lookup-autocomplete__subtitle">@option.Subtitulo</span>
-                        }
-                    </div>
+                    <button type="button"
+                            class="@GetItemClass(index)"
+                            role="option"
+                            aria-selected="@(index == _highlightIndex)"
+                            @onmousedown="() => SelectAsync(option)">
+                        <span class="lookup-autocomplete__item-main">
+                            <span class="lookup-autocomplete__title">@BuildDisplayText(option)</span>
+                            @if (!string.IsNullOrWhiteSpace(option.Subtitulo))
+                            {
+                                <span class="lookup-autocomplete__subtitle">@option.Subtitulo</span>
+                            }
+                        </span>
+                    </button>
                 }
             }
         </div>
@@ -70,12 +79,16 @@
     [Parameter] public EventCallback<string> OnCreateRequested { get; set; }
     [Parameter] public bool Disabled { get; set; }
     [Parameter] public int MinimumCharacters { get; set; } = 1;
+    [Parameter] public int DebounceMilliseconds { get; set; } = 220;
 
     private bool _isOpen;
     private bool _loading;
     private int _highlightIndex = -1;
     private List<CargaViajeLookupOptionDto> _items = [];
     private ElementReference _inputRef;
+    private CancellationTokenSource? _searchCts;
+    private long _searchSequence;
+    private string _errorMessage = string.Empty;
 
     public async Task FocusAsync()
     {
@@ -150,21 +163,53 @@
 
         if ((text ?? string.Empty).Trim().Length < MinimumCharacters)
         {
+            CancelPendingSearch();
+            _errorMessage = string.Empty;
             _items.Clear();
             CloseDropdown();
             return;
         }
 
+        CancelPendingSearch();
+        _errorMessage = string.Empty;
+        var sequence = Interlocked.Increment(ref _searchSequence);
+        var cts = new CancellationTokenSource();
+        _searchCts = cts;
+        var token = cts.Token;
+
         _loading = true;
         _isOpen = true;
         _highlightIndex = -1;
+        await InvokeAsync(StateHasChanged);
         try
         {
-            _items = (await searchFunc(text ?? string.Empty, CancellationToken.None)).ToList();
+            if (DebounceMilliseconds > 0)
+                await Task.Delay(DebounceMilliseconds, token);
+
+            var results = await searchFunc(text ?? string.Empty, token);
+            if (token.IsCancellationRequested || sequence != _searchSequence)
+                return;
+
+            _items = results.ToList();
+        }
+        catch (OperationCanceledException)
+        {
+            if (sequence != _searchSequence)
+                return;
+        }
+        catch (Exception)
+        {
+            if (sequence != _searchSequence)
+                return;
+
+            _items.Clear();
+            _errorMessage = "No se pudo consultar.";
+            _isOpen = true;
         }
         finally
         {
-            _loading = false;
+            if (sequence == _searchSequence)
+                _loading = false;
         }
     }
 
@@ -192,8 +237,10 @@
 
     private void CloseDropdown()
     {
+        CancelPendingSearch();
         _isOpen = false;
         _highlightIndex = -1;
+        _errorMessage = string.Empty;
     }
 
     private string GetItemClass(int index)
@@ -205,11 +252,28 @@
     {
         var code = (option?.Codigo ?? string.Empty).Trim();
         var title = (option?.Titulo ?? string.Empty).Trim();
-        if (string.IsNullOrWhiteSpace(code))
-            return title;
+        return string.IsNullOrWhiteSpace(title) ? code : title;
+    }
 
-        return string.IsNullOrWhiteSpace(title)
-            ? code
-            : $"{code} - {title}";
+    private void CancelPendingSearch()
+    {
+        try
+        {
+            _searchCts?.Cancel();
+        }
+        catch
+        {
+            // Best effort only.
+        }
+        finally
+        {
+            _searchCts?.Dispose();
+            _searchCts = null;
+        }
+    }
+
+    public void Dispose()
+    {
+        CancelPendingSearch();
     }
 }
