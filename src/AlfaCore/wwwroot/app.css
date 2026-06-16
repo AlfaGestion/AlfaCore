@@ -10564,6 +10564,26 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
     text-align: left;
 }
 
+.tareas-note-menu {
+    grid-column: -2 / -1;
+    justify-self: end;
+}
+
+.tareas-note-menu > div {
+    min-width: 178px;
+}
+
+.tareas-note-menu button {
+    display: flex;
+    align-items: center;
+    gap: .45rem;
+}
+
+.tareas-note-menu button:disabled {
+    cursor: not-allowed;
+    opacity: .55;
+}
+
 .tareas-menu button:hover {
     background: rgba(14, 165, 233, .12);
 }
@@ -10616,13 +10636,17 @@ html[data-theme="light"] .drawer-new__field input { background: #fff; border-col
 
 .tareas-note {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    grid-template-columns: auto minmax(0, 1fr) repeat(3, auto);
     align-items: center;
-    gap: .7rem;
+    gap: .45rem;
     padding: .7rem .75rem;
     border: 1px solid rgba(148, 163, 184, .13);
     border-radius: 8px;
     background: rgba(15, 23, 42, .26);
+}
+
+.tareas-note > span {
+    margin-right: .25rem;
 }
 
 .tareas-note span {
@@ -18752,6 +18776,53 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
     border-bottom: 1px solid rgba(84, 129, 190, 0.14);
 }
 
+.tareas-note > button:not(.tareas-check) {
+    width: 30px;
+    height: 30px;
+}
+
+.tareas-note-editor {
+    display: grid;
+    gap: .45rem;
+}
+
+.tareas-note-editor input,
+.tareas-note-editor textarea {
+    width: 100%;
+    min-width: 0;
+    border: 1px solid rgba(80, 118, 180, .32);
+    border-radius: 8px;
+    background: rgba(12, 24, 43, .92);
+    color: var(--color-text);
+    outline: 0;
+}
+
+.tareas-note-editor input {
+    min-height: 34px;
+    padding: 0 .65rem;
+    font-weight: 800;
+}
+
+.tareas-note-editor textarea {
+    min-height: 58px;
+    padding: .55rem .65rem;
+    resize: vertical;
+}
+
+.tareas-note-editor__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: .45rem;
+}
+
+.tareas-note-editor__actions button {
+    width: auto !important;
+    min-width: 74px;
+    height: 30px;
+    padding: 0 .65rem;
+    border-radius: 8px;
+}
+
 .tareas-side-panel__add i {
     color: #24c2dc;
     font-size: 1.15rem;
@@ -18856,7 +18927,7 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
 
 .tareas-side-row {
     display: grid;
-    grid-template-columns: 18px 28px minmax(0, 1fr) 32px;
+    grid-template-columns: 18px 28px minmax(0, 1fr) max-content;
     align-items: start;
     gap: 0.35rem;
     position: relative;
@@ -18946,12 +19017,30 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
 
 .tareas-side-row__actions {
     position: relative;
-    display: inline-flex;
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 28px;
     justify-content: flex-end;
     gap: 0.15rem;
     min-width: 0;
     grid-column: 4;
     justify-self: end;
+}
+
+.tareas-side-order-button {
+    display: inline-grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    border: 0;
+    border-radius: 999px;
+    background: rgba(92, 132, 185, 0.1);
+    color: rgba(221, 235, 250, 0.78);
+}
+
+.tareas-side-order-button:hover {
+    background: rgba(36, 194, 220, 0.16);
+    color: #ffffff;
 }
 
 .tareas-side-row__actions > .bi-share {
@@ -19376,7 +19465,7 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
 }
 
 .shell__content .tareas-note {
-    grid-template-columns: 28px minmax(0, 1fr) 28px 28px;
+    grid-template-columns: 28px minmax(0, 1fr) repeat(3, 32px);
     gap: 0.65rem;
     padding: 0.7rem 0.75rem;
 }

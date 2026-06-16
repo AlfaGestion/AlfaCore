@@ -830,6 +830,18 @@ else
                                 {
                                     <i class="bi bi-share" title="@GetTasksPanelSharingSummary(nota)"></i>
                                 }
+                                @if (CanMoveTasksPanelNote(nota, -1))
+                                {
+                                    <button type="button" class="tareas-side-order-button" title="Subir tarea" @onclick="() => MoveTasksPanelNoteAsync(nota, -1)">
+                                        <i class="bi bi-arrow-up"></i>
+                                    </button>
+                                }
+                                @if (CanMoveTasksPanelNote(nota, 1))
+                                {
+                                    <button type="button" class="tareas-side-order-button" title="Bajar tarea" @onclick="() => MoveTasksPanelNoteAsync(nota, 1)">
+                                        <i class="bi bi-arrow-down"></i>
+                                    </button>
+                                }
                                 <button type="button" class="tareas-side-menu-button" title="Más opciones" @onclick="() => ToggleTasksPanelNoteMenu(nota.IdNota)">
                                     <i class="bi bi-three-dots-vertical"></i>
                                 </button>
@@ -2261,6 +2273,30 @@ else
             return;
 
         await ReorderTasksPanelNotesAsync(draggedId, target.IdNota);
+    }
+
+    private bool CanMoveTasksPanelNote(TareaNotaRapidaDto nota, int direction)
+    {
+        if (!nota.EsPropia || nota.Completada)
+            return false;
+
+        var open = TasksPanelOpenNotes;
+        var index = open.FindIndex(x => x.IdNota == nota.IdNota);
+        var targetIndex = index + direction;
+        return index >= 0 && targetIndex >= 0 && targetIndex < open.Count;
+    }
+
+    private async Task MoveTasksPanelNoteAsync(TareaNotaRapidaDto nota, int direction)
+    {
+        var open = TasksPanelOpenNotes;
+        var index = open.FindIndex(x => x.IdNota == nota.IdNota);
+        var targetIndex = index + direction;
+        if (index < 0 || targetIndex < 0 || targetIndex >= open.Count)
+            return;
+
+        open.RemoveAt(index);
+        open.Insert(targetIndex, nota);
+        await SaveTasksPanelNoteOrderAsync(open.Select(x => x.IdNota).ToArray());
     }
 
     private async Task ReorderTasksPanelNotesAsync(long draggedId, long targetId)
