@@ -741,14 +741,32 @@ else
 
     <section class="tareas-side-panel__add">
         <i class="bi bi-check2-circle"></i>
-        <input @bind="_tasksPanelQuickTitle"
-               @bind:event="oninput"
-               @onkeydown="HandleTasksPanelQuickKeyDown"
-               dir="ltr"
-               autocomplete="off"
-               spellcheck="true"
-               style="direction: ltr; unicode-bidi: plaintext; text-align: left;"
-               placeholder="Añadir rápida" />
+        <div class="tareas-side-compose">
+            <input @bind="_tasksPanelQuickTitle"
+                   @bind:event="oninput"
+                   @onkeydown="HandleTasksPanelQuickKeyDown"
+                   @onfocus="() => _tasksPanelShowComposerDetails = true"
+                   dir="ltr"
+                   autocomplete="off"
+                   spellcheck="true"
+                   style="direction: ltr; unicode-bidi: plaintext; text-align: left;"
+                   placeholder="Añadir una tarea" />
+            @if (_tasksPanelShowComposerDetails || !string.IsNullOrWhiteSpace(_tasksPanelQuickDetail))
+            {
+                <textarea @bind="_tasksPanelQuickDetail"
+                          @bind:event="oninput"
+                          rows="2"
+                          placeholder="Detalles"></textarea>
+                <div class="tareas-side-compose__actions">
+                    <button type="button" @onclick="AddTasksPanelNoteAsync" disabled="@_tasksPanelLoading">
+                        Añadir
+                    </button>
+                    <button type="button" @onclick="CancelTasksPanelCompose">
+                        Cancelar
+                    </button>
+                </div>
+            }
+        </div>
     </section>
 
     <section class="tareas-side-panel__body">
@@ -768,14 +786,87 @@ else
                 <div class="tareas-side-list">
                     @foreach (var nota in TasksPanelOpenNotes)
                     {
-                        <article class="tareas-side-row">
+                        <article class="tareas-side-row @(_tasksPanelDraggedNoteId == nota.IdNota ? "is-dragging" : string.Empty) @(_tasksPanelDragOverNoteId == nota.IdNota ? "is-drag-over" : string.Empty) @(_tasksPanelEditingNoteId == nota.IdNota ? "is-editing" : string.Empty)"
+                                 draggable="@nota.EsPropia"
+                                 @ondragstart="() => StartTasksPanelNoteDrag(nota)"
+                                 @ondragend="ClearTasksPanelNoteDrag"
+                                 @ondragenter="() => SetTasksPanelDragOver(nota)"
+                                 @ondragover:preventDefault="true"
+                                 @ondrop="() => DropTasksPanelNoteAsync(nota)">
+                            <span class="tareas-side-drag" title="Arrastrar para ordenar" aria-hidden="true">
+                                <i class="bi bi-grip-vertical"></i>
+                            </span>
                             <button type="button" class="tareas-side-check" title="Marcar como hecha" @onclick="() => CompleteTasksPanelNoteAsync(nota)">
                                 <i class="bi bi-circle"></i>
                             </button>
-                            <span class="tareas-side-row__body">
-                                <strong>@nota.Texto</strong>
-                                <span>Rápida</span>
-                            </span>
+                            @if (_tasksPanelEditingNoteId == nota.IdNota)
+                            {
+                                <div class="tareas-side-row__editor">
+                                    <input value="@_tasksPanelEditTitle"
+                                           @oninput="e => _tasksPanelEditTitle = Convert.ToString(e.Value) ?? string.Empty"
+                                           placeholder="Título" />
+                                    <textarea value="@_tasksPanelEditDetail"
+                                              @oninput="e => _tasksPanelEditDetail = Convert.ToString(e.Value) ?? string.Empty"
+                                              rows="2"
+                                              placeholder="Detalles"></textarea>
+                                    <div class="tareas-side-row__editor-actions">
+                                        <button type="button" @onclick="SaveTasksPanelEditedNoteAsync">Guardar</button>
+                                        <button type="button" @onclick="CancelTasksPanelEdit">Cancelar</button>
+                                    </div>
+                                </div>
+                            }
+                            else
+                            {
+                                <button type="button" class="tareas-side-row__body" @onclick="() => StartTasksPanelEdit(nota)">
+                                    <strong>@nota.Texto</strong>
+                                    @if (!string.IsNullOrWhiteSpace(nota.Detalle))
+                                    {
+                                        <span>@nota.Detalle</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="is-placeholder">Añadir detalles</span>
+                                    }
+                                </button>
+                            }
+                            <div class="tareas-side-row__actions">
+                                @if (nota.CompartidaConTodos || nota.UsuariosCompartidos.Count > 0)
+                                {
+                                    <i class="bi bi-share" title="@GetTasksPanelSharingSummary(nota)"></i>
+                                }
+                                @if (CanMoveTasksPanelNote(nota, -1))
+                                {
+                                    <button type="button" class="tareas-side-order-button" title="Subir tarea" @onclick="() => MoveTasksPanelNoteAsync(nota, -1)">
+                                        <i class="bi bi-arrow-up"></i>
+                                    </button>
+                                }
+                                @if (CanMoveTasksPanelNote(nota, 1))
+                                {
+                                    <button type="button" class="tareas-side-order-button" title="Bajar tarea" @onclick="() => MoveTasksPanelNoteAsync(nota, 1)">
+                                        <i class="bi bi-arrow-down"></i>
+                                    </button>
+                                }
+                                <button type="button" class="tareas-side-menu-button" title="Más opciones" @onclick="() => ToggleTasksPanelNoteMenu(nota.IdNota)">
+                                    <i class="bi bi-three-dots-vertical"></i>
+                                </button>
+                                @if (_tasksPanelMenuNoteId == nota.IdNota)
+                                {
+                                    <div class="tareas-side-note-menu" @onclick:stopPropagation>
+                                        <button type="button" @onclick="() => StartTasksPanelEdit(nota)">
+                                            <i class="bi bi-card-text"></i>
+                                            Editar detalle
+                                        </button>
+                                        <button type="button" @onclick="() => OpenTasksPanelNoteInModule(nota)">
+                                            <i class="bi bi-share"></i>
+                                            Compartir
+                                        </button>
+                                        <button type="button" class="is-danger" @onclick="() => DeleteTasksPanelNoteAsync(nota)" disabled="@(!nota.EsPropia)">
+                                            <i class="bi bi-trash"></i>
+                                            Eliminar
+                                        </button>
+                                    </div>
+                                }
+                            </div>
                         </article>
                     }
                 </div>
@@ -796,6 +887,10 @@ else
                             </button>
                             <span class="tareas-side-row__body">
                                 <strong>@nota.Texto</strong>
+                                @if (!string.IsNullOrWhiteSpace(nota.Detalle))
+                                {
+                                    <span>@nota.Detalle</span>
+                                }
                                 <span>@FormatTasksPanelDateTime(nota.FechaHoraCompletada)</span>
                             </span>
                         </article>
@@ -1056,7 +1151,15 @@ else
     private bool _tasksPanelOpen;
     private bool _tasksPanelLoading;
     private string _tasksPanelQuickTitle = string.Empty;
+    private string _tasksPanelQuickDetail = string.Empty;
     private string _tasksPanelError = string.Empty;
+    private bool _tasksPanelShowComposerDetails;
+    private long? _tasksPanelEditingNoteId;
+    private string _tasksPanelEditTitle = string.Empty;
+    private string _tasksPanelEditDetail = string.Empty;
+    private long? _tasksPanelMenuNoteId;
+    private long? _tasksPanelDraggedNoteId;
+    private long? _tasksPanelDragOverNoteId;
     private TareasPageDto _tasksPanel = new();
     private readonly Dictionary<long, long> _globalConversationLastIncomingById = [];
     private CancellationTokenSource? _globalConversationPollingCts;
@@ -1469,7 +1572,7 @@ else
 
     private async Task RunGlobalConversationPollingAsync(CancellationToken cancellationToken)
     {
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(3));
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(15));
         await PollGlobalConversationNotificationsAsync(cancellationToken);
 
         try
@@ -1485,6 +1588,7 @@ else
     private async Task PollGlobalConversationNotificationsAsync(CancellationToken cancellationToken)
     {
         if (!AppUserSession.IsAuthenticated
+            || IsDirectMode
             || string.Equals(_currentModule, "conversaciones", StringComparison.OrdinalIgnoreCase))
             return;
 
@@ -1500,7 +1604,7 @@ else
             {
                 Canal = "WHATSAPP",
                 Modo = "pendientes",
-                Limit = 50
+                Limit = 10
             }, cancellationToken);
 
             var newCount = 0;
@@ -1948,7 +2052,8 @@ else
 
     private List<TareaNotaRapidaDto> TasksPanelOpenNotes => _tasksPanel.NotasRapidas
         .Where(x => !x.Completada)
-        .OrderByDescending(x => x.FechaHoraAlta)
+        .OrderBy(x => x.Orden <= 0 ? int.MaxValue : x.Orden)
+        .ThenByDescending(x => x.FechaHoraAlta)
         .ToList();
 
     private List<TareaNotaRapidaDto> TasksPanelCompletedNotes => _tasksPanel.NotasRapidas
@@ -1979,6 +2084,12 @@ else
     {
         _tasksPanelOpen = false;
         _tasksPanelQuickTitle = string.Empty;
+        _tasksPanelQuickDetail = string.Empty;
+        _tasksPanelShowComposerDetails = false;
+        _tasksPanelEditingNoteId = null;
+        _tasksPanelMenuNoteId = null;
+        _tasksPanelDraggedNoteId = null;
+        _tasksPanelDragOverNoteId = null;
     }
 
     private async Task LoadTasksPanelAsync()
@@ -2012,15 +2123,27 @@ else
         if (!string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase))
             return;
 
+        await AddTasksPanelNoteAsync();
+    }
+
+    private async Task AddTasksPanelNoteAsync()
+    {
         var title = _tasksPanelQuickTitle.Trim();
         if (string.IsNullOrWhiteSpace(title))
             return;
 
         try
         {
-            await TareasSvc.AddQuickNoteAsync(title, TasksPanelUser);
+            await TareasSvc.SaveQuickNoteAsync(new TareaNotaRapidaSaveRequest
+            {
+                Texto = title,
+                Detalle = _tasksPanelQuickDetail,
+                UsuarioAccion = TasksPanelUser
+            });
 
             _tasksPanelQuickTitle = string.Empty;
+            _tasksPanelQuickDetail = string.Empty;
+            _tasksPanelShowComposerDetails = false;
             await LoadTasksPanelAsync();
         }
         catch (Exception ex)
@@ -2029,6 +2152,191 @@ else
             try
             {
                 await AppEvents.LogErrorAsync("TAREAS", "PANEL_CREAR", ex, "Falló la creación rápida de una tarea.");
+            }
+            catch
+            {
+            }
+        }
+    }
+
+    private void CancelTasksPanelCompose()
+    {
+        _tasksPanelQuickTitle = string.Empty;
+        _tasksPanelQuickDetail = string.Empty;
+        _tasksPanelShowComposerDetails = false;
+    }
+
+    private void StartTasksPanelEdit(TareaNotaRapidaDto nota)
+    {
+        if (!nota.EsPropia)
+            return;
+
+        _tasksPanelMenuNoteId = null;
+        _tasksPanelEditingNoteId = nota.IdNota;
+        _tasksPanelEditTitle = nota.Texto;
+        _tasksPanelEditDetail = nota.Detalle;
+    }
+
+    private void CancelTasksPanelEdit()
+    {
+        _tasksPanelEditingNoteId = null;
+        _tasksPanelEditTitle = string.Empty;
+        _tasksPanelEditDetail = string.Empty;
+    }
+
+    private async Task SaveTasksPanelEditedNoteAsync()
+    {
+        if (_tasksPanelEditingNoteId is not long idNota)
+            return;
+
+        try
+        {
+            await TareasSvc.SaveQuickNoteAsync(new TareaNotaRapidaSaveRequest
+            {
+                IdNota = idNota,
+                Texto = _tasksPanelEditTitle,
+                Detalle = _tasksPanelEditDetail,
+                UsuarioAccion = TasksPanelUser
+            });
+
+            CancelTasksPanelEdit();
+            await LoadTasksPanelAsync();
+        }
+        catch (Exception ex)
+        {
+            _tasksPanelError = "No se pudo guardar la tarea.";
+            try
+            {
+                await AppEvents.LogErrorAsync("TAREAS", "PANEL_EDITAR", ex, "Falló la edición desde el panel rápido de tareas.");
+            }
+            catch
+            {
+            }
+        }
+    }
+
+    private void ToggleTasksPanelNoteMenu(long idNota)
+        => _tasksPanelMenuNoteId = _tasksPanelMenuNoteId == idNota ? null : idNota;
+
+    private async Task DeleteTasksPanelNoteAsync(TareaNotaRapidaDto nota)
+    {
+        if (!nota.EsPropia)
+            return;
+
+        try
+        {
+            await TareasSvc.DeleteQuickNoteAsync(nota.IdNota, TasksPanelUser);
+            _tasksPanelMenuNoteId = null;
+            await LoadTasksPanelAsync();
+        }
+        catch (Exception ex)
+        {
+            _tasksPanelError = "No se pudo eliminar la tarea.";
+            try
+            {
+                await AppEvents.LogErrorAsync("TAREAS", "PANEL_ELIMINAR", ex, "Falló la eliminación desde el panel rápido de tareas.");
+            }
+            catch
+            {
+            }
+        }
+    }
+
+    private void OpenTasksPanelNoteInModule(TareaNotaRapidaDto nota)
+    {
+        _tasksPanelMenuNoteId = null;
+        CloseTasksPanel();
+        Nav.NavigateTo("/tareas");
+    }
+
+    private void StartTasksPanelNoteDrag(TareaNotaRapidaDto nota)
+    {
+        if (nota.EsPropia)
+        {
+            _tasksPanelDraggedNoteId = nota.IdNota;
+            _tasksPanelDragOverNoteId = null;
+            _tasksPanelMenuNoteId = null;
+            _tasksPanelEditingNoteId = null;
+        }
+    }
+
+    private void ClearTasksPanelNoteDrag()
+    {
+        _tasksPanelDraggedNoteId = null;
+        _tasksPanelDragOverNoteId = null;
+    }
+
+    private void SetTasksPanelDragOver(TareaNotaRapidaDto nota)
+    {
+        if (_tasksPanelDraggedNoteId.HasValue && _tasksPanelDraggedNoteId != nota.IdNota)
+            _tasksPanelDragOverNoteId = nota.IdNota;
+    }
+
+    private async Task DropTasksPanelNoteAsync(TareaNotaRapidaDto target)
+    {
+        if (_tasksPanelDraggedNoteId is not long draggedId || draggedId == target.IdNota)
+            return;
+
+        await ReorderTasksPanelNotesAsync(draggedId, target.IdNota);
+    }
+
+    private bool CanMoveTasksPanelNote(TareaNotaRapidaDto nota, int direction)
+    {
+        if (!nota.EsPropia || nota.Completada)
+            return false;
+
+        var open = TasksPanelOpenNotes;
+        var index = open.FindIndex(x => x.IdNota == nota.IdNota);
+        var targetIndex = index + direction;
+        return index >= 0 && targetIndex >= 0 && targetIndex < open.Count;
+    }
+
+    private async Task MoveTasksPanelNoteAsync(TareaNotaRapidaDto nota, int direction)
+    {
+        var open = TasksPanelOpenNotes;
+        var index = open.FindIndex(x => x.IdNota == nota.IdNota);
+        var targetIndex = index + direction;
+        if (index < 0 || targetIndex < 0 || targetIndex >= open.Count)
+            return;
+
+        open.RemoveAt(index);
+        open.Insert(targetIndex, nota);
+        await SaveTasksPanelNoteOrderAsync(open.Select(x => x.IdNota).ToArray());
+    }
+
+    private async Task ReorderTasksPanelNotesAsync(long draggedId, long targetId)
+    {
+        var open = TasksPanelOpenNotes;
+        var dragged = open.FirstOrDefault(x => x.IdNota == draggedId);
+        if (dragged is null || !dragged.EsPropia)
+            return;
+
+        var oldIndex = open.FindIndex(x => x.IdNota == draggedId);
+        var newIndex = open.FindIndex(x => x.IdNota == targetId);
+        if (oldIndex < 0 || newIndex < 0)
+            return;
+
+        open.RemoveAt(oldIndex);
+        open.Insert(newIndex, dragged);
+        await SaveTasksPanelNoteOrderAsync(open.Select(x => x.IdNota).ToArray());
+    }
+
+    private async Task SaveTasksPanelNoteOrderAsync(IReadOnlyList<long> orderedIds)
+    {
+        try
+        {
+            await TareasSvc.ReorderQuickNotesAsync(orderedIds, TasksPanelUser);
+            _tasksPanelMenuNoteId = null;
+            _tasksPanelDraggedNoteId = null;
+            _tasksPanelDragOverNoteId = null;
+            await LoadTasksPanelAsync();
+        }
+        catch (Exception ex)
+        {
+            _tasksPanelError = "No se pudo reordenar la lista.";
+            try
+            {
+                await AppEvents.LogErrorAsync("TAREAS", "PANEL_REORDENAR", ex, "Falló el reordenamiento desde el panel rápido de tareas.");
             }
             catch
             {
@@ -2064,6 +2372,16 @@ else
 
     private static string FormatTasksPanelDateTime(DateTime? value)
         => value?.ToString("dd/MM HH:mm", CultureInfo.CurrentCulture) ?? string.Empty;
+
+    private static string GetTasksPanelSharingSummary(TareaNotaRapidaDto nota)
+    {
+        if (nota.CompartidaConTodos)
+            return "Compartida con todos";
+
+        return nota.UsuariosCompartidos.Count == 0
+            ? "Sin compartir"
+            : $"Compartida con {string.Join(", ", nota.UsuariosCompartidos)}";
+    }
 
     private void TogglePushChannel(string channel, ChangeEventArgs args)
     {

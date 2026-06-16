@@ -116,7 +116,7 @@ public sealed class TicketsService(
                 OFFSET @Skip ROWS FETCH NEXT @PageSize ROWS ONLY;
 
                 SELECT COUNT(*)
-                {TicketBaseFromSql()}
+                {TicketBaseFromSql(includeMessageCount: false)}
                 {TicketWhereSql()};
                 """;
 
@@ -861,11 +861,22 @@ public sealed class TicketsService(
                 t.FechaHoraCierre,
                 ISNULL(t.UsuarioAlta, ''),
                 ISNULL(CAST(t.Descripcion AS nvarchar(max)), '')
-            {TicketBaseFromSql()}
+            {TicketBaseFromSql(includeMessageCount: true)}
             """;
 
-    private static string TicketBaseFromSql()
-        => """
+    private static string TicketBaseFromSql(bool includeMessageCount = true)
+    {
+        var messageCountApply = includeMessageCount
+            ? """
+            OUTER APPLY (
+                SELECT COUNT(*) AS CantidadMensajes
+                FROM dbo.TICK_TICKET_MENSAJES tm
+                WHERE tm.IdTicket = t.IdTicket
+            ) msg
+            """
+            : string.Empty;
+
+        return $"""
             FROM dbo.TICK_TICKETS t
             INNER JOIN dbo.TICK_ESTADOS e ON e.CodigoEstado = t.CodigoEstado
             LEFT JOIN dbo.VT_CLIENTES cli ON cli.CODIGO = t.ClienteCodigo
@@ -892,12 +903,9 @@ public sealed class TicketsService(
                 ORDER BY cuenta.Orden, cliCuenta.RAZON_SOCIAL
             ) contactoCuenta
             LEFT JOIN dbo.V_TA_Tecnicos tec ON LTRIM(RTRIM(tec.IdTecnico)) = LTRIM(RTRIM(t.IdTecnico))
-            OUTER APPLY (
-                SELECT COUNT(*) AS CantidadMensajes
-                FROM dbo.TICK_TICKET_MENSAJES tm
-                WHERE tm.IdTicket = t.IdTicket
-            ) msg
+            {messageCountApply}
             """;
+    }
 
     private static string TicketWhereSql()
         => $"""
@@ -918,7 +926,19 @@ public sealed class TicketsService(
                 ))
                 AND (@IncluirCerrados = 1 OR ISNULL(e.EsCerrado, 0) = 0)
                 AND (@TieneAsignado IS NULL OR CASE WHEN NULLIF(LTRIM(RTRIM(ISNULL(t.IdTecnico, ''))), '') IS NULL THEN CAST(0 AS bit) ELSE CAST(1 AS bit) END = @TieneAsignado)
-                AND (@TieneMensajes IS NULL OR CASE WHEN ISNULL(msg.CantidadMensajes, 0) > 0 THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END = @TieneMensajes)
+                AND (
+                    @TieneMensajes IS NULL
+                    OR (@TieneMensajes = 1 AND EXISTS (
+                        SELECT 1
+                        FROM dbo.TICK_TICKET_MENSAJES tmFiltro
+                        WHERE tmFiltro.IdTicket = t.IdTicket
+                    ))
+                    OR (@TieneMensajes = 0 AND NOT EXISTS (
+                        SELECT 1
+                        FROM dbo.TICK_TICKET_MENSAJES tmFiltro
+                        WHERE tmFiltro.IdTicket = t.IdTicket
+                    ))
+                )
                 AND (
                     @FechaRapida = ''
                     OR (@FechaRapida = 'hoy' AND CONVERT(date, t.FechaHoraAlta) = CONVERT(date, GETDATE()))
