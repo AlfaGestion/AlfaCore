@@ -881,15 +881,22 @@ public sealed class CargaViajesService(
             var choferColumn = FirstExistingColumn(columns, "IDCHOFER", "CHOFER");
             var destinoColumn = FirstExistingColumn(columns, "IDDESTINO", "DESTINO");
             var tipoVehiculoColumn = FirstExistingColumn(columns, "IDTIPOVEHICULO", "TIPOVEHICULO");
-            var config = BuildConfiguracion(await LoadConfiguracionAsync(cn, token));
-            var porcentajeAdic = ResolvePercentOrDefault(request.PorcentajeAdic, config.PorcentajesAdicionales.ElementAtOrDefault(0));
-            var porcentajeAdic1 = ResolvePercentOrDefault(request.PorcentajeAdic1, config.PorcentajesAdicionales.ElementAtOrDefault(1));
-            var porcentajeAdic2 = ResolvePercentOrDefault(request.PorcentajeAdic2, config.PorcentajesAdicionales.ElementAtOrDefault(2));
-            var porcentajeAdic3 = ResolvePercentOrDefault(request.PorcentajeAdic3, config.PorcentajesAdicionales.ElementAtOrDefault(3));
-            var porcentajeAdic4 = ResolvePercentOrDefault(request.PorcentajeAdic4, config.PorcentajesAdicionales.ElementAtOrDefault(4));
 
-            var isNew = string.IsNullOrWhiteSpace(request.IdLista);
             var idLista = request.IdLista.Trim().ToUpperInvariant();
+            var originalIdLista = string.IsNullOrWhiteSpace(request.OriginalIdLista)
+                ? idLista
+                : request.OriginalIdLista.Trim().ToUpperInvariant();
+            var cliente = request.TarifaFletero ? null : string.IsNullOrWhiteSpace(request.Cliente) ? null : request.Cliente.Trim();
+            var chofer = request.TarifaFletero ? string.IsNullOrWhiteSpace(request.Chofer) ? null : request.Chofer.Trim() : null;
+            var destino = string.IsNullOrWhiteSpace(request.Destino) ? null : request.Destino.Trim();
+            var tipoVehiculo = string.IsNullOrWhiteSpace(request.TipoVehiculo) ? null : request.TipoVehiculo.Trim();
+            var existsSql = $"""
+                SELECT TOP (1) 1
+                FROM dbo.TA_TARIFA
+                WHERE UPPER(LTRIM(RTRIM(ISNULL({idListaColumn}, '')))) = @IdLista;
+                """;
+            var exists = await cn.ExecuteScalarAsync<int?>(new CommandDefinition(existsSql, new { IdLista = originalIdLista }, cancellationToken: token));
+            var isNew = !exists.HasValue;
             var sql = isNew
                 ? $"""
                 INSERT INTO dbo.TA_TARIFA
@@ -906,6 +913,7 @@ public sealed class CargaViajesService(
                 : $"""
                 UPDATE dbo.TA_TARIFA
                 SET
+                    {idListaColumn} = @IdLista,
                     Nombre = @Nombre,
                     Importe = @Importe,
                     {clienteColumn} = @Cliente,
@@ -919,24 +927,25 @@ public sealed class CargaViajesService(
                     PorcentajeAdic3 = @PorcentajeAdic3,
                     PorcentajeAdic4 = @PorcentajeAdic4,
                     Activo = @Activo
-                WHERE UPPER(LTRIM(RTRIM({idListaColumn}))) = @IdLista;
+                WHERE UPPER(LTRIM(RTRIM({idListaColumn}))) = @OriginalIdLista;
                 """;
 
             await cn.ExecuteAsync(new CommandDefinition(sql, new
             {
                 IdLista = idLista,
+                OriginalIdLista = originalIdLista,
                 Nombre = request.Nombre.Trim(),
                 request.Importe,
-                Cliente = request.Cliente.Trim(),
-                Chofer = request.Chofer.Trim(),
-                Destino = request.Destino.Trim(),
-                TipoVehiculo = request.TipoVehiculo.Trim(),
+                Cliente = cliente,
+                Chofer = chofer,
+                Destino = destino,
+                TipoVehiculo = tipoVehiculo,
                 TarifaFletero = request.TarifaFletero,
-                PorcentajeAdic = porcentajeAdic,
-                PorcentajeAdic1 = porcentajeAdic1,
-                PorcentajeAdic2 = porcentajeAdic2,
-                PorcentajeAdic3 = porcentajeAdic3,
-                PorcentajeAdic4 = porcentajeAdic4,
+                PorcentajeAdic = request.PorcentajeAdic,
+                PorcentajeAdic1 = request.PorcentajeAdic1,
+                PorcentajeAdic2 = request.PorcentajeAdic2,
+                PorcentajeAdic3 = request.PorcentajeAdic3,
+                PorcentajeAdic4 = request.PorcentajeAdic4,
                 request.Activo
             }, cancellationToken: token));
 
@@ -3073,11 +3082,11 @@ public sealed class CargaViajesService(
 
     private static string BuildListaDesdeCliente(string clienteCodigo)
     {
-        var digits = new string((clienteCodigo ?? string.Empty).Where(char.IsDigit).ToArray());
-        if (string.IsNullOrWhiteSpace(digits))
+        var code = (clienteCodigo ?? string.Empty).Trim().ToUpperInvariant();
+        if (string.IsNullOrWhiteSpace(code))
             return string.Empty;
 
-        var lastFour = digits.Length <= 4 ? digits : digits[^4..];
+        var lastFour = code.Length <= 4 ? code : code[^4..];
         return lastFour.PadLeft(4, '0');
     }
 

@@ -345,7 +345,7 @@
                     <table class="data-table">
                         <thead>
                             <tr>
-                                <th>IdLista</th><th>Nombre</th><th>Importe</th><th>Cliente</th><th>Chofer</th><th>Destino</th><th>Tipo Vehículo</th><th>Activo</th><th>Acciones</th>
+                                <th>Código lista</th><th>Nombre</th><th>Tipo tarifa</th><th>Cliente / Chofer</th><th>Destino</th><th>Tipo vehículo</th><th>Importe</th><th>Activo</th><th>Acciones</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -354,6 +354,10 @@
                                 <tr class="@GetTarifaRowClass(item.row, item.index)" @ondblclick="() => EditarTarifaAsync(item.row)">
                                     <td>@item.row.IdLista</td>
                                     <td>@item.row.Nombre</td>
+                                    <td>@(item.row.TarifaFletero ? "Fletero" : "Cliente")</td>
+                                    <td>@GetTarifaEntidadDisplay(item.row)</td>
+                                    <td>@item.row.Destino</td>
+                                    <td>@item.row.TipoVehiculo</td>
                                     <td class="@GetTarifaImporteCellClass(item.row)" @onclick:stopPropagation="_tarifasQuickImportEditMode" @ondblclick:stopPropagation="_tarifasQuickImportEditMode">
                                         @if (_tarifasQuickImportEditMode && _tarifasQuickImportEditId == item.row.Id && item.row.Id > 0)
                                         {
@@ -378,10 +382,6 @@
                                             </button>
                                         }
                                     </td>
-                                    <td>@item.row.Cliente</td>
-                                    <td>@item.row.Chofer</td>
-                                    <td>@item.row.Destino</td>
-                                    <td>@item.row.TipoVehiculo</td>
                                     <td>@(item.row.Activo ? "Activo" : "Desactivado")</td>
                                     <td>
                                         <div class="actions">
@@ -411,26 +411,97 @@
                         </button>
                     </header>
                     <div class="cuentas-modal__body">
-                        <div class="carga-viajes-form-grid">
-                            <div class="field"><label>IdLista</label><input @ref="_tarifaIdListaInput" type="text" @bind="_tarifaForm.IdLista" disabled="@(!_isNewTarifa)" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusTarifaNombreAsync)" /></div>
-                            <div class="field"><label>Nombre</label><input @ref="_tarifaNombreInput" type="text" @bind="_tarifaForm.Nombre" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusTarifaImporteAsync)" /></div>
-                            <div class="field"><label>Importe</label><input @ref="_tarifaImporteInput" type="number" step="0.01" @bind="_tarifaForm.Importe" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusTarifaClienteAsync)" /></div>
-                            <div class="field"><label>Cliente</label><input @ref="_tarifaClienteInput" type="text" @bind="_tarifaForm.Cliente" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusTarifaChoferAsync)" /></div>
-                            <div class="field"><label>Chofer</label><input @ref="_tarifaChoferInput" type="text" @bind="_tarifaForm.Chofer" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusTarifaDestinoAsync)" /></div>
-                            <div class="field"><label>Destino</label><input @ref="_tarifaDestinoInput" type="text" @bind="_tarifaForm.Destino" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusTarifaTipoVehiculoAsync)" /></div>
-                            <div class="field"><label>Tipo vehículo</label><input @ref="_tarifaTipoVehiculoInput" type="text" @bind="_tarifaForm.TipoVehiculo" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusTarifaTarifaFleteroAsync)" /></div>
-                            <div class="field"><label>Tarifa fletero</label><select @ref="_tarifaTarifaFleteroInput" @bind="_tarifaForm.TarifaFletero" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusTarifaPorcentajeAdicAsync)"><option value="false">Tarifa cliente</option><option value="true">Tarifa chofer/fletero</option></select></div>
-                            <div class="field carga-viajes-percent-field"><label>@GetAdicionalLabel(0)</label><div class="carga-viajes-percent-field__control"><input @ref="_tarifaPorcentajeAdicInput" class="carga-viajes-percent-field__input" type="text" inputmode="decimal" @bind="_tarifaForm.PorcentajeAdic" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusTarifaPorcentajeAdic1Async)" /><span class="carga-viajes-percent-field__suffix">%</span></div></div>
-                            <div class="field carga-viajes-percent-field"><label>@GetAdicionalLabel(1)</label><div class="carga-viajes-percent-field__control"><input @ref="_tarifaPorcentajeAdic1Input" class="carga-viajes-percent-field__input" type="text" inputmode="decimal" @bind="_tarifaForm.PorcentajeAdic1" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusTarifaPorcentajeAdic2Async)" /><span class="carga-viajes-percent-field__suffix">%</span></div></div>
-                            <div class="field carga-viajes-percent-field"><label>@GetAdicionalLabel(2)</label><div class="carga-viajes-percent-field__control"><input @ref="_tarifaPorcentajeAdic2Input" class="carga-viajes-percent-field__input" type="text" inputmode="decimal" @bind="_tarifaForm.PorcentajeAdic2" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusTarifaPorcentajeAdic3Async)" /><span class="carga-viajes-percent-field__suffix">%</span></div></div>
-                            <div class="field carga-viajes-percent-field"><label>@GetAdicionalLabel(3)</label><div class="carga-viajes-percent-field__control"><input @ref="_tarifaPorcentajeAdic3Input" class="carga-viajes-percent-field__input" type="text" inputmode="decimal" @bind="_tarifaForm.PorcentajeAdic3" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusTarifaPorcentajeAdic4Async)" /><span class="carga-viajes-percent-field__suffix">%</span></div></div>
-                            <div class="field carga-viajes-percent-field"><label>@GetAdicionalLabel(4)</label><div class="carga-viajes-percent-field__control"><input @ref="_tarifaPorcentajeAdic4Input" class="carga-viajes-percent-field__input" type="text" inputmode="decimal" @bind="_tarifaForm.PorcentajeAdic4" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusTarifaGuardarAsync)" /><span class="carga-viajes-percent-field__suffix">%</span></div></div>
+                        <div class="carga-viajes-form-grid carga-viajes-tarifa-editor__grid">
+                            <div class="field field--wide">
+                                <label>Tipo de tarifa</label>
+                                <div class="carga-viajes-tarifa-editor__type" role="group" aria-label="Tipo de tarifa">
+                                    <button type="button"
+                                            class="carga-viajes-filter-pill @(!_tarifaForm.TarifaFletero ? "carga-viajes-filter-pill--active" : string.Empty)"
+                                            aria-pressed="@(!_tarifaForm.TarifaFletero)"
+                                            @onclick="SetTarifaClienteTypeAsync">
+                                        <span class="carga-viajes-filter-pill__check" aria-hidden="true"><i class="bi bi-check-lg"></i></span>
+                                        <span>Cliente</span>
+                                    </button>
+                                    <button type="button"
+                                            class="carga-viajes-filter-pill @(_tarifaForm.TarifaFletero ? "carga-viajes-filter-pill--active" : string.Empty)"
+                                            aria-pressed="@_tarifaForm.TarifaFletero"
+                                            @onclick="SetTarifaFleteroTypeAsync">
+                                        <span class="carga-viajes-filter-pill__check" aria-hidden="true"><i class="bi bi-check-lg"></i></span>
+                                        <span>Fletero</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="field field--wide">
+                                @if (_tarifaForm.TarifaFletero)
+                                {
+                                    <label>Chofer / fletero</label>
+                                    <LookupAutocomplete @ref="_tarifaChoferLookup"
+                                                        Label=""
+                                                        Placeholder="Buscar chofer o fletero..."
+                                                        Text="@_tarifaChoferTexto"
+                                                        TextChanged="OnTarifaChoferTextoChangedAsync"
+                                                        SelectedChanged="OnTarifaChoferSeleccionadoAsync"
+                                                        OnEnterCommitted="FocusTarifaNombreAsync"
+                                                        SearchFunc="CargaViajesSvc.SearchChoferLookupAsync" />
+                                }
+                                else
+                                {
+                                    <label>Cliente</label>
+                                    <LookupAutocomplete @ref="_tarifaClienteLookup"
+                                                        Label=""
+                                                        Placeholder="Buscar cliente..."
+                                                        Text="@_tarifaClienteTexto"
+                                                        TextChanged="OnTarifaClienteTextoChangedAsync"
+                                                        SelectedChanged="OnTarifaClienteSeleccionadoAsync"
+                                                        OnEnterCommitted="FocusTarifaNombreAsync"
+                                                        SearchFunc="CargaViajesSvc.SearchClientesAsync" />
+                                }
+                            </div>
+
+                            <div class="field field--wide">
+                                <label>Nombre de lista</label>
+                                <input @ref="_tarifaNombreInput" type="text" @bind="_tarifaForm.Nombre" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusTarifaDestinoAsync)" />
+                                <div class="carga-viajes-tarifa__hint">
+                                    Código de lista: <strong>@GetTarifaListaCodigo()</strong>
+                                </div>
+                            </div>
+
                             <div class="field">
+                                <label>Destino</label>
+                                <LookupAutocomplete @ref="_tarifaDestinoLookup"
+                                                    Label=""
+                                                    Placeholder="Buscar destino..."
+                                                    Text="@_tarifaDestinoTexto"
+                                                    TextChanged="OnTarifaDestinoTextoChangedAsync"
+                                                    SelectedChanged="OnTarifaDestinoSeleccionadoAsync"
+                                                    OnEnterCommitted="FocusTarifaTipoVehiculoAsync"
+                                                    SearchFunc="CargaViajesSvc.SearchDestinosLookupAsync" />
+                            </div>
+
+                            <div class="field">
+                                <label>Tipo vehículo</label>
+                                <LookupAutocomplete @ref="_tarifaTipoVehiculoLookup"
+                                                    Label=""
+                                                    Placeholder="Buscar tipo..."
+                                                    Text="@_tarifaTipoVehiculoTexto"
+                                                    TextChanged="OnTarifaTipoVehiculoTextoChangedAsync"
+                                                    SelectedChanged="OnTarifaTipoVehiculoSeleccionadoAsync"
+                                                    OnEnterCommitted="FocusTarifaImporteAsync"
+                                                    SearchFunc="CargaViajesSvc.SearchTipoVehiculosLookupAsync" />
+                            </div>
+
+                            <div class="field">
+                                <label>Importe</label>
+                                <input @ref="_tarifaImporteInput" type="number" step="0.01" @bind="_tarifaForm.Importe" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusTarifaGuardarAsync)" />
+                            </div>
+
+                            <div class="field">
+                                <label>Estado</label>
                                 <button type="button"
                                         class="carga-viajes-switch @(_tarifaForm.Activo ? "carga-viajes-check--active" : string.Empty)"
                                         aria-pressed="@_tarifaForm.Activo"
-                                        @onclick="ToggleTarifaActivoAsync"
-                                        @onkeydown="args => HandleEnterAdvanceAsync(args, FocusTarifaGuardarAsync)">
+                                        @onclick="ToggleTarifaActivoAsync">
                                     <span class="carga-viajes-check__text">@(_tarifaForm.Activo ? "Activo" : "Desactivado")</span>
                                     <span class="carga-viajes-switch__pill" aria-hidden="true">
                                         <span class="carga-viajes-switch__thumb"></span>
@@ -1621,19 +1692,16 @@
     private ElementReference _viajeAdicional3Input;
     private ElementReference _viajeAdicional4Input;
     private ElementReference _viajeObservacionesInput;
-    private ElementReference _tarifaIdListaInput;
+    private string _tarifaClienteTexto = string.Empty;
+    private string _tarifaChoferTexto = string.Empty;
+    private string _tarifaDestinoTexto = string.Empty;
+    private string _tarifaTipoVehiculoTexto = string.Empty;
+    private LookupAutocomplete? _tarifaClienteLookup;
+    private LookupAutocomplete? _tarifaChoferLookup;
+    private LookupAutocomplete? _tarifaDestinoLookup;
+    private LookupAutocomplete? _tarifaTipoVehiculoLookup;
     private ElementReference _tarifaNombreInput;
     private ElementReference _tarifaImporteInput;
-    private ElementReference _tarifaClienteInput;
-    private ElementReference _tarifaChoferInput;
-    private ElementReference _tarifaDestinoInput;
-    private ElementReference _tarifaTipoVehiculoInput;
-    private ElementReference _tarifaTarifaFleteroInput;
-    private ElementReference _tarifaPorcentajeAdicInput;
-    private ElementReference _tarifaPorcentajeAdic1Input;
-    private ElementReference _tarifaPorcentajeAdic2Input;
-    private ElementReference _tarifaPorcentajeAdic3Input;
-    private ElementReference _tarifaPorcentajeAdic4Input;
     private ElementReference _tarifaGuardarButton;
     private ElementReference _choferCodigoInput;
     private ElementReference _choferNombreInput;
@@ -1668,6 +1736,7 @@
     private bool _showTarifaEditor;
     private bool _isNewTarifa = true;
     private CargaViajeTarifaSaveRequest _tarifaForm = new();
+    private string _tarifaOriginalIdLista = string.Empty;
 
     private readonly List<CargaViajeChoferGridItemDto> _choferes = [];
     private int _choferesTotal;
@@ -2341,16 +2410,10 @@
 
     private async Task FocusTarifaNombreAsync() => await _tarifaNombreInput.FocusAsync(preventScroll: true);
     private async Task FocusTarifaImporteAsync() => await _tarifaImporteInput.FocusAsync(preventScroll: true);
-    private async Task FocusTarifaClienteAsync() => await _tarifaClienteInput.FocusAsync(preventScroll: true);
-    private async Task FocusTarifaChoferAsync() => await _tarifaChoferInput.FocusAsync(preventScroll: true);
-    private async Task FocusTarifaDestinoAsync() => await _tarifaDestinoInput.FocusAsync(preventScroll: true);
-    private async Task FocusTarifaTipoVehiculoAsync() => await _tarifaTipoVehiculoInput.FocusAsync(preventScroll: true);
-    private async Task FocusTarifaTarifaFleteroAsync() => await _tarifaTarifaFleteroInput.FocusAsync(preventScroll: true);
-    private async Task FocusTarifaPorcentajeAdicAsync() => await _tarifaPorcentajeAdicInput.FocusAsync(preventScroll: true);
-    private async Task FocusTarifaPorcentajeAdic1Async() => await _tarifaPorcentajeAdic1Input.FocusAsync(preventScroll: true);
-    private async Task FocusTarifaPorcentajeAdic2Async() => await _tarifaPorcentajeAdic2Input.FocusAsync(preventScroll: true);
-    private async Task FocusTarifaPorcentajeAdic3Async() => await _tarifaPorcentajeAdic3Input.FocusAsync(preventScroll: true);
-    private async Task FocusTarifaPorcentajeAdic4Async() => await _tarifaPorcentajeAdic4Input.FocusAsync(preventScroll: true);
+    private async Task FocusTarifaClienteAsync() => await (_tarifaClienteLookup?.FocusAsync() ?? Task.CompletedTask);
+    private async Task FocusTarifaChoferAsync() => await (_tarifaChoferLookup?.FocusAsync() ?? Task.CompletedTask);
+    private async Task FocusTarifaDestinoAsync() => await (_tarifaDestinoLookup?.FocusAsync() ?? Task.CompletedTask);
+    private async Task FocusTarifaTipoVehiculoAsync() => await (_tarifaTipoVehiculoLookup?.FocusAsync() ?? Task.CompletedTask);
     private async Task FocusTarifaGuardarAsync() => await _tarifaGuardarButton.FocusAsync(preventScroll: true);
 
     private async Task FocusChoferNombreAsync() => await _choferNombreInput.FocusAsync(preventScroll: true);
@@ -2526,6 +2589,108 @@
     {
         _tarifaForm.Activo = !_tarifaForm.Activo;
         return Task.CompletedTask;
+    }
+
+    private Task SetTarifaClienteTypeAsync()
+    {
+        if (_tarifaForm.TarifaFletero)
+        {
+            _tarifaForm.TarifaFletero = false;
+            _tarifaForm.Chofer = string.Empty;
+            _tarifaChoferTexto = string.Empty;
+            _tarifaForm.IdLista = string.Empty;
+            _tarifaForm.Nombre = string.Empty;
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private Task SetTarifaFleteroTypeAsync()
+    {
+        if (!_tarifaForm.TarifaFletero)
+        {
+            _tarifaForm.TarifaFletero = true;
+            _tarifaForm.Cliente = string.Empty;
+            _tarifaClienteTexto = string.Empty;
+            _tarifaForm.IdLista = string.Empty;
+            _tarifaForm.Nombre = string.Empty;
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private async Task OnTarifaClienteTextoChangedAsync(string text)
+    {
+        _tarifaClienteTexto = text;
+        if (!string.Equals(ExtractCodeFromDisplay(text), _tarifaForm.Cliente, StringComparison.OrdinalIgnoreCase))
+        {
+            _tarifaForm.Cliente = string.Empty;
+            _tarifaForm.IdLista = string.Empty;
+        }
+
+        await Task.CompletedTask;
+    }
+
+    private async Task OnTarifaChoferTextoChangedAsync(string text)
+    {
+        _tarifaChoferTexto = text;
+        if (!string.Equals(ExtractCodeFromDisplay(text), _tarifaForm.Chofer, StringComparison.OrdinalIgnoreCase))
+        {
+            _tarifaForm.Chofer = string.Empty;
+            _tarifaForm.IdLista = string.Empty;
+        }
+
+        await Task.CompletedTask;
+    }
+
+    private async Task OnTarifaDestinoTextoChangedAsync(string text)
+    {
+        _tarifaDestinoTexto = text;
+        if (!string.Equals(ExtractCodeFromDisplay(text), _tarifaForm.Destino, StringComparison.OrdinalIgnoreCase))
+            _tarifaForm.Destino = string.Empty;
+
+        await Task.CompletedTask;
+    }
+
+    private async Task OnTarifaTipoVehiculoTextoChangedAsync(string text)
+    {
+        _tarifaTipoVehiculoTexto = text;
+        if (!string.Equals(ExtractCodeFromDisplay(text), _tarifaForm.TipoVehiculo, StringComparison.OrdinalIgnoreCase))
+            _tarifaForm.TipoVehiculo = string.Empty;
+
+        await Task.CompletedTask;
+    }
+
+    private async Task OnTarifaClienteSeleccionadoAsync(CargaViajeLookupOptionDto item)
+    {
+        _tarifaForm.Cliente = item.Codigo;
+        _tarifaClienteTexto = BuildLookupDisplayText(item);
+        _tarifaForm.IdLista = BuildListaDesdeCodigo(item.Codigo);
+        _tarifaForm.Nombre = string.IsNullOrWhiteSpace(item.Titulo) ? item.Codigo : item.Titulo.Trim();
+        await Task.CompletedTask;
+    }
+
+    private async Task OnTarifaChoferSeleccionadoAsync(CargaViajeLookupOptionDto item)
+    {
+        _tarifaForm.Chofer = item.Codigo;
+        _tarifaChoferTexto = BuildLookupDisplayText(item);
+        _tarifaForm.IdLista = BuildListaDesdeCodigo(item.Codigo);
+        _tarifaForm.Nombre = string.IsNullOrWhiteSpace(item.Titulo) ? item.Codigo : item.Titulo.Trim();
+        await Task.CompletedTask;
+    }
+
+    private async Task OnTarifaDestinoSeleccionadoAsync(CargaViajeLookupOptionDto item)
+    {
+        _tarifaForm.Destino = item.Codigo;
+        _tarifaDestinoTexto = BuildLookupDisplayText(item);
+        await Task.CompletedTask;
+    }
+
+    private async Task OnTarifaTipoVehiculoSeleccionadoAsync(CargaViajeLookupOptionDto item)
+    {
+        _tarifaForm.TipoVehiculo = item.Codigo;
+        _tarifaTipoVehiculoTexto = BuildLookupDisplayText(item);
+        await Task.CompletedTask;
     }
 
     private Task ToggleChoferActivoAsync()
@@ -3575,8 +3740,12 @@
 
     private async Task NuevaTarifaAsync()
     {
-        _tarifaForm = BuildDefaultTarifaForm(_config);
-        ApplyTarifaDefaultPercents(_tarifaForm);
+        _tarifaForm = BuildDefaultTarifaForm();
+        _tarifaOriginalIdLista = string.Empty;
+        _tarifaClienteTexto = string.Empty;
+        _tarifaChoferTexto = string.Empty;
+        _tarifaDestinoTexto = string.Empty;
+        _tarifaTipoVehiculoTexto = string.Empty;
         _showTarifaEditor = true;
         _isNewTarifa = true;
         _tarifaSnapshot = CaptureTarifaSnapshot(_tarifaForm);
@@ -3591,15 +3760,20 @@
         if (result.Success && result.Value is not null)
         {
             var item = result.Value;
+            var clienteCodigo = ExtractCodeFromDisplay(item.Cliente);
+            var choferCodigo = ExtractCodeFromDisplay(item.Chofer);
+            var destinoCodigo = ExtractCodeFromDisplay(item.Destino);
+            var tipoVehiculoCodigo = ExtractCodeFromDisplay(item.TipoVehiculo);
             _tarifaForm = new CargaViajeTarifaSaveRequest
             {
                 IdLista = item.IdLista,
+                OriginalIdLista = item.IdLista,
                 Nombre = item.Nombre,
                 Importe = item.Importe,
-                Cliente = item.Cliente,
-                Chofer = item.Chofer,
-                Destino = item.Destino,
-                TipoVehiculo = item.TipoVehiculo,
+                Cliente = clienteCodigo,
+                Chofer = choferCodigo,
+                Destino = destinoCodigo,
+                TipoVehiculo = tipoVehiculoCodigo,
                 TarifaFletero = item.TarifaFletero,
                 PorcentajeAdic = item.PorcentajeAdic,
                 PorcentajeAdic1 = item.PorcentajeAdic1,
@@ -3608,7 +3782,11 @@
                 PorcentajeAdic4 = item.PorcentajeAdic4,
                 Activo = item.Activo
             };
-            ApplyTarifaDefaultPercents(_tarifaForm);
+            _tarifaClienteTexto = item.TarifaFletero ? string.Empty : item.Cliente;
+            _tarifaChoferTexto = item.TarifaFletero ? item.Chofer : string.Empty;
+            _tarifaDestinoTexto = item.Destino;
+            _tarifaTipoVehiculoTexto = item.TipoVehiculo;
+            _tarifaOriginalIdLista = item.IdLista;
             _showTarifaEditor = true;
             _isNewTarifa = false;
             _tarifaSnapshot = CaptureTarifaSnapshot(_tarifaForm);
@@ -3618,6 +3796,7 @@
         _tarifaForm = new CargaViajeTarifaSaveRequest
         {
             IdLista = row.IdLista,
+            OriginalIdLista = row.IdLista,
             Nombre = row.Nombre,
             Importe = row.Importe,
             Cliente = ExtractCodeFromDisplay(row.Cliente),
@@ -3632,7 +3811,11 @@
             PorcentajeAdic4 = row.PorcentajeAdic4,
             Activo = row.Activo
         };
-        ApplyTarifaDefaultPercents(_tarifaForm);
+        _tarifaClienteTexto = row.TarifaFletero ? string.Empty : row.Cliente;
+        _tarifaChoferTexto = row.TarifaFletero ? row.Chofer : string.Empty;
+        _tarifaDestinoTexto = row.Destino;
+        _tarifaTipoVehiculoTexto = row.TipoVehiculo;
+        _tarifaOriginalIdLista = row.IdLista;
         _showTarifaEditor = true;
         _isNewTarifa = false;
         _tarifaSnapshot = CaptureTarifaSnapshot(_tarifaForm);
@@ -3642,6 +3825,8 @@
     {
         try
         {
+            _tarifaForm.IdLista = GetTarifaListaCodigo();
+            _tarifaForm.OriginalIdLista = _tarifaOriginalIdLista;
             await CargaViajesSvc.SaveTarifaAsync(_tarifaForm);
         }
         catch (Exception ex)
@@ -3665,6 +3850,48 @@
         => _tarifasQuickImportEditMode && row.Id > 0 && row.Id == _tarifasQuickImportEditId
             ? "carga-viajes-tarifas__importe-cell carga-viajes-tarifas__importe-cell--editing"
             : "carga-viajes-tarifas__importe-cell";
+
+    private static string GetTarifaEntidadDisplay(CargaViajeTarifaGridItemDto row)
+    {
+        var value = row.TarifaFletero ? row.Chofer : row.Cliente;
+        return string.IsNullOrWhiteSpace(value) ? string.Empty : value;
+    }
+
+    private string GetTarifaListaCodigo()
+    {
+        var codigoBase = _tarifaForm.TarifaFletero ? _tarifaForm.Chofer : _tarifaForm.Cliente;
+        var normalized = (codigoBase ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(normalized))
+            return _tarifaForm.IdLista.Trim().ToUpperInvariant();
+
+        if (normalized.Length <= 4)
+            return normalized.PadLeft(4, '0').ToUpperInvariant();
+
+        return normalized[^4..].ToUpperInvariant();
+    }
+
+    private static string BuildLookupDisplayText(CargaViajeLookupOptionDto item)
+    {
+        var code = (item.Codigo ?? string.Empty).Trim();
+        var title = (item.Titulo ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(code))
+            return title;
+
+        return string.IsNullOrWhiteSpace(title)
+            ? code
+            : $"{code} - {title}";
+    }
+
+    private static string BuildListaDesdeCodigo(string codigo)
+    {
+        var value = (codigo ?? string.Empty).Trim().ToUpperInvariant();
+        if (string.IsNullOrWhiteSpace(value))
+            return string.Empty;
+
+        return value.Length <= 4
+            ? value.PadLeft(4, '0')
+            : value[^4..];
+    }
 
     private static string GetTarifaImporteInputId(int id) => $"tarifa-importe-{id}";
 
@@ -4473,40 +4700,17 @@
         form.PorcentajeAdic4 = ResolvePercentOrDefault(form.PorcentajeAdic4, 4);
     }
 
-    private static CargaViajeTarifaSaveRequest BuildDefaultTarifaForm(CargaViajesConfigDto? config = null)
+    private static CargaViajeTarifaSaveRequest BuildDefaultTarifaForm()
     {
-        var dto = config ?? CreateDefaultConfiguracionForUi();
         return new CargaViajeTarifaSaveRequest
         {
             Activo = true,
-            PorcentajeAdic = dto.PorcentajesAdicionales.ElementAtOrDefault(0),
-            PorcentajeAdic1 = dto.PorcentajesAdicionales.ElementAtOrDefault(1),
-            PorcentajeAdic2 = dto.PorcentajesAdicionales.ElementAtOrDefault(2),
-            PorcentajeAdic3 = dto.PorcentajesAdicionales.ElementAtOrDefault(3),
-            PorcentajeAdic4 = dto.PorcentajesAdicionales.ElementAtOrDefault(4)
+            TarifaFletero = false
         };
-    }
-
-    private void ApplyTarifaDefaultPercents(CargaViajeTarifaSaveRequest form)
-    {
-        form.PorcentajeAdic = ResolvePercentOrDefault(form.PorcentajeAdic, 0);
-        form.PorcentajeAdic1 = ResolvePercentOrDefault(form.PorcentajeAdic1, 1);
-        form.PorcentajeAdic2 = ResolvePercentOrDefault(form.PorcentajeAdic2, 2);
-        form.PorcentajeAdic3 = ResolvePercentOrDefault(form.PorcentajeAdic3, 3);
-        form.PorcentajeAdic4 = ResolvePercentOrDefault(form.PorcentajeAdic4, 4);
     }
 
     private decimal ResolvePercentOrDefault(decimal value, int index)
         => value > 0m ? value : GetConfiguredAdicionalPercent(index);
-
-    private static CargaViajesConfigDto CreateDefaultConfiguracionForUi()
-        => new()
-        {
-            Sucursal = "0001",
-            Letra = "X",
-            NombresAdicionales = ["Adicional 1", "Adicional 2", "Adicional 3", "Adicional 4", "Adicional 5"],
-            PorcentajesAdicionales = [0m, 0m, 0m, 0m, 0m]
-        };
 
     private static CargaViajesReporteLiquidacionFilters CreateDefaultReporteLiquidacionFilters()
     {

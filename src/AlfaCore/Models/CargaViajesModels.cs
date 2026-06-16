@@ -140,6 +140,7 @@ public sealed class CargaViajeTarifaGridItemDto
 public sealed class CargaViajeTarifaSaveRequest
 {
     public string IdLista { get; set; } = string.Empty;
+    public string OriginalIdLista { get; set; } = string.Empty;
     public string Nombre { get; set; } = string.Empty;
     public decimal Importe { get; set; }
     public string Cliente { get; set; } = string.Empty;

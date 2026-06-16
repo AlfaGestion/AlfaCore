@@ -48,7 +48,6 @@ if errorlevel 1 goto :sdk_missing
 
 echo Iniciando servidor...
 echo.
-
 dotnet run --configuration Release --no-launch-profile
 set "EXITCODE=%ERRORLEVEL%"
 

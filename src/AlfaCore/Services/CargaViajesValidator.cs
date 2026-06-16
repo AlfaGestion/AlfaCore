@@ -66,12 +66,63 @@ public sealed class CargaViajesValidator(
             result.Add("nombre", "El nombre es obligatorio.");
         if (request.Importe < 0)
             result.Add("importe", "El importe no puede ser negativo.");
-        ValidateCommonCodeFields(request.Cliente, request.Chofer, request.Destino, request.TipoVehiculo, result);
-        ValidatePercent(request.PorcentajeAdic, "porcentaje-adic", result);
-        ValidatePercent(request.PorcentajeAdic1, "porcentaje-adic1", result);
-        ValidatePercent(request.PorcentajeAdic2, "porcentaje-adic2", result);
-        ValidatePercent(request.PorcentajeAdic3, "porcentaje-adic3", result);
-        ValidatePercent(request.PorcentajeAdic4, "porcentaje-adic4", result);
+
+        var tarifaFletero = request.TarifaFletero;
+        if (tarifaFletero)
+        {
+            if (string.IsNullOrWhiteSpace(request.Chofer))
+                result.Add("chofer", "Debe seleccionar un chofer.");
+        }
+        else if (string.IsNullOrWhiteSpace(request.Cliente))
+        {
+            result.Add("cliente", "Debe seleccionar un cliente.");
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Destino))
+            result.Add("destino", "Debe seleccionar un destino.");
+        if (string.IsNullOrWhiteSpace(request.TipoVehiculo))
+            result.Add("tipo-vehiculo", "Debe seleccionar un tipo de vehículo.");
+
+        if (!result.IsValid)
+            return result;
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+
+        if (!tarifaFletero)
+        {
+            if (!await ExistsAsync(cn, "Vt_Clientes", "CODIGO", request.Cliente, ct))
+                result.Add("cliente", "El cliente seleccionado no existe.");
+        }
+        else if (!await ExistsAsync(cn, await ResolveChoferTableAsync(cn, ct), await ResolveChoferCodeColumnAsync(cn, ct), request.Chofer, ct))
+        {
+            result.Add("chofer", "El chofer seleccionado no existe.");
+        }
+
+        if (!await ExistsAsync(cn, await ResolveDestinoTableAsync(cn, ct), await ResolveDestinoCodeColumnAsync(cn, ct), request.Destino, ct))
+            result.Add("destino", "El destino seleccionado no existe.");
+
+        if (!await ExistsAsync(cn, await ResolveTipoVehiculoTableAsync(cn, ct), "CODIGO", request.TipoVehiculo, ct))
+            result.Add("tipo-vehiculo", "El tipo de vehículo seleccionado no existe.");
+
+        if (!result.IsValid)
+            return result;
+
+        var idListaColumn = await ResolveExistingColumnAsync(cn, ct, "TA_TARIFA", "IDLISTA", "ID_LISTA");
+        var currentIdLista = request.IdLista.Trim().ToUpperInvariant();
+        var originalIdLista = string.IsNullOrWhiteSpace(request.OriginalIdLista)
+            ? string.Empty
+            : request.OriginalIdLista.Trim().ToUpperInvariant();
+        if (string.IsNullOrWhiteSpace(originalIdLista) || !string.Equals(originalIdLista, currentIdLista, StringComparison.OrdinalIgnoreCase))
+        {
+            if (await ExistsAsync(cn, "TA_TARIFA", idListaColumn, currentIdLista, ct))
+                result.Add("id-lista", "Ya existe una tarifa con ese código de lista.");
+        }
+
+        var hasDuplicate = await HasDuplicateTarifaAsync(cn, request, ct);
+        if (hasDuplicate)
+            result.Add("tarifa-duplicada", "Ya existe una tarifa para esta combinación.");
+
         return result;
     }
 
@@ -99,6 +150,12 @@ public sealed class CargaViajesValidator(
         return Task.FromResult(result);
     }
 
+    private static void ValidateMoney(decimal value, string fieldKey, ValidationResult result)
+    {
+        if (value < 0)
+            result.Add(fieldKey, "El valor no puede ser negativo.");
+    }
+
     private static void ValidateCommonCodeFields(string cliente, string chofer, string destino, string tipoVehiculo, ValidationResult result)
     {
         if (string.IsNullOrWhiteSpace(cliente))
@@ -109,12 +166,6 @@ public sealed class CargaViajesValidator(
             result.Add("destino", "Debe seleccionar un destino.");
         if (string.IsNullOrWhiteSpace(tipoVehiculo))
             result.Add("tipo-vehiculo", "Debe seleccionar un tipo de vehículo.");
-    }
-
-    private static void ValidateMoney(decimal value, string fieldKey, ValidationResult result)
-    {
-        if (value < 0)
-            result.Add(fieldKey, "El valor no puede ser negativo.");
     }
 
     private static void ValidatePercent(decimal value, string fieldKey, ValidationResult result)
@@ -152,6 +203,46 @@ public sealed class CargaViajesValidator(
     private static async Task<string> ResolveDestinoCodeColumnAsync(SqlConnection cn, CancellationToken ct)
         => await ResolveExistingColumnAsync(cn, ct, await ResolveDestinoTableAsync(cn, ct), "CODIGO", "IDDESTINO", "IdDestino");
 
+    private static async Task<bool> HasDuplicateTarifaAsync(SqlConnection cn, CargaViajeTarifaSaveRequest request, CancellationToken ct)
+    {
+        var idListaColumn = await ResolveExistingColumnAsync(cn, ct, "TA_TARIFA", "IDLISTA", "ID_LISTA");
+        var clienteColumn = await ResolveExistingColumnAsync(cn, ct, "TA_TARIFA", "IDCLIENTE", "CLIENTE");
+        var choferColumn = await ResolveExistingColumnAsync(cn, ct, "TA_TARIFA", "IDCHOFER", "CHOFER");
+        var destinoColumn = await ResolveExistingColumnAsync(cn, ct, "TA_TARIFA", "IDDESTINO", "DESTINO");
+        var tipoVehiculoColumn = await ResolveExistingColumnAsync(cn, ct, "TA_TARIFA", "IDTIPOVEHICULO", "TIPOVEHICULO");
+        var idLista = string.IsNullOrWhiteSpace(request.OriginalIdLista)
+            ? request.IdLista.Trim().ToUpperInvariant()
+            : request.OriginalIdLista.Trim().ToUpperInvariant();
+        var cliente = (request.Cliente ?? string.Empty).Trim().ToUpperInvariant();
+        var chofer = (request.Chofer ?? string.Empty).Trim().ToUpperInvariant();
+        var destino = (request.Destino ?? string.Empty).Trim().ToUpperInvariant();
+        var tipoVehiculo = (request.TipoVehiculo ?? string.Empty).Trim().ToUpperInvariant();
+
+        var sql = $"""
+            SELECT COUNT(1)
+            FROM dbo.TA_TARIFA
+            WHERE ISNULL(Activo, 1) = 1
+              AND ISNULL(TarifaFletero, 0) = @TarifaFletero
+              AND UPPER(LTRIM(RTRIM(ISNULL({clienteColumn}, '')))) = @Cliente
+              AND UPPER(LTRIM(RTRIM(ISNULL({choferColumn}, '')))) = @Chofer
+              AND UPPER(LTRIM(RTRIM(ISNULL({destinoColumn}, '')))) = @Destino
+              AND UPPER(LTRIM(RTRIM(ISNULL({tipoVehiculoColumn}, '')))) = @TipoVehiculo
+              AND UPPER(LTRIM(RTRIM(ISNULL({idListaColumn}, '')))) <> @IdLista;
+            """;
+
+        var count = await cn.ExecuteScalarAsync<int>(new CommandDefinition(sql, new
+        {
+            TarifaFletero = request.TarifaFletero ? 1 : 0,
+            Cliente = request.TarifaFletero ? string.Empty : cliente,
+            Chofer = request.TarifaFletero ? chofer : string.Empty,
+            Destino = destino,
+            TipoVehiculo = tipoVehiculo,
+            IdLista = idLista
+        }, cancellationToken: ct));
+
+        return count > 0;
+    }
+
     private static async Task<string> ResolveExistingTableAsync(SqlConnection cn, CancellationToken ct, params string[] candidates)
     {
         foreach (var candidate in candidates)
@@ -181,6 +272,7 @@ public sealed class CargaViajesValidator(
 
         return candidates.First();
     }
+
 }
 
 
