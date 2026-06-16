@@ -50,6 +50,8 @@ public interface ICargaViajesService
     Task<decimal> GetTarifaFleteroAsync(string chofer, string destino, string tipoVehiculo, CancellationToken ct = default);
     Task<CargaViajeTarifaGridItemDto?> ClonarTarifaParaViajeAsync(string idListaBase, CargaViajeSaveRequest viaje, CancellationToken ct = default);
     Task<IReadOnlyList<CargaViajeReporteLiquidacionRowDto>> SearchLiquidacionChoferesAsync(CargaViajesReporteLiquidacionFilters filters, CancellationToken ct = default);
+    Task<IReadOnlyList<CargaViajeLiquidacionRowDto>> SearchLiquidacionesFletesAsync(CargaViajesLiquidacionFilters filters, CancellationToken ct = default);
+    Task<int> MarcarFletesPagadosAsync(CargaViajesMarcarPagadoRequest request, CancellationToken ct = default);
     Task<CargaViajesLookupDto> GetLookupsAsync(CancellationToken ct = default);
 
     Task<CargaViajesViewSettingsDto> GetViewSettingsAsync(string userName, CancellationToken ct = default);
