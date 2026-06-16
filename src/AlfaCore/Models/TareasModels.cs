@@ -86,14 +86,24 @@ public sealed class TareaNotaRapidaDto
 {
     public long IdNota { get; set; }
     public string Texto { get; set; } = string.Empty;
+    public string Detalle { get; set; } = string.Empty;
     public string Usuario { get; set; } = string.Empty;
     public bool EsPropia { get; set; }
     public bool CompartidaConTodos { get; set; }
     public List<string> UsuariosCompartidos { get; set; } = [];
     public DateTime Fecha { get; set; }
     public bool Completada { get; set; }
+    public int Orden { get; set; }
     public DateTime FechaHoraAlta { get; set; }
     public DateTime? FechaHoraCompletada { get; set; }
+}
+
+public sealed class TareaNotaRapidaSaveRequest
+{
+    public long? IdNota { get; set; }
+    public string Texto { get; set; } = string.Empty;
+    public string Detalle { get; set; } = string.Empty;
+    public string UsuarioAccion { get; set; } = string.Empty;
 }
 
 public sealed class TareaUsuarioDto

@@ -1102,6 +1102,10 @@
                         </button>
                         <span>
                             @nota.Texto
+                            @if (!string.IsNullOrWhiteSpace(nota.Detalle))
+                            {
+                                <small>@nota.Detalle</small>
+                            }
                             @if (!nota.EsPropia)
                             {
                                 <small>@nota.Usuario</small>

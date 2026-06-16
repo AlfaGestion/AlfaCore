@@ -36,6 +36,7 @@ public sealed class TareasService(
             await EnsureDefaultListAsync(cn, user, token);
             await EnsureTaskPriorityColumnAsync(cn, token);
             await EnsureTaskGroupsReadyAsync(cn, token);
+            await EnsureQuickNotesColumnsAsync(cn, token);
             var userActiveFilter = await HasUsuarioActivoColumnAsync(cn, token)
                 ? "AND ISNULL(Activo, 1) = 1"
                 : string.Empty;
@@ -261,10 +262,12 @@ public sealed class TareasService(
                 SELECT
                     IdNota,
                     ISNULL(Texto, '') AS Texto,
+                    ISNULL(CONVERT(nvarchar(max), Detalle), '') AS Detalle,
                     ISNULL(Usuario, '') AS Usuario,
                     CONVERT(bit, CASE WHEN UPPER(LTRIM(RTRIM(Usuario))) = UPPER(LTRIM(RTRIM(@Usuario))) THEN 1 ELSE 0 END) AS EsPropia,
                     Fecha,
                     CONVERT(bit, ISNULL(Completada, 0)) AS Completada,
+                    ISNULL(Orden, 0) AS Orden,
                     FechaHoraAlta,
                     FechaHoraCompletada
                 FROM dbo.ALFACORE_TAREAS_NOTAS_RAPIDAS n
@@ -284,7 +287,7 @@ public sealed class TareasService(
                               )
                         )
                   )
-                ORDER BY Completada, FechaHoraAlta DESC;
+                ORDER BY Completada, ISNULL(Orden, 0), FechaHoraAlta DESC;
 
                 SELECT
                     ISNULL(NOMBRE, '') AS Nombre,
@@ -841,22 +844,66 @@ public sealed class TareasService(
         }, "No se pudo eliminar la tarea.", ct);
 
     public Task<long> AddQuickNoteAsync(string texto, string usuario, CancellationToken ct = default)
+        => SaveQuickNoteAsync(new TareaNotaRapidaSaveRequest
+        {
+            Texto = texto,
+            UsuarioAccion = usuario
+        }, ct);
+
+    public Task<long> SaveQuickNoteAsync(TareaNotaRapidaSaveRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "AddQuickNote", async token =>
         {
-            var clean = texto.Trim();
+            ArgumentNullException.ThrowIfNull(request);
+            var clean = request.Texto.Trim();
+            var detail = request.Detalle.Trim();
             if (string.IsNullOrWhiteSpace(clean))
                 throw new InvalidOperationException("La nota rápida no puede estar vacía.");
 
             await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await EnsureQuickNotesColumnsAsync(cn, token);
+            var user = NormalizeUser(request.UsuarioAccion);
+
+            if (request.IdNota is long idNota && idNota > 0)
+            {
+                var affected = await cn.ExecuteAsync(new CommandDefinition(
+                    """
+                    UPDATE dbo.ALFACORE_TAREAS_NOTAS_RAPIDAS
+                    SET Texto = @Texto,
+                        Detalle = @Detalle
+                    WHERE IdNota = @IdNota
+                      AND UPPER(LTRIM(RTRIM(Usuario))) = UPPER(LTRIM(RTRIM(@Usuario)))
+                      AND ISNULL(Activa, 1) = 1;
+                    """,
+                    new { IdNota = idNota, Texto = clean, Detalle = detail, Usuario = user },
+                    cancellationToken: token));
+
+                if (affected == 0)
+                    throw new InvalidOperationException("Solo podés editar tareas rápidas propias.");
+
+                return idNota;
+            }
+
+            var nextOrder = await cn.ExecuteScalarAsync<int>(new CommandDefinition(
+                """
+                SELECT ISNULL(MAX(Orden), 0) + 10
+                FROM dbo.ALFACORE_TAREAS_NOTAS_RAPIDAS
+                WHERE UPPER(LTRIM(RTRIM(Usuario))) = UPPER(LTRIM(RTRIM(@Usuario)))
+                  AND ISNULL(Activa, 1) = 1
+                  AND ISNULL(Completada, 0) = 0;
+                """,
+                new { Usuario = user },
+                cancellationToken: token));
+
             return await cn.ExecuteScalarAsync<long>(new CommandDefinition(
                 """
                 INSERT INTO dbo.ALFACORE_TAREAS_NOTAS_RAPIDAS
-                    (Texto, Fecha, Usuario, Completada, FechaHoraAlta, Activa)
+                    (Texto, Detalle, Fecha, Usuario, Completada, Orden, FechaHoraAlta, Activa)
                 OUTPUT INSERTED.IdNota
                 VALUES
-                    (@Texto, CONVERT(date, GETDATE()), @Usuario, 0, GETDATE(), 1);
+                    (@Texto, @Detalle, CONVERT(date, GETDATE()), @Usuario, 0, @Orden, GETDATE(), 1);
                 """,
-                new { Texto = clean, Usuario = NormalizeUser(usuario) },
+                new { Texto = clean, Detalle = detail, Usuario = user, Orden = nextOrder },
                 cancellationToken: token));
         }, "No se pudo guardar la nota rápida.", ct);
 
@@ -864,6 +911,8 @@ public sealed class TareasService(
         => ExecuteLoggedAsync(ModuleName, "ToggleQuickNote", async token =>
         {
             await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await EnsureQuickNotesColumnsAsync(cn, token);
             await cn.ExecuteAsync(new CommandDefinition(
                 """
                 UPDATE dbo.ALFACORE_TAREAS_NOTAS_RAPIDAS
@@ -881,6 +930,7 @@ public sealed class TareasService(
         => ExecuteLoggedAsync(ModuleName, "DeleteQuickNote", async token =>
         {
             await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
             await cn.ExecuteAsync(new CommandDefinition(
                 """
                 UPDATE dbo.ALFACORE_TAREAS_NOTAS_RAPIDAS
@@ -896,6 +946,7 @@ public sealed class TareasService(
         => ExecuteLoggedAsync(ModuleName, "ClearCompletedQuickNotes", async token =>
         {
             await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
             await cn.ExecuteAsync(new CommandDefinition(
                 """
                 UPDATE dbo.ALFACORE_TAREAS_NOTAS_RAPIDAS
@@ -906,6 +957,47 @@ public sealed class TareasService(
                 new { Usuario = NormalizeUser(usuario) },
                 cancellationToken: token));
         }, "No se pudieron limpiar las notas completadas.", ct);
+
+    public Task ReorderQuickNotesAsync(IReadOnlyList<long> orderedIds, string usuario, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "ReorderQuickNotes", async token =>
+        {
+            ArgumentNullException.ThrowIfNull(orderedIds);
+            var ids = orderedIds.Where(x => x > 0).Distinct().ToArray();
+            if (ids.Length == 0)
+                return;
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await EnsureQuickNotesColumnsAsync(cn, token);
+            var user = NormalizeUser(usuario);
+
+            await using var tx = await cn.BeginTransactionAsync(token);
+            try
+            {
+                for (var i = 0; i < ids.Length; i++)
+                {
+                    await cn.ExecuteAsync(new CommandDefinition(
+                        """
+                        UPDATE dbo.ALFACORE_TAREAS_NOTAS_RAPIDAS
+                        SET Orden = @Orden
+                        WHERE IdNota = @IdNota
+                          AND UPPER(LTRIM(RTRIM(Usuario))) = UPPER(LTRIM(RTRIM(@Usuario)))
+                          AND ISNULL(Activa, 1) = 1
+                          AND ISNULL(Completada, 0) = 0;
+                        """,
+                        new { IdNota = ids[i], Orden = (i + 1) * 10, Usuario = user },
+                        (SqlTransaction)tx,
+                        cancellationToken: token));
+                }
+
+                await tx.CommitAsync(token);
+            }
+            catch
+            {
+                await tx.RollbackAsync(token);
+                throw;
+            }
+        }, "No se pudo reordenar las notas rápidas.", ct);
 
     public Task SaveSharingAsync(TareaCompartirRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "SaveSharing", async token =>
@@ -995,6 +1087,42 @@ public sealed class TareasService(
             WHERE Prioridad IS NULL
                OR LTRIM(RTRIM(Prioridad)) = N''
                OR UPPER(LTRIM(RTRIM(Prioridad))) NOT IN (N'ALTA', N'MEDIA', N'BAJA');
+            """,
+            cancellationToken: ct));
+
+    private static async Task EnsureQuickNotesColumnsAsync(SqlConnection cn, CancellationToken ct)
+        => await cn.ExecuteAsync(new CommandDefinition(
+            """
+            IF COL_LENGTH(N'dbo.ALFACORE_TAREAS_NOTAS_RAPIDAS', N'Detalle') IS NULL
+            BEGIN
+                ALTER TABLE dbo.ALFACORE_TAREAS_NOTAS_RAPIDAS
+                ADD Detalle nvarchar(max) NULL;
+            END;
+
+            IF COL_LENGTH(N'dbo.ALFACORE_TAREAS_NOTAS_RAPIDAS', N'Orden') IS NULL
+            BEGIN
+                ALTER TABLE dbo.ALFACORE_TAREAS_NOTAS_RAPIDAS
+                ADD Orden int NOT NULL
+                    CONSTRAINT DF_ALFACORE_TAREAS_NOTAS_Orden DEFAULT (0);
+            END;
+
+            ;WITH Pendientes AS
+            (
+                SELECT
+                    IdNota,
+                    ROW_NUMBER() OVER
+                    (
+                        PARTITION BY UPPER(LTRIM(RTRIM(Usuario))), ISNULL(Completada, 0)
+                        ORDER BY FechaHoraAlta DESC, IdNota DESC
+                    ) AS RowNum
+                FROM dbo.ALFACORE_TAREAS_NOTAS_RAPIDAS
+                WHERE ISNULL(Activa, 1) = 1
+                  AND ISNULL(Orden, 0) = 0
+            )
+            UPDATE n
+            SET Orden = p.RowNum * 10
+            FROM dbo.ALFACORE_TAREAS_NOTAS_RAPIDAS n
+            INNER JOIN Pendientes p ON p.IdNota = n.IdNota;
             """,
             cancellationToken: ct));
 
