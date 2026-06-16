@@ -782,10 +782,11 @@ else
                 <div class="tareas-side-list">
                     @foreach (var nota in TasksPanelOpenNotes)
                     {
-                        <article class="tareas-side-row @(_tasksPanelDraggedNoteId == nota.IdNota ? "is-dragging" : string.Empty)"
+                        <article class="tareas-side-row @(_tasksPanelDraggedNoteId == nota.IdNota ? "is-dragging" : string.Empty) @(_tasksPanelDragOverNoteId == nota.IdNota ? "is-drag-over" : string.Empty) @(_tasksPanelEditingNoteId == nota.IdNota ? "is-editing" : string.Empty)"
                                  draggable="@nota.EsPropia"
                                  @ondragstart="() => StartTasksPanelNoteDrag(nota)"
                                  @ondragend="ClearTasksPanelNoteDrag"
+                                 @ondragenter="() => SetTasksPanelDragOver(nota)"
                                  @ondragover:preventDefault="true"
                                  @ondrop="() => DropTasksPanelNoteAsync(nota)">
                             <span class="tareas-side-drag" title="Arrastrar para ordenar" aria-hidden="true">
@@ -838,14 +839,6 @@ else
                                         <button type="button" @onclick="() => StartTasksPanelEdit(nota)">
                                             <i class="bi bi-card-text"></i>
                                             Editar detalle
-                                        </button>
-                                        <button type="button" @onclick="() => MoveTasksPanelNoteAsync(nota, -1)" disabled="@(!nota.EsPropia)">
-                                            <i class="bi bi-arrow-up"></i>
-                                            Mover arriba
-                                        </button>
-                                        <button type="button" @onclick="() => MoveTasksPanelNoteAsync(nota, 1)" disabled="@(!nota.EsPropia)">
-                                            <i class="bi bi-arrow-down"></i>
-                                            Mover abajo
                                         </button>
                                         <button type="button" @onclick="() => OpenTasksPanelNoteInModule(nota)">
                                             <i class="bi bi-share"></i>
@@ -1150,6 +1143,7 @@ else
     private string _tasksPanelEditDetail = string.Empty;
     private long? _tasksPanelMenuNoteId;
     private long? _tasksPanelDraggedNoteId;
+    private long? _tasksPanelDragOverNoteId;
     private TareasPageDto _tasksPanel = new();
     private readonly Dictionary<long, long> _globalConversationLastIncomingById = [];
     private CancellationTokenSource? _globalConversationPollingCts;
@@ -2078,6 +2072,7 @@ else
         _tasksPanelEditingNoteId = null;
         _tasksPanelMenuNoteId = null;
         _tasksPanelDraggedNoteId = null;
+        _tasksPanelDragOverNoteId = null;
     }
 
     private async Task LoadTasksPanelAsync()
@@ -2240,11 +2235,25 @@ else
     private void StartTasksPanelNoteDrag(TareaNotaRapidaDto nota)
     {
         if (nota.EsPropia)
+        {
             _tasksPanelDraggedNoteId = nota.IdNota;
+            _tasksPanelDragOverNoteId = null;
+            _tasksPanelMenuNoteId = null;
+            _tasksPanelEditingNoteId = null;
+        }
     }
 
     private void ClearTasksPanelNoteDrag()
-        => _tasksPanelDraggedNoteId = null;
+    {
+        _tasksPanelDraggedNoteId = null;
+        _tasksPanelDragOverNoteId = null;
+    }
+
+    private void SetTasksPanelDragOver(TareaNotaRapidaDto nota)
+    {
+        if (_tasksPanelDraggedNoteId.HasValue && _tasksPanelDraggedNoteId != nota.IdNota)
+            _tasksPanelDragOverNoteId = nota.IdNota;
+    }
 
     private async Task DropTasksPanelNoteAsync(TareaNotaRapidaDto target)
     {
@@ -2252,19 +2261,6 @@ else
             return;
 
         await ReorderTasksPanelNotesAsync(draggedId, target.IdNota);
-    }
-
-    private async Task MoveTasksPanelNoteAsync(TareaNotaRapidaDto nota, int direction)
-    {
-        var open = TasksPanelOpenNotes;
-        var index = open.FindIndex(x => x.IdNota == nota.IdNota);
-        var targetIndex = index + direction;
-        if (index < 0 || targetIndex < 0 || targetIndex >= open.Count)
-            return;
-
-        open.RemoveAt(index);
-        open.Insert(targetIndex, nota);
-        await SaveTasksPanelNoteOrderAsync(open.Select(x => x.IdNota).ToArray());
     }
 
     private async Task ReorderTasksPanelNotesAsync(long draggedId, long targetId)
@@ -2280,8 +2276,6 @@ else
             return;
 
         open.RemoveAt(oldIndex);
-        if (oldIndex < newIndex)
-            newIndex--;
         open.Insert(newIndex, dragged);
         await SaveTasksPanelNoteOrderAsync(open.Select(x => x.IdNota).ToArray());
     }
@@ -2293,6 +2287,7 @@ else
             await TareasSvc.ReorderQuickNotesAsync(orderedIds, TasksPanelUser);
             _tasksPanelMenuNoteId = null;
             _tasksPanelDraggedNoteId = null;
+            _tasksPanelDragOverNoteId = null;
             await LoadTasksPanelAsync();
         }
         catch (Exception ex)
