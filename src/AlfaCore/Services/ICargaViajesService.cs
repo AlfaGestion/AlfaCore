@@ -40,6 +40,7 @@ public interface ICargaViajesService
 
     Task<IReadOnlyList<CargaViajeLookupOptionDto>> SearchClientesAsync(string texto, CancellationToken ct = default);
     Task<IReadOnlyList<CargaViajeLookupOptionDto>> SearchChoferLookupAsync(string texto, CancellationToken ct = default);
+    Task<IReadOnlyList<CargaViajeLookupOptionDto>> SearchChoferLookupAsync(string texto, bool incluirChoferes, bool incluirFleteros, CancellationToken ct = default);
     Task<IReadOnlyList<CargaViajeLookupOptionDto>> SearchFleterosLookupAsync(string texto, CancellationToken ct = default);
     Task<IReadOnlyList<CargaViajeLookupOptionDto>> SearchDestinosLookupAsync(string texto, CancellationToken ct = default);
     Task<IReadOnlyList<CargaViajeLookupOptionDto>> SearchTipoVehiculosLookupAsync(string texto, CancellationToken ct = default);

@@ -286,9 +286,10 @@ public sealed class CargaViajesReporteLiquidacionFilters
 {
     public DateTime? FechaDesde { get; set; }
     public DateTime? FechaHasta { get; set; }
-    public string Chofer { get; set; } = string.Empty;
-    public string Fletero { get; set; } = string.Empty;
-    public string TipoReporte { get; set; } = CargaViajesReporteTipoKeys.LiquidacionChoferes;
+    public bool IncluirChoferes { get; set; } = true;
+    public bool IncluirFleteros { get; set; } = false;
+    public string ChoferCodigo { get; set; } = string.Empty;
+    public string ChoferTexto { get; set; } = string.Empty;
 }
 
 public sealed class CargaViajeReporteLiquidacionRowDto

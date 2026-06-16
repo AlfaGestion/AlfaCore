@@ -1554,6 +1554,9 @@ public sealed class CargaViajesService(
         }, "No se pudieron buscar clientes.", ct);
 
     public Task<IReadOnlyList<CargaViajeLookupOptionDto>> SearchChoferLookupAsync(string texto, CancellationToken ct = default)
+        => SearchChoferLookupAsync(texto, true, true, ct);
+
+    public Task<IReadOnlyList<CargaViajeLookupOptionDto>> SearchChoferLookupAsync(string texto, bool incluirChoferes, bool incluirFleteros, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "SearchChoferLookup", async token =>
         {
             var search = SearchTextHelper.Normalize(texto);
@@ -1563,14 +1566,23 @@ public sealed class CargaViajesService(
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
             const string table = "TA_CHOFERES";
+            var hasEsFletero = await ColumnExistsAsync(cn, table, "ES_FLETERO", token);
+            var filterClause = incluirChoferes && incluirFleteros
+                ? string.Empty
+                : incluirFleteros
+                    ? hasEsFletero ? "AND ISNULL(ES_FLETERO, 0) = 1" : "AND 1 = 0"
+                    : incluirChoferes
+                        ? hasEsFletero ? "AND ISNULL(ES_FLETERO, 0) = 0" : string.Empty
+                        : "AND 1 = 0";
             var sql = $"""
                 SELECT TOP (12)
                     LTRIM(RTRIM(ISNULL(CODIGO, ''))) AS Codigo,
                     LTRIM(RTRIM(ISNULL(NOMBRES, ''))) AS Titulo,
                     '' AS Subtitulo
                 FROM dbo.{table}
-                WHERE CODIGO LIKE @Search
-                   OR NOMBRES COLLATE Latin1_General_CI_AI LIKE @Search
+                WHERE (CODIGO LIKE @Search
+                   OR NOMBRES COLLATE Latin1_General_CI_AI LIKE @Search)
+                  {filterClause}
                 ORDER BY NOMBRES, CODIGO;
                 """;
 
@@ -2049,19 +2061,19 @@ public sealed class CargaViajesService(
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
             const string viajeTable = "MV_VIAJES_CARGA";
-            var hasEsFletero = await ColumnExistsAsync(cn, "TA_CHOFERES", "ES_FLETERO", token);
-            var tipoReporte = (filters.TipoReporte ?? string.Empty).Trim();
-            var isFleterosReport = string.Equals(tipoReporte, CargaViajesReporteTipoKeys.LiquidacionFleteros, StringComparison.OrdinalIgnoreCase);
             var choferJoin = "LEFT JOIN dbo.TA_CHOFERES ch ON UPPER(LTRIM(RTRIM(ISNULL(ch.CODIGO, '')))) = UPPER(LTRIM(RTRIM(ISNULL(v.IDCHOFER, ''))))";
             var clienteJoin = "LEFT JOIN dbo.Vt_Clientes cli ON UPPER(LTRIM(RTRIM(ISNULL(cli.CODIGO, '')))) = UPPER(LTRIM(RTRIM(ISNULL(v.IDCLIENTE, ''))))";
             var destinoJoin = "LEFT JOIN dbo.TA_DESTINOS d ON UPPER(LTRIM(RTRIM(ISNULL(d.CODIGO, '')))) = UPPER(LTRIM(RTRIM(ISNULL(v.IDDESTINO, ''))))";
             var vehiculoJoin = "LEFT JOIN dbo.TA_TIPOVEHICULO tv ON UPPER(LTRIM(RTRIM(ISNULL(tv.CODIGO, '')))) = UPPER(LTRIM(RTRIM(ISNULL(v.IDTIPOVEHICULO, ''))))";
+            var hasEsFletero = await ColumnExistsAsync(cn, "TA_CHOFERES", "ES_FLETERO", token);
             var esFleteroExpr = hasEsFletero ? "CAST(ISNULL(ch.ES_FLETERO, 0) AS bit)" : "CAST(0 AS bit)";
-            var reporteFilter = isFleterosReport
-                ? hasEsFletero
-                    ? "AND ISNULL(ch.ES_FLETERO, 0) = 1 AND (@Filtro = '' OR UPPER(LTRIM(RTRIM(ISNULL(v.IDCHOFER, '')))) = @Filtro)"
-                    : "AND 1 = 0"
-                : "AND (@Filtro = '' OR UPPER(LTRIM(RTRIM(ISNULL(v.IDCHOFER, '')))) = @Filtro)";
+            var reporteFilter = """
+                AND (
+                        (@IncluirChoferes = 1 AND ISNULL(ch.ES_FLETERO, 0) = 0)
+                     OR (@IncluirFleteros = 1 AND ISNULL(ch.ES_FLETERO, 0) = 1)
+                    )
+                AND (@ChoferCodigo = '' OR UPPER(LTRIM(RTRIM(ISNULL(v.IDCHOFER, '')))) = @ChoferCodigo)
+                """;
             var sql = $"""
                 SELECT
                     v.ID AS Id,
@@ -2094,7 +2106,9 @@ public sealed class CargaViajesService(
             {
                 FechaDesde = fechaDesde,
                 FechaHasta = fechaHasta,
-                Filtro = TrimUpper(isFleterosReport ? filters.Fletero : filters.Chofer)
+                IncluirChoferes = filters.IncluirChoferes ? 1 : 0,
+                IncluirFleteros = filters.IncluirFleteros ? 1 : 0,
+                ChoferCodigo = TrimUpper(filters.ChoferCodigo)
             }, cancellationToken: token))).ToList();
 
             return (IReadOnlyList<CargaViajeReporteLiquidacionRowDto>)rows;

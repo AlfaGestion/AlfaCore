@@ -837,53 +837,38 @@
                 </div>
                 <div class="field">
                     <label>Fecha hasta</label>
-                        <InputDate @bind-Value="_reporteLiquidacionFilters.FechaHasta" />
-                    </div>
+                    <InputDate @bind-Value="_reporteLiquidacionFilters.FechaHasta" />
+                </div>
                 <div class="field field--wide">
                     <label>Tipo de reporte</label>
-                    <div class="carga-viajes-reportes__modes">
-                        <button type="button"
-                                class="carga-viajes-reportes__mode @(IsReporteChoferes() ? "carga-viajes-reportes__mode--active" : string.Empty)"
-                                aria-pressed="@IsReporteChoferes()"
-                                @onclick="() => SetReporteTipoAsync(CargaViajesReporteTipoKeys.LiquidacionChoferes)">
-                            <span class="carga-viajes-reportes__mode-dot" aria-hidden="true"></span>
-                            <span class="carga-viajes-reportes__mode-body">
-                                <span class="carga-viajes-reportes__mode-eyebrow">Consulta</span>
-                                <span class="carga-viajes-reportes__mode-label">Choferes</span>
-                                <span class="carga-viajes-reportes__mode-note">Busca por chofer y muestra la liquidación por chofer.</span>
-                            </span>
-                        </button>
-                        <button type="button"
-                                class="carga-viajes-reportes__mode @(IsReporteFleteros() ? "carga-viajes-reportes__mode--active" : string.Empty)"
-                                aria-pressed="@IsReporteFleteros()"
-                                @onclick="() => SetReporteTipoAsync(CargaViajesReporteTipoKeys.LiquidacionFleteros)">
-                            <span class="carga-viajes-reportes__mode-dot" aria-hidden="true"></span>
-                            <span class="carga-viajes-reportes__mode-body">
-                                <span class="carga-viajes-reportes__mode-eyebrow">Consulta</span>
-                                <span class="carga-viajes-reportes__mode-label">Fleteros</span>
-                                <span class="carga-viajes-reportes__mode-note">Busca solo fleteros y muestra la liquidación por fletero.</span>
-                            </span>
-                        </button>
-                    </div>
-                    <div class="carga-viajes-reportes__legend">
-                        <span>Consulta: <strong>@GetReporteConsultaTexto()</strong></span>
-                        <span>Se muestra: <strong>@GetReporteVistaTexto()</strong></span>
+                    <div class="carga-viajes-reportes__chips" role="group" aria-label="Tipo de reporte">
+                        <label class="carga-viajes-reportes__chip @(_reporteLiquidacionFilters.IncluirChoferes ? "carga-viajes-reportes__chip--active" : string.Empty)">
+                            <input class="carga-viajes-reportes__chip-input"
+                                   type="checkbox"
+                                   checked="@_reporteLiquidacionFilters.IncluirChoferes"
+                                   @onchange="args => OnReporteIncluirChoferesChangedAsync(args)" />
+                            <span class="carga-viajes-reportes__chip-box" aria-hidden="true"></span>
+                            <span class="carga-viajes-reportes__chip-text">Choferes</span>
+                        </label>
+                        <label class="carga-viajes-reportes__chip @(_reporteLiquidacionFilters.IncluirFleteros ? "carga-viajes-reportes__chip--active" : string.Empty)">
+                            <input class="carga-viajes-reportes__chip-input"
+                                   type="checkbox"
+                                   checked="@_reporteLiquidacionFilters.IncluirFleteros"
+                                   @onchange="args => OnReporteIncluirFleterosChangedAsync(args)" />
+                            <span class="carga-viajes-reportes__chip-box" aria-hidden="true"></span>
+                            <span class="carga-viajes-reportes__chip-text">Fleteros</span>
+                        </label>
                     </div>
                 </div>
-                @if (IsReporteFleteros())
-                {
-                    <div class="field">
-                        <label>Fletero</label>
-                        <LookupAutocomplete Label="" Placeholder="Buscar fletero..." Text="@_reporteFleteroTexto" TextChanged="OnReporteFleteroTextoChangedAsync" SelectedChanged="OnReporteFleteroSeleccionadoAsync" SearchFunc="CargaViajesSvc.SearchFleterosLookupAsync" />
-                    </div>
-                }
-                else
-                {
-                    <div class="field">
-                        <label>Chofer</label>
-                        <LookupAutocomplete Label="" Placeholder="Buscar chofer..." Text="@_reporteChoferTexto" TextChanged="OnReporteChoferTextoChangedAsync" SelectedChanged="OnReporteChoferSeleccionadoAsync" SearchFunc="CargaViajesSvc.SearchChoferLookupAsync" />
-                    </div>
-                }
+                <div class="field field--wide">
+                    <label>Chofer/Fletero</label>
+                    <LookupAutocomplete Label=""
+                                         Placeholder="Buscar chofer o fletero..."
+                                         Text="@_reporteChoferFleteroTexto"
+                                         TextChanged="OnReporteChoferFleteroTextoChangedAsync"
+                                         SelectedChanged="OnReporteChoferFleteroSeleccionadoAsync"
+                                         SearchFunc="SearchReporteChoferFleteroLookupAsync" />
+                </div>
             </div>
         </section>
 
@@ -893,10 +878,6 @@
                     <h3 class="panel-card__title">@GetReporteTitulo()</h3>
                     <span class="panel-card__subtitle">@_reporteLiquidacionRows.Count viaje(s) | Total a pagar: @_reporteTotalFlete.ToString("N2")</span>
                 </div>
-            </div>
-
-            <div class="carga-viajes-reportes__chart">
-                <HorizontalBarChart Data="@GetReporteLiquidacionChartData()" Titulo="@GetReporteChartTitle()" Subtitulo="@GetReporteChartSubtitle()" Formato="moneda" />
             </div>
 
             @if (_reportesLoading)
@@ -909,68 +890,23 @@
             }
             else
             {
-                if (ShouldShowReporteResumenPorChofer())
+                if (_reporteLiquidacionFilters.IncluirChoferes)
                 {
-                    <div class="usuarios-table-wrap">
-                        <table class="data-table">
-                            <thead>
-                                <tr>
-                                    <th>Chofer</th>
-                                    <th>Nombre</th>
-                                    <th>Es fletero</th>
-                                    <th>Cantidad viajes</th>
-                                    <th>Total flete</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach (var resumen in GetReporteLiquidacionResumen())
-                                {
-                                    <tr>
-                                        <td>@resumen.ChoferCodigo</td>
-                                        <td>@resumen.ChoferNombre</td>
-                                        <td>@(resumen.EsFletero ? "Sí" : "No")</td>
-                                        <td>@resumen.CantidadViajes</td>
-                                        <td>@resumen.TotalFlete.ToString("N2")</td>
-                                    </tr>
-                                }
-                            </tbody>
-                        </table>
-                    </div>
+                    @RenderReporteGrupo("CHOFERES", false)
                 }
 
-                <div class="usuarios-table-wrap">
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Fecha</th>
-                                <th>Comprobante</th>
-                                <th>Chofer</th>
-                                <th>Es fletero</th>
-                                <th>Cliente</th>
-                                <th>Destino</th>
-                                <th>Tipo vehículo</th>
-                                <th>Cantidad viajes</th>
-                                <th>Total flete</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var row in _reporteLiquidacionRows)
-                            {
-                                <tr>
-                                    <td>@row.Fecha.ToString("dd/MM/yyyy")</td>
-                                    <td>@row.IdComprobante</td>
-                                    <td>@($"{row.ChoferCodigo} - {row.ChoferNombre}")</td>
-                                    <td>@(row.EsFletero ? "Sí" : "No")</td>
-                                    <td>@($"{row.ClienteCodigo} - {row.ClienteNombre}")</td>
-                                    <td>@($"{row.DestinoCodigo} - {row.DestinoDescripcion}")</td>
-                                    <td>@($"{row.TipoVehiculoCodigo} - {row.TipoVehiculoDescripcion}")</td>
-                                    <td>@row.CantidadViajes</td>
-                                    <td>@row.TotalFlete.ToString("N2")</td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                </div>
+                if (_reporteLiquidacionFilters.IncluirFleteros)
+                {
+                    @RenderReporteGrupo("FLETEROS", true)
+                }
+
+                if (_reporteLiquidacionFilters.IncluirChoferes && _reporteLiquidacionFilters.IncluirFleteros)
+                {
+                    <div class="carga-viajes-reportes__total-general">
+                        <span class="carga-viajes-reportes__total-general-label">TOTAL GENERAL</span>
+                        <strong>@GetReporteTotalGeneral().ToString("N2")</strong>
+                    </div>
+                }
             }
         </section>
     }
@@ -1228,13 +1164,7 @@
     private CargaViajesReporteLiquidacionFilters _reporteLiquidacionFilters = CreateDefaultReporteLiquidacionFilters();
     private readonly List<CargaViajeReporteLiquidacionRowDto> _reporteLiquidacionRows = [];
     private decimal _reporteTotalFlete;
-    private readonly List<CargaViajesReportTypeOptionDto> _reportTypes =
-    [
-        new() { Value = CargaViajesReporteTipoKeys.LiquidacionChoferes, Label = "Liquidación de choferes" },
-        new() { Value = CargaViajesReporteTipoKeys.LiquidacionFleteros, Label = "Liquidación de fleteros" }
-    ];
-    private string _reporteChoferTexto = string.Empty;
-    private string _reporteFleteroTexto = string.Empty;
+    private string _reporteChoferFleteroTexto = string.Empty;
 
     private string _clienteFiltroTexto = string.Empty;
     private string _choferFiltroTexto = string.Empty;
@@ -2172,19 +2102,42 @@
     private async Task OnDestinoSeleccionadoAsync(CargaViajeLookupOptionDto item) { _viajesFilters.Destino = item.Codigo; _destinoFiltroTexto = item.Codigo; await Task.CompletedTask; }
     private async Task OnChoferTipoVehiculoChangedAsync(string text) { _choferesFilters.TipoVehiculo = text; _choferesTipoVehiculoTexto = text; await Task.CompletedTask; }
     private async Task OnChoferTipoVehiculoSelectedAsync(CargaViajeLookupOptionDto item) { _choferesFilters.TipoVehiculo = item.Codigo; _choferesTipoVehiculoTexto = item.Codigo; await Task.CompletedTask; }
-    private async Task SetReporteTipoAsync(string tipoReporte)
+    private async Task OnReporteIncluirChoferesChangedAsync(ChangeEventArgs args)
     {
-        _reporteLiquidacionFilters.TipoReporte = tipoReporte ?? string.Empty;
-        _reporteLiquidacionFilters.Chofer = string.Empty;
-        _reporteLiquidacionFilters.Fletero = string.Empty;
-        _reporteChoferTexto = string.Empty;
-        _reporteFleteroTexto = string.Empty;
-        await RecargarReporteLiquidacionAsync();
+        _reporteLiquidacionFilters.IncluirChoferes = ConvertToBool(args.Value);
+        _reporteLiquidacionFilters.ChoferCodigo = string.Empty;
+        _reporteLiquidacionFilters.ChoferTexto = string.Empty;
+        _reporteChoferFleteroTexto = string.Empty;
+        await Task.CompletedTask;
     }
-    private async Task OnReporteChoferTextoChangedAsync(string text) { _reporteChoferTexto = text; _reporteLiquidacionFilters.Chofer = text; await Task.CompletedTask; }
-    private async Task OnReporteChoferSeleccionadoAsync(CargaViajeLookupOptionDto item) { _reporteLiquidacionFilters.Chofer = item.Codigo; _reporteChoferTexto = FormatLookupDisplay(item.Codigo, item.Titulo); await Task.CompletedTask; }
-    private async Task OnReporteFleteroTextoChangedAsync(string text) { _reporteFleteroTexto = text; _reporteLiquidacionFilters.Fletero = text; await Task.CompletedTask; }
-    private async Task OnReporteFleteroSeleccionadoAsync(CargaViajeLookupOptionDto item) { _reporteLiquidacionFilters.Fletero = item.Codigo; _reporteFleteroTexto = FormatLookupDisplay(item.Codigo, item.Titulo); await Task.CompletedTask; }
+
+    private async Task OnReporteIncluirFleterosChangedAsync(ChangeEventArgs args)
+    {
+        _reporteLiquidacionFilters.IncluirFleteros = ConvertToBool(args.Value);
+        _reporteLiquidacionFilters.ChoferCodigo = string.Empty;
+        _reporteLiquidacionFilters.ChoferTexto = string.Empty;
+        _reporteChoferFleteroTexto = string.Empty;
+        await Task.CompletedTask;
+    }
+
+    private async Task OnReporteChoferFleteroTextoChangedAsync(string text)
+    {
+        _reporteChoferFleteroTexto = text;
+        _reporteLiquidacionFilters.ChoferCodigo = string.Empty;
+        _reporteLiquidacionFilters.ChoferTexto = text;
+        await Task.CompletedTask;
+    }
+
+    private async Task OnReporteChoferFleteroSeleccionadoAsync(CargaViajeLookupOptionDto item)
+    {
+        _reporteLiquidacionFilters.ChoferCodigo = item.Codigo;
+        _reporteLiquidacionFilters.ChoferTexto = FormatLookupDisplay(item.Codigo, item.Titulo);
+        _reporteChoferFleteroTexto = _reporteLiquidacionFilters.ChoferTexto;
+        await Task.CompletedTask;
+    }
+
+    private Task<IReadOnlyList<CargaViajeLookupOptionDto>> SearchReporteChoferFleteroLookupAsync(string texto, CancellationToken ct)
+        => CargaViajesSvc.SearchChoferLookupAsync(texto, _reporteLiquidacionFilters.IncluirChoferes, _reporteLiquidacionFilters.IncluirFleteros, ct);
 
     private async Task OnViajeClienteTextoChangedAsync(string text)
     {
@@ -2330,8 +2283,7 @@
     private async Task LimpiarFiltrosReporteAsync()
     {
         _reporteLiquidacionFilters = CreateDefaultReporteLiquidacionFilters();
-        _reporteChoferTexto = string.Empty;
-        _reporteFleteroTexto = string.Empty;
+        _reporteChoferFleteroTexto = string.Empty;
         await RecargarReporteLiquidacionAsync();
     }
 
@@ -2396,39 +2348,43 @@
             return false;
         }
 
+        if (!_reporteLiquidacionFilters.IncluirChoferes && !_reporteLiquidacionFilters.IncluirFleteros)
+        {
+            _feedback = new AppUiMessage { Severity = AppUiFeedbackSeverity.Warning, Title = "Seleccione tipo de reporte", Message = "Seleccione Choferes, Fleteros o ambos." };
+            return false;
+        }
+
         return true;
     }
 
-    private bool ShouldShowReporteResumenPorChofer()
-        => string.IsNullOrWhiteSpace((_reporteLiquidacionFilters.Chofer ?? string.Empty).Trim())
-           && string.IsNullOrWhiteSpace((_reporteLiquidacionFilters.Fletero ?? string.Empty).Trim());
-
-    private bool IsReporteChoferes()
-        => !IsReporteFleteros();
-
-    private bool IsReporteFleteros()
-        => string.Equals((_reporteLiquidacionFilters.TipoReporte ?? string.Empty).Trim(), CargaViajesReporteTipoKeys.LiquidacionFleteros, StringComparison.OrdinalIgnoreCase);
-
-    private string GetReporteConsultaTexto()
-        => IsReporteFleteros() ? "Fleteros" : "Choferes";
-
-    private string GetReporteVistaTexto()
-        => IsReporteFleteros() ? "Liquidación por fletero" : "Liquidación por chofer";
+    private static bool ConvertToBool(object? value)
+        => value switch
+        {
+            bool b => b,
+            string s => bool.TryParse(s, out var parsed) && parsed,
+            _ => value is not null && value.ToString() == "true"
+        };
 
     private string GetReporteTitulo()
-        => IsReporteFleteros()
-            ? "Liquidación de fleteros"
-            : "Liquidación de choferes";
+        => _reporteLiquidacionFilters.IncluirChoferes && _reporteLiquidacionFilters.IncluirFleteros
+            ? "Liquidación de choferes y fleteros"
+            : _reporteLiquidacionFilters.IncluirFleteros
+                ? "Liquidación de fleteros"
+                : "Liquidación de choferes";
 
     private string GetReporteChartTitle()
-        => IsReporteFleteros()
-            ? "Distribución por fletero"
-            : "Distribución por chofer";
+        => _reporteLiquidacionFilters.IncluirChoferes && _reporteLiquidacionFilters.IncluirFleteros
+            ? "Distribución general por chofer"
+            : _reporteLiquidacionFilters.IncluirFleteros
+                ? "Distribución por fletero"
+                : "Distribución por chofer";
 
     private string GetReporteChartSubtitle()
-        => IsReporteFleteros()
-            ? "Total a pagar por fletero"
-            : "Total a pagar por chofer";
+        => _reporteLiquidacionFilters.IncluirChoferes && _reporteLiquidacionFilters.IncluirFleteros
+            ? "Total a pagar por chofer/fletero"
+            : _reporteLiquidacionFilters.IncluirFleteros
+                ? "Total a pagar por fletero"
+                : "Total a pagar por chofer";
 
     private IReadOnlyList<CategoryTotalDto> GetReporteLiquidacionChartData()
         => GetReporteLiquidacionResumen()
@@ -2457,6 +2413,144 @@
             .OrderBy(x => x.ChoferNombre)
             .ThenBy(x => x.ChoferCodigo)
             .ToList();
+
+    private IReadOnlyList<CargaViajeReporteLiquidacionRowDto> GetReporteRows(bool esFletero)
+        => _reporteLiquidacionRows
+            .Where(x => x.EsFletero == esFletero)
+            .OrderBy(x => x.ChoferNombre)
+            .ThenBy(x => x.Fecha)
+            .ThenBy(x => x.IdComprobante)
+            .ToList();
+
+    private IReadOnlyList<CargaViajeReporteLiquidacionResumenDto> GetReporteResumen(bool esFletero)
+        => GetReporteLiquidacionResumen()
+            .Where(x => x.EsFletero == esFletero)
+            .ToList();
+
+    private decimal GetReporteSubtotal(bool esFletero)
+        => GetReporteRows(esFletero).Sum(x => x.TotalFlete);
+
+    private int GetReporteCantidadViajes(bool esFletero)
+        => GetReporteRows(esFletero).Sum(x => Math.Max(1, x.CantidadViajes));
+
+    private decimal GetReporteTotalGeneral()
+        => _reporteLiquidacionRows.Sum(x => x.TotalFlete);
+
+    private IReadOnlyList<CategoryTotalDto> GetReporteChartData(bool esFletero)
+        => GetReporteResumen(esFletero)
+            .Select(x => new CategoryTotalDto
+            {
+                Codigo = x.ChoferCodigo,
+                Categoria = string.IsNullOrWhiteSpace(x.ChoferNombre)
+                    ? x.ChoferCodigo
+                    : $"{x.ChoferCodigo} - {x.ChoferNombre}",
+                Total = x.TotalFlete,
+                Participacion = 0m
+            })
+            .ToList();
+
+    private string GetReporteChartTitle(bool esFletero)
+        => esFletero ? "Distribución por fleteros" : "Distribución por choferes";
+
+    private string GetReporteChartSubtitle(bool esFletero)
+        => esFletero ? "Total a pagar del grupo" : "Total a pagar del grupo";
+
+    private RenderFragment RenderReporteGrupo(string titulo, bool esFletero) => builder =>
+    {
+        var seq = 0;
+        var rows = GetReporteRows(esFletero);
+        var resumen = GetReporteResumen(esFletero);
+        var subtotal = rows.Sum(x => x.TotalFlete);
+        var cantidad = rows.Sum(x => Math.Max(1, x.CantidadViajes));
+
+        builder.OpenElement(seq++, "section");
+        builder.AddAttribute(seq++, "class", "carga-viajes-reportes__group");
+
+        builder.OpenElement(seq++, "div");
+        builder.AddAttribute(seq++, "class", "carga-viajes-reportes__group-header");
+        builder.OpenElement(seq++, "div");
+        builder.OpenElement(seq++, "h4");
+        builder.AddContent(seq++, titulo);
+        builder.CloseElement();
+        builder.AddMarkupContent(seq++, $"<span class=\"carga-viajes-reportes__group-meta\">{cantidad} viaje(s) · Total: {subtotal:N2}</span>");
+        builder.CloseElement();
+        builder.CloseElement();
+
+        builder.OpenElement(seq++, "div");
+        builder.AddAttribute(seq++, "class", "carga-viajes-reportes__chart");
+        builder.OpenComponent<HorizontalBarChart>(seq++);
+        builder.AddAttribute(seq++, "Data", GetReporteChartData(esFletero));
+        builder.AddAttribute(seq++, "Titulo", GetReporteChartTitle(esFletero));
+        builder.AddAttribute(seq++, "Subtitulo", GetReporteChartSubtitle(esFletero));
+        builder.AddAttribute(seq++, "Formato", "moneda");
+        builder.CloseComponent();
+        builder.CloseElement();
+
+        if (resumen.Count > 0)
+        {
+            builder.OpenElement(seq++, "div");
+            builder.AddAttribute(seq++, "class", "usuarios-table-wrap");
+            builder.OpenElement(seq++, "table");
+            builder.AddAttribute(seq++, "class", "data-table");
+            builder.OpenElement(seq++, "thead");
+            builder.OpenElement(seq++, "tr");
+            builder.OpenElement(seq++, "th"); builder.AddContent(seq++, "Chofer"); builder.CloseElement();
+            builder.OpenElement(seq++, "th"); builder.AddContent(seq++, "Nombre"); builder.CloseElement();
+            builder.OpenElement(seq++, "th"); builder.AddContent(seq++, "Cantidad viajes"); builder.CloseElement();
+            builder.OpenElement(seq++, "th"); builder.AddContent(seq++, "Total flete"); builder.CloseElement();
+            builder.CloseElement();
+            builder.CloseElement();
+
+            builder.OpenElement(seq++, "tbody");
+            foreach (var item in resumen)
+            {
+                builder.OpenElement(seq++, "tr");
+                builder.OpenElement(seq++, "td"); builder.AddContent(seq++, item.ChoferCodigo); builder.CloseElement();
+                builder.OpenElement(seq++, "td"); builder.AddContent(seq++, item.ChoferNombre); builder.CloseElement();
+                builder.OpenElement(seq++, "td"); builder.AddContent(seq++, item.CantidadViajes); builder.CloseElement();
+                builder.OpenElement(seq++, "td"); builder.AddContent(seq++, item.TotalFlete.ToString("N2")); builder.CloseElement();
+                builder.CloseElement();
+            }
+            builder.CloseElement();
+            builder.CloseElement();
+            builder.CloseElement();
+        }
+
+        builder.OpenElement(seq++, "div");
+        builder.AddAttribute(seq++, "class", "usuarios-table-wrap");
+        builder.OpenElement(seq++, "table");
+        builder.AddAttribute(seq++, "class", "data-table");
+        builder.OpenElement(seq++, "thead");
+        builder.OpenElement(seq++, "tr");
+        builder.OpenElement(seq++, "th"); builder.AddContent(seq++, "Fecha"); builder.CloseElement();
+        builder.OpenElement(seq++, "th"); builder.AddContent(seq++, "Comprobante"); builder.CloseElement();
+        builder.OpenElement(seq++, "th"); builder.AddContent(seq++, "Chofer"); builder.CloseElement();
+        builder.OpenElement(seq++, "th"); builder.AddContent(seq++, "Cliente"); builder.CloseElement();
+        builder.OpenElement(seq++, "th"); builder.AddContent(seq++, "Destino"); builder.CloseElement();
+        builder.OpenElement(seq++, "th"); builder.AddContent(seq++, "Tipo vehículo"); builder.CloseElement();
+        builder.OpenElement(seq++, "th"); builder.AddContent(seq++, "Cantidad viajes"); builder.CloseElement();
+        builder.OpenElement(seq++, "th"); builder.AddContent(seq++, "Total flete"); builder.CloseElement();
+        builder.CloseElement();
+        builder.CloseElement();
+
+        builder.OpenElement(seq++, "tbody");
+        foreach (var row in rows)
+        {
+            builder.OpenElement(seq++, "tr");
+            builder.OpenElement(seq++, "td"); builder.AddContent(seq++, row.Fecha.ToString("dd/MM/yyyy")); builder.CloseElement();
+            builder.OpenElement(seq++, "td"); builder.AddContent(seq++, row.IdComprobante); builder.CloseElement();
+            builder.OpenElement(seq++, "td"); builder.AddContent(seq++, $"{row.ChoferCodigo} - {row.ChoferNombre}"); builder.CloseElement();
+            builder.OpenElement(seq++, "td"); builder.AddContent(seq++, $"{row.ClienteCodigo} - {row.ClienteNombre}"); builder.CloseElement();
+            builder.OpenElement(seq++, "td"); builder.AddContent(seq++, $"{row.DestinoCodigo} - {row.DestinoDescripcion}"); builder.CloseElement();
+            builder.OpenElement(seq++, "td"); builder.AddContent(seq++, $"{row.TipoVehiculoCodigo} - {row.TipoVehiculoDescripcion}"); builder.CloseElement();
+            builder.OpenElement(seq++, "td"); builder.AddContent(seq++, row.CantidadViajes); builder.CloseElement();
+            builder.OpenElement(seq++, "td"); builder.AddContent(seq++, row.TotalFlete.ToString("N2")); builder.CloseElement();
+            builder.CloseElement();
+        }
+        builder.CloseElement();
+        builder.CloseElement();
+        builder.CloseElement();
+    };
 
     private Task OnViajeClienteCreateRequestedAsync(string text)
     {
@@ -3555,7 +3649,8 @@
         {
             FechaDesde = firstDay,
             FechaHasta = lastDay,
-            TipoReporte = CargaViajesReporteTipoKeys.LiquidacionChoferes
+            IncluirChoferes = true,
+            IncluirFleteros = false
         };
     }
 
