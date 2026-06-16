@@ -29,6 +29,10 @@ public sealed class ConversacionesService(
     private static readonly ConcurrentDictionary<long, byte> MediaHydrationAttempts = new();
     private static readonly ConcurrentDictionary<long, byte> AttachmentRecoveryFailures = new();
     private static readonly ConcurrentDictionary<string, TypingPresence> TypingPresences = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly ConcurrentDictionary<string, DateTime> MaintenanceLastRunUtc = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly TimeSpan InboxMaintenanceInterval = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan InboxDuplicateMaintenanceInterval = TimeSpan.FromHours(6);
+    private static readonly TimeSpan ReadBaselineMaintenanceInterval = TimeSpan.FromMinutes(15);
     private static readonly string[] DebtSourceCandidates =
     [
         "VE_CPTES_SALDOS_VENTAS",
@@ -685,7 +689,9 @@ public sealed class ConversacionesService(
         => ExecuteLoggedAsync("Conversaciones", "GetInbox", async token =>
         {
             filters ??= new();
-            await AutoCloseExpiredOpenWhatsAppConversationsAsync(null, token);
+            if (ShouldRunMaintenance("AutoCloseExpiredOpenWhatsAppConversations", InboxMaintenanceInterval))
+                await AutoCloseExpiredOpenWhatsAppConversationsAsync(null, token);
+
             var items = new List<ConversacionInboxItemDto>();
             var searchPhone = NormalizePhone(filters.Search);
             var searchPhoneTail = GetPhoneComparableTail(searchPhone);
@@ -960,12 +966,19 @@ public sealed class ConversacionesService(
             await cn.OpenAsync(token);
             await EnsureConversationPinsTableAsync(cn, token);
             await EnsureConversationReadStateTableAsync(cn, token);
-            await EnsureConversationReadBaselinesAsync(cn, usuarioActual, sistemaActual, clienteCodigo, token);
+            if (ShouldRunMaintenance($"ReadBaselines:{usuarioActual}:{sistemaActual}:{clienteCodigo}", ReadBaselineMaintenanceInterval))
+                await EnsureConversationReadBaselinesAsync(cn, usuarioActual, sistemaActual, clienteCodigo, token);
+
             if (string.IsNullOrWhiteSpace(clienteCodigo))
             {
-                await LinkUnassociatedWhatsAppConversationsByPhoneAsync(cn, token);
-                await ConsolidateExistingDuplicateWhatsAppConversationsAsync(cn, token);
-                await ReopenClosedConversationsWithIncomingAfterCloseAsync(cn, null, token);
+                if (ShouldRunMaintenance("LinkUnassociatedWhatsAppConversationsByPhone", InboxMaintenanceInterval))
+                    await LinkUnassociatedWhatsAppConversationsByPhoneAsync(cn, token);
+
+                if (ShouldRunMaintenance("ConsolidateExistingDuplicateWhatsAppConversations", InboxDuplicateMaintenanceInterval))
+                    await ConsolidateExistingDuplicateWhatsAppConversationsAsync(cn, token);
+
+                if (ShouldRunMaintenance("ReopenClosedConversationsWithIncomingAfterClose", InboxMaintenanceInterval))
+                    await ReopenClosedConversationsWithIncomingAfterCloseAsync(cn, null, token);
             }
 
             await using var cmd = new SqlCommand(sql, cn);
@@ -5020,7 +5033,7 @@ public sealed class ConversacionesService(
                 FechaHora_Grabacion,
                 FechaHora_Modificacion
             )
-            SELECT
+            SELECT TOP (500)
                 @Usuario,
                 @Sistema,
                 c.IdConversacion,
@@ -5040,7 +5053,8 @@ public sealed class ConversacionesService(
                 FROM dbo.CONV_CONVERSACIONES_LECTURA_USUARIO r
                 WHERE r.Usuario = @Usuario
                   AND r.IdConversacion = c.IdConversacion
-            );
+            )
+            ORDER BY c.FechaHoraUltimoMensaje DESC, c.IdConversacion DESC;
             """;
 
         await using var cmd = new SqlCommand(sql, cn);
@@ -6439,6 +6453,18 @@ public sealed class ConversacionesService(
 
     private static string NormalizePinSystem(string? sistema)
         => (sistema ?? string.Empty).Trim().ToUpperInvariant();
+
+    private bool ShouldRunMaintenance(string operation, TimeSpan interval)
+    {
+        var key = $"{ConnectionString.GetHashCode(StringComparison.Ordinal)}:{operation}";
+        var now = DateTime.UtcNow;
+
+        if (MaintenanceLastRunUtc.TryGetValue(key, out var lastRun) && now - lastRun < interval)
+            return false;
+
+        MaintenanceLastRunUtc[key] = now;
+        return true;
+    }
 
     private static IReadOnlyList<ConversacionInboxItemDto> DeduplicateInboxItems(IReadOnlyList<ConversacionInboxItemDto> items)
     {

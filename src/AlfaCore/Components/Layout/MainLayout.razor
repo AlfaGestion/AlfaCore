@@ -1568,7 +1568,7 @@ else
 
     private async Task RunGlobalConversationPollingAsync(CancellationToken cancellationToken)
     {
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(3));
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(15));
         await PollGlobalConversationNotificationsAsync(cancellationToken);
 
         try
@@ -1584,6 +1584,7 @@ else
     private async Task PollGlobalConversationNotificationsAsync(CancellationToken cancellationToken)
     {
         if (!AppUserSession.IsAuthenticated
+            || IsDirectMode
             || string.Equals(_currentModule, "conversaciones", StringComparison.OrdinalIgnoreCase))
             return;
 
@@ -1599,7 +1600,7 @@ else
             {
                 Canal = "WHATSAPP",
                 Modo = "pendientes",
-                Limit = 50
+                Limit = 10
             }, cancellationToken);
 
             var newCount = 0;
