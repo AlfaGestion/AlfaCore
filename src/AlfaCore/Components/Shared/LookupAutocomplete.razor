@@ -8,16 +8,30 @@
         <label>@Label</label>
     }
 
-    <input type="text"
-           @ref="_inputRef"
-           class="lookup-autocomplete__input"
-           value="@Text"
-           @oninput="HandleInputAsync"
-           @onkeydown="HandleKeyDownAsync"
-           @onfocus="HandleFocusAsync"
-           disabled="@Disabled"
-           autocomplete="off"
-           placeholder="@Placeholder" />
+    <div class="lookup-autocomplete__input-wrap">
+        <input type="text"
+               @ref="_inputRef"
+               class="lookup-autocomplete__input"
+               value="@Text"
+               @oninput="HandleInputAsync"
+               @onkeydown="HandleKeyDownAsync"
+               @onfocus="HandleFocusAsync"
+               disabled="@Disabled"
+               autocomplete="off"
+               placeholder="@Placeholder" />
+        @if (!Disabled && !string.IsNullOrWhiteSpace(Text))
+        {
+            <button type="button"
+                    class="lookup-autocomplete__clear"
+                    title="Limpiar"
+                    aria-label="Limpiar búsqueda"
+                    @onmousedown:preventDefault="true"
+                    @onmousedown="ClearAsync"
+                    style="position:absolute;top:50%;right:.4rem;transform:translateY(-50%);width:1.45rem;height:1.45rem;min-width:1.45rem;min-height:1.45rem;padding:0;display:inline-flex;align-items:center;justify-content:center;z-index:3;appearance:none;-webkit-appearance:none;border:1px solid rgba(148,163,184,.34);border-radius:999px;background:linear-gradient(180deg, rgba(15,23,42,.98), rgba(30,41,59,.95));color:#e2e8f0;box-shadow:inset 0 1px 0 rgba(255,255,255,.04), 0 6px 14px rgba(2,6,23,.2);cursor:pointer;">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        }
+    </div>
 
     @if (_isOpen)
     {
@@ -49,19 +63,18 @@
                 {
                     var index = i;
                     var option = _items[index];
-                    <button type="button"
-                            class="@GetItemClass(index)"
-                            role="option"
-                            aria-selected="@(index == _highlightIndex)"
-                            @onmousedown="() => SelectAsync(option)">
-                        <span class="lookup-autocomplete__item-main">
-                            <span class="lookup-autocomplete__title">@BuildDisplayText(option)</span>
+                    <div class="@GetItemClass(index)"
+                         role="option"
+                         aria-selected="@(index == _highlightIndex)"
+                         @onmousedown="() => SelectAsync(option)">
+                        <div class="lookup-autocomplete__item-main">
+                            <div class="lookup-autocomplete__title">@BuildDisplayText(option)</div>
                             @if (!string.IsNullOrWhiteSpace(option.Subtitulo))
                             {
-                                <span class="lookup-autocomplete__subtitle">@option.Subtitulo</span>
+                                <div class="lookup-autocomplete__subtitle">@option.Subtitulo</div>
                             }
-                        </span>
-                    </button>
+                        </div>
+                    </div>
                 }
             }
         </div>
@@ -101,6 +114,16 @@
         Text = Convert.ToString(args.Value) ?? string.Empty;
         await TextChanged.InvokeAsync(Text);
         await SearchAsync(Text);
+    }
+
+    private async Task ClearAsync()
+    {
+        Text = string.Empty;
+        await TextChanged.InvokeAsync(Text);
+        CloseDropdown();
+        await InvokeAsync(StateHasChanged);
+        if (!Disabled)
+            await _inputRef.FocusAsync(preventScroll: true);
     }
 
     private async Task HandleFocusAsync(FocusEventArgs _)

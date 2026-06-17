@@ -94,15 +94,15 @@
                     </div>
                     <div class="field">
                         <label>Cliente</label>
-                        <LookupAutocomplete Label="" Placeholder="Buscar cliente..." Text="@_clienteFiltroTexto" TextChanged="OnClienteFiltroTextoChangedAsync" SelectedChanged="OnClienteSeleccionadoAsync" SearchFunc="CargaViajesSvc.SearchClientesAsync" />
+                        <LookupAutocomplete Label="" Placeholder="Buscar cliente..." Text="@_clienteFiltroTexto" TextChanged="OnClienteFiltroTextoChangedAsync" SelectedChanged="OnClienteSeleccionadoAsync" OnEnterCommitted="AplicarFiltrosViajesAsync" SearchFunc="CargaViajesSvc.SearchClientesAsync" />
                     </div>
                     <div class="field">
                         <label>Chofer</label>
-                        <LookupAutocomplete Label="" Placeholder="Buscar chofer..." Text="@_choferFiltroTexto" TextChanged="OnChoferFiltroTextoChangedAsync" SelectedChanged="OnChoferSeleccionadoAsync" SearchFunc="CargaViajesSvc.SearchChoferLookupAsync" />
+                        <LookupAutocomplete Label="" Placeholder="Buscar chofer..." Text="@_choferFiltroTexto" TextChanged="OnChoferFiltroTextoChangedAsync" SelectedChanged="OnChoferSeleccionadoAsync" OnEnterCommitted="AplicarFiltrosViajesAsync" SearchFunc="CargaViajesSvc.SearchChoferLookupAsync" />
                     </div>
                     <div class="field">
                         <label>Destino</label>
-                        <LookupAutocomplete Label="" Placeholder="Buscar destino..." Text="@_destinoFiltroTexto" TextChanged="OnDestinoFiltroTextoChangedAsync" SelectedChanged="OnDestinoSeleccionadoAsync" SearchFunc="CargaViajesSvc.SearchDestinosLookupAsync" />
+                        <LookupAutocomplete Label="" Placeholder="Buscar destino..." Text="@_destinoFiltroTexto" TextChanged="OnDestinoFiltroTextoChangedAsync" SelectedChanged="OnDestinoSeleccionadoAsync" OnEnterCommitted="AplicarFiltrosViajesAsync" SearchFunc="CargaViajesSvc.SearchDestinosLookupAsync" />
                     </div>
                     <div class="field">
                         <label>Estado</label>
@@ -207,7 +207,12 @@
                             <tr>
                                 @foreach (var column in visibleColumns)
                                 {
-                                    <th>@column.Label</th>
+                                    <th>
+                                        <button type="button" class="carga-viajes-sort-button" @onclick="() => SortViajesAsync(column.Key)">
+                                            <span>@column.Label</span>
+                                            <i class="bi @GetSortIcon(_viajesFilters, column.Key)"></i>
+                                        </button>
+                                    </th>
                                 }
                                 <th>Acciones</th>
                             </tr>
@@ -267,16 +272,42 @@
             <div class="carga-viajes-toolbar">
                 <div class="field field--wide carga-viajes-toolbar__search">
                     <label>Búsqueda general</label>
-                    <input type="search" @bind="_tarifasFilters.Texto" @bind:event="oninput" />
+                    <input type="search" @bind="_tarifasFilters.Texto" @bind:event="oninput" @onkeydown="HandleTarifasSearchKeyDownAsync" />
                 </div>
                 <div class="carga-viajes-toolbar__actions">
-                    <button type="button"
-                            class="carga-viajes-check carga-viajes-quick-edit-toggle @(_tarifasQuickImportEditMode ? "carga-viajes-check--active" : string.Empty)"
-                            aria-pressed="@_tarifasQuickImportEditMode"
-                            @onclick="ToggleTarifasQuickImportEditModeAsync">
-                        <span class="carga-viajes-check__text">Editar solo importes</span>
-                        <span class="carga-viajes-check__pill" aria-hidden="true"></span>
-                    </button>
+                    <div class="carga-viajes-tarifas__filter-frame">
+                        <span class="carga-viajes-tarifas__filter-title">Ver tarifas</span>
+                        <div class="carga-viajes-tarifas__filter-inner">
+                            <label class="carga-viajes-checkbox carga-viajes-quick-edit-toggle @(_tarifasQuickImportEditMode ? "carga-viajes-check--active" : string.Empty)">
+                                <input type="checkbox"
+                                       class="carga-viajes-checkbox__input"
+                                       checked="@_tarifasQuickImportEditMode"
+                                       @onchange="async _ => await ToggleTarifasQuickImportEditModeAsync()" />
+                                <span class="carga-viajes-checkbox__box" aria-hidden="true"></span>
+                                <span class="carga-viajes-checkbox__label">Editar solo importes</span>
+                            </label>
+                            <div class="carga-viajes-tarifas__type-filter carga-viajes-reportes__chips" role="group" aria-label="Tipo tarifa">
+                                <button type="button"
+                                        class="carga-viajes-filter-pill @(!HasTarifaFleteroFilter() ? "carga-viajes-filter-pill--active" : string.Empty)"
+                                        aria-pressed="@(!HasTarifaFleteroFilter())"
+                                        @onclick="SetTarifasTipoTodasAsync">
+                                    Todas
+                                </button>
+                                <button type="button"
+                                        class="carga-viajes-filter-pill @(_tarifasFilters.TarifaFletero == "0" ? "carga-viajes-filter-pill--active" : string.Empty)"
+                                        aria-pressed="@(_tarifasFilters.TarifaFletero == "0")"
+                                        @onclick="SetTarifasTipoClientesAsync">
+                                    Clientes
+                                </button>
+                                <button type="button"
+                                        class="carga-viajes-filter-pill @(_tarifasFilters.TarifaFletero == "1" ? "carga-viajes-filter-pill--active" : string.Empty)"
+                                        aria-pressed="@(_tarifasFilters.TarifaFletero == "1")"
+                                        @onclick="SetTarifasTipoFleterosAsync">
+                                    Fleteros
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                     <button type="button" class="btn btn--ghost btn--sm" @onclick="ToggleTarifasAdvancedFilters" aria-expanded="@_showTarifasAdvancedFilters" aria-controls="carga-viajes-tarifas-filtros-avanzados">
                         @(_showTarifasAdvancedFilters ? "Ocultar filtros" : "Filtros")
                     </button>
@@ -290,27 +321,19 @@
                 <div id="carga-viajes-tarifas-filtros-avanzados" class="carga-viajes-advanced-grid">
                     <div class="field">
                         <label>Cliente</label>
-                        <LookupAutocomplete Label="" Placeholder="Buscar cliente..." Text="@_tarifasFilters.Cliente" TextChanged="OnTarifaClienteFiltroChangedAsync" SelectedChanged="OnTarifaClienteFiltroSelectedAsync" SearchFunc="CargaViajesSvc.SearchClientesAsync" />
+                        <LookupAutocomplete Label="" Placeholder="Buscar cliente..." Text="@_tarifasFilters.Cliente" TextChanged="OnTarifaClienteFiltroChangedAsync" SelectedChanged="OnTarifaClienteFiltroSelectedAsync" OnEnterCommitted="AplicarFiltrosTarifasAsync" SearchFunc="CargaViajesSvc.SearchClientesAsync" />
                     </div>
                     <div class="field">
                         <label>Chofer</label>
-                        <LookupAutocomplete Label="" Placeholder="Buscar chofer..." Text="@_tarifasFilters.Chofer" TextChanged="OnTarifaChoferFiltroChangedAsync" SelectedChanged="OnTarifaChoferFiltroSelectedAsync" SearchFunc="CargaViajesSvc.SearchChoferLookupAsync" />
+                        <LookupAutocomplete Label="" Placeholder="Buscar chofer..." Text="@_tarifasFilters.Chofer" TextChanged="OnTarifaChoferFiltroChangedAsync" SelectedChanged="OnTarifaChoferFiltroSelectedAsync" OnEnterCommitted="AplicarFiltrosTarifasAsync" SearchFunc="CargaViajesSvc.SearchChoferLookupAsync" />
                     </div>
                     <div class="field">
                         <label>Destino</label>
-                        <LookupAutocomplete Label="" Placeholder="Buscar destino..." Text="@_tarifasFilters.Destino" TextChanged="OnTarifaDestinoFiltroChangedAsync" SelectedChanged="OnTarifaDestinoFiltroSelectedAsync" SearchFunc="CargaViajesSvc.SearchDestinosLookupAsync" />
+                        <LookupAutocomplete Label="" Placeholder="Buscar destino..." Text="@_tarifasFilters.Destino" TextChanged="OnTarifaDestinoFiltroChangedAsync" SelectedChanged="OnTarifaDestinoFiltroSelectedAsync" OnEnterCommitted="AplicarFiltrosTarifasAsync" SearchFunc="CargaViajesSvc.SearchDestinosLookupAsync" />
                     </div>
                     <div class="field">
                         <label>Tipo vehículo</label>
-                        <LookupAutocomplete Label="" Placeholder="Buscar tipo..." Text="@_tarifasFilters.TipoVehiculo" TextChanged="OnTarifaTipoVehiculoFiltroChangedAsync" SelectedChanged="OnTarifaTipoVehiculoFiltroSelectedAsync" SearchFunc="CargaViajesSvc.SearchTipoVehiculosLookupAsync" />
-                    </div>
-                    <div class="field">
-                        <label>Tarifa fletero</label>
-                        <select @bind="_tarifasFilters.TarifaFletero">
-                            <option value="">Todas</option>
-                            <option value="0">Cliente</option>
-                            <option value="1">Fletero</option>
-                        </select>
+                        <LookupAutocomplete Label="" Placeholder="Buscar tipo..." Text="@_tarifasFilters.TipoVehiculo" TextChanged="OnTarifaTipoVehiculoFiltroChangedAsync" SelectedChanged="OnTarifaTipoVehiculoFiltroSelectedAsync" OnEnterCommitted="AplicarFiltrosTarifasAsync" SearchFunc="CargaViajesSvc.SearchTipoVehiculosLookupAsync" />
                     </div>
                     <div class="field">
                         <label>Activo</label>
@@ -345,7 +368,14 @@
                     <table class="data-table">
                         <thead>
                             <tr>
-                                <th>Nombre</th><th>Tipo tarifa</th><th>Cliente / Chofer</th><th>Destino</th><th>Tipo vehículo</th><th>Importe</th><th>Activo</th><th>Acciones</th>
+                                <th><button type="button" class="carga-viajes-sort-button" @onclick="() => SortTarifasAsync(SortKeyNombre)"><span>Nombre</span><i class="bi @GetSortIcon(_tarifasFilters, SortKeyNombre)"></i></button></th>
+                                <th><button type="button" class="carga-viajes-sort-button" @onclick="() => SortTarifasAsync(SortKeyTipoTarifa)"><span>Tipo tarifa</span><i class="bi @GetSortIcon(_tarifasFilters, SortKeyTipoTarifa)"></i></button></th>
+                                <th><button type="button" class="carga-viajes-sort-button" @onclick="() => SortTarifasAsync(SortKeyCliente)"><span>Cliente / Chofer</span><i class="bi @GetSortIcon(_tarifasFilters, SortKeyCliente)"></i></button></th>
+                                <th><button type="button" class="carga-viajes-sort-button" @onclick="() => SortTarifasAsync(SortKeyDestino)"><span>Destino</span><i class="bi @GetSortIcon(_tarifasFilters, SortKeyDestino)"></i></button></th>
+                                <th><button type="button" class="carga-viajes-sort-button" @onclick="() => SortTarifasAsync(SortKeyTipoVehiculo)"><span>Tipo vehículo</span><i class="bi @GetSortIcon(_tarifasFilters, SortKeyTipoVehiculo)"></i></button></th>
+                                <th><button type="button" class="carga-viajes-sort-button" @onclick="() => SortTarifasAsync(SortKeyImporte)"><span>Importe</span><i class="bi @GetSortIcon(_tarifasFilters, SortKeyImporte)"></i></button></th>
+                                <th><button type="button" class="carga-viajes-sort-button" @onclick="() => SortTarifasAsync(SortKeyActivo)"><span>Activo</span><i class="bi @GetSortIcon(_tarifasFilters, SortKeyActivo)"></i></button></th>
+                                <th>Acciones</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -355,8 +385,8 @@
                                     <td>@item.row.Nombre</td>
                                     <td>@(item.row.TarifaFletero ? "Fletero" : "Cliente")</td>
                                     <td>@GetTarifaEntidadDisplay(item.row)</td>
-                                    <td>@item.row.Destino</td>
-                                    <td>@item.row.TipoVehiculo</td>
+                                    <td>@ExtractVisibleText(item.row.Destino)</td>
+                                    <td>@ExtractVisibleText(item.row.TipoVehiculo)</td>
                                     <td class="@GetTarifaImporteCellClass(item.row)" @onclick:stopPropagation="_tarifasQuickImportEditMode" @ondblclick:stopPropagation="_tarifasQuickImportEditMode">
                                         @if (_tarifasQuickImportEditMode && _tarifasQuickImportEditId == item.row.Id && item.row.Id > 0)
                                         {
@@ -394,6 +424,13 @@
                     </table>
                 </div>
             }
+            <div class="result-pagination">
+                <div class="result-pagination__info">Total: @_tarifasTotal · Página @_tarifasPage de @_tarifasTotalPages</div>
+                <div class="result-pagination__controls">
+                    <button class="result-pagination__btn" @onclick="() => CambiarPaginaTarifasAsync(_tarifasPage - 1)" disabled="@(_tarifasPage <= 1)">Anterior</button>
+                    <button class="result-pagination__btn" @onclick="() => CambiarPaginaTarifasAsync(_tarifasPage + 1)" disabled="@(_tarifasPage >= _tarifasTotalPages)">Siguiente</button>
+                </div>
+            </div>
         </section>
 
         @if (_showTarifaEditor)
@@ -410,6 +447,20 @@
                         </button>
                     </header>
                     <div class="cuentas-modal__body">
+                        @if (_tarifaEditorFeedback is not null)
+                        {
+                            <div class="editor-msg carga-viajes-feedback__box @GetFeedbackClass(_tarifaEditorFeedback)">
+                                <div class="carga-viajes-feedback__content">
+                                    @if (ShouldShowFeedbackTitle(_tarifaEditorFeedback))
+                                    {
+                                        <strong class="carga-viajes-feedback__title">@_tarifaEditorFeedback.Title</strong>
+                                    }
+                                    <div class="carga-viajes-feedback__line">
+                                        <span>@FormatFeedbackMessage(_tarifaEditorFeedback)</span>
+                                    </div>
+                                </div>
+                            </div>
+                        }
                         <div class="carga-viajes-form-grid carga-viajes-tarifa-editor__grid">
                             <div class="field field--wide">
                                 <label>Tipo de tarifa</label>
@@ -582,7 +633,7 @@
                     <div class="field"><label>Activo</label><select @bind="_choferesFilters.Activo"><option value="">Todos</option><option value="1">Activo</option><option value="0">Desactivado</option></select></div>
                     <div class="field"><label>Disponible</label><select @bind="_choferesFilters.Disponible"><option value="">Todos</option><option value="1">Disponible</option><option value="0">No disponible</option></select></div>
                     <div class="field"><label>Es fletero</label><select @bind="_choferesFilters.EsFletero"><option value="">Todos</option><option value="1">Fletero</option><option value="0">No fletero</option></select></div>
-                    <div class="field"><label>Tipo vehículo</label><LookupAutocomplete Label="" Placeholder="Buscar tipo..." Text="@_choferesTipoVehiculoTexto" TextChanged="OnChoferTipoVehiculoChangedAsync" SelectedChanged="OnChoferTipoVehiculoSelectedAsync" SearchFunc="CargaViajesSvc.SearchTipoVehiculosLookupAsync" /></div>
+                    <div class="field"><label>Tipo vehículo</label><LookupAutocomplete Label="" Placeholder="Buscar tipo..." Text="@_choferesTipoVehiculoTexto" TextChanged="OnChoferTipoVehiculoChangedAsync" SelectedChanged="OnChoferTipoVehiculoSelectedAsync" OnEnterCommitted="AplicarFiltrosChoferesAsync" SearchFunc="CargaViajesSvc.SearchTipoVehiculosLookupAsync" /></div>
                 </div>
             }
         </section>
@@ -593,7 +644,16 @@
             </div>
             <div class="usuarios-table-wrap">
                 <table class="data-table">
-                    <thead><tr><th>Código</th><th>Nombre</th><th>Activo</th><th>Disponible</th><th>Es fletero</th><th>Acciones</th></tr></thead>
+                    <thead>
+                        <tr>
+                            <th><button type="button" class="carga-viajes-sort-button" @onclick="() => SortChoferesAsync(SortKeyCodigo)"><span>Código</span><i class="bi @GetSortIcon(_choferesFilters, SortKeyCodigo)"></i></button></th>
+                            <th><button type="button" class="carga-viajes-sort-button" @onclick="() => SortChoferesAsync(SortKeyNombre)"><span>Nombre</span><i class="bi @GetSortIcon(_choferesFilters, SortKeyNombre)"></i></button></th>
+                            <th><button type="button" class="carga-viajes-sort-button" @onclick="() => SortChoferesAsync(SortKeyActivo)"><span>Activo</span><i class="bi @GetSortIcon(_choferesFilters, SortKeyActivo)"></i></button></th>
+                            <th><button type="button" class="carga-viajes-sort-button" @onclick="() => SortChoferesAsync(SortKeyDisponible)"><span>Disponible</span><i class="bi @GetSortIcon(_choferesFilters, SortKeyDisponible)"></i></button></th>
+                            <th><button type="button" class="carga-viajes-sort-button" @onclick="() => SortChoferesAsync(SortKeyEsFletero)"><span>Es fletero</span><i class="bi @GetSortIcon(_choferesFilters, SortKeyEsFletero)"></i></button></th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
                     <tbody>
                                 @foreach (var row in _choferes)
                                 {
@@ -683,7 +743,14 @@
             </div>
             <div class="usuarios-table-wrap">
                 <table class="data-table">
-                    <thead><tr><th>Código</th><th>Descripción</th><th>Activo</th><th>Acciones</th></tr></thead>
+                    <thead>
+                        <tr>
+                            <th><button type="button" class="carga-viajes-sort-button" @onclick="() => SortDestinosAsync(SortKeyCodigo)"><span>Código</span><i class="bi @GetSortIcon(_destinosFilters, SortKeyCodigo)"></i></button></th>
+                            <th><button type="button" class="carga-viajes-sort-button" @onclick="() => SortDestinosAsync(SortKeyDescripcion)"><span>Descripción</span><i class="bi @GetSortIcon(_destinosFilters, SortKeyDescripcion)"></i></button></th>
+                            <th><button type="button" class="carga-viajes-sort-button" @onclick="() => SortDestinosAsync(SortKeyActivo)"><span>Activo</span><i class="bi @GetSortIcon(_destinosFilters, SortKeyActivo)"></i></button></th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
                     <tbody>
                         @foreach (var row in _destinos)
                         {
@@ -806,7 +873,12 @@
                             <tr>
                                 @foreach (var column in visibleColumns)
                                 {
-                                    <th>@column.Label</th>
+                                    <th>
+                                        <button type="button" class="carga-viajes-sort-button" @onclick="() => SortTipoVehiculosAsync(column.Key)">
+                                            <span>@column.Label</span>
+                                            <i class="bi @GetSortIcon(_tipoVehiculosFilters, column.Key)"></i>
+                                        </button>
+                                    </th>
                                 }
                                 <th>Acciones</th>
                             </tr>
@@ -1488,7 +1560,21 @@
                 </header>
 
                 <div class="cuentas-modal__body">
-                    <div class="carga-viajes-form-grid" @oninput="MarkViajeDirty" @onchange="MarkViajeDirty">
+                    @if (_viajeEditorFeedback is not null)
+                    {
+                        <div class="editor-msg carga-viajes-feedback__box @GetFeedbackClass(_viajeEditorFeedback)">
+                            <div class="carga-viajes-feedback__content">
+                                @if (ShouldShowFeedbackTitle(_viajeEditorFeedback))
+                                {
+                                    <strong class="carga-viajes-feedback__title">@_viajeEditorFeedback.Title</strong>
+                                }
+                                <div class="carga-viajes-feedback__line">
+                                    <span>@FormatFeedbackMessage(_viajeEditorFeedback)</span>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                    <div class="carga-viajes-form-grid carga-viajes-form-grid--viaje" @oninput="MarkViajeDirty" @onchange="MarkViajeDirty">
                         <div class="field">
                             <label>Fecha</label>
                             <InputDate @bind-Value="_viajeForm.Fecha" disabled="@_viajeReadOnly" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusViajeClienteAsync)" />
@@ -1509,87 +1595,89 @@
                             <label>Tipo vehículo</label>
                             <LookupAutocomplete @ref="_viajeTipoVehiculoLookup" Label="" Placeholder="Buscar tipo..." Text="@_viajeTipoVehiculoTexto" TextChanged="OnViajeTipoVehiculoTextoChangedAsync" SelectedChanged="OnViajeTipoVehiculoSelectedAsync" OnEnterCommitted="FocusViajeImporteClienteAsync" OnCreateRequested="OnViajeTipoVehiculoCreateRequestedAsync" SearchFunc="CargaViajesSvc.SearchTipoVehiculosLookupAsync" Disabled="@_viajeReadOnly" />
                         </div>
-                        <div class="field">
-                            <label>Lista</label>
-                            <LookupAutocomplete Label=""
-                                                Placeholder="Buscar tarifa..."
-                                                Text="@_viajeListaTexto"
-                                                TextChanged="OnViajeListaTextoChangedAsync"
-                                                SelectedChanged="OnViajeTarifaSeleccionadaAsync"
-                                                OnEnterCommitted="FocusViajeImporteClienteAsync"
-                                                SearchFunc="CargaViajesSvc.SearchTarifasLookupAsync"
-                                                Disabled="@_viajeReadOnly" />
+                    </div>
+                    <div class="carga-viajes-viaje-secondary">
+                        <div class="carga-viajes-viaje-secondary__money">
+                            <div class="field carga-viajes-viaje__importe">
+                                <label>Importe cliente</label>
+                                <input @ref="_viajeImporteClienteInput" type="number" step="0.01" @bind="_viajeForm.ImporteCliente" disabled="@_viajeReadOnly" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusViajeImporteFleteroAsync)" />
+                            </div>
+                            <div class="field carga-viajes-viaje__importe">
+                                <label>Importe fletero</label>
+                                <input @ref="_viajeImporteFleteroInput" type="number" step="0.01" @bind="_viajeForm.ImporteFletero" disabled="@_viajeReadOnly" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusViajePeajeAsync)" />
+                            </div>
+                            <div class="field">
+                                <label>Peaje</label>
+                                <input @ref="_viajePeajeInput" type="number" step="0.01" @bind="_viajeForm.Peaje" disabled="@_viajeReadOnly" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusViajeCantidadViajesAsync)" />
+                            </div>
+                            <div class="field">
+                                <label>Cantidad viajes</label>
+                                <input @ref="_viajeCantidadViajesInput" type="number" step="1" @bind="_viajeForm.CantidadViajes" disabled="@_viajeReadOnly" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusViajeAdicional0Async)" />
+                            </div>
                         </div>
-                        <div class="field">
-                            <label>Importe cliente</label>
-                            <input @ref="_viajeImporteClienteInput" type="number" step="0.01" @bind="_viajeForm.ImporteCliente" disabled="@_viajeReadOnly" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusViajeImporteFleteroAsync)" />
+
+                        <div class="field field--wide carga-viajes-viaje__tarifa-aplicada">
+                            <span class="carga-viajes-viaje__tarifa-label">Tarifa aplicada</span>
+                            <strong>@GetViajeTarifaAplicadaTexto()</strong>
                         </div>
-                        <div class="field">
-                            <label>Importe fletero</label>
-                            <input @ref="_viajeImporteFleteroInput" type="number" step="0.01" @bind="_viajeForm.ImporteFletero" disabled="@_viajeReadOnly" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusViajePeajeAsync)" />
-                        </div>
-                        <div class="field">
-                            <label>Peaje</label>
-                            <input @ref="_viajePeajeInput" type="number" step="0.01" @bind="_viajeForm.Peaje" disabled="@_viajeReadOnly" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusViajeCantidadViajesAsync)" />
-                        </div>
-                        <div class="field">
-                            <label>Cantidad viajes</label>
-                            <input @ref="_viajeCantidadViajesInput" type="number" step="1" @bind="_viajeForm.CantidadViajes" disabled="@_viajeReadOnly" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusViajeAdicional0Async)" />
-                        </div>
+
                         <div class="field field--wide carga-viajes-adicionales">
                             <label>Adicionales generales</label>
-                            <div class="carga-viajes-adicionales__list">
+                            <div class="carga-viajes-adicionales__simple-list">
                                 @for (var i = 0; i < GetAdicionalesHabilitadosCount(); i++)
                                 {
                                     var index = i;
-                                    <button type="button"
-                                            class="carga-viajes-adicionales__item @(GetViajeAdicionalChecked(index) ? "carga-viajes-adicionales__item--active" : string.Empty)"
-                                            aria-pressed="@GetViajeAdicionalChecked(index)"
-                                            disabled="@_viajeReadOnly"
-                                            @onclick="() => ToggleViajeAdicionalAsync(index)">
-                                        <span class="carga-viajes-adicionales__check" aria-hidden="true">
-                                            <i class="bi @(GetViajeAdicionalChecked(index) ? "bi-check-lg" : "bi-plus-lg")"></i>
+                                    <label class="carga-viajes-adicionales__simple-item @(GetViajeAdicionalChecked(index) ? "carga-viajes-adicionales__simple-item--active" : string.Empty)">
+                                        <input type="checkbox"
+                                               checked="@GetViajeAdicionalChecked(index)"
+                                               disabled="@_viajeReadOnly"
+                                               @onchange="args => OnViajeAdicionalChangedAsync(index, args)" />
+                                        <span class="carga-viajes-adicionales__simple-main">
+                                            <span class="carga-viajes-adicionales__simple-name">@GetAdicionalLabel(index)</span>
+                                            <span class="carga-viajes-adicionales__simple-percent">@GetViajeAdicionalPercentText(index)</span>
                                         </span>
-                                        <span class="carga-viajes-adicionales__content">
-                                            <span class="carga-viajes-adicionales__name">@GetAdicionalLabel(index)</span>
-                                            <span class="carga-viajes-adicionales__percent">@GetViajeAdicionalPercentText(index)</span>
-                                            <span class="carga-viajes-adicionales__amount">+@GetViajeAdicionalImporte(index).ToString("C2")</span>
-                                        </span>
-                                    </button>
+                                        <span class="carga-viajes-adicionales__simple-amount">+@GetViajeAdicionalImporte(index).ToString("C2")</span>
+                                    </label>
                                 }
                             </div>
 
                             <label class="carga-viajes-adicionales__section-label">Adicionales de tarifa</label>
-                            <div class="carga-viajes-adicionales__list carga-viajes-adicionales__list--fixed">
+                            <div class="carga-viajes-adicionales__simple-list carga-viajes-adicionales__simple-list--fixed">
                                 @for (var i = 0; i < 3; i++)
                                 {
                                     if (!GetViajeAdicionalFijoVisible(i))
                                         continue;
                                     var index = i;
-                                    <button type="button"
-                                            class="carga-viajes-adicionales__item carga-viajes-adicionales__item--fixed @(GetViajeAdicionalFijoChecked(index) ? "carga-viajes-adicionales__item--active" : string.Empty)"
-                                            aria-pressed="@GetViajeAdicionalFijoChecked(index)"
-                                            disabled="@_viajeReadOnly"
-                                            @onclick="() => ToggleViajeAdicionalFijoAsync(index)">
-                                        <span class="carga-viajes-adicionales__check" aria-hidden="true">
-                                            <i class="bi @(GetViajeAdicionalFijoChecked(index) ? "bi-check-lg" : "bi-plus-lg")"></i>
+                                    <label class="carga-viajes-adicionales__simple-item carga-viajes-adicionales__simple-item--fixed @(GetViajeAdicionalFijoChecked(index) ? "carga-viajes-adicionales__simple-item--active" : string.Empty)">
+                                        <input type="checkbox"
+                                               checked="@GetViajeAdicionalFijoChecked(index)"
+                                               disabled="@_viajeReadOnly"
+                                               @onchange="async _ => await ToggleViajeAdicionalFijoAsync(index)" />
+                                        <span class="carga-viajes-adicionales__simple-main">
+                                            <span class="carga-viajes-adicionales__simple-name">@GetViajeAdicionalFijoDescripcion(index)</span>
+                                            <span class="carga-viajes-adicionales__simple-percent">Importe fijo</span>
                                         </span>
-                                        <span class="carga-viajes-adicionales__content">
-                                            <span class="carga-viajes-adicionales__name">@GetViajeAdicionalFijoDescripcion(index)</span>
-                                            <span class="carga-viajes-adicionales__percent">+@GetViajeAdicionalFijoImporte(index).ToString("C2")</span>
-                                            <span class="carga-viajes-adicionales__amount">Se suma al total si lo tildás</span>
-                                        </span>
-                                    </button>
+                                        <span class="carga-viajes-adicionales__simple-amount">+@GetViajeAdicionalFijoImporte(index).ToString("C2")</span>
+                                    </label>
                                 }
                             </div>
 
-                            <div class="carga-viajes-adicionales__totals">
-                                <div class="carga-viajes-adicionales__total">Adicionales generales: @(GetViajeTotalAdicionalesGenerales().ToString("C2"))</div>
-                                <div class="carga-viajes-adicionales__total">Adicionales de tarifa: @(GetViajeTotalAdicionalesFijos().ToString("C2"))</div>
-                                <div class="carga-viajes-adicionales__total">Total adicionales: @((GetViajeTotalAdicionalesGenerales() + GetViajeTotalAdicionalesFijos()).ToString("C2"))</div>
-                                <div class="carga-viajes-adicionales__total carga-viajes-adicionales__total--grand">Total viaje: @(GetViajeTotalViaje().ToString("C2"))</div>
+                            <div class="carga-viajes-viaje__totals">
+                                <div class="carga-viajes-viaje__total-card">
+                                    <span>Total Cliente</span>
+                                    <strong>@GetViajeTotalCliente().ToString("C2")</strong>
+                                </div>
+                                <div class="carga-viajes-viaje__total-card">
+                                    <span>Total Fletero</span>
+                                    <strong>@GetViajeTotalFletero().ToString("C2")</strong>
+                                </div>
+                                <div class="carga-viajes-viaje__total-card carga-viajes-viaje__total-card--result">
+                                    <span>Resultado</span>
+                                    <strong>@GetViajeResultado().ToString("C2")</strong>
+                                </div>
                             </div>
                         </div>
+
                         <div class="field field--wide"><label>Observaciones</label><textarea @ref="_viajeObservacionesInput" rows="4" @bind="_viajeForm.Observaciones" disabled="@_viajeReadOnly"></textarea></div>
                     </div>
                 </div>
@@ -1675,11 +1763,33 @@
     private const string SectionLiquidaciones = "liquidaciones";
     private const string SectionConfiguracion = "configuracion";
     private const string PendingCloseTitle = "Cambios sin guardar";
+    private const string SortKeyFecha = "fecha";
+    private const string SortKeyIdComprobante = "idcomprobante";
+    private const string SortKeyCliente = "cliente";
+    private const string SortKeyDestino = "destino";
+    private const string SortKeyChofer = "chofer";
+    private const string SortKeyTipoVehiculo = "tipovehiculo";
+    private const string SortKeyTotalCliente = "totalcliente";
+    private const string SortKeyTotalFletero = "totalfletero";
+    private const string SortKeyEstado = "estado";
+    private const string SortKeyUsuario = "usuario";
+    private const string SortKeyAlta = "alta";
+    private const string SortKeyId = "id";
+    private const string SortKeyNombre = "nombre";
+    private const string SortKeyTipoTarifa = "tipotarifa";
+    private const string SortKeyImporte = "importe";
+    private const string SortKeyCodigo = "codigo";
+    private const string SortKeyDescripcion = "descripcion";
+    private const string SortKeyActivo = "activo";
+    private const string SortKeyDisponible = "disponible";
+    private const string SortKeyEsFletero = "esfletero";
+    private const string SortKeyIdLista = "idlista";
 
     private string _activeSection = SectionViajes;
     private string _lastMessageSection = SectionViajes;
     private AppUiMessage? _feedback;
     private AppUiMessage? _viajeEditorFeedback;
+    private bool _viajesSchemaLoaded;
     private CancellationTokenSource? _feedbackAutoClearCts;
     private CargaViajesLookupDto _lookups = new();
     private CargaViajesFilters _viajesFilters = new();
@@ -1795,6 +1905,8 @@
 
     private readonly List<CargaViajeTarifaGridItemDto> _tarifas = [];
     private int _tarifasTotal;
+    private int _tarifasPage = 1;
+    private int _tarifasTotalPages = 1;
     private CargaViajesFilters _tarifasFilters = new() { PageNumber = 1, PageSize = 50 };
     private bool _tarifasLoading = true;
     private bool _tarifasQuickImportEditMode;
@@ -1806,6 +1918,7 @@
     private bool _isNewTarifa = true;
     private CargaViajeTarifaSaveRequest _tarifaForm = new();
     private string _tarifaOriginalIdLista = string.Empty;
+    private AppUiMessage? _tarifaEditorFeedback;
 
     private readonly List<CargaViajeChoferGridItemDto> _choferes = [];
     private int _choferesTotal;
@@ -1847,7 +1960,27 @@
         await EnsureViewSettingsLoadedAsync();
         await EnsureTipoVehiculoSchemaLoadedAsync();
         await EnsureConfigLoadedAsync();
+        if (!await EnsureViajesSchemaLoadedAsync())
+            return;
         await LoadActiveSectionAsync();
+    }
+
+    private async Task<bool> EnsureViajesSchemaLoadedAsync()
+    {
+        if (_viajesSchemaLoaded)
+            return true;
+
+        var result = await UiOps.RunAsync(
+            () => CargaViajesSvc.EnsureViajesSchemaAsync(),
+            "No se pudo verificar la estructura del módulo Viajes.");
+        if (!result.Success)
+        {
+            SetFeedback(result.Feedback);
+            return false;
+        }
+
+        _viajesSchemaLoaded = true;
+        return true;
     }
 
     private async Task LoadActiveSectionAsync()
@@ -2007,7 +2140,9 @@
 
     private async Task LimpiarFiltrosViajesAsync()
     {
-        _viajesFilters = new CargaViajesFilters { PageNumber = 1, PageSize = 50 };
+        var sortBy = _viajesFilters.SortBy;
+        var sortDescending = _viajesFilters.SortDescending;
+        _viajesFilters = new CargaViajesFilters { PageNumber = 1, PageSize = 50, SortBy = sortBy, SortDescending = sortDescending };
         _clienteFiltroTexto = string.Empty;
         _choferFiltroTexto = string.Empty;
         _destinoFiltroTexto = string.Empty;
@@ -2107,6 +2242,7 @@
         catch (AppValidationException validationEx)
         {
             var message = BuildValidationFeedback(validationEx);
+            _viajeEditorFeedback = message;
             await AppDialogs.ShowMessageAsync(
                 message.Severity,
                 message.Title,
@@ -2115,7 +2251,8 @@
         }
         catch (Exception ex)
         {
-            var message = UiOps.BuildMessage(ex, "No se pudo guardar el viaje.");
+            var message = UiOps.BuildMessage(ex, "No se pudo guardar el viaje. Se registró el detalle técnico.");
+            _viajeEditorFeedback = message;
             await AppDialogs.ShowMessageAsync(
                 message.Severity,
                 message.Title,
@@ -2284,6 +2421,19 @@
         return string.IsNullOrWhiteSpace(display) ? string.Empty : display;
     }
 
+    private string GetViajeTarifaAplicadaTexto()
+    {
+        var display = (_viajeForm.ListaDisplay ?? string.Empty).Trim();
+        if (!string.IsNullOrWhiteSpace(display))
+            return display;
+
+        var lista = (_viajeForm.Lista ?? string.Empty).Trim();
+        if (!string.IsNullOrWhiteSpace(lista))
+            return lista;
+
+        return "Automática";
+    }
+
     private static string DisplayText(string? description, string? fallbackCode)
     {
         var visible = (description ?? string.Empty).Trim();
@@ -2450,11 +2600,20 @@
     private decimal GetViajeTotalAdicionalesGenerales()
         => GetViajeTotalAdicionales();
 
-    private decimal GetViajeTotalViaje()
+    private decimal GetViajeTotalCliente()
         => Math.Max(0m, _viajeForm.ImporteCliente * Math.Max(1, _viajeForm.CantidadViajes))
            + GetViajeTotalAdicionalesGenerales()
            + GetViajeTotalAdicionalesFijos()
            + Math.Max(0m, _viajeForm.Peaje);
+
+    private decimal GetViajeTotalFletero()
+        => Math.Max(0m, _viajeForm.ImporteFletero * Math.Max(1, _viajeForm.CantidadViajes));
+
+    private decimal GetViajeResultado()
+        => GetViajeTotalCliente() - GetViajeTotalFletero();
+
+    private decimal GetViajeTotalViaje()
+        => GetViajeTotalCliente();
 
     private async Task OnViajeAdicionalChangedAsync(int index, ChangeEventArgs args)
     {
@@ -2930,7 +3089,7 @@
     {
         _tarifaForm.Chofer = item.Codigo;
         _tarifaChoferTexto = BuildLookupDisplayText(item);
-        _tarifaForm.IdLista = BuildListaDesdeCodigo(item.Codigo);
+        _tarifaForm.IdLista = BuildListaDesdeCodigo(item.Codigo, true);
         _tarifaForm.Nombre = string.IsNullOrWhiteSpace(item.Titulo) ? item.Codigo : item.Titulo.Trim();
         await Task.CompletedTask;
     }
@@ -3990,8 +4149,19 @@
     private async Task AplicarFiltrosTarifasAsync() { _tarifasFilters.PageNumber = 1; await RecargarTarifasAsync(); }
     private async Task LimpiarFiltrosTarifasAsync()
     {
-        _tarifasFilters = new CargaViajesFilters { PageNumber = 1, PageSize = 50 };
+        var sortBy = _tarifasFilters.SortBy;
+        var sortDescending = _tarifasFilters.SortDescending;
+        _tarifasFilters = new CargaViajesFilters { PageNumber = 1, PageSize = 50, SortBy = sortBy, SortDescending = sortDescending };
         _showTarifasAdvancedFilters = false;
+        await RecargarTarifasAsync();
+    }
+
+    private async Task CambiarPaginaTarifasAsync(int page)
+    {
+        if (page < 1)
+            return;
+
+        _tarifasFilters.PageNumber = page;
         await RecargarTarifasAsync();
     }
 
@@ -4005,17 +4175,37 @@
     private async Task OnTarifaDestinoFiltroSelectedAsync(CargaViajeLookupOptionDto item) { _tarifasFilters.Destino = item.Codigo; await Task.CompletedTask; }
     private async Task OnTarifaTipoVehiculoFiltroChangedAsync(string text) { _tarifasFilters.TipoVehiculo = text; await Task.CompletedTask; }
     private async Task OnTarifaTipoVehiculoFiltroSelectedAsync(CargaViajeLookupOptionDto item) { _tarifasFilters.TipoVehiculo = item.Codigo; await Task.CompletedTask; }
+    private bool HasTarifaFleteroFilter() => _tarifasFilters.TarifaFletero is "0" or "1";
+    private async Task SetTarifasTipoTodasAsync()
+    {
+        _tarifasFilters.TarifaFletero = string.Empty;
+        await AplicarFiltrosTarifasAsync();
+    }
+
+    private async Task SetTarifasTipoClientesAsync()
+    {
+        _tarifasFilters.TarifaFletero = "0";
+        await AplicarFiltrosTarifasAsync();
+    }
+
+    private async Task SetTarifasTipoFleterosAsync()
+    {
+        _tarifasFilters.TarifaFletero = "1";
+        await AplicarFiltrosTarifasAsync();
+    }
 
     private async Task RecargarTarifasAsync()
     {
         _tarifasLoading = true;
-        _tarifasFilters.PageSize = 50;
+        _tarifasFilters.PageSize = 10;
         var result = await UiOps.RunAsync(() => CargaViajesSvc.SearchTarifasAsync(_tarifasFilters), "No se pudieron cargar las tarifas.");
         if (result.Success && result.Value is not null)
         {
             _tarifas.Clear();
             _tarifas.AddRange(result.Value.Items);
             _tarifasTotal = result.Value.Total;
+            _tarifasPage = result.Value.PageNumber;
+            _tarifasTotalPages = Math.Max(1, result.Value.TotalPages);
         }
         else _feedback = result.Feedback;
         _tarifasLoading = false;
@@ -4038,6 +4228,7 @@
         _showTarifaEditor = true;
         _isNewTarifa = true;
         _tarifaSnapshot = CaptureTarifaSnapshot(_tarifaForm);
+        _tarifaEditorFeedback = null;
         await Task.CompletedTask;
     }
 
@@ -4055,6 +4246,7 @@
             var tipoVehiculoCodigo = ExtractCodeFromDisplay(item.TipoVehiculo);
             _tarifaForm = new CargaViajeTarifaSaveRequest
             {
+                Id = item.Id,
                 IdLista = item.IdLista,
                 OriginalIdLista = item.IdLista,
                 Nombre = item.Nombre,
@@ -4085,11 +4277,13 @@
             _showTarifaEditor = true;
             _isNewTarifa = false;
             _tarifaSnapshot = CaptureTarifaSnapshot(_tarifaForm);
+            _tarifaEditorFeedback = null;
             return;
         }
 
         _tarifaForm = new CargaViajeTarifaSaveRequest
         {
+            Id = row.Id,
             IdLista = row.IdLista,
             OriginalIdLista = row.IdLista,
             Nombre = row.Nombre,
@@ -4120,6 +4314,7 @@
         _showTarifaEditor = true;
         _isNewTarifa = false;
         _tarifaSnapshot = CaptureTarifaSnapshot(_tarifaForm);
+        _tarifaEditorFeedback = null;
     }
 
     private async Task GuardarTarifaAsync()
@@ -4132,10 +4327,11 @@
         }
         catch (Exception ex)
         {
-            _feedback = UiOps.BuildMessage(ex, "No se pudo guardar la tarifa.");
+            _tarifaEditorFeedback = UiOps.BuildMessage(ex, "No se pudo guardar la tarifa. Detalle tecnico registrado.");
             return;
         }
 
+        _tarifaEditorFeedback = null;
         SetSuccessFeedback("Tarifa guardada", "La tarifa quedó actualizada.");
         _showTarifaEditor = false;
         _tarifaSnapshot = string.Empty;
@@ -4165,10 +4361,7 @@
         if (string.IsNullOrWhiteSpace(normalized))
             return _tarifaForm.IdLista.Trim().ToUpperInvariant();
 
-        if (normalized.Length <= 4)
-            return normalized.PadLeft(4, '0').ToUpperInvariant();
-
-        return normalized[^4..].ToUpperInvariant();
+        return BuildListaDesdeCodigo(normalized, _tarifaForm.TarifaFletero);
     }
 
     private static string BuildLookupDisplayText(CargaViajeLookupOptionDto item)
@@ -4178,11 +4371,17 @@
         return string.IsNullOrWhiteSpace(title) ? code : title;
     }
 
-    private static string BuildListaDesdeCodigo(string codigo)
+    private static string BuildListaDesdeCodigo(string codigo, bool esFletero = false)
     {
         var value = (codigo ?? string.Empty).Trim().ToUpperInvariant();
         if (string.IsNullOrWhiteSpace(value))
             return string.Empty;
+
+        if (esFletero)
+        {
+            var lastThree = value.Length <= 3 ? value : value[^3..];
+            return $"F{lastThree.PadLeft(3, '0')}";
+        }
 
         return value.Length <= 4
             ? value.PadLeft(4, '0')
@@ -4316,6 +4515,7 @@
     {
         _showTarifaEditor = false;
         _tarifaSnapshot = string.Empty;
+        _tarifaEditorFeedback = null;
         return Task.CompletedTask;
     }
 
@@ -4326,7 +4526,9 @@
     }
     private async Task LimpiarFiltrosChoferesAsync()
     {
-        _choferesFilters = new CargaViajesFilters { PageNumber = 1, PageSize = 50 };
+        var sortBy = _choferesFilters.SortBy;
+        var sortDescending = _choferesFilters.SortDescending;
+        _choferesFilters = new CargaViajesFilters { PageNumber = 1, PageSize = 50, SortBy = sortBy, SortDescending = sortDescending };
         _choferesTipoVehiculoTexto = string.Empty;
         _showChoferesAdvancedFilters = false;
         await RecargarChoferesAsync();
@@ -4425,7 +4627,9 @@
     }
     private async Task LimpiarFiltrosDestinosAsync()
     {
-        _destinosFilters = new CargaViajesFilters { PageNumber = 1, PageSize = 50 };
+        var sortBy = _destinosFilters.SortBy;
+        var sortDescending = _destinosFilters.SortDescending;
+        _destinosFilters = new CargaViajesFilters { PageNumber = 1, PageSize = 50, SortBy = sortBy, SortDescending = sortDescending };
         _showDestinosAdvancedFilters = false;
         await RecargarDestinosAsync();
     }
@@ -4523,7 +4727,9 @@
 
     private async Task LimpiarFiltrosTipoVehiculosAsync()
     {
-        _tipoVehiculosFilters = new CargaViajesFilters { PageNumber = 1, PageSize = 50 };
+        var sortBy = _tipoVehiculosFilters.SortBy;
+        var sortDescending = _tipoVehiculosFilters.SortDescending;
+        _tipoVehiculosFilters = new CargaViajesFilters { PageNumber = 1, PageSize = 50, SortBy = sortBy, SortDescending = sortDescending };
         _tipoVehiculoFiltroTexto = string.Empty;
         _showTipoVehiculosAdvancedFilters = false;
         await RecargarTipoVehiculosAsync();
@@ -4720,10 +4926,67 @@
         return Task.CompletedTask;
     }
 
+    private static void ToggleSort(CargaViajesFilters filters, string sortBy)
+    {
+        if (string.Equals(filters.SortBy, sortBy, StringComparison.OrdinalIgnoreCase))
+            filters.SortDescending = !filters.SortDescending;
+        else
+        {
+            filters.SortBy = sortBy;
+            filters.SortDescending = false;
+        }
+    }
+
+    private static string GetSortIcon(CargaViajesFilters filters, string sortBy)
+        => string.Equals(filters.SortBy, sortBy, StringComparison.OrdinalIgnoreCase)
+            ? (filters.SortDescending ? "bi-sort-down-alt" : "bi-sort-up")
+            : "bi-arrow-down-up";
+
+    private async Task SortViajesAsync(string sortBy)
+    {
+        ToggleSort(_viajesFilters, sortBy);
+        _viajesFilters.PageNumber = 1;
+        await RecargarViajesAsync();
+    }
+
+    private async Task SortTarifasAsync(string sortBy)
+    {
+        ToggleSort(_tarifasFilters, sortBy);
+        _tarifasFilters.PageNumber = 1;
+        await RecargarTarifasAsync();
+    }
+
+    private async Task SortChoferesAsync(string sortBy)
+    {
+        ToggleSort(_choferesFilters, sortBy);
+        _choferesFilters.PageNumber = 1;
+        await RecargarChoferesAsync();
+    }
+
+    private async Task SortDestinosAsync(string sortBy)
+    {
+        ToggleSort(_destinosFilters, sortBy);
+        _destinosFilters.PageNumber = 1;
+        await RecargarDestinosAsync();
+    }
+
+    private async Task SortTipoVehiculosAsync(string sortBy)
+    {
+        ToggleSort(_tipoVehiculosFilters, sortBy);
+        _tipoVehiculosFilters.PageNumber = 1;
+        await RecargarTipoVehiculosAsync();
+    }
+
     private async Task HandleViajesFilterKeyDownAsync(KeyboardEventArgs args)
     {
         if (string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase))
             await AplicarFiltrosViajesAsync();
+    }
+
+    private async Task HandleTarifasSearchKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase))
+            await RecargarTarifasAsync();
     }
 
     private async Task HandleModalKeyDownAsync(KeyboardEventArgs args)

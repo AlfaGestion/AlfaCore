@@ -996,6 +996,36 @@
     white-space: nowrap;
 }
 
+.carga-viajes-quick-edit-toggle .carga-viajes-checkbox__label {
+    white-space: nowrap;
+}
+
+.carga-viajes-tarifas__filter-frame {
+    display: flex;
+    flex-direction: column;
+    gap: .45rem;
+    padding: .6rem .7rem;
+    border: 1px solid rgba(148, 163, 184, .16);
+    border-radius: 1rem;
+    background: linear-gradient(180deg, rgba(15, 23, 42, .46), rgba(15, 23, 42, .22));
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .03);
+}
+
+.carga-viajes-tarifas__filter-title {
+    font-size: .72rem;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: #94a3b8;
+}
+
+.carga-viajes-tarifas__filter-inner {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .45rem;
+}
+
 .carga-viajes-check__pill,
 .carga-viajes-switch__pill {
     position: relative;
