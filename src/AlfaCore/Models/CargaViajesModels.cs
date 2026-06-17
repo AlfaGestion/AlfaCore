@@ -16,6 +16,8 @@ public sealed class CargaViajesFilters
     public string Estado { get; set; } = string.Empty;
     public string Usuario { get; set; } = string.Empty;
     public string IdComprobante { get; set; } = string.Empty;
+    public string SortBy { get; set; } = string.Empty;
+    public bool SortDescending { get; set; } = false;
     public int PageNumber { get; set; } = 1;
     public int PageSize { get; set; } = 50;
 }
@@ -165,6 +167,7 @@ public sealed class CargaViajeTarifaGridItemDto
 
 public sealed class CargaViajeTarifaSaveRequest
 {
+    public int Id { get; set; }
     public string IdLista { get; set; } = string.Empty;
     public string OriginalIdLista { get; set; } = string.Empty;
     public string Nombre { get; set; } = string.Empty;

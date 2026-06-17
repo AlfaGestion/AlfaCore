@@ -114,6 +114,12 @@
     width: 100%;
 }
 
+.carga-viajes-tarifas__type-filter {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .45rem;
+}
+
 .carga-viajes-tarifa__hint {
     margin-top: .3rem;
     font-size: .76rem;
@@ -193,6 +199,181 @@
 .carga-viajes-filter-pill--active .carga-viajes-filter-pill__check {
     opacity: 1;
     transform: scale(1);
+}
+
+.carga-viajes-form-grid--viaje {
+    gap: .7rem;
+}
+
+.carga-viajes-viaje__tarifa-aplicada {
+    display: flex;
+    flex-direction: column;
+    gap: .2rem;
+    padding: .7rem .8rem;
+    border: 1px solid rgba(148, 163, 184, .12);
+    border-radius: .9rem;
+    background: linear-gradient(180deg, rgba(15, 23, 42, .46), rgba(15, 23, 42, .26));
+}
+
+.carga-viajes-viaje__tarifa-label {
+    font-size: .76rem;
+    font-weight: 700;
+    letter-spacing: .02em;
+    text-transform: uppercase;
+    color: #94a3b8;
+}
+
+.carga-viajes-viaje__tarifa-aplicada strong {
+    font-size: .95rem;
+    color: #f8fafc;
+}
+
+.carga-viajes-viaje__importe input,
+.carga-viajes-viaje__importe {
+    width: 100%;
+}
+
+.carga-viajes-viaje-secondary {
+    display: flex;
+    flex-direction: column;
+    gap: .8rem;
+    margin-top: .85rem;
+    padding-top: .85rem;
+    border-top: 1px solid rgba(148, 163, 184, .12);
+}
+
+.carga-viajes-viaje-secondary__money {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: .65rem;
+}
+
+.carga-viajes-viaje__totals {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: .55rem;
+    margin-top: .25rem;
+}
+
+.carga-viajes-viaje__total-card {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: .6rem;
+    padding: .7rem .8rem;
+    border: 1px solid rgba(148, 163, 184, .12);
+    border-radius: .9rem;
+    background: linear-gradient(180deg, rgba(15, 23, 42, .42), rgba(15, 23, 42, .24));
+    color: #e2e8f0;
+}
+
+.carga-viajes-viaje__total-card span {
+    font-size: .77rem;
+    font-weight: 700;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: .02em;
+}
+
+.carga-viajes-viaje__total-card strong {
+    font-size: 1.02rem;
+    font-variant-numeric: tabular-nums;
+    color: #f8fafc;
+}
+
+.carga-viajes-viaje__total-card--result {
+    border-color: rgba(34, 211, 238, .22);
+    background: linear-gradient(135deg, rgba(8, 145, 178, .22), rgba(15, 23, 42, .24));
+}
+
+.carga-viajes-adicionales__simple-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+    gap: .5rem;
+}
+
+.carga-viajes-adicionales__simple-item {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: .65rem;
+    min-height: 3rem;
+    padding: .55rem .7rem;
+    border: 1px solid rgba(148, 163, 184, .16);
+    border-radius: .9rem;
+    background: linear-gradient(180deg, rgba(15, 23, 42, .78), rgba(15, 23, 42, .54));
+    cursor: pointer;
+    user-select: none;
+    transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease, background .16s ease;
+}
+
+.carga-viajes-adicionales__simple-item:hover {
+    transform: translateY(-1px);
+    border-color: rgba(34, 211, 238, .34);
+    box-shadow: 0 10px 24px rgba(2, 6, 23, .18);
+}
+
+.carga-viajes-adicionales__simple-item--active {
+    border-color: rgba(34, 211, 238, .64);
+    background: linear-gradient(135deg, rgba(8, 145, 178, .22), rgba(15, 23, 42, .76));
+}
+
+.carga-viajes-adicionales__simple-item input[type="checkbox"] {
+    width: 1rem;
+    height: 1rem;
+    margin: 0;
+    accent-color: #06b6d4;
+    cursor: pointer;
+}
+
+.carga-viajes-adicionales__simple-main {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: .1rem;
+}
+
+.carga-viajes-adicionales__simple-name {
+    font-size: .84rem;
+    font-weight: 700;
+    color: #f8fafc;
+    line-height: 1.15;
+}
+
+.carga-viajes-adicionales__simple-percent {
+    font-size: .73rem;
+    color: #94a3b8;
+    line-height: 1.1;
+}
+
+.carga-viajes-adicionales__simple-amount {
+    font-size: .8rem;
+    font-weight: 800;
+    color: #bfdbfe;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.carga-viajes-adicionales__simple-item--fixed .carga-viajes-adicionales__simple-amount {
+    color: #a7f3d0;
+}
+
+.carga-viajes-adicionales__section-label {
+    margin-top: .45rem;
+}
+
+@media (max-width: 992px) {
+    .carga-viajes-viaje-secondary__money,
+    .carga-viajes-viaje__totals {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 640px) {
+    .carga-viajes-viaje-secondary__money,
+    .carga-viajes-viaje__totals {
+        grid-template-columns: 1fr;
+    }
 }
 
 .carga-viajes-liquidaciones__summary-bar,
@@ -752,4 +933,155 @@
     .carga-viajes-adicionales__totals {
         grid-template-columns: 1fr;
     }
+}
+
+.carga-viajes-page .lookup-autocomplete {
+    position: relative;
+    display: block;
+    width: 100%;
+    min-width: 0;
+    overflow: visible;
+    isolation: isolate;
+    z-index: 5;
+}
+
+.carga-viajes-page .lookup-autocomplete:focus-within {
+    z-index: 20000;
+}
+
+.carga-viajes-page .field {
+    overflow: visible;
+}
+
+.carga-viajes-page .lookup-autocomplete__input {
+    width: 100%;
+    min-width: 0;
+    min-height: 2.35rem;
+    padding: .5rem .75rem;
+    border: 1px solid rgba(148, 163, 184, .22);
+    border-radius: 10px;
+    background: linear-gradient(180deg, rgba(15, 23, 42, .96), rgba(15, 23, 42, .84));
+    color: #e2e8f0;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04);
+    outline: none;
+    appearance: none !important;
+    -webkit-appearance: none !important;
+    -moz-appearance: none !important;
+    position: relative;
+    z-index: 1;
+}
+
+.carga-viajes-page .lookup-autocomplete__input:focus,
+.carga-viajes-page .lookup-autocomplete__input:focus-visible {
+    border-color: rgba(34, 211, 238, .85);
+    box-shadow: 0 0 0 3px rgba(34, 211, 238, .16);
+}
+
+.carga-viajes-page .lookup-autocomplete__dropdown {
+    position: absolute !important;
+    top: calc(100% + 4px) !important;
+    left: 0 !important;
+    right: 0 !important;
+    z-index: 20001 !important;
+    display: block !important;
+    max-height: 240px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    border: 1px solid rgba(148, 163, 184, .22) !important;
+    border-radius: 4px !important;
+    background: linear-gradient(180deg, rgba(15, 23, 42, .98), rgba(8, 15, 28, .98)) !important;
+    color: #e2e8f0 !important;
+    box-shadow: 0 16px 34px rgba(2, 6, 23, .45) !important;
+    padding: 0 !important;
+    margin: 0 !important;
+}
+
+.carga-viajes-page .lookup-autocomplete__item {
+    display: block !important;
+    width: 100% !important;
+    box-sizing: border-box;
+    min-height: 0;
+    padding: 4px 8px !important;
+    border: 0;
+    border-bottom: 1px solid rgba(148, 163, 184, .16);
+    background: rgba(15, 23, 42, .98) !important;
+    color: #e2e8f0 !important;
+    cursor: pointer;
+    user-select: none;
+    white-space: normal;
+    overflow: hidden;
+}
+
+.carga-viajes-page .lookup-autocomplete__item:last-child {
+    border-bottom: 0;
+}
+
+.carga-viajes-page .lookup-autocomplete__item:hover,
+.carga-viajes-page .lookup-autocomplete__item--active {
+    background: linear-gradient(180deg, rgba(8, 145, 178, .92), rgba(14, 165, 233, .78)) !important;
+    color: #ffffff !important;
+}
+
+.carga-viajes-page .lookup-autocomplete__item-main {
+    display: block;
+    width: 100%;
+}
+
+.carga-viajes-page .lookup-autocomplete__title {
+    display: block;
+    font-size: 13px;
+    line-height: 1.18;
+    font-weight: 600;
+    color: inherit;
+    overflow-wrap: anywhere;
+}
+
+.carga-viajes-page .lookup-autocomplete__subtitle {
+    display: block;
+    margin-top: 1px;
+    font-size: 11px;
+    line-height: 1.12;
+    color: #94a3b8;
+    overflow-wrap: anywhere;
+}
+
+.carga-viajes-page .lookup-autocomplete__empty {
+    padding: 6px 8px;
+    font-size: 12px;
+    line-height: 1.2;
+    color: #94a3b8;
+    background: rgba(15, 23, 42, .98) !important;
+}
+
+.carga-viajes-page .lookup-autocomplete__empty--error {
+    color: #fecaca;
+    background: rgba(127, 29, 29, .2) !important;
+}
+
+.carga-viajes-sort-button {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-weight: 800;
+    text-transform: inherit;
+    letter-spacing: inherit;
+    cursor: pointer;
+}
+
+.carga-viajes-sort-button i {
+    font-size: .82rem;
+    opacity: .7;
+}
+
+.carga-viajes-sort-button:hover {
+    color: #67e8f9;
+}
+
+.data-table th {
+    white-space: nowrap;
 }
