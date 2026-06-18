@@ -62,6 +62,65 @@
         gap: 16px;
     }
 
+    .tickets-partes-registrados {
+        display: grid;
+        gap: 10px;
+        padding-bottom: 4px;
+    }
+
+    .tickets-partes-registrados__head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+    }
+
+    .tickets-partes-registrados__head h4 {
+        margin: 0;
+        color: var(--text);
+        font-size: .95rem;
+    }
+
+    .tickets-partes-registrados__head span {
+        color: var(--muted);
+        font-size: .82rem;
+    }
+
+    .tickets-partes-registrados__list {
+        display: grid;
+        gap: 8px;
+    }
+
+    .tickets-parte-registrado {
+        display: grid;
+        grid-template-columns: minmax(92px, .6fr) minmax(130px, .8fr) minmax(110px, .65fr) minmax(80px, .45fr) minmax(90px, .55fr) minmax(220px, 1.6fr);
+        gap: 10px;
+        align-items: start;
+        padding: .72rem .8rem;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, .025);
+    }
+
+    .tickets-parte-registrado span,
+    .tickets-parte-registrado strong {
+        display: block;
+    }
+
+    .tickets-parte-registrado span {
+        color: var(--muted);
+        font-size: .7rem;
+        font-weight: 700;
+        text-transform: uppercase;
+    }
+
+    .tickets-parte-registrado strong {
+        margin-top: 3px;
+        color: var(--text);
+        font-size: .9rem;
+        overflow-wrap: anywhere;
+    }
+
     .tickets-partes-lines {
         display: grid;
         gap: 8px;
@@ -106,6 +165,10 @@
         }
 
         .tickets-partes-lines .partes-lines__row {
+            grid-template-columns: 1fr;
+        }
+
+        .tickets-parte-registrado {
             grid-template-columns: 1fr;
         }
     }
@@ -664,6 +727,50 @@
                             <p class="panel-card__subtitle">Registrá tiempo trabajado y dejalo vinculado a este ticket.</p>
                         </div>
                     </div>
+                    <div class="tickets-partes-registrados">
+                        <div class="tickets-partes-registrados__head">
+                            <h4>Partes vinculados</h4>
+                            <span>@(_loadingTicketPartes ? "Cargando..." : $"{_ticketPartesRegistrados.Count} linea(s)")</span>
+                        </div>
+                        @if (!_loadingTicketPartes && _ticketPartesRegistrados.Count == 0)
+                        {
+                            <p class="panel-card__subtitle">Todavia no hay partes de horas vinculados a este ticket.</p>
+                        }
+                        else if (_ticketPartesRegistrados.Count > 0)
+                        {
+                            <div class="tickets-partes-registrados__list">
+                                @foreach (var parte in _ticketPartesRegistrados)
+                                {
+                                    <article class="tickets-parte-registrado">
+                                        <div>
+                                            <span>Fecha</span>
+                                            <strong>@parte.Fecha.ToString("dd/MM/yyyy")</strong>
+                                        </div>
+                                        <div>
+                                            <span>Tecnico</span>
+                                            <strong>@DisplayOrFallback(parte.TecnicoNombre, parte.Usuario, "Sin tecnico")</strong>
+                                        </div>
+                                        <div>
+                                            <span>Tipo</span>
+                                            <strong>@LabelParteTipo(parte.TipoTrabajo)</strong>
+                                        </div>
+                                        <div>
+                                            <span>Horas</span>
+                                            <strong>@FormatParteMinutes(parte.Minutos)</strong>
+                                        </div>
+                                        <div>
+                                            <span>Estado</span>
+                                            <strong>@LabelParteEstado(parte.Estado)</strong>
+                                        </div>
+                                        <div>
+                                            <span>Tarea</span>
+                                            <strong>@DisplayOrFallback(parte.Descripcion, "Sin descripcion")</strong>
+                                        </div>
+                                    </article>
+                                }
+                            </div>
+                        }
+                    </div>
                     <div class="filters-grid filters-grid--wide">
                         <div class="field">
                             <label>Fecha</label>
@@ -997,6 +1104,7 @@
     private bool _refreshingTickets;
     private bool _saving;
     private bool _savingParteHora;
+    private bool _loadingTicketPartes;
     private bool _showEditor;
     private bool _isNew;
     private bool _showViewSettings;
@@ -1010,6 +1118,7 @@
     private TicketUpdateRequest _form = new();
     private ParteHoraSaveRequest _ticketParteForm = new();
     private List<TicketParteHoraLineaForm> _ticketParteLineas = [];
+    private List<ParteHoraGridItemDto> _ticketPartesRegistrados = [];
     private List<int> _formTagIds = [];
     private string _newNote = string.Empty;
     private int _pagedTotal;
@@ -1589,6 +1698,7 @@
         _formTagIds = [];
         ClearTicketRelations();
         _ticketEditorTab = TicketEditorTabTicket;
+        _ticketPartesRegistrados = [];
         ResetTicketParteHoraForm();
     }
 
@@ -1635,6 +1745,7 @@
         _newNote = string.Empty;
         _descriptionEditorReady = false;
         ResetTicketParteHoraForm();
+        await LoadTicketPartesAsync();
     }
 
     private void SetTicketParteHoraTab()
@@ -1657,6 +1768,37 @@
 
     private string GetTicketEditorTabClass(string tab)
         => string.Equals(_ticketEditorTab, tab, StringComparison.Ordinal) ? "is-active" : string.Empty;
+
+    private async Task LoadTicketPartesAsync()
+    {
+        if (_detail is null)
+        {
+            _ticketPartesRegistrados = [];
+            return;
+        }
+
+        _loadingTicketPartes = true;
+        try
+        {
+            var result = await UiOps.RunAsync(() => PartesSvc.SearchAsync(new PartesHorasFilters
+            {
+                IdTicket = _detail.IdTicket,
+                FechaDesde = null,
+                FechaHasta = null,
+                PageNumber = 1,
+                PageSize = 200
+            }), "No se pudieron cargar los partes vinculados al ticket.");
+
+            if (result.Success && result.Value is not null)
+                _ticketPartesRegistrados = result.Value.Items.ToList();
+            else if (result.Feedback is not null)
+                SetFeedback(result.Feedback);
+        }
+        finally
+        {
+            _loadingTicketPartes = false;
+        }
+    }
 
     private void ResetTicketParteHoraForm()
     {
@@ -2597,6 +2739,12 @@
         ParteHoraTipoTrabajoKeys.Interno => "Interno",
         _ => value
     };
+
+    private static string FormatParteMinutes(int minutes)
+    {
+        var safe = Math.Max(0, minutes);
+        return $"{safe / 60}h {safe % 60:00}m";
+    }
 
     private static string FormatActivityType(string value) => value switch
     {
