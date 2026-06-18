@@ -728,9 +728,8 @@
                                 </select>
                                 <input type="text"
                                        id="@GetTicketParteLineaDescripcionId(index)"
-                                       value="@linea.Descripcion"
+                                       @bind="linea.Descripcion"
                                        maxlength="1000"
-                                       @oninput="args => linea.Descripcion = Convert.ToString(args.Value) ?? string.Empty"
                                        @onkeydown="args => HandleTicketParteLineaKeyDownAsync(args, index)"
                                        disabled="@_savingParteHora"
                                        placeholder="Descripción de la tarea" />

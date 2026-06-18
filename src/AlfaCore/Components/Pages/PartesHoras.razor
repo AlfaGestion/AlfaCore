@@ -700,8 +700,7 @@
                         </select>
                         <input type="text"
                                id="@GetLineaDescripcionId(index)"
-                               value="@linea.Descripcion"
-                               @oninput="args => linea.Descripcion = Convert.ToString(args.Value) ?? string.Empty"
+                               @bind="linea.Descripcion"
                                @onkeydown="args => HandleLineaKeyDownAsync(args, index)"
                                placeholder="Descripcion de la tarea" />
                         <input type="number" min="1" max="1440" step="5" @bind="linea.Minutos" />

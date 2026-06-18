@@ -1889,9 +1889,10 @@
                     <small>Se asignará automáticamente al usuario que crea el ticket.</small>
                 </div>
             </div>
-            <label class="checkbox conversations-ticket-hours-toggle">
-                <input type="checkbox" @bind="_ticketCreateWithParteHora" disabled="@_creatingTicket" />
-                <span>Cargar parte de horas con este ticket</span>
+            <label class="conversations-ticket-hours-toggle @(_ticketCreateWithParteHora ? "conversations-ticket-hours-toggle--checked" : string.Empty)">
+                <input class="conversations-ticket-hours-toggle__input" type="checkbox" @bind="_ticketCreateWithParteHora" disabled="@_creatingTicket" />
+                <span class="conversations-ticket-hours-toggle__box" aria-hidden="true"></span>
+                <span class="conversations-ticket-hours-toggle__label">Cargar parte de horas con este ticket</span>
             </label>
             @if (_ticketCreateWithParteHora)
             {
@@ -1923,9 +1924,8 @@
                             </select>
                             <input type="text"
                                    id="@GetTicketParteHoraLineaDescripcionId(index)"
-                                   value="@linea.Descripcion"
+                                   @bind="linea.Descripcion"
                                    maxlength="1000"
-                                   @oninput="args => linea.Descripcion = Convert.ToString(args.Value) ?? string.Empty"
                                    @onkeydown="args => HandleTicketParteHoraLineaKeyDownAsync(args, index)"
                                    disabled="@_creatingTicket"
                                    placeholder="Descripción de la tarea" />
@@ -2047,9 +2047,8 @@
                         </select>
                         <input type="text"
                                id="@GetParteHoraLineaDescripcionId(index)"
-                               value="@linea.Descripcion"
+                               @bind="linea.Descripcion"
                                maxlength="1000"
-                               @oninput="args => linea.Descripcion = Convert.ToString(args.Value) ?? string.Empty"
                                @onkeydown="args => HandleParteHoraLineaKeyDownAsync(args, index)"
                                disabled="@_savingParteHora"
                                placeholder="Descripcion de la tarea" />
