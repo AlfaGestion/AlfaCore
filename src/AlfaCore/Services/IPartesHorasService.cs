@@ -13,6 +13,7 @@ public interface IPartesHorasService
     Task<ParteHoraDashboardDto> GetDashboardAsync(PartesHorasFilters filters, CancellationToken ct = default);
     Task<ParteHoraLookupDto> GetLookupsAsync(CancellationToken ct = default);
     Task<IReadOnlyList<ParteHoraLookupOptionDto>> SearchClientesAsync(string texto, CancellationToken ct = default);
+    Task<IReadOnlyList<ParteHoraPersonaOptionDto>> SearchPersonasAsync(string texto, string? clienteCodigo = null, CancellationToken ct = default);
     Task<IReadOnlyList<ParteHoraTicketOptionDto>> SearchTicketsAsync(string texto, string? clienteCodigo = null, CancellationToken ct = default);
     Task<ParteHoraClienteConfigDto?> GetClienteConfigAsync(string clienteCodigo, CancellationToken ct = default);
     Task SaveClienteConfigAsync(ParteHoraClienteConfigDto config, string usuarioAccion, CancellationToken ct = default);

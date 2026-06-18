@@ -207,6 +207,74 @@
         min-height: 42px;
     }
 
+    .partes-autocomplete {
+        position: relative;
+    }
+
+    .partes-autocomplete__menu {
+        position: absolute;
+        z-index: 970;
+        top: calc(100% + 6px);
+        left: 0;
+        right: 0;
+        display: grid;
+        gap: 4px;
+        max-height: 260px;
+        overflow: auto;
+        padding: 6px;
+        border: 1px solid var(--color-border);
+        border-radius: 8px;
+        background: var(--color-panel);
+        box-shadow: 0 18px 48px rgba(0, 0, 0, .36);
+    }
+
+    .partes-autocomplete__option {
+        display: grid;
+        gap: 2px;
+        width: 100%;
+        border: 0;
+        border-radius: 6px;
+        background: transparent;
+        color: var(--color-text);
+        padding: 8px;
+        text-align: left;
+        cursor: pointer;
+    }
+
+    .partes-autocomplete__option:hover {
+        background: rgba(8, 197, 218, .14);
+    }
+
+    .partes-autocomplete__option small {
+        color: var(--color-muted);
+        line-height: 1.3;
+    }
+
+    .partes-lines {
+        display: grid;
+        gap: 8px;
+    }
+
+    .partes-lines__header,
+    .partes-lines__row {
+        display: grid;
+        grid-template-columns: minmax(150px, .9fr) minmax(120px, .7fr) minmax(220px, 1.5fr) 96px 38px;
+        gap: 8px;
+        align-items: center;
+    }
+
+    .partes-lines__header {
+        color: var(--color-muted);
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+    }
+
+    .partes-lines__row input,
+    .partes-lines__row select {
+        min-width: 0;
+    }
+
     @@media (max-width: 1280px) {
         .partes-horas-page .partes-hero {
             grid-template-columns: minmax(220px, 1fr) minmax(360px, 1.7fr);
@@ -242,6 +310,21 @@
         .partes-editor-form {
             grid-template-columns: 1fr 1fr;
         }
+
+        .partes-lines__header {
+            display: none;
+        }
+
+        .partes-lines__row {
+            grid-template-columns: 1fr 1fr;
+            padding: 10px;
+            border: 1px solid var(--color-border);
+            border-radius: 8px;
+        }
+
+        .partes-lines__row input[type="text"] {
+            grid-column: 1 / -1;
+        }
     }
 
     @@media (max-width: 520px) {
@@ -275,6 +358,10 @@
         .partes-check-row {
             display: grid;
             gap: 8px;
+        }
+
+        .partes-lines__row {
+            grid-template-columns: 1fr;
         }
     }
 </style>
@@ -455,7 +542,7 @@
     @if (_showEditor)
     {
         <div class="partes-modal-backdrop" @onclick="CerrarEditor"></div>
-        <section class="partes-editor-modal" @onclick:stopPropagation>
+        <section class="partes-editor-modal" @onclick:stopPropagation @onkeydown:stopPropagation>
             <div class="panel-card__header">
                 <div>
                     <h3 class="panel-card__title">@(_form.IdParteHora.HasValue ? "Editar parte" : "Nuevo parte")</h3>
@@ -469,40 +556,49 @@
                     <label>Fecha</label>
                     <InputDate @bind-Value="_form.Fecha" />
                 </div>
-                <div class="field">
+                <div class="field partes-autocomplete">
                     <label>Cliente</label>
-                    <input type="text" @bind="_form.ClienteCodigo" @bind:event="oninput" placeholder="Código cliente" />
+                    <input type="text"
+                           value="@_clienteSearch"
+                           @oninput="OnClienteSearchChangedAsync"
+                           @onfocus="BuscarClientesAsync"
+                           placeholder="Nombre, codigo o localidad" />
+                    @if (_clienteOptions.Count > 0)
+                    {
+                        <div class="partes-autocomplete__menu">
+                            @foreach (var cliente in _clienteOptions)
+                            {
+                                <button type="button" class="partes-autocomplete__option" @onclick="() => SeleccionarCliente(cliente)">
+                                    <strong>@cliente.Titulo</strong>
+                                    <small>@cliente.Codigo - @cliente.Subtitulo</small>
+                                </button>
+                            }
+                        </div>
+                    }
                 </div>
                 <div class="field">
                     <label>Ticket</label>
                     <input type="number" @bind="_ticketNumeroBusqueda" placeholder="Número o búsqueda" />
                 </div>
-                <div class="field">
-                    <label>Técnico</label>
-                    <select @bind="_form.IdTecnico">
-                        <option value="">Sin técnico</option>
-                        @foreach (var tecnico in _lookups.Tecnicos)
-                        {
-                            <option value="@tecnico.Codigo">@tecnico.Codigo - @tecnico.Titulo</option>
-                        }
-                    </select>
-                </div>
-                <div class="field">
-                    <label>Usuario</label>
-                    <input type="text" @bind="_form.Usuario" @bind:event="oninput" />
-                </div>
-                <div class="field">
-                    <label>Tipo</label>
-                    <select @bind="_form.TipoTrabajo">
-                        @foreach (var tipo in GetTiposTrabajoVisibles())
-                        {
-                            <option value="@tipo">@LabelTipo(tipo)</option>
-                        }
-                    </select>
-                </div>
-                <div class="field">
-                    <label>Minutos</label>
-                    <input type="number" min="1" max="1440" step="15" @bind="_form.Minutos" />
+                <div class="field partes-autocomplete">
+                    <label>Contacto / usuario</label>
+                    <input type="text"
+                           value="@_personaSearch"
+                           @oninput="OnPersonaSearchChangedAsync"
+                           @onfocus="BuscarPersonasAsync"
+                           placeholder="Nombre, telefono, email o usuario" />
+                    @if (_personaOptions.Count > 0)
+                    {
+                        <div class="partes-autocomplete__menu">
+                            @foreach (var persona in _personaOptions)
+                            {
+                                <button type="button" class="partes-autocomplete__option" @onclick="() => SeleccionarPersona(persona)">
+                                    <strong>@persona.Nombre</strong>
+                                    <small>@FormatPersonaOption(persona)</small>
+                                </button>
+                            }
+                        </div>
+                    }
                 </div>
                 <div class="field">
                     <label>Estado</label>
@@ -523,9 +619,48 @@
                 </label>
             </div>
 
-            <div class="field">
-                <label>Descripción</label>
-                <textarea rows="3" @bind="_form.Descripcion" @bind:event="oninput"></textarea>
+            <div class="partes-lines">
+                <div class="partes-lines__header">
+                    <span>Tecnico</span>
+                    <span>Tipo</span>
+                    <span>Tarea</span>
+                    <span>Minutos</span>
+                    <span></span>
+                </div>
+                @for (var i = 0; i < _lineas.Count; i++)
+                {
+                    var index = i;
+                    var linea = _lineas[index];
+                    <div class="partes-lines__row" @key="linea">
+                        <select @bind="linea.IdTecnico">
+                            <option value="">Sin tecnico</option>
+                            @foreach (var tecnico in _lookups.Tecnicos)
+                            {
+                                <option value="@tecnico.Codigo">@tecnico.Titulo</option>
+                            }
+                        </select>
+                        <select @bind="linea.TipoTrabajo">
+                            @foreach (var tipo in GetTiposTrabajoVisibles())
+                            {
+                                <option value="@tipo">@LabelTipo(tipo)</option>
+                            }
+                        </select>
+                        <input type="text"
+                               value="@linea.Descripcion"
+                               @oninput="args => linea.Descripcion = Convert.ToString(args.Value) ?? string.Empty"
+                               @onkeydown="args => HandleLineaKeyDownAsync(args, index)"
+                               placeholder="Descripcion de la tarea" />
+                        <input type="number" min="1" max="1440" step="5" @bind="linea.Minutos" />
+                        <button type="button" class="btn btn--ghost btn--sm" @onclick="() => QuitarLinea(index)" disabled="@(_lineas.Count <= 1)">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </div>
+                }
+                <div class="actions">
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="AgregarLinea">
+                        <i class="bi bi-plus-circle"></i> Agregar linea
+                    </button>
+                </div>
             </div>
 
             <div class="actions">
@@ -713,6 +848,14 @@
 </div>
 
 @code {
+    private sealed class ParteHoraLineaForm
+    {
+        public string IdTecnico { get; set; } = string.Empty;
+        public string TipoTrabajo { get; set; } = ParteHoraTipoTrabajoKeys.Soporte;
+        public string Descripcion { get; set; } = string.Empty;
+        public int Minutos { get; set; } = 15;
+    }
+
     private PartesHorasFilters _filters = new();
     private PagedResult<ParteHoraGridItemDto> _result = new();
     private ParteHoraDashboardDto _dashboard = new();
@@ -720,12 +863,17 @@
     private ParteHoraSaveRequest _form = new();
     private ParteHoraClienteConfigDto _config = new();
     private List<ParteHoraTicketOptionDto> _ticketOptions = [];
+    private List<ParteHoraLookupOptionDto> _clienteOptions = [];
+    private List<ParteHoraPersonaOptionDto> _personaOptions = [];
+    private List<ParteHoraLineaForm> _lineas = [];
     private AppUiMessage? _feedback;
     private bool _loading;
     private bool _saving;
     private bool _showEditor;
     private bool _filtersExpanded;
     private string _quickSearch = string.Empty;
+    private string _clienteSearch = string.Empty;
+    private string _personaSearch = string.Empty;
     private int? _ticketNumeroBusqueda;
     private IDisposable? _floatingWindowRegistration;
 
@@ -929,14 +1077,28 @@
             Facturable = true,
             Minutos = 60
         };
+        _clienteSearch = string.Empty;
+        _personaSearch = AppUserSession.GetCurrentUserName(Environment.UserName);
         _ticketNumeroBusqueda = null;
+        _clienteOptions.Clear();
+        _personaOptions.Clear();
         _ticketOptions.Clear();
+        _lineas =
+        [
+            new ParteHoraLineaForm
+            {
+                TipoTrabajo = ParteHoraTipoTrabajoKeys.Soporte,
+                Minutos = 15
+            }
+        ];
         _showEditor = true;
     }
 
     private void CerrarEditor()
     {
         _showEditor = false;
+        _clienteOptions.Clear();
+        _personaOptions.Clear();
         _ticketOptions.Clear();
     }
 
@@ -968,6 +1130,18 @@
             Descripcion = detail.Descripcion,
             UsuarioAccion = AppUserSession.GetCurrentUserName(Environment.UserName)
         };
+        _clienteSearch = string.IsNullOrWhiteSpace(detail.ClienteNombre) ? detail.ClienteCodigo : $"{detail.ClienteNombre} ({detail.ClienteCodigo})";
+        _personaSearch = string.IsNullOrWhiteSpace(detail.ContactoNombre) ? detail.Usuario : detail.ContactoNombre;
+        _lineas =
+        [
+            new ParteHoraLineaForm
+            {
+                IdTecnico = detail.IdTecnico,
+                TipoTrabajo = detail.TipoTrabajo,
+                Minutos = detail.Minutos,
+                Descripcion = detail.Descripcion
+            }
+        ];
         _ticketNumeroBusqueda = null;
         _showEditor = true;
     }
@@ -978,14 +1152,41 @@
         try
         {
             _form.UsuarioAccion = AppUserSession.GetCurrentUserName(Environment.UserName);
-            var result = await UiOps.RunAsync(() => PartesSvc.SaveAsync(_form), "No se pudo guardar el parte de horas.");
-            if (!result.Success)
+            var lineas = _lineas
+                .Where(linea => linea.Minutos > 0 || !string.IsNullOrWhiteSpace(linea.Descripcion) || !string.IsNullOrWhiteSpace(linea.IdTecnico))
+                .ToList();
+            if (lineas.Count == 0)
+                lineas.Add(new ParteHoraLineaForm { TipoTrabajo = _form.TipoTrabajo, Minutos = _form.Minutos, Descripcion = _form.Descripcion, IdTecnico = _form.IdTecnico });
+
+            for (var i = 0; i < lineas.Count; i++)
             {
-                _feedback = result.Feedback;
-                return;
+                var linea = lineas[i];
+                var request = new ParteHoraSaveRequest
+                {
+                    IdParteHora = i == 0 ? _form.IdParteHora : null,
+                    Fecha = _form.Fecha,
+                    ClienteCodigo = _form.ClienteCodigo,
+                    IdContacto = _form.IdContacto,
+                    IdTicket = _form.IdTicket,
+                    IdTecnico = linea.IdTecnico,
+                    Usuario = _form.Usuario,
+                    TipoTrabajo = linea.TipoTrabajo,
+                    Minutos = linea.Minutos,
+                    Facturable = _form.Facturable,
+                    Excedente = _form.Excedente,
+                    Estado = _form.Estado,
+                    Descripcion = linea.Descripcion,
+                    UsuarioAccion = _form.UsuarioAccion
+                };
+                var result = await UiOps.RunAsync(() => PartesSvc.SaveAsync(request), "No se pudo guardar el parte de horas.");
+                if (!result.Success)
+                {
+                    _feedback = result.Feedback;
+                    return;
+                }
             }
 
-            _feedback = AppUiMessage.Success("Parte guardado", "Las horas quedaron registradas correctamente.");
+            _feedback = AppUiMessage.Success("Parte guardado", lineas.Count == 1 ? "Las horas quedaron registradas correctamente." : $"Se registraron {lineas.Count} lineas de trabajo.");
             _showEditor = false;
             await BuscarAsync();
         }
@@ -1009,8 +1210,122 @@
     {
         _form.IdTicket = ticket.IdTicket;
         _form.ClienteCodigo = ticket.ClienteCodigo;
+        _clienteSearch = string.IsNullOrWhiteSpace(ticket.ClienteNombre) ? ticket.ClienteCodigo : $"{ticket.ClienteNombre} ({ticket.ClienteCodigo})";
         _ticketNumeroBusqueda = ticket.Numero;
         _ticketOptions.Clear();
+    }
+
+    private async Task OnClienteSearchChangedAsync(ChangeEventArgs args)
+    {
+        _clienteSearch = Convert.ToString(args.Value) ?? string.Empty;
+        _form.ClienteCodigo = string.Empty;
+        _form.IdContacto = null;
+        await BuscarClientesAsync();
+    }
+
+    private async Task BuscarClientesAsync()
+    {
+        if (_clienteSearch.Trim().Length < 2)
+        {
+            _clienteOptions.Clear();
+            return;
+        }
+
+        var result = await UiOps.RunAsync(() => PartesSvc.SearchClientesAsync(_clienteSearch), "No se pudieron buscar clientes.");
+        if (result.Success && result.Value is not null)
+            _clienteOptions = result.Value.ToList();
+        else if (result.Feedback is not null)
+            _feedback = result.Feedback;
+    }
+
+    private void SeleccionarCliente(ParteHoraLookupOptionDto cliente)
+    {
+        _form.ClienteCodigo = cliente.Codigo;
+        _clienteSearch = $"{cliente.Titulo} ({cliente.Codigo})";
+        _form.IdContacto = null;
+        _personaSearch = string.Empty;
+        _clienteOptions.Clear();
+        _personaOptions.Clear();
+    }
+
+    private async Task OnPersonaSearchChangedAsync(ChangeEventArgs args)
+    {
+        _personaSearch = Convert.ToString(args.Value) ?? string.Empty;
+        _form.IdContacto = null;
+        _form.Usuario = _personaSearch;
+        await BuscarPersonasAsync();
+    }
+
+    private async Task BuscarPersonasAsync()
+    {
+        if (_personaSearch.Trim().Length < 2 && string.IsNullOrWhiteSpace(_form.ClienteCodigo))
+        {
+            _personaOptions.Clear();
+            return;
+        }
+
+        var result = await UiOps.RunAsync(() => PartesSvc.SearchPersonasAsync(_personaSearch, _form.ClienteCodigo), "No se pudieron buscar contactos o usuarios.");
+        if (result.Success && result.Value is not null)
+            _personaOptions = result.Value.ToList();
+        else if (result.Feedback is not null)
+            _feedback = result.Feedback;
+    }
+
+    private void SeleccionarPersona(ParteHoraPersonaOptionDto persona)
+    {
+        _form.IdContacto = persona.IdContacto;
+        _form.Usuario = string.IsNullOrWhiteSpace(persona.Usuario) ? persona.Nombre : persona.Usuario;
+        if (string.IsNullOrWhiteSpace(_form.ClienteCodigo) && !string.IsNullOrWhiteSpace(persona.ClienteCodigo))
+        {
+            _form.ClienteCodigo = persona.ClienteCodigo;
+            _clienteSearch = string.IsNullOrWhiteSpace(persona.ClienteNombre) ? persona.ClienteCodigo : $"{persona.ClienteNombre} ({persona.ClienteCodigo})";
+        }
+
+        _personaSearch = persona.Nombre;
+        _personaOptions.Clear();
+    }
+
+    private void AgregarLinea()
+    {
+        var previous = _lineas.LastOrDefault();
+        _lineas.Add(new ParteHoraLineaForm
+        {
+            IdTecnico = previous?.IdTecnico ?? string.Empty,
+            TipoTrabajo = previous?.TipoTrabajo ?? ParteHoraTipoTrabajoKeys.Soporte,
+            Minutos = 15
+        });
+    }
+
+    private void QuitarLinea(int index)
+    {
+        if (_lineas.Count <= 1 || index < 0 || index >= _lineas.Count)
+            return;
+
+        _lineas.RemoveAt(index);
+    }
+
+    private Task HandleLineaKeyDownAsync(KeyboardEventArgs args, int index)
+    {
+        if (string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase))
+            InsertarLineaDespues(index);
+
+        return Task.CompletedTask;
+    }
+
+    private void InsertarLineaDespues(int index)
+    {
+        var previous = index >= 0 && index < _lineas.Count ? _lineas[index] : _lineas.LastOrDefault();
+        var nueva = new ParteHoraLineaForm
+        {
+            IdTecnico = previous?.IdTecnico ?? string.Empty,
+            TipoTrabajo = previous?.TipoTrabajo ?? ParteHoraTipoTrabajoKeys.Soporte,
+            Minutos = 15
+        };
+
+        if (index < 0 || index >= _lineas.Count - 1)
+            _lineas.Add(nueva);
+        else
+            _lineas.Insert(index + 1, nueva);
     }
 
     private async Task AprobarAsync(long id)
@@ -1084,6 +1399,25 @@
         ParteHoraTipoTrabajoKeys.Interno => "Interno",
         _ => value
     };
+
+    private static string FormatPersonaOption(ParteHoraPersonaOptionDto persona)
+    {
+        var datos = new List<string>();
+        if (!string.IsNullOrWhiteSpace(persona.ClienteNombre))
+            datos.Add($"{persona.ClienteCodigo} {persona.ClienteNombre}".Trim());
+        if (!string.IsNullOrWhiteSpace(persona.Telefono))
+            datos.Add(persona.Telefono);
+        if (!string.IsNullOrWhiteSpace(persona.Celular))
+            datos.Add(persona.Celular);
+        if (!string.IsNullOrWhiteSpace(persona.Email))
+            datos.Add(persona.Email);
+        if (!string.IsNullOrWhiteSpace(persona.Direccion))
+            datos.Add(persona.Direccion);
+        if (datos.Count == 0 && !string.IsNullOrWhiteSpace(persona.Tipo))
+            datos.Add(persona.Tipo);
+
+        return string.Join(" · ", datos);
+    }
 
     private static string GetFeedbackClass(AppUiMessage feedback)
         => feedback.Severity switch

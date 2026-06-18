@@ -298,6 +298,91 @@ public sealed class PartesHorasService(
             return rows.ToList();
         }, "No se pudieron buscar clientes.", ct);
 
+    public Task<IReadOnlyList<ParteHoraPersonaOptionDto>> SearchPersonasAsync(string texto, string? clienteCodigo = null, CancellationToken ct = default)
+        => ExecuteLoggedAsync<IReadOnlyList<ParteHoraPersonaOptionDto>>("SearchPersonas", async token =>
+        {
+            var searchText = (texto ?? string.Empty).Trim();
+            var cliente = TrimUpper(clienteCodigo);
+            if (searchText.Length < 2 && string.IsNullOrWhiteSpace(cliente))
+                return [];
+
+            await using var cn = new SqlConnection(ConnectionString);
+            var rows = await cn.QueryAsync<ParteHoraPersonaOptionDto>(new CommandDefinition("""
+                SELECT TOP (20)
+                    CAST(N'CONTACTO' AS nvarchar(20)) AS Tipo,
+                    c.id AS IdContacto,
+                    CAST(N'' AS nvarchar(100)) AS Usuario,
+                    ISNULL(c.Nombre_y_Apellido, '') AS Nombre,
+                    ISNULL(c.Email, '') AS Email,
+                    ISNULL(c.Telefono, '') AS Telefono,
+                    ISNULL(c.Celular, '') AS Celular,
+                    ISNULL(contactoCuenta.Cuenta, '') AS ClienteCodigo,
+                    ISNULL(contactoCuenta.RazonSocial, '') AS ClienteNombre,
+                    CONCAT(
+                        ISNULL(contactoCuenta.Localidad, ''),
+                        CASE WHEN ISNULL(contactoCuenta.Provincia, '') = '' THEN '' ELSE ' - ' + contactoCuenta.Provincia END
+                    ) AS Direccion
+                FROM dbo.MA_CONTACTOS c
+                OUTER APPLY (
+                    SELECT TOP (1)
+                        cuenta.Cuenta,
+                        cliCuenta.RAZON_SOCIAL AS RazonSocial,
+                        ISNULL(cliCuenta.LOCALIDAD, '') AS Localidad,
+                        ISNULL(cliCuenta.PROVINCIA, '') AS Provincia
+                    FROM (
+                        SELECT UPPER(LTRIM(RTRIM(rel.Cuenta))) AS Cuenta, 0 AS Orden
+                        FROM dbo.MA_CONTACTOS_CUENTAS rel
+                        WHERE rel.IdContacto = ISNULL(NULLIF(c.idContacto, 0), c.id)
+                          AND LTRIM(RTRIM(ISNULL(rel.Cuenta, ''))) <> ''
+                        UNION ALL
+                        SELECT UPPER(LTRIM(RTRIM(c.CuentaRel))) AS Cuenta, 1 AS Orden
+                        WHERE LTRIM(RTRIM(ISNULL(c.CuentaRel, ''))) <> ''
+                    ) cuenta
+                    INNER JOIN dbo.VT_CLIENTES cliCuenta
+                        ON UPPER(LTRIM(RTRIM(cliCuenta.CODIGO))) = cuenta.Cuenta
+                    WHERE @ClienteCodigo = '' OR cuenta.Cuenta = @ClienteCodigo
+                    ORDER BY cuenta.Orden, cliCuenta.RAZON_SOCIAL
+                ) contactoCuenta
+                WHERE (@ClienteCodigo = '' OR contactoCuenta.Cuenta = @ClienteCodigo)
+                  AND (
+                        @Texto = ''
+                        OR c.Nombre_y_Apellido COLLATE Latin1_General_CI_AI LIKE @Search
+                        OR c.Email COLLATE Latin1_General_CI_AI LIKE @Search
+                        OR c.Telefono LIKE @Search
+                        OR c.Celular LIKE @Search
+                      )
+
+                UNION ALL
+
+                SELECT TOP (20)
+                    CAST(N'USUARIO' AS nvarchar(20)) AS Tipo,
+                    CAST(NULL AS int) AS IdContacto,
+                    LTRIM(RTRIM(ISNULL(u.NOMBRE, ''))) AS Usuario,
+                    LTRIM(RTRIM(ISNULL(u.NOMBRE, ''))) AS Nombre,
+                    ISNULL(u.email_de, '') AS Email,
+                    CAST(N'' AS nvarchar(80)) AS Telefono,
+                    CAST(N'' AS nvarchar(80)) AS Celular,
+                    CAST(N'' AS nvarchar(40)) AS ClienteCodigo,
+                    CAST(N'Equipo Alfa' AS nvarchar(160)) AS ClienteNombre,
+                    CAST(N'Usuario interno' AS nvarchar(220)) AS Direccion
+                FROM dbo.TA_USUARIOS u
+                WHERE UPPER(LTRIM(RTRIM(ISNULL(u.SISTEMA, '')))) = N'CN000PR'
+                  AND LTRIM(RTRIM(ISNULL(u.NOMBRE, ''))) <> ''
+                  AND (
+                        @Texto = ''
+                        OR u.NOMBRE COLLATE Latin1_General_CI_AI LIKE @Search
+                        OR u.email_de COLLATE Latin1_General_CI_AI LIKE @Search
+                      )
+                ORDER BY Tipo, Nombre;
+                """, new
+            {
+                Texto = searchText,
+                Search = SearchTextHelper.LikeContains(searchText),
+                ClienteCodigo = cliente
+            }, cancellationToken: token));
+            return rows.ToList();
+        }, "No se pudieron buscar contactos o usuarios.", ct);
+
     public Task<IReadOnlyList<ParteHoraTicketOptionDto>> SearchTicketsAsync(string texto, string? clienteCodigo = null, CancellationToken ct = default)
         => ExecuteLoggedAsync<IReadOnlyList<ParteHoraTicketOptionDto>>("SearchTickets", async token =>
         {

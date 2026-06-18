@@ -142,6 +142,20 @@ public sealed class ParteHoraTicketOptionDto
     public string ClienteNombre { get; set; } = string.Empty;
 }
 
+public sealed class ParteHoraPersonaOptionDto
+{
+    public string Tipo { get; set; } = string.Empty;
+    public int? IdContacto { get; set; }
+    public string Usuario { get; set; } = string.Empty;
+    public string Nombre { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+    public string Telefono { get; set; } = string.Empty;
+    public string Celular { get; set; } = string.Empty;
+    public string ClienteCodigo { get; set; } = string.Empty;
+    public string ClienteNombre { get; set; } = string.Empty;
+    public string Direccion { get; set; } = string.Empty;
+}
+
 public sealed class ParteHoraLookupDto
 {
     public List<ParteHoraLookupOptionDto> Tecnicos { get; set; } = [];
