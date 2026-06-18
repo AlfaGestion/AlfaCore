@@ -945,6 +945,7 @@
     private string _personaSearch = string.Empty;
     private string _ticketSelectValue = TicketSelectDefaultValue;
     private int? _ticketNumeroBusqueda;
+    private int? _pendingLineaDescripcionFocusIndex;
     private IDisposable? _floatingWindowRegistration;
 
     protected override async Task OnInitializedAsync()
@@ -953,6 +954,23 @@
         NuevoParte();
         _showEditor = false;
         await RecargarAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_pendingLineaDescripcionFocusIndex.HasValue)
+        {
+            var focusIndex = _pendingLineaDescripcionFocusIndex.Value;
+            _pendingLineaDescripcionFocusIndex = null;
+
+            try
+            {
+                await JS.InvokeVoidAsync("eval", $"document.getElementById('{GetLineaDescripcionId(focusIndex)}')?.focus()");
+            }
+            catch
+            {
+            }
+        }
     }
 
     private Task CloseFloatingWindowsAsync()
@@ -1422,7 +1440,7 @@
         return Task.CompletedTask;
     }
 
-    private async Task InsertarLineaDespuesAsync(int index)
+    private Task InsertarLineaDespuesAsync(int index)
     {
         var previous = index >= 0 && index < _lineas.Count ? _lineas[index] : _lineas.LastOrDefault();
         var nueva = new ParteHoraLineaForm
@@ -1438,8 +1456,8 @@
             _lineas.Insert(index + 1, nueva);
 
         var focusIndex = Math.Min(index + 1, _lineas.Count - 1);
-        await InvokeAsync(StateHasChanged);
-        await JS.InvokeVoidAsync("eval", $"document.getElementById('{GetLineaDescripcionId(focusIndex)}')?.focus()");
+        _pendingLineaDescripcionFocusIndex = focusIndex;
+        return Task.CompletedTask;
     }
 
     private static string GetLineaDescripcionId(int index)

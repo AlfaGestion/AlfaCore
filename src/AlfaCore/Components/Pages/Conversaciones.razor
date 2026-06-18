@@ -2212,6 +2212,7 @@
     private readonly string _typingClientId = Guid.NewGuid().ToString("N");
     private DateTime _lastTypingSentUtc = DateTime.MinValue;
     private bool _focusReplyAfterRender;
+    private int? _pendingParteHoraLineaDescripcionFocusIndex;
     private double _previewZoom = 1d;
     private List<PendingAttachment> _pendingAttachments = [];
     private List<PendingAttachment> _templatePendingAttachments = [];
@@ -2577,6 +2578,20 @@
             try
             {
                 await _conversationNameInput.FocusAsync(preventScroll: true);
+            }
+            catch
+            {
+            }
+        }
+
+        if (_pendingParteHoraLineaDescripcionFocusIndex.HasValue)
+        {
+            var focusIndex = _pendingParteHoraLineaDescripcionFocusIndex.Value;
+            _pendingParteHoraLineaDescripcionFocusIndex = null;
+
+            try
+            {
+                await JS.InvokeVoidAsync("eval", $"document.getElementById('{GetParteHoraLineaDescripcionId(focusIndex)}')?.focus()");
             }
             catch
             {
@@ -3380,7 +3395,7 @@
         return Task.CompletedTask;
     }
 
-    private async Task InsertParteHoraLineaAfterAsync(int index)
+    private Task InsertParteHoraLineaAfterAsync(int index)
     {
         var previous = index >= 0 && index < _parteHoraLineas.Count ? _parteHoraLineas[index] : _parteHoraLineas.LastOrDefault();
         var nueva = new ParteHoraConversacionLinea
@@ -3396,8 +3411,8 @@
             _parteHoraLineas.Insert(index + 1, nueva);
 
         var focusIndex = Math.Min(index + 1, _parteHoraLineas.Count - 1);
-        await InvokeAsync(StateHasChanged);
-        await JS.InvokeVoidAsync("eval", $"document.getElementById('{GetParteHoraLineaDescripcionId(focusIndex)}')?.focus()");
+        _pendingParteHoraLineaDescripcionFocusIndex = focusIndex;
+        return Task.CompletedTask;
     }
 
     private static string GetParteHoraLineaDescripcionId(int index)
