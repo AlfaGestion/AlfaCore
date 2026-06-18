@@ -523,7 +523,7 @@
                 <aside class="tickets-editor-side">
                     <div class="field">
                         <label>Etapa</label>
-                        <select @bind="_form.CodigoEstado" disabled="@_saving">
+                        <select @bind="_form.CodigoEstado" @bind:after="AutoGuardarTicketAsync" disabled="@_saving">
                             @foreach (var state in _lookups.Estados)
                             {
                                 <option value="@state.CodigoEstado">@state.Nombre</option>
@@ -532,7 +532,7 @@
                     </div>
                     <div class="field">
                         <label>Prioridad</label>
-                        <select @bind="_form.Prioridad" disabled="@_saving">
+                        <select @bind="_form.Prioridad" @bind:after="AutoGuardarTicketAsync" disabled="@_saving">
                             <option value="0">Sin prioridad</option>
                             <option value="1">Baja</option>
                             <option value="2">Media</option>
@@ -541,7 +541,7 @@
                     </div>
                     <div class="field">
                         <label>Asignado a</label>
-                        <select @bind="_form.IdTecnico" disabled="@_saving">
+                        <select @bind="_form.IdTecnico" @bind:after="AutoGuardarTicketAsync" disabled="@_saving">
                             <option value="">Sin asignar</option>
                             @foreach (var tech in _lookups.Tecnicos)
                             {
@@ -562,7 +562,7 @@
                                 <label class="tickets-tag-option">
                                     <input type="checkbox"
                                            checked="@_formTagIds.Contains(tag.IdEtiqueta)"
-                                           @onchange="args => ToggleTicketTag(tag.IdEtiqueta, args)"
+                                           @onchange="args => ToggleTicketTagAsync(tag.IdEtiqueta, args)"
                                            disabled="@_saving" />
                                     <span class="tickets-tag-chip" style="border-color:@tag.Color;color:@tag.Color">@tag.Nombre</span>
                                 </label>
@@ -2032,7 +2032,7 @@
         _ticketContactSuggestions = [];
     }
 
-    private void ToggleTicketTag(int idEtiqueta, ChangeEventArgs args)
+    private async Task ToggleTicketTagAsync(int idEtiqueta, ChangeEventArgs args)
     {
         var selected = args.Value is bool flag && flag;
         if (selected)
@@ -2044,6 +2044,8 @@
         {
             _formTagIds.Remove(idEtiqueta);
         }
+
+        await AutoGuardarTicketAsync();
     }
 
     private void OpenTagManager()
@@ -2065,6 +2067,14 @@
     {
         if (string.Equals(args.Key, "Escape", StringComparison.OrdinalIgnoreCase))
             CloseTagManager();
+    }
+
+    private async Task AutoGuardarTicketAsync()
+    {
+        if (_isNew || _detail is null || _saving)
+            return;
+
+        await GuardarAsync();
     }
 
     private void NuevaEtiqueta()
