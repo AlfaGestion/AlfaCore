@@ -202,15 +202,9 @@ public sealed class PartesHorasService(
                     UsuarioModificacion = @Usuario,
                     FechaHoraModificacion = GETDATE()
                 WHERE IdParteHora = @IdParteHora
-                  AND Estado <> @Aprobado;
-                """, new { IdParteHora = idParteHora, Usuario = NormalizeUser(usuarioAccion), Aprobado = ParteHoraEstadoKeys.Aprobado }, cancellationToken: token));
-        }, "No se pudo anular el parte de horas.", ct);
-
-    public Task AprobarAsync(long idParteHora, string usuarioAccion, CancellationToken ct = default)
-        => ChangeEstadoAsync(idParteHora, ParteHoraEstadoKeys.Aprobado, usuarioAccion, "Aprobar", "No se pudo aprobar el parte de horas.", ct);
-
-    public Task RechazarAsync(long idParteHora, string usuarioAccion, CancellationToken ct = default)
-        => ChangeEstadoAsync(idParteHora, ParteHoraEstadoKeys.Rechazado, usuarioAccion, "Rechazar", "No se pudo rechazar el parte de horas.", ct);
+                  AND ISNULL(Baja, 0) = 0;
+                """, new { IdParteHora = idParteHora, Usuario = NormalizeUser(usuarioAccion) }, cancellationToken: token));
+        }, "No se pudo borrar el parte de horas.", ct);
 
     public Task<ParteHoraDashboardDto> GetDashboardAsync(PartesHorasFilters filters, CancellationToken ct = default)
         => ExecuteLoggedAsync("Dashboard", async token =>
@@ -276,7 +270,11 @@ public sealed class PartesHorasService(
                 ORDER BY Nombre;
                 """, cancellationToken: token));
 
-            return new ParteHoraLookupDto { Tecnicos = tecnicos.ToList() };
+            return new ParteHoraLookupDto
+            {
+                Tecnicos = tecnicos.ToList(),
+                Estados = ParteHoraEstadoKeys.Editables.ToList()
+            };
         }, "No se pudieron cargar los datos auxiliares de partes.", ct);
 
     public Task<IReadOnlyList<ParteHoraLookupOptionDto>> SearchClientesAsync(string texto, CancellationToken ct = default)
@@ -460,22 +458,6 @@ public sealed class PartesHorasService(
             }, cancellationToken: token));
         }, "No se pudo guardar la bolsa mensual del cliente.", ct);
 
-    private Task ChangeEstadoAsync(long idParteHora, string estado, string usuarioAccion, string action, string userMessage, CancellationToken ct)
-        => ExecuteLoggedAsync(action, async token =>
-        {
-            await using var cn = new SqlConnection(ConnectionString);
-            await cn.ExecuteAsync(new CommandDefinition("""
-                UPDATE dbo.ALFACORE_PARTES_HORAS
-                SET Estado = @Estado,
-                    UsuarioAprobacion = @Usuario,
-                    FechaHoraAprobacion = GETDATE(),
-                    UsuarioModificacion = @Usuario,
-                    FechaHoraModificacion = GETDATE()
-                WHERE IdParteHora = @IdParteHora
-                  AND ISNULL(Baja, 0) = 0;
-                """, new { IdParteHora = idParteHora, Estado = estado, Usuario = NormalizeUser(usuarioAccion) }, cancellationToken: token));
-        }, userMessage, ct);
-
     private static string SelectGridSql() => """
         SELECT
             p.IdParteHora,
@@ -572,7 +554,7 @@ public sealed class PartesHorasService(
             Minutos = request.Minutos,
             Facturable = request.Facturable,
             Excedente = request.Excedente,
-            Estado = NormalizeAllowed(request.Estado, ParteHoraEstadoKeys.All, ParteHoraEstadoKeys.Borrador),
+            Estado = NormalizeAllowed(request.Estado, ParteHoraEstadoKeys.Editables, ParteHoraEstadoKeys.Borrador),
             Descripcion = request.Descripcion?.Trim() ?? string.Empty,
             UsuarioAccion = NormalizeUser(request.UsuarioAccion)
         };

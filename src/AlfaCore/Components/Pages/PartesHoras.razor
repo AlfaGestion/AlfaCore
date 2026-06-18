@@ -61,7 +61,7 @@
 
     .partes-horas-page .partes-hero__metrics {
         display: grid;
-        grid-template-columns: repeat(4, minmax(102px, 1fr));
+        grid-template-columns: repeat(3, minmax(118px, 1fr));
         min-width: 0;
         overflow: hidden;
         border: 1px solid var(--color-border);
@@ -351,15 +351,7 @@
         }
 
         .partes-horas-page .partes-hero__metrics {
-            grid-template-columns: repeat(2, minmax(100px, 1fr));
-        }
-
-        .partes-horas-page .partes-metric:nth-child(2) {
-            border-right: 0;
-        }
-
-        .partes-horas-page .partes-metric:nth-child(-n + 2) {
-            border-bottom: 1px solid var(--color-border);
+            grid-template-columns: repeat(3, minmax(100px, 1fr));
         }
 
         .partes-editor-form {
@@ -440,10 +432,6 @@
             <article class="partes-metric partes-metric--warn">
                 <span>Excedente</span>
                 <strong>@FormatMinutes(_dashboard.MinutosExcedentes)</strong>
-            </article>
-            <article class="partes-metric">
-                <span>Pendientes</span>
-                <strong>@_dashboard.PartesPendientes</strong>
             </article>
         </div>
         <div class="partes-hero__actions">
@@ -821,10 +809,12 @@
                                 <td>@(parte.Excedente ? "Sí" : "No")</td>
                                 <td>
                                     <div class="actions">
-                                        <button type="button" class="btn btn--ghost btn--sm" @onclick="() => EditarParteAsync(parte.IdParteHora)" @onclick:stopPropagation>Editar</button>
-                                        <button type="button" class="btn btn--ghost btn--sm" @onclick="() => AprobarAsync(parte.IdParteHora)">Aprobar</button>
-                                        <button type="button" class="btn btn--ghost btn--sm" @onclick="() => RechazarAsync(parte.IdParteHora)">Rechazar</button>
-                                        <button type="button" class="btn btn--ghost btn--sm" @onclick="() => AnularAsync(parte.IdParteHora)">Anular</button>
+                                        <button type="button" class="btn btn--ghost btn--sm" title="Editar parte" aria-label="Editar parte" @onclick="() => EditarParteAsync(parte.IdParteHora)" @onclick:stopPropagation>
+                                            <i class="bi bi-pencil-square"></i>
+                                        </button>
+                                        <button type="button" class="btn btn--ghost btn--sm" title="Borrar parte" aria-label="Borrar parte" @onclick="() => BorrarParteAsync(parte.IdParteHora)" @onclick:stopPropagation>
+                                            <i class="bi bi-trash"></i>
+                                        </button>
                                     </div>
                                 </td>
                             </tr>
@@ -1492,24 +1482,10 @@
     private static string DisplayText(string value, string fallback)
         => string.IsNullOrWhiteSpace(value) ? fallback : value;
 
-    private async Task AprobarAsync(long id)
+    private async Task BorrarParteAsync(long id)
     {
-        var result = await UiOps.RunAsync(() => PartesSvc.AprobarAsync(id, AppUserSession.GetCurrentUserName(Environment.UserName)), "No se pudo aprobar el parte.");
-        _feedback = result.Success ? AppUiMessage.Success("Parte aprobado", "El registro quedó aprobado.") : result.Feedback;
-        await BuscarAsync();
-    }
-
-    private async Task RechazarAsync(long id)
-    {
-        var result = await UiOps.RunAsync(() => PartesSvc.RechazarAsync(id, AppUserSession.GetCurrentUserName(Environment.UserName)), "No se pudo rechazar el parte.");
-        _feedback = result.Success ? AppUiMessage.Success("Parte rechazado", "El registro quedó rechazado.") : result.Feedback;
-        await BuscarAsync();
-    }
-
-    private async Task AnularAsync(long id)
-    {
-        var result = await UiOps.RunAsync(() => PartesSvc.DeleteAsync(id, AppUserSession.GetCurrentUserName(Environment.UserName)), "No se pudo anular el parte.");
-        _feedback = result.Success ? AppUiMessage.Success("Parte anulado", "El registro fue dado de baja.") : result.Feedback;
+        var result = await UiOps.RunAsync(() => PartesSvc.DeleteAsync(id, AppUserSession.GetCurrentUserName(Environment.UserName)), "No se pudo borrar el parte.");
+        _feedback = result.Success ? AppUiMessage.Success("Parte borrado", "El registro fue dado de baja.") : result.Feedback;
         await BuscarAsync();
     }
 

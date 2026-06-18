@@ -7,6 +7,7 @@ public static class ParteHoraEstadoKeys
     public const string Aprobado = "APROBADO";
     public const string Rechazado = "RECHAZADO";
 
+    public static readonly string[] Editables = [Borrador, Presentado];
     public static readonly string[] All = [Borrador, Presentado, Aprobado, Rechazado];
 }
 
