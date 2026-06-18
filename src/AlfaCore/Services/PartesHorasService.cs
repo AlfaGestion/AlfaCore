@@ -538,6 +538,8 @@ public sealed class PartesHorasService(
             throw ValidationError("tecnico", "Indicá el técnico o usuario que realizó el trabajo.");
         if (request.TipoTrabajo != ParteHoraTipoTrabajoKeys.Interno && string.IsNullOrWhiteSpace(request.ClienteCodigo))
             throw ValidationError("cliente", "Indicá el cliente o usá tipo Interno para tareas no imputables.");
+        if (string.IsNullOrWhiteSpace(request.Descripcion))
+            throw ValidationError("descripcion", "Indica la descripcion de la tarea.");
     }
 
     private static ParteHoraSaveRequest Normalize(ParteHoraSaveRequest request)

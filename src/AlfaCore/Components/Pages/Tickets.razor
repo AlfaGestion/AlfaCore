@@ -93,7 +93,7 @@
 
     .tickets-parte-registrado {
         display: grid;
-        grid-template-columns: minmax(92px, .6fr) minmax(130px, .8fr) minmax(110px, .65fr) minmax(80px, .45fr) minmax(90px, .55fr) minmax(220px, 1.6fr);
+        grid-template-columns: minmax(92px, .6fr) minmax(130px, .8fr) minmax(110px, .65fr) minmax(80px, .45fr) minmax(220px, 1.6fr) auto;
         gap: 10px;
         align-items: start;
         padding: .72rem .8rem;
@@ -119,6 +119,12 @@
         color: var(--text);
         font-size: .9rem;
         overflow-wrap: anywhere;
+    }
+
+    .tickets-parte-registrado__actions {
+        display: flex;
+        gap: 6px;
+        justify-content: flex-end;
     }
 
     .tickets-partes-lines {
@@ -759,12 +765,16 @@
                                             <strong>@FormatParteMinutes(parte.Minutos)</strong>
                                         </div>
                                         <div>
-                                            <span>Estado</span>
-                                            <strong>@LabelParteEstado(parte.Estado)</strong>
-                                        </div>
-                                        <div>
                                             <span>Tarea</span>
                                             <strong>@DisplayOrFallback(parte.Descripcion, "Sin descripcion")</strong>
+                                        </div>
+                                        <div class="tickets-parte-registrado__actions">
+                                            <button type="button" class="btn btn--ghost btn--sm" title="Editar parte" aria-label="Editar parte" @onclick="() => EditarParteVinculadoAsync(parte.IdParteHora)" disabled="@_savingParteHora">
+                                                <i class="bi bi-pencil-square"></i>
+                                            </button>
+                                            <button type="button" class="btn btn--ghost btn--sm" title="Borrar parte" aria-label="Borrar parte" @onclick="() => BorrarParteVinculadoAsync(parte.IdParteHora)" disabled="@_savingParteHora">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
                                         </div>
                                     </article>
                                 }
@@ -787,15 +797,6 @@
                         <div class="field">
                             <label>Contacto / usuario</label>
                             <input type="text" value="@DisplayOrFallback(_detail?.ContactoNombre, _ticketParteForm.Usuario, "Sin contacto")" disabled />
-                        </div>
-                        <div class="field">
-                            <label>Estado</label>
-                            <select @bind="_ticketParteForm.Estado" disabled="@_savingParteHora">
-                                @foreach (var estado in _partesLookups.Estados)
-                                {
-                                    <option value="@estado">@LabelParteEstado(estado)</option>
-                                }
-                            </select>
                         </div>
                         <label class="checkbox">
                             <input type="checkbox" @bind="_ticketParteForm.Facturable" disabled="@_savingParteHora" />
@@ -855,10 +856,10 @@
 
                     <div class="actions usuarios-editor__actions">
                         <button type="button" class="btn btn--primary" @onclick="GuardarParteHoraTicketAsync" disabled="@(_savingParteHora || _detail is null)">
-                            <i class="bi bi-stopwatch"></i> @(_savingParteHora ? "Guardando..." : "Guardar parte")
+                            <i class="bi bi-stopwatch"></i> @(_savingParteHora ? "Guardando..." : (_editingTicketParteHoraId.HasValue ? "Actualizar parte" : "Guardar parte"))
                         </button>
                         <button type="button" class="btn btn--ghost" @onclick="ResetTicketParteHoraForm" disabled="@_savingParteHora">
-                            <i class="bi bi-eraser"></i> Limpiar
+                            <i class="bi bi-eraser"></i> @(_editingTicketParteHoraId.HasValue ? "Cancelar edicion" : "Limpiar")
                         </button>
                     </div>
                 </section>
@@ -1119,6 +1120,7 @@
     private ParteHoraSaveRequest _ticketParteForm = new();
     private List<TicketParteHoraLineaForm> _ticketParteLineas = [];
     private List<ParteHoraGridItemDto> _ticketPartesRegistrados = [];
+    private long? _editingTicketParteHoraId;
     private List<int> _formTagIds = [];
     private string _newNote = string.Empty;
     private int _pagedTotal;
@@ -1800,9 +1802,74 @@
         }
     }
 
+    private async Task EditarParteVinculadoAsync(long idParteHora)
+    {
+        var result = await UiOps.RunAsync(() => PartesSvc.GetByIdAsync(idParteHora), "No se pudo cargar el parte de horas.");
+        if (!result.Success || result.Value is null)
+        {
+            SetFeedback(result.Feedback ?? new AppUiMessage { Severity = AppUiFeedbackSeverity.Warning, Title = "Parte no disponible", Message = "El parte seleccionado ya no existe." });
+            await LoadTicketPartesAsync();
+            return;
+        }
+
+        var detail = result.Value;
+        _editingTicketParteHoraId = detail.IdParteHora;
+        _ticketParteForm = new ParteHoraSaveRequest
+        {
+            IdParteHora = detail.IdParteHora,
+            Fecha = detail.Fecha,
+            ClienteCodigo = detail.ClienteCodigo,
+            IdContacto = detail.IdContacto,
+            IdTicket = detail.IdTicket,
+            IdTecnico = detail.IdTecnico,
+            Usuario = detail.Usuario,
+            TipoTrabajo = detail.TipoTrabajo,
+            Minutos = detail.Minutos,
+            Facturable = detail.Facturable,
+            Excedente = detail.Excedente,
+            Estado = ParteHoraEstadoKeys.Presentado,
+            Descripcion = detail.Descripcion,
+            UsuarioAccion = AppUserSession.GetCurrentUserName(Environment.UserName)
+        };
+        _ticketParteLineas =
+        [
+            new TicketParteHoraLineaForm
+            {
+                IdTecnico = detail.IdTecnico,
+                TipoTrabajo = detail.TipoTrabajo,
+                Minutos = detail.Minutos,
+                Descripcion = detail.Descripcion
+            }
+        ];
+    }
+
+    private async Task BorrarParteVinculadoAsync(long idParteHora)
+    {
+        _savingParteHora = true;
+        try
+        {
+            var result = await UiOps.RunAsync(() => PartesSvc.DeleteAsync(idParteHora, AppUserSession.GetCurrentUserName(Environment.UserName)), "No se pudo borrar el parte de horas.");
+            if (!result.Success)
+            {
+                SetFeedback(result.Feedback);
+                return;
+            }
+
+            SetFeedback(AppUiMessage.Success("Parte borrado", "El parte fue dado de baja."));
+            if (_editingTicketParteHoraId == idParteHora)
+                ResetTicketParteHoraForm();
+            await LoadTicketPartesAsync();
+        }
+        finally
+        {
+            _savingParteHora = false;
+        }
+    }
+
     private void ResetTicketParteHoraForm()
     {
         var usuario = AppUserSession.GetCurrentUserName(Environment.UserName);
+        _editingTicketParteHoraId = null;
         _ticketParteForm = new ParteHoraSaveRequest
         {
             Fecha = DateTime.Today,
@@ -1814,7 +1881,7 @@
             UsuarioAccion = usuario,
             TipoTrabajo = ParteHoraTipoTrabajoKeys.Soporte,
             Minutos = 15,
-            Estado = ParteHoraEstadoKeys.Borrador,
+            Estado = ParteHoraEstadoKeys.Presentado,
             Facturable = true
         };
         _ticketParteLineas =
@@ -1890,10 +1957,18 @@
             if (lineas.Count == 0)
                 lineas.Add(new TicketParteHoraLineaForm { IdTecnico = _ticketParteForm.IdTecnico, TipoTrabajo = ParteHoraTipoTrabajoKeys.Soporte, Minutos = 15 });
 
+            if (lineas.Any(linea => string.IsNullOrWhiteSpace(linea.Descripcion)))
+            {
+                SetFeedback(new AppUiMessage { Severity = AppUiFeedbackSeverity.Warning, Title = "Tarea requerida", Message = "Todas las lineas del parte deben tener descripcion de tarea." });
+                return;
+            }
+
+            var lineIndex = 0;
             foreach (var linea in lineas)
             {
                 var request = new ParteHoraSaveRequest
                 {
+                    IdParteHora = lineIndex == 0 ? _editingTicketParteHoraId : null,
                     Fecha = _ticketParteForm.Fecha,
                     ClienteCodigo = _detail.ClienteCodigo,
                     IdContacto = _detail.IdContacto,
@@ -1904,7 +1979,7 @@
                     Minutos = linea.Minutos,
                     Facturable = _ticketParteForm.Facturable,
                     Excedente = _ticketParteForm.Excedente,
-                    Estado = _ticketParteForm.Estado,
+                    Estado = ParteHoraEstadoKeys.Presentado,
                     Descripcion = linea.Descripcion,
                     UsuarioAccion = usuario
                 };
@@ -1915,9 +1990,11 @@
                     SetFeedback(result.Feedback);
                     return;
                 }
+
+                lineIndex++;
             }
 
-            SetFeedback(AppUiMessage.Success("Parte guardado", lineas.Count == 1 ? "La hora quedó vinculada al ticket." : $"Se vincularon {lineas.Count} líneas de trabajo al ticket."));
+            SetFeedback(AppUiMessage.Success(_editingTicketParteHoraId.HasValue ? "Parte actualizado" : "Parte guardado", lineas.Count == 1 ? "La hora quedo vinculada al ticket." : $"Se vincularon {lineas.Count} lineas de trabajo al ticket."));
             var id = _detail.IdTicket;
             await AbrirTicketAsync(id, updateUrl: false);
             _ticketEditorTab = TicketEditorTabParteHora;
@@ -2718,15 +2795,6 @@
             1 => "Baja",
             _ => "Sin prioridad"
         };
-
-    private static string LabelParteEstado(string value) => value switch
-    {
-        ParteHoraEstadoKeys.Borrador => "Borrador",
-        ParteHoraEstadoKeys.Presentado => "Presentado",
-        ParteHoraEstadoKeys.Aprobado => "Aprobado",
-        ParteHoraEstadoKeys.Rechazado => "Rechazado",
-        _ => value
-    };
 
     private static string LabelParteTipo(string value) => value switch
     {

@@ -488,12 +488,6 @@
                     Busqueda @_filters.Texto <i class="bi bi-x"></i>
                 </button>
             }
-            @if (!string.IsNullOrWhiteSpace(_filters.Estado))
-            {
-                <button type="button" class="smart-chip" @onclick="ClearEstadoAsync">
-                    @LabelEstado(_filters.Estado) <i class="bi bi-x"></i>
-                </button>
-            }
             @if (!string.IsNullOrWhiteSpace(_filters.TipoTrabajo))
             {
                 <button type="button" class="smart-chip" @onclick="ClearTipoAsync">
@@ -530,19 +524,6 @@
         {
             <div class="smart-search__panel" @onkeydown="HandleQuickSearchKeyDownAsync">
                 <div class="smart-search__column">
-                    <h4><i class="bi bi-funnel-fill"></i> Estado</h4>
-                    <button type="button" class="@GetSmartOptionClass(string.IsNullOrWhiteSpace(_filters.Estado))" @onclick='() => SetEstadoFilterAsync(string.Empty)'>Todos</button>
-                    @foreach (var estado in _lookups.Estados)
-                    {
-                        <button type="button" class="@GetSmartOptionClass(string.Equals(_filters.Estado, estado, StringComparison.OrdinalIgnoreCase))" @onclick="() => SetEstadoFilterAsync(estado)">
-                            @LabelEstado(estado)
-                        </button>
-                    }
-                    <button type="button" class="btn btn--primary btn--sm" @onclick="AplicarBusquedaAsync" disabled="@_loading">
-                        <i class="bi bi-search"></i> Aplicar
-                    </button>
-                </div>
-                <div class="smart-search__column">
                     <h4><i class="bi bi-clock-history"></i> Tipo y condicion</h4>
                     <button type="button" class="@GetSmartOptionClass(string.IsNullOrWhiteSpace(_filters.TipoTrabajo))" @onclick='() => SetTipoFilterAsync(string.Empty)'>Todos los tipos</button>
                     @foreach (var tipo in GetTiposTrabajoVisibles())
@@ -553,6 +534,9 @@
                     }
                     <button type="button" class="@GetSmartOptionClass(_filters.SoloFacturables)" @onclick="ToggleSoloFacturablesAsync">Solo facturables</button>
                     <button type="button" class="@GetSmartOptionClass(_filters.SoloExcedentes)" @onclick="ToggleSoloExcedentesAsync">Solo excedentes</button>
+                    <button type="button" class="btn btn--primary btn--sm" @onclick="AplicarBusquedaAsync" disabled="@_loading">
+                        <i class="bi bi-search"></i> Aplicar
+                    </button>
                 </div>
                 <div class="smart-search__column">
                     <h4><i class="bi bi-calendar-week"></i> Periodo y asignacion</h4>
@@ -652,15 +636,6 @@
                             }
                         </div>
                     }
-                </div>
-                <div class="field">
-                    <label>Estado</label>
-                    <select @bind="_form.Estado">
-                        @foreach (var estado in _lookups.Estados)
-                        {
-                            <option value="@estado">@LabelEstado(estado)</option>
-                        }
-                    </select>
                 </div>
                 <label class="checkbox">
                     <input type="checkbox" @bind="_form.Facturable" />
@@ -787,7 +762,6 @@
                             <th>Técnico</th>
                             <th>Tipo</th>
                             <th>Horas</th>
-                            <th>Estado</th>
                             <th>Fact.</th>
                             <th>Exc.</th>
                             <th>Acciones</th>
@@ -803,7 +777,6 @@
                                 <td>@(string.IsNullOrWhiteSpace(parte.TecnicoNombre) ? parte.Usuario : parte.TecnicoNombre)</td>
                                 <td>@LabelTipo(parte.TipoTrabajo)</td>
                                 <td>@FormatMinutes(parte.Minutos)</td>
-                                <td>@LabelEstado(parte.Estado)</td>
                                 <td>@(parte.Facturable ? "Sí" : "No")</td>
                                 <td>@(parte.Excedente ? "Sí" : "No")</td>
                                 <td>
@@ -1075,12 +1048,6 @@
         CloseFiltros();
     }
 
-    private async Task SetEstadoFilterAsync(string estado)
-    {
-        _filters.Estado = estado;
-        await AplicarFiltrosAsync();
-    }
-
     private async Task SetTipoFilterAsync(string tipo)
     {
         _filters.TipoTrabajo = tipo;
@@ -1112,12 +1079,6 @@
         _filters.Texto = string.Empty;
         _filters.PageNumber = 1;
         await BuscarAsync();
-    }
-
-    private async Task ClearEstadoAsync()
-    {
-        _filters.Estado = string.Empty;
-        await AplicarFiltrosAsync();
     }
 
     private async Task ClearTipoAsync()
@@ -1177,7 +1138,7 @@
             Usuario = AppUserSession.GetCurrentUserName(Environment.UserName),
             UsuarioAccion = AppUserSession.GetCurrentUserName(Environment.UserName),
             TipoTrabajo = ParteHoraTipoTrabajoKeys.Soporte,
-            Estado = ParteHoraEstadoKeys.Borrador,
+            Estado = ParteHoraEstadoKeys.Presentado,
             Facturable = true,
             Minutos = 60
         };
@@ -1283,7 +1244,7 @@
                     Minutos = linea.Minutos,
                     Facturable = _form.Facturable,
                     Excedente = _form.Excedente,
-                    Estado = _form.Estado,
+                    Estado = ParteHoraEstadoKeys.Presentado,
                     Descripcion = linea.Descripcion,
                     UsuarioAccion = _form.UsuarioAccion
                 };
@@ -1517,15 +1478,6 @@
         var hasta = _filters.FechaHasta?.ToString("dd/MM/yyyy") ?? "Sin fin";
         return $"{desde} - {hasta}";
     }
-
-    private static string LabelEstado(string value) => value switch
-    {
-        ParteHoraEstadoKeys.Borrador => "Borrador",
-        ParteHoraEstadoKeys.Presentado => "Presentado",
-        ParteHoraEstadoKeys.Aprobado => "Aprobado",
-        ParteHoraEstadoKeys.Rechazado => "Rechazado",
-        _ => value
-    };
 
     private static string LabelTipo(string value) => value switch
     {
