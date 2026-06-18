@@ -16,6 +16,47 @@
         margin: 4px 0 18px;
     }
 
+    .tickets-page select,
+    .tickets-page option {
+        background: #081220;
+        color: var(--text);
+    }
+
+    .tickets-page select {
+        color-scheme: dark;
+    }
+
+    .tickets-tag-field__head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin-bottom: 6px;
+    }
+
+    .tickets-tag-field__head label {
+        margin: 0;
+    }
+
+    .tickets-tag-field__head .btn {
+        width: 34px;
+        height: 34px;
+        padding: 0;
+        display: inline-grid;
+        place-items: center;
+    }
+
+    .tickets-activity-panel {
+        display: grid;
+        gap: 14px;
+    }
+
+    .tickets-activity__item strong {
+        display: block;
+        margin-bottom: 4px;
+        text-transform: capitalize;
+    }
+
     .tickets-partes-panel {
         display: grid;
         gap: 16px;
@@ -415,6 +456,7 @@
             <div class="contactos-tabs tickets-editor-tabs" role="tablist" aria-label="Detalle de ticket">
                 <button type="button" class="cuentas-tab @GetTicketEditorTabClass(TicketEditorTabTicket)" @onclick='() => _ticketEditorTab = TicketEditorTabTicket'>Ticket</button>
                 <button type="button" class="cuentas-tab @GetTicketEditorTabClass(TicketEditorTabParteHora)" @onclick="SetTicketParteHoraTab" disabled="@_isNew">Parte de hora</button>
+                <button type="button" class="cuentas-tab @GetTicketEditorTabClass(TicketEditorTabActividad)" @onclick="SetTicketActividadTab" disabled="@_isNew">Actividad</button>
             </div>
 
             @if (_ticketEditorTab == TicketEditorTabTicket)
@@ -507,8 +549,13 @@
                             }
                         </select>
                     </div>
-                    <div class="field">
-                        <label>Etiquetas</label>
+                    <div class="field tickets-tag-field">
+                        <div class="tickets-tag-field__head">
+                            <label>Etiquetas</label>
+                            <button type="button" class="btn btn--ghost btn--sm" @onclick="OpenTagManager" disabled="@_saving" title="Administrar etiquetas" aria-label="Administrar etiquetas">
+                                <i class="bi bi-tags"></i>
+                            </button>
+                        </div>
                         <div class="tickets-tag-picker">
                             @foreach (var tag in _lookups.Etiquetas)
                             {
@@ -525,9 +572,6 @@
                                 <span class="panel-card__subtitle">Todavía no hay etiquetas.</span>
                             }
                         </div>
-                        <button type="button" class="btn btn--ghost btn--sm" @onclick="OpenTagManager" disabled="@_saving">
-                            <i class="bi bi-tags"></i> Administrar etiquetas
-                        </button>
                     </div>
                     <div class="field tickets-lookup">
                         <label>Cliente / empresa</label>
@@ -580,6 +624,36 @@
                     <i class="bi bi-eraser"></i> Revertir
                 </button>
             </div>
+            }
+            else if (_ticketEditorTab == TicketEditorTabActividad && _detail is not null)
+            {
+                <section class="tickets-activity-panel">
+                    <div class="panel-card__header">
+                        <div>
+                            <h3 class="panel-card__title">Actividad del ticket</h3>
+                            <p class="panel-card__subtitle">Notas, horas y cambios registrados sobre este ticket.</p>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label>Nueva nota</label>
+                        <textarea rows="3" @bind="_newNote"></textarea>
+                    </div>
+                    <div class="actions">
+                        <button type="button" class="btn btn--primary" @onclick="AgregarNotaAsync" disabled="@(_saving || string.IsNullOrWhiteSpace(_newNote))">
+                            <i class="bi bi-chat-left-text"></i> Registrar nota
+                        </button>
+                    </div>
+                    <div class="tickets-activity">
+                        @foreach (var activity in _detail.Actividad)
+                        {
+                            <div class="tickets-activity__item">
+                                <strong>@FormatActivityType(activity.TipoActividad)</strong>
+                                <p>@FormatActivityDescription(activity)</p>
+                                <span>@activity.Usuario · @activity.FechaHora.ToString("dd/MM/yyyy HH:mm")</span>
+                            </div>
+                        }
+                    </div>
+                </section>
             }
             else
             {
@@ -739,33 +813,6 @@
                             }
                         </div>
                     }
-                </div>
-                <div class="panel-card">
-                    <div class="panel-card__header">
-                        <div>
-                            <h3 class="panel-card__title">Actividad</h3>
-                            <p class="panel-card__subtitle">Notas e historial del ticket.</p>
-                        </div>
-                    </div>
-                    <div class="field">
-                        <label>Nueva nota</label>
-                        <textarea rows="3" @bind="_newNote"></textarea>
-                    </div>
-                    <div class="actions">
-                        <button type="button" class="btn btn--primary" @onclick="AgregarNotaAsync" disabled="@(_saving || string.IsNullOrWhiteSpace(_newNote))">
-                            <i class="bi bi-chat-left-text"></i> Registrar nota
-                        </button>
-                    </div>
-                    <div class="tickets-activity">
-                        @foreach (var activity in _detail.Actividad)
-                        {
-                            <div class="tickets-activity__item">
-                                <strong>@activity.TipoActividad</strong>
-                                <p>@activity.Descripcion</p>
-                                <span>@activity.Usuario · @activity.FechaHora.ToString("dd/MM/yyyy HH:mm")</span>
-                            </div>
-                        }
-                    </div>
                 </div>
             </section>
         }
@@ -940,6 +987,7 @@
 
     private const string TicketEditorTabTicket = "ticket";
     private const string TicketEditorTabParteHora = "parte-hora";
+    private const string TicketEditorTabActividad = "actividad";
 
     private TicketLookupDto _lookups = new();
     private ParteHoraLookupDto _partesLookups = new();
@@ -1598,6 +1646,14 @@
         _ticketEditorTab = TicketEditorTabParteHora;
         if (_ticketParteLineas.Count == 0)
             ResetTicketParteHoraForm();
+    }
+
+    private void SetTicketActividadTab()
+    {
+        if (_isNew)
+            return;
+
+        _ticketEditorTab = TicketEditorTabActividad;
     }
 
     private string GetTicketEditorTabClass(string tab)
@@ -2532,6 +2588,30 @@
         ParteHoraTipoTrabajoKeys.Interno => "Interno",
         _ => value
     };
+
+    private static string FormatActivityType(string value) => value switch
+    {
+        "EDICION" => "Edición",
+        "CAMBIO" => "Cambio",
+        "HORAS" => "Horas",
+        "NOTA" => "Nota",
+        "CREACION" => "Creación",
+        _ => string.IsNullOrWhiteSpace(value) ? "Actividad" : value.ToLowerInvariant()
+    };
+
+    private static string FormatActivityDescription(TicketActividadDto activity)
+    {
+        if (string.IsNullOrWhiteSpace(activity.Descripcion))
+            return "Movimiento registrado.";
+
+        if (string.Equals(activity.TipoActividad, "EDICION", StringComparison.OrdinalIgnoreCase)
+            && activity.Descripcion.StartsWith("Ticket actualizado.", StringComparison.OrdinalIgnoreCase))
+            return activity.Descripcion.Length > "Ticket actualizado.".Length
+                ? $"Ticket actualizado - {activity.Descripcion["Ticket actualizado.".Length..].Trim(' ', '-', '.')}"
+                : "Ticket actualizado.";
+
+        return activity.Descripcion;
+    }
 
     private static string DisplayOrFallback(params string?[] values)
         => values.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x))?.Trim() ?? string.Empty;
