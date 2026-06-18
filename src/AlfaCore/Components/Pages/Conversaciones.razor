@@ -8,6 +8,7 @@
 @inject AlfaCore.Services.IContactosService ContactosSvc
 @inject AlfaCore.Services.ICuentasComercialesService CuentasSvc
 @inject AlfaCore.Services.ITicketsService TicketsSvc
+@inject AlfaCore.Services.IPartesHorasService PartesHorasSvc
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject AlfaCore.Services.IFloatingWindowService FloatingWindows
 @inject IJSRuntime JS
@@ -1837,6 +1838,100 @@
     </section>
 }
 
+@if (_showParteHorasDialog)
+{
+    <div class="conversations-modal-backdrop conversations-hours-backdrop" @onclick="CloseParteHorasDialog"></div>
+    <section class="panel-card conversations-modal conversations-hours-dialog" aria-labelledby="conversations-hours-title">
+        <div class="conversations-hours-dialog__head">
+            <div class="conversations-hours-dialog__title">
+                <span class="conversations-hours-dialog__icon"><i class="bi bi-stopwatch"></i></span>
+                <div>
+                    <h3 id="conversations-hours-title" class="panel-card__title">Parte de horas</h3>
+                    <p class="panel-card__subtitle">Tiempo detectado desde el inicio de la atencion hasta el cierre manual.</p>
+                </div>
+            </div>
+            <button type="button" class="btn btn--ghost btn--sm conversations-hours-dialog__close" @onclick="CloseParteHorasDialog" disabled="@_savingParteHora" aria-label="Cerrar parte de horas">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        </div>
+
+        <div class="conversations-hours-summary">
+            <div>
+                <span>Tiempo sugerido</span>
+                <strong>@FormatParteHorasDuration(_parteHoraSuggestedMinutes)</strong>
+            </div>
+            <div>
+                <span>Tramo</span>
+                <strong>@FormatParteHorasRange()</strong>
+            </div>
+            <div>
+                <span>Cliente</span>
+                <strong>@DisplayOrFallback(_parteHoraClienteNombre, _parteHoraClienteCodigo)</strong>
+            </div>
+        </div>
+
+        @if (_parteHoraTickets.Count > 1)
+        {
+            <div class="conversations-hours-hint">
+                <i class="bi bi-info-circle"></i>
+                <span>Hay varios tickets del cliente. Elegi el correcto antes de guardar.</span>
+            </div>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(_parteHoraError))
+        {
+            <div class="conversations-error conversations-notice">@_parteHoraError</div>
+        }
+
+        <div class="conversations-hours-form">
+            <label class="field">
+                <span>Minutos</span>
+                <input type="number" min="1" max="1440" step="1" @bind="_parteHoraMinutos" disabled="@_savingParteHora" />
+            </label>
+
+            <label class="field">
+                <span>Tipo</span>
+                <select @bind="_parteHoraTipo" disabled="@_savingParteHora">
+                    @foreach (var tipo in ParteHoraTipoTrabajoKeys.All)
+                    {
+                        <option value="@tipo">@FormatParteHoraTipo(tipo)</option>
+                    }
+                </select>
+            </label>
+
+            <label class="field">
+                <span>Ticket</span>
+                <select @bind="_parteHoraTicketId" disabled="@(_savingParteHora || _parteHoraTickets.Count == 0)">
+                    <option value="">Sin ticket</option>
+                    @foreach (var ticket in _parteHoraTickets)
+                    {
+                        <option value="@ticket.IdTicket">@FormatParteHoraTicket(ticket)</option>
+                    }
+                </select>
+            </label>
+
+            <label class="conversations-hours-check">
+                <input type="checkbox" @bind="_parteHoraFacturable" disabled="@_savingParteHora" />
+                <span>Facturable</span>
+            </label>
+
+            <label class="field conversations-hours-description">
+                <span>Descripcion</span>
+                <textarea rows="4" maxlength="1000" @bind="_parteHoraDescripcion" disabled="@_savingParteHora"></textarea>
+            </label>
+        </div>
+
+        <div class="actions conversations-hours-actions">
+            <button type="button" class="btn btn--primary" @onclick="SaveParteHorasAsync" disabled="@_savingParteHora">
+                <i class="bi bi-stopwatch"></i> @(_savingParteHora ? "Guardando..." : "Guardar parte")
+            </button>
+            <button type="button" class="btn btn--ghost" @onclick="CloseParteHorasDialog" disabled="@_savingParteHora">
+                Cerrar sin parte
+            </button>
+        </div>
+    </section>
+}
+
 @if (_showRelacionarClienteModal)
 {
     <div class="conversations-modal-backdrop" @onclick="CloseRelacionarClienteModal"></div>
@@ -2055,6 +2150,23 @@
     private string? _contextNotesSourceKey;
     private bool _contextNotesLoaded;
     private readonly Dictionary<string, ContextNotesVm> _contextNotesCache = [];
+    private bool _showParteHorasDialog;
+    private bool _savingParteHora;
+    private string? _parteHoraError;
+    private int _parteHoraSuggestedMinutes;
+    private int _parteHoraMinutos = 15;
+    private string _parteHoraTipo = ParteHoraTipoTrabajoKeys.Soporte;
+    private bool _parteHoraFacturable = true;
+    private long? _parteHoraTicketId;
+    private string _parteHoraDescripcion = string.Empty;
+    private string _parteHoraClienteCodigo = string.Empty;
+    private string _parteHoraClienteNombre = string.Empty;
+    private int? _parteHoraIdContacto;
+    private DateTime _parteHoraFecha = DateTime.Today;
+    private DateTime? _parteHoraInicio;
+    private DateTime? _parteHoraFin;
+    private long? _parteHoraConversationId;
+    private List<ParteHoraTicketOptionDto> _parteHoraTickets = [];
 
     private static readonly TimeSpan PollingInterval = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan TypingPollingInterval = TimeSpan.FromMilliseconds(650);
@@ -3023,6 +3135,208 @@
         {
             _creatingTicket = false;
         }
+    }
+
+    private async Task OpenParteHorasDialogAsync(ParteHorasPromptVm prompt)
+    {
+        _parteHoraError = null;
+        _parteHoraConversationId = prompt.IdConversacion;
+        _parteHoraClienteCodigo = prompt.ClienteCodigo;
+        _parteHoraClienteNombre = prompt.ClienteNombre;
+        _parteHoraIdContacto = prompt.IdContacto;
+        _parteHoraInicio = prompt.Inicio;
+        _parteHoraFin = prompt.Fin;
+        _parteHoraFecha = prompt.Fin.Date;
+        _parteHoraSuggestedMinutes = prompt.MinutosSugeridos;
+        _parteHoraMinutos = prompt.MinutosSugeridos;
+        _parteHoraTipo = string.IsNullOrWhiteSpace(prompt.ClienteCodigo)
+            ? ParteHoraTipoTrabajoKeys.Interno
+            : ParteHoraTipoTrabajoKeys.Soporte;
+        _parteHoraFacturable = !string.IsNullOrWhiteSpace(prompt.ClienteCodigo);
+        _parteHoraTicketId = null;
+        _parteHoraDescripcion = BuildParteHoraDescription(prompt);
+        _parteHoraTickets = [];
+
+        _showParteHorasDialog = true;
+
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(prompt.ClienteCodigo))
+            {
+                _parteHoraTickets = (await PartesHorasSvc.SearchTicketsAsync(string.Empty, prompt.ClienteCodigo)).ToList();
+                if (_parteHoraTickets.Count == 1)
+                    _parteHoraTicketId = _parteHoraTickets[0].IdTicket;
+            }
+        }
+        catch (Exception ex)
+        {
+            _parteHoraError = $"No se pudieron cargar tickets relacionados: {ex.Message}";
+        }
+    }
+
+    private void CloseParteHorasDialog()
+    {
+        if (_savingParteHora)
+            return;
+
+        _showParteHorasDialog = false;
+        _parteHoraError = null;
+    }
+
+    private async Task SaveParteHorasAsync()
+    {
+        if (_parteHoraConversationId is null)
+            return;
+
+        if (_parteHoraMinutos <= 0)
+        {
+            _parteHoraError = "Indica una duracion mayor a cero.";
+            return;
+        }
+
+        if (_parteHoraMinutos > 24 * 60)
+        {
+            _parteHoraError = "El parte no puede superar 24 horas.";
+            return;
+        }
+
+        _savingParteHora = true;
+        _parteHoraError = null;
+
+        try
+        {
+            var idParte = await PartesHorasSvc.SaveAsync(new ParteHoraSaveRequest
+            {
+                Fecha = _parteHoraFecha,
+                ClienteCodigo = _parteHoraClienteCodigo,
+                IdContacto = _parteHoraIdContacto,
+                IdTicket = _parteHoraTicketId,
+                IdTecnico = CurrentMessageTechnicianId,
+                Usuario = CurrentUserNameForAudit,
+                TipoTrabajo = _parteHoraTipo,
+                Minutos = _parteHoraMinutos,
+                Facturable = _parteHoraFacturable,
+                Estado = ParteHoraEstadoKeys.Presentado,
+                Descripcion = _parteHoraDescripcion,
+                UsuarioAccion = CurrentUserNameForAudit
+            });
+
+            await ConversacionesSvc.AddInternalEventAsync(new ConversacionEventoInternoRequest
+            {
+                IdConversacion = _parteHoraConversationId.Value,
+                Texto = $"{CurrentMessageTechnicianName} guardo el parte de horas #{idParte.ToString(System.Globalization.CultureInfo.InvariantCulture)} por {FormatParteHorasDuration(_parteHoraMinutos)}.",
+                IdTecnicoAutor = CurrentMessageTechnicianId,
+                NombreTecnicoAccion = CurrentMessageTechnicianName,
+                UsuarioAccion = CurrentUserNameForAudit,
+                SistemaAccion = CurrentUserSystemForAudit
+            });
+
+            _actionMessage = $"Parte de horas #{idParte.ToString(System.Globalization.CultureInfo.InvariantCulture)} guardado.";
+            _showParteHorasDialog = false;
+            if (_selectedConversationId.HasValue)
+                await LoadConversationAsync(_selectedConversationId.Value, showLoading: false, clearActionState: false);
+        }
+        catch (Exception ex)
+        {
+            _parteHoraError = ex is AlfaCore.Services.AppUserFacingException userFacing
+                ? userFacing.Message
+                : "No se pudo guardar el parte de horas. Revisa los datos y volve a intentar.";
+        }
+        finally
+        {
+            _savingParteHora = false;
+        }
+    }
+
+    private ParteHorasPromptVm? BuildParteHorasPrompt(DateTime closedAt)
+    {
+        if (_selectedConversation is null)
+            return null;
+
+        var relevantMessages = VisibleMessages
+            .Where(x => x.FechaHora != DateTime.MinValue && x.FechaHora <= closedAt.AddMinutes(2))
+            .OrderBy(x => x.FechaHora)
+            .ThenBy(x => x.IdMensaje)
+            .ToList();
+
+        var segment = GetParteHorasSegment(relevantMessages, _selectedConversation, closedAt);
+        var minutes = (int)Math.Ceiling(Math.Max(1d, (closedAt - segment).TotalMinutes));
+        minutes = Math.Clamp(minutes, 1, 24 * 60);
+
+        return new ParteHorasPromptVm
+        {
+            IdConversacion = _selectedConversation.IdConversacion,
+            ClienteCodigo = _selectedConversation.ClienteCodigo,
+            ClienteNombre = _selectedConversation.ClienteNombre,
+            IdContacto = _selectedConversation.IdContacto,
+            Inicio = segment,
+            Fin = closedAt,
+            MinutosSugeridos = minutes,
+            TecnicoNombre = CurrentMessageTechnicianName
+        };
+    }
+
+    private static DateTime GetParteHorasSegment(IReadOnlyList<ConversacionMensajeDto> messages, ConversacionDetalleDto conversation, DateTime closedAt)
+    {
+        if (messages.Count == 0)
+            return conversation.FechaHoraUltimoMensajeCliente ?? conversation.FechaHoraPrimerMensaje ?? closedAt.AddMinutes(-15);
+
+        var boundary = messages
+            .Where(IsConversationStateBoundaryMessage)
+            .Select(x => x.FechaHora)
+            .DefaultIfEmpty(DateTime.MinValue)
+            .Max();
+
+        var candidates = messages
+            .Where(x => x.FechaHora > boundary)
+            .OrderBy(x => x.FechaHora)
+            .ThenBy(x => x.IdMensaje)
+            .ToList();
+
+        if (candidates.Count == 0)
+            candidates = messages.ToList();
+
+        var anchorIndex = candidates.FindLastIndex(x => IsIncomingMessage(x));
+        if (anchorIndex < 0)
+            anchorIndex = candidates.Count - 1;
+
+        var startIndex = anchorIndex;
+        for (var i = anchorIndex; i > 0; i--)
+        {
+            var gap = candidates[i].FechaHora - candidates[i - 1].FechaHora;
+            if (gap > TimeSpan.FromHours(1))
+                break;
+
+            startIndex = i - 1;
+        }
+
+        var start = candidates[startIndex].FechaHora;
+        if (start > closedAt)
+            return closedAt.AddMinutes(-1);
+
+        return start;
+    }
+
+    private bool IsClosedStatusCode(string? statusCode)
+        => !string.IsNullOrWhiteSpace(statusCode)
+           && _states.Any(x => x.EsCerrado && string.Equals(x.CodigoEstado, statusCode, StringComparison.OrdinalIgnoreCase));
+
+    private static bool IsConversationStateBoundaryMessage(ConversacionMensajeDto message)
+    {
+        if (!string.Equals(message.Direction, "NOTA_INTERNA", StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(message.MessageType, "SYSTEM", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        var text = RemoveDiacritics(message.Texto ?? string.Empty).ToLowerInvariant();
+        return text.Contains("cerro la conversacion", StringComparison.Ordinal)
+               || text.Contains("cambio el estado", StringComparison.Ordinal)
+               || text.Contains("reabr", StringComparison.Ordinal);
+    }
+
+    private static string BuildParteHoraDescription(ParteHorasPromptVm prompt)
+    {
+        var tecnico = string.IsNullOrWhiteSpace(prompt.TecnicoNombre) ? "Sin tecnico" : prompt.TecnicoNombre;
+        return $"Atencion de conversacion #{prompt.IdConversacion.ToString(System.Globalization.CultureInfo.InvariantCulture)}. Tiempo sugerido {FormatParteHorasDuration(prompt.MinutosSugeridos)}. Tramo {prompt.Inicio:dd/MM HH:mm} - {prompt.Fin:dd/MM HH:mm}. Tecnico: {tecnico}.";
     }
 
     private async Task CheckRelatedTicketsForSelectionAsync()
@@ -4490,17 +4804,22 @@
         if (string.Equals(previousValue, nextValue, StringComparison.OrdinalIgnoreCase))
             return;
 
+        var promptParteHoras = IsClosedStatusCode(nextValue) && !IsClosedStatusCode(previousValue);
         _statusCode = nextValue;
-        if (!await SaveStatusAsync())
+        if (!await SaveStatusAsync(promptParteHoras))
         {
             _statusCode = previousValue;
         }
     }
 
-    private async Task<bool> SaveStatusAsync()
+    private async Task<bool> SaveStatusAsync(bool promptParteHorasOnManualClose = false)
     {
         if (_selectedConversation is null || string.IsNullOrWhiteSpace(_statusCode))
             return false;
+
+        var parteHorasPrompt = promptParteHorasOnManualClose && IsClosedStatusCode(_statusCode)
+            ? BuildParteHorasPrompt(DateTime.Now)
+            : null;
 
         _busyAction = true;
         _actionMessage = null;
@@ -4522,6 +4841,8 @@
             _actionMessage = "Estado actualizado.";
             await SelectConversationAsync(_selectedConversation.IdConversacion, updateUrl: false);
             await RefreshInboxAsync(showLoading: false, allowSelectionChange: false);
+            if (parteHorasPrompt is not null)
+                await OpenParteHorasDialogAsync(parteHorasPrompt);
             return true;
         }
         catch (Exception ex)
@@ -4537,9 +4858,13 @@
 
     private async Task CloseConversationAsync()
     {
+        if (_selectedConversation is null)
+            return;
+
         var closedState = _states.FirstOrDefault(x => x.EsCerrado)?.CodigoEstado ?? "CERRADA";
+        var promptParteHoras = !IsClosedStatusCode(_statusCode);
         _statusCode = closedState;
-        await SaveStatusAsync();
+        await SaveStatusAsync(promptParteHoras);
     }
 
     private async Task ChangeCanalAsync(string canal)
@@ -5775,6 +6100,55 @@
             _ => "Sin prioridad"
         };
 
+    private static string FormatParteHorasDuration(int minutes)
+    {
+        minutes = Math.Clamp(minutes, 1, 24 * 60);
+        var hours = minutes / 60;
+        var remaining = minutes % 60;
+        return hours > 0
+            ? $"{hours}h {remaining:00}m"
+            : $"{remaining}m";
+    }
+
+    private string FormatParteHorasRange()
+    {
+        if (_parteHoraInicio is not DateTime start || _parteHoraFin is not DateTime end)
+            return "Sin tramo";
+
+        return $"{FormatShortDate(start)} - {FormatShortDate(end)}";
+    }
+
+    private static string FormatParteHoraTipo(string tipo)
+        => tipo switch
+        {
+            ParteHoraTipoTrabajoKeys.Soporte => "Soporte",
+            ParteHoraTipoTrabajoKeys.Desarrollo => "Desarrollo",
+            ParteHoraTipoTrabajoKeys.Implementacion => "Implementacion",
+            ParteHoraTipoTrabajoKeys.Capacitacion => "Capacitacion",
+            ParteHoraTipoTrabajoKeys.Reunion => "Reunion",
+            ParteHoraTipoTrabajoKeys.Viaje => "Viaje",
+            ParteHoraTipoTrabajoKeys.Interno => "Interno",
+            _ => tipo
+        };
+
+    private static string FormatParteHoraTicket(ParteHoraTicketOptionDto ticket)
+    {
+        var code = string.IsNullOrWhiteSpace(ticket.CodigoVisible)
+            ? ticket.IdTicket.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            : ticket.CodigoVisible;
+        return $"#{code} - {DisplayOrFallback(ticket.Titulo, ticket.ClienteNombre)}";
+    }
+
+    private static string RemoveDiacritics(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return string.Empty;
+
+        var normalized = value.Normalize(System.Text.NormalizationForm.FormD);
+        var chars = normalized.Where(c => System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c) != System.Globalization.UnicodeCategory.NonSpacingMark).ToArray();
+        return new string(chars).Normalize(System.Text.NormalizationForm.FormC);
+    }
+
     private static string FormatShortDate(DateTime value)
     {
         if (value == DateTime.MinValue)
@@ -6674,6 +7048,18 @@
         ConversacionesInboxFilters Filters,
         List<ConversacionInboxItemDto> Inbox,
         long? SelectedConversationId);
+
+    private sealed class ParteHorasPromptVm
+    {
+        public long IdConversacion { get; init; }
+        public string ClienteCodigo { get; init; } = string.Empty;
+        public string ClienteNombre { get; init; } = string.Empty;
+        public int? IdContacto { get; init; }
+        public DateTime Inicio { get; init; }
+        public DateTime Fin { get; init; }
+        public int MinutosSugeridos { get; init; }
+        public string TecnicoNombre { get; init; } = string.Empty;
+    }
 
     private static class ContextNotesTabs
     {

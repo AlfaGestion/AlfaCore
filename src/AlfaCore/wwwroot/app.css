@@ -6080,6 +6080,204 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
     resize: vertical;
 }
 
+.conversations-hours-dialog {
+    width: min(680px, calc(100vw - 2rem));
+    padding: 0;
+    gap: 0;
+    overflow: hidden;
+}
+
+.conversations-hours-dialog__head {
+    align-items: start;
+    display: flex;
+    gap: 1rem;
+    justify-content: space-between;
+    padding: clamp(1rem, 2.4vw, 1.35rem) clamp(1rem, 2.8vw, 1.5rem);
+    border-bottom: 1px solid rgba(148, 163, 184, .14);
+    background: linear-gradient(135deg, rgba(14, 116, 144, .22), rgba(15, 23, 42, .94));
+}
+
+.conversations-hours-dialog__title {
+    align-items: center;
+    display: flex;
+    gap: .85rem;
+    min-width: 0;
+}
+
+.conversations-hours-dialog__title .panel-card__title,
+.conversations-hours-dialog__title .panel-card__subtitle {
+    margin: 0;
+}
+
+.conversations-hours-dialog__icon {
+    align-items: center;
+    background: linear-gradient(135deg, rgba(34, 211, 238, .95), rgba(20, 184, 166, .95));
+    border-radius: 8px;
+    color: #062330;
+    display: inline-flex;
+    flex: 0 0 auto;
+    font-size: 1.15rem;
+    height: 2.6rem;
+    justify-content: center;
+    width: 2.6rem;
+}
+
+.conversations-hours-dialog__close {
+    flex: 0 0 auto;
+}
+
+.conversations-hours-summary {
+    display: grid;
+    gap: .75rem;
+    grid-template-columns: minmax(8rem, .8fr) minmax(10rem, 1fr) minmax(10rem, 1fr);
+    padding: 1rem clamp(1rem, 2.8vw, 1.5rem) .85rem;
+}
+
+.conversations-hours-summary > div {
+    display: grid;
+    gap: .25rem;
+    min-width: 0;
+    padding: .8rem .9rem;
+    border: 1px solid rgba(83, 124, 172, .28);
+    border-radius: 8px;
+    background: rgba(8, 20, 36, .72);
+}
+
+.conversations-hours-summary span {
+    color: var(--text-muted, #8da2bf);
+    font-size: .78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.conversations-hours-summary strong {
+    color: var(--text-main, #e7f1ff);
+    font-size: clamp(.95rem, 2vw, 1.1rem);
+    overflow-wrap: anywhere;
+}
+
+.conversations-hours-hint {
+    align-items: center;
+    display: flex;
+    gap: .55rem;
+    margin: 0 clamp(1rem, 2.8vw, 1.5rem) .85rem;
+    padding: .68rem .8rem;
+    border: 1px solid rgba(34, 211, 238, .3);
+    border-radius: 8px;
+    background: rgba(34, 211, 238, .08);
+    color: #bae6fd;
+    font-size: .9rem;
+}
+
+.conversations-hours-dialog > .conversations-error {
+    margin: 0 clamp(1rem, 2.8vw, 1.5rem) .85rem;
+}
+
+.conversations-hours-form {
+    display: grid;
+    gap: .9rem;
+    grid-template-columns: minmax(7rem, .7fr) minmax(9rem, .9fr) minmax(12rem, 1.3fr) auto;
+    padding: 0 clamp(1rem, 2.8vw, 1.5rem) 1rem;
+}
+
+.conversations-hours-form .field {
+    min-width: 0;
+}
+
+.conversations-hours-form input,
+.conversations-hours-form select,
+.conversations-hours-form textarea {
+    width: 100%;
+}
+
+.conversations-hours-check {
+    align-self: end;
+    align-items: center;
+    display: inline-flex;
+    gap: .55rem;
+    min-height: 2.55rem;
+    padding: .55rem .75rem;
+    border: 1px solid rgba(83, 124, 172, .34);
+    border-radius: 8px;
+    background: rgba(8, 20, 36, .74);
+    color: var(--text-main, #e7f1ff);
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.conversations-hours-check input {
+    accent-color: #22d3ee;
+    height: 1rem;
+    width: 1rem;
+}
+
+.conversations-hours-description {
+    grid-column: 1 / -1;
+}
+
+.conversations-hours-description textarea {
+    min-height: 6rem;
+    resize: vertical;
+}
+
+.conversations-hours-actions {
+    justify-content: flex-start;
+    margin: 0;
+    padding: .9rem clamp(1rem, 2.8vw, 1.5rem) clamp(1rem, 2.4vw, 1.25rem);
+    border-top: 1px solid rgba(148, 163, 184, .14);
+    background: linear-gradient(180deg, rgba(15, 23, 42, .9), rgba(15, 23, 42, .98));
+}
+
+@media (max-width: 720px) {
+    .conversations-hours-dialog {
+        width: min(100vw - 1rem, 680px);
+        max-height: calc(100dvh - 1rem);
+    }
+
+    .conversations-hours-dialog__head {
+        padding: .95rem;
+    }
+
+    .conversations-hours-dialog__title {
+        align-items: flex-start;
+    }
+
+    .conversations-hours-dialog__icon {
+        height: 2.35rem;
+        width: 2.35rem;
+    }
+
+    .conversations-hours-summary,
+    .conversations-hours-form {
+        grid-template-columns: 1fr;
+        padding-left: .95rem;
+        padding-right: .95rem;
+    }
+
+    .conversations-hours-check {
+        align-self: stretch;
+        justify-content: flex-start;
+        min-height: 2.75rem;
+    }
+
+    .conversations-hours-hint,
+    .conversations-hours-dialog > .conversations-error {
+        margin-left: .95rem;
+        margin-right: .95rem;
+    }
+
+    .conversations-hours-actions {
+        display: grid;
+        grid-template-columns: 1fr;
+        padding: .85rem .95rem .95rem;
+    }
+
+    .conversations-hours-actions .btn {
+        justify-content: center;
+        width: 100%;
+    }
+}
+
 .conversations-link-client-dialog {
     width: min(620px, calc(100vw - 2rem));
     padding: clamp(1rem, 2.4vh, 1.35rem);
