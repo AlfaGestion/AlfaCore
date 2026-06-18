@@ -397,7 +397,9 @@ public sealed class PartesHorasService(
                     ISNULL(cli.RAZON_SOCIAL, '') AS ClienteNombre
                 FROM dbo.TICK_TICKETS t
                 LEFT JOIN dbo.VT_CLIENTES cli ON cli.CODIGO = t.ClienteCodigo
+                LEFT JOIN dbo.TICK_ESTADOS e ON e.CodigoEstado = t.CodigoEstado
                 WHERE ISNULL(t.Baja, 0) = 0
+                  AND ISNULL(e.EsCerrado, 0) = 0
                   AND (@ClienteCodigo = '' OR UPPER(LTRIM(RTRIM(ISNULL(t.ClienteCodigo, '')))) = @ClienteCodigo)
                   AND (@Search = '' OR CONVERT(varchar(20), t.Numero) LIKE @SearchLike OR ISNULL(t.Titulo, '') COLLATE Latin1_General_CI_AI LIKE @SearchLike)
                 ORDER BY t.FechaHoraAlta DESC, t.IdTicket DESC;

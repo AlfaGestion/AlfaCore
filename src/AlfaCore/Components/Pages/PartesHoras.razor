@@ -139,15 +139,47 @@
 
     .partes-horas-page .partes-panel-grid {
         display: grid;
-        grid-template-columns: minmax(0, 1.35fr) minmax(320px, .65fr);
-        gap: 14px;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 16px;
         align-items: start;
     }
 
     .partes-horas-page .partes-panel-stack {
         display: grid;
-        gap: 14px;
+        grid-template-columns: minmax(0, 1.15fr) minmax(360px, .85fr);
+        gap: 16px;
         min-width: 0;
+    }
+
+    .partes-horas-page .partes-table-panel .usuarios-table-wrap {
+        max-height: none;
+    }
+
+    .partes-feedback {
+        padding: 0;
+    }
+
+    .partes-feedback .editor-msg {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+        min-height: 68px;
+    }
+
+    .partes-feedback__close {
+        flex: 0 0 auto;
+        width: 34px;
+        height: 34px;
+        border: 1px solid var(--color-border);
+        border-radius: 8px;
+        background: rgba(4, 12, 24, .36);
+        color: var(--color-text);
+        cursor: pointer;
+    }
+
+    .partes-feedback__close:hover {
+        border-color: var(--color-primary);
     }
 
     .partes-horas-page .panel-card {
@@ -273,6 +305,24 @@
     .partes-lines__row input,
     .partes-lines__row select {
         min-width: 0;
+        width: 100%;
+        border: 1px solid rgba(125, 161, 207, .28);
+        border-radius: 6px;
+        background: rgba(4, 12, 24, .78);
+        color: var(--color-text);
+        padding: .55rem .65rem;
+        outline: none;
+    }
+
+    .partes-lines__row input:focus,
+    .partes-lines__row select:focus {
+        border-color: rgba(8, 197, 218, .85);
+        box-shadow: 0 0 0 1px rgba(8, 197, 218, .18);
+    }
+
+    .partes-lines__row select option {
+        background: #111827;
+        color: var(--color-text);
     }
 
     @@media (max-width: 1280px) {
@@ -286,6 +336,10 @@
         }
 
         .partes-horas-page .partes-panel-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .partes-horas-page .partes-panel-stack {
             grid-template-columns: 1fr;
         }
     }
@@ -366,7 +420,7 @@
     }
 </style>
 
-<div class="page-grid partes-horas-page" @onclick="CloseFiltros" @onkeydown="HandleQuickSearchKeyDownAsync" tabindex="-1">
+<div class="page-grid partes-horas-page" @onclick="CloseTransientUi" @onkeydown="HandleQuickSearchKeyDownAsync" tabindex="-1">
     <section class="partes-hero">
         <div class="partes-hero__main">
             <span class="partes-hero__eyebrow">Control operativo</span>
@@ -399,7 +453,7 @@
 
     @if (_feedback is not null)
     {
-        <section class="panel-card">
+        <section class="partes-feedback" @onclick:stopPropagation>
             <div class="editor-msg @GetFeedbackClass(_feedback)">
                 <div>
                     <strong>@_feedback.Title</strong>
@@ -413,6 +467,9 @@
                         <small>Código: @_feedback.Code</small>
                     }
                 </div>
+                <button type="button" class="partes-feedback__close" @onclick="DismissFeedback" aria-label="Cerrar notificación">
+                    <i class="bi bi-x-lg"></i>
+                </button>
             </div>
         </section>
     }
@@ -699,7 +756,7 @@
     }
 
     <div class="partes-panel-grid">
-    <section class="panel-card">
+    <section class="panel-card partes-table-panel">
         <div class="panel-card__header">
             <div>
                 <h3 class="panel-card__title">Partes registrados</h3>
@@ -956,6 +1013,15 @@
 
     private void CloseFiltros()
         => _filtersExpanded = false;
+
+    private void CloseTransientUi()
+    {
+        CloseFiltros();
+        DismissFeedback();
+    }
+
+    private void DismissFeedback()
+        => _feedback = null;
 
     private void OnQuickSearchChanged(ChangeEventArgs args)
         => _quickSearch = Convert.ToString(args.Value) ?? string.Empty;
