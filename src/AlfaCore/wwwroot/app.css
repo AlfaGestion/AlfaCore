@@ -6220,72 +6220,6 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
     resize: vertical;
 }
 
-.conversations-hours-ticket-tools {
-    display: grid;
-    gap: .75rem;
-    padding: 0 clamp(1rem, 2.8vw, 1.5rem) 1rem;
-}
-
-.conversations-hours-ticket-tools__actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: .5rem;
-}
-
-.conversations-hours-ticket-card,
-.conversations-hours-ticket-editor {
-    border: 1px solid rgba(83, 124, 172, .28);
-    border-radius: 8px;
-    background: rgba(8, 20, 36, .68);
-    padding: .85rem;
-}
-
-.conversations-hours-ticket-card {
-    display: grid;
-    gap: .55rem;
-}
-
-.conversations-hours-ticket-card > div {
-    display: grid;
-    gap: .2rem;
-    min-width: 0;
-}
-
-.conversations-hours-ticket-card strong,
-.conversations-hours-ticket-card span,
-.conversations-hours-ticket-card p {
-    overflow-wrap: anywhere;
-}
-
-.conversations-hours-ticket-card span,
-.conversations-hours-ticket-card p {
-    color: var(--text-muted, #8da2bf);
-}
-
-.conversations-hours-ticket-card p {
-    margin: 0;
-}
-
-.conversations-hours-ticket-card .btn {
-    justify-self: start;
-}
-
-.conversations-hours-ticket-editor {
-    display: grid;
-    gap: .8rem;
-    grid-template-columns: minmax(12rem, 1fr) minmax(9rem, .7fr) minmax(8rem, .6fr);
-}
-
-.conversations-hours-ticket-editor__description,
-.conversations-hours-ticket-editor__actions {
-    grid-column: 1 / -1;
-}
-
-.conversations-hours-ticket-editor textarea {
-    min-height: 5rem;
-    resize: vertical;
-}
-
 .conversations-hours-actions {
     justify-content: flex-start;
     margin: 0;
@@ -6314,26 +6248,10 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
     }
 
     .conversations-hours-summary,
-    .conversations-hours-form,
-    .conversations-hours-ticket-editor {
+    .conversations-hours-form {
         grid-template-columns: 1fr;
         padding-left: .95rem;
         padding-right: .95rem;
-    }
-
-    .conversations-hours-ticket-tools {
-        padding-left: .95rem;
-        padding-right: .95rem;
-    }
-
-    .conversations-hours-ticket-tools__actions {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
-    .conversations-hours-ticket-tools__actions .btn {
-        justify-content: center;
-        width: 100%;
     }
 
     .conversations-hours-check {
