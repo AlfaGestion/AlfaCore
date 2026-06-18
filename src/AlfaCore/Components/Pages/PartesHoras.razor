@@ -279,7 +279,7 @@
     }
 </style>
 
-<div class="page-grid partes-horas-page">
+<div class="page-grid partes-horas-page" @onclick="CloseFiltros" @onkeydown="HandleQuickSearchKeyDownAsync" tabindex="-1">
     <section class="partes-hero">
         <div class="partes-hero__main">
             <span class="partes-hero__eyebrow">Control operativo</span>
@@ -405,7 +405,7 @@
                             @LabelEstado(estado)
                         </button>
                     }
-                    <button type="button" class="btn btn--primary btn--sm" @onclick="AplicarFiltrosAsync" disabled="@_loading">
+                    <button type="button" class="btn btn--primary btn--sm" @onclick="AplicarBusquedaAsync" disabled="@_loading">
                         <i class="bi bi-search"></i> Aplicar
                     </button>
                 </div>
@@ -445,7 +445,7 @@
                             }
                         </select>
                     </div>
-                    <button type="button" @onclick="LimpiarFiltrosAsync" disabled="@_loading">Limpiar busqueda</button>
+                    <button type="button" @onclick="LimpiarFiltrosYCerrarAsync" disabled="@_loading">Limpiar busqueda</button>
                 </div>
             </div>
         }
@@ -794,11 +794,20 @@
         await BuscarAsync();
     }
 
+    private async Task LimpiarFiltrosYCerrarAsync()
+    {
+        await LimpiarFiltrosAsync();
+        CloseFiltros();
+    }
+
     private void ToggleFiltros()
         => _filtersExpanded = !_filtersExpanded;
 
     private void OpenFiltros()
         => _filtersExpanded = true;
+
+    private void CloseFiltros()
+        => _filtersExpanded = false;
 
     private void OnQuickSearchChanged(ChangeEventArgs args)
         => _quickSearch = Convert.ToString(args.Value) ?? string.Empty;
@@ -807,10 +816,15 @@
     {
         if (string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase))
             await AplicarBusquedaAsync();
+        else if (string.Equals(args.Key, "Escape", StringComparison.OrdinalIgnoreCase))
+            CloseFiltros();
     }
 
-    private Task AplicarBusquedaAsync()
-        => AplicarFiltrosAsync();
+    private async Task AplicarBusquedaAsync()
+    {
+        await AplicarFiltrosAsync();
+        CloseFiltros();
+    }
 
     private async Task SetEstadoFilterAsync(string estado)
     {
@@ -904,6 +918,7 @@
 
     private void NuevoParte()
     {
+        CloseFiltros();
         _form = new ParteHoraSaveRequest
         {
             Fecha = DateTime.Today,
@@ -927,6 +942,7 @@
 
     private async Task EditarParteAsync(long id)
     {
+        CloseFiltros();
         var result = await UiOps.RunAsync(() => PartesSvc.GetByIdAsync(id), "No se pudo cargar el parte.");
         if (!result.Success || result.Value is null)
         {
