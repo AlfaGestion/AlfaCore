@@ -9,6 +9,8 @@
 @inject IPartesHorasService PartesSvc
 @inject IAppUiOperationService UiOps
 @inject IAppUserSessionService AppUserSession
+@inject IFloatingWindowService FloatingWindows
+@implements IDisposable
 
 <PageTitle>Partes de horas | Alfa Gestión</PageTitle>
 
@@ -101,8 +103,7 @@
         color: #f2b84b;
     }
 
-    .partes-horas-page .partes-hero__actions,
-    .partes-horas-page .partes-search {
+    .partes-horas-page .partes-hero__actions {
         display: flex;
         gap: 8px;
         align-items: center;
@@ -113,84 +114,40 @@
     }
 
     .partes-horas-page .partes-search-card {
-        padding: 12px;
+        padding: 1rem;
     }
 
-    .partes-horas-page .partes-search__input {
-        display: flex;
-        flex: 1 1 520px;
-        min-width: 260px;
+    .partes-horas-page .smart-search__panel {
+        width: min(980px, calc(100vw - 3rem));
+    }
+
+    .partes-horas-page .smart-search__column .btn {
+        display: inline-flex;
         align-items: center;
-        border: 1px solid var(--color-border);
-        border-radius: 8px;
-        background: var(--input-bg);
-        transition: border-color .16s ease, box-shadow .16s ease;
+        justify-content: flex-start;
+        gap: .35rem;
     }
 
-    .partes-horas-page .partes-search__input:focus-within {
-        border-color: var(--color-primary);
-        box-shadow: 0 0 0 2px rgba(33, 188, 218, .18);
-    }
-
-    .partes-horas-page .partes-search__icon {
-        flex: 0 0 auto;
-        margin-left: 13px;
-        color: var(--color-muted);
-        font-size: 15px;
-    }
-
-    .partes-horas-page .partes-search__input input {
-        width: 100%;
+    .partes-horas-page .smart-search input[type="date"] {
         min-width: 0;
-        height: 44px;
-        border: 0;
-        background: transparent;
-        color: var(--color-text);
-        box-shadow: none;
-    }
-
-    .partes-horas-page .partes-search__input input:focus {
-        outline: 0;
-        box-shadow: none;
-    }
-
-    .partes-horas-page .partes-filter-summary {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 6px;
-        margin-top: 10px;
-    }
-
-    .partes-horas-page .partes-filter-summary span {
-        padding: 5px 8px;
-        border: 1px solid var(--color-border);
+        border: 1px solid rgba(125, 161, 207, .28);
         border-radius: 6px;
-        color: var(--color-muted);
-        font-size: 11px;
-        line-height: 1;
+        background: rgba(4, 12, 24, .78);
+        color: var(--color-text);
+        padding: .58rem .65rem;
     }
 
-    .partes-horas-page .partes-filters-panel {
+    .partes-horas-page .partes-panel-grid {
         display: grid;
-        grid-template-columns: repeat(6, minmax(130px, 1fr));
-        gap: 12px;
-        align-items: end;
-        margin-top: 12px;
-        padding-top: 12px;
-        border-top: 1px solid var(--color-border);
+        grid-template-columns: minmax(0, 1.35fr) minmax(320px, .65fr);
+        gap: 14px;
+        align-items: start;
     }
 
-    .partes-horas-page .partes-filter-checks {
-        display: flex;
-        grid-column: span 3;
-        gap: 18px;
-        min-height: 42px;
-        align-items: center;
-    }
-
-    .partes-horas-page .partes-filters-panel__actions {
-        grid-column: span 3;
-        justify-content: flex-end;
+    .partes-horas-page .partes-panel-stack {
+        display: grid;
+        gap: 14px;
+        min-width: 0;
     }
 
     .partes-horas-page .panel-card {
@@ -199,6 +156,55 @@
 
     .partes-horas-page .usuarios-table-wrap {
         max-height: 520px;
+    }
+
+    .partes-modal-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 960;
+        background: rgba(2, 6, 23, .56);
+        backdrop-filter: blur(3px);
+    }
+
+    .partes-editor-modal {
+        position: fixed;
+        z-index: 961;
+        top: 50%;
+        left: 50%;
+        width: min(920px, calc(100vw - 2rem));
+        max-height: min(760px, calc(100dvh - 2rem));
+        overflow: auto;
+        transform: translate(-50%, -50%);
+        display: grid;
+        gap: 14px;
+        padding: 18px;
+        border: 1px solid var(--color-border);
+        border-radius: 8px;
+        background: var(--color-panel);
+        box-shadow: 0 24px 70px rgba(0, 0, 0, .42);
+    }
+
+    .partes-editor-form {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(140px, 1fr));
+        gap: 12px;
+        align-items: end;
+    }
+
+    .partes-editor-form .field--wide,
+    .partes-ticket-results {
+        grid-column: 1 / -1;
+    }
+
+    .partes-ticket-results {
+        max-height: 220px;
+    }
+
+    .partes-check-row {
+        display: flex;
+        gap: 14px;
+        align-items: center;
+        min-height: 42px;
     }
 
     @@media (max-width: 1280px) {
@@ -211,8 +217,8 @@
             justify-content: flex-start;
         }
 
-        .partes-horas-page .partes-filters-panel {
-            grid-template-columns: repeat(3, minmax(150px, 1fr));
+        .partes-horas-page .partes-panel-grid {
+            grid-template-columns: 1fr;
         }
     }
 
@@ -233,27 +239,13 @@
             border-bottom: 1px solid var(--color-border);
         }
 
-        .partes-horas-page .partes-search {
-            flex-wrap: wrap;
-        }
-
-        .partes-horas-page .partes-search__input {
-            flex-basis: 100%;
-        }
-
-        .partes-horas-page .partes-filters-panel {
+        .partes-editor-form {
             grid-template-columns: 1fr 1fr;
-        }
-
-        .partes-horas-page .partes-filter-checks,
-        .partes-horas-page .partes-filters-panel__actions {
-            grid-column: 1 / -1;
         }
     }
 
     @@media (max-width: 520px) {
-        .partes-horas-page .partes-hero__metrics,
-        .partes-horas-page .partes-filters-panel {
+        .partes-horas-page .partes-hero__metrics {
             grid-template-columns: 1fr;
         }
 
@@ -266,12 +258,21 @@
             border-bottom: 0;
         }
 
-        .partes-horas-page .partes-search .btn,
         .partes-horas-page .partes-hero__actions .btn {
             flex: 1 1 auto;
         }
 
-        .partes-horas-page .partes-filter-checks {
+        .partes-editor-modal {
+            width: calc(100vw - 1rem);
+            max-height: calc(100dvh - 1rem);
+            padding: 14px;
+        }
+
+        .partes-editor-form {
+            grid-template-columns: 1fr;
+        }
+
+        .partes-check-row {
             display: grid;
             gap: 8px;
         }
@@ -304,7 +305,7 @@
             </article>
         </div>
         <div class="partes-hero__actions">
-            <button type="button" class="btn btn--primary" @onclick="NuevoParte">Nuevo parte</button>
+            <button type="button" class="btn btn--primary" @onclick="NuevoParte" @onclick:stopPropagation>Nuevo parte</button>
             <button type="button" class="btn btn--ghost" @onclick="RecargarAsync" disabled="@_loading">Recargar</button>
         </div>
     </section>
@@ -329,108 +330,132 @@
         </section>
     }
 
-    <section class="panel-card partes-search-card">
-        <div class="partes-search">
-            <div class="partes-search__input">
-                <i class="bi bi-search partes-search__icon" aria-hidden="true"></i>
+    <section class="panel-card smart-search-card partes-search-card">
+        <div class="smart-search" @onclick:stopPropagation>
+            <div class="smart-search__bar">
+                <i class="bi bi-search"></i>
                 <input type="search"
                        value="@_quickSearch"
                        @oninput="OnQuickSearchChanged"
                        @onfocus="OpenFiltros"
                        @onkeydown="HandleQuickSearchKeyDownAsync"
-                       placeholder="Buscar por cliente o número de ticket" />
+                       placeholder="Buscar por cliente, ticket, tecnico o descripcion..." />
+                <button type="button" class="smart-search__toggle" @onclick="ToggleFiltros" aria-label="Mostrar filtros">
+                    <i class="bi @(_filtersExpanded ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
+                </button>
             </div>
-            <button type="button" class="btn btn--primary" @onclick="AplicarBusquedaAsync" disabled="@_loading">Buscar</button>
-            <button type="button" class="btn btn--ghost" @onclick="ToggleFiltros">@(_filtersExpanded ? "Ocultar filtros" : "Filtros")</button>
-            <button type="button" class="btn btn--ghost" @onclick="LimpiarFiltrosAsync" disabled="@_loading">Limpiar</button>
-        </div>
 
-        <div class="partes-filter-summary">
-            <span>@FormatDateRange()</span>
+        <div class="smart-search__chips" aria-live="polite">
+            <button type="button" class="smart-chip" @onclick="ClearDateRangeAsync">
+                @FormatDateRange() <i class="bi bi-x"></i>
+            </button>
+            @if (!string.IsNullOrWhiteSpace(_filters.Texto))
+            {
+                <button type="button" class="smart-chip" @onclick="ClearQuickSearchAsync">
+                    Busqueda @_filters.Texto <i class="bi bi-x"></i>
+                </button>
+            }
+            @if (!string.IsNullOrWhiteSpace(_filters.Estado))
+            {
+                <button type="button" class="smart-chip" @onclick="ClearEstadoAsync">
+                    @LabelEstado(_filters.Estado) <i class="bi bi-x"></i>
+                </button>
+            }
+            @if (!string.IsNullOrWhiteSpace(_filters.TipoTrabajo))
+            {
+                <button type="button" class="smart-chip" @onclick="ClearTipoAsync">
+                    @LabelTipo(_filters.TipoTrabajo) <i class="bi bi-x"></i>
+                </button>
+            }
             @if (!string.IsNullOrWhiteSpace(_filters.ClienteCodigo))
             {
-                <span>Cliente @_filters.ClienteCodigo</span>
+                <button type="button" class="smart-chip" @onclick="ClearClienteAsync">
+                    Cliente @_filters.ClienteCodigo <i class="bi bi-x"></i>
+                </button>
             }
             @if (!string.IsNullOrWhiteSpace(_filters.IdTecnico))
             {
-                <span>Técnico @_filters.IdTecnico</span>
+                <button type="button" class="smart-chip" @onclick="ClearTecnicoAsync">
+                    Tecnico @_filters.IdTecnico <i class="bi bi-x"></i>
+                </button>
             }
             @if (_filters.SoloFacturables)
             {
-                <span>Facturables</span>
+                <button type="button" class="smart-chip" @onclick="ClearFacturableAsync">
+                    Facturables <i class="bi bi-x"></i>
+                </button>
             }
             @if (_filters.SoloExcedentes)
             {
-                <span>Excedentes</span>
+                <button type="button" class="smart-chip" @onclick="ClearExcedenteAsync">
+                    Excedentes <i class="bi bi-x"></i>
+                </button>
             }
         </div>
 
         @if (_filtersExpanded)
         {
-            <div class="partes-filters-panel">
-                <div class="field">
-                    <label>Fecha desde</label>
-                    <InputDate @bind-Value="_filters.FechaDesde" />
+            <div class="smart-search__panel" @onkeydown="HandleQuickSearchKeyDownAsync">
+                <div class="smart-search__column">
+                    <h4><i class="bi bi-funnel-fill"></i> Estado</h4>
+                    <button type="button" class="@GetSmartOptionClass(string.IsNullOrWhiteSpace(_filters.Estado))" @onclick='() => SetEstadoFilterAsync(string.Empty)'>Todos</button>
+                    @foreach (var estado in _lookups.Estados)
+                    {
+                        <button type="button" class="@GetSmartOptionClass(string.Equals(_filters.Estado, estado, StringComparison.OrdinalIgnoreCase))" @onclick="() => SetEstadoFilterAsync(estado)">
+                            @LabelEstado(estado)
+                        </button>
+                    }
+                    <button type="button" class="btn btn--primary btn--sm" @onclick="AplicarFiltrosAsync" disabled="@_loading">
+                        <i class="bi bi-search"></i> Aplicar
+                    </button>
                 </div>
-                <div class="field">
-                    <label>Fecha hasta</label>
-                    <InputDate @bind-Value="_filters.FechaHasta" />
+                <div class="smart-search__column">
+                    <h4><i class="bi bi-clock-history"></i> Tipo y condicion</h4>
+                    <button type="button" class="@GetSmartOptionClass(string.IsNullOrWhiteSpace(_filters.TipoTrabajo))" @onclick='() => SetTipoFilterAsync(string.Empty)'>Todos los tipos</button>
+                    @foreach (var tipo in GetTiposTrabajoVisibles())
+                    {
+                        <button type="button" class="@GetSmartOptionClass(string.Equals(_filters.TipoTrabajo, tipo, StringComparison.OrdinalIgnoreCase))" @onclick="() => SetTipoFilterAsync(tipo)">
+                            @LabelTipo(tipo)
+                        </button>
+                    }
+                    <button type="button" class="@GetSmartOptionClass(_filters.SoloFacturables)" @onclick="ToggleSoloFacturablesAsync">Solo facturables</button>
+                    <button type="button" class="@GetSmartOptionClass(_filters.SoloExcedentes)" @onclick="ToggleSoloExcedentesAsync">Solo excedentes</button>
                 </div>
-                <div class="field">
-                    <label>Cliente</label>
-                    <input type="text" @bind="_filters.ClienteCodigo" @bind:event="oninput" placeholder="Código cliente" />
-                </div>
-                <div class="field">
-                    <label>Técnico</label>
-                    <select @bind="_filters.IdTecnico">
-                        <option value="">Todos</option>
-                        @foreach (var tecnico in _lookups.Tecnicos)
-                        {
-                            <option value="@tecnico.Codigo">@tecnico.Codigo - @tecnico.Titulo</option>
-                        }
-                    </select>
-                </div>
-                <div class="field">
-                    <label>Estado</label>
-                    <select @bind="_filters.Estado">
-                        <option value="">Todos</option>
-                        @foreach (var estado in _lookups.Estados)
-                        {
-                            <option value="@estado">@LabelEstado(estado)</option>
-                        }
-                    </select>
-                </div>
-                <div class="field">
-                    <label>Tipo</label>
-                    <select @bind="_filters.TipoTrabajo">
-                        <option value="">Todos</option>
-                        @foreach (var tipo in _lookups.TiposTrabajo)
-                        {
-                            <option value="@tipo">@LabelTipo(tipo)</option>
-                        }
-                    </select>
-                </div>
-                <div class="partes-filter-checks">
-                    <label class="checkbox">
-                        <input type="checkbox" @bind="_filters.SoloFacturables" />
-                        <span>Solo facturables</span>
-                    </label>
-                    <label class="checkbox">
-                        <input type="checkbox" @bind="_filters.SoloExcedentes" />
-                        <span>Solo excedentes</span>
-                    </label>
-                </div>
-                <div class="actions partes-filters-panel__actions">
-                    <button type="button" class="btn btn--primary" @onclick="AplicarFiltrosAsync" disabled="@_loading">Aplicar filtros</button>
-                    <button type="button" class="btn btn--ghost" @onclick="LimpiarFiltrosAsync" disabled="@_loading">Limpiar</button>
+                <div class="smart-search__column">
+                    <h4><i class="bi bi-calendar-week"></i> Periodo y asignacion</h4>
+                    <div class="smart-search__inline">
+                        <label>Fecha desde</label>
+                        <InputDate @bind-Value="_filters.FechaDesde" />
+                    </div>
+                    <div class="smart-search__inline">
+                        <label>Fecha hasta</label>
+                        <InputDate @bind-Value="_filters.FechaHasta" />
+                    </div>
+                    <div class="smart-search__inline">
+                        <label>Cliente</label>
+                        <input type="text" @bind="_filters.ClienteCodigo" @bind:event="oninput" placeholder="Codigo cliente" />
+                    </div>
+                    <div class="smart-search__inline">
+                        <label>Tecnico</label>
+                        <select @bind="_filters.IdTecnico">
+                            <option value="">Todos</option>
+                            @foreach (var tecnico in _lookups.Tecnicos)
+                            {
+                                <option value="@tecnico.Codigo">@tecnico.Codigo - @tecnico.Titulo</option>
+                            }
+                        </select>
+                    </div>
+                    <button type="button" @onclick="LimpiarFiltrosAsync" disabled="@_loading">Limpiar busqueda</button>
                 </div>
             </div>
         }
+        </div>
     </section>
 
     @if (_showEditor)
     {
-        <section class="panel-card">
+        <div class="partes-modal-backdrop" @onclick="CerrarEditor"></div>
+        <section class="partes-editor-modal" @onclick:stopPropagation>
             <div class="panel-card__header">
                 <div>
                     <h3 class="panel-card__title">@(_form.IdParteHora.HasValue ? "Editar parte" : "Nuevo parte")</h3>
@@ -439,7 +464,7 @@
                 <button type="button" class="btn btn--ghost btn--sm" @onclick="CerrarEditor">Cerrar</button>
             </div>
 
-            <div class="filters-grid filters-grid--wide">
+            <div class="partes-editor-form">
                 <div class="field">
                     <label>Fecha</label>
                     <InputDate @bind-Value="_form.Fecha" />
@@ -469,7 +494,7 @@
                 <div class="field">
                     <label>Tipo</label>
                     <select @bind="_form.TipoTrabajo">
-                        @foreach (var tipo in _lookups.TiposTrabajo)
+                        @foreach (var tipo in GetTiposTrabajoVisibles())
                         {
                             <option value="@tipo">@LabelTipo(tipo)</option>
                         }
@@ -511,7 +536,7 @@
 
             @if (_ticketOptions.Count > 0)
             {
-                <div class="usuarios-table-wrap">
+                <div class="usuarios-table-wrap partes-ticket-results">
                     <table class="data-table usuarios-table">
                         <thead>
                             <tr>
@@ -538,6 +563,7 @@
         </section>
     }
 
+    <div class="partes-panel-grid">
     <section class="panel-card">
         <div class="panel-card__header">
             <div>
@@ -587,7 +613,7 @@
                                 <td>@(parte.Excedente ? "Sí" : "No")</td>
                                 <td>
                                     <div class="actions">
-                                        <button type="button" class="btn btn--ghost btn--sm" @onclick="() => EditarParteAsync(parte.IdParteHora)">Editar</button>
+                                        <button type="button" class="btn btn--ghost btn--sm" @onclick="() => EditarParteAsync(parte.IdParteHora)" @onclick:stopPropagation>Editar</button>
                                         <button type="button" class="btn btn--ghost btn--sm" @onclick="() => AprobarAsync(parte.IdParteHora)">Aprobar</button>
                                         <button type="button" class="btn btn--ghost btn--sm" @onclick="() => RechazarAsync(parte.IdParteHora)">Rechazar</button>
                                         <button type="button" class="btn btn--ghost btn--sm" @onclick="() => AnularAsync(parte.IdParteHora)">Anular</button>
@@ -609,6 +635,7 @@
         </div>
     </section>
 
+    <div class="partes-panel-stack">
     <section class="panel-card">
         <div class="panel-card__header">
             <div>
@@ -681,6 +708,8 @@
             <button type="button" class="btn btn--primary" @onclick="GuardarConfigClienteAsync">Guardar bolsa</button>
         </div>
     </section>
+    </div>
+    </div>
 </div>
 
 @code {
@@ -698,12 +727,23 @@
     private bool _filtersExpanded;
     private string _quickSearch = string.Empty;
     private int? _ticketNumeroBusqueda;
+    private IDisposable? _floatingWindowRegistration;
 
     protected override async Task OnInitializedAsync()
     {
+        _floatingWindowRegistration = FloatingWindows.Register(FloatingWindowType.Popover, CloseFloatingWindowsAsync);
         NuevoParte();
         _showEditor = false;
         await RecargarAsync();
+    }
+
+    private Task CloseFloatingWindowsAsync()
+    {
+        if (_saving || !_showEditor)
+            return Task.CompletedTask;
+
+        CerrarEditor();
+        return InvokeAsync(StateHasChanged);
     }
 
     private async Task RecargarAsync()
@@ -771,6 +811,87 @@
 
     private Task AplicarBusquedaAsync()
         => AplicarFiltrosAsync();
+
+    private async Task SetEstadoFilterAsync(string estado)
+    {
+        _filters.Estado = estado;
+        await AplicarFiltrosAsync();
+    }
+
+    private async Task SetTipoFilterAsync(string tipo)
+    {
+        _filters.TipoTrabajo = tipo;
+        await AplicarFiltrosAsync();
+    }
+
+    private async Task ToggleSoloFacturablesAsync()
+    {
+        _filters.SoloFacturables = !_filters.SoloFacturables;
+        await AplicarFiltrosAsync();
+    }
+
+    private async Task ToggleSoloExcedentesAsync()
+    {
+        _filters.SoloExcedentes = !_filters.SoloExcedentes;
+        await AplicarFiltrosAsync();
+    }
+
+    private async Task ClearDateRangeAsync()
+    {
+        _filters.FechaDesde = null;
+        _filters.FechaHasta = null;
+        await AplicarFiltrosAsync();
+    }
+
+    private async Task ClearQuickSearchAsync()
+    {
+        _quickSearch = string.Empty;
+        _filters.Texto = string.Empty;
+        _filters.PageNumber = 1;
+        await BuscarAsync();
+    }
+
+    private async Task ClearEstadoAsync()
+    {
+        _filters.Estado = string.Empty;
+        await AplicarFiltrosAsync();
+    }
+
+    private async Task ClearTipoAsync()
+    {
+        _filters.TipoTrabajo = string.Empty;
+        await AplicarFiltrosAsync();
+    }
+
+    private async Task ClearClienteAsync()
+    {
+        _filters.ClienteCodigo = string.Empty;
+        await AplicarFiltrosAsync();
+    }
+
+    private async Task ClearTecnicoAsync()
+    {
+        _filters.IdTecnico = string.Empty;
+        await AplicarFiltrosAsync();
+    }
+
+    private async Task ClearFacturableAsync()
+    {
+        _filters.SoloFacturables = false;
+        await AplicarFiltrosAsync();
+    }
+
+    private async Task ClearExcedenteAsync()
+    {
+        _filters.SoloExcedentes = false;
+        await AplicarFiltrosAsync();
+    }
+
+    private static string GetSmartOptionClass(bool active)
+        => active ? "smart-option is-active" : "smart-option";
+
+    private IEnumerable<string> GetTiposTrabajoVisibles()
+        => _lookups.TiposTrabajo.Where(tipo => !string.Equals(tipo, ParteHoraTipoTrabajoKeys.Viaje, StringComparison.OrdinalIgnoreCase));
 
     private async Task CambiarPaginaAsync(int page)
     {
@@ -956,4 +1077,7 @@
             AppUiFeedbackSeverity.Error => "editor-msg--error",
             _ => "editor-msg--info"
         };
+
+    public void Dispose()
+        => _floatingWindowRegistration?.Dispose();
 }
