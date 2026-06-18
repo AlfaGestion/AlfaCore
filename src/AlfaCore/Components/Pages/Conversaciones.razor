@@ -1889,6 +1889,59 @@
                     <small>Se asignará automáticamente al usuario que crea el ticket.</small>
                 </div>
             </div>
+            <label class="checkbox conversations-ticket-hours-toggle">
+                <input type="checkbox" @bind="_ticketCreateWithParteHora" disabled="@_creatingTicket" />
+                <span>Cargar parte de horas con este ticket</span>
+            </label>
+            @if (_ticketCreateWithParteHora)
+            {
+                <div class="conversations-hours-lines conversations-ticket-hours-lines">
+                    <div class="conversations-hours-lines__header">
+                        <span>Técnico</span>
+                        <span>Tipo</span>
+                        <span>Tarea</span>
+                        <span>Minutos</span>
+                        <span></span>
+                    </div>
+                    @for (var i = 0; i < _ticketParteHoraLineas.Count; i++)
+                    {
+                        var index = i;
+                        var linea = _ticketParteHoraLineas[index];
+                        <div class="conversations-hours-lines__row" @key="linea">
+                            <select @bind="linea.IdTecnico" disabled="@_creatingTicket">
+                                <option value="">Sin técnico</option>
+                                @foreach (var tecnico in _technicians)
+                                {
+                                    <option value="@tecnico.IdTecnico">@DisplayOrFallback(tecnico.Nombre, tecnico.IdTecnico)</option>
+                                }
+                            </select>
+                            <select @bind="linea.TipoTrabajo" disabled="@_creatingTicket">
+                                @foreach (var tipo in ParteHoraTiposConversacion)
+                                {
+                                    <option value="@tipo">@FormatParteHoraTipo(tipo)</option>
+                                }
+                            </select>
+                            <input type="text"
+                                   id="@GetTicketParteHoraLineaDescripcionId(index)"
+                                   value="@linea.Descripcion"
+                                   maxlength="1000"
+                                   @oninput="args => linea.Descripcion = Convert.ToString(args.Value) ?? string.Empty"
+                                   @onkeydown="args => HandleTicketParteHoraLineaKeyDownAsync(args, index)"
+                                   disabled="@_creatingTicket"
+                                   placeholder="Descripción de la tarea" />
+                            <input type="number" min="1" max="1440" step="1" @bind="linea.Minutos" disabled="@_creatingTicket" />
+                            <button type="button" class="btn btn--ghost btn--sm" @onclick="() => RemoveTicketParteHoraLinea(index)" disabled="@(_creatingTicket || _ticketParteHoraLineas.Count <= 1)">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                    }
+                    <div class="actions">
+                        <button type="button" class="btn btn--ghost btn--sm" @onclick="AddTicketParteHoraLinea" disabled="@_creatingTicket">
+                            <i class="bi bi-plus-circle"></i> Agregar línea
+                        </button>
+                    </div>
+                </div>
+            }
         </div>
         <div class="actions usuarios-editor__actions">
             <button type="button" class="btn btn--primary" @onclick="CreateTicketFromSelectionAsync" disabled="@(_creatingTicket || _checkingRelatedTickets)">
@@ -2240,6 +2293,9 @@
     private int _ticketPriority = 2;
     private string? _ticketError;
     private bool _creatingTicket;
+    private bool _ticketCreateWithParteHora;
+    private List<ParteHoraConversacionLinea> _ticketParteHoraLineas = [];
+    private int? _pendingTicketParteHoraLineaDescripcionFocusIndex;
     private bool _checkingRelatedTickets;
     private bool _allowCreateDespiteRelated;
     private List<TicketRelatedMatchDto> _relatedTicketMatches = [];
@@ -2592,6 +2648,20 @@
             try
             {
                 await JS.InvokeVoidAsync("eval", $"document.getElementById('{GetParteHoraLineaDescripcionId(focusIndex)}')?.focus()");
+            }
+            catch
+            {
+            }
+        }
+
+        if (_pendingTicketParteHoraLineaDescripcionFocusIndex.HasValue)
+        {
+            var focusIndex = _pendingTicketParteHoraLineaDescripcionFocusIndex.Value;
+            _pendingTicketParteHoraLineaDescripcionFocusIndex = null;
+
+            try
+            {
+                await JS.InvokeVoidAsync("eval", $"document.getElementById('{GetTicketParteHoraLineaDescripcionId(focusIndex)}')?.focus()");
             }
             catch
             {
@@ -3136,6 +3206,7 @@
         _ticketTitle = BuildDefaultTicketTitle();
         _ticketDescription = string.Empty;
         _ticketPriority = 2;
+        ResetTicketParteHoraState();
         _allowCreateDespiteRelated = false;
         _relatedTicketMatches.Clear();
     }
@@ -3171,6 +3242,7 @@
 
         _showTicketDialog = false;
         _ticketError = null;
+        ResetTicketParteHoraState();
         _allowCreateDespiteRelated = false;
     }
 
@@ -3184,8 +3256,107 @@
         _selectedTicketMessageIds.Clear();
         _ticketDescription = string.Empty;
         _ticketError = null;
+        ResetTicketParteHoraState();
         _allowCreateDespiteRelated = false;
         _relatedTicketMatches.Clear();
+    }
+
+    private void ResetTicketParteHoraState()
+    {
+        _ticketCreateWithParteHora = false;
+        _ticketParteHoraLineas =
+        [
+            new ParteHoraConversacionLinea
+            {
+                IdTecnico = CurrentMessageTechnicianId,
+                TipoTrabajo = GetDefaultTicketParteHoraTipo(),
+                Minutos = 15
+            }
+        ];
+    }
+
+    private void AddTicketParteHoraLinea()
+    {
+        var previous = _ticketParteHoraLineas.LastOrDefault();
+        _ticketParteHoraLineas.Add(new ParteHoraConversacionLinea
+        {
+            IdTecnico = previous?.IdTecnico ?? CurrentMessageTechnicianId,
+            TipoTrabajo = previous?.TipoTrabajo ?? GetDefaultTicketParteHoraTipo(),
+            Minutos = 15
+        });
+    }
+
+    private void RemoveTicketParteHoraLinea(int index)
+    {
+        if (_ticketParteHoraLineas.Count <= 1 || index < 0 || index >= _ticketParteHoraLineas.Count)
+            return;
+
+        _ticketParteHoraLineas.RemoveAt(index);
+    }
+
+    private Task HandleTicketParteHoraLineaKeyDownAsync(KeyboardEventArgs args, int index)
+    {
+        if (string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase))
+            return InsertTicketParteHoraLineaAfterAsync(index);
+
+        return Task.CompletedTask;
+    }
+
+    private Task InsertTicketParteHoraLineaAfterAsync(int index)
+    {
+        var previous = index >= 0 && index < _ticketParteHoraLineas.Count ? _ticketParteHoraLineas[index] : _ticketParteHoraLineas.LastOrDefault();
+        var nueva = new ParteHoraConversacionLinea
+        {
+            IdTecnico = previous?.IdTecnico ?? CurrentMessageTechnicianId,
+            TipoTrabajo = previous?.TipoTrabajo ?? GetDefaultTicketParteHoraTipo(),
+            Minutos = 15
+        };
+
+        if (index < 0 || index >= _ticketParteHoraLineas.Count - 1)
+            _ticketParteHoraLineas.Add(nueva);
+        else
+            _ticketParteHoraLineas.Insert(index + 1, nueva);
+
+        _pendingTicketParteHoraLineaDescripcionFocusIndex = Math.Min(index + 1, _ticketParteHoraLineas.Count - 1);
+        return Task.CompletedTask;
+    }
+
+    private static string GetTicketParteHoraLineaDescripcionId(int index)
+        => $"ticket-create-parte-linea-desc-{index.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+
+    private string GetDefaultTicketParteHoraTipo()
+        => string.IsNullOrWhiteSpace(_selectedConversation?.ClienteCodigo)
+            ? ParteHoraTipoTrabajoKeys.Interno
+            : ParteHoraTipoTrabajoKeys.Soporte;
+
+    private List<ParteHoraConversacionLinea> GetTicketParteHoraLineasForSave()
+    {
+        if (!_ticketCreateWithParteHora)
+            return [];
+
+        var lineas = _ticketParteHoraLineas
+            .Where(linea => linea.Minutos > 0 || !string.IsNullOrWhiteSpace(linea.Descripcion) || !string.IsNullOrWhiteSpace(linea.IdTecnico))
+            .ToList();
+
+        if (lineas.Count == 0)
+        {
+            _ticketError = "Agregá al menos una tarea para guardar el parte.";
+            return [];
+        }
+
+        if (lineas.Any(linea => linea.Minutos <= 0))
+        {
+            _ticketError = "Todas las líneas del parte deben tener una duración mayor a cero.";
+            return [];
+        }
+
+        if (lineas.Any(linea => linea.Minutos > 24 * 60))
+        {
+            _ticketError = "Ninguna línea del parte puede superar 24 horas.";
+            return [];
+        }
+
+        return lineas;
     }
 
     private async Task CreateTicketFromSelectionAsync()
@@ -3214,6 +3385,10 @@
             _ticketError = "Revisá los tickets relacionados o elegí Crear igual para continuar.";
             return;
         }
+
+        var parteLineas = GetTicketParteHoraLineasForSave();
+        if (_ticketCreateWithParteHora && parteLineas.Count == 0)
+            return;
 
         _creatingTicket = true;
         _ticketError = null;
@@ -3248,10 +3423,47 @@
                 SistemaAccion = CurrentUserSystemForAudit
             });
 
+            if (_ticketCreateWithParteHora)
+            {
+                var idsPartes = new List<long>();
+                foreach (var linea in parteLineas)
+                {
+                    idsPartes.Add(await PartesHorasSvc.SaveAsync(new ParteHoraSaveRequest
+                    {
+                        Fecha = DateTime.Today,
+                        ClienteCodigo = _selectedConversation.ClienteCodigo,
+                        IdContacto = _selectedConversation.IdContacto,
+                        IdTicket = idTicket,
+                        IdTecnico = linea.IdTecnico,
+                        Usuario = CurrentUserNameForAudit,
+                        TipoTrabajo = linea.TipoTrabajo,
+                        Minutos = linea.Minutos,
+                        Facturable = !string.IsNullOrWhiteSpace(_selectedConversation.ClienteCodigo),
+                        Estado = ParteHoraEstadoKeys.Presentado,
+                        Descripcion = linea.Descripcion,
+                        UsuarioAccion = CurrentUserNameForAudit
+                    }));
+                }
+
+                var totalMinutes = parteLineas.Sum(linea => linea.Minutos);
+                await ConversacionesSvc.AddInternalEventAsync(new ConversacionEventoInternoRequest
+                {
+                    IdConversacion = _selectedConversation.IdConversacion,
+                    Texto = idsPartes.Count == 1
+                        ? $"{CurrentMessageTechnicianName} guardó el parte de horas #{idsPartes[0].ToString(System.Globalization.CultureInfo.InvariantCulture)} por {FormatParteHorasDuration(totalMinutes)} vinculado al ticket #{idTicket.ToString(System.Globalization.CultureInfo.InvariantCulture)}."
+                        : $"{CurrentMessageTechnicianName} guardó {idsPartes.Count.ToString(System.Globalization.CultureInfo.InvariantCulture)} líneas de parte de horas por {FormatParteHorasDuration(totalMinutes)} vinculadas al ticket #{idTicket.ToString(System.Globalization.CultureInfo.InvariantCulture)}.",
+                    IdTecnicoAutor = creatorTechnicianId,
+                    NombreTecnicoAccion = CurrentMessageTechnicianName,
+                    UsuarioAccion = CurrentUserNameForAudit,
+                    SistemaAccion = CurrentUserSystemForAudit
+                });
+            }
+
             _ticketSelectionMode = false;
             _showTicketDialog = false;
             _selectedTicketMessageIds.Clear();
             _ticketDescription = string.Empty;
+            ResetTicketParteHoraState();
             _relatedTicketMatches.Clear();
             _allowCreateDespiteRelated = false;
             _actionMessage = $"Ticket #{idTicket.ToString(System.Globalization.CultureInfo.InvariantCulture)} creado correctamente.";
@@ -7424,4 +7636,3 @@
         public const string Notas = "notas";
     }
 }
-
