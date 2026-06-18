@@ -764,7 +764,14 @@
         </section>
     }
 
-    <div class="partes-panel-grid">
+    <div class="contactos-tabs partes-tabs" role="tablist" aria-label="Vistas de partes de horas">
+        <button type="button" class="cuentas-tab @GetPartesTabClass(PartesTabRegistradas)" @onclick='() => _partesActiveTab = PartesTabRegistradas'>Partes registradas</button>
+        <button type="button" class="cuentas-tab @GetPartesTabClass(PartesTabConsumo)" @onclick='() => _partesActiveTab = PartesTabConsumo'>Consumo por cliente</button>
+        <button type="button" class="cuentas-tab @GetPartesTabClass(PartesTabBolsa)" @onclick='() => _partesActiveTab = PartesTabBolsa'>Bolsa mensual</button>
+    </div>
+
+    @if (_partesActiveTab == PartesTabRegistradas)
+    {
     <section class="panel-card partes-table-panel">
         <div class="panel-card__header">
             <div>
@@ -835,8 +842,10 @@
             </div>
         </div>
     </section>
+    }
 
-    <div class="partes-panel-stack">
+    @if (_partesActiveTab == PartesTabConsumo)
+    {
     <section class="panel-card">
         <div class="panel-card__header">
             <div>
@@ -874,7 +883,10 @@
             </table>
         </div>
     </section>
+    }
 
+    @if (_partesActiveTab == PartesTabBolsa)
+    {
     <section class="panel-card">
         <div class="panel-card__header">
             <div>
@@ -909,8 +921,7 @@
             <button type="button" class="btn btn--primary" @onclick="GuardarConfigClienteAsync">Guardar bolsa</button>
         </div>
     </section>
-    </div>
-    </div>
+    }
 </div>
 
 @code {
@@ -924,6 +935,9 @@
 
     private const string TicketSelectDefaultValue = "__select__";
     private const string TicketSelectNoneValue = "__none__";
+    private const string PartesTabRegistradas = "registradas";
+    private const string PartesTabConsumo = "consumo";
+    private const string PartesTabBolsa = "bolsa";
 
     private PartesHorasFilters _filters = new();
     private PagedResult<ParteHoraGridItemDto> _result = new();
@@ -944,6 +958,7 @@
     private string _clienteSearch = string.Empty;
     private string _personaSearch = string.Empty;
     private string _ticketSelectValue = TicketSelectDefaultValue;
+    private string _partesActiveTab = PartesTabRegistradas;
     private int? _ticketNumeroBusqueda;
     private int? _pendingLineaDescripcionFocusIndex;
     private IDisposable? _floatingWindowRegistration;
@@ -1148,6 +1163,9 @@
 
     private static string GetSmartOptionClass(bool active)
         => active ? "smart-option is-active" : "smart-option";
+
+    private string GetPartesTabClass(string tab)
+        => string.Equals(_partesActiveTab, tab, StringComparison.Ordinal) ? "is-active" : string.Empty;
 
     private IEnumerable<string> GetTiposTrabajoVisibles()
         => _lookups.TiposTrabajo.Where(tipo => !string.Equals(tipo, ParteHoraTipoTrabajoKeys.Viaje, StringComparison.OrdinalIgnoreCase));

@@ -3,12 +3,72 @@
 @using Microsoft.JSInterop
 @inject IJSRuntime JS
 @inject AlfaCore.Services.ITicketsService TicketsSvc
+@inject AlfaCore.Services.IPartesHorasService PartesSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject NavigationManager Nav
 @implements IDisposable
 
 <PageTitle>Tickets de asistencia | Alfa Gestión</PageTitle>
+
+<style>
+    .tickets-editor-tabs {
+        margin: 4px 0 18px;
+    }
+
+    .tickets-partes-panel {
+        display: grid;
+        gap: 16px;
+    }
+
+    .tickets-partes-lines {
+        display: grid;
+        gap: 8px;
+    }
+
+    .tickets-partes-lines .partes-lines__header,
+    .tickets-partes-lines .partes-lines__row {
+        display: grid;
+        grid-template-columns: minmax(140px, .8fr) minmax(130px, .75fr) minmax(260px, 2fr) minmax(90px, .45fr) 40px;
+        gap: 8px;
+        align-items: center;
+    }
+
+    .tickets-partes-lines .partes-lines__header {
+        color: var(--muted);
+        font-size: .74rem;
+        font-weight: 700;
+        letter-spacing: .04em;
+        text-transform: uppercase;
+    }
+
+    .tickets-partes-lines .partes-lines__row input,
+    .tickets-partes-lines .partes-lines__row select {
+        width: 100%;
+        min-height: 38px;
+        border: 1px solid var(--border);
+        border-radius: 7px;
+        background: rgba(2, 6, 23, .45);
+        color: var(--text);
+        padding: .55rem .7rem;
+    }
+
+    .tickets-partes-lines .partes-lines__row input:focus,
+    .tickets-partes-lines .partes-lines__row select:focus {
+        outline: 2px solid rgba(34, 211, 238, .45);
+        border-color: rgba(34, 211, 238, .9);
+    }
+
+    @@media (max-width: 760px) {
+        .tickets-partes-lines .partes-lines__header {
+            display: none;
+        }
+
+        .tickets-partes-lines .partes-lines__row {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
 
 <section class="page-grid tickets-page tickets-page--odoo" @onclick="HandleTicketPageClickAsync">
     <section class="tickets-odoo-header">
@@ -352,6 +412,13 @@
                 </div>
             </div>
 
+            <div class="contactos-tabs tickets-editor-tabs" role="tablist" aria-label="Detalle de ticket">
+                <button type="button" class="cuentas-tab @GetTicketEditorTabClass(TicketEditorTabTicket)" @onclick='() => _ticketEditorTab = TicketEditorTabTicket'>Ticket</button>
+                <button type="button" class="cuentas-tab @GetTicketEditorTabClass(TicketEditorTabParteHora)" @onclick="SetTicketParteHoraTab" disabled="@_isNew">Parte de hora</button>
+            </div>
+
+            @if (_ticketEditorTab == TicketEditorTabTicket)
+            {
             <div class="tickets-editor-grid">
                 <div class="tickets-editor-main">
                     <div class="field">
@@ -513,9 +580,112 @@
                     <i class="bi bi-eraser"></i> Revertir
                 </button>
             </div>
+            }
+            else
+            {
+                <section class="tickets-partes-panel">
+                    <div class="panel-card__header">
+                        <div>
+                            <h3 class="panel-card__title">Parte de hora</h3>
+                            <p class="panel-card__subtitle">Registrá tiempo trabajado y dejalo vinculado a este ticket.</p>
+                        </div>
+                    </div>
+                    <div class="filters-grid filters-grid--wide">
+                        <div class="field">
+                            <label>Fecha</label>
+                            <input type="date" @bind="_ticketParteForm.Fecha" disabled="@_savingParteHora" />
+                        </div>
+                        <div class="field">
+                            <label>Cliente</label>
+                            <input type="text" value="@DisplayOrFallback(_detail?.ClienteNombre, _detail?.ClienteCodigo, "Sin cliente")" disabled />
+                        </div>
+                        <div class="field">
+                            <label>Ticket</label>
+                            <input type="text" value="@($"{_detail?.CodigoVisible} {_detail?.Titulo}".Trim())" disabled />
+                        </div>
+                        <div class="field">
+                            <label>Contacto / usuario</label>
+                            <input type="text" value="@DisplayOrFallback(_detail?.ContactoNombre, _ticketParteForm.Usuario, "Sin contacto")" disabled />
+                        </div>
+                        <div class="field">
+                            <label>Estado</label>
+                            <select @bind="_ticketParteForm.Estado" disabled="@_savingParteHora">
+                                @foreach (var estado in _partesLookups.Estados)
+                                {
+                                    <option value="@estado">@LabelParteEstado(estado)</option>
+                                }
+                            </select>
+                        </div>
+                        <label class="checkbox">
+                            <input type="checkbox" @bind="_ticketParteForm.Facturable" disabled="@_savingParteHora" />
+                            <span>Facturable</span>
+                        </label>
+                        <label class="checkbox">
+                            <input type="checkbox" @bind="_ticketParteForm.Excedente" disabled="@_savingParteHora" />
+                            <span>Excedente</span>
+                        </label>
+                    </div>
+
+                    <div class="partes-lines tickets-partes-lines">
+                        <div class="partes-lines__header">
+                            <span>Técnico</span>
+                            <span>Tipo</span>
+                            <span>Tarea</span>
+                            <span>Minutos</span>
+                            <span></span>
+                        </div>
+                        @for (var i = 0; i < _ticketParteLineas.Count; i++)
+                        {
+                            var index = i;
+                            var linea = _ticketParteLineas[index];
+                            <div class="partes-lines__row" @key="linea">
+                                <select @bind="linea.IdTecnico" disabled="@_savingParteHora">
+                                    <option value="">Sin técnico</option>
+                                    @foreach (var tecnico in _partesLookups.Tecnicos)
+                                    {
+                                        <option value="@tecnico.Codigo">@tecnico.Titulo</option>
+                                    }
+                                </select>
+                                <select @bind="linea.TipoTrabajo" disabled="@_savingParteHora">
+                                    @foreach (var tipo in GetTicketParteTiposVisibles())
+                                    {
+                                        <option value="@tipo">@LabelParteTipo(tipo)</option>
+                                    }
+                                </select>
+                                <input type="text"
+                                       id="@GetTicketParteLineaDescripcionId(index)"
+                                       value="@linea.Descripcion"
+                                       maxlength="1000"
+                                       @oninput="args => linea.Descripcion = Convert.ToString(args.Value) ?? string.Empty"
+                                       @onkeydown="args => HandleTicketParteLineaKeyDownAsync(args, index)"
+                                       disabled="@_savingParteHora"
+                                       placeholder="Descripción de la tarea" />
+                                <input type="number" min="1" max="1440" step="5" @bind="linea.Minutos" disabled="@_savingParteHora" />
+                                <button type="button" class="btn btn--ghost btn--sm" @onclick="() => RemoveTicketParteLinea(index)" disabled="@(_savingParteHora || _ticketParteLineas.Count <= 1)">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </div>
+                        }
+                        <div class="actions">
+                            <button type="button" class="btn btn--ghost btn--sm" @onclick="AddTicketParteLinea" disabled="@_savingParteHora">
+                                <i class="bi bi-plus-circle"></i> Agregar línea
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="actions usuarios-editor__actions">
+                        <button type="button" class="btn btn--primary" @onclick="GuardarParteHoraTicketAsync" disabled="@(_savingParteHora || _detail is null)">
+                            <i class="bi bi-stopwatch"></i> @(_savingParteHora ? "Guardando..." : "Guardar parte")
+                        </button>
+                        <button type="button" class="btn btn--ghost" @onclick="ResetTicketParteHoraForm" disabled="@_savingParteHora">
+                            <i class="bi bi-eraser"></i> Limpiar
+                        </button>
+                    </div>
+                </section>
+            }
         </section>
 
-        @if (!_isNew && _detail is not null)
+        @if (!_isNew && _detail is not null && _ticketEditorTab == TicketEditorTabTicket)
         {
             <section class="tickets-detail-layout">
                 <div class="panel-card">
@@ -760,13 +930,26 @@
 </section>
 
 @code {
+    private sealed class TicketParteHoraLineaForm
+    {
+        public string IdTecnico { get; set; } = string.Empty;
+        public string TipoTrabajo { get; set; } = ParteHoraTipoTrabajoKeys.Soporte;
+        public string Descripcion { get; set; } = string.Empty;
+        public int Minutos { get; set; } = 15;
+    }
+
+    private const string TicketEditorTabTicket = "ticket";
+    private const string TicketEditorTabParteHora = "parte-hora";
+
     private TicketLookupDto _lookups = new();
+    private ParteHoraLookupDto _partesLookups = new();
     private TicketsFilters _filters = new();
     private string _prioridadFiltro = string.Empty;
     private string _viewMode = "kanban";
     private bool _loading;
     private bool _refreshingTickets;
     private bool _saving;
+    private bool _savingParteHora;
     private bool _showEditor;
     private bool _isNew;
     private bool _showViewSettings;
@@ -778,6 +961,8 @@
     private bool _feedbackLeaving;
     private DateTime _feedbackSetAtUtc = DateTime.MinValue;
     private TicketUpdateRequest _form = new();
+    private ParteHoraSaveRequest _ticketParteForm = new();
+    private List<TicketParteHoraLineaForm> _ticketParteLineas = [];
     private List<int> _formTagIds = [];
     private string _newNote = string.Empty;
     private int _pagedTotal;
@@ -827,6 +1012,8 @@
     private int _tagDraftId;
     private string _tagDraftName = string.Empty;
     private string _tagDraftColor = "#14B8A6";
+    private string _ticketEditorTab = TicketEditorTabTicket;
+    private int? _pendingTicketParteLineaDescripcionFocusIndex;
 
     private static readonly IReadOnlyList<DescriptionCommandOption> DescriptionCommands =
     [
@@ -917,6 +1104,20 @@
             _viewSettingsFocusPending = false;
             await _viewSettingsLayer.FocusAsync();
         }
+
+        if (_pendingTicketParteLineaDescripcionFocusIndex.HasValue)
+        {
+            var focusIndex = _pendingTicketParteLineaDescripcionFocusIndex.Value;
+            _pendingTicketParteLineaDescripcionFocusIndex = null;
+
+            try
+            {
+                await JS.InvokeVoidAsync("eval", $"document.getElementById('{GetTicketParteLineaDescripcionId(focusIndex)}')?.focus()");
+            }
+            catch
+            {
+            }
+        }
     }
 
     private void OnAppUserSessionChanged()
@@ -968,6 +1169,12 @@
         ClearErrorFeedback();
         if (string.IsNullOrWhiteSpace(_form.CodigoEstado))
             _form.CodigoEstado = _lookups.Estados.FirstOrDefault()?.CodigoEstado ?? TicketEstadoKeys.Nuevo;
+
+        var partesResult = await UiOps.RunAsync(() => PartesSvc.GetLookupsAsync(), "No se pudieron cargar los datos de partes de horas.");
+        if (partesResult.Success && partesResult.Value is not null)
+            _partesLookups = partesResult.Value;
+        else if (partesResult.Feedback is not null)
+            SetFeedback(partesResult.Feedback);
     }
 
     private async Task RecargarAsync()
@@ -1334,6 +1541,8 @@
         };
         _formTagIds = [];
         ClearTicketRelations();
+        _ticketEditorTab = TicketEditorTabTicket;
+        ResetTicketParteHoraForm();
     }
 
     private async Task AbrirTicketAsync(long idTicket, bool updateUrl = true)
@@ -1375,9 +1584,158 @@
         _ticketContactSuggestions = [];
         _isNew = false;
         _showEditor = true;
+        _ticketEditorTab = TicketEditorTabTicket;
         _newNote = string.Empty;
         _descriptionEditorReady = false;
+        ResetTicketParteHoraForm();
     }
+
+    private void SetTicketParteHoraTab()
+    {
+        if (_isNew)
+            return;
+
+        _ticketEditorTab = TicketEditorTabParteHora;
+        if (_ticketParteLineas.Count == 0)
+            ResetTicketParteHoraForm();
+    }
+
+    private string GetTicketEditorTabClass(string tab)
+        => string.Equals(_ticketEditorTab, tab, StringComparison.Ordinal) ? "is-active" : string.Empty;
+
+    private void ResetTicketParteHoraForm()
+    {
+        var usuario = AppUserSession.GetCurrentUserName(Environment.UserName);
+        _ticketParteForm = new ParteHoraSaveRequest
+        {
+            Fecha = DateTime.Today,
+            ClienteCodigo = _detail?.ClienteCodigo ?? _form.ClienteCodigo ?? string.Empty,
+            IdContacto = _detail?.IdContacto ?? _form.IdContacto,
+            IdTicket = _detail?.IdTicket,
+            IdTecnico = _detail?.IdTecnico ?? _form.IdTecnico ?? string.Empty,
+            Usuario = usuario,
+            UsuarioAccion = usuario,
+            TipoTrabajo = ParteHoraTipoTrabajoKeys.Soporte,
+            Minutos = 15,
+            Estado = ParteHoraEstadoKeys.Borrador,
+            Facturable = true
+        };
+        _ticketParteLineas =
+        [
+            new TicketParteHoraLineaForm
+            {
+                IdTecnico = _ticketParteForm.IdTecnico,
+                TipoTrabajo = ParteHoraTipoTrabajoKeys.Soporte,
+                Minutos = 15
+            }
+        ];
+    }
+
+    private void AddTicketParteLinea()
+    {
+        var previous = _ticketParteLineas.LastOrDefault();
+        _ticketParteLineas.Add(new TicketParteHoraLineaForm
+        {
+            IdTecnico = previous?.IdTecnico ?? _ticketParteForm.IdTecnico,
+            TipoTrabajo = previous?.TipoTrabajo ?? ParteHoraTipoTrabajoKeys.Soporte,
+            Minutos = 15
+        });
+    }
+
+    private void RemoveTicketParteLinea(int index)
+    {
+        if (_ticketParteLineas.Count <= 1 || index < 0 || index >= _ticketParteLineas.Count)
+            return;
+
+        _ticketParteLineas.RemoveAt(index);
+    }
+
+    private Task HandleTicketParteLineaKeyDownAsync(KeyboardEventArgs args, int index)
+    {
+        if (string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase))
+            return InsertTicketParteLineaAfterAsync(index);
+
+        return Task.CompletedTask;
+    }
+
+    private Task InsertTicketParteLineaAfterAsync(int index)
+    {
+        var previous = index >= 0 && index < _ticketParteLineas.Count ? _ticketParteLineas[index] : _ticketParteLineas.LastOrDefault();
+        var nueva = new TicketParteHoraLineaForm
+        {
+            IdTecnico = previous?.IdTecnico ?? _ticketParteForm.IdTecnico,
+            TipoTrabajo = previous?.TipoTrabajo ?? ParteHoraTipoTrabajoKeys.Soporte,
+            Minutos = 15
+        };
+
+        if (index < 0 || index >= _ticketParteLineas.Count - 1)
+            _ticketParteLineas.Add(nueva);
+        else
+            _ticketParteLineas.Insert(index + 1, nueva);
+
+        _pendingTicketParteLineaDescripcionFocusIndex = Math.Min(index + 1, _ticketParteLineas.Count - 1);
+        return Task.CompletedTask;
+    }
+
+    private async Task GuardarParteHoraTicketAsync()
+    {
+        if (_detail is null)
+            return;
+
+        _savingParteHora = true;
+        try
+        {
+            var usuario = AppUserSession.GetCurrentUserName(Environment.UserName);
+            var lineas = _ticketParteLineas
+                .Where(linea => linea.Minutos > 0 || !string.IsNullOrWhiteSpace(linea.Descripcion) || !string.IsNullOrWhiteSpace(linea.IdTecnico))
+                .ToList();
+
+            if (lineas.Count == 0)
+                lineas.Add(new TicketParteHoraLineaForm { IdTecnico = _ticketParteForm.IdTecnico, TipoTrabajo = ParteHoraTipoTrabajoKeys.Soporte, Minutos = 15 });
+
+            foreach (var linea in lineas)
+            {
+                var request = new ParteHoraSaveRequest
+                {
+                    Fecha = _ticketParteForm.Fecha,
+                    ClienteCodigo = _detail.ClienteCodigo,
+                    IdContacto = _detail.IdContacto,
+                    IdTicket = _detail.IdTicket,
+                    IdTecnico = linea.IdTecnico,
+                    Usuario = usuario,
+                    TipoTrabajo = linea.TipoTrabajo,
+                    Minutos = linea.Minutos,
+                    Facturable = _ticketParteForm.Facturable,
+                    Excedente = _ticketParteForm.Excedente,
+                    Estado = _ticketParteForm.Estado,
+                    Descripcion = linea.Descripcion,
+                    UsuarioAccion = usuario
+                };
+
+                var result = await UiOps.RunAsync(() => PartesSvc.SaveAsync(request), "No se pudo guardar el parte de horas.");
+                if (!result.Success)
+                {
+                    SetFeedback(result.Feedback);
+                    return;
+                }
+            }
+
+            SetFeedback(AppUiMessage.Success("Parte guardado", lineas.Count == 1 ? "La hora quedó vinculada al ticket." : $"Se vincularon {lineas.Count} líneas de trabajo al ticket."));
+            var id = _detail.IdTicket;
+            await AbrirTicketAsync(id, updateUrl: false);
+            _ticketEditorTab = TicketEditorTabParteHora;
+        }
+        finally
+        {
+            _savingParteHora = false;
+        }
+    }
+
+    private IEnumerable<string> GetTicketParteTiposVisibles()
+        => _partesLookups.TiposTrabajo.Where(tipo => !string.Equals(tipo, ParteHoraTipoTrabajoKeys.Viaje, StringComparison.OrdinalIgnoreCase));
+
+    private static string GetTicketParteLineaDescripcionId(int index)
+        => $"ticket-parte-linea-desc-{index.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
 
     private bool NavigateToTicketUrl(long idTicket)
     {
@@ -2153,6 +2511,27 @@
             1 => "Baja",
             _ => "Sin prioridad"
         };
+
+    private static string LabelParteEstado(string value) => value switch
+    {
+        ParteHoraEstadoKeys.Borrador => "Borrador",
+        ParteHoraEstadoKeys.Presentado => "Presentado",
+        ParteHoraEstadoKeys.Aprobado => "Aprobado",
+        ParteHoraEstadoKeys.Rechazado => "Rechazado",
+        _ => value
+    };
+
+    private static string LabelParteTipo(string value) => value switch
+    {
+        ParteHoraTipoTrabajoKeys.Soporte => "Soporte",
+        ParteHoraTipoTrabajoKeys.Desarrollo => "Desarrollo",
+        ParteHoraTipoTrabajoKeys.Implementacion => "Implementación",
+        ParteHoraTipoTrabajoKeys.Capacitacion => "Capacitación",
+        ParteHoraTipoTrabajoKeys.Reunion => "Reunión",
+        ParteHoraTipoTrabajoKeys.Viaje => "Viaje",
+        ParteHoraTipoTrabajoKeys.Interno => "Interno",
+        _ => value
+    };
 
     private static string DisplayOrFallback(params string?[] values)
         => values.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x))?.Trim() ?? string.Empty;
