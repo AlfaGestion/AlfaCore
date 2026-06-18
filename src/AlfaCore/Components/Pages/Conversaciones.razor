@@ -1847,7 +1847,7 @@
                 <span class="conversations-hours-dialog__icon"><i class="bi bi-stopwatch"></i></span>
                 <div>
                     <h3 id="conversations-hours-title" class="panel-card__title">Parte de horas</h3>
-                    <p class="panel-card__subtitle">Tiempo detectado desde el inicio de la atencion hasta el cierre manual.</p>
+                    <p class="panel-card__subtitle">Tiempo detectado hasta este cierre manual pendiente.</p>
                 </div>
             </div>
             <button type="button" class="btn btn--ghost btn--sm conversations-hours-dialog__close" @onclick="CloseParteHorasDialog" disabled="@_savingParteHora" aria-label="Cerrar parte de horas">
@@ -2003,8 +2003,8 @@
             <button type="button" class="btn btn--primary" @onclick="SaveParteHorasAsync" disabled="@_savingParteHora">
                 <i class="bi bi-stopwatch"></i> @(_savingParteHora ? "Guardando..." : "Guardar parte")
             </button>
-            <button type="button" class="btn btn--ghost" @onclick="CloseParteHorasDialog" disabled="@_savingParteHora">
-                Cerrar sin parte
+            <button type="button" class="btn btn--ghost" @onclick="ConfirmCloseWithoutParteHorasAsync" disabled="@_savingParteHora">
+                No cargar parte
             </button>
         </div>
     </section>
@@ -2244,6 +2244,8 @@
     private DateTime? _parteHoraInicio;
     private DateTime? _parteHoraFin;
     private long? _parteHoraConversationId;
+    private string _parteHoraPendingCloseStatusCode = string.Empty;
+    private string _parteHoraPreviousStatusCode = string.Empty;
     private List<TicketGridItemDto> _parteHoraTickets = [];
     private List<TicketEstadoDto> _parteHoraTicketEstados = [];
     private TicketDetailDto? _parteHoraTicketDetail;
@@ -3277,6 +3279,18 @@
         }
     }
 
+    private async Task PromptCloseConversationAsync(string closeStatusCode, string previousStatusCode)
+    {
+        var prompt = BuildParteHorasPrompt(DateTime.Now);
+        if (prompt is null)
+            return;
+
+        _parteHoraPendingCloseStatusCode = closeStatusCode;
+        _parteHoraPreviousStatusCode = previousStatusCode;
+        _statusCode = previousStatusCode;
+        await OpenParteHorasDialogAsync(prompt);
+    }
+
     private void CloseParteHorasDialog()
     {
         if (_savingParteHora)
@@ -3284,6 +3298,26 @@
 
         _showParteHorasDialog = false;
         _parteHoraError = null;
+        _parteHoraPendingCloseStatusCode = string.Empty;
+        _parteHoraPreviousStatusCode = string.Empty;
+    }
+
+    private async Task ConfirmCloseWithoutParteHorasAsync()
+    {
+        if (_parteHoraConversationId is null)
+            return;
+
+        _savingParteHora = true;
+        _parteHoraError = null;
+        try
+        {
+            if (await FinalizePendingConversationCloseAsync("Conversacion cerrada sin parte de horas."))
+                _showParteHorasDialog = false;
+        }
+        finally
+        {
+            _savingParteHora = false;
+        }
     }
 
     private async Task OnParteHoraTicketChangedAsync(ChangeEventArgs args)
@@ -3541,10 +3575,8 @@
                 SistemaAccion = CurrentUserSystemForAudit
             });
 
-            _actionMessage = $"Parte de horas #{idParte.ToString(System.Globalization.CultureInfo.InvariantCulture)} guardado.";
-            _showParteHorasDialog = false;
-            if (_selectedConversationId.HasValue)
-                await LoadConversationAsync(_selectedConversationId.Value, showLoading: false, clearActionState: false);
+            if (await FinalizePendingConversationCloseAsync($"Parte de horas #{idParte.ToString(System.Globalization.CultureInfo.InvariantCulture)} guardado y conversacion cerrada."))
+                _showParteHorasDialog = false;
         }
         catch (Exception ex)
         {
@@ -3556,6 +3588,32 @@
         {
             _savingParteHora = false;
         }
+    }
+
+    private async Task<bool> FinalizePendingConversationCloseAsync(string successMessage)
+    {
+        if (_selectedConversation is null || string.IsNullOrWhiteSpace(_parteHoraPendingCloseStatusCode))
+        {
+            _parteHoraError = "No se encontro un cierre pendiente para confirmar.";
+            return false;
+        }
+
+        var previousValue = string.IsNullOrWhiteSpace(_parteHoraPreviousStatusCode)
+            ? _statusCode
+            : _parteHoraPreviousStatusCode;
+
+        _statusCode = _parteHoraPendingCloseStatusCode;
+        if (!await SaveStatusAsync())
+        {
+            _statusCode = previousValue;
+            _parteHoraError = _actionError ?? "No se pudo cerrar la conversacion. El parte quedo cargado, pero la conversacion sigue abierta.";
+            return false;
+        }
+
+        _parteHoraPendingCloseStatusCode = string.Empty;
+        _parteHoraPreviousStatusCode = string.Empty;
+        _actionMessage = successMessage;
+        return true;
     }
 
     private ParteHorasPromptVm? BuildParteHorasPrompt(DateTime closedAt)
@@ -5078,6 +5136,12 @@
         if (string.IsNullOrWhiteSpace(nextValue) || string.Equals(previousValue, nextValue, StringComparison.Ordinal))
             return;
 
+        if (IsClosedStatusCode(nextValue) && !IsClosedStatusCode(previousValue))
+        {
+            await PromptCloseConversationAsync(nextValue, previousValue);
+            return;
+        }
+
         _statusCode = nextValue;
         if (!await SaveStatusAsync())
         {
@@ -5114,22 +5178,23 @@
         if (string.Equals(previousValue, nextValue, StringComparison.OrdinalIgnoreCase))
             return;
 
-        var promptParteHoras = IsClosedStatusCode(nextValue) && !IsClosedStatusCode(previousValue);
+        if (IsClosedStatusCode(nextValue) && !IsClosedStatusCode(previousValue))
+        {
+            await PromptCloseConversationAsync(nextValue, previousValue);
+            return;
+        }
+
         _statusCode = nextValue;
-        if (!await SaveStatusAsync(promptParteHoras))
+        if (!await SaveStatusAsync())
         {
             _statusCode = previousValue;
         }
     }
 
-    private async Task<bool> SaveStatusAsync(bool promptParteHorasOnManualClose = false)
+    private async Task<bool> SaveStatusAsync()
     {
         if (_selectedConversation is null || string.IsNullOrWhiteSpace(_statusCode))
             return false;
-
-        var parteHorasPrompt = promptParteHorasOnManualClose && IsClosedStatusCode(_statusCode)
-            ? BuildParteHorasPrompt(DateTime.Now)
-            : null;
 
         _busyAction = true;
         _actionMessage = null;
@@ -5151,8 +5216,6 @@
             _actionMessage = "Estado actualizado.";
             await SelectConversationAsync(_selectedConversation.IdConversacion, updateUrl: false);
             await RefreshInboxAsync(showLoading: false, allowSelectionChange: false);
-            if (parteHorasPrompt is not null)
-                await OpenParteHorasDialogAsync(parteHorasPrompt);
             return true;
         }
         catch (Exception ex)
@@ -5172,9 +5235,10 @@
             return;
 
         var closedState = _states.FirstOrDefault(x => x.EsCerrado)?.CodigoEstado ?? "CERRADA";
-        var promptParteHoras = !IsClosedStatusCode(_statusCode);
-        _statusCode = closedState;
-        await SaveStatusAsync(promptParteHoras);
+        if (IsClosedStatusCode(_statusCode))
+            return;
+
+        await PromptCloseConversationAsync(closedState, _statusCode);
     }
 
     private async Task ChangeCanalAsync(string canal)
