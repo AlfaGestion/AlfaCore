@@ -10,6 +10,7 @@
 @inject IAppUiOperationService UiOps
 @inject IAppUserSessionService AppUserSession
 @inject IFloatingWindowService FloatingWindows
+@inject IJSRuntime JS
 @implements IDisposable
 
 <PageTitle>Partes de horas | Alfa Gestión</PageTitle>
@@ -625,7 +626,7 @@
                         <div class="partes-autocomplete__menu">
                             @foreach (var cliente in _clienteOptions)
                             {
-                                <button type="button" class="partes-autocomplete__option" @onclick="() => SeleccionarCliente(cliente)">
+                                <button type="button" class="partes-autocomplete__option" @onclick="() => SeleccionarClienteAsync(cliente)">
                                     <strong>@cliente.Titulo</strong>
                                     <small>@cliente.Codigo - @cliente.Subtitulo</small>
                                 </button>
@@ -635,7 +636,14 @@
                 </div>
                 <div class="field">
                     <label>Ticket</label>
-                    <input type="number" @bind="_ticketNumeroBusqueda" placeholder="Número o búsqueda" />
+                    <select value="@_ticketSelectValue" @onchange="OnTicketSelectChangedAsync">
+                        <option value="@TicketSelectDefaultValue">Seleccionar ticket</option>
+                        <option value="@TicketSelectNoneValue">Sin ticket</option>
+                        @foreach (var ticket in _ticketOptions)
+                        {
+                            <option value="@ticket.IdTicket">@FormatParteHoraTicket(ticket)</option>
+                        }
+                    </select>
                 </div>
                 <div class="field partes-autocomplete">
                     <label>Contacto / usuario</label>
@@ -703,6 +711,7 @@
                             }
                         </select>
                         <input type="text"
+                               id="@GetLineaDescripcionId(index)"
                                value="@linea.Descripcion"
                                @oninput="args => linea.Descripcion = Convert.ToString(args.Value) ?? string.Empty"
                                @onkeydown="args => HandleLineaKeyDownAsync(args, index)"
@@ -913,6 +922,9 @@
         public int Minutos { get; set; } = 15;
     }
 
+    private const string TicketSelectDefaultValue = "__select__";
+    private const string TicketSelectNoneValue = "__none__";
+
     private PartesHorasFilters _filters = new();
     private PagedResult<ParteHoraGridItemDto> _result = new();
     private ParteHoraDashboardDto _dashboard = new();
@@ -931,6 +943,7 @@
     private string _quickSearch = string.Empty;
     private string _clienteSearch = string.Empty;
     private string _personaSearch = string.Empty;
+    private string _ticketSelectValue = TicketSelectDefaultValue;
     private int? _ticketNumeroBusqueda;
     private IDisposable? _floatingWindowRegistration;
 
@@ -1145,6 +1158,7 @@
         };
         _clienteSearch = string.Empty;
         _personaSearch = AppUserSession.GetCurrentUserName(Environment.UserName);
+        _ticketSelectValue = TicketSelectDefaultValue;
         _ticketNumeroBusqueda = null;
         _clienteOptions.Clear();
         _personaOptions.Clear();
@@ -1209,7 +1223,11 @@
             }
         ];
         _ticketNumeroBusqueda = null;
+        _ticketSelectValue = detail.IdTicket.HasValue
+            ? detail.IdTicket.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            : TicketSelectNoneValue;
         _showEditor = true;
+        await BuscarTicketsAsync();
     }
 
     private async Task GuardarParteAsync()
@@ -1267,7 +1285,11 @@
         var text = _ticketNumeroBusqueda?.ToString() ?? string.Empty;
         var result = await UiOps.RunAsync(() => PartesSvc.SearchTicketsAsync(text, _form.ClienteCodigo), "No se pudieron buscar tickets.");
         if (result.Success && result.Value is not null)
+        {
             _ticketOptions = result.Value.ToList();
+            if (_form.IdTicket.HasValue && _ticketOptions.All(ticket => ticket.IdTicket != _form.IdTicket.Value))
+                _ticketSelectValue = TicketSelectNoneValue;
+        }
         else if (result.Feedback is not null)
             _feedback = result.Feedback;
     }
@@ -1278,7 +1300,26 @@
         _form.ClienteCodigo = ticket.ClienteCodigo;
         _clienteSearch = string.IsNullOrWhiteSpace(ticket.ClienteNombre) ? ticket.ClienteCodigo : $"{ticket.ClienteNombre} ({ticket.ClienteCodigo})";
         _ticketNumeroBusqueda = ticket.Numero;
-        _ticketOptions.Clear();
+        _ticketSelectValue = ticket.IdTicket.ToString(System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    private async Task OnTicketSelectChangedAsync(ChangeEventArgs args)
+    {
+        _ticketSelectValue = Convert.ToString(args.Value, System.Globalization.CultureInfo.InvariantCulture) ?? TicketSelectDefaultValue;
+        if (string.Equals(_ticketSelectValue, TicketSelectDefaultValue, StringComparison.Ordinal)
+            || string.Equals(_ticketSelectValue, TicketSelectNoneValue, StringComparison.Ordinal)
+            || !long.TryParse(_ticketSelectValue, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var id))
+        {
+            _form.IdTicket = null;
+            _ticketNumeroBusqueda = null;
+            return;
+        }
+
+        _form.IdTicket = id;
+        var ticket = _ticketOptions.FirstOrDefault(x => x.IdTicket == id);
+        if (ticket is not null)
+            SeleccionarTicket(ticket);
+        await Task.CompletedTask;
     }
 
     private async Task OnClienteSearchChangedAsync(ChangeEventArgs args)
@@ -1304,14 +1345,17 @@
             _feedback = result.Feedback;
     }
 
-    private void SeleccionarCliente(ParteHoraLookupOptionDto cliente)
+    private async Task SeleccionarClienteAsync(ParteHoraLookupOptionDto cliente)
     {
         _form.ClienteCodigo = cliente.Codigo;
         _clienteSearch = $"{cliente.Titulo} ({cliente.Codigo})";
         _form.IdContacto = null;
+        _form.IdTicket = null;
+        _ticketSelectValue = TicketSelectDefaultValue;
         _personaSearch = string.Empty;
         _clienteOptions.Clear();
         _personaOptions.Clear();
+        await BuscarTicketsAsync();
     }
 
     private async Task OnPersonaSearchChangedAsync(ChangeEventArgs args)
@@ -1373,12 +1417,12 @@
     private Task HandleLineaKeyDownAsync(KeyboardEventArgs args, int index)
     {
         if (string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase))
-            InsertarLineaDespues(index);
+            return InsertarLineaDespuesAsync(index);
 
         return Task.CompletedTask;
     }
 
-    private void InsertarLineaDespues(int index)
+    private async Task InsertarLineaDespuesAsync(int index)
     {
         var previous = index >= 0 && index < _lineas.Count ? _lineas[index] : _lineas.LastOrDefault();
         var nueva = new ParteHoraLineaForm
@@ -1392,7 +1436,25 @@
             _lineas.Add(nueva);
         else
             _lineas.Insert(index + 1, nueva);
+
+        var focusIndex = Math.Min(index + 1, _lineas.Count - 1);
+        await InvokeAsync(StateHasChanged);
+        await JS.InvokeVoidAsync("eval", $"document.getElementById('{GetLineaDescripcionId(focusIndex)}')?.focus()");
     }
+
+    private static string GetLineaDescripcionId(int index)
+        => $"parte-linea-desc-{index.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+
+    private static string FormatParteHoraTicket(ParteHoraTicketOptionDto ticket)
+    {
+        var code = string.IsNullOrWhiteSpace(ticket.CodigoVisible)
+            ? ticket.Numero.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            : ticket.CodigoVisible;
+        return $"#{code} - {DisplayText(ticket.Titulo, ticket.ClienteNombre)}";
+    }
+
+    private static string DisplayText(string value, string fallback)
+        => string.IsNullOrWhiteSpace(value) ? fallback : value;
 
     private async Task AprobarAsync(long id)
     {
