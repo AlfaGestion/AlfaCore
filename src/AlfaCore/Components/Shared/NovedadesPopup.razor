@@ -1,0 +1,100 @@
+@inject AlfaCore.Services.INovedadesService NovedadesSvc
+@inject AlfaCore.Services.IAppUserSessionService AppUserSession
+
+@if (_visible && _novedad is not null)
+{
+    <div class="novedades-popup-backdrop" role="dialog" aria-modal="true">
+        <article class="@PopupClass">
+            <header>
+                <div class="novedades-popup__icon">
+                    <i class="bi @_novedad.Icono"></i>
+                </div>
+                <div>
+                    <span>@(string.IsNullOrWhiteSpace(_novedad.Version) ? "Novedad interna" : _novedad.Version)</span>
+                    <h2>@_novedad.Titulo</h2>
+                    <p>@_novedad.Bajada</p>
+                </div>
+            </header>
+
+            @if (_novedad.PortadaTipo == NovedadPortadas.Url && !string.IsNullOrWhiteSpace(_novedad.PortadaValor))
+            {
+                <img class="novedades-popup__cover" src="@_novedad.PortadaValor" alt="" />
+            }
+
+            <div class="novedades-popup__body">
+                @((MarkupString)_novedad.Contenido)
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(_novedad.Footer))
+            {
+                <footer>@_novedad.Footer</footer>
+            }
+
+            <div class="novedades-popup__actions">
+                <button type="button" class="btn btn--primary" @onclick="MarkReadAsync">
+                    <i class="bi bi-check2-circle"></i>
+                    <span>Marcar leido</span>
+                </button>
+                @if (!_novedad.LecturaObligatoria)
+                {
+                    <button type="button" class="btn btn--ghost" @onclick="Close">
+                        <i class="bi bi-x-lg"></i>
+                        <span>Ahora no</span>
+                    </button>
+                }
+            </div>
+        </article>
+    </div>
+}
+
+@code {
+    [Parameter] public bool Enabled { get; set; } = true;
+
+    private NovedadDetalleDto? _novedad;
+    private bool _visible;
+    private bool _registeredView;
+
+    private string CurrentUser => AppUserSession.GetCurrentUserName(Environment.UserName).Trim();
+
+    private string PopupClass => $"novedades-popup novedades-popup--{_novedad?.Acento ?? NovedadAcentos.Azul}";
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!Enabled)
+            return;
+
+        try
+        {
+            _novedad = await NovedadesSvc.GetPendingAnnouncementAsync(CurrentUser);
+            _visible = _novedad is not null;
+
+            if (_visible && _novedad is not null && !_registeredView)
+            {
+                _registeredView = true;
+                await NovedadesSvc.RegisterViewAsync(_novedad.IdNovedad, CurrentUser);
+            }
+        }
+        catch
+        {
+            _visible = false;
+        }
+    }
+
+    private async Task MarkReadAsync()
+    {
+        if (_novedad is null)
+            return;
+
+        try
+        {
+            await NovedadesSvc.MarkReadAsync(_novedad.IdNovedad, CurrentUser);
+        }
+        finally
+        {
+            _visible = false;
+        }
+    }
+
+    private void Close()
+        => _visible = false;
+}

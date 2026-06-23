@@ -149,6 +149,40 @@ Criterio aplicado:
 - Datos que usa: no verificable desde este repositorio
 - Observaciones: su uso visible es de lectura y enriquecimiento jerárquico.
 
+## Informes internos
+
+### NovedadesService
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/NovedadesService.cs`
+- Propósito: administra novedades internas, boletines de patch, programación de anuncios, publicación, archivado y registro de lectura por usuario.
+- Datos que usa: `ALFACORE_NOVEDADES`, `ALFACORE_NOVEDADES_LECTURAS`
+- Observaciones: usa Dapper y registra errores técnicos mediante `IAppEventService`; los anuncios publicados se consultan por fecha de programación, vigencia y lectura pendiente.
+
+### NovedadesModels
+
+- Tipo: DTO
+- Ubicación: `src/AlfaCore/Models/NovedadesModels.cs`
+- Propósito: define los DTO de listado, detalle, métricas, filtros, estados, tipos, prioridades y solicitudes de guardado del módulo Novedades.
+- Datos que usa: modela datos de `ALFACORE_NOVEDADES` y `ALFACORE_NOVEDADES_LECTURAS`.
+- Observaciones: diferencia comunicados manuales de boletines de patch asistidos, con soporte para popup, lectura obligatoria y repetición hasta lectura.
+
+### Novedades
+
+- Tipo: Page
+- Ubicación: `src/AlfaCore/Components/Pages/Novedades.razor`
+- Propósito: pantalla interna para crear, editar, previsualizar, programar, publicar, duplicar y archivar novedades y boletines de AlfaCore.
+- Datos que usa: `INovedadesService`
+- Observaciones: reutiliza el editor rico de bloques para contenido con llamados, listas, imágenes, portadas y estructura de boletín.
+
+### NovedadesPopup
+
+- Tipo: Page
+- Ubicación: `src/AlfaCore/Components/Shared/NovedadesPopup.razor`
+- Propósito: muestra anuncios internos publicados como popup global y permite registrar vista y lectura por usuario.
+- Datos que usa: `INovedadesService`, sesión de usuario de AlfaCore
+- Observaciones: está integrado al layout principal y falla de forma silenciosa si la base todavía no tiene aplicadas las tablas del módulo.
+
 ## Informes IA de compras
 
 ### InformesIaService

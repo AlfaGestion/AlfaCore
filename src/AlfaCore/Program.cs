@@ -52,6 +52,7 @@ public class Program
         builder.Services.AddScoped<IReporteComprasService, ReporteComprasService>();
         builder.Services.AddScoped<IInformesIaService, InformesIaService>();
         builder.Services.AddScoped<IInformesService, InformesService>();
+        builder.Services.AddScoped<INovedadesService, NovedadesService>();
         builder.Services.AddScoped<IConsultasService, ConsultasService>();
         builder.Services.AddScoped<ICostosService, CostosService>();
         builder.Services.AddScoped<IConversacionesService, ConversacionesService>();

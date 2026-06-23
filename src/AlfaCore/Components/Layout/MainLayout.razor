@@ -231,6 +231,10 @@ else
                         <span class="menu__icon"><i class="bi bi-journal-richtext"></i></span>
                         <span>Articulos</span>
                     </NavLink>
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/informes/novedades")" Match="NavLinkMatch.All">
+                        <span class="menu__icon"><i class="bi bi-megaphone"></i></span>
+                        <span>Novedades</span>
+                    </NavLink>
                 </nav>
             }
             else if (_currentModule == "interfaces")
@@ -1066,6 +1070,7 @@ else
                  OnOpenSqlSessions="OpenSqlSessionDrawerAsync" />
 
 <AppMsgBoxHost />
+<NovedadesPopup Enabled="@(!IsDirectMode)" />
 
 @code {
     private bool _mobileSidebarOpen;
@@ -2496,6 +2501,7 @@ else
             "carga-viajes/liquidaciones" => "Liquidaciones",
             "carga-viajes/configuracion" => "Configurar Carga de Viaje",
             "informes" => "Informes",
+            "informes/novedades" => "Novedades",
             "interfaces" => "Recepción documental",
             "interfaces/configuracion" => "Configuración de Interfaces",
             "interfaces/nuevo" => "Nuevo documento",
@@ -2548,6 +2554,7 @@ else
         "carga-viajes/liquidaciones" => "Liquidaciones",
         "carga-viajes/configuracion" => "Configurar Carga de Viaje",
         "informes" => "Informes",
+        "informes/novedades" => "Novedades",
         "interfaces" => "Interfaces",
         "actualizaciones" => "Actualizaciones",
         "usuarios" => "Usuarios",
