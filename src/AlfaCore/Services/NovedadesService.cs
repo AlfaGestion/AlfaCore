@@ -209,6 +209,34 @@ public sealed class NovedadesService(
             await cn.ExecuteAsync(new CommandDefinition(sql, new { IdNovedad = idNovedad, Usuario = NormalizeUser(usuarioAccion) }, cancellationToken: token));
         }, "No se pudo archivar la novedad.", ct);
 
+    public Task DeleteAsync(long idNovedad, string usuarioAccion, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "Delete", async token =>
+        {
+            const string sql = """
+                DELETE FROM dbo.ALFACORE_NOVEDADES_LECTURAS
+                WHERE IdNovedad = @IdNovedad;
+
+                DELETE FROM dbo.ALFACORE_NOVEDADES
+                WHERE IdNovedad = @IdNovedad;
+                """;
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await EnsureSchemaAsync(cn, token);
+            using var tx = cn.BeginTransaction();
+            try
+            {
+                await cn.ExecuteAsync(new CommandDefinition(sql, new { IdNovedad = idNovedad }, transaction: tx, cancellationToken: token));
+                tx.Commit();
+            }
+            catch
+            {
+                tx.Rollback();
+                throw;
+            }
+            await appEvents.LogAuditAsync(ModuleName, "Delete", "ALFACORE_NOVEDADES", idNovedad.ToString(), "Novedad eliminada.", new { Usuario = NormalizeUser(usuarioAccion) }, token);
+        }, "No se pudo eliminar la novedad.", ct);
+
     public Task DuplicateAsync(long idNovedad, string usuarioAccion, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "Duplicate", async token =>
         {
@@ -569,20 +597,25 @@ public sealed class NovedadesService(
                 Footer = "Equipo AlfaCore",
                 Contenido = """
                     <h1>Actualizacion AlfaCore Patch 0.1</h1>
-                    <p>Este boletin queda como borrador base para completar con las novedades del periodo.</p>
-                    <div class="ticket-editor-banner ticket-editor-banner--info"><i class="bi bi-info-circle-fill ticket-editor-banner__icon" contenteditable="false"></i><div class="ticket-editor-banner__body"><p>Completar alcance, fechas, modulos impactados y capturas antes de programar la publicacion.</p></div></div>
+                    <p>Una nueva version de AlfaCore ya esta lista. Usa este boletin para explicar los cambios de forma clara y visual.</p>
+                    <div class="ticket-editor-banner ticket-editor-banner--success"><i class="bi bi-check-circle-fill ticket-editor-banner__icon" contenteditable="false"></i><div class="ticket-editor-banner__body"><p>El patch incorpora nuevas herramientas, mejoras operativas y correcciones para el trabajo diario.</p></div></div>
+                    <div class="ticket-editor-file ticket-editor-file--media" contenteditable="false" tabindex="0" data-ticket-media-block="true"><div class="ticket-editor-file__preview"><img src="/logo.png" alt="Portada de ejemplo AlfaCore"></div></div>
                     <h2>Resumen ejecutivo</h2>
-                    <p>Describir en pocas lineas que cambio y por que es importante para el equipo.</p>
+                    <p>Resume en dos o tres parrafos el objetivo de la version, los equipos alcanzados y el beneficio principal.</p>
                     <h2>Nuevos modulos</h2>
-                    <ul><li>Modulo - objetivo - donde encontrarlo.</li></ul>
+                    <p>Presenta cada modulo nuevo indicando para que sirve y donde se encuentra.</p>
+                    <div class="ticket-editor-file ticket-editor-file--media" contenteditable="false" tabindex="0" data-ticket-media-block="true"><div class="ticket-editor-file__preview"><img src="/icons/icon-512.png" alt="Icono de ejemplo para un modulo nuevo"></div></div>
+                    <h3>Nombre del modulo</h3>
+                    <ul><li><strong>Objetivo:</strong> explica que problema resuelve.</li><li><strong>Ubicacion:</strong> indica el menu y la opcion.</li><li><strong>Usuarios:</strong> aclara quienes lo van a utilizar.</li></ul>
                     <h2>Funcionalidades nuevas</h2>
-                    <ul><li>Funcionalidad - beneficio - usuarios impactados.</li></ul>
+                    <ol><li><strong>Funcionalidad principal.</strong> Describe el cambio y su beneficio.</li><li><strong>Nuevo flujo.</strong> Explica brevemente como se utiliza.</li><li><strong>Informacion disponible.</strong> Detalla los nuevos datos o reportes.</li></ol>
                     <h2>Mejoras operativas</h2>
-                    <ul><li>Mejora - antes - ahora.</li></ul>
-                    <h2>Imagenes y capturas sugeridas</h2>
-                    <div class="ticket-editor-file ticket-editor-file--media" contenteditable="false" tabindex="0" data-ticket-media-block="true"><button type="button" class="ticket-editor-file__button" data-ticket-file-picker="true" data-ticket-upload-kind="media"><i class="bi bi-file-earmark-image ticket-editor-file__icon"></i><span>Elegir medio</span></button><div class="ticket-editor-file__content"><strong>Medio</strong><span class="ticket-editor-file__status">Imagen del modulo o pantalla principal</span><div class="ticket-editor-file__files"></div><div class="ticket-editor-file__preview"></div><small class="ticket-editor-file__replace-hint">Doble click para reemplazar</small></div></div>
-                    <h2>Acciones para el equipo</h2>
-                    <ul class="ticket-editor-todo"><li><input type="checkbox"> Revisar el borrador</li><li><input type="checkbox"> Agregar capturas finales</li><li><input type="checkbox"> Programar envio</li></ul>
+                    <ul><li>Compara de manera simple como se trabajaba antes y como queda ahora.</li><li>Menciona mejoras de rendimiento, claridad o reduccion de pasos.</li><li>Incluye correcciones relevantes sin entrar en detalles tecnicos innecesarios.</li></ul>
+                    <h2>Que necesita saber el equipo</h2>
+                    <blockquote>Agrega aca una recomendacion concreta, una accion necesaria o un cambio de procedimiento.</blockquote>
+                    <h2>Disponibilidad</h2>
+                    <p>Indica desde que fecha esta disponible, si requiere actualizar la base y a quien consultar ante dudas.</p>
+                    <div class="ticket-editor-banner ticket-editor-banner--warning"><i class="bi bi-exclamation-triangle-fill ticket-editor-banner__icon" contenteditable="false"></i><div class="ticket-editor-banner__body"><p>Reemplaza este aviso por una consideracion importante del despliegue o eliminalo si no corresponde.</p></div></div>
                     """
             };
         }

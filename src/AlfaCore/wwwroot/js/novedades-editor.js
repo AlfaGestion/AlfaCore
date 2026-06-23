@@ -1,3 +1,5 @@
+import { getHtml } from './tickets-rich-editor.js';
+
 const editorStates = new WeakMap();
 let previewEscapeHandler = null;
 
@@ -103,6 +105,17 @@ export function refreshMedia(editor) {
             }
         });
     });
+}
+
+export function renderPreviewContent(editor, preview) {
+    if (!editor || !preview) {
+        return;
+    }
+
+    preview.innerHTML = getHtml(editor);
+    preview.querySelectorAll('.ticket-editor-file__resize').forEach((handle) => handle.remove());
+    preview.querySelectorAll('[contenteditable]').forEach((element) => element.removeAttribute('contenteditable'));
+    preview.querySelectorAll('[draggable]').forEach((element) => element.removeAttribute('draggable'));
 }
 
 export function wirePreviewEscape(dotNetReference) {

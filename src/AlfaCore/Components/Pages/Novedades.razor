@@ -2,6 +2,7 @@
 @inject AlfaCore.Services.INovedadesService NovedadesSvc
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject AlfaCore.Services.IAppUiOperationService UiOps
+@inject AlfaCore.Services.IAppUiDialogService AppDialogs
 @inject NavigationManager Nav
 @inject IJSRuntime JS
 @using Microsoft.AspNetCore.Components.Forms
@@ -10,7 +11,7 @@
 
 <PageTitle>Novedades | AlfaCore</PageTitle>
 <HeadContent>
-    <link rel="stylesheet" href="/css/novedades.css?v=20260623-03" />
+    <link rel="stylesheet" href="/css/novedades.css?v=20260623-04" />
 </HeadContent>
 
 <section class="novedades-shell">
@@ -236,6 +237,7 @@
                         <div class="novedades-settings-actions">
                             <button type="button" class="btn btn--primary" @onclick="PublishNowAsync"><i class="bi bi-send-check"></i><span>Publicar ahora</span></button>
                             <button type="button" class="btn btn--ghost" @onclick="ArchiveAsync"><i class="bi bi-archive"></i><span>Archivar</span></button>
+                            <button type="button" class="btn novedades-btn--danger" @onclick="DeleteAsync"><i class="bi bi-trash3"></i><span>Eliminar</span></button>
                         </div>
                     </section>
 
@@ -267,10 +269,6 @@
                         </div>
                     </section>
 
-                    <section class="novedades-settings-section novedades-codex-section">
-                        <header><i class="bi bi-stars"></i><div><h3>Asistencia Codex</h3><p>Los boletines asistidos quedan como borrador para revisar y programar.</p></div></header>
-                        <button type="button" class="btn btn--ghost" @onclick="InsertPatchChecklistAsync"><i class="bi bi-list-check"></i><span>Insertar checklist en Detalles</span></button>
-                    </section>
                 </section>
             </div>
         }
@@ -295,7 +293,7 @@
             {
                 <img class="novedades-preview__cover" src="@_draft.PortadaValor" alt="" />
             }
-            <div class="novedades-preview__body">@((MarkupString)_draft.Contenido)</div>
+            <div class="novedades-preview__body" @ref="_previewBody"></div>
             @if (!string.IsNullOrWhiteSpace(_draft.Footer))
             {
                 <footer>@_draft.Footer</footer>
@@ -311,6 +309,7 @@
     private NovedadesFilterDto _filter = new();
     private ElementReference _editorRoot;
     private ElementReference _contentEditor;
+    private ElementReference _previewBody;
     private IJSObjectReference? _editorJs;
     private IJSObjectReference? _informesEditorJs;
     private IJSObjectReference? _novedadesEditorJs;
@@ -381,7 +380,7 @@
         {
             _editorJs = await JS.InvokeAsync<IJSObjectReference>("import", "/js/tickets-rich-editor.js?v=20260519i");
             _informesEditorJs = await JS.InvokeAsync<IJSObjectReference>("import", "/js/informes-editor.js?v=20260609-image-paste");
-            _novedadesEditorJs = await JS.InvokeAsync<IJSObjectReference>("import", "/js/novedades-editor.js?v=20260623-01");
+            _novedadesEditorJs = await JS.InvokeAsync<IJSObjectReference>("import", "/js/novedades-editor.js?v=20260623-02");
             _selfReference = DotNetObjectReference.Create(this);
         }
 
@@ -401,6 +400,7 @@
 
         if (_previewOpen && !_previewKeyboardWired && _novedadesEditorJs is not null && _selfReference is not null)
         {
+            await _novedadesEditorJs.InvokeVoidAsync("renderPreviewContent", _contentEditor, _previewBody);
             await _novedadesEditorJs.InvokeVoidAsync("wirePreviewEscape", _selfReference);
             _previewKeyboardWired = true;
         }
@@ -512,6 +512,40 @@
             _feedback = FeedbackText(result.Feedback);
     }
 
+    private async Task DeleteAsync()
+    {
+        if (_selected is null)
+            return;
+
+        var confirmed = await AppDialogs.ConfirmAsync(
+            "Eliminar comunicado",
+            $"Se eliminara definitivamente '{_selected.Titulo}'.",
+            "Eliminar",
+            "Cancelar",
+            "Las lecturas registradas tambien se eliminaran. Esta accion no se puede deshacer.",
+            "bi bi-trash3");
+
+        if (!confirmed)
+            return;
+
+        var id = _selected.IdNovedad;
+        var result = await UiOps.RunAsync(async () =>
+        {
+            await NovedadesSvc.DeleteAsync(id, CurrentUser);
+            return true;
+        }, "No se pudo eliminar la novedad.");
+
+        if (result.Success)
+        {
+            _feedback = "Comunicado eliminado.";
+            await LoadAsync();
+        }
+        else
+        {
+            _feedback = FeedbackText(result.Feedback);
+        }
+    }
+
     private async Task DuplicateAsync()
     {
         if (_selected is null)
@@ -559,14 +593,6 @@
             await _novedadesEditorJs.InvokeVoidAsync("refreshMedia", _contentEditor);
         await SyncContentFromEditorAsync();
         _showCommandMenu = false;
-    }
-
-    private async Task InsertPatchChecklistAsync()
-    {
-        _activeTab = TabDetails;
-        await InvokeAsync(StateHasChanged);
-        await Task.Yield();
-        await RunEditorCommandAsync(EditorCommands.First(x => x.Command == "checkList"));
     }
 
     private async Task SyncContentFromEditorAsync()
@@ -630,9 +656,9 @@
 
     private async Task OpenPreviewAsync()
     {
-        await FlushEditorAsync();
         _previewOpen = true;
         _previewKeyboardWired = false;
+        await InvokeAsync(StateHasChanged);
     }
 
     private async Task ClosePreviewAsync()

@@ -933,8 +933,7 @@
     gap: 10px;
 }
 
-.novedades-settings .btn,
-.novedades-codex-section .btn {
+.novedades-settings .btn {
     appearance: none;
     display: inline-flex;
     align-items: center;
@@ -949,6 +948,19 @@
     font: inherit;
     font-weight: 700;
     box-shadow: none;
+}
+
+.novedades-settings .novedades-btn--danger {
+    margin-left: auto;
+    border-color: rgba(248, 113, 113, .42);
+    color: #fecaca;
+    background: rgba(127, 29, 29, .2);
+}
+
+.novedades-settings .novedades-btn--danger:hover {
+    border-color: rgba(248, 113, 113, .72);
+    color: #fff1f2;
+    background: rgba(153, 27, 27, .34);
 }
 
 .novedades-presentation-grid {
@@ -1005,14 +1017,6 @@
 .novedades-tracking small {
     margin-top: 2px;
     color: var(--nov-muted);
-}
-
-.novedades-codex-section {
-    align-items: center;
-}
-
-.novedades-codex-section > .btn {
-    justify-self: start;
 }
 
 .novedades-empty {
@@ -1222,5 +1226,9 @@
     .novedades-settings-actions {
         align-items: stretch;
         flex-direction: column;
+    }
+
+    .novedades-settings .novedades-btn--danger {
+        margin-left: 0;
     }
 }
