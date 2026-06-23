@@ -326,7 +326,7 @@
     private string _fechaProgramadaText = string.Empty;
     private string _vigenteHastaText = string.Empty;
 
-    private string CurrentUser => AppUserSession.GetCurrentUserName(Environment.UserName).Trim();
+    private string CurrentUser => AppUserSession.CurrentUser?.UserName?.Trim() ?? string.Empty;
 
     private const string TabDetails = "details";
     private const string TabSettings = "settings";

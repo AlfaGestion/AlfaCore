@@ -1,8 +1,9 @@
 @inject AlfaCore.Services.INovedadesService NovedadesSvc
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
+@implements IDisposable
 
 <HeadContent>
-    <link rel="stylesheet" href="/css/novedades-popup.css?v=20260623-01" />
+    <link rel="stylesheet" href="/css/novedades-popup.css?v=20260623-02" />
 </HeadContent>
 
 @if (_visible && _novedad is not null)
@@ -35,17 +36,14 @@
             }
 
             <div class="novedades-popup__actions">
-                <button type="button" class="btn btn--primary" @onclick="MarkReadAsync">
-                    <i class="bi bi-check2-circle"></i>
-                    <span>Marcar leido</span>
-                </button>
-                @if (!_novedad.LecturaObligatoria)
+                @if (!string.IsNullOrWhiteSpace(_actionError))
                 {
-                    <button type="button" class="btn btn--ghost" @onclick="Close">
-                        <i class="bi bi-x-lg"></i>
-                        <span>Ahora no</span>
-                    </button>
+                    <p class="novedades-popup__error" role="alert">@_actionError</p>
                 }
+                <button type="button" class="btn btn--primary" disabled="@_markingRead" @onclick="MarkReadAsync">
+                    <i class="bi bi-check2-circle"></i>
+                    <span>@(_markingRead ? "Registrando..." : "Marcar leido")</span>
+                </button>
             </div>
         </article>
     </div>
@@ -57,48 +55,123 @@
     private NovedadDetalleDto? _novedad;
     private bool _visible;
     private bool _registeredView;
+    private bool _markingRead;
+    private string _actionError = string.Empty;
+    private string _loadedUser = string.Empty;
+    private CancellationTokenSource? _loadCts;
 
-    private string CurrentUser => AppUserSession.GetCurrentUserName(Environment.UserName).Trim();
+    private string CurrentUser => AppUserSession.CurrentUser?.UserName?.Trim() ?? string.Empty;
 
     private string PopupClass => $"novedades-popup novedades-popup--{_novedad?.Acento ?? NovedadAcentos.Azul}";
 
     protected override async Task OnInitializedAsync()
     {
-        if (!Enabled)
+        AppUserSession.StateChanged += OnUserSessionChanged;
+        await RefreshForAuthenticatedUserAsync();
+    }
+
+    private void OnUserSessionChanged()
+        => _ = InvokeAsync(RefreshForAuthenticatedUserAsync);
+
+    private async Task RefreshForAuthenticatedUserAsync()
+    {
+        _loadCts?.Cancel();
+        _loadCts?.Dispose();
+        _loadCts = null;
+
+        var user = CurrentUser;
+        if (!Enabled || !AppUserSession.IsAuthenticated || string.IsNullOrWhiteSpace(user))
+        {
+            ResetPopup();
+            await InvokeAsync(StateHasChanged);
             return;
+        }
+
+        if (string.Equals(_loadedUser, user, StringComparison.OrdinalIgnoreCase) && _novedad is not null)
+            return;
+
+        var cts = new CancellationTokenSource();
+        _loadCts = cts;
+        _visible = false;
+        _novedad = null;
+        _registeredView = false;
+        _actionError = string.Empty;
 
         try
         {
-            _novedad = await NovedadesSvc.GetPendingAnnouncementAsync(CurrentUser);
-            _visible = _novedad is not null;
+            var pending = await NovedadesSvc.GetPendingAnnouncementAsync(user, cts.Token);
+            if (cts.IsCancellationRequested
+                || !AppUserSession.IsAuthenticated
+                || !string.Equals(CurrentUser, user, StringComparison.OrdinalIgnoreCase))
+                return;
+
+            _loadedUser = user;
+            _novedad = pending;
+            _visible = pending is not null;
 
             if (_visible && _novedad is not null && !_registeredView)
             {
                 _registeredView = true;
-                await NovedadesSvc.RegisterViewAsync(_novedad.IdNovedad, CurrentUser);
+                await NovedadesSvc.RegisterViewAsync(_novedad.IdNovedad, user, cts.Token);
             }
+        }
+        catch (OperationCanceledException) when (cts.IsCancellationRequested)
+        {
         }
         catch
         {
             _visible = false;
         }
+        finally
+        {
+            if (ReferenceEquals(_loadCts, cts))
+            {
+                _loadCts = null;
+                cts.Dispose();
+            }
+
+            await InvokeAsync(StateHasChanged);
+        }
     }
 
     private async Task MarkReadAsync()
     {
-        if (_novedad is null)
+        var user = CurrentUser;
+        if (_novedad is null || string.IsNullOrWhiteSpace(user) || _markingRead)
             return;
 
+        _markingRead = true;
+        _actionError = string.Empty;
         try
         {
-            await NovedadesSvc.MarkReadAsync(_novedad.IdNovedad, CurrentUser);
+            await NovedadesSvc.MarkReadAsync(_novedad.IdNovedad, user);
+            _visible = false;
+            _novedad = null;
+        }
+        catch
+        {
+            _actionError = "No se pudo registrar la lectura. Intenta nuevamente.";
         }
         finally
         {
-            _visible = false;
+            _markingRead = false;
         }
     }
 
-    private void Close()
-        => _visible = false;
+    private void ResetPopup()
+    {
+        _loadedUser = string.Empty;
+        _novedad = null;
+        _visible = false;
+        _registeredView = false;
+        _markingRead = false;
+        _actionError = string.Empty;
+    }
+
+    public void Dispose()
+    {
+        AppUserSession.StateChanged -= OnUserSessionChanged;
+        _loadCts?.Cancel();
+        _loadCts?.Dispose();
+    }
 }
