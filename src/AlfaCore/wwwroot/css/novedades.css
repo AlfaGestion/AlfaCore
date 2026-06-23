@@ -351,6 +351,13 @@
     display: none !important;
 }
 
+.novedades-accent--azul { --nov-current-accent: #38bdf8; --nov-current-soft: rgba(56, 189, 248, .18); }
+.novedades-accent--verde { --nov-current-accent: #34d399; --nov-current-soft: rgba(52, 211, 153, .18); }
+.novedades-accent--cian { --nov-current-accent: #22d3ee; --nov-current-soft: rgba(34, 211, 238, .18); }
+.novedades-accent--ambar { --nov-current-accent: #f59e0b; --nov-current-soft: rgba(245, 158, 11, .18); }
+.novedades-accent--rojo { --nov-current-accent: #f87171; --nov-current-soft: rgba(248, 113, 113, .18); }
+.novedades-accent--grafito { --nov-current-accent: #cbd5e1; --nov-current-soft: rgba(203, 213, 225, .16); }
+
 .novedades-editor-panel {
     min-width: 0;
     overflow: hidden;
@@ -371,10 +378,10 @@
     width: 40px;
     height: 40px;
     flex: 0 0 40px;
-    border: 1px solid rgba(56, 189, 248, .34);
+    border: 1px solid var(--nov-current-accent, #38bdf8);
     border-radius: 8px;
-    color: #bae6fd;
-    background: rgba(14, 116, 144, .2);
+    color: var(--nov-current-accent, #bae6fd);
+    background: var(--nov-current-soft, rgba(14, 116, 144, .2));
 }
 
 .novedades-document-head div {
@@ -642,6 +649,54 @@
 .novedades-editor-surface .ticket-editor-file__preview img {
     max-height: 280px;
     object-fit: contain;
+}
+
+.novedades-editor-surface .novedades-media-block {
+    display: block;
+    width: fit-content;
+    max-width: 100%;
+    margin: 18px 0;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    cursor: grab;
+    box-shadow: none;
+}
+
+.novedades-editor-surface .novedades-media-block:hover,
+.novedades-editor-surface .novedades-media-block:focus {
+    border-color: var(--nov-current-accent, #38bdf8);
+    outline: 3px solid var(--nov-current-soft, rgba(56, 189, 248, .14));
+}
+
+.novedades-editor-surface .novedades-media-block:active {
+    cursor: grabbing;
+}
+
+.novedades-editor-surface .novedades-media-block.is-dragging {
+    opacity: .48;
+}
+
+.novedades-editor-surface .novedades-media-block > .ticket-editor-file__preview {
+    display: block;
+    line-height: 0;
+}
+
+.novedades-editor-surface .novedades-media-block .ticket-editor-file__button,
+.novedades-editor-surface .novedades-media-block .ticket-editor-file__content,
+.novedades-editor-surface .novedades-media-block .ticket-editor-file__files,
+.novedades-editor-surface .novedades-media-block .ticket-editor-file__status,
+.novedades-editor-surface .novedades-media-block .ticket-editor-file__replace-hint {
+    display: none !important;
+}
+
+.novedades-editor-surface .novedades-media-block img {
+    display: block;
+    max-width: 100%;
+    max-height: none;
+    border-radius: 8px;
+    user-select: none;
 }
 
 .novedades-editor-surface .ticket-editor-file__resize {
@@ -984,6 +1039,8 @@
 }
 
 .novedades-preview {
+    --preview-accent: #38bdf8;
+    --preview-soft: rgba(56, 189, 248, .18);
     width: min(860px, 100%);
     max-height: min(820px, calc(100dvh - 48px));
     overflow: auto;
@@ -993,13 +1050,20 @@
     box-shadow: 0 30px 80px rgba(0, 0, 0, .5);
 }
 
+.novedades-preview--verde { --preview-accent: #34d399; --preview-soft: rgba(52, 211, 153, .18); }
+.novedades-preview--cian { --preview-accent: #22d3ee; --preview-soft: rgba(34, 211, 238, .18); }
+.novedades-preview--ambar { --preview-accent: #f59e0b; --preview-soft: rgba(245, 158, 11, .18); }
+.novedades-preview--rojo { --preview-accent: #f87171; --preview-soft: rgba(248, 113, 113, .18); }
+.novedades-preview--grafito { --preview-accent: #cbd5e1; --preview-soft: rgba(203, 213, 225, .16); }
+
 .novedades-preview header {
     display: flex;
     justify-content: space-between;
     gap: 12px;
     padding: 22px;
+    border-top: 3px solid var(--preview-accent);
     border-bottom: 1px solid var(--nov-border);
-    background: linear-gradient(135deg, rgba(56, 189, 248, .18), rgba(20, 184, 166, .12));
+    background: linear-gradient(135deg, var(--preview-soft), rgba(15, 23, 42, .72));
 }
 
 .novedades-preview header h2,
@@ -1008,9 +1072,43 @@
 }
 
 .novedades-preview header span {
-    color: #bae6fd;
+    color: var(--preview-accent);
     font-weight: 800;
     text-transform: uppercase;
+}
+
+.novedades-preview__body .ticket-editor-file--media {
+    display: block;
+    width: fit-content;
+    max-width: 100%;
+    margin: 18px 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+}
+
+.novedades-preview__body .ticket-editor-file--media .ticket-editor-file__preview {
+    display: block;
+}
+
+.novedades-preview__body .ticket-editor-file--media img {
+    display: block;
+    max-width: 100%;
+    max-height: none;
+}
+
+.novedades-preview__body .ticket-editor-banner {
+    border-left: 3px solid var(--preview-accent);
+}
+
+.novedades-preview__body .ticket-editor-banner__icon {
+    color: var(--preview-accent);
+    background: var(--preview-soft);
+}
+
+.novedades-preview__body .ticket-editor-button {
+    color: #07111f;
+    background: var(--preview-accent);
 }
 
 .novedades-preview__cover {

@@ -133,6 +133,22 @@
     padding: 12px;
 }
 
+.novedades-popup__body .ticket-editor-file--media {
+    display: block;
+    width: fit-content;
+    max-width: 100%;
+    margin: 16px 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+}
+
+.novedades-popup__body .ticket-editor-file--media img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+}
+
 .novedades-popup footer {
     padding: 14px 24px;
     border-top: 1px solid var(--popup-border);

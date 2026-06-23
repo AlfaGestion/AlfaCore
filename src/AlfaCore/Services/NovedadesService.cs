@@ -596,9 +596,23 @@ public sealed class NovedadesService(
             Bajada = "Comunicado interno para el equipo.",
             Icono = "bi-megaphone",
             Acento = NovedadAcentos.Azul,
-            PortadaTipo = NovedadPortadas.Ninguna,
+            PortadaTipo = NovedadPortadas.Gradiente,
+            PortadaValor = NovedadAcentos.Azul,
             Footer = "AlfaCore",
-            Contenido = "<h1>Nueva novedad interna</h1><p>Escribi el comunicado para el equipo.</p><h2>Detalle</h2><p><br></p>"
+            Contenido = """
+                <h1>Nueva novedad interna</h1>
+                <p>Contale al equipo que cambio, por que es importante y desde cuando esta disponible.</p>
+                <div class="ticket-editor-banner ticket-editor-banner--info"><i class="bi bi-info-circle-fill ticket-editor-banner__icon" contenteditable="false"></i><div class="ticket-editor-banner__body"><p>Este bloque sirve para destacar el mensaje principal. Todo el texto es editable.</p></div></div>
+                <h2>Lo mas importante</h2>
+                <ul><li>Resume el cambio principal.</li><li>Indica a quienes alcanza.</li><li>Agrega la fecha o accion necesaria.</li></ul>
+                <div class="ticket-editor-file ticket-editor-file--media" contenteditable="false" tabindex="0" data-ticket-media-block="true"><div class="ticket-editor-file__preview"><img src="/logo.png" alt="Imagen de ejemplo AlfaCore"></div></div>
+                <h2>Como usarlo</h2>
+                <ol><li>Explica donde encontrar la nueva opcion.</li><li>Describe el paso principal.</li><li>Cuenta que resultado deberia ver el usuario.</li></ol>
+                <div class="ticket-editor-file ticket-editor-file--media" contenteditable="false" tabindex="0" data-ticket-media-block="true"><div class="ticket-editor-file__preview"><img src="/icons/icon-512.png" alt="Icono de ejemplo AlfaCore"></div></div>
+                <h2>Necesitas ayuda</h2>
+                <p>Indica aca a quien consultar o donde encontrar mas informacion.</p>
+                <div class="ticket-editor-banner ticket-editor-banner--warning"><i class="bi bi-exclamation-triangle-fill ticket-editor-banner__icon" contenteditable="false"></i><div class="ticket-editor-banner__body"><p>Reemplaza este aviso por una consideracion importante o eliminalo si no hace falta.</p></div></div>
+                """
         };
     }
 

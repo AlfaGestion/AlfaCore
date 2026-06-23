@@ -10,7 +10,7 @@
 
 <PageTitle>Novedades | AlfaCore</PageTitle>
 <HeadContent>
-    <link rel="stylesheet" href="/css/novedades.css?v=20260623-02" />
+    <link rel="stylesheet" href="/css/novedades.css?v=20260623-03" />
 </HeadContent>
 
 <section class="novedades-shell">
@@ -101,7 +101,7 @@
                     <p>@_draft.Bajada</p>
                 </div>
                 <div class="novedades-header__actions">
-                    <button type="button" class="btn btn--ghost" disabled="@_saving" @onclick="OpenPreview">
+                    <button type="button" class="btn btn--ghost" disabled="@_saving" @onclick="OpenPreviewAsync">
                         <i class="bi bi-eye"></i>
                         <span>Vista previa</span>
                     </button>
@@ -152,7 +152,7 @@
                 </button>
             </nav>
 
-            <div class="novedades-workspace">
+            <div class="@WorkspaceClass">
                 <section class="novedades-editor-panel" hidden="@(_activeTab != TabDetails)">
                     <header class="novedades-document-head">
                         <span class="novedades-document-head__icon"><i class="bi @_draft.Icono"></i></span>
@@ -177,10 +177,7 @@
                         <div class="informes-editor-surface novedades-editor-surface"
                              @ref="_contentEditor"
                              contenteditable="true"
-                             data-placeholder="Escribi / para bloques, imagenes y llamados"
-                             @oninput="OnContentChangedAsync"
-                             @onkeyup="OnContentChangedAsync"
-                             @onfocus="OnContentFocusAsync"></div>
+                             data-placeholder="Escribi el contenido del comunicado"></div>
 
                         @if (_showCommandMenu)
                         {
@@ -282,15 +279,15 @@
 
 @if (_previewOpen && _selected is not null)
 {
-    <div class="novedades-preview-backdrop" role="dialog" aria-modal="true">
-        <article class="@PreviewClass">
+    <div class="novedades-preview-backdrop" role="dialog" aria-modal="true" @onclick="ClosePreviewAsync">
+        <article class="@PreviewClass" @onclick:stopPropagation="true">
             <header>
                 <div>
                     <span>@(string.IsNullOrWhiteSpace(_draft.Version) ? TipoLabel(_draft.Tipo) : _draft.Version)</span>
                     <h2>@_draft.Titulo</h2>
                     <p>@_draft.Bajada</p>
                 </div>
-                <button type="button" title="Cerrar" @onclick="ClosePreview">
+                <button type="button" title="Cerrar" @onclick="ClosePreviewAsync">
                     <i class="bi bi-x-lg"></i>
                 </button>
             </header>
@@ -316,12 +313,15 @@
     private ElementReference _contentEditor;
     private IJSObjectReference? _editorJs;
     private IJSObjectReference? _informesEditorJs;
+    private IJSObjectReference? _novedadesEditorJs;
+    private DotNetObjectReference<Novedades>? _selfReference;
     private bool _loading;
     private bool _saving;
     private bool _editorReady;
     private bool _editorRootWired;
     private bool _showCommandMenu;
     private bool _previewOpen;
+    private bool _previewKeyboardWired;
     private string _activeTab = TabDetails;
     private string _feedback = string.Empty;
     private string _fechaProgramadaText = string.Empty;
@@ -381,6 +381,8 @@
         {
             _editorJs = await JS.InvokeAsync<IJSObjectReference>("import", "/js/tickets-rich-editor.js?v=20260519i");
             _informesEditorJs = await JS.InvokeAsync<IJSObjectReference>("import", "/js/informes-editor.js?v=20260609-image-paste");
+            _novedadesEditorJs = await JS.InvokeAsync<IJSObjectReference>("import", "/js/novedades-editor.js?v=20260623-01");
+            _selfReference = DotNetObjectReference.Create(this);
         }
 
         if (_selected is not null && !_editorReady && _editorJs is not null)
@@ -393,6 +395,14 @@
             }
 
             _editorReady = true;
+            if (_novedadesEditorJs is not null)
+                await _novedadesEditorJs.InvokeVoidAsync("wireNovedadesEditor", _contentEditor);
+        }
+
+        if (_previewOpen && !_previewKeyboardWired && _novedadesEditorJs is not null && _selfReference is not null)
+        {
+            await _novedadesEditorJs.InvokeVoidAsync("wirePreviewEscape", _selfReference);
+            _previewKeyboardWired = true;
         }
     }
 
@@ -400,8 +410,14 @@
     {
         if (_informesEditorJs is not null)
             await _informesEditorJs.DisposeAsync();
+        if (_novedadesEditorJs is not null)
+        {
+            await _novedadesEditorJs.InvokeVoidAsync("unwirePreviewEscape");
+            await _novedadesEditorJs.DisposeAsync();
+        }
         if (_editorJs is not null)
             await _editorJs.DisposeAsync();
+        _selfReference?.Dispose();
     }
 
     private async Task LoadAsync(long? selectedId = null)
@@ -539,6 +555,8 @@
         await _editorJs.InvokeVoidAsync("runCommand", _contentEditor, option.Command);
         if (_informesEditorJs is not null)
             await _informesEditorJs.InvokeVoidAsync("normalizeInformesBlocks", _contentEditor);
+        if (_novedadesEditorJs is not null)
+            await _novedadesEditorJs.InvokeVoidAsync("refreshMedia", _contentEditor);
         await SyncContentFromEditorAsync();
         _showCommandMenu = false;
     }
@@ -549,21 +567,6 @@
         await InvokeAsync(StateHasChanged);
         await Task.Yield();
         await RunEditorCommandAsync(EditorCommands.First(x => x.Command == "checkList"));
-    }
-
-    private async Task OnContentChangedAsync()
-    {
-        if (_informesEditorJs is not null)
-            await _informesEditorJs.InvokeVoidAsync("normalizeInformesBlocks", _contentEditor);
-        await SyncContentFromEditorAsync();
-        if (_editorJs is not null)
-            _showCommandMenu = await _editorJs.InvokeAsync<bool>("shouldShowCommands", _contentEditor);
-    }
-
-    private async Task OnContentFocusAsync()
-    {
-        if (_editorJs is not null)
-            _showCommandMenu = await _editorJs.InvokeAsync<bool>("shouldShowCommands", _contentEditor);
     }
 
     private async Task SyncContentFromEditorAsync()
@@ -625,11 +628,27 @@
         return _draft;
     }
 
-    private void OpenPreview()
-        => _previewOpen = true;
+    private async Task OpenPreviewAsync()
+    {
+        await FlushEditorAsync();
+        _previewOpen = true;
+        _previewKeyboardWired = false;
+    }
 
-    private void ClosePreview()
-        => _previewOpen = false;
+    private async Task ClosePreviewAsync()
+    {
+        _previewOpen = false;
+        _previewKeyboardWired = false;
+        if (_novedadesEditorJs is not null)
+            await _novedadesEditorJs.InvokeVoidAsync("unwirePreviewEscape");
+    }
+
+    [JSInvokable]
+    public async Task ClosePreviewFromKeyboardAsync()
+    {
+        await ClosePreviewAsync();
+        await InvokeAsync(StateHasChanged);
+    }
 
     private void ToggleCommandMenu()
         => _showCommandMenu = !_showCommandMenu;
@@ -648,6 +667,8 @@
 
     private string GetTabClass(string tab)
         => "novedades-tab" + (_activeTab == tab ? " is-active" : string.Empty);
+
+    private string WorkspaceClass => $"novedades-workspace novedades-accent--{_draft.Acento}";
 
     private void OnFechaProgramadaChanged(ChangeEventArgs args)
         => _fechaProgramadaText = args.Value?.ToString() ?? string.Empty;
