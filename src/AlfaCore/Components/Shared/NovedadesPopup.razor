@@ -1,6 +1,10 @@
 @inject AlfaCore.Services.INovedadesService NovedadesSvc
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 
+<HeadContent>
+    <link rel="stylesheet" href="/css/novedades-popup.css?v=20260623-01" />
+</HeadContent>
+
 @if (_visible && _novedad is not null)
 {
     <div class="novedades-popup-backdrop" role="dialog" aria-modal="true">
