@@ -10,7 +10,7 @@
 
 <PageTitle>Novedades | AlfaCore</PageTitle>
 <HeadContent>
-    <link rel="stylesheet" href="/css/novedades.css?v=20260623-01" />
+    <link rel="stylesheet" href="/css/novedades.css?v=20260623-02" />
 </HeadContent>
 
 <section class="novedades-shell">
@@ -135,113 +135,32 @@
                 </article>
             </section>
 
-            <div class="novedades-workspace">
-                <section class="novedades-editor-panel">
-                    <div class="@CoverClass" style="@CoverStyle">
-                        @if (_draft.PortadaTipo == NovedadPortadas.Url && !string.IsNullOrWhiteSpace(_draft.PortadaValor))
-                        {
-                            <img src="@_draft.PortadaValor" alt="" />
-                        }
-                        <div>
-                            <i class="bi @_draft.Icono"></i>
-                            <span>@(string.IsNullOrWhiteSpace(_draft.Version) ? "Comunicado interno" : _draft.Version)</span>
-                        </div>
-                    </div>
+            <nav class="novedades-tabs" aria-label="Secciones de la novedad">
+                <button type="button"
+                        class="@GetTabClass(TabDetails)"
+                        aria-selected="@(_activeTab == TabDetails)"
+                        @onclick="() => SelectTabAsync(TabDetails)">
+                    <i class="bi bi-file-earmark-text"></i>
+                    <span>Detalles</span>
+                </button>
+                <button type="button"
+                        class="@GetTabClass(TabSettings)"
+                        aria-selected="@(_activeTab == TabSettings)"
+                        @onclick="() => SelectTabAsync(TabSettings)">
+                    <i class="bi bi-sliders"></i>
+                    <span>Ajustes</span>
+                </button>
+            </nav>
 
-                    <div class="novedades-form-grid">
-                        <label>
-                            <span>Titulo</span>
-                            <input @bind="_draft.Titulo" @bind:event="oninput" />
-                        </label>
-                        <label>
-                            <span>Version</span>
-                            <input @bind="_draft.Version" @bind:event="oninput" placeholder="AlfaCore Patch 0.1" />
-                        </label>
-                        <label class="novedades-span-2">
-                            <span>Bajada</span>
-                            <input @bind="_draft.Bajada" @bind:event="oninput" />
-                        </label>
-                        <label>
-                            <span>Tipo</span>
-                            <select @bind="_draft.Tipo">
-                                <option value="@NovedadTipos.Manual">Manual</option>
-                                <option value="@NovedadTipos.BoletinPatch">Boletin patch</option>
-                            </select>
-                        </label>
-                        <label>
-                            <span>Estado</span>
-                            <select @bind="_draft.Estado">
-                                <option value="@NovedadEstados.Borrador">Borrador</option>
-                                <option value="@NovedadEstados.Programado">Programado</option>
-                                <option value="@NovedadEstados.Publicado">Publicado</option>
-                            </select>
-                        </label>
-                        <label>
-                            <span>Prioridad</span>
-                            <select @bind="_draft.Prioridad">
-                                <option value="@NovedadPrioridades.Info">Informativo</option>
-                                <option value="@NovedadPrioridades.Importante">Importante</option>
-                                <option value="@NovedadPrioridades.Critico">Critico</option>
-                            </select>
-                        </label>
-                        <label>
-                            <span>Icono</span>
-                            <select @bind="_draft.Icono">
-                                @foreach (var icon in IconOptions)
-                                {
-                                    <option value="@icon.Value">@icon.Label</option>
-                                }
-                            </select>
-                        </label>
-                        <label>
-                            <span>Color</span>
-                            <select @bind="_draft.Acento">
-                                <option value="@NovedadAcentos.Azul">Azul</option>
-                                <option value="@NovedadAcentos.Verde">Verde</option>
-                                <option value="@NovedadAcentos.Cian">Cian</option>
-                                <option value="@NovedadAcentos.Ambar">Ambar</option>
-                                <option value="@NovedadAcentos.Rojo">Rojo</option>
-                                <option value="@NovedadAcentos.Grafito">Grafito</option>
-                            </select>
-                        </label>
-                        <label>
-                            <span>Programar</span>
-                            <input type="datetime-local" value="@_fechaProgramadaText" @onchange="OnFechaProgramadaChanged" />
-                        </label>
-                        <label>
-                            <span>Vigente hasta</span>
-                            <input type="datetime-local" value="@_vigenteHastaText" @onchange="OnVigenteHastaChanged" />
-                        </label>
-                        <label class="novedades-check">
-                            <input type="checkbox" @bind="_draft.MostrarPopup" />
-                            <span>Mostrar popup</span>
-                        </label>
-                        <label class="novedades-check">
-                            <input type="checkbox" @bind="_draft.LecturaObligatoria" />
-                            <span>Lectura obligatoria</span>
-                        </label>
-                        <label class="novedades-check">
-                            <input type="checkbox" @bind="_draft.RepetirHastaLeer" />
-                            <span>Repetir hasta leer</span>
-                        </label>
-                        <label>
-                            <span>Portada</span>
-                            <select @bind="_draft.PortadaTipo">
-                                <option value="@NovedadPortadas.Ninguna">Sin portada</option>
-                                <option value="@NovedadPortadas.Gradiente">Portada AlfaCore</option>
-                                <option value="@NovedadPortadas.Url">Imagen</option>
-                            </select>
-                        </label>
-                        <label class="novedades-span-2">
-                            <span>URL de imagen</span>
-                            <input @bind="_draft.PortadaValor" @bind:event="oninput" placeholder="/uploads/novedades/imagen.jpg" />
-                        </label>
-                        <label class="novedades-upload">
-                            <i class="bi bi-upload"></i>
-                            <span>Subir imagen</span>
-                            <InputFile OnChange="HandleCoverFileSelectedAsync" accept="image/jpeg,image/png,image/webp,image/gif" />
-                        </label>
-                    </div>
+            <div class="novedades-workspace">
+                <section class="novedades-editor-panel" hidden="@(_activeTab != TabDetails)">
+                    <header class="novedades-document-head">
+                        <span class="novedades-document-head__icon"><i class="bi @_draft.Icono"></i></span>
+                        <div>
+                            <small>@(string.IsNullOrWhiteSpace(_draft.Version) ? TipoLabel(_draft.Tipo) : _draft.Version)</small>
+                            <strong>@_draft.Titulo</strong>
+                        </div>
+                    </header>
 
                     <div class="novedades-rich-editor" @ref="_editorRoot">
                         <div class="novedades-editor-toolbar">
@@ -283,43 +202,79 @@
                             </div>
                         }
                     </div>
-
-                    <label class="novedades-footer-field">
-                        <span>Footer del comunicado</span>
-                        <input @bind="_draft.Footer" @bind:event="oninput" />
-                    </label>
                 </section>
 
-                <aside class="novedades-side-panel">
-                    <section>
-                        <h3>Publicacion</h3>
-                        <dl>
-                            <dt>Estado</dt>
-                            <dd>@EstadoLabel(_draft.Estado)</dd>
-                            <dt>Lecturas</dt>
-                            <dd>@_selected.Lecturas de @_selected.Vistas vistas</dd>
-                            <dt>Modificado</dt>
-                            <dd>@_selected.FechaHoraModificacion.ToString("dd/MM/yyyy HH:mm")</dd>
-                        </dl>
-                        <button type="button" class="btn btn--primary" @onclick="PublishNowAsync">
-                            <i class="bi bi-send-check"></i>
-                            <span>Publicar ahora</span>
-                        </button>
-                        <button type="button" class="btn btn--ghost" @onclick="ArchiveAsync">
-                            <i class="bi bi-archive"></i>
-                            <span>Archivar</span>
-                        </button>
+                <section class="novedades-settings" hidden="@(_activeTab != TabSettings)">
+                    <section class="novedades-settings-section">
+                        <header>
+                            <i class="bi bi-card-heading"></i>
+                            <div><h3>Identidad</h3><p>Nombre, version y presentacion general del comunicado.</p></div>
+                        </header>
+                        <div class="novedades-form-grid novedades-form-grid--three">
+                            <label class="novedades-span-2"><span>Titulo</span><input @bind="_draft.Titulo" @bind:event="oninput" /></label>
+                            <label><span>Version</span><input @bind="_draft.Version" @bind:event="oninput" placeholder="AlfaCore Patch 0.1" /></label>
+                            <label class="novedades-span-3"><span>Bajada</span><input @bind="_draft.Bajada" @bind:event="oninput" /></label>
+                            <label><span>Tipo</span><select @bind="_draft.Tipo"><option value="@NovedadTipos.Manual">Manual</option><option value="@NovedadTipos.BoletinPatch">Boletin patch</option></select></label>
+                            <label><span>Prioridad</span><select @bind="_draft.Prioridad"><option value="@NovedadPrioridades.Info">Informativo</option><option value="@NovedadPrioridades.Importante">Importante</option><option value="@NovedadPrioridades.Critico">Critico</option></select></label>
+                            <label><span>Icono</span><select @bind="_draft.Icono">@foreach (var icon in IconOptions) { <option value="@icon.Value">@icon.Label</option> }</select></label>
+                            <label><span>Color</span><select @bind="_draft.Acento"><option value="@NovedadAcentos.Azul">Azul</option><option value="@NovedadAcentos.Verde">Verde</option><option value="@NovedadAcentos.Cian">Cian</option><option value="@NovedadAcentos.Ambar">Ambar</option><option value="@NovedadAcentos.Rojo">Rojo</option><option value="@NovedadAcentos.Grafito">Grafito</option></select></label>
+                        </div>
                     </section>
 
-                    <section>
-                        <h3>Flujo Codex</h3>
-                        <p>Para boletines asistidos, pedime que arme el contenido del patch y lo dejo como borrador en esta pantalla para revisar y programar.</p>
-                        <button type="button" class="btn btn--ghost" @onclick="InsertPatchChecklistAsync">
-                            <i class="bi bi-list-check"></i>
-                            <span>Insertar checklist</span>
-                        </button>
+                    <section class="novedades-settings-section">
+                        <header>
+                            <i class="bi bi-calendar2-check"></i>
+                            <div><h3>Publicacion</h3><p>Estado, fechas y comportamiento del anuncio para el equipo.</p></div>
+                        </header>
+                        <div class="novedades-form-grid novedades-form-grid--three">
+                            <label><span>Estado</span><select @bind="_draft.Estado"><option value="@NovedadEstados.Borrador">Borrador</option><option value="@NovedadEstados.Programado">Programado</option><option value="@NovedadEstados.Publicado">Publicado</option></select></label>
+                            <label><span>Programar</span><input type="datetime-local" value="@_fechaProgramadaText" @onchange="OnFechaProgramadaChanged" /></label>
+                            <label><span>Vigente hasta</span><input type="datetime-local" value="@_vigenteHastaText" @onchange="OnVigenteHastaChanged" /></label>
+                        </div>
+                        <div class="novedades-switch-grid">
+                            <label><input type="checkbox" @bind="_draft.MostrarPopup" /><span><strong>Mostrar popup</strong><small>Aparece automaticamente al ingresar.</small></span></label>
+                            <label><input type="checkbox" @bind="_draft.LecturaObligatoria" /><span><strong>Lectura obligatoria</strong><small>No permite cerrar sin confirmar lectura.</small></span></label>
+                            <label><input type="checkbox" @bind="_draft.RepetirHastaLeer" /><span><strong>Repetir hasta leer</strong><small>Vuelve a mostrarse mientras siga pendiente.</small></span></label>
+                        </div>
+                        <div class="novedades-settings-actions">
+                            <button type="button" class="btn btn--primary" @onclick="PublishNowAsync"><i class="bi bi-send-check"></i><span>Publicar ahora</span></button>
+                            <button type="button" class="btn btn--ghost" @onclick="ArchiveAsync"><i class="bi bi-archive"></i><span>Archivar</span></button>
+                        </div>
                     </section>
-                </aside>
+
+                    <section class="novedades-settings-section">
+                        <header>
+                            <i class="bi bi-image"></i>
+                            <div><h3>Presentacion</h3><p>Portada y firma visibles en el comunicado.</p></div>
+                        </header>
+                        <div class="novedades-presentation-grid">
+                            <div class="@CoverClass" style="@CoverStyle">
+                                @if (_draft.PortadaTipo == NovedadPortadas.Url && !string.IsNullOrWhiteSpace(_draft.PortadaValor)) { <img src="@_draft.PortadaValor" alt="" /> }
+                                <div><i class="bi @_draft.Icono"></i><span>@(string.IsNullOrWhiteSpace(_draft.Version) ? "Comunicado interno" : _draft.Version)</span></div>
+                            </div>
+                            <div class="novedades-form-grid">
+                                <label><span>Portada</span><select @bind="_draft.PortadaTipo"><option value="@NovedadPortadas.Ninguna">Sin portada</option><option value="@NovedadPortadas.Gradiente">Portada AlfaCore</option><option value="@NovedadPortadas.Url">Imagen</option></select></label>
+                                <label><span>URL de imagen</span><input @bind="_draft.PortadaValor" @bind:event="oninput" placeholder="/uploads/novedades/imagen.jpg" /></label>
+                                <label class="novedades-upload"><i class="bi bi-upload"></i><span>Subir imagen</span><InputFile OnChange="HandleCoverFileSelectedAsync" accept="image/jpeg,image/png,image/webp,image/gif" /></label>
+                                <label><span>Footer del comunicado</span><input @bind="_draft.Footer" @bind:event="oninput" /></label>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="novedades-settings-section novedades-settings-section--summary">
+                        <header><i class="bi bi-bar-chart"></i><div><h3>Seguimiento</h3><p>Actividad registrada para esta publicacion.</p></div></header>
+                        <div class="novedades-tracking">
+                            <div><span>Estado</span><strong>@EstadoLabel(_draft.Estado)</strong></div>
+                            <div><span>Lecturas</span><strong>@_selected.Lecturas</strong><small>@_selected.Vistas vistas</small></div>
+                            <div><span>Modificado</span><strong>@_selected.FechaHoraModificacion.ToString("dd/MM/yyyy")</strong><small>@_selected.FechaHoraModificacion.ToString("HH:mm")</small></div>
+                        </div>
+                    </section>
+
+                    <section class="novedades-settings-section novedades-codex-section">
+                        <header><i class="bi bi-stars"></i><div><h3>Asistencia Codex</h3><p>Los boletines asistidos quedan como borrador para revisar y programar.</p></div></header>
+                        <button type="button" class="btn btn--ghost" @onclick="InsertPatchChecklistAsync"><i class="bi bi-list-check"></i><span>Insertar checklist en Detalles</span></button>
+                    </section>
+                </section>
             </div>
         }
     </main>
@@ -367,11 +322,15 @@
     private bool _editorRootWired;
     private bool _showCommandMenu;
     private bool _previewOpen;
+    private string _activeTab = TabDetails;
     private string _feedback = string.Empty;
     private string _fechaProgramadaText = string.Empty;
     private string _vigenteHastaText = string.Empty;
 
     private string CurrentUser => AppUserSession.GetCurrentUserName(Environment.UserName).Trim();
+
+    private const string TabDetails = "details";
+    private const string TabSettings = "settings";
 
     private static readonly IReadOnlyList<EditorCommandOption> EditorCommands =
     [
@@ -586,6 +545,9 @@
 
     private async Task InsertPatchChecklistAsync()
     {
+        _activeTab = TabDetails;
+        await InvokeAsync(StateHasChanged);
+        await Task.Yield();
         await RunEditorCommandAsync(EditorCommands.First(x => x.Command == "checkList"));
     }
 
@@ -671,6 +633,21 @@
 
     private void ToggleCommandMenu()
         => _showCommandMenu = !_showCommandMenu;
+
+    private async Task SelectTabAsync(string tab)
+    {
+        if (tab == _activeTab)
+            return;
+
+        if (_activeTab == TabDetails)
+            await FlushEditorAsync();
+
+        _showCommandMenu = false;
+        _activeTab = tab == TabSettings ? TabSettings : TabDetails;
+    }
+
+    private string GetTabClass(string tab)
+        => "novedades-tab" + (_activeTab == tab ? " is-active" : string.Empty);
 
     private void OnFechaProgramadaChanged(ChangeEventArgs args)
         => _fechaProgramadaText = args.Value?.ToString() ?? string.Empty;
