@@ -57,6 +57,7 @@
     private string _actionError = string.Empty;
     private string _loadedUser = string.Empty;
     private CancellationTokenSource? _loadCts;
+    private readonly CancellationTokenSource _pollCts = new();
 
     private string CurrentUser => AppUserSession.CurrentUser?.UserName?.Trim() ?? string.Empty;
 
@@ -65,13 +66,18 @@
     protected override async Task OnInitializedAsync()
     {
         AppUserSession.StateChanged += OnUserSessionChanged;
+        NovedadesSvc.AnnouncementsChanged += OnAnnouncementsChanged;
+        _ = PollAnnouncementsAsync(_pollCts.Token);
         await RefreshForAuthenticatedUserAsync();
     }
 
     private void OnUserSessionChanged()
-        => _ = InvokeAsync(RefreshForAuthenticatedUserAsync);
+        => _ = InvokeAsync(() => RefreshForAuthenticatedUserAsync(force: true));
 
-    private async Task RefreshForAuthenticatedUserAsync()
+    private void OnAnnouncementsChanged()
+        => _ = InvokeAsync(() => RefreshForAuthenticatedUserAsync(force: true));
+
+    private async Task RefreshForAuthenticatedUserAsync(bool force = false)
     {
         _loadCts?.Cancel();
         _loadCts?.Dispose();
@@ -85,7 +91,7 @@
             return;
         }
 
-        if (string.Equals(_loadedUser, user, StringComparison.OrdinalIgnoreCase) && _novedad is not null)
+        if (!force && string.Equals(_loadedUser, user, StringComparison.OrdinalIgnoreCase) && _novedad is not null)
             return;
 
         var cts = new CancellationTokenSource();
@@ -132,6 +138,22 @@
         }
     }
 
+    private async Task PollAnnouncementsAsync(CancellationToken ct)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(30));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(ct))
+            {
+                if (!_visible && !_markingRead && AppUserSession.IsAuthenticated)
+                    await InvokeAsync(() => RefreshForAuthenticatedUserAsync());
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+        }
+    }
+
     private async Task MarkReadAsync()
     {
         var user = CurrentUser;
@@ -145,6 +167,8 @@
             await NovedadesSvc.MarkReadAsync(_novedad.IdNovedad, user);
             _visible = false;
             _novedad = null;
+            _loadedUser = string.Empty;
+            await RefreshForAuthenticatedUserAsync(force: true);
         }
         catch
         {
@@ -169,6 +193,9 @@
     public void Dispose()
     {
         AppUserSession.StateChanged -= OnUserSessionChanged;
+        NovedadesSvc.AnnouncementsChanged -= OnAnnouncementsChanged;
+        _pollCts.Cancel();
+        _pollCts.Dispose();
         _loadCts?.Cancel();
         _loadCts?.Dispose();
     }

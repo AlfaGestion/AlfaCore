@@ -4,6 +4,8 @@ namespace AlfaCore.Services;
 
 public interface INovedadesService
 {
+    event Action? AnnouncementsChanged;
+
     Task<NovedadesPageDto> GetPageAsync(NovedadesFilterDto filter, long? idNovedad, string usuario, CancellationToken ct = default);
     Task<NovedadDetalleDto?> GetAsync(long idNovedad, string usuario, CancellationToken ct = default);
     Task<long> CreateDraftAsync(string tipo, string usuarioAccion, CancellationToken ct = default);

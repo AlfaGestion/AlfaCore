@@ -12,6 +12,7 @@ public sealed class NovedadesService(
     IWebHostEnvironment environment) : INovedadesService
 {
     private const string ModuleName = "Novedades";
+    private static event Action? SharedAnnouncementsChanged;
     private static readonly HashSet<string> AllowedCoverContentTypes = new(StringComparer.OrdinalIgnoreCase)
     {
         "image/jpeg",
@@ -24,6 +25,12 @@ public sealed class NovedadesService(
         ? sessionService.GetConnectionString()
         : configuration.GetConnectionString("AlfaGestion")
           ?? throw new InvalidOperationException("No se configuro la cadena de conexion 'ConnectionStrings:AlfaGestion'.");
+
+    public event Action? AnnouncementsChanged
+    {
+        add => SharedAnnouncementsChanged += value;
+        remove => SharedAnnouncementsChanged -= value;
+    }
 
     public Task<NovedadesPageDto> GetPageAsync(NovedadesFilterDto filter, long? idNovedad, string usuario, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "GetPage", async token =>
@@ -188,6 +195,7 @@ public sealed class NovedadesService(
             }, cancellationToken: token));
 
             await appEvents.LogAuditAsync(ModuleName, "Save", "ALFACORE_NOVEDADES", request.IdNovedad.ToString(), "Novedad guardada.", new { Estado = estado }, token);
+            NotifyAnnouncementsChanged();
             return request.IdNovedad;
         }, "No se pudo guardar la novedad.", ct);
 
@@ -207,6 +215,7 @@ public sealed class NovedadesService(
             await cn.OpenAsync(token);
             await EnsureSchemaAsync(cn, token);
             await cn.ExecuteAsync(new CommandDefinition(sql, new { IdNovedad = idNovedad, Usuario = NormalizeUser(usuarioAccion) }, cancellationToken: token));
+            NotifyAnnouncementsChanged();
         }, "No se pudo archivar la novedad.", ct);
 
     public Task DeleteAsync(long idNovedad, string usuarioAccion, CancellationToken ct = default)
@@ -235,6 +244,7 @@ public sealed class NovedadesService(
                 throw;
             }
             await appEvents.LogAuditAsync(ModuleName, "Delete", "ALFACORE_NOVEDADES", idNovedad.ToString(), "Novedad eliminada.", new { Usuario = NormalizeUser(usuarioAccion) }, token);
+            NotifyAnnouncementsChanged();
         }, "No se pudo eliminar la novedad.", ct);
 
     public Task DuplicateAsync(long idNovedad, string usuarioAccion, CancellationToken ct = default)
@@ -363,6 +373,7 @@ public sealed class NovedadesService(
             await cn.OpenAsync(token);
             await EnsureSchemaAsync(cn, token);
             await cn.ExecuteAsync(new CommandDefinition(sql, new { IdNovedad = idNovedad, Usuario = NormalizeUser(usuario) }, cancellationToken: token));
+            NotifyAnnouncementsChanged();
         }, "No se pudo marcar la novedad como leida.", ct);
 
     public Task<string> SaveCoverImageAsync(Stream content, string fileName, string contentType, string usuarioAccion, CancellationToken ct = default)
@@ -659,7 +670,22 @@ public sealed class NovedadesService(
     }
 
     private static string NormalizeUser(string? value)
-        => string.IsNullOrWhiteSpace(value) ? Environment.UserName : value.Trim();
+        => string.IsNullOrWhiteSpace(value) ? "SYSTEM" : value.Trim();
+
+    private static void NotifyAnnouncementsChanged()
+    {
+        var subscribers = SharedAnnouncementsChanged?.GetInvocationList().Cast<Action>().ToArray() ?? [];
+        foreach (var subscriber in subscribers)
+        {
+            try
+            {
+                subscriber();
+            }
+            catch
+            {
+            }
+        }
+    }
 
     private static string? NormalizeNullable(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
