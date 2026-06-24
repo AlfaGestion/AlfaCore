@@ -244,6 +244,7 @@ public sealed class PuntoVentaService(
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
+            await EnsureRequiredSaleProceduresAsync(cn, token);
 
             var context = await GetContextAsync(token);
             var settings = await GetSettingsAsync(token);
@@ -830,6 +831,31 @@ public sealed class PuntoVentaService(
             throw new InvalidOperationException("La venta se grabó pero no se pudo releer el comprobante generado.");
 
         return row;
+    }
+
+    private static async Task EnsureRequiredSaleProceduresAsync(SqlConnection cn, CancellationToken ct)
+    {
+        var requiredProcedures = new[]
+        {
+            "sp_web_Alta_Comprobante",
+            "sp_web_CpteInsumos",
+            "sp_web_CreaCobPorFactura",
+            "sp_web_creaLineaAsiento",
+            "sp_web_CreaAplicacionCobranzaFactura"
+        };
+
+        var missing = new List<string>();
+        foreach (var procedure in requiredProcedures)
+        {
+            if (!await ObjectExistsAsync(cn, procedure, "P", ct))
+                missing.Add(procedure);
+        }
+
+        if (missing.Count == 0)
+            return;
+
+        throw new InvalidOperationException(
+            $"La base activa no tiene los procedimientos del POS requeridos: {string.Join(", ", missing)}. Aplicá los updates SQL del punto de venta antes de cobrar.");
     }
 
     private async Task AddReceiptItemAsync(SqlConnection cn, int idComprobante, PuntoVentaCartItemDto item, CancellationToken ct)
