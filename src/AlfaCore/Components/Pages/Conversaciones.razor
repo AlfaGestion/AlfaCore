@@ -27,9 +27,13 @@
     .conversations-hours-lines__header,
     .conversations-hours-lines__row {
         display: grid;
-        grid-template-columns: minmax(130px, .9fr) minmax(120px, .75fr) minmax(190px, 1.5fr) 86px 38px;
+        grid-template-columns: minmax(128px, .75fr) minmax(112px, .62fr) minmax(220px, 1.25fr) minmax(150px, .72fr) 38px;
         gap: 8px;
         align-items: center;
+    }
+
+    .conversations-hours-dialog {
+        width: min(94vw, 820px);
     }
 
     .conversations-hours-lines__header {
@@ -62,6 +66,39 @@
         color: var(--color-text);
     }
 
+    .conversations-hours-duration {
+        display: grid;
+        grid-template-columns: minmax(62px, 1fr) minmax(70px, 1fr);
+        gap: 6px;
+        align-items: end;
+        min-width: 0;
+        width: 100%;
+        padding: 0;
+        border: 0;
+        background: transparent;
+    }
+
+    .conversations-hours-duration label {
+        min-width: 0;
+    }
+
+    .conversations-hours-duration label > span {
+        display: none;
+    }
+
+    .conversations-hours-duration span {
+        color: var(--color-muted);
+        font-size: 10px;
+        font-weight: 800;
+        text-transform: uppercase;
+    }
+
+    .conversations-hours-duration input,
+    .conversations-hours-duration select {
+        height: 36px;
+        padding-block: .35rem;
+    }
+
     @@media (max-width: 720px) {
         .conversations-hours-lines__header {
             display: none;
@@ -75,6 +112,10 @@
         }
 
         .conversations-hours-lines__row input[type="text"] {
+            grid-column: 1 / -1;
+        }
+
+        .conversations-hours-duration {
             grid-column: 1 / -1;
         }
     }
@@ -280,7 +321,7 @@
                                     <span>Buscando contactos...</span>
                                 </div>
                             }
-                            else if (_conversationSuggestions.Count > 0 || _contactSuggestions.Count > 0)
+                            else if (_conversationSuggestions.Count > 0 || _contactSuggestions.Count > 0 || _clientSuggestions.Count > 0)
                             {
                                 @if (_conversationSuggestions.Count > 0)
                                 {
@@ -337,6 +378,33 @@
                                                 </button>
                                                 <button type="button" class="btn btn--ghost btn--sm" @onclick="() => OpenContactEditor(contact)">
                                                     <i class="bi bi-pencil-square"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    }
+                                }
+                                @if (_clientSuggestions.Count > 0)
+                                {
+                                    <div class="conversations-contact-suggest__header">
+                                        <span>Clientes encontrados</span>
+                                        @if (_conversationSuggestions.Count == 0 && _contactSuggestions.Count == 0)
+                                        {
+                                            <button type="button" class="btn btn--ghost btn--sm" @onclick="CloseContactSuggestions" title="Cerrar">
+                                                <i class="bi bi-x-lg"></i>
+                                            </button>
+                                        }
+                                    </div>
+                                    @foreach (var client in _clientSuggestions)
+                                    {
+                                        <div class="conversations-contact-suggest__item">
+                                            <div class="conversations-contact-suggest__main">
+                                                <strong>@client.RazonSocial</strong>
+                                                <span>@client.Codigo</span>
+                                                <small>@DisplayOrFallback(client.Telefono, client.Mail, client.Localidad)</small>
+                                            </div>
+                                            <div class="conversations-contact-suggest__actions">
+                                                <button type="button" class="btn btn--primary btn--sm" @onclick="() => SelectClientSuggestionAsync(client)">
+                                                    <i class="bi bi-search"></i> Ver conversaciones
                                                 </button>
                                             </div>
                                         </div>
@@ -1901,7 +1969,7 @@
                         <span>Técnico</span>
                         <span>Tipo</span>
                         <span>Tarea</span>
-                        <span>Minutos</span>
+                        <span>Tiempo</span>
                         <span></span>
                     </div>
                     @for (var i = 0; i < _ticketParteHoraLineas.Count; i++)
@@ -1929,7 +1997,21 @@
                                    @onkeydown="args => HandleTicketParteHoraLineaKeyDownAsync(args, index)"
                                    disabled="@_creatingTicket"
                                    placeholder="Descripción de la tarea" />
-                            <input type="number" min="1" max="1440" step="1" @bind="linea.Minutos" disabled="@_creatingTicket" />
+                            <div class="conversations-hours-duration">
+                                <label>
+                                    <span>Hora</span>
+                                    <input type="number" min="0" max="24" step="1" @bind="linea.Horas" disabled="@_creatingTicket" />
+                                </label>
+                                <label>
+                                    <span>Min</span>
+                                    <select @bind="linea.MinutosBloque" disabled="@_creatingTicket">
+                                        @foreach (var minutes in ParteHoraMinuteOptions)
+                                        {
+                                            <option value="@minutes">@minutes.ToString("00")</option>
+                                        }
+                                    </select>
+                                </label>
+                            </div>
                             <button type="button" class="btn btn--ghost btn--sm" @onclick="() => RemoveTicketParteHoraLinea(index)" disabled="@(_creatingTicket || _ticketParteHoraLineas.Count <= 1)">
                                 <i class="bi bi-trash"></i>
                             </button>
@@ -2024,7 +2106,7 @@
                     <span>Tecnico</span>
                     <span>Tipo</span>
                     <span>Tarea</span>
-                    <span>Minutos</span>
+                    <span>Tiempo</span>
                     <span></span>
                 </div>
                 @for (var i = 0; i < _parteHoraLineas.Count; i++)
@@ -2052,7 +2134,21 @@
                                @onkeydown="args => HandleParteHoraLineaKeyDownAsync(args, index)"
                                disabled="@_savingParteHora"
                                placeholder="Descripcion de la tarea" />
-                        <input type="number" min="1" max="1440" step="1" @bind="linea.Minutos" disabled="@_savingParteHora" />
+                        <div class="conversations-hours-duration">
+                            <label>
+                                <span>Hora</span>
+                                <input type="number" min="0" max="24" step="1" @bind="linea.Horas" disabled="@_savingParteHora" />
+                            </label>
+                            <label>
+                                <span>Min</span>
+                                <select @bind="linea.MinutosBloque" disabled="@_savingParteHora">
+                                    @foreach (var minutes in ParteHoraMinuteOptions)
+                                    {
+                                        <option value="@minutes">@minutes.ToString("00")</option>
+                                    }
+                                </select>
+                            </label>
+                        </div>
                         <button type="button" class="btn btn--ghost btn--sm" @onclick="() => RemoveParteHoraLinea(index)" disabled="@(_savingParteHora || _parteHoraLineas.Count <= 1)">
                             <i class="bi bi-trash"></i>
                         </button>
@@ -2151,14 +2247,56 @@
 @code {
     private sealed class ParteHoraConversacionLinea
     {
+        private int _horas;
+        private int _minutosBloque = 10;
+
         public string IdTecnico { get; set; } = string.Empty;
         public string TipoTrabajo { get; set; } = ParteHoraTipoTrabajoKeys.Soporte;
         public string Descripcion { get; set; } = string.Empty;
-        public int Minutos { get; set; } = 1;
+
+        public int Horas
+        {
+            get => _horas;
+            set => _horas = Math.Clamp(value, 0, 24);
+        }
+
+        public int MinutosBloque
+        {
+            get => _minutosBloque;
+            set => _minutosBloque = NormalizeMinuteBlock(value);
+        }
+
+        public int Minutos
+        {
+            get => (Horas * 60) + MinutosBloque;
+            set
+            {
+                var total = RoundUpToTen(Math.Clamp(value, 0, 24 * 60));
+                _horas = total / 60;
+                _minutosBloque = total >= 24 * 60 ? 0 : total % 60;
+            }
+        }
+
+        private static int NormalizeMinuteBlock(int value)
+        {
+            if (value <= 0)
+                return 0;
+
+            return Math.Clamp((value / 10) * 10, 0, 50);
+        }
+
+        private static int RoundUpToTen(int value)
+        {
+            if (value <= 0)
+                return 0;
+
+            return Math.Min(24 * 60, ((value + 9) / 10) * 10);
+        }
     }
 
     private const string TicketSelectDefaultValue = "__select__";
     private const string TicketSelectNoneValue = "__none__";
+    private static readonly int[] ParteHoraMinuteOptions = [0, 10, 20, 30, 40, 50];
 
     private readonly (string Value, string Label)[] _modeOptions =
     [
@@ -2198,6 +2336,7 @@
     private List<ConversacionTypingDto> _typingUsers = [];
     private List<ContactoGridItemDto> _contactSuggestions = [];
     private List<ConversacionInboxItemDto> _conversationSuggestions = [];
+    private List<ConversacionClienteCandidateDto> _clientSuggestions = [];
     private List<ConversacionClienteCandidateDto> _clientCandidates = [];
     private readonly Dictionary<long, ConversationViewCache> _conversationCache = [];
     private readonly Dictionary<string, ConversationChannelCache> _channelCache = [];
@@ -2314,7 +2453,6 @@
     private bool _savingParteHora;
     private string? _parteHoraError;
     private int _parteHoraSuggestedMinutes;
-    private int _parteHoraMinutos = 15;
     private string _parteHoraTipo = ParteHoraTipoTrabajoKeys.Soporte;
     private bool _parteHoraFacturable = true;
     private long? _parteHoraTicketId;
@@ -2323,7 +2461,7 @@
     private string _parteHoraClienteCodigo = string.Empty;
     private string _parteHoraClienteNombre = string.Empty;
     private int? _parteHoraIdContacto;
-    private DateTime _parteHoraFecha = DateTime.Today;
+    private DateTime _parteHoraFecha = BusinessNow().Date;
     private DateTime? _parteHoraInicio;
     private DateTime? _parteHoraFin;
     private long? _parteHoraConversationId;
@@ -2814,7 +2952,7 @@
             _showContactSuggestions = false;
             _contactSuggestions = [];
             _conversationSuggestions = [];
-            await LoadInboxAsync();
+            _clientSuggestions = [];
             return;
         }
 
@@ -2897,8 +3035,9 @@
         try
         {
             var previousInbox = _inbox.ToDictionary(x => x.IdConversacion);
-            ApplyCurrentUserToFilters(_filters);
-            var refreshedInbox = (await ConversacionesSvc.GetInboxAsync(_filters)).ToList();
+            var filters = BuildInboxFiltersForCurrentSearch();
+            ApplyCurrentUserToFilters(filters);
+            var refreshedInbox = (await ConversacionesSvc.GetInboxAsync(filters)).ToList();
             if (trackNewMessages)
                 newMessagesDetected = TrackInboxNewMessages(previousInbox, refreshedInbox);
             _inbox = refreshedInbox;
@@ -2945,7 +3084,9 @@
         await Task.Yield();
         try
         {
-            _auditMessages = (await ConversacionesSvc.GetAuditMessagesAsync(_filters)).ToList();
+            var filters = BuildInboxFiltersForCurrentSearch();
+            ApplyCurrentUserToFilters(filters);
+            _auditMessages = (await ConversacionesSvc.GetAuditMessagesAsync(filters)).ToList();
         }
         catch (Exception ex)
         {
@@ -2973,7 +3114,7 @@
                 nextPinned);
 
             item.FijadaPorUsuario = nextPinned;
-            item.FechaHoraFijada = nextPinned ? DateTime.Now : null;
+            item.FechaHoraFijada = nextPinned ? BusinessNow() : null;
             await RefreshInboxAsync(showLoading: false, allowSelectionChange: false);
         }
         catch (Exception ex)
@@ -3002,6 +3143,22 @@
     {
         filters.UsuarioActual = CurrentUserNameForAudit;
         filters.SistemaActual = CurrentUserSystemForAudit;
+    }
+
+    private ConversacionesInboxFilters BuildInboxFiltersForCurrentSearch()
+    {
+        if (string.IsNullOrWhiteSpace(_filters.Search))
+            return _filters;
+
+        return new ConversacionesInboxFilters
+        {
+            Modo = "todas",
+            Search = _filters.Search,
+            ClienteCodigo = _filters.ClienteCodigo,
+            Canal = null,
+            Limit = _filters.Limit,
+            Offset = _filters.Offset
+        };
     }
 
     private int TrackInboxNewMessages(
@@ -3054,8 +3211,8 @@
 
     private static bool IsFreshInboxClientMessage(ConversacionInboxItemDto item)
         => item.FechaHoraUltimoMensajeCliente is DateTime value
-           && DateTime.Now - value <= LateIncomingNotificationWindow
-           && value <= DateTime.Now.AddMinutes(2);
+           && BusinessNow() - value <= LateIncomingNotificationWindow
+           && value <= BusinessNow().AddMinutes(2);
 
     private async Task SelectConversationAsync(long idConversacion, bool showMobileChat = false, bool updateUrl = true)
     {
@@ -3269,7 +3426,7 @@
             {
                 IdTecnico = CurrentMessageTechnicianId,
                 TipoTrabajo = GetDefaultTicketParteHoraTipo(),
-                Minutos = 15
+                Minutos = 10
             }
         ];
     }
@@ -3281,7 +3438,7 @@
         {
             IdTecnico = previous?.IdTecnico ?? CurrentMessageTechnicianId,
             TipoTrabajo = previous?.TipoTrabajo ?? GetDefaultTicketParteHoraTipo(),
-            Minutos = 15
+            Minutos = 10
         });
     }
 
@@ -3308,7 +3465,7 @@
         {
             IdTecnico = previous?.IdTecnico ?? CurrentMessageTechnicianId,
             TipoTrabajo = previous?.TipoTrabajo ?? GetDefaultTicketParteHoraTipo(),
-            Minutos = 15
+            Minutos = 10
         };
 
         if (index < 0 || index >= _ticketParteHoraLineas.Count - 1)
@@ -3429,7 +3586,7 @@
                 {
                     idsPartes.Add(await PartesHorasSvc.SaveAsync(new ParteHoraSaveRequest
                     {
-                        Fecha = DateTime.Today,
+                        Fecha = BusinessNow().Date,
                         ClienteCodigo = _selectedConversation.ClienteCodigo,
                         IdContacto = _selectedConversation.IdContacto,
                         IdTicket = idTicket,
@@ -3491,7 +3648,6 @@
         _parteHoraFin = prompt.Fin;
         _parteHoraFecha = prompt.Fin.Date;
         _parteHoraSuggestedMinutes = prompt.MinutosSugeridos;
-        _parteHoraMinutos = prompt.MinutosSugeridos;
         _parteHoraTipo = string.IsNullOrWhiteSpace(prompt.ClienteCodigo)
             ? ParteHoraTipoTrabajoKeys.Interno
             : ParteHoraTipoTrabajoKeys.Soporte;
@@ -3528,7 +3684,7 @@
 
     private async Task PromptCloseConversationAsync(string closeStatusCode, string previousStatusCode)
     {
-        var prompt = BuildParteHorasPrompt(DateTime.Now);
+        var prompt = BuildParteHorasPrompt(BusinessNow());
         if (prompt is null)
             return;
 
@@ -3586,7 +3742,7 @@
         {
             IdTecnico = previous?.IdTecnico ?? CurrentMessageTechnicianId,
             TipoTrabajo = previous?.TipoTrabajo ?? ParteHoraTipoTrabajoKeys.Soporte,
-            Minutos = 1
+            Minutos = 10
         });
     }
 
@@ -3613,7 +3769,7 @@
         {
             IdTecnico = previous?.IdTecnico ?? CurrentMessageTechnicianId,
             TipoTrabajo = previous?.TipoTrabajo ?? ParteHoraTipoTrabajoKeys.Soporte,
-            Minutos = 1
+            Minutos = 10
         };
 
         if (index < 0 || index >= _parteHoraLineas.Count - 1)
@@ -4269,6 +4425,7 @@
             _showContactSuggestions = false;
             _contactSuggestions = [];
             _conversationSuggestions = [];
+            _clientSuggestions = [];
             return;
         }
 
@@ -4283,23 +4440,22 @@
             var contactTask = ContactosSvc.SearchAsync(new ContactosFilters
             {
                 Texto = _filters.Search.Trim(),
-                Activo = true,
+                Activo = null,
                 PageNumber = 1,
                 PageSize = 6
             }, cts.Token);
             var conversationTask = ConversacionesSvc.GetInboxAsync(new ConversacionesInboxFilters
             {
-                Canal = _canalActivo,
-                Modo = _filters.Modo,
+                Canal = null,
+                Modo = "todas",
                 Search = _filters.Search.Trim(),
-                IdTecnicoActual = _filters.IdTecnicoActual,
-                CodigoEstado = _filters.CodigoEstado,
                 UsuarioActual = CurrentUserNameForAudit,
                 SistemaActual = CurrentUserSystemForAudit,
                 Limit = 6
             }, cts.Token);
+            var clientTask = ConversacionesSvc.SearchClientesParaRelacionarAsync(_filters.Search.Trim(), cts.Token);
 
-            await Task.WhenAll(contactTask, conversationTask);
+            await Task.WhenAll(contactTask, conversationTask, clientTask);
 
             if (!cts.IsCancellationRequested)
             {
@@ -4311,6 +4467,9 @@
                     .Where(contact => !_conversationSuggestions.Any(conversation => IsSameContactSuggestion(conversation, contact)))
                     .Take(6)
                     .ToList();
+                _clientSuggestions = (await clientTask)
+                    .Take(6)
+                    .ToList();
             }
         }
         catch (OperationCanceledException)
@@ -4320,6 +4479,7 @@
         {
             _contactSuggestions = [];
             _conversationSuggestions = [];
+            _clientSuggestions = [];
             _actionError = ex.Message;
         }
         finally
@@ -5014,7 +5174,7 @@
             Direction = "SALIENTE",
             EstadoEnvio = "PENDIENTE",
             Texto = text,
-            FechaHora = DateTime.Now,
+            FechaHora = BusinessNow(),
             IdTecnicoAutor = CurrentMessageTechnicianId,
             TecnicoAutorNombre = CurrentMessageTechnicianName,
             UsuarioAutor = CurrentUserNameForAudit,
@@ -5523,6 +5683,8 @@
     {
         _showContactSuggestions = false;
         _conversationSuggestions = [];
+        _contactSuggestions = [];
+        _clientSuggestions = [];
     }
 
     private void OpenContactEditor(ContactoGridItemDto contact)
@@ -5700,6 +5862,14 @@
     {
         _showContactSuggestions = false;
         await SelectConversationAsync(idConversacion, showMobileChat: true);
+    }
+
+    private async Task SelectClientSuggestionAsync(ConversacionClienteCandidateDto client)
+    {
+        _filters.ClienteCodigo = client.Codigo;
+        _filters.Search = FirstNonEmpty(client.RazonSocial, client.Codigo);
+        CloseContactSuggestions();
+        await LoadInboxAsync();
     }
 
     private ConversacionInboxItemDto? GetBestConversationMatchForSearch()
@@ -6623,6 +6793,25 @@
             : $"{remaining}m";
     }
 
+    private static DateTime BusinessNow()
+        => TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, ResolveBusinessTimeZone());
+
+    private static TimeZoneInfo ResolveBusinessTimeZone()
+    {
+        try
+        {
+            return TimeZoneInfo.FindSystemTimeZoneById("Argentina Standard Time");
+        }
+        catch (TimeZoneNotFoundException)
+        {
+            return TimeZoneInfo.Local;
+        }
+        catch (InvalidTimeZoneException)
+        {
+            return TimeZoneInfo.Local;
+        }
+    }
+
     private string FormatParteHorasRange()
     {
         if (_parteHoraInicio is not DateTime start || _parteHoraFin is not DateTime end)
@@ -6668,7 +6857,7 @@
             return "--";
 
         var date = value.Date;
-        var today = DateTime.Today;
+        var today = BusinessNow().Date;
         var time = value.ToString("HH:mm", System.Globalization.CultureInfo.CurrentCulture);
 
         if (date == today)
@@ -6686,7 +6875,7 @@
             return string.Empty;
 
         var date = value.Date;
-        var today = DateTime.Today;
+        var today = BusinessNow().Date;
 
         if (date == today)
             return "Hoy";

@@ -10,7 +10,7 @@ END;
 
 DECLARE @Clave nvarchar(50) = N'VIAJES-PORCENTAJES-ADICIONALES-HABILITADOS';
 DECLARE @Grupo nvarchar(50) = N'VIAJES';
-DECLARE @Descripcion nvarchar(150) = N'Cantidad de porcentajes adicionales habilitados en carga de viajes';
+DECLARE @Descripcion nvarchar(50) = N'Porcentajes adicionales en viajes';
 DECLARE @Valor nvarchar(150) = N'3';
 
 IF EXISTS (SELECT 1 FROM dbo.TA_CONFIGURACION WHERE UPPER(LTRIM(RTRIM(CLAVE))) = UPPER(@Clave))

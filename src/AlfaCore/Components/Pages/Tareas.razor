@@ -1004,6 +1004,10 @@
                                     {
                                         <span> · @GetAssigneeSummary(tarea.UsuarioAsignado)</span>
                                     }
+                                    @if (ShouldShowCreator(tarea))
+                                    {
+                                        <span> · creó @GetTaskCreator(tarea)</span>
+                                    }
                                     @if (tarea.FechaVencimiento is not null)
                                     {
                                         <span> · vence @tarea.FechaVencimiento.Value.ToString("dd/MM")</span>
@@ -1056,6 +1060,10 @@
                                     @if (!string.IsNullOrWhiteSpace(tarea.UsuarioAsignado))
                                     {
                                         <span> · @GetAssigneeSummary(tarea.UsuarioAsignado)</span>
+                                    }
+                                    @if (ShouldShowCreator(tarea))
+                                    {
+                                        <span> · creó @GetTaskCreator(tarea)</span>
                                     }
                                     @if (tarea.Adjuntos > 0)
                                     {
@@ -1349,6 +1357,36 @@
                                     @onclick="() => SelectTaskList(lista.IdLista)">
                                 <span>@lista.Nombre</span>
                                 @if (IsFieldOptionSelected(_taskDraft.IdLista, lista.IdLista))
+                                {
+                                    <i class="bi bi-check2"></i>
+                                }
+                            </button>
+                        }
+                    </div>
+                }
+            </div>
+            <div class="tareas-field-picker" @onclick:stopPropagation @onkeydown="HandleFieldMenuKeyDown">
+                <span>Creador</span>
+                <button type="button"
+                        class="tareas-field-button"
+                        aria-haspopup="listbox"
+                        aria-expanded="@_creatorMenuOpen"
+                        @onclick="ToggleCreatorMenu">
+                    <span>@(string.IsNullOrWhiteSpace(_taskDraft.UsuarioCreador) ? CurrentUser : _taskDraft.UsuarioCreador)</span>
+                    <i class="bi bi-chevron-down"></i>
+                </button>
+                @if (_creatorMenuOpen)
+                {
+                    <div class="tareas-field-menu" role="listbox">
+                        @foreach (var user in CreatorOptions)
+                        {
+                            <button type="button"
+                                    class="@GetFieldOptionClass(_taskDraft.UsuarioCreador, user)"
+                                    role="option"
+                                    aria-selected="@IsFieldOptionSelected(_taskDraft.UsuarioCreador, user)"
+                                    @onclick="() => SelectTaskCreator(user)">
+                                <span>@user</span>
+                                @if (IsFieldOptionSelected(_taskDraft.UsuarioCreador, user))
                                 {
                                     <i class="bi bi-check2"></i>
                                 }
@@ -1709,6 +1747,7 @@
     private bool _stateMenuOpen;
     private bool _priorityMenuOpen;
     private bool _listMenuOpen;
+    private bool _creatorMenuOpen;
     private string _quickTaskTitle = string.Empty;
     private string _quickNoteText = string.Empty;
     private long? _editingQuickNoteId;
@@ -1840,12 +1879,21 @@
         .OrderBy(x => x)
         .ToArray();
 
+    private IReadOnlyList<string> CreatorOptions => _page.Usuarios
+        .Select(x => x.Nombre)
+        .Append(CurrentUser)
+        .Append(_taskDraft.UsuarioCreador)
+        .Where(x => !string.IsNullOrWhiteSpace(x))
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .OrderBy(x => x)
+        .ToArray();
+
     private IReadOnlyList<AssignedFilterOption> AssignedFilterOptions
         => new[]
             {
                 new AssignedFilterOption(string.Empty, "Todos los asignados", "bi-people"),
                 new AssignedFilterOption(CurrentUser, "Asignadas a mí", "bi-person-check"),
-                new AssignedFilterOption(AssignedByMeFilter, "Asignadas por mí", "bi-send-check")
+                new AssignedFilterOption(AssignedByMeFilter, "Creadas por mí", "bi-send-check")
             }
             .Concat(new[] { new AssignedFilterOption(EveryoneAssignee, EveryoneAssignee, "bi-broadcast") })
             .Concat(_page.Grupos
@@ -1911,7 +1959,7 @@
         if (_selectedListId is int listId && tarea.IdLista != listId)
             return false;
         if (string.Equals(_assignedFilter, AssignedByMeFilter, StringComparison.Ordinal))
-            return string.Equals(tarea.UsuarioAlta, CurrentUser, StringComparison.OrdinalIgnoreCase)
+            return string.Equals(GetTaskCreator(tarea), CurrentUser, StringComparison.OrdinalIgnoreCase)
                 && !AssignmentMatchesFilter(tarea.UsuarioAsignado, CurrentUser);
         if (!string.IsNullOrWhiteSpace(_assignedFilter)
             && !AssignmentMatchesFilter(tarea.UsuarioAsignado, _assignedFilter))
@@ -2080,6 +2128,16 @@
     {
         var assignees = ParseAssignees(assignedTo);
         return assignees.Length == 0 ? "Sin asignar" : string.Join(", ", assignees);
+    }
+
+    private static string GetTaskCreator(TareaItemDto tarea)
+        => string.IsNullOrWhiteSpace(tarea.UsuarioCreador) ? tarea.UsuarioAlta : tarea.UsuarioCreador;
+
+    private static bool ShouldShowCreator(TareaItemDto tarea)
+    {
+        var creator = GetTaskCreator(tarea);
+        return !string.IsNullOrWhiteSpace(creator)
+               && !AssignmentHasExact(tarea.UsuarioAsignado, creator);
     }
 
     private bool IsAssigneeSelected(string assignee)
@@ -2466,6 +2524,7 @@
         {
             IdLista = ResolveTargetListIdForNewTask(),
             Titulo = title,
+            UsuarioCreador = CurrentUser,
             UsuarioAsignado = CurrentUser,
             UsuarioAccion = CurrentUser,
             UsuariosCompartidos = [],
@@ -2492,6 +2551,7 @@
             NormalizeTaskTitle(_taskDraft.Titulo),
             (_taskDraft.Descripcion ?? string.Empty).Trim(),
             _taskDraft.FechaVencimiento?.Date,
+            (_taskDraft.UsuarioCreador ?? string.Empty).Trim(),
             (_taskDraft.UsuarioAsignado ?? string.Empty).Trim(),
             _taskDraft.Estado,
             NormalizePriorityForUi(_taskDraft.Prioridad),
@@ -2516,6 +2576,7 @@
                || !string.Equals(current.Titulo, _taskDraftSnapshot.Titulo, StringComparison.Ordinal)
                || !string.Equals(current.Descripcion, _taskDraftSnapshot.Descripcion, StringComparison.Ordinal)
                || current.FechaVencimiento != _taskDraftSnapshot.FechaVencimiento
+               || !string.Equals(current.UsuarioCreador, _taskDraftSnapshot.UsuarioCreador, StringComparison.OrdinalIgnoreCase)
                || !string.Equals(current.UsuarioAsignado, _taskDraftSnapshot.UsuarioAsignado, StringComparison.OrdinalIgnoreCase)
                || !string.Equals(current.Estado, _taskDraftSnapshot.Estado, StringComparison.Ordinal)
                || !string.Equals(current.Prioridad, _taskDraftSnapshot.Prioridad, StringComparison.Ordinal)
@@ -2532,6 +2593,7 @@
             Titulo = tarea.Titulo,
             Descripcion = tarea.Descripcion,
             FechaVencimiento = tarea.FechaVencimiento,
+            UsuarioCreador = string.IsNullOrWhiteSpace(tarea.UsuarioCreador) ? tarea.UsuarioAlta : tarea.UsuarioCreador,
             UsuarioAsignado = string.IsNullOrWhiteSpace(tarea.UsuarioAsignado) ? CurrentUser : tarea.UsuarioAsignado,
             Estado = tarea.Estado,
             Prioridad = tarea.Prioridad,
@@ -2641,6 +2703,8 @@
     private async Task SaveTaskAsync()
     {
         _taskDraft.UsuarioAccion = CurrentUser;
+        if (string.IsNullOrWhiteSpace(_taskDraft.UsuarioCreador))
+            _taskDraft.UsuarioCreador = CurrentUser;
         _savingTask = true;
         var result = await UiOps.RunAsync(async () =>
         {
@@ -2844,6 +2908,7 @@
             {
                 IdLista = ResolveTargetListIdForNewTask(),
                 Titulo = title,
+                UsuarioCreador = CurrentUser,
                 UsuarioAsignado = CurrentUser,
                 Prioridad = TareaPrioridadKeys.Media,
                 UsuarioAccion = CurrentUser
@@ -3098,6 +3163,13 @@
         _listMenuOpen = next;
     }
 
+    private void ToggleCreatorMenu()
+    {
+        var next = !_creatorMenuOpen;
+        CloseTaskFieldMenus();
+        _creatorMenuOpen = next;
+    }
+
     private void SelectState(string value)
     {
         _taskDraft.Estado = value;
@@ -3116,12 +3188,19 @@
         _listMenuOpen = false;
     }
 
+    private void SelectTaskCreator(string user)
+    {
+        _taskDraft.UsuarioCreador = user;
+        _creatorMenuOpen = false;
+    }
+
     private void CloseTaskFieldMenus()
     {
         _dueDateMenuOpen = false;
         _stateMenuOpen = false;
         _priorityMenuOpen = false;
         _listMenuOpen = false;
+        _creatorMenuOpen = false;
         _assigneeMenuOpen = false;
         _taskSharePanelOpen = false;
     }
@@ -3233,6 +3312,7 @@
         string Titulo,
         string Descripcion,
         DateTime? FechaVencimiento,
+        string UsuarioCreador,
         string UsuarioAsignado,
         string Estado,
         string Prioridad,
