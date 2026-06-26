@@ -23262,12 +23262,8 @@ body:has(.tickets-view-settings-layer) {
 
 .panel-card:has(> .panel-card__header + .usuarios-view-settings)::before,
 .cuentas-modal:has(.usuarios-view-settings)::before {
-    content: "" !important;
-    position: fixed !important;
-    inset: 0 !important;
-    z-index: -1 !important;
-    background: rgba(0, 6, 18, .74) !important;
-    backdrop-filter: blur(7px) saturate(.78) !important;
+    display: none !important;
+    content: none !important;
 }
 
 .panel-card:has(> .panel-card__header + .usuarios-view-settings) > .panel-card__header,
@@ -23409,8 +23405,24 @@ html[data-theme="light"] .cuentas-modal:has(.usuarios-view-settings)::before {
     background: rgba(15, 23, 42, .50) !important;
 }
 
-html:has(.panel-card > .panel-card__header + .usuarios-view-settings),
-body:has(.panel-card > .panel-card__header + .usuarios-view-settings),
+body:has(.panel-card:not(.tickets-view-settings-modal) > .panel-card__header + .usuarios-view-settings)::before,
+body:has(.cuentas-modal .usuarios-view-settings)::before {
+    content: "" !important;
+    position: fixed !important;
+    inset: 0 !important;
+    z-index: 1310 !important;
+    background: rgba(0, 6, 18, .74) !important;
+    backdrop-filter: blur(7px) saturate(.78) !important;
+    pointer-events: none !important;
+}
+
+html[data-theme="light"] body:has(.panel-card:not(.tickets-view-settings-modal) > .panel-card__header + .usuarios-view-settings)::before,
+html[data-theme="light"] body:has(.cuentas-modal .usuarios-view-settings)::before {
+    background: rgba(15, 23, 42, .50) !important;
+}
+
+html:has(.panel-card:not(.tickets-view-settings-modal) > .panel-card__header + .usuarios-view-settings),
+body:has(.panel-card:not(.tickets-view-settings-modal) > .panel-card__header + .usuarios-view-settings),
 html:has(.cuentas-modal .usuarios-view-settings),
 body:has(.cuentas-modal .usuarios-view-settings) {
     overflow: hidden !important;
