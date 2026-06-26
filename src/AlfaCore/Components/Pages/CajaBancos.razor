@@ -1,9 +1,10 @@
-@page "/caja-bancos"
+﻿@page "/caja-bancos"
+@page "/{idweb}/{idbase:int}/caja-bancos"
 @inject AlfaCore.Services.IGestionDashboardService GestionSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.GestionFilterStateService FilterState
 
-<PageTitle>Caja y Bancos | Alfa Gestión</PageTitle>
+<PageTitle>Caja y Bancos | Alfa GestiÃ³n</PageTitle>
 
 <div class="page-grid">
     <section class="page-intro">
@@ -17,15 +18,15 @@
         <div class="panel-card__header">
             <div>
                 <h3 class="panel-card__title">Filtros de caja y bancos</h3>
-                <p class="panel-card__subtitle">Liquidez, cuentas y movimientos financieros sin mezclar lógica de artículos.</p>
+                <p class="panel-card__subtitle">Liquidez, cuentas y movimientos financieros sin mezclar lÃ³gica de artÃ­culos.</p>
             </div>
             <div class="quick-range">
                 <button class="btn btn--ghost" @onclick="HoyAsync">Hoy</button>
                 <button class="btn btn--ghost" @onclick="SemanaAsync">Esta semana</button>
                 <button class="btn btn--ghost" @onclick="MesAsync">Este mes</button>
                 <button class="btn btn--ghost" @onclick="MesAnteriorAsync">Mes anterior</button>
-                <button class="btn btn--ghost" @onclick="UltimosTresAsync">Últimos 3 meses</button>
-                <button class="btn btn--ghost" @onclick="AnioAsync">Año actual</button>
+                <button class="btn btn--ghost" @onclick="UltimosTresAsync">Ãšltimos 3 meses</button>
+                <button class="btn btn--ghost" @onclick="AnioAsync">AÃ±o actual</button>
             </div>
         </div>
 
@@ -88,7 +89,7 @@
 
     @if (_loading)
     {
-        <div class="consultas-loading"><i class="bi bi-hourglass-split"></i> Cargando caja y bancos…</div>
+        <div class="consultas-loading"><i class="bi bi-hourglass-split"></i> Cargando caja y bancosâ€¦</div>
     }
     else
     {
@@ -99,7 +100,7 @@
                 <div>@_feedback.Message</div>
                 @if (_feedback.HasCode)
                 {
-                    <div>Código: @_feedback.Code</div>
+                    <div>CÃ³digo: @_feedback.Code</div>
                 }
                 @if (_feedback.HasSuggestion)
                 {
@@ -117,19 +118,19 @@
 
         <section class="two-grid">
             <article class="panel-card">
-                <LineChart Data="_data.EvolucionDiaria" Titulo="Flujo diario de caja" Subtitulo="Según filtros aplicados" />
+                <LineChart Data="_data.EvolucionDiaria" Titulo="Flujo diario de caja" Subtitulo="SegÃºn filtros aplicados" />
             </article>
             <article class="panel-card">
                 <div class="panel-card__header">
                     <div>
                         <h3 class="panel-card__title">Movimientos recientes</h3>
-                        <p class="panel-card__subtitle">Ingresos y egresos del período filtrado.</p>
+                        <p class="panel-card__subtitle">Ingresos y egresos del perÃ­odo filtrado.</p>
                     </div>
                 </div>
                 <div class="detail-grid">
-                    <div><strong>Ingresos período</strong><br />@FmtMoney(_data.Ingresos7Dias)</div>
-                    <div><strong>Egresos período</strong><br />@FmtMoney(_data.Egresos7Dias)</div>
-                    <div><strong>Neto período</strong><br />@FmtMoney(_data.Ingresos7Dias - _data.Egresos7Dias)</div>
+                    <div><strong>Ingresos perÃ­odo</strong><br />@FmtMoney(_data.Ingresos7Dias)</div>
+                    <div><strong>Egresos perÃ­odo</strong><br />@FmtMoney(_data.Egresos7Dias)</div>
+                    <div><strong>Neto perÃ­odo</strong><br />@FmtMoney(_data.Ingresos7Dias - _data.Egresos7Dias)</div>
                     <div><strong>Liquidez inmediata</strong><br />@FmtMoney(_data.SaldoCajas + _data.SaldoBancos)</div>
                 </div>
             </article>

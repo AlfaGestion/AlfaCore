@@ -1,0 +1,280 @@
+body:has(.novedades-popup-backdrop) {
+    overflow: hidden;
+}
+
+.novedades-popup-backdrop,
+.novedades-popup-backdrop * {
+    box-sizing: border-box;
+}
+
+.novedades-popup-backdrop {
+    position: fixed !important;
+    inset: 0 !important;
+    z-index: 10000 !important;
+    display: grid !important;
+    place-items: center !important;
+    width: 100vw;
+    height: 100dvh;
+    margin: 0 !important;
+    padding: 24px;
+    overflow: hidden;
+    background: rgba(3, 7, 18, .78);
+    backdrop-filter: blur(6px);
+}
+
+.novedades-popup-backdrop > .novedades-popup {
+    --popup-border: rgba(148, 163, 184, .24);
+    --popup-muted: #94a3b8;
+    --popup-accent: #38bdf8;
+    position: relative;
+    display: block;
+    width: min(760px, 100%);
+    max-height: calc(100dvh - 48px);
+    margin: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
+    color: #e5edf7;
+    border: 1px solid var(--popup-border);
+    border-radius: 8px;
+    background: #0b1626;
+    box-shadow: 0 30px 90px rgba(0, 0, 0, .56);
+}
+
+.novedades-popup--verde {
+    --popup-accent: #34d399;
+}
+
+.novedades-popup--cian {
+    --popup-accent: #22d3ee;
+}
+
+.novedades-popup--ambar {
+    --popup-accent: #f59e0b;
+}
+
+.novedades-popup--rojo {
+    --popup-accent: #f87171;
+}
+
+.novedades-popup--grafito {
+    --popup-accent: #cbd5e1;
+}
+
+.novedades-popup header {
+    display: grid;
+    grid-template-columns: 48px minmax(0, 1fr);
+    gap: 14px;
+    padding: 22px;
+    border-bottom: 1px solid var(--popup-border);
+    background: #0f172a;
+}
+
+.novedades-popup__icon {
+    display: inline-grid;
+    place-items: center;
+    width: 48px;
+    height: 48px;
+    border: 1px solid color-mix(in srgb, var(--popup-accent) 45%, transparent);
+    border-radius: 8px;
+    color: var(--popup-accent);
+    background: color-mix(in srgb, var(--popup-accent) 14%, transparent);
+}
+
+.novedades-popup header span {
+    color: var(--popup-accent);
+    font-size: .78rem;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+}
+
+.novedades-popup header h2 {
+    margin: 4px 0 0;
+    color: #f8fafc;
+    font-size: 1.55rem;
+    line-height: 1.2;
+    letter-spacing: 0;
+}
+
+.novedades-popup header p {
+    margin: 6px 0 0;
+    color: var(--popup-muted);
+    font-size: .95rem;
+    line-height: 1.45;
+}
+
+.novedades-popup__cover {
+    display: block;
+    width: 100%;
+    max-height: 260px;
+    object-fit: cover;
+}
+
+.novedades-popup__body {
+    padding: 24px;
+    color: #e5edf7;
+    font-size: .96rem;
+    line-height: 1.65;
+}
+
+.novedades-popup__body :is(h1, h2, h3) {
+    margin: 24px 0 10px;
+    color: #f8fafc;
+    line-height: 1.25;
+    letter-spacing: 0;
+}
+
+.novedades-popup__body h1 {
+    font-size: 1.65rem;
+}
+
+.novedades-popup__body h2 {
+    font-size: 1.35rem;
+}
+
+.novedades-popup__body h3 {
+    font-size: 1.1rem;
+}
+
+.novedades-popup__body p {
+    margin: 8px 0 14px;
+}
+
+.novedades-popup__body img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    border-radius: 8px;
+}
+
+.novedades-popup__body :is(blockquote, pre, .ticket-editor-banner, .ticket-editor-file, .ticket-editor-index) {
+    border: 1px solid var(--popup-border);
+    border-radius: 8px;
+    background: rgba(15, 23, 42, .72);
+}
+
+.novedades-popup__body .ticket-editor-banner {
+    position: relative;
+    display: block !important;
+    width: 100% !important;
+    min-height: 60px;
+    margin: 14px 0;
+    padding: 14px 14px 14px 58px !important;
+}
+
+.novedades-popup__body .ticket-editor-banner__icon {
+    position: absolute !important;
+    top: 12px;
+    left: 12px;
+    display: inline-grid !important;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+    color: var(--popup-accent);
+    background: color-mix(in srgb, var(--popup-accent) 16%, transparent);
+}
+
+.novedades-popup__body .ticket-editor-banner__body {
+    display: block !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    white-space: normal !important;
+    word-break: normal !important;
+    overflow-wrap: break-word !important;
+}
+
+.novedades-popup__body .ticket-editor-banner__body p {
+    margin: 4px 0;
+    white-space: normal !important;
+    word-break: normal !important;
+    overflow-wrap: break-word !important;
+}
+
+.novedades-popup__body .ticket-editor-file {
+    padding: 12px;
+}
+
+.novedades-popup__body .ticket-editor-file--media {
+    display: block;
+    width: fit-content;
+    max-width: 100%;
+    margin: 16px 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+}
+
+.novedades-popup__body .ticket-editor-file--media img {
+    max-width: 100%;
+    height: auto;
+}
+
+.novedades-popup footer {
+    padding: 14px 24px;
+    color: var(--popup-muted);
+    border-top: 1px solid var(--popup-border);
+}
+
+.novedades-popup__actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 16px 24px 22px;
+}
+
+.novedades-popup__error {
+    flex: 1 1 auto;
+    margin: 0;
+    color: #fca5a5;
+    font-size: .88rem;
+}
+
+.novedades-popup__actions .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 38px;
+    padding: 0 14px;
+    border: 1px solid var(--popup-border);
+    border-radius: 8px;
+    color: #e5edf7;
+    font-weight: 800;
+}
+
+.novedades-popup__actions .btn--primary {
+    border-color: color-mix(in srgb, var(--popup-accent) 55%, transparent);
+    background: color-mix(in srgb, var(--popup-accent) 72%, #0f172a);
+}
+
+.novedades-popup__actions .btn--ghost {
+    background: rgba(15, 23, 42, .72);
+}
+
+@media (max-width: 640px) {
+    .novedades-popup-backdrop {
+        padding: 12px;
+    }
+
+    .novedades-popup-backdrop > .novedades-popup {
+        max-height: calc(100dvh - 24px);
+    }
+
+    .novedades-popup header {
+        grid-template-columns: 1fr;
+        padding: 18px;
+    }
+
+    .novedades-popup__body {
+        padding: 18px;
+    }
+
+    .novedades-popup__actions {
+        flex-direction: column;
+        align-items: stretch;
+        padding: 14px 18px 18px;
+    }
+}

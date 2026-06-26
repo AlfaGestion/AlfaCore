@@ -1,0 +1,19 @@
+<span class="@ContainerClass">
+    <img src="@Src"
+         alt="@Alt"
+         class="@ImageClass"
+         width="@Width"
+         height="@Height"
+         style="@ImageStyle" />
+</span>
+
+@code {
+    [Parameter] public string Src { get; set; } = "/logos/Logo.png";
+    [Parameter] public string Alt { get; set; } = "Alfa Gestión";
+    [Parameter] public string ContainerClass { get; set; } = string.Empty;
+    [Parameter] public string ImageClass { get; set; } = string.Empty;
+    [Parameter] public string? Width { get; set; }
+    [Parameter] public string? Height { get; set; }
+
+    private string ImageStyle => string.Empty;
+}

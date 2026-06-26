@@ -1,0 +1,202 @@
+@page "/{idweb}/{idbase:int}/{*path}"
+@using System.Globalization
+@using System.Reflection
+@using System.Text.RegularExpressions
+@using Microsoft.AspNetCore.Components
+@inject ILogger<SaasRouteBridge> Logger
+
+@if (_componentType is not null)
+{
+    <DynamicComponent Type="_componentType" Parameters="_parameters" />
+}
+else
+{
+    <div class="panel-card empty-state">
+        <span class="empty-state__eyebrow">SaaS</span>
+        <h1>Ruta no disponible</h1>
+        <p>@_error</p>
+    </div>
+}
+
+@code {
+    [Parameter] public string? path { get; set; }
+
+    private Type? _componentType;
+    private IDictionary<string, object?> _parameters = new Dictionary<string, object?>();
+    private string _error = string.Empty;
+
+    private static readonly Lazy<IReadOnlyList<RouteCandidate>> RouteCandidates = new(BuildRouteCandidates);
+
+    protected override void OnParametersSet()
+    {
+        ResolveRoute();
+    }
+
+    private void ResolveRoute()
+    {
+        var normalizedPath = NormalizePath(path);
+        if (string.IsNullOrWhiteSpace(normalizedPath))
+        {
+            _componentType = null;
+            _parameters = new Dictionary<string, object?>();
+            _error = "No se encontró una ruta SaaS para mostrar.";
+            return;
+        }
+
+        foreach (var candidate in RouteCandidates.Value)
+        {
+            if (!candidate.TryMatch(normalizedPath, out var parameters))
+                continue;
+
+            _componentType = candidate.ComponentType;
+            _parameters = parameters;
+            _error = string.Empty;
+            return;
+        }
+
+        _componentType = null;
+        _parameters = new Dictionary<string, object?>();
+        _error = $"La ruta '{normalizedPath}' no está registrada en el catálogo de pantallas.";
+        Logger.LogWarning("SaaSRouteBridge: no se pudo resolver la ruta {Route} ({IdWeb}/{IdBase})", normalizedPath, idweb, idbase);
+    }
+
+    private static string NormalizePath(string? value)
+        => string.IsNullOrWhiteSpace(value)
+            ? string.Empty
+            : value.Trim().Trim('/');
+
+    private static IReadOnlyList<RouteCandidate> BuildRouteCandidates()
+    {
+        var assembly = typeof(Program).Assembly;
+
+        return assembly
+            .GetTypes()
+            .Where(type => !type.IsAbstract && typeof(IComponent).IsAssignableFrom(type))
+            .SelectMany(type => type.GetCustomAttributes<RouteAttribute>(inherit: false)
+                .Select(attribute => RouteCandidate.TryCreate(type, attribute.Template)))
+            .Where(candidate => candidate is not null)
+            .Cast<RouteCandidate>()
+            .OrderByDescending(candidate => candidate.Priority)
+            .ToArray();
+    }
+
+    private sealed record RouteCandidate(
+        Type ComponentType,
+        Regex Pattern,
+        IReadOnlyDictionary<string, Func<string, object?>> Converters,
+        int Priority)
+    {
+        public static RouteCandidate? TryCreate(Type componentType, string? template)
+        {
+            if (string.IsNullOrWhiteSpace(template))
+                return null;
+
+            var normalizedTemplate = template.Trim().Trim('/');
+            if (string.IsNullOrWhiteSpace(normalizedTemplate))
+                return null;
+
+            if (string.Equals(normalizedTemplate, "inicio", StringComparison.OrdinalIgnoreCase))
+                return null;
+
+            if (normalizedTemplate.Contains("{idweb}", StringComparison.OrdinalIgnoreCase)
+                || normalizedTemplate.Contains("{idbase", StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+
+            var converters = new Dictionary<string, Func<string, object?>>(StringComparer.OrdinalIgnoreCase);
+            var regex = BuildRegex(normalizedTemplate, converters);
+
+            return new RouteCandidate(componentType, regex, converters, GetPriority(normalizedTemplate));
+        }
+
+        public bool TryMatch(string path, out IDictionary<string, object?> parameters)
+        {
+            parameters = new Dictionary<string, object?>();
+            var match = Pattern.Match(path);
+            if (!match.Success)
+                return false;
+
+            foreach (var converter in Converters)
+            {
+                var raw = match.Groups[converter.Key].Value;
+                parameters[converter.Key] = converter.Value(raw);
+            }
+
+            return true;
+        }
+
+        private static Regex BuildRegex(string template, IDictionary<string, Func<string, object?>> converters)
+        {
+            var segments = template.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            var pattern = "^";
+
+            for (var i = 0; i < segments.Length; i++)
+            {
+                pattern += i == 0 ? string.Empty : "/";
+                var segment = segments[i];
+
+                if (segment.StartsWith('{') && segment.EndsWith('}'))
+                {
+                    var inner = segment[1..^1];
+                    var catchAll = inner.StartsWith("*", StringComparison.Ordinal);
+                    if (catchAll)
+                    {
+                        var catchAllName = inner[1..];
+                        converters[catchAllName] = value => value;
+                        pattern += $"(?<{catchAllName}>.*)";
+                        break;
+                    }
+
+                    var parts = inner.Split(':', 2, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                    var parameterName = parts[0];
+                    var constraint = parts.Length > 1 ? parts[1] : string.Empty;
+
+                    switch (constraint.ToLowerInvariant())
+                    {
+                        case "int":
+                            converters[parameterName] = value => int.Parse(value, NumberStyles.Integer, CultureInfo.InvariantCulture);
+                            pattern += $"(?<{parameterName}>\\d+)";
+                            break;
+                        case "long":
+                            converters[parameterName] = value => long.Parse(value, NumberStyles.Integer, CultureInfo.InvariantCulture);
+                            pattern += $"(?<{parameterName}>\\d+)";
+                            break;
+                        case "guid":
+                            converters[parameterName] = value => Guid.Parse(value);
+                            pattern += $"(?<{parameterName}>[0-9a-fA-F-]{{36}})";
+                            break;
+                        default:
+                            converters[parameterName] = value => value;
+                            pattern += $"(?<{parameterName}>[^/]+)";
+                            break;
+                    }
+                }
+                else
+                {
+                    pattern += Regex.Escape(segment);
+                }
+            }
+
+            pattern += "$";
+            return new Regex(pattern, RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        }
+
+        private static int GetPriority(string template)
+        {
+            var score = 0;
+            foreach (var segment in template.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                if (segment.StartsWith('{') && segment.EndsWith('}'))
+                {
+                    score += 1;
+                    continue;
+                }
+
+                score += 10 + segment.Length;
+            }
+
+            return score;
+        }
+    }
+}

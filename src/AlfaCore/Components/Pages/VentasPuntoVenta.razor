@@ -1,4 +1,5 @@
-@page "/ventas/punto-venta"
+﻿@page "/ventas/punto-venta"
+@page "/{idweb}/{idbase:int}/ventas/punto-venta"
 @inject AlfaCore.Services.IPuntoVentaService PuntoVentaSvc
 @inject IJSRuntime Js
 
@@ -274,8 +275,7 @@
         border-radius: 999px;
         background: #ffffff;
         color: #5c94cf;
-        font-size: 2.6rem;
-        font-weight: 900;
+        font-size: 2.4rem;
     }
 
     .pos-charge__label {
@@ -1938,6 +1938,80 @@
             font-size: 1.5rem;
         }
     }
+
+    /* === Tema claro: overrides para valores hardcodeados en oscuro === */
+    html[data-theme="light"] .pos-topbar {
+        background: var(--color-panel-strong);
+        box-shadow: 0 1px 0 var(--color-border);
+    }
+
+    html[data-theme="light"] .pos-catalog__toolbar,
+    html[data-theme="light"] .pos-catalog__meta {
+        background: var(--color-panel);
+        border-bottom: 1px solid var(--color-border);
+    }
+
+    html[data-theme="light"] .pos-sidebar__checkout {
+        background: var(--color-panel);
+        border-top: 1px solid var(--color-border);
+    }
+
+    html[data-theme="light"] .pos-sidebar__empty {
+        background: rgba(100, 116, 139, 0.05);
+    }
+
+    html[data-theme="light"] .pos-charge__icon {
+        background: var(--color-primary);
+        color: #ffffff;
+    }
+
+    html[data-theme="light"] .pos-item-modal__danger {
+        color: #dc2626;
+        background: rgba(220, 38, 38, 0.06);
+        border-color: rgba(220, 38, 38, 0.18);
+    }
+
+    html[data-theme="light"] .pos-sidebar__danger,
+    html[data-theme="light"] .pos-sidebar__cash-actions .pos-sidebar__danger {
+        color: #dc2626;
+        border-color: rgba(220, 38, 38, 0.2);
+        background: rgba(220, 38, 38, 0.04);
+    }
+
+    html[data-theme="light"] .pos-settings-modal__section {
+        background: rgba(100, 116, 139, 0.05);
+    }
+
+    html[data-theme="light"] .pos-settings-modal__feedback {
+        color: #166534;
+    }
+
+    html[data-theme="light"] .pos-settings-modal__feedback--error,
+    html[data-theme="light"] .pos-charge-modal__feedback--error,
+    html[data-theme="light"] .pos-receipt-modal__mail-feedback--error {
+        color: #991b1b;
+    }
+
+    html[data-theme="light"] .pos-charge-modal__feedback {
+        color: #166534;
+    }
+
+    html[data-theme="light"] .pos-success-banner {
+        color: #166534;
+    }
+
+    html[data-theme="light"] .pos-success-banner button {
+        color: #166534;
+        border-color: rgba(22, 101, 52, 0.2);
+    }
+
+    html[data-theme="light"] .pos-receipt-modal {
+        background: var(--color-panel-strong);
+    }
+
+    html[data-theme="light"] .pos-receipt-modal__mail-feedback--ok {
+        color: #166534;
+    }
 </style>
 
 <script>
@@ -2053,7 +2127,7 @@
             <section class="pos-loading" style="padding-top:0.75rem;">
                 <div class="pos-charge-modal__feedback pos-success-banner">
                     <span>@_chargeSuccess</span>
-                    <button type="button" @onclick="DismissChargeSuccess">X</button>
+                    <button type="button" @onclick="DismissChargeSuccess"><i class="bi bi-x-lg"></i></button>
                 </div>
             </section>
         }
@@ -2097,7 +2171,7 @@
 
                     <div class="pos-sidebar__footer">
                         <button type="button" class="pos-charge" @onclick="OpenChargeModalAsync" disabled="@(!_cartItems.Any())">
-                            <span class="pos-charge__icon">$</span>
+                            <i class="bi bi-cash-stack pos-charge__icon"></i>
                             <span class="pos-charge__label">Cobrar</span>
                         </button>
 
@@ -2256,7 +2330,7 @@
                 <h3>Cobranza</h3>
                 <p>Registrá los medios de pago y confirmá la venta actual sin salir del facturador.</p>
             </div>
-            <button type="button" class="pos-charge-modal__close" @onclick="CloseChargeModal">X</button>
+            <button type="button" class="pos-charge-modal__close" @onclick="CloseChargeModal"><i class="bi bi-x-lg"></i></button>
         </div>
 
         @if (!string.IsNullOrWhiteSpace(_chargeError))
@@ -2331,7 +2405,7 @@
                                     <span>@line.CodigoMedioPago</span>
                                 </div>
                                 <strong>@FmtMoney(line.Importe)</strong>
-                                <button type="button" @onclick="() => RemovePaymentLine(line)" @onclick:stopPropagation="true" @onclick:preventDefault="true">X</button>
+                                <button type="button" @onclick="() => RemovePaymentLine(line)" @onclick:stopPropagation="true" @onclick:preventDefault="true"><i class="bi bi-x-lg"></i></button>
                             </div>
                         }
                     </div>

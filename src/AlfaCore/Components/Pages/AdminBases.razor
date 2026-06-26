@@ -1,0 +1,270 @@
+﻿@page "/admin/bases"
+@page "/{idweb}/{idbase:int}/admin/bases"
+@layout AlfaCore.Components.Layout.MainLayout
+@inject AlfaCore.Services.IAppUserSessionService AppUserSession
+@inject AlfaCore.Services.ICentralAdminService AdminSvc
+@inject AlfaCore.Services.IRouteContextService RouteContext
+@inject NavigationManager Nav
+@using Microsoft.AspNetCore.Components
+
+<PageTitle>Admin bases | AlfaCore</PageTitle>
+
+<div class="panel-card">
+    <div class="panel-card__header">
+        <div>
+            <h1 class="panel-card__title">Bases centrales</h1>
+            <p class="panel-card__subtitle">Alta y ediciÃ³n de bases en ALFA_CENTRAL.</p>
+        </div>
+        <div class="d-flex gap-2">
+            <button type="button" class="btn btn-outline-light" @onclick="GoHome">Inicio</button>
+            <button type="button" class="btn btn-primary" @onclick="StartNew">Nueva base</button>
+        </div>
+    </div>
+
+    @if (_loading)
+    {
+        <p>Cargando bases...</p>
+    }
+    else if (!IsSuperAdmin)
+    {
+        <div class="editor-msg editor-msg--warning">
+            <strong>Acceso restringido</strong>
+            <p>Solo los superadmin pueden ver esta secciÃ³n.</p>
+        </div>
+    }
+    else
+    {
+        @if (!string.IsNullOrWhiteSpace(Cliente))
+        {
+            <div class="editor-msg editor-msg--info">
+                <strong>Filtro activo</strong>
+                <p>Mostrando bases del cliente <strong>@Cliente</strong>.</p>
+            </div>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(_message))
+        {
+            <div class="editor-msg editor-msg--success">
+                <strong>Listo</strong>
+                <p>@_message</p>
+            </div>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(_error))
+        {
+            <div class="editor-msg editor-msg--warning">
+                <strong>No se pudo guardar</strong>
+                <p>@_error</p>
+            </div>
+        }
+
+        <div class="row g-3">
+            <div class="col-12 col-xl-5">
+                <div class="panel-card">
+                    <div class="panel-card__header">
+                        <div>
+                            <h2 class="panel-card__title">@(_editing ? $"Editar base #{_form.IdBase}" : "Nueva base")</h2>
+                            <p class="panel-card__subtitle">No se muestra ni registra la contraseÃ±a SQL.</p>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Cliente</label>
+                        <select class="form-select" @bind="_form.IdCliente">
+                            <option value="">SeleccionÃ¡ un cliente</option>
+                            @foreach (var client in _clients)
+                            {
+                                <option value="@client.IdCliente">@client.IdCliente - @client.RazonSocial</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Nombre</label>
+                        <input class="form-control" @bind="_form.Nombre" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Servidor</label>
+                        <input class="form-control" @bind="_form.DbServer" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Base de datos</label>
+                        <input class="form-control" @bind="_form.DbName" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Usuario SQL</label>
+                        <input class="form-control" @bind="_form.DbUser" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">ContraseÃ±a SQL</label>
+                        <input class="form-control" type="password" @bind="_form.DbPassword" placeholder="Dejala vacÃ­a para conservar la actual al editar" />
+                    </div>
+
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-primary" @onclick="SaveAsync">@(_editing ? "Guardar cambios" : "Crear base")</button>
+                        <button type="button" class="btn btn-outline-light" @onclick="StartNew">Limpiar</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-12 col-xl-7">
+                <div class="panel-card">
+                    <div class="panel-card__header">
+                        <div>
+                            <h2 class="panel-card__title">Listado</h2>
+                            <p class="panel-card__subtitle">Bases registradas en la central.</p>
+                        </div>
+                    </div>
+
+                    @if (FilteredItems.Count == 0)
+                    {
+                        <p>No hay bases para mostrar.</p>
+                    }
+                    else
+                    {
+                        <div class="table-responsive">
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Cliente</th>
+                                        <th>Nombre</th>
+                                        <th>Servidor</th>
+                                        <th>Base</th>
+                                        <th>Usuario</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var item in FilteredItems)
+                                    {
+                                        <tr>
+                                            <td>@item.IdBase</td>
+                                            <td>@item.IdCliente</td>
+                                            <td>@item.Nombre</td>
+                                            <td>@item.DbServer</td>
+                                            <td>@item.DbName</td>
+                                            <td>@item.DbUser</td>
+                                            <td class="text-end">
+                                                <button type="button" class="btn btn-sm btn-outline-light" @onclick="() => EditAsync(item.IdBase)">Editar</button>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private readonly CrearBaseRequest _form = new();
+    private readonly List<AlfaCore.Models.AdminBaseDto> _items = [];
+    private readonly List<AlfaCore.Models.AdminClienteDto> _clients = [];
+    [SupplyParameterFromQuery(Name = "cliente")]
+    public string? Cliente { get; set; }
+
+    private bool _loading = true;
+    private bool _editing;
+    private bool IsSuperAdmin => AppUserSession.CurrentUser?.SuperAdmin == true;
+    private string _message = string.Empty;
+    private string _error = string.Empty;
+
+    private IReadOnlyList<AlfaCore.Models.AdminBaseDto> FilteredItems => string.IsNullOrWhiteSpace(Cliente)
+        ? _items
+        : _items.Where(item => string.Equals(item.IdCliente, Cliente, StringComparison.OrdinalIgnoreCase)).ToArray();
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!IsSuperAdmin)
+        {
+            _loading = false;
+            return;
+        }
+
+        await LoadAsync();
+    }
+
+    private void GoHome()
+        => Nav.NavigateTo(RouteContext.BuildRoute("/admin"));
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try
+        {
+            _items.Clear();
+            _clients.Clear();
+            _items.AddRange(await AdminSvc.GetBasesAsync());
+            _clients.AddRange(await AdminSvc.GetClientesAsync());
+            if (!string.IsNullOrWhiteSpace(Cliente) && string.IsNullOrWhiteSpace(_form.IdCliente))
+                _form.IdCliente = Cliente.Trim();
+        }
+        catch (Exception ex)
+        {
+            _error = ex is AlfaCore.Services.AppUserFacingException userFacing
+                ? userFacing.UserMessage
+                : ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void StartNew()
+    {
+        _editing = false;
+        _form.IdBase = null;
+        _form.IdCliente = string.Empty;
+        _form.Nombre = string.Empty;
+        _form.DbServer = string.Empty;
+        _form.DbName = string.Empty;
+        _form.DbUser = string.Empty;
+        _form.DbPassword = string.Empty;
+    }
+
+    private async Task EditAsync(int idBase)
+    {
+        var item = await AdminSvc.GetBaseAsync(idBase);
+        if (item is null)
+            return;
+
+        _editing = true;
+        _message = string.Empty;
+        _error = string.Empty;
+        _form.IdBase = item.IdBase;
+        _form.IdCliente = item.IdCliente;
+        _form.Nombre = item.Nombre;
+        _form.DbServer = item.DbServer;
+        _form.DbName = item.DbName;
+        _form.DbUser = item.DbUser;
+        _form.DbPassword = string.Empty;
+    }
+
+    private async Task SaveAsync()
+    {
+        _message = string.Empty;
+        _error = string.Empty;
+
+        try
+        {
+            if (_editing)
+                await AdminSvc.UpdateBaseAsync(_form);
+            else
+                await AdminSvc.CreateBaseAsync(_form);
+
+            await LoadAsync();
+            _message = _editing ? "Base actualizada." : "Base creada.";
+            StartNew();
+        }
+        catch (Exception ex)
+        {
+            _error = ex is AlfaCore.Services.AppUserFacingException userFacing
+                ? userFacing.UserMessage
+                : ex.Message;
+        }
+    }
+}

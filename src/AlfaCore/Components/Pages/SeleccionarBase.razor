@@ -1,0 +1,318 @@
+@page "/seleccionar-base"
+@page "/{idweb}"
+@layout AlfaCore.Components.Layout.PublicLayout
+@inject AlfaCore.Services.IAppUserSessionService AppUserSession
+@inject AlfaCore.Services.ISessionService SessionSvc
+@inject AlfaCore.Services.ILegacyBaseUserSessionService LegacyBaseUserSession
+@inject AlfaCore.Services.ICentralClientesService CentralClientesSvc
+@inject AlfaCore.Services.ICentralBasesService CentralBasesSvc
+@inject AlfaCore.Services.IAppEventService AppEvents
+@inject AlfaCore.Services.IAppModeService AppMode
+@inject ILogger<SeleccionarBase> Logger
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<PageTitle>Seleccionar base | AlfaCore</PageTitle>
+
+<div class="auth-page">
+    <section class="auth-shell auth-shell--selection">
+        <aside class="auth-hero">
+            <div class="auth-hero__brand">
+                <img class="central-brand-logo auth-hero__logo auth-hero__logo--selection"
+                     src="/logos/LogoGrandeAzul.png"
+                     alt="Alfa Gestión"
+                     loading="eager"
+                     decoding="async" />
+            </div>
+
+            <div class="auth-hero__copy">
+                <h2 class="auth-hero__title">Seleccioná la base para trabajar</h2>
+                <p class="auth-hero__text">
+                    @if (AppUserSession.CurrentUser is null)
+                    {
+                        <span>Primero iniciá sesión para ver las bases disponibles.</span>
+                    }
+                    else
+                    {
+                        <span>@AppUserSession.CurrentUser.RazonSocial</span>
+                    }
+                </p>
+            </div>
+
+            <ul class="auth-hero__points">
+                <li><i class="bi bi-check-circle-fill"></i> Una base por cliente o varias si el cliente lo necesita</li>
+                <li><i class="bi bi-check-circle-fill"></i> Acceso directo desde la URL</li>
+                <li><i class="bi bi-check-circle-fill"></i> Cambio seguro sin tocar credenciales</li>
+            </ul>
+
+            <div class="auth-hero__note">
+                @_bases.Count base(s) disponibles
+            </div>
+        </aside>
+
+        <section class="auth-form-panel auth-form-panel--selection">
+            <div class="auth-form-panel__glow auth-form-panel__glow--one" aria-hidden="true"></div>
+            <div class="auth-form-panel__glow auth-form-panel__glow--two" aria-hidden="true"></div>
+
+            <div class="auth-form-panel__surface auth-form-panel__surface--selection">
+                <header class="auth-form-panel__header">
+                    <h1 class="auth-card__title">Elegí una base</h1>
+                    <p class="auth-card__subtitle">Usá la base correcta para entrar con el cliente actual.</p>
+                </header>
+
+                @if (!string.IsNullOrWhiteSpace(_error))
+                {
+                    <div class="editor-msg editor-msg--error auth-card__error">
+                        <strong>No se pudo continuar</strong>
+                        <p>@_error</p>
+                    </div>
+                }
+
+                @if (_loading)
+                {
+                    <div class="auth-loading">
+                        <i class="bi bi-hourglass-split"></i>
+                        <span>Cargando bases...</span>
+                    </div>
+                }
+                else
+                {
+                    <div class="auth-base-search">
+                        <input type="text"
+                               class="base-search-input auth-base-search__input"
+                               placeholder="Buscar base..."
+                               @bind="_baseSearch"
+                               @bind:event="oninput" />
+                    </div>
+
+                    @if (FilteredBases.Count == 0)
+                    {
+                        <div class="auth-base-empty">
+                            No se encontraron bases.
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="auth-base-grid">
+                            @foreach (var item in FilteredBases)
+                            {
+                                <article class="auth-base-card @(item.Activa ? "auth-base-card--active" : string.Empty)">
+                                    <div class="auth-base-card__content">
+                                        <p class="auth-base-card__name">@item.Nombre</p>
+                                        <p class="auth-base-card__meta">@item.Servidor Â· @item.BaseDatos</p>
+                                        <small class="auth-base-card__id">Base #@item.BaseId</small>
+                                    </div>
+                                    <button type="button"
+                                            class="auth-base-card__action @(item.Activa ? "auth-base-card__action--active" : string.Empty)"
+                                            @onclick="() => SelectBaseAsync(item)">
+                                        @(item.Activa ? "Activa" : "Seleccionar")
+                                    </button>
+                                </article>
+                            }
+                        </div>
+                    }
+                }
+            </div>
+        </section>
+    </section>
+</div>
+
+@code {
+    private IReadOnlyList<SessionDto> _bases = [];
+    private bool _loading = true;
+    private string _error = string.Empty;
+    private string _baseSearch = string.Empty;
+
+    protected override void OnInitialized()
+    {
+        Logger.LogInformation(
+            "SeleccionarBase: initialized. Uri={Uri}, IdWeb={IdWeb}, SaaS={SaaS}, Auth={Auth}",
+            Nav.Uri,
+            idweb ?? "(sin ruta)",
+            AppMode.IsSaaSMode,
+            AppUserSession.IsAuthenticated);
+
+        if (!AppMode.IsSaaSMode)
+            Nav.NavigateTo("/", replace: true);
+    }
+
+    private IReadOnlyList<SessionDto> FilteredBases => string.IsNullOrWhiteSpace(_baseSearch)
+        ? _bases
+        : _bases.Where(item =>
+                Contains(item.Nombre, _baseSearch) ||
+                Contains(item.BaseDatos, _baseSearch) ||
+                Contains(item.Servidor, _baseSearch))
+            .ToArray();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadBasesAsync();
+    }
+
+    private async Task LoadBasesAsync()
+    {
+        _loading = true;
+        _error = string.Empty;
+
+        try
+        {
+            if (AppMode.IsSaaSMode)
+            {
+                var routeIdWeb = NormalizeRouteIdWeb(idweb) ?? NormalizeRouteIdWeb(AppUserSession.CurrentUser?.IdWeb);
+                if (string.IsNullOrWhiteSpace(routeIdWeb))
+                {
+                    _error = "No se pudo resolver el cliente desde la URL.";
+                    Logger.LogWarning("SeleccionarBase: no se pudo resolver cliente desde la URL. Uri={Uri}", Nav.Uri);
+                    return;
+                }
+
+                var client = await CentralClientesSvc.GetByIdWebAsync(routeIdWeb);
+                if (client is null)
+                {
+                    _error = $"No se encontró el cliente '{routeIdWeb}'.";
+                    Logger.LogWarning("SeleccionarBase: cliente no encontrado para IdWeb={IdWeb}. Uri={Uri}", routeIdWeb, Nav.Uri);
+                    return;
+                }
+
+                _bases = (await CentralBasesSvc.GetByClienteAsync(client.IdCliente, AppUserSession.CurrentUser?.SuperAdmin == true))
+                    .Select(MapBase)
+                    .ToArray();
+            }
+            else
+            {
+                if (!AppUserSession.IsAuthenticated)
+                {
+                    var returnUrl = "/" + Nav.ToBaseRelativePath(Nav.Uri).Split('?')[0].Split('#')[0].TrimStart('/');
+                    Nav.NavigateTo($"/login?returnUrl={Uri.EscapeDataString(returnUrl)}", replace: true);
+                    return;
+                }
+
+                _bases = SessionSvc.GetAllSessions();
+            }
+
+            Logger.LogInformation(
+                "SeleccionarBase: bases cargadas. User={User}, BaseCount={Count}, RouteIdWeb={IdWeb}",
+                AppUserSession.CurrentUser?.UserName ?? "(sin usuario)",
+                _bases.Count,
+                idweb ?? "(sin ruta)");
+
+            if (_bases.Count == 1)
+                await SelectBaseAsync(_bases[0]);
+        }
+        catch (NavigationException)
+        {
+            return;
+        }
+        catch (Exception ex)
+        {
+            _error = "No se pudo cargar la lista de bases.";
+            await AppEvents.LogErrorAsync("Central", "SeleccionarBase.LoadBases", ex, "No se pudo cargar la lista de bases.", ct: default);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task SelectBaseAsync(SessionDto item)
+    {
+        try
+        {
+            _loading = true;
+            _error = string.Empty;
+
+            Logger.LogInformation(
+                "SeleccionarBase: seleccionando base. BaseId={BaseId}, Nombre={Nombre}, Servidor={Servidor}, DbName={DbName}",
+                item.BaseId,
+                item.Nombre,
+                item.Servidor,
+                item.BaseDatos);
+
+            var routeIdWeb = NormalizeRouteIdWeb(idweb) ?? NormalizeRouteIdWeb(AppUserSession.CurrentUser?.IdWeb);
+            var destination = !string.IsNullOrWhiteSpace(routeIdWeb)
+                ? $"/{Uri.EscapeDataString(routeIdWeb)}/{item.BaseId}"
+                : "/seleccionar-base";
+
+            if (AppMode.IsSaaSMode && !AppUserSession.IsAuthenticated)
+            {
+                Logger.LogInformation("SeleccionarBase: contexto SaaS sin sesion; derivando a login con returnUrl={Destino}", destination);
+                Nav.NavigateTo($"/login?returnUrl={Uri.EscapeDataString(destination)}", replace: true);
+                return;
+            }
+
+            SessionSvc.SwitchSession(item.Id);
+            try
+            {
+                await JS.InvokeVoidAsync("alfaCoreSqlSession.setActive", item.Id.ToString());
+            }
+            catch
+            {
+            }
+
+            AppUserSession.HandleSqlSessionChanged();
+
+            var loginCentral = AppUserSession.CurrentUser?.CentralLogin ?? string.Empty;
+            var internalSession = await LegacyBaseUserSession.ResolveByCentralLoginAsync(loginCentral);
+            Logger.LogInformation(
+                "SeleccionarBase: busqueda TA_USUARIOS para {LoginCentral}: {Resultado}",
+                loginCentral,
+                internalSession is null ? "sin coincidencia" : "coincidencia");
+
+            if (internalSession is not null)
+                AppUserSession.AdoptInternalUser(internalSession);
+
+            Logger.LogInformation("SeleccionarBase: destino posterior a la seleccion de base: {Destino}", destination);
+            Nav.NavigateTo(destination, replace: true);
+        }
+        catch (Exception ex)
+        {
+            _error = "No se pudo activar la base seleccionada.";
+            await AppEvents.LogErrorAsync(
+                "Central",
+                "SeleccionarBase.SelectBase",
+                ex,
+                "No se pudo activar la base seleccionada.",
+                new { item.BaseId, item.Nombre, item.Servidor, item.BaseDatos },
+                AppEventSeverity.Error,
+                default);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private static bool Contains(string? value, string search)
+        => !string.IsNullOrWhiteSpace(value)
+           && value.Contains(search, StringComparison.OrdinalIgnoreCase);
+
+    private static string? NormalizeRouteIdWeb(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        var trimmed = value.Trim();
+        return trimmed.Length == 0 ? null : trimmed;
+    }
+
+    private static SessionDto MapBase(BaseCentralDto baseDto)
+        => new()
+        {
+            Id = BuildGuidFromBaseId(baseDto.IdBase),
+            BaseId = baseDto.IdBase,
+            Nombre = baseDto.Nombre,
+            Servidor = baseDto.DbServer,
+            BaseDatos = baseDto.DbName,
+            Usuario = baseDto.DbUser,
+            Password = baseDto.DbPassword,
+            TrustServerCertificate = true,
+            Activa = false
+        };
+
+    private static Guid BuildGuidFromBaseId(int baseId)
+    {
+        Span<byte> bytes = stackalloc byte[16];
+        BitConverter.GetBytes(baseId).CopyTo(bytes);
+        return new Guid(bytes);
+    }
+}

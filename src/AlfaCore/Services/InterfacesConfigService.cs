@@ -7,9 +7,7 @@ using System.Runtime.InteropServices;
 namespace AlfaCore.Services;
 
 public sealed class InterfacesConfigService(
-    IConfiguration configuration,
     ISessionService sessionService,
-    IHttpContextAccessor httpContextAccessor,
     IAppEventService appEvents) : IInterfacesConfigService
 {
     private const string ConfigGroup = "INTERFACES";
@@ -27,18 +25,11 @@ public sealed class InterfacesConfigService(
     {
         get
         {
-            var configured = configuration.GetConnectionString("AlfaGestion") ?? string.Empty;
-            if (httpContextAccessor.HttpContext is null && !string.IsNullOrWhiteSpace(configured))
-                return configured;
-
             var sessionConnection = sessionService.GetConnectionString();
             if (!string.IsNullOrWhiteSpace(sessionConnection))
                 return sessionConnection;
 
-            if (!string.IsNullOrWhiteSpace(configured))
-                return configured;
-
-            throw new InvalidOperationException("No se configuró la cadena de conexión 'ConnectionStrings:AlfaGestion'.");
+            throw new InvalidOperationException("No hay una sesión SQL activa seleccionada.");
         }
     }
 

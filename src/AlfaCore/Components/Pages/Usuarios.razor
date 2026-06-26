@@ -1,4 +1,5 @@
-@page "/usuarios"
+﻿@page "/usuarios"
+@page "/{idweb}/{idbase:int}/usuarios"
 @using AlfaCore.Models
 @using AlfaCore.Services
 @using Microsoft.AspNetCore.Components.Forms
@@ -8,13 +9,13 @@
 @inject IJSRuntime Js
 @implements IDisposable
 
-<PageTitle>Usuarios | Alfa Gestión</PageTitle>
+<PageTitle>Usuarios | Alfa GestiÃ³n</PageTitle>
 
 <div class="page-grid">
     <section class="page-intro">
         <div>
             <h2 class="page-intro__title">Usuarios</h2>
-            <p class="page-intro__text">Administrá usuarios y grupos del sistema actual, con baja lógica, contraseña compatible e imagen opcional por archivo.</p>
+            <p class="page-intro__text">AdministrÃ¡ usuarios y grupos del sistema actual, con baja lÃ³gica, contraseÃ±a compatible e imagen opcional por archivo.</p>
         </div>
         <div class="actions">
             <button type="button" class="btn btn--primary" @onclick="BeginNew">
@@ -39,7 +40,7 @@
                     }
                     @if (_feedback.HasCode)
                     {
-                        <small>Código: @_feedback.Code</small>
+                        <small>CÃ³digo: @_feedback.Code</small>
                     }
                 </div>
             </div>
@@ -50,7 +51,7 @@
         <div class="panel-card__header">
             <div>
                 <h3 class="panel-card__title">Filtros</h3>
-                <p class="panel-card__subtitle">La búsqueda trabaja sobre el sistema fijo `CN000PR` y lista activos por defecto.</p>
+                <p class="panel-card__subtitle">La bÃºsqueda trabaja sobre el sistema fijo `CN000PR` y lista activos por defecto.</p>
             </div>
         </div>
 
@@ -94,8 +95,8 @@
         <section class="panel-card">
             <div class="panel-card__header">
                 <div>
-                    <h3 class="panel-card__title">Configuración de vista</h3>
-                    <p class="panel-card__subtitle">Elegí columnas visibles, orden y agrupación para tu grilla de usuarios.</p>
+                    <h3 class="panel-card__title">ConfiguraciÃ³n de vista</h3>
+                    <p class="panel-card__subtitle">ElegÃ­ columnas visibles, orden y agrupaciÃ³n para tu grilla de usuarios.</p>
                 </div>
             </div>
 
@@ -106,7 +107,7 @@
                         <option value="@UsuariosViewGroupKeys.None">Sin agrupar</option>
                         <option value="@UsuariosViewGroupKeys.Tipo">Tipo</option>
                         <option value="@UsuariosViewGroupKeys.Activo">Activo</option>
-                        <option value="@UsuariosViewGroupKeys.CambiarClave">Clave próximo inicio</option>
+                        <option value="@UsuariosViewGroupKeys.CambiarClave">Clave prÃ³ximo inicio</option>
                     </select>
                 </div>
 
@@ -148,9 +149,24 @@
             <div class="panel-card__header">
                 <div>
                     <h3 class="panel-card__title">@(_isNewMode ? "Nuevo usuario" : $"Editar {_form.Nombre}")</h3>
-                    <p class="panel-card__subtitle">@(_isNewMode ? "Completá los datos básicos del usuario o grupo." : $"Sistema fijo: CN000PR · Estado: {(_selectedActivo ? "Activo" : "Inactivo")}")</p>
+                    <p class="panel-card__subtitle">@(_isNewMode ? "CompletÃ¡ los datos bÃ¡sicos del usuario o grupo." : $"Sistema fijo: CN000PR Â· Estado: {(_selectedActivo ? "Activo" : "Inactivo")}")</p>
                 </div>
                 <div class="actions">
+                    <button type="button" class="btn btn--primary" @onclick="GuardarAsync" disabled="@_saving">
+                        <i class="bi bi-floppy"></i>
+                        <span>@(_saving ? "Guardando..." : "Guardar usuario")</span>
+                    </button>
+                    <button type="button" class="btn btn--ghost" @onclick="ResetForm" disabled="@_saving">
+                        <i class="bi bi-eraser"></i>
+                        <span>@(_isNewMode ? "Limpiar" : "Revertir")</span>
+                    </button>
+                    @if (!_isNewMode && _selectedActivo)
+                    {
+                        <button type="button" class="btn btn--ghost usuarios-btn-danger" @onclick="DarDeBajaAsync" disabled="@_saving">
+                            <i class="bi bi-person-dash"></i>
+                            <span>Dar de baja</span>
+                        </button>
+                    }
                     <button type="button" class="btn btn--ghost" @onclick="CerrarEditor" disabled="@_saving">
                         <i class="bi bi-arrow-left"></i>
                         <span>Volver al listado</span>
@@ -237,7 +253,7 @@
                         </label>
                         <label class="checkbox">
                             <input type="checkbox" @bind="_form.CambiarProximoInicio" disabled="@(_saving || _form.EsGrupo)" />
-                            <span>Cambiar contraseña en el próximo inicio</span>
+                            <span>Cambiar contraseÃ±a en el prÃ³ximo inicio</span>
                         </label>
                     </div>
                     @if (HasFieldError("cambiar-proximo-inicio"))
@@ -248,7 +264,7 @@
                     @if (_form.EsGrupo)
                     {
                         <div class="usuarios-empty">
-                            Los grupos no usan contraseña en esta primera versión.
+                            Los grupos no usan contraseÃ±a en esta primera versiÃ³n.
                         </div>
                     }
                     else
@@ -256,8 +272,8 @@
                         <div class="usuarios-password-card">
                             <div class="usuarios-password-card__head">
                                 <div>
-                                    <span class="interfaces-detail__label">Contraseña</span>
-                                    <p class="panel-card__subtitle">Compatible con la codificación actual del sistema de escritorio.</p>
+                                    <span class="interfaces-detail__label">ContraseÃ±a</span>
+                                    <p class="panel-card__subtitle">Compatible con la codificaciÃ³n actual del sistema de escritorio.</p>
                                 </div>
                                 <button type="button" class="btn btn--ghost btn--sm" @onclick="TogglePasswordVisibility">
                                     <i class="bi @(_showPassword ? "bi-eye-slash" : "bi-eye")"></i>
@@ -266,7 +282,7 @@
                             </div>
                             <div class="usuarios-editor__grid">
                                 <div class="field">
-                                    <label>Contraseña</label>
+                                    <label>ContraseÃ±a</label>
                                     <input type="@(_showPassword ? "text" : "password")"
                                            class="@GetFieldInputClass("contrasena")"
                                            maxlength="13"
@@ -278,7 +294,7 @@
                                     }
                                 </div>
                                 <div class="field">
-                                    <label>Confirmación</label>
+                                    <label>ConfirmaciÃ³n</label>
                                     <input type="@(_showPassword ? "text" : "password")"
                                            class="@GetFieldInputClass("confirmacion")"
                                            maxlength="13"
@@ -293,29 +309,11 @@
                         </div>
                     }
 
-                    <div class="actions usuarios-editor__actions">
-                        <button type="button" class="btn btn--primary" @onclick="GuardarAsync" disabled="@_saving">
-                            <i class="bi bi-floppy"></i>
-                            <span>@(_saving ? "Guardando..." : "Guardar usuario")</span>
-                        </button>
-                        <button type="button" class="btn btn--ghost" @onclick="ResetForm" disabled="@_saving">
-                            <i class="bi bi-eraser"></i>
-                            <span>@(_isNewMode ? "Limpiar" : "Revertir")</span>
-                        </button>
-                        @if (!_isNewMode && _selectedActivo)
-                        {
-                            <button type="button" class="btn btn--ghost usuarios-btn-danger" @onclick="DarDeBajaAsync" disabled="@_saving">
-                                <i class="bi bi-person-dash"></i>
-                                <span>Dar de baja</span>
-                            </button>
-                        }
-                    </div>
-
                     @if (!_isNewMode)
                     {
                         <div class="usuarios-editor__meta">
                             <span>Alta: @FormatDate(_selectedAlta)</span>
-                            <span>Modificación: @FormatDate(_selectedModificacion)</span>
+                            <span>ModificaciÃ³n: @FormatDate(_selectedModificacion)</span>
                         </div>
                     }
                 </div>
@@ -331,13 +329,13 @@
             <div class="panel-card__header">
                 <div>
                     <h3 class="panel-card__title">Usuarios</h3>
-                    <p class="panel-card__subtitle">@_pagedTotal registro(s) · Página @_pageNumber de @_totalPages · podés abrir la ficha con el botón editar o con doble clic.</p>
+                    <p class="panel-card__subtitle">@_pagedTotal registro(s) Â· PÃ¡gina @_pageNumber de @_totalPages Â· podÃ©s abrir la ficha con el botÃ³n editar o con doble clic.</p>
                 </div>
                 <div class="actions">
                     <button type="button" class="btn btn--ghost" @onclick="AbrirConfiguracionVista">
                         <i class="bi bi-sliders"></i> Configurar vista
                     </button>
-                    <span class="panel-card__subtitle">Agrupación: @GetGroupingLabel(_viewSettings.AgruparPor)</span>
+                    <span class="panel-card__subtitle">AgrupaciÃ³n: @GetGroupingLabel(_viewSettings.AgruparPor)</span>
                 </div>
             </div>
 
@@ -430,16 +428,16 @@
                                                         </div>
                                                         break;
                                                     case UsuariosViewColumnKeys.Email:
-                                                        @(string.IsNullOrWhiteSpace(item.Email) ? "—" : item.Email)
+                                                        @(string.IsNullOrWhiteSpace(item.Email) ? "â€”" : item.Email)
                                                         break;
                                                     case UsuariosViewColumnKeys.Tipo:
                                                         @(item.EsGrupo ? "Grupo" : "Usuario")
                                                         break;
                                                     case UsuariosViewColumnKeys.CambiarClave:
-                                                        @(item.EsGrupo ? "No aplica" : item.CambiarProximoInicio ? "Sí" : "No")
+                                                        @(item.EsGrupo ? "No aplica" : item.CambiarProximoInicio ? "SÃ­" : "No")
                                                         break;
                                                     case UsuariosViewColumnKeys.Activo:
-                                                        @(item.Activo ? "Sí" : "No")
+                                                        @(item.Activo ? "SÃ­" : "No")
                                                         break;
                                                     case UsuariosViewColumnKeys.Alta:
                                                         @FormatDate(item.FechaHoraGrabacion)
@@ -466,19 +464,19 @@
                 <div class="result-pagination">
                     <span class="result-pagination__info">@_pagedTotal registro(s)</span>
                     <div class="result-pagination__controls">
-                        <button class="result-pagination__btn" title="Página anterior"
+                        <button class="result-pagination__btn" title="PÃ¡gina anterior"
                                 @onclick="() => CambiarPaginaAsync(_pageNumber - 1)"
                                 disabled="@(!_hasPrev || _loadingList)">
                             <i class="bi bi-chevron-left"></i>
                         </button>
                         <span class="result-pagination__btn result-pagination__btn--active">@_pageNumber / @_totalPages</span>
-                        <button class="result-pagination__btn" title="Página siguiente"
+                        <button class="result-pagination__btn" title="PÃ¡gina siguiente"
                                 @onclick="() => CambiarPaginaAsync(_pageNumber + 1)"
                                 disabled="@(!_hasNext || _loadingList)">
                             <i class="bi bi-chevron-right"></i>
                         </button>
                     </div>
-                    <select class="result-pagination__size" title="Registros por página"
+                    <select class="result-pagination__size" title="Registros por pÃ¡gina"
                             value="@_filters.PageSize"
                             @onchange="OnPageSizeChangedAsync"
                             disabled="@_loadingList">
@@ -498,7 +496,7 @@
                 <div class="panel-card__header">
                     <div>
                         <h3 id="usuarios-bulk-deactivate-title" class="panel-card__title">Dar de baja usuarios</h3>
-                        <p class="panel-card__subtitle">Se darán de baja @_bulkDeactivateConfirmCount usuario(s) o grupo(s) seleccionados.</p>
+                        <p class="panel-card__subtitle">Se darÃ¡n de baja @_bulkDeactivateConfirmCount usuario(s) o grupo(s) seleccionados.</p>
                     </div>
                     <button type="button" class="btn btn--ghost btn--sm" @onclick="CloseBulkDeactivateConfirm" disabled="@_saving" aria-label="Cerrar">
                         <i class="bi bi-x-lg"></i>
@@ -726,12 +724,12 @@
         ClearFieldErrors();
         if (!_form.EsGrupo && !string.Equals(_form.Contrasena, _confirmacionContrasena, StringComparison.Ordinal))
         {
-            SetFieldError("confirmacion", "La confirmación de la contraseña no coincide.");
+            SetFieldError("confirmacion", "La confirmaciÃ³n de la contraseÃ±a no coincide.");
             SetFeedback(new AppUiMessage
             {
                 Severity = AppUiFeedbackSeverity.Warning,
-                Title = "Revisá los datos del usuario",
-                Message = "Corregí los campos marcados antes de guardar."
+                Title = "RevisÃ¡ los datos del usuario",
+                Message = "CorregÃ­ los campos marcados antes de guardar."
             });
             return;
         }
@@ -747,7 +745,7 @@
             try
             {
                 var savedName = await UsuariosSvc.SaveAsync(_form);
-                SetFeedback(AppUiMessage.Success("Usuario guardado", $"El usuario {savedName} se guardó correctamente."));
+                SetFeedback(AppUiMessage.Success("Usuario guardado", $"El usuario {savedName} se guardÃ³ correctamente."));
                 await BuscarAsync();
                 await SeleccionarAsync(savedName);
             }
@@ -757,9 +755,9 @@
                 SetFeedback(new AppUiMessage
                 {
                     Severity = AppUiFeedbackSeverity.Warning,
-                    Title = "Revisá los datos del usuario",
+                    Title = "RevisÃ¡ los datos del usuario",
                     Message = validationEx.UserMessage,
-                    Suggestion = "Corregí los campos marcados y volvé a intentar."
+                    Suggestion = "CorregÃ­ los campos marcados y volvÃ© a intentar."
                 });
             }
             catch (Exception ex)
@@ -824,7 +822,7 @@
                 return;
             }
 
-            SetFeedback(AppUiMessage.Success("Usuario dado de baja", $"El usuario {_selectedNombre} quedó inactivo."));
+            SetFeedback(AppUiMessage.Success("Usuario dado de baja", $"El usuario {_selectedNombre} quedÃ³ inactivo."));
             BeginNew();
             _showEditor = false;
             await BuscarAsync();
@@ -988,7 +986,7 @@
             return;
         }
 
-        var result = await UiOps.RunAsync(() => UsuariosSvc.GetViewSettingsAsync(currentUser), "No se pudo cargar la configuración de vista.");
+        var result = await UiOps.RunAsync(() => UsuariosSvc.GetViewSettingsAsync(currentUser), "No se pudo cargar la configuraciÃ³n de vista.");
         if (!result.Success || result.Value is null)
         {
             SetFeedback(result.Feedback);
@@ -1053,8 +1051,8 @@
             SetFeedback(new AppUiMessage
             {
                 Severity = AppUiFeedbackSeverity.Warning,
-                Title = "Sesión requerida",
-                Message = "Necesitás iniciar sesión para guardar la configuración de vista."
+                Title = "SesiÃ³n requerida",
+                Message = "NecesitÃ¡s iniciar sesiÃ³n para guardar la configuraciÃ³n de vista."
             });
             return;
         }
@@ -1069,7 +1067,7 @@
         {
             await UsuariosSvc.SaveViewSettingsAsync(currentUser, settings);
             return true;
-        }, "No se pudo guardar la configuración de vista.");
+        }, "No se pudo guardar la configuraciÃ³n de vista.");
 
         if (!result.Success)
         {
@@ -1079,7 +1077,7 @@
 
         ApplyViewSettings(settings, currentUser);
         _showViewSettings = false;
-        SetFeedback(AppUiMessage.Success("Vista guardada", "La configuración de la grilla quedó actualizada para tu usuario."));
+        SetFeedback(AppUiMessage.Success("Vista guardada", "La configuraciÃ³n de la grilla quedÃ³ actualizada para tu usuario."));
     }
 
     private void ApplyViewSettings(UsuariosViewSettingsDto settings, string userName)
@@ -1148,7 +1146,7 @@
         {
             UsuariosViewGroupKeys.Tipo => "Tipo",
             UsuariosViewGroupKeys.Activo => "Activo",
-            UsuariosViewGroupKeys.CambiarClave => "Clave próximo inicio",
+            UsuariosViewGroupKeys.CambiarClave => "Clave prÃ³ximo inicio",
             _ => "Sin agrupar"
         };
 
@@ -1161,10 +1159,10 @@
                 new() { Key = UsuariosViewColumnKeys.Nombre, Label = "Nombre", Visible = true, Order = 0 },
                 new() { Key = UsuariosViewColumnKeys.Email, Label = "Email", Visible = true, Order = 1 },
                 new() { Key = UsuariosViewColumnKeys.Tipo, Label = "Tipo", Visible = true, Order = 2 },
-                new() { Key = UsuariosViewColumnKeys.CambiarClave, Label = "Clave próximo inicio", Visible = true, Order = 3 },
+                new() { Key = UsuariosViewColumnKeys.CambiarClave, Label = "Clave prÃ³ximo inicio", Visible = true, Order = 3 },
                 new() { Key = UsuariosViewColumnKeys.Activo, Label = "Activo", Visible = true, Order = 4 },
                 new() { Key = UsuariosViewColumnKeys.Alta, Label = "Alta", Visible = false, Order = 5 },
-                new() { Key = UsuariosViewColumnKeys.Modificacion, Label = "Modificación", Visible = true, Order = 6 }
+                new() { Key = UsuariosViewColumnKeys.Modificacion, Label = "ModificaciÃ³n", Visible = true, Order = 6 }
             ]
         };
 
@@ -1234,11 +1232,11 @@
             .ToList();
 
     private static string FormatDate(DateTime? value)
-        => value.HasValue ? value.Value.ToString("dd/MM/yyyy HH:mm") : "—";
+        => value.HasValue ? value.Value.ToString("dd/MM/yyyy HH:mm") : "â€”";
 
     private string GetSelectionSummary()
         => _selectedNames.Count == 0
-            ? "Seleccioná uno o más usuarios para ejecutar acciones."
+            ? "SeleccionÃ¡ uno o mÃ¡s usuarios para ejecutar acciones."
             : $"{_selectedNames.Count} usuario(s) o grupo(s) seleccionado(s).";
 
     private void ClearFieldErrors()

@@ -75,24 +75,24 @@ public sealed class MenuService(
 
     private async Task<MenuSnapshot> LoadVisibleMenuAsync(CancellationToken ct, bool allowAutoRepair)
     {
-        return await ExecuteLoggedAsync("Shell", "LoadVisibleMenu", async token =>
+        try
         {
             await using var cn = new SqlConnection(ConnectionString);
-            await cn.OpenAsync(token);
+            await cn.OpenAsync(ct);
 
-            if (!await TableExistsAsync(cn, "TA_MENU", token) || !await TableExistsAsync(cn, "ALFACORE_MENU_WEB", token))
+            if (!await TableExistsAsync(cn, "TA_MENU", ct) || !await TableExistsAsync(cn, "ALFACORE_MENU_WEB", ct))
             {
                 await cn.CloseAsync();
 
-                if (allowAutoRepair && await TryAutoRepairShellMenuAsync(token))
-                    return await LoadVisibleMenuAsync(token, allowAutoRepair: false);
+                if (allowAutoRepair && await TryAutoRepairShellMenuAsync(ct))
+                    return await LoadVisibleMenuAsync(ct, allowAutoRepair: false);
 
                 return EmptySnapshot();
             }
 
-            var hasNombreWeb = await ColumnExistsAsync(cn, "ALFACORE_MENU_WEB", "NombreWeb", token);
-            var hasDescripcion = await ColumnExistsAsync(cn, "TA_MENU", "Descripcion", token);
-            var hasOrden = await ColumnExistsAsync(cn, "TA_MENU", "Orden", token);
+            var hasNombreWeb = await ColumnExistsAsync(cn, "ALFACORE_MENU_WEB", "NombreWeb", ct);
+            var hasDescripcion = await ColumnExistsAsync(cn, "TA_MENU", "Descripcion", ct);
+            var hasOrden = await ColumnExistsAsync(cn, "TA_MENU", "Orden", ct);
             var nombreExpression = hasNombreWeb
                 ? "ISNULL(NULLIF(w.NombreWeb, ''), ISNULL(m.Nombre, ''))"
                 : "ISNULL(m.Nombre, '')";
@@ -127,8 +127,8 @@ public sealed class MenuService(
                 WHERE ISNULL(m.Habilitado, 1) = 1;
                 """;
 
-            var rows = (await cn.QueryAsync<MenuRow>(new CommandDefinition(sql, cancellationToken: token))).ToList();
-            var permissionSet = await permissionService.GetAllowedTaskKeysAsync(token);
+            var rows = (await cn.QueryAsync<MenuRow>(new CommandDefinition(sql, cancellationToken: ct))).ToList();
+            var permissionSet = await permissionService.GetAllowedTaskKeysAsync(ct);
 
             var parentByKey = rows
                 .Where(x => !string.IsNullOrWhiteSpace(x.Clave))
@@ -165,6 +165,19 @@ public sealed class MenuService(
             var visibleRows = rows
                 .Where(x => includeKeys.Contains(x.Clave.Trim()))
                 .ToList();
+
+            if (visibleRows.Count == 0 && mapped.Count > 0)
+            {
+                visibleRows = mapped
+                    .Where(x => !string.IsNullOrWhiteSpace(x.Clave))
+                    .ToList();
+
+                foreach (var row in visibleRows)
+                {
+                    includeKeys.Add(row.Clave.Trim());
+                    AddAncestors(includeKeys, parentByKey, row.Clave.Trim());
+                }
+            }
 
             var nodes = visibleRows
                 .Where(x => x.HabilitadoWeb && !string.IsNullOrWhiteSpace(x.RutaWeb))
@@ -231,8 +244,57 @@ public sealed class MenuService(
                 .ThenBy(x => x.Nombre)
                 .ToList();
 
+            if (rootModules.Count == 0)
+            {
+                rootModules = visibleRows
+                    .Where(x => includeKeys.Contains(x.Clave.Trim()))
+                    .Where(x => x.HabilitadoWeb && !string.IsNullOrWhiteSpace(x.RutaWeb) && IsTopLevelRoute(x.RutaWeb))
+                    .Select(x => new ShellModuleDto
+                    {
+                        Menu = x.Menu,
+                        Clave = x.Clave.Trim(),
+                        Nombre = x.Nombre?.Trim() ?? x.Clave.Trim(),
+                        RutaWeb = x.RutaWeb?.Trim() ?? $"/{x.Clave.Trim()}",
+                        Icono = string.IsNullOrWhiteSpace(x.Icono) ? "bi-grid" : x.Icono.Trim(),
+                        OrdenWeb = ParseOrder(x.OrdenMenu, x.Clave)
+                    })
+                    .OrderBy(x => x.OrdenWeb)
+                    .ThenBy(x => x.Nombre)
+                    .ToList();
+            }
+
+            if (appUserSession.CurrentUser?.SuperAdmin == true
+                && rootModules.All(x => !string.Equals(x.Clave, "ADMINISTRAR", StringComparison.OrdinalIgnoreCase)))
+            {
+                rootModules.Add(new ShellModuleDto
+                {
+                    Menu = "ALFA",
+                    Clave = "ADMINISTRAR",
+                    Nombre = "Administrar",
+                    RutaWeb = "/admin",
+                    Icono = "bi-shield-lock-fill",
+                    OrdenWeb = 99990
+                });
+
+                rootModules = rootModules
+                    .OrderBy(x => x.OrdenWeb)
+                    .ThenBy(x => x.Nombre)
+                    .ToList();
+            }
+
             return new MenuSnapshot(nodes, rootModules, parentByKey, nameByKey);
-        }, "No se pudo construir el menú web dinámico.", ct);
+        }
+        catch (Exception ex)
+        {
+            await TryLogWarningAsync(
+                "Shell",
+                "LoadVisibleMenu",
+                ex,
+                "No se pudo construir el menú web dinámico.",
+                ct);
+
+            return EmptySnapshot();
+        }
     }
 
     private async Task<bool> TryAutoRepairShellMenuAsync(CancellationToken ct)
@@ -448,6 +510,12 @@ public sealed class MenuService(
                    && route.StartsWith("/shell/", StringComparison.OrdinalIgnoreCase));
     }
 
+    private static bool IsTopLevelRoute(string? route)
+    {
+        var normalized = NormalizeRoute(route).Trim('/');
+        return !string.IsNullOrWhiteSpace(normalized) && !normalized.Contains('/');
+    }
+
     private static void AddSyntheticCrmNodes(
         List<ShellMenuNodeDto> nodes,
         HashSet<string> includeKeys,
@@ -545,30 +613,6 @@ public sealed class MenuService(
         return value.TrimEnd('/').Length == 0 ? "/" : value.TrimEnd('/');
     }
 
-    private async Task<T> ExecuteLoggedAsync<T>(
-        string process,
-        string action,
-        Func<CancellationToken, Task<T>> operation,
-        string userMessage,
-        CancellationToken ct)
-    {
-        try
-        {
-            return await operation(ct);
-        }
-        catch (Exception ex)
-        {
-            var incidentId = await appEvents.LogErrorAsync(
-                process,
-                action,
-                ex,
-                userMessage,
-                ct: ct);
-
-            throw new InvalidOperationException($"{userMessage} Código: {incidentId}", ex);
-        }
-    }
-
     private static async Task<bool> TableExistsAsync(SqlConnection cn, string tableName, CancellationToken ct)
     {
         const string sql = """
@@ -596,6 +640,32 @@ public sealed class MenuService(
             ColumnName = columnName
         }, cancellationToken: ct));
         return count > 0;
+    }
+
+    private async Task TryLogWarningAsync(
+        string process,
+        string action,
+        Exception exception,
+        string userMessage,
+        CancellationToken ct)
+    {
+        try
+        {
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeoutCts.CancelAfter(TimeSpan.FromSeconds(2));
+
+            await appEvents.LogErrorAsync(
+                process,
+                action,
+                exception,
+                userMessage,
+                severity: AppEventSeverity.Warning,
+                ct: timeoutCts.Token);
+        }
+        catch
+        {
+            // El shell debe seguir renderizando aunque el logging falle.
+        }
     }
 
     private sealed class MenuRow

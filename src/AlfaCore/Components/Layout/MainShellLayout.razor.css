@@ -30,9 +30,31 @@
     object-fit: contain;
 }
 
+.main-shell__logo-shell {
+    width: 3.25rem;
+    height: 3.25rem;
+    display: grid;
+    place-items: center;
+    position: relative;
+}
+
 .main-shell__logo-link,
 .main-shell__title {
     text-decoration: none;
+}
+
+.main-shell__logo-fallback {
+    width: 3.25rem;
+    height: 3.25rem;
+    place-items: center;
+    border-radius: 1rem;
+    background: rgba(53, 194, 255, .12);
+    border: 1px solid rgba(53, 194, 255, .26);
+    color: #eaf6ff;
+    font-size: .7rem;
+    font-weight: 900;
+    line-height: 1;
+    text-align: center;
 }
 
 .main-shell__eyebrow {

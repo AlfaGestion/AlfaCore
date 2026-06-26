@@ -13,9 +13,31 @@ window.alfaCorePwa = (function () {
         notifyInstallState();
     });
 
+    function isLocalDevelopmentHost() {
+        return window.location.hostname === 'localhost'
+            || window.location.hostname === '127.0.0.1';
+    }
+
+    async function unregisterServiceWorkers() {
+        if (!('serviceWorker' in navigator))
+            return;
+
+        try {
+            const registrations = await navigator.serviceWorker.getRegistrations();
+            await Promise.all(registrations.map(registration => registration.unregister()));
+        } catch {
+            // En desarrollo no bloqueamos si el navegador no permite limpiar registros.
+        }
+    }
+
     async function registerServiceWorker() {
         if (!('serviceWorker' in navigator))
             return false;
+
+        if (isLocalDevelopmentHost()) {
+            await unregisterServiceWorkers();
+            return false;
+        }
 
         try {
             await navigator.serviceWorker.register('/service-worker.js');

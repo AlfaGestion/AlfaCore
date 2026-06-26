@@ -1,4 +1,5 @@
-@page "/calendario/reuniones"
+﻿@page "/calendario/reuniones"
+@page "/{idweb}/{idbase:int}/calendario/reuniones"
 @using System.Globalization
 @inject AlfaCore.Services.IReunionesPublicasService ReunionesSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
@@ -11,7 +12,7 @@
     <header class="cal-reuniones-topbar">
         <div>
             <p class="cal-reuniones-eyebrow">Calendario</p>
-            <h2>Reuniones públicas</h2>
+            <h2>Reuniones pÃºblicas</h2>
             <span>Agendas para que los clientes reserven capacitaciones online.</span>
         </div>
         <div>
@@ -54,7 +55,7 @@
                     <button type="button" class="@TipoClass(tipo)" @onclick="() => EditTipo(tipo)">
                         <span style="background:@tipo.Color"></span>
                         <strong>@tipo.Titulo</strong>
-                        <small>@(tipo.Activo ? "Activa" : "Inactiva") · @tipo.DuracionMinutos min</small>
+                        <small>@(tipo.Activo ? "Activa" : "Inactiva") Â· @tipo.DuracionMinutos min</small>
                     </button>
                 }
             </aside>
@@ -62,29 +63,29 @@
             <section class="cal-reuniones-editor">
                 <header>
                     <div>
-                        <span>Configuración</span>
+                        <span>ConfiguraciÃ³n</span>
                         <strong>@(_form.IdTipoReunion > 0 ? _form.Titulo : "Nueva agenda")</strong>
                     </div>
                     @if (_form.IdTipoReunion > 0)
                     {
                         <a class="btn btn--ghost" href="@PublicUrl(_form)" target="_blank">
                             <i class="bi bi-box-arrow-up-right"></i>
-                            <span>Ver pública</span>
+                            <span>Ver pÃºblica</span>
                         </a>
                     }
                 </header>
 
                 <div class="cal-reuniones-form">
                     <label class="is-wide">
-                        <span>Título de la cita</span>
+                        <span>TÃ­tulo de la cita</span>
                         <input @bind="_form.Titulo" disabled="@_saving" />
                     </label>
                     <label>
-                        <span>Slug público</span>
+                        <span>Slug pÃºblico</span>
                         <input @bind="_form.Slug" disabled="@_saving" placeholder="capacitacion-online" />
                     </label>
                     <label>
-                        <span>Duración</span>
+                        <span>DuraciÃ³n</span>
                         <input type="number" min="15" max="480" step="15" @bind="_form.DuracionMinutos" disabled="@_saving" />
                     </label>
                     <label>
@@ -100,7 +101,7 @@
                         <input @bind="_form.TecnicoNombre" disabled="@_saving" />
                     </label>
                     <label>
-                        <span>Id técnico</span>
+                        <span>Id tÃ©cnico</span>
                         <input @bind="_form.IdTecnico" disabled="@_saving" />
                     </label>
                     <label>
@@ -124,7 +125,7 @@
                         <input type="number" min="1" max="180" @bind="_form.ReservasHastaDias" disabled="@_saving" />
                     </label>
                     <label>
-                        <span>Anticipación mínima</span>
+                        <span>AnticipaciÃ³n mÃ­nima</span>
                         <input type="number" min="0" max="720" @bind="_form.AnticipacionMinHoras" disabled="@_saving" />
                     </label>
                     <label>
@@ -137,7 +138,7 @@
                     </label>
 
                     <div class="cal-reuniones-days is-wide">
-                        <span>Días disponibles</span>
+                        <span>DÃ­as disponibles</span>
                         @foreach (var day in Days)
                         {
                             <label>
@@ -148,13 +149,13 @@
                     </div>
 
                     <label class="is-wide">
-                        <span>Descripción pública</span>
+                        <span>DescripciÃ³n pÃºblica</span>
                         <textarea @bind="_form.Descripcion" disabled="@_saving"></textarea>
                     </label>
                 </div>
 
                 <footer>
-                    <span>@(_form.IdTipoReunion > 0 ? PublicUrl(_form) : "Guardá para generar el link público.")</span>
+                    <span>@(_form.IdTipoReunion > 0 ? PublicUrl(_form) : "GuardÃ¡ para generar el link pÃºblico.")</span>
                     <button type="button" class="btn btn--primary" @onclick="SaveAsync" disabled="@_saving">
                         <i class="bi bi-save"></i>
                         <span>@(_saving ? "Guardando..." : "Guardar agenda")</span>
@@ -172,7 +173,7 @@
             </header>
             @if (_admin.Reservas.Count == 0)
             {
-                <p>Todavía no hay reservas públicas.</p>
+                <p>TodavÃ­a no hay reservas pÃºblicas.</p>
             }
             else
             {
@@ -190,7 +191,7 @@
                             </div>
                             <div>
                                 <strong>@reserva.TipoCapacitacion</strong>
-                                <span>@reserva.Email · @reserva.Telefono</span>
+                                <span>@reserva.Email Â· @reserva.Telefono</span>
                             </div>
                             <div>
                                 <span class="cal-reuniones-state">@reserva.Estado</span>
@@ -215,10 +216,10 @@
     [
         (1, "Lun"),
         (2, "Mar"),
-        (3, "Mié"),
+        (3, "MiÃ©"),
         (4, "Jue"),
         (5, "Vie"),
-        (6, "Sáb"),
+        (6, "SÃ¡b"),
         (7, "Dom")
     ];
 
@@ -249,7 +250,7 @@
         }
         else
         {
-            SetFeedback("No se pudieron cargar las reuniones", result.Feedback?.Message ?? "Revisá la base activa.", "error");
+            SetFeedback("No se pudieron cargar las reuniones", result.Feedback?.Message ?? "RevisÃ¡ la base activa.", "error");
         }
         _loading = false;
     }
@@ -275,12 +276,12 @@
         var result = await UiOps.RunAsync(() => ReunionesSvc.SaveTipoAsync(_form, user), "No se pudo guardar la agenda.");
         if (result.Success)
         {
-            SetFeedback("Agenda guardada", "La página pública quedó actualizada.", "success");
+            SetFeedback("Agenda guardada", "La pÃ¡gina pÃºblica quedÃ³ actualizada.", "success");
             await LoadAsync();
         }
         else
         {
-            SetFeedback(result.Feedback?.Title ?? "No se pudo guardar", result.Feedback?.Message ?? "Revisá los datos.", "error");
+            SetFeedback(result.Feedback?.Title ?? "No se pudo guardar", result.Feedback?.Message ?? "RevisÃ¡ los datos.", "error");
         }
         _saving = false;
     }
@@ -296,7 +297,7 @@
         }
         else
         {
-            SetFeedback(result.Feedback?.Title ?? "No se pudo cancelar", result.Feedback?.Message ?? "Revisá la reserva.", "error");
+            SetFeedback(result.Feedback?.Title ?? "No se pudo cancelar", result.Feedback?.Message ?? "RevisÃ¡ la reserva.", "error");
         }
     }
 
@@ -338,9 +339,9 @@
         => new()
         {
             Slug = "capacitacion-online",
-            Titulo = "Capacitación Online",
-            Descripcion = "Espacio para que los clientes reserven una capacitación online con el equipo de AlfaNet.",
-            Modalidad = "Reunión en línea",
+            Titulo = "CapacitaciÃ³n Online",
+            Descripcion = "Espacio para que los clientes reserven una capacitaciÃ³n online con el equipo de AlfaNet.",
+            Modalidad = "ReuniÃ³n en lÃ­nea",
             EnlaceVideollamada = "Google Meet",
             TecnicoNombre = "Equipo AlfaNet",
             DuracionMinutos = 60,

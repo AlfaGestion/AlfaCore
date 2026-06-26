@@ -1,4 +1,5 @@
-@page "/ventas/rubros"
+﻿@page "/ventas/rubros"
+@page "/{idweb}/{idbase:int}/ventas/rubros"
 @inject AlfaCore.Services.IGestionDashboardService GestionSvc
 @inject AlfaCore.Services.GestionFilterStateService FilterState
 
@@ -7,12 +8,12 @@
 <section class="page-grid">
     <div class="page-intro">
         <div>
-            <h2 class="page-intro__title">Rubros más vendidos</h2>
-            <p class="page-intro__text">Lectura comercial por rubro para identificar concentración y categorías líderes.</p>
+            <h2 class="page-intro__title">Rubros mÃ¡s vendidos</h2>
+            <p class="page-intro__text">Lectura comercial por rubro para identificar concentraciÃ³n y categorÃ­as lÃ­deres.</p>
         </div>
     </div>
 
-    <VentasFiltersBar Model="_filters" Options="_options" OnApply="LoadAsync" Titulo="Filtros de rubros" Subtitulo="Acotá el análisis de categorías vendidas." />
+    <VentasFiltersBar Model="_filters" Options="_options" OnApply="LoadAsync" Titulo="Filtros de rubros" Subtitulo="AcotÃ¡ el anÃ¡lisis de categorÃ­as vendidas." />
 
     @if (!string.IsNullOrWhiteSpace(_error))
     {
@@ -34,13 +35,13 @@
                 <HorizontalBarChart Data="_page.TopRubros" Titulo="Top rubros" Subtitulo="Rubros con mayor venta" />
             </section>
 
-            <DataTable Titulo="Listado de rubros" Subtitulo="Participación comercial por categoría">
+            <DataTable Titulo="Listado de rubros" Subtitulo="ParticipaciÃ³n comercial por categorÃ­a">
                 <Header>
                     <tr>
                         <th>Rubro</th>
                         <th style="text-align:right;">Total</th>
                         <th style="text-align:right;">% total</th>
-                        <th style="text-align:right;">Artículos</th>
+                        <th style="text-align:right;">ArtÃ­culos</th>
                         <th style="text-align:right;">Comprobantes</th>
                     </tr>
                 </Header>

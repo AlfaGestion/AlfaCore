@@ -48,6 +48,10 @@ public sealed class InterfacesCompraIaWorkerHostedService(
             {
                 RegisterConnectionWarning(delaySeconds, ex);
             }
+            catch (SqlException ex) when (ex.Number == 10060)
+            {
+                RegisterConnectionWarning(delaySeconds, ex);
+            }
             catch (AppUserFacingException ex) when (IsSqlLoginDatabaseError(ex))
             {
                 RegisterConnectionWarning(delaySeconds, ex);

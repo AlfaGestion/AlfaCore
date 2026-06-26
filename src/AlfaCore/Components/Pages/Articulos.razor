@@ -1,23 +1,24 @@
-@page "/compras/articulos"
+﻿@page "/compras/articulos"
+@page "/{idweb}/{idbase:int}/compras/articulos"
 @inject AlfaCore.Services.IComprasDashboardService DashboardService
 @inject AlfaCore.Services.FilterStateService FilterState
 
-<PageTitle>Artículos | Dashboard de Compras</PageTitle>
+<PageTitle>ArtÃ­culos | Dashboard de Compras</PageTitle>
 
 <section class="page-grid">
-    <div class="page-intro"><div><h2 class="page-intro__title">Artículos</h2><p class="page-intro__text">Impacto económico, variación de precio, proveedor principal y últimas compras por artículo. <a class="help-link" href="/ayuda#9-artículos">Ver ayuda</a></p></div></div>
+    <div class="page-intro"><div><h2 class="page-intro__title">ArtÃ­culos</h2><p class="page-intro__text">Impacto econÃ³mico, variaciÃ³n de precio, proveedor principal y Ãºltimas compras por artÃ­culo. <a class="help-link" href="/ayuda#9-artÃ­culos">Ver ayuda</a></p></div></div>
     <GlobalFiltersBar Model="_filters" Options="_options" OnApply="LoadAsync" />
 
     @if (_page?.Kpis is not null)
     {
         <div class="kpi-grid kpi-grid--6">
             <KpiCard Titulo="Total comprado" Valor="@Moneda(_page.Kpis.TotalComprado)" Icono="$" />
-            <KpiCard Titulo="Artículos distintos" Valor="@_page.Kpis.CantidadArticulosDistintos.ToString("N0")" Icono="A" />
-            <KpiCard Titulo="Ítems totales" Valor="@_page.Kpis.CantidadItems.ToString("N0")" Icono="I" />
+            <KpiCard Titulo="ArtÃ­culos distintos" Valor="@_page.Kpis.CantidadArticulosDistintos.ToString("N0")" Icono="A" />
+            <KpiCard Titulo="Ãtems totales" Valor="@_page.Kpis.CantidadItems.ToString("N0")" Icono="I" />
             <KpiCard Titulo="Costo promedio general" Valor="@Moneda(_page.Kpis.CostoPromedioGeneral)" Icono="C" />
-            <KpiCard Titulo="Artículos con aumento" Valor="@_page.Kpis.ArticulosConAumento.ToString("N0")" Icono="▲" />
-            <KpiCard Titulo="Artículos con baja" Valor="@_page.Kpis.ArticulosConBaja.ToString("N0")" Icono="▼" />
-            <KpiCard Titulo="Artículos nuevos" Valor="@_page.Kpis.ArticulosNuevos.ToString("N0")" Icono="✦" />
+            <KpiCard Titulo="ArtÃ­culos con aumento" Valor="@_page.Kpis.ArticulosConAumento.ToString("N0")" Icono="â–²" />
+            <KpiCard Titulo="ArtÃ­culos con baja" Valor="@_page.Kpis.ArticulosConBaja.ToString("N0")" Icono="â–¼" />
+            <KpiCard Titulo="ArtÃ­culos nuevos" Valor="@_page.Kpis.ArticulosNuevos.ToString("N0")" Icono="âœ¦" />
             <KpiCard Titulo="Mayor aumento" Valor="@RenderMayorVariacion(_page.Kpis.MayorAumentoArticulo, _page.Kpis.MayorAumentoVariacion)" Icono="+" />
             <KpiCard Titulo="Mayor baja" Valor="@RenderMayorVariacion(_page.Kpis.MayorBajaArticulo, _page.Kpis.MayorBajaVariacion)" Icono="-" />
         </div>
@@ -35,15 +36,15 @@
 
     @if (_page is null)
     {
-        <div class="loading">Cargando artículos...</div>
+        <div class="loading">Cargando artÃ­culos...</div>
     }
     else
     {
         <div class="three-grid">
-            <section class="panel-card"><HorizontalBarChart Data="_page.TopPorTotal" Titulo="Top por impacto económico" Subtitulo="Artículos con mayor total comprado" /></section>
-            <section class="panel-card"><HorizontalBarChart Data="_page.TopPorCantidad" Titulo="Top por cantidad comprada" Subtitulo="Artículos con mayor volumen" Formato="numero" /></section>
-            <section class="panel-card"><HorizontalBarChart Data="_page.TopAumentos" Titulo="Top aumentos de precio" Subtitulo="Variación vs período anterior" Formato="porcentaje" /></section>
-            <section class="panel-card"><HorizontalBarChart Data="_page.TopBajas" Titulo="Top bajas de precio" Subtitulo="Variación vs período anterior" Formato="porcentaje" /></section>
+            <section class="panel-card"><HorizontalBarChart Data="_page.TopPorTotal" Titulo="Top por impacto econÃ³mico" Subtitulo="ArtÃ­culos con mayor total comprado" /></section>
+            <section class="panel-card"><HorizontalBarChart Data="_page.TopPorCantidad" Titulo="Top por cantidad comprada" Subtitulo="ArtÃ­culos con mayor volumen" Formato="numero" /></section>
+            <section class="panel-card"><HorizontalBarChart Data="_page.TopAumentos" Titulo="Top aumentos de precio" Subtitulo="VariaciÃ³n vs perÃ­odo anterior" Formato="porcentaje" /></section>
+            <section class="panel-card"><HorizontalBarChart Data="_page.TopBajas" Titulo="Top bajas de precio" Subtitulo="VariaciÃ³n vs perÃ­odo anterior" Formato="porcentaje" /></section>
         </div>
 
         @if (_page.Articulos.Any())
@@ -54,26 +55,26 @@
             var nNuevos    = _page.Articulos.Count(x => x.EsNuevo);
             <div class="quick-filter-bar">
                 <button class="@QfClass("")  quick-filter-btn" @onclick='() => _filtroVar = ""'>Todos (@_page.Articulos.Count)</button>
-                <button class="@QfClass("subio") quick-filter-btn quick-filter-btn--up"   @onclick='() => _filtroVar = "subio"'>▲ Subieron (@nSubieron)</button>
-                <button class="@QfClass("bajo")  quick-filter-btn quick-filter-btn--down" @onclick='() => _filtroVar = "bajo"'>▼ Bajaron (@nBajaron)</button>
-                <button class="@QfClass("plano") quick-filter-btn" @onclick='() => _filtroVar = "plano"'>= Sin variación (@nSinVar)</button>
-                <button class="@QfClass("nuevo") quick-filter-btn quick-filter-btn--new"  @onclick='() => _filtroVar = "nuevo"'>✦ Nuevos (@nNuevos)</button>
+                <button class="@QfClass("subio") quick-filter-btn quick-filter-btn--up"   @onclick='() => _filtroVar = "subio"'>â–² Subieron (@nSubieron)</button>
+                <button class="@QfClass("bajo")  quick-filter-btn quick-filter-btn--down" @onclick='() => _filtroVar = "bajo"'>â–¼ Bajaron (@nBajaron)</button>
+                <button class="@QfClass("plano") quick-filter-btn" @onclick='() => _filtroVar = "plano"'>= Sin variaciÃ³n (@nSinVar)</button>
+                <button class="@QfClass("nuevo") quick-filter-btn quick-filter-btn--new"  @onclick='() => _filtroVar = "nuevo"'>âœ¦ Nuevos (@nNuevos)</button>
             </div>
         }
 
         <div class="split-grid">
-            <DataTable Titulo="Artículos" Subtitulo="Análisis ejecutivo por impacto, precio y proveedor principal">
+            <DataTable Titulo="ArtÃ­culos" Subtitulo="AnÃ¡lisis ejecutivo por impacto, precio y proveedor principal">
                 <Header>
                     <tr>
-                        <th>Código</th>
-                        <th>Descripción</th>
+                        <th>CÃ³digo</th>
+                        <th>DescripciÃ³n</th>
                         <th style="text-align:right;">Cantidad</th>
                         <th style="text-align:right;">Total</th>
                         <th style="text-align:right;">Costo prom.</th>
                         <th style="text-align:right;">Precio ant.</th>
                         <th style="text-align:right;">Precio act.</th>
-                        <th style="text-align:center;">Variación</th>
-                        <th>Última compra</th>
+                        <th style="text-align:center;">VariaciÃ³n</th>
+                        <th>Ãšltima compra</th>
                         <th>Proveedor principal</th>
                         <th style="text-align:right;">Compras</th>
                         <th></th>
@@ -114,17 +115,17 @@
 
             @if (_detalle is not null)
             {
-                <DetailCard Titulo="@_detalle.Resumen.DescripcionArticulo" Subtitulo="Resumen del artículo">
-                    <div class="detail-row"><span class="detail-row__label">Código</span><strong style="text-align:@GetCodigoAlign(_detalle.Resumen.IdArticulo); display:inline-block; min-width:100%;">@_detalle.Resumen.IdArticulo</strong></div>
+                <DetailCard Titulo="@_detalle.Resumen.DescripcionArticulo" Subtitulo="Resumen del artÃ­culo">
+                    <div class="detail-row"><span class="detail-row__label">CÃ³digo</span><strong style="text-align:@GetCodigoAlign(_detalle.Resumen.IdArticulo); display:inline-block; min-width:100%;">@_detalle.Resumen.IdArticulo</strong></div>
                     <div class="detail-row"><span class="detail-row__label">Cantidad</span><strong>@_detalle.Resumen.CantidadComprada.ToString("N2")</strong></div>
                     <div class="detail-row"><span class="detail-row__label">Total</span><strong>@Moneda(_detalle.Resumen.TotalComprado)</strong></div>
                     <div class="detail-row"><span class="detail-row__label">Costo promedio</span><strong>@Moneda(_detalle.Resumen.CostoPromedio)</strong></div>
                     <div class="detail-row"><span class="detail-row__label">Precio anterior</span><strong>@MonedaNullable(_detalle.Resumen.PrecioAnterior)</strong></div>
                     <div class="detail-row"><span class="detail-row__label">Precio actual</span><strong>@Moneda(_detalle.Resumen.PrecioActual)</strong></div>
-                    <div class="detail-row"><span class="detail-row__label">Variación</span><strong>@((MarkupString)RenderVariacionBadge(_detalle.Resumen.VariacionPrecio, _detalle.Resumen.EsNuevo))</strong></div>
-                    <div class="detail-row"><span class="detail-row__label">Última compra</span><strong>@Fecha(_detalle.Resumen.UltimaCompra)</strong></div>
+                    <div class="detail-row"><span class="detail-row__label">VariaciÃ³n</span><strong>@((MarkupString)RenderVariacionBadge(_detalle.Resumen.VariacionPrecio, _detalle.Resumen.EsNuevo))</strong></div>
+                    <div class="detail-row"><span class="detail-row__label">Ãšltima compra</span><strong>@Fecha(_detalle.Resumen.UltimaCompra)</strong></div>
                     <div class="detail-row"><span class="detail-row__label">Proveedor principal</span><strong>@(string.IsNullOrWhiteSpace(_detalle.Resumen.ProveedorPrincipal) ? "Sin dato" : _detalle.Resumen.ProveedorPrincipal)</strong></div>
-                    <div class="detail-row"><span class="detail-row__label">Participación proveedor</span><strong>@(_detalle.Resumen.ParticipacionProveedorPrincipal > 0 ? $"{(_detalle.Resumen.ParticipacionProveedorPrincipal * 100m):N1}%" : "Sin dato")</strong></div>
+                    <div class="detail-row"><span class="detail-row__label">ParticipaciÃ³n proveedor</span><strong>@(_detalle.Resumen.ParticipacionProveedorPrincipal > 0 ? $"{(_detalle.Resumen.ParticipacionProveedorPrincipal * 100m):N1}%" : "Sin dato")</strong></div>
                     <div class="detail-row"><span class="detail-row__label">Cantidad de compras</span><strong>@_detalle.Resumen.CantidadCompras.ToString("N0")</strong></div>
                 </DetailCard>
             }
@@ -133,15 +134,15 @@
         @if (_detalle is not null)
         {
             <div class="three-grid">
-                <section class="panel-card"><LineChart Data="_detalle.EvolucionCosto" Titulo="Evolución del precio" Subtitulo="Costo promedio mensual del artículo" /></section>
-                <section class="panel-card"><HorizontalBarChart Data="_detalle.Proveedores" Titulo="Proveedores asociados" Subtitulo="Participación por total comprado" /></section>
+                <section class="panel-card"><LineChart Data="_detalle.EvolucionCosto" Titulo="EvoluciÃ³n del precio" Subtitulo="Costo promedio mensual del artÃ­culo" /></section>
+                <section class="panel-card"><HorizontalBarChart Data="_detalle.Proveedores" Titulo="Proveedores asociados" Subtitulo="ParticipaciÃ³n por total comprado" /></section>
                 <section class="panel-card">
-                    <div class="panel-card__header"><div><h3 class="panel-card__title">Historial</h3><p class="panel-card__subtitle">Últimos comprobantes del artículo</p></div></div>
+                    <div class="panel-card__header"><div><h3 class="panel-card__title">Historial</h3><p class="panel-card__subtitle">Ãšltimos comprobantes del artÃ­culo</p></div></div>
                     <div class="detail-list">
                         @foreach (var item in _detalle.Historial)
                         {
                             <div class="detail-row">
-                                <span class="detail-row__label">@item.Fecha.ToString("dd/MM/yy") · @item.Tc @item.IdComprobante</span>
+                                <span class="detail-row__label">@item.Fecha.ToString("dd/MM/yy") Â· @item.Tc @item.IdComprobante</span>
                                 <a class="action-link" href="/compras/comprobantes?tc=@item.Tc&id=@item.IdComprobante&cuenta=@Uri.EscapeDataString(item.Cuenta)">Abrir</a>
                             </div>
                         }
@@ -205,7 +206,7 @@
         if (string.IsNullOrWhiteSpace(articulo) || !variacion.HasValue)
             return "Sin cambios";
 
-        return $"{articulo} · {(variacion.Value * 100m):N1}%";
+        return $"{articulo} Â· {(variacion.Value * 100m):N1}%";
     }
 
     private static string GetArticuloRowClass(ArticuloResumenDto item)

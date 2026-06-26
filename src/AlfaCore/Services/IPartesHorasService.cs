@@ -15,4 +15,6 @@ public interface IPartesHorasService
     Task<IReadOnlyList<ParteHoraTicketOptionDto>> SearchTicketsAsync(string texto, string? clienteCodigo = null, CancellationToken ct = default);
     Task<ParteHoraClienteConfigDto?> GetClienteConfigAsync(string clienteCodigo, CancellationToken ct = default);
     Task SaveClienteConfigAsync(ParteHoraClienteConfigDto config, string usuarioAccion, CancellationToken ct = default);
+    Task AprobarAsync(long idParteHora, string usuarioAccion, CancellationToken ct = default);
+    Task RechazarAsync(long idParteHora, string usuarioAccion, CancellationToken ct = default);
 }

@@ -48,25 +48,51 @@ public sealed class ConversacionesService(
         : configuration.GetConnectionString("AlfaGestion")
           ?? throw new InvalidOperationException("No se configuró la cadena de conexión 'ConnectionStrings:AlfaGestion'.");
 
-    public Task<bool> HasConversationSchemaAsync(CancellationToken ct = default)
-        => ExecuteLoggedAsync("Conversaciones", "HasConversationSchema", async token =>
-        {
-            const string sql = """
-                SELECT
-                    CASE
-                        WHEN OBJECT_ID(N'dbo.CONV_CONVERSACIONES', N'U') IS NOT NULL
-                         AND OBJECT_ID(N'dbo.CONV_ESTADOS', N'U') IS NOT NULL
-                        THEN CAST(1 AS bit)
-                        ELSE CAST(0 AS bit)
-                    END;
-                """;
+    public async Task<bool> HasConversationSchemaAsync(CancellationToken ct = default)
+    {
+        const string sql = """
+            SELECT
+                CASE
+                    WHEN OBJECT_ID(N'dbo.CONV_CONVERSACIONES', N'U') IS NOT NULL
+                     AND OBJECT_ID(N'dbo.CONV_ESTADOS', N'U') IS NOT NULL
+                    THEN CAST(1 AS bit)
+                    ELSE CAST(0 AS bit)
+                END;
+            """;
 
+        try
+        {
             await using var cn = new SqlConnection(ConnectionString);
-            await cn.OpenAsync(token);
-            await using var cmd = new SqlCommand(sql, cn);
-            var result = await cmd.ExecuteScalarAsync(token);
+            await cn.OpenAsync(ct);
+
+            await using var cmd = new SqlCommand(sql, cn)
+            {
+                CommandTimeout = 3
+            };
+
+            var result = await cmd.ExecuteScalarAsync(ct);
             return result is not null && Convert.ToBoolean(result);
-        }, "No se pudo verificar el esquema de conversaciones.", ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return false;
+        }
+        catch (SqlException ex)
+        {
+            await TryLogConversationSchemaCheckFailureAsync(ex, ct);
+            return false;
+        }
+        catch (TaskCanceledException ex)
+        {
+            await TryLogConversationSchemaCheckFailureAsync(ex, ct);
+            return false;
+        }
+        catch (Exception ex)
+        {
+            await TryLogConversationSchemaCheckFailureAsync(ex, ct);
+            return false;
+        }
+    }
 
     public Task<IReadOnlyList<ConversacionTecnicoOptionDto>> GetTechniciansAsync(CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetTechnicians", async token =>
@@ -6797,6 +6823,14 @@ public sealed class ConversacionesService(
         {
             return await operation(ct);
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (TaskCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (SqlException ex) when (TryBuildKnownSqlMessage(ex, out var knownMessage))
         {
             var incidentId = await _appEvents.LogErrorAsync(module, action, ex, userMessage, null, AppEventSeverity.Error, ct);
@@ -6810,6 +6844,27 @@ public sealed class ConversacionesService(
         {
             var incidentId = await _appEvents.LogErrorAsync(module, action, ex, userMessage, null, AppEventSeverity.Error, ct);
             throw new AppUserFacingException(userMessage, incidentId, ex);
+        }
+    }
+
+    private async Task TryLogConversationSchemaCheckFailureAsync(Exception exception, CancellationToken ct)
+    {
+        if (ct.IsCancellationRequested)
+            return;
+
+        try
+        {
+            await _appEvents.LogErrorAsync(
+                "Conversaciones",
+                "HasConversationSchema",
+                exception,
+                "No se pudo verificar el esquema de conversaciones.",
+                null,
+                AppEventSeverity.Error,
+                CancellationToken.None);
+        }
+        catch
+        {
         }
     }
 
