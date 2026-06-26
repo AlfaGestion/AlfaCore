@@ -343,7 +343,8 @@
 
                 @if (_showSearchPanel)
                 {
-                    <div class="smart-search__panel" @onclick="CloseTicketLookupSuggestions" @onkeydown="HandleTicketApplyKeyDownAsync">
+                    <div class="tickets-search-backdrop" @onclick="CloseTicketSearchPanel"></div>
+                    <div class="smart-search__panel" @onclick="CloseTicketLookupSuggestions" @onclick:stopPropagation @onkeydown="HandleTicketApplyKeyDownAsync">
                         <div class="smart-search__column">
                             <h4><i class="bi bi-funnel-fill"></i> Filtros</h4>
                             <button type="button" class="@GetSmartOptionClass(_filters.IncluirCerrados)" @onclick='() => ToggleTicketClosedAsync(true)'>Todos</button>
