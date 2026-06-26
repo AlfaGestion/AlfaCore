@@ -941,22 +941,10 @@ public sealed class PuntoVentaService(
     private async Task CreatePaymentSeedAsync(SqlConnection cn, int idCobranza, CancellationToken ct)
     {
         const string sql = """
-            BEGIN TRY
-                ALTER TABLE dbo.MV_ASIENTOS DISABLE TRIGGER ALL;
-                DECLARE @pResultado INT;
-                DECLARE @pMensaje NVARCHAR(250);
-                EXEC dbo.sp_web_creaLineaAsiento @pIdCobranza, 0, '', 1, NULL, @pResultado OUTPUT, @pMensaje OUTPUT;
-                ALTER TABLE dbo.MV_ASIENTOS ENABLE TRIGGER ALL;
-                SELECT @pResultado AS Resultado, @pMensaje AS Mensaje;
-            END TRY
-            BEGIN CATCH
-                BEGIN TRY
-                    ALTER TABLE dbo.MV_ASIENTOS ENABLE TRIGGER ALL;
-                END TRY
-                BEGIN CATCH
-                END CATCH;
-                THROW;
-            END CATCH
+            DECLARE @pResultado INT;
+            DECLARE @pMensaje NVARCHAR(250);
+            EXEC dbo.sp_web_creaLineaAsiento @pIdCobranza, 0, '', 1, NULL, @pResultado OUTPUT, @pMensaje OUTPUT;
+            SELECT @pResultado AS Resultado, @pMensaje AS Mensaje;
             """;
 
         var result = await cn.QuerySingleAsync<SpResultRow>(new CommandDefinition(
@@ -970,22 +958,10 @@ public sealed class PuntoVentaService(
     private async Task CreatePaymentLineAsync(SqlConnection cn, int idCobranza, PuntoVentaPaymentLineDto pago, CancellationToken ct)
     {
         const string sql = """
-            BEGIN TRY
-                ALTER TABLE dbo.MV_ASIENTOS DISABLE TRIGGER ALL;
-                DECLARE @pResultado INT;
-                DECLARE @pMensaje NVARCHAR(250);
-                EXEC dbo.sp_web_creaLineaAsiento @pIdCobranza, @Importe, @Codigo, 0, NULL, @pResultado OUTPUT, @pMensaje OUTPUT;
-                ALTER TABLE dbo.MV_ASIENTOS ENABLE TRIGGER ALL;
-                SELECT @pResultado AS Resultado, @pMensaje AS Mensaje;
-            END TRY
-            BEGIN CATCH
-                BEGIN TRY
-                    ALTER TABLE dbo.MV_ASIENTOS ENABLE TRIGGER ALL;
-                END TRY
-                BEGIN CATCH
-                END CATCH;
-                THROW;
-            END CATCH
+            DECLARE @pResultado INT;
+            DECLARE @pMensaje NVARCHAR(250);
+            EXEC dbo.sp_web_creaLineaAsiento @pIdCobranza, @Importe, @Codigo, 0, NULL, @pResultado OUTPUT, @pMensaje OUTPUT;
+            SELECT @pResultado AS Resultado, @pMensaje AS Mensaje;
             """;
 
         var result = await cn.QuerySingleAsync<SpResultRow>(new CommandDefinition(
@@ -1004,22 +980,10 @@ public sealed class PuntoVentaService(
     private async Task CreateCollectionApplicationAsync(SqlConnection cn, int idCobranza, int idComprobante, CancellationToken ct)
     {
         const string sql = """
-            BEGIN TRY
-                ALTER TABLE dbo.MV_ASIENTOS DISABLE TRIGGER ALL;
-                DECLARE @pResultado INT;
-                DECLARE @pMensaje NVARCHAR(250);
-                EXEC dbo.sp_web_CreaAplicacionCobranzaFactura @pIdCobranza, @pIdComprobante, @pResultado OUTPUT, @pMensaje OUTPUT;
-                ALTER TABLE dbo.MV_ASIENTOS ENABLE TRIGGER ALL;
-                SELECT @pResultado AS Resultado, @pMensaje AS Mensaje;
-            END TRY
-            BEGIN CATCH
-                BEGIN TRY
-                    ALTER TABLE dbo.MV_ASIENTOS ENABLE TRIGGER ALL;
-                END TRY
-                BEGIN CATCH
-                END CATCH;
-                THROW;
-            END CATCH
+            DECLARE @pResultado INT;
+            DECLARE @pMensaje NVARCHAR(250);
+            EXEC dbo.sp_web_CreaAplicacionCobranzaFactura @pIdCobranza, @pIdComprobante, @pResultado OUTPUT, @pMensaje OUTPUT;
+            SELECT @pResultado AS Resultado, @pMensaje AS Mensaje;
             """;
 
         var result = await cn.QuerySingleAsync<SpResultRow>(new CommandDefinition(

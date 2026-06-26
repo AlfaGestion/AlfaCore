@@ -136,8 +136,12 @@ BEGIN TRY
     SET @pMensaje = 'El pedido se ha dado de alta con exito'
     SET @pIdComprobanteRES = SCOPE_IDENTITY()
 
-    INSERT INTO S_TA_UBICACIONES_VENDEDOR (lat, long, idvendedor, fechahora, idcomprobante)
-    VALUES (@pLat, @pLng, @pVendedor, GETDATE(), @IdComprobante)
+    BEGIN TRY
+        INSERT INTO S_TA_UBICACIONES_VENDEDOR (lat, long, idvendedor, fechahora, idcomprobante)
+        VALUES (@pLat, @pLng, @pVendedor, GETDATE(), @IdComprobante)
+    END TRY
+    BEGIN CATCH
+    END CATCH
 END TRY
 BEGIN CATCH
     ROLLBACK TRANSACTION

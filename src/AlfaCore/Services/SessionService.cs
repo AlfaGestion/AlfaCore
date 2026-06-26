@@ -288,6 +288,7 @@ public sealed class SessionService : ISessionService
             UserID = s.Usuario,
             Password = s.Password,
             TrustServerCertificate = s.TrustServerCertificate,
+            Encrypt = false,
             ApplicationName = "AlfaCore"
         }.ConnectionString;
 
