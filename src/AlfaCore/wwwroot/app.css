@@ -73,6 +73,7 @@ h1:focus {
     --shadow-soft: 0 20px 50px rgba(2, 6, 23, 0.35);
     --radius-xl: 24px;
     --radius-lg: 18px;
+    --module-page-gutter: clamp(.65rem, 1.15vw, 1rem);
 }
 
 html[data-theme="light"] {
@@ -2739,6 +2740,16 @@ html[data-theme="light"] .costos-lote__table th {
 
 .shell__content {
     min-width: 0;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: clip;
+    padding-inline: var(--module-page-gutter);
+    box-sizing: border-box;
+}
+
+.shell__content > * {
+    max-width: 100%;
+    box-sizing: border-box;
 }
 
 .pos-layout-host {
@@ -2753,6 +2764,7 @@ html[data-theme="light"] .costos-lote__table th {
 
 .shell__main--calendario .shell__content {
     min-height: 100dvh;
+    padding-inline: 0;
 }
 
 .global-message-notice {
@@ -5672,18 +5684,18 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
 
 .shell:not(.shell--collapsed) .templates-page--odoo {
     position: fixed;
-    inset: 0 0 0 300px;
+    inset: var(--module-page-gutter) var(--module-page-gutter) var(--module-page-gutter) calc(300px + var(--module-page-gutter));
     z-index: 25;
-    min-height: 100vh;
-    height: 100vh;
+    min-height: calc(100vh - (var(--module-page-gutter) * 2));
+    height: calc(100vh - (var(--module-page-gutter) * 2));
 }
 
 .shell.shell--collapsed .templates-page--odoo {
     position: fixed;
-    inset: 0 0 0 92px;
+    inset: var(--module-page-gutter) var(--module-page-gutter) var(--module-page-gutter) calc(92px + var(--module-page-gutter));
     z-index: 25;
-    min-height: 100vh;
-    height: 100vh;
+    min-height: calc(100vh - (var(--module-page-gutter) * 2));
+    height: calc(100vh - (var(--module-page-gutter) * 2));
 }
 
 .templates-page--odoo .conversations-topbar {
@@ -5712,18 +5724,18 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
 
 .shell:not(.shell--collapsed) .conversations-page--odoo {
     position: fixed;
-    inset: 0 0 0 300px;
+    inset: var(--module-page-gutter) var(--module-page-gutter) var(--module-page-gutter) calc(300px + var(--module-page-gutter));
     z-index: 25;
-    min-height: 100vh;
-    height: 100vh;
+    min-height: calc(100vh - (var(--module-page-gutter) * 2));
+    height: calc(100vh - (var(--module-page-gutter) * 2));
 }
 
 .shell.shell--collapsed .conversations-page--odoo {
     position: fixed;
-    inset: 0 0 0 92px;
+    inset: var(--module-page-gutter) var(--module-page-gutter) var(--module-page-gutter) calc(92px + var(--module-page-gutter));
     z-index: 25;
-    min-height: 100vh;
-    height: 100vh;
+    min-height: calc(100vh - (var(--module-page-gutter) * 2));
+    height: calc(100vh - (var(--module-page-gutter) * 2));
 }
 
 .conversations-page--odoo .conversations-filters,
@@ -23023,7 +23035,15 @@ html[data-theme="light"] .tickets-table-wrap {
 .main-shell__content,
 .page-grid {
     width: 100% !important;
-    max-width: none !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
+    overflow-x: clip !important;
+}
+
+.shell__content,
+.main-shell__content {
+    padding-inline: var(--module-page-gutter) !important;
 }
 
 .shell__content {
@@ -23060,7 +23080,8 @@ html[data-theme="light"] .tickets-table-wrap {
 .launcher-grid,
 .templates-page--odoo,
 .conversations-page--odoo {
-    max-width: none !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
 }
 
 .reuniones-header,
@@ -23163,8 +23184,8 @@ html[data-theme="light"] .tickets-table-wrap {
 
 .conversations-page--odoo,
 .templates-page--odoo {
-    min-height: 100dvh !important;
-    height: 100dvh !important;
+    min-height: calc(100dvh - (var(--module-page-gutter) * 2)) !important;
+    height: calc(100dvh - (var(--module-page-gutter) * 2)) !important;
 }
 
 .empty-state {
