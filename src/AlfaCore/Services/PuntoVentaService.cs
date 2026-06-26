@@ -244,6 +244,7 @@ public sealed class PuntoVentaService(
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
+            await EnsureRequiredSaleProceduresAsync(cn, token);
 
             var context = await GetContextAsync(token);
             var settings = await GetSettingsAsync(token);
@@ -832,6 +833,31 @@ public sealed class PuntoVentaService(
         return row;
     }
 
+    private static async Task EnsureRequiredSaleProceduresAsync(SqlConnection cn, CancellationToken ct)
+    {
+        var requiredProcedures = new[]
+        {
+            "sp_web_Alta_Comprobante",
+            "sp_web_CpteInsumos",
+            "sp_web_CreaCobPorFactura",
+            "sp_web_creaLineaAsiento",
+            "sp_web_CreaAplicacionCobranzaFactura"
+        };
+
+        var missing = new List<string>();
+        foreach (var procedure in requiredProcedures)
+        {
+            if (!await ObjectExistsAsync(cn, procedure, "P", ct))
+                missing.Add(procedure);
+        }
+
+        if (missing.Count == 0)
+            return;
+
+        throw new InvalidOperationException(
+            $"La base activa no tiene los procedimientos del POS requeridos: {string.Join(", ", missing)}. Aplicá los updates SQL del punto de venta antes de cobrar.");
+    }
+
     private async Task AddReceiptItemAsync(SqlConnection cn, int idComprobante, PuntoVentaCartItemDto item, CancellationToken ct)
     {
         await using var cmd = new SqlCommand("dbo.sp_web_CpteInsumos", cn)
@@ -915,22 +941,10 @@ public sealed class PuntoVentaService(
     private async Task CreatePaymentSeedAsync(SqlConnection cn, int idCobranza, CancellationToken ct)
     {
         const string sql = """
-            BEGIN TRY
-                ALTER TABLE dbo.MV_ASIENTOS DISABLE TRIGGER ALL;
-                DECLARE @pResultado INT;
-                DECLARE @pMensaje NVARCHAR(250);
-                EXEC dbo.sp_web_creaLineaAsiento @pIdCobranza, 0, '', 1, NULL, @pResultado OUTPUT, @pMensaje OUTPUT;
-                ALTER TABLE dbo.MV_ASIENTOS ENABLE TRIGGER ALL;
-                SELECT @pResultado AS Resultado, @pMensaje AS Mensaje;
-            END TRY
-            BEGIN CATCH
-                BEGIN TRY
-                    ALTER TABLE dbo.MV_ASIENTOS ENABLE TRIGGER ALL;
-                END TRY
-                BEGIN CATCH
-                END CATCH;
-                THROW;
-            END CATCH
+            DECLARE @pResultado INT;
+            DECLARE @pMensaje NVARCHAR(250);
+            EXEC dbo.sp_web_creaLineaAsiento @pIdCobranza, 0, '', 1, NULL, @pResultado OUTPUT, @pMensaje OUTPUT;
+            SELECT @pResultado AS Resultado, @pMensaje AS Mensaje;
             """;
 
         var result = await cn.QuerySingleAsync<SpResultRow>(new CommandDefinition(
@@ -944,22 +958,10 @@ public sealed class PuntoVentaService(
     private async Task CreatePaymentLineAsync(SqlConnection cn, int idCobranza, PuntoVentaPaymentLineDto pago, CancellationToken ct)
     {
         const string sql = """
-            BEGIN TRY
-                ALTER TABLE dbo.MV_ASIENTOS DISABLE TRIGGER ALL;
-                DECLARE @pResultado INT;
-                DECLARE @pMensaje NVARCHAR(250);
-                EXEC dbo.sp_web_creaLineaAsiento @pIdCobranza, @Importe, @Codigo, 0, NULL, @pResultado OUTPUT, @pMensaje OUTPUT;
-                ALTER TABLE dbo.MV_ASIENTOS ENABLE TRIGGER ALL;
-                SELECT @pResultado AS Resultado, @pMensaje AS Mensaje;
-            END TRY
-            BEGIN CATCH
-                BEGIN TRY
-                    ALTER TABLE dbo.MV_ASIENTOS ENABLE TRIGGER ALL;
-                END TRY
-                BEGIN CATCH
-                END CATCH;
-                THROW;
-            END CATCH
+            DECLARE @pResultado INT;
+            DECLARE @pMensaje NVARCHAR(250);
+            EXEC dbo.sp_web_creaLineaAsiento @pIdCobranza, @Importe, @Codigo, 0, NULL, @pResultado OUTPUT, @pMensaje OUTPUT;
+            SELECT @pResultado AS Resultado, @pMensaje AS Mensaje;
             """;
 
         var result = await cn.QuerySingleAsync<SpResultRow>(new CommandDefinition(
@@ -978,22 +980,10 @@ public sealed class PuntoVentaService(
     private async Task CreateCollectionApplicationAsync(SqlConnection cn, int idCobranza, int idComprobante, CancellationToken ct)
     {
         const string sql = """
-            BEGIN TRY
-                ALTER TABLE dbo.MV_ASIENTOS DISABLE TRIGGER ALL;
-                DECLARE @pResultado INT;
-                DECLARE @pMensaje NVARCHAR(250);
-                EXEC dbo.sp_web_CreaAplicacionCobranzaFactura @pIdCobranza, @pIdComprobante, @pResultado OUTPUT, @pMensaje OUTPUT;
-                ALTER TABLE dbo.MV_ASIENTOS ENABLE TRIGGER ALL;
-                SELECT @pResultado AS Resultado, @pMensaje AS Mensaje;
-            END TRY
-            BEGIN CATCH
-                BEGIN TRY
-                    ALTER TABLE dbo.MV_ASIENTOS ENABLE TRIGGER ALL;
-                END TRY
-                BEGIN CATCH
-                END CATCH;
-                THROW;
-            END CATCH
+            DECLARE @pResultado INT;
+            DECLARE @pMensaje NVARCHAR(250);
+            EXEC dbo.sp_web_CreaAplicacionCobranzaFactura @pIdCobranza, @pIdComprobante, @pResultado OUTPUT, @pMensaje OUTPUT;
+            SELECT @pResultado AS Resultado, @pMensaje AS Mensaje;
             """;
 
         var result = await cn.QuerySingleAsync<SpResultRow>(new CommandDefinition(

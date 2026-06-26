@@ -30,6 +30,7 @@ BEGIN TRY
             UsuarioAsignado nvarchar(50) NOT NULL,
             Estado nvarchar(20) NOT NULL CONSTRAINT DF_ALFACORE_TAREAS_Estado DEFAULT (N'PENDIENTE'),
             UsuarioAlta nvarchar(50) NULL,
+            UsuarioCreador nvarchar(50) NULL,
             FechaHoraAlta datetime NOT NULL CONSTRAINT DF_ALFACORE_TAREAS_Alta DEFAULT (GETDATE()),
             FechaHoraModificacion datetime NULL,
             FechaHoraCompletada datetime NULL,

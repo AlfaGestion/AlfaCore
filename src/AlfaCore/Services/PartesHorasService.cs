@@ -202,15 +202,9 @@ public sealed class PartesHorasService(
                     UsuarioModificacion = @Usuario,
                     FechaHoraModificacion = GETDATE()
                 WHERE IdParteHora = @IdParteHora
-                  AND Estado <> @Aprobado;
-                """, new { IdParteHora = idParteHora, Usuario = NormalizeUser(usuarioAccion), Aprobado = ParteHoraEstadoKeys.Aprobado }, cancellationToken: token));
-        }, "No se pudo anular el parte de horas.", ct);
-
-    public Task AprobarAsync(long idParteHora, string usuarioAccion, CancellationToken ct = default)
-        => ChangeEstadoAsync(idParteHora, ParteHoraEstadoKeys.Aprobado, usuarioAccion, "Aprobar", "No se pudo aprobar el parte de horas.", ct);
-
-    public Task RechazarAsync(long idParteHora, string usuarioAccion, CancellationToken ct = default)
-        => ChangeEstadoAsync(idParteHora, ParteHoraEstadoKeys.Rechazado, usuarioAccion, "Rechazar", "No se pudo rechazar el parte de horas.", ct);
+                  AND ISNULL(Baja, 0) = 0;
+                """, new { IdParteHora = idParteHora, Usuario = NormalizeUser(usuarioAccion) }, cancellationToken: token));
+        }, "No se pudo borrar el parte de horas.", ct);
 
     public Task<ParteHoraDashboardDto> GetDashboardAsync(PartesHorasFilters filters, CancellationToken ct = default)
         => ExecuteLoggedAsync("Dashboard", async token =>
@@ -276,7 +270,11 @@ public sealed class PartesHorasService(
                 ORDER BY Nombre;
                 """, cancellationToken: token));
 
-            return new ParteHoraLookupDto { Tecnicos = tecnicos.ToList() };
+            return new ParteHoraLookupDto
+            {
+                Tecnicos = tecnicos.ToList(),
+                Estados = ParteHoraEstadoKeys.Editables.ToList()
+            };
         }, "No se pudieron cargar los datos auxiliares de partes.", ct);
 
     public Task<IReadOnlyList<ParteHoraLookupOptionDto>> SearchClientesAsync(string texto, CancellationToken ct = default)
@@ -298,6 +296,91 @@ public sealed class PartesHorasService(
             return rows.ToList();
         }, "No se pudieron buscar clientes.", ct);
 
+    public Task<IReadOnlyList<ParteHoraPersonaOptionDto>> SearchPersonasAsync(string texto, string? clienteCodigo = null, CancellationToken ct = default)
+        => ExecuteLoggedAsync<IReadOnlyList<ParteHoraPersonaOptionDto>>("SearchPersonas", async token =>
+        {
+            var searchText = (texto ?? string.Empty).Trim();
+            var cliente = TrimUpper(clienteCodigo);
+            if (searchText.Length < 2 && string.IsNullOrWhiteSpace(cliente))
+                return [];
+
+            await using var cn = new SqlConnection(ConnectionString);
+            var rows = await cn.QueryAsync<ParteHoraPersonaOptionDto>(new CommandDefinition("""
+                SELECT TOP (20)
+                    CAST(N'CONTACTO' AS nvarchar(20)) AS Tipo,
+                    c.id AS IdContacto,
+                    CAST(N'' AS nvarchar(100)) AS Usuario,
+                    ISNULL(c.Nombre_y_Apellido, '') AS Nombre,
+                    ISNULL(c.Email, '') AS Email,
+                    ISNULL(c.Telefono, '') AS Telefono,
+                    ISNULL(c.Celular, '') AS Celular,
+                    ISNULL(contactoCuenta.Cuenta, '') AS ClienteCodigo,
+                    ISNULL(contactoCuenta.RazonSocial, '') AS ClienteNombre,
+                    CONCAT(
+                        ISNULL(contactoCuenta.Localidad, ''),
+                        CASE WHEN ISNULL(contactoCuenta.Provincia, '') = '' THEN '' ELSE ' - ' + contactoCuenta.Provincia END
+                    ) AS Direccion
+                FROM dbo.MA_CONTACTOS c
+                OUTER APPLY (
+                    SELECT TOP (1)
+                        cuenta.Cuenta,
+                        cliCuenta.RAZON_SOCIAL AS RazonSocial,
+                        ISNULL(cliCuenta.LOCALIDAD, '') AS Localidad,
+                        ISNULL(cliCuenta.PROVINCIA, '') AS Provincia
+                    FROM (
+                        SELECT UPPER(LTRIM(RTRIM(rel.Cuenta))) AS Cuenta, 0 AS Orden
+                        FROM dbo.MA_CONTACTOS_CUENTAS rel
+                        WHERE rel.IdContacto = ISNULL(NULLIF(c.idContacto, 0), c.id)
+                          AND LTRIM(RTRIM(ISNULL(rel.Cuenta, ''))) <> ''
+                        UNION ALL
+                        SELECT UPPER(LTRIM(RTRIM(c.CuentaRel))) AS Cuenta, 1 AS Orden
+                        WHERE LTRIM(RTRIM(ISNULL(c.CuentaRel, ''))) <> ''
+                    ) cuenta
+                    INNER JOIN dbo.VT_CLIENTES cliCuenta
+                        ON UPPER(LTRIM(RTRIM(cliCuenta.CODIGO))) = cuenta.Cuenta
+                    WHERE @ClienteCodigo = '' OR cuenta.Cuenta = @ClienteCodigo
+                    ORDER BY cuenta.Orden, cliCuenta.RAZON_SOCIAL
+                ) contactoCuenta
+                WHERE (@ClienteCodigo = '' OR contactoCuenta.Cuenta = @ClienteCodigo)
+                  AND (
+                        @Texto = ''
+                        OR c.Nombre_y_Apellido COLLATE Latin1_General_CI_AI LIKE @Search
+                        OR c.Email COLLATE Latin1_General_CI_AI LIKE @Search
+                        OR c.Telefono LIKE @Search
+                        OR c.Celular LIKE @Search
+                      )
+
+                UNION ALL
+
+                SELECT TOP (20)
+                    CAST(N'USUARIO' AS nvarchar(20)) AS Tipo,
+                    CAST(NULL AS int) AS IdContacto,
+                    LTRIM(RTRIM(ISNULL(u.NOMBRE, ''))) AS Usuario,
+                    LTRIM(RTRIM(ISNULL(u.NOMBRE, ''))) AS Nombre,
+                    ISNULL(u.email_de, '') AS Email,
+                    CAST(N'' AS nvarchar(80)) AS Telefono,
+                    CAST(N'' AS nvarchar(80)) AS Celular,
+                    CAST(N'' AS nvarchar(40)) AS ClienteCodigo,
+                    CAST(N'Equipo Alfa' AS nvarchar(160)) AS ClienteNombre,
+                    CAST(N'Usuario interno' AS nvarchar(220)) AS Direccion
+                FROM dbo.TA_USUARIOS u
+                WHERE UPPER(LTRIM(RTRIM(ISNULL(u.SISTEMA, '')))) = N'CN000PR'
+                  AND LTRIM(RTRIM(ISNULL(u.NOMBRE, ''))) <> ''
+                  AND (
+                        @Texto = ''
+                        OR u.NOMBRE COLLATE Latin1_General_CI_AI LIKE @Search
+                        OR u.email_de COLLATE Latin1_General_CI_AI LIKE @Search
+                      )
+                ORDER BY Tipo, Nombre;
+                """, new
+            {
+                Texto = searchText,
+                Search = SearchTextHelper.LikeContains(searchText),
+                ClienteCodigo = cliente
+            }, cancellationToken: token));
+            return rows.ToList();
+        }, "No se pudieron buscar contactos o usuarios.", ct);
+
     public Task<IReadOnlyList<ParteHoraTicketOptionDto>> SearchTicketsAsync(string texto, string? clienteCodigo = null, CancellationToken ct = default)
         => ExecuteLoggedAsync<IReadOnlyList<ParteHoraTicketOptionDto>>("SearchTickets", async token =>
         {
@@ -312,7 +395,9 @@ public sealed class PartesHorasService(
                     ISNULL(cli.RAZON_SOCIAL, '') AS ClienteNombre
                 FROM dbo.TICK_TICKETS t
                 LEFT JOIN dbo.VT_CLIENTES cli ON cli.CODIGO = t.ClienteCodigo
+                LEFT JOIN dbo.TICK_ESTADOS e ON e.CodigoEstado = t.CodigoEstado
                 WHERE ISNULL(t.Baja, 0) = 0
+                  AND ISNULL(e.EsCerrado, 0) = 0
                   AND (@ClienteCodigo = '' OR UPPER(LTRIM(RTRIM(ISNULL(t.ClienteCodigo, '')))) = @ClienteCodigo)
                   AND (@Search = '' OR CONVERT(varchar(20), t.Numero) LIKE @SearchLike OR ISNULL(t.Titulo, '') COLLATE Latin1_General_CI_AI LIKE @SearchLike)
                 ORDER BY t.FechaHoraAlta DESC, t.IdTicket DESC;
@@ -373,21 +458,11 @@ public sealed class PartesHorasService(
             }, cancellationToken: token));
         }, "No se pudo guardar la bolsa mensual del cliente.", ct);
 
-    private Task ChangeEstadoAsync(long idParteHora, string estado, string usuarioAccion, string action, string userMessage, CancellationToken ct)
-        => ExecuteLoggedAsync(action, async token =>
-        {
-            await using var cn = new SqlConnection(ConnectionString);
-            await cn.ExecuteAsync(new CommandDefinition("""
-                UPDATE dbo.ALFACORE_PARTES_HORAS
-                SET Estado = @Estado,
-                    UsuarioAprobacion = @Usuario,
-                    FechaHoraAprobacion = GETDATE(),
-                    UsuarioModificacion = @Usuario,
-                    FechaHoraModificacion = GETDATE()
-                WHERE IdParteHora = @IdParteHora
-                  AND ISNULL(Baja, 0) = 0;
-                """, new { IdParteHora = idParteHora, Estado = estado, Usuario = NormalizeUser(usuarioAccion) }, cancellationToken: token));
-        }, userMessage, ct);
+    public Task AprobarAsync(long idParteHora, string usuarioAccion, CancellationToken ct = default)
+        => CambiarEstadoAsync(idParteHora, ParteHoraEstadoKeys.Aprobado, usuarioAccion, "Aprobar", ct);
+
+    public Task RechazarAsync(long idParteHora, string usuarioAccion, CancellationToken ct = default)
+        => CambiarEstadoAsync(idParteHora, ParteHoraEstadoKeys.Rechazado, usuarioAccion, "Rechazar", ct);
 
     private static string SelectGridSql() => """
         SELECT
@@ -469,6 +544,8 @@ public sealed class PartesHorasService(
             throw ValidationError("tecnico", "Indicá el técnico o usuario que realizó el trabajo.");
         if (request.TipoTrabajo != ParteHoraTipoTrabajoKeys.Interno && string.IsNullOrWhiteSpace(request.ClienteCodigo))
             throw ValidationError("cliente", "Indicá el cliente o usá tipo Interno para tareas no imputables.");
+        if (string.IsNullOrWhiteSpace(request.Descripcion))
+            throw ValidationError("descripcion", "Indica la descripcion de la tarea.");
     }
 
     private static ParteHoraSaveRequest Normalize(ParteHoraSaveRequest request)
@@ -485,7 +562,7 @@ public sealed class PartesHorasService(
             Minutos = request.Minutos,
             Facturable = request.Facturable,
             Excedente = request.Excedente,
-            Estado = NormalizeAllowed(request.Estado, ParteHoraEstadoKeys.All, ParteHoraEstadoKeys.Borrador),
+            Estado = NormalizeAllowed(request.Estado, ParteHoraEstadoKeys.Editables, ParteHoraEstadoKeys.Borrador),
             Descripcion = request.Descripcion?.Trim() ?? string.Empty,
             UsuarioAccion = NormalizeUser(request.UsuarioAccion)
         };
@@ -576,6 +653,41 @@ public sealed class PartesHorasService(
 
     private static string NormalizeUser(string? value)
         => string.IsNullOrWhiteSpace(value) ? Environment.UserName : value.Trim();
+
+    private Task CambiarEstadoAsync(long idParteHora, string estado, string usuarioAccion, string accion, CancellationToken ct)
+        => ExecuteLoggedAsync(accion, async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            var usuario = NormalizeUser(usuarioAccion);
+
+            var rows = await cn.ExecuteAsync(new CommandDefinition("""
+                UPDATE dbo.ALFACORE_PARTES_HORAS
+                SET Estado = @Estado,
+                    UsuarioAprobacion = @Usuario,
+                    FechaHoraAprobacion = GETDATE(),
+                    UsuarioModificacion = @Usuario,
+                    FechaHoraModificacion = GETDATE()
+                WHERE IdParteHora = @IdParteHora
+                  AND ISNULL(Baja, 0) = 0;
+                """, new
+            {
+                IdParteHora = idParteHora,
+                Estado = estado,
+                Usuario = usuario
+            }, cancellationToken: token));
+
+            if (rows == 0)
+                throw new InvalidOperationException("No se encontró el parte de horas para actualizar.");
+
+            await appEvents.LogAuditAsync(
+                ModuleName,
+                accion,
+                "ALFACORE_PARTES_HORAS",
+                idParteHora.ToString(),
+                $"Parte de horas {estado.ToLowerInvariant()}.",
+                new { Estado = estado, Usuario = usuario },
+                token);
+        }, $"No se pudo {accion.ToLowerInvariant()} el parte de horas.", ct);
 
     private async Task<T> ExecuteLoggedAsync<T>(string action, Func<CancellationToken, Task<T>> operation, string userMessage, CancellationToken ct)
     {

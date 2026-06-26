@@ -1,0 +1,776 @@
+@page "/informes/novedades"
+@inject AlfaCore.Services.INovedadesService NovedadesSvc
+@inject AlfaCore.Services.IAppUserSessionService AppUserSession
+@inject AlfaCore.Services.IAppUiOperationService UiOps
+@inject AlfaCore.Services.IAppUiDialogService AppDialogs
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.AspNetCore.WebUtilities
+@implements IAsyncDisposable
+
+<PageTitle>Novedades | AlfaCore</PageTitle>
+<HeadContent>
+    <link rel="stylesheet" href="/css/novedades.css?v=20260623-04" />
+</HeadContent>
+
+<section class="novedades-shell">
+    <aside class="novedades-sidebar">
+        <div class="novedades-sidebar__top">
+            <div>
+                <span>Informes</span>
+                <h2>Novedades</h2>
+            </div>
+            <button type="button" title="Recargar" @onclick="ReloadAsync">
+                <i class="bi bi-arrow-clockwise"></i>
+            </button>
+        </div>
+
+        <div class="novedades-actions">
+            <button type="button" class="novedades-primary" @onclick="() => CreateDraftAsync(NovedadTipos.Manual)">
+                <i class="bi bi-plus-lg"></i>
+                <span>Manual</span>
+            </button>
+            <button type="button" @onclick="() => CreateDraftAsync(NovedadTipos.BoletinPatch)">
+                <i class="bi bi-stars"></i>
+                <span>Boletin patch</span>
+            </button>
+        </div>
+
+        <label class="novedades-search">
+            <i class="bi bi-search"></i>
+            <input @bind="_filter.Busqueda" @bind:event="oninput" @onkeyup="SearchKeyUpAsync" placeholder="Buscar version o titulo" />
+        </label>
+
+        <div class="novedades-filter-row">
+            <select @bind="_filter.Estado" @bind:after="ReloadAsync">
+                <option value="">Todos</option>
+                <option value="@NovedadEstados.Borrador">Borradores</option>
+                <option value="@NovedadEstados.Programado">Programadas</option>
+                <option value="@NovedadEstados.Publicado">Publicadas</option>
+            </select>
+            <select @bind="_filter.Tipo" @bind:after="ReloadAsync">
+                <option value="">Tipos</option>
+                <option value="@NovedadTipos.Manual">Manual</option>
+                <option value="@NovedadTipos.BoletinPatch">Boletin patch</option>
+            </select>
+        </div>
+
+        <div class="novedades-list">
+            @foreach (var item in _page.Novedades)
+            {
+                <button type="button"
+                        class="@GetListItemClass(item)"
+                        @onclick="() => SelectAsync(item.IdNovedad)">
+                    <i class="bi @item.Icono"></i>
+                    <span>
+                        <strong>@item.Titulo</strong>
+                        <small>@BuildItemMeta(item)</small>
+                    </span>
+                </button>
+            }
+        </div>
+    </aside>
+
+    <main class="novedades-main">
+        @if (!string.IsNullOrWhiteSpace(_feedback))
+        {
+            <div class="novedades-feedback">@_feedback</div>
+        }
+
+        @if (_loading)
+        {
+            <div class="novedades-empty">
+                <i class="bi bi-hourglass-split"></i>
+                <h2>Cargando novedades</h2>
+            </div>
+        }
+        else if (_selected is null)
+        {
+            <div class="novedades-empty">
+                <i class="bi bi-megaphone"></i>
+                <h2>No hay una novedad seleccionada</h2>
+                <p>Creá un comunicado manual o un borrador de patch para empezar.</p>
+            </div>
+        }
+        else
+        {
+            <header class="novedades-header">
+                <div class="novedades-title-block">
+                    <span class="@($"novedades-status novedades-status--{_draft.Estado.ToLowerInvariant()}")">@EstadoLabel(_draft.Estado)</span>
+                    <h1>@_draft.Titulo</h1>
+                    <p>@_draft.Bajada</p>
+                </div>
+                <div class="novedades-header__actions">
+                    <button type="button" class="btn btn--ghost" disabled="@_saving" @onclick="OpenPreviewAsync">
+                        <i class="bi bi-eye"></i>
+                        <span>Vista previa</span>
+                    </button>
+                    <button type="button" class="btn btn--ghost" disabled="@_saving" @onclick="DuplicateAsync">
+                        <i class="bi bi-copy"></i>
+                        <span>Duplicar</span>
+                    </button>
+                    <button type="button" class="btn btn--primary" disabled="@_saving" @onclick="SaveAsync">
+                        <i class="bi bi-save"></i>
+                        <span>Guardar</span>
+                    </button>
+                </div>
+            </header>
+
+            <section class="novedades-metrics">
+                <article>
+                    <span>Borradores</span>
+                    <strong>@_page.Metricas.Borradores</strong>
+                </article>
+                <article>
+                    <span>Programadas</span>
+                    <strong>@_page.Metricas.Programadas</strong>
+                </article>
+                <article>
+                    <span>Publicadas</span>
+                    <strong>@_page.Metricas.Publicadas</strong>
+                </article>
+                <article>
+                    <span>Pendientes</span>
+                    <strong>@_page.Metricas.LecturasPendientes</strong>
+                </article>
+            </section>
+
+            <nav class="novedades-tabs" aria-label="Secciones de la novedad">
+                <button type="button"
+                        class="@GetTabClass(TabDetails)"
+                        aria-selected="@(_activeTab == TabDetails)"
+                        @onclick="() => SelectTabAsync(TabDetails)">
+                    <i class="bi bi-file-earmark-text"></i>
+                    <span>Detalles</span>
+                </button>
+                <button type="button"
+                        class="@GetTabClass(TabSettings)"
+                        aria-selected="@(_activeTab == TabSettings)"
+                        @onclick="() => SelectTabAsync(TabSettings)">
+                    <i class="bi bi-sliders"></i>
+                    <span>Ajustes</span>
+                </button>
+            </nav>
+
+            <div class="@WorkspaceClass">
+                <section class="novedades-editor-panel" hidden="@(_activeTab != TabDetails)">
+                    <header class="novedades-document-head">
+                        <span class="novedades-document-head__icon"><i class="bi @_draft.Icono"></i></span>
+                        <div>
+                            <small>@(string.IsNullOrWhiteSpace(_draft.Version) ? TipoLabel(_draft.Tipo) : _draft.Version)</small>
+                            <strong>@_draft.Titulo</strong>
+                        </div>
+                    </header>
+
+                    <div class="novedades-rich-editor" @ref="_editorRoot">
+                        <div class="novedades-editor-toolbar">
+                            @foreach (var option in ToolbarCommands)
+                            {
+                                <button type="button" title="@option.Title" @onclick="() => RunEditorCommandAsync(option)">
+                                    <i class="bi @option.Icon"></i>
+                                </button>
+                            }
+                            <button type="button" title="Comandos" @onclick="ToggleCommandMenu">
+                                <i class="bi bi-three-dots-vertical"></i>
+                            </button>
+                        </div>
+                        <div class="informes-editor-surface novedades-editor-surface"
+                             @ref="_contentEditor"
+                             contenteditable="true"
+                             data-placeholder="Escribi el contenido del comunicado"></div>
+
+                        @if (_showCommandMenu)
+                        {
+                            <div class="novedades-command-menu">
+                                @foreach (var group in EditorCommands.GroupBy(x => x.Group))
+                                {
+                                    <div>
+                                        <span>@group.Key</span>
+                                        @foreach (var option in group)
+                                        {
+                                            <button type="button" @onclick="() => RunEditorCommandAsync(option)">
+                                                <i class="bi @option.Icon"></i>
+                                                <strong>@option.Title</strong>
+                                                <small>@option.Description</small>
+                                            </button>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                </section>
+
+                <section class="novedades-settings" hidden="@(_activeTab != TabSettings)">
+                    <section class="novedades-settings-section">
+                        <header>
+                            <i class="bi bi-card-heading"></i>
+                            <div><h3>Identidad</h3><p>Nombre, version y presentacion general del comunicado.</p></div>
+                        </header>
+                        <div class="novedades-form-grid novedades-form-grid--three">
+                            <label class="novedades-span-2"><span>Titulo</span><input @bind="_draft.Titulo" @bind:event="oninput" /></label>
+                            <label><span>Version</span><input @bind="_draft.Version" @bind:event="oninput" placeholder="AlfaCore Patch 0.1" /></label>
+                            <label class="novedades-span-3"><span>Bajada</span><input @bind="_draft.Bajada" @bind:event="oninput" /></label>
+                            <label><span>Tipo</span><select @bind="_draft.Tipo"><option value="@NovedadTipos.Manual">Manual</option><option value="@NovedadTipos.BoletinPatch">Boletin patch</option></select></label>
+                            <label><span>Prioridad</span><select @bind="_draft.Prioridad"><option value="@NovedadPrioridades.Info">Informativo</option><option value="@NovedadPrioridades.Importante">Importante</option><option value="@NovedadPrioridades.Critico">Critico</option></select></label>
+                            <label><span>Icono</span><select @bind="_draft.Icono">@foreach (var icon in IconOptions) { <option value="@icon.Value">@icon.Label</option> }</select></label>
+                            <label><span>Color</span><select @bind="_draft.Acento"><option value="@NovedadAcentos.Azul">Azul</option><option value="@NovedadAcentos.Verde">Verde</option><option value="@NovedadAcentos.Cian">Cian</option><option value="@NovedadAcentos.Ambar">Ambar</option><option value="@NovedadAcentos.Rojo">Rojo</option><option value="@NovedadAcentos.Grafito">Grafito</option></select></label>
+                        </div>
+                    </section>
+
+                    <section class="novedades-settings-section">
+                        <header>
+                            <i class="bi bi-calendar2-check"></i>
+                            <div><h3>Publicacion</h3><p>Estado, fechas y comportamiento del anuncio para el equipo.</p></div>
+                        </header>
+                        <div class="novedades-form-grid novedades-form-grid--three">
+                            <label><span>Estado</span><select @bind="_draft.Estado"><option value="@NovedadEstados.Borrador">Borrador</option><option value="@NovedadEstados.Programado">Programado</option><option value="@NovedadEstados.Publicado">Publicado</option></select></label>
+                            <label><span>Programar</span><input type="datetime-local" value="@_fechaProgramadaText" @onchange="OnFechaProgramadaChanged" /></label>
+                            <label><span>Vigente hasta</span><input type="datetime-local" value="@_vigenteHastaText" @onchange="OnVigenteHastaChanged" /></label>
+                        </div>
+                        <div class="novedades-switch-grid">
+                            <label><input type="checkbox" @bind="_draft.MostrarPopup" /><span><strong>Mostrar popup</strong><small>Aparece automaticamente al ingresar.</small></span></label>
+                            <label><input type="checkbox" @bind="_draft.LecturaObligatoria" /><span><strong>Lectura obligatoria</strong><small>No permite cerrar sin confirmar lectura.</small></span></label>
+                            <label><input type="checkbox" @bind="_draft.RepetirHastaLeer" /><span><strong>Repetir hasta leer</strong><small>Vuelve a mostrarse mientras siga pendiente.</small></span></label>
+                        </div>
+                        <div class="novedades-settings-actions">
+                            <button type="button" class="btn btn--primary" @onclick="PublishNowAsync"><i class="bi bi-send-check"></i><span>Publicar ahora</span></button>
+                            <button type="button" class="btn btn--ghost" @onclick="ArchiveAsync"><i class="bi bi-archive"></i><span>Archivar</span></button>
+                            <button type="button" class="btn novedades-btn--danger" @onclick="DeleteAsync"><i class="bi bi-trash3"></i><span>Eliminar</span></button>
+                        </div>
+                    </section>
+
+                    <section class="novedades-settings-section">
+                        <header>
+                            <i class="bi bi-image"></i>
+                            <div><h3>Presentacion</h3><p>Portada y firma visibles en el comunicado.</p></div>
+                        </header>
+                        <div class="novedades-presentation-grid">
+                            <div class="@CoverClass" style="@CoverStyle">
+                                @if (_draft.PortadaTipo == NovedadPortadas.Url && !string.IsNullOrWhiteSpace(_draft.PortadaValor)) { <img src="@_draft.PortadaValor" alt="" /> }
+                                <div><i class="bi @_draft.Icono"></i><span>@(string.IsNullOrWhiteSpace(_draft.Version) ? "Comunicado interno" : _draft.Version)</span></div>
+                            </div>
+                            <div class="novedades-form-grid">
+                                <label><span>Portada</span><select @bind="_draft.PortadaTipo"><option value="@NovedadPortadas.Ninguna">Sin portada</option><option value="@NovedadPortadas.Gradiente">Portada AlfaCore</option><option value="@NovedadPortadas.Url">Imagen</option></select></label>
+                                <label><span>URL de imagen</span><input @bind="_draft.PortadaValor" @bind:event="oninput" placeholder="/uploads/novedades/imagen.jpg" /></label>
+                                <label class="novedades-upload"><i class="bi bi-upload"></i><span>Subir imagen</span><InputFile OnChange="HandleCoverFileSelectedAsync" accept="image/jpeg,image/png,image/webp,image/gif" /></label>
+                                <label><span>Footer del comunicado</span><input @bind="_draft.Footer" @bind:event="oninput" /></label>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="novedades-settings-section novedades-settings-section--summary">
+                        <header><i class="bi bi-bar-chart"></i><div><h3>Seguimiento</h3><p>Actividad registrada para esta publicacion.</p></div></header>
+                        <div class="novedades-tracking">
+                            <div><span>Estado</span><strong>@EstadoLabel(_draft.Estado)</strong></div>
+                            <div><span>Lecturas</span><strong>@_selected.Lecturas</strong><small>@_selected.Vistas vistas</small></div>
+                            <div><span>Modificado</span><strong>@_selected.FechaHoraModificacion.ToString("dd/MM/yyyy")</strong><small>@_selected.FechaHoraModificacion.ToString("HH:mm")</small></div>
+                        </div>
+                    </section>
+
+                </section>
+            </div>
+        }
+    </main>
+</section>
+
+@if (_previewOpen && _selected is not null)
+{
+    <div class="novedades-preview-backdrop" role="dialog" aria-modal="true" @onclick="ClosePreviewAsync">
+        <article class="@PreviewClass" @onclick:stopPropagation="true">
+            <header>
+                <div>
+                    <span>@(string.IsNullOrWhiteSpace(_draft.Version) ? TipoLabel(_draft.Tipo) : _draft.Version)</span>
+                    <h2>@_draft.Titulo</h2>
+                    <p>@_draft.Bajada</p>
+                </div>
+                <button type="button" title="Cerrar" @onclick="ClosePreviewAsync">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </header>
+            @if (_draft.PortadaTipo == NovedadPortadas.Url && !string.IsNullOrWhiteSpace(_draft.PortadaValor))
+            {
+                <img class="novedades-preview__cover" src="@_draft.PortadaValor" alt="" />
+            }
+            <div class="novedades-preview__body" @ref="_previewBody"></div>
+            @if (!string.IsNullOrWhiteSpace(_draft.Footer))
+            {
+                <footer>@_draft.Footer</footer>
+            }
+        </article>
+    </div>
+}
+
+@code {
+    private NovedadesPageDto _page = new();
+    private NovedadDetalleDto? _selected;
+    private NovedadSaveRequest _draft = new();
+    private NovedadesFilterDto _filter = new();
+    private ElementReference _editorRoot;
+    private ElementReference _contentEditor;
+    private ElementReference _previewBody;
+    private IJSObjectReference? _editorJs;
+    private IJSObjectReference? _informesEditorJs;
+    private IJSObjectReference? _novedadesEditorJs;
+    private DotNetObjectReference<Novedades>? _selfReference;
+    private bool _loading;
+    private bool _saving;
+    private bool _editorReady;
+    private bool _editorRootWired;
+    private bool _showCommandMenu;
+    private bool _previewOpen;
+    private bool _previewKeyboardWired;
+    private string _activeTab = TabDetails;
+    private string _feedback = string.Empty;
+    private string _fechaProgramadaText = string.Empty;
+    private string _vigenteHastaText = string.Empty;
+
+    private string CurrentUser => AppUserSession.CurrentUser?.UserName?.Trim() ?? string.Empty;
+
+    private const string TabDetails = "details";
+    private const string TabSettings = "settings";
+
+    private static readonly IReadOnlyList<EditorCommandOption> EditorCommands =
+    [
+        new("FORMATO", "Titulo 1", "Titulo principal", "bi-type-h1", "h1"),
+        new("FORMATO", "Titulo 2", "Seccion", "bi-type-h2", "h2"),
+        new("FORMATO", "Parrafo", "Texto normal", "bi-paragraph", "paragraph"),
+        new("LISTAS", "Viñetas", "Lista simple", "bi-list-ul", "bulletList"),
+        new("LISTAS", "Numerada", "Lista ordenada", "bi-list-ol", "numberedList"),
+        new("LISTAS", "Checklist", "Tareas del patch", "bi-check2-square", "checkList"),
+        new("BLOQUES", "Info", "Llamado informativo", "bi-info-circle", "infoBanner"),
+        new("BLOQUES", "Exito", "Llamado positivo", "bi-check-circle", "successBanner"),
+        new("BLOQUES", "Atencion", "Punto importante", "bi-exclamation-triangle", "warningBanner"),
+        new("BLOQUES", "Imagen", "Captura o icono", "bi-image", "media"),
+        new("BLOQUES", "Separador", "Linea divisoria", "bi-hr", "separator"),
+        new("BLOQUES", "Boton", "Enlace destacado", "bi-link-45deg", "button")
+    ];
+
+    private static readonly IReadOnlyList<EditorCommandOption> ToolbarCommands =
+    [
+        EditorCommands[0],
+        EditorCommands[1],
+        EditorCommands[3],
+        EditorCommands[5],
+        EditorCommands[6],
+        EditorCommands[8],
+        EditorCommands[9],
+        EditorCommands[11]
+    ];
+
+    private static readonly IReadOnlyList<(string Value, string Label)> IconOptions =
+    [
+        ("bi-megaphone", "Megafono"),
+        ("bi-stars", "Novedad"),
+        ("bi-rocket-takeoff", "Lanzamiento"),
+        ("bi-tools", "Herramientas"),
+        ("bi-journal-richtext", "Informe"),
+        ("bi-shield-check", "Seguridad"),
+        ("bi-lightbulb", "Idea"),
+        ("bi-exclamation-triangle", "Atencion")
+    ];
+
+    protected override async Task OnInitializedAsync()
+        => await LoadAsync(GetInitialId());
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _editorJs = await JS.InvokeAsync<IJSObjectReference>("import", "/js/tickets-rich-editor.js?v=20260519i");
+            _informesEditorJs = await JS.InvokeAsync<IJSObjectReference>("import", "/js/informes-editor.js?v=20260609-image-paste");
+            _novedadesEditorJs = await JS.InvokeAsync<IJSObjectReference>("import", "/js/novedades-editor.js?v=20260623-02");
+            _selfReference = DotNetObjectReference.Create(this);
+        }
+
+        if (_selected is not null && !_editorReady && _editorJs is not null)
+        {
+            await _editorJs.InvokeVoidAsync("setHtml", _contentEditor, NormalizeEditorHtml(_draft.Contenido));
+            if (_informesEditorJs is not null && !_editorRootWired)
+            {
+                await _informesEditorJs.InvokeVoidAsync("wireInformesEditor", _editorRoot);
+                _editorRootWired = true;
+            }
+
+            _editorReady = true;
+            if (_novedadesEditorJs is not null)
+                await _novedadesEditorJs.InvokeVoidAsync("wireNovedadesEditor", _contentEditor);
+        }
+
+        if (_previewOpen && !_previewKeyboardWired && _novedadesEditorJs is not null && _selfReference is not null)
+        {
+            await _novedadesEditorJs.InvokeVoidAsync("renderPreviewContent", _contentEditor, _previewBody);
+            await _novedadesEditorJs.InvokeVoidAsync("wirePreviewEscape", _selfReference);
+            _previewKeyboardWired = true;
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_informesEditorJs is not null)
+            await _informesEditorJs.DisposeAsync();
+        if (_novedadesEditorJs is not null)
+        {
+            await _novedadesEditorJs.InvokeVoidAsync("unwirePreviewEscape");
+            await _novedadesEditorJs.DisposeAsync();
+        }
+        if (_editorJs is not null)
+            await _editorJs.DisposeAsync();
+        _selfReference?.Dispose();
+    }
+
+    private async Task LoadAsync(long? selectedId = null)
+    {
+        _loading = true;
+        _feedback = string.Empty;
+        _editorReady = false;
+        _editorRootWired = false;
+
+        var result = await UiOps.RunAsync(() => NovedadesSvc.GetPageAsync(_filter, selectedId, CurrentUser), "No se pudo cargar novedades.");
+        if (result.Success && result.Value is not null)
+        {
+            _page = result.Value;
+            ApplySelected(_page.Seleccionada);
+        }
+        else
+        {
+            _feedback = FeedbackText(result.Feedback);
+        }
+
+        _loading = false;
+    }
+
+    private async Task ReloadAsync()
+        => await LoadAsync(_selected?.IdNovedad);
+
+    private async Task SearchKeyUpAsync(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter")
+            await LoadAsync();
+    }
+
+    private async Task SelectAsync(long idNovedad)
+    {
+        await FlushEditorAsync();
+        await LoadAsync(idNovedad);
+    }
+
+    private async Task CreateDraftAsync(string tipo)
+    {
+        _feedback = "Creando borrador...";
+        await InvokeAsync(StateHasChanged);
+
+        var result = await UiOps.RunAsync(() => NovedadesSvc.CreateDraftAsync(tipo, CurrentUser), "No se pudo crear el borrador.");
+        if (result.Success)
+            await LoadAsync(result.Value);
+        else
+            _feedback = FeedbackText(result.Feedback);
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_selected is null)
+            return;
+
+        await FlushEditorAsync();
+        _saving = true;
+        _feedback = string.Empty;
+
+        var request = SnapshotDraft();
+        var result = await UiOps.RunAsync(() => NovedadesSvc.SaveAsync(request), "No se pudo guardar la novedad.");
+        if (result.Success)
+        {
+            _feedback = "Novedad guardada.";
+            await LoadAsync(result.Value);
+        }
+        else
+        {
+            _feedback = FeedbackText(result.Feedback);
+        }
+
+        _saving = false;
+    }
+
+    private async Task PublishNowAsync()
+    {
+        _draft.Estado = NovedadEstados.Publicado;
+        _draft.FechaProgramada = DateTime.Now;
+        _fechaProgramadaText = ToInputDateTime(_draft.FechaProgramada);
+        await SaveAsync();
+    }
+
+    private async Task ArchiveAsync()
+    {
+        if (_selected is null)
+            return;
+
+        var result = await UiOps.RunAsync(async () => { await NovedadesSvc.ArchiveAsync(_selected.IdNovedad, CurrentUser); return true; }, "No se pudo archivar.");
+        if (result.Success)
+            await LoadAsync();
+        else
+            _feedback = FeedbackText(result.Feedback);
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (_selected is null)
+            return;
+
+        var confirmed = await AppDialogs.ConfirmAsync(
+            "Eliminar comunicado",
+            $"Se eliminara definitivamente '{_selected.Titulo}'.",
+            "Eliminar",
+            "Cancelar",
+            "Las lecturas registradas tambien se eliminaran. Esta accion no se puede deshacer.",
+            "bi bi-trash3");
+
+        if (!confirmed)
+            return;
+
+        var id = _selected.IdNovedad;
+        var result = await UiOps.RunAsync(async () =>
+        {
+            await NovedadesSvc.DeleteAsync(id, CurrentUser);
+            return true;
+        }, "No se pudo eliminar la novedad.");
+
+        if (result.Success)
+        {
+            _feedback = "Comunicado eliminado.";
+            await LoadAsync();
+        }
+        else
+        {
+            _feedback = FeedbackText(result.Feedback);
+        }
+    }
+
+    private async Task DuplicateAsync()
+    {
+        if (_selected is null)
+            return;
+
+        var result = await UiOps.RunAsync(async () => { await NovedadesSvc.DuplicateAsync(_selected.IdNovedad, CurrentUser); return true; }, "No se pudo duplicar.");
+        if (result.Success)
+            await LoadAsync();
+        else
+            _feedback = FeedbackText(result.Feedback);
+    }
+
+    private async Task HandleCoverFileSelectedAsync(InputFileChangeEventArgs args)
+    {
+        var file = args.File;
+        if (file is null)
+            return;
+
+        try
+        {
+            await using var stream = file.OpenReadStream(4 * 1024 * 1024);
+            var url = await NovedadesSvc.SaveCoverImageAsync(stream, file.Name, file.ContentType, CurrentUser);
+            _draft.PortadaTipo = NovedadPortadas.Url;
+            _draft.PortadaValor = url;
+            _feedback = "Imagen cargada.";
+        }
+        catch (Exception ex)
+        {
+            _feedback = ex.Message;
+        }
+    }
+
+    private async Task RunEditorCommandAsync(EditorCommandOption option)
+    {
+        if (_editorJs is null)
+            return;
+
+        if (_informesEditorJs is not null && option.Command is not "button")
+            await _informesEditorJs.InvokeVoidAsync("closeInformesPopups", _editorRoot);
+
+        await _editorJs.InvokeVoidAsync("runCommand", _contentEditor, option.Command);
+        if (_informesEditorJs is not null)
+            await _informesEditorJs.InvokeVoidAsync("normalizeInformesBlocks", _contentEditor);
+        if (_novedadesEditorJs is not null)
+            await _novedadesEditorJs.InvokeVoidAsync("refreshMedia", _contentEditor);
+        await SyncContentFromEditorAsync();
+        _showCommandMenu = false;
+    }
+
+    private async Task SyncContentFromEditorAsync()
+    {
+        if (_editorJs is null || !_editorReady)
+            return;
+
+        _draft.Contenido = await _editorJs.InvokeAsync<string>("getHtml", _contentEditor);
+    }
+
+    private async Task FlushEditorAsync()
+    {
+        if (_editorReady)
+            await SyncContentFromEditorAsync();
+    }
+
+    private void ApplySelected(NovedadDetalleDto? selected)
+    {
+        _selected = selected;
+        if (selected is null)
+        {
+            _draft = new();
+            return;
+        }
+
+        _draft = new NovedadSaveRequest
+        {
+            IdNovedad = selected.IdNovedad,
+            Tipo = selected.Tipo,
+            Estado = selected.Estado,
+            Prioridad = selected.Prioridad,
+            Version = selected.Version,
+            Titulo = selected.Titulo,
+            Bajada = selected.Bajada,
+            Contenido = selected.Contenido,
+            Icono = selected.Icono,
+            Acento = selected.Acento,
+            PortadaTipo = selected.PortadaTipo,
+            PortadaValor = selected.PortadaValor,
+            Footer = selected.Footer,
+            FechaProgramada = selected.FechaProgramada,
+            VigenteHasta = selected.VigenteHasta,
+            MostrarPopup = selected.MostrarPopup,
+            LecturaObligatoria = selected.LecturaObligatoria,
+            RepetirHastaLeer = selected.RepetirHastaLeer,
+            Segmento = selected.Segmento,
+            UsuarioAccion = CurrentUser
+        };
+
+        _fechaProgramadaText = ToInputDateTime(selected.FechaProgramada);
+        _vigenteHastaText = ToInputDateTime(selected.VigenteHasta);
+    }
+
+    private NovedadSaveRequest SnapshotDraft()
+    {
+        _draft.UsuarioAccion = CurrentUser;
+        _draft.FechaProgramada = ParseInputDateTime(_fechaProgramadaText);
+        _draft.VigenteHasta = ParseInputDateTime(_vigenteHastaText);
+        return _draft;
+    }
+
+    private async Task OpenPreviewAsync()
+    {
+        _previewOpen = true;
+        _previewKeyboardWired = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task ClosePreviewAsync()
+    {
+        _previewOpen = false;
+        _previewKeyboardWired = false;
+        if (_novedadesEditorJs is not null)
+            await _novedadesEditorJs.InvokeVoidAsync("unwirePreviewEscape");
+    }
+
+    [JSInvokable]
+    public async Task ClosePreviewFromKeyboardAsync()
+    {
+        await ClosePreviewAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void ToggleCommandMenu()
+        => _showCommandMenu = !_showCommandMenu;
+
+    private async Task SelectTabAsync(string tab)
+    {
+        if (tab == _activeTab)
+            return;
+
+        if (_activeTab == TabDetails)
+            await FlushEditorAsync();
+
+        _showCommandMenu = false;
+        _activeTab = tab == TabSettings ? TabSettings : TabDetails;
+    }
+
+    private string GetTabClass(string tab)
+        => "novedades-tab" + (_activeTab == tab ? " is-active" : string.Empty);
+
+    private string WorkspaceClass => $"novedades-workspace novedades-accent--{_draft.Acento}";
+
+    private void OnFechaProgramadaChanged(ChangeEventArgs args)
+        => _fechaProgramadaText = args.Value?.ToString() ?? string.Empty;
+
+    private void OnVigenteHastaChanged(ChangeEventArgs args)
+        => _vigenteHastaText = args.Value?.ToString() ?? string.Empty;
+
+    private string CoverClass => $"novedades-cover novedades-cover--{_draft.Acento} novedades-cover--{_draft.PortadaTipo.ToLowerInvariant()}";
+
+    private string CoverStyle => _draft.PortadaTipo == NovedadPortadas.Gradiente
+        ? _draft.Acento switch
+        {
+            NovedadAcentos.Verde => "--cover-bg: linear-gradient(135deg, #064e3b, #0f766e);",
+            NovedadAcentos.Cian => "--cover-bg: linear-gradient(135deg, #083344, #0e7490);",
+            NovedadAcentos.Ambar => "--cover-bg: linear-gradient(135deg, #78350f, #b45309);",
+            NovedadAcentos.Rojo => "--cover-bg: linear-gradient(135deg, #7f1d1d, #b91c1c);",
+            NovedadAcentos.Grafito => "--cover-bg: linear-gradient(135deg, #111827, #374151);",
+            _ => "--cover-bg: linear-gradient(135deg, #0f3b63, #0f766e);"
+        }
+        : string.Empty;
+
+    private string PreviewClass => $"novedades-preview novedades-preview--{_draft.Acento}";
+
+    private string GetListItemClass(NovedadResumenDto item)
+        => "novedades-list-item" + (item.IdNovedad == _selected?.IdNovedad ? " is-selected" : string.Empty);
+
+    private static string BuildItemMeta(NovedadResumenDto item)
+    {
+        var version = string.IsNullOrWhiteSpace(item.Version) ? TipoLabel(item.Tipo) : item.Version;
+        var date = item.FechaProgramada ?? item.FechaPublicacion ?? item.FechaHoraModificacion;
+        return $"{EstadoLabel(item.Estado)} - {version} - {date:dd/MM HH:mm}";
+    }
+
+    private static string EstadoLabel(string estado)
+        => estado switch
+        {
+            NovedadEstados.Programado => "Programado",
+            NovedadEstados.Publicado => "Publicado",
+            NovedadEstados.Archivado => "Archivado",
+            _ => "Borrador"
+        };
+
+    private static string TipoLabel(string tipo)
+        => tipo == NovedadTipos.BoletinPatch ? "Boletin patch" : "Manual";
+
+    private static string ToInputDateTime(DateTime? value)
+        => value?.ToString("yyyy-MM-ddTHH:mm") ?? string.Empty;
+
+    private static DateTime? ParseInputDateTime(string value)
+        => DateTime.TryParse(value, out var parsed) ? parsed : null;
+
+    private long? GetInitialId()
+    {
+        var query = QueryHelpers.ParseQuery(Nav.ToAbsoluteUri(Nav.Uri).Query);
+        if (query.TryGetValue("id", out var value)
+            && long.TryParse(value.ToString(), out var id)
+            && id > 0)
+        {
+            return id;
+        }
+
+        return null;
+    }
+
+    private static string NormalizeEditorHtml(string? content)
+        => string.IsNullOrWhiteSpace(content) ? "<p><br></p>" : content;
+
+    private static string FeedbackText(AppUiMessage? feedback)
+    {
+        if (feedback is null)
+            return "No se pudo completar la operacion.";
+
+        var parts = new[] { feedback.Message, feedback.Suggestion, feedback.HasCode ? $"Codigo: {feedback.Code}" : string.Empty }
+            .Where(x => !string.IsNullOrWhiteSpace(x));
+        return string.Join(" ", parts);
+    }
+
+    private sealed record EditorCommandOption(string Group, string Title, string Description, string Icon, string Command);
+}

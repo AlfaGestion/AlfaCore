@@ -62,12 +62,15 @@ else
                     <span class="brand__title">Alfa Gestión</span>
                 }
             </div>
-            @if (ShowLauncherContext)
-            {
-                <span class="sidebar-toggle sidebar-toggle--static" title="Menú principal desplegado" aria-hidden="true">
-                    <i class="bi bi-layout-sidebar"></i>
-                </span>
-            }
+            <button type="button"
+                    class="sidebar-toggle no-print"
+                    title="@SidebarToggleTitle"
+                    aria-label="@SidebarToggleTitle"
+                    aria-expanded="@(!IsSidebarCollapsed)"
+                    @onclick="ToggleSidebarCollapsed"
+                    @onclick:stopPropagation="true">
+                <i class="bi @SidebarToggleIcon"></i>
+            </button>
         </div>
 
         <div class="menu">
@@ -141,6 +144,17 @@ else
                         <span class="menu__icon"><i class="bi bi-chat-dots-fill"></i></span>
                         <span>Inbox</span>
                     </NavLink>
+                    @if (!IsDirectMode)
+                    {
+                        <NavLink class="menu__link" href="@BuildModuleUrl("/contactos")" Match="NavLinkMatch.All">
+                            <span class="menu__icon"><i class="bi bi-person-lines-fill"></i></span>
+                            <span>Contactos</span>
+                        </NavLink>
+                        <NavLink class="menu__link" href="@BuildModuleUrl("/clientes")" Match="NavLinkMatch.All">
+                            <span class="menu__icon"><i class="bi bi-people-fill"></i></span>
+                            <span>Clientes</span>
+                        </NavLink>
+                    }
                     <NavLink class="menu__link" href="@BuildModuleUrl("/conversaciones/plantillas")" Match="NavLinkMatch.All">
                         <span class="menu__icon"><i class="bi bi-chat-square-text-fill"></i></span>
                         <span>Plantillas</span>
@@ -236,6 +250,10 @@ else
                     <NavLink class="menu__link" href="@BuildModuleUrl("/informes")" Match="NavLinkMatch.All">
                         <span class="menu__icon"><i class="bi bi-journal-richtext"></i></span>
                         <span>Articulos</span>
+                    </NavLink>
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/informes/novedades")" Match="NavLinkMatch.All">
+                        <span class="menu__icon"><i class="bi bi-megaphone"></i></span>
+                        <span>Novedades</span>
                     </NavLink>
                 </nav>
             }
@@ -1081,9 +1099,11 @@ else
                  OnOpenSqlSessions="OpenSqlSessionDrawerAsync" />
 
 <AppMsgBoxHost />
+<NovedadesPopup Enabled="@(!IsDirectMode)" />
 
 @code {
     private bool _mobileSidebarOpen;
+    private bool? _sidebarCollapsedOverride;
     private bool _isDark = false;
     private bool _drawerOpen;
     private AlfaCore.Models.SessionDto? _activeSession;
@@ -1129,7 +1149,10 @@ else
     private bool ShowShellContext => string.IsNullOrWhiteSpace(_currentModule);
     private bool ShowLauncherContext => ShowShellContext && !IsDirectMode;
     private bool CanShowLauncherAccess => !IsDirectMode;
-    private bool IsSidebarCollapsed => !ShowLauncherContext;
+    private bool DefaultSidebarCollapsed => !ShowLauncherContext;
+    private bool IsSidebarCollapsed => _sidebarCollapsedOverride ?? DefaultSidebarCollapsed;
+    private string SidebarToggleTitle => IsSidebarCollapsed ? "Desplegar menú principal" : "Plegar menú principal";
+    private string SidebarToggleIcon => IsSidebarCollapsed ? "bi-layout-sidebar-inset" : "bi-layout-sidebar";
     private bool CanShowTasksPanel => !IsPosFullscreenRoute && !IsDirectMode && AppUserSession.IsAuthenticated;
     private bool IsLauncherRoute => string.IsNullOrWhiteSpace(Nav.ToBaseRelativePath(Nav.Uri).Split('?')[0].Split('#')[0].Trim('/'));
     private bool IsDirectMode => !string.IsNullOrWhiteSpace(_directModuleKey);
@@ -1285,6 +1308,7 @@ else
     private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs args)
     {
         _mobileSidebarOpen = false;
+        _sidebarCollapsedOverride = null;
         UpdateCurrentModule();
         if (EnforceDirectMode())
             return;
@@ -1308,6 +1332,11 @@ else
 
     private void GoToLauncher()
         => Nav.NavigateTo(GetLauncherUrl(), replace: true);
+
+    private void ToggleSidebarCollapsed()
+    {
+        _sidebarCollapsedOverride = !IsSidebarCollapsed;
+    }
 
     private async Task GoBackOrLauncherAsync()
     {
@@ -2951,6 +2980,7 @@ else
             "carga-viajes/liquidaciones" => "Liquidaciones",
             "carga-viajes/configuracion" => "Configurar Carga de Viaje",
             "informes" => "Informes",
+            "informes/novedades" => "Novedades",
             "interfaces" => "Recepción documental",
             "interfaces/configuracion" => "Configuración de Interfaces",
             "interfaces/nuevo" => "Nuevo documento",
@@ -3003,6 +3033,7 @@ else
         "carga-viajes/liquidaciones" => "Liquidaciones",
         "carga-viajes/configuracion" => "Configurar Carga de Viaje",
         "informes" => "Informes",
+        "informes/novedades" => "Novedades",
         "interfaces" => "Interfaces",
         "actualizaciones" => "Actualizaciones",
         "usuarios" => "Usuarios",

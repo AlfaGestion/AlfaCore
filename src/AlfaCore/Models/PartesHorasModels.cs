@@ -7,6 +7,7 @@ public static class ParteHoraEstadoKeys
     public const string Aprobado = "APROBADO";
     public const string Rechazado = "RECHAZADO";
 
+    public static readonly string[] Editables = [Borrador, Presentado];
     public static readonly string[] All = [Borrador, Presentado, Aprobado, Rechazado];
 }
 
@@ -140,6 +141,20 @@ public sealed class ParteHoraTicketOptionDto
     public string Titulo { get; set; } = string.Empty;
     public string ClienteCodigo { get; set; } = string.Empty;
     public string ClienteNombre { get; set; } = string.Empty;
+}
+
+public sealed class ParteHoraPersonaOptionDto
+{
+    public string Tipo { get; set; } = string.Empty;
+    public int? IdContacto { get; set; }
+    public string Usuario { get; set; } = string.Empty;
+    public string Nombre { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+    public string Telefono { get; set; } = string.Empty;
+    public string Celular { get; set; } = string.Empty;
+    public string ClienteCodigo { get; set; } = string.Empty;
+    public string ClienteNombre { get; set; } = string.Empty;
+    public string Direccion { get; set; } = string.Empty;
 }
 
 public sealed class ParteHoraLookupDto

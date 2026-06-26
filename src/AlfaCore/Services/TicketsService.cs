@@ -22,6 +22,15 @@ public sealed class TicketsService(
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
 
+    private sealed record TicketEditSnapshot(
+        string Titulo,
+        string Descripcion,
+        string CodigoEstado,
+        string EstadoNombre,
+        int Prioridad,
+        string IdTecnico,
+        string TecnicoNombre);
+
     private string ConnectionString => sessionService.GetConnectionString().Length > 0
         ? sessionService.GetConnectionString()
         : configuration.GetConnectionString("AlfaGestion")
@@ -494,6 +503,7 @@ public sealed class TicketsService(
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
             await using var tx = await cn.BeginTransactionAsync(token);
+            var previous = await GetTicketEditSnapshotAsync(cn, (SqlTransaction)tx, request.IdTicket, token);
 
             const string sql = """
                 UPDATE dbo.TICK_TICKETS
@@ -524,7 +534,8 @@ public sealed class TicketsService(
                 throw new InvalidOperationException("El ticket seleccionado ya no existe en la base activa.");
 
             await SyncTicketEtiquetasAsync(cn, (SqlTransaction)tx, request.IdTicket, tagIds, token);
-            await InsertActivityAsync(cn, (SqlTransaction)tx, request.IdTicket, "EDICION", "Ticket actualizado.", user, token);
+            var current = await GetTicketEditSnapshotAsync(cn, (SqlTransaction)tx, request.IdTicket, token);
+            await InsertActivityAsync(cn, (SqlTransaction)tx, request.IdTicket, "EDICION", BuildTicketUpdateActivity(previous, current), user, token);
             await tx.CommitAsync(token);
         }, "No se pudo actualizar el ticket.", ct);
 
@@ -1425,6 +1436,76 @@ public sealed class TicketsService(
 
         return rows;
     }
+
+    private static async Task<TicketEditSnapshot> GetTicketEditSnapshotAsync(SqlConnection cn, SqlTransaction tx, long idTicket, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT
+                ISNULL(t.Titulo, ''),
+                ISNULL(t.Descripcion, ''),
+                ISNULL(t.CodigoEstado, ''),
+                ISNULL(e.Nombre, ISNULL(t.CodigoEstado, '')),
+                ISNULL(t.Prioridad, 0),
+                LTRIM(RTRIM(ISNULL(t.IdTecnico, ''))),
+                ISNULL(tec.Nombre, '')
+            FROM dbo.TICK_TICKETS t
+            LEFT JOIN dbo.TICK_ESTADOS e ON e.CodigoEstado = t.CodigoEstado
+            LEFT JOIN dbo.V_TA_Tecnicos tec ON LTRIM(RTRIM(tec.IdTecnico)) = LTRIM(RTRIM(t.IdTecnico))
+            WHERE t.IdTicket = @IdTicket;
+            """;
+
+        await using var cmd = new SqlCommand(sql, cn, tx);
+        cmd.Parameters.AddWithValue("@IdTicket", idTicket);
+        await using var rd = await cmd.ExecuteReaderAsync(ct);
+        if (!await rd.ReadAsync(ct))
+            throw new InvalidOperationException("El ticket seleccionado ya no existe en la base activa.");
+
+        return new TicketEditSnapshot(
+            GetString(rd, 0),
+            GetString(rd, 1),
+            GetString(rd, 2),
+            GetString(rd, 3),
+            GetInt(rd, 4),
+            GetString(rd, 5),
+            GetString(rd, 6));
+    }
+
+    private static string BuildTicketUpdateActivity(TicketEditSnapshot previous, TicketEditSnapshot current)
+    {
+        var changes = new List<string>();
+        if (!string.Equals(previous.EstadoNombre, current.EstadoNombre, StringComparison.OrdinalIgnoreCase))
+            changes.Add($"Actualización de etapa: {DisplayActivityValue(previous.EstadoNombre, previous.CodigoEstado, "Sin etapa")} → {DisplayActivityValue(current.EstadoNombre, current.CodigoEstado, "Sin etapa")}");
+
+        if (previous.Prioridad != current.Prioridad)
+            changes.Add($"Actualización de prioridad: {FormatPriority(previous.Prioridad)} → {FormatPriority(current.Prioridad)}");
+
+        if (!string.Equals(previous.IdTecnico, current.IdTecnico, StringComparison.OrdinalIgnoreCase))
+            changes.Add($"Asignación: {DisplayActivityValue(previous.TecnicoNombre, previous.IdTecnico, "Sin técnico")} → {DisplayActivityValue(current.TecnicoNombre, current.IdTecnico, "Sin técnico")}");
+
+        if (!string.Equals(previous.Titulo, current.Titulo, StringComparison.Ordinal))
+            changes.Add("Actualización de nombre del ticket.");
+
+        if (!string.Equals(previous.Descripcion, current.Descripcion, StringComparison.Ordinal))
+            changes.Add("Actualización de descripción.");
+
+        return changes.Count == 0
+            ? "Ticket actualizado sin cambios visibles."
+            : $"Ticket actualizado. {string.Join(" / ", changes)}";
+    }
+
+    private static string DisplayActivityValue(string primary, string fallback, string empty)
+        => string.IsNullOrWhiteSpace(primary)
+            ? (string.IsNullOrWhiteSpace(fallback) ? empty : fallback.Trim())
+            : primary.Trim();
+
+    private static string FormatPriority(int priority)
+        => priority switch
+        {
+            >= 3 => "Alta",
+            2 => "Media",
+            1 => "Baja",
+            _ => "Sin prioridad"
+        };
 
     private static async Task ApplyConversationDefaultsAsync(SqlConnection cn, SqlTransaction tx, TicketCreateRequest request, CancellationToken ct)
     {
