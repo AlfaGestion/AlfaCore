@@ -75,6 +75,15 @@
     align-items: end;
 }
 
+.carga-viajes-toolbar--tarifas {
+    grid-template-columns: minmax(0, 1.05fr) minmax(380px, .95fr);
+    align-items: stretch;
+}
+
+.carga-viajes-toolbar__search--tarifas {
+    align-self: end;
+}
+
 .carga-viajes-toolbar .field {
     gap: .2rem;
 }
@@ -91,10 +100,23 @@
 }
 
 .carga-viajes-toolbar__actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: .4rem;
+    align-content: flex-start;
+    align-items: stretch;
+}
+
+.carga-viajes-tarifas__actions {
+    min-width: 0;
+}
+
+.carga-viajes-tarifas__action-pills {
     display: flex;
     flex-wrap: wrap;
-    justify-content: flex-end;
     gap: .35rem;
+    justify-content: flex-end;
+    align-items: center;
 }
 
 .carga-viajes-toolbar__actions .btn {
@@ -859,6 +881,24 @@
     z-index: 4;
 }
 
+.carga-viajes-tarifas-table {
+    table-layout: fixed;
+}
+
+.carga-viajes-tarifas-table .carga-viajes-tarifas__importe-col {
+    width: 6.5rem;
+    min-width: 6.5rem;
+    max-width: 6.5rem;
+}
+
+.carga-viajes-tarifas-table thead .carga-viajes-tarifas__importe-col button {
+    width: 100%;
+}
+
+.carga-viajes-tarifas-table td.carga-viajes-tarifas__importe-col {
+    padding-inline: .25rem;
+}
+
 .data-grid__row--active td {
     background: rgba(56, 189, 248, .06);
 }
@@ -1003,27 +1043,75 @@
 .carga-viajes-tarifas__filter-frame {
     display: flex;
     flex-direction: column;
-    gap: .45rem;
-    padding: .6rem .7rem;
+    gap: .3rem;
+    padding: .42rem .55rem;
     border: 1px solid rgba(148, 163, 184, .16);
     border-radius: 1rem;
     background: linear-gradient(180deg, rgba(15, 23, 42, .46), rgba(15, 23, 42, .22));
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, .03);
+    min-width: 0;
+    width: 100%;
 }
 
 .carga-viajes-tarifas__filter-title {
-    font-size: .72rem;
+    font-size: .68rem;
     font-weight: 800;
-    letter-spacing: .08em;
+    letter-spacing: .06em;
     text-transform: uppercase;
     color: #94a3b8;
 }
 
+.carga-viajes-tarifas__filter-head {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    grid-template-areas:
+        "title toggle"
+        "chips chips";
+    align-items: center;
+    gap: .35rem .5rem;
+}
+
+.carga-viajes-tarifas__filter-head > .carga-viajes-tarifas__filter-title {
+    grid-area: title;
+}
+
+.carga-viajes-tarifas__filter-head > .carga-viajes-tarifas__quick-toggle {
+    grid-area: toggle;
+    justify-self: end;
+}
+
+.carga-viajes-tarifas__quick-toggle {
+    width: fit-content;
+    min-width: 0;
+    padding: .32rem .5rem;
+    gap: .45rem;
+    flex: 0 0 auto;
+    white-space: nowrap;
+    transform: scale(.95);
+    transform-origin: right center;
+}
+
 .carga-viajes-tarifas__filter-inner {
     display: flex;
+    flex-direction: column;
+    gap: .3rem;
+    margin-top: .05rem;
+    grid-area: chips;
+}
+
+.carga-viajes-tarifas__type-filter {
+    display: flex;
     flex-wrap: wrap;
-    align-items: center;
-    gap: .45rem;
+    gap: .32rem;
+}
+
+.carga-viajes-tarifas__type-filter .carga-viajes-filter-pill {
+    min-width: 6.9rem;
+    flex: 1 1 6.9rem;
+}
+
+.carga-viajes-tarifas__action-pills .btn {
+    border-radius: 999px;
 }
 
 .carga-viajes-check__pill,
@@ -1598,32 +1686,6 @@
 
 .carga-viajes-tabs .btn {
     white-space: nowrap;
-}
-
-.carga-viajes-tarifas__importe-cell {
-    width: 100%;
-    min-height: 2.2rem;
-    padding: .28rem .52rem;
-    border: 1px solid rgba(148, 163, 184, .18);
-    border-radius: .72rem;
-    background: rgba(15, 23, 42, .28);
-    color: inherit;
-    text-align: right;
-    font: inherit;
-    font-variant-numeric: tabular-nums;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .03);
-}
-
-.carga-viajes-tarifas__importe-cell:hover,
-.carga-viajes-tarifas__importe-cell:focus-visible,
-.carga-viajes-tarifas__importe-cell--editing {
-    border-color: rgba(34, 211, 238, .45);
-    background: rgba(8, 145, 178, .15);
-    box-shadow: 0 0 0 3px rgba(34, 211, 238, .08);
-}
-
-.carga-viajes-tarifas__importe-cell:focus-visible {
-    outline: none;
 }
 
 .carga-viajes-pill,

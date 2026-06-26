@@ -1,22 +1,23 @@
-@page "/costos/lotes/{Id:int}"
+﻿@page "/costos/lotes/{Id:int}"
+@page "/{idweb}/{idbase:int}/costos/lotes/{Id:int}"
 @using AlfaCore.Models
 @inject AlfaCore.Services.ICostosService CostosSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 
-<PageTitle>Lote de Costos | Alfa Gestión</PageTitle>
+<PageTitle>Lote de Costos | Alfa GestiÃ³n</PageTitle>
 
 @if (_loading)
 {
     <div class="consultas-loading">
-        <i class="bi bi-hourglass-split"></i> Cargando lote…
+        <i class="bi bi-hourglass-split"></i> Cargando loteâ€¦
     </div>
 }
 else if (_detail is null)
 {
     <div class="consultas-error">
         <i class="bi bi-exclamation-triangle"></i> Lote no encontrado.
-        <a href="/costos">Volver al módulo</a>
+        <a href="/costos">Volver al mÃ³dulo</a>
     </div>
 }
 else
@@ -29,9 +30,9 @@ else
                     Lote #@_detail.Batch.Id
                     @if (_detail.Profile is not null)
                     {
-                        <span> · Perfil: @_detail.Profile.ProviderName@(string.IsNullOrWhiteSpace(_detail.Profile.ProviderAccount) ? string.Empty : $" [{_detail.Profile.ProviderAccount}]")</span>
+                        <span> Â· Perfil: @_detail.Profile.ProviderName@(string.IsNullOrWhiteSpace(_detail.Profile.ProviderAccount) ? string.Empty : $" [{_detail.Profile.ProviderAccount}]")</span>
                     }
-                    <span> · @_detail.Batch.SourceFileName · @_detail.Batch.Status</span>
+                    <span> Â· @_detail.Batch.SourceFileName Â· @_detail.Batch.Status</span>
                 </p>
             </div>
             <div class="actions">
@@ -47,14 +48,14 @@ else
                 </button>
                 <button class="btn btn--ghost" @onclick="DeshacerAplicacionAsync" disabled="@(_busy || !_detail.Rows.Any(r => string.Equals(r.Status, "APLICADO", StringComparison.OrdinalIgnoreCase)))">
                     <i class="bi bi-arrow-counterclockwise"></i>
-                    <span>Deshacer aplicación</span>
+                    <span>Deshacer aplicaciÃ³n</span>
                 </button>
             </div>
         </section>
 
         <section class="kpi-grid">
             <article class="kpi-card">
-                <div class="kpi-card__label">Filas leídas</div>
+                <div class="kpi-card__label">Filas leÃ­das</div>
                 <div class="kpi-card__value">@_detail.Batch.TotalRowsRead</div>
             </article>
             <article class="kpi-card">
@@ -74,8 +75,8 @@ else
         <section class="panel-card">
             <div class="panel-card__header">
                 <div>
-                    <h3 class="panel-card__title">Revisión del lote</h3>
-                    <p class="panel-card__subtitle">Compará lo leído del Excel contra SQL, elegí artículo, chequeá filas y aplicá en lote.</p>
+                    <h3 class="panel-card__title">RevisiÃ³n del lote</h3>
+                    <p class="panel-card__subtitle">ComparÃ¡ lo leÃ­do del Excel contra SQL, elegÃ­ artÃ­culo, chequeÃ¡ filas y aplicÃ¡ en lote.</p>
                 </div>
                 <div class="actions">
                     <button class="btn btn--ghost" @onclick="ToggleVisibleChecks" disabled="@(_busy || !FilteredRows.Any(r => r.CanBeChecked))">
@@ -123,7 +124,7 @@ else
                 </div>
                 <div class="field">
                     <label class="field__label">Buscar</label>
-                    <input class="field__control" @bind="_searchText" @bind:event="oninput" placeholder="Código, descripción, código proveedor SQL o artículo..." />
+                    <input class="field__control" @bind="_searchText" @bind:event="oninput" placeholder="CÃ³digo, descripciÃ³n, cÃ³digo proveedor SQL o artÃ­culo..." />
                 </div>
             </div>
 
@@ -146,16 +147,16 @@ else
                                 </th>
                                 <th>@SortButton("Fila", "fila")</th>
                                 <th>@SortButton("Estado", "estado")</th>
-                                <th>@SortButton("Código", "codigo")</th>
-                                <th>@SortButton("Descripción", "descripcion")</th>
-                                <th>@SortButton("Costo leído", "costo")</th>
-                                <th>@SortButton("% variación", "variacion")</th>
+                                <th>@SortButton("CÃ³digo", "codigo")</th>
+                                <th>@SortButton("DescripciÃ³n", "descripcion")</th>
+                                <th>@SortButton("Costo leÃ­do", "costo")</th>
+                                <th>@SortButton("% variaciÃ³n", "variacion")</th>
                                 <th>@SortButton("Costo actual", "costoactual")</th>
                                 <th>@SortButton("CodigoArtProveedor", "codigosql")</th>
-                                <th>@SortButton("Descripción SQL", "descripcionsql")</th>
+                                <th>@SortButton("DescripciÃ³n SQL", "descripcionsql")</th>
                                 <th>@SortButton("IdArticulo", "articulo")</th>
                                 <th>@SortButton("Score", "score")</th>
-                                <th>Acción</th>
+                                <th>AcciÃ³n</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -173,13 +174,13 @@ else
                                         <span class="costos-lote__state @StateClass(row.Status)">@FormatStatus(row.Status)</span>
                                     </td>
                                     <td @onclick="() => SeleccionarFilaAsync(row)">
-                                        <strong>@(string.IsNullOrWhiteSpace(row.ProviderCodeRead) ? "—" : row.ProviderCodeRead)</strong>
+                                        <strong>@(string.IsNullOrWhiteSpace(row.ProviderCodeRead) ? "â€”" : row.ProviderCodeRead)</strong>
                                     </td>
                                     <td @onclick="() => SeleccionarFilaAsync(row)">
                                         <div class="costos-lote__text">@row.DescriptionRead</div>
                                     </td>
                                     <td @onclick="() => SeleccionarFilaAsync(row)">
-                                        @(row.CostRead?.ToString("N2") ?? "—")
+                                        @(row.CostRead?.ToString("N2") ?? "â€”")
                                     </td>
                                     <td @onclick="() => SeleccionarFilaAsync(row)">
                                         <span class="costos-lote__variation @VariationClass(row.VariationPct)">
@@ -187,16 +188,16 @@ else
                                         </span>
                                     </td>
                                     <td @onclick="() => SeleccionarFilaAsync(row)">
-                                        @(row.CurrentCost?.ToString("N2") ?? "—")
+                                        @(row.CurrentCost?.ToString("N2") ?? "â€”")
                                     </td>
                                     <td @onclick="() => SeleccionarFilaAsync(row)">
-                                        @(string.IsNullOrWhiteSpace(row.ArticleProviderCode) ? "—" : row.ArticleProviderCode)
+                                        @(string.IsNullOrWhiteSpace(row.ArticleProviderCode) ? "â€”" : row.ArticleProviderCode)
                                     </td>
                                     <td @onclick="() => SeleccionarFilaAsync(row)">
-                                        <div class="costos-lote__text">@(!string.IsNullOrWhiteSpace(row.ArticleDescription) ? row.ArticleDescription : "—")</div>
+                                        <div class="costos-lote__text">@(!string.IsNullOrWhiteSpace(row.ArticleDescription) ? row.ArticleDescription : "â€”")</div>
                                     </td>
                                     <td @onclick="() => SeleccionarFilaAsync(row)">
-                                        @(string.IsNullOrWhiteSpace(row.ArticleId) ? "—" : row.ArticleId)
+                                        @(string.IsNullOrWhiteSpace(row.ArticleId) ? "â€”" : row.ArticleId)
                                     </td>
                                     <td @onclick="() => SeleccionarFilaAsync(row)">
                                         <span class="costos-lote__score @ScoreClass(row.MatchType, row.MatchScore)">@row.MatchScore.ToString("N1")</span>
@@ -224,9 +225,9 @@ else
         <div class="panel-card costos-lote__modal-card">
             <div class="panel-card__header">
                 <div>
-                    <h3 class="panel-card__title">Búsqueda de artículos</h3>
+                    <h3 class="panel-card__title">BÃºsqueda de artÃ­culos</h3>
                     <p class="panel-card__subtitle">
-                        Fila seleccionada: @(_selectedRow?.RowNumber.ToString() ?? "—")
+                        Fila seleccionada: @(_selectedRow?.RowNumber.ToString() ?? "â€”")
                     </p>
                 </div>
                 <button type="button" class="btn btn--ghost btn--sm" @onclick="CerrarCandidatos">
@@ -240,15 +241,15 @@ else
                 <div class="costos-lote__summary">
                     <div>
                         <span class="costos-lote__summary-label">Excel</span>
-                        <strong>@(string.IsNullOrWhiteSpace(_selectedRow.ProviderCodeRead) ? "Sin código" : _selectedRow.ProviderCodeRead)</strong>
+                        <strong>@(string.IsNullOrWhiteSpace(_selectedRow.ProviderCodeRead) ? "Sin cÃ³digo" : _selectedRow.ProviderCodeRead)</strong>
                         <div class="costos-lote__text">@_selectedRow.DescriptionRead</div>
-                        <small>Costo leído: @(_selectedRow.CostRead?.ToString("N2") ?? "—")</small>
+                        <small>Costo leÃ­do: @(_selectedRow.CostRead?.ToString("N2") ?? "â€”")</small>
                     </div>
                     <div>
                         <span class="costos-lote__summary-label">SQL actual</span>
-                        <strong>@(string.IsNullOrWhiteSpace(_selectedRow.ArticleProviderCode) ? "Sin artículo elegido" : _selectedRow.ArticleProviderCode)</strong>
-                        <div class="costos-lote__text">@(!string.IsNullOrWhiteSpace(_selectedRow.ArticleDescription) ? _selectedRow.ArticleDescription : "—")</div>
-                        <small>Id: @(!string.IsNullOrWhiteSpace(_selectedRow.ArticleId) ? _selectedRow.ArticleId : "—")</small>
+                        <strong>@(string.IsNullOrWhiteSpace(_selectedRow.ArticleProviderCode) ? "Sin artÃ­culo elegido" : _selectedRow.ArticleProviderCode)</strong>
+                        <div class="costos-lote__text">@(!string.IsNullOrWhiteSpace(_selectedRow.ArticleDescription) ? _selectedRow.ArticleDescription : "â€”")</div>
+                        <small>Id: @(!string.IsNullOrWhiteSpace(_selectedRow.ArticleId) ? _selectedRow.ArticleId : "â€”")</small>
                     </div>
                 </div>
 
@@ -258,10 +259,10 @@ else
                         <input class="field__control"
                                @bind="_candidateSearch"
                                @bind:event="oninput"
-                               placeholder="Probá otra descripción, código proveedor o artículo..." />
+                               placeholder="ProbÃ¡ otra descripciÃ³n, cÃ³digo proveedor o artÃ­culo..." />
                     </div>
                     <div class="field">
-                        <label class="field__label">Búsqueda</label>
+                        <label class="field__label">BÃºsqueda</label>
                         <label class="costos-lote__fallback">
                             <input type="checkbox" @bind="_includeFallbackSearch" />
                             <span>Ampliar fuera del proveedor</span>
@@ -276,7 +277,7 @@ else
                     </button>
                     <button class="btn btn--primary btn--sm" @onclick="ElegirCandidatoAsync" disabled="@(_busy || _selectedCandidate is null)">
                         <i class="bi bi-check2-circle"></i>
-                        <span>Elegir artículo</span>
+                        <span>Elegir artÃ­culo</span>
                     </button>
                     <button class="btn btn--ghost btn--sm" @onclick="DescartarFilaAsync" disabled="@_busy">
                         <i class="bi bi-x-circle"></i>
@@ -288,9 +289,9 @@ else
                     <table class="data-table costos-lote__table">
                         <thead>
                             <tr>
-                                <th>Artículo</th>
+                                <th>ArtÃ­culo</th>
                                 <th>CodigoArtProveedor</th>
-                                <th>Descripción</th>
+                                <th>DescripciÃ³n</th>
                                 <th>Costo actual</th>
                                 <th>Score</th>
                                 <th>% var.</th>
@@ -306,7 +307,7 @@ else
                                     <td>@candidate.ArticleId</td>
                                     <td>@candidate.ProviderCode</td>
                                     <td><div class="costos-lote__text">@candidate.Description</div></td>
-                                    <td>@(candidate.CurrentCost?.ToString("N2") ?? "—")</td>
+                                    <td>@(candidate.CurrentCost?.ToString("N2") ?? "â€”")</td>
                                     <td><span class="costos-lote__score @ScoreClass(candidate.MatchType, candidate.Score)">@candidate.Score.ToString("N1")</span></td>
                                     <td><span class="costos-lote__variation @VariationClass(candidate.VariationPct)">@FormatVariation(candidate.VariationPct)</span></td>
                                     <td>@(candidate.SearchScope == "plan_b" ? "Plan B" : "Proveedor")</td>
@@ -510,7 +511,7 @@ else
         }
         catch (Exception ex)
         {
-            _feedback = UiOps.BuildMessage(ex, "No se pudo confirmar el artículo para la fila.");
+            _feedback = UiOps.BuildMessage(ex, "No se pudo confirmar el artÃ­culo para la fila.");
             _isError = true;
             _message = BuildFeedbackText(_feedback);
         }
@@ -557,7 +558,7 @@ else
         {
             var result = await CostosSvc.ApplySelectedRowsAsync(Id, _checkedRows.ToArray(), CurrentUserName);
             await ReloadAsync();
-            _message = $"Aplicación finalizada. Actualizadas: {result.Updated}, sin cambio: {result.Same}, errores: {result.Errors}. Estado: {result.Status}.";
+            _message = $"AplicaciÃ³n finalizada. Actualizadas: {result.Updated}, sin cambio: {result.Same}, errores: {result.Errors}. Estado: {result.Status}.";
         }
         catch (Exception ex)
         {
@@ -584,7 +585,7 @@ else
         }
         catch (Exception ex)
         {
-            _feedback = UiOps.BuildMessage(ex, "No se pudo deshacer la última aplicación del lote.");
+            _feedback = UiOps.BuildMessage(ex, "No se pudo deshacer la Ãºltima aplicaciÃ³n del lote.");
             _isError = true;
             _message = BuildFeedbackText(_feedback);
         }
@@ -779,7 +780,7 @@ else
     }
 
     private static string FormatVariation(double? variation) =>
-        variation is null ? "—" : $"{variation.Value:+0.0;-0.0;0.0}%";
+        variation is null ? "â€”" : $"{variation.Value:+0.0;-0.0;0.0}%";
 
     private static string BuildFeedbackText(AlfaCore.Models.AppUiMessage? feedback)
     {
@@ -790,7 +791,7 @@ else
         if (feedback.HasSuggestion)
             parts.Add(feedback.Suggestion);
         if (feedback.HasCode)
-            parts.Add($"Código: {feedback.Code}");
+            parts.Add($"CÃ³digo: {feedback.Code}");
         return string.Join(" ", parts.Where(static part => !string.IsNullOrWhiteSpace(part)));
     }
 

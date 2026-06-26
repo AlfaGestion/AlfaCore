@@ -1,16 +1,22 @@
-@page "/partes-horas"
+﻿@page "/partes-horas"
+@page "/{idweb}/{idbase:int}/partes-horas"
 @page "/partes-de-horas"
+@page "/{idweb}/{idbase:int}/partes-de-horas"
 @page "/horas"
+@page "/{idweb}/{idbase:int}/horas"
 @page "/crm/partes-horas"
+@page "/{idweb}/{idbase:int}/crm/partes-horas"
 @page "/soporte/partes-horas"
+@page "/{idweb}/{idbase:int}/soporte/partes-horas"
 @page "/shell/D010186"
+@page "/{idweb}/{idbase:int}/shell/D010186"
 @using AlfaCore.Models
 @using AlfaCore.Services
 @inject IPartesHorasService PartesSvc
 @inject IAppUiOperationService UiOps
 @inject IAppUserSessionService AppUserSession
 
-<PageTitle>Partes de horas | Alfa Gestión</PageTitle>
+<PageTitle>Partes de horas | Alfa GestiÃ³n</PageTitle>
 
 <style>
     .partes-horas-page {
@@ -283,7 +289,7 @@
         <div class="partes-hero__main">
             <span class="partes-hero__eyebrow">Control operativo</span>
             <h2 class="partes-hero__title">Partes de horas</h2>
-            <p class="partes-hero__text">Registro de tiempo por cliente, ticket y técnico, con lectura rápida de excedentes mensuales.</p>
+            <p class="partes-hero__text">Registro de tiempo por cliente, ticket y tÃ©cnico, con lectura rÃ¡pida de excedentes mensuales.</p>
         </div>
         <div class="partes-hero__metrics">
             <article class="partes-metric">
@@ -322,7 +328,7 @@
                     }
                     @if (_feedback.HasCode)
                     {
-                        <small>Código: @_feedback.Code</small>
+                        <small>CÃ³digo: @_feedback.Code</small>
                     }
                 </div>
             </div>
@@ -338,7 +344,7 @@
                        @oninput="OnQuickSearchChanged"
                        @onfocus="OpenFiltros"
                        @onkeydown="HandleQuickSearchKeyDownAsync"
-                       placeholder="Buscar por cliente o número de ticket" />
+                       placeholder="Buscar por cliente o nÃºmero de ticket" />
             </div>
             <button type="button" class="btn btn--primary" @onclick="AplicarBusquedaAsync" disabled="@_loading">Buscar</button>
             <button type="button" class="btn btn--ghost" @onclick="ToggleFiltros">@(_filtersExpanded ? "Ocultar filtros" : "Filtros")</button>
@@ -353,7 +359,7 @@
             }
             @if (!string.IsNullOrWhiteSpace(_filters.IdTecnico))
             {
-                <span>Técnico @_filters.IdTecnico</span>
+                <span>TÃ©cnico @_filters.IdTecnico</span>
             }
             @if (_filters.SoloFacturables)
             {
@@ -378,10 +384,10 @@
                 </div>
                 <div class="field">
                     <label>Cliente</label>
-                    <input type="text" @bind="_filters.ClienteCodigo" @bind:event="oninput" placeholder="Código cliente" />
+                    <input type="text" @bind="_filters.ClienteCodigo" @bind:event="oninput" placeholder="CÃ³digo cliente" />
                 </div>
                 <div class="field">
-                    <label>Técnico</label>
+                    <label>TÃ©cnico</label>
                     <select @bind="_filters.IdTecnico">
                         <option value="">Todos</option>
                         @foreach (var tecnico in _lookups.Tecnicos)
@@ -434,7 +440,7 @@
             <div class="panel-card__header">
                 <div>
                     <h3 class="panel-card__title">@(_form.IdParteHora.HasValue ? "Editar parte" : "Nuevo parte")</h3>
-                    <p class="panel-card__subtitle">Imputá tiempo a un cliente y, cuando aplique, vinculalo con un ticket.</p>
+                    <p class="panel-card__subtitle">ImputÃ¡ tiempo a un cliente y, cuando aplique, vinculalo con un ticket.</p>
                 </div>
                 <button type="button" class="btn btn--ghost btn--sm" @onclick="CerrarEditor">Cerrar</button>
             </div>
@@ -446,16 +452,16 @@
                 </div>
                 <div class="field">
                     <label>Cliente</label>
-                    <input type="text" @bind="_form.ClienteCodigo" @bind:event="oninput" placeholder="Código cliente" />
+                    <input type="text" @bind="_form.ClienteCodigo" @bind:event="oninput" placeholder="CÃ³digo cliente" />
                 </div>
                 <div class="field">
                     <label>Ticket</label>
-                    <input type="number" @bind="_ticketNumeroBusqueda" placeholder="Número o búsqueda" />
+                    <input type="number" @bind="_ticketNumeroBusqueda" placeholder="NÃºmero o bÃºsqueda" />
                 </div>
                 <div class="field">
-                    <label>Técnico</label>
+                    <label>TÃ©cnico</label>
                     <select @bind="_form.IdTecnico">
-                        <option value="">Sin técnico</option>
+                        <option value="">Sin tÃ©cnico</option>
                         @foreach (var tecnico in _lookups.Tecnicos)
                         {
                             <option value="@tecnico.Codigo">@tecnico.Codigo - @tecnico.Titulo</option>
@@ -499,7 +505,7 @@
             </div>
 
             <div class="field">
-                <label>Descripción</label>
+                <label>DescripciÃ³n</label>
                 <textarea rows="3" @bind="_form.Descripcion" @bind:event="oninput"></textarea>
             </div>
 
@@ -517,7 +523,7 @@
                             <tr>
                                 <th>Ticket</th>
                                 <th>Cliente</th>
-                                <th>Título</th>
+                                <th>TÃ­tulo</th>
                                 <th></th>
                             </tr>
                         </thead>
@@ -542,7 +548,7 @@
         <div class="panel-card__header">
             <div>
                 <h3 class="panel-card__title">Partes registrados</h3>
-                <p class="panel-card__subtitle">@_result.Total registro(s) · Página @_result.PageNumber de @_result.TotalPages</p>
+                <p class="panel-card__subtitle">@_result.Total registro(s) Â· PÃ¡gina @_result.PageNumber de @_result.TotalPages</p>
             </div>
         </div>
 
@@ -563,7 +569,7 @@
                             <th>Fecha</th>
                             <th>Cliente</th>
                             <th>Ticket</th>
-                            <th>Técnico</th>
+                            <th>TÃ©cnico</th>
                             <th>Tipo</th>
                             <th>Horas</th>
                             <th>Estado</th>
@@ -583,8 +589,8 @@
                                 <td>@LabelTipo(parte.TipoTrabajo)</td>
                                 <td>@FormatMinutes(parte.Minutos)</td>
                                 <td>@LabelEstado(parte.Estado)</td>
-                                <td>@(parte.Facturable ? "Sí" : "No")</td>
-                                <td>@(parte.Excedente ? "Sí" : "No")</td>
+                                <td>@(parte.Facturable ? "SÃ­" : "No")</td>
+                                <td>@(parte.Excedente ? "SÃ­" : "No")</td>
                                 <td>
                                     <div class="actions">
                                         <button type="button" class="btn btn--ghost btn--sm" @onclick="() => EditarParteAsync(parte.IdParteHora)">Editar</button>
@@ -651,7 +657,7 @@
         <div class="panel-card__header">
             <div>
                 <h3 class="panel-card__title">Bolsa mensual por cliente</h3>
-                <p class="panel-card__subtitle">Configurá las horas incluidas para marcar excedentes automáticamente.</p>
+                <p class="panel-card__subtitle">ConfigurÃ¡ las horas incluidas para marcar excedentes automÃ¡ticamente.</p>
             </div>
         </div>
         <div class="filters-grid filters-grid--wide">
@@ -677,7 +683,7 @@
             <textarea rows="2" @bind="_config.Observaciones" @bind:event="oninput"></textarea>
         </div>
         <div class="actions">
-            <button type="button" class="btn btn--ghost" @onclick="CargarConfigClienteAsync">Cargar configuración</button>
+            <button type="button" class="btn btn--ghost" @onclick="CargarConfigClienteAsync">Cargar configuraciÃ³n</button>
             <button type="button" class="btn btn--primary" @onclick="GuardarConfigClienteAsync">Guardar bolsa</button>
         </div>
     </section>
@@ -879,14 +885,14 @@
     private async Task AprobarAsync(long id)
     {
         var result = await UiOps.RunAsync(() => PartesSvc.AprobarAsync(id, AppUserSession.GetCurrentUserName(Environment.UserName)), "No se pudo aprobar el parte.");
-        _feedback = result.Success ? AppUiMessage.Success("Parte aprobado", "El registro quedó aprobado.") : result.Feedback;
+        _feedback = result.Success ? AppUiMessage.Success("Parte aprobado", "El registro quedÃ³ aprobado.") : result.Feedback;
         await BuscarAsync();
     }
 
     private async Task RechazarAsync(long id)
     {
         var result = await UiOps.RunAsync(() => PartesSvc.RechazarAsync(id, AppUserSession.GetCurrentUserName(Environment.UserName)), "No se pudo rechazar el parte.");
-        _feedback = result.Success ? AppUiMessage.Success("Parte rechazado", "El registro quedó rechazado.") : result.Feedback;
+        _feedback = result.Success ? AppUiMessage.Success("Parte rechazado", "El registro quedÃ³ rechazado.") : result.Feedback;
         await BuscarAsync();
     }
 
@@ -913,7 +919,7 @@
     private async Task GuardarConfigClienteAsync()
     {
         var result = await UiOps.RunAsync(() => PartesSvc.SaveClienteConfigAsync(_config, AppUserSession.GetCurrentUserName(Environment.UserName)), "No se pudo guardar la bolsa del cliente.");
-        _feedback = result.Success ? AppUiMessage.Success("Bolsa guardada", "La configuración mensual del cliente quedó actualizada.") : result.Feedback;
+        _feedback = result.Success ? AppUiMessage.Success("Bolsa guardada", "La configuraciÃ³n mensual del cliente quedÃ³ actualizada.") : result.Feedback;
         await BuscarAsync();
     }
 
@@ -940,9 +946,9 @@
     {
         ParteHoraTipoTrabajoKeys.Soporte => "Soporte",
         ParteHoraTipoTrabajoKeys.Desarrollo => "Desarrollo",
-        ParteHoraTipoTrabajoKeys.Implementacion => "Implementación",
-        ParteHoraTipoTrabajoKeys.Capacitacion => "Capacitación",
-        ParteHoraTipoTrabajoKeys.Reunion => "Reunión",
+        ParteHoraTipoTrabajoKeys.Implementacion => "ImplementaciÃ³n",
+        ParteHoraTipoTrabajoKeys.Capacitacion => "CapacitaciÃ³n",
+        ParteHoraTipoTrabajoKeys.Reunion => "ReuniÃ³n",
         ParteHoraTipoTrabajoKeys.Viaje => "Viaje",
         ParteHoraTipoTrabajoKeys.Interno => "Interno",
         _ => value

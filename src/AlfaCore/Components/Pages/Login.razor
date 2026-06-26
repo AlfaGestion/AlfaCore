@@ -1,0 +1,283 @@
+@page "/login"
+@layout AlfaCore.Components.Layout.PublicLayout
+@inject AlfaCore.Services.IAppUserSessionService AppUserSession
+@inject AlfaCore.Services.ISessionService SessionSvc
+@inject AlfaCore.Services.ILegacyBaseUserSessionService LegacyBaseUserSession
+@inject AlfaCore.Services.IAppModeService AppMode
+@inject ILogger<Login> Logger
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@using Microsoft.AspNetCore.Components
+@using Microsoft.AspNetCore.WebUtilities
+
+<PageTitle>Login | AlfaCore</PageTitle>
+
+<div class="auth-page">
+    <section class="auth-shell">
+        <aside class="auth-hero">
+            <div class="auth-hero__brand">
+                <img class="central-brand-logo central-login-logo"
+                     src="/logos/LogoGrandeAzul.png"
+                     alt="Alfa Gestión"
+                     loading="eager"
+                     decoding="async" />
+            </div>
+
+            <div class="auth-hero__copy">
+                <h2 class="auth-hero__title">
+                    @(AppMode.IsSaaSMode
+                        ? "Gestion central de clientes, bases y operaciones"
+                        : "Acceso directo al sistema")
+                </h2>
+                <p class="auth-hero__text">
+                    @(AppMode.IsSaaSMode
+                        ? "Ingresar con tu usuario central y trabajar sobre la base que corresponda a cada cliente."
+                        : "Ingresá con tu usuario y contraseña para entrar a la base activa.")
+                </p>
+            </div>
+
+            @if (AppMode.IsSaaSMode)
+            {
+                <ul class="auth-hero__points">
+                    <li><i class="bi bi-check-circle-fill"></i> Acceso multi-cliente</li>
+                    <li><i class="bi bi-check-circle-fill"></i> Selector de bases seguro</li>
+                    <li><i class="bi bi-check-circle-fill"></i> Administracion centralizada</li>
+                </ul>
+
+                <div class="auth-hero__note">Todo el acceso queda unido a tu cliente central.</div>
+            }
+            else
+            {
+                <div class="auth-hero__note">Escribí tu usuario y contraseña para continuar.</div>
+            }
+        </aside>
+
+        <section class="auth-form-panel">
+            <div class="auth-form-panel__glow auth-form-panel__glow--one" aria-hidden="true"></div>
+            <div class="auth-form-panel__glow auth-form-panel__glow--two" aria-hidden="true"></div>
+
+            <div class="auth-form-panel__surface">
+                <header class="auth-form-panel__header">
+                    <h1 class="auth-card__title">Ingresar al sistema</h1>
+                    <p class="auth-card__subtitle">
+                        @(AppMode.IsSaaSMode
+                            ? "Valida tus credenciales centrales y elegi la base disponible para tu cliente."
+                            : "Escribí tu usuario y contraseña para ingresar.")
+                    </p>
+                </header>
+
+                @if (!string.IsNullOrWhiteSpace(_error))
+                {
+                    <div class="editor-msg editor-msg--error auth-card__error">
+                        <strong>Ingreso rechazado</strong>
+                        <p>@_error</p>
+                    </div>
+                }
+
+                <form class="auth-form" @onsubmit="LoginAsync" @onsubmit:preventDefault="true">
+                    <div class="auth-field">
+                        <label for="login-user">@(AppMode.IsSaaSMode ? "Usuario o email" : "Usuario")</label>
+                        <input id="login-user"
+                               class="central-login-input"
+                               @bind="_userName"
+                               @bind:event="oninput"
+                               placeholder="@(AppMode.IsSaaSMode ? "usuario@empresa.com" : "usuario")"
+                               disabled="@_busy"
+                               autocomplete="username"
+                               inputmode="text"
+                               @onkeydown="OnKeyDownAsync" />
+                    </div>
+
+                    <div class="auth-field">
+                        <label for="login-password">Contraseña</label>
+                        <div class="auth-password central-login-password">
+                            <input id="login-password"
+                                   class="central-login-input central-login-password__input"
+                                   type="@(_showPassword ? "text" : "password")"
+                                   @bind="_password"
+                                   @bind:event="oninput"
+                                   placeholder="Contraseña"
+                                   disabled="@_busy"
+                                   autocomplete="current-password"
+                                   @onkeydown="OnKeyDownAsync" />
+                            <button type="button"
+                                    class="auth-password__toggle central-login-password__toggle"
+                                    title="@(_showPassword ? "Ocultar contraseña" : "Mostrar contraseña")"
+                                    aria-label="@(_showPassword ? "Ocultar contraseña" : "Mostrar contraseña")"
+                                    @onclick="TogglePasswordAsync"
+                                    disabled="@_busy">
+                                <i class="bi @(_showPassword ? "bi-eye-slash" : "bi-eye")"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn btn--primary auth-card__submit" disabled="@_busy">
+                        <i class="bi bi-box-arrow-in-right"></i>
+                        <span>@(_busy ? "Ingresando..." : "Ingresar")</span>
+                    </button>
+                </form>
+            </div>
+        </section>
+    </section>
+</div>
+
+@code {
+    private string _userName = string.Empty;
+    private string _password = string.Empty;
+    private string _error = string.Empty;
+    private bool _busy;
+    private bool _showPassword;
+    [SupplyParameterFromQuery(Name = "returnUrl")]
+    public string? ReturnUrl { get; set; }
+
+    protected override void OnInitialized()
+    {
+        Logger.LogInformation(
+            "Login: initialized. Uri={Uri}, SaaS={SaaS}, Auth={Auth}, ReturnUrl={ReturnUrl}",
+            Nav.Uri,
+            AppMode.IsSaaSMode,
+            AppUserSession.IsAuthenticated,
+            ReturnUrl ?? "(sin returnUrl)");
+    }
+
+    private async Task LoginAsync()
+    {
+        _busy = true;
+        _error = string.Empty;
+
+        try
+        {
+            if (AppMode.IsSaaSMode)
+            {
+                await AppUserSession.LoginAsync(_userName, _password);
+            }
+            else
+            {
+                var session = await LegacyBaseUserSession.LoginAsync(_userName, _password);
+                AppUserSession.AdoptInternalUser(session);
+            }
+
+            await PersistUserTokenAsync();
+            await GoToNextStepAsync();
+        }
+        catch (InvalidOperationException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task PersistUserTokenAsync()
+    {
+        var token = AppUserSession.CurrentToken;
+        if (string.IsNullOrWhiteSpace(token))
+            return;
+
+        try
+        {
+            await JS.InvokeVoidAsync("localStorage.setItem", "alfacore_user_token", token);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Login: no se pudo persistir el token de usuario en localStorage.");
+        }
+    }
+
+    private async Task GoToNextStepAsync()
+    {
+        if (!AppMode.IsSaaSMode)
+        {
+            if (TryGetSafeReturnUrl(out var legacyReturnUrl))
+            {
+                Logger.LogInformation("Login: legacy mode, navigating to returnUrl {ReturnUrl}", legacyReturnUrl);
+                Nav.NavigateTo(legacyReturnUrl, replace: true);
+                return;
+            }
+
+            Logger.LogInformation("Login: legacy mode, navigating to root");
+            Nav.NavigateTo("/", replace: true);
+            return;
+        }
+
+        if (TryGetSafeReturnUrl(out var returnUrl))
+        {
+            Logger.LogInformation("Login: navigating to returnUrl {ReturnUrl}", returnUrl);
+            Nav.NavigateTo(returnUrl, replace: true);
+            return;
+        }
+
+        var bases = SessionSvc.GetAllSessions();
+        if (bases.Count == 1)
+        {
+            SessionSvc.SwitchSession(bases[0].Id);
+            await JS.InvokeVoidAsync("alfaCoreSqlSession.setActive", bases[0].Id.ToString());
+            AppUserSession.HandleSqlSessionChanged();
+            var internalSession = await LegacyBaseUserSession.ResolveByCentralLoginAsync(AppUserSession.CurrentUser?.CentralLogin ?? _userName);
+            if (internalSession is not null)
+                AppUserSession.AdoptInternalUser(internalSession);
+            var routeIdWeb = NormalizeRouteIdWeb(AppUserSession.CurrentUser?.IdWeb);
+            var destination = !string.IsNullOrWhiteSpace(routeIdWeb)
+                ? $"/{Uri.EscapeDataString(routeIdWeb)}/{bases[0].BaseId}"
+                : "/";
+            Logger.LogInformation("Login: single-base destination resolved to {Destination}", destination);
+            Nav.NavigateTo(destination, replace: true);
+            return;
+        }
+
+        var currentIdWeb = AppUserSession.CurrentUser?.IdWeb;
+        if (!string.IsNullOrWhiteSpace(currentIdWeb))
+        {
+            Logger.LogInformation("Login: redirecting to client landing {IdWeb}", currentIdWeb);
+            Nav.NavigateTo($"/{Uri.EscapeDataString(currentIdWeb)}", replace: true);
+            return;
+        }
+
+        Logger.LogInformation("Login: redirecting to selector base");
+        Nav.NavigateTo("/seleccionar-base", replace: true);
+    }
+
+    private async Task OnKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (string.Equals(args.Key, "Enter", StringComparison.Ordinal))
+            await LoginAsync();
+    }
+
+    private Task TogglePasswordAsync()
+    {
+        _showPassword = !_showPassword;
+        return Task.CompletedTask;
+    }
+
+    private static string? NormalizeRouteIdWeb(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        var trimmed = value.Trim();
+        return trimmed.Length == 0 ? null : trimmed;
+    }
+
+    private bool TryGetSafeReturnUrl(out string safeReturnUrl)
+    {
+        safeReturnUrl = string.Empty;
+
+        var candidate = ReturnUrl?.Trim();
+        if (string.IsNullOrWhiteSpace(candidate))
+            return false;
+
+        if (!candidate.StartsWith("/", StringComparison.Ordinal) || candidate.StartsWith("//", StringComparison.Ordinal))
+            return false;
+
+        if (string.Equals(candidate, "/", StringComparison.Ordinal))
+            return false;
+
+        if (candidate.Contains('\r') || candidate.Contains('\n'))
+            return false;
+
+        safeReturnUrl = candidate;
+        return true;
+    }
+}

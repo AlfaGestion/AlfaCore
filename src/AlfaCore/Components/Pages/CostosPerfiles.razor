@@ -1,13 +1,14 @@
-@page "/costos/perfiles"
+﻿@page "/costos/perfiles"
+@page "/{idweb}/{idbase:int}/costos/perfiles"
 @inject AlfaCore.Services.ICostosService CostosSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 
-<PageTitle>Perfiles de Costos | Alfa Gestión</PageTitle>
+<PageTitle>Perfiles de Costos | Alfa GestiÃ³n</PageTitle>
 
 @if (_loading)
 {
     <div class="consultas-loading">
-        <i class="bi bi-hourglass-split"></i> Cargando perfiles…
+        <i class="bi bi-hourglass-split"></i> Cargando perfilesâ€¦
     </div>
 }
 else
@@ -15,8 +16,8 @@ else
     <div class="page-grid">
         <section class="page-intro">
             <div>
-                <h2 class="page-intro__title">Perfiles de importación</h2>
-                <p class="page-intro__text">Administrá los perfiles de `V_Ta_InterODBC` para definir cómo se interpretan las listas de proveedores.</p>
+                <h2 class="page-intro__title">Perfiles de importaciÃ³n</h2>
+                <p class="page-intro__text">AdministrÃ¡ los perfiles de `V_Ta_InterODBC` para definir cÃ³mo se interpretan las listas de proveedores.</p>
             </div>
             <div class="actions">
                 <button class="btn btn--primary" @onclick="NuevoPerfil">
@@ -46,7 +47,7 @@ else
 
                 <div class="field" style="margin-bottom:1rem;">
                     <label class="field__label">Buscar</label>
-                    <input class="field__control" @bind="_searchText" @bind:event="oninput" placeholder="Nombre del perfil o código..." />
+                    <input class="field__control" @bind="_searchText" @bind:event="oninput" placeholder="Nombre del perfil o cÃ³digo..." />
                 </div>
 
                 <div class="table-wrap">
@@ -54,7 +55,7 @@ else
                         <thead>
                             <tr>
                                 <th>Perfil</th>
-                                <th>Código proveedor</th>
+                                <th>CÃ³digo proveedor</th>
                                 <th>Reglas</th>
                             </tr>
                         </thead>
@@ -65,7 +66,7 @@ else
                                     style="cursor:pointer"
                                     @onclick="() => Seleccionar(profile)">
                                     <td>@profile.ProviderName</td>
-                                    <td>@(string.IsNullOrWhiteSpace(profile.ProviderAccount) ? "—" : profile.ProviderAccount)</td>
+                                    <td>@(string.IsNullOrWhiteSpace(profile.ProviderAccount) ? "â€”" : profile.ProviderAccount)</td>
                                     <td>@BuildRules(profile)</td>
                                 </tr>
                             }
@@ -78,7 +79,7 @@ else
                 <div class="panel-card__header">
                     <div>
                         <h3 class="panel-card__title">@(_editId == 0 ? "Nuevo perfil" : $"Editar perfil #{_editId}")</h3>
-                        <p class="panel-card__subtitle">Configuración operativa para importar costos por perfil.</p>
+                        <p class="panel-card__subtitle">ConfiguraciÃ³n operativa para importar costos por perfil.</p>
                     </div>
                 </div>
 
@@ -88,14 +89,14 @@ else
                         <input class="field__control costos-perfiles__input-lg" @bind="_providerName" placeholder="Ej: Lista Luca marzo 2026" />
                     </div>
                     <div class="field costos-perfiles__field costos-perfiles__field--code">
-                        <label class="field__label">Código del proveedor</label>
+                        <label class="field__label">CÃ³digo del proveedor</label>
                         <input class="field__control"
                                @bind="_providerAccount"
                                @bind:event="oninput"
                                @bind:after="BuscarProveedoresAsync"
-                               placeholder="Escribí código o nombre..."
+                               placeholder="EscribÃ­ cÃ³digo o nombre..."
                                list="proveedores-sugeridos" />
-                        <div class="field__hint">Opcional. Si lo completás, debe existir en la base.</div>
+                        <div class="field__hint">Opcional. Si lo completÃ¡s, debe existir en la base.</div>
 
                         @if (_providerMatches.Count > 0)
                         {
@@ -127,7 +128,7 @@ else
                         {
                             <button type="button" class="btn btn--ghost btn--sm" @onclick="LimpiarProveedor">
                                 <i class="bi bi-x-circle"></i>
-                                <span>Quitar código</span>
+                                <span>Quitar cÃ³digo</span>
                             </button>
                         }
                     </div>
@@ -139,7 +140,7 @@ else
                         </label>
                         <label class="checkbox costos-perfiles__toggle">
                         <input type="checkbox" @bind="_onlyModify" />
-                        <span>Solo modificación</span>
+                        <span>Solo modificaciÃ³n</span>
                         </label>
                     </div>
 
@@ -200,8 +201,8 @@ else
         _selectedProvider is not null
             ? $"{_selectedProvider.Name} [{_selectedProvider.Code}]"
             : string.IsNullOrWhiteSpace(_providerAccount)
-                ? "Sin código asociado"
-                : $"Código seleccionado: {_providerAccount}";
+                ? "Sin cÃ³digo asociado"
+                : $"CÃ³digo seleccionado: {_providerAccount}";
 
     private IEnumerable<CostosProfileDto> FilteredProfiles =>
         _profiles.Where(p =>
@@ -389,9 +390,9 @@ else
     {
         var parts = new List<string>();
         if (profile.OnlyAdd) parts.Add("SoloAlta");
-        if (profile.OnlyModify) parts.Add("SoloModificación");
+        if (profile.OnlyModify) parts.Add("SoloModificaciÃ³n");
         if (parts.Count == 0) parts.Add("Sin reglas");
-        return string.Join(" · ", parts);
+        return string.Join(" Â· ", parts);
     }
 
     private static string BuildFeedbackText(AlfaCore.Models.AppUiMessage? feedback)
@@ -403,7 +404,7 @@ else
         if (feedback.HasSuggestion)
             parts.Add(feedback.Suggestion);
         if (feedback.HasCode)
-            parts.Add($"Código: {feedback.Code}");
+            parts.Add($"CÃ³digo: {feedback.Code}");
         return string.Join(" ", parts.Where(static part => !string.IsNullOrWhiteSpace(part)));
     }
 }

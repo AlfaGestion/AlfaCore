@@ -1,4 +1,4 @@
-@inherits LayoutComponentBase
+﻿@inherits LayoutComponentBase
 @inject IJSRuntime JS
 @using System.Globalization
 @using AlfaCore.Models
@@ -6,12 +6,18 @@
 @inject NavigationManager Nav
 @inject AlfaCore.Services.ISessionService SessionSvc
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
+@inject AlfaCore.Services.IAppModeService AppMode
+@inject AlfaCore.Services.ILegacyBaseUserSessionService LegacyBaseUserSession
+@inject AlfaCore.Services.IRouteContextService RouteContext
+@inject AlfaCore.Services.ICentralClientesService CentralClientesSvc
 @inject AlfaCore.Services.IMenuService MenuSvc
 @inject AlfaCore.Services.IRecentService RecentSvc
 @inject AlfaCore.Services.IConversacionesService ConversacionesSvc
 @inject AlfaCore.Services.ITareasService TareasSvc
 @inject AlfaCore.Services.IAppEventService AppEvents
 @inject AlfaCore.Services.IFloatingWindowService FloatingWindows
+@inject AlfaCore.Services.ICentralBasesService CentralBasesSvc
+@inject ILogger<MainLayout> Logger
 @implements IDisposable
 
 @if (IsPosFullscreenRoute)
@@ -35,21 +41,21 @@ else
         <div class="brand">
             @if (CanShowLauncherAccess)
             {
-                <a class="brand__logo-link" href="/" title="Volver al menú principal" aria-label="Volver al menú principal" @onclick="GoToLauncher">
-                    <img class="brand__logo" src="logo.png" alt="Alfa Gestión" />
+                <a class="brand__logo-link" href="@GetLauncherUrl()" title="Volver al menú principal" aria-label="Volver al menú principal" @onclick="GoToLauncher">
+                    <img class="brand__logo" src="/logos/Logo.png" alt="Alfa Gestión" />
                 </a>
             }
             else
             {
                 <span class="brand__logo-link brand__logo-link--static" aria-hidden="true">
-                    <img class="brand__logo" src="logo.png" alt="Alfa Gestión" />
+                    <img class="brand__logo" src="/logos/Logo.png" alt="Alfa Gestión" />
                 </span>
             }
             <div class="brand__content">
                 <p class="brand__eyebrow">Business Intelligence</p>
                 @if (CanShowLauncherAccess)
                 {
-                    <a class="brand__title" href="/" @onclick="GoToLauncher">Alfa Gestión</a>
+                    <a class="brand__title" href="@GetLauncherUrl()" @onclick="GoToLauncher">Alfa Gestión</a>
                 }
                 else
                 {
@@ -469,7 +475,7 @@ else
                         </a>
                     }
 
-                    @if (_menuSearchLoading || (!_menuSearchLoaded && ShowShellContext))
+                    @if (_menuSearchLoading)
                     {
                         <div class="menu__link menu__link--disabled">
                             <span class="menu__icon"><i class="bi bi-hourglass-split"></i></span>
@@ -488,7 +494,7 @@ else
                         @foreach (var module in _mainMenuModules)
                         {
                             <a class="@GetMainMenuModuleClass(module)"
-                               href="@module.RutaWeb"
+                               href="@BuildModuleUrl(module.RutaWeb)"
                                title="@module.Nombre"
                                @onclick="(() => NavigateToModule(module.RutaWeb))">
                                 <span class="menu__icon"><i class="bi @(string.IsNullOrWhiteSpace(module.Icono) ? "bi-grid" : module.Icono)"></i></span>
@@ -500,10 +506,11 @@ else
 
                 <div class="menu__search" @onclick:stopPropagation="true">
                     <label class="menu__search-label" for="main-menu-search">Buscar opción</label>
-                    <div class="menu__search-box">
+                    <div class="menu__search-box" style="background: rgba(6, 17, 33, .78); border: 1px solid rgba(92, 201, 255, .18);">
                         <span class="menu__search-icon"><i class="bi bi-search"></i></span>
                         <input id="main-menu-search"
                                class="menu__search-input"
+                               style="appearance: none; -webkit-appearance: none; background: transparent; color: #e2e8f0; border: 0; box-shadow: none;"
                                type="search"
                                placeholder="Ventas, clientes, auditoría..."
                                @bind="_menuSearchText"
@@ -513,6 +520,7 @@ else
                         {
                             <button type="button"
                                     class="menu__search-clear"
+                                    style="background: transparent; color: rgba(196, 212, 237, .72);"
                                     aria-label="Limpiar búsqueda"
                                     @onclick="ClearMenuSearch">
                                 <i class="bi bi-x-lg"></i>
@@ -605,6 +613,7 @@ else
         <header class="shell__header">
             <button type="button"
                     class="shell__mobile-toggle no-print"
+                    style="display:none !important;"
                     @onclick="ToggleMobileSidebar"
                     aria-label="Abrir menú"
                     aria-expanded="@_mobileSidebarOpen">
@@ -627,7 +636,7 @@ else
                             <span>Exportar PDF</span>
                         </button>
                     }
-                    <button class="session-chip no-print" @onclick="() => _drawerOpen = true" title="Gestionar sesiones de base de datos">
+                    <button type="button" class="session-chip no-print" @onclick="() => _drawerOpen = true" title="Gestionar sesiones de base de datos">
                         <span class="session-chip__dot"></span>
                         <span class="session-chip__text">@(_activeSession?.Servidor ?? "—") · @(_activeSession?.BaseDatos ?? "—")</span>
                         <i class="bi bi-chevron-down"></i>
@@ -681,13 +690,16 @@ else
         }
 
         <section class="shell__content">
-            <div class="print-banner print-only">
-                <div>
-                    <p class="print-banner__eyebrow">Dashboard de Compras</p>
-                    <h2 class="print-banner__title">@CurrentPageTitle</h2>
+            @if (IsWorkspaceRoute)
+            {
+                <div class="print-banner print-only">
+                    <div>
+                        <p class="print-banner__eyebrow">Aplicaciones</p>
+                        <h2 class="print-banner__title">@CurrentPageTitle</h2>
+                    </div>
+                    <p class="print-banner__meta">Exportado el @DateTime.Now.ToString("dd/MM/yyyy HH:mm")</p>
                 </div>
-                <p class="print-banner__meta">Exportado el @DateTime.Now.ToString("dd/MM/yyyy HH:mm")</p>
-            </div>
+            }
             @Body
         </section>
     </main>
@@ -1050,18 +1062,21 @@ else
     </section>
 }
 
-<AppLoginOverlay Open="@(!AppUserSession.IsAuthenticated)"
+<AppLoginOverlay Open="@ShowLoginOverlay"
                  SqlSessionLabel="@GetSqlSessionLabel()"
                  UserName="@_loginUserName"
                  Password="@_loginPassword"
                  ErrorMessage="@_loginError"
                  IsBusy="@_loginBusy"
-                 ShowPassword="@_loginShowPassword"
+                ShowPassword="@_loginShowPassword"
                  RememberCredentials="@_loginRememberCredentials"
+                 UserOptions="@_loginUsers"
+                 UseUserList="@_loginUseUserList"
                  UserNameChanged="@(value => _loginUserName = value)"
                  PasswordChanged="@(value => _loginPassword = value)"
                  ShowPasswordChanged="@(value => _loginShowPassword = value)"
                  RememberCredentialsChanged="OnRememberCredentialsChangedAsync"
+                 UseUserListChanged="@(value => _loginUseUserList = value)"
                  OnSubmit="LoginAsync"
                  OnOpenSqlSessions="OpenSqlSessionDrawerAsync" />
 
@@ -1078,6 +1093,11 @@ else
     private bool _loginBusy;
     private bool _loginShowPassword;
     private bool _loginRememberCredentials;
+    private IReadOnlyList<UsuarioSistemaDto> _loginUsers = [];
+    private int? _loginUsersBaseId;
+    private bool _loginUsersLoaded;
+    private bool _loginUsersLoading;
+    private bool _loginUseUserList = true;
     private DotNetObjectReference<MainLayout>? _pwaRef;
     private bool _pwaCanInstall;
     private bool _pwaInstalled;
@@ -1099,7 +1119,7 @@ else
     private List<NotificacionesPushEndpointResultDto> _pushLastTestResults = [];
     private string CurrentPageTitle => GetCurrentPageTitle();
     private RenderFragment? ModuleBackLink => !IsDirectMode
-        ? @<a class="menu__back" href="/" @onclick:preventDefault="true" @onclick="GoBackOrLauncherAsync">
+        ? @<a class="menu__back" href="@GetLauncherUrl()" @onclick:preventDefault="true" @onclick="GoBackOrLauncherAsync">
                 <i class="bi bi-grid-3x3-gap-fill"></i>
                 <span>Aplicaciones</span>
             </a>
@@ -1114,6 +1134,29 @@ else
     private bool IsLauncherRoute => string.IsNullOrWhiteSpace(Nav.ToBaseRelativePath(Nav.Uri).Split('?')[0].Split('#')[0].Trim('/'));
     private bool IsDirectMode => !string.IsNullOrWhiteSpace(_directModuleKey);
     private bool IsPosFullscreenRoute => string.Equals(GetNormalizedCurrentPath(), "ventas/punto-venta", StringComparison.OrdinalIgnoreCase);
+    private bool IsLoginRoute => string.Equals(GetNormalizedCurrentPath(), "login", StringComparison.OrdinalIgnoreCase);
+    private bool IsInternalSqlLoginContext
+    {
+        get
+        {
+            if (!AppMode.IsSaaSMode || IsLoginRoute)
+                return false;
+
+            if (AppUserSession.IsAuthenticated && !AppUserSession.RequiresInternalLogin)
+                return false;
+
+            if (SessionSvc.GetActiveSession() is not null)
+                return true;
+
+            if (TryGetRouteBaseId(out _))
+                return true;
+
+            return !string.IsNullOrWhiteSpace(_routeSessionLabel);
+        }
+    }
+    private bool ShowLoginOverlay
+        => (!AppMode.IsSaaSMode && (!AppUserSession.IsAuthenticated || AppUserSession.RequiresInternalLogin))
+           || (AppMode.IsSaaSMode && (!AppUserSession.IsAuthenticated || AppUserSession.RequiresInternalLogin));
     private bool ShouldShowConversationMobilePwaActions
         => string.Equals(_currentModule, "conversaciones", StringComparison.OrdinalIgnoreCase);
     private bool CanEnablePush
@@ -1169,6 +1212,7 @@ else
     private long? _globalConversationLatestId;
     private string _globalConversationLatestName = string.Empty;
     private string _globalConversationLatestSummary = string.Empty;
+    private string _routeSessionLabel = string.Empty;
 
     protected override void OnInitialized()
     {
@@ -1184,6 +1228,10 @@ else
         ResetMenuSearchCatalog();
         var wasAuthenticated = AppUserSession.IsAuthenticated;
         AppUserSession.HandleSqlSessionChanged();
+        if (IsInternalSqlLoginContext && AppUserSession.RequiresInternalLogin)
+            ResetLoginDraftForInternalContext();
+        if (AppMode.IsSaaSMode && AppUserSession.IsAuthenticated)
+            _ = InvokeAsync(EnsureActiveSessionFromRouteAsync);
         if (wasAuthenticated && !AppUserSession.IsAuthenticated)
         {
             _ = InvokeAsync(async () =>
@@ -1204,6 +1252,10 @@ else
     private void OnAppUserStateChanged()
     {
         ResetMenuSearchCatalog();
+        if (IsInternalSqlLoginContext && AppUserSession.RequiresInternalLogin)
+            ResetLoginDraftForInternalContext();
+        if (AppMode.IsSaaSMode && AppUserSession.IsAuthenticated)
+            _ = InvokeAsync(EnsureActiveSessionFromRouteAsync);
         if (!AppUserSession.IsAuthenticated)
         {
             _loginPassword = string.Empty;
@@ -1248,10 +1300,14 @@ else
     {
         UpdateCurrentModule();
         EnforceDirectMode();
+        if (IsInternalSqlLoginContext && ShowLoginOverlay)
+            ResetLoginDraftForInternalContext();
+        if (ShowLoginOverlay && IsInternalSqlLoginContext)
+            _ = InvokeAsync(EnsureInternalLoginUsersAsync);
     }
 
     private void GoToLauncher()
-        => Nav.NavigateTo("/");
+        => Nav.NavigateTo(GetLauncherUrl(), replace: true);
 
     private async Task GoBackOrLauncherAsync()
     {
@@ -1309,43 +1365,230 @@ else
         {
         }
 
+        await EnsureActiveSessionFromRouteAsync();
+        await EnsureInternalLoginUsersAsync();
+
+        if (IsInternalSqlLoginContext && AppUserSession.RequiresInternalLogin)
+            ResetLoginDraftForInternalContext();
+
         if (!AppUserSession.IsAuthenticated)
         {
+            var normalizedPathForToken = GetNormalizedCurrentPath();
             try
             {
-                var token = await JS.InvokeAsync<string?>("localStorage.getItem", "alfacore_user_token");
-                if (!string.IsNullOrEmpty(token))
-                    AppUserSession.TryRestoreFromToken(token);
+                if (!string.IsNullOrWhiteSpace(normalizedPathForToken))
+                {
+                    var token = await JS.InvokeAsync<string?>("localStorage.getItem", "alfacore_user_token");
+                    if (!string.IsNullOrEmpty(token))
+                        AppUserSession.TryRestoreFromToken(token);
+                }
             }
             catch { }
 
             try
             {
-                _loginRememberCredentials = string.Equals(
-                    await JS.InvokeAsync<string?>("localStorage.getItem", "alfacore_login_remember"),
-                    "true",
-                    StringComparison.OrdinalIgnoreCase);
-
-                if (_loginRememberCredentials)
+                var isInternalLoginPrompt = IsInternalSqlLoginContext || (AppMode.IsSaaSMode && AppUserSession.RequiresInternalLogin && !IsLoginRoute);
+                if (!isInternalLoginPrompt)
                 {
-                    _loginUserName = await JS.InvokeAsync<string?>("localStorage.getItem", "alfacore_login_user") ?? string.Empty;
-                    _loginPassword = await JS.InvokeAsync<string?>("localStorage.getItem", "alfacore_login_password") ?? string.Empty;
+                    _loginRememberCredentials = string.Equals(
+                        await JS.InvokeAsync<string?>("localStorage.getItem", "alfacore_login_remember"),
+                        "true",
+                        StringComparison.OrdinalIgnoreCase);
+
+                    if (_loginRememberCredentials)
+                    {
+                        _loginUserName = await JS.InvokeAsync<string?>("localStorage.getItem", "alfacore_login_user") ?? string.Empty;
+                        _loginPassword = await JS.InvokeAsync<string?>("localStorage.getItem", "alfacore_login_password") ?? string.Empty;
+                    }
+                }
+                else
+                {
+                    _loginRememberCredentials = false;
+                    _loginUserName = string.Empty;
+                    _loginPassword = string.Empty;
                 }
             }
             catch { }
         }
+
+        if (AppMode.IsSaaSMode && !AppUserSession.IsAuthenticated)
+        {
+            var normalizedPath = GetNormalizedCurrentPath();
+            var allowSaasLanding = await CanShowSaaSClientLandingAsync(normalizedPath);
+            Logger.LogInformation(
+                "MainLayout: auth guard. Path={Path}, AllowLanding={AllowLanding}, HasAuth={HasAuth}, ActiveSession={ActiveSession}, SaaS={SaaS}",
+                normalizedPath,
+                allowSaasLanding,
+                AppUserSession.IsAuthenticated,
+                SessionSvc.GetActiveSession()?.BaseId,
+                AppMode.IsSaaSMode);
+
+            if (!allowSaasLanding && string.IsNullOrWhiteSpace(_currentModule))
+            {
+                var returnUrl = "/" + Nav.ToBaseRelativePath(Nav.Uri).Split('?')[0].Split('#')[0].TrimStart('/');
+                Logger.LogInformation("MainLayout: redirecting to login. ReturnUrl={ReturnUrl}", returnUrl);
+                Nav.NavigateTo($"/login?returnUrl={Uri.EscapeDataString(returnUrl)}", replace: true);
+                return;
+            }
+
+            if (!allowSaasLanding)
+            {
+                Logger.LogInformation(
+                    "MainLayout: SaaS module route without auth, keeping current URL. Path={Path}, Module={Module}",
+                    normalizedPath,
+                    _currentModule);
+            }
+        }
+
+        if (TryRedirectToCanonicalHome())
+            return;
 
         if (ShowShellContext)
             await EnsureMenuSearchCatalogAsync();
         StateHasChanged();
     }
 
+    private async Task EnsureActiveSessionFromRouteAsync()
+    {
+        if (!AppMode.IsSaaSMode || !TryGetRouteBaseId(out var routeBaseId))
+            return;
+
+        var availableSessions = SessionSvc.GetAllSessions();
+        var routeSession = availableSessions.FirstOrDefault(x => x.BaseId == routeBaseId);
+
+        if (routeSession is null)
+        {
+            var routeBase = await CentralBasesSvc.GetByIdAsync(routeBaseId);
+            _routeSessionLabel = routeBase is null
+                ? $"Base #{routeBaseId}"
+                : $"{routeBase.Nombre} · {routeBase.DbServer} · {routeBase.DbName}";
+            return;
+        }
+
+        if (SessionSvc.GetActiveSession() is null)
+        {
+            SessionSvc.SwitchSession(routeSession.Id);
+
+            try
+            {
+                await JS.InvokeVoidAsync("alfaCoreSqlSession.setActive", routeSession.Id.ToString());
+            }
+            catch
+            {
+                // La sesión en memoria ya quedó activa; el storage es solo persistencia auxiliar.
+            }
+
+            Logger.LogInformation(
+                "MainLayout: base activada desde la URL (sin sesión previa). Path={Path}, IdWeb={IdWeb}, IdBase={IdBase}, Nombre={Nombre}",
+                GetNormalizedCurrentPath(),
+                GetRouteIdWeb() ?? "(sin ruta)",
+                routeSession.BaseId,
+                routeSession.Nombre);
+            _routeSessionLabel = $"{routeSession.Nombre} · {routeSession.Servidor} · {routeSession.BaseDatos}";
+            return;
+        }
+
+        try
+        {
+            await JS.InvokeVoidAsync("alfaCoreSqlSession.setActive", routeSession.Id.ToString());
+        }
+        catch
+        {
+            // La sesión en memoria ya quedó activa; el storage es solo persistencia auxiliar.
+        }
+
+        Logger.LogInformation(
+            "MainLayout: base activada desde la URL. Path={Path}, IdWeb={IdWeb}, IdBase={IdBase}, Nombre={Nombre}",
+            GetNormalizedCurrentPath(),
+            GetRouteIdWeb() ?? "(sin ruta)",
+            routeSession.BaseId,
+            routeSession.Nombre);
+        _routeSessionLabel = $"{routeSession.Nombre} · {routeSession.Servidor} · {routeSession.BaseDatos}";
+    }
+
+    private async Task EnsureInternalLoginUsersAsync()
+    {
+        if (!ShowLoginOverlay || !IsInternalSqlLoginContext)
+            return;
+
+        var currentBaseId = SessionSvc.GetActiveSession()?.BaseId;
+        if (currentBaseId is null)
+            return;
+
+        if (_loginUsersLoading)
+            return;
+
+        if (_loginUsersLoaded && _loginUsersBaseId == currentBaseId)
+            return;
+
+        _loginUsersLoading = true;
+        try
+        {
+            _loginUsers = await LegacyBaseUserSession.GetLoginUsersAsync();
+            _loginUsersBaseId = currentBaseId;
+            _loginUsersLoaded = true;
+            _loginUseUserList = _loginUsers.Count > 0;
+            Logger.LogInformation(
+                "MainLayout: usuarios de login cargados. BaseId={BaseId}, Count={Count}",
+                currentBaseId,
+                _loginUsers.Count);
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            _loginUsers = [];
+            _loginUsersBaseId = currentBaseId;
+            _loginUsersLoaded = true;
+            _loginUseUserList = false;
+            Logger.LogWarning(ex, "MainLayout: no se pudo cargar el listado de usuarios de login.");
+            await InvokeAsync(StateHasChanged);
+        }
+        finally
+        {
+            _loginUsersLoading = false;
+        }
+    }
+
+    private bool TryGetRouteBaseId(out int baseId)
+    {
+        baseId = 0;
+        var path = GetNormalizedCurrentPath();
+        if (string.IsNullOrWhiteSpace(path))
+            return false;
+
+        var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (segments.Length < 2)
+            return false;
+
+        return int.TryParse(segments[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out baseId);
+    }
+
+    private string? GetRouteIdWeb()
+    {
+        var path = GetNormalizedCurrentPath();
+        if (string.IsNullOrWhiteSpace(path))
+            return null;
+
+        var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return segments.Length > 0 ? segments[0] : null;
+    }
+
     private void UpdateCurrentModule()
     {
         var relativePath = Nav.ToBaseRelativePath(Nav.Uri);
         var path = relativePath.Split('?')[0].Split('#')[0].Trim('/');
+        var effectivePath = GetEffectiveCurrentPath();
         var query = QueryHelpers.ParseQuery(Nav.ToAbsoluteUri(Nav.Uri).Query);
-        var normalized = path.ToLowerInvariant();
+        var normalized = effectivePath.ToLowerInvariant();
+
+        if (IsLauncherContextRoute(path) || string.IsNullOrWhiteSpace(effectivePath))
+        {
+            _activeShellModuleKey = string.Empty;
+            _currentModule = string.Empty;
+            _directModuleKey = string.Empty;
+            return;
+        }
+
         if (normalized.StartsWith("shell/", StringComparison.OrdinalIgnoreCase))
         {
             _activeShellModuleKey = path.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Skip(1).FirstOrDefault() ?? string.Empty;
@@ -1360,7 +1603,7 @@ else
         {
             "clientes" => "clientes",
             "proveedores" => "proveedores",
-            _ => path.Split('/').FirstOrDefault()?.ToLowerInvariant() ?? string.Empty
+            _ => effectivePath.Split('/').FirstOrDefault()?.ToLowerInvariant() ?? string.Empty
         };
 
         if (query.TryGetValue("directo", out var directo)
@@ -1369,10 +1612,37 @@ else
         {
             _directModuleKey = _currentModule;
         }
-        else if (string.IsNullOrWhiteSpace(path) || string.IsNullOrWhiteSpace(_currentModule))
+        else if (string.IsNullOrWhiteSpace(effectivePath) || string.IsNullOrWhiteSpace(_currentModule))
         {
             _directModuleKey = string.Empty;
         }
+    }
+
+    private bool TryRedirectToCanonicalHome()
+    {
+        if (!AppMode.IsSaaSMode)
+            return false;
+
+        if (!CanShowLauncherAccess)
+            return false;
+
+        var activeSession = SessionSvc.GetActiveSession();
+        if (activeSession is null)
+            return false;
+
+        var currentPath = Nav.ToBaseRelativePath(Nav.Uri).Split('?')[0].Split('#')[0].Trim('/');
+
+        if (!IsLauncherContextRoute(currentPath))
+            return false;
+
+        var canonicalHome = BuildLauncherUrl(activeSession);
+        var currentCanonical = canonicalHome.Trim('/');
+
+        if (string.Equals(currentPath, currentCanonical, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        Nav.NavigateTo(canonicalHome, replace: true);
+        return true;
     }
 
     private bool EnforceDirectMode()
@@ -1397,14 +1667,11 @@ else
         if (string.IsNullOrWhiteSpace(route))
             return route;
 
+        var normalizedRoute = RouteContext.BuildRoute(route);
         if (!IsDirectMode)
-            return route;
+            return normalizedRoute;
 
-        var normalizedRoute = route.Trim();
-        if (!normalizedRoute.StartsWith('/'))
-            normalizedRoute = "/" + normalizedRoute;
-
-        var normalizedModule = "/" + _directModuleKey;
+        var normalizedModule = RouteContext.BuildRoute("/" + _directModuleKey);
         var belongsToDirectModule = string.Equals(normalizedRoute, normalizedModule, StringComparison.OrdinalIgnoreCase)
             || normalizedRoute.StartsWith(normalizedModule + "/", StringComparison.OrdinalIgnoreCase);
 
@@ -1446,13 +1713,20 @@ else
         {
             _mainMenuModules = (await MenuSvc.GetModulesAsync()).ToList();
             _menuSearchCatalog = (await MenuSvc.GetSearchItemsAsync()).ToList();
+            if (_mainMenuModules.Count == 0)
+            {
+                _mainMenuModules = GetFallbackMainMenuModules().ToList();
+                _menuSearchCatalog = BuildSearchCatalogFromModules(_mainMenuModules).ToList();
+                _menuSearchError = "Se usó un catálogo de respaldo porque no respondió el menú dinámico.";
+            }
             _menuSearchLoaded = true;
         }
         catch
         {
-            _mainMenuModules = [];
-            _menuSearchCatalog = [];
-            _menuSearchError = "No se pudo preparar la búsqueda del menú.";
+            _mainMenuModules = GetFallbackMainMenuModules().ToList();
+            _menuSearchCatalog = BuildSearchCatalogFromModules(_mainMenuModules).ToList();
+            _menuSearchError = "Se usó un catálogo de respaldo porque no respondió el menú dinámico.";
+            _menuSearchLoaded = true;
         }
         finally
         {
@@ -1511,6 +1785,34 @@ else
     private void ClearMenuSearch()
         => _menuSearchText = string.Empty;
 
+    private static List<ShellModuleDto> GetFallbackMainMenuModules()
+        => new()
+        {
+            new ShellModuleDto { Menu = "ALFA", Clave = "D01", Nombre = "Archivos", RutaWeb = "/shell/D01", Icono = "bi-folder2-open", OrdenWeb = 10 },
+            new ShellModuleDto { Menu = "ALFA", Clave = "D50", Nombre = "Compras", RutaWeb = "/shell/D50", Icono = "bi-cart-fill", OrdenWeb = 50 },
+            new ShellModuleDto { Menu = "ALFA", Clave = "D60", Nombre = "Ventas", RutaWeb = "/shell/D60", Icono = "bi-graph-up-arrow", OrdenWeb = 60 },
+            new ShellModuleDto { Menu = "ALFA", Clave = "D75", Nombre = "Caja y Bancos", RutaWeb = "/shell/D75", Icono = "bi-bank", OrdenWeb = 75 },
+            new ShellModuleDto { Menu = "ALFA", Clave = "D80", Nombre = "Stock", RutaWeb = "/shell/D80", Icono = "bi-box-seam", OrdenWeb = 80 },
+            new ShellModuleDto { Menu = "ALFA", Clave = "D95", Nombre = "Gestión Contable", RutaWeb = "/shell/D95", Icono = "bi-journal-bookmark-fill", OrdenWeb = 95 },
+            new ShellModuleDto { Menu = "ALFA", Clave = "D98", Nombre = "Utilidades", RutaWeb = "/shell/D98", Icono = "bi-tools", OrdenWeb = 98 }
+        };
+
+    private static IReadOnlyList<ShellMenuSearchItemDto> BuildSearchCatalogFromModules(IEnumerable<ShellModuleDto> modules)
+        => modules
+            .Select(module => new ShellMenuSearchItemDto
+            {
+                Menu = module.Menu,
+                Clave = module.Clave,
+                Nombre = module.Nombre,
+                RutaWeb = module.RutaWeb,
+                Icono = string.IsNullOrWhiteSpace(module.Icono) ? "bi-grid-3x3-gap-fill" : module.Icono,
+                ModuloNombre = module.Nombre,
+                SeccionNombre = "Módulo raíz",
+                Descripcion = $"Acceso al módulo raíz {module.Nombre}.",
+                EsModulo = true
+            })
+            .ToArray();
+
     private string GetMainMenuModuleClass(ShellModuleDto module)
     {
         var css = "menu__link menu__link--module";
@@ -1540,6 +1842,26 @@ else
         }
 
         Nav.NavigateTo(BuildModuleUrl(item.RutaWeb));
+    }
+
+    private string GetLauncherUrl()
+    {
+        var activeSession = SessionSvc.GetActiveSession();
+        return BuildLauncherUrl(activeSession);
+    }
+
+    private string BuildLauncherUrl(SessionDto? session)
+    {
+        return RouteContext.BuildRoute("/");
+    }
+
+    private static string? NormalizeRouteIdWeb(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        var trimmed = value.Trim();
+        return trimmed.Length == 0 ? null : trimmed;
     }
 
     private void NavigateToModule(string? route)
@@ -1666,7 +1988,7 @@ else
     {
         var idQuery = _globalConversationLatestId is long id ? $"?id={id}" : string.Empty;
         ResetGlobalConversationNotifications();
-        Nav.NavigateTo($"/conversaciones{idQuery}");
+        Nav.NavigateTo(RouteContext.BuildRoute($"/conversaciones{idQuery}"));
     }
 
     private void ResetGlobalConversationNotifications()
@@ -1712,45 +2034,159 @@ else
         _loginBusy = true;
         _loginError = string.Empty;
 
+        using var loginCts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+
         try
         {
-            var session = await AppUserSession.LoginAsync(_loginUserName, _loginPassword);
-            _loginUserName = session.UserName;
-            if (_loginRememberCredentials)
+            Logger.LogInformation(
+                "LoginAsync: start. SaaS={SaaS}, InternalContext={InternalContext}, Route={Route}, User={User}, HasRouteBase={HasRouteBase}, ActiveSession={ActiveSession}",
+                AppMode.IsSaaSMode,
+                IsInternalSqlLoginContext,
+                GetNormalizedCurrentPath(),
+                _loginUserName,
+                TryGetRouteBaseId(out var debugRouteBaseId),
+                SessionSvc.GetActiveSession()?.BaseId);
+
+            AppUserSessionInfo session;
+            if (IsInternalSqlLoginContext)
             {
-                try
+                if (!TryGetRouteBaseId(out var routeBaseId))
                 {
-                    await JS.InvokeVoidAsync("localStorage.setItem", "alfacore_login_remember", "true");
-                    await JS.InvokeVoidAsync("localStorage.setItem", "alfacore_login_user", _loginUserName);
-                    await JS.InvokeVoidAsync("localStorage.setItem", "alfacore_login_password", _loginPassword);
+                    _loginError = "No hay una base activa lista para validar el acceso interno.";
+                    Logger.LogWarning("LoginAsync: no se pudo resolver idbase desde la URL. Route={Route}", GetNormalizedCurrentPath());
+                    return;
                 }
-                catch { }
+
+                var routeBase = await CentralBasesSvc.GetByIdAsync(routeBaseId);
+                if (routeBase is null)
+                {
+                    _loginError = $"No se encontró la base #{routeBaseId} para validar el acceso interno.";
+                    Logger.LogWarning("LoginAsync: base central no encontrada. IdBase={IdBase}, Route={Route}", routeBaseId, GetNormalizedCurrentPath());
+                    return;
+                }
+
+                var builder = new Microsoft.Data.SqlClient.SqlConnectionStringBuilder
+                {
+                    DataSource = routeBase.DbServer,
+                    InitialCatalog = routeBase.DbName,
+                    UserID = routeBase.DbUser,
+                    Password = routeBase.DbPassword,
+                    TrustServerCertificate = true,
+                    ApplicationName = "AlfaCore"
+                };
+
+                Logger.LogInformation(
+                    "LoginAsync: validando acceso interno contra base central. IdBase={IdBase}, DbServer={DbServer}, DbName={DbName}, DbUser={DbUser}",
+                    routeBaseId,
+                    routeBase.DbServer,
+                    routeBase.DbName,
+                    routeBase.DbUser);
+
+                var loginTask = LegacyBaseUserSession.LoginAsync(_loginUserName, _loginPassword, builder.ConnectionString, loginCts.Token);
+                var completedTask = await Task.WhenAny(loginTask, Task.Delay(TimeSpan.FromSeconds(20), loginCts.Token));
+                if (!ReferenceEquals(completedTask, loginTask))
+                {
+                    Logger.LogWarning("LoginAsync: timeout esperando validación interna. Route={Route}, IdBase={IdBase}", GetNormalizedCurrentPath(), routeBaseId);
+                    throw new TaskCanceledException("El inicio de sesión interno superó el tiempo máximo de espera.");
+                }
+
+                session = await loginTask;
+                Logger.LogInformation("LoginAsync: acceso interno validado. User={User}, SystemCode={SystemCode}", session.UserName, session.SystemCode);
+                Logger.LogInformation("LoginAsync: adoptando usuario interno...");
+                AppUserSession.AdoptInternalUser(session);
+                Logger.LogInformation("LoginAsync: usuario interno adoptado. RequiresInternalLogin={RequiresInternalLogin}, Authenticated={Authenticated}", AppUserSession.RequiresInternalLogin, AppUserSession.IsAuthenticated);
+            }
+            else if (AppMode.IsSaaSMode)
+            {
+                Logger.LogInformation("LoginAsync: validación SaaS central para usuario {User}", _loginUserName);
+                session = await AppUserSession.LoginAsync(_loginUserName, _loginPassword, loginCts.Token);
+                Logger.LogInformation("LoginAsync: login SaaS OK. User={User}, Client={Client}, Base={Base}", session.UserName, session.IdCliente, session.SqlSessionId);
             }
             else
             {
+                Logger.LogInformation("LoginAsync: validación legacy local para usuario {User}", _loginUserName);
+                session = await LegacyBaseUserSession.LoginAsync(_loginUserName, _loginPassword, loginCts.Token);
+                Logger.LogInformation("LoginAsync: login legacy OK. User={User}, SystemCode={SystemCode}", session.UserName, session.SystemCode);
+                AppUserSession.AdoptInternalUser(session);
+            }
+
+            if (IsInternalSqlLoginContext)
+            {
+                _loginUserName = string.Empty;
                 _loginPassword = string.Empty;
-                try
+                _loginRememberCredentials = false;
+                _ = InvokeAsync(async () =>
                 {
-                    await JS.InvokeVoidAsync("localStorage.removeItem", "alfacore_login_user");
-                    await JS.InvokeVoidAsync("localStorage.removeItem", "alfacore_login_password");
-                    await JS.InvokeVoidAsync("localStorage.setItem", "alfacore_login_remember", "false");
+                    try
+                    {
+                        await JS.InvokeVoidAsync("localStorage.removeItem", "alfacore_login_user");
+                        await JS.InvokeVoidAsync("localStorage.removeItem", "alfacore_login_password");
+                        await JS.InvokeVoidAsync("localStorage.setItem", "alfacore_login_remember", "false");
+                    }
+                    catch { }
+                });
+            }
+            else
+            {
+                _loginUserName = session.UserName;
+                if (_loginRememberCredentials)
+                {
+                    try
+                    {
+                        await JS.InvokeVoidAsync("localStorage.setItem", "alfacore_login_remember", "true");
+                        await JS.InvokeVoidAsync("localStorage.setItem", "alfacore_login_user", _loginUserName);
+                        await JS.InvokeVoidAsync("localStorage.setItem", "alfacore_login_password", _loginPassword);
+                    }
+                    catch { }
                 }
-                catch { }
+                else
+                {
+                    _loginPassword = string.Empty;
+                    try
+                    {
+                        await JS.InvokeVoidAsync("localStorage.removeItem", "alfacore_login_user");
+                        await JS.InvokeVoidAsync("localStorage.removeItem", "alfacore_login_password");
+                        await JS.InvokeVoidAsync("localStorage.setItem", "alfacore_login_remember", "false");
+                    }
+                    catch { }
+                }
             }
             _loginShowPassword = false;
             if (AppUserSession.CurrentToken is not null)
             {
-                try { await JS.InvokeVoidAsync("localStorage.setItem", "alfacore_user_token", AppUserSession.CurrentToken); }
-                catch { }
+                var tokenToPersist = AppUserSession.CurrentToken;
+                Logger.LogInformation("LoginAsync: persistiendo token de usuario en background.");
+                _ = InvokeAsync(async () =>
+                {
+                    try { await JS.InvokeVoidAsync("localStorage.setItem", "alfacore_user_token", tokenToPersist); }
+                    catch { }
+                });
             }
+        }
+        catch (AlfaCore.Services.AppUserFacingException ex)
+        {
+            _loginError = ex.Message;
+            Logger.LogWarning(ex, "LoginAsync: AppUserFacingException. Route={Route}, User={User}", GetNormalizedCurrentPath(), _loginUserName);
         }
         catch (InvalidOperationException ex)
         {
             _loginError = ex.Message;
+            Logger.LogWarning(ex, "LoginAsync: InvalidOperationException. Route={Route}, User={User}", GetNormalizedCurrentPath(), _loginUserName);
+        }
+        catch (TaskCanceledException)
+        {
+            _loginError = "No se pudo iniciar sesión a tiempo. Revisá la base activa e intentá nuevamente.";
+            Logger.LogWarning("LoginAsync: timeout/cancelación. Route={Route}, User={User}", GetNormalizedCurrentPath(), _loginUserName);
+        }
+        catch (Exception ex)
+        {
+            _loginError = ex.Message;
+            Logger.LogError(ex, "LoginAsync: excepción inesperada. Route={Route}, User={User}", GetNormalizedCurrentPath(), _loginUserName);
         }
         finally
         {
             _loginBusy = false;
+            Logger.LogInformation("LoginAsync: end. Busy=false, HasError={HasError}", !string.IsNullOrWhiteSpace(_loginError));
             StateHasChanged();
         }
     }
@@ -2246,7 +2682,7 @@ else
     {
         _tasksPanelMenuNoteId = null;
         CloseTasksPanel();
-        Nav.NavigateTo("/tareas");
+        Nav.NavigateTo(RouteContext.BuildRoute("/tareas"));
     }
 
     private void StartTasksPanelNoteDrag(TareaNotaRapidaDto nota)
@@ -2445,18 +2881,37 @@ else
         return Task.CompletedTask;
     }
 
+    private void ResetLoginDraftIfSaaSInternalPrompt()
+    {
+        if (!AppMode.IsSaaSMode || IsLoginRoute)
+            return;
+
+        if (IsInternalSqlLoginContext && ShowLoginOverlay)
+            ResetLoginDraftForInternalContext();
+    }
+
+    private void ResetLoginDraftForInternalContext()
+    {
+        _loginRememberCredentials = false;
+        _loginUserName = string.Empty;
+        _loginPassword = string.Empty;
+        _loginShowPassword = false;
+        _loginUseUserList = true;
+    }
+
     private string GetSqlSessionLabel()
         => _activeSession is null
-            ? "Sin base activa"
+            ? (!string.IsNullOrWhiteSpace(_routeSessionLabel) ? _routeSessionLabel : "Sin base activa")
             : $"{_activeSession.Nombre} · {_activeSession.Servidor} · {_activeSession.BaseDatos}";
 
     private string GetCurrentPageTitle()
     {
-        var path = GetNormalizedCurrentPath();
+        var path = GetEffectiveCurrentPath();
 
         return path switch
         {
         "" => "Aplicaciones",
+        _ when IsLauncherContextRoute(path) => "Aplicaciones",
         _ when path.StartsWith("shell/") => "Aplicaciones",
         "clientes" => "Clientes",
         "tecnicos" => "Técnicos",
@@ -2521,7 +2976,7 @@ else
             "consultas/nueva" => "Nueva consulta",
             _ when path.StartsWith("consultas/") && path.EndsWith("/editar") => "Editar consulta",
             _ when path.StartsWith("consultas/") => "Consulta",
-            _ => "Dashboard"
+            _ => "Aplicaciones"
         };
     }
 
@@ -2553,7 +3008,7 @@ else
         "usuarios" => "Usuarios",
         "seguridad" => "Seguridad",
         "contactos" => "Contactos",
-        _ => "Dashboard de Compras"
+        _ => "Inicio"
     };
 
     private string GetNormalizedCurrentPath()
@@ -2562,6 +3017,66 @@ else
             .Split('#')[0]
             .Trim('/')
             .ToLowerInvariant();
+
+    private bool IsWorkspaceRoute => GetEffectiveCurrentPath().StartsWith("shell/", StringComparison.OrdinalIgnoreCase);
+
+    private string GetEffectiveCurrentPath()
+    {
+        var path = GetNormalizedCurrentPath();
+        if (!AppMode.IsSaaSMode || string.IsNullOrWhiteSpace(path))
+            return path;
+
+        var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (segments.Length >= 2
+            && int.TryParse(segments[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
+        {
+            return string.Join('/', segments.Skip(2));
+        }
+
+        return path;
+    }
+
+    private bool IsLauncherContextRoute(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return true;
+
+        var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (segments.Length == 1
+            && !string.IsNullOrWhiteSpace(AppUserSession.CurrentUser?.IdWeb)
+            && string.Equals(segments[0], AppUserSession.CurrentUser.IdWeb, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return segments.Length == 2
+            && int.TryParse(segments[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out _);
+    }
+
+    private async Task<bool> CanShowSaaSClientLandingAsync(string path)
+    {
+        if (!AppMode.IsSaaSMode || string.IsNullOrWhiteSpace(path))
+            return false;
+
+        var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (segments.Length != 1)
+            return false;
+
+        try
+        {
+            var client = await CentralClientesSvc.GetByIdWebAsync(segments[0]);
+            Logger.LogInformation(
+                "MainLayout: SaaS landing lookup. IdWeb={IdWeb}, Found={Found}",
+                segments[0],
+                client is not null);
+            return client is not null;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "MainLayout: no se pudo validar el cliente SaaS para {IdWeb}", segments[0]);
+            return false;
+        }
+    }
 
     private sealed class PwaClientState
     {
@@ -2606,6 +3121,7 @@ else
         public List<NotificacionesPushEndpointResultDto> Subscriptions { get; set; } = [];
     }
 }
+
 
 
 

@@ -1,13 +1,14 @@
-@page "/auditoria"
+﻿@page "/auditoria"
+@page "/{idweb}/{idbase:int}/auditoria"
 @inject AlfaCore.Services.IAuditoriaService AuditoriaSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 
-<PageTitle>Auditoría | Alfa Gestión</PageTitle>
+<PageTitle>AuditorÃ­a | Alfa GestiÃ³n</PageTitle>
 
 @if (_loading)
 {
     <div class="consultas-loading">
-        <i class="bi bi-hourglass-split"></i> Cargando auditoría…
+        <i class="bi bi-hourglass-split"></i> Cargando auditorÃ­aâ€¦
     </div>
 }
 else
@@ -15,17 +16,17 @@ else
     <div class="page-grid">
         <section class="page-intro">
             <div>
-                <h2 class="page-intro__title">Auditoría</h2>
-                <p class="page-intro__text">Centralizá la revisión de errores técnicos y el análisis de actividad sospechosa de usuarios sobre comprobantes comerciales.</p>
+                <h2 class="page-intro__title">AuditorÃ­a</h2>
+                <p class="page-intro__text">CentralizÃ¡ la revisiÃ³n de errores tÃ©cnicos y el anÃ¡lisis de actividad sospechosa de usuarios sobre comprobantes comerciales.</p>
             </div>
             <div class="actions">
                 <a class="btn btn--primary" href="/auditoria/errores">
                     <i class="bi bi-bug"></i>
-                    <span>Auditoría de errores</span>
+                    <span>AuditorÃ­a de errores</span>
                 </a>
                 <a class="btn btn--ghost" href="/auditoria/usuarios">
                     <i class="bi bi-shield-exclamation"></i>
-                    <span>Auditoría de usuarios</span>
+                    <span>AuditorÃ­a de usuarios</span>
                 </a>
             </div>
         </section>
@@ -34,22 +35,22 @@ else
             <article class="panel-card">
                 <div class="panel-card__header">
                     <div>
-                        <h3 class="panel-card__title">Auditoría de errores</h3>
-                        <p class="panel-card__subtitle">Bitácora técnica actual sobre `AUX_ERR`, sin cambios en su funcionamiento.</p>
+                        <h3 class="panel-card__title">AuditorÃ­a de errores</h3>
+                        <p class="panel-card__subtitle">BitÃ¡cora tÃ©cnica actual sobre `AUX_ERR`, sin cambios en su funcionamiento.</p>
                     </div>
                     <a class="action-link" href="/auditoria/errores">Abrir</a>
                 </div>
-                <p class="page-intro__text">Ideal para soporte: procesos fallidos, errores SQL, integraciones y detalle técnico por incidente.</p>
+                <p class="page-intro__text">Ideal para soporte: procesos fallidos, errores SQL, integraciones y detalle tÃ©cnico por incidente.</p>
             </article>
             <article class="panel-card">
                 <div class="panel-card__header">
                     <div>
-                        <h3 class="panel-card__title">Auditoría de usuarios</h3>
+                        <h3 class="panel-card__title">AuditorÃ­a de usuarios</h3>
                         <p class="panel-card__subtitle">Nueva vista operativa para detectar fraudes, remitos sin facturar y actividad irregular.</p>
                     </div>
                     <a class="action-link" href="/auditoria/usuarios">Abrir</a>
                 </div>
-                <p class="page-intro__text">Consolidá comprobantes iniciados y no grabados, remitos parciales, bajas, actividad fuera de horario y accesos sensibles.</p>
+                <p class="page-intro__text">ConsolidÃ¡ comprobantes iniciados y no grabados, remitos parciales, bajas, actividad fuera de horario y accesos sensibles.</p>
             </article>
         </section>
 
@@ -60,7 +61,7 @@ else
                 <div>@_feedback.Message</div>
                 @if (_feedback.HasCode)
                 {
-                    <div>Código: @_feedback.Code</div>
+                    <div>CÃ³digo: @_feedback.Code</div>
                 }
                 @if (_feedback.HasSuggestion)
                 {
@@ -75,15 +76,15 @@ else
                 <div class="kpi-card__value">@_resumen.ErrorsToday</div>
             </article>
             <article class="kpi-card">
-                <div class="kpi-card__label">Últimos 7 días</div>
+                <div class="kpi-card__label">Ãšltimos 7 dÃ­as</div>
                 <div class="kpi-card__value">@_resumen.ErrorsLast7Days</div>
             </article>
             <article class="kpi-card">
-                <div class="kpi-card__label">Proceso más frecuente</div>
+                <div class="kpi-card__label">Proceso mÃ¡s frecuente</div>
                 <div class="kpi-card__value">@_resumen.TopProcess</div>
             </article>
             <article class="kpi-card">
-                <div class="kpi-card__label">Usuario más afectado</div>
+                <div class="kpi-card__label">Usuario mÃ¡s afectado</div>
                 <div class="kpi-card__value">@_resumen.TopUser</div>
             </article>
         </section>
@@ -92,15 +93,15 @@ else
             <article class="panel-card">
                 <div class="panel-card__header">
                     <div>
-                        <h3 class="panel-card__title">Errores por día</h3>
-                        <p class="panel-card__subtitle">Últimas dos semanas.</p>
+                        <h3 class="panel-card__title">Errores por dÃ­a</h3>
+                        <p class="panel-card__subtitle">Ãšltimas dos semanas.</p>
                     </div>
                 </div>
                 <div class="table-wrap">
                     <table class="data-table">
                         <thead>
                             <tr>
-                                <th>Día</th>
+                                <th>DÃ­a</th>
                                 <th>Cantidad</th>
                             </tr>
                         </thead>
@@ -120,8 +121,8 @@ else
             <article class="panel-card">
                 <div class="panel-card__header">
                     <div>
-                        <h3 class="panel-card__title">Procesos con más errores</h3>
-                        <p class="panel-card__subtitle">Ventana de 30 días.</p>
+                        <h3 class="panel-card__title">Procesos con mÃ¡s errores</h3>
+                        <p class="panel-card__subtitle">Ventana de 30 dÃ­as.</p>
                     </div>
                 </div>
                 <div class="table-wrap">
@@ -148,8 +149,8 @@ else
             <article class="panel-card">
                 <div class="panel-card__header">
                     <div>
-                        <h3 class="panel-card__title">Usuarios con más errores</h3>
-                        <p class="panel-card__subtitle">Ventana de 30 días.</p>
+                        <h3 class="panel-card__title">Usuarios con mÃ¡s errores</h3>
+                        <p class="panel-card__subtitle">Ventana de 30 dÃ­as.</p>
                     </div>
                 </div>
                 <div class="table-wrap">
@@ -177,8 +178,8 @@ else
         <section class="panel-card">
             <div class="panel-card__header">
                 <div>
-                    <h3 class="panel-card__title">Últimos errores</h3>
-                    <p class="panel-card__subtitle">Acceso rápido a los incidentes más recientes.</p>
+                    <h3 class="panel-card__title">Ãšltimos errores</h3>
+                    <p class="panel-card__subtitle">Acceso rÃ¡pido a los incidentes mÃ¡s recientes.</p>
                 </div>
                 <a class="action-link" href="/auditoria/errores">Ver listado completo</a>
             </div>
@@ -190,8 +191,8 @@ else
                             <th>Proceso</th>
                             <th>Usuario</th>
                             <th>Error</th>
-                            <th>Descripción</th>
-                            <th>Acción</th>
+                            <th>DescripciÃ³n</th>
+                            <th>AcciÃ³n</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -230,7 +231,7 @@ else
         {
             _resumen = await AuditoriaSvc.GetResumenAsync();
             _latest = await AuditoriaSvc.SearchErrorsAsync(new AuditoriaErrorFilterDto { MaxRows = 12 });
-        }, "No se pudo cargar la auditoría.");
+        }, "No se pudo cargar la auditorÃ­a.");
 
         _feedback = result.Feedback;
         _loading = false;

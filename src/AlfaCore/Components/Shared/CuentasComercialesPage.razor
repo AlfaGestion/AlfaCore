@@ -5,6 +5,7 @@
 @inject ICuentasComercialesService CuentasSvc
 @inject IAppUiOperationService UiOps
 @inject IAppUserSessionService AppUserSession
+@inject IRouteContextService RouteContext
 @inject NavigationManager Nav
 @inject IJSRuntime Js
 @implements IDisposable
@@ -2107,7 +2108,7 @@
         if (openMerge)
             query["unificar"] = "1";
 
-        return QueryHelpers.AddQueryString("/contactos", query);
+        return QueryHelpers.AddQueryString(RouteContext.BuildRoute("/contactos"), query);
     }
 
     private string BuildCurrentRelativeUrl()

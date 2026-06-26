@@ -1,4 +1,5 @@
-@page "/ventas/familias"
+﻿@page "/ventas/familias"
+@page "/{idweb}/{idbase:int}/ventas/familias"
 @inject AlfaCore.Services.IGestionDashboardService GestionSvc
 @inject AlfaCore.Services.GestionFilterStateService FilterState
 
@@ -7,12 +8,12 @@
 <section class="page-grid">
     <div class="page-intro">
         <div>
-            <h2 class="page-intro__title">Familias más vendidas</h2>
-            <p class="page-intro__text">Análisis comercial por familia para entender composición y concentración de ventas.</p>
+            <h2 class="page-intro__title">Familias mÃ¡s vendidas</h2>
+            <p class="page-intro__text">AnÃ¡lisis comercial por familia para entender composiciÃ³n y concentraciÃ³n de ventas.</p>
         </div>
     </div>
 
-    <VentasFiltersBar Model="_filters" Options="_options" OnApply="LoadAsync" Titulo="Filtros de familias" Subtitulo="Evaluá familias vendidas con los mismos filtros comerciales." />
+    <VentasFiltersBar Model="_filters" Options="_options" OnApply="LoadAsync" Titulo="Filtros de familias" Subtitulo="EvaluÃ¡ familias vendidas con los mismos filtros comerciales." />
 
     @if (!string.IsNullOrWhiteSpace(_error))
     {
@@ -34,13 +35,13 @@
                 <HorizontalBarChart Data="_page.TopFamilias" Titulo="Top familias" Subtitulo="Familias con mayor incidencia" />
             </section>
 
-            <DataTable Titulo="Listado de familias" Subtitulo="Participación comercial por familia">
+            <DataTable Titulo="Listado de familias" Subtitulo="ParticipaciÃ³n comercial por familia">
                 <Header>
                     <tr>
                         <th>Familia</th>
                         <th style="text-align:right;">Total</th>
                         <th style="text-align:right;">% total</th>
-                        <th style="text-align:right;">Artículos</th>
+                        <th style="text-align:right;">ArtÃ­culos</th>
                         <th style="text-align:right;">Comprobantes</th>
                     </tr>
                 </Header>

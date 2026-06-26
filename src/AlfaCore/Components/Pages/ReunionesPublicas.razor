@@ -1,5 +1,7 @@
-@page "/reuniones"
+﻿@page "/reuniones"
+@page "/{idweb}/{idbase:int}/reuniones"
 @page "/reuniones/{Slug}"
+@page "/{idweb}/{idbase:int}/reuniones/{Slug}"
 @layout AlfaCore.Components.Layout.PublicLayout
 @using System.Globalization
 @inject AlfaCore.Services.IReunionesPublicasService ReunionesSvc
@@ -9,7 +11,7 @@
 <section class="reuniones-publicas">
     <header class="reuniones-header">
         <a href="/" class="reuniones-brand" aria-label="AlfaNet">
-            <img src="logo.png" alt="AlfaNet" />
+            <img src="/logos/Logo.png" alt="AlfaNet" />
             <span>AlfaNet</span>
         </a>
         <div class="reuniones-steps">
@@ -65,7 +67,7 @@
             <section class="reuniones-main">
                 <div>
                     <a href="/reuniones" class="reuniones-back">Todas las citas</a>
-                    <h1>Elegí la fecha y la hora</h1>
+                    <h1>ElegÃ­ la fecha y la hora</h1>
                 </div>
 
                 @if (!string.IsNullOrWhiteSpace(_error))
@@ -116,7 +118,7 @@
                     </section>
 
                     <section class="reuniones-slots">
-                        <span>Seleccioná una hora</span>
+                        <span>SeleccionÃ¡ una hora</span>
                         @if (SelectedDay?.Horarios.Any(x => x.Disponible) == true)
                         {
                             <div>
@@ -132,7 +134,7 @@
                         }
                         else
                         {
-                            <p>No hay horarios disponibles para este día.</p>
+                            <p>No hay horarios disponibles para este dÃ­a.</p>
                         }
                     </section>
                 </div>
@@ -150,7 +152,7 @@
                                 <input @bind="_request.ClienteNombre" disabled="@_saving" />
                             </label>
                             <label>
-                                <span>Razón social</span>
+                                <span>RazÃ³n social</span>
                                 <input @bind="_request.RazonSocial" disabled="@_saving" />
                             </label>
                             <label>
@@ -158,16 +160,16 @@
                                 <input type="email" @bind="_request.Email" disabled="@_saving" />
                             </label>
                             <label>
-                                <span>Teléfono</span>
+                                <span>TelÃ©fono</span>
                                 <input @bind="_request.Telefono" disabled="@_saving" />
                             </label>
                             <label class="is-wide">
-                                <span>Tipo de capacitación</span>
+                                <span>Tipo de capacitaciÃ³n</span>
                                 <select @bind="_request.TipoCapacitacion" disabled="@_saving">
                                     <option value="">Seleccionar</option>
-                                    <option>Capacitación inicial / básica</option>
-                                    <option>Capacitación intermedia</option>
-                                    <option>Capacitación avanzada / especializada</option>
+                                    <option>CapacitaciÃ³n inicial / bÃ¡sica</option>
+                                    <option>CapacitaciÃ³n intermedia</option>
+                                    <option>CapacitaciÃ³n avanzada / especializada</option>
                                 </select>
                             </label>
                             <label class="is-wide">
@@ -184,7 +186,7 @@
             </section>
 
             <aside class="reuniones-detail">
-                <img src="logo.png" alt="AlfaNet" />
+                <img src="/logos/Logo.png" alt="AlfaNet" />
                 <h2>@_model.Tipo.Titulo</h2>
                 <p>@_model.Tipo.Descripcion</p>
                 <dl>
@@ -193,7 +195,7 @@
                         <dd>@_model.Tipo.Modalidad</dd>
                     </div>
                     <div>
-                        <dt><i class="bi bi-clock"></i> Duración</dt>
+                        <dt><i class="bi bi-clock"></i> DuraciÃ³n</dt>
                         <dd>@_model.Tipo.DuracionMinutos minutos</dd>
                     </div>
                     <div>
@@ -232,7 +234,7 @@
     private bool _loading = true;
     private bool _saving;
     private string _error = string.Empty;
-    private string _errorTitle = "Revisá la reserva";
+    private string _errorTitle = "RevisÃ¡ la reserva";
 
     private ReunionPublicaDiaDto? SelectedDay
         => _selectedSlot is null

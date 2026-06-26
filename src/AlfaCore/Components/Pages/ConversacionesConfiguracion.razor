@@ -1,15 +1,16 @@
-@page "/conversaciones/configuracion"
+﻿@page "/conversaciones/configuracion"
+@page "/{idweb}/{idbase:int}/conversaciones/configuracion"
 @inject AlfaCore.Services.IConversacionesConfigService ConfigSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject NavigationManager Nav
 
-<PageTitle>Configuración de WhatsApp | Alfa Gestión</PageTitle>
+<PageTitle>ConfiguraciÃ³n de WhatsApp | Alfa GestiÃ³n</PageTitle>
 
 <section class="page-grid">
     <div class="page-intro">
         <div>
-            <h2 class="page-intro__title">Configuración de WhatsApp</h2>
-            <p class="page-intro__text">Administrá desde AlfaCore los parámetros del canal oficial de WhatsApp. Esta configuración se guarda en <code>TA_CONFIGURACION</code> y <code>appsettings</code> queda solo como respaldo mínimo.</p>
+            <h2 class="page-intro__title">ConfiguraciÃ³n de WhatsApp</h2>
+            <p class="page-intro__text">AdministrÃ¡ desde AlfaCore los parÃ¡metros del canal oficial de WhatsApp. Esta configuraciÃ³n se guarda en <code>TA_CONFIGURACION</code> y <code>appsettings</code> queda solo como respaldo mÃ­nimo.</p>
         </div>
         <div class="actions">
             <a class="btn btn--ghost" href="/conversaciones">
@@ -28,7 +29,7 @@
             <div>@_feedback.Message</div>
             @if (_feedback.HasCode)
             {
-                <div>Código: @_feedback.Code</div>
+                <div>CÃ³digo: @_feedback.Code</div>
             }
             @if (_feedback.HasSuggestion)
             {
@@ -38,21 +39,21 @@
     }
     <div class="conv-config-status-grid">
             <article class="panel-card conv-status-card">
-                <span class="panel-card__tag">Envío Cloud API</span>
+                <span class="panel-card__tag">EnvÃ­o Cloud API</span>
                 <strong class="@GetStatusClass(_config.IsConfiguredForSend)">@GetStatusLabel(_config.IsConfiguredForSend)</strong>
                 <p class="panel-card__subtitle">Requiere <code>access token</code> y <code>phone_number_id</code>.</p>
             </article>
 
             <article class="panel-card conv-status-card">
-                <span class="panel-card__tag">Webhook de verificación</span>
+                <span class="panel-card__tag">Webhook de verificaciÃ³n</span>
                 <strong class="@GetStatusClass(_config.IsConfiguredForVerify)">@GetStatusLabel(_config.IsConfiguredForVerify)</strong>
                 <p class="panel-card__subtitle">Requiere <code>verify_token</code> para validar el callback de Meta.</p>
             </article>
 
             <article class="panel-card conv-status-card">
-                <span class="panel-card__tag">Publicación</span>
+                <span class="panel-card__tag">PublicaciÃ³n</span>
                 <strong class="@GetStatusClass(_config.IsReadyForMetaSetup)">@GetPublicationLabel()</strong>
-                <p class="panel-card__subtitle">Meta necesita una URL pública HTTPS para llamar al webhook.</p>
+                <p class="panel-card__subtitle">Meta necesita una URL pÃºblica HTTPS para llamar al webhook.</p>
             </article>
     </div>
 
@@ -60,7 +61,7 @@
             <section class="panel-card conv-config-form">
                 <div class="panel-card__header">
                     <div>
-                        <h3 class="panel-card__title">Parámetros del canal</h3>
+                        <h3 class="panel-card__title">ParÃ¡metros del canal</h3>
                         <p class="panel-card__subtitle">Origen actual: @DisplaySource(_config.ConfigSource)</p>
                     </div>
                     <span class="panel-card__tag">TA_CONFIGURACION</span>
@@ -68,12 +69,12 @@
 
                 <div class="conv-config-fields">
                     <div class="field">
-                        <label for="wa-public-url">Base pública HTTPS</label>
+                        <label for="wa-public-url">Base pÃºblica HTTPS</label>
                         <input id="wa-public-url" @bind="_config.PublicBaseUrl" placeholder="@_suggestedBaseUrl" />
                     </div>
 
                     <div class="field">
-                        <label for="wa-api-version">Versión Graph API</label>
+                        <label for="wa-api-version">VersiÃ³n Graph API</label>
                         <input id="wa-api-version" @bind="_config.ApiVersion" placeholder="v22.0" />
                     </div>
 
@@ -89,12 +90,12 @@
 
                     <div class="field conv-config-fields__full">
                         <label for="wa-access-token">Access Token</label>
-                        <textarea id="wa-access-token" rows="4" @bind="_config.AccessToken" placeholder="Pegá acá el token permanente o del sistema"></textarea>
+                        <textarea id="wa-access-token" rows="4" @bind="_config.AccessToken" placeholder="PegÃ¡ acÃ¡ el token permanente o del sistema"></textarea>
                     </div>
 
                     <div class="field">
                         <label for="wa-verify-token">Verify Token</label>
-                        <input id="wa-verify-token" @bind="_config.VerifyToken" placeholder="Texto secreto que definís vos" />
+                        <input id="wa-verify-token" @bind="_config.VerifyToken" placeholder="Texto secreto que definÃ­s vos" />
                     </div>
 
                     <div class="field">
@@ -111,12 +112,12 @@
                 <div class="context-card">
                     <span class="context-card__label">URL de callback a informar en Meta</span>
                     <strong>@GetWebhookUrlPreview()</strong>
-                    <span class="context-card__muted">Si no cargás la base pública, se sugiere la URL actual del navegador.</span>
+                    <span class="context-card__muted">Si no cargÃ¡s la base pÃºblica, se sugiere la URL actual del navegador.</span>
                 </div>
 
                 <div class="actions">
                     <button type="button" class="btn btn--primary" @onclick="SaveAsync" disabled="@(Loading || Saving)">
-                        <i class="bi bi-floppy-fill"></i> Guardar configuración
+                        <i class="bi bi-floppy-fill"></i> Guardar configuraciÃ³n
                     </button>
                 </div>
             </section>
@@ -124,24 +125,24 @@
             <aside class="panel-card conv-config-help">
                 <div class="panel-card__header">
                     <div>
-                        <h3 class="panel-card__title">Qué necesitás en Meta</h3>
-                        <p class="panel-card__subtitle">Guía rápida para dejar operativo el canal.</p>
+                        <h3 class="panel-card__title">QuÃ© necesitÃ¡s en Meta</h3>
+                        <p class="panel-card__subtitle">GuÃ­a rÃ¡pida para dejar operativo el canal.</p>
                     </div>
                     <span class="panel-card__tag">Cloud API</span>
                 </div>
 
                 <ol class="conv-config-steps">
                     <li>Crear o usar una app tipo negocio en Meta for Developers y agregar el producto WhatsApp.</li>
-                    <li>Obtener el <code>Phone Number ID</code> del número que vas a conectar.</li>
+                    <li>Obtener el <code>Phone Number ID</code> del nÃºmero que vas a conectar.</li>
                     <li>Obtener el <code>WhatsApp Business Account ID</code> de la cuenta de negocio.</li>
-                    <li>Generar un <code>Access Token</code> válido para el envío de mensajes.</li>
-                    <li>Definir un <code>Verify Token</code> propio y cargar la URL pública del webhook en Meta.</li>
+                    <li>Generar un <code>Access Token</code> vÃ¡lido para el envÃ­o de mensajes.</li>
+                    <li>Definir un <code>Verify Token</code> propio y cargar la URL pÃºblica del webhook en Meta.</li>
                     <li>Suscribir el webhook al menos a eventos de mensajes y estados.</li>
-                    <li>Probar verificación, envío y recepción antes de pasar a producción.</li>
+                    <li>Probar verificaciÃ³n, envÃ­o y recepciÃ³n antes de pasar a producciÃ³n.</li>
                 </ol>
 
                 <div class="context-card">
-                    <span class="context-card__label">Dónde queda guardado</span>
+                    <span class="context-card__label">DÃ³nde queda guardado</span>
                     <strong>dbo.TA_CONFIGURACION</strong>
                     <span class="context-card__muted">Claves usadas: <code>CONV_WHATSAPP_*</code>.</span>
                 </div>
@@ -149,7 +150,7 @@
                 <div class="context-card">
                     <span class="context-card__label">Manual interno</span>
                     <strong><code>docs/conversaciones_whatsapp_conexion.md</code></strong>
-                    <span class="context-card__muted">Ahí te dejo el paso a paso completo y el mapa entre Meta y AlfaCore.</span>
+                    <span class="context-card__muted">AhÃ­ te dejo el paso a paso completo y el mapa entre Meta y AlfaCore.</span>
                 </div>
             </aside>
     </div>
@@ -175,7 +176,7 @@
 
         var result = await UiOps.RunAsync(
             () => ConfigSvc.GetWhatsAppConfigAsync(),
-            "No se pudo cargar la configuración de WhatsApp.");
+            "No se pudo cargar la configuraciÃ³n de WhatsApp.");
 
         if (result.Success && result.Value is not null)
         {
@@ -201,14 +202,14 @@
 
         var result = await UiOps.RunAsync(
             () => ConfigSvc.SaveWhatsAppConfigAsync(_config),
-            "No se pudo guardar la configuración de WhatsApp.");
+            "No se pudo guardar la configuraciÃ³n de WhatsApp.");
 
         if (result.Success)
         {
             _config.ConfigSource = "TA_CONFIGURACION";
             _feedback = AppUiMessage.Success(
-                "Configuración guardada",
-                "La configuración se grabó correctamente. Si cambiás de sesión SQL, los valores pueden variar según la base activa.");
+                "ConfiguraciÃ³n guardada",
+                "La configuraciÃ³n se grabÃ³ correctamente. Si cambiÃ¡s de sesiÃ³n SQL, los valores pueden variar segÃºn la base activa.");
         }
         else
         {

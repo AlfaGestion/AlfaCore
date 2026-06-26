@@ -1,13 +1,14 @@
-@page "/costos"
+﻿@page "/costos"
+@page "/{idweb}/{idbase:int}/costos"
 @inject AlfaCore.Services.ICostosService CostosSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 
-<PageTitle>Actualización de Costos | Alfa Gestión</PageTitle>
+<PageTitle>ActualizaciÃ³n de Costos | Alfa GestiÃ³n</PageTitle>
 
 @if (_loading)
 {
     <div class="consultas-loading">
-        <i class="bi bi-hourglass-split"></i> Cargando módulo…
+        <i class="bi bi-hourglass-split"></i> Cargando mÃ³duloâ€¦
     </div>
 }
 else
@@ -15,13 +16,13 @@ else
     <div class="page-grid">
         <section class="page-intro">
             <div>
-                <h2 class="page-intro__title">Actualización de Costos</h2>
-                <p class="page-intro__text">Importá listas de proveedores, apoyate en perfiles de `V_Ta_InterODBC` y dejá trazabilidad de cada corrida para revisión y aplicación controlada.</p>
+                <h2 class="page-intro__title">ActualizaciÃ³n de Costos</h2>
+                <p class="page-intro__text">ImportÃ¡ listas de proveedores, apoyate en perfiles de `V_Ta_InterODBC` y dejÃ¡ trazabilidad de cada corrida para revisiÃ³n y aplicaciÃ³n controlada.</p>
             </div>
             <div class="actions">
                 <a class="btn btn--primary" href="/costos/nueva">
                     <i class="bi bi-upload"></i>
-                    <span>Nueva importación</span>
+                    <span>Nueva importaciÃ³n</span>
                 </a>
                 <a class="btn btn--ghost" href="/costos/perfiles">
                     <i class="bi bi-sliders"></i>
@@ -37,7 +38,7 @@ else
                 <div>@_feedback.Message</div>
                 @if (_feedback.HasCode)
                 {
-                    <div>Código: @_feedback.Code</div>
+                    <div>CÃ³digo: @_feedback.Code</div>
                 }
                 @if (_feedback.HasSuggestion)
                 {
@@ -56,8 +57,8 @@ else
                 <div class="kpi-card__value">@_batches.Count</div>
             </article>
             <article class="kpi-card">
-                <div class="kpi-card__label">Último estado</div>
-                <div class="kpi-card__value">@(_batches.FirstOrDefault()?.Status ?? "—")</div>
+                <div class="kpi-card__label">Ãšltimo estado</div>
+                <div class="kpi-card__value">@(_batches.FirstOrDefault()?.Status ?? "â€”")</div>
             </article>
             <article class="kpi-card">
                 <div class="kpi-card__label">Historial cargado</div>
@@ -68,8 +69,8 @@ else
         <section class="panel-card">
             <div class="panel-card__header">
                 <div>
-                    <h3 class="panel-card__title">Perfiles de importación</h3>
-                    <p class="panel-card__subtitle">Configuración tomada desde `V_Ta_InterODBC`.</p>
+                    <h3 class="panel-card__title">Perfiles de importaciÃ³n</h3>
+                    <p class="panel-card__subtitle">ConfiguraciÃ³n tomada desde `V_Ta_InterODBC`.</p>
                 </div>
             </div>
             <div class="table-wrap">
@@ -77,7 +78,7 @@ else
                     <thead>
                         <tr>
                             <th>Perfil</th>
-                            <th>Código proveedor</th>
+                            <th>CÃ³digo proveedor</th>
                             <th>Reglas</th>
                         </tr>
                     </thead>
@@ -86,7 +87,7 @@ else
                         {
                             <tr>
                                 <td><strong>@profile.ProviderName</strong></td>
-                                <td>@(string.IsNullOrWhiteSpace(profile.ProviderAccount) ? "—" : profile.ProviderAccount)</td>
+                                <td>@(string.IsNullOrWhiteSpace(profile.ProviderAccount) ? "â€”" : profile.ProviderAccount)</td>
                                 <td>@BuildRules(profile)</td>
                             </tr>
                         }
@@ -135,7 +136,7 @@ else
             <div class="panel-card__header">
                 <div>
                     <h3 class="panel-card__title">Historial</h3>
-                    <p class="panel-card__subtitle">Últimas actualizaciones registradas en `IA_Costos_Actualizacion_Hist`.</p>
+                    <p class="panel-card__subtitle">Ãšltimas actualizaciones registradas en `IA_Costos_Actualizacion_Hist`.</p>
                 </div>
                 <a class="action-link" href="/costos/historial">Ver todo</a>
             </div>
@@ -145,8 +146,8 @@ else
                         <tr>
                             <th>Fecha</th>
                             <th>Proveedor</th>
-                            <th>Artículo</th>
-                            <th>Descripción</th>
+                            <th>ArtÃ­culo</th>
+                            <th>DescripciÃ³n</th>
                             <th>Nuevo costo</th>
                         </tr>
                     </thead>
@@ -158,7 +159,7 @@ else
                                 <td>@item.ProviderName</td>
                                 <td>@item.ArticleId</td>
                                 <td>@item.ImportedDescription</td>
-                                <td>@(item.NewCost?.ToString("N2") ?? "—")</td>
+                                <td>@(item.NewCost?.ToString("N2") ?? "â€”")</td>
                             </tr>
                         }
                     </tbody>
@@ -182,7 +183,7 @@ else
             _profiles = await CostosSvc.GetProfilesAsync();
             _batches = await CostosSvc.GetRecentBatchesAsync();
             _history = await CostosSvc.GetRecentHistoryAsync(25);
-        }, "No se pudo cargar el módulo de costos.");
+        }, "No se pudo cargar el mÃ³dulo de costos.");
 
         _feedback = result.Feedback;
         _loading = false;
@@ -192,9 +193,9 @@ else
     {
         var parts = new List<string>();
         if (profile.OnlyAdd) parts.Add("SoloAlta");
-        if (profile.OnlyModify) parts.Add("SoloModificación");
+        if (profile.OnlyModify) parts.Add("SoloModificaciÃ³n");
         if (parts.Count == 0) parts.Add("Sin reglas");
-        return string.Join(" · ", parts);
+        return string.Join(" Â· ", parts);
     }
 
     private static string GetFeedbackClass(AlfaCore.Models.AppUiMessage message)

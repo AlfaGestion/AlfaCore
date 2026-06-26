@@ -6,7 +6,7 @@ namespace AlfaCore.Services;
 public sealed class Vb6BridgeService(
     IConfiguration configuration,
     ISessionService sessionService,
-    IAppUserSessionService appUserSession,
+    ILegacyBaseUserSessionService legacyBaseUserSession,
     UsuariosPasswordCodec passwordCodec,
     Vb6BridgeTicketStore ticketStore) : IVb6BridgeService
 {
@@ -53,7 +53,7 @@ public sealed class Vb6BridgeService(
 
         var session = EnsureSession(record);
         await LoginAppUserAsync(record, ct);
-        var token = appUserSession.CurrentToken;
+        var token = legacyBaseUserSession.CurrentToken;
         if (string.IsNullOrWhiteSpace(token))
             throw new InvalidOperationException("No se pudo crear la sesión del usuario del sistema.");
 
@@ -75,21 +75,7 @@ public sealed class Vb6BridgeService(
                 string.Equals(x.Usuario, record.UsuarioSql, StringComparison.OrdinalIgnoreCase));
 
         if (existing is null)
-        {
-            sessionService.AddSession(
-                record.NombreSesion ?? $"VB6 - {record.Servidor} - {record.BaseDatos}",
-                record.Servidor,
-                record.BaseDatos,
-                record.UsuarioSql,
-                record.PasswordSql);
-
-            existing = sessionService
-                .GetAllSessions()
-                .First(x =>
-                    string.Equals(x.Servidor, record.Servidor, StringComparison.OrdinalIgnoreCase) &&
-                    string.Equals(x.BaseDatos, record.BaseDatos, StringComparison.OrdinalIgnoreCase) &&
-                    string.Equals(x.Usuario, record.UsuarioSql, StringComparison.OrdinalIgnoreCase));
-        }
+            throw new InvalidOperationException("La base solicitada por el ticket no está registrada en ALFA_CENTRAL.");
 
         sessionService.SwitchSession(existing.Id);
         return existing;
@@ -107,7 +93,7 @@ public sealed class Vb6BridgeService(
             throw new InvalidOperationException("La sesión SQL activa no coincide con la solicitada por el ticket.");
         }
 
-        return await appUserSession.LoginAsync(record.UsuarioSistema, record.PasswordSistema, ct);
+        return await legacyBaseUserSession.LoginAsync(record.UsuarioSistema, record.PasswordSistema, ct);
     }
 
     private static async Task ValidateSqlConnectionAsync(SqlSessionData sqlSession, CancellationToken ct)

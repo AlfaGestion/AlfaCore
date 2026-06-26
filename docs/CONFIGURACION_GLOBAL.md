@@ -140,6 +140,11 @@ CLAVE: VIAJES-PORCENTAJES-ADICIONALES-HABILITADOS
 VALOR: 3
 DESCRIPCION: Cantidad de porcentajes adicionales habilitados en carga de viajes
 
+Login central multi-cliente
+ConnectionStrings:AlfaCentral
+Debe apuntar a la base ALFA_CENTRAL y contiene users, Clientes y bases.
+El selector de bases del sistema toma la conexión activa desde esa estructura.
+
 Token WhatsApp 
 GRUPO: CONVERSACIONES 
 CLAVE: WHATSAPP-TOKEN 

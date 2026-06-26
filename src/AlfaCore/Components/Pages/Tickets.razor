@@ -1,14 +1,16 @@
-@page "/tickets"
+﻿@page "/tickets"
+@page "/{idweb}/{idbase:int}/tickets"
 @using Microsoft.AspNetCore.WebUtilities
 @using Microsoft.JSInterop
 @inject IJSRuntime JS
 @inject AlfaCore.Services.ITicketsService TicketsSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
+@inject AlfaCore.Services.IRouteContextService RouteContext
 @inject NavigationManager Nav
 @implements IDisposable
 
-<PageTitle>Tickets de asistencia | Alfa Gestión</PageTitle>
+<PageTitle>Tickets de asistencia | Alfa GestiÃ³n</PageTitle>
 
 <section class="page-grid tickets-page tickets-page--odoo" @onclick="HandleTicketPageClickAsync">
     <section class="tickets-odoo-header">
@@ -34,7 +36,7 @@
                     <p>@_feedback.Message</p>
                     @if (_feedback.HasCode)
                     {
-                        <small>Código: @_feedback.Code</small>
+                        <small>CÃ³digo: @_feedback.Code</small>
                     }
                     @if (IsTicketsInitializationPending(_feedback.Message))
                     {
@@ -64,7 +66,7 @@
                 <div class="smart-search__bar">
                     <i class="bi bi-search"></i>
                     <input type="search"
-                           placeholder="Buscar por ticket, cliente, contacto, teléfono, email o técnico..."
+                           placeholder="Buscar por ticket, cliente, contacto, telÃ©fono, email o tÃ©cnico..."
                            value="@_filters.Texto"
                            @onfocus="OpenTicketSearchPanel"
                            @oninput="OnTicketSearchInput"
@@ -83,7 +85,7 @@
                     }
                     @if (BuildTicketFilterChips().Count == 0)
                     {
-                        <span class="smart-search__hint">Filtrá por etapa, prioridad, técnico o reglas personalizadas.</span>
+                        <span class="smart-search__hint">FiltrÃ¡ por etapa, prioridad, tÃ©cnico o reglas personalizadas.</span>
                     }
                 </div>
 
@@ -97,7 +99,7 @@
                             <button type="button" class="@GetSmartOptionClass(_filters.TieneAsignado == false)" @onclick='() => ToggleTicketBoolFilterAsync("sin-asignar")'>Sin asignar</button>
                             <button type="button" class="@GetSmartOptionClass(_filters.TieneMensajes == true)" @onclick='() => ToggleTicketBoolFilterAsync("mensajes")'>Con mensajes</button>
                             <button type="button" class='@GetSmartOptionClass(_filters.FechaRapida == "hoy")' @onclick='() => SetTicketDateFilterAsync("hoy")'>Creados hoy</button>
-                            <button type="button" class='@GetSmartOptionClass(_filters.FechaRapida == "recientes")' @onclick='() => SetTicketDateFilterAsync("recientes")'>Actualizados 7 días</button>
+                            <button type="button" class='@GetSmartOptionClass(_filters.FechaRapida == "recientes")' @onclick='() => SetTicketDateFilterAsync("recientes")'>Actualizados 7 dÃ­as</button>
                         </div>
                         <div class="smart-search__column">
                             <h4><i class="bi bi-kanban"></i> Soporte</h4>
@@ -181,7 +183,7 @@
                             <h4><i class="bi bi-star-fill"></i> Favoritos</h4>
                             <button type="button" @onclick='() => ApplyTicketFavoriteAsync("urgentes")'>Alta prioridad abiertos</button>
                             <button type="button" @onclick='() => ApplyTicketFavoriteAsync("seguimiento")'>Seguimiento soporte</button>
-                            <button type="button" @onclick="SaveTicketFavorite">Guardar búsqueda actual</button>
+                            <button type="button" @onclick="SaveTicketFavorite">Guardar bÃºsqueda actual</button>
                             <button type="button" @onclick="OpenTagManager">Administrar etiquetas</button>
                             @foreach (var favorite in _ticketFavorites)
                             {
@@ -199,18 +201,18 @@
                         <div class="smart-search__custom">
                             <h4><i class="bi bi-sliders"></i> Filtro personalizado</h4>
                             <select @bind="_ticketRuleDraft.Campo">
-                                <option value="titulo">Título</option>
-                                <option value="descripcion">Descripción</option>
+                                <option value="titulo">TÃ­tulo</option>
+                                <option value="descripcion">DescripciÃ³n</option>
                                 <option value="cliente">Cliente</option>
                                 <option value="contacto">Contacto</option>
-                                <option value="tecnico">Técnico</option>
+                                <option value="tecnico">TÃ©cnico</option>
                             </select>
                             <select @bind="_ticketRuleDraft.Operador">
                                 <option value="contains">contiene</option>
                                 <option value="equals">es igual a</option>
                                 <option value="starts">empieza con</option>
-                                <option value="empty">está vacío</option>
-                                <option value="not-empty">no está vacío</option>
+                                <option value="empty">estÃ¡ vacÃ­o</option>
+                                <option value="not-empty">no estÃ¡ vacÃ­o</option>
                             </select>
                             <input type="text" placeholder="Valor" @bind="_ticketRuleDraft.Valor" disabled="@IsValueOptionalOperator(_ticketRuleDraft.Operador)" />
                             <button type="button" class="btn btn--primary btn--sm" @onclick="AddTicketRuleAsync">Agregar regla</button>
@@ -227,8 +229,8 @@
         <section class="panel-card tickets-view-settings-modal" @onclick:stopPropagation>
             <div class="panel-card__header">
                 <div>
-                    <h3 class="panel-card__title">Configuración de vista</h3>
-                    <p class="panel-card__subtitle">Columnas visibles, orden y agrupación del listado.</p>
+                    <h3 class="panel-card__title">ConfiguraciÃ³n de vista</h3>
+                    <p class="panel-card__subtitle">Columnas visibles, orden y agrupaciÃ³n del listado.</p>
                 </div>
                 <button type="button" class="btn btn--ghost" @onclick="CloseViewSettings">
                     <i class="bi bi-x-circle"></i> Cerrar
@@ -279,7 +281,7 @@
             <div class="panel-card__header">
                 <div>
                     <h3 class="panel-card__title">Etiquetas</h3>
-                    <p class="panel-card__subtitle">Clasificá tickets por programación, soporte, capacitación u otros criterios.</p>
+                    <p class="panel-card__subtitle">ClasificÃ¡ tickets por programaciÃ³n, soporte, capacitaciÃ³n u otros criterios.</p>
                 </div>
                 <button type="button" class="btn btn--ghost" @onclick="CloseTagManager">
                     <i class="bi bi-x-circle"></i> Cerrar
@@ -331,7 +333,7 @@
             <div class="panel-card__header">
                 <div>
                     <h3 class="panel-card__title">@(_isNew ? "Nuevo ticket" : $"{_detail?.CodigoVisible} {_form.Titulo}")</h3>
-                    <p class="panel-card__subtitle">@(_isNew ? "Cargá lo mínimo para que soporte lo tome rápido." : BuildDetailSubtitle())</p>
+                    <p class="panel-card__subtitle">@(_isNew ? "CargÃ¡ lo mÃ­nimo para que soporte lo tome rÃ¡pido." : BuildDetailSubtitle())</p>
                 </div>
                 <div class="actions">
                     @if (!_isNew && _detail?.IdConversacion is long idConv)
@@ -359,12 +361,12 @@
                         <input type="text" maxlength="180" @bind="_form.Titulo" disabled="@_saving" />
                     </div>
                     <div class="field">
-                        <label>Descripción</label>
+                        <label>DescripciÃ³n</label>
                         <div class="tickets-rich-editor">
                             <div class="tickets-rich-editor__surface"
                                  @ref="_descriptionEditor"
                                  contenteditable="@(!_saving)"
-                                 data-placeholder="Escribí / para comandos"
+                                 data-placeholder="EscribÃ­ / para comandos"
                                  @oninput="OnDescripcionChangedAsync"
                                  @onkeyup="OnDescripcionChangedAsync"
                                  @onfocus="OnDescripcionFocusAsync"></div>
@@ -455,7 +457,7 @@
                             }
                             @if (_lookups.Etiquetas.Count == 0)
                             {
-                                <span class="panel-card__subtitle">Todavía no hay etiquetas.</span>
+                                <span class="panel-card__subtitle">TodavÃ­a no hay etiquetas.</span>
                             }
                         </div>
                         <button type="button" class="btn btn--ghost btn--sm" @onclick="OpenTagManager" disabled="@_saving">
@@ -527,7 +529,7 @@
                     </div>
                     @if (_detail.MensajesOrigenDetalle.Count == 0)
                     {
-                        <div class="usuarios-empty">Este ticket no tiene mensajes de conversación vinculados.</div>
+                        <div class="usuarios-empty">Este ticket no tiene mensajes de conversaciÃ³n vinculados.</div>
                     }
                     else
                     {
@@ -592,7 +594,7 @@
                             <div class="tickets-activity__item">
                                 <strong>@activity.TipoActividad</strong>
                                 <p>@activity.Descripcion</p>
-                                <span>@activity.Usuario · @activity.FechaHora.ToString("dd/MM/yyyy HH:mm")</span>
+                                <span>@activity.Usuario Â· @activity.FechaHora.ToString("dd/MM/yyyy HH:mm")</span>
                             </div>
                         }
                     </div>
@@ -635,7 +637,7 @@
                             <article class="@GetTicketCardClass(item)"
                                      draggable="true"
                                      data-ticket-id="@item.IdTicket"
-                                     title="Arrastrá para cambiar de etapa"
+                                     title="ArrastrÃ¡ para cambiar de etapa"
                                      @ondragstart="() => IniciarArrastreTicket(item)"
                                      @ondragend="FinalizarArrastreTicketAsync"
                                      @onclick="() => AbrirTicketDesdeKanbanAsync(item.IdTicket)">
@@ -679,7 +681,7 @@
             <div class="panel-card__header">
                 <div>
                     <h3 class="panel-card__title">Listado</h3>
-                    <p class="panel-card__subtitle">@_pagedTotal registro(s) · Página @_pageNumber de @_totalPages</p>
+                    <p class="panel-card__subtitle">@_pagedTotal registro(s) Â· PÃ¡gina @_pageNumber de @_totalPages</p>
                 </div>
                 <div class="actions">
                     <button type="button" class="btn btn--ghost" @onclick="AbrirConfiguracionVista">
@@ -750,7 +752,7 @@
                     </div>
                     <div class="pagination">
                         <button type="button" class="btn btn--ghost btn--sm" @onclick="() => CambiarPaginaAsync(_pageNumber - 1)" disabled="@(!_hasPrev)">Anterior</button>
-                        <span>Página @_pageNumber / @_totalPages</span>
+                        <span>PÃ¡gina @_pageNumber / @_totalPages</span>
                         <button type="button" class="btn btn--ghost btn--sm" @onclick="() => CambiarPaginaAsync(_pageNumber + 1)" disabled="@(!_hasNext)">Siguiente</button>
                     </div>
                 </div>
@@ -830,31 +832,31 @@
 
     private static readonly IReadOnlyList<DescriptionCommandOption> DescriptionCommands =
     [
-        new("FORMATEAR", "Título 1", "Título de sección grande", "bi-type-h1", "h1"),
-        new("FORMATEAR", "Título 2", "Título de sección mediano", "bi-type-h2", "h2"),
-        new("FORMATEAR", "Título 3", "Título de sección pequeño", "bi-type-h3", "h3"),
-        new("FORMATEAR", "Texto", "Bloque de párrafo", "bi-paragraph", "paragraph"),
+        new("FORMATEAR", "TÃ­tulo 1", "TÃ­tulo de secciÃ³n grande", "bi-type-h1", "h1"),
+        new("FORMATEAR", "TÃ­tulo 2", "TÃ­tulo de secciÃ³n mediano", "bi-type-h2", "h2"),
+        new("FORMATEAR", "TÃ­tulo 3", "TÃ­tulo de secciÃ³n pequeÃ±o", "bi-type-h3", "h3"),
+        new("FORMATEAR", "Texto", "Bloque de pÃ¡rrafo", "bi-paragraph", "paragraph"),
         new("ESTRUCTURA", "Separador", "Insertar un separador horizontal", "bi-dash-lg", "separator"),
-        new("ESTRUCTURA", "Lista de viñetas", "Crear una lista simple", "bi-list-ul", "bulletList"),
+        new("ESTRUCTURA", "Lista de viÃ±etas", "Crear una lista simple", "bi-list-ul", "bulletList"),
         new("ESTRUCTURA", "Lista numerada", "Crear una lista numerada", "bi-list-ol", "numberedList"),
-        new("ESTRUCTURA", "Lista de comprobación", "Llevar seguimiento de tareas", "bi-check2-square", "checkList"),
+        new("ESTRUCTURA", "Lista de comprobaciÃ³n", "Llevar seguimiento de tareas", "bi-check2-square", "checkList"),
         new("ESTRUCTURA", "Alternar lista", "Ocultar texto en secciones plegables", "bi-caret-right-square", "toggle"),
-        new("BANNER", "Banner de información", "Insertar un aviso informativo", "bi-info-circle-fill", "infoBanner"),
-        new("BANNER", "Banner de éxito", "Insertar un aviso de éxito", "bi-check-circle-fill", "successBanner"),
+        new("BANNER", "Banner de informaciÃ³n", "Insertar un aviso informativo", "bi-info-circle-fill", "infoBanner"),
+        new("BANNER", "Banner de Ã©xito", "Insertar un aviso de Ã©xito", "bi-check-circle-fill", "successBanner"),
         new("BANNER", "Banner de advertencia", "Insertar un aviso de advertencia", "bi-exclamation-triangle-fill", "warningBanner"),
         new("BANNER", "Banner de peligro", "Insertar un aviso de peligro", "bi-x-octagon-fill", "dangerBanner"),
-        new("BANNER", "Monoespaciado", "Insertar bloque técnico", "bi-terminal", "codeBlock"),
+        new("BANNER", "Monoespaciado", "Insertar bloque tÃ©cnico", "bi-terminal", "codeBlock"),
         new("MEDIOS", "Medios", "Insertar imagen, icono o video", "bi-file-earmark-image", "media"),
-        new("MEDIOS", "Subir archivo", "Añadir una casilla de descarga", "bi-upload", "upload"),
+        new("MEDIOS", "Subir archivo", "AÃ±adir una casilla de descarga", "bi-upload", "upload"),
         new("MEDIOS", "Archivo", "Insertar un archivo desde Documentos", "bi-files", "file"),
-        new("NAVEGACIÓN", "Enlace", "Añadir un enlace", "bi-link-45deg", "link"),
-        new("NAVEGACIÓN", "Botón", "Añadir un botón", "bi-link", "button"),
-        new("NAVEGACIÓN", "Artículo", "Insertar un atajo a un artículo", "bi-newspaper", "article"),
-        new("NAVEGACIÓN", "Cita", "Añadir una cita específica", "bi-quote", "quote"),
-        new("NAVEGACIÓN", "Índice", "Resaltar estructura de títulos", "bi-bookmark-fill", "index"),
-        new("WIDGET", "Emoji", "Añadir un emoji", "bi-emoji-smile", "emoji"),
-        new("WIDGET", "3 estrellas", "Insertar calificación mayor que 3", "bi-star-fill", "stars3"),
-        new("WIDGET", "5 estrellas", "Insertar calificación mayor que 5", "bi-star-fill", "stars5")
+        new("NAVEGACIÃ“N", "Enlace", "AÃ±adir un enlace", "bi-link-45deg", "link"),
+        new("NAVEGACIÃ“N", "BotÃ³n", "AÃ±adir un botÃ³n", "bi-link", "button"),
+        new("NAVEGACIÃ“N", "ArtÃ­culo", "Insertar un atajo a un artÃ­culo", "bi-newspaper", "article"),
+        new("NAVEGACIÃ“N", "Cita", "AÃ±adir una cita especÃ­fica", "bi-quote", "quote"),
+        new("NAVEGACIÃ“N", "Ãndice", "Resaltar estructura de tÃ­tulos", "bi-bookmark-fill", "index"),
+        new("WIDGET", "Emoji", "AÃ±adir un emoji", "bi-emoji-smile", "emoji"),
+        new("WIDGET", "3 estrellas", "Insertar calificaciÃ³n mayor que 3", "bi-star-fill", "stars3"),
+        new("WIDGET", "5 estrellas", "Insertar calificaciÃ³n mayor que 5", "bi-star-fill", "stars5")
     ];
 
     private static readonly IReadOnlyList<DescriptionCommandOption> ToolbarDescriptionCommands =
@@ -1381,7 +1383,7 @@
 
     private bool NavigateToTicketUrl(long idTicket)
     {
-        var target = QueryHelpers.AddQueryString("/tickets", "id", idTicket.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        var target = QueryHelpers.AddQueryString(RouteContext.BuildRoute("/tickets"), "id", idTicket.ToString(System.Globalization.CultureInfo.InvariantCulture));
         if (string.Equals(Nav.ToBaseRelativePath(Nav.Uri), target.TrimStart('/'), StringComparison.Ordinal))
             return false;
 
@@ -1504,7 +1506,7 @@
             return;
         }
 
-        SetFeedback(AppUiMessage.Success("Etapa actualizada", "El ticket se movió correctamente."));
+        SetFeedback(AppUiMessage.Success("Etapa actualizada", "El ticket se moviÃ³ correctamente."));
         await BuscarAsync(keepCurrent: true);
     }
 
@@ -1688,7 +1690,7 @@
 
             await CargarLookupsAsync();
             NuevaEtiqueta();
-            SetFeedback(AppUiMessage.Success("Etiqueta guardada", "La etiqueta quedÃ³ disponible para clasificar tickets."));
+            SetFeedback(AppUiMessage.Success("Etiqueta guardada", "La etiqueta quedÃƒÂ³ disponible para clasificar tickets."));
         }
         finally
         {
@@ -1723,7 +1725,7 @@
             await CargarLookupsAsync();
             await BuscarAsync(keepCurrent: true);
             NuevaEtiqueta();
-            SetFeedback(AppUiMessage.Success("Etiqueta eliminada", "La etiqueta se desactivÃ³ y ya no aparece para nuevos filtros."));
+            SetFeedback(AppUiMessage.Success("Etiqueta eliminada", "La etiqueta se desactivÃƒÂ³ y ya no aparece para nuevos filtros."));
         }
         finally
         {
@@ -1753,7 +1755,7 @@
                 };
                 var result = await UiOps.RunAsync(() => TicketsSvc.CreateAsync(create), "No se pudo crear el ticket.");
                 if (!result.Success) { SetFeedback(result.Feedback); return; }
-                SetFeedback(AppUiMessage.Success("Ticket creado", "El ticket quedó listo para el equipo de soporte."));
+                SetFeedback(AppUiMessage.Success("Ticket creado", "El ticket quedÃ³ listo para el equipo de soporte."));
                 await BuscarAsync();
                 await AbrirTicketAsync(result.Value);
             }
@@ -1823,7 +1825,7 @@
             ApplyViewSettings(BuildDefaultViewSettings(), string.Empty);
             return;
         }
-        var result = await UiOps.RunAsync(() => TicketsSvc.GetViewSettingsAsync(currentUser), "No se pudo cargar la configuración de vista.");
+        var result = await UiOps.RunAsync(() => TicketsSvc.GetViewSettingsAsync(currentUser), "No se pudo cargar la configuraciÃ³n de vista.");
         ApplyViewSettings(result.Success && result.Value is not null ? result.Value : BuildDefaultViewSettings(), currentUser);
     }
 
@@ -1884,16 +1886,16 @@
     {
         if (string.IsNullOrWhiteSpace(CurrentUserName))
         {
-            SetFeedback(new AppUiMessage { Severity = AppUiFeedbackSeverity.Warning, Title = "Sesión requerida", Message = "Necesitás iniciar sesión para guardar la configuración de vista." });
+            SetFeedback(new AppUiMessage { Severity = AppUiFeedbackSeverity.Warning, Title = "SesiÃ³n requerida", Message = "NecesitÃ¡s iniciar sesiÃ³n para guardar la configuraciÃ³n de vista." });
             return;
         }
 
         var settings = new TicketViewSettingsDto { AgruparPor = _draftAgruparPor, Columnas = CloneColumns(_viewSettingsDraft) };
-        var result = await UiOps.RunAsync(async () => { await TicketsSvc.SaveViewSettingsAsync(CurrentUserName, settings); return true; }, "No se pudo guardar la configuración de vista.");
+        var result = await UiOps.RunAsync(async () => { await TicketsSvc.SaveViewSettingsAsync(CurrentUserName, settings); return true; }, "No se pudo guardar la configuraciÃ³n de vista.");
         if (!result.Success) { SetFeedback(result.Feedback); return; }
         ApplyViewSettings(settings, CurrentUserName);
         CloseViewSettings();
-        SetFeedback(AppUiMessage.Success("Vista guardada", "La configuración del listado quedó actualizada para tu usuario."));
+        SetFeedback(AppUiMessage.Success("Vista guardada", "La configuraciÃ³n del listado quedÃ³ actualizada para tu usuario."));
     }
 
     private IReadOnlyList<TicketViewColumnDto> GetVisibleColumns()
@@ -2005,7 +2007,7 @@
     private string CurrentUserName => AppUserSession.GetCurrentUserName(string.Empty).Trim();
 
     private string BuildDetailSubtitle()
-        => _detail is null ? string.Empty : $"{DisplayOrFallback(_detail.ClienteNombre, _detail.ContactoNombre, "Sin contacto")} · {_detail.EstadoNombre} · {RenderPriority(_detail.Prioridad)}";
+        => _detail is null ? string.Empty : $"{DisplayOrFallback(_detail.ClienteNombre, _detail.ContactoNombre, "Sin contacto")} Â· {_detail.EstadoNombre} Â· {RenderPriority(_detail.Prioridad)}";
 
     private IReadOnlyList<SmartFilterChip> BuildTicketFilterChips()
     {
@@ -2031,7 +2033,7 @@
         if (_filters.TieneMensajes.HasValue)
             chips.Add(new("mensajes", _filters.TieneMensajes.Value ? "Con mensajes" : "Sin mensajes"));
         if (!string.IsNullOrWhiteSpace(_filters.FechaRapida))
-            chips.Add(new("fecha", _filters.FechaRapida == "hoy" ? "Creados hoy" : "Actualizados 7 días"));
+            chips.Add(new("fecha", _filters.FechaRapida == "hoy" ? "Creados hoy" : "Actualizados 7 dÃ­as"));
 
         for (var i = 0; i < _filters.Reglas.Count; i++)
             chips.Add(new($"rule:{i}", $"{GetTicketRuleFieldLabel(_filters.Reglas[i].Campo)} {GetRuleOperatorLabel(_filters.Reglas[i].Operador)} {_filters.Reglas[i].Valor}".Trim()));
@@ -2060,19 +2062,19 @@
         {
             "equals" => "es igual a",
             "starts" => "empieza con",
-            "empty" => "está vacío",
-            "not-empty" => "no está vacío",
+            "empty" => "estÃ¡ vacÃ­o",
+            "not-empty" => "no estÃ¡ vacÃ­o",
             _ => "contiene"
         };
 
     private static string GetTicketRuleFieldLabel(string? field)
         => (field ?? string.Empty).Trim().ToLowerInvariant() switch
         {
-            "descripcion" => "Descripción",
+            "descripcion" => "DescripciÃ³n",
             "cliente" => "Cliente",
             "contacto" => "Contacto",
-            "tecnico" => "Técnico",
-            _ => "Título"
+            "tecnico" => "TÃ©cnico",
+            _ => "TÃ­tulo"
         };
 
     private static string? EmptyToNull(string? value)
@@ -2216,7 +2218,7 @@
 
     private static bool IsTicketsInitializationPending(string? message)
         => !string.IsNullOrWhiteSpace(message)
-           && message.Contains("Tickets de asistencia todavía no está inicializado", StringComparison.OrdinalIgnoreCase);
+           && message.Contains("Tickets de asistencia todavÃ­a no estÃ¡ inicializado", StringComparison.OrdinalIgnoreCase);
 
     private static string GetFeedbackClass(AppUiMessage message)
         => message.Severity switch

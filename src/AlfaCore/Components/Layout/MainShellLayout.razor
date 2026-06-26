@@ -1,4 +1,4 @@
-@using AlfaCore.Models
+﻿@using AlfaCore.Models
 @inherits LayoutComponentBase
 @implements IDisposable
 @inject IJSRuntime JS
@@ -6,16 +6,17 @@
 @inject AlfaCore.Services.IWorkspaceService WorkspaceSvc
 @inject AlfaCore.Services.ISessionService SessionSvc
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
+@inject AlfaCore.Services.IRouteContextService RouteContext
 
 <div class="@ShellClass">
     <aside class="main-shell__sidebar">
         <div class="main-shell__brand">
-            <a href="/" class="main-shell__logo-link">
-                <img src="logo.png" alt="Alfa Gestión" class="main-shell__logo" width="52" height="52" />
+            <a href="@RouteContext.BuildRoute("/")" class="main-shell__logo-link">
+                <img src="/logos/Logo.png" alt="Alfa Gestión" class="main-shell__logo" width="52" height="52" />
             </a>
             <div class="main-shell__brand-copy">
                 <div class="main-shell__eyebrow">Business Intelligence</div>
-                <a href="/" class="main-shell__title">Alfa Gestión</a>
+                <a href="@RouteContext.BuildRoute("/")" class="main-shell__title">Alfa Gestión</a>
             </div>
             <button type="button"
                     class="main-shell__toggle"
@@ -30,7 +31,7 @@
             <a href="/" class="main-shell__back">Aplicaciones</a>
             @foreach (var module in _context.Modules)
             {
-                <a href="@module.RutaWeb" class="@GetModuleLinkClass(module)">
+                <a href="@RouteContext.BuildRoute(module.RutaWeb)" class="@GetModuleLinkClass(module)">
                     <i class="bi @(string.IsNullOrWhiteSpace(module.Icono) ? "bi-grid" : module.Icono)"></i>
                     <span>@module.Nombre</span>
                 </a>
@@ -156,3 +157,4 @@
         AppUserSession.StateChanged -= OnAppUserStateChanged;
     }
 }
+

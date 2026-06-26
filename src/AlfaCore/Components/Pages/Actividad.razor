@@ -1,4 +1,5 @@
-@page "/compras/actividad"
+﻿@page "/compras/actividad"
+@page "/{idweb}/{idbase:int}/compras/actividad"
 @inject AlfaCore.Services.IComprasDashboardService DashboardService
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.FilterStateService FilterState
@@ -23,7 +24,7 @@
             <p>@_error.Message</p>
             @if (_error.HasCode)
             {
-                <p>Código: @_error.Code</p>
+                <p>CÃ³digo: @_error.Code</p>
             }
             @if (_error.HasSuggestion)
             {
@@ -39,13 +40,13 @@
     {
         <div class="kpi-grid">
             <KpiCard Titulo="Comprobantes cargados" Valor="@_page.Kpis.CantidadComprobantes.ToString("N0")" Icono="C" />
-            <KpiCard Titulo="Ítems cargados" Valor="@_page.Kpis.CantidadItems.ToString("N0")" Icono="I" />
+            <KpiCard Titulo="Ãtems cargados" Valor="@_page.Kpis.CantidadItems.ToString("N0")" Icono="I" />
             <KpiCard Titulo="Usuarios activos" Valor="@_page.Kpis.UsuariosActivos.ToString("N0")" Icono="U" />
-            <KpiCard Titulo="Promedio ítems/cpte" Valor="@_page.Kpis.PromedioItemsPorComprobante.ToString("N2", Cultura)" Icono="%" />
+            <KpiCard Titulo="Promedio Ã­tems/cpte" Valor="@_page.Kpis.PromedioItemsPorComprobante.ToString("N2", Cultura)" Icono="%" />
             <KpiCard Titulo="Promedio cpte/usuario" Valor="@_page.Kpis.PromedioComprobantesPorUsuario.ToString("N2", Cultura)" Icono="P" />
-            <KpiCard Titulo="Día con mayor actividad" Valor="@_page.Kpis.DiaMayorActividad" Icono="D" />
-            <KpiCard Titulo="Usuario más activo" Valor="@_page.Kpis.UsuarioMasActivo" Icono="*" />
-            <KpiCard Titulo="Más carga con detalle" Valor="@_page.Kpis.UsuarioMasDetalle" Descripcion="@DetalleUsuarioMasTrabajo()" Icono="+" Destacado="true" />
+            <KpiCard Titulo="DÃ­a con mayor actividad" Valor="@_page.Kpis.DiaMayorActividad" Icono="D" />
+            <KpiCard Titulo="Usuario mÃ¡s activo" Valor="@_page.Kpis.UsuarioMasActivo" Icono="*" />
+            <KpiCard Titulo="MÃ¡s carga con detalle" Valor="@_page.Kpis.UsuarioMasDetalle" Descripcion="@DetalleUsuarioMasTrabajo()" Icono="+" Destacado="true" />
         </div>
 
         @if (_page.Insights.Count > 0)
@@ -62,21 +63,21 @@
             <section class="panel-card">
                 <div class="panel-card__header">
                     <div>
-                        <h3 class="panel-card__title">Comprobantes por día</h3>
+                        <h3 class="panel-card__title">Comprobantes por dÃ­a</h3>
                         <p class="panel-card__subtitle">Cantidad diaria de comprobantes cargados</p>
                     </div>
                 </div>
-                <LineChart Data="_page.SerieComprobantesPorDia" Titulo="Comprobantes por día" MostrarMoneda="false" />
+                <LineChart Data="_page.SerieComprobantesPorDia" Titulo="Comprobantes por dÃ­a" MostrarMoneda="false" />
             </section>
 
             <section class="panel-card">
                 <div class="panel-card__header">
                     <div>
-                        <h3 class="panel-card__title">Ítems por día</h3>
+                        <h3 class="panel-card__title">Ãtems por dÃ­a</h3>
                         <p class="panel-card__subtitle">Volumen diario de registros cargados</p>
                     </div>
                 </div>
-                <LineChart Data="_page.SerieItemsPorDia" Titulo="Ítems por día" MostrarMoneda="false" />
+                <LineChart Data="_page.SerieItemsPorDia" Titulo="Ãtems por dÃ­a" MostrarMoneda="false" />
             </section>
 
             <section class="panel-card">
@@ -104,7 +105,7 @@
             <section class="panel-card">
                 <div class="panel-card__header">
                     <div>
-                        <h3 class="panel-card__title">Ítems por usuario</h3>
+                        <h3 class="panel-card__title">Ãtems por usuario</h3>
                         <p class="panel-card__subtitle">Carga de detalle registrada</p>
                     </div>
                 </div>
@@ -116,7 +117,7 @@
             <div class="panel-card__header">
                 <div>
                     <h3 class="panel-card__title">Actividad por usuario</h3>
-                    <p class="panel-card__subtitle">Hacé clic en Ver detalle para abrir la ficha del usuario y sus comprobantes.</p>
+                    <p class="panel-card__subtitle">HacÃ© clic en Ver detalle para abrir la ficha del usuario y sus comprobantes.</p>
                 </div>
             </div>
             <div class="table-wrap">
@@ -125,14 +126,14 @@
                         <tr>
                             <th>Usuario</th>
                             <th style="text-align:right;">Comprobantes</th>
-                            <th style="text-align:right;">Ítems</th>
-                            <th style="text-align:right;">Prom. ítems/cpte</th>
+                            <th style="text-align:right;">Ãtems</th>
+                            <th style="text-align:right;">Prom. Ã­tems/cpte</th>
                             <th style="text-align:right;">Importe total</th>
                             <th style="text-align:right;">Con detalle</th>
                             <th style="text-align:right;">Contables</th>
                             <th style="text-align:right;">% detalle</th>
-                            <th>Última actividad</th>
-                            <th style="text-align:right;">Días activos</th>
+                            <th>Ãšltima actividad</th>
+                            <th style="text-align:right;">DÃ­as activos</th>
                             <th></th>
                         </tr>
                     </thead>
@@ -148,7 +149,7 @@
                                 <td style="text-align:right;">@row.ComprobantesConDetalle.ToString("N0")</td>
                                 <td style="text-align:right;">@row.ComprobantesContables.ToString("N0")</td>
                                 <td style="text-align:right;">@row.PorcentajeConDetalle.ToString("P1", Cultura)</td>
-                                <td>@(row.UltimaActividad?.ToString("dd/MM/yyyy") ?? "—")</td>
+                                <td>@(row.UltimaActividad?.ToString("dd/MM/yyyy") ?? "â€”")</td>
                                 <td style="text-align:right;">@row.DiasConActividad.ToString("N0")</td>
                                 <td><button class="btn btn--ghost btn--sm" @onclick="() => SelectUsuarioAsync(row.Usuario)">Ver detalle</button></td>
                             </tr>
@@ -163,20 +164,20 @@
             <div class="split-grid">
                 <DetailCard Titulo="@_detalle.Resumen.Usuario" Subtitulo="Ficha de actividad del usuario">
                     <div class="detail-row"><span class="detail-row__label">Comprobantes</span><strong>@_detalle.Resumen.CantidadComprobantes.ToString("N0")</strong></div>
-                    <div class="detail-row"><span class="detail-row__label">Ítems</span><strong>@_detalle.Resumen.CantidadItems.ToString("N0")</strong></div>
-                    <div class="detail-row"><span class="detail-row__label">Promedio ítems/cpte</span><strong>@_detalle.Resumen.PromedioItemsPorComprobante.ToString("N2", Cultura)</strong></div>
+                    <div class="detail-row"><span class="detail-row__label">Ãtems</span><strong>@_detalle.Resumen.CantidadItems.ToString("N0")</strong></div>
+                    <div class="detail-row"><span class="detail-row__label">Promedio Ã­tems/cpte</span><strong>@_detalle.Resumen.PromedioItemsPorComprobante.ToString("N2", Cultura)</strong></div>
                     <div class="detail-row"><span class="detail-row__label">Importe total</span><strong>@Moneda(_detalle.Resumen.ImporteTotal)</strong></div>
                     <div class="detail-row"><span class="detail-row__label">Con detalle</span><strong>@_detalle.Resumen.ComprobantesConDetalle.ToString("N0")</strong></div>
                     <div class="detail-row"><span class="detail-row__label">Contables</span><strong>@_detalle.Resumen.ComprobantesContables.ToString("N0")</strong></div>
-                    <div class="detail-row"><span class="detail-row__label">Última actividad</span><strong>@(_detalle.Resumen.UltimaActividad?.ToString("dd/MM/yyyy") ?? "—")</strong></div>
-                    <div class="detail-row"><span class="detail-row__label">Días con actividad</span><strong>@_detalle.Resumen.DiasConActividad.ToString("N0")</strong></div>
+                    <div class="detail-row"><span class="detail-row__label">Ãšltima actividad</span><strong>@(_detalle.Resumen.UltimaActividad?.ToString("dd/MM/yyyy") ?? "â€”")</strong></div>
+                    <div class="detail-row"><span class="detail-row__label">DÃ­as con actividad</span><strong>@_detalle.Resumen.DiasConActividad.ToString("N0")</strong></div>
                 </DetailCard>
 
                 <section class="panel-card">
                     <div class="panel-card__header">
                         <div>
-                            <h3 class="panel-card__title">Evolución del usuario</h3>
-                            <p class="panel-card__subtitle">Comprobantes e ítems cargados por día</p>
+                            <h3 class="panel-card__title">EvoluciÃ³n del usuario</h3>
+                            <p class="panel-card__subtitle">Comprobantes e Ã­tems cargados por dÃ­a</p>
                         </div>
                     </div>
                     <div class="three-grid">
@@ -185,16 +186,16 @@
                             <LineChart Data="_detalle.SerieComprobantesPorDia" Titulo="Comprobantes del usuario" MostrarMoneda="false" />
                         </section>
                         <section class="panel-card">
-                            <h4 class="panel-card__title">Ítems</h4>
-                            <LineChart Data="_detalle.SerieItemsPorDia" Titulo="Ítems del usuario" MostrarMoneda="false" />
+                            <h4 class="panel-card__title">Ãtems</h4>
+                            <LineChart Data="_detalle.SerieItemsPorDia" Titulo="Ãtems del usuario" MostrarMoneda="false" />
                         </section>
                         <section class="panel-card">
-                            <h4 class="panel-card__title">Últimos comprobantes</h4>
+                            <h4 class="panel-card__title">Ãšltimos comprobantes</h4>
                             <div class="detail-list">
                                 @foreach (var cpte in _detalle.Comprobantes.Take(8))
                                 {
                                     <div class="detail-row">
-                                        <span class="detail-row__label">@cpte.Fecha.ToString("dd/MM/yy") · @cpte.Tc @cpte.IdComprobante</span>
+                                        <span class="detail-row__label">@cpte.Fecha.ToString("dd/MM/yy") Â· @cpte.Tc @cpte.IdComprobante</span>
                                         <span>@Moneda(cpte.ImporteDashboard)</span>
                                     </div>
                                 }
@@ -204,7 +205,7 @@
                 </section>
             </div>
 
-            <DataTable Titulo="Comprobantes del usuario" Subtitulo="@($"{_detalle.Comprobantes.Count} comprobantes más recientes")">
+            <DataTable Titulo="Comprobantes del usuario" Subtitulo="@($"{_detalle.Comprobantes.Count} comprobantes mÃ¡s recientes")">
                 <Header>
                     <tr>
                         <th>Fecha</th>
@@ -213,7 +214,7 @@
                         <th>Proveedor</th>
                         <th style="text-align:right;">Total</th>
                         <th>Detalle</th>
-                        <th style="text-align:right;">Ítems</th>
+                        <th style="text-align:right;">Ãtems</th>
                         <th>Tipo carga</th>
                         <th>Alerta</th>
                     </tr>
@@ -291,10 +292,10 @@
     private string DetalleUsuarioMasTrabajo()
         => _page is null
             ? string.Empty
-            : $"{_page.Kpis.ComprobantesConDetalleMaximos:N0} cptes con detalle · {_page.Kpis.ItemsDelUsuarioMasDetalle:N0} ítems";
+            : $"{_page.Kpis.ComprobantesConDetalleMaximos:N0} cptes con detalle Â· {_page.Kpis.ItemsDelUsuarioMasDetalle:N0} Ã­tems";
 
     private static string Moneda(decimal valor) => valor.ToString("$ #,##0.00", Cultura);
-    private static string ActividadFlagLabel(bool value) => value ? "Sí" : "No";
+    private static string ActividadFlagLabel(bool value) => value ? "SÃ­" : "No";
     private static string ActividadFlagCss(bool value) => value ? "badge-state badge-state--ok" : "badge-state badge-state--danger";
     private static string ActividadTipoCargaLabel(bool esContable) => esContable ? "Contable" : "Con detalle";
     private static string ActividadTipoCargaCss(bool esContable) => esContable ? "badge-state badge-state--warn" : "badge-state badge-state--ok";
