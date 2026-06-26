@@ -458,6 +458,12 @@ public sealed class PartesHorasService(
             }, cancellationToken: token));
         }, "No se pudo guardar la bolsa mensual del cliente.", ct);
 
+    public Task AprobarAsync(long idParteHora, string usuarioAccion, CancellationToken ct = default)
+        => CambiarEstadoAsync(idParteHora, ParteHoraEstadoKeys.Aprobado, usuarioAccion, "Aprobar", ct);
+
+    public Task RechazarAsync(long idParteHora, string usuarioAccion, CancellationToken ct = default)
+        => CambiarEstadoAsync(idParteHora, ParteHoraEstadoKeys.Rechazado, usuarioAccion, "Rechazar", ct);
+
     private static string SelectGridSql() => """
         SELECT
             p.IdParteHora,
@@ -647,6 +653,41 @@ public sealed class PartesHorasService(
 
     private static string NormalizeUser(string? value)
         => string.IsNullOrWhiteSpace(value) ? Environment.UserName : value.Trim();
+
+    private Task CambiarEstadoAsync(long idParteHora, string estado, string usuarioAccion, string accion, CancellationToken ct)
+        => ExecuteLoggedAsync(accion, async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            var usuario = NormalizeUser(usuarioAccion);
+
+            var rows = await cn.ExecuteAsync(new CommandDefinition("""
+                UPDATE dbo.ALFACORE_PARTES_HORAS
+                SET Estado = @Estado,
+                    UsuarioAprobacion = @Usuario,
+                    FechaHoraAprobacion = GETDATE(),
+                    UsuarioModificacion = @Usuario,
+                    FechaHoraModificacion = GETDATE()
+                WHERE IdParteHora = @IdParteHora
+                  AND ISNULL(Baja, 0) = 0;
+                """, new
+            {
+                IdParteHora = idParteHora,
+                Estado = estado,
+                Usuario = usuario
+            }, cancellationToken: token));
+
+            if (rows == 0)
+                throw new InvalidOperationException("No se encontró el parte de horas para actualizar.");
+
+            await appEvents.LogAuditAsync(
+                ModuleName,
+                accion,
+                "ALFACORE_PARTES_HORAS",
+                idParteHora.ToString(),
+                $"Parte de horas {estado.ToLowerInvariant()}.",
+                new { Estado = estado, Usuario = usuario },
+                token);
+        }, $"No se pudo {accion.ToLowerInvariant()} el parte de horas.", ct);
 
     private async Task<T> ExecuteLoggedAsync<T>(string action, Func<CancellationToken, Task<T>> operation, string userMessage, CancellationToken ct)
     {

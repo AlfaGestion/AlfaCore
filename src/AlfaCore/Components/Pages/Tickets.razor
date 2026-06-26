@@ -1,282 +1,16 @@
-@page "/tickets"
+﻿@page "/tickets"
+@page "/{idweb}/{idbase:int}/tickets"
 @using Microsoft.AspNetCore.WebUtilities
 @using Microsoft.JSInterop
 @inject IJSRuntime JS
 @inject AlfaCore.Services.ITicketsService TicketsSvc
-@inject AlfaCore.Services.IPartesHorasService PartesSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
+@inject AlfaCore.Services.IRouteContextService RouteContext
 @inject NavigationManager Nav
 @implements IDisposable
 
-<PageTitle>Tickets de asistencia | Alfa Gestión</PageTitle>
-
-<style>
-    .tickets-editor-tabs {
-        margin: 4px 0 18px;
-    }
-
-    .tickets-page select,
-    .tickets-page option {
-        background: #081220;
-        color: var(--text);
-    }
-
-    .tickets-page select {
-        color-scheme: dark;
-    }
-
-    .tickets-view-settings-modal .panel-card__header {
-        align-items: flex-start;
-    }
-
-    .tickets-view-settings-modal .panel-card__header .actions {
-        align-items: center;
-        flex-wrap: nowrap;
-    }
-
-    .tickets-view-settings-check {
-        display: inline-flex;
-        align-items: center;
-        gap: 9px;
-        min-width: 0;
-        margin: 0;
-        cursor: pointer;
-        color: var(--text);
-        font-weight: 700;
-    }
-
-    .tickets-view-settings-check input {
-        appearance: none;
-        width: 18px;
-        height: 18px;
-        flex: 0 0 18px;
-        margin: 0;
-        border: 1px solid rgba(148, 163, 184, .55);
-        border-radius: 5px;
-        background: rgba(2, 6, 23, .72);
-        display: grid;
-        place-items: center;
-        color: #ffffff;
-        cursor: pointer;
-    }
-
-    .tickets-view-settings-check input::before {
-        content: "";
-        width: 9px;
-        height: 5px;
-        border-left: 2px solid currentColor;
-        border-bottom: 2px solid currentColor;
-        transform: rotate(-45deg) translate(1px, -1px) scale(0);
-        transform-origin: center;
-        transition: transform .12s ease;
-    }
-
-    .tickets-view-settings-check input:checked {
-        border-color: rgba(14, 165, 233, .95);
-        background: #0ea5e9;
-    }
-
-    .tickets-view-settings-check input:checked::before {
-        transform: rotate(-45deg) translate(1px, -1px) scale(1);
-    }
-
-    .tickets-view-settings-check input:focus-visible {
-        outline: 2px solid rgba(34, 211, 238, .55);
-        outline-offset: 2px;
-    }
-
-    .tickets-view-settings-check span {
-        overflow-wrap: anywhere;
-    }
-
-    .tickets-group-toggle {
-        width: 100%;
-        min-height: 46px;
-        border: 0;
-        padding: 0 12px;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        background: transparent;
-        color: inherit;
-        text-align: left;
-        font: inherit;
-        font-weight: 800;
-        cursor: pointer;
-    }
-
-    .tickets-group-toggle i {
-        color: var(--muted);
-        font-size: .92rem;
-    }
-
-    .tickets-group-toggle small {
-        margin-left: auto;
-        color: var(--muted);
-        font-size: .78rem;
-        font-weight: 700;
-    }
-
-    .tickets-group-toggle:hover,
-    .tickets-group-toggle:focus-visible {
-        background: rgba(34, 211, 238, .08);
-        outline: none;
-    }
-
-    .tickets-tag-field__head {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 8px;
-        margin-bottom: 6px;
-    }
-
-    .tickets-tag-field__head label {
-        margin: 0;
-    }
-
-    .tickets-tag-field__head .btn {
-        width: 34px;
-        height: 34px;
-        padding: 0;
-        display: inline-grid;
-        place-items: center;
-    }
-
-    .tickets-activity-panel {
-        display: grid;
-        gap: 14px;
-    }
-
-    .tickets-activity__item strong {
-        display: block;
-        margin-bottom: 4px;
-        text-transform: capitalize;
-    }
-
-    .tickets-partes-panel {
-        display: grid;
-        gap: 16px;
-    }
-
-    .tickets-partes-registrados {
-        display: grid;
-        gap: 10px;
-        padding-bottom: 4px;
-    }
-
-    .tickets-partes-registrados__head {
-        display: flex;
-        align-items: baseline;
-        justify-content: space-between;
-        gap: 12px;
-    }
-
-    .tickets-partes-registrados__head h4 {
-        margin: 0;
-        color: var(--text);
-        font-size: .95rem;
-    }
-
-    .tickets-partes-registrados__head span {
-        color: var(--muted);
-        font-size: .82rem;
-    }
-
-    .tickets-partes-registrados__list {
-        display: grid;
-        gap: 8px;
-    }
-
-    .tickets-parte-registrado {
-        display: grid;
-        grid-template-columns: minmax(92px, .6fr) minmax(130px, .8fr) minmax(110px, .65fr) minmax(80px, .45fr) minmax(220px, 1.6fr) auto;
-        gap: 10px;
-        align-items: start;
-        padding: .72rem .8rem;
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        background: rgba(255, 255, 255, .025);
-    }
-
-    .tickets-parte-registrado span,
-    .tickets-parte-registrado strong {
-        display: block;
-    }
-
-    .tickets-parte-registrado span {
-        color: var(--muted);
-        font-size: .7rem;
-        font-weight: 700;
-        text-transform: uppercase;
-    }
-
-    .tickets-parte-registrado strong {
-        margin-top: 3px;
-        color: var(--text);
-        font-size: .9rem;
-        overflow-wrap: anywhere;
-    }
-
-    .tickets-parte-registrado__actions {
-        display: flex;
-        gap: 6px;
-        justify-content: flex-end;
-    }
-
-    .tickets-partes-lines {
-        display: grid;
-        gap: 8px;
-    }
-
-    .tickets-partes-lines .partes-lines__header,
-    .tickets-partes-lines .partes-lines__row {
-        display: grid;
-        grid-template-columns: minmax(140px, .8fr) minmax(130px, .75fr) minmax(260px, 2fr) minmax(90px, .45fr) 40px;
-        gap: 8px;
-        align-items: center;
-    }
-
-    .tickets-partes-lines .partes-lines__header {
-        color: var(--muted);
-        font-size: .74rem;
-        font-weight: 700;
-        letter-spacing: .04em;
-        text-transform: uppercase;
-    }
-
-    .tickets-partes-lines .partes-lines__row input,
-    .tickets-partes-lines .partes-lines__row select {
-        width: 100%;
-        min-height: 38px;
-        border: 1px solid var(--border);
-        border-radius: 7px;
-        background: rgba(2, 6, 23, .45);
-        color: var(--text);
-        padding: .55rem .7rem;
-    }
-
-    .tickets-partes-lines .partes-lines__row input:focus,
-    .tickets-partes-lines .partes-lines__row select:focus {
-        outline: 2px solid rgba(34, 211, 238, .45);
-        border-color: rgba(34, 211, 238, .9);
-    }
-
-    @@media (max-width: 760px) {
-        .tickets-partes-lines .partes-lines__header {
-            display: none;
-        }
-
-        .tickets-partes-lines .partes-lines__row {
-            grid-template-columns: 1fr;
-        }
-
-        .tickets-parte-registrado {
-            grid-template-columns: 1fr;
-        }
-    }
-</style>
+<PageTitle>Tickets de asistencia | Alfa GestiÃ³n</PageTitle>
 
 <section class="page-grid tickets-page tickets-page--odoo" @onclick="HandleTicketPageClickAsync">
     @if (_feedback is not null)
@@ -288,7 +22,7 @@
                     <p>@_feedback.Message</p>
                     @if (_feedback.HasCode)
                     {
-                        <small>Código: @_feedback.Code</small>
+                        <small>CÃ³digo: @_feedback.Code</small>
                     }
                     @if (IsTicketsInitializationPending(_feedback.Message))
                     {
@@ -318,7 +52,7 @@
                 <div class="smart-search__bar">
                     <i class="bi bi-search"></i>
                     <input type="search"
-                           placeholder="Buscar por ticket, cliente, contacto, teléfono, email o técnico..."
+                           placeholder="Buscar por ticket, cliente, contacto, telÃ©fono, email o tÃ©cnico..."
                            value="@_filters.Texto"
                            @onfocus="OpenTicketSearchPanel"
                            @oninput="OnTicketSearchInput"
@@ -337,7 +71,7 @@
                     }
                     @if (BuildTicketFilterChips().Count == 0)
                     {
-                        <span class="smart-search__hint">Filtrá por etapa, prioridad, técnico o reglas personalizadas.</span>
+                        <span class="smart-search__hint">FiltrÃ¡ por etapa, prioridad, tÃ©cnico o reglas personalizadas.</span>
                     }
                 </div>
 
@@ -352,7 +86,7 @@
                             <button type="button" class="@GetSmartOptionClass(_filters.TieneAsignado == false)" @onclick='() => ToggleTicketBoolFilterAsync("sin-asignar")'>Sin asignar</button>
                             <button type="button" class="@GetSmartOptionClass(_filters.TieneMensajes == true)" @onclick='() => ToggleTicketBoolFilterAsync("mensajes")'>Con mensajes</button>
                             <button type="button" class='@GetSmartOptionClass(_filters.FechaRapida == "hoy")' @onclick='() => SetTicketDateFilterAsync("hoy")'>Creados hoy</button>
-                            <button type="button" class='@GetSmartOptionClass(_filters.FechaRapida == "recientes")' @onclick='() => SetTicketDateFilterAsync("recientes")'>Actualizados 7 días</button>
+                            <button type="button" class='@GetSmartOptionClass(_filters.FechaRapida == "recientes")' @onclick='() => SetTicketDateFilterAsync("recientes")'>Actualizados 7 dÃ­as</button>
                         </div>
                         <div class="smart-search__column">
                             <h4><i class="bi bi-kanban"></i> Soporte</h4>
@@ -436,7 +170,7 @@
                             <h4><i class="bi bi-star-fill"></i> Favoritos</h4>
                             <button type="button" @onclick='() => ApplyTicketFavoriteAsync("urgentes")'>Alta prioridad abiertos</button>
                             <button type="button" @onclick='() => ApplyTicketFavoriteAsync("seguimiento")'>Seguimiento soporte</button>
-                            <button type="button" @onclick="SaveTicketFavorite">Guardar búsqueda actual</button>
+                            <button type="button" @onclick="SaveTicketFavorite">Guardar bÃºsqueda actual</button>
                             <button type="button" @onclick="OpenTagManager">Administrar etiquetas</button>
                             @foreach (var favorite in _ticketFavorites)
                             {
@@ -454,18 +188,18 @@
                         <div class="smart-search__custom">
                             <h4><i class="bi bi-sliders"></i> Filtro personalizado</h4>
                             <select @bind="_ticketRuleDraft.Campo">
-                                <option value="titulo">Título</option>
-                                <option value="descripcion">Descripción</option>
+                                <option value="titulo">TÃ­tulo</option>
+                                <option value="descripcion">DescripciÃ³n</option>
                                 <option value="cliente">Cliente</option>
                                 <option value="contacto">Contacto</option>
-                                <option value="tecnico">Técnico</option>
+                                <option value="tecnico">TÃ©cnico</option>
                             </select>
                             <select @bind="_ticketRuleDraft.Operador">
                                 <option value="contains">contiene</option>
                                 <option value="equals">es igual a</option>
                                 <option value="starts">empieza con</option>
-                                <option value="empty">está vacío</option>
-                                <option value="not-empty">no está vacío</option>
+                                <option value="empty">estÃ¡ vacÃ­o</option>
+                                <option value="not-empty">no estÃ¡ vacÃ­o</option>
                             </select>
                             <input type="text" placeholder="Valor" @bind="_ticketRuleDraft.Valor" disabled="@IsValueOptionalOperator(_ticketRuleDraft.Operador)" />
                             <button type="button" class="btn btn--primary btn--sm" @onclick="AddTicketRuleAsync">Agregar regla</button>
@@ -490,17 +224,12 @@
         <section class="panel-card tickets-view-settings-modal" @onclick:stopPropagation>
             <div class="panel-card__header">
                 <div>
-                    <h3 class="panel-card__title">Configuración de vista</h3>
-                    <p class="panel-card__subtitle">Columnas visibles, orden y agrupación del listado.</p>
+                    <h3 class="panel-card__title">ConfiguraciÃ³n de vista</h3>
+                    <p class="panel-card__subtitle">Columnas visibles, orden y agrupaciÃ³n del listado.</p>
                 </div>
-                <div class="actions">
-                    <button type="button" class="btn btn--primary" @onclick="GuardarConfiguracionVistaAsync">
-                        <i class="bi bi-floppy"></i> Guardar vista
-                    </button>
-                    <button type="button" class="btn btn--ghost" @onclick="CloseViewSettings">
-                        <i class="bi bi-x-circle"></i> Cerrar
-                    </button>
-                </div>
+                <button type="button" class="btn btn--ghost" @onclick="CloseViewSettings">
+                    <i class="bi bi-x-circle"></i> Cerrar
+                </button>
             </div>
             <div class="usuarios-view-settings">
                 <div class="field">
@@ -516,7 +245,7 @@
                     @foreach (var col in _viewSettingsDraft.OrderBy(c => c.Order))
                     {
                         <div class="usuarios-view-settings__item">
-                            <label class="tickets-view-settings-check">
+                            <label class="checkbox">
                                 <input type="checkbox" checked="@col.Visible" @onchange="args => ToggleViewColumn(col.Key, args)" />
                                 <span>@col.Label</span>
                             </label>
@@ -526,6 +255,14 @@
                             </div>
                         </div>
                     }
+                </div>
+                <div class="actions">
+                    <button type="button" class="btn btn--primary" @onclick="GuardarConfiguracionVistaAsync">
+                        <i class="bi bi-floppy"></i> Guardar vista
+                    </button>
+                    <button type="button" class="btn btn--ghost" @onclick="CloseViewSettings">
+                        <i class="bi bi-x-circle"></i> Cancelar
+                    </button>
                 </div>
             </div>
         </section>
@@ -539,7 +276,7 @@
             <div class="panel-card__header">
                 <div>
                     <h3 class="panel-card__title">Etiquetas</h3>
-                    <p class="panel-card__subtitle">Clasificá tickets por programación, soporte, capacitación u otros criterios.</p>
+                    <p class="panel-card__subtitle">ClasificÃ¡ tickets por programaciÃ³n, soporte, capacitaciÃ³n u otros criterios.</p>
                 </div>
                 <button type="button" class="btn btn--ghost" @onclick="CloseTagManager">
                     <i class="bi bi-x-circle"></i> Cerrar
@@ -591,7 +328,7 @@
             <div class="panel-card__header">
                 <div>
                     <h3 class="panel-card__title">@(_isNew ? "Nuevo ticket" : $"{_detail?.CodigoVisible} {_form.Titulo}")</h3>
-                    <p class="panel-card__subtitle">@(_isNew ? "Cargá lo mínimo para que soporte lo tome rápido." : BuildDetailSubtitle())</p>
+                    <p class="panel-card__subtitle">@(_isNew ? "CargÃ¡ lo mÃ­nimo para que soporte lo tome rÃ¡pido." : BuildDetailSubtitle())</p>
                 </div>
                 <div class="actions">
                     @if (!_isNew && _detail?.IdConversacion is long idConv)
@@ -612,14 +349,6 @@
                 </div>
             </div>
 
-            <div class="contactos-tabs tickets-editor-tabs" role="tablist" aria-label="Detalle de ticket">
-                <button type="button" class="cuentas-tab @GetTicketEditorTabClass(TicketEditorTabTicket)" @onclick='() => _ticketEditorTab = TicketEditorTabTicket'>Ticket</button>
-                <button type="button" class="cuentas-tab @GetTicketEditorTabClass(TicketEditorTabParteHora)" @onclick="SetTicketParteHoraTab" disabled="@_isNew">Parte de hora</button>
-                <button type="button" class="cuentas-tab @GetTicketEditorTabClass(TicketEditorTabActividad)" @onclick="SetTicketActividadTab" disabled="@_isNew">Actividad</button>
-            </div>
-
-            @if (_ticketEditorTab == TicketEditorTabTicket)
-            {
             <div class="tickets-editor-grid">
                 <div class="tickets-editor-main">
                     <div class="field">
@@ -627,12 +356,12 @@
                         <input type="text" maxlength="180" @bind="_form.Titulo" disabled="@_saving" />
                     </div>
                     <div class="field">
-                        <label>Descripción</label>
+                        <label>DescripciÃ³n</label>
                         <div class="tickets-rich-editor">
                             <div class="tickets-rich-editor__surface"
                                  @ref="_descriptionEditor"
                                  contenteditable="@(!_saving)"
-                                 data-placeholder="Escribí / para comandos"
+                                 data-placeholder="EscribÃ­ / para comandos"
                                  @oninput="OnDescripcionChangedAsync"
                                  @onkeyup="OnDescripcionChangedAsync"
                                  @onfocus="OnDescripcionFocusAsync"></div>
@@ -682,7 +411,7 @@
                 <aside class="tickets-editor-side">
                     <div class="field">
                         <label>Etapa</label>
-                        <select @bind="_form.CodigoEstado" @bind:after="AutoGuardarTicketAsync" disabled="@_saving">
+                        <select @bind="_form.CodigoEstado" disabled="@_saving">
                             @foreach (var state in _lookups.Estados)
                             {
                                 <option value="@state.CodigoEstado">@state.Nombre</option>
@@ -691,7 +420,7 @@
                     </div>
                     <div class="field">
                         <label>Prioridad</label>
-                        <select @bind="_form.Prioridad" @bind:after="AutoGuardarTicketAsync" disabled="@_saving">
+                        <select @bind="_form.Prioridad" disabled="@_saving">
                             <option value="0">Sin prioridad</option>
                             <option value="1">Baja</option>
                             <option value="2">Media</option>
@@ -700,7 +429,7 @@
                     </div>
                     <div class="field">
                         <label>Asignado a</label>
-                        <select @bind="_form.IdTecnico" @bind:after="AutoGuardarTicketAsync" disabled="@_saving">
+                        <select @bind="_form.IdTecnico" disabled="@_saving">
                             <option value="">Sin asignar</option>
                             @foreach (var tech in _lookups.Tecnicos)
                             {
@@ -708,29 +437,27 @@
                             }
                         </select>
                     </div>
-                    <div class="field tickets-tag-field">
-                        <div class="tickets-tag-field__head">
-                            <label>Etiquetas</label>
-                            <button type="button" class="btn btn--ghost btn--sm" @onclick="OpenTagManager" disabled="@_saving" title="Administrar etiquetas" aria-label="Administrar etiquetas">
-                                <i class="bi bi-tags"></i>
-                            </button>
-                        </div>
+                    <div class="field">
+                        <label>Etiquetas</label>
                         <div class="tickets-tag-picker">
                             @foreach (var tag in _lookups.Etiquetas)
                             {
                                 <label class="tickets-tag-option">
                                     <input type="checkbox"
                                            checked="@_formTagIds.Contains(tag.IdEtiqueta)"
-                                           @onchange="args => ToggleTicketTagAsync(tag.IdEtiqueta, args)"
+                                           @onchange="args => ToggleTicketTag(tag.IdEtiqueta, args)"
                                            disabled="@_saving" />
                                     <span class="tickets-tag-chip" style="border-color:@tag.Color;color:@tag.Color">@tag.Nombre</span>
                                 </label>
                             }
                             @if (_lookups.Etiquetas.Count == 0)
                             {
-                                <span class="panel-card__subtitle">Todavía no hay etiquetas.</span>
+                                <span class="panel-card__subtitle">TodavÃ­a no hay etiquetas.</span>
                             }
                         </div>
+                        <button type="button" class="btn btn--ghost btn--sm" @onclick="OpenTagManager" disabled="@_saving">
+                            <i class="bi bi-tags"></i> Administrar etiquetas
+                        </button>
                     </div>
                     <div class="field tickets-lookup">
                         <label>Cliente / empresa</label>
@@ -783,180 +510,9 @@
                     <i class="bi bi-eraser"></i> Revertir
                 </button>
             </div>
-            }
-            else if (_ticketEditorTab == TicketEditorTabActividad && _detail is not null)
-            {
-                <section class="tickets-activity-panel">
-                    <div class="panel-card__header">
-                        <div>
-                            <h3 class="panel-card__title">Actividad del ticket</h3>
-                            <p class="panel-card__subtitle">Notas, horas y cambios registrados sobre este ticket.</p>
-                        </div>
-                    </div>
-                    <div class="field">
-                        <label>Nueva nota</label>
-                        <textarea rows="3" @bind="_newNote"></textarea>
-                    </div>
-                    <div class="actions">
-                        <button type="button" class="btn btn--primary" @onclick="AgregarNotaAsync" disabled="@(_saving || string.IsNullOrWhiteSpace(_newNote))">
-                            <i class="bi bi-chat-left-text"></i> Registrar nota
-                        </button>
-                    </div>
-                    <div class="tickets-activity">
-                        @foreach (var activity in _detail.Actividad)
-                        {
-                            <div class="tickets-activity__item">
-                                <strong>@FormatActivityType(activity.TipoActividad)</strong>
-                                <p>@FormatActivityDescription(activity)</p>
-                                <span>@activity.Usuario · @activity.FechaHora.ToString("dd/MM/yyyy HH:mm")</span>
-                            </div>
-                        }
-                    </div>
-                </section>
-            }
-            else
-            {
-                <section class="tickets-partes-panel">
-                    <div class="panel-card__header">
-                        <div>
-                            <h3 class="panel-card__title">Parte de hora</h3>
-                            <p class="panel-card__subtitle">Registrá tiempo trabajado y dejalo vinculado a este ticket.</p>
-                        </div>
-                    </div>
-                    <div class="tickets-partes-registrados">
-                        <div class="tickets-partes-registrados__head">
-                            <h4>Partes vinculados</h4>
-                            <span>@(_loadingTicketPartes ? "Cargando..." : $"{_ticketPartesRegistrados.Count} linea(s)")</span>
-                        </div>
-                        @if (!_loadingTicketPartes && _ticketPartesRegistrados.Count == 0)
-                        {
-                            <p class="panel-card__subtitle">Todavia no hay partes de horas vinculados a este ticket.</p>
-                        }
-                        else if (_ticketPartesRegistrados.Count > 0)
-                        {
-                            <div class="tickets-partes-registrados__list">
-                                @foreach (var parte in _ticketPartesRegistrados)
-                                {
-                                    <article class="tickets-parte-registrado">
-                                        <div>
-                                            <span>Fecha</span>
-                                            <strong>@parte.Fecha.ToString("dd/MM/yyyy")</strong>
-                                        </div>
-                                        <div>
-                                            <span>Tecnico</span>
-                                            <strong>@DisplayOrFallback(parte.TecnicoNombre, parte.Usuario, "Sin tecnico")</strong>
-                                        </div>
-                                        <div>
-                                            <span>Tipo</span>
-                                            <strong>@LabelParteTipo(parte.TipoTrabajo)</strong>
-                                        </div>
-                                        <div>
-                                            <span>Horas</span>
-                                            <strong>@FormatParteMinutes(parte.Minutos)</strong>
-                                        </div>
-                                        <div>
-                                            <span>Tarea</span>
-                                            <strong>@DisplayOrFallback(parte.Descripcion, "Sin descripcion")</strong>
-                                        </div>
-                                        <div class="tickets-parte-registrado__actions">
-                                            <button type="button" class="btn btn--ghost btn--sm" title="Editar parte" aria-label="Editar parte" @onclick="() => EditarParteVinculadoAsync(parte.IdParteHora)" disabled="@_savingParteHora">
-                                                <i class="bi bi-pencil-square"></i>
-                                            </button>
-                                            <button type="button" class="btn btn--ghost btn--sm" title="Borrar parte" aria-label="Borrar parte" @onclick="() => BorrarParteVinculadoAsync(parte.IdParteHora)" disabled="@_savingParteHora">
-                                                <i class="bi bi-trash"></i>
-                                            </button>
-                                        </div>
-                                    </article>
-                                }
-                            </div>
-                        }
-                    </div>
-                    <div class="filters-grid filters-grid--wide">
-                        <div class="field">
-                            <label>Fecha</label>
-                            <input type="date" @bind="_ticketParteForm.Fecha" disabled="@_savingParteHora" />
-                        </div>
-                        <div class="field">
-                            <label>Cliente</label>
-                            <input type="text" value="@DisplayOrFallback(_detail?.ClienteNombre, _detail?.ClienteCodigo, "Sin cliente")" disabled />
-                        </div>
-                        <div class="field">
-                            <label>Ticket</label>
-                            <input type="text" value="@($"{_detail?.CodigoVisible} {_detail?.Titulo}".Trim())" disabled />
-                        </div>
-                        <div class="field">
-                            <label>Contacto / usuario</label>
-                            <input type="text" value="@DisplayOrFallback(_detail?.ContactoNombre, _ticketParteForm.Usuario, "Sin contacto")" disabled />
-                        </div>
-                        <label class="checkbox">
-                            <input type="checkbox" @bind="_ticketParteForm.Facturable" disabled="@_savingParteHora" />
-                            <span>Facturable</span>
-                        </label>
-                        <label class="checkbox">
-                            <input type="checkbox" @bind="_ticketParteForm.Excedente" disabled="@_savingParteHora" />
-                            <span>Excedente</span>
-                        </label>
-                    </div>
-
-                    <div class="partes-lines tickets-partes-lines">
-                        <div class="partes-lines__header">
-                            <span>Técnico</span>
-                            <span>Tipo</span>
-                            <span>Tarea</span>
-                            <span>Minutos</span>
-                            <span></span>
-                        </div>
-                        @for (var i = 0; i < _ticketParteLineas.Count; i++)
-                        {
-                            var index = i;
-                            var linea = _ticketParteLineas[index];
-                            <div class="partes-lines__row" @key="linea">
-                                <select @bind="linea.IdTecnico" disabled="@_savingParteHora">
-                                    <option value="">Sin técnico</option>
-                                    @foreach (var tecnico in _partesLookups.Tecnicos)
-                                    {
-                                        <option value="@tecnico.Codigo">@tecnico.Titulo</option>
-                                    }
-                                </select>
-                                <select @bind="linea.TipoTrabajo" disabled="@_savingParteHora">
-                                    @foreach (var tipo in GetTicketParteTiposVisibles())
-                                    {
-                                        <option value="@tipo">@LabelParteTipo(tipo)</option>
-                                    }
-                                </select>
-                                <input type="text"
-                                       id="@GetTicketParteLineaDescripcionId(index)"
-                                       @bind="linea.Descripcion"
-                                       maxlength="1000"
-                                       @onkeydown="args => HandleTicketParteLineaKeyDownAsync(args, index)"
-                                       disabled="@_savingParteHora"
-                                       placeholder="Descripción de la tarea" />
-                                <input type="number" min="1" max="1440" step="5" @bind="linea.Minutos" disabled="@_savingParteHora" />
-                                <button type="button" class="btn btn--ghost btn--sm" @onclick="() => RemoveTicketParteLinea(index)" disabled="@(_savingParteHora || _ticketParteLineas.Count <= 1)">
-                                    <i class="bi bi-trash"></i>
-                                </button>
-                            </div>
-                        }
-                        <div class="actions">
-                            <button type="button" class="btn btn--ghost btn--sm" @onclick="AddTicketParteLinea" disabled="@_savingParteHora">
-                                <i class="bi bi-plus-circle"></i> Agregar línea
-                            </button>
-                        </div>
-                    </div>
-
-                    <div class="actions usuarios-editor__actions">
-                        <button type="button" class="btn btn--primary" @onclick="GuardarParteHoraTicketAsync" disabled="@(_savingParteHora || _detail is null)">
-                            <i class="bi bi-stopwatch"></i> @(_savingParteHora ? "Guardando..." : (_editingTicketParteHoraId.HasValue ? "Actualizar parte" : "Guardar parte"))
-                        </button>
-                        <button type="button" class="btn btn--ghost" @onclick="ResetTicketParteHoraForm" disabled="@_savingParteHora">
-                            <i class="bi bi-eraser"></i> @(_editingTicketParteHoraId.HasValue ? "Cancelar edicion" : "Limpiar")
-                        </button>
-                    </div>
-                </section>
-            }
         </section>
 
-        @if (!_isNew && _detail is not null && _ticketEditorTab == TicketEditorTabTicket)
+        @if (!_isNew && _detail is not null)
         {
             <section class="tickets-detail-layout">
                 <div class="panel-card">
@@ -968,7 +524,7 @@
                     </div>
                     @if (_detail.MensajesOrigenDetalle.Count == 0)
                     {
-                        <div class="usuarios-empty">Este ticket no tiene mensajes de conversación vinculados.</div>
+                        <div class="usuarios-empty">Este ticket no tiene mensajes de conversaciÃ³n vinculados.</div>
                     }
                     else
                     {
@@ -1011,6 +567,33 @@
                         </div>
                     }
                 </div>
+                <div class="panel-card">
+                    <div class="panel-card__header">
+                        <div>
+                            <h3 class="panel-card__title">Actividad</h3>
+                            <p class="panel-card__subtitle">Notas e historial del ticket.</p>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label>Nueva nota</label>
+                        <textarea rows="3" @bind="_newNote"></textarea>
+                    </div>
+                    <div class="actions">
+                        <button type="button" class="btn btn--primary" @onclick="AgregarNotaAsync" disabled="@(_saving || string.IsNullOrWhiteSpace(_newNote))">
+                            <i class="bi bi-chat-left-text"></i> Registrar nota
+                        </button>
+                    </div>
+                    <div class="tickets-activity">
+                        @foreach (var activity in _detail.Actividad)
+                        {
+                            <div class="tickets-activity__item">
+                                <strong>@activity.TipoActividad</strong>
+                                <p>@activity.Descripcion</p>
+                                <span>@activity.Usuario Â· @activity.FechaHora.ToString("dd/MM/yyyy HH:mm")</span>
+                            </div>
+                        }
+                    </div>
+                </div>
             </section>
         }
     }
@@ -1049,7 +632,7 @@
                             <article class="@GetTicketCardClass(item)"
                                      draggable="true"
                                      data-ticket-id="@item.IdTicket"
-                                     title="Arrastrá para cambiar de etapa"
+                                     title="ArrastrÃ¡ para cambiar de etapa"
                                      @ondragstart="() => IniciarArrastreTicket(item)"
                                      @ondragend="FinalizarArrastreTicketAsync"
                                      @onclick="() => AbrirTicketDesdeKanbanAsync(item.IdTicket)">
@@ -1093,7 +676,7 @@
             <div class="panel-card__header">
                 <div>
                     <h3 class="panel-card__title">Listado</h3>
-                    <p class="panel-card__subtitle">@_pagedTotal registro(s) · Página @_pageNumber de @_totalPages</p>
+                    <p class="panel-card__subtitle">@_pagedTotal registro(s) Â· PÃ¡gina @_pageNumber de @_totalPages</p>
                 </div>
                 <div class="actions">
                     <button type="button" class="btn btn--ghost" @onclick="AbrirConfiguracionVista">
@@ -1138,30 +721,16 @@
                             <tbody>
                                 @if (group.ShowHeader)
                                 {
-                                    <tr class="usuarios-group-row">
-                                        <td colspan="@visibleColumns.Count">
-                                            <button type="button"
-                                                    class="tickets-group-toggle"
-                                                    @onclick="() => ToggleListGroup(group.Key)"
-                                                    aria-expanded="@(!IsListGroupCollapsed(group.Key))">
-                                                <i class="bi @(IsListGroupCollapsed(group.Key) ? "bi-chevron-right" : "bi-chevron-down")"></i>
-                                                <span>@group.Label</span>
-                                                <small>@group.Items.Count ticket(s)</small>
-                                            </button>
-                                        </td>
-                                    </tr>
+                                    <tr class="usuarios-group-row"><td colspan="@visibleColumns.Count">@group.Label</td></tr>
                                 }
-                                @if (!group.ShowHeader || !IsListGroupCollapsed(group.Key))
+                                @foreach (var item in group.Items)
                                 {
-                                    @foreach (var item in group.Items)
-                                    {
-                                        <tr class="@GetTicketRowClass(item)" @onclick="() => AbrirTicketAsync(item.IdTicket)">
-                                            @foreach (var col in visibleColumns)
-                                            {
-                                                <td>@RenderColumn(item, col.Key)</td>
-                                            }
-                                        </tr>
-                                    }
+                                    <tr class="@GetTicketRowClass(item)" @onclick="() => AbrirTicketAsync(item.IdTicket)">
+                                        @foreach (var col in visibleColumns)
+                                        {
+                                            <td>@RenderColumn(item, col.Key)</td>
+                                        }
+                                    </tr>
                                 }
                             </tbody>
                         }
@@ -1178,7 +747,7 @@
                     </div>
                     <div class="pagination">
                         <button type="button" class="btn btn--ghost btn--sm" @onclick="() => CambiarPaginaAsync(_pageNumber - 1)" disabled="@(!_hasPrev)">Anterior</button>
-                        <span>Página @_pageNumber / @_totalPages</span>
+                        <span>PÃ¡gina @_pageNumber / @_totalPages</span>
                         <button type="button" class="btn btn--ghost btn--sm" @onclick="() => CambiarPaginaAsync(_pageNumber + 1)" disabled="@(!_hasNext)">Siguiente</button>
                     </div>
                 </div>
@@ -1188,28 +757,13 @@
 </section>
 
 @code {
-    private sealed class TicketParteHoraLineaForm
-    {
-        public string IdTecnico { get; set; } = string.Empty;
-        public string TipoTrabajo { get; set; } = ParteHoraTipoTrabajoKeys.Soporte;
-        public string Descripcion { get; set; } = string.Empty;
-        public int Minutos { get; set; } = 15;
-    }
-
-    private const string TicketEditorTabTicket = "ticket";
-    private const string TicketEditorTabParteHora = "parte-hora";
-    private const string TicketEditorTabActividad = "actividad";
-
     private TicketLookupDto _lookups = new();
-    private ParteHoraLookupDto _partesLookups = new();
     private TicketsFilters _filters = new();
     private string _prioridadFiltro = string.Empty;
     private string _viewMode = "kanban";
     private bool _loading;
     private bool _refreshingTickets;
     private bool _saving;
-    private bool _savingParteHora;
-    private bool _loadingTicketPartes;
     private bool _showEditor;
     private bool _isNew;
     private bool _showViewSettings;
@@ -1221,10 +775,6 @@
     private bool _feedbackLeaving;
     private DateTime _feedbackSetAtUtc = DateTime.MinValue;
     private TicketUpdateRequest _form = new();
-    private ParteHoraSaveRequest _ticketParteForm = new();
-    private List<TicketParteHoraLineaForm> _ticketParteLineas = [];
-    private List<ParteHoraGridItemDto> _ticketPartesRegistrados = [];
-    private long? _editingTicketParteHoraId;
     private List<int> _formTagIds = [];
     private string _newNote = string.Empty;
     private int _pagedTotal;
@@ -1237,7 +787,6 @@
     private string _draftAgruparPor = TicketViewGroupKeys.Estado;
     private bool _viewSettingsLoaded;
     private string _viewSettingsUserName = string.Empty;
-    private readonly HashSet<string> _collapsedListGroups = new(StringComparer.OrdinalIgnoreCase);
     private long? _startupTicketId;
     private TicketGridItemDto? _draggingTicket;
     private string? _dragTargetEstado;
@@ -1275,36 +824,34 @@
     private int _tagDraftId;
     private string _tagDraftName = string.Empty;
     private string _tagDraftColor = "#14B8A6";
-    private string _ticketEditorTab = TicketEditorTabTicket;
-    private int? _pendingTicketParteLineaDescripcionFocusIndex;
 
     private static readonly IReadOnlyList<DescriptionCommandOption> DescriptionCommands =
     [
-        new("FORMATEAR", "Título 1", "Título de sección grande", "bi-type-h1", "h1"),
-        new("FORMATEAR", "Título 2", "Título de sección mediano", "bi-type-h2", "h2"),
-        new("FORMATEAR", "Título 3", "Título de sección pequeño", "bi-type-h3", "h3"),
-        new("FORMATEAR", "Texto", "Bloque de párrafo", "bi-paragraph", "paragraph"),
+        new("FORMATEAR", "TÃ­tulo 1", "TÃ­tulo de secciÃ³n grande", "bi-type-h1", "h1"),
+        new("FORMATEAR", "TÃ­tulo 2", "TÃ­tulo de secciÃ³n mediano", "bi-type-h2", "h2"),
+        new("FORMATEAR", "TÃ­tulo 3", "TÃ­tulo de secciÃ³n pequeÃ±o", "bi-type-h3", "h3"),
+        new("FORMATEAR", "Texto", "Bloque de pÃ¡rrafo", "bi-paragraph", "paragraph"),
         new("ESTRUCTURA", "Separador", "Insertar un separador horizontal", "bi-dash-lg", "separator"),
-        new("ESTRUCTURA", "Lista de viñetas", "Crear una lista simple", "bi-list-ul", "bulletList"),
+        new("ESTRUCTURA", "Lista de viÃ±etas", "Crear una lista simple", "bi-list-ul", "bulletList"),
         new("ESTRUCTURA", "Lista numerada", "Crear una lista numerada", "bi-list-ol", "numberedList"),
-        new("ESTRUCTURA", "Lista de comprobación", "Llevar seguimiento de tareas", "bi-check2-square", "checkList"),
+        new("ESTRUCTURA", "Lista de comprobaciÃ³n", "Llevar seguimiento de tareas", "bi-check2-square", "checkList"),
         new("ESTRUCTURA", "Alternar lista", "Ocultar texto en secciones plegables", "bi-caret-right-square", "toggle"),
-        new("BANNER", "Banner de información", "Insertar un aviso informativo", "bi-info-circle-fill", "infoBanner"),
-        new("BANNER", "Banner de éxito", "Insertar un aviso de éxito", "bi-check-circle-fill", "successBanner"),
+        new("BANNER", "Banner de informaciÃ³n", "Insertar un aviso informativo", "bi-info-circle-fill", "infoBanner"),
+        new("BANNER", "Banner de Ã©xito", "Insertar un aviso de Ã©xito", "bi-check-circle-fill", "successBanner"),
         new("BANNER", "Banner de advertencia", "Insertar un aviso de advertencia", "bi-exclamation-triangle-fill", "warningBanner"),
         new("BANNER", "Banner de peligro", "Insertar un aviso de peligro", "bi-x-octagon-fill", "dangerBanner"),
-        new("BANNER", "Monoespaciado", "Insertar bloque técnico", "bi-terminal", "codeBlock"),
+        new("BANNER", "Monoespaciado", "Insertar bloque tÃ©cnico", "bi-terminal", "codeBlock"),
         new("MEDIOS", "Medios", "Insertar imagen, icono o video", "bi-file-earmark-image", "media"),
-        new("MEDIOS", "Subir archivo", "Añadir una casilla de descarga", "bi-upload", "upload"),
+        new("MEDIOS", "Subir archivo", "AÃ±adir una casilla de descarga", "bi-upload", "upload"),
         new("MEDIOS", "Archivo", "Insertar un archivo desde Documentos", "bi-files", "file"),
-        new("NAVEGACIÓN", "Enlace", "Añadir un enlace", "bi-link-45deg", "link"),
-        new("NAVEGACIÓN", "Botón", "Añadir un botón", "bi-link", "button"),
-        new("NAVEGACIÓN", "Artículo", "Insertar un atajo a un artículo", "bi-newspaper", "article"),
-        new("NAVEGACIÓN", "Cita", "Añadir una cita específica", "bi-quote", "quote"),
-        new("NAVEGACIÓN", "Índice", "Resaltar estructura de títulos", "bi-bookmark-fill", "index"),
-        new("WIDGET", "Emoji", "Añadir un emoji", "bi-emoji-smile", "emoji"),
-        new("WIDGET", "3 estrellas", "Insertar calificación mayor que 3", "bi-star-fill", "stars3"),
-        new("WIDGET", "5 estrellas", "Insertar calificación mayor que 5", "bi-star-fill", "stars5")
+        new("NAVEGACIÃ“N", "Enlace", "AÃ±adir un enlace", "bi-link-45deg", "link"),
+        new("NAVEGACIÃ“N", "BotÃ³n", "AÃ±adir un botÃ³n", "bi-link", "button"),
+        new("NAVEGACIÃ“N", "ArtÃ­culo", "Insertar un atajo a un artÃ­culo", "bi-newspaper", "article"),
+        new("NAVEGACIÃ“N", "Cita", "AÃ±adir una cita especÃ­fica", "bi-quote", "quote"),
+        new("NAVEGACIÃ“N", "Ãndice", "Resaltar estructura de tÃ­tulos", "bi-bookmark-fill", "index"),
+        new("WIDGET", "Emoji", "AÃ±adir un emoji", "bi-emoji-smile", "emoji"),
+        new("WIDGET", "3 estrellas", "Insertar calificaciÃ³n mayor que 3", "bi-star-fill", "stars3"),
+        new("WIDGET", "5 estrellas", "Insertar calificaciÃ³n mayor que 5", "bi-star-fill", "stars5")
     ];
 
     private static readonly IReadOnlyList<DescriptionCommandOption> ToolbarDescriptionCommands =
@@ -1367,20 +914,6 @@
             _viewSettingsFocusPending = false;
             await _viewSettingsLayer.FocusAsync();
         }
-
-        if (_pendingTicketParteLineaDescripcionFocusIndex.HasValue)
-        {
-            var focusIndex = _pendingTicketParteLineaDescripcionFocusIndex.Value;
-            _pendingTicketParteLineaDescripcionFocusIndex = null;
-
-            try
-            {
-                await JS.InvokeVoidAsync("eval", $"document.getElementById('{GetTicketParteLineaDescripcionId(focusIndex)}')?.focus()");
-            }
-            catch
-            {
-            }
-        }
     }
 
     private void OnAppUserSessionChanged()
@@ -1432,12 +965,6 @@
         ClearErrorFeedback();
         if (string.IsNullOrWhiteSpace(_form.CodigoEstado))
             _form.CodigoEstado = _lookups.Estados.FirstOrDefault()?.CodigoEstado ?? TicketEstadoKeys.Nuevo;
-
-        var partesResult = await UiOps.RunAsync(() => PartesSvc.GetLookupsAsync(), "No se pudieron cargar los datos de partes de horas.");
-        if (partesResult.Success && partesResult.Value is not null)
-            _partesLookups = partesResult.Value;
-        else if (partesResult.Feedback is not null)
-            SetFeedback(partesResult.Feedback);
     }
 
     private async Task RecargarAsync()
@@ -1804,9 +1331,6 @@
         };
         _formTagIds = [];
         ClearTicketRelations();
-        _ticketEditorTab = TicketEditorTabTicket;
-        _ticketPartesRegistrados = [];
-        ResetTicketParteHoraForm();
     }
 
     private async Task AbrirTicketAsync(long idTicket, bool updateUrl = true)
@@ -1848,277 +1372,13 @@
         _ticketContactSuggestions = [];
         _isNew = false;
         _showEditor = true;
-        _ticketEditorTab = TicketEditorTabTicket;
         _newNote = string.Empty;
         _descriptionEditorReady = false;
-        ResetTicketParteHoraForm();
-        await LoadTicketPartesAsync();
     }
-
-    private void SetTicketParteHoraTab()
-    {
-        if (_isNew)
-            return;
-
-        _ticketEditorTab = TicketEditorTabParteHora;
-        if (_ticketParteLineas.Count == 0)
-            ResetTicketParteHoraForm();
-    }
-
-    private void SetTicketActividadTab()
-    {
-        if (_isNew)
-            return;
-
-        _ticketEditorTab = TicketEditorTabActividad;
-    }
-
-    private string GetTicketEditorTabClass(string tab)
-        => string.Equals(_ticketEditorTab, tab, StringComparison.Ordinal) ? "is-active" : string.Empty;
-
-    private async Task LoadTicketPartesAsync()
-    {
-        if (_detail is null)
-        {
-            _ticketPartesRegistrados = [];
-            return;
-        }
-
-        _loadingTicketPartes = true;
-        try
-        {
-            var result = await UiOps.RunAsync(() => PartesSvc.SearchAsync(new PartesHorasFilters
-            {
-                IdTicket = _detail.IdTicket,
-                FechaDesde = null,
-                FechaHasta = null,
-                PageNumber = 1,
-                PageSize = 200
-            }), "No se pudieron cargar los partes vinculados al ticket.");
-
-            if (result.Success && result.Value is not null)
-                _ticketPartesRegistrados = result.Value.Items.ToList();
-            else if (result.Feedback is not null)
-                SetFeedback(result.Feedback);
-        }
-        finally
-        {
-            _loadingTicketPartes = false;
-        }
-    }
-
-    private async Task EditarParteVinculadoAsync(long idParteHora)
-    {
-        var result = await UiOps.RunAsync(() => PartesSvc.GetByIdAsync(idParteHora), "No se pudo cargar el parte de horas.");
-        if (!result.Success || result.Value is null)
-        {
-            SetFeedback(result.Feedback ?? new AppUiMessage { Severity = AppUiFeedbackSeverity.Warning, Title = "Parte no disponible", Message = "El parte seleccionado ya no existe." });
-            await LoadTicketPartesAsync();
-            return;
-        }
-
-        var detail = result.Value;
-        _editingTicketParteHoraId = detail.IdParteHora;
-        _ticketParteForm = new ParteHoraSaveRequest
-        {
-            IdParteHora = detail.IdParteHora,
-            Fecha = detail.Fecha,
-            ClienteCodigo = detail.ClienteCodigo,
-            IdContacto = detail.IdContacto,
-            IdTicket = detail.IdTicket,
-            IdTecnico = detail.IdTecnico,
-            Usuario = detail.Usuario,
-            TipoTrabajo = detail.TipoTrabajo,
-            Minutos = detail.Minutos,
-            Facturable = detail.Facturable,
-            Excedente = detail.Excedente,
-            Estado = ParteHoraEstadoKeys.Presentado,
-            Descripcion = detail.Descripcion,
-            UsuarioAccion = AppUserSession.GetCurrentUserName(Environment.UserName)
-        };
-        _ticketParteLineas =
-        [
-            new TicketParteHoraLineaForm
-            {
-                IdTecnico = detail.IdTecnico,
-                TipoTrabajo = detail.TipoTrabajo,
-                Minutos = detail.Minutos,
-                Descripcion = detail.Descripcion
-            }
-        ];
-    }
-
-    private async Task BorrarParteVinculadoAsync(long idParteHora)
-    {
-        _savingParteHora = true;
-        try
-        {
-            var result = await UiOps.RunAsync(() => PartesSvc.DeleteAsync(idParteHora, AppUserSession.GetCurrentUserName(Environment.UserName)), "No se pudo borrar el parte de horas.");
-            if (!result.Success)
-            {
-                SetFeedback(result.Feedback);
-                return;
-            }
-
-            SetFeedback(AppUiMessage.Success("Parte borrado", "El parte fue dado de baja."));
-            if (_editingTicketParteHoraId == idParteHora)
-                ResetTicketParteHoraForm();
-            await LoadTicketPartesAsync();
-        }
-        finally
-        {
-            _savingParteHora = false;
-        }
-    }
-
-    private void ResetTicketParteHoraForm()
-    {
-        var usuario = AppUserSession.GetCurrentUserName(Environment.UserName);
-        _editingTicketParteHoraId = null;
-        _ticketParteForm = new ParteHoraSaveRequest
-        {
-            Fecha = DateTime.Today,
-            ClienteCodigo = _detail?.ClienteCodigo ?? _form.ClienteCodigo ?? string.Empty,
-            IdContacto = _detail?.IdContacto ?? _form.IdContacto,
-            IdTicket = _detail?.IdTicket,
-            IdTecnico = _detail?.IdTecnico ?? _form.IdTecnico ?? string.Empty,
-            Usuario = usuario,
-            UsuarioAccion = usuario,
-            TipoTrabajo = ParteHoraTipoTrabajoKeys.Soporte,
-            Minutos = 15,
-            Estado = ParteHoraEstadoKeys.Presentado,
-            Facturable = true
-        };
-        _ticketParteLineas =
-        [
-            new TicketParteHoraLineaForm
-            {
-                IdTecnico = _ticketParteForm.IdTecnico,
-                TipoTrabajo = ParteHoraTipoTrabajoKeys.Soporte,
-                Minutos = 15
-            }
-        ];
-    }
-
-    private void AddTicketParteLinea()
-    {
-        var previous = _ticketParteLineas.LastOrDefault();
-        _ticketParteLineas.Add(new TicketParteHoraLineaForm
-        {
-            IdTecnico = previous?.IdTecnico ?? _ticketParteForm.IdTecnico,
-            TipoTrabajo = previous?.TipoTrabajo ?? ParteHoraTipoTrabajoKeys.Soporte,
-            Minutos = 15
-        });
-    }
-
-    private void RemoveTicketParteLinea(int index)
-    {
-        if (_ticketParteLineas.Count <= 1 || index < 0 || index >= _ticketParteLineas.Count)
-            return;
-
-        _ticketParteLineas.RemoveAt(index);
-    }
-
-    private Task HandleTicketParteLineaKeyDownAsync(KeyboardEventArgs args, int index)
-    {
-        if (string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase))
-            return InsertTicketParteLineaAfterAsync(index);
-
-        return Task.CompletedTask;
-    }
-
-    private Task InsertTicketParteLineaAfterAsync(int index)
-    {
-        var previous = index >= 0 && index < _ticketParteLineas.Count ? _ticketParteLineas[index] : _ticketParteLineas.LastOrDefault();
-        var nueva = new TicketParteHoraLineaForm
-        {
-            IdTecnico = previous?.IdTecnico ?? _ticketParteForm.IdTecnico,
-            TipoTrabajo = previous?.TipoTrabajo ?? ParteHoraTipoTrabajoKeys.Soporte,
-            Minutos = 15
-        };
-
-        if (index < 0 || index >= _ticketParteLineas.Count - 1)
-            _ticketParteLineas.Add(nueva);
-        else
-            _ticketParteLineas.Insert(index + 1, nueva);
-
-        _pendingTicketParteLineaDescripcionFocusIndex = Math.Min(index + 1, _ticketParteLineas.Count - 1);
-        return Task.CompletedTask;
-    }
-
-    private async Task GuardarParteHoraTicketAsync()
-    {
-        if (_detail is null)
-            return;
-
-        _savingParteHora = true;
-        try
-        {
-            var usuario = AppUserSession.GetCurrentUserName(Environment.UserName);
-            var lineas = _ticketParteLineas
-                .Where(linea => linea.Minutos > 0 || !string.IsNullOrWhiteSpace(linea.Descripcion) || !string.IsNullOrWhiteSpace(linea.IdTecnico))
-                .ToList();
-
-            if (lineas.Count == 0)
-                lineas.Add(new TicketParteHoraLineaForm { IdTecnico = _ticketParteForm.IdTecnico, TipoTrabajo = ParteHoraTipoTrabajoKeys.Soporte, Minutos = 15 });
-
-            if (lineas.Any(linea => string.IsNullOrWhiteSpace(linea.Descripcion)))
-            {
-                SetFeedback(new AppUiMessage { Severity = AppUiFeedbackSeverity.Warning, Title = "Tarea requerida", Message = "Todas las lineas del parte deben tener descripcion de tarea." });
-                return;
-            }
-
-            var lineIndex = 0;
-            foreach (var linea in lineas)
-            {
-                var request = new ParteHoraSaveRequest
-                {
-                    IdParteHora = lineIndex == 0 ? _editingTicketParteHoraId : null,
-                    Fecha = _ticketParteForm.Fecha,
-                    ClienteCodigo = _detail.ClienteCodigo,
-                    IdContacto = _detail.IdContacto,
-                    IdTicket = _detail.IdTicket,
-                    IdTecnico = linea.IdTecnico,
-                    Usuario = usuario,
-                    TipoTrabajo = linea.TipoTrabajo,
-                    Minutos = linea.Minutos,
-                    Facturable = _ticketParteForm.Facturable,
-                    Excedente = _ticketParteForm.Excedente,
-                    Estado = ParteHoraEstadoKeys.Presentado,
-                    Descripcion = linea.Descripcion,
-                    UsuarioAccion = usuario
-                };
-
-                var result = await UiOps.RunAsync(() => PartesSvc.SaveAsync(request), "No se pudo guardar el parte de horas.");
-                if (!result.Success)
-                {
-                    SetFeedback(result.Feedback);
-                    return;
-                }
-
-                lineIndex++;
-            }
-
-            SetFeedback(AppUiMessage.Success(_editingTicketParteHoraId.HasValue ? "Parte actualizado" : "Parte guardado", lineas.Count == 1 ? "La hora quedo vinculada al ticket." : $"Se vincularon {lineas.Count} lineas de trabajo al ticket."));
-            var id = _detail.IdTicket;
-            await AbrirTicketAsync(id, updateUrl: false);
-            _ticketEditorTab = TicketEditorTabParteHora;
-        }
-        finally
-        {
-            _savingParteHora = false;
-        }
-    }
-
-    private IEnumerable<string> GetTicketParteTiposVisibles()
-        => _partesLookups.TiposTrabajo.Where(tipo => !string.Equals(tipo, ParteHoraTipoTrabajoKeys.Viaje, StringComparison.OrdinalIgnoreCase));
-
-    private static string GetTicketParteLineaDescripcionId(int index)
-        => $"ticket-parte-linea-desc-{index.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
 
     private bool NavigateToTicketUrl(long idTicket)
     {
-        var target = QueryHelpers.AddQueryString("/tickets", "id", idTicket.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        var target = QueryHelpers.AddQueryString(RouteContext.BuildRoute("/tickets"), "id", idTicket.ToString(System.Globalization.CultureInfo.InvariantCulture));
         if (string.Equals(Nav.ToBaseRelativePath(Nav.Uri), target.TrimStart('/'), StringComparison.Ordinal))
             return false;
 
@@ -2241,7 +1501,7 @@
             return;
         }
 
-        SetFeedback(AppUiMessage.Success("Etapa actualizada", "El ticket se movió correctamente."));
+        SetFeedback(AppUiMessage.Success("Etapa actualizada", "El ticket se moviÃ³ correctamente."));
         await BuscarAsync(keepCurrent: true);
     }
 
@@ -2355,7 +1615,7 @@
         _ticketContactSuggestions = [];
     }
 
-    private async Task ToggleTicketTagAsync(int idEtiqueta, ChangeEventArgs args)
+    private void ToggleTicketTag(int idEtiqueta, ChangeEventArgs args)
     {
         var selected = args.Value is bool flag && flag;
         if (selected)
@@ -2367,8 +1627,6 @@
         {
             _formTagIds.Remove(idEtiqueta);
         }
-
-        await AutoGuardarTicketAsync();
     }
 
     private void OpenTagManager()
@@ -2390,14 +1648,6 @@
     {
         if (string.Equals(args.Key, "Escape", StringComparison.OrdinalIgnoreCase))
             CloseTagManager();
-    }
-
-    private async Task AutoGuardarTicketAsync()
-    {
-        if (_isNew || _detail is null || _saving)
-            return;
-
-        await GuardarAsync();
     }
 
     private void NuevaEtiqueta()
@@ -2435,7 +1685,7 @@
 
             await CargarLookupsAsync();
             NuevaEtiqueta();
-            SetFeedback(AppUiMessage.Success("Etiqueta guardada", "La etiqueta quedÃ³ disponible para clasificar tickets."));
+            SetFeedback(AppUiMessage.Success("Etiqueta guardada", "La etiqueta quedÃƒÂ³ disponible para clasificar tickets."));
         }
         finally
         {
@@ -2470,7 +1720,7 @@
             await CargarLookupsAsync();
             await BuscarAsync(keepCurrent: true);
             NuevaEtiqueta();
-            SetFeedback(AppUiMessage.Success("Etiqueta eliminada", "La etiqueta se desactivÃ³ y ya no aparece para nuevos filtros."));
+            SetFeedback(AppUiMessage.Success("Etiqueta eliminada", "La etiqueta se desactivÃƒÂ³ y ya no aparece para nuevos filtros."));
         }
         finally
         {
@@ -2500,7 +1750,7 @@
                 };
                 var result = await UiOps.RunAsync(() => TicketsSvc.CreateAsync(create), "No se pudo crear el ticket.");
                 if (!result.Success) { SetFeedback(result.Feedback); return; }
-                SetFeedback(AppUiMessage.Success("Ticket creado", "El ticket quedó listo para el equipo de soporte."));
+                SetFeedback(AppUiMessage.Success("Ticket creado", "El ticket quedÃ³ listo para el equipo de soporte."));
                 await BuscarAsync();
                 await AbrirTicketAsync(result.Value);
             }
@@ -2570,15 +1820,12 @@
             ApplyViewSettings(BuildDefaultViewSettings(), string.Empty);
             return;
         }
-        var result = await UiOps.RunAsync(() => TicketsSvc.GetViewSettingsAsync(currentUser), "No se pudo cargar la configuración de vista.");
+        var result = await UiOps.RunAsync(() => TicketsSvc.GetViewSettingsAsync(currentUser), "No se pudo cargar la configuraciÃ³n de vista.");
         ApplyViewSettings(result.Success && result.Value is not null ? result.Value : BuildDefaultViewSettings(), currentUser);
     }
 
     private void ApplyViewSettings(TicketViewSettingsDto settings, string userName)
     {
-        if (!string.Equals(_viewSettings.AgruparPor, settings.AgruparPor, StringComparison.OrdinalIgnoreCase))
-            _collapsedListGroups.Clear();
-
         _viewSettings = settings;
         _viewSettingsUserName = userName;
         _viewSettingsLoaded = true;
@@ -2634,16 +1881,16 @@
     {
         if (string.IsNullOrWhiteSpace(CurrentUserName))
         {
-            SetFeedback(new AppUiMessage { Severity = AppUiFeedbackSeverity.Warning, Title = "Sesión requerida", Message = "Necesitás iniciar sesión para guardar la configuración de vista." });
+            SetFeedback(new AppUiMessage { Severity = AppUiFeedbackSeverity.Warning, Title = "SesiÃ³n requerida", Message = "NecesitÃ¡s iniciar sesiÃ³n para guardar la configuraciÃ³n de vista." });
             return;
         }
 
         var settings = new TicketViewSettingsDto { AgruparPor = _draftAgruparPor, Columnas = CloneColumns(_viewSettingsDraft) };
-        var result = await UiOps.RunAsync(async () => { await TicketsSvc.SaveViewSettingsAsync(CurrentUserName, settings); return true; }, "No se pudo guardar la configuración de vista.");
+        var result = await UiOps.RunAsync(async () => { await TicketsSvc.SaveViewSettingsAsync(CurrentUserName, settings); return true; }, "No se pudo guardar la configuraciÃ³n de vista.");
         if (!result.Success) { SetFeedback(result.Feedback); return; }
         ApplyViewSettings(settings, CurrentUserName);
         CloseViewSettings();
-        SetFeedback(AppUiMessage.Success("Vista guardada", "La configuración del listado quedó actualizada para tu usuario."));
+        SetFeedback(AppUiMessage.Success("Vista guardada", "La configuraciÃ³n del listado quedÃ³ actualizada para tu usuario."));
     }
 
     private IReadOnlyList<TicketViewColumnDto> GetVisibleColumns()
@@ -2709,29 +1956,11 @@
     {
         return _viewSettings.AgruparPor switch
         {
-            TicketViewGroupKeys.Prioridad => _listItems.GroupBy(x => RenderPriority(x.Prioridad)).Select(g => BuildGridGroup(TicketViewGroupKeys.Prioridad, g.Key, g.ToList())).ToList(),
-            TicketViewGroupKeys.Tecnico => _listItems.GroupBy(x => DisplayOrFallback(x.TecnicoNombre, "Sin asignar")).Select(g => BuildGridGroup(TicketViewGroupKeys.Tecnico, g.Key, g.ToList())).ToList(),
-            TicketViewGroupKeys.Estado => _listItems.GroupBy(x => x.EstadoNombre).Select(g => BuildGridGroup(TicketViewGroupKeys.Estado, g.Key, g.ToList())).ToList(),
-            _ => [new TicketGridGroup { Key = "sin-agrupar", Label = string.Empty, ShowHeader = false, Items = _listItems.ToList() }]
+            TicketViewGroupKeys.Prioridad => _listItems.GroupBy(x => RenderPriority(x.Prioridad)).Select(g => new TicketGridGroup { Label = g.Key, ShowHeader = true, Items = g.ToList() }).ToList(),
+            TicketViewGroupKeys.Tecnico => _listItems.GroupBy(x => DisplayOrFallback(x.TecnicoNombre, "Sin asignar")).Select(g => new TicketGridGroup { Label = g.Key, ShowHeader = true, Items = g.ToList() }).ToList(),
+            TicketViewGroupKeys.Estado => _listItems.GroupBy(x => x.EstadoNombre).Select(g => new TicketGridGroup { Label = g.Key, ShowHeader = true, Items = g.ToList() }).ToList(),
+            _ => [new TicketGridGroup { Label = string.Empty, ShowHeader = false, Items = _listItems.ToList() }]
         };
-    }
-
-    private static TicketGridGroup BuildGridGroup(string groupType, string label, List<TicketGridItemDto> items)
-        => new()
-        {
-            Key = $"{groupType}:{label.Trim().ToUpperInvariant()}",
-            Label = label,
-            ShowHeader = true,
-            Items = items
-        };
-
-    private bool IsListGroupCollapsed(string key)
-        => _collapsedListGroups.Contains(key);
-
-    private void ToggleListGroup(string key)
-    {
-        if (!_collapsedListGroups.Add(key))
-            _collapsedListGroups.Remove(key);
     }
 
     private MarkupString RenderColumn(TicketGridItemDto item, string key)
@@ -2773,7 +2002,7 @@
     private string CurrentUserName => AppUserSession.GetCurrentUserName(string.Empty).Trim();
 
     private string BuildDetailSubtitle()
-        => _detail is null ? string.Empty : $"{DisplayOrFallback(_detail.ClienteNombre, _detail.ContactoNombre, "Sin contacto")} · {_detail.EstadoNombre} · {RenderPriority(_detail.Prioridad)}";
+        => _detail is null ? string.Empty : $"{DisplayOrFallback(_detail.ClienteNombre, _detail.ContactoNombre, "Sin contacto")} Â· {_detail.EstadoNombre} Â· {RenderPriority(_detail.Prioridad)}";
 
     private IReadOnlyList<SmartFilterChip> BuildTicketFilterChips()
     {
@@ -2799,7 +2028,7 @@
         if (_filters.TieneMensajes.HasValue)
             chips.Add(new("mensajes", _filters.TieneMensajes.Value ? "Con mensajes" : "Sin mensajes"));
         if (!string.IsNullOrWhiteSpace(_filters.FechaRapida))
-            chips.Add(new("fecha", _filters.FechaRapida == "hoy" ? "Creados hoy" : "Actualizados 7 días"));
+            chips.Add(new("fecha", _filters.FechaRapida == "hoy" ? "Creados hoy" : "Actualizados 7 dÃ­as"));
 
         for (var i = 0; i < _filters.Reglas.Count; i++)
             chips.Add(new($"rule:{i}", $"{GetTicketRuleFieldLabel(_filters.Reglas[i].Campo)} {GetRuleOperatorLabel(_filters.Reglas[i].Operador)} {_filters.Reglas[i].Valor}".Trim()));
@@ -2828,19 +2057,19 @@
         {
             "equals" => "es igual a",
             "starts" => "empieza con",
-            "empty" => "está vacío",
-            "not-empty" => "no está vacío",
+            "empty" => "estÃ¡ vacÃ­o",
+            "not-empty" => "no estÃ¡ vacÃ­o",
             _ => "contiene"
         };
 
     private static string GetTicketRuleFieldLabel(string? field)
         => (field ?? string.Empty).Trim().ToLowerInvariant() switch
         {
-            "descripcion" => "Descripción",
+            "descripcion" => "DescripciÃ³n",
             "cliente" => "Cliente",
             "contacto" => "Contacto",
-            "tecnico" => "Técnico",
-            _ => "Título"
+            "tecnico" => "TÃ©cnico",
+            _ => "TÃ­tulo"
         };
 
     private static string? EmptyToNull(string? value)
@@ -2922,48 +2151,6 @@
             _ => "Sin prioridad"
         };
 
-    private static string LabelParteTipo(string value) => value switch
-    {
-        ParteHoraTipoTrabajoKeys.Soporte => "Soporte",
-        ParteHoraTipoTrabajoKeys.Desarrollo => "Desarrollo",
-        ParteHoraTipoTrabajoKeys.Implementacion => "Implementación",
-        ParteHoraTipoTrabajoKeys.Capacitacion => "Capacitación",
-        ParteHoraTipoTrabajoKeys.Reunion => "Reunión",
-        ParteHoraTipoTrabajoKeys.Viaje => "Viaje",
-        ParteHoraTipoTrabajoKeys.Interno => "Interno",
-        _ => value
-    };
-
-    private static string FormatParteMinutes(int minutes)
-    {
-        var safe = Math.Max(0, minutes);
-        return $"{safe / 60}h {safe % 60:00}m";
-    }
-
-    private static string FormatActivityType(string value) => value switch
-    {
-        "EDICION" => "Edición",
-        "CAMBIO" => "Cambio",
-        "HORAS" => "Horas",
-        "NOTA" => "Nota",
-        "CREACION" => "Creación",
-        _ => string.IsNullOrWhiteSpace(value) ? "Actividad" : value.ToLowerInvariant()
-    };
-
-    private static string FormatActivityDescription(TicketActividadDto activity)
-    {
-        if (string.IsNullOrWhiteSpace(activity.Descripcion))
-            return "Movimiento registrado.";
-
-        if (string.Equals(activity.TipoActividad, "EDICION", StringComparison.OrdinalIgnoreCase)
-            && activity.Descripcion.StartsWith("Ticket actualizado.", StringComparison.OrdinalIgnoreCase))
-            return activity.Descripcion.Length > "Ticket actualizado.".Length
-                ? $"Ticket actualizado - {activity.Descripcion["Ticket actualizado.".Length..].Trim(' ', '-', '.')}"
-                : "Ticket actualizado.";
-
-        return activity.Descripcion;
-    }
-
     private static string DisplayOrFallback(params string?[] values)
         => values.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x))?.Trim() ?? string.Empty;
 
@@ -3026,7 +2213,7 @@
 
     private static bool IsTicketsInitializationPending(string? message)
         => !string.IsNullOrWhiteSpace(message)
-           && message.Contains("Tickets de asistencia todavía no está inicializado", StringComparison.OrdinalIgnoreCase);
+           && message.Contains("Tickets de asistencia todavÃ­a no estÃ¡ inicializado", StringComparison.OrdinalIgnoreCase);
 
     private static string GetFeedbackClass(AppUiMessage message)
         => message.Severity switch
@@ -3039,7 +2226,6 @@
 
     private sealed class TicketGridGroup
     {
-        public string Key { get; init; } = string.Empty;
         public string Label { get; init; } = string.Empty;
         public bool ShowHeader { get; init; }
         public List<TicketGridItemDto> Items { get; init; } = [];

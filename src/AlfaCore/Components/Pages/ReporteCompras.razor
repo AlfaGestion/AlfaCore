@@ -1,26 +1,27 @@
-@page "/compras/reportes"
+﻿@page "/compras/reportes"
+@page "/{idweb}/{idbase:int}/compras/reportes"
 @inject AlfaCore.Services.IReporteComprasService ReporteService
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject IJSRuntime Js
 
-<PageTitle>Reportes de Compras | Alfa Gestión</PageTitle>
+<PageTitle>Reportes de Compras | Alfa GestiÃ³n</PageTitle>
 
 <section class="page-grid">
 
     <div class="page-intro">
         <div>
             <h2 class="page-intro__title">Reportes de Compras</h2>
-            <p class="page-intro__text">Generador de informes y estadísticas del módulo de compras.</p>
+            <p class="page-intro__text">Generador de informes y estadÃ­sticas del mÃ³dulo de compras.</p>
         </div>
     </div>
 
-    @* ── Panel de parámetros ──────────────────────────────────────────── *@
+    @* â”€â”€ Panel de parÃ¡metros â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ *@
     <section class="panel-card filters-card smart-search-card">
 
         <div class="panel-card__header" style="margin-bottom:0.5rem;">
             <div>
-                <h3 class="panel-card__title">Parámetros</h3>
-                <p class="panel-card__subtitle">Período, filtros y tipo de reporte</p>
+                <h3 class="panel-card__title">ParÃ¡metros</h3>
+                <p class="panel-card__subtitle">PerÃ­odo, filtros y tipo de reporte</p>
             </div>
         </div>
 
@@ -48,7 +49,7 @@
             <div class="smart-search__bar">
                 <i class="bi bi-search"></i>
                 <InputText @bind-Value="_filtros.Proveedor"
-                           placeholder="Buscar por proveedor o cuenta…" />
+                           placeholder="Buscar por proveedor o cuentaâ€¦" />
                 <button type="button"
                         class="smart-search__toggle"
                         @onclick="TogglePanel"
@@ -78,7 +79,7 @@
             {
                 <div class="smart-search__panel">
                     <div class="smart-search__column">
-                        <h4><i class="bi bi-calendar3"></i> Período</h4>
+                        <h4><i class="bi bi-calendar3"></i> PerÃ­odo</h4>
                         <div class="field field--sm">
                             <label>Desde</label>
                             <InputDate @bind-Value="_filtros.FechaDesde" />
@@ -91,7 +92,7 @@
                             <button class="btn btn--ghost btn--sm" @onclick='() => SetRango("hoy")'>Hoy</button>
                             <button class="btn btn--ghost btn--sm" @onclick='() => SetRango("mes")'>Este mes</button>
                             <button class="btn btn--ghost btn--sm" @onclick='() => SetRango("mes-anterior")'>Mes ant.</button>
-                            <button class="btn btn--ghost btn--sm" @onclick='() => SetRango("anio")'>Año actual</button>
+                            <button class="btn btn--ghost btn--sm" @onclick='() => SetRango("anio")'>AÃ±o actual</button>
                         </div>
                     </div>
                     <div class="smart-search__column">
@@ -116,22 +117,22 @@
         {
             <div class="filters-summary" style="margin-top:0.5rem;">
                 <span class="filters-summary__label">Nota</span>
-                <span class="filters-summary__text">Para Cuenta Corriente es recomendable filtrar por proveedor. Sin filtro se devuelven todos los asientos contables del período.</span>
+                <span class="filters-summary__text">Para Cuenta Corriente es recomendable filtrar por proveedor. Sin filtro se devuelven todos los asientos contables del perÃ­odo.</span>
             </div>
         }
 
         <div class="actions" style="margin-top:0.75rem;">
             <button class="btn btn--primary" @onclick="GenerarAsync" disabled="@_isLoading">
-                @(_isLoading ? "Generando…" : "Generar reporte")
+                @(_isLoading ? "Generandoâ€¦" : "Generar reporte")
             </button>
             <button class="btn btn--ghost" @onclick="LimpiarAsync" disabled="@_isLoading">Limpiar</button>
         </div>
     </section>
 
-    @* ── Estado de carga / error ─────────────────────────────────────── *@
+    @* â”€â”€ Estado de carga / error â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ *@
     @if (_isLoading)
     {
-        <div class="loading">Generando reporte…</div>
+        <div class="loading">Generando reporteâ€¦</div>
     }
     else if (_error is not null)
     {
@@ -145,13 +146,13 @@
                 }
                 @if (_error.HasCode)
                 {
-                    <p style="font-size:0.78rem;color:var(--color-text-muted);">Código: @_error.Code</p>
+                    <p style="font-size:0.78rem;color:var(--color-text-muted);">CÃ³digo: @_error.Code</p>
                 }
             </div>
         </section>
     }
 
-    @* ── Resultados: Resumen de Compras ─────────────────────────────── *@
+    @* â”€â”€ Resultados: Resumen de Compras â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ *@
     @if (_mostrarResultados && _tipoReporte == TipoReporteCompras.ResumenDeCompras && _resumen is not null)
     {
         <div class="kpi-grid">
@@ -163,7 +164,7 @@
         </div>
 
         <DataTable Titulo="Resumen por proveedor"
-                   Subtitulo="@($"{_resumen.Filas.Count} proveedores en el período")">
+                   Subtitulo="@($"{_resumen.Filas.Count} proveedores en el perÃ­odo")">
             <Toolbar>
                 <a class="btn btn--ghost" href="@GetExcelUrl("resumen")" title="Exportar a Excel">
                     <i class="bi bi-file-earmark-excel"></i>
@@ -192,8 +193,8 @@
                         <td colspan="7">
                             <div class="empty-state">
                                 <span class="empty-state__eyebrow">Sin resultados</span>
-                                <h3>Sin comprobantes en el período</h3>
-                                <p>Ampliá el rango de fechas o revisá los filtros aplicados.</p>
+                                <h3>Sin comprobantes en el perÃ­odo</h3>
+                                <p>AmpliÃ¡ el rango de fechas o revisÃ¡ los filtros aplicados.</p>
                             </div>
                         </td>
                     </tr>
@@ -213,7 +214,7 @@
                         </tr>
                     }
                     <tr class="data-table__totals">
-                        <td colspan="3" style="text-align:right; font-weight:600; font-size:0.8rem; color:var(--color-text-muted);">Total página</td>
+                        <td colspan="3" style="text-align:right; font-weight:600; font-size:0.8rem; color:var(--color-text-muted);">Total pÃ¡gina</td>
                         <td style="text-align:right; font-weight:700;">@Moneda(_resumen.NetoTotal)</td>
                         <td style="text-align:right; font-weight:700;">@Moneda(_resumen.IvaTotal)</td>
                         <td style="text-align:right; font-weight:700;">@Moneda(_resumen.TotalComprado)</td>
@@ -224,7 +225,7 @@
         </DataTable>
     }
 
-    @* ── Resultados: Detalle de Compras ─────────────────────────────── *@
+    @* â”€â”€ Resultados: Detalle de Compras â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ *@
     @if (_mostrarResultados && _tipoReporte == TipoReporteCompras.DetalleDeCompras && _detalleCompras is not null)
     {
         <DataTable Titulo="Detalle de comprobantes"
@@ -235,7 +236,7 @@
                     <div class="pagination">
                         <button class="btn btn--ghost" @onclick="PaginaAnteriorAsync"
                                 disabled="@(_filtros.Pagina <= 1)">Anterior</button>
-                        <span>Página @_filtros.Pagina de @_detalleCompras.TotalPaginas</span>
+                        <span>PÃ¡gina @_filtros.Pagina de @_detalleCompras.TotalPaginas</span>
                         <button class="btn btn--ghost" @onclick="PaginaSiguienteAsync"
                                 disabled="@(_filtros.Pagina >= _detalleCompras.TotalPaginas)">Siguiente</button>
                     </div>
@@ -271,8 +272,8 @@
                         <td colspan="11">
                             <div class="empty-state">
                                 <span class="empty-state__eyebrow">Sin resultados</span>
-                                <h3>Sin comprobantes en el período</h3>
-                                <p>Ampliá el rango de fechas o revisá los filtros aplicados.</p>
+                                <h3>Sin comprobantes en el perÃ­odo</h3>
+                                <p>AmpliÃ¡ el rango de fechas o revisÃ¡ los filtros aplicados.</p>
                             </div>
                         </td>
                     </tr>
@@ -303,7 +304,7 @@
                     }
                     <tr class="data-table__totals">
                         <td colspan="6" style="text-align:right; font-weight:600; font-size:0.8rem; color:var(--color-text-muted);">
-                            Total página (@_detalleCompras.Items.Count comprobantes)
+                            Total pÃ¡gina (@_detalleCompras.Items.Count comprobantes)
                         </td>
                         <td style="text-align:right; font-weight:700;">@Moneda(TotalNetoDetalle)</td>
                         <td style="text-align:right; font-weight:700;">@Moneda(TotalIvaDetalle)</td>
@@ -315,7 +316,7 @@
         </DataTable>
     }
 
-    @* ── Resultados: Cuenta Corriente ──────────────────────────────── *@
+    @* â”€â”€ Resultados: Cuenta Corriente â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ *@
     @if (_mostrarResultados && _tipoReporte == TipoReporteCompras.CuentaCorriente && _cuentaCorriente is not null)
     {
         <div class="kpi-grid">
@@ -336,7 +337,7 @@
                     <div class="pagination">
                         <button class="btn btn--ghost" @onclick="PaginaAnteriorAsync"
                                 disabled="@(_filtros.Pagina <= 1)">Anterior</button>
-                        <span>Página @_filtros.Pagina de @_cuentaCorriente.TotalPaginas</span>
+                        <span>PÃ¡gina @_filtros.Pagina de @_cuentaCorriente.TotalPaginas</span>
                         <button class="btn btn--ghost" @onclick="PaginaSiguienteAsync"
                                 disabled="@(_filtros.Pagina >= _cuentaCorriente.TotalPaginas)">Siguiente</button>
                     </div>
@@ -361,8 +362,8 @@
                         <td colspan="8">
                             <div class="empty-state">
                                 <span class="empty-state__eyebrow">Sin resultados</span>
-                                <h3>Sin movimientos en el período</h3>
-                                <p>Para Cuenta Corriente filtrá por proveedor para ver sus movimientos en MV_ASIENTOS.</p>
+                                <h3>Sin movimientos en el perÃ­odo</h3>
+                                <p>Para Cuenta Corriente filtrÃ¡ por proveedor para ver sus movimientos en MV_ASIENTOS.</p>
                             </div>
                         </td>
                     </tr>
@@ -412,7 +413,7 @@
     private static readonly System.Globalization.CultureInfo Cultura =
         System.Globalization.CultureInfo.GetCultureInfo("es-AR");
 
-    // Totales de la página actual del detalle
+    // Totales de la pÃ¡gina actual del detalle
     private decimal TotalNetoDetalle  => _detalleCompras?.Items.Sum(x => x.Neto)  ?? 0;
     private decimal TotalIvaDetalle   => _detalleCompras?.Items.Sum(x => x.Iva)   ?? 0;
     private decimal TotalTotalDetalle => _detalleCompras?.Items.Sum(x => x.Total) ?? 0;
@@ -577,11 +578,11 @@
 
     private string GetSubtituloDetalle() =>
         _detalleCompras is null ? string.Empty
-            : $"{_detalleCompras.TotalRegistros} comprobantes — página {_filtros.Pagina} de {_detalleCompras.TotalPaginas}";
+            : $"{_detalleCompras.TotalRegistros} comprobantes â€” pÃ¡gina {_filtros.Pagina} de {_detalleCompras.TotalPaginas}";
 
     private string GetSubtituloCC() =>
         _cuentaCorriente is null ? string.Empty
-            : $"{_cuentaCorriente.TotalRegistros} movimientos — saldo: {Moneda(_cuentaCorriente.SaldoTotal)}";
+            : $"{_cuentaCorriente.TotalRegistros} movimientos â€” saldo: {Moneda(_cuentaCorriente.SaldoTotal)}";
 
     private static string Moneda(decimal v) =>
         v.ToString("$ #,##0.00", System.Globalization.CultureInfo.GetCultureInfo("es-AR"));

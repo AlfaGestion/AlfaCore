@@ -172,6 +172,13 @@
     outline: none;
 }
 
+.lookup-autocomplete__item--create:hover,
+.lookup-autocomplete__item--create:focus-visible {
+    background: rgba(8, 145, 178, .98) !important;
+    color: #ffffff !important;
+    outline: none;
+}
+
 .lookup-autocomplete__title {
     display: block;
     width: 100%;

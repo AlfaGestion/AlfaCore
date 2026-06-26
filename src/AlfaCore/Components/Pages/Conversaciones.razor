@@ -1,4 +1,5 @@
-@page "/conversaciones"
+﻿@page "/conversaciones"
+@page "/{idweb}/{idbase:int}/conversaciones"
 @using System.IO
 @using System.Net
 @using System.Text.Json
@@ -8,7 +9,6 @@
 @inject AlfaCore.Services.IContactosService ContactosSvc
 @inject AlfaCore.Services.ICuentasComercialesService CuentasSvc
 @inject AlfaCore.Services.ITicketsService TicketsSvc
-@inject AlfaCore.Services.IPartesHorasService PartesHorasSvc
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject AlfaCore.Services.IFloatingWindowService FloatingWindows
 @inject IJSRuntime JS
@@ -17,116 +17,12 @@
 
 <PageTitle>@ConversationPageTitle</PageTitle>
 
-<style>
-    .conversations-hours-lines {
-        display: grid;
-        gap: 8px;
-        grid-column: 1 / -1;
-    }
-
-    .conversations-hours-lines__header,
-    .conversations-hours-lines__row {
-        display: grid;
-        grid-template-columns: minmax(128px, .75fr) minmax(112px, .62fr) minmax(220px, 1.25fr) minmax(150px, .72fr) 38px;
-        gap: 8px;
-        align-items: center;
-    }
-
-    .conversations-hours-dialog {
-        width: min(94vw, 820px);
-    }
-
-    .conversations-hours-lines__header {
-        color: var(--color-muted);
-        font-size: 11px;
-        font-weight: 700;
-        text-transform: uppercase;
-    }
-
-    .conversations-hours-lines__row input,
-    .conversations-hours-lines__row select {
-        min-width: 0;
-        width: 100%;
-        border: 1px solid rgba(125, 161, 207, .28);
-        border-radius: 6px;
-        background: rgba(4, 12, 24, .78);
-        color: var(--color-text);
-        padding: .55rem .65rem;
-        outline: none;
-    }
-
-    .conversations-hours-lines__row input:focus,
-    .conversations-hours-lines__row select:focus {
-        border-color: rgba(8, 197, 218, .85);
-        box-shadow: 0 0 0 1px rgba(8, 197, 218, .18);
-    }
-
-    .conversations-hours-lines__row select option {
-        background: #111827;
-        color: var(--color-text);
-    }
-
-    .conversations-hours-duration {
-        display: grid;
-        grid-template-columns: minmax(62px, 1fr) minmax(70px, 1fr);
-        gap: 6px;
-        align-items: end;
-        min-width: 0;
-        width: 100%;
-        padding: 0;
-        border: 0;
-        background: transparent;
-    }
-
-    .conversations-hours-duration label {
-        min-width: 0;
-    }
-
-    .conversations-hours-duration label > span {
-        display: none;
-    }
-
-    .conversations-hours-duration span {
-        color: var(--color-muted);
-        font-size: 10px;
-        font-weight: 800;
-        text-transform: uppercase;
-    }
-
-    .conversations-hours-duration input,
-    .conversations-hours-duration select {
-        height: 36px;
-        padding-block: .35rem;
-    }
-
-    @@media (max-width: 720px) {
-        .conversations-hours-lines__header {
-            display: none;
-        }
-
-        .conversations-hours-lines__row {
-            grid-template-columns: 1fr 1fr;
-            padding: 10px;
-            border: 1px solid var(--color-border);
-            border-radius: 8px;
-        }
-
-        .conversations-hours-lines__row input[type="text"] {
-            grid-column: 1 / -1;
-        }
-
-        .conversations-hours-duration {
-            grid-column: 1 / -1;
-        }
-    }
-</style>
-
 <section class="page-grid conversations-page conversations-page--odoo @(IsMobileChatView ? "conversations-page--chat-active" : string.Empty)" @onclick="DismissConversationNoticesAsync">
     @if (_loadError is not null)
     {
         <div class="panel-card empty-state">
             <span class="empty-state__eyebrow">Conversaciones</span>
-            <h3>No fue posible cargar el módulo</h3>
+            <h3>No fue posible cargar el mÃ³dulo</h3>
             <p>@_loadError</p>
             @if (IsInitializationPending(_loadError))
             {
@@ -140,7 +36,7 @@
             <div class="conversations-mobile-header">
                 <div>
                     <h2>Conversaciones</h2>
-                    <span>@_inbox.Count conversación(es)</span>
+                    <span>@_inbox.Count conversaciÃ³n(es)</span>
                 </div>
                 <button type="button" class="conversations-mobile-icon-button" @onclick="RecargarAsync" disabled="@(_loadingInbox || _loadingConversation)" title="Recargar">
                     <i class="bi bi-arrow-clockwise"></i>
@@ -180,7 +76,7 @@
                 </button>
             </div>
 
-            <div class="conversations-mobile-quick-filters mobile-filter-chips" aria-label="Filtros rápidos">
+            <div class="conversations-mobile-quick-filters mobile-filter-chips" aria-label="Filtros rÃ¡pidos">
                 <button type="button"
                         class="conversations-mobile-chip @(_filters.Modo == "todas" ? "is-active" : string.Empty)"
                         @onclick='() => ChangeModeAsync("todas")'>
@@ -194,7 +90,7 @@
                 <button type="button"
                         class="conversations-mobile-chip @(_filters.Modo == "asignadas_a_mi" ? "is-active" : string.Empty)"
                         @onclick='() => ChangeModeAsync("asignadas_a_mi")'>
-                    Asignadas a mí
+                    Asignadas a mÃ­
                 </button>
                 <button type="button"
                         class="conversations-mobile-chip conversations-mobile-chip--icon"
@@ -224,14 +120,14 @@
                     <label for="conv-mobile-search">Buscar</label>
                     <input id="conv-mobile-search"
                            type="search"
-                           placeholder="Buscar por teléfono, cliente, contacto, email, resumen o mensaje..."
+                           placeholder="Buscar por telÃ©fono, cliente, contacto, email, resumen o mensaje..."
                            value="@_filters.Search"
                            @oninput="HandleSearchInputAsync"
                            @onkeydown="HandleSearchEnter" />
                 </div>
 
                 <div class="field">
-                    <label for="conv-mobile-my-tech">Técnico</label>
+                    <label for="conv-mobile-my-tech">TÃ©cnico</label>
                     <select id="conv-mobile-my-tech" value="@_filters.IdTecnicoActual" @onchange="HandleTechnicianFilterChangedAsync">
                         <option value="">Todos</option>
                         @foreach (var tech in _technicians)
@@ -306,7 +202,7 @@
                     <label for="conv-search">Buscar</label>
                     <input id="conv-search"
                            type="search"
-                           placeholder="Buscar por teléfono, cliente, contacto, email, resumen o mensaje..."
+                           placeholder="Buscar por telÃ©fono, cliente, contacto, email, resumen o mensaje..."
                            value="@_filters.Search"
                            @oninput="HandleSearchInputAsync"
                            @onkeydown="HandleSearchEnter"
@@ -321,7 +217,7 @@
                                     <span>Buscando contactos...</span>
                                 </div>
                             }
-                            else if (_conversationSuggestions.Count > 0 || _contactSuggestions.Count > 0 || _clientSuggestions.Count > 0)
+                            else if (_conversationSuggestions.Count > 0 || _contactSuggestions.Count > 0)
                             {
                                 @if (_conversationSuggestions.Count > 0)
                                 {
@@ -383,33 +279,6 @@
                                         </div>
                                     }
                                 }
-                                @if (_clientSuggestions.Count > 0)
-                                {
-                                    <div class="conversations-contact-suggest__header">
-                                        <span>Clientes encontrados</span>
-                                        @if (_conversationSuggestions.Count == 0 && _contactSuggestions.Count == 0)
-                                        {
-                                            <button type="button" class="btn btn--ghost btn--sm" @onclick="CloseContactSuggestions" title="Cerrar">
-                                                <i class="bi bi-x-lg"></i>
-                                            </button>
-                                        }
-                                    </div>
-                                    @foreach (var client in _clientSuggestions)
-                                    {
-                                        <div class="conversations-contact-suggest__item">
-                                            <div class="conversations-contact-suggest__main">
-                                                <strong>@client.RazonSocial</strong>
-                                                <span>@client.Codigo</span>
-                                                <small>@DisplayOrFallback(client.Telefono, client.Mail, client.Localidad)</small>
-                                            </div>
-                                            <div class="conversations-contact-suggest__actions">
-                                                <button type="button" class="btn btn--primary btn--sm" @onclick="() => SelectClientSuggestionAsync(client)">
-                                                    <i class="bi bi-search"></i> Ver conversaciones
-                                                </button>
-                                            </div>
-                                        </div>
-                                    }
-                                }
                             }
                             else
                             {
@@ -452,13 +321,13 @@
                                 style="margin-top: .45rem; width: fit-content;"
                                 @onclick="CreateWhatsAppFromSearchAsync"
                                 disabled="@_busyAction">
-                            <i class="bi bi-plus-circle-fill"></i> Crear conversación con este celular
+                            <i class="bi bi-plus-circle-fill"></i> Crear conversaciÃ³n con este celular
                         </button>
                     }
                 </div>
 
                 <div class="field">
-                    <label for="conv-my-tech">Mi técnico</label>
+                    <label for="conv-my-tech">Mi tÃ©cnico</label>
                     <select id="conv-my-tech" @bind="_filters.IdTecnicoActual">
                         <option value="">Todos</option>
                         @foreach (var tech in _technicians)
@@ -582,64 +451,15 @@
                     </div>
                 }
                 <div class="conversations-list__header">
-                    <span class="conversations-mobile-inbox-count mobile-only">@_inbox.Count</span>
-                </div>
-
-                <div class="conversations-inbox-tools desktop-only" @onclick:stopPropagation>
-                    <div class="conversations-inbox-search">
-                        <div class="conversations-inbox-searchbox">
-                            <i class="bi bi-search"></i>
-                            <input id="conv-inbox-search"
-                                   type="search"
-                                   placeholder="Buscar por telefono, cliente, contacto, email o mensaje..."
-                                   value="@_filters.Search"
-                                   @oninput="HandleSearchInputAsync"
-                                   @onkeydown="HandleSearchEnter"
-                                   @onfocus="() => _showContactSuggestions = ShouldShowContactSuggestions" />
-                            <i class="bi bi-chevron-down conversations-inbox-searchbox__caret"></i>
-                        </div>
-                        <div class="conversations-inbox-filter-panel">
-                            <div class="field">
-                                <label for="conv-inbox-tech">Mi tecnico</label>
-                                <select id="conv-inbox-tech" @bind="_filters.IdTecnicoActual">
-                                    <option value="">Todos</option>
-                                    @foreach (var tech in _technicians)
-                                    {
-                                        <option value="@tech.IdTecnico">@tech.Nombre (@tech.IdTecnico)</option>
-                                    }
-                                </select>
-                            </div>
-                            <div class="field">
-                                <label for="conv-inbox-state">Estado</label>
-                                <select id="conv-inbox-state" @bind="_filters.CodigoEstado">
-                                    <option value="">Todos</option>
-                                    <option value="@ConversacionesInboxFilters.EstadoSinFinalizar">Sin finalizar</option>
-                                    @foreach (var state in _states)
-                                    {
-                                        <option value="@state.CodigoEstado">@state.Descripcion</option>
-                                    }
-                                </select>
-                            </div>
-                            <div class="actions">
-                                <button type="button" class="btn btn--primary btn--sm" @onclick="LoadInboxAsync" disabled="@_loadingInbox">
-                                    <i class="bi bi-funnel"></i> Aplicar
-                                </button>
-                                <button type="button"
-                                        class="btn btn--ghost btn--sm"
-                                        title="Limpiar filtros"
-                                        aria-label="Limpiar filtros"
-                                        @onclick="ClearConversationFiltersAsync"
-                                        disabled="@_loadingInbox">
-                                    <i class="bi bi-eraser"></i> Limpiar
-                                </button>
-                            </div>
-                        </div>
+                    <div>
+                        <h3 class="panel-card__title">Inbox <span class="conversations-mobile-inbox-count mobile-only">@_inbox.Count</span></h3>
+                        <p class="panel-card__subtitle">@_inbox.Count conversación(es)</p>
                     </div>
                 </div>
 
                 @if (_loadingInbox && _inbox.Count == 0)
                 {
-                    <div class="loading">Cargando conversaciones…</div>
+                    <div class="loading">Cargando conversacionesâ€¦</div>
                 }
                 else if (_inbox.Count == 0)
                 {
@@ -665,7 +485,7 @@
                                         <button type="button"
                                                 class="conversation-pin @(item.FijadaPorUsuario ? "is-pinned" : string.Empty)"
                                                 title="@(item.FijadaPorUsuario ? "Desfijar para mi usuario" : "Fijar para mi usuario")"
-                                                aria-label="@(item.FijadaPorUsuario ? "Desfijar conversación" : "Fijar conversación")"
+                                                aria-label="@(item.FijadaPorUsuario ? "Desfijar conversaciÃ³n" : "Fijar conversaciÃ³n")"
                                                 @onclick:stopPropagation
                                                 @onclick="() => ToggleConversationPinAsync(item)">
                                             <i class="bi @(item.FijadaPorUsuario ? "bi-pin-angle-fill" : "bi-pin-angle")"></i>
@@ -681,7 +501,7 @@
                                     <span>@item.TelefonoWhatsApp</span>
                                     @if (!string.IsNullOrWhiteSpace(item.TecnicoNombre))
                                     {
-                                        <span>• @item.TecnicoNombre</span>
+                                        <span>â€¢ @item.TecnicoNombre</span>
                                     }
                                 </div>
                                 <div class="conversation-row__badges">
@@ -713,7 +533,7 @@
                 }
                 @if (_loadingConversation)
                 {
-                    <div class="loading">Cargando conversación…</div>
+                    <div class="loading">Cargando conversaciÃ³nâ€¦</div>
                 }
                 else if (_selectedConversation is null && IsAuditResultsMode)
                 {
@@ -763,7 +583,7 @@
                 else if (_selectedConversation is null)
                 {
                     <div class="conversations-empty conversations-empty--center">
-                        Seleccioná una conversación del panel izquierdo para verla y responder.
+                        SeleccionÃ¡ una conversaciÃ³n del panel izquierdo para verla y responder.
                     </div>
                 }
                 else
@@ -862,13 +682,13 @@
                             @if (!IsSelectedConversationClosed)
                             {
                                 <button type="button" class="btn btn--ghost btn--sm conversation-header-state__close" @onclick="CloseConversationAsync" disabled="@_busyAction">
-                                    <i class="bi bi-lock-fill"></i> Cerrar conversación
+                                    <i class="bi bi-lock-fill"></i> Cerrar conversaciÃ³n
                                 </button>
                             }
                             else
                             {
                                 <span class="conversation-header-state__closed">
-                                    <i class="bi bi-lock-fill"></i> Conversación cerrada
+                                    <i class="bi bi-lock-fill"></i> ConversaciÃ³n cerrada
                                 </span>
                             }
                         </div>
@@ -882,7 +702,7 @@
                     @if (IsWhatsAppWindowExpired && !_showStatusMenu)
                     {
                         <div class="conversations-window-banner">
-                            <span>Esta conversación superó la ventana de 24 horas de WhatsApp.</span>
+                            <span>Esta conversaciÃ³n superÃ³ la ventana de 24 horas de WhatsApp.</span>
                             <button type="button" class="btn btn--primary btn--sm" @onclick="OpenTemplatePanel" disabled="@(!CanOpenTemplatePanel)">
                                 <i class="bi bi-send-fill"></i> Enviar plantilla
                             </button>
@@ -892,7 +712,7 @@
                     @if (_ticketSelectionMode)
                     {
                         <div class="conversations-window-banner conversations-ticket-selection">
-                            <span>Seleccioná los mensajes que querés guardar dentro del ticket. Elegidos: @_selectedTicketMessageIds.Count</span>
+                            <span>SeleccionÃ¡ los mensajes que querÃ©s guardar dentro del ticket. Elegidos: @_selectedTicketMessageIds.Count</span>
                             <div class="actions">
                                 <button type="button" class="btn btn--primary btn--sm" @onclick="OpenTicketDialog" disabled="@(_selectedTicketMessageIds.Count == 0)">
                                     <i class="bi bi-check2-circle"></i> Continuar
@@ -909,7 +729,7 @@
                         @if (_messages.Count == 0)
                         {
                             <div class="conversations-empty conversations-empty--center">
-                                La conversación todavía no tiene mensajes registrados.
+                                La conversaciÃ³n todavÃ­a no tiene mensajes registrados.
                             </div>
                         }
                         else
@@ -1175,7 +995,7 @@
                                         <span>@GetMessageTypeLabel(message)</span>
                                         @if (!string.IsNullOrWhiteSpace(message.EstadoEnvio))
                                         {
-                                            <span>• @message.EstadoEnvio</span>
+                                            <span>â€¢ @message.EstadoEnvio</span>
                                         }
                                     </div>
                                     @if (IsOutgoingMessage(message))
@@ -1275,7 +1095,7 @@
                                           @ref="_replyTextArea"
                                           @key="_selectedConversationId"
                                           rows="2"
-                                          placeholder="@(_selectedConversation.Canal == "INTERNO" ? "Escribí un mensaje para el equipo…" : "Escribí una respuesta para WhatsApp…")"
+                                          placeholder="@(_selectedConversation.Canal == "INTERNO" ? "EscribÃ­ un mensaje para el equipoâ€¦" : "EscribÃ­ una respuesta para WhatsAppâ€¦")"
                                           @onfocus="MarkSelectedConversationAsRead"
                                           @onfocusin="OnReplyFocusAsync"
                                           @oninput="HandleReplyInputAsync"></textarea>
@@ -1336,7 +1156,7 @@
                                 </button>
                                 <button type="button"
                                         class="btn btn--ghost"
-                                        title="Más opciones"
+                                        title="MÃ¡s opciones"
                                         @onclick="ToggleComposerTools"
                                         @onclick:stopPropagation>
                                     <i class="bi bi-plus-lg"></i>
@@ -1376,7 +1196,7 @@
                                             </label>
                                     @if (_favoriteStickers.Count == 0)
                                     {
-                                        <span class="context-card__muted">Todavía no hay stickers favoritos.</span>
+                                        <span class="context-card__muted">TodavÃ­a no hay stickers favoritos.</span>
                                     }
                                     @foreach (var sticker in _favoriteStickers)
                                     {
@@ -1398,7 +1218,7 @@
                                                 <span>Archivo</span>
                                                 <InputFile OnChange="HandleFileSelectedAsync" style="display:none" multiple accept="image/*,audio/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.zip,.rar" />
                                             </label>
-                                            <button type="button" class="btn btn--ghost conversations-tools-panel__tool @(_recording ? "is-recording" : string.Empty)" @onclick="ToggleRecordingAsync" title="@(_recording ? "Detener grabación" : "Grabar mensaje de voz")" disabled="@_uploadingAudio">
+                                            <button type="button" class="btn btn--ghost conversations-tools-panel__tool @(_recording ? "is-recording" : string.Empty)" @onclick="ToggleRecordingAsync" title="@(_recording ? "Detener grabaciÃ³n" : "Grabar mensaje de voz")" disabled="@_uploadingAudio">
                                                 <i class="bi @(_recording ? "bi-stop-circle-fill" : "bi-mic-fill")"></i>
                                                 <span>Audio</span>
                                             </button>
@@ -1411,7 +1231,7 @@
                                             <textarea id="conv-note-mobile"
                                                       @ref="_internalNoteMobileTextArea"
                                                       rows="1"
-                                                      placeholder="Escribí una nota interna visible solo para el equipo…"
+                                                      placeholder="EscribÃ­ una nota interna visible solo para el equipoâ€¦"
                                                       value="@_internalNoteText"
                                                       @oninput="HandleInternalNoteInputAsync"></textarea>
                                         </div>
@@ -1429,7 +1249,7 @@
                             <label for="conv-note">Nota interna</label>
                             <textarea id="conv-note"
                                       rows="1"
-                                      placeholder="Escribí una nota interna visible solo para el equipo…"
+                                      placeholder="EscribÃ­ una nota interna visible solo para el equipoâ€¦"
                                       @bind="_internalNoteText"></textarea>
                         </div>
                         <div class="conversations-composer__actions conversations-composer__actions--note">
@@ -1447,13 +1267,13 @@
                 </button>
                 <div class="conversations-context__section">
                     <h3 class="panel-card__title">Contexto</h3>
-                    <p class="panel-card__subtitle">Cliente, contacto y gestión</p>
+                    <p class="panel-card__subtitle">Cliente, contacto y gestiÃ³n</p>
                 </div>
 
                 @if (_selectedConversation is null)
                 {
                     <div class="conversations-empty">
-                        Seleccioná una conversación para ver sus datos.
+                        SeleccionÃ¡ una conversaciÃ³n para ver sus datos.
                     </div>
                 }
                 else
@@ -1535,7 +1355,7 @@
                                         <article class="conversations-context-ticket">
                                             <div>
                                                 <strong>@match.Ticket.CodigoVisible @match.Ticket.Titulo</strong>
-                                                <span>@match.Ticket.EstadoNombre · @RenderTicketPriority(match.Ticket.Prioridad) · @DisplayOrFallback(match.Ticket.TecnicoNombre, "Sin asignar")</span>
+                                                <span>@match.Ticket.EstadoNombre Â· @RenderTicketPriority(match.Ticket.Prioridad) Â· @DisplayOrFallback(match.Ticket.TecnicoNombre, "Sin asignar")</span>
                                                 <small>@BuildContextTicketPreview(match)</small>
                                             </div>
                                             <button type="button" class="btn btn--ghost btn--sm" @onclick="() => OpenTicket(match.Ticket.IdTicket)">
@@ -1556,9 +1376,9 @@
                     }
 
                     <div class="conversations-context__section">
-                        <h4 class="panel-card__title">Asignación</h4>
+                        <h4 class="panel-card__title">AsignaciÃ³n</h4>
                         <div class="field">
-                            <label for="conv-tech">Técnico</label>
+                            <label for="conv-tech">TÃ©cnico</label>
                             <select id="conv-tech" value="@_assignmentTechnicianId" @onchange="OnAssignmentChangedAsync" disabled="@_busyAction">
                                 <option value="">Sin asignar</option>
                                 @foreach (var tech in _technicians)
@@ -1619,7 +1439,7 @@
                 @if (ActiveContextNoteSections.Count == 0)
                 {
                     <div class="context-card" style="background:#0b1828;color:#cbd5e1;border-color:rgba(148,163,184,.28);">
-                        No hay información cargada en esta solapa.
+                        No hay informaciÃ³n cargada en esta solapa.
                     </div>
                 }
             </div>
@@ -1634,7 +1454,7 @@
             <header class="conversations-template-modal__header">
                 <div>
                     <h3 class="modal-card__title">Enviar plantilla de WhatsApp</h3>
-                    <p>La conversación queda visible detrás para revisar el contexto antes de enviar.</p>
+                    <p>La conversaciÃ³n queda visible detrÃ¡s para revisar el contexto antes de enviar.</p>
                 </div>
                 <button type="button" class="btn btn--ghost btn--sm" @onclick="CloseTemplatePanel">
                     <i class="bi bi-x-lg"></i>
@@ -1656,7 +1476,7 @@
                             }
                             else
                             {
-                                <option value="0">Seleccioná una plantilla</option>
+                                <option value="0">SeleccionÃ¡ una plantilla</option>
                                 @foreach (var template in _availableTemplates)
                                 {
                                     <option value="@template.IdPlantilla">@template.NombreVisible (@GetTemplateStatusLabel(template.EstadoMeta))</option>
@@ -1671,7 +1491,7 @@
                             <label for="conv-template-values-modal">Variables editables</label>
                             <textarea id="conv-template-values-modal"
                                       rows="4"
-                                      placeholder="Un valor por línea"
+                                      placeholder="Un valor por lÃ­nea"
                                       @bind="_templateValuesText"></textarea>
                         </div>
                     }
@@ -1742,7 +1562,7 @@
                     <article class="message-card message-card--outgoing">
                         @if (SelectedTemplate is null)
                         {
-                            <p class="message-card__text">Seleccioná una plantilla para ver el mensaje.</p>
+                            <p class="message-card__text">SeleccionÃ¡ una plantilla para ver el mensaje.</p>
                         }
                         else
                         {
@@ -1773,10 +1593,10 @@
             <div class="field">
                 <label for="hilo-nombre">Nombre del hilo</label>
                 <input id="hilo-nombre" type="text" @bind="_nuevoHiloNombre"
-                       placeholder="Ej: Revisión instalación cliente X…" />
+                       placeholder="Ej: RevisiÃ³n instalaciÃ³n cliente Xâ€¦" />
             </div>
             <div class="field">
-                <label for="hilo-tecnico">Asignar a técnico (opcional)</label>
+                <label for="hilo-tecnico">Asignar a tÃ©cnico (opcional)</label>
                 <select id="hilo-tecnico" @bind="_nuevoHiloTecnico">
                     <option value="">Sin asignar</option>
                     @foreach (var tech in _technicians)
@@ -1920,7 +1740,7 @@
         <div class="panel-card__header">
             <div>
                 <h3 class="panel-card__title">Crear ticket</h3>
-                <p class="panel-card__subtitle">@_selectedTicketMessageIds.Count mensaje(s) quedarán vinculados al ticket.</p>
+                <p class="panel-card__subtitle">@_selectedTicketMessageIds.Count mensaje(s) quedarÃ¡n vinculados al ticket.</p>
             </div>
             <button type="button" class="btn btn--ghost btn--sm" @onclick="CloseTicketDialog" disabled="@_creatingTicket">
                 <i class="bi bi-x-lg"></i>
@@ -1944,7 +1764,7 @@
                     <i class="bi bi-exclamation-triangle-fill"></i>
                     <div>
                         <strong>Posible ticket existente</strong>
-                        <span>Encontramos @_relatedTicketMatches.Count ticket(s) abierto(s) que podrían ser la misma consulta.</span>
+                        <span>Encontramos @_relatedTicketMatches.Count ticket(s) abierto(s) que podrÃ­an ser la misma consulta.</span>
                     </div>
                 </div>
                 @if (GetRelatedTerms().Count > 0)
@@ -1962,7 +1782,7 @@
                         <article class="conversations-ticket-duplicate">
                             <div>
                                 <strong>@match.Ticket.CodigoVisible @match.Ticket.Titulo</strong>
-                                <span>@match.Ticket.EstadoNombre · @RenderTicketPriority(match.Ticket.Prioridad) · @DisplayOrFallback(match.Ticket.TecnicoNombre, "Sin asignar")</span>
+                                <span>@match.Ticket.EstadoNombre Â· @RenderTicketPriority(match.Ticket.Prioridad) Â· @DisplayOrFallback(match.Ticket.TecnicoNombre, "Sin asignar")</span>
                                 <small>@BuildRelatedReason(match)</small>
                             </div>
                             <button type="button" class="btn btn--ghost btn--sm" @onclick="() => OpenTicket(match.Ticket.IdTicket)">
@@ -1996,83 +1816,16 @@
                 </select>
             </div>
             <div class="field">
-                <label>Comentario / observación</label>
+                <label>Comentario / observaciÃ³n</label>
                 <textarea rows="4" maxlength="4000" @bind="_ticketDescription" disabled="@_creatingTicket" placeholder="Detalle adicional para el ticket..."></textarea>
             </div>
             <div class="field">
                 <label>Asignado a</label>
                 <div class="ticket-creator-assignment">
                     <span>@CurrentMessageTechnicianName</span>
-                    <small>Se asignará automáticamente al usuario que crea el ticket.</small>
+                    <small>Se asignarÃ¡ automÃ¡ticamente al usuario que crea el ticket.</small>
                 </div>
             </div>
-            <label class="conversations-ticket-hours-toggle @(_ticketCreateWithParteHora ? "conversations-ticket-hours-toggle--checked" : string.Empty)">
-                <input class="conversations-ticket-hours-toggle__input" type="checkbox" @bind="_ticketCreateWithParteHora" disabled="@_creatingTicket" />
-                <span class="conversations-ticket-hours-toggle__box" aria-hidden="true"></span>
-                <span class="conversations-ticket-hours-toggle__label">Cargar parte de horas con este ticket</span>
-            </label>
-            @if (_ticketCreateWithParteHora)
-            {
-                <div class="conversations-hours-lines conversations-ticket-hours-lines">
-                    <div class="conversations-hours-lines__header">
-                        <span>Técnico</span>
-                        <span>Tipo</span>
-                        <span>Tarea</span>
-                        <span>Tiempo</span>
-                        <span></span>
-                    </div>
-                    @for (var i = 0; i < _ticketParteHoraLineas.Count; i++)
-                    {
-                        var index = i;
-                        var linea = _ticketParteHoraLineas[index];
-                        <div class="conversations-hours-lines__row" @key="linea">
-                            <select @bind="linea.IdTecnico" disabled="@_creatingTicket">
-                                <option value="">Sin técnico</option>
-                                @foreach (var tecnico in _technicians)
-                                {
-                                    <option value="@tecnico.IdTecnico">@DisplayOrFallback(tecnico.Nombre, tecnico.IdTecnico)</option>
-                                }
-                            </select>
-                            <select @bind="linea.TipoTrabajo" disabled="@_creatingTicket">
-                                @foreach (var tipo in ParteHoraTiposConversacion)
-                                {
-                                    <option value="@tipo">@FormatParteHoraTipo(tipo)</option>
-                                }
-                            </select>
-                            <input type="text"
-                                   id="@GetTicketParteHoraLineaDescripcionId(index)"
-                                   @bind="linea.Descripcion"
-                                   maxlength="1000"
-                                   @onkeydown="args => HandleTicketParteHoraLineaKeyDownAsync(args, index)"
-                                   disabled="@_creatingTicket"
-                                   placeholder="Descripción de la tarea" />
-                            <div class="conversations-hours-duration">
-                                <label>
-                                    <span>Hora</span>
-                                    <input type="number" min="0" max="24" step="1" @bind="linea.Horas" disabled="@_creatingTicket" />
-                                </label>
-                                <label>
-                                    <span>Min</span>
-                                    <select @bind="linea.MinutosBloque" disabled="@_creatingTicket">
-                                        @foreach (var minutes in ParteHoraMinuteOptions)
-                                        {
-                                            <option value="@minutes">@minutes.ToString("00")</option>
-                                        }
-                                    </select>
-                                </label>
-                            </div>
-                            <button type="button" class="btn btn--ghost btn--sm" @onclick="() => RemoveTicketParteHoraLinea(index)" disabled="@(_creatingTicket || _ticketParteHoraLineas.Count <= 1)">
-                                <i class="bi bi-trash"></i>
-                            </button>
-                        </div>
-                    }
-                    <div class="actions">
-                        <button type="button" class="btn btn--ghost btn--sm" @onclick="AddTicketParteHoraLinea" disabled="@_creatingTicket">
-                            <i class="bi bi-plus-circle"></i> Agregar línea
-                        </button>
-                    </div>
-                </div>
-            }
         </div>
         <div class="actions usuarios-editor__actions">
             <button type="button" class="btn btn--primary" @onclick="CreateTicketFromSelectionAsync" disabled="@(_creatingTicket || _checkingRelatedTickets)">
@@ -2085,143 +1838,6 @@
     </section>
 }
 
-@if (_showParteHorasDialog)
-{
-    <div class="conversations-modal-backdrop conversations-hours-backdrop" @onclick="CloseParteHorasDialog"></div>
-    <section class="panel-card conversations-modal conversations-hours-dialog" aria-labelledby="conversations-hours-title">
-        <div class="conversations-hours-dialog__head">
-            <div class="conversations-hours-dialog__title">
-                <span class="conversations-hours-dialog__icon"><i class="bi bi-stopwatch"></i></span>
-                <div>
-                    <h3 id="conversations-hours-title" class="panel-card__title">Parte de horas</h3>
-                    <p class="panel-card__subtitle">Tiempo detectado hasta este cierre manual pendiente.</p>
-                </div>
-            </div>
-            <button type="button" class="btn btn--ghost btn--sm conversations-hours-dialog__close" @onclick="CloseParteHorasDialog" disabled="@_savingParteHora" aria-label="Cerrar parte de horas">
-                <i class="bi bi-x-lg"></i>
-            </button>
-        </div>
-
-        <div class="conversations-hours-summary">
-            <div>
-                <span>Tiempo sugerido</span>
-                <strong>@FormatParteHorasDuration(_parteHoraSuggestedMinutes)</strong>
-            </div>
-            <div>
-                <span>Tramo</span>
-                <strong>@FormatParteHorasRange()</strong>
-            </div>
-            <div>
-                <span>Cliente</span>
-                <strong>@DisplayOrFallback(_parteHoraClienteNombre, _parteHoraClienteCodigo)</strong>
-            </div>
-        </div>
-
-        @if (_parteHoraTickets.Count > 1)
-        {
-            <div class="conversations-hours-hint">
-                <i class="bi bi-info-circle"></i>
-                <span>Hay varios tickets del cliente. Elegi el correcto antes de guardar.</span>
-            </div>
-        }
-
-        @if (!string.IsNullOrWhiteSpace(_parteHoraError))
-        {
-            <div class="conversations-error conversations-notice">@_parteHoraError</div>
-        }
-
-        <div class="conversations-hours-form">
-            <label class="field conversations-hours-ticket-field">
-                <span>Ticket</span>
-                <select value="@_parteHoraTicketSelectValue"
-                        @onchange="OnParteHoraTicketChanged"
-                        disabled="@_savingParteHora">
-                    <option value="@TicketSelectDefaultValue">Seleccionar ticket</option>
-                    <option value="@TicketSelectNoneValue">Sin ticket</option>
-                    @foreach (var ticket in _parteHoraTickets)
-                    {
-                        <option value="@ticket.IdTicket">@FormatParteHoraTicket(ticket)</option>
-                    }
-                </select>
-            </label>
-
-            <label class="conversations-hours-check">
-                <input type="checkbox" @bind="_parteHoraFacturable" disabled="@_savingParteHora" />
-                <span>Facturable</span>
-            </label>
-
-            <div class="conversations-hours-lines">
-                <div class="conversations-hours-lines__header">
-                    <span>Tecnico</span>
-                    <span>Tipo</span>
-                    <span>Tarea</span>
-                    <span>Tiempo</span>
-                    <span></span>
-                </div>
-                @for (var i = 0; i < _parteHoraLineas.Count; i++)
-                {
-                    var index = i;
-                    var linea = _parteHoraLineas[index];
-                    <div class="conversations-hours-lines__row" @key="linea">
-                        <select @bind="linea.IdTecnico" disabled="@_savingParteHora">
-                            <option value="">Sin tecnico</option>
-                            @foreach (var tecnico in _technicians)
-                            {
-                                <option value="@tecnico.IdTecnico">@DisplayOrFallback(tecnico.Nombre, tecnico.IdTecnico)</option>
-                            }
-                        </select>
-                        <select @bind="linea.TipoTrabajo" disabled="@_savingParteHora">
-                            @foreach (var tipo in ParteHoraTiposConversacion)
-                            {
-                                <option value="@tipo">@FormatParteHoraTipo(tipo)</option>
-                            }
-                        </select>
-                        <input type="text"
-                               id="@GetParteHoraLineaDescripcionId(index)"
-                               @bind="linea.Descripcion"
-                               maxlength="1000"
-                               @onkeydown="args => HandleParteHoraLineaKeyDownAsync(args, index)"
-                               disabled="@_savingParteHora"
-                               placeholder="Descripcion de la tarea" />
-                        <div class="conversations-hours-duration">
-                            <label>
-                                <span>Hora</span>
-                                <input type="number" min="0" max="24" step="1" @bind="linea.Horas" disabled="@_savingParteHora" />
-                            </label>
-                            <label>
-                                <span>Min</span>
-                                <select @bind="linea.MinutosBloque" disabled="@_savingParteHora">
-                                    @foreach (var minutes in ParteHoraMinuteOptions)
-                                    {
-                                        <option value="@minutes">@minutes.ToString("00")</option>
-                                    }
-                                </select>
-                            </label>
-                        </div>
-                        <button type="button" class="btn btn--ghost btn--sm" @onclick="() => RemoveParteHoraLinea(index)" disabled="@(_savingParteHora || _parteHoraLineas.Count <= 1)">
-                            <i class="bi bi-trash"></i>
-                        </button>
-                    </div>
-                }
-                <div class="actions">
-                    <button type="button" class="btn btn--ghost btn--sm" @onclick="AddParteHoraLinea" disabled="@_savingParteHora">
-                        <i class="bi bi-plus-circle"></i> Agregar linea
-                    </button>
-                </div>
-            </div>
-        </div>
-
-        <div class="actions conversations-hours-actions">
-            <button type="button" class="btn btn--primary" @onclick="SaveParteHorasAsync" disabled="@_savingParteHora">
-                <i class="bi bi-stopwatch"></i> @(_savingParteHora ? "Guardando..." : "Guardar parte")
-            </button>
-            <button type="button" class="btn btn--ghost" @onclick="ConfirmCloseWithoutParteHorasAsync" disabled="@_savingParteHora">
-                No cargar parte
-            </button>
-        </div>
-    </section>
-}
-
 @if (_showRelacionarClienteModal)
 {
     <div class="conversations-modal-backdrop" @onclick="CloseRelacionarClienteModal"></div>
@@ -2229,7 +1845,7 @@
         <div class="panel-card__header">
             <div>
                 <h3 class="panel-card__title">Relacionar cliente</h3>
-                <p class="panel-card__subtitle">Buscá la empresa y vinculala con esta conversación.</p>
+                <p class="panel-card__subtitle">BuscÃ¡ la empresa y vinculala con esta conversaciÃ³n.</p>
             </div>
             <button type="button" class="btn btn--ghost btn--sm" @onclick="CloseRelacionarClienteModal" disabled="@(_loadingClientCandidates || _linkingClient)">
                 <i class="bi bi-x-lg"></i>
@@ -2245,7 +1861,7 @@
             <div class="field">
                 <label>Cliente / empresa</label>
                 <input type="search"
-                       placeholder="Código, razón social, teléfono o email..."
+                       placeholder="CÃ³digo, razÃ³n social, telÃ©fono o email..."
                        @bind="_clientSearchText"
                        @bind:event="oninput"
                        @onkeydown="OnClientSearchKeyDownAsync"
@@ -2294,64 +1910,11 @@
 }
 
 @code {
-    private sealed class ParteHoraConversacionLinea
-    {
-        private int _horas;
-        private int _minutosBloque = 10;
-
-        public string IdTecnico { get; set; } = string.Empty;
-        public string TipoTrabajo { get; set; } = ParteHoraTipoTrabajoKeys.Soporte;
-        public string Descripcion { get; set; } = string.Empty;
-
-        public int Horas
-        {
-            get => _horas;
-            set => _horas = Math.Clamp(value, 0, 24);
-        }
-
-        public int MinutosBloque
-        {
-            get => _minutosBloque;
-            set => _minutosBloque = NormalizeMinuteBlock(value);
-        }
-
-        public int Minutos
-        {
-            get => (Horas * 60) + MinutosBloque;
-            set
-            {
-                var total = RoundUpToTen(Math.Clamp(value, 0, 24 * 60));
-                _horas = total / 60;
-                _minutosBloque = total >= 24 * 60 ? 0 : total % 60;
-            }
-        }
-
-        private static int NormalizeMinuteBlock(int value)
-        {
-            if (value <= 0)
-                return 0;
-
-            return Math.Clamp((value / 10) * 10, 0, 50);
-        }
-
-        private static int RoundUpToTen(int value)
-        {
-            if (value <= 0)
-                return 0;
-
-            return Math.Min(24 * 60, ((value + 9) / 10) * 10);
-        }
-    }
-
-    private const string TicketSelectDefaultValue = "__select__";
-    private const string TicketSelectNoneValue = "__none__";
-    private static readonly int[] ParteHoraMinuteOptions = [0, 10, 20, 30, 40, 50];
-
     private readonly (string Value, string Label)[] _modeOptions =
     [
         ("todas", "Todas"),
         ("sin_asignar", "Sin asignar"),
-        ("asignadas_a_mi", "Asignadas a mí"),
+        ("asignadas_a_mi", "Asignadas a mÃ­"),
         ("pendientes", "Pendientes"),
         ("cerradas", "Cerradas")
     ];
@@ -2385,7 +1948,6 @@
     private List<ConversacionTypingDto> _typingUsers = [];
     private List<ContactoGridItemDto> _contactSuggestions = [];
     private List<ConversacionInboxItemDto> _conversationSuggestions = [];
-    private List<ConversacionClienteCandidateDto> _clientSuggestions = [];
     private List<ConversacionClienteCandidateDto> _clientCandidates = [];
     private readonly Dictionary<long, ConversationViewCache> _conversationCache = [];
     private readonly Dictionary<string, ConversationChannelCache> _channelCache = [];
@@ -2452,7 +2014,6 @@
     private readonly string _typingClientId = Guid.NewGuid().ToString("N");
     private DateTime _lastTypingSentUtc = DateTime.MinValue;
     private bool _focusReplyAfterRender;
-    private int? _pendingParteHoraLineaDescripcionFocusIndex;
     private double _previewZoom = 1d;
     private List<PendingAttachment> _pendingAttachments = [];
     private List<PendingAttachment> _templatePendingAttachments = [];
@@ -2480,9 +2041,6 @@
     private int _ticketPriority = 2;
     private string? _ticketError;
     private bool _creatingTicket;
-    private bool _ticketCreateWithParteHora;
-    private List<ParteHoraConversacionLinea> _ticketParteHoraLineas = [];
-    private int? _pendingTicketParteHoraLineaDescripcionFocusIndex;
     private bool _checkingRelatedTickets;
     private bool _allowCreateDespiteRelated;
     private List<TicketRelatedMatchDto> _relatedTicketMatches = [];
@@ -2498,46 +2056,17 @@
     private string? _contextNotesSourceKey;
     private bool _contextNotesLoaded;
     private readonly Dictionary<string, ContextNotesVm> _contextNotesCache = [];
-    private bool _showParteHorasDialog;
-    private bool _savingParteHora;
-    private string? _parteHoraError;
-    private int _parteHoraSuggestedMinutes;
-    private string _parteHoraTipo = ParteHoraTipoTrabajoKeys.Soporte;
-    private bool _parteHoraFacturable = true;
-    private long? _parteHoraTicketId;
-    private string _parteHoraTicketSelectValue = TicketSelectDefaultValue;
-    private string _parteHoraDescripcion = string.Empty;
-    private string _parteHoraClienteCodigo = string.Empty;
-    private string _parteHoraClienteNombre = string.Empty;
-    private int? _parteHoraIdContacto;
-    private DateTime _parteHoraFecha = BusinessNow().Date;
-    private DateTime? _parteHoraInicio;
-    private DateTime? _parteHoraFin;
-    private long? _parteHoraConversationId;
-    private string _parteHoraPendingCloseStatusCode = string.Empty;
-    private string _parteHoraPreviousStatusCode = string.Empty;
-    private List<TicketGridItemDto> _parteHoraTickets = [];
-    private List<ParteHoraConversacionLinea> _parteHoraLineas = [];
 
     private static readonly TimeSpan PollingInterval = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan TypingPollingInterval = TimeSpan.FromMilliseconds(650);
-    private static readonly string[] ParteHoraTiposConversacion =
-    [
-        ParteHoraTipoTrabajoKeys.Soporte,
-        ParteHoraTipoTrabajoKeys.Desarrollo,
-        ParteHoraTipoTrabajoKeys.Implementacion,
-        ParteHoraTipoTrabajoKeys.Capacitacion,
-        ParteHoraTipoTrabajoKeys.Reunion,
-        ParteHoraTipoTrabajoKeys.Interno
-    ];
-    private static readonly string[] QuickReactionEmojis = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
+    private static readonly string[] QuickReactionEmojis = ["ðŸ‘", "â¤ï¸", "ðŸ˜‚", "ðŸ˜®", "ðŸ˜¢", "ðŸ™"];
     private static readonly IReadOnlyList<EmojiGroup> EmojiGroups =
     [
-        new("Recientes", ["🤣", "🥰", "👉", "😭", "😔", "😁", "🧘", "😩", "💔", "🙏", "🕯️", "😌", "😂", "😍", "😅", "🤩"]),
-        new("Emoticones y personas", ["😀", "😃", "😄", "😁", "😆", "🥹", "😅", "😂", "🤣", "🙂", "😊", "😇", "😉", "😌", "😍", "🥰", "😘", "😗", "😙", "😚", "😋", "😜", "😝", "😛", "🧐", "🤓", "😎", "🥳", "😴"]),
-        new("Gestos", ["👍", "👎", "👌", "👏", "🙌", "🤝", "🙏", "💪", "✌️", "🤞", "👋", "🤙", "☝️", "👇", "👈", "👉"]),
-        new("Corazones", ["❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "🤎", "💔", "💕", "💞", "💓", "💗", "💖", "💘"]),
-        new("Objetos", ["✅", "❌", "⚠️", "📌", "📎", "🧾", "📄", "💬", "📞", "📱", "💻", "🔧", "🛠️", "💡", "🚀", "⏰"])
+        new("Recientes", ["ðŸ¤£", "ðŸ¥°", "ðŸ‘‰", "ðŸ˜­", "ðŸ˜”", "ðŸ˜", "ðŸ§˜", "ðŸ˜©", "ðŸ’”", "ðŸ™", "ðŸ•¯ï¸", "ðŸ˜Œ", "ðŸ˜‚", "ðŸ˜", "ðŸ˜…", "ðŸ¤©"]),
+        new("Emoticones y personas", ["ðŸ˜€", "ðŸ˜ƒ", "ðŸ˜„", "ðŸ˜", "ðŸ˜†", "ðŸ¥¹", "ðŸ˜…", "ðŸ˜‚", "ðŸ¤£", "ðŸ™‚", "ðŸ˜Š", "ðŸ˜‡", "ðŸ˜‰", "ðŸ˜Œ", "ðŸ˜", "ðŸ¥°", "ðŸ˜˜", "ðŸ˜—", "ðŸ˜™", "ðŸ˜š", "ðŸ˜‹", "ðŸ˜œ", "ðŸ˜", "ðŸ˜›", "ðŸ§", "ðŸ¤“", "ðŸ˜Ž", "ðŸ¥³", "ðŸ˜´"]),
+        new("Gestos", ["ðŸ‘", "ðŸ‘Ž", "ðŸ‘Œ", "ðŸ‘", "ðŸ™Œ", "ðŸ¤", "ðŸ™", "ðŸ’ª", "âœŒï¸", "ðŸ¤ž", "ðŸ‘‹", "ðŸ¤™", "â˜ï¸", "ðŸ‘‡", "ðŸ‘ˆ", "ðŸ‘‰"]),
+        new("Corazones", ["â¤ï¸", "ðŸ§¡", "ðŸ’›", "ðŸ’š", "ðŸ’™", "ðŸ’œ", "ðŸ–¤", "ðŸ¤", "ðŸ¤Ž", "ðŸ’”", "ðŸ’•", "ðŸ’ž", "ðŸ’“", "ðŸ’—", "ðŸ’–", "ðŸ’˜"]),
+        new("Objetos", ["âœ…", "âŒ", "âš ï¸", "ðŸ“Œ", "ðŸ“Ž", "ðŸ§¾", "ðŸ“„", "ðŸ’¬", "ðŸ“ž", "ðŸ“±", "ðŸ’»", "ðŸ”§", "ðŸ› ï¸", "ðŸ’¡", "ðŸš€", "â°"])
     ];
     private IReadOnlyList<EmojiGroup> FilteredEmojiGroups
         => string.IsNullOrWhiteSpace(_emojiSearch)
@@ -2579,8 +2108,8 @@
     private int TotalNewMessagesCount => _inbox.Sum(x => GetConversationNewCount(x.IdConversacion));
     private string ConversationPageTitle
         => TotalNewMessagesCount > 0
-            ? $"({TotalNewMessagesCount}) Conversaciones | Alfa Gestión"
-            : "Conversaciones | Alfa Gestión";
+            ? $"({TotalNewMessagesCount}) Conversaciones | Alfa GestiÃ³n"
+            : "Conversaciones | Alfa GestiÃ³n";
     private bool IsWhatsAppConversation
         => _selectedConversation is not null
            && _selectedConversation.Canal == "WHATSAPP";
@@ -2727,7 +2256,7 @@
         {
             try
             {
-                await JS.InvokeVoidAsync("conversacionesUi.initNotifications", "AlfaCore - Alfa Gestión");
+                await JS.InvokeVoidAsync("conversacionesUi.initNotifications", "AlfaCore - Alfa GestiÃ³n");
                 await UpdateSoundDiagnosticsAsync();
             }
             catch
@@ -2820,34 +2349,6 @@
             try
             {
                 await _conversationNameInput.FocusAsync(preventScroll: true);
-            }
-            catch
-            {
-            }
-        }
-
-        if (_pendingParteHoraLineaDescripcionFocusIndex.HasValue)
-        {
-            var focusIndex = _pendingParteHoraLineaDescripcionFocusIndex.Value;
-            _pendingParteHoraLineaDescripcionFocusIndex = null;
-
-            try
-            {
-                await JS.InvokeVoidAsync("eval", $"document.getElementById('{GetParteHoraLineaDescripcionId(focusIndex)}')?.focus()");
-            }
-            catch
-            {
-            }
-        }
-
-        if (_pendingTicketParteHoraLineaDescripcionFocusIndex.HasValue)
-        {
-            var focusIndex = _pendingTicketParteHoraLineaDescripcionFocusIndex.Value;
-            _pendingTicketParteHoraLineaDescripcionFocusIndex = null;
-
-            try
-            {
-                await JS.InvokeVoidAsync("eval", $"document.getElementById('{GetTicketParteHoraLineaDescripcionId(focusIndex)}')?.focus()");
             }
             catch
             {
@@ -3001,7 +2502,7 @@
             _showContactSuggestions = false;
             _contactSuggestions = [];
             _conversationSuggestions = [];
-            _clientSuggestions = [];
+            await LoadInboxAsync();
             return;
         }
 
@@ -3084,9 +2585,8 @@
         try
         {
             var previousInbox = _inbox.ToDictionary(x => x.IdConversacion);
-            var filters = BuildInboxFiltersForCurrentSearch();
-            ApplyCurrentUserToFilters(filters);
-            var refreshedInbox = (await ConversacionesSvc.GetInboxAsync(filters)).ToList();
+            ApplyCurrentUserToFilters(_filters);
+            var refreshedInbox = (await ConversacionesSvc.GetInboxAsync(_filters)).ToList();
             if (trackNewMessages)
                 newMessagesDetected = TrackInboxNewMessages(previousInbox, refreshedInbox);
             _inbox = refreshedInbox;
@@ -3133,9 +2633,7 @@
         await Task.Yield();
         try
         {
-            var filters = BuildInboxFiltersForCurrentSearch();
-            ApplyCurrentUserToFilters(filters);
-            _auditMessages = (await ConversacionesSvc.GetAuditMessagesAsync(filters)).ToList();
+            _auditMessages = (await ConversacionesSvc.GetAuditMessagesAsync(_filters)).ToList();
         }
         catch (Exception ex)
         {
@@ -3163,7 +2661,7 @@
                 nextPinned);
 
             item.FijadaPorUsuario = nextPinned;
-            item.FechaHoraFijada = nextPinned ? BusinessNow() : null;
+            item.FechaHoraFijada = nextPinned ? DateTime.Now : null;
             await RefreshInboxAsync(showLoading: false, allowSelectionChange: false);
         }
         catch (Exception ex)
@@ -3192,22 +2690,6 @@
     {
         filters.UsuarioActual = CurrentUserNameForAudit;
         filters.SistemaActual = CurrentUserSystemForAudit;
-    }
-
-    private ConversacionesInboxFilters BuildInboxFiltersForCurrentSearch()
-    {
-        if (string.IsNullOrWhiteSpace(_filters.Search))
-            return _filters;
-
-        return new ConversacionesInboxFilters
-        {
-            Modo = "todas",
-            Search = _filters.Search,
-            ClienteCodigo = _filters.ClienteCodigo,
-            Canal = null,
-            Limit = _filters.Limit,
-            Offset = _filters.Offset
-        };
     }
 
     private int TrackInboxNewMessages(
@@ -3260,8 +2742,8 @@
 
     private static bool IsFreshInboxClientMessage(ConversacionInboxItemDto item)
         => item.FechaHoraUltimoMensajeCliente is DateTime value
-           && BusinessNow() - value <= LateIncomingNotificationWindow
-           && value <= BusinessNow().AddMinutes(2);
+           && DateTime.Now - value <= LateIncomingNotificationWindow
+           && value <= DateTime.Now.AddMinutes(2);
 
     private async Task SelectConversationAsync(long idConversacion, bool showMobileChat = false, bool updateUrl = true)
     {
@@ -3411,7 +2893,6 @@
         _ticketTitle = BuildDefaultTicketTitle();
         _ticketDescription = string.Empty;
         _ticketPriority = 2;
-        ResetTicketParteHoraState();
         _allowCreateDespiteRelated = false;
         _relatedTicketMatches.Clear();
     }
@@ -3447,7 +2928,6 @@
 
         _showTicketDialog = false;
         _ticketError = null;
-        ResetTicketParteHoraState();
         _allowCreateDespiteRelated = false;
     }
 
@@ -3461,107 +2941,8 @@
         _selectedTicketMessageIds.Clear();
         _ticketDescription = string.Empty;
         _ticketError = null;
-        ResetTicketParteHoraState();
         _allowCreateDespiteRelated = false;
         _relatedTicketMatches.Clear();
-    }
-
-    private void ResetTicketParteHoraState()
-    {
-        _ticketCreateWithParteHora = false;
-        _ticketParteHoraLineas =
-        [
-            new ParteHoraConversacionLinea
-            {
-                IdTecnico = CurrentMessageTechnicianId,
-                TipoTrabajo = GetDefaultTicketParteHoraTipo(),
-                Minutos = 10
-            }
-        ];
-    }
-
-    private void AddTicketParteHoraLinea()
-    {
-        var previous = _ticketParteHoraLineas.LastOrDefault();
-        _ticketParteHoraLineas.Add(new ParteHoraConversacionLinea
-        {
-            IdTecnico = previous?.IdTecnico ?? CurrentMessageTechnicianId,
-            TipoTrabajo = previous?.TipoTrabajo ?? GetDefaultTicketParteHoraTipo(),
-            Minutos = 10
-        });
-    }
-
-    private void RemoveTicketParteHoraLinea(int index)
-    {
-        if (_ticketParteHoraLineas.Count <= 1 || index < 0 || index >= _ticketParteHoraLineas.Count)
-            return;
-
-        _ticketParteHoraLineas.RemoveAt(index);
-    }
-
-    private Task HandleTicketParteHoraLineaKeyDownAsync(KeyboardEventArgs args, int index)
-    {
-        if (string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase))
-            return InsertTicketParteHoraLineaAfterAsync(index);
-
-        return Task.CompletedTask;
-    }
-
-    private Task InsertTicketParteHoraLineaAfterAsync(int index)
-    {
-        var previous = index >= 0 && index < _ticketParteHoraLineas.Count ? _ticketParteHoraLineas[index] : _ticketParteHoraLineas.LastOrDefault();
-        var nueva = new ParteHoraConversacionLinea
-        {
-            IdTecnico = previous?.IdTecnico ?? CurrentMessageTechnicianId,
-            TipoTrabajo = previous?.TipoTrabajo ?? GetDefaultTicketParteHoraTipo(),
-            Minutos = 10
-        };
-
-        if (index < 0 || index >= _ticketParteHoraLineas.Count - 1)
-            _ticketParteHoraLineas.Add(nueva);
-        else
-            _ticketParteHoraLineas.Insert(index + 1, nueva);
-
-        _pendingTicketParteHoraLineaDescripcionFocusIndex = Math.Min(index + 1, _ticketParteHoraLineas.Count - 1);
-        return Task.CompletedTask;
-    }
-
-    private static string GetTicketParteHoraLineaDescripcionId(int index)
-        => $"ticket-create-parte-linea-desc-{index.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
-
-    private string GetDefaultTicketParteHoraTipo()
-        => string.IsNullOrWhiteSpace(_selectedConversation?.ClienteCodigo)
-            ? ParteHoraTipoTrabajoKeys.Interno
-            : ParteHoraTipoTrabajoKeys.Soporte;
-
-    private List<ParteHoraConversacionLinea> GetTicketParteHoraLineasForSave()
-    {
-        if (!_ticketCreateWithParteHora)
-            return [];
-
-        var lineas = _ticketParteHoraLineas
-            .Where(linea => linea.Minutos > 0 || !string.IsNullOrWhiteSpace(linea.Descripcion) || !string.IsNullOrWhiteSpace(linea.IdTecnico))
-            .ToList();
-
-        if (lineas.Count == 0)
-        {
-            _ticketError = "Agregá al menos una tarea para guardar el parte.";
-            return [];
-        }
-
-        if (lineas.Any(linea => linea.Minutos <= 0))
-        {
-            _ticketError = "Todas las líneas del parte deben tener una duración mayor a cero.";
-            return [];
-        }
-
-        if (lineas.Any(linea => linea.Minutos > 24 * 60))
-        {
-            _ticketError = "Ninguna línea del parte puede superar 24 horas.";
-            return [];
-        }
-
-        return lineas;
     }
 
     private async Task CreateTicketFromSelectionAsync()
@@ -3570,30 +2951,26 @@
             return;
         if (_selectedTicketMessageIds.Count == 0)
         {
-            _ticketError = "Seleccioná al menos un mensaje para crear el ticket.";
+            _ticketError = "SeleccionÃ¡ al menos un mensaje para crear el ticket.";
             return;
         }
         if (string.IsNullOrWhiteSpace(_ticketTitle))
         {
-            _ticketError = "Ingresá el nombre del ticket.";
+            _ticketError = "IngresÃ¡ el nombre del ticket.";
             return;
         }
         var creatorTechnicianId = CurrentMessageTechnicianId;
         if (string.IsNullOrWhiteSpace(creatorTechnicianId))
         {
-            _ticketError = "No se pudo crear el ticket porque tu usuario no tiene un técnico asociado.";
+            _ticketError = "No se pudo crear el ticket porque tu usuario no tiene un tÃ©cnico asociado.";
             return;
         }
 
         if (_relatedTicketMatches.Count > 0 && !_allowCreateDespiteRelated)
         {
-            _ticketError = "Revisá los tickets relacionados o elegí Crear igual para continuar.";
+            _ticketError = "RevisÃ¡ los tickets relacionados o elegÃ­ Crear igual para continuar.";
             return;
         }
-
-        var parteLineas = GetTicketParteHoraLineasForSave();
-        if (_ticketCreateWithParteHora && parteLineas.Count == 0)
-            return;
 
         _creatingTicket = true;
         _ticketError = null;
@@ -3628,47 +3005,10 @@
                 SistemaAccion = CurrentUserSystemForAudit
             });
 
-            if (_ticketCreateWithParteHora)
-            {
-                var idsPartes = new List<long>();
-                foreach (var linea in parteLineas)
-                {
-                    idsPartes.Add(await PartesHorasSvc.SaveAsync(new ParteHoraSaveRequest
-                    {
-                        Fecha = BusinessNow().Date,
-                        ClienteCodigo = _selectedConversation.ClienteCodigo,
-                        IdContacto = _selectedConversation.IdContacto,
-                        IdTicket = idTicket,
-                        IdTecnico = linea.IdTecnico,
-                        Usuario = CurrentUserNameForAudit,
-                        TipoTrabajo = linea.TipoTrabajo,
-                        Minutos = linea.Minutos,
-                        Facturable = !string.IsNullOrWhiteSpace(_selectedConversation.ClienteCodigo),
-                        Estado = ParteHoraEstadoKeys.Presentado,
-                        Descripcion = linea.Descripcion,
-                        UsuarioAccion = CurrentUserNameForAudit
-                    }));
-                }
-
-                var totalMinutes = parteLineas.Sum(linea => linea.Minutos);
-                await ConversacionesSvc.AddInternalEventAsync(new ConversacionEventoInternoRequest
-                {
-                    IdConversacion = _selectedConversation.IdConversacion,
-                    Texto = idsPartes.Count == 1
-                        ? $"{CurrentMessageTechnicianName} guardó el parte de horas #{idsPartes[0].ToString(System.Globalization.CultureInfo.InvariantCulture)} por {FormatParteHorasDuration(totalMinutes)} vinculado al ticket #{idTicket.ToString(System.Globalization.CultureInfo.InvariantCulture)}."
-                        : $"{CurrentMessageTechnicianName} guardó {idsPartes.Count.ToString(System.Globalization.CultureInfo.InvariantCulture)} líneas de parte de horas por {FormatParteHorasDuration(totalMinutes)} vinculadas al ticket #{idTicket.ToString(System.Globalization.CultureInfo.InvariantCulture)}.",
-                    IdTecnicoAutor = creatorTechnicianId,
-                    NombreTecnicoAccion = CurrentMessageTechnicianName,
-                    UsuarioAccion = CurrentUserNameForAudit,
-                    SistemaAccion = CurrentUserSystemForAudit
-                });
-            }
-
             _ticketSelectionMode = false;
             _showTicketDialog = false;
             _selectedTicketMessageIds.Clear();
             _ticketDescription = string.Empty;
-            ResetTicketParteHoraState();
             _relatedTicketMatches.Clear();
             _allowCreateDespiteRelated = false;
             _actionMessage = $"Ticket #{idTicket.ToString(System.Globalization.CultureInfo.InvariantCulture)} creado correctamente.";
@@ -3678,377 +3018,12 @@
         {
             _ticketError = ex is AlfaCore.Services.AppUserFacingException userFacing
                 ? userFacing.Message
-                : "No se pudo crear el ticket. Revisá la base activa y volvé a intentar.";
+                : "No se pudo crear el ticket. RevisÃ¡ la base activa y volvÃ© a intentar.";
         }
         finally
         {
             _creatingTicket = false;
         }
-    }
-
-    private async Task OpenParteHorasDialogAsync(ParteHorasPromptVm prompt)
-    {
-        _parteHoraError = null;
-        _parteHoraConversationId = prompt.IdConversacion;
-        _parteHoraClienteCodigo = prompt.ClienteCodigo;
-        _parteHoraClienteNombre = prompt.ClienteNombre;
-        _parteHoraIdContacto = prompt.IdContacto;
-        _parteHoraInicio = prompt.Inicio;
-        _parteHoraFin = prompt.Fin;
-        _parteHoraFecha = prompt.Fin.Date;
-        _parteHoraSuggestedMinutes = prompt.MinutosSugeridos;
-        _parteHoraTipo = string.IsNullOrWhiteSpace(prompt.ClienteCodigo)
-            ? ParteHoraTipoTrabajoKeys.Interno
-            : ParteHoraTipoTrabajoKeys.Soporte;
-        _parteHoraFacturable = !string.IsNullOrWhiteSpace(prompt.ClienteCodigo);
-        _parteHoraTicketId = null;
-        _parteHoraTicketSelectValue = TicketSelectDefaultValue;
-        _parteHoraDescripcion = BuildParteHoraDescription(prompt);
-        _parteHoraLineas =
-        [
-            new ParteHoraConversacionLinea
-            {
-                IdTecnico = CurrentMessageTechnicianId,
-                TipoTrabajo = _parteHoraTipo,
-                Minutos = prompt.MinutosSugeridos,
-                Descripcion = _parteHoraDescripcion
-            }
-        ];
-        _parteHoraTickets = [];
-
-        _showParteHorasDialog = true;
-
-        try
-        {
-            if (!string.IsNullOrWhiteSpace(prompt.ClienteCodigo))
-            {
-                _parteHoraTickets = await SearchOpenParteHoraTicketsAsync(prompt.ClienteCodigo);
-            }
-        }
-        catch (Exception ex)
-        {
-            _parteHoraError = $"No se pudieron cargar tickets relacionados: {ex.Message}";
-        }
-    }
-
-    private async Task PromptCloseConversationAsync(string closeStatusCode, string previousStatusCode)
-    {
-        var prompt = BuildParteHorasPrompt(BusinessNow());
-        if (prompt is null)
-            return;
-
-        _parteHoraPendingCloseStatusCode = closeStatusCode;
-        _parteHoraPreviousStatusCode = previousStatusCode;
-        _statusCode = previousStatusCode;
-        await OpenParteHorasDialogAsync(prompt);
-    }
-
-    private void CloseParteHorasDialog()
-    {
-        if (_savingParteHora)
-            return;
-
-        _showParteHorasDialog = false;
-        _parteHoraError = null;
-        _parteHoraPendingCloseStatusCode = string.Empty;
-        _parteHoraPreviousStatusCode = string.Empty;
-    }
-
-    private async Task ConfirmCloseWithoutParteHorasAsync()
-    {
-        if (_parteHoraConversationId is null)
-            return;
-
-        _savingParteHora = true;
-        _parteHoraError = null;
-        try
-        {
-            if (await FinalizePendingConversationCloseAsync("Conversacion cerrada sin parte de horas."))
-                _showParteHorasDialog = false;
-        }
-        finally
-        {
-            _savingParteHora = false;
-        }
-    }
-
-    private void OnParteHoraTicketChanged(ChangeEventArgs args)
-    {
-        var value = Convert.ToString(args.Value, System.Globalization.CultureInfo.InvariantCulture);
-        _parteHoraTicketSelectValue = value ?? TicketSelectDefaultValue;
-        _parteHoraTicketId = !string.Equals(_parteHoraTicketSelectValue, TicketSelectDefaultValue, StringComparison.Ordinal)
-                             && !string.Equals(_parteHoraTicketSelectValue, TicketSelectNoneValue, StringComparison.Ordinal)
-                             && long.TryParse(_parteHoraTicketSelectValue, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var id)
-                             && id > 0
-            ? id
-            : null;
-    }
-
-    private void AddParteHoraLinea()
-    {
-        var previous = _parteHoraLineas.LastOrDefault();
-        _parteHoraLineas.Add(new ParteHoraConversacionLinea
-        {
-            IdTecnico = previous?.IdTecnico ?? CurrentMessageTechnicianId,
-            TipoTrabajo = previous?.TipoTrabajo ?? ParteHoraTipoTrabajoKeys.Soporte,
-            Minutos = 10
-        });
-    }
-
-    private void RemoveParteHoraLinea(int index)
-    {
-        if (_parteHoraLineas.Count <= 1 || index < 0 || index >= _parteHoraLineas.Count)
-            return;
-
-        _parteHoraLineas.RemoveAt(index);
-    }
-
-    private Task HandleParteHoraLineaKeyDownAsync(KeyboardEventArgs args, int index)
-    {
-        if (string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase))
-            return InsertParteHoraLineaAfterAsync(index);
-
-        return Task.CompletedTask;
-    }
-
-    private Task InsertParteHoraLineaAfterAsync(int index)
-    {
-        var previous = index >= 0 && index < _parteHoraLineas.Count ? _parteHoraLineas[index] : _parteHoraLineas.LastOrDefault();
-        var nueva = new ParteHoraConversacionLinea
-        {
-            IdTecnico = previous?.IdTecnico ?? CurrentMessageTechnicianId,
-            TipoTrabajo = previous?.TipoTrabajo ?? ParteHoraTipoTrabajoKeys.Soporte,
-            Minutos = 10
-        };
-
-        if (index < 0 || index >= _parteHoraLineas.Count - 1)
-            _parteHoraLineas.Add(nueva);
-        else
-            _parteHoraLineas.Insert(index + 1, nueva);
-
-        var focusIndex = Math.Min(index + 1, _parteHoraLineas.Count - 1);
-        _pendingParteHoraLineaDescripcionFocusIndex = focusIndex;
-        return Task.CompletedTask;
-    }
-
-    private static string GetParteHoraLineaDescripcionId(int index)
-        => $"conv-parte-linea-desc-{index.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
-
-    private async Task<List<TicketGridItemDto>> SearchOpenParteHoraTicketsAsync(string clienteCodigo)
-    {
-        if (string.IsNullOrWhiteSpace(clienteCodigo))
-            return [];
-
-        var result = await TicketsSvc.SearchAsync(new TicketsFilters
-        {
-            ClienteCodigo = clienteCodigo,
-            IncluirCerrados = false,
-            PageNumber = 1,
-            PageSize = 200
-        });
-
-        return result.Items.ToList();
-    }
-
-    private async Task SaveParteHorasAsync()
-    {
-        if (_parteHoraConversationId is null)
-            return;
-
-        var lineas = _parteHoraLineas
-            .Where(linea => linea.Minutos > 0 || !string.IsNullOrWhiteSpace(linea.Descripcion) || !string.IsNullOrWhiteSpace(linea.IdTecnico))
-            .ToList();
-
-        if (lineas.Count == 0)
-        {
-            _parteHoraError = "Agrega al menos una tarea para guardar el parte.";
-            return;
-        }
-
-        if (lineas.Any(linea => linea.Minutos <= 0))
-        {
-            _parteHoraError = "Todas las lineas deben tener una duracion mayor a cero.";
-            return;
-        }
-
-        if (lineas.Any(linea => linea.Minutos > 24 * 60))
-        {
-            _parteHoraError = "Ninguna linea puede superar 24 horas.";
-            return;
-        }
-
-        _savingParteHora = true;
-        _parteHoraError = null;
-
-        try
-        {
-            var idsPartes = new List<long>();
-            foreach (var linea in lineas)
-            {
-                idsPartes.Add(await PartesHorasSvc.SaveAsync(new ParteHoraSaveRequest
-                {
-                    Fecha = _parteHoraFecha,
-                    ClienteCodigo = _parteHoraClienteCodigo,
-                    IdContacto = _parteHoraIdContacto,
-                    IdTicket = _parteHoraTicketId,
-                    IdTecnico = linea.IdTecnico,
-                    Usuario = CurrentUserNameForAudit,
-                    TipoTrabajo = linea.TipoTrabajo,
-                    Minutos = linea.Minutos,
-                    Facturable = _parteHoraFacturable,
-                    Estado = ParteHoraEstadoKeys.Presentado,
-                    Descripcion = linea.Descripcion,
-                    UsuarioAccion = CurrentUserNameForAudit
-                }));
-            }
-
-            var totalMinutes = lineas.Sum(linea => linea.Minutos);
-            var idParte = idsPartes.First();
-
-            await ConversacionesSvc.AddInternalEventAsync(new ConversacionEventoInternoRequest
-            {
-                IdConversacion = _parteHoraConversationId.Value,
-                Texto = idsPartes.Count == 1
-                    ? $"{CurrentMessageTechnicianName} guardo el parte de horas #{idParte.ToString(System.Globalization.CultureInfo.InvariantCulture)} por {FormatParteHorasDuration(totalMinutes)}."
-                    : $"{CurrentMessageTechnicianName} guardo {idsPartes.Count.ToString(System.Globalization.CultureInfo.InvariantCulture)} lineas de parte de horas por {FormatParteHorasDuration(totalMinutes)}.",
-                IdTecnicoAutor = CurrentMessageTechnicianId,
-                NombreTecnicoAccion = CurrentMessageTechnicianName,
-                UsuarioAccion = CurrentUserNameForAudit,
-                SistemaAccion = CurrentUserSystemForAudit
-            });
-
-            if (await FinalizePendingConversationCloseAsync(idsPartes.Count == 1
-                    ? $"Parte de horas #{idParte.ToString(System.Globalization.CultureInfo.InvariantCulture)} guardado y conversacion cerrada."
-                    : $"{idsPartes.Count.ToString(System.Globalization.CultureInfo.InvariantCulture)} lineas de parte de horas guardadas y conversacion cerrada."))
-                _showParteHorasDialog = false;
-        }
-        catch (Exception ex)
-        {
-            _parteHoraError = ex is AlfaCore.Services.AppUserFacingException userFacing
-                ? userFacing.Message
-                : "No se pudo guardar el parte de horas. Revisa los datos y volve a intentar.";
-        }
-        finally
-        {
-            _savingParteHora = false;
-        }
-    }
-
-    private async Task<bool> FinalizePendingConversationCloseAsync(string successMessage)
-    {
-        if (_selectedConversation is null || string.IsNullOrWhiteSpace(_parteHoraPendingCloseStatusCode))
-        {
-            _parteHoraError = "No se encontro un cierre pendiente para confirmar.";
-            return false;
-        }
-
-        var previousValue = string.IsNullOrWhiteSpace(_parteHoraPreviousStatusCode)
-            ? _statusCode
-            : _parteHoraPreviousStatusCode;
-
-        _statusCode = _parteHoraPendingCloseStatusCode;
-        if (!await SaveStatusAsync())
-        {
-            _statusCode = previousValue;
-            _parteHoraError = _actionError ?? "No se pudo cerrar la conversacion. El parte quedo cargado, pero la conversacion sigue abierta.";
-            return false;
-        }
-
-        _parteHoraPendingCloseStatusCode = string.Empty;
-        _parteHoraPreviousStatusCode = string.Empty;
-        _actionMessage = successMessage;
-        return true;
-    }
-
-    private ParteHorasPromptVm? BuildParteHorasPrompt(DateTime closedAt)
-    {
-        if (_selectedConversation is null)
-            return null;
-
-        var relevantMessages = VisibleMessages
-            .Where(x => x.FechaHora != DateTime.MinValue && x.FechaHora <= closedAt.AddMinutes(2))
-            .OrderBy(x => x.FechaHora)
-            .ThenBy(x => x.IdMensaje)
-            .ToList();
-
-        var segment = GetParteHorasSegment(relevantMessages, _selectedConversation, closedAt);
-        var minutes = (int)Math.Ceiling(Math.Max(1d, (closedAt - segment).TotalMinutes));
-        minutes = Math.Clamp(minutes, 1, 24 * 60);
-
-        return new ParteHorasPromptVm
-        {
-            IdConversacion = _selectedConversation.IdConversacion,
-            ClienteCodigo = _selectedConversation.ClienteCodigo,
-            ClienteNombre = _selectedConversation.ClienteNombre,
-            IdContacto = _selectedConversation.IdContacto,
-            Inicio = segment,
-            Fin = closedAt,
-            MinutosSugeridos = minutes,
-            TecnicoNombre = CurrentMessageTechnicianName
-        };
-    }
-
-    private static DateTime GetParteHorasSegment(IReadOnlyList<ConversacionMensajeDto> messages, ConversacionDetalleDto conversation, DateTime closedAt)
-    {
-        if (messages.Count == 0)
-            return conversation.FechaHoraUltimoMensajeCliente ?? conversation.FechaHoraPrimerMensaje ?? closedAt.AddMinutes(-15);
-
-        var boundary = messages
-            .Where(IsConversationStateBoundaryMessage)
-            .Select(x => x.FechaHora)
-            .DefaultIfEmpty(DateTime.MinValue)
-            .Max();
-
-        var candidates = messages
-            .Where(x => x.FechaHora > boundary)
-            .OrderBy(x => x.FechaHora)
-            .ThenBy(x => x.IdMensaje)
-            .ToList();
-
-        if (candidates.Count == 0)
-            candidates = messages.ToList();
-
-        var anchorIndex = candidates.FindLastIndex(x => IsIncomingMessage(x));
-        if (anchorIndex < 0)
-            anchorIndex = candidates.Count - 1;
-
-        var startIndex = anchorIndex;
-        for (var i = anchorIndex; i > 0; i--)
-        {
-            var gap = candidates[i].FechaHora - candidates[i - 1].FechaHora;
-            if (gap > TimeSpan.FromHours(1))
-                break;
-
-            startIndex = i - 1;
-        }
-
-        var start = candidates[startIndex].FechaHora;
-        if (start > closedAt)
-            return closedAt.AddMinutes(-1);
-
-        return start;
-    }
-
-    private bool IsClosedStatusCode(string? statusCode)
-        => !string.IsNullOrWhiteSpace(statusCode)
-           && _states.Any(x => x.EsCerrado && string.Equals(x.CodigoEstado, statusCode, StringComparison.OrdinalIgnoreCase));
-
-    private static bool IsConversationStateBoundaryMessage(ConversacionMensajeDto message)
-    {
-        if (!string.Equals(message.Direction, "NOTA_INTERNA", StringComparison.OrdinalIgnoreCase)
-            || !string.Equals(message.MessageType, "SYSTEM", StringComparison.OrdinalIgnoreCase))
-            return false;
-
-        var text = RemoveDiacritics(message.Texto ?? string.Empty).ToLowerInvariant();
-        return text.Contains("cerro la conversacion", StringComparison.Ordinal)
-               || text.Contains("cambio el estado", StringComparison.Ordinal)
-               || text.Contains("reabr", StringComparison.Ordinal);
-    }
-
-    private static string BuildParteHoraDescription(ParteHorasPromptVm prompt)
-    {
-        var tecnico = string.IsNullOrWhiteSpace(prompt.TecnicoNombre) ? "Sin tecnico" : prompt.TecnicoNombre;
-        return $"Atencion de conversacion #{prompt.IdConversacion.ToString(System.Globalization.CultureInfo.InvariantCulture)}. Tiempo sugerido {FormatParteHorasDuration(prompt.MinutosSugeridos)}. Tramo {prompt.Inicio:dd/MM HH:mm} - {prompt.Fin:dd/MM HH:mm}. Tecnico: {tecnico}.";
     }
 
     private async Task CheckRelatedTicketsForSelectionAsync()
@@ -4474,7 +3449,6 @@
             _showContactSuggestions = false;
             _contactSuggestions = [];
             _conversationSuggestions = [];
-            _clientSuggestions = [];
             return;
         }
 
@@ -4489,22 +3463,23 @@
             var contactTask = ContactosSvc.SearchAsync(new ContactosFilters
             {
                 Texto = _filters.Search.Trim(),
-                Activo = null,
+                Activo = true,
                 PageNumber = 1,
                 PageSize = 6
             }, cts.Token);
             var conversationTask = ConversacionesSvc.GetInboxAsync(new ConversacionesInboxFilters
             {
-                Canal = null,
-                Modo = "todas",
+                Canal = _canalActivo,
+                Modo = _filters.Modo,
                 Search = _filters.Search.Trim(),
+                IdTecnicoActual = _filters.IdTecnicoActual,
+                CodigoEstado = _filters.CodigoEstado,
                 UsuarioActual = CurrentUserNameForAudit,
                 SistemaActual = CurrentUserSystemForAudit,
                 Limit = 6
             }, cts.Token);
-            var clientTask = ConversacionesSvc.SearchClientesParaRelacionarAsync(_filters.Search.Trim(), cts.Token);
 
-            await Task.WhenAll(contactTask, conversationTask, clientTask);
+            await Task.WhenAll(contactTask, conversationTask);
 
             if (!cts.IsCancellationRequested)
             {
@@ -4516,9 +3491,6 @@
                     .Where(contact => !_conversationSuggestions.Any(conversation => IsSameContactSuggestion(conversation, contact)))
                     .Take(6)
                     .ToList();
-                _clientSuggestions = (await clientTask)
-                    .Take(6)
-                    .ToList();
             }
         }
         catch (OperationCanceledException)
@@ -4528,7 +3500,6 @@
         {
             _contactSuggestions = [];
             _conversationSuggestions = [];
-            _clientSuggestions = [];
             _actionError = ex.Message;
         }
         finally
@@ -5189,7 +4160,7 @@
                 await SelectConversationAsync(_selectedConversation.IdConversacion, updateUrl: false);
 
             foreach (var pending in _pendingAttachments)
-                pending.Error ??= "No se pudo enviar. Reintentá con el botón de enviar.";
+                pending.Error ??= "No se pudo enviar. ReintentÃ¡ con el botÃ³n de enviar.";
 
             if (!string.IsNullOrWhiteSpace(textToSend) && !_messages.Any(x => x.Texto == textToSend && IsOutgoingMessage(x)))
             {
@@ -5223,7 +4194,7 @@
             Direction = "SALIENTE",
             EstadoEnvio = "PENDIENTE",
             Texto = text,
-            FechaHora = BusinessNow(),
+            FechaHora = DateTime.Now,
             IdTecnicoAutor = CurrentMessageTechnicianId,
             TecnicoAutorNombre = CurrentMessageTechnicianName,
             UsuarioAutor = CurrentUserNameForAudit,
@@ -5305,12 +4276,12 @@
                 var autoValues = await ConversacionesSvc.GetTemplateAutoValuesAsync(_selectedConversation.IdConversacion, required);
                 automaticValues = autoValues.Valores.ToList();
                 _templateAutoNotice = string.IsNullOrWhiteSpace(autoValues.Observaciones)
-                    ? "Variables cargadas automáticamente desde la conversación y la cuenta del cliente."
+                    ? "Variables cargadas automÃ¡ticamente desde la conversaciÃ³n y la cuenta del cliente."
                     : autoValues.Observaciones;
             }
             catch (Exception ex)
             {
-                _templateAutoNotice = $"No se pudieron cargar variables automáticas: {ex.Message}";
+                _templateAutoNotice = $"No se pudieron cargar variables automÃ¡ticas: {ex.Message}";
             }
         }
 
@@ -5458,7 +4429,7 @@
                 SistemaAccion = CurrentUserSystemForAudit
             });
 
-            _actionMessage = "Asignación actualizada.";
+            _actionMessage = "AsignaciÃ³n actualizada.";
             await SelectConversationAsync(_selectedConversation.IdConversacion, updateUrl: false);
             await RefreshInboxAsync(showLoading: false, allowSelectionChange: false);
             return true;
@@ -5483,12 +4454,6 @@
         var nextValue = e.Value?.ToString() ?? string.Empty;
         if (string.IsNullOrWhiteSpace(nextValue) || string.Equals(previousValue, nextValue, StringComparison.Ordinal))
             return;
-
-        if (IsClosedStatusCode(nextValue) && !IsClosedStatusCode(previousValue))
-        {
-            await PromptCloseConversationAsync(nextValue, previousValue);
-            return;
-        }
 
         _statusCode = nextValue;
         if (!await SaveStatusAsync())
@@ -5525,12 +4490,6 @@
         var nextValue = codigoEstado.Trim();
         if (string.Equals(previousValue, nextValue, StringComparison.OrdinalIgnoreCase))
             return;
-
-        if (IsClosedStatusCode(nextValue) && !IsClosedStatusCode(previousValue))
-        {
-            await PromptCloseConversationAsync(nextValue, previousValue);
-            return;
-        }
 
         _statusCode = nextValue;
         if (!await SaveStatusAsync())
@@ -5579,14 +4538,9 @@
 
     private async Task CloseConversationAsync()
     {
-        if (_selectedConversation is null)
-            return;
-
         var closedState = _states.FirstOrDefault(x => x.EsCerrado)?.CodigoEstado ?? "CERRADA";
-        if (IsClosedStatusCode(_statusCode))
-            return;
-
-        await PromptCloseConversationAsync(closedState, _statusCode);
+        _statusCode = closedState;
+        await SaveStatusAsync();
     }
 
     private async Task ChangeCanalAsync(string canal)
@@ -5677,7 +4631,7 @@
     {
         if (!IsPotentialPhone(_filters.Search))
         {
-            _actionError = "Ingresá un número de celular válido para iniciar la conversación.";
+            _actionError = "IngresÃ¡ un nÃºmero de celular vÃ¡lido para iniciar la conversaciÃ³n.";
             return;
         }
 
@@ -5699,8 +4653,8 @@
             await LoadInboxAsync();
             await SelectConversationAsync(result.IdConversacion, showMobileChat: true);
 
-            var action = result.Creada ? "Conversación creada" : "Conversación existente abierta";
-            var contact = result.ContactoAsociado ? " y asociada al contacto encontrado." : ". No se encontró un contacto existente para asociar.";
+            var action = result.Creada ? "ConversaciÃ³n creada" : "ConversaciÃ³n existente abierta";
+            var contact = result.ContactoAsociado ? " y asociada al contacto encontrado." : ". No se encontrÃ³ un contacto existente para asociar.";
             _actionMessage = $"{action} para {DisplayOrFallback(result.NombreVisible, result.TelefonoWhatsApp)}{contact}";
         }
         catch (Exception ex)
@@ -5732,8 +4686,6 @@
     {
         _showContactSuggestions = false;
         _conversationSuggestions = [];
-        _contactSuggestions = [];
-        _clientSuggestions = [];
     }
 
     private void OpenContactEditor(ContactoGridItemDto contact)
@@ -5791,7 +4743,7 @@
 
         if (string.IsNullOrWhiteSpace(_clientSearchText))
         {
-            _linkClientError = "Escribí parte del código, razón social, teléfono o email del cliente.";
+            _linkClientError = "EscribÃ­ parte del cÃ³digo, razÃ³n social, telÃ©fono o email del cliente.";
             return;
         }
 
@@ -5911,14 +4863,6 @@
     {
         _showContactSuggestions = false;
         await SelectConversationAsync(idConversacion, showMobileChat: true);
-    }
-
-    private async Task SelectClientSuggestionAsync(ConversacionClienteCandidateDto client)
-    {
-        _filters.ClienteCodigo = client.Codigo;
-        _filters.Search = FirstNonEmpty(client.RazonSocial, client.Codigo);
-        CloseContactSuggestions();
-        await LoadInboxAsync();
     }
 
     private ConversacionInboxItemDto? GetBestConversationMatchForSearch()
@@ -6148,7 +5092,7 @@
         }
         catch (Exception ex)
         {
-            _actionError = $"No se pudo iniciar la grabación: {ex.Message}";
+            _actionError = $"No se pudo iniciar la grabaciÃ³n: {ex.Message}";
         }
     }
 
@@ -6188,7 +5132,7 @@
     private void MarkPendingAttachmentsError(string? message)
     {
         var error = string.IsNullOrWhiteSpace(message)
-            ? "No se pudo enviar. Reintentá con el botón de enviar."
+            ? "No se pudo enviar. ReintentÃ¡ con el botÃ³n de enviar."
             : message;
 
         foreach (var pending in _pendingAttachments)
@@ -6267,7 +5211,7 @@
             _openReactionMessageId = null;
             await SelectConversationAsync(_selectedConversation.IdConversacion, updateUrl: false);
             await LoadInboxAsync();
-            _actionMessage = $"Reacción enviada: {emoji}";
+            _actionMessage = $"ReacciÃ³n enviada: {emoji}";
         }
         catch (Exception ex)
         {
@@ -6715,7 +5659,7 @@
 
     private static bool IsReactionMessage(ConversacionMensajeDto message)
         => string.Equals(message.MessageType, "REACTION", StringComparison.OrdinalIgnoreCase)
-           || (message.Texto ?? string.Empty).StartsWith("Reacción ", StringComparison.OrdinalIgnoreCase);
+           || (message.Texto ?? string.Empty).StartsWith("ReacciÃ³n ", StringComparison.OrdinalIgnoreCase);
 
     private IReadOnlyList<string> GetInlineReactions(ConversacionMensajeDto message)
     {
@@ -6789,9 +5733,9 @@
     private static string FormatClientCandidateSummary(ConversacionClienteCandidateDto client)
     {
         var location = FirstNonEmpty(
-            string.Join(" · ", new[] { client.Localidad, client.Provincia }.Where(x => !string.IsNullOrWhiteSpace(x))),
+            string.Join(" Â· ", new[] { client.Localidad, client.Provincia }.Where(x => !string.IsNullOrWhiteSpace(x))),
             string.Empty);
-        var contact = string.Join(" · ", new[] { client.Telefono, client.Mail }.Where(x => !string.IsNullOrWhiteSpace(x)));
+        var contact = string.Join(" Â· ", new[] { client.Telefono, client.Mail }.Where(x => !string.IsNullOrWhiteSpace(x)));
         return FirstNonEmpty(location, contact, "Sin datos adicionales");
     }
 
@@ -6804,11 +5748,11 @@
     private static string BuildRelatedReason(TicketRelatedMatchDto match)
     {
         var parts = new List<string>();
-        if (match.MismaConversacion) parts.Add("misma conversación");
+        if (match.MismaConversacion) parts.Add("misma conversaciÃ³n");
         if (match.MismoContacto) parts.Add("mismo contacto");
         if (match.MismoCliente) parts.Add("mismo cliente");
         if (match.Terminos.Count > 0) parts.Add($"coincide: {string.Join(", ", match.Terminos.Take(3))}");
-        return parts.Count == 0 ? "posible relación por texto" : string.Join(" · ", parts);
+        return parts.Count == 0 ? "posible relaciÃ³n por texto" : string.Join(" Â· ", parts);
     }
 
     private static string BuildContextTicketPreview(TicketRelatedMatchDto match)
@@ -6832,81 +5776,13 @@
             _ => "Sin prioridad"
         };
 
-    private static string FormatParteHorasDuration(int minutes)
-    {
-        minutes = Math.Clamp(minutes, 1, 24 * 60);
-        var hours = minutes / 60;
-        var remaining = minutes % 60;
-        return hours > 0
-            ? $"{hours}h {remaining:00}m"
-            : $"{remaining}m";
-    }
-
-    private static DateTime BusinessNow()
-        => TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, ResolveBusinessTimeZone());
-
-    private static TimeZoneInfo ResolveBusinessTimeZone()
-    {
-        try
-        {
-            return TimeZoneInfo.FindSystemTimeZoneById("Argentina Standard Time");
-        }
-        catch (TimeZoneNotFoundException)
-        {
-            return TimeZoneInfo.Local;
-        }
-        catch (InvalidTimeZoneException)
-        {
-            return TimeZoneInfo.Local;
-        }
-    }
-
-    private string FormatParteHorasRange()
-    {
-        if (_parteHoraInicio is not DateTime start || _parteHoraFin is not DateTime end)
-            return "Sin tramo";
-
-        return $"{FormatShortDate(start)} - {FormatShortDate(end)}";
-    }
-
-    private static string FormatParteHoraTipo(string tipo)
-        => tipo switch
-        {
-            ParteHoraTipoTrabajoKeys.Soporte => "Soporte",
-            ParteHoraTipoTrabajoKeys.Desarrollo => "Desarrollo",
-            ParteHoraTipoTrabajoKeys.Implementacion => "Implementacion",
-            ParteHoraTipoTrabajoKeys.Capacitacion => "Capacitacion",
-            ParteHoraTipoTrabajoKeys.Reunion => "Reunion",
-            ParteHoraTipoTrabajoKeys.Viaje => "Viaje",
-            ParteHoraTipoTrabajoKeys.Interno => "Interno",
-            _ => tipo
-        };
-
-    private static string FormatParteHoraTicket(TicketGridItemDto ticket)
-    {
-        var code = string.IsNullOrWhiteSpace(ticket.CodigoVisible)
-            ? ticket.Numero.ToString(System.Globalization.CultureInfo.InvariantCulture)
-            : ticket.CodigoVisible;
-        return $"#{code} - {DisplayOrFallback(ticket.Titulo, ticket.ClienteNombre)}";
-    }
-
-    private static string RemoveDiacritics(string value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-            return string.Empty;
-
-        var normalized = value.Normalize(System.Text.NormalizationForm.FormD);
-        var chars = normalized.Where(c => System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c) != System.Globalization.UnicodeCategory.NonSpacingMark).ToArray();
-        return new string(chars).Normalize(System.Text.NormalizationForm.FormC);
-    }
-
     private static string FormatShortDate(DateTime value)
     {
         if (value == DateTime.MinValue)
             return "--";
 
         var date = value.Date;
-        var today = BusinessNow().Date;
+        var today = DateTime.Today;
         var time = value.ToString("HH:mm", System.Globalization.CultureInfo.CurrentCulture);
 
         if (date == today)
@@ -6924,7 +5800,7 @@
             return string.Empty;
 
         var date = value.Date;
-        var today = BusinessNow().Date;
+        var today = DateTime.Today;
 
         if (date == today)
             return "Hoy";
@@ -6938,7 +5814,7 @@
     private static bool IsInitializationPending(string? message)
         => !string.IsNullOrWhiteSpace(message)
            && (message.Contains("todavia no esta inicializado", StringComparison.OrdinalIgnoreCase)
-               || message.Contains("todavía no está inicializado", StringComparison.OrdinalIgnoreCase));
+               || message.Contains("todavÃ­a no estÃ¡ inicializado", StringComparison.OrdinalIgnoreCase));
 
     private static string InferTipoArchivo(string mimeType)
     {
@@ -7006,8 +5882,8 @@
 
         var unsupportedType = ExtractUnsupportedType(message.PayloadJson);
         return string.IsNullOrWhiteSpace(unsupportedType)
-            ? "WhatsApp envió un tipo de mensaje que todavía no es compatible con el módulo."
-            : $"WhatsApp envió un formato no compatible: {unsupportedType}.";
+            ? "WhatsApp enviÃ³ un tipo de mensaje que todavÃ­a no es compatible con el mÃ³dulo."
+            : $"WhatsApp enviÃ³ un formato no compatible: {unsupportedType}.";
     }
 
     private static readonly Regex MessageUrlRegex = new(
@@ -7156,8 +6032,8 @@
             parts.Add($"ID WhatsApp: {message.WhatsAppMessageId}");
 
         return parts.Count == 0
-            ? "Sin detalle técnico disponible en el webhook."
-            : string.Join(" · ", parts);
+            ? "Sin detalle tÃ©cnico disponible en el webhook."
+            : string.Join(" Â· ", parts);
     }
 
     private static bool IsUnsupportedMessage(ConversacionMensajeDto message)
@@ -7649,7 +6525,7 @@
         return state switch
         {
             "PENDIENTE" => "Enviando",
-            "PENDIENTE_CONFIG" => "Sin configuración",
+            "PENDIENTE_CONFIG" => "Sin configuraciÃ³n",
             "ENVIADO_META" => "Enviado a WhatsApp",
             "ENVIADO" => "Enviado",
             "ENTREGADO" => "Entregado",
@@ -7800,18 +6676,6 @@
         List<ConversacionInboxItemDto> Inbox,
         long? SelectedConversationId);
 
-    private sealed class ParteHorasPromptVm
-    {
-        public long IdConversacion { get; init; }
-        public string ClienteCodigo { get; init; } = string.Empty;
-        public string ClienteNombre { get; init; } = string.Empty;
-        public int? IdContacto { get; init; }
-        public DateTime Inicio { get; init; }
-        public DateTime Fin { get; init; }
-        public int MinutosSugeridos { get; init; }
-        public string TecnicoNombre { get; init; } = string.Empty;
-    }
-
     private static class ContextNotesTabs
     {
         public const string Observaciones = "observaciones";
@@ -7873,3 +6737,4 @@
         public const string Notas = "notas";
     }
 }
+

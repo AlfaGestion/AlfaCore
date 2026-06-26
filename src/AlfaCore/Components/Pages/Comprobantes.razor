@@ -1,4 +1,5 @@
-@page "/compras/comprobantes"
+﻿@page "/compras/comprobantes"
+@page "/{idweb}/{idbase:int}/compras/comprobantes"
 @inject AlfaCore.Services.IComprasDashboardService DashboardService
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.FilterStateService FilterState
@@ -9,7 +10,7 @@
     <div class="page-intro">
         <div>
             <h2 class="page-intro__title">Comprobantes</h2>
-            <p class="page-intro__text">Grilla filtrable con detalle del comprobante y sus artículos asociados. <a class="help-link" href="/ayuda#6-comprobantes">Ver ayuda</a></p>
+            <p class="page-intro__text">Grilla filtrable con detalle del comprobante y sus artÃ­culos asociados. <a class="help-link" href="/ayuda#6-comprobantes">Ver ayuda</a></p>
         </div>
     </div>
 
@@ -24,7 +25,7 @@
             <KpiCard Titulo="Ticket promedio" Valor="@Moneda(_overview.TicketPromedio)" Icono="T" />
             <KpiCard Titulo="En cero" Valor="@_overview.ComprobantesEnCero.ToString("N0")" Icono="0" />
             <KpiCard Titulo="Sin detalle" Valor="@_overview.ComprobantesSinDetalle.ToString("N0")" Icono="D" />
-            <KpiCard Titulo="Comprobante máximo" Valor="@Moneda(_overview.ComprobanteMaximo)" Icono="!" />
+            <KpiCard Titulo="Comprobante mÃ¡ximo" Valor="@Moneda(_overview.ComprobanteMaximo)" Icono="!" />
             <KpiCard Titulo="TC predominante" Valor="@_overview.TcPredominante" Descripcion="@_overview.TcPredominanteParticipacion.ToString("P1", Cultura)" Icono="TC" />
         </div>
 
@@ -42,18 +43,18 @@
             <section class="panel-card">
                 <div class="panel-card__header">
                     <div>
-                        <h3 class="panel-card__title">Evolución semanal</h3>
-                        <p class="panel-card__subtitle">Importe total por semana del período filtrado</p>
+                        <h3 class="panel-card__title">EvoluciÃ³n semanal</h3>
+                        <p class="panel-card__subtitle">Importe total por semana del perÃ­odo filtrado</p>
                     </div>
                 </div>
-                <LineChart Data="_overview.EvolucionSemanal" Titulo="Evolución semanal" />
+                <LineChart Data="_overview.EvolucionSemanal" Titulo="EvoluciÃ³n semanal" />
             </section>
 
             <section class="panel-card">
                 <div class="panel-card__header">
                     <div>
                         <h3 class="panel-card__title">Tipos predominantes</h3>
-                        <p class="panel-card__subtitle">Participación por TC</p>
+                        <p class="panel-card__subtitle">ParticipaciÃ³n por TC</p>
                     </div>
                 </div>
                 <HorizontalBarChart Data="_overview.ComposicionTipos" />
@@ -63,7 +64,7 @@
                 <div class="panel-card__header">
                     <div>
                         <h3 class="panel-card__title">Top comprobantes</h3>
-                        <p class="panel-card__subtitle">Mayores importes del período</p>
+                        <p class="panel-card__subtitle">Mayores importes del perÃ­odo</p>
                     </div>
                 </div>
                 <HorizontalBarChart Data="_overview.TopComprobantes" />
@@ -74,13 +75,13 @@
     <section class="panel-card">
         <div class="panel-card__header">
             <div>
-                <h3 class="panel-card__title">Filtros rápidos de control</h3>
-                <p class="panel-card__subtitle">Aplicá un recorte operativo sobre la grilla actual.</p>
+                <h3 class="panel-card__title">Filtros rÃ¡pidos de control</h3>
+                <p class="panel-card__subtitle">AplicÃ¡ un recorte operativo sobre la grilla actual.</p>
             </div>
         </div>
         <div class="quick-filter-bar">
             <button type="button" class="@QuickFilterButtonCss(QuickFilterMode.Todos)" @onclick="() => SetQuickFilterAsync(QuickFilterMode.Todos)">Todos</button>
-            <button type="button" class="@QuickFilterButtonCss(QuickFilterMode.Criticos)" @onclick="() => SetQuickFilterAsync(QuickFilterMode.Criticos)">Solo críticos</button>
+            <button type="button" class="@QuickFilterButtonCss(QuickFilterMode.Criticos)" @onclick="() => SetQuickFilterAsync(QuickFilterMode.Criticos)">Solo crÃ­ticos</button>
             <button type="button" class="@QuickFilterButtonCss(QuickFilterMode.ConDetalle)" @onclick="() => SetQuickFilterAsync(QuickFilterMode.ConDetalle)">Con detalle</button>
             <button type="button" class="@QuickFilterButtonCss(QuickFilterMode.Contables)" @onclick="() => SetQuickFilterAsync(QuickFilterMode.Contables)">Contables</button>
             <button type="button" class="@QuickFilterButtonCss(QuickFilterMode.EnCero)" @onclick="() => SetQuickFilterAsync(QuickFilterMode.EnCero)">En cero</button>
@@ -95,7 +96,7 @@
             {
                 <div class="pagination">
                     <button class="btn btn--ghost" @onclick="PaginaAnteriorAsync" disabled="@(_resultado.PaginaActual <= 1)">Anterior</button>
-                    <span>Página @_resultado.PaginaActual de @_resultado.TotalPaginas</span>
+                    <span>PÃ¡gina @_resultado.PaginaActual de @_resultado.TotalPaginas</span>
                     <button class="btn btn--ghost" @onclick="PaginaSiguienteAsync" disabled="@(_resultado.PaginaActual >= _resultado.TotalPaginas)">Siguiente</button>
                 </div>
             }
@@ -112,10 +113,10 @@
                 <th style="text-align:right;">Total</th>
                 <th>Estado</th>
                 <th>Detalle</th>
-                <th style="text-align:right;">Ítems</th>
+                <th style="text-align:right;">Ãtems</th>
                 <th>Tipo carga</th>
                 <th>Alerta</th>
-                <th>Depósito</th>
+                <th>DepÃ³sito</th>
                 <th>Usuario</th>
                 <th></th>
             </tr>
@@ -131,7 +132,7 @@
                             <p>@_error.Message</p>
                             @if (_error.HasCode)
                             {
-                                <p>Código: @_error.Code</p>
+                                <p>CÃ³digo: @_error.Code</p>
                             }
                             @if (_error.HasSuggestion)
                             {
@@ -156,7 +157,7 @@
                         <div class="empty-state">
                             <span class="empty-state__eyebrow">Resultados</span>
                             <h3>No se encontraron comprobantes</h3>
-                            <p>Probá ampliar el rango de fechas o ajustar los filtros seleccionados.</p>
+                            <p>ProbÃ¡ ampliar el rango de fechas o ajustar los filtros seleccionados.</p>
                         </div>
                     </td>
                 </tr>
@@ -200,11 +201,11 @@
                 <div class="detail-row"><span class="detail-row__label">Estado</span><strong>@_detalle.Cabecera.EstadoComprobante</strong></div>
                 <div class="detail-row"><span class="detail-row__label">Tiene detalle</span><strong>@FlagLabel(_detalle.Cabecera.TieneDetalle)</strong></div>
                 <div class="detail-row"><span class="detail-row__label">Tipo carga</span><strong>@TipoCargaLabel(_detalle.Cabecera.EsContable)</strong></div>
-                <div class="detail-row"><span class="detail-row__label">Cantidad ítems</span><strong>@_detalle.Items.Count</strong></div>
+                <div class="detail-row"><span class="detail-row__label">Cantidad Ã­tems</span><strong>@_detalle.Items.Count</strong></div>
             </DetailCard>
 
-            <DataTable Titulo="Artículos asociados" Subtitulo="@($"{_detalle.Items.Count} ítems del comprobante")">
-                <Header><tr><th>Código</th><th>Descripción</th><th>Rubro</th><th>Familia</th><th style="text-align:right;">Cantidad</th><th style="text-align:right;">Costo</th><th style="text-align:right;">Total</th></tr></Header>
+            <DataTable Titulo="ArtÃ­culos asociados" Subtitulo="@($"{_detalle.Items.Count} Ã­tems del comprobante")">
+                <Header><tr><th>CÃ³digo</th><th>DescripciÃ³n</th><th>Rubro</th><th>Familia</th><th style="text-align:right;">Cantidad</th><th style="text-align:right;">Costo</th><th style="text-align:right;">Total</th></tr></Header>
                 <Rows>
                     @foreach (var item in _detalle.Items)
                     {
@@ -388,7 +389,7 @@
     }
 
     private static string Moneda(decimal valor) => valor.ToString("$ #,##0.00", System.Globalization.CultureInfo.GetCultureInfo("es-AR"));
-    private static string FlagLabel(bool value) => value ? "Sí" : "No";
+    private static string FlagLabel(bool value) => value ? "SÃ­" : "No";
     private static string FlagCss(bool value) => value ? "badge-state badge-state--ok" : "badge-state badge-state--danger";
     private static string TipoCargaLabel(bool esContable) => esContable ? "Contable" : "Con detalle";
     private static string TipoCargaCss(bool esContable) => esContable ? "badge-state badge-state--warn" : "badge-state badge-state--ok";

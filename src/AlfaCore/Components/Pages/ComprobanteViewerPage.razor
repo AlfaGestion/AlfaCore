@@ -1,7 +1,8 @@
-@page "/comprobantes/viewer/{Tc}/{IdComprobante}"
+﻿@page "/comprobantes/viewer/{Tc}/{IdComprobante}"
+@page "/{idweb}/{idbase:int}/comprobantes/viewer/{Tc}/{IdComprobante}"
 @using Microsoft.AspNetCore.Components
 
-<PageTitle>Visualizador de comprobantes | Alfa Gestión</PageTitle>
+<PageTitle>Visualizador de comprobantes | Alfa GestiÃ³n</PageTitle>
 
 <ComprobanteViewer Tc="@Tc"
                    IdComprobante="@IdComprobante"

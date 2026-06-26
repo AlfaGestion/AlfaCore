@@ -1,4 +1,5 @@
-@page "/compras/proveedores"
+﻿@page "/compras/proveedores"
+@page "/{idweb}/{idbase:int}/compras/proveedores"
 @inject AlfaCore.Services.IComprasDashboardService DashboardService
 @inject AlfaCore.Services.FilterStateService FilterState
 
@@ -8,7 +9,7 @@
     <div class="page-intro">
         <div>
             <h2 class="page-intro__title">Proveedores</h2>
-            <p class="page-intro__text">Tablero de compras por proveedor para analizar gasto, concentración y variación contra el período anterior.</p>
+            <p class="page-intro__text">Tablero de compras por proveedor para analizar gasto, concentraciÃ³n y variaciÃ³n contra el perÃ­odo anterior.</p>
         </div>
     </div>
 
@@ -20,7 +21,7 @@
     }
     else if (_loading)
     {
-        <div class="consultas-loading"><i class="bi bi-hourglass-split"></i> Cargando…</div>
+        <div class="consultas-loading"><i class="bi bi-hourglass-split"></i> Cargandoâ€¦</div>
     }
     else
     {
@@ -28,13 +29,13 @@
             <article class="kpi-card"><div class="kpi-card__label">Total comprado</div><div class="kpi-card__value">@FmtMoney(_page.Kpis.TotalComprado)</div></article>
             <article class="kpi-card"><div class="kpi-card__label">Proveedores activos</div><div class="kpi-card__value">@_page.Kpis.ProveedoresActivos.ToString("N0")</div></article>
             <article class="kpi-card"><div class="kpi-card__label">Top proveedor</div><div class="kpi-card__value">@Display(_page.Kpis.TopProveedorNombre)</div></article>
-            <article class="kpi-card"><div class="kpi-card__label">Concentración top 5</div><div class="kpi-card__value">@_page.Kpis.ConcentracionTop5.ToString("P1", System.Globalization.CultureInfo.GetCultureInfo("es-AR"))</div></article>
+            <article class="kpi-card"><div class="kpi-card__label">ConcentraciÃ³n top 5</div><div class="kpi-card__value">@_page.Kpis.ConcentracionTop5.ToString("P1", System.Globalization.CultureInfo.GetCultureInfo("es-AR"))</div></article>
         </section>
 
         <section class="panel-card">
             <div class="panel-card__header">
                 <div>
-                    <h3 class="panel-card__title">Proveedores del período</h3>
+                    <h3 class="panel-card__title">Proveedores del perÃ­odo</h3>
                     <p class="panel-card__subtitle">@_page.Proveedores.Count registro(s) consolidados.</p>
                 </div>
             </div>
@@ -46,11 +47,11 @@
                             <th>Cuenta</th>
                             <th>Proveedor</th>
                             <th>Total comprado</th>
-                            <th>Participación</th>
+                            <th>ParticipaciÃ³n</th>
                             <th>Comprobantes</th>
                             <th>Ticket promedio</th>
-                            <th>Última compra</th>
-                            <th>Variación</th>
+                            <th>Ãšltima compra</th>
+                            <th>VariaciÃ³n</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -118,11 +119,11 @@
         => value.ToString("$ #,##0.00", System.Globalization.CultureInfo.GetCultureInfo("es-AR"));
 
     private static string FmtDate(DateTime? value)
-        => value.HasValue ? value.Value.ToString("dd/MM/yyyy") : "—";
+        => value.HasValue ? value.Value.ToString("dd/MM/yyyy") : "â€”";
 
     private static string FmtPercent(decimal? value)
-        => value.HasValue ? value.Value.ToString("P1", System.Globalization.CultureInfo.GetCultureInfo("es-AR")) : "—";
+        => value.HasValue ? value.Value.ToString("P1", System.Globalization.CultureInfo.GetCultureInfo("es-AR")) : "â€”";
 
     private static string Display(string? value)
-        => string.IsNullOrWhiteSpace(value) ? "—" : value.Trim();
+        => string.IsNullOrWhiteSpace(value) ? "â€”" : value.Trim();
 }

@@ -15,7 +15,55 @@ public class Program
     {
         var builder = WebApplication.CreateBuilder(args);
         DotEnvLoader.LoadIfPresent(builder.Environment.ContentRootPath);
-        var startupConnectionString = StartupConnectionResolver.Resolve(args, builder.Configuration, builder.Environment.ContentRootPath);
+        var startupConnectionString = StartupConnectionResolver.Resolve(args, builder.Configuration);
+
+        var webRootCandidates = new[]
+        {
+            Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../wwwroot")),
+            Path.Combine(builder.Environment.ContentRootPath, "wwwroot")
+        };
+
+        foreach (var candidate in webRootCandidates)
+        {
+            if (Directory.Exists(candidate))
+            {
+                builder.WebHost.UseWebRoot(candidate);
+                break;
+            }
+        }
+
+        string? ResolveStaticAsset(string relativePath)
+        {
+            foreach (var candidate in webRootCandidates)
+            {
+                var fullPath = Path.Combine(candidate, relativePath);
+                if (File.Exists(fullPath))
+                    return fullPath;
+            }
+
+            foreach (var candidate in webRootCandidates)
+            {
+                var projectDir = Path.GetDirectoryName(candidate);
+                if (string.IsNullOrWhiteSpace(projectDir))
+                    continue;
+
+                var scopedCssCandidates = new[]
+                {
+                    Path.Combine(projectDir, "obj", "Debug", "net8.0", "scopedcss", "bundle", relativePath),
+                    Path.Combine(projectDir, "obj", "Release", "net8.0", "scopedcss", "bundle", relativePath),
+                    Path.Combine(projectDir, "bin", "Debug", "net8.0", "scopedcss", "bundle", relativePath),
+                    Path.Combine(projectDir, "bin", "Release", "net8.0", "scopedcss", "bundle", relativePath)
+                };
+
+                foreach (var scopedCssPath in scopedCssCandidates)
+                {
+                    if (File.Exists(scopedCssPath))
+                        return scopedCssPath;
+                }
+            }
+
+            return null;
+        }
 
         if (!string.IsNullOrWhiteSpace(startupConnectionString))
         {
@@ -48,6 +96,16 @@ public class Program
         builder.Services.AddRazorComponents()
             .AddInteractiveServerComponents();
         builder.Services.AddScoped<ISessionService, SessionService>();
+        builder.Services.AddSingleton<IAppModeService, AppModeService>();
+        builder.Services.AddScoped<IRouteContextService, RouteContextService>();
+        builder.Services.AddScoped<IPasswordVerifier, PlainTextPasswordVerifier>();
+        builder.Services.AddScoped<ICentralClientesService, CentralClientesService>();
+        builder.Services.AddScoped<ICentralBasesService, CentralBasesService>();
+        builder.Services.AddScoped<ICentralUsersService, CentralUsersService>();
+        builder.Services.AddScoped<ICentralAdminService, CentralAdminService>();
+        builder.Services.AddScoped<ICentralAuthService, CentralAuthService>();
+        builder.Services.AddScoped<IConexionClienteService, ConexionClienteService>();
+        builder.Services.AddScoped<ILegacyBaseUserSessionService, LegacyBaseUserSessionService>();
         builder.Services.AddScoped<IComprasDashboardService, ComprasDashboardService>();
         builder.Services.AddScoped<IReporteComprasService, ReporteComprasService>();
         builder.Services.AddScoped<IInformesIaService, InformesIaService>();
@@ -126,6 +184,21 @@ public class Program
         app.UseMiddleware<AppExceptionLoggingMiddleware>();
         app.UseStaticFiles();
         app.UseAntiforgery();
+
+        app.MapGet("/app.css", () =>
+            ResolveStaticAsset("app.css") is { } file
+                ? Results.File(file, "text/css; charset=utf-8")
+                : Results.NotFound());
+
+        app.MapGet("/theme-overrides.css", () =>
+            ResolveStaticAsset("theme-overrides.css") is { } file
+                ? Results.File(file, "text/css; charset=utf-8")
+                : Results.NotFound());
+
+        app.MapGet("/AlfaCore.styles.css", () =>
+            ResolveStaticAsset("AlfaCore.styles.css") is { } file
+                ? Results.File(file, "text/css; charset=utf-8")
+                : Results.NotFound());
 
         app.MapRazorComponents<App>()
             .AddInteractiveServerRenderMode();
@@ -1026,8 +1099,7 @@ public class Program
             "if (window.alfaCoreSqlSession && typeof window.alfaCoreSqlSession.setActive === 'function') {",
             "window.alfaCoreSqlSession.setActive('", sessionId, "');",
             "} else {",
-            "document.cookie = 'AlfaCore.SqlSessionId=", sessionId, "; path=/; max-age=31536000; samesite=lax';",
-            "localStorage.setItem('alfacore.sqlSessionId', '", sessionId, "');",
+            "localStorage.setItem('alfacore.baseId', '", sessionId, "');",
             "}",
             "localStorage.setItem('alfacore_user_token', '", token, "');",
             "window.location.replace('", redirectUrl, "');",

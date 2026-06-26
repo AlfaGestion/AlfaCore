@@ -1,0 +1,127 @@
+.admin-client-row {
+    cursor: pointer;
+}
+
+.admin-client-row:hover {
+    background: rgba(34, 211, 238, 0.06);
+}
+
+.admin-modal {
+    width: min(1180px, calc(100vw - 2rem));
+    display: grid;
+    gap: 1rem;
+}
+
+.admin-modal .row {
+    margin-top: 0;
+}
+
+.admin-modal-input {
+    width: 100%;
+    background: rgba(15, 23, 42, 0.92) !important;
+    color: #e5eefc !important;
+    border: 1px solid rgba(148, 163, 184, 0.35) !important;
+    border-radius: 14px !important;
+    padding: 0.9rem 1rem !important;
+    box-shadow: none !important;
+}
+
+.admin-modal-input::placeholder {
+    color: rgba(203, 213, 225, 0.55) !important;
+}
+
+.admin-modal-input:focus {
+    background: rgba(15, 23, 42, 0.98) !important;
+    border-color: rgba(34, 211, 238, 0.75) !important;
+    box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.12) !important;
+}
+
+.admin-modal-input:disabled,
+.admin-modal-input[readonly] {
+    color: rgba(226, 232, 240, 0.72) !important;
+    background: rgba(15, 23, 42, 0.72) !important;
+}
+
+.admin-modal-check {
+    background-color: rgba(15, 23, 42, 0.92);
+    border-color: rgba(148, 163, 184, 0.35);
+}
+
+.admin-modal-check:checked {
+    background-color: #22d3ee;
+    border-color: #22d3ee;
+}
+
+.admin-modal .form-label {
+    color: #cbd5e1;
+    font-weight: 600;
+}
+
+.admin-sync-modal {
+    width: min(640px, calc(100vw - 2rem));
+    display: grid;
+    gap: 1rem;
+}
+
+.admin-sync-modal__topbar {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    justify-content: space-between;
+}
+
+.admin-sync-modal__back {
+    flex: 0 0 auto;
+}
+
+.admin-sync-card {
+    display: grid;
+    gap: 1rem;
+    padding: 1rem;
+    border-radius: 1.25rem;
+    background: rgba(8, 15, 32, 0.7);
+    border: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.admin-sync-field {
+    display: grid;
+    gap: 0.45rem;
+}
+
+.admin-table {
+    color: #dbeafe;
+}
+
+.admin-table thead th {
+    color: #f5f8ff;
+    border-bottom-color: rgba(148, 163, 184, 0.18);
+    white-space: nowrap;
+}
+
+.admin-table tbody td {
+    border-top-color: rgba(148, 163, 184, 0.12);
+}
+
+.admin-table-wrap {
+    max-height: 520px;
+    overflow: auto;
+}
+
+.admin-table-wrap::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+.admin-table-wrap::-webkit-scrollbar-track {
+    background: rgba(15, 23, 42, 0.5);
+    border-radius: 999px;
+}
+
+.admin-table-wrap::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.28);
+    border-radius: 999px;
+}
+
+.admin-table-wrap::-webkit-scrollbar-thumb:hover {
+    background: rgba(148, 163, 184, 0.42);
+}

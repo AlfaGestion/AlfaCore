@@ -1,16 +1,19 @@
-@page "/consultas/nueva"
+﻿@page "/consultas/nueva"
+@page "/{idweb}/{idbase:int}/consultas/nueva"
 @page "/consultas/{Id:int}/editar"
+@page "/{idweb}/{idbase:int}/consultas/{Id:int}/editar"
+@inject AlfaCore.Services.IRouteContextService RouteContext
 @using AlfaCore.Services
 @inject IConsultasService ConsultasSvc
 @inject IAppUiOperationService UiOps
 @inject NavigationManager Nav
 
-<PageTitle>@_titulo | Alfa Gestión</PageTitle>
+<PageTitle>@_titulo | Alfa GestiÃ³n</PageTitle>
 
 @if (_cargando)
 {
     <div class="consultas-loading">
-        <i class="bi bi-hourglass-split"></i> Cargando…
+        <i class="bi bi-hourglass-split"></i> Cargandoâ€¦
     </div>
 }
 else
@@ -25,18 +28,18 @@ else
             <h2 class="editor__title">@_titulo</h2>
         </div>
 
-        <!-- Datos básicos -->
+        <!-- Datos bÃ¡sicos -->
         <div class="editor-section">
-            <p class="editor-section__title">Datos básicos</p>
+            <p class="editor-section__title">Datos bÃ¡sicos</p>
             <div class="editor-fields">
 
                 @if (!_id.HasValue)
                 {
-                    <!-- Modo crear: selector de ubicación en el árbol -->
+                    <!-- Modo crear: selector de ubicaciÃ³n en el Ã¡rbol -->
                     <div class="editor-field">
-                        <label class="editor-field__label">Ubicación en el árbol</label>
+                        <label class="editor-field__label">UbicaciÃ³n en el Ã¡rbol</label>
                         <select class="editor-field__input" @onchange="OnPadreChangedAsync">
-                            <option value="">— Primer nivel (raíz) —</option>
+                            <option value="">â€” Primer nivel (raÃ­z) â€”</option>
                             @foreach (var op in _opcionesArbol)
                             {
                                 <option value="@op.Clave" selected="@(_parentClave == op.Clave)">
@@ -48,10 +51,10 @@ else
                 }
 
                 <div class="editor-field">
-                    <label class="editor-field__label">Clave @(_sugirendoClave ? "…" : "")</label>
+                    <label class="editor-field__label">Clave @(_sugirendoClave ? "â€¦" : "")</label>
                     <input class="editor-field__input"
                            @bind="_clave"
-                           placeholder="Se asigna al elegir ubicación"
+                           placeholder="Se asigna al elegir ubicaciÃ³n"
                            maxlength="20"
                            disabled="@_sugirendoClave" />
                 </div>
@@ -65,7 +68,7 @@ else
                 </div>
 
                 <div class="editor-field editor-field--full">
-                    <label class="editor-field__label">Descripción / Ayuda <span class="editor-field__optional">(opcional)</span></label>
+                    <label class="editor-field__label">DescripciÃ³n / Ayuda <span class="editor-field__optional">(opcional)</span></label>
                     <input class="editor-field__input"
                            @bind="_descripcion"
                            placeholder="Texto de ayuda para el usuario final"
@@ -91,7 +94,7 @@ else
                                @bind="_filtroTabla"
                                @bind:event="oninput"
                                @onkeydown="OnFiltroKeyDownAsync"
-                               placeholder="Ej: V_CM, COMPRAS… (Enter para buscar)" />
+                               placeholder="Ej: V_CM, COMPRASâ€¦ (Enter para buscar)" />
                         <button class="btn btn--ghost btn--sm" type="button" @onclick="BuscarTablasAsync"
                                 disabled="@_buscandoTablas">
                             @if (_buscandoTablas)
@@ -109,7 +112,7 @@ else
                     @if (_vistasDisponibles.Count > 0)
                     {
                         <select class="editor-field__input" style="margin-top:.5rem;" @onchange="OnTablaChangedAsync">
-                            <option value="">— Seleccioná una fuente —</option>
+                            <option value="">â€” SeleccionÃ¡ una fuente â€”</option>
                             @foreach (var v in _vistasDisponibles)
                             {
                                 <option value="@v" selected="@(_tablaBuilder == v)">@v</option>
@@ -120,7 +123,7 @@ else
 
                 @if (_cargandoColumnas)
                     {
-                        <p class="editor-builder__loading"><i class="bi bi-hourglass-split"></i> Cargando columnas…</p>
+                        <p class="editor-builder__loading"><i class="bi bi-hourglass-split"></i> Cargando columnasâ€¦</p>
                     }
                     else if (_columnasBuilder.Count > 0)
                     {
@@ -135,7 +138,7 @@ else
                                 <input class="editor-builder__col-search"
                                        @bind="_busquedaColumna"
                                        @bind:event="oninput"
-                                       placeholder="Buscar columna…" />
+                                       placeholder="Buscar columnaâ€¦" />
                             </div>
                             <div class="editor-builder__col-grid">
                                 @foreach (var col in _columnasBuilder)
@@ -164,7 +167,7 @@ else
                             {
                                 <div class="editor-builder__filter-row">
                                     <select class="editor-field__input editor-field__input--sm" @bind="filtro.Campo">
-                                        <option value="">Campo…</option>
+                                        <option value="">Campoâ€¦</option>
                                         @foreach (var col in _columnasBuilder)
                                         {
                                             <option value="@col.Nombre">@col.Nombre</option>
@@ -182,7 +185,7 @@ else
                                     </select>
                                     <label class="editor-builder__param-toggle">
                                         <input type="checkbox" @bind="filtro.EsParametro" />
-                                        <span>Parámetro &lt;P&gt;</span>
+                                        <span>ParÃ¡metro &lt;P&gt;</span>
                                     </label>
                                     @if (!filtro.EsParametro)
                                     {
@@ -208,7 +211,7 @@ else
                             {
                                 <div class="editor-builder__filter-row">
                                     <select class="editor-field__input editor-field__input--sm" @bind="orden.Campo">
-                                        <option value="">Campo…</option>
+                                        <option value="">Campoâ€¦</option>
                                         @foreach (var col in _columnasBuilder)
                                         {
                                             <option value="@col.Nombre">@col.Nombre</option>
@@ -256,8 +259,8 @@ else
                                             <option value="SUM">Suma</option>
                                             <option value="COUNT">Conteo</option>
                                             <option value="AVG">Promedio</option>
-                                            <option value="MIN">Mínimo</option>
-                                            <option value="MAX">Máximo</option>
+                                            <option value="MIN">MÃ­nimo</option>
+                                            <option value="MAX">MÃ¡ximo</option>
                                         </select>
                                     </div>
                                 }
@@ -275,7 +278,7 @@ else
         <div class="editor-section">
             <p class="editor-section__title">SQL</p>
             <p class="editor-section__hint">
-                Usá <code>&lt;P&gt;</code> como token para cada parámetro que el usuario debe completar al ejecutar.
+                UsÃ¡ <code>&lt;P&gt;</code> como token para cada parÃ¡metro que el usuario debe completar al ejecutar.
             </p>
             <textarea class="editor-sql"
                       rows="12"
@@ -289,15 +292,15 @@ else
                 <div class="editor-params">
                     <p class="editor-params__title">
                         <i class="bi bi-sliders2"></i>
-                        @_etiquetasParams.Count parámetro@(_etiquetasParams.Count != 1 ? "s" : "") detectado@(_etiquetasParams.Count != 1 ? "s" : "")
-                        — asigná una etiqueta a cada uno:
+                        @_etiquetasParams.Count parÃ¡metro@(_etiquetasParams.Count != 1 ? "s" : "") detectado@(_etiquetasParams.Count != 1 ? "s" : "")
+                        â€” asignÃ¡ una etiqueta a cada uno:
                     </p>
                     <div class="editor-params__grid">
                         @for (int i = 0; i < _etiquetasParams.Count; i++)
                         {
                             var idx = i;
                             <div class="editor-params__field">
-                                <label class="editor-params__label">Parámetro @(idx + 1)</label>
+                                <label class="editor-params__label">ParÃ¡metro @(idx + 1)</label>
                                 <input class="editor-params__input"
                                        @bind="_etiquetasParams[idx]"
                                        placeholder="Ej: Fecha desde" />
@@ -355,7 +358,7 @@ else
                 @if (_guardando)
                 {
                     <i class="bi bi-hourglass-split"></i>
-                    <span>Guardando…</span>
+                    <span>Guardandoâ€¦</span>
                 }
                 else
                 {
@@ -375,9 +378,9 @@ else
                 }
                 else
                 {
-                    <span class="editor-actions__confirm">¿Eliminar esta consulta definitivamente?</span>
+                    <span class="editor-actions__confirm">Â¿Eliminar esta consulta definitivamente?</span>
                     <button class="btn btn--danger" type="button" @onclick="EliminarAsync" disabled="@_eliminando">
-                        @(_eliminando ? "Eliminando…" : "Sí, eliminar")
+                        @(_eliminando ? "Eliminandoâ€¦" : "SÃ­, eliminar")
                     </button>
                     <button class="btn btn--ghost" type="button" @onclick="() => _mostrarConfirmarEliminar = false">
                         Cancelar
@@ -450,7 +453,7 @@ else
     private async Task CargarConsultaAsync(int id)
     {
         var c = await ConsultasSvc.GetConsultaAsync(id);
-        if (c is null) { Nav.NavigateTo("/consultas"); return; }
+        if (c is null) { Nav.NavigateTo(RouteContext.BuildRoute("/consultas")); return; }
         _clave = c.Clave;
         _nombre = c.Grupo;
         _descripcion = c.Descripcion;
@@ -530,8 +533,8 @@ else
     {
         foreach (var nodo in nodos)
         {
-            var indent = new string(' ', nivel * 4);
-            lista.Add(new OpcionArbol(nodo.Clave, $"{indent}{nodo.Clave} · {nodo.Nombre}"));
+            var indent = new string(' ', nivel * 4);
+            lista.Add(new OpcionArbol(nodo.Clave, $"{indent}{nodo.Clave} - {nodo.Nombre}"));
             AplanarParaSelector(nodo.Hijos, lista, nivel + 1);
         }
     }
@@ -848,7 +851,7 @@ else
     private void ActualizarParametros()
     {
         int count = ContarTokens(_sql);
-        while (_etiquetasParams.Count < count) _etiquetasParams.Add($"Parámetro {_etiquetasParams.Count + 1}");
+        while (_etiquetasParams.Count < count) _etiquetasParams.Add($"ParÃ¡metro {_etiquetasParams.Count + 1}");
         while (_etiquetasParams.Count > count) _etiquetasParams.RemoveAt(_etiquetasParams.Count - 1);
     }
 
@@ -885,7 +888,7 @@ else
                 CamposOrdenar = _camposOrdenar.Trim(),
                 EtiquetasParametros = [.. _etiquetasParams]
             });
-            Nav.NavigateTo($"/consultas/{nuevoId}");
+            Nav.NavigateTo(RouteContext.BuildRoute($"/consultas/{nuevoId}"));
         }
         catch (Exception ex)
         {
@@ -903,7 +906,7 @@ else
         try
         {
             await ConsultasSvc.EliminarConsultaAsync(_id!.Value);
-            Nav.NavigateTo("/consultas");
+            Nav.NavigateTo(RouteContext.BuildRoute("/consultas"));
         }
         catch (Exception ex)
         {
@@ -925,7 +928,7 @@ else
         if (feedback.HasSuggestion)
             parts.Add(feedback.Suggestion);
         if (feedback.HasCode)
-            parts.Add($"Código: {feedback.Code}");
+            parts.Add($"CÃ³digo: {feedback.Code}");
         return string.Join(" ", parts.Where(static part => !string.IsNullOrWhiteSpace(part)));
     }
 

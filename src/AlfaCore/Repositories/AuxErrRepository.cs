@@ -6,7 +6,6 @@ namespace AlfaCore.Repositories;
 
 public sealed class AuxErrRepository(
     IConfiguration configuration,
-    ISessionService sessionService,
     IHttpContextAccessor httpContextAccessor,
     ILogger<AuxErrRepository> logger) : IAuxErrRepository
 {
@@ -14,14 +13,14 @@ public sealed class AuxErrRepository(
     {
         get
         {
+            if (httpContextAccessor.HttpContext?.Items.TryGetValue("AlfaCore.ConnectionString", out var currentConnection) == true
+                && currentConnection is string itemConnection
+                && !string.IsNullOrWhiteSpace(itemConnection))
+            {
+                return itemConnection;
+            }
+
             var configured = configuration.GetConnectionString("AlfaGestion") ?? string.Empty;
-            if (httpContextAccessor.HttpContext is null && !string.IsNullOrWhiteSpace(configured))
-                return configured;
-
-            var sessionConnection = sessionService.GetConnectionString();
-            if (!string.IsNullOrWhiteSpace(sessionConnection))
-                return sessionConnection;
-
             if (!string.IsNullOrWhiteSpace(configured))
                 return configured;
 

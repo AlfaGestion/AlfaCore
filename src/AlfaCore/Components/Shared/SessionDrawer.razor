@@ -1,15 +1,14 @@
 @inject AlfaCore.Services.ISessionService SessionSvc
-@inject AlfaCore.Services.IActualizacionesService ActualizacionesSvc
 @inject IJSRuntime JS
 
 @if (Open)
 {
     <div class="drawer-overlay" @onclick="Close"></div>
 
-    <div class="drawer" role="dialog" aria-label="Gestor de sesiones">
+    <div class="drawer" role="dialog" aria-label="Selector de bases">
         <div class="drawer__header">
             <h3 class="drawer__title">
-                <i class="bi bi-database"></i> Sesiones de base de datos
+                <i class="bi bi-database"></i> Bases disponibles
             </h3>
             <button class="drawer__close" @onclick="Close" title="Cerrar">
                 <i class="bi bi-x-lg"></i>
@@ -17,8 +16,6 @@
         </div>
 
         <div class="drawer__body">
-
-            <!-- Lista de sesiones -->
             <div class="drawer-sessions">
                 @foreach (var s in _sesiones)
                 {
@@ -27,8 +24,8 @@
                             <span class="drawer-session__dot @(s.Activa ? "drawer-session__dot--ok" : "")"></span>
                             <div>
                                 <p class="drawer-session__nombre">@s.Nombre</p>
-                                <p class="drawer-session__detalle">@s.Servidor · @s.BaseDatos</p>
-                                <p class="drawer-session__usuario">@s.Usuario</p>
+                                <p class="drawer-session__detalle">@s.Servidor Â· @s.BaseDatos</p>
+                                <p class="drawer-session__usuario">@(s.BaseId > 0 ? $"Base #{s.BaseId}" : s.Nombre)</p>
                             </div>
                         </div>
                         <div class="drawer-session__actions">
@@ -39,10 +36,7 @@
                             else
                             {
                                 <button class="btn btn--primary btn--sm" @onclick="() => ConectarAsync(s.Id)">
-                                    Conectar
-                                </button>
-                                <button class="btn btn--ghost btn--sm btn--danger" @onclick="() => Eliminar(s.Id)">
-                                    <i class="bi bi-trash"></i>
+                                    Seleccionar
                                 </button>
                             }
                         </div>
@@ -50,56 +44,9 @@
                 }
             </div>
 
-            <!-- Formulario nueva sesión -->
-            <details class="drawer-new">
-                <summary class="drawer-new__summary">
-                    <i class="bi bi-plus-circle"></i> Agregar sesión
-                </summary>
-
-                <div class="drawer-new__form">
-                    @if (_mensajeError is not null)
-                    {
-                        <p class="drawer-new__error"><i class="bi bi-exclamation-circle"></i> @_mensajeError</p>
-                    }
-
-                    <div class="drawer-new__field">
-                        <label>Nombre</label>
-                        <input @bind="_newNombre" placeholder="Ej: Alfa Gestión Producción" />
-                    </div>
-                    <div class="drawer-new__field">
-                        <label>Servidor</label>
-                        <input @bind="_newServidor" placeholder="Ej: AGSERVER\ALFANET" />
-                    </div>
-                    <div class="drawer-new__field">
-                        <label>Base de datos</label>
-                        <input @bind="_newBaseDatos" placeholder="Ej: ALFANET" />
-                    </div>
-                    <div class="drawer-new__field">
-                        <label>Usuario</label>
-                        <input @bind="_newUsuario" placeholder="Ej: sa" />
-                    </div>
-                    <div class="drawer-new__field">
-                        <label>Contraseña</label>
-                        <div class="drawer-new__password">
-                            <input type="@(_mostrarPass ? "text" : "password")"
-                                   @bind="_newPassword"
-                                   placeholder="Contraseña" />
-                            <button type="button" class="drawer-new__eye" @onclick="() => _mostrarPass = !_mostrarPass"
-                                    title="@(_mostrarPass ? "Ocultar" : "Mostrar")">
-                                <i class="bi @(_mostrarPass ? "bi-eye-slash" : "bi-eye")"></i>
-                            </button>
-                        </div>
-                    </div>
-
-                    <button class="btn btn--primary" @onclick="AgregarAsync">
-                        <i class="bi bi-floppy"></i> Guardar sesión
-                    </button>
-                </div>
-            </details>
-
             <p class="drawer__note">
                 <i class="bi bi-info-circle"></i>
-                Las sesiones se guardan en <code>App_Data/sessions.json</code>.
+                Las bases disponibles salen de ALFA_CENTRAL y cambian segun el cliente autenticado.
             </p>
         </div>
     </div>
@@ -110,14 +57,6 @@
     [Parameter] public EventCallback OnClose { get; set; }
 
     private List<AlfaCore.Models.SessionDto> _sesiones = [];
-    private string _newNombre = string.Empty;
-    private string _newServidor = string.Empty;
-    private string _newBaseDatos = string.Empty;
-    private string _newUsuario = string.Empty;
-    private string _newPassword = string.Empty;
-    private bool _mostrarPass;
-    private string? _mensajeError;
-
     protected override void OnParametersSet()
     {
         if (Open) Reload();
@@ -128,46 +67,9 @@
 
     private async Task ConectarAsync(Guid id)
     {
-        _mensajeError = null;
         SessionSvc.SwitchSession(id);
         await JS.InvokeVoidAsync("alfaCoreSqlSession.setActive", id.ToString());
-        try
-        {
-            await ActualizacionesSvc.ExecutePendingAsync(new AlfaCore.Models.ActualizacionesRunRequest
-            {
-                UsuarioAccion = "SYSTEM",
-                PcAccion = Environment.MachineName,
-                EsEjecucionAutomatica = true
-            });
-        }
-        catch (Exception ex)
-        {
-            _mensajeError = ex.Message;
-        }
         Reload();
-    }
-
-    private void Eliminar(Guid id)
-    {
-        SessionSvc.DeleteSession(id);
-        Reload();
-    }
-
-    private Task AgregarAsync()
-    {
-        _mensajeError = null;
-
-        if (string.IsNullOrWhiteSpace(_newNombre))    { _mensajeError = "El nombre es obligatorio."; return Task.CompletedTask; }
-        if (string.IsNullOrWhiteSpace(_newServidor))  { _mensajeError = "El servidor es obligatorio."; return Task.CompletedTask; }
-        if (string.IsNullOrWhiteSpace(_newBaseDatos)) { _mensajeError = "La base de datos es obligatoria."; return Task.CompletedTask; }
-        if (string.IsNullOrWhiteSpace(_newUsuario))   { _mensajeError = "El usuario es obligatorio."; return Task.CompletedTask; }
-
-        SessionSvc.AddSession(_newNombre, _newServidor, _newBaseDatos, _newUsuario, _newPassword);
-
-        _newNombre = _newServidor = _newBaseDatos = _newUsuario = _newPassword = string.Empty;
-        _mostrarPass = false;
-        Reload();
-        return Task.CompletedTask;
     }
 
     private Task Close() => OnClose.InvokeAsync();

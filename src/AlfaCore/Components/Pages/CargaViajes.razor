@@ -1,5 +1,7 @@
 ﻿@page "/carga-viajes"
+@page "/{idweb}/{idbase:int}/carga-viajes"
 @page "/carga-viajes/{Vista}"
+@page "/{idweb}/{idbase:int}/carga-viajes/{Vista}"
 @using AlfaCore.Models
 @using AlfaCore.Services
 @inject ICargaViajesService CargaViajesSvc
@@ -94,15 +96,15 @@
                     </div>
                     <div class="field">
                         <label>Cliente</label>
-                        <LookupAutocomplete Label="" Placeholder="Buscar cliente..." Text="@_clienteFiltroTexto" TextChanged="OnClienteFiltroTextoChangedAsync" SelectedChanged="OnClienteSeleccionadoAsync" OnEnterCommitted="AplicarFiltrosViajesAsync" SearchFunc="CargaViajesSvc.SearchClientesAsync" />
+                        <LookupAutocomplete Label="" Placeholder="Buscar cliente..." Text="@_clienteFiltroTexto" TextChanged="OnClienteFiltroTextoChangedAsync" SelectedChanged="OnClienteSeleccionadoAsync" OnEnterCommitted="AplicarFiltrosViajesAsync" SearchFunc="CargaViajesSvc.SearchClientesAsync" MinimumCharacters="0" />
                     </div>
                     <div class="field">
                         <label>Chofer</label>
-                        <LookupAutocomplete Label="" Placeholder="Buscar chofer..." Text="@_choferFiltroTexto" TextChanged="OnChoferFiltroTextoChangedAsync" SelectedChanged="OnChoferSeleccionadoAsync" OnEnterCommitted="AplicarFiltrosViajesAsync" SearchFunc="CargaViajesSvc.SearchChoferLookupAsync" />
+                        <LookupAutocomplete Label="" Placeholder="Buscar chofer..." Text="@_choferFiltroTexto" TextChanged="OnChoferFiltroTextoChangedAsync" SelectedChanged="OnChoferSeleccionadoAsync" OnEnterCommitted="AplicarFiltrosViajesAsync" SearchFunc="CargaViajesSvc.SearchChoferLookupAsync" MinimumCharacters="0" />
                     </div>
                     <div class="field">
                         <label>Destino</label>
-                        <LookupAutocomplete Label="" Placeholder="Buscar destino..." Text="@_destinoFiltroTexto" TextChanged="OnDestinoFiltroTextoChangedAsync" SelectedChanged="OnDestinoSeleccionadoAsync" OnEnterCommitted="AplicarFiltrosViajesAsync" SearchFunc="CargaViajesSvc.SearchDestinosLookupAsync" />
+                        <LookupAutocomplete Label="" Placeholder="Buscar destino..." Text="@_destinoFiltroTexto" TextChanged="OnDestinoFiltroTextoChangedAsync" SelectedChanged="OnDestinoSeleccionadoAsync" OnEnterCommitted="AplicarFiltrosViajesAsync" SearchFunc="CargaViajesSvc.SearchDestinosLookupAsync" MinimumCharacters="0" />
                     </div>
                     <div class="field">
                         <label>Estado</label>
@@ -269,16 +271,16 @@
                 </div>
             </div>
 
-            <div class="carga-viajes-toolbar">
-                <div class="field field--wide carga-viajes-toolbar__search">
+            <div class="carga-viajes-toolbar carga-viajes-toolbar--tarifas">
+                <div class="field field--wide carga-viajes-toolbar__search carga-viajes-toolbar__search--tarifas">
                     <label>Búsqueda general</label>
                     <input type="search" @bind="_tarifasFilters.Texto" @bind:event="oninput" @onkeydown="HandleTarifasSearchKeyDownAsync" />
                 </div>
-                <div class="carga-viajes-toolbar__actions">
+                <div class="carga-viajes-toolbar__actions carga-viajes-tarifas__actions">
                     <div class="carga-viajes-tarifas__filter-frame">
-                        <span class="carga-viajes-tarifas__filter-title">Ver tarifas</span>
-                        <div class="carga-viajes-tarifas__filter-inner">
-                            <label class="carga-viajes-checkbox carga-viajes-quick-edit-toggle @(_tarifasQuickImportEditMode ? "carga-viajes-check--active" : string.Empty)">
+                        <div class="carga-viajes-tarifas__filter-head">
+                            <span class="carga-viajes-tarifas__filter-title">Ver tarifas</span>
+                            <label class="carga-viajes-checkbox carga-viajes-quick-edit-toggle carga-viajes-tarifas__quick-toggle @(_tarifasQuickImportEditMode ? "carga-viajes-check--active" : string.Empty)">
                                 <input type="checkbox"
                                        class="carga-viajes-checkbox__input"
                                        checked="@_tarifasQuickImportEditMode"
@@ -286,6 +288,8 @@
                                 <span class="carga-viajes-checkbox__box" aria-hidden="true"></span>
                                 <span class="carga-viajes-checkbox__label">Editar solo importes</span>
                             </label>
+                        </div>
+                        <div class="carga-viajes-tarifas__filter-inner">
                             <div class="carga-viajes-tarifas__type-filter carga-viajes-reportes__chips" role="group" aria-label="Tipo tarifa">
                                 <button type="button"
                                         class="carga-viajes-filter-pill @(!HasTarifaFleteroFilter() ? "carga-viajes-filter-pill--active" : string.Empty)"
@@ -308,11 +312,13 @@
                             </div>
                         </div>
                     </div>
-                    <button type="button" class="btn btn--ghost btn--sm" @onclick="ToggleTarifasAdvancedFilters" aria-expanded="@_showTarifasAdvancedFilters" aria-controls="carga-viajes-tarifas-filtros-avanzados">
-                        @(_showTarifasAdvancedFilters ? "Ocultar filtros" : "Filtros")
-                    </button>
-                    <button type="button" class="btn btn--ghost btn--sm" @onclick="LimpiarFiltrosTarifasAsync">Limpiar</button>
-                    <button type="button" class="btn btn--ghost btn--sm" @onclick="RecargarTarifasAsync">Recargar</button>
+                    <div class="carga-viajes-tarifas__action-pills">
+                        <button type="button" class="btn btn--ghost btn--sm" @onclick="ToggleTarifasAdvancedFilters" aria-expanded="@_showTarifasAdvancedFilters" aria-controls="carga-viajes-tarifas-filtros-avanzados">
+                            @(_showTarifasAdvancedFilters ? "Ocultar filtros" : "Filtros")
+                        </button>
+                        <button type="button" class="btn btn--ghost btn--sm" @onclick="LimpiarFiltrosTarifasAsync">Limpiar</button>
+                        <button type="button" class="btn btn--ghost btn--sm" @onclick="RecargarTarifasAsync">Recargar</button>
+                    </div>
                 </div>
             </div>
 
@@ -321,19 +327,19 @@
                 <div id="carga-viajes-tarifas-filtros-avanzados" class="carga-viajes-advanced-grid">
                     <div class="field">
                         <label>Cliente</label>
-                        <LookupAutocomplete Label="" Placeholder="Buscar cliente..." Text="@_tarifasFilters.Cliente" TextChanged="OnTarifaClienteFiltroChangedAsync" SelectedChanged="OnTarifaClienteFiltroSelectedAsync" OnEnterCommitted="AplicarFiltrosTarifasAsync" SearchFunc="CargaViajesSvc.SearchClientesAsync" />
+                        <LookupAutocomplete Label="" Placeholder="Buscar cliente..." Text="@_tarifasFilters.Cliente" TextChanged="OnTarifaClienteFiltroChangedAsync" SelectedChanged="OnTarifaClienteFiltroSelectedAsync" OnEnterCommitted="AplicarFiltrosTarifasAsync" SearchFunc="CargaViajesSvc.SearchClientesAsync" MinimumCharacters="0" />
                     </div>
                     <div class="field">
                         <label>Chofer</label>
-                        <LookupAutocomplete Label="" Placeholder="Buscar chofer..." Text="@_tarifasFilters.Chofer" TextChanged="OnTarifaChoferFiltroChangedAsync" SelectedChanged="OnTarifaChoferFiltroSelectedAsync" OnEnterCommitted="AplicarFiltrosTarifasAsync" SearchFunc="CargaViajesSvc.SearchChoferLookupAsync" />
+                        <LookupAutocomplete Label="" Placeholder="Buscar chofer..." Text="@_tarifasFilters.Chofer" TextChanged="OnTarifaChoferFiltroChangedAsync" SelectedChanged="OnTarifaChoferFiltroSelectedAsync" OnEnterCommitted="AplicarFiltrosTarifasAsync" SearchFunc="CargaViajesSvc.SearchChoferLookupAsync" MinimumCharacters="0" />
                     </div>
                     <div class="field">
                         <label>Destino</label>
-                        <LookupAutocomplete Label="" Placeholder="Buscar destino..." Text="@_tarifasFilters.Destino" TextChanged="OnTarifaDestinoFiltroChangedAsync" SelectedChanged="OnTarifaDestinoFiltroSelectedAsync" OnEnterCommitted="AplicarFiltrosTarifasAsync" SearchFunc="CargaViajesSvc.SearchDestinosLookupAsync" />
+                        <LookupAutocomplete Label="" Placeholder="Buscar destino..." Text="@_tarifasFilters.Destino" TextChanged="OnTarifaDestinoFiltroChangedAsync" SelectedChanged="OnTarifaDestinoFiltroSelectedAsync" OnEnterCommitted="AplicarFiltrosTarifasAsync" SearchFunc="CargaViajesSvc.SearchDestinosLookupAsync" MinimumCharacters="0" />
                     </div>
                     <div class="field">
                         <label>Tipo vehículo</label>
-                        <LookupAutocomplete Label="" Placeholder="Buscar tipo..." Text="@_tarifasFilters.TipoVehiculo" TextChanged="OnTarifaTipoVehiculoFiltroChangedAsync" SelectedChanged="OnTarifaTipoVehiculoFiltroSelectedAsync" OnEnterCommitted="AplicarFiltrosTarifasAsync" SearchFunc="CargaViajesSvc.SearchTipoVehiculosLookupAsync" />
+                        <LookupAutocomplete Label="" Placeholder="Buscar tipo..." Text="@_tarifasFilters.TipoVehiculo" TextChanged="OnTarifaTipoVehiculoFiltroChangedAsync" SelectedChanged="OnTarifaTipoVehiculoFiltroSelectedAsync" OnEnterCommitted="AplicarFiltrosTarifasAsync" SearchFunc="CargaViajesSvc.SearchTipoVehiculosLookupAsync" MinimumCharacters="0" />
                     </div>
                     <div class="field">
                         <label>Activo</label>
@@ -365,7 +371,7 @@
             else
             {
                 <div class="usuarios-table-wrap">
-                    <table class="data-table">
+                    <table class="data-table carga-viajes-tarifas-table">
                         <thead>
                             <tr>
                                 <th><button type="button" class="carga-viajes-sort-button" @onclick="() => SortTarifasAsync(SortKeyNombre)"><span>Nombre</span><i class="bi @GetSortIcon(_tarifasFilters, SortKeyNombre)"></i></button></th>
@@ -373,7 +379,7 @@
                                 <th><button type="button" class="carga-viajes-sort-button" @onclick="() => SortTarifasAsync(SortKeyCliente)"><span>Cliente / Chofer</span><i class="bi @GetSortIcon(_tarifasFilters, SortKeyCliente)"></i></button></th>
                                 <th><button type="button" class="carga-viajes-sort-button" @onclick="() => SortTarifasAsync(SortKeyDestino)"><span>Destino</span><i class="bi @GetSortIcon(_tarifasFilters, SortKeyDestino)"></i></button></th>
                                 <th><button type="button" class="carga-viajes-sort-button" @onclick="() => SortTarifasAsync(SortKeyTipoVehiculo)"><span>Tipo vehículo</span><i class="bi @GetSortIcon(_tarifasFilters, SortKeyTipoVehiculo)"></i></button></th>
-                                <th><button type="button" class="carga-viajes-sort-button" @onclick="() => SortTarifasAsync(SortKeyImporte)"><span>Importe</span><i class="bi @GetSortIcon(_tarifasFilters, SortKeyImporte)"></i></button></th>
+                                <th class="carga-viajes-tarifas__importe-col"><button type="button" class="carga-viajes-sort-button" @onclick="() => SortTarifasAsync(SortKeyImporte)"><span>Importe</span><i class="bi @GetSortIcon(_tarifasFilters, SortKeyImporte)"></i></button></th>
                                 <th><button type="button" class="carga-viajes-sort-button" @onclick="() => SortTarifasAsync(SortKeyActivo)"><span>Activo</span><i class="bi @GetSortIcon(_tarifasFilters, SortKeyActivo)"></i></button></th>
                                 <th>Acciones</th>
                             </tr>
@@ -387,7 +393,7 @@
                                     <td>@GetTarifaEntidadDisplay(item.row)</td>
                                     <td>@ExtractVisibleText(item.row.Destino)</td>
                                     <td>@ExtractVisibleText(item.row.TipoVehiculo)</td>
-                                    <td class="@GetTarifaImporteCellClass(item.row)" @onclick:stopPropagation="_tarifasQuickImportEditMode" @ondblclick:stopPropagation="_tarifasQuickImportEditMode">
+                                    <td class="carga-viajes-tarifas__importe-col @GetTarifaImporteCellClass(item.row)" @onclick:stopPropagation="_tarifasQuickImportEditMode" @ondblclick:stopPropagation="_tarifasQuickImportEditMode">
                                         @if (_tarifasQuickImportEditMode && _tarifasQuickImportEditId == item.row.Id && item.row.Id > 0)
                                         {
                                             <input id="@GetTarifaImporteInputId(item.row.Id)"
@@ -493,7 +499,8 @@
                                                         TextChanged="OnTarifaChoferTextoChangedAsync"
                                                         SelectedChanged="OnTarifaChoferSeleccionadoAsync"
                                                         OnEnterCommitted="FocusTarifaNombreAsync"
-                                                        SearchFunc="CargaViajesSvc.SearchChoferLookupAsync" />
+                                                        SearchFunc="CargaViajesSvc.SearchChoferLookupAsync"
+                                                        MinimumCharacters="0" />
                                 }
                                 else
                                 {
@@ -505,7 +512,8 @@
                                                         TextChanged="OnTarifaClienteTextoChangedAsync"
                                                         SelectedChanged="OnTarifaClienteSeleccionadoAsync"
                                                         OnEnterCommitted="FocusTarifaNombreAsync"
-                                                        SearchFunc="CargaViajesSvc.SearchClientesAsync" />
+                                                        SearchFunc="CargaViajesSvc.SearchClientesAsync"
+                                                        MinimumCharacters="0" />
                                 }
                             </div>
 
@@ -523,7 +531,8 @@
                                                     TextChanged="OnTarifaDestinoTextoChangedAsync"
                                                     SelectedChanged="OnTarifaDestinoSeleccionadoAsync"
                                                     OnEnterCommitted="FocusTarifaTipoVehiculoAsync"
-                                                    SearchFunc="CargaViajesSvc.SearchDestinosLookupAsync" />
+                                                    SearchFunc="CargaViajesSvc.SearchDestinosLookupAsync"
+                                                    MinimumCharacters="0" />
                             </div>
 
                             <div class="field">
@@ -535,7 +544,8 @@
                                                     TextChanged="OnTarifaTipoVehiculoTextoChangedAsync"
                                                     SelectedChanged="OnTarifaTipoVehiculoSeleccionadoAsync"
                                                     OnEnterCommitted="FocusTarifaImporteAsync"
-                                                    SearchFunc="CargaViajesSvc.SearchTipoVehiculosLookupAsync" />
+                                                    SearchFunc="CargaViajesSvc.SearchTipoVehiculosLookupAsync"
+                                                    MinimumCharacters="0" />
                             </div>
 
                             <div class="field">
@@ -633,7 +643,7 @@
                     <div class="field"><label>Activo</label><select @bind="_choferesFilters.Activo"><option value="">Todos</option><option value="1">Activo</option><option value="0">Desactivado</option></select></div>
                     <div class="field"><label>Disponible</label><select @bind="_choferesFilters.Disponible"><option value="">Todos</option><option value="1">Disponible</option><option value="0">No disponible</option></select></div>
                     <div class="field"><label>Es fletero</label><select @bind="_choferesFilters.EsFletero"><option value="">Todos</option><option value="1">Fletero</option><option value="0">No fletero</option></select></div>
-                    <div class="field"><label>Tipo vehículo</label><LookupAutocomplete Label="" Placeholder="Buscar tipo..." Text="@_choferesTipoVehiculoTexto" TextChanged="OnChoferTipoVehiculoChangedAsync" SelectedChanged="OnChoferTipoVehiculoSelectedAsync" OnEnterCommitted="AplicarFiltrosChoferesAsync" SearchFunc="CargaViajesSvc.SearchTipoVehiculosLookupAsync" /></div>
+                    <div class="field"><label>Tipo vehículo</label><LookupAutocomplete Label="" Placeholder="Buscar tipo..." Text="@_choferesTipoVehiculoTexto" TextChanged="OnChoferTipoVehiculoChangedAsync" SelectedChanged="OnChoferTipoVehiculoSelectedAsync" OnEnterCommitted="AplicarFiltrosChoferesAsync" SearchFunc="CargaViajesSvc.SearchTipoVehiculosLookupAsync" MinimumCharacters="0" /></div>
                 </div>
             }
         </section>
@@ -1581,19 +1591,19 @@
                         </div>
                         <div class="field">
                             <label>Cliente</label>
-                            <LookupAutocomplete @ref="_viajeClienteLookup" Label="" Placeholder="Buscar cliente..." Text="@_viajeClienteTexto" TextChanged="OnViajeClienteTextoChangedAsync" SelectedChanged="OnViajeClienteSelectedAsync" OnEnterCommitted="FocusViajeChoferAsync" OnCreateRequested="OnViajeClienteCreateRequestedAsync" SearchFunc="CargaViajesSvc.SearchClientesAsync" Disabled="@_viajeReadOnly" />
+                            <LookupAutocomplete @ref="_viajeClienteLookup" Label="" Placeholder="Buscar cliente..." Text="@_viajeClienteTexto" TextChanged="OnViajeClienteTextoChangedAsync" SelectedChanged="OnViajeClienteSelectedAsync" OnEnterCommitted="FocusViajeChoferAsync" OnCreateRequested="OnViajeClienteCreateRequestedAsync" SearchFunc="CargaViajesSvc.SearchClientesAsync" Disabled="@_viajeReadOnly" MinimumCharacters="0" />
                         </div>
                         <div class="field">
                             <label>Chofer</label>
-                            <LookupAutocomplete @ref="_viajeChoferLookup" Label="" Placeholder="Buscar chofer..." Text="@_viajeChoferTexto" TextChanged="OnViajeChoferTextoChangedAsync" SelectedChanged="OnViajeChoferSelectedAsync" OnEnterCommitted="FocusViajeDestinoAsync" OnCreateRequested="OnViajeChoferCreateRequestedAsync" SearchFunc="CargaViajesSvc.SearchChoferLookupAsync" Disabled="@_viajeReadOnly" />
+                            <LookupAutocomplete @ref="_viajeChoferLookup" Label="" Placeholder="Buscar chofer..." Text="@_viajeChoferTexto" TextChanged="OnViajeChoferTextoChangedAsync" SelectedChanged="OnViajeChoferSelectedAsync" OnEnterCommitted="FocusViajeDestinoAsync" OnCreateRequested="OnViajeChoferCreateRequestedAsync" SearchFunc="CargaViajesSvc.SearchChoferLookupAsync" Disabled="@_viajeReadOnly" MinimumCharacters="0" />
                         </div>
                         <div class="field">
                             <label>Destino</label>
-                            <LookupAutocomplete @ref="_viajeDestinoLookup" Label="" Placeholder="Buscar destino..." Text="@_viajeDestinoTexto" TextChanged="OnViajeDestinoTextoChangedAsync" SelectedChanged="OnViajeDestinoSelectedAsync" OnEnterCommitted="FocusViajeTipoVehiculoAsync" OnCreateRequested="OnViajeDestinoCreateRequestedAsync" SearchFunc="CargaViajesSvc.SearchDestinosLookupAsync" Disabled="@_viajeReadOnly" />
+                            <LookupAutocomplete @ref="_viajeDestinoLookup" Label="" Placeholder="Buscar destino..." Text="@_viajeDestinoTexto" TextChanged="OnViajeDestinoTextoChangedAsync" SelectedChanged="OnViajeDestinoSelectedAsync" OnEnterCommitted="FocusViajeTipoVehiculoAsync" OnCreateRequested="OnViajeDestinoCreateRequestedAsync" SearchFunc="CargaViajesSvc.SearchDestinosLookupAsync" Disabled="@_viajeReadOnly" MinimumCharacters="0" />
                         </div>
                         <div class="field">
                             <label>Tipo vehículo</label>
-                            <LookupAutocomplete @ref="_viajeTipoVehiculoLookup" Label="" Placeholder="Buscar tipo..." Text="@_viajeTipoVehiculoTexto" TextChanged="OnViajeTipoVehiculoTextoChangedAsync" SelectedChanged="OnViajeTipoVehiculoSelectedAsync" OnEnterCommitted="FocusViajeImporteClienteAsync" OnCreateRequested="OnViajeTipoVehiculoCreateRequestedAsync" SearchFunc="CargaViajesSvc.SearchTipoVehiculosLookupAsync" Disabled="@_viajeReadOnly" />
+                            <LookupAutocomplete @ref="_viajeTipoVehiculoLookup" Label="" Placeholder="Buscar tipo..." Text="@_viajeTipoVehiculoTexto" TextChanged="OnViajeTipoVehiculoTextoChangedAsync" SelectedChanged="OnViajeTipoVehiculoSelectedAsync" OnEnterCommitted="FocusViajeImporteClienteAsync" OnCreateRequested="OnViajeTipoVehiculoCreateRequestedAsync" SearchFunc="CargaViajesSvc.SearchTipoVehiculosLookupAsync" Disabled="@_viajeReadOnly" MinimumCharacters="0" />
                         </div>
                     </div>
                     <div class="carga-viajes-viaje-secondary">
