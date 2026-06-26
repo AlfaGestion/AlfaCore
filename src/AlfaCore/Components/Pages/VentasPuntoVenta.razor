@@ -1938,6 +1938,80 @@
             font-size: 1.5rem;
         }
     }
+
+    /* === Tema claro: overrides para valores hardcodeados en oscuro === */
+    html[data-theme="light"] .pos-topbar {
+        background: var(--color-panel-strong);
+        box-shadow: 0 1px 0 var(--color-border);
+    }
+
+    html[data-theme="light"] .pos-catalog__toolbar,
+    html[data-theme="light"] .pos-catalog__meta {
+        background: var(--color-panel);
+        border-bottom: 1px solid var(--color-border);
+    }
+
+    html[data-theme="light"] .pos-sidebar__checkout {
+        background: var(--color-panel);
+        border-top: 1px solid var(--color-border);
+    }
+
+    html[data-theme="light"] .pos-sidebar__empty {
+        background: rgba(100, 116, 139, 0.05);
+    }
+
+    html[data-theme="light"] .pos-charge__icon {
+        background: var(--color-primary);
+        color: #ffffff;
+    }
+
+    html[data-theme="light"] .pos-item-modal__danger {
+        color: #dc2626;
+        background: rgba(220, 38, 38, 0.06);
+        border-color: rgba(220, 38, 38, 0.18);
+    }
+
+    html[data-theme="light"] .pos-sidebar__danger,
+    html[data-theme="light"] .pos-sidebar__cash-actions .pos-sidebar__danger {
+        color: #dc2626;
+        border-color: rgba(220, 38, 38, 0.2);
+        background: rgba(220, 38, 38, 0.04);
+    }
+
+    html[data-theme="light"] .pos-settings-modal__section {
+        background: rgba(100, 116, 139, 0.05);
+    }
+
+    html[data-theme="light"] .pos-settings-modal__feedback {
+        color: #166534;
+    }
+
+    html[data-theme="light"] .pos-settings-modal__feedback--error,
+    html[data-theme="light"] .pos-charge-modal__feedback--error,
+    html[data-theme="light"] .pos-receipt-modal__mail-feedback--error {
+        color: #991b1b;
+    }
+
+    html[data-theme="light"] .pos-charge-modal__feedback {
+        color: #166534;
+    }
+
+    html[data-theme="light"] .pos-success-banner {
+        color: #166534;
+    }
+
+    html[data-theme="light"] .pos-success-banner button {
+        color: #166534;
+        border-color: rgba(22, 101, 52, 0.2);
+    }
+
+    html[data-theme="light"] .pos-receipt-modal {
+        background: var(--color-panel-strong);
+    }
+
+    html[data-theme="light"] .pos-receipt-modal__mail-feedback--ok {
+        color: #166534;
+    }
 </style>
 
 <script>
@@ -2003,7 +2077,7 @@
                 <div class="pos-topbar__menu">
                     <button type="button" class="pos-topbar__ghost" @onclick="TogglePosMenu">
                         <i class="bi bi-list"></i>
-                        MenÃº POS
+                        Menú POS
                     </button>
 
                     @if (_showPosMenu)
@@ -2013,7 +2087,7 @@
                             {
                                 <button type="button" class="pos-topbar__menu-item" @onclick="OpenSettingsAsync">
                                     <i class="bi bi-sliders"></i>
-                                    ConfiguraciÃ³n
+                                    Configuración
                                 </button>
                             }
                             <button type="button" class="pos-topbar__menu-item" @onclick="OpenCashDetailModal">
@@ -2194,11 +2268,11 @@
 
                     @if (_catalogLoadingMore)
                     {
-                        <div class="pos-grid-status">Cargando mÃ¡s artÃ­culos...</div>
+                        <div class="pos-grid-status">Cargando más artículos...</div>
                     }
                     else if (_catalog.TieneMasResultados)
                     {
-                        <div class="pos-grid-status">DeslizÃ¡ hacia abajo para seguir cargando artÃ­culos.</div>
+                        <div class="pos-grid-status">Deslizá hacia abajo para seguir cargando artículos.</div>
                     }
                 }
             </div>
@@ -2209,7 +2283,7 @@
 @if (SelectedCartItem is not null)
 {
     <button type="button" class="pos-item-modal-backdrop" aria-label="Cerrar detalle" @onclick="CloseCartItemModal"></button>
-    <section class="pos-item-modal" aria-label="Editar artÃ­culo">
+    <section class="pos-item-modal" aria-label="Editar artículo">
         <div class="pos-item-modal__image">
             @if (ShouldShowImage(SelectedCartItem.IdArticulo))
             {
@@ -2254,7 +2328,7 @@
         <div class="pos-charge-modal__header">
             <div>
                 <h3>Cobranza</h3>
-                <p>RegistrÃ¡ los medios de pago y confirmÃ¡ la venta actual sin salir del facturador.</p>
+                <p>Registrá los medios de pago y confirmá la venta actual sin salir del facturador.</p>
             </div>
             <button type="button" class="pos-charge-modal__close" @onclick="CloseChargeModal"><i class="bi bi-x-lg"></i></button>
         </div>
@@ -2286,7 +2360,7 @@
                                         class="@(method.Codigo == _selectedPaymentCode ? "pos-charge-modal__method-btn pos-charge-modal__method-btn--active" : "pos-charge-modal__method-btn")"
                                         @onclick="() => HandlePaymentMethodClickAsync(method.Codigo)">
                                     <strong>@method.Descripcion</strong>
-                                    <span>@method.Codigo @(!string.IsNullOrWhiteSpace(method.MedioDePago) ? $"Â· {method.MedioDePago}" : string.Empty)</span>
+                                    <span>@method.Codigo @(!string.IsNullOrWhiteSpace(method.MedioDePago) ? $"· {method.MedioDePago}" : string.Empty)</span>
                                 </button>
                             }
                         </div>
@@ -2298,7 +2372,7 @@
                     <button type="button" class="pos-charge-modal__action" @onclick="AddSelectedPaymentAsync" disabled="@_paymentMethodsLoading">Agregar</button>
                 </div>
                 <div class="pos-charge-modal__hint">
-                    TocÃ¡ un medio de pago para cargar el importe pendiente completo. Si querÃ©s dividir el cobro, cambiÃ¡ el importe y despuÃ©s tocÃ¡ el medio.
+                    Tocá un medio de pago para cargar el importe pendiente completo. Si querés dividir el cobro, cambiá el importe y después tocá el medio.
                 </div>
 
                 <div class="pos-charge-modal__summary">
@@ -2307,7 +2381,7 @@
                         <strong>@DisplayValueOrDash(_settings.CuentaConsumidorFinal)</strong>
                     </div>
                     <div class="pos-charge-modal__summary-row">
-                        <span>MÃ©todo seleccionado</span>
+                        <span>Método seleccionado</span>
                         <strong>@SelectedPaymentMethodLabel()</strong>
                     </div>
                 </div>
@@ -2318,7 +2392,7 @@
 
                 @if (!_paymentLines.Any())
                 {
-                    <div class="pos-grid-status">TodavÃ­a no agregaste pagos.</div>
+                    <div class="pos-grid-status">Todavía no agregaste pagos.</div>
                 }
                 else
                 {
@@ -2375,7 +2449,7 @@
             <div class="pos-receipt-modal__header">
                 <div>
                     <h3>Recibo</h3>
-                    <p>ImprimÃ­ el comprobante, envialo por email o seguÃ­ con una nueva venta.</p>
+                    <p>Imprimí el comprobante, envialo por email o seguí con una nueva venta.</p>
                 </div>
                 <button type="button" class="pos-receipt-modal__close" @onclick="CloseReceiptModal">X</button>
             </div>
@@ -2502,19 +2576,19 @@
                     </div>
                 </div>
             </div>
-            <iframe id="pos-receipt-frame" class="pos-receipt-modal__frame pos-receipt-modal__frame--hidden" title="ImpresiÃ³n ticket POS"></iframe>
+            <iframe id="pos-receipt-frame" class="pos-receipt-modal__frame pos-receipt-modal__frame--hidden" title="Impresión ticket POS"></iframe>
         </section>
     </section>
 }
 
 @if (_showReprintModal)
 {
-    <button type="button" class="pos-item-modal-backdrop" aria-label="Cerrar reimpresiÃ³n" @onclick="CloseReprintModal"></button>
+    <button type="button" class="pos-item-modal-backdrop" aria-label="Cerrar reimpresión" @onclick="CloseReprintModal"></button>
     <section class="pos-settings-modal" aria-label="Reimprimir comprobantes">
         <div class="pos-settings-modal__header">
             <div>
                 <h3>Reimprimir comprobantes</h3>
-                <p>Se listan del mÃ¡s reciente al mÃ¡s viejo.</p>
+                <p>Se listan del más reciente al más viejo.</p>
             </div>
             <button type="button" class="pos-settings-modal__close" @onclick="CloseReprintModal">X</button>
         </div>
@@ -2556,12 +2630,12 @@
 
 @if (_showSettingsModal)
 {
-    <button type="button" class="pos-item-modal-backdrop" aria-label="Cerrar configuraciÃ³n" @onclick="CloseSettingsModal"></button>
-    <section class="pos-settings-modal" aria-label="ConfiguraciÃ³n del punto de venta">
+    <button type="button" class="pos-item-modal-backdrop" aria-label="Cerrar configuración" @onclick="CloseSettingsModal"></button>
+    <section class="pos-settings-modal" aria-label="Configuración del punto de venta">
         <div class="pos-settings-modal__header">
             <div>
-                <h3>ConfiguraciÃ³n</h3>
-                <p>AdministrÃ¡ las claves activas del POS sin perder el carrito ni los filtros cargados.</p>
+                <h3>Configuración</h3>
+                <p>Administrá las claves activas del POS sin perder el carrito ni los filtros cargados.</p>
             </div>
             <button type="button" class="pos-settings-modal__close" @onclick="CloseSettingsModal">X</button>
         </div>
@@ -2618,14 +2692,14 @@
 
                 <div class="pos-settings-modal__field">
                     <label>EMAIL_PASS</label>
-                    <input type="password" @bind="_settings.EmailPassword" placeholder="ContraseÃ±a SMTP" />
+                    <input type="password" @bind="_settings.EmailPassword" placeholder="Contraseña SMTP" />
                 </div>
 
                 <div class="pos-settings-modal__field">
                     <label>EMAIL_SSL</label>
                     <select @bind="_settings.EmailSsl">
                         <option value="">No</option>
-                        <option value="SI">SÃ­</option>
+                        <option value="SI">Sí</option>
                     </select>
                 </div>
             </section>
@@ -2649,7 +2723,7 @@
                     <div class="pos-settings-modal__readonly">@DisplayValueOrDash(_settings.RutaImagenesLegacy)</div>
                 </div>
                 <div class="pos-settings-modal__field">
-                    <label>Orden de bÃºsqueda de imÃ¡genes</label>
+                    <label>Orden de búsqueda de imágenes</label>
                     <ol class="pos-settings-modal__flow">
                         <li><code>VERIFICADOR_RUTAIMAGENES + RutaImagen</code></li>
                         <li><code>ContentRootPath + RutaImagen</code></li>
@@ -2662,7 +2736,7 @@
         <div class="pos-settings-modal__actions">
             <button type="button" class="pos-settings-modal__ghost" @onclick="CloseSettingsModal" disabled="@_settingsSaving">Cerrar</button>
             <button type="button" class="pos-settings-modal__save" @onclick="SavePosSettingsAsync" disabled="@_settingsSaving">
-                @( _settingsSaving ? "Guardando..." : "Guardar configuraciÃ³n" )
+                @( _settingsSaving ? "Guardando..." : "Guardar configuración" )
             </button>
         </div>
     </section>
@@ -2707,24 +2781,24 @@
 
 @if (_showClearCartConfirm)
 {
-    <button type="button" class="pos-item-modal-backdrop" aria-label="Cerrar confirmaciÃ³n" @onclick="CloseClearCartConfirm"></button>
+    <button type="button" class="pos-item-modal-backdrop" aria-label="Cerrar confirmación" @onclick="CloseClearCartConfirm"></button>
     <section class="pos-panel-modal" aria-label="Confirmar vaciado de carrito">
         <div class="pos-settings-modal__header">
             <div>
                 <h3>Vaciar carrito</h3>
-                <p>Se van a eliminar todos los artÃ­culos y los pagos cargados en esta venta.</p>
+                <p>Se van a eliminar todos los artículos y los pagos cargados en esta venta.</p>
             </div>
             <button type="button" class="pos-settings-modal__close" @onclick="CloseClearCartConfirm">X</button>
         </div>
 
         <div class="pos-settings-modal__field">
-            <label>ConfirmaciÃ³n</label>
-            <div class="pos-settings-modal__readonly">Â¿QuerÃ©s vaciar el carrito actual?</div>
+            <label>Confirmación</label>
+            <div class="pos-settings-modal__readonly">¿Querés vaciar el carrito actual?</div>
         </div>
 
         <div class="pos-panel-modal__grid">
             <div class="pos-settings-modal__field">
-                <label>Ãtems cargados</label>
+                <label>Ítems cargados</label>
                 <div class="pos-settings-modal__readonly">@_cartItems.Count</div>
             </div>
             <div class="pos-settings-modal__field">
@@ -3000,7 +3074,7 @@
     {
         if (_context is null || !_context.EsAdministrador)
         {
-            _chargeError = "Solo un usuario administrador puede abrir la configuraciÃ³n del punto de venta.";
+            _chargeError = "Solo un usuario administrador puede abrir la configuración del punto de venta.";
             _showPosMenu = false;
             return;
         }
@@ -3096,20 +3170,20 @@
 
         if (string.IsNullOrWhiteSpace(_selectedPaymentCode))
         {
-            _chargeError = "SeleccionÃ¡ un medio de pago antes de agregarlo.";
+            _chargeError = "Seleccioná un medio de pago antes de agregarlo.";
             return Task.CompletedTask;
         }
 
         if (!TryParseMoney(_chargeAmountInput, out var importe) || importe <= 0)
         {
-            _chargeError = "IngresÃ¡ un importe vÃ¡lido para el medio de pago.";
+            _chargeError = "Ingresá un importe válido para el medio de pago.";
             return Task.CompletedTask;
         }
 
         var method = _paymentMethods.FirstOrDefault(x => x.Codigo == _selectedPaymentCode);
         if (method is null)
         {
-            _chargeError = "El medio de pago seleccionado ya no estÃ¡ disponible.";
+            _chargeError = "El medio de pago seleccionado ya no está disponible.";
             return Task.CompletedTask;
         }
 
@@ -3141,13 +3215,13 @@
 
         if (!_cartItems.Any())
         {
-            _chargeError = "No hay artÃ­culos en el carrito para cobrar.";
+            _chargeError = "No hay artículos en el carrito para cobrar.";
             return;
         }
 
         if (!_paymentLines.Any())
         {
-            _chargeError = "AgregÃ¡ al menos un medio de pago.";
+            _chargeError = "Agregá al menos un medio de pago.";
             return;
         }
 
@@ -3194,7 +3268,7 @@
             });
 
             _lastSaleResult = result;
-            await ShowChargeSuccessAsync($"Venta registrada: {result.TipoComprobante} {result.Sucursal}-{result.Numero}{result.Letra} Â· total {FmtMoney(result.Total)}.");
+            await ShowChargeSuccessAsync($"Venta registrada: {result.TipoComprobante} {result.Sucursal}-{result.Numero}{result.Letra} · total {FmtMoney(result.Total)}.");
             _cartItems.Clear();
             _paymentLines.Clear();
             _showChargeModal = false;
@@ -3296,7 +3370,7 @@
 
         if (_lastSaleResult is null)
         {
-            _receiptEmailError = "No se encontrÃ³ el comprobante generado para enviarlo por email.";
+            _receiptEmailError = "No se encontró el comprobante generado para enviarlo por email.";
             return;
         }
 
@@ -3334,7 +3408,7 @@
             await PuntoVentaSvc.SaveSettingsAsync(_settings);
             _settings = await PuntoVentaSvc.GetSettingsAsync();
             await LoadCatalogAsync();
-            _settingsFeedback = "ConfiguraciÃ³n guardada. El catÃ¡logo se recargÃ³ sin perder el carrito actual.";
+            _settingsFeedback = "Configuración guardada. El catálogo se recargó sin perder el carrito actual.";
         }
         catch (Exception ex)
         {
@@ -3361,12 +3435,12 @@
     private string DisplayListName()
         => string.IsNullOrWhiteSpace(_catalog.ListaPrecioActual)
             ? "Precio base del articulo"
-            : $"{_catalog.ListaPrecioActual} Â· {(_catalog.NombreListaPrecioActual.Length == 0 ? "Lista vigente" : _catalog.NombreListaPrecioActual)}";
+            : $"{_catalog.ListaPrecioActual} · {(_catalog.NombreListaPrecioActual.Length == 0 ? "Lista vigente" : _catalog.NombreListaPrecioActual)}";
 
     private static string FamilyLabel(PuntoVentaFamilyDto family)
         => string.IsNullOrWhiteSpace(family.Descripcion)
             ? family.IdFamilia
-            : $"{family.IdFamilia} Â· {family.Descripcion}";
+            : $"{family.IdFamilia} · {family.Descripcion}";
 
     private static string ProductInitials(string descripcion)
     {
