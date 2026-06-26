@@ -22833,10 +22833,27 @@ html[data-theme="light"] .tickets-table-wrap {
     display: none !important;
 }
 
+.shell__header > div:first-of-type,
+.tareas-header > div:first-child,
+.partes-hero__main {
+    display: none !important;
+}
+
 .shell__topbar,
 .main-shell__topbar {
     justify-content: flex-end !important;
     min-height: 0 !important;
     padding-top: .65rem !important;
     padding-bottom: .65rem !important;
+}
+
+.shell__header,
+.tareas-header,
+.partes-hero {
+    justify-content: flex-end !important;
+    min-height: 0 !important;
+}
+
+.partes-hero {
+    grid-template-columns: minmax(0, 1fr) auto !important;
 }
