@@ -279,20 +279,6 @@
 </style>
 
 <section class="page-grid tickets-page tickets-page--odoo" @onclick="HandleTicketPageClickAsync">
-    <section class="tickets-odoo-header">
-        <div>
-            <h2 class="tickets-odoo-header__title">Servicio de soporte - Tickets de asistencia</h2>
-        </div>
-        <div class="actions">
-            <button type="button" class="btn btn--primary" @onclick="NuevoTicket">
-                <i class="bi bi-plus-circle"></i> Nuevo
-            </button>
-            <button type="button" class="btn btn--ghost" @onclick="RecargarAsync" disabled="@_loading">
-                <i class="bi bi-arrow-clockwise"></i> Recargar
-            </button>
-        </div>
-    </section>
-
     @if (_feedback is not null)
     {
         <section class="panel-card">
@@ -485,6 +471,14 @@
                         </div>
                     </div>
                 }
+            </div>
+            <div class="actions tickets-commandbar__actions">
+                <button type="button" class="btn btn--primary" @onclick="NuevoTicket">
+                    <i class="bi bi-plus-circle"></i> Nuevo
+                </button>
+                <button type="button" class="btn btn--ghost" @onclick="RecargarAsync" disabled="@_loading">
+                    <i class="bi bi-arrow-clockwise"></i> Recargar
+                </button>
             </div>
         </section>
     }

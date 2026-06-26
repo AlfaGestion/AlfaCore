@@ -1549,6 +1549,112 @@ select {
     min-width: min(100%, 480px);
 }
 
+.tickets-page--odoo .tickets-commandbar {
+    grid-template-columns: auto minmax(320px, 520px) minmax(0, 1fr) auto;
+    align-items: start;
+    gap: .6rem;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    animation: none;
+}
+
+.tickets-page--odoo .tickets-view-switch {
+    grid-column: 1;
+}
+
+.tickets-page--odoo .tickets-smart-search {
+    grid-column: 2;
+    width: 100%;
+    min-width: 0;
+    max-width: 520px;
+}
+
+.tickets-page--odoo .tickets-commandbar__actions {
+    grid-column: 4;
+    justify-self: end;
+    flex-wrap: nowrap;
+}
+
+.tickets-page--odoo .tickets-smart-search .smart-search__panel {
+    width: min(780px, calc(100vw - 6rem));
+    grid-template-columns: minmax(180px, .75fr) minmax(220px, 1fr) minmax(220px, 1fr);
+}
+
+.tickets-page--odoo .tickets-smart-search .smart-search__column,
+.tickets-page--odoo .tickets-smart-search .smart-search__custom {
+    padding: .7rem;
+}
+
+.tickets-page--odoo .tickets-smart-search .smart-search__column:nth-of-type(4) {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(130px, 1fr)) auto;
+    align-items: center;
+    gap: .4rem;
+    border-top: 1px solid rgba(125, 161, 207, .2);
+}
+
+.tickets-page--odoo .tickets-smart-search .smart-search__column:nth-of-type(4) h4 {
+    grid-column: 1 / -1;
+    margin-bottom: .1rem;
+}
+
+.tickets-page--odoo .tickets-smart-search .smart-search__column button,
+.tickets-page--odoo .tickets-smart-search .smart-option {
+    padding: .38rem .48rem;
+}
+
+.tickets-page--odoo .tickets-smart-search .smart-search__inline {
+    margin-top: .18rem;
+}
+
+.tickets-page--odoo .tickets-smart-search .smart-search__custom {
+    grid-template-columns: auto minmax(130px, .75fr) minmax(170px, 1fr) minmax(120px, .7fr) auto;
+    gap: .45rem;
+}
+
+.tickets-page--odoo .tickets-smart-search .smart-search__custom h4 {
+    margin: 0;
+    white-space: nowrap;
+}
+
+@media (max-width: 1180px) {
+    .tickets-page--odoo .tickets-commandbar {
+        grid-template-columns: auto minmax(280px, 1fr) auto;
+    }
+
+    .tickets-page--odoo .tickets-commandbar__actions {
+        grid-column: 3;
+    }
+}
+
+@media (max-width: 860px) {
+    .tickets-page--odoo .tickets-commandbar {
+        grid-template-columns: 1fr;
+    }
+
+    .tickets-page--odoo .tickets-view-switch,
+    .tickets-page--odoo .tickets-smart-search,
+    .tickets-page--odoo .tickets-commandbar__actions {
+        grid-column: 1;
+        justify-self: stretch;
+        max-width: none;
+    }
+
+    .tickets-page--odoo .tickets-commandbar__actions .btn {
+        flex: 1 1 auto;
+    }
+
+    .tickets-page--odoo .tickets-smart-search .smart-search__panel,
+    .tickets-page--odoo .tickets-smart-search .smart-search__column:nth-of-type(4),
+    .tickets-page--odoo .tickets-smart-search .smart-search__custom {
+        grid-template-columns: 1fr;
+        width: min(100%, calc(100vw - 2rem));
+    }
+}
+
 @keyframes support-dropdown-in {
     from {
         opacity: 0;
