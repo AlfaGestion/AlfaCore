@@ -23171,11 +23171,11 @@ html[data-theme="light"] .tickets-table-wrap {
     padding: 1rem !important;
 }
 
-/* Configurar vista: conservar layout original; solo separar mejor el fondo. */
+/* Configurar vista: conservar layout original sin capa oscura extra. */
 .tickets-view-settings-layer {
-    background:
-        radial-gradient(ellipse at center, rgba(0, 6, 18, .58) 0%, rgba(0, 6, 18, .78) 58%, rgba(0, 6, 18, .92) 100%) !important;
-    backdrop-filter: blur(7px) saturate(.78) !important;
+    background: transparent !important;
+    backdrop-filter: none !important;
+    overflow: hidden !important;
 }
 
 .tickets-view-settings-modal {
@@ -23184,6 +23184,12 @@ html[data-theme="light"] .tickets-table-wrap {
     grid-template-rows: auto minmax(0, 1fr) !important;
     overflow: hidden !important;
     box-shadow: 0 24px 72px rgba(0, 0, 0, .58) !important;
+    scrollbar-width: none !important;
+}
+
+.tickets-view-settings-modal::-webkit-scrollbar,
+.tickets-view-settings-layer::-webkit-scrollbar {
+    display: none !important;
 }
 
 .tickets-view-settings-modal > .usuarios-view-settings {
@@ -23198,6 +23204,20 @@ html[data-theme="light"] .tickets-table-wrap {
     min-height: 0 !important;
     overflow-y: auto !important;
     overflow-x: hidden !important;
+    scrollbar-width: none !important;
+}
+
+.tickets-view-settings-modal .usuarios-view-settings__list::-webkit-scrollbar {
+    display: none !important;
+}
+
+.tickets-view-settings-modal .usuarios-view-settings__item {
+    min-width: 0 !important;
+}
+
+html:has(.tickets-view-settings-layer),
+body:has(.tickets-view-settings-layer) {
+    overflow: hidden !important;
 }
 
 .panel-card:has(> .panel-card__header + .usuarios-view-settings),
