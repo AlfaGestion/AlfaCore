@@ -22474,3 +22474,326 @@ html[data-theme="light"] .pos-settings-modal {
     font-size: .8rem !important;
     font-weight: 700 !important;
 }
+
+/* AlfaCore UI Standard - capa comun de normalizacion visual.
+   No cambia comportamiento: unifica densidad, espaciado y jerarquia entre modulos. */
+:root {
+    --ui-radius: 8px;
+    --ui-radius-sm: 6px;
+    --ui-gap: .75rem;
+    --ui-gap-sm: .5rem;
+    --ui-control-height: 36px;
+    --ui-panel-padding: 1rem;
+    --ui-border: rgba(148, 163, 184, .16);
+}
+
+.shell__content,
+.main-shell__content {
+    padding-top: .75rem;
+}
+
+.page-grid {
+    gap: var(--ui-gap);
+}
+
+.page-intro,
+.tickets-odoo-header,
+.carga-viajes-brand {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--ui-gap);
+    margin-bottom: 0;
+    padding: .8rem var(--ui-panel-padding);
+    border: 1px solid var(--ui-border);
+    border-radius: var(--ui-radius);
+    background: linear-gradient(180deg, rgba(13, 27, 48, .78), rgba(9, 19, 33, .68));
+    box-shadow: none;
+}
+
+.page-intro__title,
+.tickets-odoo-header__title,
+.carga-viajes-brand__title {
+    font-size: 1.18rem;
+    line-height: 1.2;
+}
+
+.page-intro__text {
+    margin-top: .25rem;
+    font-size: .86rem;
+    line-height: 1.35;
+}
+
+.panel-card,
+.smart-search-card,
+.contactos-tabs,
+.contactos-form,
+.usuarios-view-settings,
+.tickets-commandbar,
+.carga-viajes-tabs,
+.carga-viajes-toolbar {
+    border-radius: var(--ui-radius);
+}
+
+.panel-card {
+    padding: var(--ui-panel-padding);
+    box-shadow: 0 10px 28px rgba(2, 6, 23, .20);
+}
+
+.panel-card__header,
+.table-toolbar {
+    align-items: flex-start;
+    gap: var(--ui-gap);
+    margin-bottom: var(--ui-gap);
+}
+
+.panel-card__title {
+    font-size: .95rem;
+    line-height: 1.25;
+}
+
+.panel-card__subtitle {
+    margin-top: .18rem;
+    font-size: .78rem;
+    line-height: 1.35;
+}
+
+.actions,
+.quick-range,
+.carga-viajes-toolbar__actions,
+.interfaces-mobile-toolbar,
+.tickets-view-switch {
+    align-items: center;
+    gap: var(--ui-gap-sm);
+}
+
+.actions {
+    min-width: 0;
+}
+
+.btn,
+.result-pagination__btn,
+.smart-search__toggle {
+    min-height: var(--ui-control-height);
+    border-radius: var(--ui-radius);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: .42rem;
+    white-space: nowrap;
+}
+
+.btn {
+    padding: .46rem .72rem;
+    font-size: .84rem;
+    line-height: 1.2;
+}
+
+.btn--sm,
+.result-pagination__btn {
+    min-height: 32px;
+    padding: .32rem .55rem;
+    font-size: .78rem;
+}
+
+.btn:hover {
+    transform: none;
+}
+
+.filters-grid,
+.filters-grid--wide,
+.interfaces-filters-panel-grid,
+.carga-viajes-advanced-grid,
+.usuarios-editor__grid,
+.contactos-form__grid,
+.carga-viajes-form-grid {
+    gap: var(--ui-gap);
+}
+
+.field {
+    gap: .28rem;
+}
+
+.field label,
+.smart-search__inline label {
+    font-size: .74rem;
+    line-height: 1.2;
+}
+
+.field input,
+.field select,
+.field textarea,
+.smart-search select,
+.smart-search input[type="text"],
+.smart-search__bar,
+.usuarios-input,
+.result-pagination__size {
+    min-height: var(--ui-control-height);
+    border-radius: var(--ui-radius-sm);
+}
+
+.field input,
+.field select,
+.field textarea,
+.smart-search select,
+.smart-search input[type="text"],
+.usuarios-input {
+    padding: .48rem .62rem;
+    font-size: .84rem;
+}
+
+.smart-search-card {
+    padding: .75rem;
+}
+
+.smart-search__bar {
+    min-height: var(--ui-control-height);
+}
+
+.smart-search__bar input {
+    padding: .48rem .62rem;
+    font-size: .86rem;
+}
+
+.smart-search__chips {
+    min-height: 0;
+    padding-top: .45rem;
+}
+
+.smart-search__panel {
+    border-radius: var(--ui-radius);
+}
+
+.smart-chip {
+    border-radius: 999px;
+    padding: .24rem .48rem;
+    font-size: .74rem;
+}
+
+.usuarios-table-wrap,
+.table-wrap,
+.interfaces-docs-table-wrap,
+.tickets-table-wrap {
+    border: 1px solid var(--ui-border);
+    border-radius: var(--ui-radius);
+    background: rgba(2, 6, 23, .16);
+}
+
+.data-table {
+    font-size: .84rem;
+}
+
+.data-table th,
+.data-table td {
+    padding: .55rem .65rem;
+    height: 40px;
+}
+
+.data-table th {
+    font-size: .68rem;
+    letter-spacing: .04em;
+}
+
+.data-table tbody tr:hover,
+.usuarios-table__row:hover,
+.data-grid__row:hover {
+    background: rgba(14, 165, 233, .08);
+}
+
+.interfaces-table__actions,
+.contactos-table__actions {
+    white-space: nowrap;
+}
+
+.result-pagination {
+    padding: .6rem 0 0;
+    gap: var(--ui-gap-sm);
+}
+
+.result-pagination__controls {
+    gap: .25rem;
+}
+
+.result-pagination__size {
+    padding: .35rem .5rem;
+}
+
+.usuarios-editor,
+.contactos-form,
+.tickets-detail-layout,
+.carga-viajes-form-grid {
+    gap: var(--ui-gap);
+}
+
+.usuarios-editor__actions {
+    margin-top: 0;
+    padding-top: 0;
+}
+
+.modal-card,
+.cuentas-modal,
+.app-modal {
+    border-radius: var(--ui-radius);
+}
+
+.cuentas-modal__header,
+.modal-card .panel-card__header {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+}
+
+.cuentas-modal__actions,
+.modal-card__actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    justify-content: flex-start;
+}
+
+@media (max-width: 980px) {
+    .page-intro,
+    .tickets-odoo-header,
+    .carga-viajes-brand,
+    .panel-card__header,
+    .table-toolbar {
+        display: grid;
+        grid-template-columns: 1fr;
+    }
+
+    .actions,
+    .quick-range,
+    .carga-viajes-toolbar__actions {
+        width: 100%;
+    }
+
+    .actions .btn,
+    .quick-range .btn {
+        flex: 1 1 auto;
+    }
+
+    .filters-grid,
+    .filters-grid--wide,
+    .interfaces-filters-panel-grid,
+    .carga-viajes-advanced-grid,
+    .usuarios-editor__grid,
+    .contactos-form__grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+html[data-theme="light"] .page-intro,
+html[data-theme="light"] .tickets-odoo-header,
+html[data-theme="light"] .carga-viajes-brand {
+    background: #ffffff;
+    border-color: rgba(15, 23, 42, .12);
+    box-shadow: 0 4px 18px rgba(15, 23, 42, .06);
+}
+
+html[data-theme="light"] .usuarios-table-wrap,
+html[data-theme="light"] .table-wrap,
+html[data-theme="light"] .interfaces-docs-table-wrap,
+html[data-theme="light"] .tickets-table-wrap {
+    background: #ffffff;
+    border-color: rgba(15, 23, 42, .10);
+}
