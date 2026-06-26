@@ -22998,3 +22998,186 @@ html[data-theme="light"] .tickets-table-wrap {
 .partes-hero {
     grid-template-columns: minmax(0, 1fr) auto !important;
 }
+
+/* Pantalla util completa: reduce aire global y evita contenedores-card de pagina completa. */
+:root {
+    --ui-gap: .55rem;
+    --ui-gap-sm: .38rem;
+    --ui-panel-padding: .65rem;
+}
+
+.shell__main,
+.main-shell__workspace {
+    min-width: 0 !important;
+}
+
+.shell__main {
+    padding: .35rem .55rem .55rem !important;
+}
+
+.main-shell__content {
+    padding: .35rem .55rem .55rem !important;
+}
+
+.shell__content,
+.main-shell__content,
+.page-grid {
+    width: 100% !important;
+    max-width: none !important;
+}
+
+.shell__content {
+    min-height: calc(100dvh - .9rem);
+}
+
+.page-grid {
+    align-content: start;
+    gap: .55rem !important;
+}
+
+.shell__header,
+.main-shell__topbar,
+.tareas-header,
+.partes-hero {
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+.shell__header:has(> div:first-of-type:last-child),
+.main-shell__topbar:has(> div:first-child:last-child),
+.tareas-header:has(> div:first-child:last-child),
+.partes-hero:has(.partes-hero__main:last-child) {
+    display: none !important;
+}
+
+.shell__content > *,
+.main-shell__content > *,
+.page-grid > *,
+.reuniones-header,
+.reuniones-grid,
+.help-main,
+.novedades-page,
+.launcher-grid,
+.templates-page--odoo,
+.conversations-page--odoo {
+    max-width: none !important;
+}
+
+.reuniones-header,
+.reuniones-grid {
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+}
+
+.shell__content > .page-grid > .panel-card:not(.empty-state):not(.modal-card),
+.main-shell__content > .page-grid > .panel-card:not(.empty-state):not(.modal-card),
+.page-grid > .panel-card.filters-card,
+.page-grid > .panel-card.smart-search-card,
+.page-grid > .panel-card:has(> .panel-card__header + .filters-grid),
+.page-grid > .panel-card:has(> .panel-card__header + .filters-grid--wide),
+.page-grid > .panel-card:has(> .panel-card__header + .table-wrap),
+.page-grid > .panel-card:has(> .panel-card__header + .data-table),
+.page-grid > .panel-card:has(.usuarios-table-wrap),
+.page-grid > .panel-card:has(.tickets-table-wrap),
+.page-grid > .panel-card:has(.table-toolbar) {
+    padding: .25rem 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+}
+
+.panel-card__header,
+.table-toolbar {
+    margin-bottom: .45rem !important;
+}
+
+.panel-card__subtitle {
+    line-height: 1.25 !important;
+}
+
+.filters-card .panel-card__header,
+.smart-search-card .panel-card__header,
+.page-grid > .panel-card:has(.filters-grid) > .panel-card__header,
+.page-grid > .panel-card:has(.filters-grid--wide) > .panel-card__header {
+    display: none !important;
+}
+
+.filters-grid,
+.filters-grid--wide,
+.interfaces-filters-panel-grid,
+.usuarios-editor__grid,
+.contactos-form__grid,
+.carga-viajes-form-grid {
+    gap: .5rem !important;
+}
+
+.table-wrap,
+.usuarios-table-wrap,
+.tickets-table-wrap,
+.interfaces-docs-table-wrap,
+.data-table-wrap {
+    width: 100% !important;
+}
+
+.data-table th,
+.data-table td {
+    padding: .42rem .55rem !important;
+    height: 34px !important;
+}
+
+.tickets-page,
+.tickets-page--odoo {
+    gap: .45rem !important;
+}
+
+.tickets-page--odoo .panel-card:not(.empty-state):not(.modal-card) {
+    padding: .25rem 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    animation: none !important;
+}
+
+.tickets-kanban {
+    gap: .45rem !important;
+    padding-bottom: 0 !important;
+}
+
+.tickets-kanban-column__head {
+    min-height: 34px !important;
+    padding: .42rem .55rem !important;
+}
+
+.tickets-kanban-column__body {
+    gap: .38rem !important;
+    padding: .42rem !important;
+}
+
+.tickets-editor-grid,
+.tickets-detail-layout {
+    gap: .6rem !important;
+    grid-template-columns: minmax(0, 1fr) minmax(240px, .28fr) !important;
+}
+
+.conversations-page--odoo,
+.templates-page--odoo {
+    min-height: 100dvh !important;
+    height: 100dvh !important;
+}
+
+.empty-state {
+    padding: 1rem !important;
+}
+
+@media (max-width: 980px) {
+    .shell__main,
+    .main-shell__content {
+        padding: .5rem !important;
+    }
+
+    .shell__content {
+        min-height: calc(100dvh - 1rem);
+    }
+}
