@@ -23201,9 +23201,20 @@ html[data-theme="light"] .tickets-table-wrap {
     border: 1px solid rgba(96, 165, 250, .24) !important;
     border-radius: var(--ui-radius) !important;
     background: rgba(8, 18, 33, .99) !important;
+    isolation: isolate !important;
     box-shadow:
         0 0 0 100vmax rgba(0, 6, 18, .72),
         0 30px 95px rgba(0, 0, 0, .72) !important;
+}
+
+.panel-card:has(> .panel-card__header + .usuarios-view-settings)::before,
+.cuentas-modal:has(.usuarios-view-settings)::before {
+    content: "" !important;
+    position: fixed !important;
+    inset: -100vmax !important;
+    z-index: -1 !important;
+    background: rgba(0, 6, 18, .74) !important;
+    backdrop-filter: blur(5px) saturate(.85) !important;
 }
 
 .panel-card:has(> .panel-card__header + .usuarios-view-settings) > .panel-card__header,
@@ -23275,6 +23286,11 @@ html[data-theme="light"] .cuentas-modal:has(.usuarios-view-settings) {
     box-shadow:
         0 0 0 100vmax rgba(15, 23, 42, .44),
         0 20px 55px rgba(15, 23, 42, .18) !important;
+}
+
+html[data-theme="light"] .panel-card:has(> .panel-card__header + .usuarios-view-settings)::before,
+html[data-theme="light"] .cuentas-modal:has(.usuarios-view-settings)::before {
+    background: rgba(15, 23, 42, .50) !important;
 }
 
 @media (max-width: 860px) {
