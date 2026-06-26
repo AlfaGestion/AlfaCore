@@ -23173,13 +23173,31 @@ html[data-theme="light"] .tickets-table-wrap {
 
 /* Configurar vista: conservar layout original; solo separar mejor el fondo. */
 .tickets-view-settings-layer {
-    background: rgba(0, 6, 18, .74) !important;
-    backdrop-filter: blur(5px) saturate(.85) !important;
+    background:
+        radial-gradient(ellipse at center, rgba(0, 6, 18, .58) 0%, rgba(0, 6, 18, .78) 58%, rgba(0, 6, 18, .92) 100%) !important;
+    backdrop-filter: blur(7px) saturate(.78) !important;
 }
 
 .tickets-view-settings-modal {
     background: rgba(8, 18, 33, .99) !important;
-    box-shadow: 0 30px 95px rgba(0, 0, 0, .72) !important;
+    display: grid !important;
+    grid-template-rows: auto minmax(0, 1fr) !important;
+    overflow: hidden !important;
+    box-shadow: 0 24px 72px rgba(0, 0, 0, .58) !important;
+}
+
+.tickets-view-settings-modal > .usuarios-view-settings {
+    min-height: 0 !important;
+    display: grid !important;
+    grid-template-rows: auto minmax(0, 1fr) !important;
+    gap: .65rem !important;
+    overflow: hidden !important;
+}
+
+.tickets-view-settings-modal .usuarios-view-settings__list {
+    min-height: 0 !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
 }
 
 .panel-card:has(> .panel-card__header + .usuarios-view-settings),
