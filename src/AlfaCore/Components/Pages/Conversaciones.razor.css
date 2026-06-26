@@ -3,6 +3,25 @@
     position: relative;
 }
 
+.conversations-filters {
+    position: relative;
+    z-index: 90;
+}
+
+.conversations-filters__fields .field {
+    position: relative;
+}
+
+.conversations-contact-suggest {
+    position: absolute;
+    top: calc(100% + .35rem);
+    left: 0;
+    right: 0;
+    z-index: 100;
+    max-height: min(420px, 62vh);
+    overflow: auto;
+}
+
 .conversations-page--odoo {
     min-height: 100dvh;
     height: 100dvh;

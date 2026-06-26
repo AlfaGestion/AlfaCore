@@ -548,12 +548,22 @@ public sealed class NovedadesService(
                 ISNULL(n.UsuarioAlta, '') AS UsuarioAlta,
                 ISNULL(n.UsuarioModificacion, '') AS UsuarioModificacion,
                 ISNULL(n.FechaHora_Modificacion, n.FechaHora_Alta) AS FechaHoraModificacion,
+                ISNULL(s.Vistas, 0) AS Vistas,
+                ISNULL(s.Lecturas, 0) AS Lecturas,
                 CONVERT(bit, CASE WHEN l.FechaHoraLeido IS NULL THEN 0 ELSE 1 END) AS LeidaPorUsuario,
                 l.FechaHoraLeido
             FROM dbo.ALFACORE_NOVEDADES n
             LEFT JOIN dbo.ALFACORE_NOVEDADES_LECTURAS l
                    ON l.IdNovedad = n.IdNovedad
                   AND UPPER(LTRIM(RTRIM(l.Usuario))) = UPPER(LTRIM(RTRIM(@Usuario)))
+            OUTER APPLY
+            (
+                SELECT
+                    COUNT(1) AS Vistas,
+                    SUM(CASE WHEN FechaHoraLeido IS NULL THEN 0 ELSE 1 END) AS Lecturas
+                FROM dbo.ALFACORE_NOVEDADES_LECTURAS lx
+                WHERE lx.IdNovedad = n.IdNovedad
+            ) s
             WHERE n.IdNovedad = @IdNovedad;
             """;
 

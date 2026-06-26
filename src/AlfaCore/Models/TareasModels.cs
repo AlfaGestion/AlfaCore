@@ -53,6 +53,7 @@ public sealed class TareaItemDto
     public string Estado { get; set; } = TareaEstadoKeys.Pendiente;
     public string Prioridad { get; set; } = TareaPrioridadKeys.Media;
     public string UsuarioAlta { get; set; } = string.Empty;
+    public string UsuarioCreador { get; set; } = string.Empty;
     public bool EsPropia { get; set; }
     public bool CompartidaConTodos { get; set; }
     public List<string> UsuariosCompartidos { get; set; } = [];
@@ -128,6 +129,7 @@ public sealed class TareaSaveRequest
     public string UsuarioAsignado { get; set; } = string.Empty;
     public string Estado { get; set; } = TareaEstadoKeys.Pendiente;
     public string Prioridad { get; set; } = TareaPrioridadKeys.Media;
+    public string UsuarioCreador { get; set; } = string.Empty;
     public bool CompartirConTodos { get; set; }
     public List<string> UsuariosCompartidos { get; set; } = [];
     public string UsuarioAccion { get; set; } = string.Empty;

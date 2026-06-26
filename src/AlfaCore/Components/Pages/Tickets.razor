@@ -26,6 +26,104 @@
         color-scheme: dark;
     }
 
+    .tickets-view-settings-modal .panel-card__header {
+        align-items: flex-start;
+    }
+
+    .tickets-view-settings-modal .panel-card__header .actions {
+        align-items: center;
+        flex-wrap: nowrap;
+    }
+
+    .tickets-view-settings-check {
+        display: inline-flex;
+        align-items: center;
+        gap: 9px;
+        min-width: 0;
+        margin: 0;
+        cursor: pointer;
+        color: var(--text);
+        font-weight: 700;
+    }
+
+    .tickets-view-settings-check input {
+        appearance: none;
+        width: 18px;
+        height: 18px;
+        flex: 0 0 18px;
+        margin: 0;
+        border: 1px solid rgba(148, 163, 184, .55);
+        border-radius: 5px;
+        background: rgba(2, 6, 23, .72);
+        display: grid;
+        place-items: center;
+        color: #ffffff;
+        cursor: pointer;
+    }
+
+    .tickets-view-settings-check input::before {
+        content: "";
+        width: 9px;
+        height: 5px;
+        border-left: 2px solid currentColor;
+        border-bottom: 2px solid currentColor;
+        transform: rotate(-45deg) translate(1px, -1px) scale(0);
+        transform-origin: center;
+        transition: transform .12s ease;
+    }
+
+    .tickets-view-settings-check input:checked {
+        border-color: rgba(14, 165, 233, .95);
+        background: #0ea5e9;
+    }
+
+    .tickets-view-settings-check input:checked::before {
+        transform: rotate(-45deg) translate(1px, -1px) scale(1);
+    }
+
+    .tickets-view-settings-check input:focus-visible {
+        outline: 2px solid rgba(34, 211, 238, .55);
+        outline-offset: 2px;
+    }
+
+    .tickets-view-settings-check span {
+        overflow-wrap: anywhere;
+    }
+
+    .tickets-group-toggle {
+        width: 100%;
+        min-height: 46px;
+        border: 0;
+        padding: 0 12px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        background: transparent;
+        color: inherit;
+        text-align: left;
+        font: inherit;
+        font-weight: 800;
+        cursor: pointer;
+    }
+
+    .tickets-group-toggle i {
+        color: var(--muted);
+        font-size: .92rem;
+    }
+
+    .tickets-group-toggle small {
+        margin-left: auto;
+        color: var(--muted);
+        font-size: .78rem;
+        font-weight: 700;
+    }
+
+    .tickets-group-toggle:hover,
+    .tickets-group-toggle:focus-visible {
+        background: rgba(34, 211, 238, .08);
+        outline: none;
+    }
+
     .tickets-tag-field__head {
         display: flex;
         align-items: center;
@@ -400,9 +498,14 @@
                     <h3 class="panel-card__title">Configuración de vista</h3>
                     <p class="panel-card__subtitle">Columnas visibles, orden y agrupación del listado.</p>
                 </div>
-                <button type="button" class="btn btn--ghost" @onclick="CloseViewSettings">
-                    <i class="bi bi-x-circle"></i> Cerrar
-                </button>
+                <div class="actions">
+                    <button type="button" class="btn btn--primary" @onclick="GuardarConfiguracionVistaAsync">
+                        <i class="bi bi-floppy"></i> Guardar vista
+                    </button>
+                    <button type="button" class="btn btn--ghost" @onclick="CloseViewSettings">
+                        <i class="bi bi-x-circle"></i> Cerrar
+                    </button>
+                </div>
             </div>
             <div class="usuarios-view-settings">
                 <div class="field">
@@ -418,7 +521,7 @@
                     @foreach (var col in _viewSettingsDraft.OrderBy(c => c.Order))
                     {
                         <div class="usuarios-view-settings__item">
-                            <label class="checkbox">
+                            <label class="tickets-view-settings-check">
                                 <input type="checkbox" checked="@col.Visible" @onchange="args => ToggleViewColumn(col.Key, args)" />
                                 <span>@col.Label</span>
                             </label>
@@ -428,14 +531,6 @@
                             </div>
                         </div>
                     }
-                </div>
-                <div class="actions">
-                    <button type="button" class="btn btn--primary" @onclick="GuardarConfiguracionVistaAsync">
-                        <i class="bi bi-floppy"></i> Guardar vista
-                    </button>
-                    <button type="button" class="btn btn--ghost" @onclick="CloseViewSettings">
-                        <i class="bi bi-x-circle"></i> Cancelar
-                    </button>
                 </div>
             </div>
         </section>
@@ -1048,16 +1143,30 @@
                             <tbody>
                                 @if (group.ShowHeader)
                                 {
-                                    <tr class="usuarios-group-row"><td colspan="@visibleColumns.Count">@group.Label</td></tr>
-                                }
-                                @foreach (var item in group.Items)
-                                {
-                                    <tr class="@GetTicketRowClass(item)" @onclick="() => AbrirTicketAsync(item.IdTicket)">
-                                        @foreach (var col in visibleColumns)
-                                        {
-                                            <td>@RenderColumn(item, col.Key)</td>
-                                        }
+                                    <tr class="usuarios-group-row">
+                                        <td colspan="@visibleColumns.Count">
+                                            <button type="button"
+                                                    class="tickets-group-toggle"
+                                                    @onclick="() => ToggleListGroup(group.Key)"
+                                                    aria-expanded="@(!IsListGroupCollapsed(group.Key))">
+                                                <i class="bi @(IsListGroupCollapsed(group.Key) ? "bi-chevron-right" : "bi-chevron-down")"></i>
+                                                <span>@group.Label</span>
+                                                <small>@group.Items.Count ticket(s)</small>
+                                            </button>
+                                        </td>
                                     </tr>
+                                }
+                                @if (!group.ShowHeader || !IsListGroupCollapsed(group.Key))
+                                {
+                                    @foreach (var item in group.Items)
+                                    {
+                                        <tr class="@GetTicketRowClass(item)" @onclick="() => AbrirTicketAsync(item.IdTicket)">
+                                            @foreach (var col in visibleColumns)
+                                            {
+                                                <td>@RenderColumn(item, col.Key)</td>
+                                            }
+                                        </tr>
+                                    }
                                 }
                             </tbody>
                         }
@@ -1133,6 +1242,7 @@
     private string _draftAgruparPor = TicketViewGroupKeys.Estado;
     private bool _viewSettingsLoaded;
     private string _viewSettingsUserName = string.Empty;
+    private readonly HashSet<string> _collapsedListGroups = new(StringComparer.OrdinalIgnoreCase);
     private long? _startupTicketId;
     private TicketGridItemDto? _draggingTicket;
     private string? _dragTargetEstado;
@@ -2471,6 +2581,9 @@
 
     private void ApplyViewSettings(TicketViewSettingsDto settings, string userName)
     {
+        if (!string.Equals(_viewSettings.AgruparPor, settings.AgruparPor, StringComparison.OrdinalIgnoreCase))
+            _collapsedListGroups.Clear();
+
         _viewSettings = settings;
         _viewSettingsUserName = userName;
         _viewSettingsLoaded = true;
@@ -2601,11 +2714,29 @@
     {
         return _viewSettings.AgruparPor switch
         {
-            TicketViewGroupKeys.Prioridad => _listItems.GroupBy(x => RenderPriority(x.Prioridad)).Select(g => new TicketGridGroup { Label = g.Key, ShowHeader = true, Items = g.ToList() }).ToList(),
-            TicketViewGroupKeys.Tecnico => _listItems.GroupBy(x => DisplayOrFallback(x.TecnicoNombre, "Sin asignar")).Select(g => new TicketGridGroup { Label = g.Key, ShowHeader = true, Items = g.ToList() }).ToList(),
-            TicketViewGroupKeys.Estado => _listItems.GroupBy(x => x.EstadoNombre).Select(g => new TicketGridGroup { Label = g.Key, ShowHeader = true, Items = g.ToList() }).ToList(),
-            _ => [new TicketGridGroup { Label = string.Empty, ShowHeader = false, Items = _listItems.ToList() }]
+            TicketViewGroupKeys.Prioridad => _listItems.GroupBy(x => RenderPriority(x.Prioridad)).Select(g => BuildGridGroup(TicketViewGroupKeys.Prioridad, g.Key, g.ToList())).ToList(),
+            TicketViewGroupKeys.Tecnico => _listItems.GroupBy(x => DisplayOrFallback(x.TecnicoNombre, "Sin asignar")).Select(g => BuildGridGroup(TicketViewGroupKeys.Tecnico, g.Key, g.ToList())).ToList(),
+            TicketViewGroupKeys.Estado => _listItems.GroupBy(x => x.EstadoNombre).Select(g => BuildGridGroup(TicketViewGroupKeys.Estado, g.Key, g.ToList())).ToList(),
+            _ => [new TicketGridGroup { Key = "sin-agrupar", Label = string.Empty, ShowHeader = false, Items = _listItems.ToList() }]
         };
+    }
+
+    private static TicketGridGroup BuildGridGroup(string groupType, string label, List<TicketGridItemDto> items)
+        => new()
+        {
+            Key = $"{groupType}:{label.Trim().ToUpperInvariant()}",
+            Label = label,
+            ShowHeader = true,
+            Items = items
+        };
+
+    private bool IsListGroupCollapsed(string key)
+        => _collapsedListGroups.Contains(key);
+
+    private void ToggleListGroup(string key)
+    {
+        if (!_collapsedListGroups.Add(key))
+            _collapsedListGroups.Remove(key);
     }
 
     private MarkupString RenderColumn(TicketGridItemDto item, string key)
@@ -2913,6 +3044,7 @@
 
     private sealed class TicketGridGroup
     {
+        public string Key { get; init; } = string.Empty;
         public string Label { get; init; } = string.Empty;
         public bool ShowHeader { get; init; }
         public List<TicketGridItemDto> Items { get; init; } = [];

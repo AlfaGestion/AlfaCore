@@ -35,6 +35,7 @@ public sealed class TareasService(
             await cn.OpenAsync(token);
             await EnsureDefaultListAsync(cn, user, token);
             await EnsureTaskPriorityColumnAsync(cn, token);
+            await EnsureTaskCreatorColumnAsync(cn, token);
             await EnsureTaskGroupsReadyAsync(cn, token);
             await EnsureQuickNotesColumnsAsync(cn, token);
             var userActiveFilter = await HasUsuarioActivoColumnAsync(cn, token)
@@ -156,6 +157,7 @@ public sealed class TareasService(
                     ISNULL(t.Estado, 'PENDIENTE') AS Estado,
                     ISNULL(t.Prioridad, 'MEDIA') AS Prioridad,
                     ISNULL(t.UsuarioAlta, '') AS UsuarioAlta,
+                    ISNULL(t.UsuarioCreador, ISNULL(t.UsuarioAlta, '')) AS UsuarioCreador,
                     CONVERT(bit, CASE WHEN UPPER(LTRIM(RTRIM(ISNULL(t.UsuarioAlta, '')))) = UPPER(LTRIM(RTRIM(@Usuario))) THEN 1 ELSE 0 END) AS EsPropia,
                     {attachmentCountSelect} AS Adjuntos,
                     t.FechaHoraAlta,
@@ -245,6 +247,7 @@ public sealed class TareasService(
                     ISNULL(t.Estado, 'PENDIENTE') AS Estado,
                     ISNULL(t.Prioridad, 'MEDIA') AS Prioridad,
                     ISNULL(t.UsuarioAlta, '') AS UsuarioAlta,
+                    ISNULL(t.UsuarioCreador, ISNULL(t.UsuarioAlta, '')) AS UsuarioCreador,
                     CONVERT(bit, CASE WHEN UPPER(LTRIM(RTRIM(ISNULL(t.UsuarioAlta, '')))) = UPPER(LTRIM(RTRIM(@Usuario))) THEN 1 ELSE 0 END) AS EsPropia,
                     {attachmentCountSelect} AS Adjuntos,
                     t.FechaHoraAlta,
@@ -513,11 +516,13 @@ public sealed class TareasService(
             var estado = NormalizeState(request.Estado);
             var prioridad = NormalizePriority(request.Prioridad);
             var user = NormalizeUser(request.UsuarioAccion);
+            var creador = NormalizeUserOrDefault(request.UsuarioCreador, user);
             var asignado = NormalizeAssignees(request.UsuarioAsignado, user);
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
             await EnsureTaskPriorityColumnAsync(cn, token);
+            await EnsureTaskCreatorColumnAsync(cn, token);
             var defaultId = await EnsureDefaultListAsync(cn, user, token);
             var idLista = request.IdLista <= 0 ? defaultId : request.IdLista;
             if (!await CanAccessListAsync(cn, idLista, user, token)
@@ -542,6 +547,7 @@ public sealed class TareasService(
                         Descripcion = @Descripcion,
                         FechaVencimiento = @FechaVencimiento,
                         UsuarioAsignado = @UsuarioAsignado,
+                        UsuarioCreador = @UsuarioCreador,
                         Estado = @Estado,
                         Prioridad = @Prioridad,
                         FechaHoraModificacion = GETDATE(),
@@ -561,28 +567,33 @@ public sealed class TareasService(
                         Descripcion = EmptyToNull(request.Descripcion),
                         request.FechaVencimiento,
                         UsuarioAsignado = asignado,
+                        UsuarioCreador = creador,
                         Estado = estado,
                         Prioridad = prioridad
                     },
                     cancellationToken: token));
                 if (await IsTaskOwnedByUserAsync(cn, id, user, token))
                     await SaveSharingRulesAsync(cn, "TAREA", id, request.CompartirConTodos, request.UsuariosCompartidos, user, null, token);
-                if (previous is not null && !AssignmentsEquivalent(previous.UsuarioAsignado, asignado))
+                if (previous is not null
+                    && !string.Equals(estado, TareaEstadoKeys.Completada, StringComparison.OrdinalIgnoreCase)
+                    && !AssignmentsEquivalent(previous.UsuarioAsignado, asignado))
                     await NotifyTaskAssignmentAsync(cn, id, titulo, asignado, user, token);
                 if (previous is not null
                     && !string.Equals(previous.Estado, TareaEstadoKeys.Completada, StringComparison.OrdinalIgnoreCase)
                     && string.Equals(estado, TareaEstadoKeys.Completada, StringComparison.OrdinalIgnoreCase))
-                    await NotifyTaskCompletionAsync(cn, id, titulo, asignado, previous.UsuarioAlta, user, token);
+                {
+                    await NotifyTaskCompletionAsync(cn, id, titulo, asignado, previous.UsuarioCreador, user, token);
+                }
                 return id;
             }
 
             var newId = await cn.ExecuteScalarAsync<long>(new CommandDefinition(
                 """
                 INSERT INTO dbo.ALFACORE_TAREAS
-                    (IdLista, Titulo, Descripcion, FechaVencimiento, UsuarioAsignado, Estado, Prioridad, UsuarioAlta, FechaHoraAlta, Activa)
+                    (IdLista, Titulo, Descripcion, FechaVencimiento, UsuarioAsignado, Estado, Prioridad, UsuarioAlta, UsuarioCreador, FechaHoraAlta, Activa)
                 OUTPUT INSERTED.IdTarea
                 VALUES
-                    (@IdLista, @Titulo, @Descripcion, @FechaVencimiento, @UsuarioAsignado, @Estado, @Prioridad, @UsuarioAlta, GETDATE(), 1);
+                    (@IdLista, @Titulo, @Descripcion, @FechaVencimiento, @UsuarioAsignado, @Estado, @Prioridad, @UsuarioAlta, @UsuarioCreador, GETDATE(), 1);
                 """,
                 new
                 {
@@ -593,13 +604,15 @@ public sealed class TareasService(
                     UsuarioAsignado = asignado,
                     Estado = estado,
                     Prioridad = prioridad,
-                    UsuarioAlta = user
+                    UsuarioAlta = user,
+                    UsuarioCreador = creador
                 },
                 cancellationToken: token));
             await SaveSharingRulesAsync(cn, "TAREA", newId, request.CompartirConTodos, request.UsuariosCompartidos, user, null, token);
-            await NotifyTaskAssignmentAsync(cn, newId, titulo, asignado, user, token);
+            if (!string.Equals(estado, TareaEstadoKeys.Completada, StringComparison.OrdinalIgnoreCase))
+                await NotifyTaskAssignmentAsync(cn, newId, titulo, asignado, user, token);
             if (string.Equals(estado, TareaEstadoKeys.Completada, StringComparison.OrdinalIgnoreCase))
-                await NotifyTaskCompletionAsync(cn, newId, titulo, asignado, user, user, token);
+                await NotifyTaskCompletionAsync(cn, newId, titulo, asignado, creador, user, token);
             return newId;
         }, "No se pudo guardar la tarea.", ct);
 
@@ -768,6 +781,7 @@ public sealed class TareasService(
             var user = NormalizeUser(usuarioAccion);
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
+            await EnsureTaskCreatorColumnAsync(cn, token);
             if (!await CanAccessTaskAsync(cn, idTarea, user, token))
                 throw new InvalidOperationException("No tenés acceso a la tarea seleccionada.");
 
@@ -787,7 +801,7 @@ public sealed class TareasService(
             if (previous is not null
                 && !string.Equals(previous.Estado, TareaEstadoKeys.Completada, StringComparison.OrdinalIgnoreCase)
                 && string.Equals(normalizedState, TareaEstadoKeys.Completada, StringComparison.OrdinalIgnoreCase))
-                await NotifyTaskCompletionAsync(cn, idTarea, previous.Titulo, previous.UsuarioAsignado, previous.UsuarioAlta, user, token);
+                await NotifyTaskCompletionAsync(cn, idTarea, previous.Titulo, previous.UsuarioAsignado, previous.UsuarioCreador, user, token);
         }, "No se pudo cambiar el estado de la tarea.", ct);
 
     public Task DuplicateTaskAsync(long idTarea, string usuarioAccion, CancellationToken ct = default)
@@ -797,13 +811,14 @@ public sealed class TareasService(
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
             await EnsureTaskPriorityColumnAsync(cn, token);
+            await EnsureTaskCreatorColumnAsync(cn, token);
             if (!await CanAccessTaskAsync(cn, idTarea, user, token))
                 throw new InvalidOperationException("No tenés acceso a la tarea seleccionada.");
 
             await cn.ExecuteAsync(new CommandDefinition(
                 """
                 INSERT INTO dbo.ALFACORE_TAREAS
-                    (IdLista, Titulo, Descripcion, FechaVencimiento, UsuarioAsignado, Estado, Prioridad, UsuarioAlta, FechaHoraAlta, Activa)
+                    (IdLista, Titulo, Descripcion, FechaVencimiento, UsuarioAsignado, Estado, Prioridad, UsuarioAlta, UsuarioCreador, FechaHoraAlta, Activa)
                 SELECT
                     IdLista,
                     CONCAT(Titulo, N' (copia)'),
@@ -812,6 +827,7 @@ public sealed class TareasService(
                     UsuarioAsignado,
                     'PENDIENTE',
                     ISNULL(Prioridad, N'MEDIA'),
+                    @Usuario,
                     @Usuario,
                     GETDATE(),
                     1
@@ -1087,6 +1103,24 @@ public sealed class TareasService(
             WHERE Prioridad IS NULL
                OR LTRIM(RTRIM(Prioridad)) = N''
                OR UPPER(LTRIM(RTRIM(Prioridad))) NOT IN (N'ALTA', N'MEDIA', N'BAJA');
+            """,
+            cancellationToken: ct));
+
+    private static async Task EnsureTaskCreatorColumnAsync(SqlConnection cn, CancellationToken ct)
+        => await cn.ExecuteAsync(new CommandDefinition(
+            """
+            IF COL_LENGTH(N'dbo.ALFACORE_TAREAS', N'UsuarioCreador') IS NULL
+            BEGIN
+                ALTER TABLE dbo.ALFACORE_TAREAS
+                ADD UsuarioCreador nvarchar(50) NULL;
+            END;
+
+            EXEC sys.sp_executesql N'
+            UPDATE dbo.ALFACORE_TAREAS
+            SET UsuarioCreador = UsuarioAlta
+            WHERE UsuarioCreador IS NULL
+               OR LTRIM(RTRIM(UsuarioCreador)) = N'''';
+            ';
             """,
             cancellationToken: ct));
 
@@ -1712,6 +1746,7 @@ public sealed class TareasService(
                 ISNULL(Titulo, '') AS Titulo,
                 ISNULL(UsuarioAsignado, '') AS UsuarioAsignado,
                 ISNULL(UsuarioAlta, '') AS UsuarioAlta,
+                ISNULL(UsuarioCreador, ISNULL(UsuarioAlta, '')) AS UsuarioCreador,
                 ISNULL(Estado, 'PENDIENTE') AS Estado
             FROM dbo.ALFACORE_TAREAS
             WHERE IdTarea = @IdTarea
@@ -1866,6 +1901,9 @@ public sealed class TareasService(
     private static string NormalizeUser(string? usuario)
         => string.IsNullOrWhiteSpace(usuario) ? Environment.UserName : usuario.Trim();
 
+    private static string NormalizeUserOrDefault(string? usuario, string fallbackUser)
+        => string.IsNullOrWhiteSpace(usuario) ? fallbackUser : usuario.Trim();
+
     private static string NormalizeGroupName(string? grupo)
         => Truncate(string.Join(" ", (grupo ?? string.Empty).Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries)), 50);
 
@@ -1926,6 +1964,7 @@ public sealed class TareasService(
         public string Titulo { get; set; } = string.Empty;
         public string UsuarioAsignado { get; set; } = string.Empty;
         public string UsuarioAlta { get; set; } = string.Empty;
+        public string UsuarioCreador { get; set; } = string.Empty;
         public string Estado { get; set; } = string.Empty;
     }
 
