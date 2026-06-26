@@ -23368,6 +23368,17 @@ html[data-theme="light"] .cuentas-modal:has(.usuarios-view-settings)::before {
     }
 }
 
+.panel-card.tickets-view-settings-modal:has(> .panel-card__header + .usuarios-view-settings) {
+    background: transparent !important;
+    border-color: transparent !important;
+    box-shadow: none !important;
+}
+
+.panel-card.tickets-view-settings-modal:has(> .panel-card__header + .usuarios-view-settings)::before {
+    display: none !important;
+    content: none !important;
+}
+
 /* Busqueda unificada: mismo criterio visual que Tickets en todos los modulos. */
 .smart-search-card {
     width: 100% !important;
