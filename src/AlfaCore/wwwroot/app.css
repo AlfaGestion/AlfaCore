@@ -23188,6 +23188,26 @@ html[data-theme="light"] .tickets-table-wrap {
     height: calc(100dvh - (var(--module-page-gutter) * 2)) !important;
 }
 
+@media (min-width: 769px) {
+    .shell:not(.shell--collapsed) .conversations-page--odoo,
+    .shell:not(.shell--collapsed) .templates-page--odoo {
+        position: fixed !important;
+        inset: var(--module-page-gutter) var(--module-page-gutter) var(--module-page-gutter) calc(300px + var(--module-page-gutter)) !important;
+        width: auto !important;
+        max-width: none !important;
+        min-width: 0 !important;
+    }
+
+    .shell.shell--collapsed .conversations-page--odoo,
+    .shell.shell--collapsed .templates-page--odoo {
+        position: fixed !important;
+        inset: var(--module-page-gutter) var(--module-page-gutter) var(--module-page-gutter) calc(92px + var(--module-page-gutter)) !important;
+        width: auto !important;
+        max-width: none !important;
+        min-width: 0 !important;
+    }
+}
+
 .empty-state {
     padding: 1rem !important;
 }
