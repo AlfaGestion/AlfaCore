@@ -588,6 +588,62 @@
                     </div>
                 </div>
 
+                <div class="conversations-inbox-tools desktop-only" @onclick:stopPropagation>
+                    <div class="conversations-inbox-search">
+                        <label for="conv-inbox-search">Buscar</label>
+                        <input id="conv-inbox-search"
+                               type="search"
+                               placeholder="Buscar por telefono, cliente, contacto, email o mensaje..."
+                               value="@_filters.Search"
+                               @oninput="HandleSearchInputAsync"
+                               @onkeydown="HandleSearchEnter"
+                               @onfocus="() => _showContactSuggestions = ShouldShowContactSuggestions" />
+                    </div>
+
+                    <details class="conversations-inbox-filter-popover">
+                        <summary>
+                            <i class="bi bi-sliders"></i>
+                            <span>Filtros</span>
+                        </summary>
+                        <div class="conversations-inbox-filter-panel">
+                            <div class="field">
+                                <label for="conv-inbox-tech">Mi tecnico</label>
+                                <select id="conv-inbox-tech" @bind="_filters.IdTecnicoActual">
+                                    <option value="">Todos</option>
+                                    @foreach (var tech in _technicians)
+                                    {
+                                        <option value="@tech.IdTecnico">@tech.Nombre (@tech.IdTecnico)</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="field">
+                                <label for="conv-inbox-state">Estado</label>
+                                <select id="conv-inbox-state" @bind="_filters.CodigoEstado">
+                                    <option value="">Todos</option>
+                                    <option value="@ConversacionesInboxFilters.EstadoSinFinalizar">Sin finalizar</option>
+                                    @foreach (var state in _states)
+                                    {
+                                        <option value="@state.CodigoEstado">@state.Descripcion</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="actions">
+                                <button type="button" class="btn btn--primary btn--sm" @onclick="LoadInboxAsync" disabled="@_loadingInbox">
+                                    <i class="bi bi-funnel"></i> Aplicar
+                                </button>
+                                <button type="button"
+                                        class="btn btn--ghost btn--sm"
+                                        title="Limpiar filtros"
+                                        aria-label="Limpiar filtros"
+                                        @onclick="ClearConversationFiltersAsync"
+                                        disabled="@_loadingInbox">
+                                    <i class="bi bi-eraser"></i> Limpiar
+                                </button>
+                            </div>
+                        </div>
+                    </details>
+                </div>
+
                 @if (_loadingInbox && _inbox.Count == 0)
                 {
                     <div class="loading">Cargando conversaciones…</div>
