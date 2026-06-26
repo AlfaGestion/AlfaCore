@@ -23324,6 +23324,79 @@ html[data-theme="light"] .tickets-table-wrap {
     padding: .45rem .7rem !important;
 }
 
+/* Fila de trabajo unificada: buscador a la izquierda, Nuevo/Recargar a la derecha. */
+.page-grid:has(> .page-intro .actions):has(> .smart-search-card),
+.page-grid:has(> .page-intro .actions):has(> .panel-card .filters-grid input[type="search"]),
+.page-grid:has(> .page-intro .actions):has(> .panel-card .filters-grid--wide input[type="search"]) {
+    grid-template-columns: minmax(320px, 520px) minmax(0, 1fr) auto !important;
+    align-items: start !important;
+    column-gap: .55rem !important;
+}
+
+.page-grid:has(> .page-intro .actions):has(> .smart-search-card) > .page-intro,
+.page-grid:has(> .page-intro .actions):has(> .panel-card .filters-grid input[type="search"]) > .page-intro,
+.page-grid:has(> .page-intro .actions):has(> .panel-card .filters-grid--wide input[type="search"]) > .page-intro {
+    grid-column: 3 !important;
+    grid-row: 1 !important;
+    align-self: start !important;
+}
+
+.page-grid:has(> .page-intro .actions):has(> .smart-search-card) > .page-intro .actions,
+.page-grid:has(> .page-intro .actions):has(> .panel-card .filters-grid input[type="search"]) > .page-intro .actions,
+.page-grid:has(> .page-intro .actions):has(> .panel-card .filters-grid--wide input[type="search"]) > .page-intro .actions {
+    justify-content: flex-end !important;
+    flex-wrap: nowrap !important;
+}
+
+.page-grid:has(> .page-intro .actions):has(> .smart-search-card) > .smart-search-card {
+    grid-column: 1 / 2 !important;
+    grid-row: 1 !important;
+}
+
+.page-grid:has(> .page-intro .actions):has(> .panel-card .filters-grid input[type="search"]) > .panel-card:has(.filters-grid input[type="search"]),
+.page-grid:has(> .page-intro .actions):has(> .panel-card .filters-grid--wide input[type="search"]) > .panel-card:has(.filters-grid--wide input[type="search"]) {
+    grid-column: 1 / 3 !important;
+    grid-row: 1 !important;
+}
+
+.page-grid:has(> .page-intro .actions):has(> .smart-search-card) > :not(.page-intro):not(.smart-search-card),
+.page-grid:has(> .page-intro .actions):has(> .panel-card .filters-grid input[type="search"]) > :not(.page-intro):not(:has(.filters-grid input[type="search"])),
+.page-grid:has(> .page-intro .actions):has(> .panel-card .filters-grid--wide input[type="search"]) > :not(.page-intro):not(:has(.filters-grid--wide input[type="search"])) {
+    grid-column: 1 / -1 !important;
+}
+
+.page-grid:has(> .page-intro .actions):has(> .panel-card .filters-grid input[type="search"]) > .panel-card:has(.filters-grid input[type="search"]) .filters-grid,
+.page-grid:has(> .page-intro .actions):has(> .panel-card .filters-grid--wide input[type="search"]) > .panel-card:has(.filters-grid--wide input[type="search"]) .filters-grid--wide {
+    grid-template-columns: minmax(320px, 520px) repeat(auto-fit, minmax(150px, max-content)) auto !important;
+    align-items: end !important;
+}
+
+.carga-viajes-toolbar,
+.table-toolbar:has(input[type="search"]),
+.auth-tree-toolbar,
+.pos-catalog__toolbar {
+    display: grid !important;
+    grid-template-columns: minmax(320px, 520px) minmax(0, 1fr) auto !important;
+    align-items: start !important;
+    gap: .55rem !important;
+}
+
+.carga-viajes-toolbar__search,
+.table-toolbar:has(input[type="search"]) input[type="search"],
+.auth-tree-toolbar input[type="search"],
+.pos-catalog__search {
+    grid-column: 1 !important;
+}
+
+.carga-viajes-toolbar__actions,
+.table-toolbar:has(input[type="search"]) .actions,
+.auth-tree-toolbar .actions,
+.pos-catalog__toolbar > .actions {
+    grid-column: 3 !important;
+    justify-self: end !important;
+    flex-wrap: nowrap !important;
+}
+
 @media (max-width: 860px) {
     .smart-search-card .smart-search,
     .smart-search-card .smart-search__bar,
@@ -23344,6 +23417,35 @@ html[data-theme="light"] .tickets-table-wrap {
     .smart-search__panel:not(.interfaces-filters-panel-grid) {
         width: min(100%, calc(100vw - 2rem)) !important;
         grid-template-columns: 1fr !important;
+    }
+
+    .page-grid:has(> .page-intro .actions):has(> .smart-search-card),
+    .page-grid:has(> .page-intro .actions):has(> .panel-card .filters-grid input[type="search"]),
+    .page-grid:has(> .page-intro .actions):has(> .panel-card .filters-grid--wide input[type="search"]),
+    .carga-viajes-toolbar,
+    .table-toolbar:has(input[type="search"]),
+    .auth-tree-toolbar,
+    .pos-catalog__toolbar {
+        grid-template-columns: 1fr !important;
+    }
+
+    .page-grid:has(> .page-intro .actions):has(> .smart-search-card) > .page-intro,
+    .page-grid:has(> .page-intro .actions):has(> .smart-search-card) > .smart-search-card,
+    .page-grid:has(> .page-intro .actions):has(> .panel-card .filters-grid input[type="search"]) > .page-intro,
+    .page-grid:has(> .page-intro .actions):has(> .panel-card .filters-grid input[type="search"]) > .panel-card:has(.filters-grid input[type="search"]),
+    .page-grid:has(> .page-intro .actions):has(> .panel-card .filters-grid--wide input[type="search"]) > .page-intro,
+    .page-grid:has(> .page-intro .actions):has(> .panel-card .filters-grid--wide input[type="search"]) > .panel-card:has(.filters-grid--wide input[type="search"]),
+    .carga-viajes-toolbar__search,
+    .carga-viajes-toolbar__actions {
+        grid-column: 1 !important;
+        grid-row: auto !important;
+        justify-self: stretch !important;
+    }
+
+    .page-grid:has(> .page-intro .actions):has(> .smart-search-card) > .page-intro .actions,
+    .page-grid:has(> .page-intro .actions):has(> .panel-card .filters-grid input[type="search"]) > .page-intro .actions,
+    .page-grid:has(> .page-intro .actions):has(> .panel-card .filters-grid--wide input[type="search"]) > .page-intro .actions {
+        justify-content: stretch !important;
     }
 }
 
