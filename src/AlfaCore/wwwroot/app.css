@@ -23189,11 +23189,12 @@ html[data-theme="light"] .tickets-table-wrap {
 }
 
 .tickets-view-settings-modal {
-    background: rgba(8, 18, 33, .99) !important;
+    background: transparent !important;
+    border-color: transparent !important;
     display: grid !important;
     grid-template-rows: auto minmax(0, 1fr) !important;
     overflow: hidden !important;
-    box-shadow: 0 24px 72px rgba(0, 0, 0, .58) !important;
+    box-shadow: none !important;
     scrollbar-width: none !important;
 }
 
