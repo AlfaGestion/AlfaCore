@@ -23171,11 +23171,21 @@ html[data-theme="light"] .tickets-table-wrap {
     padding: 1rem !important;
 }
 
-/* Configurar vista: conservar layout original sin capa oscura extra. */
+/* Configurar vista: fondo completo oscuro/desenfocado sin scrollbars extra. */
 .tickets-view-settings-layer {
     background: transparent !important;
     backdrop-filter: none !important;
     overflow: hidden !important;
+    isolation: isolate !important;
+}
+
+.tickets-view-settings-layer::before {
+    content: "" !important;
+    position: fixed !important;
+    inset: 0 !important;
+    z-index: -1 !important;
+    background: rgba(0, 6, 18, .74) !important;
+    backdrop-filter: blur(7px) saturate(.78) !important;
 }
 
 .tickets-view-settings-modal {
