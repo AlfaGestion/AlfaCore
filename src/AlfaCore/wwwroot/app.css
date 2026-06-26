@@ -23171,6 +23171,21 @@ html[data-theme="light"] .tickets-table-wrap {
     padding: 1rem !important;
 }
 
+/* Configurar vista: conservar layout original; solo separar mejor el fondo. */
+.tickets-view-settings-layer {
+    background: rgba(0, 6, 18, .74) !important;
+    backdrop-filter: blur(5px) saturate(.85) !important;
+}
+
+.tickets-view-settings-modal {
+    background: rgba(8, 18, 33, .99) !important;
+    box-shadow: 0 30px 95px rgba(0, 0, 0, .72) !important;
+}
+
+html[data-theme="light"] .tickets-view-settings-layer {
+    background: rgba(15, 23, 42, .50) !important;
+}
+
 /* Busqueda unificada: mismo criterio visual que Tickets en todos los modulos. */
 .smart-search-card {
     width: 100% !important;
