@@ -274,8 +274,7 @@
         border-radius: 999px;
         background: #ffffff;
         color: #5c94cf;
-        font-size: 2.6rem;
-        font-weight: 900;
+        font-size: 2.4rem;
     }
 
     .pos-charge__label {
@@ -2053,7 +2052,7 @@
             <section class="pos-loading" style="padding-top:0.75rem;">
                 <div class="pos-charge-modal__feedback pos-success-banner">
                     <span>@_chargeSuccess</span>
-                    <button type="button" @onclick="DismissChargeSuccess">X</button>
+                    <button type="button" @onclick="DismissChargeSuccess"><i class="bi bi-x-lg"></i></button>
                 </div>
             </section>
         }
@@ -2097,7 +2096,7 @@
 
                     <div class="pos-sidebar__footer">
                         <button type="button" class="pos-charge" @onclick="OpenChargeModalAsync" disabled="@(!_cartItems.Any())">
-                            <span class="pos-charge__icon">$</span>
+                            <i class="bi bi-cash-stack pos-charge__icon"></i>
                             <span class="pos-charge__label">Cobrar</span>
                         </button>
 
@@ -2256,7 +2255,7 @@
                 <h3>Cobranza</h3>
                 <p>Registrá los medios de pago y confirmá la venta actual sin salir del facturador.</p>
             </div>
-            <button type="button" class="pos-charge-modal__close" @onclick="CloseChargeModal">X</button>
+            <button type="button" class="pos-charge-modal__close" @onclick="CloseChargeModal"><i class="bi bi-x-lg"></i></button>
         </div>
 
         @if (!string.IsNullOrWhiteSpace(_chargeError))
@@ -2331,7 +2330,7 @@
                                     <span>@line.CodigoMedioPago</span>
                                 </div>
                                 <strong>@FmtMoney(line.Importe)</strong>
-                                <button type="button" @onclick="() => RemovePaymentLine(line)" @onclick:stopPropagation="true" @onclick:preventDefault="true">X</button>
+                                <button type="button" @onclick="() => RemovePaymentLine(line)" @onclick:stopPropagation="true" @onclick:preventDefault="true"><i class="bi bi-x-lg"></i></button>
                             </div>
                         }
                     </div>
