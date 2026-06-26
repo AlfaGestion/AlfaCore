@@ -293,6 +293,14 @@ body {
     transition: background-color 0.3s ease, color 0.2s ease;
 }
 
+.shell,
+.shell__main,
+.shell__content,
+.main-shell__workspace,
+.main-shell__content {
+    background-color: var(--color-bg);
+}
+
 * {
     box-sizing: border-box;
 }
@@ -23021,6 +23029,7 @@ html[data-theme="light"] .tickets-table-wrap {
 .shell__main,
 .main-shell__workspace {
     min-width: 0 !important;
+    background-color: var(--color-bg) !important;
 }
 
 .shell__main {
@@ -23039,6 +23048,7 @@ html[data-theme="light"] .tickets-table-wrap {
     min-width: 0 !important;
     box-sizing: border-box !important;
     overflow-x: clip !important;
+    background-color: var(--color-bg) !important;
 }
 
 .shell__content,
@@ -23186,6 +23196,7 @@ html[data-theme="light"] .tickets-table-wrap {
 .templates-page--odoo {
     min-height: calc(100dvh - (var(--module-page-gutter) * 2)) !important;
     height: calc(100dvh - (var(--module-page-gutter) * 2)) !important;
+    background-color: var(--color-bg) !important;
 }
 
 @media (min-width: 769px) {
