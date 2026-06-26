@@ -23204,7 +23204,7 @@ html[data-theme="light"] .tickets-table-wrap {
 .templates-page--odoo {
     min-height: 100dvh !important;
     height: 100dvh !important;
-    padding: var(--module-page-gutter) !important;
+    padding: 0 !important;
     box-sizing: border-box !important;
     background-color: var(--color-bg) !important;
 }
@@ -23238,16 +23238,17 @@ html[data-theme="light"] .tickets-table-wrap {
 /* Conversaciones: uso completo del espacio con controles compactos. */
 .conversations-page--odoo {
     gap: 0 !important;
+    grid-template-rows: auto minmax(0, 1fr) !important;
 }
 
 .conversations-page--odoo > .conversations-filters.desktop-only {
     min-height: 34px !important;
-    padding: 0 0 .35rem !important;
+    padding: .18rem .38rem !important;
     border: 0 !important;
     display: grid !important;
-    grid-template-columns: minmax(0, 1fr) auto !important;
+    grid-template-columns: auto minmax(0, 1fr) auto auto !important;
     align-items: center !important;
-    gap: .45rem !important;
+    gap: .35rem !important;
 }
 
 .conversations-page--odoo > .conversations-filters.desktop-only > .conversations-filters__fields {
@@ -23256,28 +23257,70 @@ html[data-theme="light"] .tickets-table-wrap {
 
 .conversations-page--odoo > .conversations-filters.desktop-only > .conversations-canal {
     justify-self: start !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: .35rem !important;
+    min-width: 0 !important;
+    flex-wrap: nowrap !important;
 }
 
 .conversations-page--odoo > .conversations-filters.desktop-only > .conversations-module-actions {
     justify-self: end !important;
+    grid-column: 3 !important;
     display: flex !important;
     align-items: center !important;
     gap: .4rem !important;
+    min-width: 0 !important;
+    flex-wrap: nowrap !important;
 }
 
 .conversations-page--odoo > .conversations-filters.desktop-only .conversations-filters__modes {
+    grid-column: 4 !important;
+    justify-self: end !important;
     display: flex !important;
     align-items: center !important;
     gap: .35rem !important;
+    min-width: 0 !important;
+    flex-wrap: nowrap !important;
+}
+
+.conversations-page--odoo > .conversations-filters.desktop-only .conversations-filter-pill,
+.conversations-page--odoo > .conversations-filters.desktop-only .btn {
+    white-space: nowrap !important;
+    flex: 0 0 auto !important;
 }
 
 .conversations-page--odoo .conversations-layout {
-    grid-template-columns: minmax(250px, 310px) minmax(0, 1fr) !important;
+    grid-template-columns: minmax(255px, 315px) minmax(0, 1fr) !important;
     height: 100% !important;
+    min-height: 0 !important;
+    gap: 0 !important;
+    position: relative !important;
 }
 
 .conversations-page--odoo .conversations-list,
 .conversations-page--odoo .conversations-chat {
+    min-height: 0 !important;
+    border-radius: 0 !important;
+    border-width: 0 1px 0 0 !important;
+    padding: 0 !important;
+}
+
+.conversations-page--odoo .conversations-chat {
+    border-width: 0 !important;
+}
+
+.conversations-page--odoo .conversations-list__header {
+    padding: .35rem .45rem .25rem !important;
+    min-height: 0 !important;
+}
+
+.conversations-page--odoo .conversations-list__items {
+    padding: .35rem .38rem !important;
+}
+
+.conversations-page--odoo .conversations-chat__header {
+    padding: .38rem .55rem !important;
     min-height: 0 !important;
 }
 
@@ -23286,7 +23329,7 @@ html[data-theme="light"] .tickets-table-wrap {
     grid-template-columns: minmax(0, 1fr) auto !important;
     align-items: end !important;
     gap: .4rem !important;
-    padding: 0 .45rem .45rem !important;
+    padding: 0 .38rem .38rem !important;
     border-bottom: 1px solid rgba(148, 163, 184, .12) !important;
 }
 
@@ -23414,6 +23457,36 @@ html[data-theme="light"] .tickets-table-wrap {
 
 .conversations-page--odoo .message-delivery i {
     font-size: .82rem !important;
+}
+
+@media (min-width: 901px) {
+    .conversations-page--odoo .conversations-layout:has(.conversations-context-drawer.is-open) {
+        grid-template-columns: minmax(255px, 315px) minmax(0, 1fr) !important;
+    }
+
+    .conversations-page--odoo .conversations-context-drawer {
+        position: absolute !important;
+        top: 0 !important;
+        right: 0 !important;
+        bottom: 0 !important;
+        grid-column: auto !important;
+        width: min(860px, calc(100% - 320px)) !important;
+        min-width: min(520px, calc(100% - 320px)) !important;
+        max-width: calc(100% - 320px) !important;
+        height: auto !important;
+        display: flex !important;
+        transform: translateX(104%) !important;
+        opacity: 0 !important;
+        border-width: 0 0 0 1px !important;
+        border-radius: 0 !important;
+        box-shadow: -22px 0 44px rgba(0, 0, 0, .32) !important;
+        z-index: 80 !important;
+    }
+
+    .conversations-page--odoo .conversations-context-drawer.is-open {
+        transform: translateX(0) !important;
+        opacity: 1 !important;
+    }
 }
 
 .empty-state {
