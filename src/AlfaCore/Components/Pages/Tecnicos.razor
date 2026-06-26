@@ -181,6 +181,21 @@
                     </p>
                 </div>
                 <div class="actions">
+                    <button type="button" class="btn btn--primary" @onclick="GuardarAsync" disabled="@_saving">
+                        <i class="bi bi-floppy"></i>
+                        <span>@(_saving ? "Guardando..." : "Guardar técnico")</span>
+                    </button>
+                    <button type="button" class="btn btn--ghost" @onclick="ResetFormAsync" disabled="@_saving">
+                        <i class="bi bi-eraser"></i>
+                        <span>@(_isNewMode ? "Limpiar" : "Revertir")</span>
+                    </button>
+                    @if (!_isNewMode && _selectedActivo)
+                    {
+                        <button type="button" class="btn btn--ghost usuarios-btn-danger" @onclick="DarDeBajaAsync" disabled="@_saving">
+                            <i class="bi bi-person-dash"></i>
+                            <span>Dar de baja</span>
+                        </button>
+                    }
                     <button type="button" class="btn btn--ghost" @onclick="CerrarEditor" disabled="@_saving">
                         <i class="bi bi-arrow-left"></i> Volver al listado
                     </button>
@@ -369,7 +384,7 @@
                     <div class="actions usuarios-editor__actions">
                         <button type="button" class="btn btn--primary" @onclick="GuardarAsync" disabled="@_saving">
                             <i class="bi bi-floppy"></i>
-                            <span>@(_saving ? "Guardando..." : "Guardar tÃ©cnico")</span>
+                            <span>@(_saving ? "Guardando..." : "Guardar técnico")</span>
                         </button>
                         <button type="button" class="btn btn--ghost" @onclick="ResetFormAsync" disabled="@_saving">
                             <i class="bi bi-eraser"></i>
