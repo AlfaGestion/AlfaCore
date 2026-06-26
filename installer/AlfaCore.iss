@@ -1,7 +1,7 @@
 #define MyAppName "AlfaCore"
 #define MyAppPublisher "Alfa Gestion"
 #define MyAppExeName "AlfaCore.exe"
-#define MyAppLauncher "iniciar_dashboard.bat"
+#define MyAppLauncher "iniciar_AlfaCore.bat"
 #define MyAppShellLauncher "abrir_dashboard_shell.bat"
 #define MyReadmeName "README_INSTALACION.md"
 

@@ -77,7 +77,7 @@ Sugerencia: crear un acceso directo en cada cliente apuntando a `http://NOMBRE-P
 3. Editá `appsettings.Production.json` con los datos de conexión y puerto.
 4. Ejecutá `abrir_firewall.bat` como administrador.
 5. Para instalar el servicio: ejecutá `instalar_servicio.bat` como administrador.
-6. Para iniciar sin servicio: ejecutá `iniciar_dashboard.bat`.
+6. Para iniciar sin servicio: ejecutá `iniciar_AlfaCore.bat`.
 
 ---
 
@@ -147,7 +147,7 @@ Archivo con la configuración real del servidor. Se crea automáticamente la pri
 | `scripts\publicar_instalador.bat [version]` | Genera el Setup.exe completo |
 | `scripts\instalar_servicio.bat` | Instala el servicio de Windows (requiere admin) |
 | `scripts\desinstalar_servicio.bat` | Desinstala el servicio de Windows (requiere admin) |
-| `iniciar_dashboard.bat` | Inicia la app sin servicio (modo consola) |
+| `iniciar_AlfaCore.bat` | Inicia la app sin servicio (modo consola) |
 | `abrir_firewall.bat` | Abre el puerto en Firewall de Windows |
 
 ---

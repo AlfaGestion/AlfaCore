@@ -90,7 +90,7 @@ echo start "" "%%URL_LOCAL%%"
 echo pause
 echo :end
 echo endlocal
-) > %PUBLISH_DIR%\iniciar_dashboard.bat
+) > %PUBLISH_DIR%\iniciar_AlfaCore.bat
 
 (
 echo @echo off

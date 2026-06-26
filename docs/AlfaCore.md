@@ -328,6 +328,11 @@ Opción recomendada para actualizar sin reinstalar:
 scripts\actualizar_instalacion.bat
 ```
 
+Para iniciar manualmente sin servicio en una instalación publicada:
+```batch
+iniciar_AlfaCore.bat
+```
+
 ---
 
 ## Configuración (`appsettings.Production.json`)

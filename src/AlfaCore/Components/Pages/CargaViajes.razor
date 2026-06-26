@@ -1865,11 +1865,6 @@
     private ElementReference _viajeImporteFleteroInput;
     private ElementReference _viajePeajeInput;
     private ElementReference _viajeCantidadViajesInput;
-    private ElementReference _viajeAdicional0Input;
-    private ElementReference _viajeAdicional1Input;
-    private ElementReference _viajeAdicional2Input;
-    private ElementReference _viajeAdicional3Input;
-    private ElementReference _viajeAdicional4Input;
     private ElementReference _viajeObservacionesInput;
     private string _tarifaClienteTexto = string.Empty;
     private string _tarifaChoferTexto = string.Empty;
@@ -1922,14 +1917,12 @@
 
     private readonly List<CargaViajeChoferGridItemDto> _choferes = [];
     private int _choferesTotal;
-    private bool _choferesLoading = true;
     private bool _showChoferEditor;
     private bool _isNewChofer = true;
     private CargaViajeChoferSaveRequest _choferForm = new();
 
     private readonly List<CargaViajeDestinoGridItemDto> _destinos = [];
     private int _destinosTotal;
-    private bool _destinosLoading = true;
     private bool _showDestinoEditor;
     private bool _isNewDestino = true;
     private CargaViajeDestinoSaveRequest _destinoForm = new();
@@ -2170,6 +2163,17 @@
             return;
         }
 
+        if (result.Value is null)
+        {
+            _feedback = new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Warning,
+                Title = "Viaje no disponible",
+                Message = "El viaje solicitado ya no existe o no está disponible."
+            };
+            return;
+        }
+
         _viajeSeleccionado = result.Value;
         _showViajeEditor = true;
         _isNewViaje = false;
@@ -2183,6 +2187,17 @@
         if (!result.Success)
         {
             _feedback = result.Feedback;
+            return;
+        }
+
+        if (result.Value is null)
+        {
+            _feedback = new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Warning,
+                Title = "Viaje no disponible",
+                Message = "El viaje solicitado ya no existe o no está disponible."
+            };
             return;
         }
 
@@ -4537,7 +4552,6 @@
     private void ToggleChoferesAdvancedFilters() => _showChoferesAdvancedFilters = !_showChoferesAdvancedFilters;
     private async Task RecargarChoferesAsync()
     {
-        _choferesLoading = true;
         _choferesFilters.PageSize = 50;
         var result = await UiOps.RunAsync(() => CargaViajesSvc.SearchChoferesAsync(_choferesFilters), "No se pudieron cargar los choferes.");
         if (result.Success && result.Value is not null)
@@ -4547,7 +4561,6 @@
             _choferesTotal = result.Value.Total;
         }
         else _feedback = result.Feedback;
-        _choferesLoading = false;
     }
 
     private async Task NuevoChoferAsync()
@@ -4637,7 +4650,6 @@
     private void ToggleDestinosAdvancedFilters() => _showDestinosAdvancedFilters = !_showDestinosAdvancedFilters;
     private async Task RecargarDestinosAsync()
     {
-        _destinosLoading = true;
         _destinosFilters.PageSize = 50;
         var result = await UiOps.RunAsync(() => CargaViajesSvc.SearchDestinosAsync(_destinosFilters), "No se pudieron cargar los destinos.");
         if (result.Success && result.Value is not null)
@@ -4647,7 +4659,6 @@
             _destinosTotal = result.Value.Total;
         }
         else _feedback = result.Feedback;
-        _destinosLoading = false;
     }
     private async Task NuevoDestinoAsync()
     {
