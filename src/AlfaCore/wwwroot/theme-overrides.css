@@ -1375,12 +1375,19 @@ html[data-theme="light"] .app-login-overlay .app-login-modal__body {
 }
 
 html[data-theme="light"] .app-login-overlay .app-login-modal {
-    border-color: #5b6573 !important;
+    border-color: rgba(148, 163, 184, 0.2) !important;
 }
 
 html[data-theme="light"] .app-login-overlay .app-login-userlist {
-    background: #ffffff !important;
-    border-color: #7b8493 !important;
+    background: transparent !important;
+    border-color: transparent !important;
+    box-shadow: none !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-session-note {
+    background: rgba(15, 23, 42, 0.6) !important;
+    border-color: rgba(148, 163, 184, 0.16) !important;
+    color: #cbd5e1 !important;
 }
 
 html[data-theme="light"] .app-login-overlay .app-login-userlist__item {
@@ -1396,4 +1403,8 @@ html[data-theme="light"] .app-login-overlay .app-login-userlist__item.is-active 
 
 html[data-theme="light"] .app-login-overlay .app-login-userlist__manual {
     color: #7dd3fc !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-session-note small {
+    color: #94a3b8 !important;
 }

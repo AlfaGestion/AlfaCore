@@ -13,20 +13,6 @@
 <PageTitle>Tickets de asistencia | Alfa GestiÃ³n</PageTitle>
 
 <section class="page-grid tickets-page tickets-page--odoo" @onclick="HandleTicketPageClickAsync">
-    <section class="tickets-odoo-header">
-        <div>
-            <h2 class="tickets-odoo-header__title">Servicio de soporte - Tickets de asistencia</h2>
-        </div>
-        <div class="actions">
-            <button type="button" class="btn btn--primary" @onclick="NuevoTicket">
-                <i class="bi bi-plus-circle"></i> Nuevo
-            </button>
-            <button type="button" class="btn btn--ghost" @onclick="RecargarAsync" disabled="@_loading">
-                <i class="bi bi-arrow-clockwise"></i> Recargar
-            </button>
-        </div>
-    </section>
-
     @if (_feedback is not null)
     {
         <section class="panel-card">
@@ -91,7 +77,8 @@
 
                 @if (_showSearchPanel)
                 {
-                    <div class="smart-search__panel" @onclick="CloseTicketLookupSuggestions" @onkeydown="HandleTicketApplyKeyDownAsync">
+                    <div class="tickets-search-backdrop" @onclick="CloseTicketSearchPanel"></div>
+                    <div class="smart-search__panel" @onclick="CloseTicketLookupSuggestions" @onclick:stopPropagation @onkeydown="HandleTicketApplyKeyDownAsync">
                         <div class="smart-search__column">
                             <h4><i class="bi bi-funnel-fill"></i> Filtros</h4>
                             <button type="button" class="@GetSmartOptionClass(_filters.IncluirCerrados)" @onclick='() => ToggleTicketClosedAsync(true)'>Todos</button>
@@ -219,6 +206,14 @@
                         </div>
                     </div>
                 }
+            </div>
+            <div class="actions tickets-commandbar__actions">
+                <button type="button" class="btn btn--primary" @onclick="NuevoTicket">
+                    <i class="bi bi-plus-circle"></i> Nuevo
+                </button>
+                <button type="button" class="btn btn--ghost" @onclick="RecargarAsync" disabled="@_loading">
+                    <i class="bi bi-arrow-clockwise"></i> Recargar
+                </button>
             </div>
         </section>
     }

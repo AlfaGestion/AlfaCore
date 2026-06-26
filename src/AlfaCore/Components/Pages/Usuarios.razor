@@ -152,6 +152,21 @@
                     <p class="panel-card__subtitle">@(_isNewMode ? "CompletÃ¡ los datos bÃ¡sicos del usuario o grupo." : $"Sistema fijo: CN000PR Â· Estado: {(_selectedActivo ? "Activo" : "Inactivo")}")</p>
                 </div>
                 <div class="actions">
+                    <button type="button" class="btn btn--primary" @onclick="GuardarAsync" disabled="@_saving">
+                        <i class="bi bi-floppy"></i>
+                        <span>@(_saving ? "Guardando..." : "Guardar usuario")</span>
+                    </button>
+                    <button type="button" class="btn btn--ghost" @onclick="ResetForm" disabled="@_saving">
+                        <i class="bi bi-eraser"></i>
+                        <span>@(_isNewMode ? "Limpiar" : "Revertir")</span>
+                    </button>
+                    @if (!_isNewMode && _selectedActivo)
+                    {
+                        <button type="button" class="btn btn--ghost usuarios-btn-danger" @onclick="DarDeBajaAsync" disabled="@_saving">
+                            <i class="bi bi-person-dash"></i>
+                            <span>Dar de baja</span>
+                        </button>
+                    }
                     <button type="button" class="btn btn--ghost" @onclick="CerrarEditor" disabled="@_saving">
                         <i class="bi bi-arrow-left"></i>
                         <span>Volver al listado</span>
@@ -293,24 +308,6 @@
                             </div>
                         </div>
                     }
-
-                    <div class="actions usuarios-editor__actions">
-                        <button type="button" class="btn btn--primary" @onclick="GuardarAsync" disabled="@_saving">
-                            <i class="bi bi-floppy"></i>
-                            <span>@(_saving ? "Guardando..." : "Guardar usuario")</span>
-                        </button>
-                        <button type="button" class="btn btn--ghost" @onclick="ResetForm" disabled="@_saving">
-                            <i class="bi bi-eraser"></i>
-                            <span>@(_isNewMode ? "Limpiar" : "Revertir")</span>
-                        </button>
-                        @if (!_isNewMode && _selectedActivo)
-                        {
-                            <button type="button" class="btn btn--ghost usuarios-btn-danger" @onclick="DarDeBajaAsync" disabled="@_saving">
-                                <i class="bi bi-person-dash"></i>
-                                <span>Dar de baja</span>
-                            </button>
-                        }
-                    </div>
 
                     @if (!_isNewMode)
                     {

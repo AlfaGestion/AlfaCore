@@ -165,6 +165,25 @@ public sealed class CargaViajeTarifaGridItemDto
     public bool Activo { get; set; } = true;
 }
 
+public sealed class CargaViajeTarifaClienteResumenDto
+{
+    public int IdTarifa { get; set; }
+    public string ClienteCodigo { get; set; } = string.Empty;
+    public string ClienteNombre { get; set; } = string.Empty;
+    public string DestinoCodigo { get; set; } = string.Empty;
+    public string DestinoNombre { get; set; } = string.Empty;
+    public string TipoVehiculoCodigo { get; set; } = string.Empty;
+    public string TipoVehiculoNombre { get; set; } = string.Empty;
+    public string ListaCodigo { get; set; } = string.Empty;
+    public string ListaNombre { get; set; } = string.Empty;
+    public decimal ImporteCliente { get; set; }
+    public decimal ImporteFletero { get; set; }
+    public string FleteroCodigoSugerido { get; set; } = string.Empty;
+    public string FleteroNombreSugerido { get; set; } = string.Empty;
+    public bool Activo { get; set; } = true;
+    public bool TarifaFletero { get; set; }
+}
+
 public sealed class CargaViajeTarifaSaveRequest
 {
     public int Id { get; set; }
