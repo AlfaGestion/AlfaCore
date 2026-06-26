@@ -22797,3 +22797,32 @@ html[data-theme="light"] .tickets-table-wrap {
     background: #ffffff;
     border-color: rgba(15, 23, 42, .10);
 }
+
+/* Encabezados redundantes removidos por pedido: se conserva la botonera cuando existe. */
+.brand__content,
+.main-shell__brand-copy,
+.page-intro > :first-child:not(.actions),
+.tickets-odoo-header > :first-child {
+    display: none !important;
+}
+
+.page-intro,
+.tickets-odoo-header {
+    justify-content: flex-end !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+}
+
+.page-intro:not(:has(.actions)),
+.carga-viajes-brand {
+    display: none !important;
+}
+
+.page-intro .actions,
+.tickets-odoo-header .actions {
+    margin-left: auto;
+}
