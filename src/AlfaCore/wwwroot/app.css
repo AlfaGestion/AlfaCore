@@ -22826,3 +22826,17 @@ html[data-theme="light"] .tickets-table-wrap {
 .tickets-odoo-header .actions {
     margin-left: auto;
 }
+
+/* Encabezado superior del shell: oculta "Alfa Gestion" + nombre de modulo en todas las rutas. */
+.shell__topbar > div:first-child,
+.main-shell__topbar > div:first-child {
+    display: none !important;
+}
+
+.shell__topbar,
+.main-shell__topbar {
+    justify-content: flex-end !important;
+    min-height: 0 !important;
+    padding-top: .65rem !important;
+    padding-bottom: .65rem !important;
+}
