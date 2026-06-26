@@ -23171,6 +23171,182 @@ html[data-theme="light"] .tickets-table-wrap {
     padding: 1rem !important;
 }
 
+/* Busqueda unificada: mismo criterio visual que Tickets en todos los modulos. */
+.smart-search-card {
+    width: 100% !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    overflow: visible !important;
+}
+
+.smart-search-card .smart-search {
+    width: min(520px, 100%) !important;
+    max-width: 520px !important;
+}
+
+.smart-search-card .smart-search__bar,
+.ctree-search,
+.result-search,
+.help-search__row,
+.novedades-search,
+.informes-search,
+.informes-cover-search,
+.pos-catalog__search,
+.field:has(> input[type="search"]),
+.field:has(input[type="search"]),
+.carga-viajes-toolbar__search {
+    width: min(520px, 100%) !important;
+    max-width: 520px !important;
+}
+
+.smart-search__bar {
+    min-height: 36px !important;
+}
+
+.smart-search__bar > i {
+    padding-left: .7rem !important;
+}
+
+.smart-search__bar input {
+    padding: .48rem .58rem !important;
+    font-size: .84rem !important;
+}
+
+.smart-search__toggle {
+    width: 2.35rem !important;
+}
+
+.smart-search__chips {
+    min-height: 0 !important;
+    padding-top: .35rem !important;
+    gap: .3rem !important;
+}
+
+.smart-search__hint {
+    font-size: .78rem !important;
+    line-height: 1.25 !important;
+}
+
+.smart-chip {
+    padding: .2rem .42rem !important;
+    font-size: .72rem !important;
+}
+
+.smart-search__panel:not(.interfaces-filters-panel-grid) {
+    width: min(700px, calc(100vw - 6rem)) !important;
+    top: calc(100% + .35rem) !important;
+    grid-template-columns: repeat(3, minmax(150px, 1fr)) !important;
+    font-size: .86rem !important;
+}
+
+.smart-search__column,
+.smart-search__custom {
+    padding: .55rem .65rem !important;
+    gap: .22rem !important;
+}
+
+.smart-search h4 {
+    margin-bottom: .14rem !important;
+    font-size: .84rem !important;
+}
+
+.smart-search__column button,
+.smart-option {
+    padding: .3rem .42rem !important;
+    font-size: .82rem !important;
+    line-height: 1.15 !important;
+}
+
+.smart-search__inline {
+    margin-top: .08rem !important;
+    gap: .18rem !important;
+}
+
+.smart-search select,
+.smart-search input[type="text"],
+.smart-search input[type="date"] {
+    min-height: 32px !important;
+    padding: .42rem .5rem !important;
+    font-size: .82rem !important;
+}
+
+.interfaces-sticky-filters .smart-search {
+    width: 100% !important;
+    max-width: none !important;
+}
+
+.interfaces-sticky-filters .smart-search__bar {
+    width: min(520px, 100%) !important;
+    max-width: 520px !important;
+}
+
+.interfaces-sticky-filters .smart-search__panel {
+    margin-top: .4rem !important;
+}
+
+.ctree-search,
+.result-search,
+.help-search {
+    padding: .35rem .5rem !important;
+    border-radius: var(--ui-radius) !important;
+}
+
+.help-search {
+    width: min(560px, 100%) !important;
+    max-width: 560px !important;
+    background: transparent !important;
+    box-shadow: none !important;
+}
+
+.help-search__label,
+.help-search__meta {
+    display: none !important;
+}
+
+.help-search__input,
+.pos-search-input {
+    min-height: 36px !important;
+    padding: .48rem .62rem !important;
+    font-size: .84rem !important;
+    border-radius: var(--ui-radius-sm) !important;
+}
+
+.pos-catalog__search {
+    min-width: 0 !important;
+    justify-content: flex-start !important;
+}
+
+.pos-search-btn {
+    min-height: 36px !important;
+    padding: .45rem .7rem !important;
+}
+
+@media (max-width: 860px) {
+    .smart-search-card .smart-search,
+    .smart-search-card .smart-search__bar,
+    .ctree-search,
+    .result-search,
+    .help-search,
+    .help-search__row,
+    .novedades-search,
+    .informes-search,
+    .informes-cover-search,
+    .pos-catalog__search,
+    .field:has(input[type="search"]),
+    .carga-viajes-toolbar__search {
+        width: 100% !important;
+        max-width: none !important;
+    }
+
+    .smart-search__panel:not(.interfaces-filters-panel-grid) {
+        width: min(100%, calc(100vw - 2rem)) !important;
+        grid-template-columns: 1fr !important;
+    }
+}
+
 @media (max-width: 980px) {
     .shell__main,
     .main-shell__content {
