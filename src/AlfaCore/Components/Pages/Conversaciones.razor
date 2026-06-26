@@ -582,29 +582,22 @@
                     </div>
                 }
                 <div class="conversations-list__header">
-                    <div>
-                        <h3 class="panel-card__title">Inbox <span class="conversations-mobile-inbox-count mobile-only">@_inbox.Count</span></h3>
-                        <p class="panel-card__subtitle">@_inbox.Count conversación(es)</p>
-                    </div>
+                    <span class="conversations-mobile-inbox-count mobile-only">@_inbox.Count</span>
                 </div>
 
                 <div class="conversations-inbox-tools desktop-only" @onclick:stopPropagation>
                     <div class="conversations-inbox-search">
-                        <label for="conv-inbox-search">Buscar</label>
-                        <input id="conv-inbox-search"
-                               type="search"
-                               placeholder="Buscar por telefono, cliente, contacto, email o mensaje..."
-                               value="@_filters.Search"
-                               @oninput="HandleSearchInputAsync"
-                               @onkeydown="HandleSearchEnter"
-                               @onfocus="() => _showContactSuggestions = ShouldShowContactSuggestions" />
-                    </div>
-
-                    <details class="conversations-inbox-filter-popover">
-                        <summary>
-                            <i class="bi bi-sliders"></i>
-                            <span>Filtros</span>
-                        </summary>
+                        <div class="conversations-inbox-searchbox">
+                            <i class="bi bi-search"></i>
+                            <input id="conv-inbox-search"
+                                   type="search"
+                                   placeholder="Buscar por telefono, cliente, contacto, email o mensaje..."
+                                   value="@_filters.Search"
+                                   @oninput="HandleSearchInputAsync"
+                                   @onkeydown="HandleSearchEnter"
+                                   @onfocus="() => _showContactSuggestions = ShouldShowContactSuggestions" />
+                            <i class="bi bi-chevron-down conversations-inbox-searchbox__caret"></i>
+                        </div>
                         <div class="conversations-inbox-filter-panel">
                             <div class="field">
                                 <label for="conv-inbox-tech">Mi tecnico</label>
@@ -641,7 +634,7 @@
                                 </button>
                             </div>
                         </div>
-                    </details>
+                    </div>
                 </div>
 
                 @if (_loadingInbox && _inbox.Count == 0)

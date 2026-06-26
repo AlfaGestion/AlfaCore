@@ -23243,7 +23243,7 @@ html[data-theme="light"] .tickets-table-wrap {
 
 .conversations-page--odoo > .conversations-filters.desktop-only {
     min-height: 34px !important;
-    padding: .18rem .38rem !important;
+    padding: .45rem .7rem .4rem !important;
     border: 0 !important;
     display: grid !important;
     grid-template-columns: auto minmax(0, 1fr) auto auto !important;
@@ -23291,7 +23291,7 @@ html[data-theme="light"] .tickets-table-wrap {
 }
 
 .conversations-page--odoo .conversations-layout {
-    grid-template-columns: minmax(255px, 315px) minmax(0, 1fr) !important;
+    grid-template-columns: minmax(230px, 290px) minmax(0, 1fr) !important;
     height: 100% !important;
     min-height: 0 !important;
     gap: 0 !important;
@@ -23311,12 +23311,61 @@ html[data-theme="light"] .tickets-table-wrap {
 }
 
 .conversations-page--odoo .conversations-list__header {
-    padding: .35rem .45rem .25rem !important;
+    display: none !important;
+    padding: 0 !important;
     min-height: 0 !important;
 }
 
 .conversations-page--odoo .conversations-list__items {
-    padding: .35rem .38rem !important;
+    padding: .28rem .28rem !important;
+}
+
+.conversations-page--odoo .conversation-item,
+.conversations-page--odoo .conversation-row {
+    min-width: 0 !important;
+    padding: .5rem .52rem !important;
+    gap: .45rem !important;
+}
+
+.conversations-page--odoo .conversation-row__avatar {
+    display: none !important;
+}
+
+.conversations-page--odoo .conversation-row__content,
+.conversations-page--odoo .conversation-row__top,
+.conversations-page--odoo .conversation-row__meta,
+.conversations-page--odoo .conversation-row__badges {
+    min-width: 0 !important;
+}
+
+.conversations-page--odoo .conversation-row__top {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    gap: .35rem !important;
+}
+
+.conversations-page--odoo .conversation-row__name,
+.conversations-page--odoo .conversation-row__meta span,
+.conversations-page--odoo .conversation-badge,
+.conversations-page--odoo .conversation-row__summary {
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+}
+
+.conversations-page--odoo .conversation-row__meta,
+.conversations-page--odoo .conversation-row__badges {
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    gap: .25rem !important;
+}
+
+.conversations-page--odoo .conversation-row__summary {
+    margin-top: .16rem !important;
+}
+
+.conversations-page--odoo .conversation-row__side {
+    flex: 0 0 auto !important;
 }
 
 .conversations-page--odoo .conversations-chat__header {
@@ -23325,19 +23374,16 @@ html[data-theme="light"] .tickets-table-wrap {
 }
 
 .conversations-inbox-tools {
-    display: grid !important;
-    grid-template-columns: minmax(0, 1fr) auto !important;
-    align-items: end !important;
-    gap: .4rem !important;
-    padding: 0 .38rem .38rem !important;
+    display: block !important;
+    padding: .28rem .3rem .25rem !important;
     border-bottom: 1px solid rgba(148, 163, 184, .12) !important;
 }
 
 .conversations-inbox-search {
+    position: relative !important;
     min-width: 0 !important;
 }
 
-.conversations-inbox-search label,
 .conversations-inbox-filter-panel label {
     display: block !important;
     margin-bottom: .18rem !important;
@@ -23346,7 +23392,41 @@ html[data-theme="light"] .tickets-table-wrap {
     font-weight: 800 !important;
 }
 
-.conversations-inbox-search input,
+.conversations-inbox-searchbox {
+    min-height: 34px !important;
+    display: grid !important;
+    grid-template-columns: auto minmax(0, 1fr) auto !important;
+    align-items: center !important;
+    gap: .38rem !important;
+    padding: 0 .55rem !important;
+    border: 1px solid rgba(56, 189, 248, .34) !important;
+    border-radius: 8px !important;
+    background: rgba(8, 18, 33, .92) !important;
+    color: var(--color-muted) !important;
+}
+
+.conversations-inbox-searchbox:focus-within {
+    border-color: rgba(56, 189, 248, .72) !important;
+    box-shadow: 0 0 0 2px rgba(56, 189, 248, .16) !important;
+}
+
+.conversations-inbox-searchbox input {
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 32px !important;
+    padding: 0 !important;
+    border: 0 !important;
+    outline: 0 !important;
+    background: transparent !important;
+    color: var(--color-text) !important;
+    font-size: .78rem !important;
+}
+
+.conversations-inbox-searchbox__caret {
+    font-size: .75rem !important;
+    color: var(--color-info) !important;
+}
+
 .conversations-inbox-filter-panel select {
     width: 100% !important;
     min-height: 30px !important;
@@ -23358,36 +23438,12 @@ html[data-theme="light"] .tickets-table-wrap {
     font-size: .78rem !important;
 }
 
-.conversations-inbox-filter-popover {
-    position: relative !important;
-}
-
-.conversations-inbox-filter-popover summary {
-    min-height: 30px !important;
-    padding: .34rem .6rem !important;
-    border: 1px solid rgba(56, 189, 248, .28) !important;
-    border-radius: 8px !important;
-    background: rgba(14, 165, 233, .12) !important;
-    color: var(--color-text) !important;
-    display: inline-flex !important;
-    align-items: center !important;
-    gap: .35rem !important;
-    cursor: pointer !important;
-    list-style: none !important;
-    font-size: .78rem !important;
-    font-weight: 800 !important;
-}
-
-.conversations-inbox-filter-popover summary::-webkit-details-marker {
-    display: none !important;
-}
-
 .conversations-inbox-filter-panel {
     position: absolute !important;
     top: calc(100% + .35rem) !important;
-    right: 0 !important;
+    left: 0 !important;
     z-index: 60 !important;
-    width: min(300px, calc(100vw - 2rem)) !important;
+    width: min(315px, calc(100vw - 2rem)) !important;
     display: grid !important;
     gap: .5rem !important;
     padding: .65rem !important;
@@ -23395,6 +23451,16 @@ html[data-theme="light"] .tickets-table-wrap {
     border-radius: 8px !important;
     background: rgba(8, 18, 33, .98) !important;
     box-shadow: 0 18px 44px rgba(0, 0, 0, .38) !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    transform: translateY(-4px) !important;
+    transition: opacity .14s ease, transform .14s ease !important;
+}
+
+.conversations-inbox-search:focus-within .conversations-inbox-filter-panel {
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    transform: translateY(0) !important;
 }
 
 .conversations-inbox-filter-panel .actions {
@@ -23418,16 +23484,43 @@ html[data-theme="light"] .tickets-table-wrap {
 }
 
 .conversations-page--odoo .message-card {
-    max-width: min(58ch, 62%) !important;
+    max-width: min(86ch, 78%) !important;
+    min-width: min(22rem, 72%) !important;
     padding: .46rem .62rem .42rem !important;
     border-radius: 8px !important;
     gap: .22rem !important;
     font-size: .8rem !important;
 }
 
+.conversations-page--odoo .message-row--incoming .message-card,
+.conversations-page--odoo .message-row--internal .message-card {
+    width: fit-content !important;
+}
+
+.conversations-page--odoo .message-row--outgoing .message-card {
+    width: fit-content !important;
+    max-width: min(92ch, 74%) !important;
+}
+
 .conversations-page--odoo .message-card__meta {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: .6rem !important;
     margin-bottom: .14rem !important;
     font-size: .68rem !important;
+    min-width: 0 !important;
+}
+
+.conversations-page--odoo .message-card__meta span:first-child {
+    min-width: 0 !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+}
+
+.conversations-page--odoo .message-card__meta span:last-child {
+    flex: 0 0 auto !important;
 }
 
 .conversations-page--odoo .message-card__text {
@@ -23461,7 +23554,7 @@ html[data-theme="light"] .tickets-table-wrap {
 
 @media (min-width: 901px) {
     .conversations-page--odoo .conversations-layout:has(.conversations-context-drawer.is-open) {
-        grid-template-columns: minmax(255px, 315px) minmax(0, 1fr) !important;
+        grid-template-columns: minmax(230px, 290px) minmax(0, 1fr) !important;
     }
 
     .conversations-page--odoo .conversations-context-drawer {
@@ -23470,9 +23563,9 @@ html[data-theme="light"] .tickets-table-wrap {
         right: 0 !important;
         bottom: 0 !important;
         grid-column: auto !important;
-        width: min(860px, calc(100% - 320px)) !important;
-        min-width: min(520px, calc(100% - 320px)) !important;
-        max-width: calc(100% - 320px) !important;
+        width: min(860px, calc(100% - 295px)) !important;
+        min-width: min(520px, calc(100% - 295px)) !important;
+        max-width: calc(100% - 295px) !important;
         height: auto !important;
         display: flex !important;
         transform: translateX(104%) !important;
