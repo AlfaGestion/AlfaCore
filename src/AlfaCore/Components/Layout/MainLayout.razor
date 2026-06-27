@@ -668,7 +668,7 @@ else
                     </button>
                     @if (AppUserSession.IsAuthenticated && AppUserSession.CurrentUser is not null)
                     {
-                        <button type="button" class="session-chip no-print" @onclick="GoToCentralLoginAsync" title="Cambiar usuario">
+                        <button type="button" class="session-chip no-print" @onclick="OpenLoginOverlayAsync" title="Cambiar usuario o base">
                             <span class="session-chip__dot"></span>
                             <span class="session-chip__text">@AppUserSession.CurrentUser.UserName</span>
                             <i class="bi bi-person-circle"></i>
@@ -1192,7 +1192,8 @@ else
         }
     }
     private bool ShowLoginOverlay
-        => (!AppMode.IsSaaSMode && (!AppUserSession.IsAuthenticated || AppUserSession.RequiresInternalLogin))
+        => _manualLoginOverlayOpen
+           || (!AppMode.IsSaaSMode && (!AppUserSession.IsAuthenticated || AppUserSession.RequiresInternalLogin))
            || (AppMode.IsSaaSMode && (!AppUserSession.IsAuthenticated || AppUserSession.RequiresInternalLogin));
     private bool CanShowLogoutButton
         => AppMode.IsSaaSMode && IsInternalSqlLoginContext && AppUserSession.IsAuthenticated;
@@ -1252,6 +1253,7 @@ else
     private string _globalConversationLatestName = string.Empty;
     private string _globalConversationLatestSummary = string.Empty;
     private string _routeSessionLabel = string.Empty;
+    private bool _manualLoginOverlayOpen;
 
     protected override void OnInitialized()
     {
@@ -2257,6 +2259,7 @@ else
                 }
             }
             _loginShowPassword = false;
+            _manualLoginOverlayOpen = false;
             if (AppUserSession.CurrentToken is not null)
             {
                 var tokenToPersist = AppUserSession.CurrentToken;
@@ -2294,6 +2297,17 @@ else
             Logger.LogInformation("LoginAsync: end. Busy=false, HasError={HasError}", !string.IsNullOrWhiteSpace(_loginError));
             StateHasChanged();
         }
+    }
+
+    private async Task OpenLoginOverlayAsync()
+    {
+        _loginError = string.Empty;
+        _manualLoginOverlayOpen = true;
+
+        if (IsInternalSqlLoginContext || AppUserSession.IsAuthenticated)
+            ResetLoginDraftForInternalContext();
+
+        await InvokeAsync(StateHasChanged);
     }
 
     private async Task GoToCentralLoginAsync()
