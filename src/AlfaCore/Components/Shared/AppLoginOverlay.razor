@@ -121,16 +121,13 @@
                     </button>
                 </div>
 
-                @if (ShowLogoutButton)
-                {
-                    <button type="button"
-                            class="btn btn--ghost auth-legacy-login__logout"
-                            @onclick="LogoutAsync"
-                            disabled="@IsBusy">
-                        <i class="bi bi-person-circle"></i>
-                        <span>Cambiar usuario</span>
-                    </button>
-                }
+                <button type="button"
+                        class="btn btn--ghost auth-legacy-login__logout"
+                        @onclick="LogoutAsync"
+                        disabled="@IsBusy">
+                    <i class="bi bi-person-circle"></i>
+                    <span>Cambiar usuario</span>
+                </button>
             </div>
         </section>
     </div>
@@ -146,7 +143,6 @@
     [Parameter] public bool IsBusy { get; set; }
     [Parameter] public bool ShowPassword { get; set; }
     [Parameter] public bool RememberCredentials { get; set; }
-    [Parameter] public bool ShowLogoutButton { get; set; }
     [Parameter] public EventCallback<string> UserNameChanged { get; set; }
     [Parameter] public EventCallback<string> PasswordChanged { get; set; }
     [Parameter] public EventCallback<bool> ShowPasswordChanged { get; set; }

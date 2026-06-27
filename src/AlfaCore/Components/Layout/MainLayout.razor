@@ -1099,7 +1099,6 @@ else
                  IsBusy="@_loginBusy"
                 ShowPassword="@_loginShowPassword"
                  RememberCredentials="@_loginRememberCredentials"
-                 ShowLogoutButton="@CanShowLogoutButton"
                  UserNameChanged="@(value => _loginUserName = value)"
                  PasswordChanged="@(value => _loginPassword = value)"
                  ShowPasswordChanged="@(value => _loginShowPassword = value)"
@@ -1179,6 +1178,9 @@ else
             if (!AppMode.IsSaaSMode || IsLoginRoute)
                 return false;
 
+            if (_manualLoginOverlayOpen && SessionSvc.GetActiveSession() is not null)
+                return true;
+
             if (AppUserSession.IsAuthenticated && !AppUserSession.RequiresInternalLogin)
                 return false;
 
@@ -1195,8 +1197,6 @@ else
         => _manualLoginOverlayOpen
            || (!AppMode.IsSaaSMode && (!AppUserSession.IsAuthenticated || AppUserSession.RequiresInternalLogin))
            || (AppMode.IsSaaSMode && (!AppUserSession.IsAuthenticated || AppUserSession.RequiresInternalLogin));
-    private bool CanShowLogoutButton
-        => AppMode.IsSaaSMode && IsInternalSqlLoginContext && AppUserSession.IsAuthenticated;
     private bool ShouldShowConversationMobilePwaActions
         => string.Equals(_currentModule, "conversaciones", StringComparison.OrdinalIgnoreCase);
     private bool CanEnablePush
