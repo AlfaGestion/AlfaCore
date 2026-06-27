@@ -9,6 +9,8 @@
 @inject IJSRuntime JS
 @using Microsoft.AspNetCore.Components
 @using Microsoft.AspNetCore.WebUtilities
+@using AlfaCore.Components.Shared
+@implements IAsyncDisposable
 
 <PageTitle>Login | AlfaCore</PageTitle>
 
@@ -17,7 +19,7 @@
         <aside class="auth-hero">
             <div class="auth-hero__brand">
                 <img class="central-brand-logo central-login-logo"
-                     src="/logos/LogoGrandeAzul.png"
+                     src="@LogoPrincipal"
                      alt="Alfa Gestión"
                      loading="eager"
                      decoding="async" />
@@ -109,7 +111,14 @@
                         </div>
 
                         <button type="submit" class="btn btn--primary auth-card__submit" disabled="@_busy">
-                            <i class="bi bi-box-arrow-in-right"></i>
+                            @if (_busy)
+                            {
+                                <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+                            }
+                            else
+                            {
+                                <i class="bi bi-box-arrow-in-right"></i>
+                            }
                             <span>@(_busy ? "Ingresando..." : "Ingresar")</span>
                         </button>
                     </form>
@@ -190,7 +199,14 @@
                                 </div>
 
                                 <button type="submit" class="btn btn--primary auth-card__submit" disabled="@_busy">
-                                    <i class="bi bi-box-arrow-in-right"></i>
+                                    @if (_busy)
+                                    {
+                                        <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+                                    }
+                                    else
+                                    {
+                                        <i class="bi bi-box-arrow-in-right"></i>
+                                    }
                                     <span>@(_busy ? "Ingresando..." : "Ingresar")</span>
                                 </button>
                             </form>
@@ -254,7 +270,9 @@
     private bool _showLegacyBasePicker;
     private bool _busy;
     private bool _showPassword;
+    private bool _isDarkTheme;
     private IReadOnlyList<SessionDto> _legacyBases = [];
+    private DotNetObjectReference<Login>? _themeRef;
     [SupplyParameterFromQuery(Name = "returnUrl")]
     public string? ReturnUrl { get; set; }
 
@@ -271,6 +289,25 @@
             _legacyBases = SessionSvc.GetAllSessions();
     }
 
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+            return;
+
+        try
+        {
+            var theme = await JS.InvokeAsync<string>("dashboardTheme.get");
+            ApplyTheme(theme);
+            _themeRef = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("dashboardTheme.watch", _themeRef);
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogDebug(ex, "Login: no se pudo sincronizar el tema visual inicial.");
+        }
+    }
+
     private async Task ToggleLegacyBasePickerAsync()
     {
         _showLegacyBasePicker = !_showLegacyBasePicker;
@@ -281,17 +318,23 @@
     }
 
     private IReadOnlyList<SessionDto> FilteredLegacyBases => string.IsNullOrWhiteSpace(_baseSearch)
-        ? _legacyBases
+        ? _legacyBases.OrderByDescending(item => item.Activa).ThenBy(item => item.Nombre, StringComparer.OrdinalIgnoreCase).ThenBy(item => item.BaseId).ToArray()
         : _legacyBases.Where(item =>
                 Contains(item.Nombre, _baseSearch) ||
                 Contains(item.BaseDatos, _baseSearch) ||
-                Contains(item.Servidor, _baseSearch))
+                Contains(item.Servidor, _baseSearch) ||
+                Contains(item.BaseId.ToString(), _baseSearch))
+            .OrderByDescending(item => item.Activa)
+            .ThenBy(item => item.Nombre, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(item => item.BaseId)
             .ToArray();
 
     private async Task LoginAsync()
     {
         _busy = true;
         _error = string.Empty;
+        await InvokeAsync(StateHasChanged);
+        await Task.Yield();
 
         try
         {
@@ -422,6 +465,8 @@
         return Task.CompletedTask;
     }
 
+    private string LogoPrincipal => AuthThemeAssets.GetLoginLogo(_isDarkTheme);
+
     private string GetSelectedBaseLabel()
     {
         var current = SessionSvc.GetActiveSession();
@@ -465,5 +510,28 @@
 
         safeReturnUrl = candidate;
         return true;
+    }
+
+    [JSInvokable]
+    public Task OnDashboardThemeChanged(string theme)
+    {
+        ApplyTheme(theme);
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private void ApplyTheme(string? theme)
+        => _isDarkTheme = !string.Equals(theme, "light", StringComparison.OrdinalIgnoreCase);
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("dashboardTheme.unwatch");
+        }
+        catch
+        {
+        }
+
+        _themeRef?.Dispose();
     }
 }

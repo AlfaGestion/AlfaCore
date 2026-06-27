@@ -20,7 +20,14 @@
 @inject ILogger<MainLayout> Logger
 @implements IDisposable
 
-@if (IsPosFullscreenRoute)
+@if (_isInitializing)
+{
+    <div class="shell__initial-loading">
+        <AppLoadingFrame Title="@(_initializationErrorMessage is null ? "Cargando sistema..." : "No se pudo cargar el sistema")"
+                         Subtitle="@(_initializationErrorMessage ?? "Resolviendo la sesión, la base activa y el contexto inicial.")" />
+    </div>
+}
+else if (IsPosFullscreenRoute)
 {
     <div class="pos-layout-host" @onclick="CloseFloatingWindowsAsync">
         @Body
@@ -661,10 +668,10 @@ else
                     </button>
                     @if (AppUserSession.IsAuthenticated && AppUserSession.CurrentUser is not null)
                     {
-                        <button type="button" class="session-chip no-print" @onclick="LogoutAppUser" title="Cerrar sesión del sistema">
+                        <button type="button" class="session-chip no-print" @onclick="GoToCentralLoginAsync" title="Cambiar usuario">
                             <span class="session-chip__dot"></span>
                             <span class="session-chip__text">@AppUserSession.CurrentUser.UserName</span>
-                            <i class="bi bi-box-arrow-right"></i>
+                            <i class="bi bi-person-circle"></i>
                         </button>
                     }
                     <div class="shell__status">
@@ -741,7 +748,10 @@ else
     </button>
 }
 
-<SessionDrawer Open="_drawerOpen" OnClose="() => _drawerOpen = false" />
+<SessionDrawer Open="_drawerOpen"
+               DarkTheme="_drawerDarkTheme"
+               RouteBaseId="_drawerRouteBaseId"
+               OnClose="() => _drawerOpen = false" />
 
 @if (CanShowTasksPanel && _tasksPanelOpen)
 {
@@ -1081,6 +1091,7 @@ else
 }
 
 <AppLoginOverlay Open="@ShowLoginOverlay"
+                 DarkTheme="@_isDark"
                  SqlSessionLabel="@GetSqlSessionLabel()"
                  UserName="@_loginUserName"
                  Password="@_loginPassword"
@@ -1088,15 +1099,14 @@ else
                  IsBusy="@_loginBusy"
                 ShowPassword="@_loginShowPassword"
                  RememberCredentials="@_loginRememberCredentials"
-                 UserOptions="@_loginUsers"
-                 UseUserList="@_loginUseUserList"
+                 ShowLogoutButton="@CanShowLogoutButton"
                  UserNameChanged="@(value => _loginUserName = value)"
                  PasswordChanged="@(value => _loginPassword = value)"
                  ShowPasswordChanged="@(value => _loginShowPassword = value)"
                  RememberCredentialsChanged="OnRememberCredentialsChangedAsync"
-                 UseUserListChanged="@(value => _loginUseUserList = value)"
                  OnSubmit="LoginAsync"
-                 OnOpenSqlSessions="OpenSqlSessionDrawerAsync" />
+                 OnOpenSqlSessions="OpenSqlSessionDrawerAsync"
+                 OnLogout="GoToCentralLoginAsync" />
 
 <AppMsgBoxHost />
 <NovedadesPopup Enabled="@(!IsDirectMode)" />
@@ -1106,7 +1116,11 @@ else
     private bool? _sidebarCollapsedOverride;
     private bool _isDark = false;
     private bool _drawerOpen;
+    private bool _drawerDarkTheme;
+    private int? _drawerRouteBaseId;
     private AlfaCore.Models.SessionDto? _activeSession;
+    private bool _isInitializing = true;
+    private string? _initializationErrorMessage;
     private string _loginUserName = string.Empty;
     private string _loginPassword = string.Empty;
     private string _loginError = string.Empty;
@@ -1180,6 +1194,8 @@ else
     private bool ShowLoginOverlay
         => (!AppMode.IsSaaSMode && (!AppUserSession.IsAuthenticated || AppUserSession.RequiresInternalLogin))
            || (AppMode.IsSaaSMode && (!AppUserSession.IsAuthenticated || AppUserSession.RequiresInternalLogin));
+    private bool CanShowLogoutButton
+        => AppMode.IsSaaSMode && IsInternalSqlLoginContext && AppUserSession.IsAuthenticated;
     private bool ShouldShowConversationMobilePwaActions
         => string.Equals(_currentModule, "conversaciones", StringComparison.OrdinalIgnoreCase);
     private bool CanEnablePush
@@ -1360,24 +1376,21 @@ else
         if (!firstRender)
             return;
 
-        StartGlobalConversationPolling();
-
         try
         {
+            StartGlobalConversationPolling();
+
             await JS.InvokeVoidAsync("conversacionesUi.initNotifications", "AlfaCore - Alfa Gestión");
-        }
-        catch
-        {
-        }
 
-        try
-        {
             var theme = await JS.InvokeAsync<string>("dashboardTheme.get");
             _isDark = !string.Equals(theme, "light", StringComparison.OrdinalIgnoreCase);
+            await InvokeAsync(StateHasChanged);
         }
-        catch
+        catch (Exception ex)
         {
             _isDark = true;
+            _initializationErrorMessage ??= "No se pudo sincronizar el estado visual inicial.";
+            Logger.LogDebug(ex, "MainLayout: no se pudo leer el tema inicial.");
         }
 
         try
@@ -1390,91 +1403,115 @@ else
             _pwaPushSupported = pwaState.PushSupported;
             _pwaNotificationPermission = pwaState.NotificationPermission;
         }
-        catch
+        catch (Exception ex)
         {
+            Logger.LogDebug(ex, "MainLayout: no se pudo inicializar PWA.");
         }
 
-        await EnsureActiveSessionFromRouteAsync();
-        await EnsureInternalLoginUsersAsync();
-
-        if (IsInternalSqlLoginContext && AppUserSession.RequiresInternalLogin)
-            ResetLoginDraftForInternalContext();
-
-        if (!AppUserSession.IsAuthenticated)
+        try
         {
-            var normalizedPathForToken = GetNormalizedCurrentPath();
-            try
-            {
-                if (!string.IsNullOrWhiteSpace(normalizedPathForToken))
-                {
-                    var token = await JS.InvokeAsync<string?>("localStorage.getItem", "alfacore_user_token");
-                    if (!string.IsNullOrEmpty(token))
-                        AppUserSession.TryRestoreFromToken(token);
-                }
-            }
-            catch { }
+            await EnsureActiveSessionFromRouteAsync();
+            await EnsureInternalLoginUsersAsync();
 
-            try
-            {
-                var isInternalLoginPrompt = IsInternalSqlLoginContext || (AppMode.IsSaaSMode && AppUserSession.RequiresInternalLogin && !IsLoginRoute);
-                if (!isInternalLoginPrompt)
-                {
-                    _loginRememberCredentials = string.Equals(
-                        await JS.InvokeAsync<string?>("localStorage.getItem", "alfacore_login_remember"),
-                        "true",
-                        StringComparison.OrdinalIgnoreCase);
+            if (IsInternalSqlLoginContext && AppUserSession.RequiresInternalLogin)
+                ResetLoginDraftForInternalContext();
 
-                    if (_loginRememberCredentials)
+            if (!AppUserSession.IsAuthenticated)
+            {
+                var normalizedPathForToken = GetNormalizedCurrentPath();
+                try
+                {
+                    if (!string.IsNullOrWhiteSpace(normalizedPathForToken))
                     {
-                        _loginUserName = await JS.InvokeAsync<string?>("localStorage.getItem", "alfacore_login_user") ?? string.Empty;
-                        _loginPassword = await JS.InvokeAsync<string?>("localStorage.getItem", "alfacore_login_password") ?? string.Empty;
+                        var token = await JS.InvokeAsync<string?>("localStorage.getItem", "alfacore_user_token");
+                        if (!string.IsNullOrEmpty(token))
+                            AppUserSession.TryRestoreFromToken(token);
                     }
                 }
-                else
+                catch { }
+
+                try
                 {
-                    _loginRememberCredentials = false;
-                    _loginUserName = string.Empty;
-                    _loginPassword = string.Empty;
+                    var isInternalLoginPrompt = IsInternalSqlLoginContext || (AppMode.IsSaaSMode && AppUserSession.RequiresInternalLogin && !IsLoginRoute);
+                    if (!isInternalLoginPrompt)
+                    {
+                        _loginRememberCredentials = string.Equals(
+                            await JS.InvokeAsync<string?>("localStorage.getItem", "alfacore_login_remember"),
+                            "true",
+                            StringComparison.OrdinalIgnoreCase);
+
+                        if (_loginRememberCredentials)
+                        {
+                            _loginUserName = await JS.InvokeAsync<string?>("localStorage.getItem", "alfacore_login_user") ?? string.Empty;
+                            _loginPassword = await JS.InvokeAsync<string?>("localStorage.getItem", "alfacore_login_password") ?? string.Empty;
+                        }
+                    }
+                    else
+                    {
+                        _loginRememberCredentials = false;
+                        _loginUserName = string.Empty;
+                        _loginPassword = string.Empty;
+                    }
+                }
+                catch { }
+            }
+
+            if (AppMode.IsSaaSMode && !AppUserSession.IsAuthenticated)
+            {
+                var normalizedPath = GetNormalizedCurrentPath();
+                var allowSaasLanding = await CanShowSaaSClientLandingAsync(normalizedPath);
+                Logger.LogInformation(
+                    "MainLayout: auth guard. Path={Path}, AllowLanding={AllowLanding}, HasAuth={HasAuth}, ActiveSession={ActiveSession}, SaaS={SaaS}",
+                    normalizedPath,
+                    allowSaasLanding,
+                    AppUserSession.IsAuthenticated,
+                    SessionSvc.GetActiveSession()?.BaseId,
+                    AppMode.IsSaaSMode);
+
+                if (!allowSaasLanding && string.IsNullOrWhiteSpace(_currentModule))
+                {
+                    var returnUrl = "/" + Nav.ToBaseRelativePath(Nav.Uri).Split('?')[0].Split('#')[0].TrimStart('/');
+                    var loginTarget = string.Equals(returnUrl, "/", StringComparison.Ordinal)
+                        ? "/login"
+                        : $"/login?returnUrl={Uri.EscapeDataString(returnUrl)}";
+                    Logger.LogInformation(
+                        "MainLayout: redirecting to login. ReturnUrl={ReturnUrl}",
+                        string.Equals(loginTarget, "/login", StringComparison.Ordinal) ? "(sin returnUrl)" : returnUrl);
+                    Nav.NavigateTo(loginTarget, replace: true);
+                    return;
+                }
+
+                if (!allowSaasLanding)
+                {
+                    Logger.LogInformation(
+                        "MainLayout: SaaS module route without auth, keeping current URL. Path={Path}, Module={Module}",
+                        normalizedPath,
+                        _currentModule);
                 }
             }
-            catch { }
-        }
 
-        if (AppMode.IsSaaSMode && !AppUserSession.IsAuthenticated)
-        {
-            var normalizedPath = GetNormalizedCurrentPath();
-            var allowSaasLanding = await CanShowSaaSClientLandingAsync(normalizedPath);
-            Logger.LogInformation(
-                "MainLayout: auth guard. Path={Path}, AllowLanding={AllowLanding}, HasAuth={HasAuth}, ActiveSession={ActiveSession}, SaaS={SaaS}",
-                normalizedPath,
-                allowSaasLanding,
-                AppUserSession.IsAuthenticated,
-                SessionSvc.GetActiveSession()?.BaseId,
-                AppMode.IsSaaSMode);
-
-            if (!allowSaasLanding && string.IsNullOrWhiteSpace(_currentModule))
-            {
-                var returnUrl = "/" + Nav.ToBaseRelativePath(Nav.Uri).Split('?')[0].Split('#')[0].TrimStart('/');
-                Logger.LogInformation("MainLayout: redirecting to login. ReturnUrl={ReturnUrl}", returnUrl);
-                Nav.NavigateTo($"/login?returnUrl={Uri.EscapeDataString(returnUrl)}", replace: true);
+            if (TryRedirectToCanonicalHome())
                 return;
-            }
 
-            if (!allowSaasLanding)
+            if (ShowShellContext)
+                await EnsureMenuSearchCatalogAsync();
+        }
+        catch (Exception ex)
+        {
+            _initializationErrorMessage = "No se pudo completar la carga inicial del sistema.";
+            Logger.LogError(ex, "MainLayout: fallo durante la inicializacion inicial.");
+        }
+        finally
+        {
+            _isInitializing = false;
+            try
             {
-                Logger.LogInformation(
-                    "MainLayout: SaaS module route without auth, keeping current URL. Path={Path}, Module={Module}",
-                    normalizedPath,
-                    _currentModule);
+                await InvokeAsync(StateHasChanged);
+            }
+            catch
+            {
             }
         }
-
-        if (TryRedirectToCanonicalHome())
-            return;
-
-        if (ShowShellContext)
-            await EnsureMenuSearchCatalogAsync();
-        StateHasChanged();
     }
 
     private async Task EnsureActiveSessionFromRouteAsync()
@@ -2062,6 +2099,8 @@ else
     {
         _loginBusy = true;
         _loginError = string.Empty;
+        await InvokeAsync(StateHasChanged);
+        await Task.Yield();
 
         using var loginCts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
 
@@ -2079,51 +2118,88 @@ else
             AppUserSessionInfo session;
             if (IsInternalSqlLoginContext)
             {
-                if (!TryGetRouteBaseId(out var routeBaseId))
+                var selectedSession = SessionSvc.GetActiveSession();
+                if (selectedSession is not null)
                 {
-                    _loginError = "No hay una base activa lista para validar el acceso interno.";
-                    Logger.LogWarning("LoginAsync: no se pudo resolver idbase desde la URL. Route={Route}", GetNormalizedCurrentPath());
-                    return;
+                    var builder = new Microsoft.Data.SqlClient.SqlConnectionStringBuilder
+                    {
+                        DataSource = selectedSession.Servidor,
+                        InitialCatalog = selectedSession.BaseDatos,
+                        UserID = selectedSession.Usuario,
+                        Password = selectedSession.Password,
+                        TrustServerCertificate = selectedSession.TrustServerCertificate,
+                        ApplicationName = "AlfaCore"
+                    };
+
+                    Logger.LogInformation(
+                        "LoginAsync: validando acceso interno contra base activa seleccionada. BaseId={BaseId}, DbServer={DbServer}, DbName={DbName}, DbUser={DbUser}",
+                        selectedSession.BaseId,
+                        selectedSession.Servidor,
+                        selectedSession.BaseDatos,
+                        selectedSession.Usuario);
+
+                    var loginTask = LegacyBaseUserSession.LoginAsync(_loginUserName, _loginPassword, builder.ConnectionString, loginCts.Token);
+                    var completedTask = await Task.WhenAny(loginTask, Task.Delay(TimeSpan.FromSeconds(20), loginCts.Token));
+                    if (!ReferenceEquals(completedTask, loginTask))
+                    {
+                        Logger.LogWarning("LoginAsync: timeout esperando validación interna. BaseId={BaseId}", selectedSession.BaseId);
+                        throw new TaskCanceledException("El inicio de sesión interno superó el tiempo máximo de espera.");
+                    }
+
+                    session = await loginTask;
+                    Logger.LogInformation("LoginAsync: acceso interno validado. User={User}, SystemCode={SystemCode}", session.UserName, session.SystemCode);
+                    Logger.LogInformation("LoginAsync: adoptando usuario interno...");
+                    AppUserSession.AdoptInternalUser(session);
+                    Logger.LogInformation("LoginAsync: usuario interno adoptado. RequiresInternalLogin={RequiresInternalLogin}, Authenticated={Authenticated}", AppUserSession.RequiresInternalLogin, AppUserSession.IsAuthenticated);
                 }
-
-                var routeBase = await CentralBasesSvc.GetByIdAsync(routeBaseId);
-                if (routeBase is null)
+                else
                 {
-                    _loginError = $"No se encontró la base #{routeBaseId} para validar el acceso interno.";
-                    Logger.LogWarning("LoginAsync: base central no encontrada. IdBase={IdBase}, Route={Route}", routeBaseId, GetNormalizedCurrentPath());
-                    return;
+                    if (!TryGetRouteBaseId(out var routeBaseId))
+                    {
+                        _loginError = "No hay una base activa lista para validar el acceso interno.";
+                        Logger.LogWarning("LoginAsync: no se pudo resolver idbase desde la URL. Route={Route}", GetNormalizedCurrentPath());
+                        return;
+                    }
+
+                    var routeBase = await CentralBasesSvc.GetByIdAsync(routeBaseId);
+                    if (routeBase is null)
+                    {
+                        _loginError = $"No se encontró la base #{routeBaseId} para validar el acceso interno.";
+                        Logger.LogWarning("LoginAsync: base central no encontrada. IdBase={IdBase}, Route={Route}", routeBaseId, GetNormalizedCurrentPath());
+                        return;
+                    }
+
+                    var builder = new Microsoft.Data.SqlClient.SqlConnectionStringBuilder
+                    {
+                        DataSource = routeBase.DbServer,
+                        InitialCatalog = routeBase.DbName,
+                        UserID = routeBase.DbUser,
+                        Password = routeBase.DbPassword,
+                        TrustServerCertificate = true,
+                        ApplicationName = "AlfaCore"
+                    };
+
+                    Logger.LogInformation(
+                        "LoginAsync: validando acceso interno contra base central. IdBase={IdBase}, DbServer={DbServer}, DbName={DbName}, DbUser={DbUser}",
+                        routeBaseId,
+                        routeBase.DbServer,
+                        routeBase.DbName,
+                        routeBase.DbUser);
+
+                    var loginTask = LegacyBaseUserSession.LoginAsync(_loginUserName, _loginPassword, builder.ConnectionString, loginCts.Token);
+                    var completedTask = await Task.WhenAny(loginTask, Task.Delay(TimeSpan.FromSeconds(20), loginCts.Token));
+                    if (!ReferenceEquals(completedTask, loginTask))
+                    {
+                        Logger.LogWarning("LoginAsync: timeout esperando validación interna. Route={Route}, IdBase={IdBase}", GetNormalizedCurrentPath(), routeBaseId);
+                        throw new TaskCanceledException("El inicio de sesión interno superó el tiempo máximo de espera.");
+                    }
+
+                    session = await loginTask;
+                    Logger.LogInformation("LoginAsync: acceso interno validado. User={User}, SystemCode={SystemCode}", session.UserName, session.SystemCode);
+                    Logger.LogInformation("LoginAsync: adoptando usuario interno...");
+                    AppUserSession.AdoptInternalUser(session);
+                    Logger.LogInformation("LoginAsync: usuario interno adoptado. RequiresInternalLogin={RequiresInternalLogin}, Authenticated={Authenticated}", AppUserSession.RequiresInternalLogin, AppUserSession.IsAuthenticated);
                 }
-
-                var builder = new Microsoft.Data.SqlClient.SqlConnectionStringBuilder
-                {
-                    DataSource = routeBase.DbServer,
-                    InitialCatalog = routeBase.DbName,
-                    UserID = routeBase.DbUser,
-                    Password = routeBase.DbPassword,
-                    TrustServerCertificate = true,
-                    ApplicationName = "AlfaCore"
-                };
-
-                Logger.LogInformation(
-                    "LoginAsync: validando acceso interno contra base central. IdBase={IdBase}, DbServer={DbServer}, DbName={DbName}, DbUser={DbUser}",
-                    routeBaseId,
-                    routeBase.DbServer,
-                    routeBase.DbName,
-                    routeBase.DbUser);
-
-                var loginTask = LegacyBaseUserSession.LoginAsync(_loginUserName, _loginPassword, builder.ConnectionString, loginCts.Token);
-                var completedTask = await Task.WhenAny(loginTask, Task.Delay(TimeSpan.FromSeconds(20), loginCts.Token));
-                if (!ReferenceEquals(completedTask, loginTask))
-                {
-                    Logger.LogWarning("LoginAsync: timeout esperando validación interna. Route={Route}, IdBase={IdBase}", GetNormalizedCurrentPath(), routeBaseId);
-                    throw new TaskCanceledException("El inicio de sesión interno superó el tiempo máximo de espera.");
-                }
-
-                session = await loginTask;
-                Logger.LogInformation("LoginAsync: acceso interno validado. User={User}, SystemCode={SystemCode}", session.UserName, session.SystemCode);
-                Logger.LogInformation("LoginAsync: adoptando usuario interno...");
-                AppUserSession.AdoptInternalUser(session);
-                Logger.LogInformation("LoginAsync: usuario interno adoptado. RequiresInternalLogin={RequiresInternalLogin}, Authenticated={Authenticated}", AppUserSession.RequiresInternalLogin, AppUserSession.IsAuthenticated);
             }
             else if (AppMode.IsSaaSMode)
             {
@@ -2220,12 +2296,17 @@ else
         }
     }
 
-    private async Task LogoutAppUser()
+    private async Task GoToCentralLoginAsync()
     {
-        AppUserSession.Logout();
         _loginError = string.Empty;
-        try { await JS.InvokeVoidAsync("localStorage.removeItem", "alfacore_user_token"); }
-        catch { }
+        await InvokeAsync(StateHasChanged);
+
+        var currentPath = "/" + Nav.ToBaseRelativePath(Nav.Uri).Split('?')[0].Split('#')[0].TrimStart('/');
+        var destination = string.Equals(currentPath, "/", StringComparison.Ordinal)
+            ? "/login"
+            : $"/login?returnUrl={Uri.EscapeDataString(currentPath)}";
+
+        Nav.NavigateTo(destination, replace: true);
     }
 
     [JSInvokable]
@@ -2904,9 +2985,14 @@ else
             await JS.InvokeVoidAsync("localStorage.setItem", "alfacore_login_password", _loginPassword ?? string.Empty);
         }
         catch { }
-    }    private Task OpenSqlSessionDrawerAsync()
+    }
+
+    private Task OpenSqlSessionDrawerAsync()
     {
         _drawerOpen = true;
+        _drawerDarkTheme = _isDark && (ShowLoginOverlay || IsInternalSqlLoginContext);
+        _drawerRouteBaseId = SessionSvc.GetActiveSession()?.BaseId
+            ?? (TryGetRouteBaseId(out var routeBaseId) ? routeBaseId : null);
         return Task.CompletedTask;
     }
 

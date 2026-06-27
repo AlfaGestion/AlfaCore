@@ -1,11 +1,14 @@
+@using AlfaCore.Models
 @inject AlfaCore.Services.ISessionService SessionSvc
+@inject AlfaCore.Services.IAppUserSessionService AppUserSession
+@inject AlfaCore.Services.ICentralBasesService CentralBasesSvc
 @inject IJSRuntime JS
 
 @if (Open)
 {
-    <div class="drawer-overlay" @onclick="Close"></div>
+    <div class="drawer-overlay @(DarkTheme ? "drawer-overlay--login" : string.Empty)" @onclick="Close"></div>
 
-    <div class="drawer" role="dialog" aria-label="Selector de bases">
+    <div class="drawer @(DarkTheme ? "drawer--login" : string.Empty)" role="dialog" aria-label="Selector de bases">
         <div class="drawer__header">
             <h3 class="drawer__title">
                 <i class="bi bi-database"></i> Bases disponibles
@@ -16,31 +19,50 @@
         </div>
 
         <div class="drawer__body">
+            <div class="drawer-search">
+                <input class="drawer-search__input"
+                       value="@_searchText"
+                       @oninput="HandleSearchInputAsync"
+                       @onkeydown="HandleSearchKeyDownAsync"
+                       placeholder="Buscar base..."
+                       autocomplete="off" />
+            </div>
+
             <div class="drawer-sessions">
-                @foreach (var s in _sesiones)
+                @if (VisibleSesiones.Count == 0)
                 {
-                    <div class="drawer-session @(s.Activa ? "drawer-session--active" : "")">
-                        <div class="drawer-session__info">
-                            <span class="drawer-session__dot @(s.Activa ? "drawer-session__dot--ok" : "")"></span>
-                            <div>
-                                <p class="drawer-session__nombre">@s.Nombre</p>
-                                <p class="drawer-session__detalle">@s.Servidor Â· @s.BaseDatos</p>
-                                <p class="drawer-session__usuario">@(s.BaseId > 0 ? $"Base #{s.BaseId}" : s.Nombre)</p>
+                    <div class="drawer-empty">
+                        No hay bases disponibles para este cliente.
+                    </div>
+                }
+                else
+                {
+                    @for (var index = 0; index < VisibleSesiones.Count; index++)
+                    {
+                        var s = VisibleSesiones[index];
+                        <div class="drawer-session @(s.Activa ? "drawer-session--active" : string.Empty) @(index == _selectedIndex ? "drawer-session--selected" : string.Empty)">
+                            <div class="drawer-session__info">
+                                <span class="drawer-session__dot @(s.Activa ? "drawer-session__dot--ok" : string.Empty)"></span>
+                                <div>
+                                    <p class="drawer-session__nombre">@s.Nombre</p>
+                                    <p class="drawer-session__detalle">@s.Servidor · @s.BaseDatos</p>
+                                    <p class="drawer-session__usuario">@(s.BaseId > 0 ? $"Base #{s.BaseId}" : s.Nombre)</p>
+                                </div>
+                            </div>
+                            <div class="drawer-session__actions">
+                                @if (s.Activa)
+                                {
+                                    <span class="drawer-session__badge">Activa</span>
+                                }
+                                else
+                                {
+                                    <button class="btn btn--primary btn--sm" @onclick="() => ConectarAsync(s.Id)">
+                                        Seleccionar
+                                    </button>
+                                }
                             </div>
                         </div>
-                        <div class="drawer-session__actions">
-                            @if (s.Activa)
-                            {
-                                <span class="drawer-session__badge">Activa</span>
-                            }
-                            else
-                            {
-                                <button class="btn btn--primary btn--sm" @onclick="() => ConectarAsync(s.Id)">
-                                    Seleccionar
-                                </button>
-                            }
-                        </div>
-                    </div>
+                    }
                 }
             </div>
 
@@ -54,23 +76,149 @@
 
 @code {
     [Parameter] public bool Open { get; set; }
+    [Parameter] public bool DarkTheme { get; set; }
+    [Parameter] public int? RouteBaseId { get; set; }
     [Parameter] public EventCallback OnClose { get; set; }
 
-    private List<AlfaCore.Models.SessionDto> _sesiones = [];
-    protected override void OnParametersSet()
+    private List<SessionDto> _sesiones = [];
+    private string _searchText = string.Empty;
+    private int _selectedIndex;
+
+    protected override async Task OnParametersSetAsync()
     {
-        if (Open) Reload();
+        if (Open)
+            await ReloadAsync();
     }
 
-    private void Reload() =>
-        _sesiones = SessionSvc.GetAllSessions().ToList();
+    private async Task ReloadAsync()
+    {
+        _searchText = string.Empty;
+        _selectedIndex = 0;
+
+        var currentUser = AppUserSession.CurrentUser;
+        if (currentUser is not null)
+        {
+            _sesiones = SessionSvc.GetAllSessions()
+                .OrderByDescending(x => x.Activa)
+                .ThenBy(x => x.Nombre, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(x => x.BaseId)
+                .ToList();
+            return;
+        }
+
+        var contextBaseId = SessionSvc.GetActiveSession()?.BaseId
+            ?? RouteBaseId;
+
+        if (contextBaseId is not int routeBaseId || routeBaseId <= 0)
+        {
+            _sesiones = [];
+            return;
+        }
+
+        var routeBase = await CentralBasesSvc.GetByIdAsync(routeBaseId);
+        if (routeBase is null || string.IsNullOrWhiteSpace(routeBase.IdCliente))
+        {
+            _sesiones = [];
+            return;
+        }
+
+        var bases = await CentralBasesSvc.GetByClienteAsync(routeBase.IdCliente, false);
+        _sesiones = bases
+            .Select(MapBase)
+            .OrderByDescending(s => s.Activa)
+            .ThenBy(s => s.Nombre, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(s => s.BaseId)
+            .ToList();
+
+        var active = SessionSvc.GetActiveSession();
+        if (active is not null)
+        {
+            var activeById = _sesiones.FirstOrDefault(x => x.Id == active.Id);
+            if (activeById is not null)
+                activeById.Activa = true;
+        }
+    }
+
+    private IReadOnlyList<SessionDto> VisibleSesiones
+        => _sesiones
+            .Where(ShouldIncludeSession)
+            .OrderByDescending(x => x.Activa)
+            .ThenBy(x => x.Nombre, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(x => x.BaseId)
+            .ToArray();
+
+    private bool ShouldIncludeSession(SessionDto session)
+    {
+        if (string.IsNullOrWhiteSpace(_searchText))
+            return true;
+
+        return Contains(session.Nombre, _searchText)
+            || Contains(session.Servidor, _searchText)
+            || Contains(session.BaseDatos, _searchText)
+            || Contains(session.BaseId.ToString(), _searchText);
+    }
+
+    private static SessionDto MapBase(BaseCentralDto baseDto)
+        => new()
+        {
+            Id = BuildGuidFromBaseId(baseDto.IdBase),
+            BaseId = baseDto.IdBase,
+            Nombre = baseDto.Nombre,
+            Servidor = baseDto.DbServer,
+            BaseDatos = baseDto.DbName,
+            Usuario = baseDto.DbUser,
+            Password = baseDto.DbPassword,
+            TrustServerCertificate = true,
+            Activa = false
+        };
+
+    private static Guid BuildGuidFromBaseId(int baseId)
+    {
+        Span<byte> bytes = stackalloc byte[16];
+        BitConverter.GetBytes(baseId).CopyTo(bytes);
+        return new Guid(bytes);
+    }
 
     private async Task ConectarAsync(Guid id)
     {
         SessionSvc.SwitchSession(id);
         await JS.InvokeVoidAsync("alfaCoreSqlSession.setActive", id.ToString());
-        Reload();
+        await ReloadAsync();
+    }
+
+    private async Task HandleSearchInputAsync(ChangeEventArgs args)
+    {
+        _searchText = args.Value?.ToString() ?? string.Empty;
+        _selectedIndex = 0;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task HandleSearchKeyDownAsync(KeyboardEventArgs args)
+    {
+        var visible = VisibleSesiones;
+        if (visible.Count == 0)
+            return;
+
+        switch (args.Key)
+        {
+            case "ArrowDown":
+                _selectedIndex = Math.Min(_selectedIndex + 1, visible.Count - 1);
+                await InvokeAsync(StateHasChanged);
+                break;
+            case "ArrowUp":
+                _selectedIndex = Math.Max(_selectedIndex - 1, 0);
+                await InvokeAsync(StateHasChanged);
+                break;
+            case "Enter":
+                _selectedIndex = Math.Clamp(_selectedIndex, 0, visible.Count - 1);
+                await ConectarAsync(visible[_selectedIndex].Id);
+                break;
+        }
     }
 
     private Task Close() => OnClose.InvokeAsync();
+
+    private static bool Contains(string? value, string search)
+        => !string.IsNullOrWhiteSpace(value)
+           && value.Contains(search, StringComparison.OrdinalIgnoreCase);
 }

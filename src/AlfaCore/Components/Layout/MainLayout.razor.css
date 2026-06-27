@@ -9,6 +9,22 @@
     transition: grid-template-columns 0.22s ease;
 }
 
+.shell__initial-loading {
+    min-height: 100dvh;
+    display: grid;
+    place-items: center;
+    padding: 2rem;
+    background:
+        radial-gradient(circle at top left, rgba(45, 212, 191, 0.16), transparent 24%),
+        radial-gradient(circle at bottom right, rgba(14, 165, 233, 0.14), transparent 28%),
+        #071426;
+}
+
+.shell__initial-loading ::deep .app-loading-frame {
+    width: min(100%, 760px);
+    min-height: calc(100dvh - 4rem);
+}
+
 .shell--collapsed {
     grid-template-columns: 92px 1fr;
 }

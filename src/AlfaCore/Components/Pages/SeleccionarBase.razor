@@ -11,6 +11,8 @@
 @inject ILogger<SeleccionarBase> Logger
 @inject NavigationManager Nav
 @inject IJSRuntime JS
+@using AlfaCore.Components.Shared
+@implements IAsyncDisposable
 
 <PageTitle>Seleccionar base | AlfaCore</PageTitle>
 
@@ -19,7 +21,7 @@
         <aside class="auth-hero">
             <div class="auth-hero__brand">
                 <img class="central-brand-logo auth-hero__logo auth-hero__logo--selection"
-                     src="/logos/LogoGrandeAzul.png"
+                     src="@LogoPrincipal"
                      alt="Alfa Gestión"
                      loading="eager"
                      decoding="async" />
@@ -81,11 +83,12 @@
                         <input type="text"
                                class="base-search-input auth-base-search__input"
                                placeholder="Buscar base..."
-                               @bind="_baseSearch"
-                               @bind:event="oninput" />
+                               value="@_baseSearch"
+                               @oninput="HandleSearchInputAsync"
+                               @onkeydown="HandleSearchKeyDownAsync" />
                     </div>
 
-                    @if (FilteredBases.Count == 0)
+                    @if (VisibleBases.Count == 0)
                     {
                         <div class="auth-base-empty">
                             No se encontraron bases.
@@ -94,9 +97,10 @@
                     else
                     {
                         <div class="auth-base-grid">
-                            @foreach (var item in FilteredBases)
+                            @for (var index = 0; index < VisibleBases.Count; index++)
                             {
-                                <article class="auth-base-card @(item.Activa ? "auth-base-card--active" : string.Empty)">
+                                var item = VisibleBases[index];
+                                <article class="auth-base-card @(item.Activa ? "auth-base-card--active" : string.Empty) @(index == _selectedIndex ? "auth-base-card--selected" : string.Empty)">
                                     <div class="auth-base-card__content">
                                         <p class="auth-base-card__name">@item.Nombre</p>
                                         <p class="auth-base-card__meta">@item.Servidor Â· @item.BaseDatos</p>
@@ -122,6 +126,9 @@
     private bool _loading = true;
     private string _error = string.Empty;
     private string _baseSearch = string.Empty;
+    private int _selectedIndex;
+    private bool _isDarkTheme;
+    private DotNetObjectReference<SeleccionarBase>? _themeRef;
 
     protected override void OnInitialized()
     {
@@ -136,13 +143,41 @@
             Nav.NavigateTo("/", replace: true);
     }
 
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+            return;
+
+        try
+        {
+            var theme = await JS.InvokeAsync<string>("dashboardTheme.get");
+            ApplyTheme(theme);
+            _themeRef = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("dashboardTheme.watch", _themeRef);
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogDebug(ex, "SeleccionarBase: no se pudo sincronizar el tema visual inicial.");
+        }
+    }
+
+    private string LogoPrincipal => AuthThemeAssets.GetLoginLogo(_isDarkTheme);
+
     private IReadOnlyList<SessionDto> FilteredBases => string.IsNullOrWhiteSpace(_baseSearch)
         ? _bases
         : _bases.Where(item =>
                 Contains(item.Nombre, _baseSearch) ||
                 Contains(item.BaseDatos, _baseSearch) ||
-                Contains(item.Servidor, _baseSearch))
+                Contains(item.Servidor, _baseSearch) ||
+                Contains(item.BaseId.ToString(), _baseSearch))
             .ToArray();
+
+    private IReadOnlyList<SessionDto> VisibleBases => FilteredBases
+        .OrderByDescending(item => item.Activa)
+        .ThenBy(item => item.Nombre, StringComparer.OrdinalIgnoreCase)
+        .ThenBy(item => item.BaseId)
+        .ToArray();
 
     protected override async Task OnInitializedAsync()
     {
@@ -176,6 +211,9 @@
 
                 _bases = (await CentralBasesSvc.GetByClienteAsync(client.IdCliente, AppUserSession.CurrentUser?.SuperAdmin == true))
                     .Select(MapBase)
+                    .OrderByDescending(item => item.Activa)
+                    .ThenBy(item => item.Nombre, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(item => item.BaseId)
                     .ToArray();
             }
             else
@@ -190,14 +228,16 @@
                 _bases = SessionSvc.GetAllSessions();
             }
 
-            Logger.LogInformation(
-                "SeleccionarBase: bases cargadas. User={User}, BaseCount={Count}, RouteIdWeb={IdWeb}",
-                AppUserSession.CurrentUser?.UserName ?? "(sin usuario)",
-                _bases.Count,
-                idweb ?? "(sin ruta)");
+        Logger.LogInformation(
+            "SeleccionarBase: bases cargadas. User={User}, BaseCount={Count}, RouteIdWeb={IdWeb}",
+            AppUserSession.CurrentUser?.UserName ?? "(sin usuario)",
+            _bases.Count,
+            idweb ?? "(sin ruta)");
 
-            if (_bases.Count == 1)
-                await SelectBaseAsync(_bases[0]);
+        _selectedIndex = 0;
+
+        if (_bases.Count == 1)
+            await SelectBaseAsync(_bases[0]);
         }
         catch (NavigationException)
         {
@@ -286,6 +326,36 @@
         => !string.IsNullOrWhiteSpace(value)
            && value.Contains(search, StringComparison.OrdinalIgnoreCase);
 
+    private Task HandleSearchInputAsync(ChangeEventArgs args)
+    {
+        _baseSearch = args.Value?.ToString() ?? string.Empty;
+        _selectedIndex = 0;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private async Task HandleSearchKeyDownAsync(KeyboardEventArgs args)
+    {
+        var visible = VisibleBases;
+        if (visible.Count == 0)
+            return;
+
+        switch (args.Key)
+        {
+            case "ArrowDown":
+                _selectedIndex = Math.Min(_selectedIndex + 1, visible.Count - 1);
+                await InvokeAsync(StateHasChanged);
+                break;
+            case "ArrowUp":
+                _selectedIndex = Math.Max(_selectedIndex - 1, 0);
+                await InvokeAsync(StateHasChanged);
+                break;
+            case "Enter":
+                _selectedIndex = Math.Clamp(_selectedIndex, 0, visible.Count - 1);
+                await SelectBaseAsync(visible[_selectedIndex]);
+                break;
+        }
+    }
+
     private static string? NormalizeRouteIdWeb(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -293,6 +363,29 @@
 
         var trimmed = value.Trim();
         return trimmed.Length == 0 ? null : trimmed;
+    }
+
+    [JSInvokable]
+    public Task OnDashboardThemeChanged(string theme)
+    {
+        ApplyTheme(theme);
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private void ApplyTheme(string? theme)
+        => _isDarkTheme = !string.Equals(theme, "light", StringComparison.OrdinalIgnoreCase);
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("dashboardTheme.unwatch");
+        }
+        catch
+        {
+        }
+
+        _themeRef?.Dispose();
     }
 
     private static SessionDto MapBase(BaseCentralDto baseDto)

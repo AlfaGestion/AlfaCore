@@ -1,276 +1,76 @@
-.app-login-modal--split {
-    width: min(1120px, calc(100vw - 2rem));
-    display: grid;
-    grid-template-columns: minmax(0, 1.08fr) minmax(0, .92fr);
-    border-radius: 30px;
-    overflow: hidden;
-    background: linear-gradient(135deg, rgba(9, 17, 31, .98), rgba(7, 12, 24, .98));
-    box-shadow: 0 28px 70px rgba(2, 8, 23, .72);
+.app-login-overlay {
+    backdrop-filter: blur(4px);
 }
 
-.app-login-modal__hero {
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    gap: 22px;
-    padding: 42px 40px 38px;
-    color: #eef6ff;
-    background:
-        radial-gradient(620px 460px at 86% 0%, rgba(255, 255, 255, .16), transparent 62%),
-        linear-gradient(145deg, #16407a 0%, #0f4d94 54%, #0b2748 100%);
-    border-right: 1px solid rgba(177, 212, 240, .18);
-}
-
-.app-login-modal__brand {
-    display: grid;
-    align-items: start;
-    justify-items: start;
-    min-height: 150px;
-}
-
-.app-login-modal__logo {
-    display: block;
-    width: clamp(220px, 24vw, 340px);
-    max-width: none;
-    height: auto;
-    object-fit: contain;
-    object-position: left center;
-    filter: drop-shadow(0 8px 16px rgba(0, 0, 0, .18));
-}
-
-.app-login-modal__hero-copy {
-    max-width: 500px;
-}
-
-.app-login-modal__eyebrow {
-    margin: 0 0 .55rem;
-    color: rgba(190, 230, 255, .88);
-    font-size: .78rem;
-    font-weight: 800;
-    letter-spacing: .22em;
-    text-transform: uppercase;
-}
-
-.app-login-modal__hero-title {
-    margin: 0;
-    font-size: clamp(2rem, 3vw, 3.1rem);
-    line-height: .96;
-    letter-spacing: -.05em;
-    font-weight: 800;
-    color: #f7f3e7;
-}
-
-.app-login-modal__hero-text {
-    margin: 14px 0 0;
-    color: rgba(239, 248, 255, .94);
-    font-size: 1.02rem;
-    line-height: 1.52;
-}
-
-.app-login-modal__hero-note {
-    width: max-content;
-    max-width: 100%;
-    padding: 11px 14px;
-    border-radius: 999px;
-    border: 1px solid rgba(177, 212, 240, .26);
-    background: rgba(255, 255, 255, .08);
-    color: #f8fafc;
-    font-size: .76rem;
-    letter-spacing: .08em;
-    text-transform: uppercase;
-}
-
-.app-login-modal__panel {
-    display: grid;
-    grid-template-rows: auto 1fr;
-    min-width: 0;
-    background:
-        radial-gradient(circle at 92% 12%, rgba(148, 197, 255, .24), transparent 18%),
-        linear-gradient(180deg, rgba(15, 34, 62, .98) 0%, rgba(10, 22, 40, .98) 100%);
-}
-
-.app-login-modal--split .app-login-modal__header {
-    padding: 1.2rem 1.3rem 1rem;
-    border-bottom: 1px solid rgba(148, 163, 184, .16);
-    background: linear-gradient(180deg, rgba(17, 28, 45, 0.98), rgba(15, 23, 38, 0.98));
-}
-
-.app-login-modal--split .app-login-modal__title {
-    margin: .12rem 0 0;
-    font-size: 1.26rem;
-    letter-spacing: -.02em;
-    color: #f8fafc;
-}
-
-.app-login-modal--split .app-login-modal__body {
-    display: grid;
-    gap: .9rem;
-    padding: 1.05rem 1.3rem 1.3rem;
-    background: transparent;
-}
-
-.app-login-modal--split .app-login-session-note {
-    display: grid;
-    gap: .2rem;
-    padding: .9rem .95rem;
-    border: 1px solid rgba(148, 163, 184, .16);
-    border-radius: 14px;
-    background: rgba(15, 23, 42, .6);
-    color: #cbd5e1;
-}
-
-.app-login-modal--split .app-login-session-note strong {
-    font-size: .75rem;
-    text-transform: uppercase;
-    letter-spacing: .08em;
-    color: #93c5fd;
-}
-
-.app-login-modal--split .app-login-session-note p {
-    margin: 0;
-    font-size: 1rem;
-    font-weight: 600;
-    color: #f8fafc;
-}
-
-.app-login-modal--split .app-login-session-note small {
-    color: #cbd5e1;
-    line-height: 1.35;
-}
-
-.app-login-modal--split .field {
-    display: grid;
-    gap: .45rem;
-}
-
-.app-login-modal--split .field label {
-    color: #dbeafe;
-    font-size: .95rem;
-    font-weight: 800;
-}
-
-.app-login-modal--split .app-login-userlist {
-    display: grid;
-    gap: .35rem;
-}
-
-.app-login-modal--split .app-login-userlist__select,
-.app-login-modal--split .app-login-userlist__manual-row input {
-    width: 100%;
-    min-height: 52px;
-    padding: 0 16px;
-    border-radius: 16px;
-    border: 1px solid rgba(148, 163, 184, .35);
-    background: rgba(15, 27, 45, .92);
-    color: #e5eefc;
-    outline: none;
-    appearance: none;
-    -webkit-appearance: none;
-    font: inherit;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .03);
-}
-
-.app-login-modal--split .app-login-userlist__select:focus,
-.app-login-modal--split .app-login-userlist__select:focus-visible,
-.app-login-modal--split .app-login-userlist__manual-row input:focus,
-.app-login-modal--split .app-login-userlist__manual-row input:focus-visible,
-.app-login-modal--split .drawer-new__password input:focus,
-.app-login-modal--split .drawer-new__password input:focus-visible {
-    border-color: rgba(34, 211, 238, .75);
-    box-shadow: 0 0 0 3px rgba(34, 211, 238, .12);
-    outline: none;
-}
-
-.app-login-modal--split .app-login-userlist__empty {
-    padding: .35rem .45rem;
-    color: #94a3b8;
-    font-size: .92rem;
-}
-
-.app-login-modal--split .app-login-userlist__manual {
-    width: fit-content;
-    padding: 0;
-    border: 0;
-    background: transparent;
-    color: #7dd3fc;
-    font-weight: 700;
-    cursor: pointer;
-}
-
-.app-login-modal--split .app-login-userlist__manual-row {
-    display: grid;
-    gap: .5rem;
-}
-
-.app-login-modal--split .drawer-new__password {
-    position: relative;
-}
-
-.app-login-modal--split .drawer-new__password input {
-    width: 100%;
-    min-height: 52px;
-    padding: 0 16px;
-    padding-right: 64px;
-    border-radius: 16px;
-    border: 1px solid rgba(148, 163, 184, .35);
-    background: rgba(15, 27, 45, .92);
-    color: #e5eefc;
-    outline: none;
-    font: inherit;
-}
-
-.app-login-modal--split .drawer-new__eye {
-    position: absolute;
+.app-login-modal--compact {
+    width: min(1060px, calc(100vw - 2rem));
+    position: fixed;
     top: 50%;
-    right: 8px;
-    transform: translateY(-50%);
-    width: 42px;
-    height: 42px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border: 1px solid rgba(148, 163, 184, .35);
-    border-radius: 14px;
-    background: #0f1b2d;
-    color: #e2e8f0;
-    cursor: pointer;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    max-height: calc(100dvh - 2rem);
+    overflow: auto;
+    z-index: 5001;
 }
 
-.app-login-modal--split .toggle-row--compact {
-    margin-top: -.15rem;
-    color: #dbeafe;
-}
-
-.app-login-modal--split .app-login-modal__actions {
+.auth-legacy-login__selected-row {
     display: flex;
-    flex-wrap: wrap;
+    align-items: stretch;
     gap: .75rem;
-    justify-content: stretch;
-    margin-top: .15rem;
+    margin-bottom: 1rem;
 }
 
-.app-login-modal--split .app-login-modal__actions .btn {
-    flex: 1 1 0;
-    min-height: 56px;
+.auth-legacy-login__selected-row .auth-legacy-login__selected {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin-bottom: 0;
 }
 
-.app-login-modal--split .app-login-modal__actions .btn.btn--ghost {
-    flex-basis: 170px;
+.auth-legacy-login__selected-action {
+    flex: 0 0 auto;
+    align-self: stretch;
+    min-width: 132px;
+}
+
+.auth-legacy-login__actions {
+    display: flex;
+    gap: .75rem;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.auth-legacy-login__actions .auth-card__submit {
+    flex: 1 1 180px;
+    margin-top: 0;
+}
+
+.auth-legacy-login__logout {
+    width: 100%;
+    margin-top: .85rem;
 }
 
 @media (max-width: 960px) {
-    .app-login-modal--split {
+    .app-login-modal--compact {
         width: min(calc(100vw - 1rem), 680px);
-        grid-template-columns: 1fr;
+        max-height: calc(100dvh - 1rem);
     }
 
-    .app-login-modal__hero {
-        display: none;
+    .auth-legacy-login__selected-row {
+        flex-direction: column;
     }
 
-    .app-login-modal--split .app-login-modal__header,
-    .app-login-modal--split .app-login-modal__body {
-        padding-left: 1rem;
-        padding-right: 1rem;
+    .auth-legacy-login__selected-action {
+        width: 100%;
+        min-width: 0;
+    }
+
+    .auth-legacy-login__actions {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .auth-legacy-login__actions .auth-card__submit {
+        width: 100%;
+        flex: 1 1 auto;
     }
 }

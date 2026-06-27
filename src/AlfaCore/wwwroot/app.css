@@ -10124,7 +10124,7 @@ html[data-theme="light"] .editor-builder__col-grid {
     position: fixed;
     inset: 0;
     background: rgba(0, 0, 0, .45);
-    z-index: 200;
+    z-index: 5002;
     animation: fadeIn .15s ease;
 }
 
@@ -10138,7 +10138,7 @@ html[data-theme="light"] .editor-builder__col-grid {
     max-width: 95vw;
     background: var(--color-panel);
     border-left: 1px solid var(--color-border);
-    z-index: 201;
+    z-index: 5003;
     display: flex;
     flex-direction: column;
     animation: slideIn .2s ease;
@@ -10388,11 +10388,101 @@ html[data-theme="light"] .editor-builder__col-grid {
     font-size: 0.72rem;
 }
 
+.drawer-overlay--login {
+    z-index: 5002;
+    background: rgba(2, 8, 23, .56);
+    backdrop-filter: blur(6px);
+}
+
+.drawer--login {
+    z-index: 5003;
+    background:
+        radial-gradient(circle at 92% 12%, rgba(148, 163, 184, .10), transparent 18%),
+        radial-gradient(circle at 18% 96%, rgba(34, 197, 94, .08), transparent 24%),
+        linear-gradient(180deg, rgba(13, 18, 28, .99) 0%, rgba(8, 12, 20, .99) 100%);
+    color: #e2e8f0;
+    border-left-color: rgba(148, 163, 184, .14);
+    box-shadow: -16px 0 40px rgba(2, 8, 23, .46);
+}
+
+.drawer--login .drawer__header {
+    border-bottom-color: rgba(148, 163, 184, .16);
+    background: linear-gradient(180deg, rgba(17, 28, 45, .98), rgba(15, 23, 38, .98));
+}
+
+.drawer--login .drawer__title {
+    color: #f8fafc;
+}
+
+.drawer--login .drawer__close {
+    color: #cbd5e1;
+}
+
+.drawer--login .drawer__close:hover {
+    color: #fff;
+    background: rgba(148, 163, 184, .12);
+}
+
+.drawer--login .drawer__body {
+    background:
+        radial-gradient(circle at 100% 0%, rgba(56, 189, 248, .06), transparent 20%),
+        linear-gradient(180deg, rgba(10, 15, 24, .96), rgba(8, 12, 20, .98));
+}
+
+.drawer--login .drawer-empty,
+.drawer--login .drawer-session {
+    border-color: rgba(148, 163, 184, .14);
+    background: rgba(15, 23, 42, .42);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.03);
+    backdrop-filter: blur(10px);
+}
+
+.drawer--login .drawer-empty {
+    color: #cbd5e1;
+}
+
+.drawer--login .drawer-session--active {
+    border-color: rgba(16, 185, 129, .34);
+    background: linear-gradient(135deg, rgba(15, 118, 110, .18), rgba(34, 197, 94, .10));
+}
+
+.drawer--login .drawer-session__nombre {
+    color: #f8fafc;
+}
+
+.drawer--login .drawer-session__detalle,
+.drawer--login .drawer-session__usuario,
+.drawer--login .drawer__note {
+    color: #cbd5e1;
+}
+
+.drawer--login .drawer-session__badge {
+    background: rgba(34, 197, 94, .12);
+    color: #86efac;
+    border-color: rgba(34, 197, 94, .24);
+}
+
+.drawer--login .drawer-session__dot {
+    background: rgba(148, 163, 184, .36);
+}
+
+.drawer--login .drawer-session__dot--ok {
+    background: #22c55e;
+}
+
 /* ── Lista de sesiones ── */
 .drawer-sessions {
     display: flex;
     flex-direction: column;
     gap: .5rem;
+}
+
+.drawer-empty {
+    padding: .9rem 1rem;
+    border: 1px dashed var(--color-border);
+    border-radius: 10px;
+    color: var(--color-text-muted);
+    background: color-mix(in srgb, var(--color-bg) 82%, var(--color-panel));
 }
 
 .drawer-session {
@@ -17278,6 +17368,7 @@ html[data-theme="light"] .tickets-activity__item {
 
 .app-login-overlay {
     backdrop-filter: blur(4px);
+    z-index: 5000;
 }
 
 .app-login-modal {
@@ -17285,7 +17376,7 @@ html[data-theme="light"] .tickets-activity__item {
     inset: 50% auto auto 50%;
     transform: translate(-50%, -50%);
     width: min(520px, calc(100vw - 2rem));
-    z-index: 1200;
+    z-index: 5001;
     border-radius: 14px;
     border: 1px solid rgba(148, 163, 184, 0.2);
     background: linear-gradient(180deg, rgba(15, 23, 42, 0.98), rgba(13, 20, 36, 0.98));
@@ -17480,64 +17571,64 @@ html[data-theme="light"] .app-login-userlist__item.is-active {
 }
 
 html[data-theme="light"] .app-login-modal {
-    background: #101826;
-    border-color: #5b6573;
+    background: var(--surface-1);
+    border-color: var(--border-color);
 }
 
 html[data-theme="light"] .app-login-modal__header {
-    background: linear-gradient(180deg, #111c2d, #0f1726);
+    background: linear-gradient(180deg, var(--surface-2), var(--surface-1));
 }
 
 html[data-theme="light"] .app-login-modal__body {
-    background: #101826;
+    background: var(--surface-1);
 }
 
 .app-login-overlay .app-login-modal {
-    background: #101826;
-    border-color: #5b6573;
-    color: #e5eefc;
+    background: var(--surface-1);
+    border-color: var(--border-color);
+    color: var(--text-main);
 }
 
 .app-login-overlay .app-login-modal__header {
-    background: linear-gradient(180deg, #111c2d, #0f1726);
-    border-bottom-color: rgba(148, 163, 184, 0.16);
+    background: linear-gradient(180deg, var(--surface-2), var(--surface-1));
+    border-bottom-color: var(--border-color);
 }
 
 .app-login-overlay .app-login-modal__body {
-    background: #101826;
+    background: var(--surface-1);
 }
 
 .app-login-overlay .app-login-modal .field label,
 .app-login-overlay .app-login-modal .usuarios-empty,
 .app-login-overlay .app-login-modal .toggle-row,
 .app-login-overlay .app-login-modal .toggle-row span {
-    color: #cbd5e1;
+    color: var(--text-main);
 }
 
 .app-login-overlay .app-login-userlist {
-    background: #ffffff;
-    border-color: #7b8493;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .96);
+    background: var(--surface-1);
+    border-color: var(--border-color);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04);
 }
 
 .app-login-overlay .app-login-userlist__item {
-    color: #111827;
+    color: var(--text-main);
 }
 
 .app-login-overlay .app-login-userlist__item:hover,
 .app-login-overlay .app-login-userlist__item:focus-visible,
 .app-login-overlay .app-login-userlist__item.is-active {
-    background: #0057d8;
+    background: rgba(14, 165, 233, .14);
     color: #ffffff;
 }
 
 .app-login-overlay .app-login-userlist__manual {
-    color: #7dd3fc;
+    color: var(--accent);
 }
 
 .app-login-overlay .app-login-userlist__manual:hover,
 .app-login-overlay .app-login-userlist__manual:focus-visible {
-    color: #dbeafe;
+    color: var(--color-secondary);
 }
 
 @media (max-width: 768px) {

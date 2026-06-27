@@ -1374,6 +1374,13 @@ html[data-theme="light"] .app-login-overlay .app-login-modal__body {
     color: #e5eefc !important;
 }
 
+html[data-theme="light"] .app-login-overlay,
+html[data-theme="light"] .app-login-overlay .app-login-modal,
+html[data-theme="light"] .app-login-overlay .app-login-modal__header,
+html[data-theme="light"] .app-login-overlay .app-login-modal__body {
+    color-scheme: light;
+}
+
 html[data-theme="light"] .app-login-overlay .app-login-modal {
     border-color: rgba(148, 163, 184, 0.2) !important;
 }
@@ -1407,4 +1414,457 @@ html[data-theme="light"] .app-login-overlay .app-login-userlist__manual {
 
 html[data-theme="light"] .app-login-overlay .app-login-session-note small {
     color: #94a3b8 !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-modal,
+html[data-theme="light"] .app-login-overlay .app-login-modal__header,
+html[data-theme="light"] .app-login-overlay .app-login-modal__body {
+    background: linear-gradient(180deg, #ffffff, #f3f7fc) !important;
+    color: #0f172a !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-modal {
+    border-color: rgba(148, 163, 184, .32) !important;
+    box-shadow: 0 26px 72px rgba(15, 23, 42, .18) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-modal__header {
+    border-bottom-color: rgba(148, 163, 184, .18) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-session-note {
+    background: rgba(255, 255, 255, .82) !important;
+    border-color: rgba(148, 163, 184, .26) !important;
+    color: #334155 !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-session-note strong {
+    color: #0369a1 !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-session-note p {
+    color: #0f172a !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-session-note small {
+    color: #64748b !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-userlist__item {
+    color: #0f172a !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-userlist__item:hover,
+html[data-theme="light"] .app-login-overlay .app-login-userlist__item:focus-visible,
+html[data-theme="light"] .app-login-overlay .app-login-userlist__item.is-active {
+    background: #0284c7 !important;
+    color: #ffffff !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-userlist__manual {
+    color: #0ea5e9 !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-userlist__manual:hover,
+html[data-theme="light"] .app-login-overlay .app-login-userlist__manual:focus-visible {
+    color: #0369a1 !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-userlist__select,
+html[data-theme="light"] .app-login-overlay .app-login-userlist__manual-row input,
+html[data-theme="light"] .app-login-overlay .drawer-new__password input {
+    background: #f8fbff !important;
+    color: #0f172a !important;
+    border-color: rgba(100, 116, 139, .28) !important;
+    color-scheme: light !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-userlist__select option,
+html[data-theme="light"] .app-login-overlay .app-login-userlist__select optgroup {
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-userlist__select::placeholder,
+html[data-theme="light"] .app-login-overlay .app-login-userlist__manual-row input::placeholder,
+html[data-theme="light"] .app-login-overlay .drawer-new__password input::placeholder {
+    color: rgba(71, 85, 105, .72) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .drawer-new__eye {
+    background: #f8fbff !important;
+    color: #0f172a !important;
+    border-color: rgba(100, 116, 139, .28) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .drawer-new__eye:hover,
+html[data-theme="light"] .app-login-overlay .drawer-new__eye:focus-visible {
+    background: #eef8ff !important;
+    border-color: rgba(6, 182, 212, .72) !important;
+    color: #0f172a !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-modal--split {
+    background: linear-gradient(135deg, #ffffff, #eef4fb) !important;
+    box-shadow: 0 24px 64px rgba(15, 23, 42, .14) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-modal__hero {
+    color: #0f172a !important;
+    background:
+        radial-gradient(620px 460px at 86% 0%, rgba(255, 255, 255, .64), transparent 62%),
+        linear-gradient(145deg, #d8e7fa 0%, #edf4ff 54%, #dbe8f7 100%) !important;
+    border-right-color: rgba(148, 163, 184, .22) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-modal__hero-title,
+html[data-theme="light"] .app-login-overlay .app-login-modal__title {
+    color: #0f172a !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-modal__hero-text,
+html[data-theme="light"] .app-login-overlay .app-login-modal__hero-note,
+html[data-theme="light"] .app-login-overlay .field label,
+html[data-theme="light"] .app-login-overlay .toggle-row,
+html[data-theme="light"] .app-login-overlay .toggle-row span {
+    color: #334155 !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-modal__hero-note {
+    background: rgba(255, 255, 255, .72) !important;
+    border-color: rgba(148, 163, 184, .30) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-modal__actions .btn.btn--ghost {
+    background: rgba(255, 255, 255, .92) !important;
+    color: #0f172a !important;
+    border-color: rgba(148, 163, 184, .30) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-modal__actions .btn.btn--ghost:hover,
+html[data-theme="light"] .app-login-overlay .app-login-modal__actions .btn.btn--ghost:focus-visible {
+    background: rgba(241, 245, 249, .98) !important;
+    border-color: rgba(14, 165, 233, .34) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-modal__actions .btn.btn--primary {
+    background: linear-gradient(135deg, #0284c7 0%, #14b8a6 100%) !important;
+    border-color: rgba(6, 182, 212, .34) !important;
+    box-shadow: 0 16px 34px rgba(14, 165, 233, .20) !important;
+}
+
+html[data-theme="light"] .app-login-overlay {
+    backdrop-filter: blur(4px);
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-modal,
+html[data-theme="light"] .app-login-overlay .app-login-modal__header,
+html[data-theme="light"] .app-login-overlay .app-login-modal__body {
+    background: linear-gradient(180deg, #0f172a, #101826) !important;
+    color: #e5eefc !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-modal {
+    border-color: rgba(148, 163, 184, .22) !important;
+    box-shadow: 0 28px 72px rgba(2, 8, 23, .54) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-modal__header {
+    border-bottom-color: rgba(148, 163, 184, .14) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-modal__title,
+html[data-theme="light"] .app-login-overlay .app-login-modal__hero-title,
+html[data-theme="light"] .app-login-overlay .app-login-session-note p,
+html[data-theme="light"] .app-login-overlay .app-login-userlist__item,
+html[data-theme="light"] .app-login-overlay .app-login-userlist__manual,
+html[data-theme="light"] .app-login-overlay .field label,
+html[data-theme="light"] .app-login-overlay .toggle-row,
+html[data-theme="light"] .app-login-overlay .toggle-row span {
+    color: #e5eefc !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-modal__hero {
+    color: #eef6ff !important;
+    background:
+        radial-gradient(620px 460px at 86% 0%, rgba(255, 255, 255, .16), transparent 62%),
+        linear-gradient(145deg, #16407a 0%, #0f4d94 54%, #0b2748 100%) !important;
+    border-right-color: rgba(177, 212, 240, .18) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-modal__hero-note {
+    color: #f8fafc !important;
+    background: rgba(255, 255, 255, .08) !important;
+    border-color: rgba(177, 212, 240, .26) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-modal__hero-text,
+html[data-theme="light"] .app-login-overlay .app-login-session-note small,
+html[data-theme="light"] .app-login-overlay .app-login-session-note {
+    color: #cbd5e1 !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-session-note {
+    background: rgba(15, 23, 42, .6) !important;
+    border-color: rgba(148, 163, 184, .16) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-userlist__list {
+    background: rgba(15, 27, 45, .74) !important;
+    border-color: rgba(148, 163, 184, .22) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-userlist__item,
+html[data-theme="light"] .app-login-overlay .app-login-userlist__manual-row input,
+html[data-theme="light"] .app-login-overlay .drawer-new__password input {
+    background: rgba(15, 27, 45, .92) !important;
+    color: #e5eefc !important;
+    border-color: rgba(148, 163, 184, .35) !important;
+    -webkit-text-fill-color: #e5eefc !important;
+    caret-color: #e5eefc !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-userlist__item--placeholder {
+    color: #cbd5e1 !important;
+    background: rgba(15, 27, 45, .54) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-userlist__item.is-active,
+html[data-theme="light"] .app-login-overlay .app-login-userlist__item:hover:not(:disabled),
+html[data-theme="light"] .app-login-overlay .app-login-userlist__item:focus-visible {
+    background: rgba(19, 35, 58, 1) !important;
+    color: #ffffff !important;
+    border-color: rgba(34, 211, 238, .75) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .drawer-new__eye {
+    background: #0f1b2d !important;
+    color: #e2e8f0 !important;
+    border-color: rgba(148, 163, 184, .35) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .drawer-new__eye:hover,
+html[data-theme="light"] .app-login-overlay .drawer-new__eye:focus-visible {
+    background: #13233a !important;
+    color: #ffffff !important;
+    border-color: rgba(34, 211, 238, .66) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-modal__actions .btn.btn--ghost {
+    background: rgba(15, 23, 42, .92) !important;
+    color: #e5eefc !important;
+    border-color: rgba(148, 163, 184, .18) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-modal__actions .btn.btn--ghost:hover,
+html[data-theme="light"] .app-login-overlay .app-login-modal__actions .btn.btn--ghost:focus-visible {
+    background: rgba(19, 35, 58, 1) !important;
+    border-color: rgba(34, 211, 238, .66) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-modal--split {
+    background: linear-gradient(135deg, #ffffff, #eef4fb) !important;
+    box-shadow: 0 24px 64px rgba(15, 23, 42, .14) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-modal__hero {
+    color: #0f172a !important;
+    background:
+        radial-gradient(620px 460px at 86% 0%, rgba(255, 255, 255, .72), transparent 62%) !important,
+        linear-gradient(145deg, #d8e7fa 0%, #edf4ff 54%, #dbe8f7 100%) !important;
+    border-right-color: rgba(148, 163, 184, .20) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-modal__hero-title,
+html[data-theme="light"] .app-login-overlay .app-login-modal__title {
+    color: #0f172a !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-modal__hero-text,
+html[data-theme="light"] .app-login-overlay .app-login-modal__hero-note,
+html[data-theme="light"] .app-login-overlay .field label,
+html[data-theme="light"] .app-login-overlay .toggle-row,
+html[data-theme="light"] .app-login-overlay .toggle-row span {
+    color: #334155 !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-modal__hero-note {
+    background: rgba(255, 255, 255, .82) !important;
+    border-color: rgba(148, 163, 184, .28) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-modal,
+html[data-theme="light"] .app-login-overlay .app-login-modal__header,
+html[data-theme="light"] .app-login-overlay .app-login-modal__body {
+    background: linear-gradient(180deg, #ffffff, #f6f9fc) !important;
+    color: #0f172a !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-modal__header {
+    border-bottom-color: rgba(148, 163, 184, .18) !important;
+    background: linear-gradient(180deg, #f8fafc, #edf3fb) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-session-note {
+    background: rgba(255, 255, 255, .78) !important;
+    border-color: rgba(148, 163, 184, .18) !important;
+    color: #334155 !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-session-note p,
+html[data-theme="light"] .app-login-overlay .app-login-session-note small {
+    color: #334155 !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-input,
+html[data-theme="light"] .app-login-overlay .drawer-new__password input {
+    background: rgba(255, 255, 255, .96) !important;
+    color: #0f172a !important;
+    border-color: rgba(148, 163, 184, .35) !important;
+    -webkit-text-fill-color: #0f172a !important;
+    caret-color: #0f172a !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-input::placeholder,
+html[data-theme="light"] .app-login-overlay .drawer-new__password input::placeholder {
+    color: #94a3b8 !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-input:focus,
+html[data-theme="light"] .app-login-overlay .app-login-input:focus-visible,
+html[data-theme="light"] .app-login-overlay .drawer-new__password input:focus,
+html[data-theme="light"] .app-login-overlay .drawer-new__password input:focus-visible {
+    border-color: rgba(14, 165, 233, .34) !important;
+    box-shadow: 0 0 0 3px rgba(14, 165, 233, .10) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .drawer-new__eye {
+    background: #f8fafc !important;
+    color: #0f172a !important;
+    border-color: rgba(148, 163, 184, .35) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .drawer-new__eye:hover,
+html[data-theme="light"] .app-login-overlay .drawer-new__eye:focus-visible {
+    background: #eef8ff !important;
+    color: #0f172a !important;
+    border-color: rgba(14, 165, 233, .34) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-modal__actions .btn.btn--ghost {
+    background: rgba(255, 255, 255, .92) !important;
+    color: #0f172a !important;
+    border-color: rgba(148, 163, 184, .22) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-modal__actions .btn.btn--ghost:hover,
+html[data-theme="light"] .app-login-overlay .app-login-modal__actions .btn.btn--ghost:focus-visible {
+    background: rgba(241, 245, 249, .98) !important;
+    border-color: rgba(14, 165, 233, .28) !important;
+}
+
+html[data-theme="light"] .app-login-overlay {
+    backdrop-filter: blur(4px);
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-modal--split {
+    background: linear-gradient(135deg, rgba(255, 255, 255, .96), rgba(239, 244, 250, .98)) !important;
+    box-shadow: 0 24px 64px rgba(15, 23, 42, .14) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-modal__hero {
+    color: #0f172a !important;
+    background:
+        radial-gradient(620px 460px at 86% 0%, rgba(14, 165, 233, .10), transparent 62%) !important,
+        radial-gradient(520px 320px at 0% 100%, rgba(20, 184, 166, .08), transparent 55%) !important,
+        linear-gradient(145deg, #ffffff 0%, #edf4fb 55%, #e5eef7 100%) !important;
+    border-right-color: rgba(148, 163, 184, .20) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-modal__hero-title,
+html[data-theme="light"] .app-login-overlay .app-login-modal__title {
+    color: #0f172a !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-modal__hero-text,
+html[data-theme="light"] .app-login-overlay .app-login-modal__hero-note,
+html[data-theme="light"] .app-login-overlay .field label,
+html[data-theme="light"] .app-login-overlay .toggle-row,
+html[data-theme="light"] .app-login-overlay .toggle-row span {
+    color: #334155 !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-modal__hero-note {
+    background: rgba(255, 255, 255, .82) !important;
+    border-color: rgba(148, 163, 184, .28) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-modal,
+html[data-theme="light"] .app-login-overlay .app-login-modal__header,
+html[data-theme="light"] .app-login-overlay .app-login-modal__body {
+    background: linear-gradient(180deg, #ffffff, #f6f9fc) !important;
+    color: #0f172a !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-modal__header {
+    border-bottom-color: rgba(148, 163, 184, .18) !important;
+    background: linear-gradient(180deg, #f8fafc, #edf3fb) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-session-note {
+    background: rgba(255, 255, 255, .78) !important;
+    border-color: rgba(148, 163, 184, .18) !important;
+    color: #334155 !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-session-note p,
+html[data-theme="light"] .app-login-overlay .app-login-session-note small {
+    color: #334155 !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-input,
+html[data-theme="light"] .app-login-overlay .drawer-new__password input {
+    background: rgba(255, 255, 255, .98) !important;
+    color: #0f172a !important;
+    border-color: rgba(148, 163, 184, .28) !important;
+    -webkit-text-fill-color: #0f172a !important;
+    caret-color: #0f172a !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-input::placeholder,
+html[data-theme="light"] .app-login-overlay .drawer-new__password input::placeholder {
+    color: #94a3b8 !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-input:focus,
+html[data-theme="light"] .app-login-overlay .app-login-input:focus-visible,
+html[data-theme="light"] .app-login-overlay .drawer-new__password input:focus,
+html[data-theme="light"] .app-login-overlay .drawer-new__password input:focus-visible {
+    border-color: rgba(14, 165, 233, .34) !important;
+    box-shadow: 0 0 0 3px rgba(14, 165, 233, .10) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .drawer-new__eye {
+    background: #f8fafc !important;
+    color: #0f172a !important;
+    border-color: rgba(148, 163, 184, .28) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .drawer-new__eye:hover,
+html[data-theme="light"] .app-login-overlay .drawer-new__eye:focus-visible {
+    background: #eef8ff !important;
+    color: #0f172a !important;
+    border-color: rgba(14, 165, 233, .34) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-modal__actions .btn.btn--ghost {
+    background: rgba(255, 255, 255, .92) !important;
+    color: #0f172a !important;
+    border-color: rgba(148, 163, 184, .22) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-modal__actions .btn.btn--ghost:hover,
+html[data-theme="light"] .app-login-overlay .app-login-modal__actions .btn.btn--ghost:focus-visible {
+    background: rgba(241, 245, 249, .98) !important;
+    border-color: rgba(14, 165, 233, .28) !important;
 }
