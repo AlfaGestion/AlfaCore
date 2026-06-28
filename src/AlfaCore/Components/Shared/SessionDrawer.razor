@@ -2,6 +2,7 @@
 @inject AlfaCore.Services.ISessionService SessionSvc
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject AlfaCore.Services.ICentralBasesService CentralBasesSvc
+@inject AlfaCore.Services.IActualizacionesService ActualizacionesSvc
 @inject IJSRuntime JS
 
 @if (Open)
@@ -182,6 +183,21 @@
     private async Task ConectarAsync(Guid id)
     {
         SessionSvc.SwitchSession(id);
+
+        try
+        {
+            await ActualizacionesSvc.ExecutePendingAsync(new ActualizacionesRunRequest
+            {
+                UsuarioAccion = AppUserSession.GetCurrentUserName("SYSTEM"),
+                PcAccion = Environment.MachineName,
+                EsEjecucionAutomatica = true
+            });
+        }
+        catch
+        {
+            // El servicio ya registra el error internamente; no se bloquea el cambio de sesión.
+        }
+
         await JS.InvokeVoidAsync("alfaCoreSqlSession.setActive", id.ToString());
         await ReloadAsync();
     }
