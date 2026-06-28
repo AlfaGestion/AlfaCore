@@ -1,179 +1,133 @@
-@using AlfaCore.Models
 @inject AlfaCore.Services.IAppModeService AppMode
 
 @if (Open)
 {
     <div class="drawer-overlay app-login-overlay"></div>
 
-    <div class="app-login-modal app-login-modal--split" role="dialog" aria-label="Ingreso al sistema">
-        <aside class="app-login-modal__hero" aria-hidden="true">
-            <div class="app-login-modal__brand">
-                <img class="app-login-modal__logo"
-                     src="/logos/LogoGrandeAzul.png"
-                     alt="Alfa Gestión"
+    <div class="auth-shell auth-shell--selection app-login-modal app-login-modal--compact" role="dialog" aria-label="Ingreso al sistema">
+        <aside class="auth-hero" aria-hidden="true">
+            <div class="auth-hero__brand">
+                <img class="central-brand-logo central-login-logo"
+                     src="@AlfaCore.Components.Shared.AuthThemeAssets.GetLoginLogo(DarkTheme)"
+                     alt="Alfa Gestion"
                      loading="eager"
                      decoding="async" />
             </div>
 
-            <div class="app-login-modal__hero-copy">
-                <p class="app-login-modal__eyebrow">ALFA GESTIÓN</p>
-                <h2 class="app-login-modal__hero-title">Acceso directo al sistema</h2>
-                <p class="app-login-modal__hero-text">
-                    Ingresá con tu usuario y contraseña para entrar a la base activa.
+            <div class="auth-hero__copy">
+                <h2 class="auth-hero__title">Acceso directo al sistema</h2>
+                <p class="auth-hero__text">
+                    Ingresa con tu usuario y contrasena para entrar a la base activa.
                 </p>
             </div>
 
-            <div class="app-login-modal__hero-note">
+            <div class="auth-hero__note">
                 El contexto de base se mantiene visible para evitar errores de acceso.
             </div>
         </aside>
 
-        <section class="app-login-modal__panel">
-            <div class="app-login-modal__header">
-                <div>
-                    <p class="shell__eyebrow">Alfa Gestión</p>
-                    <h2 class="app-login-modal__title">Ingresar</h2>
-                </div>
-            </div>
+        <section class="auth-form-panel auth-form-panel--selection">
+            <div class="auth-form-panel__surface auth-form-panel__surface--selection">
+                <header class="auth-form-panel__header">
+                    <p class="auth-card__eyebrow">Alfa Gestion</p>
+                    <h2 class="auth-card__title">Ingresar</h2>
+                    <p class="auth-card__subtitle">Ingresa con tu usuario y contrasena para entrar a la base activa.</p>
+                </header>
 
-            <div class="app-login-modal__body">
-                <div class="app-login-session-note">
-                    <strong>Base activa</strong>
-                    <p>@SqlSessionLabel</p>
-                    <small>Si cambiás de base, se cierra la sesión funcional actual y tenés que volver a ingresar.</small>
+                <div class="auth-legacy-login__selected-row">
+                    <div class="auth-legacy-login__selected app-login-session-note">
+                        <div class="auth-legacy-login__selected-icon" aria-hidden="true">
+                            <i class="bi bi-database-fill"></i>
+                        </div>
+                        <div class="auth-legacy-login__selected-body">
+                            <strong>Base activa</strong>
+                            <p>@SqlSessionLabel</p>
+                            <small>Si cambias de base, se cierra la sesion funcional actual y tenes que volver a ingresar.</small>
+                        </div>
+                    </div>
+
+                    @if (AppMode.IsSaaSMode)
+                    {
+                        <button type="button"
+                                class="btn btn--ghost auth-legacy-login__selected-action"
+                                @onclick="OpenSqlSessionsAsync"
+                                disabled="@IsBusy">
+                            <i class="bi bi-database"></i>
+                            <span>Cambiar base</span>
+                        </button>
+                    }
                 </div>
 
                 @if (!string.IsNullOrWhiteSpace(ErrorMessage))
                 {
                     <div class="editor-msg editor-msg--error">
                         <div>
-                            <strong>No se pudo iniciar sesión</strong>
+                            <strong>No se pudo iniciar sesion</strong>
                             <p>@ErrorMessage</p>
                         </div>
                     </div>
                 }
 
-                @if (AppMode.IsSaaSMode)
-                {
-                    <div class="field">
-                        <label>Usuario del sistema</label>
-                        <div class="app-login-userlist" aria-label="Usuarios del sistema">
-                            @if (UserOptions.Count > 0)
-                            {
-                                <select class="app-login-userlist__select"
-                                        value="@UserName"
-                                        @onchange="OnUserSelectChanged"
-                                        disabled="@IsBusy"
-                                        aria-label="Lista de usuarios del sistema">
-                                    <option value="">-- Seleccioná un usuario --</option>
-                                    @foreach (var user in UserOptions)
-                                    {
-                                        <option value="@user.Nombre">@user.Nombre</option>
-                                    }
-                                </select>
-                            }
-                            else
-                            {
-                                <div class="app-login-userlist__empty">Sin usuarios disponibles</div>
-                            }
-                        </div>
+                <div class="field">
+                    <label>Usuario</label>
+                    <input class="central-login-input"
+                           value="@UserName"
+                           @oninput="OnUserNameInput"
+                           placeholder="Ej: albert"
+                           disabled="@IsBusy"
+                           autocomplete="username" />
+                </div>
 
-                        @if (UseUserList)
+                <div class="field">
+                    <label>Contrasena</label>
+                    <div class="central-login-password drawer-new__password">
+                        <input class="central-login-input central-login-password__input"
+                               type="@(ShowPassword ? "text" : "password")"
+                               value="@Password"
+                               @oninput="OnPasswordInput"
+                               @onkeydown="OnPasswordKeyDownAsync"
+                               placeholder="Contrasena"
+                               disabled="@IsBusy"
+                               autocomplete="current-password" />
+                        <button type="button"
+                                class="drawer-new__eye central-login-password__toggle"
+                                @onclick="TogglePassword"
+                                title="@(ShowPassword ? "Ocultar" : "Mostrar")"
+                                disabled="@IsBusy">
+                            <i class="bi @(ShowPassword ? "bi-eye-slash" : "bi-eye")"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <label class="toggle-row toggle-row--compact">
+                    <input type="checkbox"
+                           checked="@RememberCredentials"
+                           @onchange="OnRememberCredentialsChangedAsync"
+                           disabled="@IsBusy" />
+                    <span>Recordar usuario y contrasena en este equipo</span>
+                </label>
+
+                <div class="actions app-login-modal__actions auth-legacy-login__actions">
+                    <button type="button" class="btn btn--primary auth-card__submit" @onclick="SubmitAsync" disabled="@IsBusy">
+                        @if (IsBusy)
                         {
-                            <button type="button"
-                                    class="app-login-userlist__manual"
-                                    @onclick="EnableManualEntryAsync"
-                                    disabled="@IsBusy">
-                                Escribir otro usuario
-                            </button>
+                            <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
                         }
                         else
                         {
-                            <div class="app-login-userlist__manual-row">
-                                <input value="@UserName"
-                                       @oninput="OnUserNameInput"
-                                       placeholder="Ej: albert"
-                                       disabled="@IsBusy" />
-                                <button type="button"
-                                        class="app-login-userlist__manual"
-                                        @onclick="EnableManualEntryAsync"
-                                        disabled="@IsBusy">
-                                    Volver a la lista
-                                </button>
-                            </div>
+                            <i class="bi bi-box-arrow-in-right"></i>
                         }
-                    </div>
-
-                    <div class="field">
-                        <label>Contraseña</label>
-                        <div class="drawer-new__password">
-                            <input type="@(ShowPassword ? "text" : "password")"
-                                   value="@Password"
-                                   @oninput="OnPasswordInput"
-                                   @onkeydown="OnPasswordKeyDownAsync"
-                                   placeholder="Contraseña"
-                                   disabled="@IsBusy" />
-                            <button type="button"
-                                    class="drawer-new__eye"
-                                    @onclick="TogglePassword"
-                                    title="@(ShowPassword ? "Ocultar" : "Mostrar")"
-                                    disabled="@IsBusy">
-                                <i class="bi @(ShowPassword ? "bi-eye-slash" : "bi-eye")"></i>
-                            </button>
-                        </div>
-                    </div>
-
-                    <label class="toggle-row toggle-row--compact">
-                        <input type="checkbox"
-                               checked="@RememberCredentials"
-                               @onchange="OnRememberCredentialsChangedAsync"
-                               disabled="@IsBusy" />
-                        <span>Recordar usuario y contraseña en este equipo</span>
-                    </label>
-                }
-                else
-                {
-                    <div class="field">
-                        <label>Usuario</label>
-                        <input value="@UserName"
-                               @oninput="OnUserNameInput"
-                               placeholder="Ej: albert"
-                               disabled="@IsBusy" />
-                    </div>
-
-                    <div class="field">
-                        <label>Contraseña</label>
-                        <div class="drawer-new__password">
-                            <input type="@(ShowPassword ? "text" : "password")"
-                                   value="@Password"
-                                   @oninput="OnPasswordInput"
-                                   @onkeydown="OnPasswordKeyDownAsync"
-                                   placeholder="Contraseña"
-                                   disabled="@IsBusy" />
-                            <button type="button"
-                                    class="drawer-new__eye"
-                                    @onclick="TogglePassword"
-                                    title="@(ShowPassword ? "Ocultar" : "Mostrar")"
-                                    disabled="@IsBusy">
-                                <i class="bi @(ShowPassword ? "bi-eye-slash" : "bi-eye")"></i>
-                            </button>
-                        </div>
-                    </div>
-                }
-
-                <div class="actions app-login-modal__actions">
-                    <button type="button" class="btn btn--primary" @onclick="SubmitAsync" disabled="@IsBusy">
-                        <i class="bi bi-box-arrow-in-right"></i>
                         <span>@(IsBusy ? "Ingresando..." : "Ingresar")</span>
                     </button>
-                    @if (AppMode.IsSaaSMode)
-                    {
-                        <button type="button" class="btn btn--ghost" @onclick="OpenSqlSessionsAsync" disabled="@IsBusy">
-                            <i class="bi bi-database"></i>
-                            <span>Cambiar base</span>
-                        </button>
-                    }
                 </div>
+
+                <button type="button"
+                        class="btn btn--ghost auth-legacy-login__logout"
+                        @onclick="LogoutAsync"
+                        disabled="@IsBusy">
+                    <i class="bi bi-person-circle"></i>
+                    <span>Cambiar usuario</span>
+                </button>
             </div>
         </section>
     </div>
@@ -181,6 +135,7 @@
 
 @code {
     [Parameter] public bool Open { get; set; }
+    [Parameter] public bool DarkTheme { get; set; }
     [Parameter] public string SqlSessionLabel { get; set; } = string.Empty;
     [Parameter] public string UserName { get; set; } = string.Empty;
     [Parameter] public string Password { get; set; } = string.Empty;
@@ -188,38 +143,25 @@
     [Parameter] public bool IsBusy { get; set; }
     [Parameter] public bool ShowPassword { get; set; }
     [Parameter] public bool RememberCredentials { get; set; }
-    [Parameter] public IReadOnlyList<UsuarioSistemaDto> UserOptions { get; set; } = [];
-    [Parameter] public bool UseUserList { get; set; } = true;
     [Parameter] public EventCallback<string> UserNameChanged { get; set; }
     [Parameter] public EventCallback<string> PasswordChanged { get; set; }
     [Parameter] public EventCallback<bool> ShowPasswordChanged { get; set; }
     [Parameter] public EventCallback<bool> RememberCredentialsChanged { get; set; }
-    [Parameter] public EventCallback<bool> UseUserListChanged { get; set; }
     [Parameter] public EventCallback OnSubmit { get; set; }
     [Parameter] public EventCallback OnOpenSqlSessions { get; set; }
+    [Parameter] public EventCallback OnLogout { get; set; }
 
     private async Task SubmitAsync() => await OnSubmit.InvokeAsync();
 
     private async Task OpenSqlSessionsAsync() => await OnOpenSqlSessions.InvokeAsync();
+
+    private async Task LogoutAsync() => await OnLogout.InvokeAsync();
 
     private async Task TogglePassword()
         => await ShowPasswordChanged.InvokeAsync(!ShowPassword);
 
     private async Task OnUserNameInput(ChangeEventArgs args)
         => await UserNameChanged.InvokeAsync(args.Value?.ToString() ?? string.Empty);
-
-    private async Task OnUserSelectChanged(ChangeEventArgs args)
-    {
-        var userName = args.Value?.ToString() ?? string.Empty;
-        await UserNameChanged.InvokeAsync(userName);
-        await UseUserListChanged.InvokeAsync(true);
-    }
-
-    private async Task EnableManualEntryAsync()
-    {
-        await UseUserListChanged.InvokeAsync(false);
-        await UserNameChanged.InvokeAsync(string.Empty);
-    }
 
     private async Task OnPasswordInput(ChangeEventArgs args)
         => await PasswordChanged.InvokeAsync(args.Value?.ToString() ?? string.Empty);

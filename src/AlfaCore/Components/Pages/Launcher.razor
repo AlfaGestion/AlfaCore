@@ -18,9 +18,8 @@
 
 @if (_loading)
 {
-    <div class="consultas-loading">
-        <i class="bi bi-hourglass-split"></i> Cargando shell principal...
-    </div>
+    <AppLoadingFrame Title="Cargando sistema..."
+                     Subtitle="Preparando el shell principal y las aplicaciones disponibles." />
 }
 else if (!string.IsNullOrWhiteSpace(_error))
 {
@@ -183,7 +182,10 @@ else
             {
                 var returnUrl = "/";
                 Logger.LogInformation("Launcher: root without usable session, redirecting to login. ReturnUrl={ReturnUrl}", returnUrl);
-                Nav.NavigateTo($"/login?returnUrl={Uri.EscapeDataString(returnUrl)}", replace: true);
+                var loginTarget = string.Equals(returnUrl, "/", StringComparison.Ordinal)
+                    ? "/login"
+                    : $"/login?returnUrl={Uri.EscapeDataString(returnUrl)}";
+                Nav.NavigateTo(loginTarget, replace: true);
                 return;
             }
 
