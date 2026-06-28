@@ -576,8 +576,37 @@ public sealed class PuntoVentaService(
             var skip = (pagina - 1) * take;
             var fetch = take + 1;
 
+            // Búsqueda multi-palabra: cada palabra debe aparecer en alguno de los campos
+            var palabras = search.ToUpperInvariant()
+                .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+            var wordFilters = new StringBuilder();
+            foreach (var (_, i) in palabras.Select((p, i) => (p, i)))
+            {
+                wordFilters.Append($"""
+
+                  AND (
+                        UPPER(LTRIM(RTRIM(a.IDARTICULO))) LIKE @Like{i}
+                        OR UPPER(LTRIM(RTRIM(a.DESCRIPCION))) LIKE @Like{i}
+                        OR UPPER(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA, '')))) LIKE @Like{i}
+                        OR UPPER(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA1, '')))) LIKE @Like{i}
+                        OR UPPER(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA2, '')))) LIKE @Like{i}
+                        OR UPPER(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA3, '')))) LIKE @Like{i}
+                        OR UPPER(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA4, '')))) LIKE @Like{i}
+                  )
+                """);
+            }
+
+            var parameters = new DynamicParameters();
+            parameters.Add("Skip", skip);
+            parameters.Add("Fetch", fetch);
+            parameters.Add("IdLista", pricing.ListaPrecioActual);
+            parameters.Add("IdFamilia", familyFilter);
+            for (var i = 0; i < palabras.Length; i++)
+                parameters.Add($"Like{i}", $"%{palabras[i]}%");
+
             var rows = await cn.QueryAsync<PuntoVentaArticleRow>(new CommandDefinition(
-                """
+                $"""
                 SELECT
                     LTRIM(RTRIM(a.IDARTICULO)) AS IdArticulo,
                     ISNULL(LTRIM(RTRIM(a.CODIGOBARRA)), '') AS CodigoBarra,
@@ -611,29 +640,12 @@ public sealed class PuntoVentaService(
                 WHERE ISNULL(a.Suspendido, 0) <> 1
                   AND ISNULL(a.SuspendidoV, 0) <> 1
                   AND (@IdFamilia = '' OR LEFT(LTRIM(RTRIM(ISNULL(a.IdFamilia, ''))), 3) = @IdFamilia)
-                  AND (
-                        @Texto = ''
-                        OR UPPER(LTRIM(RTRIM(a.IDARTICULO))) LIKE @TextoLike
-                        OR UPPER(LTRIM(RTRIM(a.DESCRIPCION))) LIKE @TextoLike
-                        OR UPPER(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA, '')))) LIKE @TextoLike
-                        OR UPPER(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA1, '')))) LIKE @TextoLike
-                        OR UPPER(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA2, '')))) LIKE @TextoLike
-                        OR UPPER(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA3, '')))) LIKE @TextoLike
-                        OR UPPER(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA4, '')))) LIKE @TextoLike
-                  )
+                  {wordFilters}
                 ORDER BY a.DESCRIPCION, a.IDARTICULO
                 OFFSET @Skip ROWS
                 FETCH NEXT @Fetch ROWS ONLY;
                 """,
-                new
-                {
-                    Skip = skip,
-                    Fetch = fetch,
-                    IdLista = pricing.ListaPrecioActual,
-                    IdFamilia = familyFilter,
-                    Texto = search,
-                    TextoLike = $"%{search.ToUpperInvariant()}%"
-                },
+                parameters,
                 cancellationToken: token));
 
             var materializedRows = rows.ToList();
@@ -709,6 +721,141 @@ public sealed class PuntoVentaService(
                 MimeType = InferImageMimeType(path)
             };
         }, "No se pudo resolver la imagen del artículo.", ct);
+
+    public Task<IReadOnlyList<PuntoVentaCuentaImputacionDto>> GetCuentasImputacionAsync(CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "GetCuentasImputacion", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            var rows = await cn.QueryAsync<PuntoVentaCuentaImputacionDto>(new CommandDefinition(
+                """
+                SELECT
+                    LTRIM(RTRIM(codigo))      AS Codigo,
+                    LTRIM(RTRIM(descripcion)) AS Descripcion
+                FROM dbo.MA_CUENTAS
+                WHERE (MEDIODEPAGO = '' OR MEDIODEPAGO IS NULL)
+                  AND ISNULL(titulo, 0) = 0
+                  AND ISNULL(CAJAYBANCO, 0) = 1
+                ORDER BY descripcion;
+                """,
+                cancellationToken: token));
+
+            return (IReadOnlyList<PuntoVentaCuentaImputacionDto>)rows.ToList();
+        }, "No se pudieron cargar las cuentas de imputación.", ct);
+
+    public Task<PuntoVentaMovimientoCajaResultDto> CrearMovimientoCajaAsync(PuntoVentaMovimientoCajaRequestDto request, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "CrearMovimientoCaja", async token =>
+        {
+            ArgumentNullException.ThrowIfNull(request);
+
+            if (request.Importe <= 0)
+                return new PuntoVentaMovimientoCajaResultDto { Ok = false, Mensaje = "El importe debe ser mayor a cero." };
+
+            if (string.IsNullOrWhiteSpace(request.Cuenta))
+                return new PuntoVentaMovimientoCajaResultDto { Ok = false, Mensaje = "Debe seleccionar una cuenta de imputación." };
+
+            var tipo = request.Tipo is "I" or "E" ? request.Tipo : "I";
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            var parameters = new DynamicParameters();
+            parameters.Add("pTipo", tipo);
+            parameters.Add("pImporte", request.Importe);
+            parameters.Add("pDetalle", (request.Detalle ?? string.Empty).Trim());
+            parameters.Add("pCuentaImputacion", request.Cuenta.Trim());
+            parameters.Add("pRes", dbType: System.Data.DbType.Int32, direction: System.Data.ParameterDirection.Output);
+            parameters.Add("pMensaje", dbType: System.Data.DbType.String, size: 255, direction: System.Data.ParameterDirection.Output);
+
+            await cn.ExecuteAsync(new CommandDefinition(
+                """
+                ALTER TABLE MV_ASIENTOS DISABLE TRIGGER ALL;
+                SET NOCOUNT ON;
+                EXEC sp_web_CreaAsientoIngresoEgreso @pTipo, @pImporte, @pDetalle, @pCuentaImputacion, @pRes OUTPUT, @pMensaje OUTPUT;
+                ALTER TABLE MV_ASIENTOS ENABLE TRIGGER ALL;
+                """,
+                parameters,
+                cancellationToken: token));
+
+            var resultado = parameters.Get<int>("pRes");
+            var mensaje = parameters.Get<string>("pMensaje") ?? string.Empty;
+
+            return new PuntoVentaMovimientoCajaResultDto
+            {
+                Ok = resultado == 11,
+                Mensaje = mensaje
+            };
+        }, "No se pudo registrar el movimiento de caja.", ct);
+
+    public Task<IReadOnlyList<PuntoVentaMovimientoCajaDetalleDto>> GetDetalleCajaHoyAsync(CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "GetDetalleCajaHoy", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            // El SP inserta 2 asientos por movimiento: uno en la cuenta de cobro/pago
+            // (efectivo, tarjeta, etc.) y otro en la cuenta de imputación.
+            // Las cuentas de cobro/pago tienen MEDIODEPAGO con valor; las de imputación no.
+            // Filtrando por MEDIODEPAGO vacío/NULL obtenemos solo el lado imputación,
+            // sin importar cuántos medios de pago distintos existan.
+            var rows = await cn.QueryAsync<PuntoVentaMovimientoCajaDetalleDto>(new CommandDefinition(
+                """
+                SELECT
+                    ISNULL(LTRIM(RTRIM(m.CUENTA)), '')                       AS Cuenta,
+                    ISNULL(LTRIM(RTRIM(c.descripcion)), '')                  AS Descripcion,
+                    ISNULL(LTRIM(RTRIM(m.DETALLE)), '')                      AS Detalle,
+                    ISNULL(m.FECHAHORA_GRABACION, CAST(m.FECHA AS datetime)) AS Fecha,
+                    ISNULL(LTRIM(RTRIM(m.TC)), '')                           AS Tc,
+                    ISNULL(LTRIM(RTRIM(m.NUMERO)), '')                       AS IdComprobante,
+                    ISNULL(m.IMPORTE, 0)                                     AS Importe,
+                    ISNULL(LTRIM(RTRIM(m.USUARIO_LOGEADO)), '')              AS Usuario,
+                    CASE m.[DEBE-HABER]
+                        WHEN 'H' THEN 'I'
+                        WHEN 'D' THEN 'E'
+                        ELSE ''
+                    END                                                      AS TipoMovimiento
+                FROM dbo.MV_ASIENTOS m
+                INNER JOIN dbo.MA_CUENTAS c ON LTRIM(RTRIM(c.codigo)) = LTRIM(RTRIM(m.CUENTA))
+                WHERE m.TC = 'CJA'
+                  AND CAST(m.FECHA AS date) = CAST(GETDATE() AS date)
+                  AND (c.MEDIODEPAGO = '' OR c.MEDIODEPAGO IS NULL)
+                ORDER BY ISNULL(m.FECHAHORA_GRABACION, CAST(m.FECHA AS datetime)) DESC, m.NUMERO DESC;
+                """,
+                cancellationToken: token));
+
+            return (IReadOnlyList<PuntoVentaMovimientoCajaDetalleDto>)rows.ToList();
+        }, "No se pudo cargar el detalle de caja.", ct);
+
+    public Task<IReadOnlyList<PuntoVentaConsolidadoCajaDto>> GetConsolidadoCajaHoyAsync(CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "GetConsolidadoCajaHoy", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            if (!await ObjectExistsAsync(cn, "dbo.VT_CONSOLIDADO_CAJA", "V", token))
+                return (IReadOnlyList<PuntoVentaConsolidadoCajaDto>)[];
+
+            var rows = await cn.QueryAsync<PuntoVentaConsolidadoCajaDto>(new CommandDefinition(
+                """
+                SELECT
+                    LTRIM(RTRIM(CONVERT(varchar(50), c.IdCajas))) AS IdCajas,
+                    LTRIM(RTRIM(c.CUENTA))                        AS Cuenta,
+                    ISNULL(LTRIM(RTRIM(c.DESCRIPCION)), '')       AS Descripcion,
+                    ISNULL(SUM(c.INGRESOS), 0)                    AS Ingresos,
+                    ISNULL(SUM(c.EGRESOS), 0)                     AS Egresos,
+                    ISNULL(SUM(c.SALDO), 0)                       AS Saldo,
+                    ISNULL(LTRIM(RTRIM(c.MONEDA)), '1')           AS Moneda,
+                    ISNULL(MAX(c.COTIZACION), 1)                  AS Cotizacion
+                FROM dbo.VT_CONSOLIDADO_CAJA c
+                WHERE CAST(c.FECHA AS date) = CAST(GETDATE() AS date)
+                GROUP BY c.IdCajas, LTRIM(RTRIM(c.CUENTA)), LTRIM(RTRIM(c.DESCRIPCION)), LTRIM(RTRIM(c.MONEDA))
+                ORDER BY LTRIM(RTRIM(c.CUENTA));
+                """,
+                cancellationToken: token));
+
+            return (IReadOnlyList<PuntoVentaConsolidadoCajaDto>)rows.ToList();
+        }, "No se pudo cargar el consolidado de caja.", ct);
 
     private async Task<TipoComprobanteRow?> GetTipoComprobanteConfigAsync(SqlConnection cn, CancellationToken ct)
     {

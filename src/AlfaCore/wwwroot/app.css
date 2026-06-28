@@ -24706,3 +24706,13 @@ body:has(.cuentas-modal .usuarios-view-settings) {
         min-height: calc(100dvh - 1rem);
     }
 }
+
+
+/* POS pantalla completa: sin sidebar ni topbar del shell */
+.main-shell--pos {
+    grid-template-columns: 1fr;
+}
+.main-shell--pos .main-shell__content {
+    padding: 0;
+    overflow: hidden;
+}

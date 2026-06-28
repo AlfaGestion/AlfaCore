@@ -1172,6 +1172,203 @@
         box-shadow: 0 28px 60px rgba(0, 0, 0, 0.38);
     }
 
+    .pos-panel-modal--narrow {
+        width: min(480px, calc(100vw - 2rem));
+    }
+
+    .pos-panel-modal--wide {
+        width: min(860px, calc(100vw - 2rem));
+        max-height: calc(100dvh - 4rem);
+        overflow-y: auto;
+    }
+
+    /* ── Ingresos/Egresos ───────────────────────────── */
+    .pos-cashinout__body {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+    }
+
+    .pos-cashinout__type-row {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .pos-cashinout__type-btn {
+        padding: 0.5rem 1.2rem;
+        border-radius: 8px;
+        border: 1px solid var(--color-border);
+        background: transparent;
+        color: var(--color-text);
+        font-size: 0.9rem;
+        cursor: pointer;
+        transition: background 0.15s, color 0.15s;
+    }
+
+    .pos-cashinout__type-btn--active {
+        background: var(--color-primary);
+        color: #fff;
+        border-color: var(--color-primary);
+    }
+
+    .pos-cashinout__amount-wrap {
+        display: flex;
+        align-items: center;
+        flex: 1;
+        border: 1px solid var(--color-border);
+        border-radius: 8px;
+        overflow: hidden;
+        background: var(--color-panel);
+    }
+
+    .pos-cashinout__currency {
+        padding: 0 0.6rem;
+        color: var(--color-muted);
+        font-size: 0.9rem;
+        user-select: none;
+    }
+
+    .pos-cashinout__currency-end {
+        padding: 0 0.6rem;
+        color: var(--color-muted);
+        font-size: 0.9rem;
+        background: var(--color-panel);
+        border-left: 1px solid var(--color-border);
+        user-select: none;
+    }
+
+    .pos-cashinout__amount {
+        flex: 1;
+        border: none;
+        background: transparent;
+        color: var(--color-text);
+        font-size: 1rem;
+        padding: 0.45rem 0.25rem;
+        outline: none;
+        text-align: right;
+    }
+
+    .pos-cashinout__field {
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+    }
+
+    .pos-cashinout__label {
+        font-size: 0.8rem;
+        color: var(--color-muted);
+    }
+
+    .pos-cashinout__select {
+        width: 100%;
+        padding: 0.5rem 0.75rem;
+        border-radius: 8px;
+        border: 1px solid var(--color-border);
+        background: var(--color-panel);
+        color: var(--color-text);
+        font-size: 0.9rem;
+        outline: none;
+    }
+
+    .pos-cashinout__textarea {
+        width: 100%;
+        padding: 0.5rem 0.75rem;
+        border-radius: 8px;
+        border: 1px solid var(--color-border);
+        background: var(--color-panel);
+        color: var(--color-text);
+        font-size: 0.9rem;
+        resize: vertical;
+        outline: none;
+        font-family: inherit;
+        box-sizing: border-box;
+    }
+
+    .pos-cashinout__loading {
+        color: var(--color-muted);
+        font-size: 0.85rem;
+    }
+
+    .pos-cashinout__feedback {
+        padding: 0.55rem 0.9rem;
+        border-radius: 8px;
+        font-size: 0.88rem;
+    }
+
+    .pos-cashinout__feedback--ok {
+        color: #166534;
+        background: rgba(22, 101, 52, 0.07);
+        border: 1px solid rgba(22, 101, 52, 0.18);
+    }
+
+    .pos-cashinout__feedback--error {
+        color: #991b1b;
+        background: rgba(220, 38, 38, 0.06);
+        border: 1px solid rgba(220, 38, 38, 0.18);
+    }
+
+    /* ── Detalle de caja ────────────────────────────── */
+    .pos-cashdetail__tables {
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+        padding: 0 0.25rem;
+    }
+
+    .pos-cashdetail__section-title {
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: var(--color-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin: 0 0 0.5rem 0;
+    }
+
+    .pos-cashdetail__table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.83rem;
+    }
+
+    .pos-cashdetail__table th {
+        text-align: left;
+        padding: 0.4rem 0.6rem;
+        border-bottom: 1px solid var(--color-border);
+        color: var(--color-muted);
+        font-weight: 600;
+        font-size: 0.78rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+    }
+
+    .pos-cashdetail__table td {
+        padding: 0.4rem 0.6rem;
+        border-bottom: 1px solid rgba(var(--color-border-rgb, 100 116 139), 0.15);
+        color: var(--color-text);
+        vertical-align: top;
+    }
+
+    .pos-cashdetail__table tfoot td {
+        border-top: 1px solid var(--color-border);
+        border-bottom: none;
+        font-weight: 600;
+    }
+
+    .pos-cashdetail__num {
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .pos-cashdetail__total-label {
+        color: var(--color-muted);
+        font-size: 0.8rem;
+    }
+
+    .pos-cashdetail__total {
+        color: var(--color-text);
+    }
+
     .pos-panel-modal__grid {
         display: grid;
         grid-template-columns: 1fr 1fr;
@@ -1548,20 +1745,20 @@
 
     .pos-product {
         gap: 0;
-        grid-template-rows: 112px 46px;
-        min-height: 158px;
+        grid-template-rows: 108px 58px;
+        min-height: 166px;
     }
 
     .pos-product__text {
-        min-height: 46px;
+        min-height: 58px;
         align-content: start;
-        padding: 0.45rem 0.72rem 0.5rem;
+        padding: 0.4rem 0.72rem 0.45rem;
     }
 
     .pos-product__text strong {
         display: -webkit-box;
         overflow: hidden;
-        -webkit-line-clamp: 2;
+        -webkit-line-clamp: 3;
         -webkit-box-orient: vertical;
         font-size: 0.8rem;
         line-height: 1.18;
@@ -2090,11 +2287,11 @@
                                     Configuración
                                 </button>
                             }
-                            <button type="button" class="pos-topbar__menu-item" @onclick="OpenCashDetailModal">
+                            <button type="button" class="pos-topbar__menu-item" @onclick="OpenCashDetailModalAsync">
                                 <i class="bi bi-journal-text"></i>
                                 Detalle de caja
                             </button>
-                            <button type="button" class="pos-topbar__menu-item" @onclick="OpenCashDetailModal">
+                            <button type="button" class="pos-topbar__menu-item" @onclick="OpenCashInOutModalAsync">
                                 <i class="bi bi-cash-stack"></i>
                                 Ingresos/Egresos de caja
                             </button>
@@ -2742,36 +2939,242 @@
     </section>
 }
 
+@if (_showCashInOutModal)
+{
+    <button type="button" class="pos-item-modal-backdrop" aria-label="Cerrar ingreso/egreso" @onclick="CloseCashInOutModal"></button>
+    <section class="pos-panel-modal pos-panel-modal--narrow" aria-label="Ingresos/Egresos de caja">
+        <div class="pos-settings-modal__header">
+            <div>
+                <h3>Ingresos/Egresos</h3>
+            </div>
+            <button type="button" class="pos-settings-modal__close" @onclick="CloseCashInOutModal">X</button>
+        </div>
+
+        <div class="pos-cashinout__body">
+            <div class="pos-cashinout__type-row">
+                <button type="button"
+                        class="@(_cashInOutTipo == "I" ? "pos-cashinout__type-btn pos-cashinout__type-btn--active" : "pos-cashinout__type-btn")"
+                        @onclick='() => _cashInOutTipo = "I"'>
+                    Ingreso
+                </button>
+                <button type="button"
+                        class="@(_cashInOutTipo == "E" ? "pos-cashinout__type-btn pos-cashinout__type-btn--active" : "pos-cashinout__type-btn")"
+                        @onclick='() => _cashInOutTipo = "E"'>
+                    Egreso
+                </button>
+                <div class="pos-cashinout__amount-wrap">
+                    <span class="pos-cashinout__currency">$</span>
+                    <input type="number"
+                           class="pos-cashinout__amount"
+                           min="0.01"
+                           step="0.01"
+                           placeholder="00.00"
+                           @bind="_cashInOutImporte"
+                           @bind:event="oninput" />
+                    <span class="pos-cashinout__currency-end">$</span>
+                </div>
+            </div>
+
+            <div class="pos-cashinout__field">
+                <label class="pos-cashinout__label">Imputación</label>
+                @if (_cashInOutCuentasLoading)
+                {
+                    <div class="pos-cashinout__loading">Cargando cuentas...</div>
+                }
+                else
+                {
+                    <select class="pos-cashinout__select" @bind="_cashInOutCuenta">
+                        <option value="">— Seleccionar —</option>
+                        @foreach (var c in _cashInOutCuentas)
+                        {
+                            <option value="@c.Codigo">@c.Descripcion</option>
+                        }
+                    </select>
+                }
+            </div>
+
+            <div class="pos-cashinout__field">
+                <label class="pos-cashinout__label">Motivo</label>
+                <textarea class="pos-cashinout__textarea" rows="3" placeholder="Motivo (opcional)" @bind="_cashInOutDetalle"></textarea>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(_cashInOutFeedback))
+            {
+                <div class="pos-cashinout__feedback @(_cashInOutOk ? "pos-cashinout__feedback--ok" : "pos-cashinout__feedback--error")">
+                    @_cashInOutFeedback
+                </div>
+            }
+        </div>
+
+        <div class="pos-settings-modal__actions">
+            <button type="button"
+                    class="pos-charge-modal__confirm"
+                    disabled="@(_cashInOutSaving || _cashInOutCuentasLoading)"
+                    @onclick="ConfirmarMovimientoCajaAsync">
+                @if (_cashInOutSaving)
+                {
+                    <span>Guardando...</span>
+                }
+                else
+                {
+                    <span>Confirmar</span>
+                }
+            </button>
+            <button type="button" class="pos-settings-modal__ghost" @onclick="CloseCashInOutModal">Cerrar</button>
+        </div>
+    </section>
+}
+
 @if (_showCashDetailModal)
 {
     <button type="button" class="pos-item-modal-backdrop" aria-label="Cerrar detalle de caja" @onclick="CloseCashDetailModal"></button>
-    <section class="pos-panel-modal" aria-label="Detalle de caja">
+    <section class="pos-panel-modal pos-panel-modal--wide" aria-label="Detalle de caja">
         <div class="pos-settings-modal__header">
             <div>
                 <h3>Detalle de caja</h3>
-                <p>Vista operativa inicial del contexto de caja del POS.</p>
+                <p>Movimientos del día — @DateTime.Today.ToString("dd/MM/yyyy")</p>
             </div>
             <button type="button" class="pos-settings-modal__close" @onclick="CloseCashDetailModal">X</button>
         </div>
 
-        <div class="pos-panel-modal__grid">
-            <div class="pos-settings-modal__field">
-                <label>Base activa</label>
-                <div class="pos-settings-modal__readonly">@(_context?.SesionSqlActiva ?? "-")</div>
+        @if (_cashDetailLoading)
+        {
+            <div class="pos-cashinout__loading" style="padding: 2rem 1.5rem;">Cargando movimientos...</div>
+        }
+        else
+        {
+            @if (_cashDetailConsolidado.Count > 0)
+            {
+                <div class="pos-cashdetail__section">
+                    <h4 class="pos-cashdetail__section-title">Saldo consolidado por cuenta</h4>
+                    <table class="pos-cashdetail__table">
+                        <thead>
+                            <tr>
+                                <th>Caja</th>
+                                <th>Cuenta</th>
+                                <th>Descripción</th>
+                                <th class="pos-cashdetail__num">Ingresos +</th>
+                                <th class="pos-cashdetail__num">Egresos -</th>
+                                <th class="pos-cashdetail__num">Saldo</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var c in _cashDetailConsolidado)
+                            {
+                                <tr>
+                                    <td>@c.IdCajas.Trim()</td>
+                                    <td>@c.Cuenta</td>
+                                    <td>@c.Descripcion</td>
+                                    <td class="pos-cashdetail__num">@FmtMoney(c.Ingresos)</td>
+                                    <td class="pos-cashdetail__num">@FmtMoney(c.Egresos)</td>
+                                    <td class="pos-cashdetail__num pos-cashdetail__total">@FmtMoney(c.Saldo)</td>
+                                </tr>
+                            }
+                        </tbody>
+                        <tfoot>
+                            <tr>
+                                <td colspan="3" class="pos-cashdetail__total-label">Totales</td>
+                                <td class="pos-cashdetail__num pos-cashdetail__total">@FmtMoney(_cashDetailConsolidado.Sum(c => c.Ingresos))</td>
+                                <td class="pos-cashdetail__num pos-cashdetail__total">@FmtMoney(_cashDetailConsolidado.Sum(c => c.Egresos))</td>
+                                <td class="pos-cashdetail__num pos-cashdetail__total">@FmtMoney(_cashDetailConsolidado.Sum(c => c.Saldo))</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            }
+
+            @if (_cashDetailMovimientos.Count == 0 && _cashDetailConsolidado.Count == 0)
+            {
+                <div class="pos-cashinout__loading" style="padding: 1rem 0; color: var(--color-muted);">
+                    No hay movimientos de caja registrados hoy.
+                </div>
+            }
+
+            @if (_cashDetailMovimientos.Count > 0)
+            {
+            var ingresos = _cashDetailMovimientos.Where(m => m.TipoMovimiento == "I").ToList();
+            var egresos  = _cashDetailMovimientos.Where(m => m.TipoMovimiento == "E").ToList();
+
+            <div class="pos-cashdetail__tables">
+                @if (ingresos.Any())
+                {
+                    <div class="pos-cashdetail__section">
+                        <h4 class="pos-cashdetail__section-title">Ingresos</h4>
+                        <table class="pos-cashdetail__table">
+                            <thead>
+                                <tr>
+                                    <th>Cuenta</th>
+                                    <th>Descripción</th>
+                                    <th>Detalle</th>
+                                    <th>Hora</th>
+                                    <th class="pos-cashdetail__num">Importe</th>
+                                    <th>Usuario</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var m in ingresos)
+                                {
+                                    <tr>
+                                        <td>@m.Cuenta</td>
+                                        <td>@m.Descripcion</td>
+                                        <td>@m.Detalle</td>
+                                        <td>@m.Fecha.ToString("HH:mm")</td>
+                                        <td class="pos-cashdetail__num">@FmtMoney(m.Importe)</td>
+                                        <td>@m.Usuario</td>
+                                    </tr>
+                                }
+                            </tbody>
+                            <tfoot>
+                                <tr>
+                                    <td colspan="4" class="pos-cashdetail__total-label">Total ingresos</td>
+                                    <td class="pos-cashdetail__num pos-cashdetail__total">@FmtMoney(ingresos.Sum(m => m.Importe))</td>
+                                    <td></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                }
+                @if (egresos.Any())
+                {
+                    <div class="pos-cashdetail__section">
+                        <h4 class="pos-cashdetail__section-title">Egresos</h4>
+                        <table class="pos-cashdetail__table">
+                            <thead>
+                                <tr>
+                                    <th>Cuenta</th>
+                                    <th>Descripción</th>
+                                    <th>Detalle</th>
+                                    <th>Hora</th>
+                                    <th class="pos-cashdetail__num">Importe</th>
+                                    <th>Usuario</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var m in egresos)
+                                {
+                                    <tr>
+                                        <td>@m.Cuenta</td>
+                                        <td>@m.Descripcion</td>
+                                        <td>@m.Detalle</td>
+                                        <td>@m.Fecha.ToString("HH:mm")</td>
+                                        <td class="pos-cashdetail__num">@FmtMoney(m.Importe)</td>
+                                        <td>@m.Usuario</td>
+                                    </tr>
+                                }
+                            </tbody>
+                            <tfoot>
+                                <tr>
+                                    <td colspan="4" class="pos-cashdetail__total-label">Total egresos</td>
+                                    <td class="pos-cashdetail__num pos-cashdetail__total">@FmtMoney(egresos.Sum(m => m.Importe))</td>
+                                    <td></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                }
             </div>
-            <div class="pos-settings-modal__field">
-                <label>Usuario</label>
-                <div class="pos-settings-modal__readonly">@(_context?.UsuarioActual ?? "-")</div>
-            </div>
-            <div class="pos-settings-modal__field">
-                <label>Caja</label>
-                <div class="pos-settings-modal__readonly">@(_context?.CajaActual ?? "-")</div>
-            </div>
-            <div class="pos-settings-modal__field">
-                <label>Total carrito</label>
-                <div class="pos-settings-modal__readonly">@FmtMoney(TotalCarrito)</div>
-            </div>
-        </div>
+            }
+        }
 
         <div class="pos-settings-modal__actions">
             <button type="button" class="pos-settings-modal__ghost" @onclick="CloseCashDetailModal">Cerrar</button>
@@ -2841,6 +3244,23 @@
     private bool _showPosMenu;
     private bool _showSettingsModal;
     private bool _showCashDetailModal;
+    private bool _showCashInOutModal;
+
+    // Ingreso/Egreso
+    private string _cashInOutTipo = "I";
+    private decimal _cashInOutImporte;
+    private string _cashInOutCuenta = string.Empty;
+    private string _cashInOutDetalle = string.Empty;
+    private bool _cashInOutSaving;
+    private bool _cashInOutCuentasLoading;
+    private string _cashInOutFeedback = string.Empty;
+    private bool _cashInOutOk;
+    private IReadOnlyList<PuntoVentaCuentaImputacionDto> _cashInOutCuentas = [];
+
+    // Detalle de caja
+    private bool _cashDetailLoading;
+    private IReadOnlyList<PuntoVentaMovimientoCajaDetalleDto> _cashDetailMovimientos = [];
+    private IReadOnlyList<PuntoVentaConsolidadoCajaDto> _cashDetailConsolidado = [];
     private bool _showChargeModal;
     private bool _showReceiptModal;
     private bool _showReprintModal;
@@ -3102,14 +3522,115 @@
         _settingsError = null;
     }
 
-    private void OpenCashDetailModal()
+    private async Task OpenCashDetailModalAsync()
     {
         _showPosMenu = false;
+        _cashDetailMovimientos = [];
+        _cashDetailConsolidado = [];
+        _cashDetailLoading = true;
         _showCashDetailModal = true;
+        try
+        {
+            var t1 = PuntoVentaSvc.GetDetalleCajaHoyAsync();
+            var t2 = PuntoVentaSvc.GetConsolidadoCajaHoyAsync();
+            await Task.WhenAll(t1, t2);
+            _cashDetailMovimientos = t1.Result;
+            _cashDetailConsolidado = t2.Result;
+        }
+        catch
+        {
+            _cashDetailMovimientos = [];
+            _cashDetailConsolidado = [];
+        }
+        finally
+        {
+            _cashDetailLoading = false;
+        }
     }
 
     private void CloseCashDetailModal()
         => _showCashDetailModal = false;
+
+    private async Task OpenCashInOutModalAsync()
+    {
+        _showPosMenu = false;
+        _cashInOutTipo = "I";
+        _cashInOutImporte = 0;
+        _cashInOutCuenta = string.Empty;
+        _cashInOutDetalle = string.Empty;
+        _cashInOutFeedback = string.Empty;
+        _cashInOutOk = false;
+        _showCashInOutModal = true;
+
+        if (_cashInOutCuentas.Count == 0)
+        {
+            _cashInOutCuentasLoading = true;
+            try
+            {
+                _cashInOutCuentas = await PuntoVentaSvc.GetCuentasImputacionAsync();
+            }
+            catch
+            {
+                _cashInOutCuentas = [];
+            }
+            finally
+            {
+                _cashInOutCuentasLoading = false;
+            }
+        }
+    }
+
+    private void CloseCashInOutModal()
+        => _showCashInOutModal = false;
+
+    private async Task ConfirmarMovimientoCajaAsync()
+    {
+        _cashInOutFeedback = string.Empty;
+
+        if (_cashInOutImporte <= 0)
+        {
+            _cashInOutFeedback = "El importe debe ser mayor a cero.";
+            _cashInOutOk = false;
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_cashInOutCuenta))
+        {
+            _cashInOutFeedback = "Debe seleccionar una cuenta de imputación.";
+            _cashInOutOk = false;
+            return;
+        }
+
+        _cashInOutSaving = true;
+        try
+        {
+            var result = await PuntoVentaSvc.CrearMovimientoCajaAsync(new PuntoVentaMovimientoCajaRequestDto
+            {
+                Tipo    = _cashInOutTipo,
+                Importe = _cashInOutImporte,
+                Cuenta  = _cashInOutCuenta,
+                Detalle = _cashInOutDetalle
+            });
+
+            _cashInOutOk = result.Ok;
+            _cashInOutFeedback = result.Ok ? "Movimiento registrado correctamente." : (result.Mensaje.Length > 0 ? result.Mensaje : "No se pudo registrar el movimiento.");
+
+            if (result.Ok)
+            {
+                _cashInOutImporte = 0;
+                _cashInOutCuenta = string.Empty;
+                _cashInOutDetalle = string.Empty;
+            }
+        }
+        catch (Exception ex)
+        {
+            _cashInOutOk = false;
+            _cashInOutFeedback = ex.Message;
+        }
+        finally
+        {
+            _cashInOutSaving = false;
+        }
+    }
 
     private async Task OpenChargeModalAsync()
     {

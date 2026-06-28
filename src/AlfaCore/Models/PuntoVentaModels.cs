@@ -165,3 +165,48 @@ public sealed class PuntoVentaReceiptDataDto
     public IReadOnlyList<PuntoVentaPaymentLineDto> Pagos { get; init; } = [];
     public bool Impreso { get; init; }
 }
+
+public sealed class PuntoVentaCuentaImputacionDto
+{
+    public string Codigo { get; init; } = string.Empty;
+    public string Descripcion { get; init; } = string.Empty;
+}
+
+public sealed class PuntoVentaMovimientoCajaRequestDto
+{
+    public string Tipo { get; set; } = "I";
+    public decimal Importe { get; set; }
+    public string Cuenta { get; set; } = string.Empty;
+    public string Detalle { get; set; } = string.Empty;
+}
+
+public sealed class PuntoVentaMovimientoCajaResultDto
+{
+    public bool Ok { get; init; }
+    public string Mensaje { get; init; } = string.Empty;
+}
+
+public sealed class PuntoVentaMovimientoCajaDetalleDto
+{
+    public string Cuenta { get; init; } = string.Empty;
+    public string Descripcion { get; init; } = string.Empty;
+    public string Detalle { get; init; } = string.Empty;
+    public DateTime Fecha { get; init; }
+    public string Tc { get; init; } = string.Empty;
+    public string IdComprobante { get; init; } = string.Empty;
+    public decimal Importe { get; init; }
+    public string Usuario { get; init; } = string.Empty;
+    public string TipoMovimiento { get; init; } = string.Empty;
+}
+
+public sealed class PuntoVentaConsolidadoCajaDto
+{
+    public string IdCajas { get; init; } = string.Empty;
+    public string Cuenta { get; init; } = string.Empty;
+    public string Descripcion { get; init; } = string.Empty;
+    public decimal Ingresos { get; init; }
+    public decimal Egresos { get; init; }
+    public decimal Saldo { get; init; }
+    public string Moneda { get; init; } = string.Empty;
+    public decimal Cotizacion { get; init; }
+}

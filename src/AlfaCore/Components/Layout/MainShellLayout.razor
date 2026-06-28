@@ -9,51 +9,57 @@
 @inject AlfaCore.Services.IRouteContextService RouteContext
 
 <div class="@ShellClass">
-    <aside class="main-shell__sidebar">
-        <div class="main-shell__brand">
-            <a href="@RouteContext.BuildRoute("/")" class="main-shell__logo-link">
-                <img src="/logos/Logo.png" alt="Alfa Gestión" class="main-shell__logo" width="52" height="52" />
-            </a>
-            <div class="main-shell__brand-copy">
-                <div class="main-shell__eyebrow">Business Intelligence</div>
-                <a href="@RouteContext.BuildRoute("/")" class="main-shell__title">Alfa Gestión</a>
-            </div>
-            <button type="button"
-                    class="main-shell__toggle"
-                    @onclick="ToggleSidebarAsync"
-                    title="@(_sidebarCollapsed ? "Mostrar menú" : "Ocultar menú")"
-                    aria-label="@(_sidebarCollapsed ? "Mostrar menú lateral" : "Ocultar menú lateral")">
-                <i class="bi @(_sidebarCollapsed ? "bi-layout-sidebar-inset" : "bi-layout-sidebar")"></i>
-            </button>
-        </div>
-
-        <nav class="main-shell__nav">
-            <a href="/" class="main-shell__back">Aplicaciones</a>
-            @foreach (var module in _context.Modules)
-            {
-                <a href="@RouteContext.BuildRoute(module.RutaWeb)" class="@GetModuleLinkClass(module)">
-                    <i class="bi @(string.IsNullOrWhiteSpace(module.Icono) ? "bi-grid" : module.Icono)"></i>
-                    <span>@module.Nombre</span>
+    @if (!IsPosPage)
+    {
+        <aside class="main-shell__sidebar">
+            <div class="main-shell__brand">
+                <a href="@RouteContext.BuildRoute("/")" class="main-shell__logo-link">
+                    <img src="/logos/Logo.png" alt="Alfa Gestión" class="main-shell__logo" width="52" height="52" />
                 </a>
-            }
-        </nav>
+                <div class="main-shell__brand-copy">
+                    <div class="main-shell__eyebrow">Business Intelligence</div>
+                    <a href="@RouteContext.BuildRoute("/")" class="main-shell__title">Alfa Gestión</a>
+                </div>
+                <button type="button"
+                        class="main-shell__toggle"
+                        @onclick="ToggleSidebarAsync"
+                        title="@(_sidebarCollapsed ? "Mostrar menú" : "Ocultar menú")"
+                        aria-label="@(_sidebarCollapsed ? "Mostrar menú lateral" : "Ocultar menú lateral")">
+                    <i class="bi @(_sidebarCollapsed ? "bi-layout-sidebar-inset" : "bi-layout-sidebar")"></i>
+                </button>
+            </div>
 
-        <div class="main-shell__footer">
-            <div class="main-shell__footer-line">@(_activeSession?.Servidor ?? "—") · @(_activeSession?.BaseDatos ?? "—")</div>
-            <div class="main-shell__footer-line">@(!AppUserSession.IsAuthenticated ? "Sin usuario validado" : AppUserSession.CurrentUser?.UserName)</div>
-        </div>
-    </aside>
+            <nav class="main-shell__nav">
+                <a href="/" class="main-shell__back">Aplicaciones</a>
+                @foreach (var module in _context.Modules)
+                {
+                    <a href="@RouteContext.BuildRoute(module.RutaWeb)" class="@GetModuleLinkClass(module)">
+                        <i class="bi @(string.IsNullOrWhiteSpace(module.Icono) ? "bi-grid" : module.Icono)"></i>
+                        <span>@module.Nombre</span>
+                    </a>
+                }
+            </nav>
+
+            <div class="main-shell__footer">
+                <div class="main-shell__footer-line">@(_activeSession?.Servidor ?? "—") · @(_activeSession?.BaseDatos ?? "—")</div>
+                <div class="main-shell__footer-line">@(!AppUserSession.IsAuthenticated ? "Sin usuario validado" : AppUserSession.CurrentUser?.UserName)</div>
+            </div>
+        </aside>
+    }
 
     <main class="main-shell__workspace">
-        <header class="main-shell__topbar">
-            <div>
-                <div class="main-shell__module-label">Shell web</div>
-                <h1 class="main-shell__module-title">@GetTitle()</h1>
-            </div>
-            <div class="main-shell__topbar-meta">
-                <span>@DateTime.Now.ToString("dd/MM/yyyy")</span>
-            </div>
-        </header>
+        @if (!IsPosPage)
+        {
+            <header class="main-shell__topbar">
+                <div>
+                    <div class="main-shell__module-label">Shell web</div>
+                    <h1 class="main-shell__module-title">@GetTitle()</h1>
+                </div>
+                <div class="main-shell__topbar-meta">
+                    <span>@DateTime.Now.ToString("dd/MM/yyyy")</span>
+                </div>
+            </header>
+        }
 
         <section class="main-shell__content">
             @Body
@@ -66,7 +72,10 @@
     private SessionDto? _activeSession;
     private bool _sidebarCollapsed;
     private bool _sidebarInitialized;
-    private string ShellClass => _sidebarCollapsed ? "main-shell main-shell--collapsed" : "main-shell";
+    private bool IsPosPage => Nav.Uri.Contains("/ventas/punto-venta", StringComparison.OrdinalIgnoreCase);
+    private string ShellClass => IsPosPage
+        ? "main-shell main-shell--pos"
+        : (_sidebarCollapsed ? "main-shell main-shell--collapsed" : "main-shell");
 
     protected override void OnInitialized()
     {
