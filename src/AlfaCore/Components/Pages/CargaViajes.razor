@@ -8,6 +8,8 @@
 @inject IAppUiOperationService UiOps
 @inject IAppUiDialogService AppDialogs
 @inject IAppUserSessionService AppUserSession
+@inject IViajePreviewStateService ViajePreviewState
+@inject IRouteContextService RouteContext
 @inject IJSRuntime Js
 @inject ILogger<CargaViajes> Logger
 @inject NavigationManager Nav
@@ -280,6 +282,7 @@
                                         }
                                         <td>
                                             <div class="actions">
+                                                <button type="button" class="btn btn--ghost btn--sm" @onclick="() => AbrirViajePreviewAsync(row.Id)">Ver viaje</button>
                                                 <button type="button" class="btn btn--ghost btn--sm" @onclick="() => VerViajeAsync(row.Id)">Ver</button>
                                                 <button type="button" class="btn btn--ghost btn--sm" @onclick="() => EditarViajeAsync(row.Id)">Editar</button>
                                                 <button type="button" class="btn btn--ghost btn--sm" @onclick="() => AnularViajeAsync(row.Id)">Anular</button>
@@ -1763,9 +1766,18 @@
                         <span class="cuentas-modal__eyebrow">Viajes</span>
                         <h3 id="carga-viajes-viaje-title">@(_isNewViaje ? "Nuevo viaje" : _viajeReadOnly ? "Detalle de viaje" : $"Editar viaje {_viajeForm.IdComprobante}")</h3>
                     </div>
-                    <button type="button" class="cuentas-modal__close" @onclick="CerrarViajeEditorAsync" aria-label="Cerrar">
-                        <i class="bi bi-x-lg"></i>
-                    </button>
+                    <div class="actions">
+                        @if (_viajeSeleccionado is not null && !_isNewViaje)
+                        {
+                            <button type="button" class="btn btn--ghost btn--sm" @onclick="AbrirVistaPreviaViajeSeleccionadoAsync">
+                                <i class="bi bi-file-earmark-text"></i>
+                                <span>Ver viaje</span>
+                            </button>
+                        }
+                        <button type="button" class="cuentas-modal__close" @onclick="CerrarViajeEditorAsync" aria-label="Cerrar">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                    </div>
                 </header>
 
                 <div class="cuentas-modal__body">
@@ -2650,6 +2662,29 @@
         MapViajeToForm(result.Value);
     }
 
+    private Task AbrirViajePreviewAsync(int id)
+    {
+        var route = RouteContext.BuildRoute($"/carga-viajes/viaje/{id}");
+        Nav.NavigateTo(route);
+        return Task.CompletedTask;
+    }
+
+    private Task AbrirVistaPreviaViajeSeleccionadoAsync()
+    {
+        if (_viajeSeleccionado is null)
+            return Task.CompletedTask;
+
+        ViajePreviewState.Set(new CargaViajePreviewDto
+        {
+            Viaje = _viajeSeleccionado,
+            Configuracion = _config ?? new CargaViajesConfigDto()
+        });
+
+        var route = RouteContext.BuildRoute($"/carga-viajes/viaje/{_viajeSeleccionado.Id}");
+        Nav.NavigateTo(route);
+        return Task.CompletedTask;
+    }
+
     private async Task EditarViajeAsync(int id)
     {
         var result = await UiOps.RunAsync(() => CargaViajesSvc.GetViajeByIdAsync(id), "No se pudo cargar el viaje.");
@@ -3168,7 +3203,9 @@
 
     private void SyncViajeAdicionalesFromForm()
     {
-        Array.Fill(_viajeAdicionalesActivos, false);
+        var count = GetAdicionalesHabilitadosCount();
+        for (var i = 0; i < _viajeAdicionalesActivos.Length; i++)
+            _viajeAdicionalesActivos[i] = i < count && GetViajeAdicionalRawPercent(i) > 0m;
     }
 
     private void SyncViajeAdicionalesFijosFromForm()

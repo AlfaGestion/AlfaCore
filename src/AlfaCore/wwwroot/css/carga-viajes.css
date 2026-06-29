@@ -362,6 +362,109 @@
     margin-top: .45rem;
 }
 
+html[data-theme="light"] .carga-viajes-page .carga-viajes-adicionales__simple-item {
+    border-color: var(--color-border);
+    background: linear-gradient(180deg, var(--color-panel), var(--color-bg));
+    box-shadow: 0 8px 18px rgba(15, 23, 42, .06);
+}
+
+html[data-theme="light"] .carga-viajes-page .carga-viajes-adicionales__simple-item:hover {
+    border-color: color-mix(in srgb, var(--color-primary) 34%, var(--color-border));
+    box-shadow: 0 12px 24px rgba(15, 23, 42, .08);
+}
+
+html[data-theme="light"] .carga-viajes-page .carga-viajes-adicionales__simple-item--active {
+    border-color: color-mix(in srgb, var(--color-primary) 58%, var(--color-border));
+    background: linear-gradient(180deg, color-mix(in srgb, var(--color-primary) 12%, var(--color-panel)), color-mix(in srgb, var(--color-primary) 8%, var(--color-bg)));
+}
+
+html[data-theme="light"] .carga-viajes-page .carga-viajes-adicionales__simple-item input[type="checkbox"] {
+    accent-color: var(--color-primary);
+}
+
+html[data-theme="light"] .carga-viajes-page .carga-viajes-adicionales__simple-name {
+    color: var(--color-text);
+}
+
+html[data-theme="light"] .carga-viajes-page .carga-viajes-adicionales__simple-percent {
+    color: var(--color-text-muted);
+}
+
+html[data-theme="light"] .carga-viajes-page .carga-viajes-adicionales__simple-amount {
+    color: color-mix(in srgb, var(--color-primary) 82%, var(--color-text));
+}
+
+html[data-theme="light"] .carga-viajes-page .carga-viajes-adicionales__simple-item--fixed .carga-viajes-adicionales__simple-amount {
+    color: color-mix(in srgb, var(--color-success) 78%, var(--color-text));
+}
+
+html[data-theme="light"] .carga-viajes-page .carga-viajes-tabs {
+    border-color: var(--color-border);
+    background: var(--color-panel);
+}
+
+html[data-theme="light"] .carga-viajes-page .carga-viajes-filter-pill {
+    border-color: var(--color-border) !important;
+    background: var(--color-panel) !important;
+    color: var(--color-text) !important;
+}
+
+html[data-theme="light"] .carga-viajes-page .carga-viajes-filter-pill:hover {
+    border-color: color-mix(in srgb, var(--color-primary) 34%, var(--color-border)) !important;
+    box-shadow: 0 10px 20px rgba(15, 23, 42, .08) !important;
+}
+
+html[data-theme="light"] .carga-viajes-page .carga-viajes-filter-pill--active {
+    border-color: color-mix(in srgb, var(--color-primary) 42%, var(--color-border)) !important;
+    background: linear-gradient(135deg, color-mix(in srgb, var(--color-primary) 18%, var(--color-panel)), color-mix(in srgb, var(--color-primary) 10%, var(--color-bg))) !important;
+    color: var(--color-text) !important;
+}
+
+html[data-theme="light"] .carga-viajes-page .carga-viajes-viaje__tarifa-aplicada {
+    border-color: var(--color-border);
+    background: linear-gradient(180deg, var(--color-panel), var(--color-bg));
+}
+
+html[data-theme="light"] .carga-viajes-page .carga-viajes-viaje__tarifa-label,
+html[data-theme="light"] .carga-viajes-page .carga-viajes-viaje__totals span {
+    color: var(--color-text-muted);
+}
+
+html[data-theme="light"] .carga-viajes-page .carga-viajes-viaje__totals strong,
+html[data-theme="light"] .carga-viajes-page .carga-viajes-viaje__tarifa-aplicada strong {
+    color: var(--color-text);
+}
+
+html[data-theme="light"] .carga-viajes-page .carga-viajes-viaje__total-card {
+    border-color: var(--color-border);
+    background: var(--color-panel);
+}
+
+html[data-theme="light"] .carga-viajes-page .carga-viajes-viaje__total-card--result {
+    border-color: color-mix(in srgb, var(--color-primary) 36%, var(--color-border));
+    background: linear-gradient(135deg, color-mix(in srgb, var(--color-primary) 10%, var(--color-panel)), color-mix(in srgb, var(--color-primary) 6%, var(--color-bg)));
+}
+
+html[data-theme="light"] .carga-viajes-page .data-grid__row--active td {
+    background: color-mix(in srgb, var(--color-primary) 8%, var(--color-bg));
+}
+
+html[data-theme="light"] .carga-viajes-page .data-table th:last-child,
+html[data-theme="light"] .carga-viajes-page .data-table td:last-child {
+    background: linear-gradient(180deg, var(--color-panel), var(--color-bg));
+    box-shadow: -10px 0 18px rgba(15, 23, 42, .08);
+}
+
+html[data-theme="light"] .carga-viajes-page .data-table thead th:last-child {
+    background: linear-gradient(180deg, color-mix(in srgb, var(--color-primary) 8%, var(--color-panel)), color-mix(in srgb, var(--color-primary) 4%, var(--color-bg)));
+}
+
+html[data-theme="light"] .carga-viajes-page .carga-viajes-tarifas__importe-cell {
+    border-color: var(--color-border);
+    background: linear-gradient(180deg, var(--color-panel), var(--color-bg));
+    color: var(--color-text);
+}
+
 @media (max-width: 992px) {
     .carga-viajes-viaje-secondary__money,
     .carga-viajes-viaje__totals {

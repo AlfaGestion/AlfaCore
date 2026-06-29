@@ -320,6 +320,21 @@ public sealed class CargaViajesService(
             return item;
         }, "No se pudo cargar el viaje seleccionado.", ct);
 
+    public Task<CargaViajePreviewDto?> GetViajePreviewAsync(int id, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "GetViajePreview", async token =>
+        {
+            var viaje = await GetViajeByIdAsync(id, token);
+            if (viaje is null)
+                return null;
+
+            var configuracion = await GetConfiguracionAsync(token);
+            return new CargaViajePreviewDto
+            {
+                Viaje = viaje,
+                Configuracion = configuracion
+            };
+        }, "No se pudo cargar la vista previa del viaje.", ct);
+
     public Task<int> SaveViajeAsync(CargaViajeSaveRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "SaveViaje", async token =>
         {

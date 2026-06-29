@@ -142,6 +142,7 @@ public class Program
         builder.Services.AddScoped<ICuentasComercialesValidator, CuentasComercialesValidator>();
         builder.Services.AddScoped<ICargaViajesService, CargaViajesService>();
         builder.Services.AddScoped<ICargaViajesValidator, CargaViajesValidator>();
+        builder.Services.AddScoped<IViajePreviewStateService, ViajePreviewStateService>();
         builder.Services.AddScoped<IComprobanteViewerService, ComprobanteViewerService>();
         builder.Services.AddSingleton<AppUserSessionStore>();
         builder.Services.AddScoped<IAppUserSessionService, AppUserSessionService>();

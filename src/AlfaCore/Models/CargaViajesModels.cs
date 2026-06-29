@@ -298,6 +298,12 @@ public sealed class CargaViajesConfigDto
     public List<decimal> PorcentajesAdicionales { get; set; } = [0m, 0m, 0m, 0m, 0m];
 }
 
+public sealed class CargaViajePreviewDto
+{
+    public CargaViajesDetailDto Viaje { get; set; } = new();
+    public CargaViajesConfigDto Configuracion { get; set; } = new();
+}
+
 public sealed class CargaViajesViewColumnDto
 {
     public string Key { get; set; } = string.Empty;

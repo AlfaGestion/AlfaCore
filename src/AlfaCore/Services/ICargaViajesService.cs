@@ -7,6 +7,7 @@ public interface ICargaViajesService
     Task EnsureViajesSchemaAsync(CancellationToken ct = default);
     Task<PagedResult<CargaViajesGridItemDto>> SearchViajesAsync(CargaViajesFilters filters, CancellationToken ct = default);
     Task<CargaViajesDetailDto?> GetViajeByIdAsync(int id, CancellationToken ct = default);
+    Task<CargaViajePreviewDto?> GetViajePreviewAsync(int id, CancellationToken ct = default);
     Task<int> SaveViajeAsync(CargaViajeSaveRequest request, CancellationToken ct = default);
     Task AnularViajeAsync(int id, string? usuarioAccion = null, CancellationToken ct = default);
 

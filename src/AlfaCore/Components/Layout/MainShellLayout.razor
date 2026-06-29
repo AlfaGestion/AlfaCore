@@ -20,13 +20,6 @@
                     <div class="main-shell__eyebrow">Business Intelligence</div>
                     <a href="@RouteContext.BuildRoute("/")" class="main-shell__title">Alfa Gestión</a>
                 </div>
-                <button type="button"
-                        class="main-shell__toggle"
-                        @onclick="ToggleSidebarAsync"
-                        title="@(_sidebarCollapsed ? "Mostrar menú" : "Ocultar menú")"
-                        aria-label="@(_sidebarCollapsed ? "Mostrar menú lateral" : "Ocultar menú lateral")">
-                    <i class="bi @(_sidebarCollapsed ? "bi-layout-sidebar-inset" : "bi-layout-sidebar")"></i>
-                </button>
             </div>
 
             <nav class="main-shell__nav">
@@ -41,6 +34,13 @@
             </nav>
 
             <div class="main-shell__footer">
+                <button type="button"
+                        class="main-shell__toggle main-shell__toggle--footer"
+                        @onclick="ToggleSidebarAsync"
+                        title="@(_sidebarCollapsed ? "Mostrar menú" : "Ocultar menú")"
+                        aria-label="@(_sidebarCollapsed ? "Mostrar menú lateral" : "Ocultar menú lateral")">
+                    <i class="bi @(_sidebarCollapsed ? "bi-layout-sidebar-inset" : "bi-layout-sidebar")"></i>
+                </button>
                 <div class="main-shell__footer-line">@(_activeSession?.Servidor ?? "—") · @(_activeSession?.BaseDatos ?? "—")</div>
                 <div class="main-shell__footer-line">@(!AppUserSession.IsAuthenticated ? "Sin usuario validado" : AppUserSession.CurrentUser?.UserName)</div>
             </div>
