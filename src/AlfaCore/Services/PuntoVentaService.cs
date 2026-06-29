@@ -687,6 +687,90 @@ public sealed class PuntoVentaService(
             };
         }, "No se pudieron cargar los artículos del punto de venta.", ct);
 
+    public Task<PuntoVentaArticleDto?> GetArticuloPorCodigoAsync(string codigo, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "GetArticuloPorCodigo", async token =>
+        {
+            var buscar = (codigo ?? string.Empty).Trim().ToUpperInvariant();
+            if (buscar.Length == 0)
+                return null;
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            if (!await TableExistsAsync(cn, "V_MA_ARTICULOS", token))
+                return null;
+
+            var pricing = await ResolvePricingContextAsync(cn, token);
+            var clasePrecio = ParseClasePrecio(pricing.ClasePrecioActual);
+
+            var row = await cn.QuerySingleOrDefaultAsync<PuntoVentaArticleRow>(new CommandDefinition(
+                """
+                SELECT TOP (1)
+                    LTRIM(RTRIM(a.IDARTICULO)) AS IdArticulo,
+                    ISNULL(LTRIM(RTRIM(a.CODIGOBARRA)), '') AS CodigoBarra,
+                    ISNULL(LTRIM(RTRIM(a.DESCRIPCION)), '') AS Descripcion,
+                    ISNULL(LTRIM(RTRIM(a.Presentacion)), '') AS Presentacion,
+                    ISNULL(LTRIM(RTRIM(a.Procedencia)), '') AS Procedencia,
+                    ISNULL(LTRIM(RTRIM(a.IdFamilia)), '') AS IdFamilia,
+                    ISNULL(LTRIM(RTRIM(f.Descripcion)), '') AS Familia,
+                    ISNULL(LTRIM(RTRIM(a.IDUNIDAD)), '') AS IdUnidad,
+                    ISNULL(a.TasaIVA, 0) AS TasaIva,
+                    ISNULL(a.EXENTO, 0) AS Exento,
+                    ISNULL(a.NO_CONTROLA_STOCK, 0) AS NoControlaStock,
+                    ISNULL(a.PESABLE, 0) AS Pesable,
+                    ISNULL(LTRIM(RTRIM(a.RutaImagen)), '') AS RutaImagen,
+                    ISNULL(a.PRECIO1, 0) AS PrecioBase1,
+                    ISNULL(p.Precio1, 0) AS PrecioLista1,
+                    ISNULL(p.Precio2, 0) AS PrecioLista2,
+                    ISNULL(p.Precio3, 0) AS PrecioLista3,
+                    ISNULL(p.Precio4, 0) AS PrecioLista4,
+                    ISNULL(p.Precio5, 0) AS PrecioLista5,
+                    ISNULL(p.Precio6, 0) AS PrecioLista6,
+                    ISNULL(p.Precio7, 0) AS PrecioLista7,
+                    ISNULL(p.Precio8, 0) AS PrecioLista8
+                FROM dbo.V_MA_ARTICULOS a
+                LEFT JOIN dbo.V_TA_FAMILIAS f
+                    ON LEFT(LTRIM(RTRIM(ISNULL(a.IdFamilia, ''))), 3) = LTRIM(RTRIM(f.IdFamilia))
+                LEFT JOIN dbo.V_MA_Precios p
+                    ON p.IdArticulo = a.IDARTICULO
+                   AND p.IdLista = @IdLista
+                   AND p.TipoLista = 'V'
+                WHERE ISNULL(a.Suspendido, 0) <> 1
+                  AND ISNULL(a.SuspendidoV, 0) <> 1
+                  AND (
+                        UPPER(LTRIM(RTRIM(a.IDARTICULO))) = @Codigo
+                        OR UPPER(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA,  '')))) = @Codigo
+                        OR UPPER(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA1, '')))) = @Codigo
+                        OR UPPER(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA2, '')))) = @Codigo
+                        OR UPPER(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA3, '')))) = @Codigo
+                        OR UPPER(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA4, '')))) = @Codigo
+                      );
+                """,
+                new { Codigo = buscar, IdLista = pricing.ListaPrecioActual },
+                cancellationToken: token));
+
+            if (row is null)
+                return null;
+
+            return new PuntoVentaArticleDto
+            {
+                IdArticulo = row.IdArticulo,
+                CodigoBarra = row.CodigoBarra,
+                Descripcion = row.Descripcion,
+                Presentacion = row.Presentacion,
+                Procedencia = row.Procedencia,
+                IdFamilia = row.IdFamilia,
+                Familia = row.Familia,
+                IdUnidad = row.IdUnidad,
+                PrecioUnitario = ResolvePrice(row, clasePrecio),
+                TasaIva = row.TasaIva,
+                Exento = row.Exento,
+                NoControlaStock = row.NoControlaStock,
+                Pesable = row.Pesable,
+                RutaImagen = row.RutaImagen
+            };
+        }, "No se pudo buscar el artículo por código.", ct);
+
     public Task<PuntoVentaArticleImageDto?> GetArticleImageForServeAsync(string idArticulo, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "GetArticleImage", async token =>
         {

@@ -2357,14 +2357,38 @@
 
                 <div class="pos-sidebar__checkout">
                     <div class="pos-sidebar__notes">
-                        <input class="pos-sidebar__scan" placeholder="Codigo rapido o scanner" />
+                        <input class="pos-sidebar__scan"
+                               placeholder="Codigo rapido o scanner"
+                               @bind="_scanCode"
+                               @bind:event="oninput"
+                               @onkeydown="HandleScanKeyAsync"
+                               disabled="@_scanLoading"
+                               autocomplete="off" />
+                        @if (!string.IsNullOrEmpty(_scanError))
+                        {
+                            <span class="pos-sidebar__scan-error">@_scanError</span>
+                        }
                     </div>
 
                     <div class="pos-sidebar__client">
-                        <button type="button" class="pos-sidebar__client-btn">
+                        <button type="button" class="pos-sidebar__client-btn" @onclick="() => _showClienteModal = true">
                             <i class="bi bi-person-circle"></i>
-                            Cliente
+                            @if (!string.IsNullOrEmpty(_cuentaClienteNombre))
+                            {
+                                <span class="pos-sidebar__client-name">@_cuentaClienteNombre</span>
+                            }
+                            else
+                            {
+                                <span>Consumidor final</span>
+                            }
                         </button>
+                        @if (!string.IsNullOrEmpty(_cuentaCliente))
+                        {
+                            <button type="button" class="pos-sidebar__client-clear" title="Quitar cliente"
+                                    @onclick="LimpiarCliente" @onclick:stopPropagation>
+                                <i class="bi bi-x"></i>
+                            </button>
+                        }
                     </div>
 
                     <div class="pos-sidebar__footer">
@@ -2395,7 +2419,6 @@
                     </div>
 
                     <div class="pos-catalog__search">
-                        <input class="pos-sidebar__scan" placeholder="Codigo rapido o scanner" />
                         <InputText @bind-Value="_filters.Texto" class="pos-search-input" placeholder="Buscar articulos..." />
                         <button type="button" class="pos-search-btn" @onclick="BuscarArticulosAsync" disabled="@_catalogLoading">
                             @( _catalogLoading ? "Buscando..." : "Buscar" )
@@ -3218,6 +3241,10 @@
     </section>
 }
 
+<QuickClienteModal Open="_showClienteModal"
+                   OnClienteSelected="OnClienteSeleccionado"
+                   OnClose="() => _showClienteModal = false" />
+
 @code {
     private PuntoVentaContextDto? _context;
     private IReadOnlyList<PuntoVentaFamilyDto> _familias = [];
@@ -3273,6 +3300,12 @@
     private bool _reprintLoading;
     private bool _receiptIsReprint;
     private string? _selectedCartItemId;
+    private string _scanCode = string.Empty;
+    private string _scanError = string.Empty;
+    private bool _scanLoading;
+    private string _cuentaCliente = string.Empty;
+    private string _cuentaClienteNombre = string.Empty;
+    private bool _showClienteModal;
     private string _chargeAmountInput = string.Empty;
     private string _selectedPaymentCode = string.Empty;
     private string _receiptEmail = string.Empty;
@@ -3450,6 +3483,50 @@
         _cartItems.Clear();
         _paymentLines.Clear();
         _chargeSuccess = null;
+    }
+
+    private async Task HandleScanKeyAsync(KeyboardEventArgs e)
+    {
+        if (e.Key != "Enter") return;
+        var codigo = _scanCode.Trim().ToUpperInvariant();
+        if (codigo.Length == 0) return;
+
+        _scanError = string.Empty;
+        _scanLoading = true;
+        try
+        {
+            var art = await PuntoVentaSvc.GetArticuloPorCodigoAsync(codigo);
+            if (art is not null)
+            {
+                AddToCart(art);
+                _scanCode = string.Empty;
+            }
+            else
+            {
+                _scanError = $"No se encontró el artículo con código \"{codigo}\".";
+            }
+        }
+        catch (Exception ex)
+        {
+            _scanError = ex.Message;
+        }
+        finally
+        {
+            _scanLoading = false;
+        }
+    }
+
+    private void OnClienteSeleccionado(AlfaCore.Models.CuentaComercialGridItemDto cliente)
+    {
+        _cuentaCliente = cliente.Codigo ?? string.Empty;
+        _cuentaClienteNombre = cliente.RazonSocial ?? string.Empty;
+        _showClienteModal = false;
+    }
+
+    private void LimpiarCliente()
+    {
+        _cuentaCliente = string.Empty;
+        _cuentaClienteNombre = string.Empty;
     }
 
     private void OpenClearCartConfirm()
@@ -3781,7 +3858,7 @@
 
             var result = await PuntoVentaSvc.CreateSaleAsync(new PuntoVentaSaleRequestDto
             {
-                CuentaCliente = _settings.CuentaConsumidorFinal,
+                CuentaCliente = !string.IsNullOrEmpty(_cuentaCliente) ? _cuentaCliente : _settings.CuentaConsumidorFinal,
                 Fecha = DateTime.Today,
                 TipoComprobante = _context?.TipoComprobanteDefault ?? "FC",
                 Sucursal = _context?.SucursalDefault ?? "0001",
@@ -3816,7 +3893,7 @@
         _receiptItems.AddRange(soldItems);
         _receiptPayments.Clear();
         _receiptPayments.AddRange(soldPayments);
-        _receiptContext = await PuntoVentaSvc.GetReceiptContextAsync(_settings.CuentaConsumidorFinal);
+        _receiptContext = await PuntoVentaSvc.GetReceiptContextAsync(!string.IsNullOrEmpty(_cuentaCliente) ? _cuentaCliente : _settings.CuentaConsumidorFinal);
         _receiptEmail = _receiptContext.EmailSugerido;
         _receiptEmailFeedback = null;
         _receiptEmailError = null;
