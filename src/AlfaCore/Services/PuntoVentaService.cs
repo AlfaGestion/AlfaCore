@@ -765,6 +765,7 @@ public sealed class PuntoVentaService(
             parameters.Add("pImporte", request.Importe);
             parameters.Add("pDetalle", (request.Detalle ?? string.Empty).Trim());
             parameters.Add("pCuentaImputacion", request.Cuenta.Trim());
+            parameters.Add("pUsuario", appUserSession.GetCurrentUserName("SYSTEM").Trim());
             parameters.Add("pRes", dbType: System.Data.DbType.Int32, direction: System.Data.ParameterDirection.Output);
             parameters.Add("pMensaje", dbType: System.Data.DbType.String, size: 255, direction: System.Data.ParameterDirection.Output);
 
@@ -772,7 +773,7 @@ public sealed class PuntoVentaService(
                 """
                 ALTER TABLE MV_ASIENTOS DISABLE TRIGGER ALL;
                 SET NOCOUNT ON;
-                EXEC sp_web_CreaAsientoIngresoEgreso @pTipo, @pImporte, @pDetalle, @pCuentaImputacion, @pRes OUTPUT, @pMensaje OUTPUT;
+                EXEC sp_web_CreaAsientoIngresoEgreso @pTipo, @pImporte, @pDetalle, @pCuentaImputacion, @pUsuario, @pRes OUTPUT, @pMensaje OUTPUT;
                 ALTER TABLE MV_ASIENTOS ENABLE TRIGGER ALL;
                 """,
                 parameters,
@@ -833,24 +834,26 @@ public sealed class PuntoVentaService(
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
 
-            if (!await ObjectExistsAsync(cn, "dbo.VT_CONSOLIDADO_CAJA", "V", token))
-                return (IReadOnlyList<PuntoVentaConsolidadoCajaDto>)[];
-
+            // Agrupa todos los movimientos de hoy por cuenta de medio de pago.
+            // Las cuentas con MEDIODEPAGO no vacío son efectivo, tarjeta, etc.
+            // DEBE = entrada de dinero (cobranza o ingreso CJA), HABER = salida (egreso CJA).
             var rows = await cn.QueryAsync<PuntoVentaConsolidadoCajaDto>(new CommandDefinition(
                 """
                 SELECT
-                    LTRIM(RTRIM(CONVERT(varchar(50), c.IdCajas))) AS IdCajas,
-                    LTRIM(RTRIM(c.CUENTA))                        AS Cuenta,
-                    ISNULL(LTRIM(RTRIM(c.DESCRIPCION)), '')       AS Descripcion,
-                    ISNULL(SUM(c.INGRESOS), 0)                    AS Ingresos,
-                    ISNULL(SUM(c.EGRESOS), 0)                     AS Egresos,
-                    ISNULL(SUM(c.SALDO), 0)                       AS Saldo,
-                    ISNULL(LTRIM(RTRIM(c.MONEDA)), '1')           AS Moneda,
-                    ISNULL(MAX(c.COTIZACION), 1)                  AS Cotizacion
-                FROM dbo.VT_CONSOLIDADO_CAJA c
-                WHERE CAST(c.FECHA AS date) = CAST(GETDATE() AS date)
-                GROUP BY c.IdCajas, LTRIM(RTRIM(c.CUENTA)), LTRIM(RTRIM(c.DESCRIPCION)), LTRIM(RTRIM(c.MONEDA))
-                ORDER BY LTRIM(RTRIM(c.CUENTA));
+                    ''                                                                      AS IdCajas,
+                    LTRIM(RTRIM(m.CUENTA))                                                  AS Cuenta,
+                    ISNULL(LTRIM(RTRIM(c.DESCRIPCION)), '')                                 AS Descripcion,
+                    ISNULL(SUM(CASE WHEN m.[DEBE-HABER] = 'D' THEN m.IMPORTE ELSE 0 END), 0) AS Ingresos,
+                    ISNULL(SUM(CASE WHEN m.[DEBE-HABER] = 'H' THEN m.IMPORTE ELSE 0 END), 0) AS Egresos,
+                    ISNULL(SUM(CASE WHEN m.[DEBE-HABER] = 'D' THEN m.IMPORTE ELSE -m.IMPORTE END), 0) AS Saldo,
+                    ISNULL(LTRIM(RTRIM(m.MONEDA)), '   1')                                  AS Moneda,
+                    ISNULL(MAX(m.COTIZACION), 1)                                            AS Cotizacion
+                FROM dbo.MV_ASIENTOS m
+                INNER JOIN dbo.MA_CUENTAS c ON LTRIM(RTRIM(c.codigo)) = LTRIM(RTRIM(m.CUENTA))
+                WHERE CAST(m.FECHA AS date) = CAST(GETDATE() AS date)
+                  AND (c.MEDIODEPAGO IS NOT NULL AND LTRIM(RTRIM(c.MEDIODEPAGO)) <> '')
+                GROUP BY LTRIM(RTRIM(m.CUENTA)), LTRIM(RTRIM(c.DESCRIPCION)), LTRIM(RTRIM(m.MONEDA))
+                ORDER BY LTRIM(RTRIM(c.DESCRIPCION));
                 """,
                 cancellationToken: token));
 

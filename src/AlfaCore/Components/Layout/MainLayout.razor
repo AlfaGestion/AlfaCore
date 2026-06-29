@@ -1169,7 +1169,7 @@ else
     private bool CanShowTasksPanel => !IsPosFullscreenRoute && !IsDirectMode && AppUserSession.IsAuthenticated;
     private bool IsLauncherRoute => string.IsNullOrWhiteSpace(Nav.ToBaseRelativePath(Nav.Uri).Split('?')[0].Split('#')[0].Trim('/'));
     private bool IsDirectMode => !string.IsNullOrWhiteSpace(_directModuleKey);
-    private bool IsPosFullscreenRoute => string.Equals(GetNormalizedCurrentPath(), "ventas/punto-venta", StringComparison.OrdinalIgnoreCase);
+    private bool IsPosFullscreenRoute => string.Equals(GetEffectiveCurrentPath(), "ventas/punto-venta", StringComparison.OrdinalIgnoreCase);
     private bool IsLoginRoute => string.Equals(GetNormalizedCurrentPath(), "login", StringComparison.OrdinalIgnoreCase);
     private bool IsInternalSqlLoginContext
     {

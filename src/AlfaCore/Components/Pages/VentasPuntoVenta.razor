@@ -1,6 +1,7 @@
 ﻿@page "/ventas/punto-venta"
 @page "/{idweb}/{idbase:int}/ventas/punto-venta"
 @inject AlfaCore.Services.IPuntoVentaService PuntoVentaSvc
+@inject AlfaCore.Services.IPuntoVentaCartStateService CartState
 @inject IJSRuntime Js
 
 <PageTitle>Punto de Venta | Ventas</PageTitle>
@@ -3223,8 +3224,8 @@
     private PuntoVentaCatalogDto _catalog = new();
     private PuntoVentaCatalogFiltersDto _filters = new();
     private IReadOnlyList<PuntoVentaReceiptListItemDto> _recentReceipts = [];
-    private readonly List<PuntoVentaCartItemDto> _cartItems = [];
-    private readonly List<PuntoVentaPaymentLineDto> _paymentLines = [];
+    private List<PuntoVentaCartItemDto> _cartItems => CartState.CartItems;
+    private List<PuntoVentaPaymentLineDto> _paymentLines => CartState.PaymentLines;
     private readonly HashSet<string> _imageFallbacks = new(StringComparer.OrdinalIgnoreCase);
     private ElementReference _catalogGridRef;
     private IReadOnlyList<PuntoVentaPaymentMethodDto> _paymentMethods = [];

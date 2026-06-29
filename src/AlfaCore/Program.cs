@@ -151,6 +151,7 @@ public class Program
         builder.Services.AddScoped<IAuditoriaService, AuditoriaService>();
         builder.Services.AddScoped<IGestionDashboardService, GestionDashboardService>();
         builder.Services.AddScoped<IPuntoVentaService, PuntoVentaService>();
+        builder.Services.AddScoped<IPuntoVentaCartStateService, PuntoVentaCartStateService>();
         builder.Services.AddScoped<IAppUiOperationService, AppUiOperationService>();
         builder.Services.AddScoped<IAppUiDialogService, AppUiDialogService>();
         builder.Services.AddScoped<IFloatingWindowService, FloatingWindowService>();
