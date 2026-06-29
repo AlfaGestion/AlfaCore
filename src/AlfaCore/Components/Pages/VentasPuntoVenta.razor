@@ -2357,13 +2357,16 @@
 
                 <div class="pos-sidebar__checkout">
                     <div class="pos-sidebar__notes">
-                        <input class="pos-sidebar__scan"
-                               placeholder="Codigo rapido o scanner"
-                               @bind="_scanCode"
-                               @bind:event="oninput"
-                               @onkeydown="HandleScanKeyAsync"
-                               disabled="@_scanLoading"
-                               autocomplete="off" />
+                        <div class="pos-sidebar__scan-wrap">
+                            <i class="bi bi-upc-scan pos-sidebar__scan-icon"></i>
+                            <input class="pos-sidebar__scan"
+                                   placeholder="Código o código de barras"
+                                   @bind="_scanCode"
+                                   @bind:event="oninput"
+                                   @onkeydown="HandleScanKeyAsync"
+                                   disabled="@_scanLoading"
+                                   autocomplete="off" />
+                        </div>
                         @if (!string.IsNullOrEmpty(_scanError))
                         {
                             <span class="pos-sidebar__scan-error">@_scanError</span>
@@ -3243,7 +3246,8 @@
 
 <QuickClienteModal Open="_showClienteModal"
                    OnClienteSelected="OnClienteSeleccionado"
-                   OnClose="() => _showClienteModal = false" />
+                   OnClose="() => _showClienteModal = false"
+                   CuentaEventualCodigo="@(_settings.CuentaConsumidorFinal)" />
 
 @code {
     private PuntoVentaContextDto? _context;
