@@ -119,7 +119,7 @@
                 <div class="field">
                     <label for="conv-mobile-search">Buscar</label>
                     <input id="conv-mobile-search"
-                           type="search"
+                           type="text"
                            placeholder="Buscar por telÃ©fono, cliente, contacto, email, resumen o mensaje..."
                            value="@_filters.Search"
                            @oninput="HandleSearchInputAsync"
@@ -201,7 +201,7 @@
                 <div class="field">
                     <label for="conv-search">Buscar</label>
                     <input id="conv-search"
-                           type="search"
+                           type="text"
                            placeholder="Buscar por telÃ©fono, cliente, contacto, email, resumen o mensaje..."
                            value="@_filters.Search"
                            @oninput="HandleSearchInputAsync"
@@ -209,6 +209,10 @@
                            @onfocus="() => _showContactSuggestions = ShouldShowContactSuggestions" />
                     @if (_showContactSuggestions)
                     {
+                        <button type="button"
+                                class="conversations-contact-suggest-backdrop"
+                                aria-label="Cerrar sugerencias"
+                                @onclick="CloseContactSuggestions"></button>
                         <div class="conversations-contact-suggest">
                             @if (_loadingContactSuggestions)
                             {
@@ -223,9 +227,6 @@
                                 {
                                     <div class="conversations-contact-suggest__header">
                                         <span>Coincidencias encontradas</span>
-                                        <button type="button" class="btn btn--ghost btn--sm" @onclick="CloseContactSuggestions" title="Cerrar">
-                                            <i class="bi bi-x-lg"></i>
-                                        </button>
                                     </div>
                                     @foreach (var conversation in _conversationSuggestions)
                                     {
@@ -252,12 +253,6 @@
                                 {
                                     <div class="conversations-contact-suggest__header">
                                         <span>Contactos encontrados</span>
-                                        @if (_conversationSuggestions.Count == 0)
-                                        {
-                                            <button type="button" class="btn btn--ghost btn--sm" @onclick="CloseContactSuggestions" title="Cerrar">
-                                                <i class="bi bi-x-lg"></i>
-                                            </button>
-                                        }
                                     </div>
                                     @foreach (var contact in _contactSuggestions)
                                     {
@@ -462,26 +457,20 @@
                         <div class="conversations-inbox-searchbox">
                             <i class="bi bi-search"></i>
                             <input id="conv-inbox-search"
-                                   type="search"
+                                   type="text"
                                    placeholder="Buscar conversación o mensaje..."
                                    value="@_filters.Search"
                                    @oninput="HandleSearchInputAsync"
                                    @onkeydown="HandleSearchEnter"
                                    @onfocus="HandleSearchFocusAsync" />
-                            @if (!string.IsNullOrWhiteSpace(_filters.Search))
-                            {
-                                <button type="button"
-                                        class="conversations-inbox-searchbox__clear"
-                                        title="Limpiar búsqueda"
-                                        aria-label="Limpiar búsqueda"
-                                        @onclick="ClearInboxSearchAsync">
-                                    <i class="bi bi-x-lg"></i>
-                                </button>
-                            }
                         </div>
 
                         @if (_showContactSuggestions)
                         {
+                            <button type="button"
+                                    class="conversations-contact-suggest-backdrop"
+                                    aria-label="Cerrar sugerencias"
+                                    @onclick="CloseContactSuggestions"></button>
                             <div class="conversations-contact-suggest">
                                 @if (_loadingContactSuggestions)
                                 {
@@ -496,9 +485,6 @@
                                     {
                                         <div class="conversations-contact-suggest__header">
                                             <span>Coincidencias encontradas</span>
-                                            <button type="button" class="btn btn--ghost btn--sm" @onclick="CloseContactSuggestions" title="Cerrar">
-                                                <i class="bi bi-x-lg"></i>
-                                            </button>
                                         </div>
                                         @foreach (var conversation in _conversationSuggestions)
                                         {
@@ -519,12 +505,6 @@
                                     {
                                         <div class="conversations-contact-suggest__header">
                                             <span>Contactos encontrados</span>
-                                            @if (_conversationSuggestions.Count == 0)
-                                            {
-                                                <button type="button" class="btn btn--ghost btn--sm" @onclick="CloseContactSuggestions" title="Cerrar">
-                                                    <i class="bi bi-x-lg"></i>
-                                                </button>
-                                            }
                                         </div>
                                         @foreach (var contact in _contactSuggestions)
                                         {
