@@ -605,10 +605,10 @@
 
 .conversations-page--odoo .conversation-row {
     height: auto !important;
-    min-height: 104px !important;
+    min-height: 96px !important;
     grid-template-columns: 46px minmax(0, 1fr) !important;
     align-items: start !important;
-    padding: .68rem .78rem !important;
+    padding: .72rem .78rem .9rem !important;
     gap: .68rem !important;
     border-bottom-color: rgba(56, 189, 248, .1) !important;
     overflow: hidden !important;
@@ -624,7 +624,7 @@
 .conversations-page--odoo .conversation-row__content {
     min-width: 0 !important;
     display: grid !important;
-    gap: .2rem !important;
+    gap: .24rem !important;
     overflow: hidden !important;
 }
 
@@ -682,9 +682,11 @@
 }
 
 .conversations-page--odoo .conversation-row__summary {
-    margin: .06rem 0 0 !important;
+    margin: .12rem 0 0 !important;
     max-width: 100% !important;
     color: #8ec5e8 !important;
+    line-height: 1.35 !important;
+    padding-bottom: .08rem !important;
 }
 
 .conversations-page--odoo .conversation-row:hover {

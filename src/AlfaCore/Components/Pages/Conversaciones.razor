@@ -596,19 +596,8 @@
                                         }
                                     </span>
                                 </div>
-                                <div class="conversation-row__meta">
-                                    <span>@item.TelefonoWhatsApp</span>
-                                    @if (!string.IsNullOrWhiteSpace(item.TecnicoNombre))
-                                    {
-                                        <span>â€¢ @item.TecnicoNombre</span>
-                                    }
-                                </div>
                                 <div class="conversation-row__badges">
                                     <span class="conversation-badge conversation-badge--state">@item.EstadoDescripcion</span>
-                                    @if (!item.VentanaWhatsAppActiva)
-                                    {
-                                        <span class="conversation-badge">Ventana vencida</span>
-                                    }
                                     @if (!string.IsNullOrWhiteSpace(item.ClienteNombre))
                                     {
                                         <span class="conversation-badge">@item.ClienteNombre</span>
