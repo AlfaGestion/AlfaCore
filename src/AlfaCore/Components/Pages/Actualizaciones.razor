@@ -1,17 +1,17 @@
-﻿@page "/actualizaciones"
+@page "/actualizaciones"
 @page "/{idweb}/{idbase:int}/actualizaciones"
 @using AlfaCore.Models
 @inject AlfaCore.Services.IActualizacionesService ActualizacionesSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 
-<PageTitle>Actualizaciones | Alfa GestiÃ³n</PageTitle>
+<PageTitle>Actualizaciones | Alfa Gestión</PageTitle>
 
 <div class="page-grid updates-page">
     <section class="page-intro">
         <div>
             <h2 class="page-intro__title">Actualizaciones de base de datos</h2>
-            <p class="page-intro__text">ControlÃ¡ la versiÃ³n `FECHAUPDATE_CORE`, elegÃ­ la carpeta de red para scripts SQL y revisÃ¡ el historial de aplicaciones por base activa.</p>
+            <p class="page-intro__text">Controlá la versión `FECHAUPDATE_CORE`, elegí la carpeta de red para scripts SQL y revisá el historial de aplicaciones por base activa.</p>
         </div>
         <div class="actions">
             <button type="button" class="btn btn--primary" @onclick="EjecutarPendientesAsync" disabled="@(_busy || !_loaded)">
@@ -42,7 +42,7 @@
     {
         <section class="updates-overview">
             <article class="panel-card updates-stat">
-                <span class="panel-card__tag">VERSIÃ“N</span>
+                <span class="panel-card__tag">VERSIÓN</span>
                 <h3 class="panel-card__title">@_dashboard.FechaUpdateActual</h3>
                 <p class="panel-card__subtitle">Valor actual de `TA_CONFIGURACION.CLAVE = FECHAUPDATE_CORE`.</p>
             </article>
@@ -64,7 +64,7 @@
             <div class="panel-card__header">
                 <div>
                     <h3 class="panel-card__title">Estado del motor de actualizaciones</h3>
-                    <p class="panel-card__subtitle">Seguimiento visible de la corrida automÃ¡tica al iniciar y de las ejecuciones manuales sobre la base activa.</p>
+                    <p class="panel-card__subtitle">Seguimiento visible de la corrida automática al iniciar y de las ejecuciones manuales sobre la base activa.</p>
                 </div>
             </div>
 
@@ -78,15 +78,15 @@
                     <input value="@GetMotorEstadoLabel()" readonly />
                 </div>
                 <div class="field">
-                    <label>Ãšltimo modo</label>
+                    <label>Último modo</label>
                     <input value="@GetMotorModoLabel()" readonly />
                 </div>
                 <div class="field">
-                    <label>Ãšltimo inicio</label>
+                    <label>Último inicio</label>
                     <input value="@FormatMotorDate(_dashboard.MotorEstado.InicioUltimaEjecucion)" readonly />
                 </div>
                 <div class="field">
-                    <label>Ãšltimo fin</label>
+                    <label>Último fin</label>
                     <input value="@FormatMotorDate(_dashboard.MotorEstado.FinUltimaEjecucion)" readonly />
                 </div>
                 <div class="field">
@@ -94,11 +94,11 @@
                     <input value="@GetMotorActorLabel()" readonly />
                 </div>
                 <div class="field field--wide">
-                    <label>Base objetivo usada por la Ãºltima corrida</label>
+                    <label>Base objetivo usada por la última corrida</label>
                     <input value="@DisplayOrDash(_dashboard.MotorEstado.BaseObjetivo)" readonly />
                 </div>
                 <div class="field field--wide">
-                    <label>Ruta usada en la Ãºltima corrida</label>
+                    <label>Ruta usada en la última corrida</label>
                     <input value="@DisplayOrDash(_dashboard.MotorEstado.RutaOrigen)" readonly />
                 </div>
                 <div class="field">
@@ -106,7 +106,7 @@
                     <input value="@_dashboard.MotorEstado.CantidadAplicada" readonly />
                 </div>
                 <div class="field">
-                    <label>VersiÃ³n final</label>
+                    <label>Versión final</label>
                     <input value="@DisplayOrDash(_dashboard.MotorEstado.VersionFinal)" readonly />
                 </div>
                 <div class="field field--wide">
@@ -116,14 +116,14 @@
                 @if (!string.IsNullOrWhiteSpace(_dashboard.MotorEstado.ErrorDetalle))
                 {
                     <div class="field field--wide">
-                        <label>Ãšltimo error</label>
+                        <label>Último error</label>
                         <textarea readonly rows="4">@_dashboard.MotorEstado.ErrorDetalle</textarea>
                     </div>
                 }
                 @if (_dashboard.MotorEstado.ScriptsAplicados.Count > 0)
                 {
                     <div class="field field--wide">
-                        <label>Scripts aplicados en la Ãºltima corrida</label>
+                        <label>Scripts aplicados en la última corrida</label>
                         <textarea readonly rows="3">@string.Join(Environment.NewLine, _dashboard.MotorEstado.ScriptsAplicados)</textarea>
                     </div>
                 }
@@ -133,8 +133,8 @@
         <section class="panel-card">
             <div class="panel-card__header">
                 <div>
-                    <h3 class="panel-card__title">ConfiguraciÃ³n de origen</h3>
-                    <p class="panel-card__subtitle">Si la ruta de red estÃ¡ disponible, el sistema la prioriza. Si no, usa la carpeta local del servidor.</p>
+                    <h3 class="panel-card__title">Configuración de origen</h3>
+                    <p class="panel-card__subtitle">Si la ruta de red está disponible, el sistema la prioriza. Si no, usa la carpeta local del servidor.</p>
                 </div>
             </div>
 
@@ -189,7 +189,7 @@
                                         </span>
                                     </div>
                                     <p>@item.Descripcion</p>
-                                    <span>@item.FechaVersionTexto Â· @item.Archivo</span>
+                                    <span>@item.FechaVersionTexto · @item.Archivo</span>
                                 </div>
                             </article>
                         }
@@ -208,7 +208,7 @@
                 @if (_dashboard.Historial.Count == 0)
                 {
                     <div class="conversations-empty interfaces-empty-state">
-                        TodavÃ­a no hay corridas registradas para esta base.
+                        Todavía no hay corridas registradas para esta base.
                     </div>
                 }
                 else
@@ -222,11 +222,11 @@
                                     <span class="interfaces-status-pill @(string.Equals(item.Resultado, "OK", StringComparison.OrdinalIgnoreCase) ? "interfaces-status-pill--success" : "interfaces-status-pill--danger")">@item.Resultado</span>
                                 </div>
                                 <p>@item.Observacion</p>
-                                <span>@item.FechaHora.ToString("dd/MM/yyyy HH:mm") Â· @item.VersionAnterior -> @item.VersionNueva Â· @item.Usuario</span>
+                                <span>@item.FechaHora.ToString("dd/MM/yyyy HH:mm") · @item.VersionAnterior -> @item.VersionNueva · @item.Usuario</span>
                                 @if (!string.IsNullOrWhiteSpace(item.ErrorDetalle))
                                 {
                                     <details>
-                                        <summary>Ver detalle tÃ©cnico</summary>
+                                        <summary>Ver detalle técnico</summary>
                                         <pre>@item.ErrorDetalle</pre>
                                     </details>
                                 }
@@ -290,7 +290,7 @@
             {
                 await ActualizacionesSvc.SaveSettingsAsync(_settings);
                 return true;
-            }, "No se pudo guardar la configuraciÃ³n de actualizaciones.");
+            }, "No se pudo guardar la configuración de actualizaciones.");
 
             if (!result.Success)
             {
@@ -313,7 +313,7 @@
         var pendientes = _dashboard?.Pendientes.Count ?? 0;
         SetMessage(
             pendientes > 0
-                ? $"Aplicando {pendientes} actualizaciÃ³n(es) pendiente(s). Esto puede tardar unos momentos segÃºn el tamaÃ±o de los scripts."
+                ? $"Aplicando {pendientes} actualización(es) pendiente(s). Esto puede tardar unos momentos según el tamaño de los scripts."
                 : "Revisando si hay actualizaciones pendientes para la base activa...",
             false,
             isWorking: true);
@@ -338,7 +338,7 @@
             if (result.Value.SinCambios)
                 SetMessage("No hay actualizaciones pendientes para la base activa.", false);
             else
-                SetMessage($"Se aplicaron {result.Value.CantidadAplicada} actualizaciÃ³n(es). VersiÃ³n final: {result.Value.VersionFinal}.", false);
+                SetMessage($"Se aplicaron {result.Value.CantidadAplicada} actualización(es). Versión final: {result.Value.VersionFinal}.", false);
 
             await RecargarAsync();
         }
@@ -351,13 +351,13 @@
     private static string BuildFeedbackText(AppUiMessage? feedback)
     {
         if (feedback is null)
-            return "OcurriÃ³ un problema inesperado.";
+            return "Ocurrió un problema inesperado.";
 
         var parts = new List<string> { feedback.Message };
         if (feedback.HasSuggestion)
             parts.Add(feedback.Suggestion);
         if (feedback.HasCode)
-            parts.Add($"CÃ³digo: {feedback.Code}");
+            parts.Add($"Código: {feedback.Code}");
         return string.Join(" ", parts.Where(static x => !string.IsNullOrWhiteSpace(x)));
     }
 
@@ -397,7 +397,7 @@
 
         var state = _dashboard.MotorEstado;
         if (!state.TieneRegistro)
-            return "Sin registro todavÃ­a";
+            return "Sin registro todavía";
 
         return state.EnEjecucion ? $"{state.Estado}..." : state.Estado;
     }
@@ -407,7 +407,7 @@
         if (_dashboard is null || !_dashboard.MotorEstado.TieneRegistro)
             return "-";
 
-        return _dashboard.MotorEstado.EsEjecucionAutomatica ? "AutomÃ¡tica al iniciar" : "Manual";
+        return _dashboard.MotorEstado.EsEjecucionAutomatica ? "Automática al iniciar" : "Manual";
     }
 
     private string GetMotorActorLabel()
@@ -415,7 +415,7 @@
         if (_dashboard is null || !_dashboard.MotorEstado.TieneRegistro)
             return "-";
 
-        return $"{DisplayOrDash(_dashboard.MotorEstado.UsuarioAccion)} Â· {DisplayOrDash(_dashboard.MotorEstado.PcAccion)}";
+        return $"{DisplayOrDash(_dashboard.MotorEstado.UsuarioAccion)} · {DisplayOrDash(_dashboard.MotorEstado.PcAccion)}";
     }
 
     private static string FormatMotorDate(DateTime? value)

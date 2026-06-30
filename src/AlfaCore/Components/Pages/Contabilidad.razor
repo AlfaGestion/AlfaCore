@@ -1,9 +1,9 @@
-﻿@page "/contabilidad"
+@page "/contabilidad"
 @page "/{idweb}/{idbase:int}/contabilidad"
 @inject AlfaCore.Services.IGestionDashboardService GestionSvc
 @inject AlfaCore.Services.GestionFilterStateService FilterState
 
-<PageTitle>Contabilidad | Alfa GestiÃ³n</PageTitle>
+<PageTitle>Contabilidad | Alfa Gestión</PageTitle>
 
 <div class="page-grid">
     <section class="page-intro">
@@ -17,15 +17,15 @@
         <div class="panel-card__header">
             <div>
                 <h3 class="panel-card__title">Filtros</h3>
-                <p class="panel-card__subtitle">PerÃ­odo y sucursal.</p>
+                <p class="panel-card__subtitle">Período y sucursal.</p>
             </div>
             <div class="quick-range">
                 <button class="btn btn--ghost" @onclick="HoyAsync">Hoy</button>
                 <button class="btn btn--ghost" @onclick="SemanaAsync">Esta semana</button>
                 <button class="btn btn--ghost" @onclick="MesAsync">Este mes</button>
                 <button class="btn btn--ghost" @onclick="MesAnteriorAsync">Mes anterior</button>
-                <button class="btn btn--ghost" @onclick="UltimosTresAsync">Ãšltimos 3 meses</button>
-                <button class="btn btn--ghost" @onclick="AnioAsync">AÃ±o actual</button>
+                <button class="btn btn--ghost" @onclick="UltimosTresAsync">Últimos 3 meses</button>
+                <button class="btn btn--ghost" @onclick="AnioAsync">Año actual</button>
             </div>
         </div>
 
@@ -72,10 +72,10 @@
             <div class="balance-nivel-selector">
                 <label class="balance-nivel-selector__label">Nivel</label>
                 <InputSelect @bind-Value="_nivelBalance" class="balance-nivel-selector__select">
-                    <option value="1">1 â€” CapÃ­tulo</option>
-                    <option value="2">2 â€” Sub-capÃ­tulo</option>
-                    <option value="3">3 â€” Rubro</option>
-                    <option value="4">4 â€” Sub-rubro</option>
+                    <option value="1">1 — Capítulo</option>
+                    <option value="2">2 — Sub-capítulo</option>
+                    <option value="3">3 — Rubro</option>
+                    <option value="4">4 — Sub-rubro</option>
                 </InputSelect>
                 <button class="btn btn--ghost btn--sm" @onclick="LoadBalanceAsync">Actualizar</button>
             </div>
@@ -83,7 +83,7 @@
 
         @if (_loadingBalance)
         {
-            <div class="consultas-loading"><i class="bi bi-hourglass-split"></i> Calculando balanceâ€¦</div>
+            <div class="consultas-loading"><i class="bi bi-hourglass-split"></i> Calculando balance…</div>
         }
         else if (!string.IsNullOrWhiteSpace(_errorBalance))
         {
@@ -130,8 +130,8 @@
                 <table class="data-table balance-saldos-table">
                     <thead>
                         <tr>
-                            <th>CÃ³digo</th>
-                            <th>DescripciÃ³n</th>
+                            <th>Código</th>
+                            <th>Descripción</th>
                             @for (int i = _balance.NivelAplicado - 1; i >= 0; i--)
                             {
                                 <th class="col-num">@_nivelNombres[i]</th>
@@ -165,7 +165,7 @@
         }
         else if (_balance is not null)
         {
-            <p class="chart-empty">Sin saldos para el perÃ­odo y filtros seleccionados.</p>
+            <p class="chart-empty">Sin saldos para el período y filtros seleccionados.</p>
         }
     </section>
 </div>
@@ -178,14 +178,14 @@
     private ContabilidadDashboardFilters _filters = null!;
     private ContabilidadFilterOptionsDto _options = new();
 
-    // Nombres de nivel en orden ascendente (Ã­ndice 0 = mÃ¡s alto = CapÃ­tulo)
-    private static readonly string[] _nivelNombres = ["CapÃ­tulo", "Sub-CapÃ­tulo", "Rubro", "Sub-Rubro"];
+    // Nombres de nivel en orden ascendente (índice 0 = más alto = Capítulo)
+    private static readonly string[] _nivelNombres = ["Capítulo", "Sub-Capítulo", "Rubro", "Sub-Rubro"];
 
     protected override async Task OnInitializedAsync()
     {
         _filters = FilterState.Contabilidad;
         try { _options = await GestionSvc.GetContabilidadFilterOptionsAsync(); }
-        catch { /* opciones no crÃ­ticas, no bloquea la carga */ }
+        catch { /* opciones no críticas, no bloquea la carga */ }
         await LoadAsync();
     }
 
@@ -201,7 +201,7 @@
         finally { _loadingBalance = false; }
     }
 
-    // Devuelve el Ã­ndice de nivel (0=CapÃ­tulo, 1=Sub-CapÃ­tulo, ...) segÃºn la longitud del cÃ³digo
+    // Devuelve el índice de nivel (0=Capítulo, 1=Sub-Capítulo, ...) según la longitud del código
     private int GetNivelIndex(string codigo)
     {
         if (_balance is null) return 0;

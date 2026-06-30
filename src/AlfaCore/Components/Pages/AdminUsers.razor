@@ -1,4 +1,4 @@
-﻿@page "/admin/users"
+@page "/admin/users"
 @page "/{idweb}/{idbase:int}/admin/users"
 @layout AlfaCore.Components.Layout.MainLayout
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
@@ -13,7 +13,7 @@
     <div class="panel-card__header">
         <div>
             <h1 class="panel-card__title">Usuarios centrales</h1>
-            <p class="panel-card__subtitle">Alta y ediciÃ³n de usuarios en ALFA_CENTRAL.</p>
+            <p class="panel-card__subtitle">Alta y edición de usuarios en ALFA_CENTRAL.</p>
         </div>
         <div class="d-flex gap-2">
             <button type="button" class="btn btn-outline-light" @onclick="GoHome">Inicio</button>
@@ -29,7 +29,7 @@
     {
         <div class="editor-msg editor-msg--warning">
             <strong>Acceso restringido</strong>
-            <p>Solo los superadmin pueden ver esta secciÃ³n.</p>
+            <p>Solo los superadmin pueden ver esta sección.</p>
         </div>
     }
     else
@@ -64,7 +64,7 @@
                     <div class="panel-card__header">
                         <div>
                             <h2 class="panel-card__title">@(_editing ? "Editar usuario" : "Nuevo usuario")</h2>
-                            <p class="panel-card__subtitle">La contraseÃ±a no se muestra en ningÃºn listado.</p>
+                            <p class="panel-card__subtitle">La contraseña no se muestra en ningún listado.</p>
                         </div>
                     </div>
 
@@ -75,7 +75,7 @@
                     <div class="mb-3">
                         <label class="form-label">Cliente</label>
                         <select class="form-select" @bind="_form.IdCliente">
-                            <option value="">SeleccionÃ¡ un cliente</option>
+                            <option value="">Seleccioná un cliente</option>
                             @foreach (var client in _clients)
                             {
                                 <option value="@client.IdCliente">@client.IdCliente - @client.RazonSocial</option>
@@ -83,8 +83,8 @@
                         </select>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">ContraseÃ±a</label>
-                        <input class="form-control" type="password" @bind="_form.Password" placeholder="Dejala vacÃ­a para conservar la actual al editar" />
+                        <label class="form-label">Contraseña</label>
+                        <input class="form-control" type="password" @bind="_form.Password" placeholder="Dejala vacía para conservar la actual al editar" />
                     </div>
 
                     <div class="d-flex gap-2">
@@ -115,7 +115,7 @@
                                     <tr>
                                         <th>Usuario</th>
                                         <th>Cliente</th>
-                                        <th>RazÃ³n social</th>
+                                        <th>Razón social</th>
                                         <th></th>
                                     </tr>
                                 </thead>

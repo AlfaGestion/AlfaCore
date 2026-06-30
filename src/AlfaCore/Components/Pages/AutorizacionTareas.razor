@@ -1,17 +1,17 @@
-﻿@page "/seguridad/autorizacion-tareas"
+@page "/seguridad/autorizacion-tareas"
 @page "/{idweb}/{idbase:int}/seguridad/autorizacion-tareas"
 @using AlfaCore.Models
 @inject AlfaCore.Services.IAutorizacionTareasService AutorizacionSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 
-<PageTitle>AutorizaciÃ³n de tareas | Alfa GestiÃ³n</PageTitle>
+<PageTitle>Autorización de tareas | Alfa Gestión</PageTitle>
 
 <div class="page-grid auth-page">
     <section class="page-intro">
         <div>
-            <h2 class="page-intro__title">AutorizaciÃ³n de tareas</h2>
-            <p class="page-intro__text">AdministrÃ¡ permisos compartidos entre Desktop y AlfaCore sobre el Ã¡rbol oficial de <code>TA_MENU</code>, con unidad de negocio, caja, depÃ³sito y perfil administrador.</p>
+            <h2 class="page-intro__title">Autorización de tareas</h2>
+            <p class="page-intro__text">Administrá permisos compartidos entre Desktop y AlfaCore sobre el árbol oficial de <code>TA_MENU</code>, con unidad de negocio, caja, depósito y perfil administrador.</p>
         </div>
         <div class="actions">
             <button type="button" class="btn btn--ghost" @onclick="RecargarUsuariosAsync" disabled="@_loadingUsers">
@@ -33,7 +33,7 @@
                     }
                     @if (_feedback.HasCode)
                     {
-                        <small>CÃ³digo: @_feedback.Code</small>
+                        <small>Código: @_feedback.Code</small>
                     }
                 </div>
             </div>
@@ -43,8 +43,8 @@
     <section class="panel-card auth-shell">
         <div class="panel-card__header auth-shell__header">
             <div>
-                <h3 class="panel-card__title">Opciones del menÃº</h3>
-                <p class="panel-card__subtitle">Sistema de menÃº <code>@MenuSistema</code> Â· permisos reales <code>@PermisosSistema</code> Â· vista inicial <strong>Solo Web</strong>.</p>
+                <h3 class="panel-card__title">Opciones del menú</h3>
+                <p class="panel-card__subtitle">Sistema de menú <code>@MenuSistema</code> · permisos reales <code>@PermisosSistema</code> · vista inicial <strong>Solo Web</strong>.</p>
             </div>
 
             @if (_treeLoaded)
@@ -80,7 +80,7 @@
                     <div class="field field--full">
                         <label>Usuario del sistema</label>
                         <select @bind="_selectedUser" disabled="@(_loadingUsers || _loadingTree)">
-                            <option value="">â€” SeleccionÃ¡ un usuario â€”</option>
+                            <option value="">— Seleccioná un usuario —</option>
                             @foreach (var item in _users)
                             {
                                 <option value="@item.Nombre">@item.Nombre</option>
@@ -140,7 +140,7 @@
                             <option value="@ViewAll">Ver todas</option>
                             <option value="@ViewDesktop">Solo Desktop</option>
                             <option value="@ViewShared">Compartidas</option>
-                            <option value="@ViewUnauthorized">Sin autorizaciÃ³n</option>
+                            <option value="@ViewUnauthorized">Sin autorización</option>
                         </select>
                     </div>
 
@@ -153,7 +153,7 @@
                     <div class="auth-legend auth-legend--stacked">
                         <span class="auth-badge auth-badge--shared">D+W = Desktop + Web</span>
                         <span class="auth-badge auth-badge--desktop">Dsk = Solo Desktop</span>
-                        <span class="auth-badge auth-badge--partial">Parcial = selecciÃ³n parcial</span>
+                        <span class="auth-badge auth-badge--partial">Parcial = selección parcial</span>
                     </div>
                 </div>
 
@@ -194,22 +194,22 @@
                                     <option value="@item.Codigo">@item.Etiqueta</option>
                                 }
                             </select>
-                            <small>Opcional. Se filtra segÃºn la unidad de negocio elegida.</small>
+                            <small>Opcional. Se filtra según la unidad de negocio elegida.</small>
                         </div>
 
                         <div class="field field--full">
-                            <label>DepÃ³sito asignado</label>
+                            <label>Depósito asignado</label>
                             <select class="@GetCodeSelectClass(_selectedIdDeposito)"
                                     value="@_selectedIdDeposito"
                                     @onchange="OnDepositoChanged"
                                     disabled="@(!_treeLoaded || _loadingTree)">
-                                <option value="">Sin depÃ³sito asignado</option>
+                                <option value="">Sin depósito asignado</option>
                                 @foreach (var item in DepositosDisponibles)
                                 {
                                     <option value="@item.Codigo">@item.Etiqueta</option>
                                 }
                             </select>
-                            <small>Opcional. Incluye depÃ³sitos compartidos.</small>
+                            <small>Opcional. Incluye depósitos compartidos.</small>
                         </div>
                     </div>
                 </div>
@@ -233,11 +233,11 @@
 
                 @if (_loadingTree)
                 {
-                    <div class="auth-tree-state"><i class="bi bi-hourglass-split"></i> Cargando Ã¡rbol de autorizaciones...</div>
+                    <div class="auth-tree-state"><i class="bi bi-hourglass-split"></i> Cargando árbol de autorizaciones...</div>
                 }
                 else if (!_treeLoaded)
                 {
-                    <div class="auth-tree-state">SeleccionÃ¡ un usuario y presionÃ¡ <strong>Consultar</strong> para editar permisos y asignaciones.</div>
+                    <div class="auth-tree-state">Seleccioná un usuario y presioná <strong>Consultar</strong> para editar permisos y asignaciones.</div>
                 }
                 else if (_visibleTree.Count == 0)
                 {
@@ -349,7 +349,7 @@
         _loadingTree = true;
         try
         {
-            var result = await UiOps.RunAsync(() => AutorizacionSvc.GetAutorizacionAsync(MenuSistema, PermisosSistema, _selectedUser), "No se pudo cargar la autorizaciÃ³n.");
+            var result = await UiOps.RunAsync(() => AutorizacionSvc.GetAutorizacionAsync(MenuSistema, PermisosSistema, _selectedUser), "No se pudo cargar la autorización.");
             if (!result.Success)
             {
                 SetFeedback(result.Feedback!);
@@ -387,7 +387,7 @@
 
     private async Task CopiarPermisosAsync()
     {
-        var result = await UiOps.RunAsync(() => AutorizacionSvc.GetAutorizacionAsync(MenuSistema, PermisosSistema, _copyFromUser), "No se pudo copiar la autorizaciÃ³n.");
+        var result = await UiOps.RunAsync(() => AutorizacionSvc.GetAutorizacionAsync(MenuSistema, PermisosSistema, _copyFromUser), "No se pudo copiar la autorización.");
         if (!result.Success)
         {
             SetFeedback(result.Feedback!);
@@ -399,7 +399,7 @@
         ApplySelectedKeys(_tree, sourceSelected);
         _dirty = true;
         RebuildVisibleTree();
-        SetFeedback(AppUiMessage.Success("Permisos copiados", $"Se aplicaron visualmente los permisos de {_copyFromUser}. GrabÃ¡ para confirmar los cambios."));
+        SetFeedback(AppUiMessage.Success("Permisos copiados", $"Se aplicaron visualmente los permisos de {_copyFromUser}. Grabá para confirmar los cambios."));
     }
 
     private async Task GuardarAsync()
@@ -415,7 +415,7 @@
             IdCaja = _selectedIdCaja,
             IdDeposito = _selectedIdDeposito,
             TareasSeleccionadas = selectedKeys
-        }), "No se pudo guardar la autorizaciÃ³n.");
+        }), "No se pudo guardar la autorización.");
 
         if (!result.Success)
         {
@@ -447,7 +447,7 @@
         {
             Severity = AppUiFeedbackSeverity.Info,
             Title = "Cambios descartados",
-            Message = "Se restaurÃ³ la autorizaciÃ³n cargada originalmente."
+            Message = "Se restauró la autorización cargada originalmente."
         });
     }
 

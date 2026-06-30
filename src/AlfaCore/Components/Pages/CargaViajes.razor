@@ -1,4 +1,4 @@
-﻿@page "/carga-viajes"
+@page "/carga-viajes"
 @page "/{idweb}/{idbase:int}/carga-viajes"
 @page "/carga-viajes/{Vista}"
 @page "/{idweb}/{idbase:int}/carga-viajes/{Vista}"
@@ -208,8 +208,8 @@
                                             <span class="carga-viajes-check__text">@column.Label</span>
                                         </label>
                                         <div class="actions">
-                                            <button type="button" class="btn btn--ghost btn--sm" @onclick="() => MoveViewColumn(column.Key, -1)">â†‘</button>
-                                            <button type="button" class="btn btn--ghost btn--sm" @onclick="() => MoveViewColumn(column.Key, 1)">â†“</button>
+                                            <button type="button" class="btn btn--ghost btn--sm" @onclick="() => MoveViewColumn(column.Key, -1)">↑</button>
+                                            <button type="button" class="btn btn--ghost btn--sm" @onclick="() => MoveViewColumn(column.Key, 1)">↓</button>
                                         </div>
                                     </div>
                                 }

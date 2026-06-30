@@ -1,4 +1,4 @@
-﻿@page "/compras"
+@page "/compras"
 @page "/{idweb}/{idbase:int}/compras"
 
 @inject AlfaCore.Services.IComprasDashboardService DashboardService
@@ -10,7 +10,7 @@
     <div class="page-intro">
         <div>
             <h2 class="page-intro__title">Resumen general</h2>
-            <p class="page-intro__text">Panel ejecutivo con KPIs, evoluciÃ³n y accesos directos a proveedores, rubros, artÃ­culos y comprobantes. <a class="help-link" href="/ayuda#4-inicio--resumen-ejecutivo">Ver ayuda</a></p>
+            <p class="page-intro__text">Panel ejecutivo con KPIs, evolución y accesos directos a proveedores, rubros, artículos y comprobantes. <a class="help-link" href="/ayuda#4-inicio--resumen-ejecutivo">Ver ayuda</a></p>
         </div>
     </div>
 
@@ -19,7 +19,7 @@
     @if (_error is not null)
     {
         <div class="panel-card empty-state">
-            <span class="empty-state__eyebrow">ConexiÃ³n</span>
+            <span class="empty-state__eyebrow">Conexión</span>
             <h3>No fue posible cargar el dashboard</h3>
             <p>@_error</p>
         </div>
@@ -36,7 +36,7 @@
             <KpiCard Titulo="IVA" Valor="@Moneda(_dashboard.IvaTotal)" Icono="%" />
             <KpiCard Titulo="Otros" Valor="@Moneda(_dashboard.TotalComprado - _dashboard.NetoTotal - _dashboard.IvaTotal)" Icono="+" />
             <KpiCard Titulo="Comprobantes" Valor="@_dashboard.CantidadComprobantes.ToString("N0")" Icono="C" />
-            <KpiCard Titulo="ArtÃ­culos" Valor="@_dashboard.CantidadArticulos.ToString("N0")" Icono="A" />
+            <KpiCard Titulo="Artículos" Valor="@_dashboard.CantidadArticulos.ToString("N0")" Icono="A" />
             <KpiCard Titulo="Proveedores" Valor="@_dashboard.ProveedoresActivos.ToString("N0")" Icono="P" />
             <KpiCard Titulo="Ticket promedio" Valor="@Moneda(_dashboard.TicketPromedio)" Icono="T" />
         </div>
@@ -45,11 +45,11 @@
             <section class="panel-card">
                 <div class="panel-card__header">
                     <div>
-                        <h3 class="panel-card__title">EvoluciÃ³n mensual</h3>
-                        <p class="panel-card__subtitle">Ãšltimos 12 meses consolidados</p>
+                        <h3 class="panel-card__title">Evolución mensual</h3>
+                        <p class="panel-card__subtitle">Últimos 12 meses consolidados</p>
                     </div>
                 </div>
-                <LineChart Data="_dashboard.EvolucionMensual" Titulo="EvoluciÃ³n mensual" />
+                <LineChart Data="_dashboard.EvolucionMensual" Titulo="Evolución mensual" />
             </section>
 
             <section class="panel-card">
@@ -73,12 +73,12 @@
             </section>
         </div>
 
-        <DataTable Titulo="Top artÃ­culos" Subtitulo="Acceso rÃ¡pido a historial y proveedores asociados">
+        <DataTable Titulo="Top artículos" Subtitulo="Acceso rápido a historial y proveedores asociados">
             <Header>
                 <tr>
-                    <th>ArtÃ­culo</th>
+                    <th>Artículo</th>
                     <th style="text-align:right;">Total</th>
-                    <th style="text-align:right;">ParticipaciÃ³n</th>
+                    <th style="text-align:right;">Participación</th>
                     <th></th>
                 </tr>
             </Header>

@@ -1,4 +1,4 @@
-﻿using AlfaCore.Models;
+using AlfaCore.Models;
 using Dapper;
 using Microsoft.Data.SqlClient;
 
@@ -11,7 +11,7 @@ public sealed class CargaViajesValidator(
     private string ConnectionString => sessionService.GetConnectionString().Length > 0
         ? sessionService.GetConnectionString()
         : configuration.GetConnectionString("AlfaGestion")
-          ?? throw new InvalidOperationException("No se configurÃ³ la cadena de conexiÃ³n 'ConnectionStrings:AlfaGestion'.");
+          ?? throw new InvalidOperationException("No se configuró la cadena de conexión 'ConnectionStrings:AlfaGestion'.");
 
     public async Task<ValidationResult> ValidateViajeForSaveAsync(CargaViajeSaveRequest request, CancellationToken ct = default)
     {
@@ -35,7 +35,7 @@ public sealed class CargaViajesValidator(
             result.Add("cantidad-viajes", "La cantidad de viajes debe ser mayor a cero.");
 
         if (!string.IsNullOrWhiteSpace(request.Estado) && !CargaViajeEstadoKeys.All.Contains(request.Estado.Trim().ToUpperInvariant()))
-            result.Add("estado", "El estado seleccionado no es vÃ¡lido.");
+            result.Add("estado", "El estado seleccionado no es válido.");
 
         if (!result.IsValid)
             return result;
@@ -135,7 +135,7 @@ public sealed class CargaViajesValidator(
 
         var result = new ValidationResult();
         if (string.IsNullOrWhiteSpace(request.Codigo))
-            result.Add("codigo", "El cÃ³digo es obligatorio.");
+            result.Add("codigo", "El código es obligatorio.");
         if (string.IsNullOrWhiteSpace(request.Nombre))
             result.Add("nombre", "El nombre es obligatorio.");
         return Task.FromResult(result);
@@ -147,9 +147,9 @@ public sealed class CargaViajesValidator(
 
         var result = new ValidationResult();
         if (string.IsNullOrWhiteSpace(request.Codigo))
-            result.Add("codigo", "El cÃ³digo es obligatorio.");
+            result.Add("codigo", "El código es obligatorio.");
         if (string.IsNullOrWhiteSpace(request.Descripcion))
-            result.Add("descripcion", "La descripciÃ³n es obligatoria.");
+            result.Add("descripcion", "La descripción es obligatoria.");
         return Task.FromResult(result);
     }
 

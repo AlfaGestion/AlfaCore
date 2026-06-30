@@ -1,14 +1,14 @@
-﻿@page "/conversaciones/plantillas"
+@page "/conversaciones/plantillas"
 @page "/{idweb}/{idbase:int}/conversaciones/plantillas"
 @inject AlfaCore.Services.IConversacionesService ConversacionesSvc
 
-<PageTitle>Plantillas de WhatsApp | Alfa GestiÃ³n</PageTitle>
+<PageTitle>Plantillas de WhatsApp | Alfa Gestión</PageTitle>
 
 <section class="page-grid templates-page templates-page--odoo">
     <div class="page-intro conversations-topbar">
         <div>
             <h2 class="page-intro__title">Plantillas de WhatsApp</h2>
-            <p class="page-intro__text">CreÃ¡ borradores, envialos a aprobaciÃ³n de Meta y sincronizÃ¡ su estado para retomar conversaciones fuera de la ventana de 24 horas.</p>
+            <p class="page-intro__text">Creá borradores, envialos a aprobación de Meta y sincronizá su estado para retomar conversaciones fuera de la ventana de 24 horas.</p>
         </div>
         <div class="actions">
             <a class="btn btn--ghost" href="/conversaciones">
@@ -53,7 +53,7 @@
             <p>@_loadError</p>
             @if (IsInitializationPending(_loadError))
             {
-                <p>EjecutÃ¡ <code>docs/conversaciones_modelo_inicial.sql</code> en la base activa y recargÃ¡ esta pantalla.</p>
+                <p>Ejecutá <code>docs/conversaciones_modelo_inicial.sql</code> en la base activa y recargá esta pantalla.</p>
             }
         </div>
     }
@@ -127,7 +127,7 @@
                                 </div>
                                 <div class="conversation-row__meta">
                                     <span>@item.NombreMeta</span>
-                                    <span>â€¢ @item.Idioma</span>
+                                    <span>• @item.Idioma</span>
                                 </div>
                                 <div class="conversation-row__badges">
                                     <span class="conversation-badge conversation-badge--state">@GetMetaStatusLabel(item.EstadoMeta)</span>
@@ -144,7 +144,7 @@
                 <header class="conversations-chat__header">
                     <div>
                         <h3 class="panel-card__title">@(_selectedId > 0 ? "Editar plantilla" : "Nueva plantilla")</h3>
-                        <p class="panel-card__subtitle">Idioma fijo: espaÃ±ol de Argentina. El telÃ©fono se toma siempre desde la conversaciÃ³n seleccionada al enviar.</p>
+                        <p class="panel-card__subtitle">Idioma fijo: español de Argentina. El teléfono se toma siempre desde la conversación seleccionada al enviar.</p>
                     </div>
                     <div class="conversations-chat__chips">
                         <span class="conversation-badge conversation-badge--state">@GetMetaStatusLabel(_formEstadoMeta)</span>
@@ -154,14 +154,14 @@
                 <div class="conversations-composer templates-form">
                     <div class="field">
                         <label for="tpl-name">Nombre visible</label>
-                        <input id="tpl-name" @bind="_form.NombreVisible" placeholder="Ej: Retomar conversaciÃ³n" />
+                        <input id="tpl-name" @bind="_form.NombreVisible" placeholder="Ej: Retomar conversación" />
                     </div>
                     <div class="field">
                         <label for="tpl-meta-name">Nombre Meta</label>
                         <input id="tpl-meta-name" @bind="_form.NombreMeta" placeholder="retomar_conversacion" />
                     </div>
                     <div class="field">
-                        <label for="tpl-category">CategorÃ­a</label>
+                        <label for="tpl-category">Categoría</label>
                         <select id="tpl-category" @bind="_form.Categoria">
                             <option value="@ConversacionPlantillaCategorias.Marketing">Marketing</option>
                             <option value="@ConversacionPlantillaCategorias.Utility">Utilidad</option>
@@ -174,7 +174,7 @@
                     <div class="field">
                         <label for="tpl-body">Cuerpo</label>
                         <textarea id="tpl-body" rows="5" @bind="_form.CuerpoTexto"
-                                  placeholder="Hola {{1}}, te escribimos para continuar con la conversaciÃ³n pendiente."></textarea>
+                                  placeholder="Hola {{1}}, te escribimos para continuar con la conversación pendiente."></textarea>
                         <div class="templates-body-limit @(IsBodyTooLong ? "is-danger" : string.Empty)">
                             <span>@BodyLength / @MetaBodyMaxLength caracteres</span>
                             @if (IsBodyTooLong)
@@ -184,16 +184,16 @@
                         </div>
                     </div>
                     <div class="field">
-                        <label for="tpl-footer">Pie de pÃ¡gina</label>
+                        <label for="tpl-footer">Pie de página</label>
                         <input id="tpl-footer" maxlength="60" @bind="_form.PieTexto" placeholder="Opcional" />
                     </div>
                     <div class="field">
                         <label for="tpl-examples">Ejemplos para variables</label>
                         <textarea id="tpl-examples" rows="3" @bind="_examplesText"
-                                  placeholder="Un valor por lÃ­nea. Ej: Evelyn"></textarea>
+                                  placeholder="Un valor por línea. Ej: Evelyn"></textarea>
                     </div>
                     <div class="templates-variable-guide">
-                        <span class="context-card__label">Variables automÃ¡ticas sugeridas</span>
+                        <span class="context-card__label">Variables automáticas sugeridas</span>
                         <button type="button" class="templates-variable-chip" @onclick='() => InsertVariable("{{1}}")'>@($"{{{{1}}}} {VariableLabel(1)}")</button>
                         <button type="button" class="templates-variable-chip" @onclick='() => InsertVariable("{{2}}")'>@($"{{{{2}}}} {VariableLabel(2)}")</button>
                         <button type="button" class="templates-variable-chip" @onclick='() => InsertVariable("{{3}}")'>@($"{{{{3}}}} {VariableLabel(3)}")</button>
@@ -215,7 +215,7 @@
                             <i class="bi bi-save-fill"></i> Guardar borrador
                         </button>
                         <button type="button" class="btn btn--ghost" @onclick="SubmitAsync" disabled="@(_busy || _selectedId <= 0 || IsBodyTooLong)">
-                            <i class="bi bi-cloud-arrow-up-fill"></i> Enviar a aprobaciÃ³n
+                            <i class="bi bi-cloud-arrow-up-fill"></i> Enviar a aprobación
                         </button>
                         <button type="button" class="btn btn--ghost" @onclick="SyncAsync" disabled="@(_busy || _selectedId <= 0)">
                             <i class="bi bi-arrow-repeat"></i> Sincronizar
@@ -259,7 +259,7 @@
             <aside class="panel-card conversations-context templates-preview">
                 <div class="conversations-context__section">
                     <h3 class="panel-card__title">Vista previa</h3>
-                    <p class="panel-card__subtitle">AsÃ­ se verÃ¡ el cuerpo principal con ejemplos.</p>
+                    <p class="panel-card__subtitle">Así se verá el cuerpo principal con ejemplos.</p>
                 </div>
                 <article class="message-card message-card--outgoing">
                     @if (!string.IsNullOrWhiteSpace(_form.EncabezadoTexto))
@@ -311,11 +311,11 @@
 
     private static readonly string FacturaMantenimientoTemplateBody = string.Join(Environment.NewLine,
     [
-        "Hola {{1}}, buen dÃ­a.",
+        "Hola {{1}}, buen día.",
         string.Empty,
-        "Te adjuntamos la factura del servicio de mantenimiento mensual. Este servicio incluye soporte, asistencia y acompaÃ±amiento ante consultas o inconvenientes sobre el sistema.",
+        "Te adjuntamos la factura del servicio de mantenimiento mensual. Este servicio incluye soporte, asistencia y acompañamiento ante consultas o inconvenientes sobre el sistema.",
         string.Empty,
-        "PerÃ­odo: {{2}}",
+        "Período: {{2}}",
         string.Empty,
         "Datos del comprobante:",
         "{{3}}",
@@ -323,11 +323,11 @@
         "Datos para el pago:",
         "{{4}}",
         string.Empty,
-        "Agradecemos su pronta atenciÃ³n. Para consultas, quedamos a disposiciÃ³n.",
+        "Agradecemos su pronta atención. Para consultas, quedamos a disposición.",
         string.Empty,
         "Saludos,",
         "Equipo ALFANET",
-        "ALFA NET Soluciones InformÃ¡ticas",
+        "ALFA NET Soluciones Informáticas",
         "WhatsApp: +54 9 11 5148-0148"
     ]);
 
@@ -344,7 +344,7 @@
         "TRANSFERENCIA BANCARIA",
         "Alias: alfa.net.plus.mp",
         "CVU: 0000003100085700504735",
-        "Titular: ALFA NET Soluciones InformÃ¡ticas"
+        "Titular: ALFA NET Soluciones Informáticas"
     ]);
 
     private static readonly string CobranzaTemplateBody = string.Join(Environment.NewLine,
@@ -352,12 +352,12 @@
         "Estimado {{1}}",
         "Esperamos que se encuentre bien.",
         string.Empty,
-        "Le recordamos que registra facturas pendientes. Para continuar brindÃ¡ndole el servicio, solicitamos realizar el pago o transferencia a la brevedad.",
+        "Le recordamos que registra facturas pendientes. Para continuar brindándole el servicio, solicitamos realizar el pago o transferencia a la brevedad.",
         string.Empty,
         "Detalle de cuenta:",
         "{{2}}",
         string.Empty,
-        "Si ya realizÃ³ el pago, envÃ­e el comprobante respondiendo este mensaje o a administracion@alfagestion.com.ar.",
+        "Si ya realizó el pago, envíe el comprobante respondiendo este mensaje o a administracion@alfagestion.com.ar.",
         string.Empty,
         "Datos para transferencia:",
         "{{3}}",
@@ -369,8 +369,8 @@
     [
         "SALDO ACTUAL: $ 1.520.963,04",
         "Cantidad de comprobantes pendientes de pago: 3",
-        "DÃ­as de atraso: 73",
-        "Fecha comprobante mÃ¡s antiguo: 01/03/2026"
+        "Días de atraso: 73",
+        "Fecha comprobante más antiguo: 01/03/2026"
     ]);
 
     private static readonly string CobranzaFormaPagoEjemplo = string.Join(Environment.NewLine,
@@ -378,7 +378,7 @@
         "TRANSFERENCIA BANCARIA",
         "Alias: alfa.net.plus.mp",
         "CVU: 0000003100085700504735",
-        "Titular: ALFA NET Soluciones InformÃ¡ticas"
+        "Titular: ALFA NET Soluciones Informáticas"
     ]);
 
     private static readonly string TareaAsignadaTemplateBody = string.Join(Environment.NewLine,
@@ -399,18 +399,18 @@
 
     private static readonly string GuardiaTemplateBody = string.Join(Environment.NewLine,
     [
-        "ðŸ›¡ï¸ *Aviso de guardia*",
+        "🛡️ *Aviso de guardia*",
         string.Empty,
         "Hola {{1}}, te recordamos que esta semana te corresponde estar de guardia.",
         string.Empty,
-        "ðŸ“… Inicio: {{2}}",
-        "ðŸ Fin: {{3}}",
+        "📅 Inicio: {{2}}",
+        "🏁 Fin: {{3}}",
         string.Empty,
         "Por favor, asegurate de estar disponible ante cualquier eventualidad que pueda surgir.",
-        "Ante cualquier duda, podÃ©s contactar al equipo de *AlfaNet*.",
+        "Ante cualquier duda, podés contactar al equipo de *AlfaNet*.",
         string.Empty,
-        "Â¡Gracias por tu compromiso!",
-        "AlfaNet | Soluciones InformÃ¡ticas"
+        "¡Gracias por tu compromiso!",
+        "AlfaNet | Soluciones Informáticas"
     ]);
 
     private string PreviewBody => RenderPreview(_form.CuerpoTexto, ParseExamples(_examplesText));
@@ -721,7 +721,7 @@
         {
             if (IsBodyTooLong)
             {
-                SetError($"Meta permite hasta {MetaBodyMaxLength} caracteres en el cuerpo. AcortÃ¡ el texto antes de enviarlo a aprobaciÃ³n.");
+                SetError($"Meta permite hasta {MetaBodyMaxLength} caracteres en el cuerpo. Acortá el texto antes de enviarlo a aprobación.");
                 return;
             }
 
@@ -729,7 +729,7 @@
                 string.IsNullOrWhiteSpace(_form.NombreMeta) ||
                 string.IsNullOrWhiteSpace(_form.CuerpoTexto))
             {
-                SetError("CompletÃ¡ nombre, nombre Meta y cuerpo antes de enviar a aprobaciÃ³n.");
+                SetError("Completá nombre, nombre Meta y cuerpo antes de enviar a aprobación.");
                 return;
             }
 
@@ -741,7 +741,7 @@
                 IdPlantilla = savedId
             });
 
-            _feedback = "Plantilla enviada a aprobaciÃ³n de Meta.";
+            _feedback = "Plantilla enviada a aprobación de Meta.";
             await LoadTemplatesAsync();
             await SelectTemplateAsync(_selectedId);
         }
@@ -803,7 +803,7 @@
         if (!_confirmArchive)
         {
             _confirmArchive = true;
-            _feedback = "VolvÃƒÂ© a presionar Confirmar archivo para ocultar esta plantilla.";
+            _feedback = "Volvé a presionar Confirmar archivo para ocultar esta plantilla.";
             ClearError();
             return;
         }
@@ -1027,7 +1027,7 @@
 
     private static string? ExtractInternalCode(string message)
     {
-        var markers = new[] { "Codigo:", "CÃ³digo:", "CÃƒÂ³digo:" };
+        var markers = new[] { "Codigo:", "Código:", "Código:" };
         var marker = markers.FirstOrDefault(value => message.IndexOf(value, StringComparison.OrdinalIgnoreCase) >= 0);
         if (marker is null)
             return null;
@@ -1058,7 +1058,7 @@
             Idioma = "es_AR",
             Activa = true,
             EstadoMeta = "DRAFT",
-            CuerpoTexto = "Hola {{1}}, te escribimos para continuar con la conversaciÃ³n pendiente. RespondÃ© este mensaje y seguimos desde donde quedamos."
+            CuerpoTexto = "Hola {{1}}, te escribimos para continuar con la conversación pendiente. Respondé este mensaje y seguimos desde donde quedamos."
         };
 
     private static ConversacionPlantillaDto NewFacturaMantenimientoForm()
@@ -1153,7 +1153,7 @@
 
     private static string RenderPreview(string text, IReadOnlyList<string> values)
     {
-        var result = string.IsNullOrWhiteSpace(text) ? "EscribÃ­ el cuerpo de la plantilla." : text;
+        var result = string.IsNullOrWhiteSpace(text) ? "Escribí el cuerpo de la plantilla." : text;
         for (var i = 0; i < values.Count; i++)
             result = result.Replace("{{" + (i + 1) + "}}", values[i], StringComparison.Ordinal);
 
