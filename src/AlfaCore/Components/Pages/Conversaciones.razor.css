@@ -426,7 +426,7 @@
 .conversations-page--odoo .conversations-panel-backdrop {
     position: fixed !important;
     inset: 0 !important;
-    z-index: 150 !important;
+    z-index: 12990 !important;
     background: transparent !important;
     animation: none !important;
 }
@@ -450,7 +450,7 @@
     box-shadow: -18px 0 44px rgba(2, 6, 23, .45) !important;
     overflow-y: auto !important;
     overflow-x: hidden !important;
-    z-index: 160 !important;
+    z-index: 13000 !important;
 }
 
 .conversations-page--odoo .conversations-context-drawer {
