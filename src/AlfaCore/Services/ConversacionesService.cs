@@ -849,6 +849,38 @@ public sealed class ConversacionesService(
                     WHERE msg.IdConversacion = c.IdConversacion
                     ORDER BY {ConversationMessageVisibleDateSql("msg")} DESC, msg.IdMensaje DESC
                 ) ultMsg
+                CROSS APPLY (
+                    SELECT
+                        CASE
+                            WHEN @Search IS NULL OR @ClienteCodigo IS NOT NULL THEN 0
+                            WHEN LTRIM(RTRIM(ISNULL(c.NombreVisible, N''))) COLLATE Latin1_General_CI_AI = @SearchTerm THEN 0
+                            WHEN LTRIM(RTRIM(ISNULL(mc.Nombre_y_Apellido, N''))) COLLATE Latin1_General_CI_AI = @SearchTerm THEN 0
+                            WHEN LTRIM(RTRIM(ISNULL(COALESCE(NULLIF(cli.RAZON_SOCIAL, ''), contactoCuenta.RazonSocial), N''))) COLLATE Latin1_General_CI_AI = @SearchTerm THEN 0
+                            WHEN c.NombreVisible COLLATE Latin1_General_CI_AI LIKE @SearchPrefix THEN 1
+                            WHEN mc.Nombre_y_Apellido COLLATE Latin1_General_CI_AI LIKE @SearchPrefix THEN 1
+                            WHEN COALESCE(NULLIF(cli.RAZON_SOCIAL, ''), contactoCuenta.RazonSocial) COLLATE Latin1_General_CI_AI LIKE @SearchPrefix THEN 1
+                            WHEN c.NombreVisible COLLATE Latin1_General_CI_AI LIKE @Search THEN 2
+                            WHEN mc.Nombre_y_Apellido COLLATE Latin1_General_CI_AI LIKE @Search THEN 2
+                            WHEN COALESCE(NULLIF(cli.RAZON_SOCIAL, ''), contactoCuenta.RazonSocial) COLLATE Latin1_General_CI_AI LIKE @Search THEN 2
+                            WHEN @SearchPhone IS NOT NULL AND (
+                                {SqlPhoneEquivalentPredicate("c.TelefonoWhatsApp", "@SearchPhone", "@SearchPhoneTail")}
+                                OR {SqlPhoneEquivalentPredicate("mc.Telefono", "@SearchPhone", "@SearchPhoneTail")}
+                                OR {SqlPhoneEquivalentPredicate("mc.Celular", "@SearchPhone", "@SearchPhoneTail")}
+                                OR {SqlPhoneEquivalentPredicate("mc.TelefonoPart", "@SearchPhone", "@SearchPhoneTail")}
+                                OR {SqlPhoneEquivalentPredicate("mc.CelularPart", "@SearchPhone", "@SearchPhoneTail")}
+                            ) THEN 3
+                            WHEN c.ResumenUltimoMensaje COLLATE Latin1_General_CI_AI LIKE @Search THEN 4
+                            WHEN EXISTS (
+                                SELECT 1
+                                FROM dbo.CONV_MENSAJES rankMsg
+                                WHERE rankMsg.IdConversacion = c.IdConversacion
+                                  AND rankMsg.Texto COLLATE Latin1_General_CI_AI LIKE @Search
+                                  AND (@Desde IS NULL OR rankMsg.FechaHora >= @Desde)
+                                  AND (@HastaExclusive IS NULL OR rankMsg.FechaHora < @HastaExclusive)
+                            ) THEN 5
+                            ELSE 9
+                        END AS SearchRank
+                ) searchRank
                 WHERE
                     (@Canal IS NULL OR c.Canal = @Canal)
                     AND (
@@ -981,6 +1013,7 @@ public sealed class ConversacionesService(
                         )
                     )
                 ORDER BY
+                    CASE WHEN @Search IS NULL OR @ClienteCodigo IS NOT NULL THEN 0 ELSE searchRank.SearchRank END ASC,
                     CASE WHEN pin.IdConversacion IS NULL THEN 0 ELSE 1 END DESC,
                     pin.FechaHora_Grabacion DESC,
                     ISNULL(c.FechaHoraUltimoMensaje, ultMsg.FechaHoraVisible) DESC,
@@ -1012,6 +1045,8 @@ public sealed class ConversacionesService(
             cmd.Parameters.AddWithValue("@CodigoEstado", DbNullable(filters.CodigoEstado));
             cmd.Parameters.AddWithValue("@EstadoSinFinalizar", ConversacionesInboxFilters.EstadoSinFinalizar);
             cmd.Parameters.AddWithValue("@Search", DbNullable(Like(filters.Search)));
+            cmd.Parameters.AddWithValue("@SearchTerm", DbNullable(SearchTextHelper.Normalize(filters.Search)));
+            cmd.Parameters.AddWithValue("@SearchPrefix", DbNullable(LikePrefix(filters.Search)));
             cmd.Parameters.AddWithValue("@SearchPhone", DbNullable(searchPhone));
             cmd.Parameters.AddWithValue("@SearchPhoneTail", DbNullable(searchPhoneTail));
             cmd.Parameters.AddWithValue("@ClienteCodigo", DbNullable(clienteCodigo));
@@ -6716,6 +6751,12 @@ public sealed class ConversacionesService(
 
     private static string? Like(string? value)
         => SearchTextHelper.LikeContainsOrNull(value);
+
+    private static string? LikePrefix(string? value)
+    {
+        var normalized = SearchTextHelper.Normalize(value);
+        return normalized.Length == 0 ? null : $"{normalized}%";
+    }
 
     private static object DbNullable(string? value)
         => string.IsNullOrWhiteSpace(value) ? DBNull.Value : value.Trim();
