@@ -388,6 +388,9 @@ select {
 
 .module-actionbar,
 .page-grid:not(.pos-page):not(.pos-page--odoo) > .page-intro:has(.actions) {
+    position: sticky;
+    top: 0;
+    z-index: 860;
     display: grid;
     grid-template-columns: auto minmax(280px, 1fr) auto;
     align-items: center;
@@ -400,106 +403,6 @@ select {
     box-shadow: 0 10px 28px rgba(2, 6, 23, .28);
     backdrop-filter: blur(10px);
     overflow: visible;
-}
-
-.module-actionbar:not(.tickets-commandbar),
-.page-grid:not(.pos-page):not(.pos-page--odoo) > .page-intro:has(.actions) {
-    position: fixed;
-    top: 0;
-    left: var(--module-actionbar-left, 0px);
-    right: 0;
-    z-index: 1180;
-    margin: 0;
-    padding: .45rem .7rem;
-    border: 0;
-    border-bottom: 1px solid rgba(56, 189, 248, .16);
-    border-radius: 0;
-    background: rgba(7, 18, 32, .94);
-    box-shadow: 0 8px 22px rgba(2, 6, 23, .24);
-    backdrop-filter: blur(10px);
-}
-
-.shell:has(.module-actionbar),
-.shell:has(.page-grid:not(.pos-page):not(.pos-page--odoo) > .page-intro:has(.actions)),
-.shell:has(.carga-viajes-page),
-.shell:has(.partes-horas-page),
-.shell:has(.tareas-page) {
-    --module-actionbar-left: 300px;
-}
-
-.shell.shell--collapsed:has(.module-actionbar),
-.shell.shell--collapsed:has(.page-grid:not(.pos-page):not(.pos-page--odoo) > .page-intro:has(.actions)),
-.shell.shell--collapsed:has(.carga-viajes-page),
-.shell.shell--collapsed:has(.partes-horas-page),
-.shell.shell--collapsed:has(.tareas-page) {
-    --module-actionbar-left: 92px;
-}
-
-.shell.shell--direct:has(.module-actionbar),
-.shell.shell--direct:has(.page-grid:not(.pos-page):not(.pos-page--odoo) > .page-intro:has(.actions)),
-.shell.shell--direct:has(.carga-viajes-page),
-.shell.shell--direct:has(.partes-horas-page),
-.shell.shell--direct:has(.tareas-page) {
-    --module-actionbar-left: 0px;
-}
-
-.page-grid:not(.pos-page):not(.pos-page--odoo):has(> .page-intro:has(.actions)),
-.page-grid:not(.pos-page):not(.pos-page--odoo):has(> .module-actionbar:not(.tickets-commandbar)),
-.carga-viajes-page:has(> .carga-viajes-tabs),
-.partes-horas-page:has(> .partes-hero),
-.tareas-page:has(> .tareas-header) {
-    padding-top: 3.25rem;
-}
-
-.carga-viajes-page > .carga-viajes-tabs,
-.partes-horas-page > .partes-hero,
-.tareas-page > .tareas-header {
-    position: fixed !important;
-    top: 0 !important;
-    left: var(--module-actionbar-left, 0px) !important;
-    right: 0 !important;
-    z-index: 1180 !important;
-    margin: 0 !important;
-    padding: .45rem .7rem !important;
-    border: 0 !important;
-    border-bottom: 1px solid rgba(56, 189, 248, .16) !important;
-    border-radius: 0 !important;
-    background: rgba(7, 18, 32, .94) !important;
-    box-shadow: 0 8px 22px rgba(2, 6, 23, .24) !important;
-    backdrop-filter: blur(10px);
-    box-sizing: border-box !important;
-}
-
-.partes-horas-page > .partes-hero {
-    display: grid !important;
-    grid-template-columns: minmax(0, 1fr) auto auto !important;
-    align-items: center !important;
-    gap: .7rem !important;
-}
-
-.partes-horas-page .partes-hero__eyebrow,
-.partes-horas-page .partes-hero__text,
-.tareas-page > .tareas-header .shell__eyebrow,
-.tareas-page > .tareas-header span {
-    display: none !important;
-}
-
-.partes-horas-page .partes-hero__title,
-.tareas-page > .tareas-header h2 {
-    margin: 0;
-    font-size: .98rem;
-    line-height: 1.2;
-}
-
-.partes-horas-page .partes-hero__metrics {
-    display: flex !important;
-    flex-wrap: nowrap !important;
-    gap: .35rem !important;
-}
-
-.partes-horas-page .partes-metric {
-    min-width: 5.5rem !important;
-    padding: .28rem .45rem !important;
 }
 
 .module-actionbar__title {
@@ -563,7 +466,7 @@ select {
 
 .contactos-commandbar + .smart-search-card {
     position: sticky;
-    top: 3.2rem;
+    top: 3.45rem;
     z-index: 855;
     margin-top: -1.15rem;
     padding: .55rem .65rem .65rem;
@@ -578,37 +481,10 @@ select {
 }
 
 @media (max-width: 900px) {
-    .shell:has(.module-actionbar),
-    .shell:has(.page-grid:not(.pos-page):not(.pos-page--odoo) > .page-intro:has(.actions)),
-    .shell:has(.carga-viajes-page),
-    .shell:has(.partes-horas-page),
-    .shell:has(.tareas-page) {
-        --module-actionbar-left: 0px;
-    }
-
     .module-actionbar,
     .page-grid:not(.pos-page):not(.pos-page--odoo) > .page-intro:has(.actions) {
         grid-template-columns: minmax(0, 1fr);
         align-items: stretch;
-    }
-
-    .page-grid:not(.pos-page):not(.pos-page--odoo):has(> .page-intro:has(.actions)),
-    .page-grid:not(.pos-page):not(.pos-page--odoo):has(> .module-actionbar:not(.tickets-commandbar)),
-    .carga-viajes-page:has(> .carga-viajes-tabs),
-    .partes-horas-page:has(> .partes-hero),
-    .tareas-page:has(> .tareas-header) {
-        padding-top: 7.25rem;
-    }
-
-    .carga-viajes-page > .carga-viajes-tabs,
-    .partes-horas-page > .partes-hero,
-    .tareas-page > .tareas-header {
-        grid-template-columns: minmax(0, 1fr);
-        align-items: stretch;
-    }
-
-    .partes-horas-page .partes-hero__metrics {
-        overflow-x: auto;
     }
 
     .module-actionbar__actions,
