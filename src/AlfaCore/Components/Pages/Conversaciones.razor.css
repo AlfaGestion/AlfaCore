@@ -396,3 +396,278 @@
 .conversations-close-ticket-warning__actions {
     margin-top: 1.15rem;
 }
+
+/* Capa final de orden visual del chat operativo. Mantiene el alcance en Conversaciones. */
+.conversations-page--odoo {
+    overflow: hidden;
+}
+
+.conversations-page--odoo .conversations-layout {
+    grid-template-columns: minmax(320px, 374px) minmax(0, 1fr) !important;
+    overflow: hidden !important;
+}
+
+.conversations-page--odoo .conversations-list {
+    overflow: hidden !important;
+}
+
+.conversations-page--odoo .conversations-list__items {
+    height: 100% !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+}
+
+.conversations-page--odoo .conversation-row {
+    min-height: 76px !important;
+    grid-template-columns: 46px minmax(0, 1fr) !important;
+    align-items: start !important;
+    padding: .58rem .72rem !important;
+    gap: .68rem !important;
+}
+
+.conversations-page--odoo .conversation-row__avatar {
+    width: 46px !important;
+    height: 46px !important;
+    margin-top: .08rem !important;
+    flex: 0 0 46px !important;
+}
+
+.conversations-page--odoo .conversation-row__content {
+    min-width: 0 !important;
+    display: grid !important;
+    gap: .16rem !important;
+    overflow: hidden !important;
+}
+
+.conversations-page--odoo .conversation-row__top {
+    min-width: 0 !important;
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    align-items: center !important;
+    gap: .45rem !important;
+}
+
+.conversations-page--odoo .conversation-row__name,
+.conversations-page--odoo .conversation-row__date,
+.conversations-page--odoo .conversation-row__meta span,
+.conversations-page--odoo .conversation-row__summary,
+.conversations-page--odoo .conversation-badge {
+    min-width: 0 !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+}
+
+.conversations-page--odoo .conversation-row__side {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: flex-end !important;
+    gap: .28rem !important;
+    min-width: 0 !important;
+}
+
+.conversations-page--odoo .conversation-pin {
+    flex: 0 0 auto !important;
+}
+
+.conversations-page--odoo .conversation-row__meta,
+.conversations-page--odoo .conversation-row__badges {
+    min-width: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: .25rem !important;
+    overflow: hidden !important;
+}
+
+.conversations-page--odoo .conversation-row__badges .conversation-badge {
+    flex: 0 1 auto !important;
+}
+
+.conversations-page--odoo .conversation-row__summary {
+    margin: .06rem 0 0 !important;
+    max-width: 100% !important;
+}
+
+.conversations-page--odoo .conversations-chat {
+    min-width: 0 !important;
+    overflow: hidden !important;
+}
+
+.conversations-page--odoo .conversations-chat__header {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    align-items: center !important;
+    gap: .75rem !important;
+    min-width: 0 !important;
+    overflow: visible !important;
+}
+
+.conversations-page--odoo .conversations-chat__identity {
+    min-width: 0 !important;
+}
+
+.conversations-page--odoo .conversations-chat__header .panel-card__title,
+.conversations-page--odoo .conversations-chat__header .panel-card__subtitle {
+    max-width: 100% !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+}
+
+.conversations-page--odoo .conversations-chat__chips {
+    display: flex !important;
+    align-items: center !important;
+    gap: .35rem !important;
+    min-width: 0 !important;
+    overflow: hidden !important;
+}
+
+.conversations-page--odoo .conversations-thread-shell {
+    min-height: 0 !important;
+    overflow: hidden !important;
+}
+
+.conversations-page--odoo .conversations-thread {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: .16rem !important;
+    padding: .85rem clamp(.9rem, 5vw, 4.5rem) .95rem !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+}
+
+.conversations-page--odoo .message-row {
+    width: 100% !important;
+    min-width: 0 !important;
+    align-items: flex-end !important;
+    gap: .35rem !important;
+    margin: 0 !important;
+    padding: 0 0 .28rem !important;
+}
+
+.conversations-page--odoo .message-row--incoming {
+    justify-content: flex-start !important;
+}
+
+.conversations-page--odoo .message-row--outgoing {
+    justify-content: flex-end !important;
+}
+
+.conversations-page--odoo .message-bubble-shell,
+.conversations-page--odoo .message-row:has(.message-actions) .message-bubble-shell {
+    width: fit-content !important;
+    min-width: 0 !important;
+    max-width: min(68ch, 74%) !important;
+    flex: 0 1 auto !important;
+}
+
+.conversations-page--odoo .message-row--outgoing .message-bubble-shell {
+    align-items: flex-end !important;
+}
+
+.conversations-page--odoo .message-card,
+.conversations-page--odoo .message-row--incoming .message-card,
+.conversations-page--odoo .message-row--internal .message-card,
+.conversations-page--odoo .message-row--outgoing .message-card {
+    display: block !important;
+    width: fit-content !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    padding: .42rem .58rem .38rem !important;
+    overflow-wrap: break-word !important;
+    word-break: normal !important;
+}
+
+.conversations-page--odoo .message-card__meta {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: .65rem !important;
+    max-width: 100% !important;
+}
+
+.conversations-page--odoo .message-card__text {
+    width: fit-content !important;
+    max-width: 100% !important;
+    margin: .08rem 0 0 !important;
+    white-space: pre-wrap !important;
+}
+
+.conversations-page--odoo .message-card:has(.message-card__delivery) {
+    padding-right: 1.8rem !important;
+}
+
+.conversations-page--odoo .message-attachments {
+    width: fit-content !important;
+    max-width: 100% !important;
+}
+
+.conversations-page--odoo .message-attachment,
+.conversations-page--odoo .message-attachment--image,
+.conversations-page--odoo .attachment-preview-button {
+    max-width: 100% !important;
+}
+
+.conversations-page--odoo .message-attachment--image img {
+    max-width: min(280px, 100%) !important;
+    max-height: 260px !important;
+    object-fit: contain !important;
+}
+
+.conversations-page--odoo .message-attachment--audio,
+.conversations-page--odoo .wa-audio-player {
+    width: min(370px, 100%) !important;
+    max-width: 100% !important;
+}
+
+.conversations-page--odoo .conversations-composer {
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    align-items: end !important;
+    gap: .55rem !important;
+    overflow: visible !important;
+}
+
+.conversations-page--odoo .conversations-composer .field {
+    min-width: 0 !important;
+}
+
+.conversations-page--odoo .conversations-composer textarea {
+    width: 100% !important;
+    resize: none !important;
+}
+
+@media (max-width: 1100px) {
+    .conversations-page--odoo .conversations-layout {
+        grid-template-columns: minmax(284px, 336px) minmax(0, 1fr) !important;
+    }
+
+    .conversations-page--odoo .conversations-thread {
+        padding-inline: 1rem !important;
+    }
+}
+
+@media (max-width: 920px) {
+    .conversations-page--odoo .message-bubble-shell,
+    .conversations-page--odoo .message-row:has(.message-actions) .message-bubble-shell {
+        max-width: min(34rem, 88%) !important;
+    }
+}
+
+@media (max-width: 768px) {
+    .conversations-page--odoo .conversations-layout {
+        grid-template-columns: minmax(0, 1fr) !important;
+    }
+
+    .conversations-page--odoo .conversations-chat__header {
+        grid-template-columns: minmax(0, 1fr) !important;
+    }
+
+    .conversations-page--odoo .conversations-thread {
+        padding: .65rem .58rem .75rem !important;
+    }
+
+    .conversations-page--odoo .message-bubble-shell,
+    .conversations-page--odoo .message-row:has(.message-actions) .message-bubble-shell {
+        max-width: 88% !important;
+    }
+}
