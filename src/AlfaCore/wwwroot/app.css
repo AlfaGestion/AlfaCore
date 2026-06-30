@@ -480,7 +480,211 @@ select {
     border-radius: 8px 8px 0 0;
 }
 
+.shell:has(.contactos-page) {
+    --module-actionbar-left: 300px;
+}
+
+.shell.shell--collapsed:has(.contactos-page) {
+    --module-actionbar-left: 92px;
+}
+
+.shell.shell--direct:has(.contactos-page) {
+    --module-actionbar-left: 0px;
+}
+
+.contactos-page {
+    padding-top: 3.25rem;
+}
+
+.contactos-page > .contactos-commandbar {
+    position: fixed;
+    top: 0;
+    left: var(--module-actionbar-left, 0px);
+    right: 0;
+    z-index: 1180;
+    display: flex;
+    justify-content: flex-end;
+    margin: 0;
+    padding: .45rem .7rem;
+    border: 0;
+    border-bottom: 1px solid rgba(56, 189, 248, .16);
+    border-radius: 0;
+    background: rgba(7, 18, 32, .94);
+    box-shadow: 0 8px 22px rgba(2, 6, 23, .24);
+    backdrop-filter: blur(10px);
+}
+
+.contactos-commandbar__title {
+    display: none;
+}
+
+.contactos-page > .smart-search-card {
+    position: fixed;
+    top: .45rem;
+    left: calc(var(--module-actionbar-left, 0px) + .7rem);
+    right: 18.5rem;
+    z-index: 1182;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+}
+
+.contactos-page > .smart-search-card .smart-search__bar {
+    width: min(520px, 100%);
+}
+
+.contactos-page > .smart-search-card .smart-search__hint,
+.contactos-page > .smart-search-card .smart-search__chips:has(.smart-search__hint) {
+    display: none;
+}
+
+.shell:has(.usuarios-page),
+.shell:has(.tecnicos-page) {
+    --module-actionbar-left: 300px;
+}
+
+.shell.shell--collapsed:has(.usuarios-page),
+.shell.shell--collapsed:has(.tecnicos-page) {
+    --module-actionbar-left: 92px;
+}
+
+.shell.shell--direct:has(.usuarios-page),
+.shell.shell--direct:has(.tecnicos-page) {
+    --module-actionbar-left: 0px;
+}
+
+.usuarios-page,
+.tecnicos-page {
+    padding-top: 3.25rem;
+}
+
+.usuarios-page > .usuarios-commandbar,
+.tecnicos-page > .tecnicos-commandbar {
+    position: fixed;
+    top: 0;
+    left: var(--module-actionbar-left, 0px);
+    right: 0;
+    z-index: 1180;
+    display: flex;
+    justify-content: flex-end;
+    margin: 0;
+    padding: .45rem .7rem;
+    border: 0;
+    border-bottom: 1px solid rgba(56, 189, 248, .16);
+    border-radius: 0;
+    background: rgba(7, 18, 32, .94);
+    box-shadow: 0 8px 22px rgba(2, 6, 23, .24);
+    backdrop-filter: blur(10px);
+}
+
+.usuarios-commandbar > div:first-child,
+.tecnicos-commandbar > div:first-child {
+    display: none;
+}
+
+.usuarios-page > .usuarios-search-card,
+.tecnicos-page > .tecnicos-search-card {
+    position: fixed;
+    top: .45rem;
+    left: calc(var(--module-actionbar-left, 0px) + .7rem);
+    right: 18.5rem;
+    z-index: 1182;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+}
+
+.usuarios-search-card > .panel-card__header {
+    display: none;
+}
+
+.usuarios-search-card .filters-grid {
+    grid-template-columns: minmax(220px, 1fr) minmax(110px, .38fr) minmax(110px, .38fr) auto;
+    gap: .45rem;
+    align-items: end;
+}
+
+.usuarios-search-card .field label {
+    display: none;
+}
+
+.usuarios-search-card .field input,
+.usuarios-search-card .field select {
+    min-height: 36px;
+}
+
+.usuarios-search-card .actions {
+    flex-wrap: nowrap;
+}
+
+.tecnicos-page > .tecnicos-search-card .smart-search__bar {
+    width: min(520px, 100%);
+}
+
+.tecnicos-page > .tecnicos-search-card .smart-search__hint,
+.tecnicos-page > .tecnicos-search-card .smart-search__chips:has(.smart-search__hint) {
+    display: none;
+}
+
 @media (max-width: 900px) {
+    .shell:has(.contactos-page) {
+        --module-actionbar-left: 0px;
+    }
+
+    .shell:has(.usuarios-page),
+    .shell:has(.tecnicos-page) {
+        --module-actionbar-left: 0px;
+    }
+
+    .contactos-page {
+        padding-top: 7.25rem;
+    }
+
+    .usuarios-page,
+    .tecnicos-page {
+        padding-top: 10.5rem;
+    }
+
+    .contactos-page > .contactos-commandbar {
+        align-items: stretch;
+        justify-content: stretch;
+        padding-top: 3.65rem;
+    }
+
+    .usuarios-page > .usuarios-commandbar,
+    .tecnicos-page > .tecnicos-commandbar {
+        align-items: stretch;
+        justify-content: stretch;
+        padding-top: 3.65rem;
+    }
+
+    .contactos-page > .smart-search-card {
+        left: .7rem;
+        right: .7rem;
+    }
+
+    .usuarios-page > .usuarios-search-card,
+    .tecnicos-page > .tecnicos-search-card {
+        left: .7rem;
+        right: .7rem;
+    }
+
+    .usuarios-search-card .filters-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .contactos-page > .smart-search-card .smart-search__bar {
+        width: 100%;
+    }
+
+    .tecnicos-page > .tecnicos-search-card .smart-search__bar {
+        width: 100%;
+    }
+
     .module-actionbar,
     .page-grid:not(.pos-page):not(.pos-page--odoo) > .page-intro:has(.actions) {
         grid-template-columns: minmax(0, 1fr);

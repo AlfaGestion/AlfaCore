@@ -11,10 +11,10 @@
 
 <PageTitle>Técnicos | Alfa Gestión</PageTitle>
 
-<div class="page-grid" @onclick="HandlePageClickAsync">
+<div class="page-grid tecnicos-page" @onclick="HandlePageClickAsync">
 
     <!-- ── Intro ───────────────────────────────────────────────────────── -->
-    <section class="page-intro">
+    <section class="page-intro tecnicos-commandbar">
         <div>
             <h2 class="page-intro__title">Técnicos</h2>
             <p class="page-intro__text">Administrá los técnicos del sistema: mecánicos, soporte y personal vinculado a usuarios.</p>
@@ -51,7 +51,7 @@
     }
 
     <!-- ── Buscador ────────────────────────────────────────────────────── -->
-    <section class="panel-card smart-search-card" @onclick:stopPropagation>
+    <section class="panel-card smart-search-card tecnicos-search-card" @onclick:stopPropagation>
         <div class="smart-search">
             <div class="smart-search__bar">
                 <i class="bi bi-search"></i>
