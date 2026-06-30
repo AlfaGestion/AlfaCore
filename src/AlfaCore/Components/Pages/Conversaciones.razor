@@ -457,6 +457,115 @@
                     </div>
                 </div>
 
+                <div class="conversations-inbox-tools desktop-only" @onclick:stopPropagation>
+                    <div class="conversations-inbox-search">
+                        <div class="conversations-inbox-searchbox">
+                            <i class="bi bi-search"></i>
+                            <input id="conv-inbox-search"
+                                   type="search"
+                                   placeholder="Buscar conversación o mensaje..."
+                                   value="@_filters.Search"
+                                   @oninput="HandleSearchInputAsync"
+                                   @onkeydown="HandleSearchEnter"
+                                   @onfocus="() => _showContactSuggestions = ShouldShowContactSuggestions" />
+                            <i class="bi bi-sliders conversations-inbox-searchbox__caret"></i>
+                        </div>
+
+                        <div class="conversations-inbox-filter-panel">
+                            <div>
+                                <label for="conv-inbox-tech">Técnico</label>
+                                <select id="conv-inbox-tech" value="@_filters.IdTecnicoActual" @onchange="HandleTechnicianFilterChangedAsync">
+                                    <option value="">Todos</option>
+                                    @foreach (var tech in _technicians)
+                                    {
+                                        <option value="@tech.IdTecnico">@tech.Nombre (@tech.IdTecnico)</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="actions">
+                                <button type="button"
+                                        class="btn btn--ghost btn--sm"
+                                        title="Limpiar filtros"
+                                        aria-label="Limpiar filtros"
+                                        @onclick="ClearConversationFiltersAsync"
+                                        disabled="@_loadingInbox">
+                                    <i class="bi bi-eraser"></i>
+                                </button>
+                                <button type="button" class="btn btn--primary btn--sm" @onclick="LoadInboxAsync" disabled="@_loadingInbox">
+                                    <i class="bi bi-funnel"></i> Aplicar
+                                </button>
+                            </div>
+                        </div>
+
+                        @if (_showContactSuggestions)
+                        {
+                            <div class="conversations-contact-suggest">
+                                @if (_loadingContactSuggestions)
+                                {
+                                    <div class="conversations-contact-suggest__state">
+                                        <i class="bi bi-hourglass-split"></i>
+                                        <span>Buscando contactos...</span>
+                                    </div>
+                                }
+                                else if (_conversationSuggestions.Count > 0 || _contactSuggestions.Count > 0)
+                                {
+                                    @if (_conversationSuggestions.Count > 0)
+                                    {
+                                        <div class="conversations-contact-suggest__header">
+                                            <span>Coincidencias encontradas</span>
+                                            <button type="button" class="btn btn--ghost btn--sm" @onclick="CloseContactSuggestions" title="Cerrar">
+                                                <i class="bi bi-x-lg"></i>
+                                            </button>
+                                        </div>
+                                        @foreach (var conversation in _conversationSuggestions)
+                                        {
+                                            <div class="conversations-contact-suggest__item">
+                                                <div class="conversations-contact-suggest__main">
+                                                    <strong>@GetDisplayName(conversation)</strong>
+                                                    <small>@DisplayOrFallback(conversation.TelefonoWhatsApp)</small>
+                                                </div>
+                                                <div class="conversations-contact-suggest__actions">
+                                                    <button type="button" class="btn btn--primary btn--sm" @onclick="() => SelectConversationFromSuggestionAsync(conversation.IdConversacion)">
+                                                        <i class="bi bi-chat-dots"></i> Conversar
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        }
+                                    }
+                                    @if (_contactSuggestions.Count > 0)
+                                    {
+                                        <div class="conversations-contact-suggest__header">
+                                            <span>Contactos encontrados</span>
+                                            @if (_conversationSuggestions.Count == 0)
+                                            {
+                                                <button type="button" class="btn btn--ghost btn--sm" @onclick="CloseContactSuggestions" title="Cerrar">
+                                                    <i class="bi bi-x-lg"></i>
+                                                </button>
+                                            }
+                                        </div>
+                                        @foreach (var contact in _contactSuggestions)
+                                        {
+                                            var phone = GetContactPhone(contact);
+                                            <div class="conversations-contact-suggest__item">
+                                                <div class="conversations-contact-suggest__main">
+                                                    <strong>@contact.NombreApellido</strong>
+                                                    <span>@DisplayOrFallback(contact.Cargo)</span>
+                                                    <small>@DisplayOrFallback(phone, contact.Email)</small>
+                                                </div>
+                                                <div class="conversations-contact-suggest__actions">
+                                                    <button type="button" class="btn btn--primary btn--sm" disabled="@string.IsNullOrWhiteSpace(phone)" @onclick="() => OpenWhatsAppForContactAsync(contact)">
+                                                        <i class="bi bi-chat-dots"></i> Conversar
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        }
+                                    }
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+
                 @if (_loadingInbox && _inbox.Count == 0)
                 {
                     <div class="loading">Cargando conversacionesâ€¦</div>
