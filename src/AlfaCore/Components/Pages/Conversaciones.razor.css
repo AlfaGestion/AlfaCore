@@ -468,16 +468,139 @@
     color: #7fa9c5 !important;
 }
 
-.conversations-page--odoo .conversations-inbox-filter-panel {
-    background: #102235 !important;
-    border-color: rgba(56, 189, 248, .22) !important;
-    box-shadow: 0 18px 44px rgba(2, 8, 18, .42) !important;
+.conversations-page--odoo .conversations-inbox-searchbox__clear {
+    display: inline-grid !important;
+    place-items: center !important;
+    width: 1.75rem !important;
+    height: 1.75rem !important;
+    min-width: 1.75rem !important;
+    padding: 0 !important;
+    border: 1px solid rgba(125, 211, 252, .16) !important;
+    border-radius: 999px !important;
+    background: rgba(14, 116, 144, .16) !important;
+    color: #bae6fd !important;
+    cursor: pointer !important;
+    transition: background-color .16s ease, border-color .16s ease, color .16s ease !important;
 }
 
-.conversations-page--odoo .conversations-inbox-filter-panel select {
-    background: #0c1a28 !important;
-    border-color: rgba(56, 189, 248, .22) !important;
+.conversations-page--odoo .conversations-inbox-searchbox__clear:hover,
+.conversations-page--odoo .conversations-inbox-searchbox__clear:focus-visible {
+    border-color: rgba(125, 211, 252, .52) !important;
+    background: rgba(14, 165, 233, .24) !important;
+    color: #f0f9ff !important;
+    outline: none !important;
+}
+
+.conversations-page--odoo .conversations-inbox-search .conversations-contact-suggest {
+    top: calc(100% + .45rem) !important;
+    left: 0 !important;
+    right: 0 !important;
+    max-height: min(420px, calc(100dvh - 12rem)) !important;
+    padding: .45rem !important;
+    border: 1px solid rgba(56, 189, 248, .22) !important;
+    border-radius: 8px !important;
+    background: #0b1828 !important;
+    box-shadow: 0 20px 48px rgba(2, 8, 18, .52), 0 0 0 1px rgba(96, 165, 250, .06) !important;
     color: #e7f4ff !important;
+}
+
+.conversations-page--odoo .conversations-contact-suggest__header {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: .5rem !important;
+    padding: .35rem .42rem .45rem !important;
+    color: #9fc7e4 !important;
+    font-size: .7rem !important;
+    font-weight: 900 !important;
+    letter-spacing: 0 !important;
+    text-transform: uppercase !important;
+}
+
+.conversations-page--odoo .conversations-contact-suggest__header .btn {
+    width: 1.8rem !important;
+    height: 1.8rem !important;
+    min-width: 1.8rem !important;
+    padding: 0 !important;
+    border-radius: 999px !important;
+    color: #bfdbfe !important;
+}
+
+.conversations-page--odoo .conversations-contact-suggest__item {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    align-items: center !important;
+    gap: .75rem !important;
+    min-width: 0 !important;
+    padding: .72rem .76rem !important;
+    border: 1px solid rgba(96, 165, 250, .14) !important;
+    border-radius: 8px !important;
+    background: rgba(15, 31, 46, .72) !important;
+}
+
+.conversations-page--odoo .conversations-contact-suggest__item + .conversations-contact-suggest__item {
+    margin-top: .42rem !important;
+}
+
+.conversations-page--odoo .conversations-contact-suggest__item:hover {
+    border-color: rgba(56, 189, 248, .32) !important;
+    background: rgba(19, 44, 66, .9) !important;
+}
+
+.conversations-page--odoo .conversations-contact-suggest__main {
+    display: grid !important;
+    gap: .18rem !important;
+    min-width: 0 !important;
+}
+
+.conversations-page--odoo .conversations-contact-suggest__main strong,
+.conversations-page--odoo .conversations-contact-suggest__main span,
+.conversations-page--odoo .conversations-contact-suggest__main small {
+    min-width: 0 !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+}
+
+.conversations-page--odoo .conversations-contact-suggest__main strong {
+    color: #f0f9ff !important;
+    font-size: .84rem !important;
+}
+
+.conversations-page--odoo .conversations-contact-suggest__main span,
+.conversations-page--odoo .conversations-contact-suggest__main small {
+    color: #8db9d6 !important;
+    font-size: .78rem !important;
+}
+
+.conversations-page--odoo .conversations-contact-suggest__actions {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: flex-end !important;
+    gap: .4rem !important;
+}
+
+.conversations-page--odoo .conversations-contact-suggest__actions .btn {
+    min-height: 2rem !important;
+    padding: .38rem .7rem !important;
+    border: 1px solid rgba(56, 189, 248, .42) !important;
+    border-radius: 999px !important;
+    background: #0284c7 !important;
+    color: #f0f9ff !important;
+    font-size: .78rem !important;
+    font-weight: 800 !important;
+}
+
+.conversations-page--odoo .conversations-contact-suggest__actions .btn:hover {
+    background: #0ea5e9 !important;
+}
+
+.conversations-page--odoo .conversations-contact-suggest__state {
+    display: flex !important;
+    align-items: center !important;
+    gap: .55rem !important;
+    padding: .85rem !important;
+    color: #9fc7e4 !important;
 }
 
 .conversations-page--odoo .conversation-row {

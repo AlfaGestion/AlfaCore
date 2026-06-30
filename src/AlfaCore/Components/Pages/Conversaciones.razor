@@ -467,34 +467,17 @@
                                    value="@_filters.Search"
                                    @oninput="HandleSearchInputAsync"
                                    @onkeydown="HandleSearchEnter"
-                                   @onfocus="() => _showContactSuggestions = ShouldShowContactSuggestions" />
-                            <i class="bi bi-sliders conversations-inbox-searchbox__caret"></i>
-                        </div>
-
-                        <div class="conversations-inbox-filter-panel">
-                            <div>
-                                <label for="conv-inbox-tech">Técnico</label>
-                                <select id="conv-inbox-tech" value="@_filters.IdTecnicoActual" @onchange="HandleTechnicianFilterChangedAsync">
-                                    <option value="">Todos</option>
-                                    @foreach (var tech in _technicians)
-                                    {
-                                        <option value="@tech.IdTecnico">@tech.Nombre (@tech.IdTecnico)</option>
-                                    }
-                                </select>
-                            </div>
-                            <div class="actions">
+                                   @onfocus="HandleSearchFocusAsync" />
+                            @if (!string.IsNullOrWhiteSpace(_filters.Search))
+                            {
                                 <button type="button"
-                                        class="btn btn--ghost btn--sm"
-                                        title="Limpiar filtros"
-                                        aria-label="Limpiar filtros"
-                                        @onclick="ClearConversationFiltersAsync"
-                                        disabled="@_loadingInbox">
-                                    <i class="bi bi-eraser"></i>
+                                        class="conversations-inbox-searchbox__clear"
+                                        title="Limpiar búsqueda"
+                                        aria-label="Limpiar búsqueda"
+                                        @onclick="ClearInboxSearchAsync">
+                                    <i class="bi bi-x-lg"></i>
                                 </button>
-                                <button type="button" class="btn btn--primary btn--sm" @onclick="LoadInboxAsync" disabled="@_loadingInbox">
-                                    <i class="bi bi-funnel"></i> Aplicar
-                                </button>
-                            </div>
+                            }
                         </div>
 
                         @if (_showContactSuggestions)
@@ -560,6 +543,13 @@
                                             </div>
                                         }
                                     }
+                                }
+                                else
+                                {
+                                    <div class="conversations-contact-suggest__state">
+                                        <i class="bi bi-search"></i>
+                                        <span>No encontramos coincidencias para esa búsqueda.</span>
+                                    </div>
                                 }
                             </div>
                         }
@@ -2603,6 +2593,7 @@
     {
         _filters.Search = Convert.ToString(args.Value, System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
         _filters.ClienteCodigo = string.Empty;
+        ResetInboxSearchScope();
         _actionError = null;
         if (string.IsNullOrWhiteSpace(_filters.Search))
         {
@@ -2615,7 +2606,38 @@
             return;
         }
 
-        await DebounceContactSuggestionsAsync();
+        await Task.WhenAll(DebounceSearchAsync(), DebounceContactSuggestionsAsync());
+    }
+
+    private async Task HandleSearchFocusAsync()
+    {
+        if (!ShouldShowContactSuggestions)
+            return;
+
+        _showContactSuggestions = true;
+
+        if (_conversationSuggestions.Count == 0 && _contactSuggestions.Count == 0)
+            await DebounceContactSuggestionsAsync();
+    }
+
+    private async Task ClearInboxSearchAsync()
+    {
+        CancelSearchDebounce();
+        CancelContactSearch();
+        _filters.Search = string.Empty;
+        _filters.ClienteCodigo = string.Empty;
+        ResetInboxSearchScope();
+        _showContactSuggestions = false;
+        _contactSuggestions = [];
+        _conversationSuggestions = [];
+        await LoadInboxAsync();
+    }
+
+    private void ResetInboxSearchScope()
+    {
+        _filters.Modo = "todas";
+        _filters.IdTecnicoActual = string.Empty;
+        _filters.CodigoEstado = string.Empty;
     }
 
     private async Task HandleTechnicianFilterChangedAsync(ChangeEventArgs args)
@@ -3579,10 +3601,10 @@
             var conversationTask = ConversacionesSvc.GetInboxAsync(new ConversacionesInboxFilters
             {
                 Canal = _canalActivo,
-                Modo = _filters.Modo,
+                Modo = "todas",
                 Search = _filters.Search.Trim(),
-                IdTecnicoActual = _filters.IdTecnicoActual,
-                CodigoEstado = _filters.CodigoEstado,
+                IdTecnicoActual = string.Empty,
+                CodigoEstado = string.Empty,
                 UsuarioActual = CurrentUserNameForAudit,
                 SistemaActual = CurrentUserSystemForAudit,
                 Limit = 6
