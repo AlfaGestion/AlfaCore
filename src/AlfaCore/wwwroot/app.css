@@ -16218,9 +16218,39 @@ html[data-theme="light"] .interfaces-bulkbar {
 }
 
 .tickets-page--odoo .tickets-commandbar.module-actionbar {
-    position: sticky;
-    top: 0;
+    position: fixed;
+    top: .35rem;
+    left: calc(var(--tickets-actionbar-left, 0px) + .55rem);
+    right: .55rem;
     z-index: 1200;
+    margin: 0;
+    box-sizing: border-box;
+}
+
+.shell:has(.tickets-page--odoo) {
+    --tickets-actionbar-left: 300px;
+}
+
+.shell.shell--collapsed:has(.tickets-page--odoo) {
+    --tickets-actionbar-left: 92px;
+}
+
+.shell.shell--direct:has(.tickets-page--odoo) {
+    --tickets-actionbar-left: 0px;
+}
+
+.tickets-page--odoo:has(.tickets-commandbar.module-actionbar) {
+    padding-top: 3.45rem;
+}
+
+@media (max-width: 900px) {
+    .shell:has(.tickets-page--odoo) {
+        --tickets-actionbar-left: 0px;
+    }
+
+    .tickets-page--odoo:has(.tickets-commandbar.module-actionbar) {
+        padding-top: 8.25rem;
+    }
 }
 
 .tickets-view-switch {
