@@ -16,12 +16,12 @@
 <PageTitle>Contactos | Alfa Gestión</PageTitle>
 
 <div class="page-grid contactos-page" @onclick="HandlePageClickAsync">
-    <section class="page-intro">
-        <div>
+    <section class="module-actionbar contactos-commandbar">
+        <div class="module-actionbar__title">
             <h2 class="page-intro__title">Contactos</h2>
             <p class="page-intro__text">Administrá la agenda general del sistema con datos de contacto, observaciones y baja lógica.</p>
         </div>
-        <div class="actions">
+        <div class="actions module-actionbar__actions">
             <button type="button" class="btn btn--primary" @onclick="BeginNew">
                 <i class="bi bi-plus-circle"></i> Nuevo contacto
             </button>
@@ -81,7 +81,8 @@
 
             @if (_showSearchPanel)
             {
-                <div class="smart-search__panel" @onkeydown="HandleContactApplyKeyDownAsync">
+                <button type="button" class="module-actionbar__search-backdrop" aria-label="Cerrar filtros" @onclick="CloseSearchPanel"></button>
+                <div class="smart-search__panel" @onclick:stopPropagation @onkeydown="HandleContactApplyKeyDownAsync">
                     <div class="smart-search__column">
                         <h4><i class="bi bi-funnel-fill"></i> Filtros</h4>
                         <button type="button" class='@GetSmartOptionClass(_activoFiltro == "1")' @onclick='() => SetContactStatusFilterAsync("1")'>Personas activas</button>

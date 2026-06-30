@@ -386,6 +386,120 @@ select {
     line-height: 1.45;
 }
 
+.module-actionbar,
+.page-grid:not(.pos-page):not(.pos-page--odoo) > .page-intro:has(.actions) {
+    position: sticky;
+    top: 0;
+    z-index: 860;
+    display: grid;
+    grid-template-columns: auto minmax(280px, 1fr) auto;
+    align-items: center;
+    gap: .65rem;
+    margin: -0.15rem 0 .85rem;
+    padding: .55rem .65rem;
+    border: 1px solid rgba(56, 189, 248, .16);
+    border-radius: 8px;
+    background: rgba(7, 18, 32, .94);
+    box-shadow: 0 10px 28px rgba(2, 6, 23, .28);
+    backdrop-filter: blur(10px);
+    overflow: visible;
+}
+
+.module-actionbar__title {
+    min-width: 0;
+    display: grid;
+    gap: .08rem;
+}
+
+.module-actionbar__title strong,
+.module-actionbar .page-intro__title {
+    margin: 0;
+    color: var(--color-text);
+    font-size: .98rem;
+    font-weight: 800;
+    line-height: 1.2;
+    white-space: nowrap;
+}
+
+.module-actionbar__title span,
+.module-actionbar .page-intro__text {
+    margin: 0;
+    max-width: 28ch;
+    overflow: hidden;
+    color: var(--color-muted);
+    font-size: .78rem;
+    line-height: 1.25;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.module-actionbar__search {
+    min-width: 0;
+}
+
+.module-actionbar__actions,
+.module-actionbar .actions,
+.page-grid:not(.pos-page):not(.pos-page--odoo) > .page-intro:has(.actions) .actions {
+    justify-content: flex-end;
+    flex-wrap: nowrap;
+    min-width: 0;
+}
+
+.module-actionbar__search-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 850;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: default;
+}
+
+.module-actionbar .smart-search__panel,
+.module-actionbar + .smart-search-card .smart-search__panel {
+    z-index: 870;
+}
+
+.module-actionbar + .smart-search-card {
+    margin-top: -.85rem;
+}
+
+.contactos-commandbar + .smart-search-card {
+    position: sticky;
+    top: 3.45rem;
+    z-index: 855;
+    margin-top: -1.15rem;
+    padding: .55rem .65rem .65rem;
+    border-top-color: rgba(56, 189, 248, .08);
+    border-radius: 0 0 8px 8px;
+    background: rgba(7, 18, 32, .94);
+    backdrop-filter: blur(10px);
+}
+
+.contactos-commandbar {
+    border-radius: 8px 8px 0 0;
+}
+
+@media (max-width: 900px) {
+    .module-actionbar,
+    .page-grid:not(.pos-page):not(.pos-page--odoo) > .page-intro:has(.actions) {
+        grid-template-columns: minmax(0, 1fr);
+        align-items: stretch;
+    }
+
+    .module-actionbar__actions,
+    .module-actionbar .actions,
+    .page-grid:not(.pos-page):not(.pos-page--odoo) > .page-intro:has(.actions) .actions {
+        justify-content: stretch;
+    }
+
+    .module-actionbar__actions .btn,
+    .module-actionbar .actions .btn,
+    .page-grid:not(.pos-page):not(.pos-page--odoo) > .page-intro:has(.actions) .actions .btn {
+        flex: 1 1 auto;
+    }
+}
+
 .page-grid {
     display: grid;
     gap: 1.25rem;

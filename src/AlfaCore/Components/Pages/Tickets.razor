@@ -39,7 +39,7 @@
 
     @if (!_showEditor)
     {
-        <section class="tickets-commandbar">
+        <section class="module-actionbar tickets-commandbar">
             <div class="tickets-view-switch">
                 <button type="button" class="btn @(_viewMode == "kanban" ? "btn--primary" : "btn--ghost")" @onclick='() => CambiarVistaAsync("kanban")'>
                     <i class="bi bi-kanban"></i> Kanban
