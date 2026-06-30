@@ -423,6 +423,66 @@
     overflow: hidden !important;
 }
 
+.conversations-page--odoo .conversations-panel-backdrop {
+    position: fixed !important;
+    inset: 0 !important;
+    z-index: 150 !important;
+    background: transparent !important;
+    animation: none !important;
+}
+
+.conversations-page--odoo .conversations-context-drawer,
+.conversations-page--odoo .conversations-context-drawer.is-open {
+    position: fixed !important;
+    inset: 0 0 0 auto !important;
+    grid-column: auto !important;
+    display: flex !important;
+    flex-direction: column !important;
+    width: min(340px, calc(100vw - 1rem)) !important;
+    min-width: 0 !important;
+    max-width: min(340px, calc(100vw - 1rem)) !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    padding: .85rem !important;
+    border-width: 0 0 0 1px !important;
+    border-radius: 0 !important;
+    background: rgba(8, 20, 34, .98) !important;
+    box-shadow: -18px 0 44px rgba(2, 6, 23, .45) !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    z-index: 160 !important;
+}
+
+.conversations-page--odoo .conversations-context-drawer {
+    transform: translateX(104%) !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    transition: transform .22s cubic-bezier(.2, .8, .2, 1), opacity .18s ease !important;
+}
+
+.conversations-page--odoo .conversations-context-drawer.is-open {
+    transform: translateX(0) !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+}
+
+.conversations-page--odoo .conversations-context-drawer .conversations-drawer-close {
+    position: sticky !important;
+    top: 0 !important;
+    align-self: flex-end !important;
+    z-index: 2 !important;
+    margin: -.25rem -.25rem .25rem 0 !important;
+}
+
+.conversations-page--odoo .conversations-context-drawer .conversations-context__section {
+    margin-bottom: .85rem !important;
+}
+
+.conversations-page--odoo .conversations-context-drawer .context-card {
+    padding: .76rem !important;
+    border-radius: 8px !important;
+}
+
 .conversations-page--odoo .conversations-list {
     display: flex !important;
     flex-direction: column !important;
@@ -906,5 +966,17 @@
     .conversations-page--odoo .message-bubble-shell,
     .conversations-page--odoo .message-row:has(.message-actions) .message-bubble-shell {
         max-width: 88% !important;
+    }
+}
+
+@media (min-width: 901px) {
+    .conversations-page--odoo .conversations-layout:has(.conversations-context-drawer.is-open) {
+        grid-template-columns: minmax(390px, 430px) minmax(0, 1fr) !important;
+    }
+}
+
+@media (max-width: 1100px) and (min-width: 769px) {
+    .conversations-page--odoo .conversations-layout:has(.conversations-context-drawer.is-open) {
+        grid-template-columns: minmax(340px, 380px) minmax(0, 1fr) !important;
     }
 }
