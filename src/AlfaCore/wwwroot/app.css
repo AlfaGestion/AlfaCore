@@ -16219,18 +16219,24 @@ html[data-theme="light"] .interfaces-bulkbar {
 
 .tickets-page--odoo .tickets-commandbar.module-actionbar {
     position: fixed;
-    top: .35rem;
-    left: calc(var(--tickets-actionbar-left, 0px) + .55rem);
-    right: .55rem;
+    top: 0;
+    left: var(--tickets-actionbar-left, 0px);
+    right: 0;
     z-index: 1200;
     margin: 0;
-    padding: .45rem .55rem .52rem;
-    border: 1px solid rgba(56, 189, 248, .16);
-    border-radius: 8px;
+    padding: .45rem .7rem;
+    border: 0;
+    border-bottom: 1px solid rgba(56, 189, 248, .16);
+    border-radius: 0;
     background: rgba(7, 18, 32, .94);
-    box-shadow: 0 10px 28px rgba(2, 6, 23, .28);
+    box-shadow: 0 8px 22px rgba(2, 6, 23, .24);
     backdrop-filter: blur(10px);
     box-sizing: border-box;
+}
+
+.tickets-page--odoo .tickets-commandbar.module-actionbar .smart-search__hint,
+.tickets-page--odoo .tickets-commandbar.module-actionbar .smart-search__chips:has(.smart-search__hint) {
+    display: none;
 }
 
 .shell:has(.tickets-page--odoo) {
@@ -16246,7 +16252,7 @@ html[data-theme="light"] .interfaces-bulkbar {
 }
 
 .tickets-page--odoo:has(.tickets-commandbar.module-actionbar) {
-    padding-top: 4.15rem;
+    padding-top: 3.25rem;
 }
 
 @media (max-width: 900px) {
