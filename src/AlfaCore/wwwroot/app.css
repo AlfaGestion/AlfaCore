@@ -16217,6 +16217,12 @@ html[data-theme="light"] .interfaces-bulkbar {
     animation: support-panel-in .16s ease-out both;
 }
 
+.tickets-page--odoo .tickets-commandbar.module-actionbar {
+    position: sticky;
+    top: 0;
+    z-index: 1200;
+}
+
 .tickets-view-switch {
     display: flex;
     flex-wrap: wrap;
