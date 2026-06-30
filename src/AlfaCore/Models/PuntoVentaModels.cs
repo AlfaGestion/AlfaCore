@@ -88,6 +88,7 @@ public sealed class PuntoVentaSettingsDto
     public string EmailCuenta { get; set; } = string.Empty;
     public string EmailPassword { get; set; } = string.Empty;
     public string EmailSsl { get; set; } = string.Empty;
+    public string FtpCodigoCta { get; set; } = string.Empty;
 }
 
 public sealed class PuntoVentaPaymentMethodDto
