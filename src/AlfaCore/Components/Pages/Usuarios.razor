@@ -11,7 +11,7 @@
 
 <PageTitle>Usuarios | Alfa Gestión</PageTitle>
 
-<div class="page-grid usuarios-page">
+<div class="page-grid usuarios-page" @onclick="CloseUsuariosSearchPanel">
     <section class="page-intro usuarios-commandbar">
         <div>
             <h2 class="page-intro__title">Usuarios</h2>
@@ -47,7 +47,58 @@
         </section>
     }
 
-    <section class="panel-card usuarios-search-card">
+    <section class="panel-card smart-search-card usuarios-search-card" @onclick:stopPropagation>
+        <div class="smart-search" @onkeydown="HandleApplyKeyDownAsync">
+            <div class="smart-search__bar">
+                <i class="bi bi-search"></i>
+                <input type="search"
+                       placeholder="Buscar por nombre o email..."
+                       value="@_filters.Texto"
+                       @onfocus="OpenUsuariosSearchPanel"
+                       @oninput="OnUsuariosSearchInput"
+                       @onkeydown="HandleApplyKeyDownAsync" />
+                <button type="button" class="smart-search__toggle" @onclick="ToggleUsuariosSearchPanel" aria-label="Mostrar filtros">
+                    <i class="bi @(_showUsuariosSearchPanel ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
+                </button>
+            </div>
+
+            <div class="smart-search__chips" aria-live="polite">
+                @foreach (var chip in BuildUsuariosFilterChips())
+                {
+                    <button type="button" class="smart-chip" @onclick="() => RemoveUsuariosChipAsync(chip.Key)">
+                        @chip.Label <i class="bi bi-x"></i>
+                    </button>
+                }
+            </div>
+
+            @if (_showUsuariosSearchPanel)
+            {
+                <button type="button" class="module-actionbar__search-backdrop" aria-label="Cerrar filtros" @onclick="CloseUsuariosSearchPanel"></button>
+                <div class="smart-search__panel" @onclick:stopPropagation @onkeydown="HandleApplyKeyDownAsync">
+                    <div class="smart-search__column">
+                        <h4><i class="bi bi-funnel-fill"></i> Estado</h4>
+                        <button type="button" class="@GetUsuariosSmartOptionClass(_activoFiltro == "1")" @onclick='() => SetUsuariosStatusFilterAsync("1")'>Activos</button>
+                        <button type="button" class="@GetUsuariosSmartOptionClass(_activoFiltro == "0")" @onclick='() => SetUsuariosStatusFilterAsync("0")'>Inactivos</button>
+                        <button type="button" class="@GetUsuariosSmartOptionClass(string.IsNullOrWhiteSpace(_activoFiltro))" @onclick='() => SetUsuariosStatusFilterAsync("")'>Todos</button>
+                    </div>
+                    <div class="smart-search__column">
+                        <h4><i class="bi bi-people-fill"></i> Tipo</h4>
+                        <button type="button" class="@GetUsuariosSmartOptionClass(string.IsNullOrWhiteSpace(_grupoFiltro))" @onclick='() => SetUsuariosTypeFilterAsync("")'>Todos</button>
+                        <button type="button" class="@GetUsuariosSmartOptionClass(_grupoFiltro == "0")" @onclick='() => SetUsuariosTypeFilterAsync("0")'>Usuarios</button>
+                        <button type="button" class="@GetUsuariosSmartOptionClass(_grupoFiltro == "1")" @onclick='() => SetUsuariosTypeFilterAsync("1")'>Grupos</button>
+                    </div>
+                    <div class="smart-search__column">
+                        <h4><i class="bi bi-lightning-charge-fill"></i> Acciones</h4>
+                        <button type="button" class="btn btn--primary btn--sm" @onclick="AplicarFiltrosAsync" disabled="@_loadingList">
+                            <i class="bi bi-search"></i> Aplicar
+                        </button>
+                        <button type="button" class="btn btn--ghost btn--sm" @onclick="LimpiarFiltros" disabled="@_loadingList">
+                            <i class="bi bi-eraser"></i> Limpiar
+                        </button>
+                    </div>
+                </div>
+            }
+        </div>
         <div class="panel-card__header">
             <div>
                 <h3 class="panel-card__title">Filtros</h3>
@@ -533,6 +584,7 @@
     private bool _selectedActivo = true;
     private bool _showViewSettings;
     private bool _showBulkDeactivateConfirm;
+    private bool _showUsuariosSearchPanel;
     private bool _viewSettingsLoaded;
     private int _photoPickerVersion;
     private int _pagedTotal;
@@ -584,8 +636,76 @@
     private async Task AplicarFiltrosAsync()
     {
         _filters.PageNumber = 1;
+        _showUsuariosSearchPanel = false;
         await BuscarAsync();
     }
+
+    private void OpenUsuariosSearchPanel()
+        => _showUsuariosSearchPanel = true;
+
+    private void ToggleUsuariosSearchPanel()
+        => _showUsuariosSearchPanel = !_showUsuariosSearchPanel;
+
+    private void CloseUsuariosSearchPanel()
+        => _showUsuariosSearchPanel = false;
+
+    private void OnUsuariosSearchInput(ChangeEventArgs e)
+    {
+        _filters.Texto = Convert.ToString(e.Value) ?? string.Empty;
+        _showUsuariosSearchPanel = true;
+    }
+
+    private async Task SetUsuariosStatusFilterAsync(string value)
+    {
+        _activoFiltro = value;
+        await AplicarFiltrosAsync();
+    }
+
+    private async Task SetUsuariosTypeFilterAsync(string value)
+    {
+        _grupoFiltro = value;
+        await AplicarFiltrosAsync();
+    }
+
+    private async Task RemoveUsuariosChipAsync(string key)
+    {
+        switch (key)
+        {
+            case "texto":
+                _filters.Texto = string.Empty;
+                break;
+            case "estado":
+                _activoFiltro = "1";
+                break;
+            case "tipo":
+                _grupoFiltro = string.Empty;
+                break;
+        }
+
+        await AplicarFiltrosAsync();
+    }
+
+    private IReadOnlyList<(string Key, string Label)> BuildUsuariosFilterChips()
+    {
+        var chips = new List<(string Key, string Label)>();
+        if (!string.IsNullOrWhiteSpace(_filters.Texto))
+            chips.Add(("texto", _filters.Texto.Trim()));
+
+        chips.Add(("estado", _activoFiltro switch
+        {
+            "0" => "Inactivos",
+            "" => "Todos",
+            _ => "Activos"
+        }));
+
+        if (!string.IsNullOrWhiteSpace(_grupoFiltro))
+            chips.Add(("tipo", _grupoFiltro == "1" ? "Grupos" : "Usuarios"));
+
+        return chips;
+    }
+
+    private static string GetUsuariosSmartOptionClass(bool active)
+        => active ? "smart-option is-active" : "smart-option";
 
     private async Task HandleApplyKeyDownAsync(KeyboardEventArgs args)
     {
@@ -922,11 +1042,14 @@
 
     private void TogglePasswordVisibility() => _showPassword = !_showPassword;
 
-    private void LimpiarFiltros()
+    private async Task LimpiarFiltros()
     {
         _filters.Texto = string.Empty;
         _activoFiltro = "1";
         _grupoFiltro = string.Empty;
+        _filters.PageNumber = 1;
+        _showUsuariosSearchPanel = false;
+        await BuscarAsync();
     }
 
     private void SyncFilters()
