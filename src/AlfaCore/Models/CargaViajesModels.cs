@@ -163,6 +163,8 @@ public sealed class CargaViajeTarifaGridItemDto
     public string AdicionalFijo3Descripcion { get; set; } = string.Empty;
     public decimal AdicionalFijo3Importe { get; set; }
     public bool Activo { get; set; } = true;
+    public DateTime? FechaHoraModificacion { get; set; }
+    public string UsuarioModificacion { get; set; } = string.Empty;
 }
 
 public sealed class CargaViajeTarifaClienteResumenDto
@@ -378,7 +380,7 @@ public sealed class CargaViajesReporteLiquidacionFilters
     public string DestinoCodigo { get; set; } = string.Empty;
     public string DestinoTexto { get; set; } = string.Empty;
     public string Estado { get; set; } = CargaViajesReporteEstadoKeys.Todos;
-    public string EstadoPago { get; set; } = CargaViajesLiquidacionEstadoPagoKeys.Pendientes;
+    public string EstadoPago { get; set; } = CargaViajesLiquidacionEstadoPagoKeys.Todos;
 }
 
 public sealed class CargaViajesLiquidacionFilters
@@ -421,6 +423,7 @@ public sealed class CargaViajeReporteLiquidacionRowDto
     public decimal TotalFlete { get; set; }
     public decimal TotalConPeaje { get; set; }
     public decimal Peaje { get; set; }
+    public bool FletePagado { get; set; }
     public string Estado { get; set; } = string.Empty;
     public string Usuario { get; set; } = string.Empty;
     public string Observaciones { get; set; } = string.Empty;

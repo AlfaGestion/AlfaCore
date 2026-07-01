@@ -283,8 +283,7 @@
                                         }
                                         <td>
                                             <div class="actions">
-                                                <button type="button" class="btn btn--ghost btn--sm" @onclick="() => AbrirViajePreviewAsync(row.Id)">Ver viaje</button>
-                                                <button type="button" class="btn btn--ghost btn--sm" @onclick="() => VerViajeAsync(row.Id)">Ver</button>
+                                                <button type="button" class="btn btn--ghost btn--sm" @onclick="() => AbrirViajePreviewAsync(row.Id)">Ver</button>
                                                 <button type="button" class="btn btn--ghost btn--sm" @onclick="() => EditarViajeAsync(row.Id)">Editar</button>
                                                 <button type="button" class="btn btn--ghost btn--sm" @onclick="() => AnularViajeAsync(row.Id)">Anular</button>
                                             </div>
@@ -315,6 +314,7 @@
                 </div>
                 <div class="actions">
                     <button type="button" class="btn btn--primary btn--sm" @onclick="NuevaTarifaAsync">Nueva tarifa</button>
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="AbrirTarifasBulkEditAsync">Aumento de tarifa</button>
                 </div>
             </div>
 
@@ -344,14 +344,6 @@
                 </div>
 
                 <div class="carga-viajes-smart-search__actions actions">
-                    <label class="carga-viajes-checkbox carga-viajes-quick-edit-toggle carga-viajes-tarifas__quick-toggle @(_tarifasQuickImportEditMode ? "carga-viajes-check--active" : string.Empty)">
-                        <input type="checkbox"
-                               class="carga-viajes-checkbox__input"
-                               checked="@_tarifasQuickImportEditMode"
-                               @onchange="async _ => await ToggleTarifasQuickImportEditModeAsync()" />
-                        <span class="carga-viajes-checkbox__box" aria-hidden="true"></span>
-                        <span class="carga-viajes-checkbox__label">Editar solo importes</span>
-                    </label>
                     <button type="button" class="btn btn--ghost btn--sm" @onclick="LimpiarFiltrosTarifasAsync">Limpiar filtros</button>
                     <button type="button" class="btn btn--ghost btn--sm" @onclick="RecargarTarifasAsync">Recargar</button>
                 </div>
@@ -436,6 +428,17 @@
             else
             {
                 <div class="usuarios-table-wrap">
+                    <div class="carga-viajes-tarifas__toolbar">
+                        <label class="carga-viajes-checkbox carga-viajes-quick-edit-toggle carga-viajes-tarifas__quick-toggle @(_tarifasQuickImportEditMode ? "carga-viajes-check--active" : string.Empty)">
+                            <input type="checkbox"
+                                   class="carga-viajes-checkbox__input"
+                                   checked="@_tarifasQuickImportEditMode"
+                                   @onchange="async _ => await ToggleTarifasQuickImportEditModeAsync()" />
+                            <span class="carga-viajes-checkbox__box" aria-hidden="true"></span>
+                            <span class="carga-viajes-checkbox__label">Editar importes</span>
+                        </label>
+                    </div>
+
                     <table class="data-table carga-viajes-tarifas-table">
                         <thead>
                             <tr>
@@ -446,6 +449,7 @@
                                 <th><button type="button" class="carga-viajes-sort-button" @onclick="() => SortTarifasAsync(SortKeyTipoVehiculo)"><span>Tipo vehículo</span><i class="bi @GetSortIcon(_tarifasFilters, SortKeyTipoVehiculo)"></i></button></th>
                                 <th class="carga-viajes-tarifas__importe-col"><button type="button" class="carga-viajes-sort-button" @onclick="() => SortTarifasAsync(SortKeyImporte)"><span>Importe</span><i class="bi @GetSortIcon(_tarifasFilters, SortKeyImporte)"></i></button></th>
                                 <th><button type="button" class="carga-viajes-sort-button" @onclick="() => SortTarifasAsync(SortKeyActivo)"><span>Activo</span><i class="bi @GetSortIcon(_tarifasFilters, SortKeyActivo)"></i></button></th>
+                                <th class="carga-viajes-tarifas__mod-col">Última modificación</th>
                                 <th>Acciones</th>
                             </tr>
                         </thead>
@@ -463,7 +467,7 @@
                                         {
                                             <input id="@GetTarifaImporteInputId(item.row.Id)"
                                                    class="carga-viajes-tarifas__importe-editor"
-                                                   type="text"
+                                                   type="number"
                                                    inputmode="decimal"
                                                    step="0.01"
                                                    @bind-value="_tarifasQuickImportValue"
@@ -473,16 +477,13 @@
                                         }
                                         else
                                         {
-                                            <button type="button"
-                                                    class="carga-viajes-tarifas__importe-cell"
-                                                    @onclick:stopPropagation="true"
-                                                    @ondblclick:stopPropagation="true"
-                                                    @onclick="() => ActivarEdicionRapidaTarifaAsync(item.row, item.index)">
+                                            <div class="carga-viajes-tarifas__importe-display" @onclick="() => ActivarEdicionRapidaTarifaAsync(item.row, item.index)">
                                                 @item.row.Importe.ToString("N2")
-                                            </button>
+                                            </div>
                                         }
                                     </td>
                                     <td>@(item.row.Activo ? "Activo" : "Desactivado")</td>
+                                    <td class="carga-viajes-tarifas__mod-col">@FormatTarifaUltimaModificacion(item.row)</td>
                                     <td>
                                         <div class="actions">
                                             <button type="button" class="btn btn--ghost btn--sm" @onclick="() => EditarTarifaAsync(item.row)">Editar</button>
@@ -503,6 +504,208 @@
                 </div>
             </div>
         </section>
+
+        @if (_showTarifasBulkEditModal)
+        {
+            <div class="tarifa-aumento-backdrop-v2" @onclick="CerrarTarifasBulkEditAsync">
+                <section class="tarifa-aumento-modal-v2" role="dialog" aria-modal="true" aria-labelledby="carga-viajes-tarifas-bulk-title" @onclick:stopPropagation="true" @onkeydown="HandleModalKeyDownAsync" tabindex="0">
+                    <header class="tarifa-aumento-header-v2">
+                        <div class="tarifa-aumento-header-v2__text">
+                            <span class="tarifa-aumento-header-v2__eyebrow">Tarifas</span>
+                            <h3 id="carga-viajes-tarifas-bulk-title" class="tarifa-aumento-header-v2__title">Aumento de tarifa</h3>
+                            <p class="tarifa-aumento-header-v2__subtitle">Filtrá, simulá y aplicá aumentos masivos sobre las tarifas seleccionadas.</p>
+                        </div>
+                        <button type="button" class="tarifa-aumento-header-v2__close" @onclick="CerrarTarifasBulkEditAsync" aria-label="Cerrar">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                    </header>
+                    <div class="tarifa-aumento-body-v2">
+                        @{ var tarifasAumentoFiltradas = GetTarifasAumentoFiltradas().ToList(); }
+
+                        <section class="tarifa-aumento-card-v2 tarifa-aumento-filters-v2">
+                            <div class="tarifa-aumento-card-v2__head">
+                                <div>
+                                    <h4 class="tarifa-aumento-card-v2__title">Filtros</h4>
+                                    <span class="tarifa-aumento-card-v2__subtitle">Buscá el universo de tarifas a actualizar.</span>
+                                </div>
+                            </div>
+                            <div class="tarifa-aumento-filters-v2__rows">
+                                <div class="tarifa-aumento-filters-v2__row">
+                                    <div class="tarifa-aumento-filters-v2__field tarifa-aumento-filters-v2__field--wide">
+                                        <label>Tipo tarifa</label>
+                                        <div class="tarifa-aumento-type-toggle-v2" role="group" aria-label="Tipo tarifa aumento">
+                                            <button type="button" class="tarifa-aumento-pill-v2 @(!HasTarifaAumentoFleteroFilter() ? "tarifa-aumento-pill-v2--active" : string.Empty)" @onclick="SetTarifaAumentoTipoTodasAsync">Todas</button>
+                                            <button type="button" class="tarifa-aumento-pill-v2 @(_tarifasAumentoFilters.TarifaFletero == "0" ? "tarifa-aumento-pill-v2--active" : string.Empty)" @onclick="SetTarifaAumentoTipoClientesAsync">Clientes</button>
+                                            <button type="button" class="tarifa-aumento-pill-v2 @(_tarifasAumentoFilters.TarifaFletero == "1" ? "tarifa-aumento-pill-v2--active" : string.Empty)" @onclick="SetTarifaAumentoTipoFleterosAsync">Fleteros</button>
+                                        </div>
+                                    </div>
+                                    <div class="tarifa-aumento-filters-v2__field">
+                                        <label>Activo</label>
+                                        <select @bind="_tarifasAumentoFilters.Activo">
+                                            <option value="">Todos</option>
+                                            <option value="1">Activo</option>
+                                            <option value="0">Desactivado</option>
+                                        </select>
+                                    </div>
+                                    <div class="tarifa-aumento-filters-v2__field tarifa-aumento-filters-v2__field--wide">
+                                        <label>Cliente</label>
+                                        <LookupAutocomplete Label="" Placeholder="Buscar cliente..." Text="@_tarifasAumentoClienteTexto" TextChanged="OnTarifaAumentoClienteFiltroChangedAsync" SelectedChanged="OnTarifaAumentoClienteFiltroSelectedAsync" OnEnterCommitted="AplicarFiltrosTarifasAumentoAsync" SearchFunc="CargaViajesSvc.SearchClientesAsync" MinimumCharacters="0" />
+                                    </div>
+                                    <div class="tarifa-aumento-filters-v2__field tarifa-aumento-filters-v2__field--wide">
+                                        <label>Chofer/Fletero</label>
+                                        <LookupAutocomplete Label="" Placeholder="Buscar chofer..." Text="@_tarifasAumentoChoferTexto" TextChanged="OnTarifaAumentoChoferFiltroChangedAsync" SelectedChanged="OnTarifaAumentoChoferFiltroSelectedAsync" OnEnterCommitted="AplicarFiltrosTarifasAumentoAsync" SearchFunc="CargaViajesSvc.SearchChoferLookupAsync" MinimumCharacters="0" />
+                                    </div>
+                                </div>
+                                <div class="tarifa-aumento-filters-v2__row">
+                                    <div class="tarifa-aumento-filters-v2__field tarifa-aumento-filters-v2__field--wide">
+                                        <label>Destino</label>
+                                        <LookupAutocomplete Label="" Placeholder="Buscar destino..." Text="@_tarifasAumentoDestinoTexto" TextChanged="OnTarifaAumentoDestinoFiltroChangedAsync" SelectedChanged="OnTarifaAumentoDestinoFiltroSelectedAsync" OnEnterCommitted="AplicarFiltrosTarifasAumentoAsync" SearchFunc="CargaViajesSvc.SearchDestinosLookupAsync" MinimumCharacters="0" />
+                                    </div>
+                                    <div class="tarifa-aumento-filters-v2__field">
+                                        <label>Tipo vehículo</label>
+                                        <LookupAutocomplete Label="" Placeholder="Buscar tipo..." Text="@_tarifasAumentoTipoVehiculoTexto" TextChanged="OnTarifaAumentoTipoVehiculoFiltroChangedAsync" SelectedChanged="OnTarifaAumentoTipoVehiculoFiltroSelectedAsync" OnEnterCommitted="AplicarFiltrosTarifasAumentoAsync" SearchFunc="CargaViajesSvc.SearchTipoVehiculosLookupAsync" MinimumCharacters="0" />
+                                    </div>
+                                    <div class="tarifa-aumento-filters-v2__field tarifa-aumento-filters-v2__field--wide">
+                                        <label>Buscar rápido</label>
+                                        <input type="search" placeholder="Código, cliente, destino o tipo vehículo..." value="@_tarifasAumentoBusqueda" @oninput="OnTarifasAumentoBusquedaChangedAsync" />
+                                    </div>
+                                    <div class="tarifa-aumento-filters-v2__field tarifa-aumento-filters-v2__field--actions">
+                                        <label>&nbsp;</label>
+                                        <button type="button" class="btn btn--ghost btn--sm" @onclick="LimpiarFiltrosTarifasAumentoAsync">Limpiar filtros</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+
+                        <section class="tarifa-aumento-card-v2 tarifa-aumento-table-card-v2">
+                            <div class="tarifa-aumento-card-v2__head tarifa-aumento-table-card-v2__head">
+                                <div>
+                                    <h4 class="tarifa-aumento-card-v2__title">Tarifas encontradas</h4>
+                                    <span class="tarifa-aumento-card-v2__subtitle">@tarifasAumentoFiltradas.Count registro(s)</span>
+                                </div>
+                                <label class="tarifa-aumento-select-all-v2">
+                                    <input type="checkbox" class="tarifa-aumento-check-v2" checked="@AreAllTarifasAumentoSeleccionadas()" @onchange="ToggleSelectAllTarifasAumentoAsync" />
+                                    <span>Seleccionar todos</span>
+                                </label>
+                            </div>
+                            @if (_tarifasAumentoLoading)
+                            {
+                                <div class="tarifa-aumento-empty-v2">Cargando tarifas...</div>
+                            }
+                            else if (tarifasAumentoFiltradas.Count == 0)
+                            {
+                                <div class="tarifa-aumento-empty-v2">Sin tarifas para mostrar.</div>
+                            }
+                            else
+                            {
+                                <div class="tarifa-aumento-table-scroll-v2">
+                                    <table class="tarifa-aumento-table-v2">
+                                        <thead>
+                                            <tr>
+                                                <th class="tarifa-aumento-table-v2__check-col">
+                                                    <input type="checkbox" class="tarifa-aumento-check-v2" checked="@AreAllTarifasAumentoSeleccionadas()" @onchange="ToggleSelectAllTarifasAumentoAsync" aria-label="Seleccionar todos" />
+                                                </th>
+                                                <th>Código</th>
+                                                <th>Cliente / Chofer</th>
+                                                <th>Destino</th>
+                                                <th>Tipo vehículo</th>
+                                                <th class="tarifa-aumento-table-v2__money-col">Importe actual</th>
+                                                <th class="tarifa-aumento-table-v2__money-col">Importe simulado</th>
+                                                <th class="tarifa-aumento-table-v2__money-col">Diferencia</th>
+                                                <th>Última actualización</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var row in tarifasAumentoFiltradas)
+                                            {
+                                                var selected = _tarifasAumentoSeleccionadas.Contains(row.Id);
+                                                var simulated = GetTarifaAumentoImporteSimulado(row);
+                                                var diff = GetTarifaAumentoDiferencia(row);
+                                                <tr class="@(selected ? "tarifa-aumento-table-v2__row tarifa-aumento-table-v2__row--selected" : "tarifa-aumento-table-v2__row")">
+                                                    <td class="tarifa-aumento-table-v2__check-col">
+                                                        <input type="checkbox" class="tarifa-aumento-check-v2" checked="@selected" @onchange="args => ToggleTarifaAumentoSelectionAsync(row, args)" aria-label="@($"Seleccionar tarifa {row.IdLista}")" />
+                                                    </td>
+                                                    <td>@row.IdLista</td>
+                                                    <td>@GetTarifaEntidadDisplay(row)</td>
+                                                    <td>@ExtractVisibleText(row.Destino)</td>
+                                                    <td>@ExtractVisibleText(row.TipoVehiculo)</td>
+                                                    <td class="tarifa-aumento-table-v2__money-cell">@row.Importe.ToString("N2")</td>
+                                                    <td class="tarifa-aumento-table-v2__money-cell">@((selected && _tarifasAumentoSimulada) ? simulated.ToString("N2") : "-")</td>
+                                                    <td class="tarifa-aumento-table-v2__money-cell">@((selected && _tarifasAumentoSimulada) ? diff.ToString("+N2;-N2;0.00") : "-")</td>
+                                                    <td>@FormatTarifaUltimaModificacion(row)</td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            }
+                        </section>
+
+                        <section class="tarifa-aumento-card-v2 tarifa-aumento-config-v2">
+                            <div class="tarifa-aumento-card-v2__head">
+                                <div>
+                                    <h4 class="tarifa-aumento-card-v2__title">Configuración del aumento</h4>
+                                    <span class="tarifa-aumento-card-v2__subtitle">Definí el ajuste antes de aplicarlo a las tarifas seleccionadas.</span>
+                                </div>
+                            </div>
+                            <div class="tarifa-aumento-config-v2__grid">
+                                <div class="tarifa-aumento-config-v2__field">
+                                    <span class="tarifa-aumento-config-v2__label">Tipo de ajuste</span>
+                                    <div class="tarifa-aumento-config-v2__radio-group" role="group" aria-label="Tipo de ajuste">
+                                        <label class="tarifa-aumento-config-v2__radio-pill">
+                                            <input type="radio" name="tarifas-aumento-mode" checked="@(_tarifasAumentoMode == TarifasBulkModeIncreasePercent)" @onchange="async _ => await SetTarifasBulkModeAsync(TarifasBulkModeIncreasePercent)" />
+                                            <span>Aumentar %</span>
+                                        </label>
+                                        <label class="tarifa-aumento-config-v2__radio-pill">
+                                            <input type="radio" name="tarifas-aumento-mode" checked="@(_tarifasAumentoMode == TarifasBulkModeDecreasePercent)" @onchange="async _ => await SetTarifasBulkModeAsync(TarifasBulkModeDecreasePercent)" />
+                                            <span>Disminuir %</span>
+                                        </label>
+                                        <label class="tarifa-aumento-config-v2__radio-pill">
+                                            <input type="radio" name="tarifas-aumento-mode" checked="@(_tarifasAumentoMode == TarifasBulkModeAddFixed)" @onchange="async _ => await SetTarifasBulkModeAsync(TarifasBulkModeAddFixed)" />
+                                            <span>Sumar importe fijo</span>
+                                        </label>
+                                        <label class="tarifa-aumento-config-v2__radio-pill">
+                                            <input type="radio" name="tarifas-aumento-mode" checked="@(_tarifasAumentoMode == TarifasBulkModeSubtractFixed)" @onchange="async _ => await SetTarifasBulkModeAsync(TarifasBulkModeSubtractFixed)" />
+                                            <span>Restar importe fijo</span>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="tarifa-aumento-config-v2__field">
+                                    <label class="tarifa-aumento-config-v2__label">Valor</label>
+                                    <input type="number" step="0.01" value="@_tarifasAumentoValue" @oninput="OnTarifaAumentoValueChangedAsync" />
+                                </div>
+                                <div class="tarifa-aumento-config-v2__field">
+                                    <label class="tarifa-aumento-config-v2__label">Redondeo</label>
+                                    <select @bind="_tarifasAumentoRedondeo">
+                                        <option value="none">Ninguno</option>
+                                        <option value="1">1</option>
+                                        <option value="10">10</option>
+                                        <option value="100">100</option>
+                                    </select>
+                                </div>
+                                <div class="tarifa-aumento-config-v2__field tarifa-aumento-config-v2__field--action">
+                                    <label class="tarifa-aumento-config-v2__label">&nbsp;</label>
+                                    <button type="button" class="btn btn--primary btn--sm" @onclick="SimularTarifasAumentoAsync">Simular</button>
+                                </div>
+                                <div class="tarifa-aumento-config-v2__preview">
+                                    <div class="tarifa-aumento-config-v2__preview-head">Vista previa</div>
+                                    <div class="tarifa-aumento-config-v2__preview-grid">
+                                        <div><span>Seleccionadas</span><strong>@GetTarifasAumentoSeleccionadasCount().ToString("N0")</strong></div>
+                                        <div><span>Importe actual total</span><strong>@FormatMoney(GetTarifasAumentoCurrentTotal())</strong></div>
+                                        <div><span>Importe simulado total</span><strong>@FormatMoney(GetTarifasAumentoSimulatedTotal())</strong></div>
+                                        <div><span>Diferencia total</span><strong>@FormatMoney(GetTarifasAumentoDifferenceTotal())</strong></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+                    </div>
+                    <footer class="tarifa-aumento-footer-v2">
+                        <button type="button" class="btn btn--ghost" @onclick="CerrarTarifasBulkEditAsync">Cancelar</button>
+                        <button type="button" class="btn btn--primary" @onclick="AplicarTarifasBulkEditAsync" disabled="@(!_tarifasAumentoSimulada || _tarifasAumentoSeleccionadas.Count == 0)">Guardar aumento</button>
+                    </footer>
+                </section>
+            </div>
+        }
 
         @if (_showTarifaEditor)
         {
@@ -1174,14 +1377,6 @@
             </div>
 
             <div class="smart-search carga-viajes-smart-search carga-viajes-smart-search--reportes">
-                <div class="smart-search__bar">
-                    <i class="bi bi-funnel"></i>
-                    <div class="carga-viajes-smart-search__bar-copy">
-                        <strong>Filtros de reportes</strong>
-                        <span>Consultá viajes con filtros claros y dos modos de visualización.</span>
-                    </div>
-                </div>
-
                 <div class="smart-search__chips" aria-live="polite">
                     @foreach (var chip in BuildReporteFilterChips())
                     {
@@ -1195,10 +1390,9 @@
                     }
                 </div>
 
-                <div class="smart-search__panel carga-viajes-smart-search__panel--reportes">
-                    <div class="smart-search__column">
-                        <h4><i class="bi bi-calendar-range"></i> Fechas</h4>
-                        <div class="smart-search__inline">
+                <div class="viajes-filter-panel-v2 viajes-report-filter-panel-v2">
+                    <div class="viajes-filter-row-v2">
+                        <div class="viajes-filter-field-v2 sm">
                             <label>Rango rápido</label>
                             <select value="@_reporteLiquidacionFilters.RangoRapido" @onchange="OnReporteRangoRapidoChangedAsync">
                                 <option value="@CargaViajesReporteRangoRapidoKeys.Hoy">Hoy</option>
@@ -1211,41 +1405,19 @@
                                 <option value="@CargaViajesReporteRangoRapidoKeys.Todo">Todo</option>
                             </select>
                         </div>
-                        <div class="smart-search__inline">
+                        <div class="viajes-filter-field-v2 sm">
                             <label>Fecha desde</label>
-                            <InputDate TValue="DateTime?"
-                                       Value="_reporteLiquidacionFilters.FechaDesde"
-                                       ValueChanged="OnReporteFechaDesdeChangedAsync"
-                                       ValueExpression="() => _reporteLiquidacionFilters.FechaDesde" />
+                            <InputDate TValue="DateTime?" Value="_reporteLiquidacionFilters.FechaDesde" ValueChanged="OnReporteFechaDesdeChangedAsync" ValueExpression="() => _reporteLiquidacionFilters.FechaDesde" />
                         </div>
-                        <div class="smart-search__inline">
+                        <div class="viajes-filter-field-v2 sm">
                             <label>Fecha hasta</label>
-                            <InputDate TValue="DateTime?"
-                                       Value="_reporteLiquidacionFilters.FechaHasta"
-                                       ValueChanged="OnReporteFechaHastaChangedAsync"
-                                       ValueExpression="() => _reporteLiquidacionFilters.FechaHasta" />
+                            <InputDate TValue="DateTime?" Value="_reporteLiquidacionFilters.FechaHasta" ValueChanged="OnReporteFechaHastaChangedAsync" ValueExpression="() => _reporteLiquidacionFilters.FechaHasta" />
                         </div>
-                    </div>
-                    <div class="smart-search__column">
-                        <h4><i class="bi bi-person-badge"></i> Persona</h4>
-                        <div class="smart-search__inline">
-                            <label>Tipo de persona</label>
-                            <select value="@_reporteLiquidacionFilters.TipoPersona" @onchange="OnReporteTipoPersonaChangedAsync">
-                                <option value="@CargaViajesReporteTipoPersonaKeys.Choferes">Choferes</option>
-                                <option value="@CargaViajesReporteTipoPersonaKeys.Fleteros">Fleteros</option>
-                                <option value="@CargaViajesReporteTipoPersonaKeys.ChoferesYFleteros">Choferes y Fleteros</option>
-                            </select>
+                        <div class="viajes-filter-field-v2 lg">
+                            <label>Chofer/Fletero</label>
+                            <LookupAutocomplete Label="" Placeholder="Buscar persona..." Text="@_reporteChoferFleteroTexto" TextChanged="OnReporteChoferFleteroTextoChangedAsync" SelectedChanged="OnReporteChoferFleteroSeleccionadoAsync" SearchFunc="SearchReporteChoferFleteroLookupAsync" />
                         </div>
-                        <div class="smart-search__inline">
-                            <label>Chofer / Fletero</label>
-                            <LookupAutocomplete Label=""
-                                                 Placeholder="Buscar persona..."
-                                                 Text="@_reporteChoferFleteroTexto"
-                                                 TextChanged="OnReporteChoferFleteroTextoChangedAsync"
-                                                 SelectedChanged="OnReporteChoferFleteroSeleccionadoAsync"
-                                                 SearchFunc="SearchReporteChoferFleteroLookupAsync" />
-                        </div>
-                        <div class="smart-search__inline">
+                        <div class="viajes-filter-field-v2 sm">
                             <label>Estado</label>
                             <select value="@_reporteLiquidacionFilters.Estado" @onchange="OnReporteEstadoChangedAsync">
                                 <option value="@CargaViajesReporteEstadoKeys.Todos">Todos</option>
@@ -1254,38 +1426,55 @@
                                 <option value="@CargaViajesReporteEstadoKeys.PendientePago">Pendiente pago</option>
                             </select>
                         </div>
-                    </div>
-                    <div class="smart-search__column">
-                        <h4><i class="bi bi-buildings"></i> Cliente y destino</h4>
-                        <div class="smart-search__inline">
-                            <label>Cliente</label>
-                            <LookupAutocomplete Label=""
-                                                 Placeholder="Buscar cliente..."
-                                                 Text="@_reporteClienteTexto"
-                                                 TextChanged="OnReporteClienteTextoChangedAsync"
-                                                 SelectedChanged="OnReporteClienteSeleccionadoAsync"
-                                                 SearchFunc="SearchReporteClienteLookupAsync"
-                                                 MinimumCharacters="0" />
+                        <div class="viajes-filter-field-v2 sm">
+                            <label>Estado pago</label>
+                            <select value="@_reporteLiquidacionFilters.EstadoPago" @onchange="OnReporteEstadoPagoChangedAsync">
+                                <option value="@CargaViajesLiquidacionEstadoPagoKeys.Todos">Todos</option>
+                                <option value="@CargaViajesLiquidacionEstadoPagoKeys.Pendientes">Pendiente</option>
+                                <option value="@CargaViajesLiquidacionEstadoPagoKeys.Pagados">Pagado</option>
+                            </select>
                         </div>
-                        <div class="smart-search__inline">
-                            <label>Destino</label>
-                            <LookupAutocomplete Label=""
-                                                 Placeholder="Buscar destino..."
-                                                 Text="@_reporteDestinoTexto"
-                                                 TextChanged="OnReporteDestinoTextoChangedAsync"
-                                                 SelectedChanged="OnReporteDestinoSeleccionadoAsync"
-                                                 SearchFunc="SearchReporteDestinoLookupAsync"
-                                                 MinimumCharacters="0" />
-                        </div>
-                    </div>
-                    <div class="smart-search__column">
-                        <h4><i class="bi bi-ui-checks-grid"></i> Modo</h4>
-                        <div class="smart-search__inline">
+                        <div class="viajes-filter-field-v2 sm">
                             <label>Visualización</label>
                             <select value="@_reporteLiquidacionFilters.Modo" @onchange="OnReporteModoChangedAsync">
                                 <option value="@CargaViajesReporteModoKeys.Detallado">Detallado</option>
                                 <option value="@CargaViajesReporteModoKeys.Resumen">Resumen</option>
                             </select>
+                        </div>
+                    </div>
+                    <div class="viajes-filter-row-v2">
+                        <div class="viajes-filter-field-v2 type">
+                            <label>Tipo</label>
+                            <div class="viajes-report-type-toggle-v2" role="group" aria-label="Tipo de persona en reportes">
+                                <button type="button" class="viajes-type-toggle-v2__button @(_reporteLiquidacionFilters.IncluirChoferes ? "viajes-type-toggle-v2__button--active" : string.Empty)" aria-pressed="@_reporteLiquidacionFilters.IncluirChoferes" @onclick="ToggleReporteChoferesAsync">
+                                    <span class="viajes-type-toggle-v2__check" aria-hidden="true"><i class="bi bi-check-lg"></i></span>
+                                    <span>Choferes</span>
+                                </button>
+                                <button type="button" class="viajes-type-toggle-v2__button @(_reporteLiquidacionFilters.IncluirFleteros ? "viajes-type-toggle-v2__button--active" : string.Empty)" aria-pressed="@_reporteLiquidacionFilters.IncluirFleteros" @onclick="ToggleReporteFleterosAsync">
+                                    <span class="viajes-type-toggle-v2__check" aria-hidden="true"><i class="bi bi-check-lg"></i></span>
+                                    <span>Fleteros</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="viajes-filter-field-v2 md">
+                            <label>Agrupar por</label>
+                            <select value="@_reporteLiquidacionFilters.AgruparPor" @onchange="async args => await SetReporteAgruparPorAsync(args.Value?.ToString() ?? string.Empty)">
+                                <option value="@CargaViajesViewGroupKeys.None">Sin agrupar</option>
+                                <option value="@CargaViajesViewGroupKeys.Chofer">Chofer/Fletero</option>
+                                <option value="@CargaViajesViewGroupKeys.Cliente">Cliente</option>
+                                <option value="@CargaViajesViewGroupKeys.Destino">Destino</option>
+                                <option value="@CargaViajesViewGroupKeys.TipoVehiculo">Tipo vehículo</option>
+                                <option value="@CargaViajesViewGroupKeys.Estado">Estado</option>
+                                <option value="@CargaViajesViewGroupKeys.Usuario">Usuario</option>
+                            </select>
+                        </div>
+                        <div class="viajes-filter-field-v2 lg">
+                            <label>Cliente</label>
+                            <LookupAutocomplete Label="" Placeholder="Buscar cliente..." Text="@_reporteClienteTexto" TextChanged="OnReporteClienteTextoChangedAsync" SelectedChanged="OnReporteClienteSeleccionadoAsync" SearchFunc="SearchReporteClienteLookupAsync" MinimumCharacters="0" />
+                        </div>
+                        <div class="viajes-filter-field-v2 lg">
+                            <label>Destino</label>
+                            <LookupAutocomplete Label="" Placeholder="Buscar destino..." Text="@_reporteDestinoTexto" TextChanged="OnReporteDestinoTextoChangedAsync" SelectedChanged="OnReporteDestinoSeleccionadoAsync" SearchFunc="SearchReporteDestinoLookupAsync" MinimumCharacters="0" />
                         </div>
                     </div>
                 </div>
@@ -1314,7 +1503,7 @@
             {
                 <div class="usuarios-empty">Elegí los filtros y presioná Buscar para ver el resultado.</div>
             }
-            else if (_reporteLiquidacionRows.Count == 0)
+            else if (GetReporteRowsAplicandoTipoPersona().Count == 0)
             {
                 <div class="usuarios-empty">No se encontraron viajes para los filtros seleccionados.</div>
             }
@@ -1324,6 +1513,14 @@
                     <article class="carga-viajes-reportes__total-card">
                         <span>Cantidad total de viajes</span>
                         <strong>@GetReporteCantidadTotalViajes().ToString("N0")</strong>
+                    </article>
+                    <article class="carga-viajes-reportes__total-card">
+                        <span>Viajes pendientes</span>
+                        <strong>@GetReporteCantidadPendientes().ToString("N0")</strong>
+                    </article>
+                    <article class="carga-viajes-reportes__total-card">
+                        <span>Viajes pagados</span>
+                        <strong>@GetReporteCantidadPagados().ToString("N0")</strong>
                     </article>
                     <article class="carga-viajes-reportes__total-card">
                         <span>Total cliente</span>
@@ -1345,25 +1542,290 @@
 
                 @if (IsReporteResumen())
                 {
-                    @foreach (var group in GetReporteResumenRows())
+                    <div class="carga-viajes-reportes__sortbar">
+                        <span class="carga-viajes-reportes__sortbar-label">Ordenar resumen por:</span>
+                        <button type="button" class="carga-viajes-sort-pill @GetSortPillClass(_reporteSortBy, _reporteSortDescending, SortKeyTipo)" @onclick="() => SortReportesAsync(SortKeyTipo)">
+                            <span>Tipo</span>
+                            <i class="bi @GetSortIcon(_reporteSortBy, _reporteSortDescending, SortKeyTipo)"></i>
+                        </button>
+                        <button type="button" class="carga-viajes-sort-pill @GetSortPillClass(_reporteSortBy, _reporteSortDescending, SortKeyChofer)" @onclick="() => SortReportesAsync(SortKeyChofer)">
+                            <span>Chofer/Fletero</span>
+                            <i class="bi @GetSortIcon(_reporteSortBy, _reporteSortDescending, SortKeyChofer)"></i>
+                        </button>
+                        <button type="button" class="carga-viajes-sort-pill @GetSortPillClass(_reporteSortBy, _reporteSortDescending, SortKeyViajes)" @onclick="() => SortReportesAsync(SortKeyViajes)">
+                            <span>Viajes</span>
+                            <i class="bi @GetSortIcon(_reporteSortBy, _reporteSortDescending, SortKeyViajes)"></i>
+                        </button>
+                        <button type="button" class="carga-viajes-sort-pill @GetSortPillClass(_reporteSortBy, _reporteSortDescending, SortKeyTotalCliente)" @onclick="() => SortReportesAsync(SortKeyTotalCliente)">
+                            <span>Total cliente</span>
+                            <i class="bi @GetSortIcon(_reporteSortBy, _reporteSortDescending, SortKeyTotalCliente)"></i>
+                        </button>
+                        <button type="button" class="carga-viajes-sort-pill @GetSortPillClass(_reporteSortBy, _reporteSortDescending, SortKeyTotalFletero)" @onclick="() => SortReportesAsync(SortKeyTotalFletero)">
+                            <span>Total chofer/fletero</span>
+                            <i class="bi @GetSortIcon(_reporteSortBy, _reporteSortDescending, SortKeyTotalFletero)"></i>
+                        </button>
+                        <button type="button" class="carga-viajes-sort-pill @GetSortPillClass(_reporteSortBy, _reporteSortDescending, SortKeyPeaje)" @onclick="() => SortReportesAsync(SortKeyPeaje)">
+                            <span>Peajes</span>
+                            <i class="bi @GetSortIcon(_reporteSortBy, _reporteSortDescending, SortKeyPeaje)"></i>
+                        </button>
+                        <button type="button" class="carga-viajes-sort-pill @GetSortPillClass(_reporteSortBy, _reporteSortDescending, SortKeyResultado)" @onclick="() => SortReportesAsync(SortKeyResultado)">
+                            <span>Resultado</span>
+                            <i class="bi @GetSortIcon(_reporteSortBy, _reporteSortDescending, SortKeyResultado)"></i>
+                        </button>
+                    </div>
+                    @if (!IsReporteAgrupado())
                     {
-                        <section class="liquidacion-group-card">
-                            <div class="liquidacion-group-card__header">
-                                <div>
-                                    <span class="liquidacion-group-card__eyebrow">Resumen</span>
-                                    <h4>@DisplayVisibleText(group.ChoferNombre)</h4>
-                                </div>
-                                <div class="liquidacion-group-card__stats">
-                                    <span>Tipo: @(group.EsFletero ? "Fletero" : "Chofer")</span>
-                                    <span>Viajes: @group.CantidadViajes</span>
-                                    <span>Total cliente: @FormatMoney(group.TotalConPeaje)</span>
-                                    <span>Total chofer/fletero: @FormatMoney(group.TotalFlete)</span>
-                                    <span>Total peajes: @FormatMoney(group.TotalPeaje)</span>
-                                    <span class="liquidacion-group-card__resultado">Resultado: @FormatMoney(group.TotalConPeaje - group.TotalFlete - group.TotalPeaje)</span>
-                                </div>
-                            </div>
-                        </section>
+                        <div class="usuarios-empty">
+                            Resumen general sin agrupación. Elegí un agrupador para ver tarjetas por grupo.
+                        </div>
                     }
+                    else
+                    {
+                        <div class="carga-viajes-reportes__accordion">
+                            @foreach (var group in GetReporteAgrupacionesActuales())
+                            {
+                                var groupKey = BuildReporteGroupKey(group);
+                                var expanded = IsReporteGroupExpanded(groupKey);
+                                <section class="liquidacion-group-card carga-viajes-reportes__group-card">
+                                    <button type="button"
+                                            class="liquidacion-group-card__header carga-viajes-reportes__group-header"
+                                            @onclick="() => ToggleReporteGroupDetail(groupKey)">
+                                        <div class="liquidacion-group-card__eyebrow">
+                                            <i class="bi @(expanded ? "bi-caret-down-fill" : "bi-caret-right-fill")"></i>
+                                            <span>@group.GrupoTipo.ToUpperInvariant()</span>
+                                        </div>
+                                        <div>
+                                            <h4>@DisplayVisibleText(group.GrupoNombre)</h4>
+                                            <span class="carga-viajes-reportes__group-hint">@(expanded ? "Ocultar detalle" : "Ver detalle")</span>
+                                        </div>
+                                        <div class="liquidacion-group-card__stats">
+                                            <span>Viajes: @group.CantidadViajes</span>
+                                            <span>Pendientes: @GetReporteGrupoCantidadPendientes(group)</span>
+                                            <span>Pagados: @GetReporteGrupoCantidadPagados(group)</span>
+                                            <span>Total cliente: @FormatMoney(group.TotalCliente)</span>
+                                            <span>Total chofer/fletero: @FormatMoney(group.TotalFletero)</span>
+                                            <span>Total peajes: @FormatMoney(group.TotalPeajes)</span>
+                                            <span class="liquidacion-group-card__resultado">Resultado: @FormatMoney(group.Resultado)</span>
+                                        </div>
+                                    </button>
+
+                                    @if (expanded)
+                                    {
+                                        <div class="carga-viajes-reportes__group-detail">
+                                            <div class="usuarios-table-wrap liquidacion-table-shell__table">
+                                                <table class="liquidacion-table">
+                                                    <thead>
+                                                        <tr>
+                                                            <th class="@GetSortThClass(_reporteSortBy, _reporteSortDescending, SortKeyFecha)">
+                                                                <button type="button" class="carga-viajes-sort-button" @onclick="() => SortReportesAsync(SortKeyFecha)">
+                                                                    <span>Fecha</span>
+                                                                    <i class="bi @GetSortIcon(_reporteSortBy, _reporteSortDescending, SortKeyFecha)"></i>
+                                                                </button>
+                                                            </th>
+                                                            <th class="@GetSortThClass(_reporteSortBy, _reporteSortDescending, SortKeyCliente)">
+                                                                <button type="button" class="carga-viajes-sort-button" @onclick="() => SortReportesAsync(SortKeyCliente)">
+                                                                    <span>Cliente</span>
+                                                                    <i class="bi @GetSortIcon(_reporteSortBy, _reporteSortDescending, SortKeyCliente)"></i>
+                                                                </button>
+                                                            </th>
+                                                            <th class="@GetSortThClass(_reporteSortBy, _reporteSortDescending, SortKeyChofer)">
+                                                                <button type="button" class="carga-viajes-sort-button" @onclick="() => SortReportesAsync(SortKeyChofer)">
+                                                                    <span>Chofer/Fletero</span>
+                                                                    <i class="bi @GetSortIcon(_reporteSortBy, _reporteSortDescending, SortKeyChofer)"></i>
+                                                                </button>
+                                                            </th>
+                                                            <th class="@GetSortThClass(_reporteSortBy, _reporteSortDescending, SortKeyDestino)">
+                                                                <button type="button" class="carga-viajes-sort-button" @onclick="() => SortReportesAsync(SortKeyDestino)">
+                                                                    <span>Destino</span>
+                                                                    <i class="bi @GetSortIcon(_reporteSortBy, _reporteSortDescending, SortKeyDestino)"></i>
+                                                                </button>
+                                                            </th>
+                                                            <th class="@GetSortThClass(_reporteSortBy, _reporteSortDescending, SortKeyTipoVehiculo)">
+                                                                <button type="button" class="carga-viajes-sort-button" @onclick="() => SortReportesAsync(SortKeyTipoVehiculo)">
+                                                                    <span>Tipo vehículo</span>
+                                                                    <i class="bi @GetSortIcon(_reporteSortBy, _reporteSortDescending, SortKeyTipoVehiculo)"></i>
+                                                                </button>
+                                                            </th>
+                                                            <th class="liquidacion-table__num @GetSortThClass(_reporteSortBy, _reporteSortDescending, SortKeyTotalCliente)">
+                                                                <button type="button" class="carga-viajes-sort-button" @onclick="() => SortReportesAsync(SortKeyTotalCliente)">
+                                                                    <span>Importe cliente</span>
+                                                                    <i class="bi @GetSortIcon(_reporteSortBy, _reporteSortDescending, SortKeyTotalCliente)"></i>
+                                                                </button>
+                                                            </th>
+                                                            <th class="liquidacion-table__num @GetSortThClass(_reporteSortBy, _reporteSortDescending, SortKeyTotalFletero)">
+                                                                <button type="button" class="carga-viajes-sort-button" @onclick="() => SortReportesAsync(SortKeyTotalFletero)">
+                                                                    <span>Importe chofer/fletero</span>
+                                                                    <i class="bi @GetSortIcon(_reporteSortBy, _reporteSortDescending, SortKeyTotalFletero)"></i>
+                                                                </button>
+                                                            </th>
+                                                            <th class="liquidacion-table__num @GetSortThClass(_reporteSortBy, _reporteSortDescending, SortKeyPeaje)">
+                                                                <button type="button" class="carga-viajes-sort-button" @onclick="() => SortReportesAsync(SortKeyPeaje)">
+                                                                    <span>Peajes</span>
+                                                                    <i class="bi @GetSortIcon(_reporteSortBy, _reporteSortDescending, SortKeyPeaje)"></i>
+                                                                </button>
+                                                            </th>
+                                                            <th class="liquidacion-table__num @GetSortThClass(_reporteSortBy, _reporteSortDescending, SortKeyTotal)">
+                                                                <button type="button" class="carga-viajes-sort-button" @onclick="() => SortReportesAsync(SortKeyTotal)">
+                                                                    <span>Total</span>
+                                                                    <i class="bi @GetSortIcon(_reporteSortBy, _reporteSortDescending, SortKeyTotal)"></i>
+                                                                </button>
+                                                            </th>
+                                                            <th class="@GetSortThClass(_reporteSortBy, _reporteSortDescending, SortKeyEstado)">
+                                                                <button type="button" class="carga-viajes-sort-button" @onclick="() => SortReportesAsync(SortKeyEstado)">
+                                                                    <span>Estado</span>
+                                                                    <i class="bi @GetSortIcon(_reporteSortBy, _reporteSortDescending, SortKeyEstado)"></i>
+                                                                </button>
+                                                            </th>
+                                                            <th>Estado pago</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        @foreach (var row in SortReporteDetalleRows(group.DetalleViajes))
+                                                        {
+                                                            <tr class="@GetReporteRowClass(row)">
+                                                                <td>@row.Fecha.ToString("dd/MM/yyyy")</td>
+                                                                <td>@DisplayVisibleText(row.ClienteNombre)</td>
+                                                                <td>@DisplayVisibleText(row.ChoferNombre)</td>
+                                                                <td>@DisplayVisibleText(row.DestinoDescripcion)</td>
+                                                                <td>@DisplayVisibleText(row.TipoVehiculoDescripcion)</td>
+                                                                <td class="liquidacion-table__num">@FormatMoney(row.TotalConPeaje)</td>
+                                                                <td class="liquidacion-table__num">@FormatMoney(row.TotalFlete)</td>
+                                                                <td class="liquidacion-table__num">@(row.Peaje > 0m ? FormatMoney(row.Peaje) : "-")</td>
+                                                                <td class="liquidacion-table__num">@FormatMoney(row.TotalConPeaje)</td>
+                                                                <td>@GetReporteEstadoTexto(row.Estado)</td>
+                                                                <td>@RenderReporteEstadoPagoChip(row)</td>
+                                                            </tr>
+                                                        }
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    }
+                                </section>
+                            }
+                        </div>
+                    }
+                }
+                else if (IsReporteAgrupado())
+                {
+                    <div class="carga-viajes-reportes__accordion">
+                        @foreach (var group in GetReporteAgrupacionesActuales())
+                        {
+                            var groupKey = BuildReporteGroupKey(group);
+                            <section class="liquidacion-group-card carga-viajes-reportes__group-card">
+                                <button type="button"
+                                        class="liquidacion-group-card__header carga-viajes-reportes__group-header"
+                                        @onclick="() => { if (IsReporteResumen()) ToggleReporteGroupDetail(groupKey); }">
+                                    <div class="liquidacion-group-card__eyebrow">
+                                        <i class="bi bi-caret-down-fill"></i>
+                                        <span>@group.GrupoTipo.ToUpperInvariant()</span>
+                                    </div>
+                                    <div>
+                                        <h4>@DisplayVisibleText(group.GrupoNombre)</h4>
+                                    </div>
+                                    <div class="liquidacion-group-card__stats">
+                                        <span>Viajes: @group.CantidadViajes</span>
+                                        <span>Pendientes: @GetReporteGrupoCantidadPendientes(group)</span>
+                                        <span>Pagados: @GetReporteGrupoCantidadPagados(group)</span>
+                                        <span>Total cliente: @FormatMoney(group.TotalCliente)</span>
+                                        <span>Total chofer/fletero: @FormatMoney(group.TotalFletero)</span>
+                                        <span>Total peajes: @FormatMoney(group.TotalPeajes)</span>
+                                        <span class="liquidacion-group-card__resultado">Resultado: @FormatMoney(group.Resultado)</span>
+                                    </div>
+                                </button>
+
+                                <div class="carga-viajes-reportes__group-detail">
+                                    <div class="usuarios-table-wrap liquidacion-table-shell__table">
+                                        <table class="liquidacion-table">
+                                            <thead>
+                                                <tr>
+                                                    <th class="@GetSortThClass(_reporteSortBy, _reporteSortDescending, SortKeyFecha)">
+                                                        <button type="button" class="carga-viajes-sort-button" @onclick="() => SortReportesAsync(SortKeyFecha)">
+                                                            <span>Fecha</span>
+                                                            <i class="bi @GetSortIcon(_reporteSortBy, _reporteSortDescending, SortKeyFecha)"></i>
+                                                        </button>
+                                                    </th>
+                                                    <th class="@GetSortThClass(_reporteSortBy, _reporteSortDescending, SortKeyCliente)">
+                                                        <button type="button" class="carga-viajes-sort-button" @onclick="() => SortReportesAsync(SortKeyCliente)">
+                                                            <span>Cliente</span>
+                                                            <i class="bi @GetSortIcon(_reporteSortBy, _reporteSortDescending, SortKeyCliente)"></i>
+                                                        </button>
+                                                    </th>
+                                                    <th class="@GetSortThClass(_reporteSortBy, _reporteSortDescending, SortKeyChofer)">
+                                                        <button type="button" class="carga-viajes-sort-button" @onclick="() => SortReportesAsync(SortKeyChofer)">
+                                                            <span>Chofer/Fletero</span>
+                                                            <i class="bi @GetSortIcon(_reporteSortBy, _reporteSortDescending, SortKeyChofer)"></i>
+                                                        </button>
+                                                    </th>
+                                                    <th class="@GetSortThClass(_reporteSortBy, _reporteSortDescending, SortKeyDestino)">
+                                                        <button type="button" class="carga-viajes-sort-button" @onclick="() => SortReportesAsync(SortKeyDestino)">
+                                                            <span>Destino</span>
+                                                            <i class="bi @GetSortIcon(_reporteSortBy, _reporteSortDescending, SortKeyDestino)"></i>
+                                                        </button>
+                                                    </th>
+                                                    <th class="@GetSortThClass(_reporteSortBy, _reporteSortDescending, SortKeyTipoVehiculo)">
+                                                        <button type="button" class="carga-viajes-sort-button" @onclick="() => SortReportesAsync(SortKeyTipoVehiculo)">
+                                                            <span>Tipo vehículo</span>
+                                                            <i class="bi @GetSortIcon(_reporteSortBy, _reporteSortDescending, SortKeyTipoVehiculo)"></i>
+                                                        </button>
+                                                    </th>
+                                                    <th class="liquidacion-table__num @GetSortThClass(_reporteSortBy, _reporteSortDescending, SortKeyTotalCliente)">
+                                                        <button type="button" class="carga-viajes-sort-button" @onclick="() => SortReportesAsync(SortKeyTotalCliente)">
+                                                            <span>Importe cliente</span>
+                                                            <i class="bi @GetSortIcon(_reporteSortBy, _reporteSortDescending, SortKeyTotalCliente)"></i>
+                                                        </button>
+                                                    </th>
+                                                    <th class="liquidacion-table__num @GetSortThClass(_reporteSortBy, _reporteSortDescending, SortKeyTotalFletero)">
+                                                        <button type="button" class="carga-viajes-sort-button" @onclick="() => SortReportesAsync(SortKeyTotalFletero)">
+                                                            <span>Importe chofer/fletero</span>
+                                                            <i class="bi @GetSortIcon(_reporteSortBy, _reporteSortDescending, SortKeyTotalFletero)"></i>
+                                                        </button>
+                                                    </th>
+                                                    <th class="liquidacion-table__num @GetSortThClass(_reporteSortBy, _reporteSortDescending, SortKeyPeaje)">
+                                                        <button type="button" class="carga-viajes-sort-button" @onclick="() => SortReportesAsync(SortKeyPeaje)">
+                                                            <span>Peajes</span>
+                                                            <i class="bi @GetSortIcon(_reporteSortBy, _reporteSortDescending, SortKeyPeaje)"></i>
+                                                        </button>
+                                                    </th>
+                                                    <th class="liquidacion-table__num @GetSortThClass(_reporteSortBy, _reporteSortDescending, SortKeyTotal)">
+                                                        <button type="button" class="carga-viajes-sort-button" @onclick="() => SortReportesAsync(SortKeyTotal)">
+                                                            <span>Total</span>
+                                                            <i class="bi @GetSortIcon(_reporteSortBy, _reporteSortDescending, SortKeyTotal)"></i>
+                                                        </button>
+                                                    </th>
+                                                    <th class="@GetSortThClass(_reporteSortBy, _reporteSortDescending, SortKeyEstado)">
+                                                        <button type="button" class="carga-viajes-sort-button" @onclick="() => SortReportesAsync(SortKeyEstado)">
+                                                            <span>Estado</span>
+                                                            <i class="bi @GetSortIcon(_reporteSortBy, _reporteSortDescending, SortKeyEstado)"></i>
+                                                        </button>
+                                                    </th>
+                                                    <th>Estado pago</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @foreach (var row in SortReporteDetalleRows(group.DetalleViajes))
+                                                {
+                                                    <tr class="@GetReporteRowClass(row)">
+                                                        <td>@row.Fecha.ToString("dd/MM/yyyy")</td>
+                                                        <td>@DisplayVisibleText(row.ClienteNombre)</td>
+                                                        <td>@DisplayVisibleText(row.ChoferNombre)</td>
+                                                        <td>@DisplayVisibleText(row.DestinoDescripcion)</td>
+                                                        <td>@DisplayVisibleText(row.TipoVehiculoDescripcion)</td>
+                                                        <td class="liquidacion-table__num">@FormatMoney(row.TotalConPeaje)</td>
+                                                        <td class="liquidacion-table__num">@FormatMoney(row.TotalFlete)</td>
+                                                        <td class="liquidacion-table__num">@(row.Peaje > 0m ? FormatMoney(row.Peaje) : "-")</td>
+                                                        <td class="liquidacion-table__num">@FormatMoney(row.TotalConPeaje)</td>
+                                                        <td>@GetReporteEstadoTexto(row.Estado)</td>
+                                                        <td>@RenderReporteEstadoPagoChip(row)</td>
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </section>
+                        }
+                    </div>
                 }
                 else
                 {
@@ -1372,22 +1834,73 @@
                             <table class="liquidacion-table">
                                 <thead>
                                     <tr>
-                                        <th>Fecha</th>
-                                        <th>Cliente</th>
-                                        <th>Chofer/Fletero</th>
-                                        <th>Destino</th>
-                                        <th>Tipo vehículo</th>
-                                        <th class="liquidacion-table__num">Importe cliente</th>
-                                        <th class="liquidacion-table__num">Importe chofer/fletero</th>
-                                        <th class="liquidacion-table__num">Peajes</th>
-                                        <th class="liquidacion-table__num">Total</th>
-                                        <th>Estado</th>
+                                        <th class="@GetSortThClass(_reporteSortBy, _reporteSortDescending, SortKeyFecha)">
+                                            <button type="button" class="carga-viajes-sort-button" @onclick="() => SortReportesAsync(SortKeyFecha)">
+                                                <span>Fecha</span>
+                                                <i class="bi @GetSortIcon(_reporteSortBy, _reporteSortDescending, SortKeyFecha)"></i>
+                                            </button>
+                                        </th>
+                                        <th class="@GetSortThClass(_reporteSortBy, _reporteSortDescending, SortKeyCliente)">
+                                            <button type="button" class="carga-viajes-sort-button" @onclick="() => SortReportesAsync(SortKeyCliente)">
+                                                <span>Cliente</span>
+                                                <i class="bi @GetSortIcon(_reporteSortBy, _reporteSortDescending, SortKeyCliente)"></i>
+                                            </button>
+                                        </th>
+                                        <th class="@GetSortThClass(_reporteSortBy, _reporteSortDescending, SortKeyChofer)">
+                                            <button type="button" class="carga-viajes-sort-button" @onclick="() => SortReportesAsync(SortKeyChofer)">
+                                                <span>Chofer/Fletero</span>
+                                                <i class="bi @GetSortIcon(_reporteSortBy, _reporteSortDescending, SortKeyChofer)"></i>
+                                            </button>
+                                        </th>
+                                        <th class="@GetSortThClass(_reporteSortBy, _reporteSortDescending, SortKeyDestino)">
+                                            <button type="button" class="carga-viajes-sort-button" @onclick="() => SortReportesAsync(SortKeyDestino)">
+                                                <span>Destino</span>
+                                                <i class="bi @GetSortIcon(_reporteSortBy, _reporteSortDescending, SortKeyDestino)"></i>
+                                            </button>
+                                        </th>
+                                        <th class="@GetSortThClass(_reporteSortBy, _reporteSortDescending, SortKeyTipoVehiculo)">
+                                            <button type="button" class="carga-viajes-sort-button" @onclick="() => SortReportesAsync(SortKeyTipoVehiculo)">
+                                                <span>Tipo vehículo</span>
+                                                <i class="bi @GetSortIcon(_reporteSortBy, _reporteSortDescending, SortKeyTipoVehiculo)"></i>
+                                            </button>
+                                        </th>
+                                        <th class="liquidacion-table__num @GetSortThClass(_reporteSortBy, _reporteSortDescending, SortKeyTotalCliente)">
+                                            <button type="button" class="carga-viajes-sort-button" @onclick="() => SortReportesAsync(SortKeyTotalCliente)">
+                                                <span>Importe cliente</span>
+                                                <i class="bi @GetSortIcon(_reporteSortBy, _reporteSortDescending, SortKeyTotalCliente)"></i>
+                                            </button>
+                                        </th>
+                                        <th class="liquidacion-table__num @GetSortThClass(_reporteSortBy, _reporteSortDescending, SortKeyTotalFletero)">
+                                            <button type="button" class="carga-viajes-sort-button" @onclick="() => SortReportesAsync(SortKeyTotalFletero)">
+                                                <span>Importe chofer/fletero</span>
+                                                <i class="bi @GetSortIcon(_reporteSortBy, _reporteSortDescending, SortKeyTotalFletero)"></i>
+                                            </button>
+                                        </th>
+                                        <th class="liquidacion-table__num @GetSortThClass(_reporteSortBy, _reporteSortDescending, SortKeyPeaje)">
+                                            <button type="button" class="carga-viajes-sort-button" @onclick="() => SortReportesAsync(SortKeyPeaje)">
+                                                <span>Peajes</span>
+                                                <i class="bi @GetSortIcon(_reporteSortBy, _reporteSortDescending, SortKeyPeaje)"></i>
+                                            </button>
+                                        </th>
+                                        <th class="liquidacion-table__num @GetSortThClass(_reporteSortBy, _reporteSortDescending, SortKeyTotal)">
+                                            <button type="button" class="carga-viajes-sort-button" @onclick="() => SortReportesAsync(SortKeyTotal)">
+                                                <span>Total</span>
+                                                <i class="bi @GetSortIcon(_reporteSortBy, _reporteSortDescending, SortKeyTotal)"></i>
+                                            </button>
+                                        </th>
+                                        <th class="@GetSortThClass(_reporteSortBy, _reporteSortDescending, SortKeyEstado)">
+                                            <button type="button" class="carga-viajes-sort-button" @onclick="() => SortReportesAsync(SortKeyEstado)">
+                                                <span>Estado</span>
+                                                <i class="bi @GetSortIcon(_reporteSortBy, _reporteSortDescending, SortKeyEstado)"></i>
+                                            </button>
+                                        </th>
+                                        <th>Estado pago</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    @foreach (var row in _reporteLiquidacionRows.OrderByDescending(x => x.Fecha).ThenByDescending(x => x.IdComprobante))
+                                    @foreach (var row in GetReporteDetalleRows())
                                     {
-                                        <tr>
+                                        <tr class="@GetReporteRowClass(row)">
                                             <td>@row.Fecha.ToString("dd/MM/yyyy")</td>
                                             <td>@DisplayVisibleText(row.ClienteNombre)</td>
                                             <td>@DisplayVisibleText(row.ChoferNombre)</td>
@@ -1398,6 +1911,7 @@
                                             <td class="liquidacion-table__num">@(row.Peaje > 0m ? FormatMoney(row.Peaje) : "-")</td>
                                             <td class="liquidacion-table__num">@FormatMoney(row.TotalConPeaje)</td>
                                             <td>@GetReporteEstadoTexto(row.Estado)</td>
+                                            <td>@RenderReporteEstadoPagoChip(row)</td>
                                         </tr>
                                     }
                                 </tbody>
@@ -1422,92 +1936,106 @@
                 </div>
             </div>
 
-            <div class="carga-viajes-liquidaciones__filters">
-                <div class="field">
-                    <label>Fecha rápida</label>
-                    <select value="@_liquidacionesFilters.RangoRapido" @onchange="OnLiquidacionesRangoRapidoChangedAsync">
-                        <option value="@CargaViajesReporteRangoRapidoKeys.Hoy">Hoy</option>
-                        <option value="@CargaViajesReporteRangoRapidoKeys.SemanaActual">Semana actual</option>
-                        <option value="@CargaViajesReporteRangoRapidoKeys.MesActual">Mes actual</option>
-                        <option value="@CargaViajesReporteRangoRapidoKeys.MesAnterior">Mes anterior</option>
-                        <option value="@CargaViajesReporteRangoRapidoKeys.AnioActual">Año actual</option>
-                        <option value="@CargaViajesReporteRangoRapidoKeys.AnioAnterior">Año anterior</option>
-                        <option value="@CargaViajesReporteRangoRapidoKeys.Personalizado">Personalizado</option>
-                        <option value="@CargaViajesReporteRangoRapidoKeys.Todo">Todo</option>
-                    </select>
-                </div>
-                <div class="carga-viajes-date-row">
-                    <div class="field">
+                <div class="viajes-filter-panel-v2 viajes-liquidaciones-filter-panel-v2">
+                <div class="viajes-filter-row-v2">
+                    <div class="viajes-filter-field-v2 sm">
+                        <label>Rango rápido</label>
+                        <select value="@_liquidacionesFilters.RangoRapido" @onchange="OnLiquidacionesRangoRapidoChangedAsync">
+                            <option value="@CargaViajesReporteRangoRapidoKeys.Hoy">Hoy</option>
+                            <option value="@CargaViajesReporteRangoRapidoKeys.SemanaActual">Semana actual</option>
+                            <option value="@CargaViajesReporteRangoRapidoKeys.MesActual">Mes actual</option>
+                            <option value="@CargaViajesReporteRangoRapidoKeys.MesAnterior">Mes anterior</option>
+                            <option value="@CargaViajesReporteRangoRapidoKeys.AnioActual">Año actual</option>
+                            <option value="@CargaViajesReporteRangoRapidoKeys.AnioAnterior">Año anterior</option>
+                            <option value="@CargaViajesReporteRangoRapidoKeys.Personalizado">Personalizado</option>
+                            <option value="@CargaViajesReporteRangoRapidoKeys.Todo">Todo</option>
+                        </select>
+                    </div>
+                    <div class="viajes-filter-field-v2 sm">
                         <label>Fecha desde</label>
                         <InputDate TValue="DateTime?" Value="_liquidacionesFilters.FechaDesde" ValueChanged="OnLiquidacionesFechaDesdeChangedAsync" ValueExpression="() => _liquidacionesFilters.FechaDesde" />
                     </div>
-                    <div class="field">
+                    <div class="viajes-filter-field-v2 sm">
                         <label>Fecha hasta</label>
                         <InputDate TValue="DateTime?" Value="_liquidacionesFilters.FechaHasta" ValueChanged="OnLiquidacionesFechaHastaChangedAsync" ValueExpression="() => _liquidacionesFilters.FechaHasta" />
                     </div>
+                    <div class="viajes-filter-field-v2 sm">
+                        <label>Estado</label>
+                        <select value="@_liquidacionesFilters.Estado" @onchange="OnLiquidacionesEstadoChangedAsync">
+                            <option value="@CargaViajeEstadoKeys.Pendiente">Pendiente</option>
+                            <option value="@CargaViajeEstadoKeys.Finalizado">Finalizado</option>
+                            <option value="@CargaViajeEstadoKeys.Anulado">Anulado</option>
+                            <option value="">Todos</option>
+                        </select>
+                    </div>
+                    <div class="viajes-filter-field-v2 lg">
+                        <label>&nbsp;</label>
+                        <label class="viajes-liquidaciones-toggle-v2">
+                            <input type="checkbox" checked="@_liquidacionesFilters.MostrarLiquidados" @onchange="OnLiquidacionesMostrarLiquidadosChangedAsync" />
+                            <span>Mostrar viajes liquidados</span>
+                        </label>
+                    </div>
                 </div>
-                <div class="field">
-                    <label>Choferes / Fleteros</label>
-                    <select value="@_liquidacionesFilters.TipoPersona" @onchange="OnLiquidacionesTipoPersonaChangedAsync">
-                        <option value="@CargaViajesReporteTipoPersonaKeys.Choferes">Choferes</option>
-                        <option value="@CargaViajesReporteTipoPersonaKeys.Fleteros">Fleteros</option>
-                        <option value="@CargaViajesReporteTipoPersonaKeys.ChoferesYFleteros">Choferes y Fleteros</option>
-                    </select>
-                </div>
-                <div class="field">
-                    <label>Chofer/Fletero</label>
-                    <LookupAutocomplete Label=""
-                                         Placeholder="Buscar chofer o fletero..."
-                                         Text="@_liquidacionesChoferFleteroTexto"
-                                         TextChanged="OnLiquidacionesChoferFleteroTextoChangedAsync"
-                                         SelectedChanged="OnLiquidacionesChoferFleteroSeleccionadoAsync"
-                                         SearchFunc="SearchLiquidacionesChoferFleteroLookupAsync" />
-                </div>
-                <div class="field">
-                    <label>Cliente</label>
-                    <LookupAutocomplete Label=""
-                                         Placeholder="Buscar cliente..."
-                                         Text="@_liquidacionesClienteTexto"
-                                         TextChanged="OnLiquidacionesClienteTextoChangedAsync"
-                                         SelectedChanged="OnLiquidacionesClienteSeleccionadoAsync"
-                                         SearchFunc="CargaViajesSvc.SearchClientesAsync"
-                                         MinimumCharacters="0" />
-                </div>
-                <div class="field">
-                    <label>Destino</label>
-                    <LookupAutocomplete Label=""
-                                         Placeholder="Buscar destino..."
-                                         Text="@_liquidacionesDestinoTexto"
-                                         TextChanged="OnLiquidacionesDestinoTextoChangedAsync"
-                                         SelectedChanged="OnLiquidacionesDestinoSeleccionadoAsync"
-                                         SearchFunc="SearchLiquidacionesDestinoLookupAsync"
-                                         MinimumCharacters="0" />
-                </div>
-                <div class="field">
-                    <label>Tipo vehículo</label>
-                    <LookupAutocomplete Label=""
-                                         Placeholder="Buscar tipo..."
-                                         Text="@_liquidacionesTipoVehiculoTexto"
-                                         TextChanged="OnLiquidacionesTipoVehiculoTextoChangedAsync"
-                                         SelectedChanged="OnLiquidacionesTipoVehiculoSeleccionadoAsync"
-                                         SearchFunc="SearchLiquidacionesTipoVehiculoLookupAsync"
-                                         MinimumCharacters="0" />
-                </div>
-                <div class="field">
-                    <label>Estado</label>
-                    <select value="@_liquidacionesFilters.Estado" @onchange="OnLiquidacionesEstadoChangedAsync">
-                        <option value="@CargaViajeEstadoKeys.Pendiente">Pendiente</option>
-                        <option value="@CargaViajeEstadoKeys.Finalizado">Finalizado</option>
-                        <option value="@CargaViajeEstadoKeys.Anulado">Anulado</option>
-                        <option value="">Todos</option>
-                    </select>
-                </div>
-                <div class="field carga-viajes-liquidaciones__toggle-field">
-                    <label>&nbsp;</label>
-                    <label class="carga-viajes-liquidaciones__toggle">
-                        <input type="checkbox" checked="@_liquidacionesFilters.MostrarLiquidados" @onchange="OnLiquidacionesMostrarLiquidadosChangedAsync" />
-                        <span>Mostrar viajes liquidados</span>
-                    </label>
+
+                <div class="viajes-filter-row-v2">
+                    <div class="viajes-filter-field-v2 type">
+                        <label>Tipo</label>
+                        <div class="viajes-type-toggle-v2" role="group" aria-label="Tipo de persona en liquidaciones">
+                            <button type="button"
+                                    class="viajes-type-toggle-v2__button @(_liquidacionesFilters.IncluirChoferes ? "viajes-type-toggle-v2__button--active" : string.Empty)"
+                                    aria-pressed="@_liquidacionesFilters.IncluirChoferes"
+                                    @onclick="ToggleLiquidacionesChoferesAsync">
+                                <span class="viajes-type-toggle-v2__check" aria-hidden="true"><i class="bi bi-check-lg"></i></span>
+                                <span>Choferes</span>
+                            </button>
+                            <button type="button"
+                                    class="viajes-type-toggle-v2__button @(_liquidacionesFilters.IncluirFleteros ? "viajes-type-toggle-v2__button--active" : string.Empty)"
+                                    aria-pressed="@_liquidacionesFilters.IncluirFleteros"
+                                    @onclick="ToggleLiquidacionesFleterosAsync">
+                                <span class="viajes-type-toggle-v2__check" aria-hidden="true"><i class="bi bi-check-lg"></i></span>
+                                <span>Fleteros</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="viajes-filter-field-v2 lg">
+                        <label>Chofer/Fletero</label>
+                        <LookupAutocomplete Label=""
+                                             Placeholder="Buscar chofer o fletero..."
+                                             Text="@_liquidacionesChoferFleteroTexto"
+                                             TextChanged="OnLiquidacionesChoferFleteroTextoChangedAsync"
+                                             SelectedChanged="OnLiquidacionesChoferFleteroSeleccionadoAsync"
+                                             SearchFunc="SearchLiquidacionesChoferFleteroLookupAsync" />
+                    </div>
+                    <div class="viajes-filter-field-v2 lg">
+                        <label>Cliente</label>
+                        <LookupAutocomplete Label=""
+                                             Placeholder="Buscar cliente..."
+                                             Text="@_liquidacionesClienteTexto"
+                                             TextChanged="OnLiquidacionesClienteTextoChangedAsync"
+                                             SelectedChanged="OnLiquidacionesClienteSeleccionadoAsync"
+                                             SearchFunc="CargaViajesSvc.SearchClientesAsync"
+                                             MinimumCharacters="0" />
+                    </div>
+                    <div class="viajes-filter-field-v2 lg">
+                        <label>Destino</label>
+                        <LookupAutocomplete Label=""
+                                             Placeholder="Buscar destino..."
+                                             Text="@_liquidacionesDestinoTexto"
+                                             TextChanged="OnLiquidacionesDestinoTextoChangedAsync"
+                                             SelectedChanged="OnLiquidacionesDestinoSeleccionadoAsync"
+                                             SearchFunc="SearchLiquidacionesDestinoLookupAsync"
+                                             MinimumCharacters="0" />
+                    </div>
+                    <div class="viajes-filter-field-v2 md">
+                        <label>Tipo vehículo</label>
+                        <LookupAutocomplete Label=""
+                                             Placeholder="Buscar tipo..."
+                                             Text="@_liquidacionesTipoVehiculoTexto"
+                                             TextChanged="OnLiquidacionesTipoVehiculoTextoChangedAsync"
+                                             SelectedChanged="OnLiquidacionesTipoVehiculoSeleccionadoAsync"
+                                             SearchFunc="SearchLiquidacionesTipoVehiculoLookupAsync"
+                                             MinimumCharacters="0" />
+                    </div>
                 </div>
             </div>
 
@@ -1531,6 +2059,46 @@
                     <h3 class="panel-card__title">Resultado</h3>
                     <span class="panel-card__subtitle">Viajes agrupados por chofer o fletero</span>
                 </div>
+            </div>
+
+            <div class="carga-viajes-liquidaciones__sortbar">
+                <span class="carga-viajes-liquidaciones__sortbar-label">Ordenar grupos por:</span>
+                <button type="button" class="carga-viajes-sort-pill @GetSortPillClass(_liquidacionesSortBy, _liquidacionesSortDescending, SortKeyFecha)" @onclick="() => SortLiquidacionesAsync(SortKeyFecha)">
+                    <span>Fecha</span>
+                    <i class="bi @GetSortIcon(_liquidacionesSortBy, _liquidacionesSortDescending, SortKeyFecha)"></i>
+                </button>
+                <button type="button" class="carga-viajes-sort-pill @GetSortPillClass(_liquidacionesSortBy, _liquidacionesSortDescending, SortKeyCliente)" @onclick="() => SortLiquidacionesAsync(SortKeyCliente)">
+                    <span>Cliente</span>
+                    <i class="bi @GetSortIcon(_liquidacionesSortBy, _liquidacionesSortDescending, SortKeyCliente)"></i>
+                </button>
+                <button type="button" class="carga-viajes-sort-pill @GetSortPillClass(_liquidacionesSortBy, _liquidacionesSortDescending, SortKeyChofer)" @onclick="() => SortLiquidacionesAsync(SortKeyChofer)">
+                    <span>Chofer/Fletero</span>
+                    <i class="bi @GetSortIcon(_liquidacionesSortBy, _liquidacionesSortDescending, SortKeyChofer)"></i>
+                </button>
+                <button type="button" class="carga-viajes-sort-pill @GetSortPillClass(_liquidacionesSortBy, _liquidacionesSortDescending, SortKeyDestino)" @onclick="() => SortLiquidacionesAsync(SortKeyDestino)">
+                    <span>Destino</span>
+                    <i class="bi @GetSortIcon(_liquidacionesSortBy, _liquidacionesSortDescending, SortKeyDestino)"></i>
+                </button>
+                <button type="button" class="carga-viajes-sort-pill @GetSortPillClass(_liquidacionesSortBy, _liquidacionesSortDescending, SortKeyTipoVehiculo)" @onclick="() => SortLiquidacionesAsync(SortKeyTipoVehiculo)">
+                    <span>Tipo vehículo</span>
+                    <i class="bi @GetSortIcon(_liquidacionesSortBy, _liquidacionesSortDescending, SortKeyTipoVehiculo)"></i>
+                </button>
+                <button type="button" class="carga-viajes-sort-pill @GetSortPillClass(_liquidacionesSortBy, _liquidacionesSortDescending, SortKeyTotalFletero)" @onclick="() => SortLiquidacionesAsync(SortKeyTotalFletero)">
+                    <span>Importe fletero</span>
+                    <i class="bi @GetSortIcon(_liquidacionesSortBy, _liquidacionesSortDescending, SortKeyTotalFletero)"></i>
+                </button>
+                <button type="button" class="carga-viajes-sort-pill @GetSortPillClass(_liquidacionesSortBy, _liquidacionesSortDescending, SortKeyPeaje)" @onclick="() => SortLiquidacionesAsync(SortKeyPeaje)">
+                    <span>Peaje</span>
+                    <i class="bi @GetSortIcon(_liquidacionesSortBy, _liquidacionesSortDescending, SortKeyPeaje)"></i>
+                </button>
+                <button type="button" class="carga-viajes-sort-pill @GetSortPillClass(_liquidacionesSortBy, _liquidacionesSortDescending, SortKeyTotal)" @onclick="() => SortLiquidacionesAsync(SortKeyTotal)">
+                    <span>Total</span>
+                    <i class="bi @GetSortIcon(_liquidacionesSortBy, _liquidacionesSortDescending, SortKeyTotal)"></i>
+                </button>
+                <button type="button" class="carga-viajes-sort-pill @GetSortPillClass(_liquidacionesSortBy, _liquidacionesSortDescending, SortKeyEstado)" @onclick="() => SortLiquidacionesAsync(SortKeyEstado)">
+                    <span>Estado</span>
+                    <i class="bi @GetSortIcon(_liquidacionesSortBy, _liquidacionesSortDescending, SortKeyEstado)"></i>
+                </button>
             </div>
 
             <div class="carga-viajes-liquidaciones__summary-bar">
@@ -1649,12 +2217,12 @@
                 </header>
 
                 <div class="cuentas-modal__body">
-                    <div class="carga-viajes-liquidaciones__modal-summary">
+                    <div class="carga-viajes-liquidaciones__modal-summary ac-responsive-stack">
                         <span><strong>Viajes:</strong> @GetLiquidacionesPagoModalRows().Count</span>
                         <span><strong>Total a pagar:</strong> @GetLiquidacionesPagoModalTotal().ToString("N2")</span>
                     </div>
 
-                    <div class="carga-viajes-liquidaciones__modal-filters">
+                    <div class="carga-viajes-liquidaciones__modal-filters ac-grid ac-grid-2 ac-form-grid">
                         <div class="field">
                             <label>Fecha de pago</label>
                             <InputDate @bind-Value="_liquidacionesPagoFecha" />
@@ -1699,7 +2267,7 @@
                     </div>
                 </div>
 
-                <footer class="cuentas-modal__actions carga-viajes-liquidaciones__modal-actions">
+                <footer class="cuentas-modal__actions carga-viajes-liquidaciones__modal-actions ac-responsive-stack">
                     <button type="button" class="btn btn--primary" @onclick="ConfirmarLiquidacionesPagoAsync" disabled="@(!_liquidacionesSeleccionadas.Any())">Confirmar pago</button>
                     <button type="button" class="btn btn--ghost" @onclick="CerrarLiquidacionesPagoModalAsync">Cancelar</button>
                 </footer>
@@ -1777,7 +2345,7 @@
                             </div>
                         </div>
                     }
-                    <div class="carga-viajes-form-grid carga-viajes-form-grid--viaje" @oninput="MarkViajeDirty" @onchange="MarkViajeDirty">
+                    <div class="carga-viajes-form-grid carga-viajes-form-grid--viaje ac-grid ac-grid-4 ac-form-grid" @oninput="MarkViajeDirty" @onchange="MarkViajeDirty">
                         <div class="field">
                             <label>Fecha</label>
                             <InputDate @bind-Value="_viajeForm.Fecha" disabled="@_viajeReadOnly" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusViajeClienteAsync)" />
@@ -1910,8 +2478,8 @@
                             <LookupAutocomplete @ref="_viajeTipoVehiculoLookup" Label="" Placeholder="Buscar tipo..." Text="@_viajeTipoVehiculoTexto" TextChanged="OnViajeTipoVehiculoTextoChangedAsync" SelectedChanged="OnViajeTipoVehiculoSelectedAsync" OnEnterCommitted="FocusViajeImporteClienteAsync" OnCreateRequested="OnViajeTipoVehiculoCreateRequestedAsync" SearchFunc="CargaViajesSvc.SearchTipoVehiculosLookupAsync" Disabled="@_viajeReadOnly" MinimumCharacters="0" />
                         </div>
                     </div>
-                    <div class="carga-viajes-viaje-secondary">
-                        <div class="carga-viajes-viaje-secondary__money">
+                    <div class="carga-viajes-viaje-secondary ac-card ac-responsive-stack">
+                        <div class="carga-viajes-viaje-secondary__money ac-grid ac-grid-4 ac-form-grid">
                             <div class="field carga-viajes-viaje__importe">
                                 <label>Importe cliente</label>
                                 <input @ref="_viajeImporteClienteInput" type="number" step="0.01" @bind="_viajeForm.ImporteCliente" disabled="@_viajeReadOnly" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusViajeImporteFleteroAsync)" />
@@ -1976,7 +2544,7 @@
                                 }
                             </div>
 
-                        <div class="carga-viajes-viaje__totals">
+                        <div class="carga-viajes-viaje__totals ac-grid ac-grid-3 ac-form-grid">
                             <div class="carga-viajes-viaje__total-card">
                                 <span>Total Cliente</span>
                                 <strong>@GetViajeTotalCliente().ToString("C2")</strong>
@@ -2022,7 +2590,7 @@
                 </header>
 
                 <div class="cuentas-modal__body">
-                    <div class="carga-viajes-config-grid">
+                    <div class="carga-viajes-config-grid ac-grid ac-grid-4 ac-form-grid">
                         <div class="field"><label>Sucursal</label><input @ref="_configSucursalInput" type="text" maxlength="4" @bind="_config.Sucursal" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusConfigLetraAsync)" /></div>
                         <div class="field"><label>Letra</label><input @ref="_configLetraInput" type="text" maxlength="1" @bind="_config.Letra" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusConfigChoferGeneralAsync)" /></div>
                         <div class="field field--wide"><label>Chofer general</label><input @ref="_configChoferGeneralInput" type="text" @bind="_config.ChoferGeneral" placeholder="Código del chofer general" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusConfigGuardarAsync)" /></div>
@@ -2076,6 +2644,11 @@
     private const string SortKeyTipoVehiculo = "tipovehiculo";
     private const string SortKeyTotalCliente = "totalcliente";
     private const string SortKeyTotalFletero = "totalfletero";
+    private const string SortKeyPeaje = "peaje";
+    private const string SortKeyTotal = "total";
+    private const string SortKeyViajes = "viajes";
+    private const string SortKeyResultado = "resultado";
+    private const string SortKeyTipo = "tipo";
     private const string SortKeyEstado = "estado";
     private const string SortKeyUsuario = "usuario";
     private const string SortKeyAlta = "alta";
@@ -2089,6 +2662,10 @@
     private const string SortKeyDisponible = "disponible";
     private const string SortKeyEsFletero = "esfletero";
     private const string SortKeyIdLista = "idlista";
+    private const string TarifasBulkModeIncreasePercent = "inc-percent";
+    private const string TarifasBulkModeDecreasePercent = "dec-percent";
+    private const string TarifasBulkModeAddFixed = "add-fixed";
+    private const string TarifasBulkModeSubtractFixed = "sub-fixed";
 
     private string _activeSection = SectionViajes;
     private string _lastMessageSection = SectionViajes;
@@ -2144,6 +2721,8 @@
     private decimal _reporteTotalViajes;
     private decimal _reporteTotalPeaje;
     private decimal _reporteTotalConPeaje;
+    private string _reporteSortBy = SortKeyFecha;
+    private bool _reporteSortDescending = true;
     private string _reporteChoferFleteroTexto = string.Empty;
     private string _reporteClienteTexto = string.Empty;
     private string _reporteDestinoTexto = string.Empty;
@@ -2151,6 +2730,8 @@
     private readonly List<CargaViajeLiquidacionRowDto> _liquidacionesRows = [];
     private readonly HashSet<int> _liquidacionesSeleccionadas = new();
     private decimal _liquidacionesTotalSeleccionado;
+    private string _liquidacionesSortBy = SortKeyFecha;
+    private bool _liquidacionesSortDescending = true;
     private string _liquidacionesChoferFleteroTexto = string.Empty;
     private string _liquidacionesClienteTexto = string.Empty;
     private string _liquidacionesDestinoTexto = string.Empty;
@@ -2230,6 +2811,20 @@
     private int _tarifasQuickImportRowIndex = -1;
     private decimal _tarifasQuickImportValue;
     private string _tarifasQuickImportOriginal = string.Empty;
+    private bool _showTarifasBulkEditModal;
+    private bool _tarifasAumentoLoading;
+    private CargaViajesFilters _tarifasAumentoFilters = new() { PageNumber = 1, PageSize = 100 };
+    private readonly List<CargaViajeTarifaGridItemDto> _tarifasAumento = [];
+    private readonly HashSet<int> _tarifasAumentoSeleccionadas = new();
+    private bool _tarifasAumentoSimulada;
+    private string _tarifasAumentoMode = TarifasBulkModeIncreasePercent;
+    private decimal _tarifasAumentoValue;
+    private string _tarifasAumentoRedondeo = "none";
+    private string _tarifasAumentoBusqueda = string.Empty;
+    private string _tarifasAumentoClienteTexto = string.Empty;
+    private string _tarifasAumentoChoferTexto = string.Empty;
+    private string _tarifasAumentoDestinoTexto = string.Empty;
+    private string _tarifasAumentoTipoVehiculoTexto = string.Empty;
     private bool _showTarifaEditor;
     private bool _isNewTarifa = true;
     private CargaViajeTarifaSaveRequest _tarifaForm = new();
@@ -2613,33 +3208,6 @@
 
         _viajesFilters.PageNumber = page;
         await RecargarViajesAsync();
-    }
-
-    private async Task VerViajeAsync(int id)
-    {
-        var result = await UiOps.RunAsync(() => CargaViajesSvc.GetViajeByIdAsync(id), "No se pudo cargar el viaje.");
-        if (!result.Success)
-        {
-            _feedback = result.Feedback;
-            return;
-        }
-
-        if (result.Value is null)
-        {
-            _feedback = new AppUiMessage
-            {
-                Severity = AppUiFeedbackSeverity.Warning,
-                Title = "Viaje no disponible",
-                Message = "El viaje solicitado ya no existe o no está disponible."
-            };
-            return;
-        }
-
-        _viajeSeleccionado = result.Value;
-        _showViajeEditor = true;
-        _isNewViaje = false;
-        _viajeReadOnly = true;
-        MapViajeToForm(result.Value);
     }
 
     private Task AbrirViajePreviewAsync(int id)
@@ -3507,6 +4075,379 @@
         return Task.CompletedTask;
     }
 
+    private bool AreAllTarifasAumentoSeleccionadas()
+        => _tarifasAumento.Count > 0 && _tarifasAumento.All(row => row.Id > 0 && _tarifasAumentoSeleccionadas.Contains(row.Id));
+
+    private Task ToggleTarifaAumentoSelectionAsync(CargaViajeTarifaGridItemDto row, ChangeEventArgs args)
+    {
+        if (row.Id <= 0)
+            return Task.CompletedTask;
+
+        var isSelected = args.Value is bool flag && flag;
+        if (isSelected)
+            _tarifasAumentoSeleccionadas.Add(row.Id);
+        else
+            _tarifasAumentoSeleccionadas.Remove(row.Id);
+
+        _tarifasAumentoSimulada = false;
+        return Task.CompletedTask;
+    }
+
+    private async Task ToggleSelectAllTarifasAumentoAsync(ChangeEventArgs args)
+    {
+        var selectAll = args.Value is bool flag && flag;
+        _tarifasAumentoSeleccionadas.Clear();
+
+        if (selectAll)
+        {
+            foreach (var row in _tarifasAumento.Where(x => x.Id > 0))
+                _tarifasAumentoSeleccionadas.Add(row.Id);
+        }
+
+        _tarifasAumentoSimulada = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private Task LimpiarSeleccionTarifasAumentoAsync()
+    {
+        _tarifasAumentoSeleccionadas.Clear();
+        _tarifasAumentoSimulada = false;
+        return Task.CompletedTask;
+    }
+
+    private async Task AbrirTarifasBulkEditAsync()
+    {
+        _showTarifasBulkEditModal = true;
+        if (_tarifasAumento.Count == 0)
+            await RecargarTarifasAumentoAsync();
+
+        if (_tarifasAumentoFilters.PageNumber < 1)
+            _tarifasAumentoFilters.PageNumber = 1;
+    }
+
+    private Task CerrarTarifasBulkEditAsync()
+    {
+        _showTarifasBulkEditModal = false;
+        _tarifasAumentoSeleccionadas.Clear();
+        _tarifasAumentoSimulada = false;
+        return Task.CompletedTask;
+    }
+
+    private Task SetTarifasBulkModeAsync(string mode)
+    {
+        _tarifasAumentoMode = mode;
+        _tarifasAumentoSimulada = false;
+        return Task.CompletedTask;
+    }
+
+    private string GetTarifasBulkPreviewText()
+        => _tarifasAumentoMode switch
+        {
+            TarifasBulkModeIncreasePercent => $"Aumentar {_tarifasAumentoValue:N2} %",
+            TarifasBulkModeDecreasePercent => $"Disminuir {_tarifasAumentoValue:N2} %",
+            TarifasBulkModeAddFixed => $"Sumar {FormatMoney(_tarifasAumentoValue)}",
+            TarifasBulkModeSubtractFixed => $"Restar {FormatMoney(_tarifasAumentoValue)}",
+            _ => string.Empty
+        };
+
+    private decimal GetTarifaAumentoImporteSimulado(CargaViajeTarifaGridItemDto row)
+    {
+        if (!_tarifasAumentoSimulada || row.Id <= 0 || !_tarifasAumentoSeleccionadas.Contains(row.Id))
+            return row.Importe;
+
+        var current = row.Importe;
+        var next = _tarifasAumentoMode switch
+        {
+            TarifasBulkModeIncreasePercent => current * (1m + (_tarifasAumentoValue / 100m)),
+            TarifasBulkModeDecreasePercent => current * (1m - (_tarifasAumentoValue / 100m)),
+            TarifasBulkModeAddFixed => current + _tarifasAumentoValue,
+            TarifasBulkModeSubtractFixed => current - _tarifasAumentoValue,
+            _ => current
+        };
+
+        return next < 0m ? 0m : next;
+    }
+
+    private decimal GetTarifaAumentoDiferencia(CargaViajeTarifaGridItemDto row)
+        => GetTarifaAumentoImporteSimulado(row) - row.Importe;
+
+    private IEnumerable<CargaViajeTarifaGridItemDto> GetTarifasAumentoFiltradas()
+    {
+        if (string.IsNullOrWhiteSpace(_tarifasAumentoBusqueda))
+            return _tarifasAumento;
+
+        var search = _tarifasAumentoBusqueda.Trim();
+        return _tarifasAumento.Where(row =>
+            ContainsTarifaAumentoSearch(row.IdLista, search) ||
+            ContainsTarifaAumentoSearch(GetTarifaEntidadDisplay(row), search) ||
+            ContainsTarifaAumentoSearch(ExtractVisibleText(row.Destino), search) ||
+            ContainsTarifaAumentoSearch(ExtractVisibleText(row.TipoVehiculo), search) ||
+            ContainsTarifaAumentoSearch(FormatTarifaUltimaModificacion(row), search));
+    }
+
+    private static bool ContainsTarifaAumentoSearch(string? source, string search)
+        => !string.IsNullOrWhiteSpace(source) && source.Contains(search, StringComparison.OrdinalIgnoreCase);
+
+    private Task OnTarifasAumentoBusquedaChangedAsync(ChangeEventArgs args)
+    {
+        _tarifasAumentoBusqueda = args.Value?.ToString() ?? string.Empty;
+        _tarifasAumentoSimulada = false;
+        return Task.CompletedTask;
+    }
+
+    private CargaViajeTarifaGridItemDto? GetTarifasAumentoPreviewRow()
+        => _tarifasAumentoSeleccionadas.Count > 0
+            ? _tarifasAumento.FirstOrDefault(row => _tarifasAumentoSeleccionadas.Contains(row.Id))
+            : _tarifasAumento.FirstOrDefault();
+
+    private decimal GetTarifasAumentoPreviewCurrentAmount()
+        => GetTarifasAumentoPreviewRow()?.Importe ?? 0m;
+
+    private decimal GetTarifasAumentoPreviewNextAmount()
+        => ApplyTarifasAumentoPreview(GetTarifasAumentoPreviewCurrentAmount());
+
+    private decimal ApplyTarifasAumentoPreview(decimal current)
+    {
+        var next = _tarifasAumentoMode switch
+        {
+            TarifasBulkModeIncreasePercent => current * (1m + (_tarifasAumentoValue / 100m)),
+            TarifasBulkModeDecreasePercent => current * (1m - (_tarifasAumentoValue / 100m)),
+            TarifasBulkModeAddFixed => current + _tarifasAumentoValue,
+            TarifasBulkModeSubtractFixed => current - _tarifasAumentoValue,
+            _ => current
+        };
+
+        return next < 0m ? 0m : next;
+    }
+
+    private string GetTarifasAumentoPreviewText()
+        => _tarifasAumentoMode switch
+        {
+            TarifasBulkModeIncreasePercent => $"+{_tarifasAumentoValue:N2} %",
+            TarifasBulkModeDecreasePercent => $"-{_tarifasAumentoValue:N2} %",
+            TarifasBulkModeAddFixed => $"+{FormatMoney(_tarifasAumentoValue)}",
+            TarifasBulkModeSubtractFixed => $"-{FormatMoney(_tarifasAumentoValue)}",
+            _ => "-"
+        };
+
+    private int GetTarifasAumentoSeleccionadasCount()
+        => _tarifasAumentoSeleccionadas.Count;
+
+    private IReadOnlyList<CargaViajeTarifaGridItemDto> GetTarifasAumentoSeleccionadas()
+        => _tarifasAumento.Where(row => _tarifasAumentoSeleccionadas.Contains(row.Id)).ToList();
+
+    private decimal GetTarifasAumentoCurrentTotal()
+        => GetTarifasAumentoSeleccionadas().Sum(row => row.Importe);
+
+    private decimal GetTarifasAumentoSimulatedTotal()
+        => GetTarifasAumentoSeleccionadas().Sum(GetTarifaAumentoImporteSimulado);
+
+    private decimal GetTarifasAumentoDifferenceTotal()
+        => GetTarifasAumentoSimulatedTotal() - GetTarifasAumentoCurrentTotal();
+
+    private async Task SimularTarifasAumentoAsync()
+    {
+        if (_tarifasAumentoSeleccionadas.Count == 0)
+        {
+            _feedback = new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Warning,
+                Title = "Seleccione tarifas",
+                Message = "Debe seleccionar al menos una tarifa para simular."
+            };
+            return;
+        }
+
+        _tarifasAumentoSimulada = true;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task AplicarTarifasBulkEditAsync()
+    {
+        if (_tarifasAumentoSeleccionadas.Count == 0)
+        {
+            _feedback = new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Warning,
+                Title = "Seleccione tarifas",
+                Message = "Debe seleccionar al menos una tarifa."
+            };
+            return;
+        }
+
+        if (!_tarifasAumentoSimulada)
+        {
+            _feedback = new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Warning,
+                Title = "Simulación pendiente",
+                Message = "Primero presione Simular para revisar los importes propuestos."
+            };
+            return;
+        }
+
+        var preview = GetTarifasBulkPreviewText();
+        var confirm = await AppDialogs.ShowConfirmAsync(
+            "Aumento de tarifa",
+            $"Se actualizarán {_tarifasAumentoSeleccionadas.Count} tarifas.\n{preview}\n¿Desea continuar?",
+            "Guardar aumento",
+            "Cancelar",
+            iconClass: "bi bi-arrow-up-circle");
+        if (!confirm)
+            return;
+
+        foreach (var row in _tarifasAumento.Where(x => x.Id > 0 && _tarifasAumentoSeleccionadas.Contains(x.Id)))
+        {
+            var next = GetTarifaAumentoImporteSimulado(row);
+            var result = await UiOps.RunAsync(
+                () => CargaViajesSvc.ActualizarTarifaImporteAsync(row.Id, row.IdLista, next),
+                "No se pudo actualizar una de las tarifas seleccionadas.");
+            if (!result.Success)
+            {
+                _feedback = result.Feedback;
+                return;
+            }
+        }
+
+        SetSuccessFeedback("Aumento aplicado", "Se actualizaron las tarifas seleccionadas.");
+        await CerrarTarifasBulkEditAsync();
+        await RecargarTarifasAsync();
+    }
+
+    private bool HasTarifaAumentoFleteroFilter() => _tarifasAumentoFilters.TarifaFletero is "0" or "1";
+
+    private async Task SetTarifaAumentoTipoTodasAsync()
+    {
+        _tarifasAumentoFilters.TarifaFletero = string.Empty;
+        await AplicarFiltrosTarifasAumentoAsync();
+    }
+
+    private async Task SetTarifaAumentoTipoClientesAsync()
+    {
+        _tarifasAumentoFilters.TarifaFletero = "0";
+        await AplicarFiltrosTarifasAumentoAsync();
+    }
+
+    private async Task SetTarifaAumentoTipoFleterosAsync()
+    {
+        _tarifasAumentoFilters.TarifaFletero = "1";
+        await AplicarFiltrosTarifasAumentoAsync();
+    }
+
+    private async Task AplicarFiltrosTarifasAumentoAsync()
+    {
+        _tarifasAumentoFilters.PageNumber = 1;
+        await RecargarTarifasAumentoAsync();
+    }
+
+    private async Task LimpiarFiltrosTarifasAumentoAsync()
+    {
+        var sortBy = _tarifasAumentoFilters.SortBy;
+        var sortDescending = _tarifasAumentoFilters.SortDescending;
+        _tarifasAumentoFilters = new CargaViajesFilters { PageNumber = 1, PageSize = 100, SortBy = sortBy, SortDescending = sortDescending };
+        _tarifasAumentoClienteTexto = string.Empty;
+        _tarifasAumentoChoferTexto = string.Empty;
+        _tarifasAumentoDestinoTexto = string.Empty;
+        _tarifasAumentoTipoVehiculoTexto = string.Empty;
+        _tarifasAumentoSeleccionadas.Clear();
+        _tarifasAumentoSimulada = false;
+        await RecargarTarifasAumentoAsync();
+    }
+
+    private async Task OnTarifaAumentoClienteFiltroChangedAsync(string text)
+    {
+        _tarifasAumentoClienteTexto = text;
+        _tarifasAumentoFilters.Cliente = text;
+        _tarifasAumentoSimulada = false;
+        await Task.CompletedTask;
+    }
+
+    private async Task OnTarifaAumentoClienteFiltroSelectedAsync(CargaViajeLookupOptionDto item)
+    {
+        _tarifasAumentoFilters.Cliente = item.Codigo;
+        _tarifasAumentoClienteTexto = FormatLookupDisplay(item.Codigo, item.Titulo);
+        _tarifasAumentoSimulada = false;
+        await Task.CompletedTask;
+    }
+
+    private async Task OnTarifaAumentoChoferFiltroChangedAsync(string text)
+    {
+        _tarifasAumentoChoferTexto = text;
+        _tarifasAumentoFilters.Chofer = text;
+        _tarifasAumentoSimulada = false;
+        await Task.CompletedTask;
+    }
+
+    private async Task OnTarifaAumentoChoferFiltroSelectedAsync(CargaViajeLookupOptionDto item)
+    {
+        _tarifasAumentoFilters.Chofer = item.Codigo;
+        _tarifasAumentoChoferTexto = FormatLookupDisplay(item.Codigo, item.Titulo);
+        _tarifasAumentoSimulada = false;
+        await Task.CompletedTask;
+    }
+
+    private async Task OnTarifaAumentoDestinoFiltroChangedAsync(string text)
+    {
+        _tarifasAumentoDestinoTexto = text;
+        _tarifasAumentoFilters.Destino = text;
+        _tarifasAumentoSimulada = false;
+        await Task.CompletedTask;
+    }
+
+    private async Task OnTarifaAumentoDestinoFiltroSelectedAsync(CargaViajeLookupOptionDto item)
+    {
+        _tarifasAumentoFilters.Destino = item.Codigo;
+        _tarifasAumentoDestinoTexto = FormatLookupDisplay(item.Codigo, item.Titulo);
+        _tarifasAumentoSimulada = false;
+        await Task.CompletedTask;
+    }
+
+    private async Task OnTarifaAumentoTipoVehiculoFiltroChangedAsync(string text)
+    {
+        _tarifasAumentoTipoVehiculoTexto = text;
+        _tarifasAumentoFilters.TipoVehiculo = text;
+        _tarifasAumentoSimulada = false;
+        await Task.CompletedTask;
+    }
+
+    private async Task OnTarifaAumentoTipoVehiculoFiltroSelectedAsync(CargaViajeLookupOptionDto item)
+    {
+        _tarifasAumentoFilters.TipoVehiculo = item.Codigo;
+        _tarifasAumentoTipoVehiculoTexto = FormatLookupDisplay(item.Codigo, item.Titulo);
+        _tarifasAumentoSimulada = false;
+        await Task.CompletedTask;
+    }
+
+    private Task OnTarifaAumentoValueChangedAsync(ChangeEventArgs args)
+    {
+        var raw = (args.Value?.ToString() ?? string.Empty).Trim();
+        _tarifasAumentoValue = decimal.TryParse(raw, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.CurrentCulture, out var value)
+            ? value
+            : 0m;
+        _tarifasAumentoSimulada = false;
+        return Task.CompletedTask;
+    }
+
+    private async Task RecargarTarifasAumentoAsync()
+    {
+        _tarifasAumentoLoading = true;
+        _tarifasAumentoFilters.PageSize = 100;
+        var result = await UiOps.RunAsync(() => CargaViajesSvc.SearchTarifasAsync(_tarifasAumentoFilters), "No se pudieron cargar las tarifas.");
+        if (result.Success && result.Value is not null)
+        {
+            _tarifasAumento.Clear();
+            _tarifasAumento.AddRange(result.Value.Items);
+            _tarifasAumentoSeleccionadas.RemoveWhere(id => _tarifasAumento.All(row => row.Id != id));
+        }
+        else
+        {
+            _feedback = result.Feedback;
+        }
+
+        _tarifasAumentoSimulada = false;
+        _tarifasAumentoLoading = false;
+    }
+
     private Task ToggleTarifaActivoAsync()
     {
         _tarifaForm.Activo = !_tarifaForm.Activo;
@@ -3647,19 +4588,37 @@
 
     private Task ToggleReporteChoferesAsync()
     {
+        if (_reporteLiquidacionFilters.IncluirChoferes && !_reporteLiquidacionFilters.IncluirFleteros)
+        {
+            SetFeedback(new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Warning,
+                Title = "Tipo de persona",
+                Message = "Debe quedar al menos una opción seleccionada."
+            });
+            return Task.CompletedTask;
+        }
+
         _reporteLiquidacionFilters.IncluirChoferes = !_reporteLiquidacionFilters.IncluirChoferes;
-        _reporteLiquidacionFilters.ChoferCodigo = string.Empty;
-        _reporteLiquidacionFilters.ChoferTexto = string.Empty;
-        _reporteChoferFleteroTexto = string.Empty;
+        SyncReporteTipoPersonaSelection();
         return Task.CompletedTask;
     }
 
     private Task ToggleReporteFleterosAsync()
     {
+        if (_reporteLiquidacionFilters.IncluirFleteros && !_reporteLiquidacionFilters.IncluirChoferes)
+        {
+            SetFeedback(new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Warning,
+                Title = "Tipo de persona",
+                Message = "Debe quedar al menos una opción seleccionada."
+            });
+            return Task.CompletedTask;
+        }
+
         _reporteLiquidacionFilters.IncluirFleteros = !_reporteLiquidacionFilters.IncluirFleteros;
-        _reporteLiquidacionFilters.ChoferCodigo = string.Empty;
-        _reporteLiquidacionFilters.ChoferTexto = string.Empty;
-        _reporteChoferFleteroTexto = string.Empty;
+        SyncReporteTipoPersonaSelection();
         return Task.CompletedTask;
     }
 
@@ -3753,10 +4712,29 @@
         await Task.CompletedTask;
     }
 
+    private async Task OnReporteEstadoPagoChangedAsync(ChangeEventArgs args)
+    {
+        _reporteLiquidacionFilters.EstadoPago = NormalizeReporteEstadoPago((args.Value?.ToString() ?? string.Empty).Trim());
+        await Task.CompletedTask;
+    }
+
     private async Task OnReporteModoChangedAsync(ChangeEventArgs args)
     {
         _reporteLiquidacionFilters.Modo = NormalizeReporteModo((args.Value?.ToString() ?? string.Empty).Trim());
+        if (_reporteLiquidacionFilters.Modo == CargaViajesReporteModoKeys.Detallado)
+            _reporteGruposAbiertos.Clear();
         await Task.CompletedTask;
+    }
+
+    private async Task SetReporteAgruparPorAsync(string value)
+    {
+        var normalized = NormalizeReporteGroupBy(value);
+        if (string.Equals(_reporteLiquidacionFilters.AgruparPor, normalized, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        _reporteLiquidacionFilters.AgruparPor = normalized;
+        _reporteGruposAbiertos.Clear();
+        await InvokeAsync(StateHasChanged);
     }
 
     private async Task BuscarLiquidacionesAsync()
@@ -3902,6 +4880,42 @@
     {
         ApplyLiquidacionesTipoPersona(args.Value?.ToString() ?? string.Empty);
         await Task.CompletedTask;
+    }
+
+    private Task ToggleLiquidacionesChoferesAsync()
+    {
+        if (_liquidacionesFilters.IncluirChoferes && !_liquidacionesFilters.IncluirFleteros)
+        {
+            SetFeedback(new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Warning,
+                Title = "Tipo de persona",
+                Message = "Debe quedar al menos una opción seleccionada."
+            });
+            return Task.CompletedTask;
+        }
+
+        _liquidacionesFilters.IncluirChoferes = !_liquidacionesFilters.IncluirChoferes;
+        SyncLiquidacionesTipoPersonaSelection();
+        return Task.CompletedTask;
+    }
+
+    private Task ToggleLiquidacionesFleterosAsync()
+    {
+        if (_liquidacionesFilters.IncluirFleteros && !_liquidacionesFilters.IncluirChoferes)
+        {
+            SetFeedback(new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Warning,
+                Title = "Tipo de persona",
+                Message = "Debe quedar al menos una opción seleccionada."
+            });
+            return Task.CompletedTask;
+        }
+
+        _liquidacionesFilters.IncluirFleteros = !_liquidacionesFilters.IncluirFleteros;
+        SyncLiquidacionesTipoPersonaSelection();
+        return Task.CompletedTask;
     }
 
     private async Task OnLiquidacionesClienteTextoChangedAsync(string text)
@@ -4487,11 +5501,12 @@
         try
         {
             Logger.LogInformation(
-                "Reportes start desde={Desde:yyyy-MM-dd} hasta={Hasta:yyyy-MM-dd} tipoPersona={TipoPersona} estado={Estado} modo={Modo} chofer={Chofer} cliente={Cliente} destino={Destino}",
+                "Reportes start desde={Desde:yyyy-MM-dd} hasta={Hasta:yyyy-MM-dd} tipoPersona={TipoPersona} estado={Estado} estadoPago={EstadoPago} modo={Modo} chofer={Chofer} cliente={Cliente} destino={Destino}",
                 _reporteLiquidacionFilters.FechaDesde,
                 _reporteLiquidacionFilters.FechaHasta,
                 _reporteLiquidacionFilters.TipoPersona,
                 _reporteLiquidacionFilters.Estado,
+                _reporteLiquidacionFilters.EstadoPago,
                 _reporteLiquidacionFilters.Modo,
                 _reporteLiquidacionFilters.ChoferCodigo,
                 _reporteLiquidacionFilters.ClienteCodigo,
@@ -4509,6 +5524,17 @@
                 _reporteTotalViajes = _reporteLiquidacionRows.Sum(x => x.TotalFlete);
                 _reporteTotalPeaje = _reporteLiquidacionRows.Sum(x => Math.Max(0m, x.Peaje));
                 _reporteTotalConPeaje = _reporteTotalViajes + _reporteTotalPeaje;
+                Logger.LogInformation(
+                    "Reportes dataset rows={Rows} totalViajes={TotalViajes} pendientes={Pendientes} pagados={Pagados} totalCliente={TotalCliente} totalChofer={TotalChofer} totalPeajes={TotalPeajes} tipoPersona={TipoPersona} estadoPago={EstadoPago}",
+                    _reporteLiquidacionRows.Count,
+                    GetReporteCantidadTotalViajes(),
+                    GetReporteCantidadPendientes(),
+                    GetReporteCantidadPagados(),
+                    GetReporteTotalCliente(),
+                    GetReporteTotalChoferFletero(),
+                    GetReporteTotalPeajes(),
+                    GetReporteTipoPersonaLabel(),
+                    GetReporteEstadoPagoLabel(_reporteLiquidacionFilters.EstadoPago));
             }
             else
             {
@@ -4568,7 +5594,10 @@
             chips.Add(new FilterChipItem("reportes-fecha", $"Fecha: {FormatReporteDate(_reporteLiquidacionFilters.FechaDesde)} - {FormatReporteDate(_reporteLiquidacionFilters.FechaHasta)}"));
         AddChipIfPresent(chips, "reportes-tipo", "Tipo", GetReporteTipoPersonaLabel());
         AddChipIfPresent(chips, "reportes-estado", "Estado", GetReporteEstadoLabel(_reporteLiquidacionFilters.Estado));
+        if (NormalizeReporteEstadoPago(_reporteLiquidacionFilters.EstadoPago) != CargaViajesLiquidacionEstadoPagoKeys.Todos)
+            AddChipIfPresent(chips, "reportes-estado-pago", "Estado pago", GetReporteEstadoPagoLabel(_reporteLiquidacionFilters.EstadoPago));
         AddChipIfPresent(chips, "reportes-modo", "Modo", GetReporteModoLabel(_reporteLiquidacionFilters.Modo));
+        AddChipIfPresent(chips, "reportes-agrupar", "Agrupar por", GetReporteAgruparPorLabel(_reporteLiquidacionFilters.AgruparPor));
 
         AddChipIfPresent(chips, "reportes-chofer", "Chofer / Fletero", _reporteChoferFleteroTexto);
         AddChipIfPresent(chips, "reportes-cliente", "Cliente", _reporteClienteTexto);
@@ -4594,8 +5623,15 @@
             case "reportes-estado":
                 _reporteLiquidacionFilters.Estado = CargaViajesReporteEstadoKeys.Todos;
                 break;
+            case "reportes-estado-pago":
+                _reporteLiquidacionFilters.EstadoPago = CargaViajesLiquidacionEstadoPagoKeys.Todos;
+                break;
             case "reportes-modo":
                 _reporteLiquidacionFilters.Modo = CargaViajesReporteModoKeys.Detallado;
+                break;
+            case "reportes-agrupar":
+                _reporteLiquidacionFilters.AgruparPor = CargaViajesViewGroupKeys.None;
+                _reporteGruposAbiertos.Clear();
                 break;
             case "reportes-chofer":
                 _reporteLiquidacionFilters.ChoferCodigo = string.Empty;
@@ -4662,7 +5698,8 @@
             ["hasta"] = _reporteLiquidacionFilters.FechaHasta?.ToString("yyyy-MM-dd"),
             ["chofer"] = _reporteLiquidacionFilters.ChoferCodigo,
             ["cliente"] = _reporteLiquidacionFilters.ClienteCodigo,
-            ["destino"] = _reporteLiquidacionFilters.DestinoCodigo
+            ["destino"] = _reporteLiquidacionFilters.DestinoCodigo,
+            ["estadoPago"] = _reporteLiquidacionFilters.EstadoPago
         };
 
         return QueryHelpers.AddQueryString(RouteContext.BuildRoute("/carga-viajes/liquidacion/vista"), query!);
@@ -4678,7 +5715,8 @@
             ["cliente"] = _reporteLiquidacionFilters.ClienteCodigo,
             ["destino"] = _reporteLiquidacionFilters.DestinoCodigo,
             ["tipoPersona"] = _reporteLiquidacionFilters.TipoPersona,
-            ["estado"] = _reporteLiquidacionFilters.Estado
+            ["estado"] = _reporteLiquidacionFilters.Estado,
+            ["estadoPago"] = _reporteLiquidacionFilters.EstadoPago
         };
 
         return QueryHelpers.AddQueryString(RouteContext.BuildRoute("/carga-viajes/liquidacion/descargar-excel"), query!);
@@ -4706,11 +5744,31 @@
             _ => "Choferes y Fleteros"
         };
 
+    private static string GetReporteEstadoPagoLabel(string? value)
+        => NormalizeReporteEstadoPago(value) switch
+        {
+            CargaViajesLiquidacionEstadoPagoKeys.Pendientes => "Pendiente",
+            CargaViajesLiquidacionEstadoPagoKeys.Pagados => "Pagado",
+            _ => "Todos"
+        };
+
     private static string GetReporteModoLabel(string? value)
         => NormalizeReporteModo(value) switch
         {
             CargaViajesReporteModoKeys.Resumen => "Resumen",
             _ => "Detallado"
+        };
+
+    private static string GetReporteAgruparPorLabel(string? value)
+        => NormalizeReporteGroupBy(value) switch
+        {
+            CargaViajesViewGroupKeys.Chofer => "Chofer/Fletero",
+            CargaViajesViewGroupKeys.Cliente => "Cliente",
+            CargaViajesViewGroupKeys.TipoVehiculo => "Tipo vehículo",
+            CargaViajesViewGroupKeys.Destino => "Destino",
+            CargaViajesViewGroupKeys.Estado => "Estado",
+            CargaViajesViewGroupKeys.Usuario => "Usuario",
+            _ => "Sin agrupar"
         };
 
     private static string GetReporteEstadoLabel(string? value)
@@ -4735,17 +5793,49 @@
             _ => "Personalizado"
         };
 
+    private IReadOnlyList<CargaViajeReporteLiquidacionRowDto> GetReporteRowsAplicandoTipoPersona()
+    {
+        IEnumerable<CargaViajeReporteLiquidacionRowDto> rows = _reporteLiquidacionRows;
+        if (!_reporteLiquidacionFilters.IncluirChoferes)
+            rows = rows.Where(x => x.EsFletero);
+        if (!_reporteLiquidacionFilters.IncluirFleteros)
+            rows = rows.Where(x => !x.EsFletero);
+        rows = ApplyReporteEstadoPagoFilter(rows);
+
+        return rows.ToList();
+    }
+
+    private IEnumerable<CargaViajeReporteLiquidacionRowDto> ApplyReporteEstadoPagoFilter(IEnumerable<CargaViajeReporteLiquidacionRowDto> rows)
+        => NormalizeReporteEstadoPago(_reporteLiquidacionFilters.EstadoPago) switch
+        {
+            CargaViajesLiquidacionEstadoPagoKeys.Pendientes => rows.Where(x => !x.FletePagado),
+            CargaViajesLiquidacionEstadoPagoKeys.Pagados => rows.Where(x => x.FletePagado),
+            _ => rows
+        };
+
     private int GetReporteCantidadTotalViajes()
-        => _reporteLiquidacionRows.Sum(x => Math.Max(1, x.CantidadViajes));
+        => GetReporteRowsAplicandoTipoPersona().Sum(x => Math.Max(1, x.CantidadViajes));
+
+    private int GetReporteCantidadPendientes()
+        => GetReporteRowsAplicandoTipoPersona().Where(x => !x.FletePagado).Sum(x => Math.Max(1, x.CantidadViajes));
+
+    private int GetReporteCantidadPagados()
+        => GetReporteRowsAplicandoTipoPersona().Where(x => x.FletePagado).Sum(x => Math.Max(1, x.CantidadViajes));
+
+    private static int GetReporteGrupoCantidadPendientes(CargaViajesAgrupacionDto<CargaViajeReporteLiquidacionRowDto> group)
+        => group.DetalleViajes.Where(x => !x.FletePagado).Sum(x => Math.Max(1, x.CantidadViajes));
+
+    private static int GetReporteGrupoCantidadPagados(CargaViajesAgrupacionDto<CargaViajeReporteLiquidacionRowDto> group)
+        => group.DetalleViajes.Where(x => x.FletePagado).Sum(x => Math.Max(1, x.CantidadViajes));
 
     private decimal GetReporteTotalCliente()
-        => _reporteLiquidacionRows.Sum(x => x.TotalConPeaje);
+        => GetReporteRowsAplicandoTipoPersona().Sum(x => x.TotalConPeaje);
 
     private decimal GetReporteTotalChoferFletero()
-        => _reporteLiquidacionRows.Sum(x => x.TotalFlete);
+        => GetReporteRowsAplicandoTipoPersona().Sum(x => x.TotalFlete);
 
     private decimal GetReporteTotalPeajes()
-        => _reporteLiquidacionRows.Sum(x => Math.Max(0m, x.Peaje));
+        => GetReporteRowsAplicandoTipoPersona().Sum(x => Math.Max(0m, x.Peaje));
 
     private decimal GetReporteResultadoTotal()
         => GetReporteTotalCliente() - GetReporteTotalChoferFletero() - GetReporteTotalPeajes();
@@ -4758,6 +5848,18 @@
             CargaViajesReporteEstadoKeys.PendientePago => "Pendiente pago",
             _ => "Pendiente"
         };
+
+    private static string GetReporteEstadoPagoTexto(CargaViajeReporteLiquidacionRowDto row)
+        => row.FletePagado ? "Pagado" : "Pendiente";
+
+    private static string GetReporteEstadoPagoChipClass(CargaViajeReporteLiquidacionRowDto row)
+        => row.FletePagado ? "carga-viajes-reportes__estado-pago-chip carga-viajes-reportes__estado-pago-chip--paid" : "carga-viajes-reportes__estado-pago-chip carga-viajes-reportes__estado-pago-chip--pending";
+
+    private static MarkupString RenderReporteEstadoPagoChip(CargaViajeReporteLiquidacionRowDto row)
+        => new($"<span class=\"{GetReporteEstadoPagoChipClass(row)}\">{GetReporteEstadoPagoTexto(row)}</span>");
+
+    private static string GetReporteRowClass(CargaViajeReporteLiquidacionRowDto row)
+        => row.FletePagado ? "carga-viajes-reportes__row--paid" : string.Empty;
 
     private static string FormatMoney(decimal value)
         => value.ToString("C0", System.Globalization.CultureInfo.GetCultureInfo("es-AR"));
@@ -4782,7 +5884,65 @@
     }
 
     private IReadOnlyList<CargaViajeReporteLiquidacionResumenDto> GetReporteResumenRows()
-        => GetReporteLiquidacionResumen();
+        => SortReporteResumenRows(GetReporteLiquidacionResumen());
+
+    private IReadOnlyList<CargaViajeReporteLiquidacionRowDto> GetReporteDetalleRows()
+        => SortReporteDetalleRows(GetReporteRowsAplicandoTipoPersona());
+
+    private IReadOnlyList<CargaViajesAgrupacionDto<CargaViajeReporteLiquidacionRowDto>> GetReporteAgrupacionesActuales()
+        => IsReporteAgrupado()
+            ? GetReporteAgrupaciones()
+            : Array.Empty<CargaViajesAgrupacionDto<CargaViajeReporteLiquidacionRowDto>>();
+
+    private IReadOnlyList<CargaViajeReporteLiquidacionResumenDto> SortReporteResumenRows(IEnumerable<CargaViajeReporteLiquidacionResumenDto> rows)
+    {
+        var list = rows.ToList();
+        return (_reporteSortBy, _reporteSortDescending) switch
+        {
+            (SortKeyTipo, false) => list.OrderBy(x => x.EsFletero ? 1 : 0).ThenBy(x => x.ChoferNombre).ThenBy(x => x.ChoferCodigo).ToList(),
+            (SortKeyTipo, true) => list.OrderByDescending(x => x.EsFletero ? 1 : 0).ThenByDescending(x => x.ChoferNombre).ThenByDescending(x => x.ChoferCodigo).ToList(),
+            (SortKeyChofer, false) => list.OrderBy(x => x.ChoferNombre).ThenBy(x => x.ChoferCodigo).ToList(),
+            (SortKeyChofer, true) => list.OrderByDescending(x => x.ChoferNombre).ThenByDescending(x => x.ChoferCodigo).ToList(),
+            (SortKeyViajes, false) => list.OrderBy(x => x.CantidadViajes).ThenBy(x => x.ChoferNombre).ToList(),
+            (SortKeyViajes, true) => list.OrderByDescending(x => x.CantidadViajes).ThenBy(x => x.ChoferNombre).ToList(),
+            (SortKeyTotalCliente, false) => list.OrderBy(x => x.TotalConPeaje).ThenBy(x => x.ChoferNombre).ToList(),
+            (SortKeyTotalCliente, true) => list.OrderByDescending(x => x.TotalConPeaje).ThenBy(x => x.ChoferNombre).ToList(),
+            (SortKeyTotalFletero, false) => list.OrderBy(x => x.TotalFlete).ThenBy(x => x.ChoferNombre).ToList(),
+            (SortKeyTotalFletero, true) => list.OrderByDescending(x => x.TotalFlete).ThenBy(x => x.ChoferNombre).ToList(),
+            (SortKeyPeaje, false) => list.OrderBy(x => x.TotalPeaje).ThenBy(x => x.ChoferNombre).ToList(),
+            (SortKeyPeaje, true) => list.OrderByDescending(x => x.TotalPeaje).ThenBy(x => x.ChoferNombre).ToList(),
+            (SortKeyResultado, false) => list.OrderBy(x => x.TotalConPeaje - x.TotalFlete - x.TotalPeaje).ThenBy(x => x.ChoferNombre).ToList(),
+            (SortKeyResultado, true) => list.OrderByDescending(x => x.TotalConPeaje - x.TotalFlete - x.TotalPeaje).ThenBy(x => x.ChoferNombre).ToList(),
+            _ => list.OrderByDescending(x => x.TotalConPeaje).ThenByDescending(x => x.CantidadViajes).ThenBy(x => x.ChoferNombre).ThenBy(x => x.ChoferCodigo).ToList()
+        };
+    }
+
+    private IReadOnlyList<CargaViajeReporteLiquidacionRowDto> SortReporteDetalleRows(IEnumerable<CargaViajeReporteLiquidacionRowDto> rows)
+    {
+        var list = rows.ToList();
+        return (_reporteSortBy, _reporteSortDescending) switch
+        {
+            (SortKeyFecha, false) => list.OrderBy(x => x.Fecha).ThenBy(x => x.IdComprobante).ToList(),
+            (SortKeyFecha, true) => list.OrderByDescending(x => x.Fecha).ThenByDescending(x => x.IdComprobante).ToList(),
+            (SortKeyCliente, false) => list.OrderBy(x => x.ClienteNombre).ThenBy(x => x.Fecha).ThenBy(x => x.IdComprobante).ToList(),
+            (SortKeyCliente, true) => list.OrderByDescending(x => x.ClienteNombre).ThenByDescending(x => x.Fecha).ThenByDescending(x => x.IdComprobante).ToList(),
+            (SortKeyChofer, false) => list.OrderBy(x => x.ChoferNombre).ThenBy(x => x.Fecha).ThenBy(x => x.IdComprobante).ToList(),
+            (SortKeyChofer, true) => list.OrderByDescending(x => x.ChoferNombre).ThenByDescending(x => x.Fecha).ThenByDescending(x => x.IdComprobante).ToList(),
+            (SortKeyDestino, false) => list.OrderBy(x => x.DestinoDescripcion).ThenBy(x => x.Fecha).ThenBy(x => x.IdComprobante).ToList(),
+            (SortKeyDestino, true) => list.OrderByDescending(x => x.DestinoDescripcion).ThenByDescending(x => x.Fecha).ThenByDescending(x => x.IdComprobante).ToList(),
+            (SortKeyTipoVehiculo, false) => list.OrderBy(x => x.TipoVehiculoDescripcion).ThenBy(x => x.Fecha).ThenBy(x => x.IdComprobante).ToList(),
+            (SortKeyTipoVehiculo, true) => list.OrderByDescending(x => x.TipoVehiculoDescripcion).ThenByDescending(x => x.Fecha).ThenByDescending(x => x.IdComprobante).ToList(),
+            (SortKeyTotalCliente or SortKeyTotal, false) => list.OrderBy(x => x.TotalConPeaje).ThenBy(x => x.Fecha).ThenBy(x => x.IdComprobante).ToList(),
+            (SortKeyTotalCliente or SortKeyTotal, true) => list.OrderByDescending(x => x.TotalConPeaje).ThenByDescending(x => x.Fecha).ThenByDescending(x => x.IdComprobante).ToList(),
+            (SortKeyTotalFletero, false) => list.OrderBy(x => x.TotalFlete).ThenBy(x => x.Fecha).ThenBy(x => x.IdComprobante).ToList(),
+            (SortKeyTotalFletero, true) => list.OrderByDescending(x => x.TotalFlete).ThenByDescending(x => x.Fecha).ThenByDescending(x => x.IdComprobante).ToList(),
+            (SortKeyPeaje, false) => list.OrderBy(x => x.Peaje).ThenBy(x => x.Fecha).ThenBy(x => x.IdComprobante).ToList(),
+            (SortKeyPeaje, true) => list.OrderByDescending(x => x.Peaje).ThenByDescending(x => x.Fecha).ThenByDescending(x => x.IdComprobante).ToList(),
+            (SortKeyEstado, false) => list.OrderBy(x => x.Estado).ThenBy(x => x.Fecha).ThenBy(x => x.IdComprobante).ToList(),
+            (SortKeyEstado, true) => list.OrderByDescending(x => x.Estado).ThenByDescending(x => x.Fecha).ThenByDescending(x => x.IdComprobante).ToList(),
+            _ => list.OrderByDescending(x => x.Fecha).ThenByDescending(x => x.IdComprobante).ToList()
+        };
+    }
 
     private bool IsReporteResumen()
         => NormalizeReporteModo(_reporteLiquidacionFilters.Modo) == CargaViajesReporteModoKeys.Resumen;
@@ -4822,18 +5982,22 @@
             _ => CargaViajesReporteEstadoKeys.Todos
         };
 
+    private static string NormalizeReporteEstadoPago(string? value)
+        => (value ?? string.Empty).Trim().ToLowerInvariant() switch
+        {
+            CargaViajesLiquidacionEstadoPagoKeys.Pendientes => CargaViajesLiquidacionEstadoPagoKeys.Pendientes,
+            CargaViajesLiquidacionEstadoPagoKeys.Pagados => CargaViajesLiquidacionEstadoPagoKeys.Pagados,
+            CargaViajesLiquidacionEstadoPagoKeys.Todos => CargaViajesLiquidacionEstadoPagoKeys.Todos,
+            _ => CargaViajesLiquidacionEstadoPagoKeys.Todos
+        };
+
     private void ApplyReporteTipoPersona(string value, bool clearSelection = true)
     {
         var normalized = NormalizeReporteTipoPersona(value);
         _reporteLiquidacionFilters.TipoPersona = normalized;
         _reporteLiquidacionFilters.IncluirChoferes = normalized != CargaViajesReporteTipoPersonaKeys.Fleteros;
         _reporteLiquidacionFilters.IncluirFleteros = normalized != CargaViajesReporteTipoPersonaKeys.Choferes;
-        if (clearSelection)
-        {
-            _reporteLiquidacionFilters.ChoferCodigo = string.Empty;
-            _reporteLiquidacionFilters.ChoferTexto = string.Empty;
-            _reporteChoferFleteroTexto = string.Empty;
-        }
+        SyncReporteTipoPersonaSelection(clearSelection);
     }
 
     private void ApplyReporteRangoRapido(string value)
@@ -4900,21 +6064,31 @@
         => NormalizeGroupBy(value) switch
         {
             CargaViajesViewGroupKeys.Chofer => CargaViajesViewGroupKeys.Chofer,
-            CargaViajesViewGroupKeys.Fletero => CargaViajesViewGroupKeys.Fletero,
+            CargaViajesViewGroupKeys.Fletero => CargaViajesViewGroupKeys.Chofer,
             CargaViajesViewGroupKeys.Cliente => CargaViajesViewGroupKeys.Cliente,
             CargaViajesViewGroupKeys.TipoVehiculo => CargaViajesViewGroupKeys.TipoVehiculo,
             CargaViajesViewGroupKeys.Destino => CargaViajesViewGroupKeys.Destino,
+            CargaViajesViewGroupKeys.Estado => CargaViajesViewGroupKeys.Estado,
+            CargaViajesViewGroupKeys.Usuario => CargaViajesViewGroupKeys.Usuario,
             _ => CargaViajesViewGroupKeys.None
         };
 
     private bool IsReporteAgrupado()
         => NormalizeReporteGroupBy(_reporteLiquidacionFilters.AgruparPor) != CargaViajesViewGroupKeys.None;
 
+    private bool IsReporteAgruparPorChoferFletero()
+        => NormalizeReporteGroupBy(_reporteLiquidacionFilters.AgruparPor) == CargaViajesViewGroupKeys.Chofer;
+
     private bool IsLiquidacionesAgrupadas()
         => NormalizeGroupBy(_liquidacionesFilters.AgruparPor) != CargaViajesViewGroupKeys.None;
 
+    private string GetReporteGroupByPillClass(string value)
+        => string.Equals(NormalizeReporteGroupBy(_reporteLiquidacionFilters.AgruparPor), NormalizeReporteGroupBy(value), StringComparison.OrdinalIgnoreCase)
+            ? "carga-viajes-filter-pill--active"
+            : string.Empty;
+
     private IReadOnlyList<CargaViajesAgrupacionDto<CargaViajeReporteLiquidacionRowDto>> GetReporteAgrupaciones()
-        => BuildAgrupaciones(_reporteLiquidacionRows, NormalizeReporteGroupBy(_reporteLiquidacionFilters.AgruparPor), GetReporteGrupoValor, GetReporteGrupoEtiqueta);
+        => SortReporteAgrupaciones(BuildAgrupaciones(GetReporteRowsAplicandoTipoPersona(), NormalizeReporteGroupBy(_reporteLiquidacionFilters.AgruparPor), GetReporteGrupoValor, GetReporteGrupoEtiqueta));
 
     private IReadOnlyList<CargaViajesAgrupacionDto<CargaViajeLiquidacionRowDto>> GetLiquidacionesAgrupaciones()
         => BuildAgrupaciones(_liquidacionesRows, NormalizeGroupBy(_liquidacionesFilters.AgruparPor), GetLiquidacionGrupoValor, GetLiquidacionGrupoEtiqueta);
@@ -4962,14 +6136,44 @@
             .ToList();
     }
 
+    private IReadOnlyList<CargaViajesAgrupacionDto<CargaViajeReporteLiquidacionRowDto>> SortReporteAgrupaciones(IEnumerable<CargaViajesAgrupacionDto<CargaViajeReporteLiquidacionRowDto>> groups)
+    {
+        var list = groups.ToList();
+        return (_reporteSortBy, _reporteSortDescending) switch
+        {
+            (SortKeyFecha, false) => list.OrderBy(x => x.DetalleViajes.FirstOrDefault()?.Fecha ?? DateTime.MinValue).ThenBy(x => x.GrupoTipo).ThenBy(x => x.GrupoNombre).ToList(),
+            (SortKeyFecha, true) => list.OrderByDescending(x => x.DetalleViajes.FirstOrDefault()?.Fecha ?? DateTime.MinValue).ThenByDescending(x => x.GrupoTipo).ThenByDescending(x => x.GrupoNombre).ToList(),
+            (SortKeyTipo, false) => list.OrderBy(x => x.GrupoTipo).ThenBy(x => x.GrupoNombre).ToList(),
+            (SortKeyTipo, true) => list.OrderByDescending(x => x.GrupoTipo).ThenByDescending(x => x.GrupoNombre).ToList(),
+            (SortKeyChofer, false) => list.OrderBy(x => x.GrupoNombre).ThenBy(x => x.GrupoTipo).ToList(),
+            (SortKeyChofer, true) => list.OrderByDescending(x => x.GrupoNombre).ThenByDescending(x => x.GrupoTipo).ToList(),
+            (SortKeyCliente, false) => list.OrderBy(x => x.GrupoNombre).ThenBy(x => x.GrupoTipo).ToList(),
+            (SortKeyCliente, true) => list.OrderByDescending(x => x.GrupoNombre).ThenByDescending(x => x.GrupoTipo).ToList(),
+            (SortKeyDestino, false) => list.OrderBy(x => x.GrupoNombre).ThenBy(x => x.GrupoTipo).ToList(),
+            (SortKeyDestino, true) => list.OrderByDescending(x => x.GrupoNombre).ThenByDescending(x => x.GrupoTipo).ToList(),
+            (SortKeyViajes, false) => list.OrderBy(x => x.CantidadViajes).ThenBy(x => x.GrupoTipo).ThenBy(x => x.GrupoNombre).ToList(),
+            (SortKeyViajes, true) => list.OrderByDescending(x => x.CantidadViajes).ThenByDescending(x => x.GrupoTipo).ThenByDescending(x => x.GrupoNombre).ToList(),
+            (SortKeyTotalCliente, false) => list.OrderBy(x => x.TotalCliente).ThenBy(x => x.GrupoTipo).ThenBy(x => x.GrupoNombre).ToList(),
+            (SortKeyTotalCliente, true) => list.OrderByDescending(x => x.TotalCliente).ThenByDescending(x => x.GrupoTipo).ThenByDescending(x => x.GrupoNombre).ToList(),
+            (SortKeyTotalFletero, false) => list.OrderBy(x => x.TotalFletero).ThenBy(x => x.GrupoTipo).ThenBy(x => x.GrupoNombre).ToList(),
+            (SortKeyTotalFletero, true) => list.OrderByDescending(x => x.TotalFletero).ThenByDescending(x => x.GrupoTipo).ThenByDescending(x => x.GrupoNombre).ToList(),
+            (SortKeyPeaje, false) => list.OrderBy(x => x.TotalPeajes).ThenBy(x => x.GrupoTipo).ThenBy(x => x.GrupoNombre).ToList(),
+            (SortKeyPeaje, true) => list.OrderByDescending(x => x.TotalPeajes).ThenByDescending(x => x.GrupoTipo).ThenByDescending(x => x.GrupoNombre).ToList(),
+            (SortKeyResultado, false) => list.OrderBy(x => x.Resultado).ThenBy(x => x.GrupoTipo).ThenBy(x => x.GrupoNombre).ToList(),
+            (SortKeyResultado, true) => list.OrderByDescending(x => x.Resultado).ThenByDescending(x => x.GrupoTipo).ThenByDescending(x => x.GrupoNombre).ToList(),
+            _ => list.OrderBy(x => x.GrupoTipo).ThenBy(x => x.GrupoNombre).ToList()
+        };
+    }
+
     private static string GetReporteGrupoEtiqueta(CargaViajeReporteLiquidacionRowDto row, string agruparPor)
         => agruparPor switch
         {
-            CargaViajesViewGroupKeys.Chofer => "Chofer",
-            CargaViajesViewGroupKeys.Fletero => "Fletero",
+            CargaViajesViewGroupKeys.Chofer => row.EsFletero ? "Fletero" : "Chofer",
             CargaViajesViewGroupKeys.Cliente => "Cliente",
             CargaViajesViewGroupKeys.TipoVehiculo => "Tipo de vehículo",
             CargaViajesViewGroupKeys.Destino => "Destino",
+            CargaViajesViewGroupKeys.Estado => "Estado",
+            CargaViajesViewGroupKeys.Usuario => "Usuario",
             _ => string.Empty
         };
 
@@ -4977,10 +6181,11 @@
         => agruparPor switch
         {
             CargaViajesViewGroupKeys.Chofer => DisplayVisibleText(row.ChoferNombre),
-            CargaViajesViewGroupKeys.Fletero => row.EsFletero ? DisplayVisibleText(row.ChoferNombre) : "Sin fletero",
             CargaViajesViewGroupKeys.Cliente => DisplayVisibleText(row.ClienteNombre),
             CargaViajesViewGroupKeys.TipoVehiculo => DisplayVisibleText(row.TipoVehiculoDescripcion),
             CargaViajesViewGroupKeys.Destino => DisplayVisibleText(row.DestinoDescripcion),
+            CargaViajesViewGroupKeys.Estado => GetReporteEstadoTexto(row.Estado),
+            CargaViajesViewGroupKeys.Usuario => DisplayVisibleText(row.Usuario),
             _ => string.Empty
         };
 
@@ -5158,6 +6363,14 @@
             {
                 _liquidacionesRows.Clear();
                 _liquidacionesRows.AddRange(result.Value);
+                Logger.LogInformation(
+                    "Liquidaciones dataset rows={Rows} totalConPeaje={TotalConPeaje} totalFlete={TotalFlete} totalPeaje={TotalPeaje} tipoPersona={TipoPersona} mostrarLiquidados={MostrarLiquidados}",
+                    _liquidacionesRows.Count,
+                    GetLiquidacionesTotalPendienteVisible(),
+                    _liquidacionesRows.Sum(x => x.TotalFlete),
+                    _liquidacionesRows.Sum(x => Math.Max(0m, x.Peaje)),
+                    GetLiquidacionesTipoPersonaLabel(),
+                    _liquidacionesFilters.MostrarLiquidados);
                 return;
             }
 
@@ -5173,8 +6386,8 @@
 
     private IReadOnlyList<CargaViajeLiquidacionGroupDto> GetLiquidacionesGroups()
     {
-        var filtered = _liquidacionesRows.Where(x => _liquidacionesFilters.MostrarLiquidados || !x.FletePagado);
-        return filtered
+        var filtered = GetLiquidacionesRowsAplicandoFiltros();
+        var groups = filtered
             .GroupBy(x => new
             {
                 x.ChoferCodigo,
@@ -5183,7 +6396,7 @@
             })
             .Select(g =>
             {
-                var items = g.OrderByDescending(x => x.Fecha).ThenByDescending(x => x.Id).ToList();
+                var items = SortLiquidacionesRows(g).ToList();
                 return new CargaViajeLiquidacionGroupDto
                 {
                     EsFletero = g.Key.EsFletero,
@@ -5196,19 +6409,78 @@
                     Items = items
                 };
             })
-            .OrderByDescending(x => x.EsFletero)
-            .ThenBy(x => x.GrupoNombre)
             .ToList();
+
+        return SortLiquidacionesGroups(groups);
+    }
+
+    private IReadOnlyList<CargaViajeLiquidacionRowDto> GetLiquidacionesRowsAplicandoFiltros()
+        => _liquidacionesRows
+            .Where(x => _liquidacionesFilters.MostrarLiquidados || !x.FletePagado)
+            .ToList();
+
+    private IReadOnlyList<CargaViajeLiquidacionRowDto> SortLiquidacionesRows(IEnumerable<CargaViajeLiquidacionRowDto> rows)
+    {
+        var list = rows.ToList();
+        return (_liquidacionesSortBy, _liquidacionesSortDescending) switch
+        {
+            (SortKeyFecha, false) => list.OrderBy(x => x.Fecha).ThenBy(x => x.Id).ToList(),
+            (SortKeyFecha, true) => list.OrderByDescending(x => x.Fecha).ThenByDescending(x => x.Id).ToList(),
+            (SortKeyCliente, false) => list.OrderBy(x => x.ClienteNombre).ThenBy(x => x.Fecha).ThenBy(x => x.Id).ToList(),
+            (SortKeyCliente, true) => list.OrderByDescending(x => x.ClienteNombre).ThenByDescending(x => x.Fecha).ThenByDescending(x => x.Id).ToList(),
+            (SortKeyChofer, false) => list.OrderBy(x => x.ChoferNombre).ThenBy(x => x.Fecha).ThenBy(x => x.Id).ToList(),
+            (SortKeyChofer, true) => list.OrderByDescending(x => x.ChoferNombre).ThenByDescending(x => x.Fecha).ThenByDescending(x => x.Id).ToList(),
+            (SortKeyDestino, false) => list.OrderBy(x => x.DestinoDescripcion).ThenBy(x => x.Fecha).ThenBy(x => x.Id).ToList(),
+            (SortKeyDestino, true) => list.OrderByDescending(x => x.DestinoDescripcion).ThenByDescending(x => x.Fecha).ThenByDescending(x => x.Id).ToList(),
+            (SortKeyTipoVehiculo, false) => list.OrderBy(x => x.TipoVehiculoDescripcion).ThenBy(x => x.Fecha).ThenBy(x => x.Id).ToList(),
+            (SortKeyTipoVehiculo, true) => list.OrderByDescending(x => x.TipoVehiculoDescripcion).ThenByDescending(x => x.Fecha).ThenByDescending(x => x.Id).ToList(),
+            (SortKeyTotalFletero, false) => list.OrderBy(x => x.TotalFlete).ThenBy(x => x.Fecha).ThenBy(x => x.Id).ToList(),
+            (SortKeyTotalFletero, true) => list.OrderByDescending(x => x.TotalFlete).ThenByDescending(x => x.Fecha).ThenByDescending(x => x.Id).ToList(),
+            (SortKeyPeaje, false) => list.OrderBy(x => x.Peaje).ThenBy(x => x.Fecha).ThenBy(x => x.Id).ToList(),
+            (SortKeyPeaje, true) => list.OrderByDescending(x => x.Peaje).ThenByDescending(x => x.Fecha).ThenByDescending(x => x.Id).ToList(),
+            (SortKeyTotal, false) => list.OrderBy(x => x.TotalConPeaje).ThenBy(x => x.Fecha).ThenBy(x => x.Id).ToList(),
+            (SortKeyTotal, true) => list.OrderByDescending(x => x.TotalConPeaje).ThenByDescending(x => x.Fecha).ThenByDescending(x => x.Id).ToList(),
+            (SortKeyEstado, false) => list.OrderBy(x => x.Estado).ThenBy(x => x.Fecha).ThenBy(x => x.Id).ToList(),
+            (SortKeyEstado, true) => list.OrderByDescending(x => x.Estado).ThenByDescending(x => x.Fecha).ThenByDescending(x => x.Id).ToList(),
+            _ => list.OrderByDescending(x => x.Fecha).ThenByDescending(x => x.Id).ToList()
+        };
+    }
+
+    private IReadOnlyList<CargaViajeLiquidacionGroupDto> SortLiquidacionesGroups(IEnumerable<CargaViajeLiquidacionGroupDto> groups)
+    {
+        var list = groups.ToList();
+        return (_liquidacionesSortBy, _liquidacionesSortDescending) switch
+        {
+            (SortKeyFecha, false) => list.OrderBy(x => x.Items.FirstOrDefault()?.Fecha ?? DateTime.MinValue).ThenBy(x => x.GrupoNombre).ToList(),
+            (SortKeyFecha, true) => list.OrderByDescending(x => x.Items.FirstOrDefault()?.Fecha ?? DateTime.MinValue).ThenByDescending(x => x.GrupoNombre).ToList(),
+            (SortKeyCliente, false) => list.OrderBy(x => x.Items.FirstOrDefault()?.ClienteNombre).ThenBy(x => x.GrupoNombre).ToList(),
+            (SortKeyCliente, true) => list.OrderByDescending(x => x.Items.FirstOrDefault()?.ClienteNombre).ThenByDescending(x => x.GrupoNombre).ToList(),
+            (SortKeyChofer, false) => list.OrderBy(x => x.GrupoNombre).ThenBy(x => x.EsFletero).ToList(),
+            (SortKeyChofer, true) => list.OrderByDescending(x => x.GrupoNombre).ThenByDescending(x => x.EsFletero).ToList(),
+            (SortKeyDestino, false) => list.OrderBy(x => x.Items.FirstOrDefault()?.DestinoDescripcion).ThenBy(x => x.GrupoNombre).ToList(),
+            (SortKeyDestino, true) => list.OrderByDescending(x => x.Items.FirstOrDefault()?.DestinoDescripcion).ThenByDescending(x => x.GrupoNombre).ToList(),
+            (SortKeyTipoVehiculo, false) => list.OrderBy(x => x.Items.FirstOrDefault()?.TipoVehiculoDescripcion).ThenBy(x => x.GrupoNombre).ToList(),
+            (SortKeyTipoVehiculo, true) => list.OrderByDescending(x => x.Items.FirstOrDefault()?.TipoVehiculoDescripcion).ThenByDescending(x => x.GrupoNombre).ToList(),
+            (SortKeyTotalFletero, false) => list.OrderBy(x => x.TotalFlete).ThenBy(x => x.GrupoNombre).ToList(),
+            (SortKeyTotalFletero, true) => list.OrderByDescending(x => x.TotalFlete).ThenByDescending(x => x.GrupoNombre).ToList(),
+            (SortKeyPeaje, false) => list.OrderBy(x => x.TotalPeaje).ThenBy(x => x.GrupoNombre).ToList(),
+            (SortKeyPeaje, true) => list.OrderByDescending(x => x.TotalPeaje).ThenByDescending(x => x.GrupoNombre).ToList(),
+            (SortKeyTotal, false) => list.OrderBy(x => x.TotalConPeaje).ThenBy(x => x.GrupoNombre).ToList(),
+            (SortKeyTotal, true) => list.OrderByDescending(x => x.TotalConPeaje).ThenByDescending(x => x.GrupoNombre).ToList(),
+            (SortKeyEstado, false) => list.OrderBy(x => x.Items.FirstOrDefault()?.Estado).ThenBy(x => x.GrupoNombre).ToList(),
+            (SortKeyEstado, true) => list.OrderByDescending(x => x.Items.FirstOrDefault()?.Estado).ThenByDescending(x => x.GrupoNombre).ToList(),
+            _ => list.OrderByDescending(x => x.EsFletero).ThenBy(x => x.GrupoNombre).ToList()
+        };
     }
 
     private int GetLiquidacionesEncontradosCount()
-        => _liquidacionesRows.Count;
+        => GetLiquidacionesRowsAplicandoFiltros().Count;
 
     private int GetLiquidacionesPendientesCount()
-        => _liquidacionesRows.Count(x => !x.FletePagado);
+        => GetLiquidacionesRowsAplicandoFiltros().Count(x => !x.FletePagado);
 
     private decimal GetLiquidacionesTotalPendienteVisible()
-        => _liquidacionesRows.Where(x => !x.FletePagado).Sum(x => x.TotalConPeaje);
+        => GetLiquidacionesRowsAplicandoFiltros().Where(x => !x.FletePagado).Sum(x => x.TotalConPeaje);
 
     private string GetLiquidacionesResumenTexto()
         => $"{GetLiquidacionesEncontradosCount()} viaje(s) encontrados | {GetLiquidacionesPendientesCount()} pendientes | {_liquidacionesSeleccionadas.Count} seleccionados | Total seleccionado: {_liquidacionesTotalSeleccionado.ToString("N2")} | Total pendiente: {GetLiquidacionesTotalPendienteVisible().ToString("N2")}";
@@ -5273,6 +6545,45 @@
         _liquidacionesFilters.TipoPersona = normalized;
         _liquidacionesFilters.IncluirChoferes = normalized != CargaViajesReporteTipoPersonaKeys.Fleteros;
         _liquidacionesFilters.IncluirFleteros = normalized != CargaViajesReporteTipoPersonaKeys.Choferes;
+        SyncLiquidacionesTipoPersonaSelection(clearSelection);
+    }
+
+    private void SyncReporteTipoPersonaSelection(bool clearSelection = true)
+    {
+        if (!_reporteLiquidacionFilters.IncluirChoferes && !_reporteLiquidacionFilters.IncluirFleteros)
+        {
+            _reporteLiquidacionFilters.IncluirChoferes = true;
+            _reporteLiquidacionFilters.IncluirFleteros = true;
+        }
+
+        _reporteLiquidacionFilters.TipoPersona = _reporteLiquidacionFilters.IncluirChoferes && _reporteLiquidacionFilters.IncluirFleteros
+            ? CargaViajesReporteTipoPersonaKeys.ChoferesYFleteros
+            : _reporteLiquidacionFilters.IncluirFleteros
+                ? CargaViajesReporteTipoPersonaKeys.Fleteros
+                : CargaViajesReporteTipoPersonaKeys.Choferes;
+
+        if (clearSelection)
+        {
+            _reporteLiquidacionFilters.ChoferCodigo = string.Empty;
+            _reporteLiquidacionFilters.ChoferTexto = string.Empty;
+            _reporteChoferFleteroTexto = string.Empty;
+        }
+    }
+
+    private void SyncLiquidacionesTipoPersonaSelection(bool clearSelection = true)
+    {
+        if (!_liquidacionesFilters.IncluirChoferes && !_liquidacionesFilters.IncluirFleteros)
+        {
+            _liquidacionesFilters.IncluirChoferes = true;
+            _liquidacionesFilters.IncluirFleteros = true;
+        }
+
+        _liquidacionesFilters.TipoPersona = _liquidacionesFilters.IncluirChoferes && _liquidacionesFilters.IncluirFleteros
+            ? CargaViajesReporteTipoPersonaKeys.ChoferesYFleteros
+            : _liquidacionesFilters.IncluirFleteros
+                ? CargaViajesReporteTipoPersonaKeys.Fleteros
+                : CargaViajesReporteTipoPersonaKeys.Choferes;
+
         if (clearSelection)
         {
             _liquidacionesFilters.ChoferCodigo = string.Empty;
@@ -5401,7 +6712,7 @@
             .ToList();
 
     private IReadOnlyList<CargaViajeReporteLiquidacionResumenDto> GetReporteLiquidacionResumen()
-        => _reporteLiquidacionRows
+        => GetReporteRowsAplicandoTipoPersona()
             .GroupBy(x => new { x.ChoferCodigo, x.ChoferNombre, x.EsFletero })
             .Select(g => new CargaViajeReporteLiquidacionResumenDto
             {
@@ -5420,7 +6731,7 @@
             .ToList();
 
     private IReadOnlyList<CargaViajeReporteLiquidacionRowDto> GetReporteRows(bool esFletero)
-        => _reporteLiquidacionRows
+        => GetReporteRowsAplicandoTipoPersona()
             .Where(x => x.EsFletero == esFletero)
             .OrderBy(x => x.ChoferNombre)
             .ThenBy(x => x.Fecha)
@@ -5445,7 +6756,7 @@
         => GetReporteRows(esFletero).Sum(x => Math.Max(1, x.CantidadViajes));
 
     private decimal GetReporteTotalGeneral()
-        => _reporteLiquidacionRows.Sum(x => x.TotalConPeaje);
+        => GetReporteRowsAplicandoTipoPersona().Sum(x => x.TotalConPeaje);
 
     private IReadOnlyList<CategoryTotalDto> GetReporteChartData(bool esFletero)
         => GetReporteResumen(esFletero)
@@ -5504,15 +6815,18 @@
         return $"{groups.Count} tarjeta(s) · detalle oculto por defecto";
     }
 
-    private static string BuildReporteGroupKey(CargaViajesReporteDriverGroupDto group)
-        => $"{(group.EsFletero ? "F" : "C")}|{group.ChoferCodigo}|{group.ChoferNombre}";
-
-    private bool IsReporteGroupExpanded(CargaViajesReporteDriverGroupDto group)
-        => _reporteGruposAbiertos.Contains(BuildReporteGroupKey(group));
-
-    private void ToggleReporteGroupDetail(CargaViajesReporteDriverGroupDto group)
+    private static string BuildReporteGroupKey(CargaViajesAgrupacionDto<CargaViajeReporteLiquidacionRowDto> group)
     {
-        var key = BuildReporteGroupKey(group);
+        var tipo = (group.GrupoTipo ?? string.Empty).Trim();
+        var nombre = (group.GrupoNombre ?? string.Empty).Trim();
+        return $"{tipo}|{nombre}";
+    }
+
+    private bool IsReporteGroupExpanded(string key)
+        => _reporteGruposAbiertos.Contains(key);
+
+    private void ToggleReporteGroupDetail(string key)
+    {
         if (!_reporteGruposAbiertos.Add(key))
             _reporteGruposAbiertos.Remove(key);
     }
@@ -5907,14 +7221,27 @@
     }
 
     private string GetTarifaRowClass(CargaViajeTarifaGridItemDto row, int index)
-        => _tarifasQuickImportEditMode && ((row.Id > 0 && row.Id == _tarifasQuickImportEditId) || index == _tarifasQuickImportRowIndex)
-            ? "data-grid__row data-grid__row--active"
-            : "data-grid__row";
+    {
+        var classes = new List<string> { "data-grid__row" };
+        if (_tarifasQuickImportEditMode && ((row.Id > 0 && row.Id == _tarifasQuickImportEditId) || index == _tarifasQuickImportRowIndex))
+            classes.Add("data-grid__row--active");
+        return string.Join(' ', classes);
+    }
 
     private string GetTarifaImporteCellClass(CargaViajeTarifaGridItemDto row)
         => _tarifasQuickImportEditMode && row.Id > 0 && row.Id == _tarifasQuickImportEditId
             ? "carga-viajes-tarifas__importe-cell carga-viajes-tarifas__importe-cell--editing"
             : "carga-viajes-tarifas__importe-cell";
+
+    private static string FormatTarifaUltimaModificacion(CargaViajeTarifaGridItemDto row)
+    {
+        if (!row.FechaHoraModificacion.HasValue && string.IsNullOrWhiteSpace(row.UsuarioModificacion))
+            return "-";
+
+        var fecha = row.FechaHoraModificacion?.ToString("dd/MM/yyyy HH:mm") ?? "-";
+        var usuario = string.IsNullOrWhiteSpace(row.UsuarioModificacion) ? string.Empty : row.UsuarioModificacion.Trim();
+        return string.IsNullOrWhiteSpace(usuario) ? fecha : $"{fecha} · {usuario}";
+    }
 
     private static string GetTarifaEntidadDisplay(CargaViajeTarifaGridItemDto row)
     {
@@ -6595,6 +7922,44 @@
             ? (filters.SortDescending ? "bi-sort-down-alt" : "bi-sort-up")
             : "bi-arrow-down-up";
 
+    private static void ToggleSort(ref string sortBy, ref bool sortDescending, string newSortBy)
+    {
+        if (string.Equals(sortBy, newSortBy, StringComparison.OrdinalIgnoreCase))
+            sortDescending = !sortDescending;
+        else
+        {
+            sortBy = newSortBy;
+            sortDescending = false;
+        }
+    }
+
+    private static string GetSortIcon(string currentSortBy, bool sortDescending, string sortBy)
+        => string.Equals(currentSortBy, sortBy, StringComparison.OrdinalIgnoreCase)
+            ? (sortDescending ? "bi-sort-down-alt" : "bi-sort-up")
+            : "bi-arrow-down-up";
+
+    private static string GetSortThClass(string currentSortBy, bool sortDescending, string sortBy)
+        => string.Equals(currentSortBy, sortBy, StringComparison.OrdinalIgnoreCase)
+            ? (sortDescending ? "sort-desc" : "sort-asc")
+            : string.Empty;
+
+    private static string GetSortPillClass(string currentSortBy, bool sortDescending, string sortBy)
+        => string.Equals(currentSortBy, sortBy, StringComparison.OrdinalIgnoreCase)
+            ? (sortDescending ? "carga-viajes-sort-pill--desc" : "carga-viajes-sort-pill--asc")
+            : string.Empty;
+
+    private Task SortReportesAsync(string sortBy)
+    {
+        ToggleSort(ref _reporteSortBy, ref _reporteSortDescending, sortBy);
+        return Task.CompletedTask;
+    }
+
+    private Task SortLiquidacionesAsync(string sortBy)
+    {
+        ToggleSort(ref _liquidacionesSortBy, ref _liquidacionesSortDescending, sortBy);
+        return Task.CompletedTask;
+    }
+
     private async Task SortViajesAsync(string sortBy)
     {
         ToggleSort(_viajesFilters, sortBy);
@@ -6952,7 +8317,8 @@
             RangoRapido = CargaViajesReporteRangoRapidoKeys.MesActual,
             TipoPersona = CargaViajesReporteTipoPersonaKeys.ChoferesYFleteros,
             Modo = CargaViajesReporteModoKeys.Detallado,
-            Estado = CargaViajesReporteEstadoKeys.Todos
+            Estado = CargaViajesReporteEstadoKeys.Todos,
+            EstadoPago = CargaViajesLiquidacionEstadoPagoKeys.Todos
         };
     }
 
@@ -6990,6 +8356,8 @@
             _reporteLiquidacionFilters.Modo = defaults.Modo;
         if (string.IsNullOrWhiteSpace(_reporteLiquidacionFilters.Estado))
             _reporteLiquidacionFilters.Estado = defaults.Estado;
+        if (string.IsNullOrWhiteSpace(_reporteLiquidacionFilters.EstadoPago))
+            _reporteLiquidacionFilters.EstadoPago = defaults.EstadoPago;
         if (string.IsNullOrWhiteSpace(_reporteLiquidacionFilters.ChoferTexto))
             _reporteLiquidacionFilters.ChoferTexto = string.Empty;
         if (string.IsNullOrWhiteSpace(_reporteLiquidacionFilters.ClienteTexto))
