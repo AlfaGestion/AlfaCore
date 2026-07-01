@@ -685,6 +685,8 @@ public sealed class CargaViajesService(
             var hasAdicionalFijo2Importe = columns.Contains("adicionalfijo2importe");
             var hasAdicionalFijo3Descripcion = columns.Contains("adicionalfijo3descripcion");
             var hasAdicionalFijo3Importe = columns.Contains("adicionalfijo3importe");
+            var fechaModificacionColumn = FirstExistingColumnOrNull(columns, "FECHAHORA_MODIFICACION", "FECHA_MODIFICACION", "FECHAMODIFICACION");
+            var usuarioModificacionColumn = FirstExistingColumnOrNull(columns, "USUARIOMODIFICACION", "USUARIO_MODIFICACION");
             var idSelectExpr = string.IsNullOrWhiteSpace(idColumn) ? "CAST(0 AS int) AS Id" : $"ISNULL(t.{idColumn}, 0) AS Id";
             var idOrderExpr = string.IsNullOrWhiteSpace(idColumn) ? "0" : $"ISNULL(t.{idColumn}, 0)";
             var tarifasOrderBy = BuildOrderByClause(
@@ -731,7 +733,9 @@ public sealed class CargaViajesService(
                         {(hasAdicionalFijo2Importe ? "ISNULL(t.AdicionalFijo2Importe, 0)" : "CAST(0 AS money)")} AS AdicionalFijo2Importe,
                         {(hasAdicionalFijo3Descripcion ? "ISNULL(t.AdicionalFijo3Descripcion, '')" : "CAST('' AS nvarchar(100))")} AS AdicionalFijo3Descripcion,
                         {(hasAdicionalFijo3Importe ? "ISNULL(t.AdicionalFijo3Importe, 0)" : "CAST(0 AS money)")} AS AdicionalFijo3Importe,
-                        ISNULL(t.Activo, 1) AS Activo
+                        ISNULL(t.Activo, 1) AS Activo,
+                        {(string.IsNullOrWhiteSpace(fechaModificacionColumn) ? "CAST(NULL AS datetime)" : $"t.{fechaModificacionColumn}")} AS FechaHoraModificacion,
+                        {(string.IsNullOrWhiteSpace(usuarioModificacionColumn) ? "CAST('' AS nvarchar(50))" : $"ISNULL(t.{usuarioModificacionColumn}, '')")} AS UsuarioModificacion
                     FROM dbo.TA_TARIFA t
                     OUTER APPLY (
                         SELECT TOP (1) LTRIM(RTRIM(ISNULL(cli.RAZON_SOCIAL, ''))) AS Valor
@@ -834,7 +838,9 @@ public sealed class CargaViajesService(
                     AdicionalFijo2Importe = GetDecimal(rd, 18),
                     AdicionalFijo3Descripcion = GetString(rd, 19),
                     AdicionalFijo3Importe = GetDecimal(rd, 20),
-                    Activo = GetBool(rd, 21)
+                    Activo = GetBool(rd, 21),
+                    FechaHoraModificacion = GetDateTimeOrNull(rd, 22),
+                    UsuarioModificacion = GetString(rd, 23)
                 });
             }
 
@@ -871,6 +877,8 @@ public sealed class CargaViajesService(
             var hasAdicionalFijo2Importe = columns.Contains("adicionalfijo2importe");
             var hasAdicionalFijo3Descripcion = columns.Contains("adicionalfijo3descripcion");
             var hasAdicionalFijo3Importe = columns.Contains("adicionalfijo3importe");
+            var fechaModificacionColumn = FirstExistingColumnOrNull(columns, "FECHAHORA_MODIFICACION", "FECHA_MODIFICACION", "FECHAMODIFICACION");
+            var usuarioModificacionColumn = FirstExistingColumnOrNull(columns, "USUARIOMODIFICACION", "USUARIO_MODIFICACION");
             var sql = $"""
                 SELECT TOP (1)
                     {(string.IsNullOrWhiteSpace(idColumn) ? "CAST(0 AS int)" : $"ISNULL({idColumn}, 0)") } AS Id,
@@ -893,7 +901,9 @@ public sealed class CargaViajesService(
                     {(hasAdicionalFijo2Importe ? "ISNULL(t.AdicionalFijo2Importe, 0)" : "CAST(0 AS money)")} AS AdicionalFijo2Importe,
                     {(hasAdicionalFijo3Descripcion ? "ISNULL(t.AdicionalFijo3Descripcion, '')" : "CAST('' AS nvarchar(100))")} AS AdicionalFijo3Descripcion,
                     {(hasAdicionalFijo3Importe ? "ISNULL(t.AdicionalFijo3Importe, 0)" : "CAST(0 AS money)")} AS AdicionalFijo3Importe,
-                    ISNULL(t.Activo, 1) AS Activo
+                    ISNULL(t.Activo, 1) AS Activo,
+                    {(string.IsNullOrWhiteSpace(fechaModificacionColumn) ? "CAST(NULL AS datetime)" : $"t.{fechaModificacionColumn}")} AS FechaHoraModificacion,
+                    {(string.IsNullOrWhiteSpace(usuarioModificacionColumn) ? "CAST('' AS nvarchar(50))" : $"ISNULL(t.{usuarioModificacionColumn}, '')")} AS UsuarioModificacion
                 FROM dbo.TA_TARIFA t
                 LEFT JOIN dbo.Vt_Clientes cli ON UPPER(LTRIM(RTRIM(cli.CODIGO))) = UPPER(LTRIM(RTRIM(ISNULL(t.{clienteColumn}, ''))))
                 LEFT JOIN dbo.TA_CHOFERES ch ON UPPER(LTRIM(RTRIM(ch.CODIGO))) = UPPER(LTRIM(RTRIM(ISNULL(t.{choferColumn}, ''))))
@@ -930,6 +940,8 @@ public sealed class CargaViajesService(
             var hasAdicionalFijo2Importe = columns.Contains("adicionalfijo2importe");
             var hasAdicionalFijo3Descripcion = columns.Contains("adicionalfijo3descripcion");
             var hasAdicionalFijo3Importe = columns.Contains("adicionalfijo3importe");
+            var fechaModificacionColumn = FirstExistingColumnOrNull(columns, "FECHAHORA_MODIFICACION", "FECHA_MODIFICACION", "FECHAMODIFICACION");
+            var usuarioModificacionColumn = FirstExistingColumnOrNull(columns, "USUARIOMODIFICACION", "USUARIO_MODIFICACION");
 
             var row = await cn.QuerySingleOrDefaultAsync<CargaViajeTarifaGridItemDto>(new CommandDefinition($"""
                 SELECT TOP (1)
@@ -953,7 +965,9 @@ public sealed class CargaViajesService(
                     {(hasAdicionalFijo2Importe ? "ISNULL(t.AdicionalFijo2Importe, 0)" : "CAST(0 AS money)")} AS AdicionalFijo2Importe,
                     {(hasAdicionalFijo3Descripcion ? "ISNULL(t.AdicionalFijo3Descripcion, '')" : "CAST('' AS nvarchar(100))")} AS AdicionalFijo3Descripcion,
                     {(hasAdicionalFijo3Importe ? "ISNULL(t.AdicionalFijo3Importe, 0)" : "CAST(0 AS money)")} AS AdicionalFijo3Importe,
-                    ISNULL(t.Activo, 1) AS Activo
+                    ISNULL(t.Activo, 1) AS Activo,
+                    {(string.IsNullOrWhiteSpace(fechaModificacionColumn) ? "CAST(NULL AS datetime)" : $"t.{fechaModificacionColumn}")} AS FechaHoraModificacion,
+                    {(string.IsNullOrWhiteSpace(usuarioModificacionColumn) ? "CAST('' AS nvarchar(50))" : $"ISNULL(t.{usuarioModificacionColumn}, '')")} AS UsuarioModificacion
                 FROM dbo.TA_TARIFA t
                 LEFT JOIN dbo.Vt_Clientes cli ON UPPER(LTRIM(RTRIM(cli.CODIGO))) = UPPER(LTRIM(RTRIM(ISNULL(t.{FirstExistingColumn(columns, "IDCLIENTE", "CLIENTE")}, ''))))
                 LEFT JOIN dbo.TA_CHOFERES ch ON UPPER(LTRIM(RTRIM(ch.CODIGO))) = UPPER(LTRIM(RTRIM(ISNULL(t.{FirstExistingColumn(columns, "IDCHOFER", "CHOFER")}, ''))))
@@ -978,11 +992,20 @@ public sealed class CargaViajesService(
                 : columns.Contains("id_tarifa") ? "ID_TARIFA"
                 : null;
             var idListaColumn = FirstExistingColumn(columns, "IDLISTA", "ID_LISTA");
+            var fechaModificacionColumn = FirstExistingColumnOrNull(columns, "FECHAHORA_MODIFICACION", "FECHA_MODIFICACION", "FECHAMODIFICACION");
+            var usuarioModificacionColumn = FirstExistingColumnOrNull(columns, "USUARIOMODIFICACION", "USUARIO_MODIFICACION");
+            var usuarioActual = NormalizeUser(Environment.UserName);
 
             if (id > 0 && !string.IsNullOrWhiteSpace(idColumn))
             {
-                var sqlById = $"UPDATE dbo.TA_TARIFA SET Importe = @Importe WHERE {idColumn} = @Id;";
-                var affectedById = await cn.ExecuteAsync(new CommandDefinition(sqlById, new { Id = id, Importe = importe }, cancellationToken: token));
+                var updateParts = new List<string> { "Importe = @Importe" };
+                if (!string.IsNullOrWhiteSpace(fechaModificacionColumn))
+                    updateParts.Add($"{fechaModificacionColumn} = GETDATE()");
+                if (!string.IsNullOrWhiteSpace(usuarioModificacionColumn))
+                    updateParts.Add($"{usuarioModificacionColumn} = @UsuarioModificacion");
+
+                var sqlById = $"UPDATE dbo.TA_TARIFA SET {string.Join(", ", updateParts)} WHERE {idColumn} = @Id;";
+                var affectedById = await cn.ExecuteAsync(new CommandDefinition(sqlById, new { Id = id, Importe = importe, UsuarioModificacion = usuarioActual }, cancellationToken: token));
                 if (affectedById <= 0)
                     throw new InvalidOperationException("No se pudo actualizar el importe de la tarifa seleccionada.");
                 return;
@@ -990,12 +1013,18 @@ public sealed class CargaViajesService(
 
             if (!string.IsNullOrWhiteSpace(idListaColumn) && !string.IsNullOrWhiteSpace(idLista))
             {
+                var updateParts = new List<string> { "Importe = @Importe" };
+                if (!string.IsNullOrWhiteSpace(fechaModificacionColumn))
+                    updateParts.Add($"{fechaModificacionColumn} = GETDATE()");
+                if (!string.IsNullOrWhiteSpace(usuarioModificacionColumn))
+                    updateParts.Add($"{usuarioModificacionColumn} = @UsuarioModificacion");
+
                 var sqlByLista = $"""
                     UPDATE dbo.TA_TARIFA
-                    SET Importe = @Importe
+                    SET {string.Join(", ", updateParts)}
                     WHERE UPPER(LTRIM(RTRIM({idListaColumn}))) = @IdLista;
                     """;
-                var affectedByLista = await cn.ExecuteAsync(new CommandDefinition(sqlByLista, new { IdLista = idLista.Trim().ToUpperInvariant(), Importe = importe }, cancellationToken: token));
+                var affectedByLista = await cn.ExecuteAsync(new CommandDefinition(sqlByLista, new { IdLista = idLista.Trim().ToUpperInvariant(), Importe = importe, UsuarioModificacion = usuarioActual }, cancellationToken: token));
                 if (affectedByLista <= 0)
                     throw new InvalidOperationException("No se pudo actualizar el importe de la tarifa seleccionada.");
                 return;
@@ -1027,6 +1056,9 @@ public sealed class CargaViajesService(
             var choferColumn = FirstExistingColumn(columns, "IDCHOFER", "CHOFER");
             var destinoColumn = FirstExistingColumn(columns, "IDDESTINO", "DESTINO");
             var tipoVehiculoColumn = FirstExistingColumn(columns, "IDTIPOVEHICULO", "TIPOVEHICULO");
+            var fechaModificacionColumn = FirstExistingColumnOrNull(columns, "FECHAHORA_MODIFICACION", "FECHA_MODIFICACION", "FECHAMODIFICACION");
+            var usuarioModificacionColumn = FirstExistingColumnOrNull(columns, "USUARIOMODIFICACION", "USUARIO_MODIFICACION");
+            var usuarioActual = NormalizeUser(Environment.UserName);
             var hasAdicFijo1Desc = columns.Contains("adicional_fijo1_descripcion");
             var hasAdicFijo1Importe = columns.Contains("adicional_fijo1_importe");
             var hasAdicFijo2Desc = columns.Contains("adicional_fijo2_descripcion");
@@ -2459,14 +2491,24 @@ public sealed class CargaViajesService(
             var fechaHasta = filters.FechaHasta?.Date;
             if (fechaDesde.HasValue && fechaHasta.HasValue && fechaHasta < fechaDesde)
                 (fechaDesde, fechaHasta) = (fechaHasta, fechaDesde);
+            var (incluirChoferes, incluirFleteros) = NormalizeTipoPersonaFlags(filters.IncluirChoferes, filters.IncluirFleteros, filters.TipoPersona);
+            var estadoPago = string.IsNullOrWhiteSpace(filters.EstadoPago)
+                ? CargaViajesLiquidacionEstadoPagoKeys.Todos
+                : NormalizeLiquidacionEstadoPago(filters.EstadoPago);
+            if (!incluirChoferes && !incluirFleteros)
+                return Array.Empty<CargaViajeReporteLiquidacionRowDto>();
 
             logger.LogInformation(
-                "SearchLiquidacionChoferes start desde={Desde:yyyy-MM-dd} hasta={Hasta:yyyy-MM-dd} choferes={Choferes} fleteros={Fleteros} chofer={Chofer}",
+                "SearchLiquidacionChoferes start desde={Desde:yyyy-MM-dd} hasta={Hasta:yyyy-MM-dd} choferes={Choferes} fleteros={Fleteros} chofer={Chofer} cliente={Cliente} destino={Destino} estado={Estado} estadoPago={EstadoPago}",
                 fechaDesde,
                 fechaHasta,
-                filters.IncluirChoferes,
-                filters.IncluirFleteros,
-                filters.ChoferCodigo);
+                incluirChoferes,
+                incluirFleteros,
+                filters.ChoferCodigo,
+                filters.ClienteCodigo,
+                filters.DestinoCodigo,
+                filters.Estado,
+                estadoPago);
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
@@ -2481,9 +2523,10 @@ public sealed class CargaViajesService(
             var observacionesExpr = columns.Contains("observaciones") ? "ISNULL(v.OBSERVACIONES, '')" : "CAST('' AS nvarchar(250))";
             var hasEsFletero = await ColumnExistsAsync(cn, "TA_CHOFERES", "ES_FLETERO", token);
             var esFleteroExpr = hasEsFletero ? "CAST(ISNULL(ch.ES_FLETERO, 0) AS bit)" : "CAST(0 AS bit)";
+            var fechaDesdeClause = fechaDesde.HasValue ? "AND v.FECHA >= @FechaDesde" : string.Empty;
+            var fechaHastaClause = fechaHasta.HasValue ? "AND v.FECHA < DATEADD(DAY, 1, @FechaHasta)" : string.Empty;
+            var tipoFilterClause = BuildTipoPersonaClause("ch", hasEsFletero, incluirChoferes, incluirFleteros);
             var reporteFilter = """
-                AND (@FechaDesde IS NULL OR v.FECHA >= @FechaDesde)
-                AND (@FechaHasta IS NULL OR v.FECHA < DATEADD(DAY, 1, @FechaHasta))
                 AND (@ChoferCodigo = '' OR UPPER(LTRIM(RTRIM(ISNULL(v.IDCHOFER, '')))) = @ChoferCodigo)
                 AND (@ClienteCodigo = '' OR UPPER(LTRIM(RTRIM(ISNULL(v.IDCLIENTE, '')))) = @ClienteCodigo)
                 AND (@DestinoCodigo = '' OR UPPER(LTRIM(RTRIM(ISNULL(v.IDDESTINO, '')))) = @DestinoCodigo)
@@ -2493,6 +2536,11 @@ public sealed class CargaViajesService(
                    OR (@EstadoFiltro = N'FINALIZADO' AND UPPER(LTRIM(RTRIM(ISNULL(v.ESTADO, N'PENDIENTE')))) = N'FINALIZADO')
                    OR (@EstadoFiltro = N'PENDIENTE_PAGO' AND ISNULL(v.FLETE_PAGADO, 0) = 0)
                 )
+                  AND (
+                        @EstadoPago = N'TODOS'
+                     OR (@EstadoPago = N'PENDIENTES' AND ISNULL(v.FLETE_PAGADO, 0) = 0)
+                     OR (@EstadoPago = N'PAGADOS' AND ISNULL(v.FLETE_PAGADO, 0) = 1)
+                  )
                 """;
             var sql = $"""
                 SELECT
@@ -2512,6 +2560,7 @@ public sealed class CargaViajesService(
                     ISNULL(v.TOTAL_FLETE, 0) AS TotalFlete,
                     ISNULL(v.TOTAL_FLETE, 0) + {peajeExpr} AS TotalConPeaje,
                     {peajeExpr} AS Peaje,
+                    CAST(ISNULL(v.FLETE_PAGADO, 0) AS bit) AS FletePagado,
                     ISNULL(v.ESTADO, N'PENDIENTE') AS Estado,
                     ISNULL(v.USUARIO, '') AS Usuario,
                     {observacionesExpr} AS Observaciones
@@ -2521,8 +2570,9 @@ public sealed class CargaViajesService(
                 {destinoJoin}
                 {vehiculoJoin}
                 WHERE ISNULL(v.ANULADO, 0) = 0
-                  AND v.FECHA >= @FechaDesde
-                  AND v.FECHA < DATEADD(DAY, 1, @FechaHasta)
+                  {fechaDesdeClause}
+                  {fechaHastaClause}
+                  {tipoFilterClause}
                   {reporteFilter}
                 ORDER BY v.FECHA DESC, v.ID DESC;
                 """;
@@ -2534,10 +2584,21 @@ public sealed class CargaViajesService(
                 ChoferCodigo = TrimUpper(filters.ChoferCodigo),
                 ClienteCodigo = TrimUpper(filters.ClienteCodigo),
                 DestinoCodigo = TrimUpper(filters.DestinoCodigo),
-                EstadoFiltro = NormalizeReporteEstado(filters.Estado)
+                EstadoFiltro = NormalizeReporteEstado(filters.Estado),
+                EstadoPago = estadoPago,
+                IncluirChoferes = incluirChoferes ? 1 : 0,
+                IncluirFleteros = incluirFleteros ? 1 : 0
             }, cancellationToken: token, commandTimeout: 60))).ToList();
 
-            logger.LogInformation("SearchLiquidacionChoferes end rows={Rows}", rows.Count);
+            logger.LogInformation(
+                "SearchLiquidacionChoferes end rows={Rows} totalCliente={TotalCliente} totalChofer={TotalChofer} totalPeajes={TotalPeajes} estadoPago={EstadoPago} incluirChoferes={IncluirChoferes} incluirFleteros={IncluirFleteros}",
+                rows.Count,
+                rows.Sum(x => x.TotalConPeaje),
+                rows.Sum(x => x.TotalFlete),
+                rows.Sum(x => Math.Max(0m, x.Peaje)),
+                NormalizeLiquidacionEstadoPago(filters.EstadoPago),
+                incluirChoferes,
+                incluirFleteros);
 
             return (IReadOnlyList<CargaViajeReporteLiquidacionRowDto>)rows;
         }, "No se pudo generar la liquidación de choferes y fleteros.", ct);
@@ -2551,14 +2612,7 @@ public sealed class CargaViajesService(
             if (fechaDesde.HasValue && fechaHasta.HasValue && fechaHasta.Value < fechaDesde.Value)
                 (fechaDesde, fechaHasta) = (fechaHasta, fechaDesde);
 
-            var incluirChoferes = filters.IncluirChoferes;
-            var incluirFleteros = filters.IncluirFleteros;
-            if (!string.IsNullOrWhiteSpace(filters.TipoPersona))
-            {
-                var tipoPersona = NormalizeLiquidacionTipoPersona(filters.TipoPersona);
-                incluirChoferes = tipoPersona != CargaViajesReporteTipoPersonaKeys.Fleteros;
-                incluirFleteros = tipoPersona != CargaViajesReporteTipoPersonaKeys.Choferes;
-            }
+            var (incluirChoferes, incluirFleteros) = NormalizeTipoPersonaFlags(filters.IncluirChoferes, filters.IncluirFleteros, filters.TipoPersona);
             if (!incluirChoferes && !incluirFleteros)
                 return Array.Empty<CargaViajeLiquidacionRowDto>();
 
@@ -3129,6 +3183,7 @@ public sealed class CargaViajesService(
                     await EnsureSchemaColumnAsync(cn, (SqlTransaction)tx, "MV_VIAJES_CARGA", "TOTAL_ADICIONALES_FIJOS", "money NOT NULL CONSTRAINT DF_MV_VIAJES_CARGA_TOTAL_ADICIONALES_FIJOS DEFAULT (0) WITH VALUES", createdColumns, token);
                 }
 
+                await EnsureSchemaColumnAsync(cn, (SqlTransaction)tx, "TA_TARIFA", "USUARIOMODIFICACION", "nvarchar(50) NULL", createdColumns, token);
                 await EnsureSchemaColumnAsync(cn, (SqlTransaction)tx, "TA_TARIFA", "AdicionalFijo1Descripcion", "nvarchar(100) NULL", createdColumns, token);
                 await EnsureSchemaColumnAsync(cn, (SqlTransaction)tx, "TA_TARIFA", "AdicionalFijo1Importe", "money NOT NULL CONSTRAINT DF_TA_TARIFA_AdicionalFijo1Importe DEFAULT (0) WITH VALUES", createdColumns, token);
                 await EnsureSchemaColumnAsync(cn, (SqlTransaction)tx, "TA_TARIFA", "AdicionalFijo2Descripcion", "nvarchar(100) NULL", createdColumns, token);
@@ -4153,6 +4208,33 @@ public sealed class CargaViajesService(
                 _ => CargaViajesReporteTipoPersonaKeys.ChoferesYFleteros
             };
 
+    private static (bool IncluirChoferes, bool IncluirFleteros) NormalizeTipoPersonaFlags(bool incluirChoferes, bool incluirFleteros, string? tipoPersona)
+    {
+        if (!string.IsNullOrWhiteSpace(tipoPersona))
+        {
+            var normalized = NormalizeLiquidacionTipoPersona(tipoPersona);
+            incluirChoferes = normalized != CargaViajesReporteTipoPersonaKeys.Fleteros;
+            incluirFleteros = normalized != CargaViajesReporteTipoPersonaKeys.Choferes;
+        }
+
+        if (!incluirChoferes && !incluirFleteros)
+            return (true, true);
+
+        return (incluirChoferes, incluirFleteros);
+    }
+
+    private static string BuildTipoPersonaClause(string alias, bool hasEsFletero, bool incluirChoferes, bool incluirFleteros)
+        => hasEsFletero
+            ? $"""
+              AND (
+                    (@IncluirChoferes = 1 AND ISNULL({alias}.ES_FLETERO, 0) = 0)
+                 OR (@IncluirFleteros = 1 AND ISNULL({alias}.ES_FLETERO, 0) = 1)
+              )
+              """
+            : incluirFleteros && !incluirChoferes
+                ? "AND 1 = 0"
+                : string.Empty;
+
     private static string NormalizeLiquidacionEstado(string? value)
         => string.IsNullOrWhiteSpace(value)
             ? string.Empty
@@ -4248,6 +4330,17 @@ public sealed class CargaViajesService(
         throw new InvalidOperationException($"No se encontrÃ³ ninguna de las columnas esperadas: {string.Join(", ", candidates)}.");
     }
 
+    private static string? FirstExistingColumnOrNull(HashSet<string> columns, params string[] candidates)
+    {
+        foreach (var candidate in candidates)
+        {
+            if (columns.Contains(candidate.Trim().ToLowerInvariant()))
+                return candidate;
+        }
+
+        return null;
+    }
+
     private static async Task EnsureSchemaColumnAsync(SqlConnection cn, SqlTransaction tx, string tableName, string columnName, string columnDefinition, ICollection<string> createdColumns, CancellationToken ct)
     {
         if (await ColumnExistsAsync(cn, tableName, columnName, ct, tx))
@@ -4303,6 +4396,9 @@ public sealed class CargaViajesService(
 
     private static int GetInt(SqlDataReader rd, int index)
         => rd.IsDBNull(index) ? 0 : Convert.ToInt32(rd.GetValue(index));
+
+    private static DateTime? GetDateTimeOrNull(SqlDataReader rd, int index)
+        => rd.IsDBNull(index) ? null : Convert.ToDateTime(rd.GetValue(index));
 
     private static string GetString(SqlDataReader rd, int index)
         => rd.IsDBNull(index) ? string.Empty : Convert.ToString(rd.GetValue(index)) ?? string.Empty;
