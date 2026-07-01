@@ -751,7 +751,8 @@ else
 <SessionDrawer Open="_drawerOpen"
                DarkTheme="_drawerDarkTheme"
                RouteBaseId="_drawerRouteBaseId"
-               OnClose="() => _drawerOpen = false" />
+               OnClose="() => _drawerOpen = false"
+               OnLogout="FullLogoutAsync" />
 
 @if (CanShowTasksPanel && _tasksPanelOpen)
 {
@@ -1105,7 +1106,9 @@ else
                  RememberCredentialsChanged="OnRememberCredentialsChangedAsync"
                  OnSubmit="LoginAsync"
                  OnOpenSqlSessions="OpenSqlSessionDrawerAsync"
-                 OnLogout="GoToCentralLoginAsync" />
+                 OnLogout="FullLogoutAsync"
+                 CanClose="@(_manualLoginOverlayOpen && AppUserSession.IsAuthenticated)"
+                 OnClose="CloseLoginOverlayAsync" />
 
 <AppMsgBoxHost />
 <NovedadesPopup Enabled="@(!IsDirectMode)" />
@@ -2321,6 +2324,23 @@ else
             : $"/login?returnUrl={Uri.EscapeDataString(currentPath)}";
 
         Nav.NavigateTo(destination, replace: true);
+    }
+
+    private async Task FullLogoutAsync()
+    {
+        AppUserSession.Logout();
+        _manualLoginOverlayOpen = false;
+        _drawerOpen = false;
+        _loginError = string.Empty;
+        await InvokeAsync(StateHasChanged);
+        Nav.NavigateTo("/login", replace: true);
+    }
+
+    private async Task CloseLoginOverlayAsync()
+    {
+        _manualLoginOverlayOpen = false;
+        _loginError = string.Empty;
+        await InvokeAsync(StateHasChanged);
     }
 
     [JSInvokable]

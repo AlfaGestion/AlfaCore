@@ -71,6 +71,16 @@
                 <i class="bi bi-info-circle"></i>
                 Las bases disponibles salen de ALFA_CENTRAL y cambian segun el cliente autenticado.
             </p>
+
+            @if (OnLogout.HasDelegate)
+            {
+                <div class="drawer__footer">
+                    <button class="btn btn--ghost btn--danger-ghost drawer__logout" @onclick="LogoutAsync">
+                        <i class="bi bi-box-arrow-left"></i>
+                        Cerrar sesión
+                    </button>
+                </div>
+            }
         </div>
     </div>
 }
@@ -80,6 +90,7 @@
     [Parameter] public bool DarkTheme { get; set; }
     [Parameter] public int? RouteBaseId { get; set; }
     [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback OnLogout { get; set; }
 
     private List<SessionDto> _sesiones = [];
     private string _searchText = string.Empty;
@@ -233,6 +244,8 @@
     }
 
     private Task Close() => OnClose.InvokeAsync();
+
+    private Task LogoutAsync() => OnLogout.InvokeAsync();
 
     private static bool Contains(string? value, string search)
         => !string.IsNullOrWhiteSpace(value)

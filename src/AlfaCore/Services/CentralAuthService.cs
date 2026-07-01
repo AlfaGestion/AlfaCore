@@ -45,6 +45,18 @@ public sealed class CentralAuthService(
                 return Fail("Usuario o contraseña incorrectos.");
             }
 
+            if (string.IsNullOrWhiteSpace(cliente.IdWeb))
+            {
+                var idWeb = await clientesService.GenerateAndSaveIdWebAsync(cliente.IdCliente, cliente.RazonSocial, ct).ConfigureAwait(false);
+                cliente = new ClienteCentralDto
+                {
+                    IdCliente = cliente.IdCliente,
+                    RazonSocial = cliente.RazonSocial,
+                    IdWeb = idWeb,
+                    SuperAdmin = cliente.SuperAdmin
+                };
+            }
+
             var bases = cliente.SuperAdmin
                 ? await basesService.GetAllAsync(ct).ConfigureAwait(false)
                 : await basesService.GetByClienteAsync(user.IdCliente, false, ct).ConfigureAwait(false);

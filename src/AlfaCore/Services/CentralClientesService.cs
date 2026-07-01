@@ -33,6 +33,61 @@ public sealed class CentralClientesService(IConfiguration configuration, IAppEve
         return rows.Select(Map).ToArray();
     }
 
+    public async Task<string> GenerateAndSaveIdWebAsync(string idCliente, string razonSocial, CancellationToken ct = default)
+    {
+        var baseIdWeb = NormalizeToIdWeb(razonSocial);
+        if (string.IsNullOrWhiteSpace(baseIdWeb))
+            baseIdWeb = "cliente";
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct).ConfigureAwait(false);
+
+        var prefix = baseIdWeb.Length > 8 ? baseIdWeb[..8] : baseIdWeb;
+        var existingRows = await cn.QueryAsync<string>(new CommandDefinition(
+            "SELECT LOWER(LTRIM(RTRIM(idweb))) FROM dbo.Clientes WHERE idweb LIKE @Prefix + '%' AND idweb IS NOT NULL;",
+            new { Prefix = prefix },
+            cancellationToken: ct)).ConfigureAwait(false);
+        var existing = existingRows.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var candidate = baseIdWeb;
+        if (existing.Contains(candidate))
+        {
+            var suffix = 2;
+            do { candidate = prefix + suffix++; } while (existing.Contains(candidate) && suffix <= 99);
+        }
+
+        await cn.ExecuteAsync(new CommandDefinition(
+            "UPDATE dbo.Clientes SET idweb = @IdWeb WHERE idcliente = @IdCliente;",
+            new { IdWeb = candidate, IdCliente = idCliente },
+            cancellationToken: ct)).ConfigureAwait(false);
+
+        return candidate;
+    }
+
+    private static string NormalizeToIdWeb(string? source)
+    {
+        if (string.IsNullOrWhiteSpace(source))
+            return string.Empty;
+
+        var normalized = source.Trim().Normalize(System.Text.NormalizationForm.FormD);
+        var builder = new System.Text.StringBuilder(10);
+
+        foreach (var ch in normalized)
+        {
+            if (System.Globalization.CharUnicodeInfo.GetUnicodeCategory(ch) == System.Globalization.UnicodeCategory.NonSpacingMark)
+                continue;
+
+            var lower = char.ToLowerInvariant(ch);
+            if (char.IsLetterOrDigit(lower))
+                builder.Append(lower);
+
+            if (builder.Length == 10)
+                break;
+        }
+
+        return builder.ToString();
+    }
+
     private async Task<ClienteCentralDto?> QuerySingleAsync(string filterSql, object parameters, CancellationToken ct)
     {
         var sql = $"""
