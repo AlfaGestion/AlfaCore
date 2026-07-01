@@ -26,17 +26,37 @@ public sealed class RecentService(
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
-            if (!await TableExistsAsync(cn, "ALFACORE_RECIENTES", token))
+            if (!await TableExistsAsync(cn, "ALFACORE_RECIENTES", token) || !await TableExistsAsync(cn, "ALFACORE_MENU_WEB", token))
                 return [];
 
             var hasNombreWeb = await ColumnExistsAsync(cn, "ALFACORE_MENU_WEB", "NombreWeb", token);
-            var hasDescripcion = await ColumnExistsAsync(cn, "TA_MENU", "Descripcion", token);
-            var nombreExpression = hasNombreWeb
-                ? "ISNULL(NULLIF(w.NombreWeb, ''), ISNULL(m.Nombre, ''))"
-                : "ISNULL(m.Nombre, '')";
-            var descripcionExpression = hasDescripcion
-                ? "ISNULL(CAST(m.Descripcion AS nvarchar(max)), '')"
-                : "''";
+            var hasDescripcionWeb = await ColumnExistsAsync(cn, "ALFACORE_MENU_WEB", "DescripcionWeb", token);
+            var hasPadreClave = await ColumnExistsAsync(cn, "ALFACORE_MENU_WEB", "PadreClave", token);
+            var hasLegacyMenu = await TableExistsAsync(cn, "TA_MENU", token);
+            var legacyJoin = hasLegacyMenu
+                ? """
+                LEFT JOIN dbo.TA_MENU tm
+                    ON tm.Menu = w.Menu
+                   AND tm.Clave = w.Clave
+                """
+                : string.Empty;
+            var parentExpr = hasPadreClave
+                ? (hasLegacyMenu
+                    ? "ISNULL(NULLIF(w.PadreClave, ''), ISNULL(tm.Titulo, ''))"
+                    : "ISNULL(w.PadreClave, '')")
+                : (hasLegacyMenu ? "ISNULL(tm.Titulo, '')" : "''");
+            var nameExpr = hasNombreWeb
+                ? (hasLegacyMenu
+                    ? "ISNULL(NULLIF(w.NombreWeb, ''), ISNULL(NULLIF(tm.Nombre, ''), w.Clave))"
+                    : "ISNULL(NULLIF(w.NombreWeb, ''), w.Clave)")
+                : (hasLegacyMenu ? "ISNULL(NULLIF(tm.Nombre, ''), ISNULL(w.Clave, ''))" : "ISNULL(w.Clave, '')");
+            var descriptionExpr = hasDescripcionWeb
+                ? (hasLegacyMenu
+                    ? "ISNULL(NULLIF(w.DescripcionWeb, ''), ISNULL(CONVERT(nvarchar(500), tm.Descripcion), ISNULL(w.Observacion, '')))"
+                    : "ISNULL(w.DescripcionWeb, '')")
+                : (hasLegacyMenu
+                    ? "ISNULL(CONVERT(nvarchar(500), tm.Descripcion), ISNULL(w.Observacion, ''))"
+                    : "ISNULL(w.Observacion, '')");
 
             var sql = $"""
                 ;WITH latest AS
@@ -50,12 +70,12 @@ public sealed class RecentService(
                     GROUP BY r.Clave
                 )
                 SELECT TOP (@MaxRows)
-                    m.Menu AS Menu,
-                    m.Clave AS Clave,
-                    ISNULL(m.Titulo, '') AS Titulo,
-                    {nombreExpression} AS Nombre,
-                    {descripcionExpression} AS Descripcion,
-                    ISNULL(m.Proceso, '') AS Proceso,
+                    ISNULL(w.Menu, '') AS Menu,
+                    ISNULL(w.Clave, '') AS Clave,
+                    {parentExpr} AS Titulo,
+                    {nameExpr} AS Nombre,
+                    {descriptionExpr} AS Descripcion,
+                    '' AS Proceso,
                     ISNULL(w.RutaWeb, '') AS RutaWeb,
                     ISNULL(w.Componente, '') AS Componente,
                     ISNULL(w.Icono, '') AS Icono,
@@ -65,11 +85,10 @@ public sealed class RecentService(
                 FROM latest l
                 INNER JOIN dbo.ALFACORE_MENU_WEB w
                     ON w.Clave = l.Clave
-                INNER JOIN dbo.TA_MENU m
-                    ON m.Menu = w.Menu
-                   AND m.Clave = w.Clave
+                {legacyJoin}
                 WHERE ISNULL(w.HabilitadoWeb, 1) = 1
-                ORDER BY l.FechaHora DESC, ISNULL(w.OrdenWeb, 0), ISNULL(m.Nombre, '');
+                  AND ISNULL(w.RutaWeb, '') <> ''
+                ORDER BY l.FechaHora DESC, ISNULL(w.OrdenWeb, 0), {nameExpr};
                 """;
 
             var rows = await cn.QueryAsync<ShellMenuNodeDto>(new CommandDefinition(sql, new

@@ -65,8 +65,8 @@ public sealed class AutorizacionTareasService(
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
 
-            if (!await TableExistsAsync(cn, "TA_MENU", token) || !await TableExistsAsync(cn, "TA_TAREAS", token))
-                throw new InvalidOperationException("La base activa no tiene completas las tablas de menú o permisos.");
+            if (!await TableExistsAsync(cn, "ALFACORE_MENU_WEB", token) || !await TableExistsAsync(cn, "ALFACORE_TAREAS_WEB", token))
+                throw new InvalidOperationException("La base activa no tiene completas las tablas web de menú o permisos.");
 
             var userData = await LoadUserDataAsync(cn, sistemaPermisos, usuario, token);
             var unidadesNegocio = await LoadUnidadesNegocioAsync(cn, token);
@@ -76,34 +76,56 @@ public sealed class AutorizacionTareasService(
             var idCaja = ResolveOptionalCatalogValue(userData.IdCaja, cajas);
             var idDeposito = ResolveOptionalCatalogValue(userData.IdDeposito, depositos);
 
-            var hasDescripcionMenu = await ColumnExistsAsync(cn, "TA_MENU", "Descripcion", token);
-            var hasOrdenMenu = await ColumnExistsAsync(cn, "TA_MENU", "Orden", token);
-            var ordenExpression = hasOrdenMenu
-                ? "COALESCE(CONVERT(nvarchar(50), m.Orden), m.Clave)"
-                : "ISNULL(m.Clave, '')";
+            var hasNombreWeb = await ColumnExistsAsync(cn, "ALFACORE_MENU_WEB", "NombreWeb", token);
+            var hasDescripcionWeb = await ColumnExistsAsync(cn, "ALFACORE_MENU_WEB", "DescripcionWeb", token);
+            var hasPadreClave = await ColumnExistsAsync(cn, "ALFACORE_MENU_WEB", "PadreClave", token);
+            var hasLegacyMenu = await TableExistsAsync(cn, "TA_MENU", token);
+            var legacyJoin = hasLegacyMenu
+                ? """
+                LEFT JOIN dbo.TA_MENU tm
+                    ON tm.Menu = w.Menu
+                   AND tm.Clave = w.Clave
+                """
+                : string.Empty;
+            var parentExpr = hasPadreClave
+                ? (hasLegacyMenu
+                    ? "ISNULL(NULLIF(w.PadreClave, ''), ISNULL(tm.Titulo, ''))"
+                    : "ISNULL(w.PadreClave, '')")
+                : (hasLegacyMenu ? "ISNULL(tm.Titulo, '')" : "''");
+            var nameExpr = hasNombreWeb
+                ? (hasLegacyMenu
+                    ? "ISNULL(NULLIF(w.NombreWeb, ''), ISNULL(NULLIF(tm.Nombre, ''), w.Clave))"
+                    : "ISNULL(NULLIF(w.NombreWeb, ''), w.Clave)")
+                : (hasLegacyMenu ? "ISNULL(NULLIF(tm.Nombre, ''), ISNULL(w.Clave, ''))" : "ISNULL(w.Clave, '')");
+            var descriptionExpr = hasDescripcionWeb
+                ? (hasLegacyMenu
+                    ? "ISNULL(NULLIF(w.DescripcionWeb, ''), ISNULL(CONVERT(nvarchar(500), tm.Descripcion), ISNULL(w.Observacion, '')))"
+                    : "ISNULL(w.DescripcionWeb, '')")
+                : (hasLegacyMenu
+                    ? "ISNULL(CONVERT(nvarchar(500), tm.Descripcion), ISNULL(w.Observacion, ''))"
+                    : "ISNULL(w.Observacion, '')");
             var sql = $"""
                 SELECT
-                    m.Menu,
-                    ISNULL(m.Titulo, '') AS Titulo,
-                    ISNULL(m.Clave, '') AS Clave,
-                    ISNULL(m.Nombre, '') AS Nombre,
-                    {(hasDescripcionMenu ? "ISNULL(CAST(m.Descripcion AS nvarchar(max)), '')" : "''")} AS Descripcion,
-                    ISNULL(m.Proceso, '') AS Proceso,
-                    ISNULL(m.Habilitado, 1) AS Habilitado,
-                    {ordenExpression} AS OrdenMenu,
+                    ISNULL(w.Menu, '') AS Menu,
+                    {parentExpr} AS Titulo,
+                    ISNULL(w.Clave, '') AS Clave,
+                    {nameExpr} AS Nombre,
+                    {descriptionExpr} AS Descripcion,
+                    CAST('' AS nvarchar(150)) AS Proceso,
+                    ISNULL(w.HabilitadoWeb, 1) AS Habilitado,
+                    ISNULL(w.OrdenWeb, 0) AS OrdenMenu,
                     ISNULL(w.RutaWeb, '') AS RutaWeb,
-                    ISNULL(w.HabilitadoWeb, 0) AS HabilitadoWeb,
-                    CASE WHEN t.TAREA IS NULL THEN CAST(0 AS bit) ELSE CAST(1 AS bit) END AS Autorizado
-                FROM dbo.TA_MENU m
-                LEFT JOIN dbo.ALFACORE_MENU_WEB w
-                    ON w.Menu = m.Menu
-                   AND w.Clave = m.Clave
-                LEFT JOIN dbo.TA_TAREAS t
+                    ISNULL(w.HabilitadoWeb, 1) AS HabilitadoWeb,
+                    CASE WHEN t.Clave IS NULL THEN CAST(0 AS bit) ELSE CAST(1 AS bit) END AS Autorizado
+                FROM dbo.ALFACORE_MENU_WEB w
+                {legacyJoin}
+                LEFT JOIN dbo.ALFACORE_TAREAS_WEB t
                     ON UPPER(LTRIM(RTRIM(t.USUARIO))) = @Usuario
                    AND UPPER(LTRIM(RTRIM(t.SISTEMA))) = @SistemaPermisos
-                   AND UPPER(LTRIM(RTRIM(t.TAREA))) = UPPER(LTRIM(RTRIM(m.Clave)))
-                WHERE UPPER(LTRIM(RTRIM(m.Menu))) = @MenuSistema
-                ORDER BY {ordenExpression}, m.Clave, m.Nombre;
+                   AND UPPER(LTRIM(RTRIM(t.Clave))) = UPPER(LTRIM(RTRIM(w.Clave)))
+                WHERE UPPER(LTRIM(RTRIM(w.Menu))) = @MenuSistema
+                  AND ISNULL(w.HabilitadoWeb, 1) = 1
+                ORDER BY ISNULL(w.OrdenWeb, 0), w.Clave, {nameExpr};
                 """;
 
             var rows = (await cn.QueryAsync<MenuAutorizacionRow>(new CommandDefinition(sql, new
@@ -123,7 +145,7 @@ public sealed class AutorizacionTareasService(
                     Titulo = g.First().Titulo?.Trim() ?? string.Empty,
                     Nombre = g.First().Nombre?.Trim() ?? g.Key,
                     Descripcion = g.First().Descripcion?.Trim() ?? string.Empty,
-                    Proceso = string.IsNullOrWhiteSpace(g.First().Proceso) ? null : g.First().Proceso?.Trim(),
+                    Proceso = null,
                     Habilitado = g.First().Habilitado,
                     RutaWeb = string.IsNullOrWhiteSpace(g.First().RutaWeb) ? null : g.First().RutaWeb?.Trim(),
                     HabilitadoWeb = g.First().HabilitadoWeb,
@@ -190,8 +212,8 @@ public sealed class AutorizacionTareasService(
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
 
-            if (!await TableExistsAsync(cn, "TA_MENU", token) || !await TableExistsAsync(cn, "TA_TAREAS", token))
-                throw new InvalidOperationException("La base activa no tiene completas las tablas de menú o permisos.");
+            if (!await TableExistsAsync(cn, "ALFACORE_MENU_WEB", token) || !await TableExistsAsync(cn, "ALFACORE_TAREAS_WEB", token))
+                throw new InvalidOperationException("La base activa no tiene completas las tablas web de menú o permisos.");
 
             var unidadesNegocio = await LoadUnidadesNegocioAsync(cn, token);
             var cajas = await LoadCajasAsync(cn, token);
@@ -206,9 +228,9 @@ public sealed class AutorizacionTareasService(
 
             var managedKeys = (await cn.QueryAsync<string>(new CommandDefinition("""
                 SELECT DISTINCT UPPER(LTRIM(RTRIM(Clave)))
-                FROM dbo.TA_MENU
+                FROM dbo.ALFACORE_MENU_WEB
                 WHERE UPPER(LTRIM(RTRIM(Menu))) = @MenuSistema
-                  AND ISNULL(Habilitado, 1) = 1
+                  AND ISNULL(HabilitadoWeb, 1) = 1
                   AND ISNULL(Clave, '') <> '';
                 """, new
             {
@@ -219,13 +241,31 @@ public sealed class AutorizacionTareasService(
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToArray();
 
-            var parentRows = (await cn.QueryAsync<(string Clave, string Titulo)>(new CommandDefinition("""
+            var hasPadreClave = await ColumnExistsAsync(cn, "ALFACORE_MENU_WEB", "PadreClave", token);
+            var hasLegacyMenu = await TableExistsAsync(cn, "TA_MENU", token);
+            var parentJoin = hasLegacyMenu
+                ? """
+                LEFT JOIN dbo.TA_MENU tm
+                    ON tm.Menu = w.Menu
+                   AND tm.Clave = w.Clave
+                """
+                : string.Empty;
+            var parentSelect = hasPadreClave
+                ? (hasLegacyMenu
+                    ? "UPPER(LTRIM(RTRIM(ISNULL(NULLIF(w.PadreClave, ''), ISNULL(tm.Titulo, ''))))) AS Titulo"
+                    : "UPPER(LTRIM(RTRIM(ISNULL(w.PadreClave, '')))) AS Titulo")
+                : (hasLegacyMenu
+                    ? "UPPER(LTRIM(RTRIM(ISNULL(tm.Titulo, '')))) AS Titulo"
+                    : "CAST('' AS nvarchar(50)) AS Titulo");
+
+            var parentRows = (await cn.QueryAsync<(string Clave, string Titulo)>(new CommandDefinition($"""
                 SELECT
-                    UPPER(LTRIM(RTRIM(ISNULL(Clave, '')))) AS Clave,
-                    UPPER(LTRIM(RTRIM(ISNULL(Titulo, '')))) AS Titulo
-                FROM dbo.TA_MENU
-                WHERE UPPER(LTRIM(RTRIM(Menu))) = @MenuSistema
-                  AND ISNULL(Clave, '') <> '';
+                    UPPER(LTRIM(RTRIM(ISNULL(w.Clave, '')))) AS Clave,
+                    {parentSelect}
+                FROM dbo.ALFACORE_MENU_WEB w
+                {parentJoin}
+                WHERE UPPER(LTRIM(RTRIM(w.Menu))) = @MenuSistema
+                  AND ISNULL(w.Clave, '') <> '';
                 """, new
             {
                 MenuSistema = request.MenuSistema.Trim().ToUpperInvariant()
@@ -264,18 +304,18 @@ public sealed class AutorizacionTareasService(
                     token);
 
                 var deleteBase = """
-                    DELETE FROM dbo.TA_TAREAS
+                    DELETE FROM dbo.ALFACORE_TAREAS_WEB
                     WHERE UPPER(LTRIM(RTRIM(USUARIO))) = @Usuario
                       AND UPPER(LTRIM(RTRIM(SISTEMA))) = @Sistema
-                      AND UPPER(LTRIM(RTRIM(TAREA))) IN @Managed;
+                      AND UPPER(LTRIM(RTRIM(Clave))) IN @Managed;
                     """;
 
                 var deleteFiltered = """
-                    DELETE FROM dbo.TA_TAREAS
+                    DELETE FROM dbo.ALFACORE_TAREAS_WEB
                     WHERE UPPER(LTRIM(RTRIM(USUARIO))) = @Usuario
                       AND UPPER(LTRIM(RTRIM(SISTEMA))) = @Sistema
-                      AND UPPER(LTRIM(RTRIM(TAREA))) IN @Managed
-                      AND UPPER(LTRIM(RTRIM(TAREA))) NOT IN @Selected;
+                      AND UPPER(LTRIM(RTRIM(Clave))) IN @Managed
+                      AND UPPER(LTRIM(RTRIM(Clave))) NOT IN @Selected;
                     """;
 
                 if (expandedSelection.Count == 0)
@@ -298,14 +338,14 @@ public sealed class AutorizacionTareasService(
                     }, tx, cancellationToken: token));
 
                     const string insertSql = """
-                        INSERT INTO dbo.TA_TAREAS (USUARIO, SISTEMA, TAREA)
-                        SELECT @Usuario, @Sistema, @Tarea
+                        INSERT INTO dbo.ALFACORE_TAREAS_WEB (Usuario, Sistema, Clave, FechaHoraGrabacion, UsuarioGrabacion)
+                        SELECT @UsuarioRaw, @SistemaRaw, @TareaRaw, GETDATE(), @UsuarioEditor
                         WHERE NOT EXISTS (
                             SELECT 1
-                            FROM dbo.TA_TAREAS
+                            FROM dbo.ALFACORE_TAREAS_WEB
                             WHERE UPPER(LTRIM(RTRIM(USUARIO))) = @Usuario
                               AND UPPER(LTRIM(RTRIM(SISTEMA))) = @Sistema
-                              AND UPPER(LTRIM(RTRIM(TAREA))) = @Tarea
+                              AND UPPER(LTRIM(RTRIM(Clave))) = @Tarea
                         );
                         """;
 
@@ -315,12 +355,34 @@ public sealed class AutorizacionTareasService(
                         {
                             Usuario = request.Usuario.Trim().ToUpperInvariant(),
                             Sistema = request.PermisosSistema.Trim().ToUpperInvariant(),
-                            Tarea = tarea
+                            Tarea = tarea,
+                            UsuarioRaw = request.Usuario.Trim(),
+                            SistemaRaw = request.PermisosSistema.Trim(),
+                            TareaRaw = tarea,
+                            UsuarioEditor = request.Usuario.Trim()
                         }, tx, cancellationToken: token));
                     }
                 }
 
                 await tx.CommitAsync(token);
+                await appEvents.LogAuditAsync(
+                    ModuleName,
+                    "GuardarAutorizacionWeb",
+                    "ALFACORE_TAREAS_WEB",
+                    $"{request.PermisosSistema.Trim().ToUpperInvariant()}::{request.Usuario.Trim().ToUpperInvariant()}",
+                    "Permisos web actualizados.",
+                    new
+                    {
+                        Usuario = request.Usuario.Trim(),
+                        Sistema = request.PermisosSistema.Trim().ToUpperInvariant(),
+                        request.Administrador,
+                        UNegocio = unidadNegocio,
+                        IdCaja = idCaja,
+                        IdDeposito = idDeposito,
+                        CantidadClaves = expandedSelection.Count,
+                        Claves = expandedSelection.OrderBy(x => x).ToArray()
+                    },
+                    token);
             }
             catch
             {

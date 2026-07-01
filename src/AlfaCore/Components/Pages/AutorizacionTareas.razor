@@ -11,7 +11,7 @@
     <section class="page-intro">
         <div>
             <h2 class="page-intro__title">Autorización de tareas</h2>
-            <p class="page-intro__text">Administrá permisos compartidos entre Desktop y AlfaCore sobre el árbol oficial de <code>TA_MENU</code>, con unidad de negocio, caja, depósito y perfil administrador.</p>
+            <p class="page-intro__text">Administrá permisos web sobre el árbol oficial de <code>ALFACORE_MENU_WEB</code>, con unidad de negocio, caja, depósito y perfil administrador.</p>
         </div>
         <div class="actions">
             <button type="button" class="btn btn--ghost" @onclick="RecargarUsuariosAsync" disabled="@_loadingUsers">
@@ -40,11 +40,11 @@
         </section>
     }
 
-    <section class="panel-card auth-shell">
+    <section class="panel-card auth-admin-shell">
         <div class="panel-card__header auth-shell__header">
             <div>
                 <h3 class="panel-card__title">Opciones del menú</h3>
-                <p class="panel-card__subtitle">Sistema de menú <code>@MenuSistema</code> · permisos reales <code>@PermisosSistema</code> · vista inicial <strong>Solo Web</strong>.</p>
+                <p class="panel-card__subtitle">Sistema de menú <code>@MenuSistema</code> · permisos reales <code>@PermisosSistema</code> · alcance fijo <strong>Solo Web</strong>.</p>
             </div>
 
             @if (_treeLoaded)
@@ -67,6 +67,67 @@
         </div>
 
         <div class="auth-shell__layout">
+            <div class="auth-main">
+                <div class="auth-main__header">
+                    <div>
+                        <h4 class="auth-panel__title">Árbol de permisos</h4>
+                        <p class="auth-main__subtitle">Editá el árbol oficial del menú y aplicá selección masiva solo sobre los nodos visibles.</p>
+                    </div>
+
+                    @if (_dirty)
+                    {
+                        <span class="auth-main__status">Cambios pendientes</span>
+                    }
+                </div>
+
+                <div class="auth-tree-toolbar">
+                    <div class="auth-tree-toolbar__group">
+                        <button type="button" class="btn btn--ghost" @onclick="SeleccionarTodoVisible" disabled="@(!_treeLoaded || _visibleTree.Count == 0)">
+                            <i class="bi bi-check2-square"></i> Seleccionar visible
+                        </button>
+                        <button type="button" class="btn btn--ghost" @onclick="DeseleccionarTodoVisible" disabled="@(!_treeLoaded || _visibleTree.Count == 0)">
+                            <i class="bi bi-square"></i> Deseleccionar visible
+                        </button>
+                    </div>
+
+                    <div class="auth-tree-toolbar__group">
+                        <button type="button" class="btn btn--ghost" @onclick="ExpandirTodo" disabled="@(!_treeLoaded)">
+                            <i class="bi bi-arrows-expand"></i> Expandir todo
+                        </button>
+                        <button type="button" class="btn btn--ghost" @onclick="ContraerTodo" disabled="@(!_treeLoaded)">
+                            <i class="bi bi-arrows-collapse"></i> Contraer todo
+                        </button>
+                    </div>
+                </div>
+
+                @if (_loadingTree)
+                {
+                    <div class="auth-tree-state"><i class="bi bi-hourglass-split"></i> Cargando árbol de autorizaciones...</div>
+                }
+                else if (!_treeLoaded)
+                {
+                    <div class="auth-tree-state">Seleccioná un usuario y presioná <strong>Consultar</strong> para editar permisos y asignaciones.</div>
+                }
+                else if (_visibleTree.Count == 0)
+                {
+                    <div class="auth-tree-state">No hay opciones que coincidan con el filtro actual.</div>
+                }
+                else
+                {
+                    <div class="auth-tree-panel">
+                        <div class="auth-tree">
+                            @foreach (var item in _visibleTree)
+                            {
+                                <AutorizacionTareasTreeNode Item="item"
+                                                            ExpandedKeys="_expandedKeys"
+                                                            ToggleExpand="ToggleExpandAsync"
+                                                            ToggleAuthorization="ToggleAuthorizationAsync" />
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+
             <aside class="auth-sidebar">
                 <div class="auth-panel auth-panel--compact">
                     <div class="auth-panel__title-wrap">
@@ -80,7 +141,7 @@
                     <div class="field field--full">
                         <label>Usuario del sistema</label>
                         <select @bind="_selectedUser" disabled="@(_loadingUsers || _loadingTree)">
-                            <option value="">�?" Seleccioná un usuario �?"</option>
+                            <option value="">Seleccioná un usuario</option>
                             @foreach (var item in _users)
                             {
                                 <option value="@item.Nombre">@item.Nombre</option>
@@ -127,21 +188,10 @@
                     <div class="field field--full">
                         <label>Buscar</label>
                         <input type="search"
-                               placeholder="Nombre, clave, proceso o ruta web..."
+                               placeholder="Nombre, clave o ruta web..."
                                value="@_searchText"
                                @oninput="OnSearchChanged"
                                @onkeydown="HandleSearchKeyDownAsync" />
-                    </div>
-
-                    <div class="field field--full">
-                        <label>Vista</label>
-                        <select value="@_viewMode" @onchange="OnViewModeChanged">
-                            <option value="@ViewWeb">Solo Web</option>
-                            <option value="@ViewAll">Ver todas</option>
-                            <option value="@ViewDesktop">Solo Desktop</option>
-                            <option value="@ViewShared">Compartidas</option>
-                            <option value="@ViewUnauthorized">Sin autorización</option>
-                        </select>
                     </div>
 
                     <div class="actions">
@@ -151,8 +201,6 @@
                     </div>
 
                     <div class="auth-legend auth-legend--stacked">
-                        <span class="auth-badge auth-badge--shared">D+W = Desktop + Web</span>
-                        <span class="auth-badge auth-badge--desktop">Dsk = Solo Desktop</span>
                         <span class="auth-badge auth-badge--partial">Parcial = selección parcial</span>
                     </div>
                 </div>
@@ -214,50 +262,6 @@
                     </div>
                 </div>
             </aside>
-
-            <div class="auth-main">
-                <div class="auth-tree-toolbar">
-                    <button type="button" class="btn btn--ghost" @onclick="SeleccionarTodoVisible" disabled="@(!_treeLoaded || _visibleTree.Count == 0)">
-                        <i class="bi bi-check2-square"></i> Seleccionar visible
-                    </button>
-                    <button type="button" class="btn btn--ghost" @onclick="DeseleccionarTodoVisible" disabled="@(!_treeLoaded || _visibleTree.Count == 0)">
-                        <i class="bi bi-square"></i> Deseleccionar visible
-                    </button>
-                    <button type="button" class="btn btn--ghost" @onclick="ExpandirTodo" disabled="@(!_treeLoaded)">
-                        <i class="bi bi-arrows-expand"></i> Expandir todo
-                    </button>
-                    <button type="button" class="btn btn--ghost" @onclick="ContraerTodo" disabled="@(!_treeLoaded)">
-                        <i class="bi bi-arrows-collapse"></i> Contraer todo
-                    </button>
-                </div>
-
-                @if (_loadingTree)
-                {
-                    <div class="auth-tree-state"><i class="bi bi-hourglass-split"></i> Cargando árbol de autorizaciones...</div>
-                }
-                else if (!_treeLoaded)
-                {
-                    <div class="auth-tree-state">Seleccioná un usuario y presioná <strong>Consultar</strong> para editar permisos y asignaciones.</div>
-                }
-                else if (_visibleTree.Count == 0)
-                {
-                    <div class="auth-tree-state">No hay opciones que coincidan con el filtro actual.</div>
-                }
-                else
-                {
-                    <div class="auth-tree-panel">
-                        <div class="auth-tree">
-                            @foreach (var item in _visibleTree)
-                            {
-                                <AutorizacionTareasTreeNode Item="item"
-                                                            ExpandedKeys="_expandedKeys"
-                                                            ToggleExpand="ToggleExpandAsync"
-                                                            ToggleAuthorization="ToggleAuthorizationAsync" />
-                            }
-                        </div>
-                    </div>
-                }
-            </div>
         </div>
     </section>
 </div>
@@ -266,12 +270,6 @@
     private const string MenuSistema = "ALFA";
     private const string PermisosSistema = "CN000PR";
     private const string DefaultUnidadNegocioVisual = "1";
-
-    private const string ViewAll = "all";
-    private const string ViewWeb = "web";
-    private const string ViewDesktop = "desktop";
-    private const string ViewShared = "shared";
-    private const string ViewUnauthorized = "unauthorized";
 
     private readonly HashSet<string> _expandedKeys = new(StringComparer.OrdinalIgnoreCase);
     private List<UsuarioSistemaDto> _users = [];
@@ -284,7 +282,6 @@
     private string _selectedUser = string.Empty;
     private string _copyFromUser = string.Empty;
     private string _searchText = string.Empty;
-    private string _viewMode = ViewWeb;
     private string _selectedUNegocio = string.Empty;
     private string _selectedIdCaja = string.Empty;
     private string _selectedIdDeposito = string.Empty;
@@ -508,7 +505,6 @@
     private Task LimpiarFiltrosAsync()
     {
         _searchText = string.Empty;
-        _viewMode = ViewWeb;
         RebuildVisibleTree();
         return Task.CompletedTask;
     }
@@ -519,13 +515,6 @@
             return;
 
         await AplicarFiltrosAsync();
-    }
-
-    private Task OnViewModeChanged(ChangeEventArgs args)
-    {
-        _viewMode = Convert.ToString(args.Value) ?? ViewWeb;
-        RebuildVisibleTree();
-        return Task.CompletedTask;
     }
 
     private Task OnAdministradorChanged(ChangeEventArgs args)
@@ -597,9 +586,9 @@
 
     private void RebuildVisibleTree()
     {
-        _visibleTree = BuildFilteredTree(_tree, _searchText, _viewMode);
+        _visibleTree = BuildFilteredTree(_tree, _searchText);
         _visibleTreeCount = CountNodes(_visibleTree);
-        _authorizedCount = EnumerateAuthorizedKeys(_tree).Count();
+        _authorizedCount = EnumerateAuthorizedKeys(_visibleTree).Count();
         NormalizePartialState(_visibleTree);
     }
 
@@ -626,17 +615,24 @@
         return match?.Codigo ?? string.Empty;
     }
 
-    private static List<MenuAutorizacionItemDto> BuildFilteredTree(IEnumerable<MenuAutorizacionItemDto> source, string searchText, string viewMode)
+    private static List<MenuAutorizacionItemDto> BuildFilteredTree(IEnumerable<MenuAutorizacionItemDto> source, string searchText)
     {
         var term = searchText?.Trim() ?? string.Empty;
         var result = new List<MenuAutorizacionItemDto>();
 
         foreach (var item in source)
         {
-            var children = BuildFilteredTree(item.Hijos, term, viewMode);
-            var matchesSelf = MatchesSearch(item, term) && MatchesView(item, viewMode);
+            var children = BuildFilteredTree(item.Hijos, term);
+            var visibleInWebTree = IsVisibleInWebTree(item);
+            var matchesSelf = visibleInWebTree && MatchesSearch(item, term);
             if (!matchesSelf && children.Count == 0)
                 continue;
+
+            if (!visibleInWebTree && children.Count > 0)
+            {
+                result.AddRange(children);
+                continue;
+            }
 
             var clone = CloneNode(item);
             clone.Hijos.AddRange(children);
@@ -656,21 +652,14 @@
             item.Nombre,
             item.Clave,
             item.Descripcion,
-            item.Proceso ?? string.Empty,
             item.RutaWeb ?? string.Empty
         });
 
         return text.Contains(term, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool MatchesView(MenuAutorizacionItemDto item, string viewMode) => viewMode switch
-    {
-        ViewWeb => item.EsWeb && !item.EsCompartida,
-        ViewDesktop => item.EsDesktop && !item.EsCompartida,
-        ViewShared => item.EsCompartida,
-        ViewUnauthorized => !item.Autorizado,
-        _ => true
-    };
+    private static bool IsVisibleInWebTree(MenuAutorizacionItemDto item)
+        => item.EsWeb || item.EsNodoAgrupador;
 
     private static MenuAutorizacionItemDto CloneNode(MenuAutorizacionItemDto item)
         => new()

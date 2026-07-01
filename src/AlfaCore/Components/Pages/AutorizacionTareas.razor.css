@@ -1,9 +1,16 @@
 /* ── Layout ──────────────────────────────────────────────────────────── */
 
+.auth-page .auth-admin-shell {
+    display: grid;
+    gap: 1.25rem;
+    overflow: visible;
+}
+
 .auth-page .auth-shell__layout {
     display: grid;
-    grid-template-columns: minmax(18rem, 22rem) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1.45fr) minmax(21rem, 24rem);
     gap: 1.25rem;
+    align-items: start;
 }
 
 .auth-page .auth-shell__header,
@@ -26,6 +33,51 @@
     align-items: flex-start;
     justify-content: space-between;
     gap: 1rem;
+}
+
+.auth-page .auth-main {
+    min-width: 0;
+    display: grid;
+    gap: 1rem;
+}
+
+.auth-page .auth-main__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem 1.1rem;
+    border-radius: 1rem;
+    border: 1px solid rgba(102, 171, 255, .12);
+    background:
+        linear-gradient(180deg, rgba(9, 22, 41, .82), rgba(6, 16, 31, .88)),
+        radial-gradient(circle at top right, rgba(56, 189, 248, .08), transparent 35%);
+}
+
+.auth-page .auth-main__header .auth-panel__title {
+    margin-bottom: .35rem;
+}
+
+.auth-page .auth-main__subtitle {
+    margin: 0;
+    color: rgba(194, 211, 230, .74);
+    line-height: 1.5;
+}
+
+.auth-page .auth-main__status {
+    display: inline-flex;
+    align-items: center;
+    gap: .4rem;
+    padding: .45rem .75rem;
+    border-radius: 999px;
+    border: 1px solid rgba(245, 158, 11, .22);
+    background: rgba(245, 158, 11, .1);
+    color: #ffd080;
+    font-size: .76rem;
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    white-space: nowrap;
 }
 
 /* ── Stats ───────────────────────────────────────────────────────────── */
@@ -64,6 +116,8 @@
     display: flex;
     flex-direction: column;
     gap: 1rem;
+    position: sticky;
+    top: 1rem;
 }
 
 .auth-page .auth-panel {
@@ -134,16 +188,27 @@
 /* ── Toolbar + panel ─────────────────────────────────────────────────── */
 
 .auth-page .auth-tree-toolbar {
-    gap: .65rem;
+    align-items: center;
+    justify-content: space-between;
+    gap: .75rem;
     flex-wrap: wrap;
-    margin-bottom: .85rem;
+    padding: .95rem 1rem;
+    border-radius: 1rem;
+    border: 1px solid rgba(102, 171, 255, .12);
+    background: rgba(6, 16, 31, .62);
+}
+
+.auth-page .auth-tree-toolbar__group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .65rem;
 }
 
 .auth-page .auth-tree-panel {
-    min-height: 28rem;
-    max-height: 72vh;
+    min-height: 34rem;
+    max-height: calc(100vh - 18rem);
     overflow: auto;
-    padding: .5rem .65rem;
+    padding: .75rem .8rem;
     border-radius: 1rem;
     border: 1px solid rgba(102, 171, 255, .12);
     background: rgba(5, 16, 31, .5);
@@ -205,6 +270,11 @@
         grid-template-columns: 1fr;
     }
 
+    .auth-page .auth-sidebar {
+        position: static;
+        top: auto;
+    }
+
     .auth-page .auth-tree-panel {
         max-height: none;
     }
@@ -212,8 +282,14 @@
 
 @media (max-width: 900px) {
     .auth-page .auth-shell__header,
-    .auth-page .auth-panel__title-wrap {
+    .auth-page .auth-panel__title-wrap,
+    .auth-page .auth-main__header,
+    .auth-page .auth-tree-toolbar {
         flex-direction: column;
         align-items: stretch;
+    }
+
+    .auth-page .auth-main__status {
+        align-self: flex-start;
     }
 }
