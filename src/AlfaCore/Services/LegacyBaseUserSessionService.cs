@@ -83,6 +83,16 @@ public sealed class LegacyBaseUserSessionService(
         {
             throw;
         }
+        catch (Microsoft.Data.SqlClient.SqlException sqlEx) when (sqlEx.Class >= 20 || sqlEx.Number is 53 or 2 or -2 or 258)
+        {
+            var servidor = TryGetDataSource(connectionString);
+            var msg = string.IsNullOrWhiteSpace(servidor)
+                ? "No se pudo conectar al servidor de base de datos. Verificá que el servidor esté encendido y accesible en la red."
+                : $"No se pudo conectar al servidor de base de datos ({servidor}). Verificá que el servidor esté encendido y accesible en la red.";
+
+            var incidentId = await TryLogErrorAsync("Central", "LoginInterno", sqlEx, msg, new { Usuario = userName.Trim() }, ct);
+            throw new AppUserFacingException(msg, incidentId, sqlEx);
+        }
         catch (Exception ex)
         {
             var incidentId = await TryLogErrorAsync(
@@ -95,6 +105,12 @@ public sealed class LegacyBaseUserSessionService(
 
             throw new AppUserFacingException("No se pudo validar el acceso interno.", incidentId, ex);
         }
+    }
+
+    private static string TryGetDataSource(string connectionString)
+    {
+        try { return new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(connectionString).DataSource; }
+        catch { return string.Empty; }
     }
 
     public async Task<AppUserSessionInfo?> ResolveByCentralLoginAsync(string loginCentral, CancellationToken ct = default)

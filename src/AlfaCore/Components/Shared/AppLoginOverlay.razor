@@ -5,6 +5,12 @@
     <div class="drawer-overlay app-login-overlay"></div>
 
     <div class="app-login-modal app-login-modal--compact" role="dialog" aria-label="Ingreso al sistema">
+        @if (CanClose)
+        {
+            <button type="button" class="app-login-modal__close" @onclick="CloseAsync" title="Volver" aria-label="Cerrar">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        }
         <div class="auth-shell auth-shell--selection">
         <aside class="auth-hero" aria-hidden="true">
             <div class="auth-hero__brand">
@@ -152,10 +158,14 @@
     [Parameter] public EventCallback OnSubmit { get; set; }
     [Parameter] public EventCallback OnOpenSqlSessions { get; set; }
     [Parameter] public EventCallback OnLogout { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public bool CanClose { get; set; }
 
     private async Task SubmitAsync() => await OnSubmit.InvokeAsync();
 
     private async Task OpenSqlSessionsAsync() => await OnOpenSqlSessions.InvokeAsync();
+
+    private async Task CloseAsync() => await OnClose.InvokeAsync();
 
     private async Task LogoutAsync() => await OnLogout.InvokeAsync();
 

@@ -13,6 +13,30 @@
     z-index: 5001;
 }
 
+.app-login-modal__close {
+    position: absolute;
+    top: .75rem;
+    right: .75rem;
+    z-index: 1;
+    background: rgba(255,255,255,.08);
+    border: none;
+    border-radius: 50%;
+    width: 2rem;
+    height: 2rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    cursor: pointer;
+    opacity: .7;
+    transition: opacity .15s, background .15s;
+}
+
+.app-login-modal__close:hover {
+    opacity: 1;
+    background: rgba(255,255,255,.16);
+}
+
 .auth-legacy-login__selected-row {
     display: flex;
     align-items: stretch;
