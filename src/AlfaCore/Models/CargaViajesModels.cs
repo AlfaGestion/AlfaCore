@@ -288,6 +288,18 @@ public sealed class CargaViajesViewSettingsDto
     public List<CargaViajesViewColumnDto> Columnas { get; set; } = [];
 }
 
+public sealed class CargaViajesAgrupacionDto<TItem>
+{
+    public string GrupoNombre { get; set; } = string.Empty;
+    public string GrupoTipo { get; set; } = string.Empty;
+    public int CantidadViajes { get; set; }
+    public decimal TotalCliente { get; set; }
+    public decimal TotalFletero { get; set; }
+    public decimal TotalPeajes { get; set; }
+    public decimal Resultado { get; set; }
+    public IReadOnlyList<TItem> DetalleViajes { get; set; } = [];
+}
+
 public sealed class CargaViajesConfigDto
 {
     public string Sucursal { get; set; } = "0001";
@@ -330,6 +342,11 @@ public static class CargaViajesViewColumnKeys
 public static class CargaViajesViewGroupKeys
 {
     public const string None = "none";
+    public const string Chofer = "chofer";
+    public const string Fletero = "fletero";
+    public const string Cliente = "cliente";
+    public const string TipoVehiculo = "tipo-vehiculo";
+    public const string Destino = "destino";
     public const string Estado = "estado";
     public const string Usuario = "usuario";
     public const string Activo = "activo";
@@ -350,18 +367,39 @@ public sealed class CargaViajesReporteLiquidacionFilters
     public DateTime? FechaHasta { get; set; }
     public bool IncluirChoferes { get; set; } = true;
     public bool IncluirFleteros { get; set; } = false;
+    public string AgruparPor { get; set; } = CargaViajesViewGroupKeys.None;
+    public string RangoRapido { get; set; } = CargaViajesReporteRangoRapidoKeys.MesActual;
+    public string TipoPersona { get; set; } = CargaViajesReporteTipoPersonaKeys.ChoferesYFleteros;
+    public string Modo { get; set; } = CargaViajesReporteModoKeys.Detallado;
     public string ChoferCodigo { get; set; } = string.Empty;
     public string ChoferTexto { get; set; } = string.Empty;
+    public string ClienteCodigo { get; set; } = string.Empty;
+    public string ClienteTexto { get; set; } = string.Empty;
+    public string DestinoCodigo { get; set; } = string.Empty;
+    public string DestinoTexto { get; set; } = string.Empty;
+    public string Estado { get; set; } = CargaViajesReporteEstadoKeys.Todos;
+    public string EstadoPago { get; set; } = CargaViajesLiquidacionEstadoPagoKeys.Pendientes;
 }
 
 public sealed class CargaViajesLiquidacionFilters
 {
     public DateTime? FechaDesde { get; set; }
     public DateTime? FechaHasta { get; set; }
+    public string RangoRapido { get; set; } = CargaViajesReporteRangoRapidoKeys.MesActual;
+    public string TipoPersona { get; set; } = CargaViajesReporteTipoPersonaKeys.ChoferesYFleteros;
     public bool IncluirChoferes { get; set; } = true;
     public bool IncluirFleteros { get; set; } = true;
+    public string AgruparPor { get; set; } = CargaViajesViewGroupKeys.None;
     public string ChoferCodigo { get; set; } = string.Empty;
     public string ChoferTexto { get; set; } = string.Empty;
+    public string ClienteCodigo { get; set; } = string.Empty;
+    public string ClienteTexto { get; set; } = string.Empty;
+    public string DestinoCodigo { get; set; } = string.Empty;
+    public string DestinoTexto { get; set; } = string.Empty;
+    public string TipoVehiculoCodigo { get; set; } = string.Empty;
+    public string TipoVehiculoTexto { get; set; } = string.Empty;
+    public string Estado { get; set; } = CargaViajeEstadoKeys.Pendiente;
+    public bool MostrarLiquidados { get; set; }
     public string EstadoPago { get; set; } = CargaViajesLiquidacionEstadoPagoKeys.Pendientes;
 }
 
@@ -381,6 +419,11 @@ public sealed class CargaViajeReporteLiquidacionRowDto
     public string TipoVehiculoDescripcion { get; set; } = string.Empty;
     public int CantidadViajes { get; set; }
     public decimal TotalFlete { get; set; }
+    public decimal TotalConPeaje { get; set; }
+    public decimal Peaje { get; set; }
+    public string Estado { get; set; } = string.Empty;
+    public string Usuario { get; set; } = string.Empty;
+    public string Observaciones { get; set; } = string.Empty;
 }
 
 public sealed class CargaViajeLiquidacionRowDto
@@ -399,10 +442,14 @@ public sealed class CargaViajeLiquidacionRowDto
     public string TipoVehiculoDescripcion { get; set; } = string.Empty;
     public int CantidadViajes { get; set; }
     public decimal TotalFlete { get; set; }
+    public decimal Peaje { get; set; }
+    public decimal TotalConPeaje { get; set; }
     public bool FletePagado { get; set; }
     public DateTime? FechaPagoFlete { get; set; }
     public string UsuarioPagoFlete { get; set; } = string.Empty;
     public string ObservacionPagoFlete { get; set; } = string.Empty;
+    public string Estado { get; set; } = string.Empty;
+    public string Usuario { get; set; } = string.Empty;
 }
 
 public sealed class CargaViajesMarcarPagadoRequest
@@ -420,6 +467,8 @@ public sealed class CargaViajeReporteLiquidacionResumenDto
     public bool EsFletero { get; set; }
     public int CantidadViajes { get; set; }
     public decimal TotalFlete { get; set; }
+    public decimal TotalPeaje { get; set; }
+    public decimal TotalConPeaje { get; set; }
 }
 
 public sealed class CargaViajesReportTypeOptionDto
@@ -440,4 +489,45 @@ public static class CargaViajesLiquidacionEstadoPagoKeys
     public const string Pendientes = "pendientes";
     public const string Pagados = "pagados";
     public const string Todos = "todos";
+}
+
+public static class CargaViajesReporteRangoRapidoKeys
+{
+    public const string Hoy = "hoy";
+    public const string SemanaActual = "semana-actual";
+    public const string MesActual = "mes-actual";
+    public const string MesAnterior = "mes-anterior";
+    public const string AnioActual = "anio-actual";
+    public const string AnioAnterior = "anio-anterior";
+    public const string Personalizado = "personalizado";
+    public const string Todo = "todo";
+
+    public static readonly IReadOnlyList<string> All = [Hoy, SemanaActual, MesActual, MesAnterior, AnioActual, AnioAnterior, Personalizado, Todo];
+}
+
+public static class CargaViajesReporteTipoPersonaKeys
+{
+    public const string Choferes = "choferes";
+    public const string Fleteros = "fleteros";
+    public const string ChoferesYFleteros = "choferes-y-fleteros";
+
+    public static readonly IReadOnlyList<string> All = [Choferes, Fleteros, ChoferesYFleteros];
+}
+
+public static class CargaViajesReporteModoKeys
+{
+    public const string Detallado = "detallado";
+    public const string Resumen = "resumen";
+
+    public static readonly IReadOnlyList<string> All = [Detallado, Resumen];
+}
+
+public static class CargaViajesReporteEstadoKeys
+{
+    public const string Todos = "todos";
+    public const string Pendiente = "pendiente";
+    public const string Finalizado = "finalizado";
+    public const string PendientePago = "pendiente-pago";
+
+    public static readonly IReadOnlyList<string> All = [Todos, Pendiente, Finalizado, PendientePago];
 }

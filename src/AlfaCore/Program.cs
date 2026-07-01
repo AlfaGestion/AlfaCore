@@ -161,6 +161,7 @@ public class Program
         builder.Services.AddSingleton<ConsultasExcelExporter>();
         builder.Services.AddSingleton<AuditoriaExcelExporter>();
         builder.Services.AddSingleton<ReporteComprasExcelExporter>();
+        builder.Services.AddSingleton<CargaViajesLiquidacionExcelExporter>();
         builder.Services.AddSingleton<InformesIaHistoryStore>();
         builder.Services.AddSingleton<InformesIaResultStore>();
         builder.Services.AddScoped<FilterStateService>();
@@ -572,6 +573,47 @@ public class Program
                     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     ReporteComprasExcelExporter.NombreArchivoResumen());
             }
+        });
+
+        app.MapGet("/carga-viajes/liquidacion/descargar-excel", async (
+            HttpRequest request,
+            ICargaViajesService cargaViajesSvc,
+            CargaViajesLiquidacionExcelExporter exporter,
+            CancellationToken ct) =>
+        {
+            static DateTime? ParseDate(string? value)
+                => DateTime.TryParse(value, out var parsed) ? parsed : null;
+
+            static string TrimOrEmpty(string? value)
+                => string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+
+            var filters = new CargaViajesReporteLiquidacionFilters
+            {
+                FechaDesde = ParseDate(request.Query["desde"]),
+                FechaHasta = ParseDate(request.Query["hasta"]),
+                ChoferCodigo = TrimOrEmpty(request.Query["chofer"]),
+                ClienteCodigo = TrimOrEmpty(request.Query["cliente"]),
+                DestinoCodigo = TrimOrEmpty(request.Query["destino"]),
+                TipoPersona = TrimOrEmpty(request.Query["tipoPersona"]),
+                Estado = TrimOrEmpty(request.Query["estado"])
+            };
+
+            var rows = await cargaViajesSvc.SearchLiquidacionChoferesAsync(filters, ct);
+            var chofer = string.IsNullOrWhiteSpace(filters.ChoferCodigo)
+                ? null
+                : await cargaViajesSvc.GetChoferByIdAsync(filters.ChoferCodigo, ct);
+            var nombreEntidad = string.IsNullOrWhiteSpace(chofer?.Nombre)
+                ? (string.IsNullOrWhiteSpace(filters.ChoferCodigo) ? "Chofer / Fletero" : filters.ChoferCodigo)
+                : chofer.Nombre;
+            var tituloEntidad = chofer is null
+                ? nombreEntidad
+                : chofer.EsFletero ? $"Fletero {nombreEntidad}" : $"Chofer {nombreEntidad}";
+
+            var bytes = exporter.Exportar(rows, filters, tituloEntidad, nombreEntidad);
+            return Results.File(
+                bytes,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                CargaViajesLiquidacionExcelExporter.NombreArchivo());
         });
 
         app.MapGet("/api/conversaciones", async (

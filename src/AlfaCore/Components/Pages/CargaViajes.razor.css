@@ -183,7 +183,7 @@
 
 .carga-viajes-liquidaciones__filters {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto minmax(0, 1.35fr) minmax(0, 1fr);
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
     gap: .55rem;
     align-items: end;
     margin-top: .55rem;
@@ -191,6 +191,30 @@
 
 .carga-viajes-liquidaciones__filters .field {
     gap: .2rem;
+}
+
+.carga-viajes-liquidaciones__toggle-field {
+    align-self: stretch;
+}
+
+.carga-viajes-liquidaciones__toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: .55rem;
+    min-height: 2.35rem;
+    padding: .55rem .8rem;
+    border-radius: .85rem;
+    border: 1px solid rgba(148, 163, 184, .16);
+    background: rgba(15, 23, 42, .45);
+    color: #e2e8f0;
+    font-size: .85rem;
+    font-weight: 700;
+}
+
+.carga-viajes-liquidaciones__toggle input {
+    width: 1rem;
+    height: 1rem;
+    margin: 0;
 }
 
 .carga-viajes-date-row {
@@ -463,6 +487,20 @@
     box-shadow: none;
 }
 
+.carga-viajes-liquidaciones__row--paid {
+    background: linear-gradient(180deg, rgba(34, 197, 94, .14), rgba(16, 185, 129, .08));
+}
+
+.carga-viajes-liquidaciones__row--paid td {
+    color: #bbf7d0;
+}
+
+.carga-viajes-liquidaciones__row--paid .carga-viajes-row-select--locked {
+    border-color: rgba(34, 197, 94, .28);
+    background: rgba(22, 101, 52, .2);
+    color: #86efac;
+}
+
 .carga-viajes-liquidaciones__remove-pill {
     appearance: none;
     -webkit-appearance: none;
@@ -509,36 +547,47 @@
     justify-content: flex-end;
 }
 
-.carga-viajes-floating-pay {
-    position: fixed;
-    right: 28px;
-    bottom: 28px;
-    z-index: 10000;
-    appearance: none;
-    -webkit-appearance: none;
-    display: inline-flex;
+.carga-viajes-liquidaciones-panel {
+    position: relative;
+}
+
+.carga-viajes-liquidaciones-actions {
+    position: static;
+    width: 100%;
+    box-sizing: border-box;
+    margin-top: 1rem;
+    display: flex;
     align-items: center;
-    gap: .65rem;
-    min-height: 54px;
-    padding: 0 1.25rem;
-    border: 0;
-    border-radius: 999px;
-    background: linear-gradient(135deg, #06b6d4, #0891b2);
-    color: #fff;
-    font-weight: 800;
-    box-shadow: 0 18px 45px rgba(8, 145, 178, .45);
-    cursor: pointer;
-    transition: transform .16s ease, box-shadow .16s ease, filter .16s ease;
+    justify-content: space-between;
+    gap: .9rem;
+    padding: .95rem 1rem;
+    border: 1px solid rgba(148, 163, 184, .18);
+    border-radius: 1rem;
+    background: linear-gradient(180deg, rgba(15, 23, 42, .92), rgba(15, 23, 42, .78));
+    color: #e2e8f0;
+    box-shadow: 0 18px 42px rgba(2, 6, 23, .28);
+    backdrop-filter: blur(10px);
 }
 
-.carga-viajes-floating-pay:hover {
-    transform: translateY(-1px);
-    filter: brightness(1.03);
-    box-shadow: 0 22px 52px rgba(8, 145, 178, .52);
+.carga-viajes-liquidaciones-actions__summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .45rem 1rem;
+    min-width: 0;
+    font-size: .92rem;
 }
 
-.carga-viajes-floating-pay i {
-    font-size: 1.05rem;
+.carga-viajes-liquidaciones-actions__summary strong {
+    color: #f8fafc;
+}
+
+.carga-viajes-liquidaciones-actions__summary span {
+    color: #cbd5e1;
+}
+
+.carga-viajes-liquidaciones-actions__pay {
+    min-width: 13rem;
 }
 
 @keyframes carga-viajes-spin {
@@ -729,6 +778,13 @@
     text-align: right;
 }
 
+.carga-viajes-reportes__driver-total--stacked {
+    display: flex;
+    flex-direction: column;
+    gap: .45rem;
+    text-align: initial;
+}
+
 .carga-viajes-reportes__driver-total span {
     display: block;
     font-size: .68rem;
@@ -791,6 +847,11 @@
     font-size: .72rem;
     text-transform: uppercase;
     letter-spacing: .09em;
+}
+
+.carga-viajes-reportes__metric--highlight {
+    border-color: rgba(34, 211, 238, .3);
+    background: rgba(8, 145, 178, .18);
 }
 
 .carga-viajes-reportes__metric strong {

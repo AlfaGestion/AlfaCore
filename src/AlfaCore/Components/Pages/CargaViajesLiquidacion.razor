@@ -1,0 +1,285 @@
+@page "/carga-viajes/liquidacion/vista"
+@page "/{idweb}/{idbase:int}/carga-viajes/liquidacion/vista"
+@using AlfaCore.Models
+@using AlfaCore.Services
+@using Microsoft.AspNetCore.Components
+@using Microsoft.AspNetCore.WebUtilities
+@inject ICargaViajesService CargaViajesSvc
+@inject IAppUiOperationService UiOps
+@inject IJSRuntime JS
+@inject IRouteContextService RouteContext
+
+<PageTitle>Liquidación de Choferes / Fleteros | Alfa Gestión</PageTitle>
+
+@if (_loading)
+{
+    <div class="liquidacion-page">
+        <section class="liquidacion-page__loading panel-card">
+            <i class="bi bi-hourglass-split"></i>
+            <span>Cargando liquidación...</span>
+        </section>
+    </div>
+}
+else if (_error is not null)
+{
+    <div class="liquidacion-page">
+        <section class="liquidacion-page__toolbar no-print">
+            <a class="btn btn--ghost btn--sm" href="@GetBackUrl()">
+                <i class="bi bi-arrow-left"></i>
+                <span>Volver</span>
+            </a>
+        </section>
+
+        <section class="panel-card liquidacion-page__error">
+            <h1>Liquidación no disponible</h1>
+            <p>No se pudo cargar la liquidación solicitada.</p>
+            <div class="editor-msg editor-msg--warning">
+                <strong>@_error.Title</strong>
+                <span>@_error.Message</span>
+            </div>
+        </section>
+    </div>
+}
+else if (_rows.Count == 0)
+{
+    <div class="liquidacion-page">
+        <section class="liquidacion-page__toolbar no-print">
+            <a class="btn btn--ghost btn--sm" href="@GetBackUrl()">
+                <i class="bi bi-arrow-left"></i>
+                <span>Volver</span>
+            </a>
+        </section>
+
+        <section class="panel-card liquidacion-page__empty">
+            <h1>@GetTitle()</h1>
+            <p>No se encontraron viajes para los filtros seleccionados.</p>
+        </section>
+    </div>
+}
+else
+{
+    <div class="liquidacion-page">
+        <section class="liquidacion-page__toolbar no-print">
+            <a class="btn btn--ghost btn--sm" href="@GetBackUrl()">
+                <i class="bi bi-arrow-left"></i>
+                <span>Volver</span>
+            </a>
+            <button type="button" class="btn btn--primary btn--sm" @onclick="ImprimirAsync">
+                <i class="bi bi-printer"></i>
+                <span>Imprimir</span>
+            </button>
+            <a class="btn btn--ghost btn--sm" href="@GetExcelUrl()">
+                <i class="bi bi-file-earmark-excel"></i>
+                <span>Exportar Excel</span>
+            </a>
+            <button type="button" class="btn btn--ghost btn--sm" disabled title="Próximamente">
+                <i class="bi bi-file-earmark-pdf"></i>
+                <span>Exportar PDF</span>
+            </button>
+        </section>
+
+        <article class="liquidacion-card">
+            <header class="liquidacion-card__hero">
+                <div>
+                    <p class="liquidacion-card__eyebrow">ALFA GESTIÓN</p>
+                    <h1>@GetTitle()</h1>
+                    <p class="liquidacion-card__subtitle">Período @FormatDate(_filters.FechaDesde) al @FormatDate(_filters.FechaHasta)</p>
+                </div>
+                <div class="liquidacion-card__badge">
+                    <span>Liquidación operativa</span>
+                    <strong>@GetPersonaTypeLabel()</strong>
+                </div>
+            </header>
+
+            <section class="liquidacion-card__summary">
+                <article class="liquidacion-summary">
+                    <span>Chofer / Fletero</span>
+                    <strong>@GetDisplayText(_filters.ChoferTexto, _filters.ChoferCodigo)</strong>
+                </article>
+                <article class="liquidacion-summary">
+                    <span>Cliente</span>
+                    <strong>@GetDisplayOrDash(_filters.ClienteTexto, _filters.ClienteCodigo)</strong>
+                </article>
+                <article class="liquidacion-summary">
+                    <span>Destino</span>
+                    <strong>@GetDisplayOrDash(_filters.DestinoTexto, _filters.DestinoCodigo)</strong>
+                </article>
+                <article class="liquidacion-summary">
+                    <span>Cantidad de viajes</span>
+                    <strong>@GetCantidadViajes().ToString("N0")</strong>
+                </article>
+            </section>
+
+            <section class="liquidacion-card__table-wrap">
+                <table class="liquidacion-table">
+                    <thead>
+                        <tr>
+                            <th>Fecha</th>
+                            <th>Destino</th>
+                            <th class="liquidacion-table__num">Cantidad</th>
+                            <th class="liquidacion-table__num">Importe</th>
+                            <th class="liquidacion-table__num">Peajes</th>
+                            <th>Observaciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in _rows)
+                        {
+                            <tr>
+                                <td>@row.Fecha.ToString("dd/MM/yyyy")</td>
+                                <td>@BuildDestino(row)</td>
+                                <td class="liquidacion-table__num">@Math.Max(1, row.CantidadViajes)</td>
+                                <td class="liquidacion-table__num">@Money(row.TotalFlete)</td>
+                                <td class="liquidacion-table__num">@(row.Peaje > 0m ? Money(row.Peaje) : "-")</td>
+                                <td>@(string.IsNullOrWhiteSpace(row.Observaciones) ? "-" : row.Observaciones)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </section>
+
+            <section class="liquidacion-card__totals">
+                <article class="liquidacion-total">
+                    <span>Subtotal viajes</span>
+                    <strong>@Money(GetSubtotalViajes())</strong>
+                </article>
+                <article class="liquidacion-total">
+                    <span>Subtotal peajes</span>
+                    <strong>@Money(GetSubtotalPeajes())</strong>
+                </article>
+                <article class="liquidacion-total liquidacion-total--grand">
+                    <span>TOTAL</span>
+                    <strong>@Money(GetTotalGeneral())</strong>
+                </article>
+            </section>
+        </article>
+    </div>
+}
+
+@code {
+    [Parameter, SupplyParameterFromQuery(Name = "desde")] public string? DesdeQuery { get; set; }
+    [Parameter, SupplyParameterFromQuery(Name = "hasta")] public string? HastaQuery { get; set; }
+    [Parameter, SupplyParameterFromQuery(Name = "chofer")] public string? ChoferQuery { get; set; }
+    [Parameter, SupplyParameterFromQuery(Name = "cliente")] public string? ClienteQuery { get; set; }
+    [Parameter, SupplyParameterFromQuery(Name = "destino")] public string? DestinoQuery { get; set; }
+
+    private readonly List<CargaViajeReporteLiquidacionRowDto> _rows = [];
+    private CargaViajesReporteLiquidacionFilters _filters = new();
+    private AppUiMessage? _error;
+    private bool _loading = true;
+    private bool? _esFletero;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _loading = true;
+        _error = null;
+
+        _filters = BuildFilters();
+        var result = await UiOps.RunAsync(() => CargaViajesSvc.SearchLiquidacionChoferesAsync(_filters), "No se pudo cargar la liquidación.");
+        if (result.Success && result.Value is not null)
+        {
+            _rows.Clear();
+            _rows.AddRange(result.Value);
+            _esFletero = await ResolveEsFleteroAsync();
+        }
+        else
+        {
+            _rows.Clear();
+            _error = result.Feedback;
+        }
+
+        _loading = false;
+    }
+
+    private CargaViajesReporteLiquidacionFilters BuildFilters()
+    {
+        static DateTime? ParseDate(string? value)
+            => DateTime.TryParse(value, out var parsed) ? parsed.Date : null;
+
+        return new CargaViajesReporteLiquidacionFilters
+        {
+            FechaDesde = ParseDate(DesdeQuery) ?? DateTime.Today,
+            FechaHasta = ParseDate(HastaQuery) ?? DateTime.Today,
+            ChoferCodigo = (ChoferQuery ?? string.Empty).Trim(),
+            ClienteCodigo = (ClienteQuery ?? string.Empty).Trim(),
+            DestinoCodigo = (DestinoQuery ?? string.Empty).Trim()
+        };
+    }
+
+    private async Task<bool?> ResolveEsFleteroAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_filters.ChoferCodigo))
+            return null;
+
+        var chofer = await UiOps.RunAsync(() => CargaViajesSvc.GetChoferByIdAsync(_filters.ChoferCodigo), "No se pudo cargar el chofer.");
+        if (!chofer.Success || chofer.Value is null)
+            return null;
+
+        return chofer.Value.EsFletero;
+    }
+
+    private string GetBackUrl()
+        => RouteContext.BuildRoute("/carga-viajes/liquidacion");
+
+    private string GetExcelUrl()
+    {
+        var query = new Dictionary<string, string?>
+        {
+            ["desde"] = _filters.FechaDesde?.ToString("yyyy-MM-dd"),
+            ["hasta"] = _filters.FechaHasta?.ToString("yyyy-MM-dd"),
+            ["chofer"] = _filters.ChoferCodigo,
+            ["cliente"] = _filters.ClienteCodigo,
+            ["destino"] = _filters.DestinoCodigo
+        };
+
+        return QueryHelpers.AddQueryString(RouteContext.BuildRoute("/carga-viajes/liquidacion/descargar-excel"), query!);
+    }
+
+    private async Task ImprimirAsync()
+        => await JS.InvokeVoidAsync("dashboardExport.printCurrentPage", GetTitle());
+
+    private string GetTitle()
+        => _esFletero.HasValue
+            ? (_esFletero.Value ? "Liquidación de Fletero" : "Liquidación de Chofer")
+            : "Liquidación de Choferes / Fleteros";
+
+    private string GetPersonaTypeLabel()
+        => _esFletero.HasValue
+            ? (_esFletero.Value ? "Fletero" : "Chofer")
+            : "Operativo";
+
+    private static string GetDisplayText(string? texto, string? fallback)
+        => string.IsNullOrWhiteSpace(texto) ? "-" : texto.Trim();
+
+    private static string GetDisplayOrDash(string? texto, string? fallback)
+        => string.IsNullOrWhiteSpace(texto) ? "-" : texto.Trim();
+
+    private static string BuildDestino(CargaViajeReporteLiquidacionRowDto row)
+    {
+        var cliente = string.IsNullOrWhiteSpace(row.ClienteNombre) ? "-" : row.ClienteNombre.Trim();
+        var destino = string.IsNullOrWhiteSpace(row.DestinoDescripcion) ? "-" : row.DestinoDescripcion.Trim();
+
+        if (cliente != "-" && destino != "-")
+            return $"{cliente} → {destino}";
+
+        return cliente != "-" ? cliente : destino;
+    }
+
+    private string Money(decimal value)
+        => value.ToString("C0", System.Globalization.CultureInfo.GetCultureInfo("es-AR"));
+
+    private static string FormatDate(DateTime? value)
+        => value?.ToString("dd/MM/yyyy") ?? "—";
+
+    private int GetCantidadViajes()
+        => _rows.Sum(x => Math.Max(1, x.CantidadViajes));
+
+    private decimal GetSubtotalViajes()
+        => _rows.Sum(x => x.TotalFlete);
+
+    private decimal GetSubtotalPeajes()
+        => _rows.Sum(x => Math.Max(0m, x.Peaje));
+
+    private decimal GetTotalGeneral()
+        => _rows.Sum(x => x.TotalConPeaje);
+}
