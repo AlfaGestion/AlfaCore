@@ -2455,9 +2455,9 @@ public sealed class CargaViajesService(
         => ExecuteLoggedAsync(ModuleName, "SearchLiquidacionChoferes", async token =>
         {
             filters ??= new CargaViajesReporteLiquidacionFilters();
-            var fechaDesde = filters.FechaDesde?.Date ?? DateTime.Today;
-            var fechaHasta = filters.FechaHasta?.Date ?? fechaDesde;
-            if (fechaHasta < fechaDesde)
+            var fechaDesde = filters.FechaDesde?.Date;
+            var fechaHasta = filters.FechaHasta?.Date;
+            if (fechaDesde.HasValue && fechaHasta.HasValue && fechaHasta < fechaDesde)
                 (fechaDesde, fechaHasta) = (fechaHasta, fechaDesde);
 
             logger.LogInformation(
@@ -2471,18 +2471,28 @@ public sealed class CargaViajesService(
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
             const string viajeTable = "MV_VIAJES_CARGA";
+            var columns = await LoadColumnsAsync(cn, viajeTable, token);
             var choferJoin = "LEFT JOIN dbo.TA_CHOFERES ch ON UPPER(LTRIM(RTRIM(ISNULL(ch.CODIGO, '')))) = UPPER(LTRIM(RTRIM(ISNULL(v.IDCHOFER, ''))))";
             var clienteJoin = "LEFT JOIN dbo.Vt_Clientes cli ON UPPER(LTRIM(RTRIM(ISNULL(cli.CODIGO, '')))) = UPPER(LTRIM(RTRIM(ISNULL(v.IDCLIENTE, ''))))";
             var destinoJoin = "LEFT JOIN dbo.TA_DESTINOS d ON UPPER(LTRIM(RTRIM(ISNULL(d.CODIGO, '')))) = UPPER(LTRIM(RTRIM(ISNULL(v.IDDESTINO, ''))))";
             var vehiculoJoin = "LEFT JOIN dbo.TA_TIPOVEHICULO tv ON UPPER(LTRIM(RTRIM(ISNULL(tv.CODIGO, '')))) = UPPER(LTRIM(RTRIM(ISNULL(v.IDTIPOVEHICULO, ''))))";
+            var peajeColumn = FirstExistingColumn(columns, "TOTAL_PEAJE", "PEAJE");
+            var peajeExpr = $"ISNULL(v.{peajeColumn}, 0)";
+            var observacionesExpr = columns.Contains("observaciones") ? "ISNULL(v.OBSERVACIONES, '')" : "CAST('' AS nvarchar(250))";
             var hasEsFletero = await ColumnExistsAsync(cn, "TA_CHOFERES", "ES_FLETERO", token);
             var esFleteroExpr = hasEsFletero ? "CAST(ISNULL(ch.ES_FLETERO, 0) AS bit)" : "CAST(0 AS bit)";
             var reporteFilter = """
-                AND (
-                        (@IncluirChoferes = 1 AND ISNULL(ch.ES_FLETERO, 0) = 0)
-                     OR (@IncluirFleteros = 1 AND ISNULL(ch.ES_FLETERO, 0) = 1)
-                    )
+                AND (@FechaDesde IS NULL OR v.FECHA >= @FechaDesde)
+                AND (@FechaHasta IS NULL OR v.FECHA < DATEADD(DAY, 1, @FechaHasta))
                 AND (@ChoferCodigo = '' OR UPPER(LTRIM(RTRIM(ISNULL(v.IDCHOFER, '')))) = @ChoferCodigo)
+                AND (@ClienteCodigo = '' OR UPPER(LTRIM(RTRIM(ISNULL(v.IDCLIENTE, '')))) = @ClienteCodigo)
+                AND (@DestinoCodigo = '' OR UPPER(LTRIM(RTRIM(ISNULL(v.IDDESTINO, '')))) = @DestinoCodigo)
+                AND (
+                      @EstadoFiltro = N''
+                   OR (@EstadoFiltro = N'PENDIENTE' AND UPPER(LTRIM(RTRIM(ISNULL(v.ESTADO, N'PENDIENTE')))) = N'PENDIENTE')
+                   OR (@EstadoFiltro = N'FINALIZADO' AND UPPER(LTRIM(RTRIM(ISNULL(v.ESTADO, N'PENDIENTE')))) = N'FINALIZADO')
+                   OR (@EstadoFiltro = N'PENDIENTE_PAGO' AND ISNULL(v.FLETE_PAGADO, 0) = 0)
+                )
                 """;
             var sql = $"""
                 SELECT
@@ -2499,7 +2509,12 @@ public sealed class CargaViajesService(
                     LTRIM(RTRIM(ISNULL(v.IDTIPOVEHICULO, ''))) AS TipoVehiculoCodigo,
                     ISNULL(tv.DESCRIPCION, '') AS TipoVehiculoDescripcion,
                     ISNULL(v.TOTAL_VIAJES, 1) AS CantidadViajes,
-                    ISNULL(v.TOTAL_FLETE, 0) AS TotalFlete
+                    ISNULL(v.TOTAL_FLETE, 0) AS TotalFlete,
+                    ISNULL(v.TOTAL_FLETE, 0) + {peajeExpr} AS TotalConPeaje,
+                    {peajeExpr} AS Peaje,
+                    ISNULL(v.ESTADO, N'PENDIENTE') AS Estado,
+                    ISNULL(v.USUARIO, '') AS Usuario,
+                    {observacionesExpr} AS Observaciones
                 FROM dbo.{viajeTable} v
                 {choferJoin}
                 {clienteJoin}
@@ -2516,9 +2531,10 @@ public sealed class CargaViajesService(
             {
                 FechaDesde = fechaDesde,
                 FechaHasta = fechaHasta,
-                IncluirChoferes = filters.IncluirChoferes ? 1 : 0,
-                IncluirFleteros = filters.IncluirFleteros ? 1 : 0,
-                ChoferCodigo = TrimUpper(filters.ChoferCodigo)
+                ChoferCodigo = TrimUpper(filters.ChoferCodigo),
+                ClienteCodigo = TrimUpper(filters.ClienteCodigo),
+                DestinoCodigo = TrimUpper(filters.DestinoCodigo),
+                EstadoFiltro = NormalizeReporteEstado(filters.Estado)
             }, cancellationToken: token, commandTimeout: 60))).ToList();
 
             logger.LogInformation("SearchLiquidacionChoferes end rows={Rows}", rows.Count);
@@ -2530,13 +2546,19 @@ public sealed class CargaViajesService(
         => ExecuteLoggedAsync(ModuleName, "SearchLiquidacionesFletes", async token =>
         {
             filters ??= new CargaViajesLiquidacionFilters();
-            var fechaDesde = filters.FechaDesde?.Date ?? new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
-            var fechaHasta = filters.FechaHasta?.Date ?? fechaDesde.AddMonths(1).AddDays(-1);
-            if (fechaHasta < fechaDesde)
+            var fechaDesde = filters.FechaDesde?.Date;
+            var fechaHasta = filters.FechaHasta?.Date;
+            if (fechaDesde.HasValue && fechaHasta.HasValue && fechaHasta.Value < fechaDesde.Value)
                 (fechaDesde, fechaHasta) = (fechaHasta, fechaDesde);
 
             var incluirChoferes = filters.IncluirChoferes;
             var incluirFleteros = filters.IncluirFleteros;
+            if (!string.IsNullOrWhiteSpace(filters.TipoPersona))
+            {
+                var tipoPersona = NormalizeLiquidacionTipoPersona(filters.TipoPersona);
+                incluirChoferes = tipoPersona != CargaViajesReporteTipoPersonaKeys.Fleteros;
+                incluirFleteros = tipoPersona != CargaViajesReporteTipoPersonaKeys.Choferes;
+            }
             if (!incluirChoferes && !incluirFleteros)
                 return Array.Empty<CargaViajeLiquidacionRowDto>();
 
@@ -2544,6 +2566,9 @@ public sealed class CargaViajesService(
             await cn.OpenAsync(token);
 
             const string viajeTable = "MV_VIAJES_CARGA";
+            var columns = await LoadColumnsAsync(cn, viajeTable, token);
+            var peajeColumn = FirstExistingColumn(columns, "TOTAL_PEAJE", "PEAJE");
+            var peajeExpr = $"ISNULL(v.{peajeColumn}, 0)";
             var hasEsFletero = await ColumnExistsAsync(cn, "TA_CHOFERES", "ES_FLETERO", token);
             var choferJoin = "LEFT JOIN dbo.TA_CHOFERES ch ON UPPER(LTRIM(RTRIM(ISNULL(ch.CODIGO, '')))) = UPPER(LTRIM(RTRIM(ISNULL(v.IDCHOFER, ''))))";
             var clienteJoin = "LEFT JOIN dbo.Vt_Clientes cli ON UPPER(LTRIM(RTRIM(ISNULL(cli.CODIGO, '')))) = UPPER(LTRIM(RTRIM(ISNULL(v.IDCLIENTE, ''))))";
@@ -2557,9 +2582,23 @@ public sealed class CargaViajesService(
                      OR (@IncluirFleteros = 1 AND ISNULL(ch.ES_FLETERO, 0) = 1)
                   )
                   """
-                : incluirFleteros && !incluirChoferes
+                  : incluirFleteros && !incluirChoferes
                     ? "AND 1 = 0"
                     : string.Empty;
+            var fechaDesdeClause = fechaDesde.HasValue ? "AND v.FECHA >= @FechaDesde" : string.Empty;
+            var fechaHastaClause = fechaHasta.HasValue ? "AND v.FECHA < DATEADD(DAY, 1, @FechaHasta)" : string.Empty;
+            var clienteClause = "AND (@ClienteCodigo = '' OR UPPER(LTRIM(RTRIM(ISNULL(v.IDCLIENTE, '')))) = @ClienteCodigo)";
+            var destinoClause = "AND (@DestinoCodigo = '' OR UPPER(LTRIM(RTRIM(ISNULL(v.IDDESTINO, '')))) = @DestinoCodigo)";
+            var tipoVehiculoClause = "AND (@TipoVehiculoCodigo = '' OR UPPER(LTRIM(RTRIM(ISNULL(v.IDTIPOVEHICULO, '')))) = @TipoVehiculoCodigo)";
+            var estadoClause = """
+                  AND (
+                        @EstadoFiltro = N''
+                     OR UPPER(LTRIM(RTRIM(ISNULL(v.ESTADO, N'PENDIENTE')))) = @EstadoFiltro
+                  )
+                """;
+            var estadoPago = filters.MostrarLiquidados
+                ? CargaViajesLiquidacionEstadoPagoKeys.Todos
+                : NormalizeLiquidacionEstadoPago(filters.EstadoPago);
 
             var sql = $"""
                 SELECT
@@ -2577,26 +2616,34 @@ public sealed class CargaViajesService(
                     ISNULL(tv.DESCRIPCION, '') AS TipoVehiculoDescripcion,
                     ISNULL(v.TOTAL_VIAJES, 1) AS CantidadViajes,
                     ISNULL(v.TOTAL_FLETE, 0) AS TotalFlete,
+                    ISNULL(v.TOTAL_FLETE, 0) + {peajeExpr} AS TotalConPeaje,
+                    {peajeExpr} AS Peaje,
                     CAST(ISNULL(v.FLETE_PAGADO, 0) AS bit) AS FletePagado,
                     v.FECHA_PAGO_FLETE AS FechaPagoFlete,
                     ISNULL(v.USUARIO_PAGO_FLETE, '') AS UsuarioPagoFlete,
-                    ISNULL(v.OBSERVACION_PAGO_FLETE, '') AS ObservacionPagoFlete
+                    ISNULL(v.OBSERVACION_PAGO_FLETE, '') AS ObservacionPagoFlete,
+                    ISNULL(v.ESTADO, N'PENDIENTE') AS Estado,
+                    ISNULL(v.USUARIO, '') AS Usuario
                 FROM dbo.{viajeTable} v
                 {choferJoin}
                 {clienteJoin}
                 {destinoJoin}
                 {vehiculoJoin}
                 WHERE ISNULL(v.ANULADO, 0) = 0
-                  AND v.FECHA >= @FechaDesde
-                  AND v.FECHA < DATEADD(DAY, 1, @FechaHasta)
+                  {fechaDesdeClause}
+                  {fechaHastaClause}
                   {tipoFilterClause}
+                  {clienteClause}
+                  {destinoClause}
+                  {tipoVehiculoClause}
+                  {estadoClause}
                   AND (@ChoferCodigo = '' OR UPPER(LTRIM(RTRIM(ISNULL(v.IDCHOFER, '')))) = @ChoferCodigo)
                   AND (
                         @EstadoPago = N'{CargaViajesLiquidacionEstadoPagoKeys.Todos.ToUpperInvariant()}'
                      OR (@EstadoPago = N'{CargaViajesLiquidacionEstadoPagoKeys.Pendientes.ToUpperInvariant()}' AND ISNULL(v.FLETE_PAGADO, 0) = 0)
                      OR (@EstadoPago = N'{CargaViajesLiquidacionEstadoPagoKeys.Pagados.ToUpperInvariant()}' AND ISNULL(v.FLETE_PAGADO, 0) = 1)
                   )
-                ORDER BY ISNULL(ch.ES_FLETERO, 0) DESC, v.FECHA DESC, v.ID DESC;
+                ORDER BY ISNULL(ch.ES_FLETERO, 0) DESC, ISNULL(ch.NOMBRES, v.NOMBRE_CHOFER), v.FECHA DESC, v.ID DESC;
                 """;
 
             var rows = (await cn.QueryAsync<CargaViajeLiquidacionRowDto>(new CommandDefinition(sql, new
@@ -2606,7 +2653,11 @@ public sealed class CargaViajesService(
                 IncluirChoferes = incluirChoferes ? 1 : 0,
                 IncluirFleteros = incluirFleteros ? 1 : 0,
                 ChoferCodigo = TrimUpper(filters.ChoferCodigo),
-                EstadoPago = NormalizeLiquidacionEstadoPago(filters.EstadoPago)
+                ClienteCodigo = TrimUpper(filters.ClienteCodigo),
+                DestinoCodigo = TrimUpper(filters.DestinoCodigo),
+                TipoVehiculoCodigo = TrimUpper(filters.TipoVehiculoCodigo),
+                EstadoFiltro = NormalizeLiquidacionEstado(filters.Estado),
+                EstadoPago = estadoPago
             }, cancellationToken: token, commandTimeout: 60))).ToList();
 
             return (IReadOnlyList<CargaViajeLiquidacionRowDto>)rows;
@@ -4090,6 +4141,38 @@ public sealed class CargaViajesService(
                 var v when string.Equals(v, CargaViajesLiquidacionEstadoPagoKeys.Pagados.ToUpperInvariant(), StringComparison.OrdinalIgnoreCase) => CargaViajesLiquidacionEstadoPagoKeys.Pagados.ToUpperInvariant(),
                 var v when string.Equals(v, CargaViajesLiquidacionEstadoPagoKeys.Todos.ToUpperInvariant(), StringComparison.OrdinalIgnoreCase) => CargaViajesLiquidacionEstadoPagoKeys.Todos.ToUpperInvariant(),
                 _ => CargaViajesLiquidacionEstadoPagoKeys.Pendientes.ToUpperInvariant()
+            };
+
+    private static string NormalizeLiquidacionTipoPersona(string? value)
+        => string.IsNullOrWhiteSpace(value)
+            ? CargaViajesReporteTipoPersonaKeys.ChoferesYFleteros
+            : value.Trim().ToLowerInvariant() switch
+            {
+                var v when string.Equals(v, CargaViajesReporteTipoPersonaKeys.Choferes, StringComparison.OrdinalIgnoreCase) => CargaViajesReporteTipoPersonaKeys.Choferes,
+                var v when string.Equals(v, CargaViajesReporteTipoPersonaKeys.Fleteros, StringComparison.OrdinalIgnoreCase) => CargaViajesReporteTipoPersonaKeys.Fleteros,
+                _ => CargaViajesReporteTipoPersonaKeys.ChoferesYFleteros
+            };
+
+    private static string NormalizeLiquidacionEstado(string? value)
+        => string.IsNullOrWhiteSpace(value)
+            ? string.Empty
+            : value.Trim() switch
+            {
+                var v when string.Equals(v, CargaViajeEstadoKeys.Pendiente, StringComparison.OrdinalIgnoreCase) => CargaViajeEstadoKeys.Pendiente,
+                var v when string.Equals(v, CargaViajeEstadoKeys.Finalizado, StringComparison.OrdinalIgnoreCase) => CargaViajeEstadoKeys.Finalizado,
+                var v when string.Equals(v, CargaViajeEstadoKeys.Anulado, StringComparison.OrdinalIgnoreCase) => CargaViajeEstadoKeys.Anulado,
+                _ => string.Empty
+            };
+
+    private static string NormalizeReporteEstado(string? value)
+        => string.IsNullOrWhiteSpace(value)
+            ? string.Empty
+            : value.Trim() switch
+            {
+                var v when string.Equals(v, CargaViajesReporteEstadoKeys.Pendiente, StringComparison.OrdinalIgnoreCase) => "PENDIENTE",
+                var v when string.Equals(v, CargaViajesReporteEstadoKeys.Finalizado, StringComparison.OrdinalIgnoreCase) => "FINALIZADO",
+                var v when string.Equals(v, CargaViajesReporteEstadoKeys.PendientePago, StringComparison.OrdinalIgnoreCase) => "PENDIENTE_PAGO",
+                _ => string.Empty
             };
 
     private static string? TrimToLength(string? value, int maxLength)
