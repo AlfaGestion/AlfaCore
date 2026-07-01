@@ -1102,7 +1102,7 @@ public sealed class CuentasComercialesService(
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
-            var detailColumn = await ResolveConfigDetailColumnAsync(cn, token);
+            var detailColumn = await ResolveConfigDetailColumnAsync(cn, null, token);
             var configKey = BuildViewConfigKey(tipo, userName);
             var sql = $"""
                 SELECT TOP (1)
@@ -1137,7 +1137,7 @@ public sealed class CuentasComercialesService(
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
-            var detailColumn = await ResolveConfigDetailColumnAsync(cn, token);
+            var detailColumn = await ResolveConfigDetailColumnAsync(cn, null, token);
             var stored = SplitStoredValue(serialized);
             var configKey = BuildViewConfigKey(tipo, userName);
             var sql = $"""
@@ -1713,7 +1713,7 @@ public sealed class CuentasComercialesService(
 
     private async Task<string> ReadConfigValueAsync(SqlConnection cn, SqlTransaction? tx, string key, CancellationToken ct)
     {
-        var detailColumn = await ResolveConfigDetailColumnAsync(cn, ct);
+        var detailColumn = await ResolveConfigDetailColumnAsync(cn, tx, ct);
         var sql = $"""
             SELECT TOP (1)
                 ISNULL(VALOR, ''),
@@ -1731,7 +1731,7 @@ public sealed class CuentasComercialesService(
         return ResolveStoredValue(GetString(rd, 0), GetString(rd, 1));
     }
 
-    private static async Task<string> ResolveConfigDetailColumnAsync(SqlConnection cn, CancellationToken ct)
+    private static async Task<string> ResolveConfigDetailColumnAsync(SqlConnection cn, SqlTransaction? tx, CancellationToken ct)
     {
         const string sql = """
             SELECT TOP (1) name
@@ -1741,7 +1741,7 @@ public sealed class CuentasComercialesService(
             ORDER BY CASE WHEN LOWER(name) IN (N'valoraux', N'valor_aux') THEN 0 ELSE 1 END, name;
             """;
 
-        await using var cmd = new SqlCommand(sql, cn);
+        await using var cmd = new SqlCommand(sql, cn, tx);
         var result = await cmd.ExecuteScalarAsync(ct);
         var column = Convert.ToString(result) ?? string.Empty;
         return string.IsNullOrWhiteSpace(column) ? "DESCRIPCION" : column;

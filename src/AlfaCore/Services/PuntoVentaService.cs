@@ -101,7 +101,8 @@ public sealed class PuntoVentaService(
                 EmailPort = await TryReadConfigValueAsync(cn, "EMAIL_PORT", token),
                 EmailCuenta = await TryReadConfigValueAsync(cn, "EMAIL_CTA", token),
                 EmailPassword = await TryReadConfigValueAsync(cn, "EMAIL_PASS", token),
-                EmailSsl = await TryReadConfigValueAsync(cn, "EMAIL_SSL", token)
+                EmailSsl = await TryReadConfigValueAsync(cn, "EMAIL_SSL", token),
+                FtpCodigoCta = await TryReadConfigValueAsync(cn, "FTP_CODIGOCTA", token)
             };
         }, "No se pudo cargar la configuración del punto de venta.", ct);
 
@@ -224,7 +225,7 @@ public sealed class PuntoVentaService(
             ArgumentNullException.ThrowIfNull(request);
 
             var items = request.Items
-                .Where(x => !string.IsNullOrWhiteSpace(x.IdArticulo) && x.Cantidad > 0)
+                .Where(x => !string.IsNullOrWhiteSpace(x.IdArticulo) && x.Cantidad != 0)
                 .ToList();
 
             if (items.Count == 0)

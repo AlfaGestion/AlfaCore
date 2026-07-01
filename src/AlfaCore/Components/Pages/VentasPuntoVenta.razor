@@ -2,13 +2,17 @@
 @page "/{idweb}/{idbase:int}/ventas/punto-venta"
 @inject AlfaCore.Services.IPuntoVentaService PuntoVentaSvc
 @inject AlfaCore.Services.IPuntoVentaCartStateService CartState
+@inject AlfaCore.Services.IRouteContextService RouteCtx
 @inject IJSRuntime Js
 
 <PageTitle>Punto de Venta | Ventas</PageTitle>
 
 <style>
     .pos-shell {
-        min-height: 100dvh;
+        height: 100dvh;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
         margin: 0;
         background: linear-gradient(180deg, #eef1f6 0%, #e4e8ef 100%);
         color: #1f2d3d;
@@ -134,7 +138,8 @@
     .pos-stage {
         display: grid;
         grid-template-columns: 38rem minmax(0, 1fr);
-        min-height: calc(100dvh - 5.4rem);
+        flex: 1 1 auto;
+        min-height: 0;
     }
 
     .pos-sidebar {
@@ -318,8 +323,8 @@
     }
 
     .pos-catalog {
-        display: grid;
-        grid-template-rows: auto auto minmax(0, 1fr);
+        display: flex;
+        flex-direction: column;
         min-width: 0;
         min-height: 0;
     }
@@ -549,6 +554,15 @@
         font-size: 1.45rem;
     }
 
+    .pos-topbar__version {
+        font-size: 0.72rem;
+        font-weight: 400;
+        opacity: 0.55;
+        vertical-align: middle;
+        margin-left: 0.35rem;
+        letter-spacing: 0.02em;
+    }
+
     .pos-topbar__ghost,
     .pos-topbar__cart-link {
         min-height: 2.65rem;
@@ -567,8 +581,8 @@
 
     .pos-stage {
         grid-template-columns: 24.25rem minmax(0, 1fr);
-        min-height: calc(100dvh - 4.4rem);
-        height: calc(100dvh - 4.4rem);
+        flex: 1 1 auto;
+        min-height: 0;
         overflow: hidden;
     }
 
@@ -654,7 +668,6 @@
         padding: 0;
     }
 
-    .pos-sidebar__notes,
     .pos-context-pill {
         display: none;
     }
@@ -758,7 +771,8 @@
     }
 
     .pos-catalog {
-        height: 100%;
+        flex: 1 1 auto;
+        min-height: 0;
         overflow: hidden;
     }
 
@@ -800,7 +814,9 @@
         gap: 0.55rem;
         padding: 0.75rem;
         background: transparent;
-        height: 100%;
+        flex: 1 1 auto;
+        min-height: 0;
+        height: auto;
         overflow-y: auto;
         overflow-x: hidden;
     }
@@ -2267,7 +2283,7 @@
                 <div class="pos-topbar__logo">PV</div>
                 <div>
                     <div class="pos-topbar__eyebrow">Alfa Gestion</div>
-                    <h1>Punto de Venta</h1>
+                    <h1>Punto de Venta <span class="pos-topbar__version">v2026.06.30.05</span></h1>
                 </div>
             </div>
 
@@ -2304,7 +2320,7 @@
                                 <i class="bi bi-printer"></i>
                                 Reimprimir comprobantes
                             </button>
-                            <a class="pos-topbar__menu-link" href="/">
+                            <a class="pos-topbar__menu-link" href="@RouteCtx.BuildRoute("/")">
                                 <i class="bi bi-box-arrow-left"></i>
                                 Salir
                             </a>
@@ -2312,11 +2328,6 @@
                     }
                 </div>
 
-                <button type="button" class="pos-topbar__cart-link">
-                    <span class="pos-topbar__cart-count">@_cartItems.Count</span>
-                    Ver carrito
-                    <strong>@FmtMoney(TotalCarrito)</strong>
-                </button>
             </div>
         </header>
 
@@ -2357,13 +2368,17 @@
 
                 <div class="pos-sidebar__checkout">
                     <div class="pos-sidebar__notes">
-                        <input class="pos-sidebar__scan"
-                               placeholder="Codigo rapido o scanner"
-                               @bind="_scanCode"
-                               @bind:event="oninput"
-                               @onkeydown="HandleScanKeyAsync"
-                               disabled="@_scanLoading"
-                               autocomplete="off" />
+                        <div class="pos-sidebar__scan-wrap">
+                            <i class="bi bi-upc-scan pos-sidebar__scan-icon"></i>
+                            <input class="pos-sidebar__scan"
+                                   placeholder="Código o código de barras"
+                                   @ref="_scanInputRef"
+                                   @bind="_scanCode"
+                                   @bind:event="oninput"
+                                   @onkeydown="HandleScanKeyAsync"
+                                   disabled="@_scanLoading"
+                                   autocomplete="off" />
+                        </div>
                         @if (!string.IsNullOrEmpty(_scanError))
                         {
                             <span class="pos-sidebar__scan-error">@_scanError</span>
@@ -3243,7 +3258,8 @@
 
 <QuickClienteModal Open="_showClienteModal"
                    OnClienteSelected="OnClienteSeleccionado"
-                   OnClose="() => _showClienteModal = false" />
+                   OnClose="() => _showClienteModal = false"
+                   CuentaEventualCodigo="@(_settings.CuentaConsumidorFinal)" />
 
 @code {
     private PuntoVentaContextDto? _context;
@@ -3255,6 +3271,8 @@
     private List<PuntoVentaPaymentLineDto> _paymentLines => CartState.PaymentLines;
     private readonly HashSet<string> _imageFallbacks = new(StringComparer.OrdinalIgnoreCase);
     private ElementReference _catalogGridRef;
+    private ElementReference _scanInputRef;
+    private bool _needScanFocus = true;
     private IReadOnlyList<PuntoVentaPaymentMethodDto> _paymentMethods = [];
     private PuntoVentaSettingsDto _settings = new();
     private PuntoVentaSaleResultDto? _lastSaleResult;
@@ -3339,6 +3357,20 @@
         }
     }
 
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_needScanFocus && _context is not null && !_loading && !_scanLoading)
+        {
+            _needScanFocus = false;
+            await FocusScanAsync();
+        }
+    }
+
+    private async Task FocusScanAsync()
+    {
+        try { await _scanInputRef.FocusAsync(); } catch { }
+    }
+
     private async Task BuscarArticulosAsync()
         => await LoadCatalogAsync();
 
@@ -3418,13 +3450,13 @@
             Pagina = pagina
         };
 
-    private void AddToCart(PuntoVentaArticleDto article)
+    private void AddToCart(PuntoVentaArticleDto article, decimal cantidad = 1m)
     {
         _chargeSuccess = null;
         var existing = _cartItems.FirstOrDefault(x => x.IdArticulo == article.IdArticulo);
         if (existing is not null)
         {
-            existing.Cantidad += 1m;
+            existing.Cantidad += cantidad;
             return;
         }
 
@@ -3434,7 +3466,7 @@
             Descripcion = article.Descripcion,
             Presentacion = article.Presentacion,
             PrecioUnitario = article.PrecioUnitario,
-            Cantidad = 1m,
+            Cantidad = cantidad,
             TasaIva = article.TasaIva,
             Exento = article.Exento,
             Familia = article.Familia
@@ -3463,7 +3495,10 @@
         => _selectedCartItemId = idArticulo;
 
     private void CloseCartItemModal()
-        => _selectedCartItemId = null;
+    {
+        _selectedCartItemId = null;
+        _needScanFocus = true;
+    }
 
     private void ChangeQtyAndRefreshModal(string idArticulo, decimal delta)
     {
@@ -3488,8 +3523,33 @@
     private async Task HandleScanKeyAsync(KeyboardEventArgs e)
     {
         if (e.Key != "Enter") return;
-        var codigo = _scanCode.Trim().ToUpperInvariant();
-        if (codigo.Length == 0) return;
+        var raw = _scanCode.Trim();
+        if (raw.Length == 0) return;
+
+        // Soporte formato "cantidad*codigo", ej: 3*7791728001723 o -3*7791728001723 (devolucion)
+        decimal cantidad = 1m;
+        string codigo;
+        var starIdx = raw.IndexOf('*');
+        if (starIdx > 0 && starIdx < raw.Length - 1)
+        {
+            var cantPart = raw[..starIdx].Trim();
+            var codPart  = raw[(starIdx + 1)..].Trim().ToUpperInvariant();
+            if (decimal.TryParse(cantPart, System.Globalization.NumberStyles.Any,
+                                 System.Globalization.CultureInfo.InvariantCulture, out var parsedCant)
+                && parsedCant != 0m && codPart.Length > 0)
+            {
+                cantidad = parsedCant;
+                codigo   = codPart;
+            }
+            else
+            {
+                codigo = raw.ToUpperInvariant();
+            }
+        }
+        else
+        {
+            codigo = raw.ToUpperInvariant();
+        }
 
         _scanError = string.Empty;
         _scanLoading = true;
@@ -3498,7 +3558,7 @@
             var art = await PuntoVentaSvc.GetArticuloPorCodigoAsync(codigo);
             if (art is not null)
             {
-                AddToCart(art);
+                AddToCart(art, cantidad);
                 _scanCode = string.Empty;
             }
             else
@@ -3514,6 +3574,7 @@
         {
             _scanLoading = false;
         }
+        _needScanFocus = true;
     }
 
     private void OnClienteSeleccionado(AlfaCore.Models.CuentaComercialGridItemDto cliente)
@@ -3521,12 +3582,14 @@
         _cuentaCliente = cliente.Codigo ?? string.Empty;
         _cuentaClienteNombre = cliente.RazonSocial ?? string.Empty;
         _showClienteModal = false;
+        _needScanFocus = true;
     }
 
     private void LimpiarCliente()
     {
         _cuentaCliente = string.Empty;
         _cuentaClienteNombre = string.Empty;
+        _needScanFocus = true;
     }
 
     private void OpenClearCartConfirm()
@@ -4113,11 +4176,16 @@
                    out parsed);
     }
 
-    private static string GetProductImageUrl(PuntoVentaArticleDto article)
-        => $"/api/punto-venta/articulos/{Uri.EscapeDataString(article.IdArticulo)}/imagen";
+    private string GetProductImageUrl(PuntoVentaArticleDto article)
+        => GetProductImageUrl(article.IdArticulo);
 
-    private static string GetProductImageUrl(string idArticulo)
-        => $"/api/punto-venta/articulos/{Uri.EscapeDataString(idArticulo)}/imagen";
+    private string GetProductImageUrl(string idArticulo)
+    {
+        var cta = _settings.FtpCodigoCta.Trim();
+        if (string.IsNullOrWhiteSpace(cta) || string.IsNullOrWhiteSpace(idArticulo))
+            return string.Empty;
+        return $"https://alfanet.com.ar/ac/public/assets/images/{Uri.EscapeDataString(cta)}/{Uri.EscapeDataString(idArticulo.Trim())}.jpg";
+    }
 
     private string BuildReceiptPrintHtml(bool showReprint)
     {
