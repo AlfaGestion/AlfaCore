@@ -528,6 +528,23 @@
         {
             _clientForm.IdWeb = BuildHostWebSuggestion(_clientForm.IdWeb, _clientForm.RazonSocial);
 
+            if (!string.IsNullOrWhiteSpace(_clientForm.IdWeb))
+            {
+                var existingIdWebs = _items
+                    .Where(x => !string.Equals(x.IdCliente, _clientForm.IdCliente, StringComparison.OrdinalIgnoreCase))
+                    .Select(x => x.IdWeb)
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                if (existingIdWebs.Contains(_clientForm.IdWeb))
+                {
+                    var baseVal = _clientForm.IdWeb.Length > 8 ? _clientForm.IdWeb[..8] : _clientForm.IdWeb;
+                    var suffix = 2;
+                    string candidate;
+                    do { candidate = baseVal + suffix++; } while (existingIdWebs.Contains(candidate) && suffix <= 99);
+                    _clientForm.IdWeb = candidate;
+                }
+            }
+
             if (_editingClient)
                 await AdminSvc.UpdateClienteAsync(_clientForm);
             else
@@ -654,8 +671,7 @@
             return string.Empty;
 
         var normalized = source.Trim().Normalize(System.Text.NormalizationForm.FormD);
-        var builder = new System.Text.StringBuilder(normalized.Length);
-        var previousDash = false;
+        var builder = new System.Text.StringBuilder(10);
 
         foreach (var ch in normalized)
         {
@@ -664,18 +680,13 @@
 
             var lower = char.ToLowerInvariant(ch);
             if (char.IsLetterOrDigit(lower))
-            {
                 builder.Append(lower);
-                previousDash = false;
-            }
-            else if (!previousDash)
-            {
-                builder.Append('-');
-                previousDash = true;
-            }
+
+            if (builder.Length == 10)
+                break;
         }
 
-        return builder.ToString().Trim('-');
+        return builder.ToString();
     }
 
     private static string NormalizeInitialPassword(string? value)
