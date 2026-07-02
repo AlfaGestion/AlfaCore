@@ -1,4 +1,4 @@
-﻿@inherits LayoutComponentBase
+@inherits LayoutComponentBase
 @inject IJSRuntime JS
 @using System.Globalization
 @using AlfaCore.Models
@@ -46,39 +46,108 @@ else
 
     <aside class="shell__sidebar" aria-label="Menú principal">
         <div class="brand">
-            @if (CanShowLauncherAccess)
-            {
-                <a class="brand__logo-link" href="@GetLauncherUrl()" title="Volver al menú principal" aria-label="Volver al menú principal" @onclick="GoToLauncher">
-                    <img class="brand__logo" src="/logos/Logo.png" alt="Alfa Gestión" />
-                </a>
-            }
-            else
-            {
-                <span class="brand__logo-link brand__logo-link--static" aria-hidden="true">
-                    <img class="brand__logo" src="/logos/Logo.png" alt="Alfa Gestión" />
-                </span>
-            }
+            <div class="brand__top">
+                @if (CanShowLauncherAccess)
+                {
+                    <a class="brand__logo-link" href="@GetLauncherUrl()" title="Volver al menú principal" aria-label="Volver al menú principal" @onclick:preventDefault="true" @onclick="GoToLauncher">
+                        <img class="brand__logo" src="/logos/Logo.png" alt="Alfa Gestión" />
+                    </a>
+                }
+                else
+                {
+                    <span class="brand__logo-link brand__logo-link--static" aria-hidden="true">
+                        <img class="brand__logo" src="/logos/Logo.png" alt="Alfa Gestión" />
+                    </span>
+                }
+                <button type="button"
+                        class="sidebar-toggle no-print"
+                        title="@SidebarToggleTitle"
+                        aria-label="@SidebarToggleTitle"
+                        aria-expanded="@(!IsSidebarCollapsed)"
+                        @onclick="ToggleSidebarCollapsed"
+                        @onclick:stopPropagation="true">
+                    <span class="sidebar-toggle__icon sidebar-toggle__icon--expanded">
+                        <i class="bi bi-layout-sidebar"></i>
+                    </span>
+                    <span class="sidebar-toggle__icon sidebar-toggle__icon--collapsed">
+                        <i class="bi bi-layout-sidebar-inset"></i>
+                    </span>
+                </button>
+            </div>
             <div class="brand__content">
                 <p class="brand__eyebrow">Business Intelligence</p>
                 @if (CanShowLauncherAccess)
                 {
-                    <a class="brand__title" href="@GetLauncherUrl()" @onclick="GoToLauncher">Alfa Gestión</a>
+                    <a class="brand__title" href="@GetLauncherUrl()" @onclick:preventDefault="true" @onclick="GoToLauncher">Alfa Gestión</a>
                 }
                 else
                 {
                     <span class="brand__title">Alfa Gestión</span>
                 }
             </div>
-            <button type="button"
-                    class="sidebar-toggle no-print"
-                    title="@SidebarToggleTitle"
-                    aria-label="@SidebarToggleTitle"
-                    aria-expanded="@(!IsSidebarCollapsed)"
-                    @onclick="ToggleSidebarCollapsed"
-                    @onclick:stopPropagation="true">
-                <i class="bi @SidebarToggleIcon"></i>
-            </button>
         </div>
+
+        @if (!IsDirectMode)
+        {
+            <div class="menu__search" @onclick:stopPropagation="true">
+                <label class="menu__search-label" for="main-menu-search">Buscar opción</label>
+                <div class="menu__search-box">
+                    <span class="menu__search-icon"><i class="bi bi-search"></i></span>
+                    <input id="main-menu-search"
+                           class="menu__search-input"
+                           type="search"
+                           placeholder="Ventas, clientes, auditoría..."
+                           @bind="_menuSearchText"
+                           @bind:event="oninput"
+                           @onfocus="EnsureMenuSearchCatalogAsync" />
+                    @if (!string.IsNullOrWhiteSpace(_menuSearchText))
+                    {
+                        <button type="button"
+                                class="menu__search-clear"
+                                aria-label="Limpiar búsqueda"
+                                @onclick="ClearMenuSearch">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                    }
+                </div>
+
+                @if (_menuSearchLoading)
+                {
+                    <p class="menu__search-state">Preparando opciones del menú...</p>
+                }
+                else if (!string.IsNullOrWhiteSpace(_menuSearchError))
+                {
+                    <p class="menu__search-state menu__search-state--error">@_menuSearchError</p>
+                }
+                else if (!string.IsNullOrWhiteSpace(_menuSearchText))
+                {
+                    <div class="menu__search-results">
+                        @if (FilteredMenuSearchResults.Count == 0)
+                        {
+                            <p class="menu__search-state">No se encontraron opciones para "@_menuSearchText".</p>
+                        }
+                        else
+                        {
+                            @foreach (var item in FilteredMenuSearchResults)
+                            {
+                                <button type="button"
+                                        class="menu__search-result"
+                                        @onclick="() => OpenMenuSearchResultAsync(item)">
+                                    <span class="menu__search-result-icon">
+                                        <i class="bi @item.Icono"></i>
+                                    </span>
+                                    <span class="menu__search-result-body">
+                                        <span class="menu__search-result-title">@item.Nombre</span>
+                                        <span class="menu__search-result-meta">@item.Descripcion</span>
+                                    </span>
+                                    <span class="menu__search-result-kind">@(item.EsModulo ? "Módulo" : "Opción")</span>
+                                </button>
+                            }
+                        }
+                    </div>
+                }
+            </div>
+        }
 
         <div class="menu">
             @if (_currentModule == "consultas")
@@ -492,103 +561,15 @@ else
             {
                 <p class="menu__section">Aplicaciones</p>
                 <nav class="menu__nav">
-                    @if (ShowShellContext)
-                    {
-                        <a class="menu__link menu__link--module" href="/#favoritos">
-                            <span class="menu__icon"><i class="bi bi-star-fill"></i></span>
-                            <span>Favoritos</span>
-                        </a>
-                    }
-
-                    @if (_menuSearchLoading)
-                    {
-                        <div class="menu__link menu__link--disabled">
-                            <span class="menu__icon"><i class="bi bi-hourglass-split"></i></span>
-                            <span>Cargando módulos...</span>
-                        </div>
-                    }
-                    else if (_mainMenuModules.Count == 0)
-                    {
-                        <div class="menu__link menu__link--disabled">
-                            <span class="menu__icon"><i class="bi bi-grid-3x3-gap-fill"></i></span>
-                            <span>Sin módulos visibles</span>
-                        </div>
-                    }
-                    else
-                    {
-                        @foreach (var module in _mainMenuModules)
-                        {
-                            <a class="@GetMainMenuModuleClass(module)"
-                               href="@BuildModuleUrl(module.RutaWeb)"
-                               title="@module.Nombre"
-                               @onclick="(() => NavigateToModule(module.RutaWeb))">
-                                <span class="menu__icon"><i class="bi @(string.IsNullOrWhiteSpace(module.Icono) ? "bi-grid" : module.Icono)"></i></span>
-                                <span>@module.Nombre</span>
-                            </a>
-                        }
-                    }
+                    <a class="menu__link menu__link--module" href="@GetLauncherAnchorUrl("favoritos")" @onclick:preventDefault="true" @onclick='() => GoToLauncherAnchor("favoritos")'>
+                        <span class="menu__icon"><i class="bi bi-star-fill"></i></span>
+                        <span>Favoritos</span>
+                    </a>
+                    <a class="menu__link menu__link--module" href="@GetLauncherAnchorUrl("recientes")" @onclick:preventDefault="true" @onclick='() => GoToLauncherAnchor("recientes")'>
+                        <span class="menu__icon"><i class="bi bi-clock-history"></i></span>
+                        <span>Recientes</span>
+                    </a>
                 </nav>
-
-                <div class="menu__search" @onclick:stopPropagation="true">
-                    <label class="menu__search-label" for="main-menu-search">Buscar opción</label>
-                    <div class="menu__search-box" style="background: rgba(6, 17, 33, .78); border: 1px solid rgba(92, 201, 255, .18);">
-                        <span class="menu__search-icon"><i class="bi bi-search"></i></span>
-                        <input id="main-menu-search"
-                               class="menu__search-input"
-                               style="appearance: none; -webkit-appearance: none; background: transparent; color: #e2e8f0; border: 0; box-shadow: none;"
-                               type="search"
-                               placeholder="Ventas, clientes, auditoría..."
-                               @bind="_menuSearchText"
-                               @bind:event="oninput"
-                               @onfocus="EnsureMenuSearchCatalogAsync" />
-                        @if (!string.IsNullOrWhiteSpace(_menuSearchText))
-                        {
-                            <button type="button"
-                                    class="menu__search-clear"
-                                    style="background: transparent; color: rgba(196, 212, 237, .72);"
-                                    aria-label="Limpiar búsqueda"
-                                    @onclick="ClearMenuSearch">
-                                <i class="bi bi-x-lg"></i>
-                            </button>
-                        }
-                    </div>
-
-                    @if (_menuSearchLoading)
-                    {
-                        <p class="menu__search-state">Preparando opciones del menú...</p>
-                    }
-                    else if (!string.IsNullOrWhiteSpace(_menuSearchError))
-                    {
-                        <p class="menu__search-state menu__search-state--error">@_menuSearchError</p>
-                    }
-                    else if (!string.IsNullOrWhiteSpace(_menuSearchText))
-                    {
-                        <div class="menu__search-results">
-                            @if (FilteredMenuSearchResults.Count == 0)
-                            {
-                                <p class="menu__search-state">No se encontraron opciones para "@_menuSearchText".</p>
-                            }
-                            else
-                            {
-                                @foreach (var item in FilteredMenuSearchResults)
-                                {
-                                    <button type="button"
-                                            class="menu__search-result"
-                                            @onclick="() => OpenMenuSearchResultAsync(item)">
-                                        <span class="menu__search-result-icon">
-                                            <i class="bi @item.Icono"></i>
-                                        </span>
-                                        <span class="menu__search-result-body">
-                                            <span class="menu__search-result-title">@item.Nombre</span>
-                                            <span class="menu__search-result-meta">@item.Descripcion</span>
-                                        </span>
-                                        <span class="menu__search-result-kind">@(item.EsModulo ? "Módulo" : "Opción")</span>
-                                    </button>
-                                }
-                            }
-                        </div>
-                    }
-                </div>
             }
 
             @if (!IsDirectMode)
@@ -1168,9 +1149,8 @@ else
     private bool DefaultSidebarCollapsed => !ShowLauncherContext;
     private bool IsSidebarCollapsed => _sidebarCollapsedOverride ?? DefaultSidebarCollapsed;
     private string SidebarToggleTitle => IsSidebarCollapsed ? "Desplegar menú principal" : "Plegar menú principal";
-    private string SidebarToggleIcon => IsSidebarCollapsed ? "bi-layout-sidebar-inset" : "bi-layout-sidebar";
     private bool CanShowTasksPanel => !IsPosFullscreenRoute && !IsDirectMode && AppUserSession.IsAuthenticated;
-    private bool IsLauncherRoute => string.IsNullOrWhiteSpace(Nav.ToBaseRelativePath(Nav.Uri).Split('?')[0].Split('#')[0].Trim('/'));
+    private bool IsLauncherRoute => IsLauncherContextRoute(GetEffectiveCurrentPath());
     private bool IsDirectMode => !string.IsNullOrWhiteSpace(_directModuleKey);
     private bool IsPosFullscreenRoute => string.Equals(GetEffectiveCurrentPath(), "ventas/punto-venta", StringComparison.OrdinalIgnoreCase);
     private bool IsLoginRoute => string.Equals(GetNormalizedCurrentPath(), "login", StringComparison.OrdinalIgnoreCase);
@@ -1329,7 +1309,8 @@ else
     private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs args)
     {
         _mobileSidebarOpen = false;
-        _sidebarCollapsedOverride = null;
+        if (IsLauncherRoute)
+            _sidebarCollapsedOverride = null;
         UpdateCurrentModule();
         if (EnforceDirectMode())
             return;
@@ -1352,7 +1333,16 @@ else
     }
 
     private void GoToLauncher()
-        => Nav.NavigateTo(GetLauncherUrl(), replace: true);
+        => Nav.NavigateTo(GetLauncherUrl());
+
+    private string GetLauncherAnchorUrl(string anchor)
+        => $"{GetLauncherUrl()}#{anchor}";
+
+    private void GoToLauncherAnchor(string anchor)
+    {
+        _mobileSidebarOpen = false;
+        Nav.NavigateTo(GetLauncherAnchorUrl(anchor));
+    }
 
     private void ToggleSidebarCollapsed()
     {
@@ -1774,7 +1764,7 @@ else
 
     private async Task EnsureMenuSearchCatalogAsync()
     {
-        if (!ShowShellContext || _menuSearchLoaded || _menuSearchLoading)
+        if (IsDirectMode || _menuSearchLoaded || _menuSearchLoading)
             return;
 
         _menuSearchLoading = true;

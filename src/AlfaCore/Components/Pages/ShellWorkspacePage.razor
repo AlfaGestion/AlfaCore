@@ -33,7 +33,6 @@ else
         <section class="page-intro">
             <div>
                 <h2 class="page-intro__title">@(_workspace.Module?.Nombre ?? "Módulo")</h2>
-                <p class="page-intro__text">Seleccioná una aplicación disponible. Las rutas web actuales se mantienen; el shell solo organiza el acceso.</p>
             </div>
         </section>
 
@@ -51,7 +50,6 @@ else
                     <div class="panel-card__header">
                         <div>
                             <h3 class="panel-card__title">@workspaceSection.Nombre</h3>
-                            <p class="panel-card__subtitle">Opciones web disponibles para este tramo del árbol funcional.</p>
                         </div>
                     </div>
                     <div class="launcher__grid">
@@ -71,7 +69,6 @@ else
                                     <i class="bi @(string.IsNullOrWhiteSpace(item.Icono) ? "bi-box-arrow-up-right" : item.Icono)"></i>
                                 </div>
                                 <span class="app-card__name">@item.Nombre</span>
-                                <span class="app-card__desc">@ShellNavigationUiHelper.GetNodeDescription(item)</span>
                             </article>
                         }
                     </div>

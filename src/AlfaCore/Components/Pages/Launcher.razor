@@ -32,20 +32,12 @@ else if (!string.IsNullOrWhiteSpace(_error))
 else
 {
     <div class="page-grid">
-        <section class="page-intro">
-            <div>
-                <h2 class="page-intro__title">Aplicaciones</h2>
-                <p class="page-intro__text">Seleccioná un módulo del ERP para entrar al nuevo shell web y abrir las aplicaciones disponibles para tu usuario.</p>
-            </div>
-        </section>
-
         @if (_home.Favorites.Count > 0)
         {
             <section id="favoritos" class="panel-card">
                 <div class="panel-card__header">
                     <div>
                         <h3 class="panel-card__title">Favoritos</h3>
-                        <p class="panel-card__subtitle">Accesos frecuentes preparados para el usuario actual.</p>
                     </div>
                 </div>
                 <div class="launcher__grid">
@@ -65,7 +57,6 @@ else
                                 <i class="bi @(string.IsNullOrWhiteSpace(item.Icono) ? "bi-star-fill" : item.Icono)"></i>
                             </div>
                             <span class="app-card__name">@item.Nombre</span>
-                            <span class="app-card__desc">@ShellNavigationUiHelper.GetNodeDescription(item)</span>
                         </article>
                     }
                 </div>
@@ -78,7 +69,6 @@ else
                 <div class="panel-card__header">
                     <div>
                         <h3 class="panel-card__title">Recientes</h3>
-                        <p class="panel-card__subtitle">Últimas aplicaciones abiertas dentro del shell.</p>
                     </div>
                 </div>
                 <div class="launcher__grid launcher__grid--compact">
@@ -98,52 +88,21 @@ else
                                 <i class="bi @(string.IsNullOrWhiteSpace(item.Icono) ? "bi-clock-history" : item.Icono)"></i>
                             </div>
                             <span class="app-card__name">@item.Nombre</span>
-                            <span class="app-card__desc">@ShellNavigationUiHelper.GetNodeDescription(item)</span>
                         </article>
                     }
                 </div>
             </section>
         }
 
-        <section class="panel-card">
-            <div class="panel-card__header">
-                <div>
-                    <h3 class="panel-card__title">Módulos</h3>
-                    <p class="panel-card__subtitle">Árbol funcional histórico de Alfa Gestión filtrado por permisos y opciones web habilitadas.</p>
-                </div>
-            </div>
-            @if (_home.Modules.Count == 0)
-            {
+        @if (_home.Favorites.Count == 0 && _home.Recents.Count == 0)
+        {
+            <section class="panel-card">
                 <div class="shell-empty-state">
-                    <strong>No hay módulos web disponibles para esta base.</strong>
-                    <span>Revisá que `ALFACORE_MENU_WEB` exista, tenga jerarquía web cargada y que estén aplicados los updates del shell.</span>
+                    <strong>Sin accesos rápidos todavía.</strong>
+                    <span>Usá el buscador del menú lateral para abrir una opción y marcarla como favorita.</span>
                 </div>
-            }
-            else
-            {
-                <div class="launcher__grid">
-                    @foreach (var module in _home.Modules)
-                    {
-                        <article class="app-card app-card--button" role="button" tabindex="0" @onclick="() => OpenModule(module)" @onkeydown="args => HandleModuleCardKeyDown(args, module)">
-                            <button type="button"
-                                    class="@GetFavoriteButtonClass(module.Clave)"
-                                    style="@GetFavoriteButtonStyle(module.Clave)"
-                                    title="@(IsFavorite(module.Clave) ? "Quitar de favoritos" : "Agregar a favoritos")"
-                                    aria-label="@(IsFavorite(module.Clave) ? $"Quitar {module.Nombre} de favoritos" : $"Agregar {module.Nombre} a favoritos")"
-                                    @onclick="() => ToggleFavoriteAsync(module.Menu, module.Clave)"
-                                    @onclick:stopPropagation>
-                                <i class="bi @(IsFavorite(module.Clave) ? "bi-star-fill" : "bi-star")"></i>
-                            </button>
-                            <div class="app-card__icon @ShellNavigationUiHelper.GetModuleIconClass(module)">
-                                <i class="bi @(string.IsNullOrWhiteSpace(module.Icono) ? "bi-grid-3x3-gap-fill" : module.Icono)"></i>
-                            </div>
-                            <span class="app-card__name">@module.Nombre</span>
-                            <span class="app-card__desc">Abrí el workspace del módulo y accedé a las aplicaciones web disponibles.</span>
-                        </article>
-                    }
-                </div>
-            }
-        </section>
+            </section>
+        }
     </div>
 }
 
@@ -340,21 +299,10 @@ else
         Nav.NavigateTo(RouteContext.BuildRoute(item.RutaWeb));
     }
 
-    private async Task OpenModule(ShellModuleDto module)
-    {
-        Nav.NavigateTo(RouteContext.BuildRoute(module.RutaWeb));
-    }
-
     private async Task HandleNodeCardKeyDownAsync(KeyboardEventArgs args, ShellMenuNodeDto item)
     {
         if (IsActivationKey(args.Key))
             await OpenNodeAsync(item);
-    }
-
-    private void HandleModuleCardKeyDown(KeyboardEventArgs args, ShellModuleDto module)
-    {
-        if (IsActivationKey(args.Key))
-            _ = OpenModule(module);
     }
 
     private bool IsFavorite(string clave)
