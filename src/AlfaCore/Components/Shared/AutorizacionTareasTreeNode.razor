@@ -28,14 +28,6 @@
         </label>
 
         <div class="auth-tree-node__badges">
-            @if (Item.EsCompartida)
-            {
-                <span class="auth-badge auth-badge--shared" title="Desktop + Web">D+W</span>
-            }
-            else if (Item.EsDesktop)
-            {
-                <span class="auth-badge auth-badge--desktop" title="Solo Desktop">Dsk</span>
-            }
             @if (Item.Parcial)
             {
                 <span class="auth-badge auth-badge--partial" title="Autorización parcial">Parcial</span>
@@ -89,8 +81,6 @@
         var parts = new List<string> { Item.Clave };
         if (!string.IsNullOrWhiteSpace(Item.Descripcion))
             parts.Add(Item.Descripcion);
-        if (!string.IsNullOrWhiteSpace(Item.Proceso))
-            parts.Add($"Desktop: {Item.Proceso}");
         if (!string.IsNullOrWhiteSpace(Item.RutaWeb))
             parts.Add($"Web: {Item.RutaWeb}");
         return string.Join("  |  ", parts);

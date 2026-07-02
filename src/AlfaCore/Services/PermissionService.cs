@@ -27,15 +27,15 @@ public sealed class PermissionService(
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(ct);
 
-            if (!await TableExistsAsync(cn, "TA_TAREAS", ct))
+            if (!await TableExistsAsync(cn, "ALFACORE_TAREAS_WEB", ct))
                 return null;
 
             var sql = """
-                SELECT DISTINCT UPPER(LTRIM(RTRIM(TAREA)))
-                FROM dbo.TA_TAREAS
+                SELECT DISTINCT UPPER(LTRIM(RTRIM(Clave)))
+                FROM dbo.ALFACORE_TAREAS_WEB
                 WHERE UPPER(LTRIM(RTRIM(USUARIO))) = @Usuario
                   AND UPPER(LTRIM(RTRIM(SISTEMA))) = @Sistema
-                  AND ISNULL(TAREA, '') <> '';
+                  AND ISNULL(Clave, '') <> '';
                 """;
 
             var rows = await cn.QueryAsync<string>(new CommandDefinition(sql, new
