@@ -503,7 +503,8 @@ select {
     right: 0;
     z-index: 1180;
     display: flex;
-    justify-content: flex-end;
+    align-items: center;
+    justify-content: space-between;
     margin: 0;
     padding: .45rem .7rem;
     border: 0;
@@ -528,9 +529,11 @@ select {
 .contactos-page > .smart-search-card {
     position: fixed;
     top: .45rem;
-    left: calc(var(--module-actionbar-left, 0px) + .7rem);
+    left: calc(var(--module-actionbar-left, 0px) + 5.75rem);
     right: 22rem;
     z-index: 1181;
+    display: flex;
+    justify-content: center;
     margin: 0;
     padding: 0;
     border: 0;
@@ -575,7 +578,8 @@ select {
     right: 0;
     z-index: 1180;
     display: flex;
-    justify-content: flex-end;
+    align-items: center;
+    justify-content: space-between;
     margin: 0;
     padding: .45rem .7rem;
     border: 0;
@@ -591,13 +595,29 @@ select {
     display: none;
 }
 
+.sticky-commandbar__history {
+    display: inline-flex;
+    align-items: center;
+    gap: .25rem;
+}
+
+.sticky-commandbar__history .btn {
+    width: 2.1rem;
+    min-width: 2.1rem;
+    height: 2.1rem;
+    padding: 0;
+    justify-content: center;
+}
+
 .usuarios-page > .usuarios-search-card,
 .tecnicos-page > .tecnicos-search-card {
     position: fixed;
     top: .45rem;
-    left: calc(var(--module-actionbar-left, 0px) + .7rem);
+    left: calc(var(--module-actionbar-left, 0px) + 5.75rem);
     right: 22rem;
     z-index: 1181;
+    display: flex;
+    justify-content: center;
     margin: 0;
     padding: 0;
     border: 0;
@@ -4057,12 +4077,6 @@ html[data-theme="light"] .chart-type-switch__btn--active {
 .app-card__name {
     font-size: 1rem;
     font-weight: 700;
-}
-
-.app-card__desc {
-    font-size: 0.82rem;
-    color: var(--color-muted);
-    line-height: 1.4;
 }
 
 /* ── Sidebar back button ─────────────────────────────────────── */
@@ -16434,6 +16448,10 @@ html[data-theme="light"] .interfaces-bulkbar {
     left: var(--tickets-actionbar-left, 0px);
     right: 0;
     z-index: 1200;
+    display: grid;
+    grid-template-columns: auto auto minmax(320px, 560px) auto;
+    align-items: center;
+    gap: .65rem;
     margin: 0;
     padding: .45rem .7rem;
     border: 0;
@@ -16443,6 +16461,66 @@ html[data-theme="light"] .interfaces-bulkbar {
     box-shadow: 0 8px 22px rgba(2, 6, 23, .24);
     backdrop-filter: blur(10px);
     box-sizing: border-box;
+}
+
+.tickets-commandbar__history {
+    display: inline-flex;
+    align-items: center;
+    gap: .25rem;
+}
+
+.tickets-commandbar__history .btn {
+    width: 2.1rem;
+    min-width: 2.1rem;
+    height: 2.1rem;
+    padding: 0;
+    justify-content: center;
+}
+
+.tickets-page--odoo .tickets-commandbar.module-actionbar .tickets-view-switch {
+    display: inline-flex;
+    flex-wrap: nowrap;
+    gap: .35rem;
+}
+
+.tickets-page--odoo .tickets-commandbar.module-actionbar .tickets-smart-search {
+    justify-self: center;
+    width: min(560px, 100%);
+    min-width: 0;
+    max-width: 560px;
+}
+
+.tickets-page--odoo .tickets-commandbar.module-actionbar .tickets-commandbar__actions {
+    justify-self: end;
+    display: inline-flex;
+    flex-wrap: nowrap;
+    gap: .45rem;
+}
+
+.tickets-commandbar__editor-context {
+    min-height: 2.5rem;
+    display: grid;
+    align-content: center;
+    gap: .05rem;
+    padding: .35rem .8rem;
+    border: 1px solid rgba(56, 189, 248, .16);
+    border-radius: 8px;
+    background: rgba(10, 25, 45, .72);
+}
+
+.tickets-commandbar__editor-context span {
+    color: rgba(196, 212, 237, .7);
+    font-size: .72rem;
+    line-height: 1.1;
+}
+
+.tickets-commandbar__editor-context strong {
+    overflow: hidden;
+    color: #f8fafc;
+    font-size: .9rem;
+    line-height: 1.15;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .tickets-page--odoo .tickets-commandbar.module-actionbar .smart-search__hint,
@@ -16472,7 +16550,24 @@ html[data-theme="light"] .interfaces-bulkbar {
     }
 
     .tickets-page--odoo:has(.tickets-commandbar.module-actionbar) {
-        padding-top: 8.25rem;
+        padding-top: 11.25rem;
+    }
+
+    .tickets-page--odoo .tickets-commandbar.module-actionbar {
+        grid-template-columns: 1fr;
+        align-items: stretch;
+    }
+
+    .tickets-commandbar__history,
+    .tickets-page--odoo .tickets-commandbar.module-actionbar .tickets-view-switch,
+    .tickets-page--odoo .tickets-commandbar.module-actionbar .tickets-commandbar__actions {
+        justify-content: stretch;
+    }
+
+    .tickets-commandbar__history .btn,
+    .tickets-page--odoo .tickets-commandbar.module-actionbar .tickets-view-switch .btn,
+    .tickets-page--odoo .tickets-commandbar.module-actionbar .tickets-commandbar__actions .btn {
+        flex: 1 1 auto;
     }
 }
 
@@ -25539,4 +25634,205 @@ body:has(.cuentas-modal .usuarios-view-settings) {
     gap: 0.6rem;
     padding-top: 0.3rem;
     border-top: 1px solid var(--color-border);
+}
+
+/* Shell simplificado 2026-07 */
+.shell .brand {
+    gap: .65rem;
+    padding: 1.35rem 1.15rem .95rem;
+}
+
+.shell .brand__top {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: relative;
+}
+
+.shell .brand__content {
+    text-align: left;
+}
+
+.shell .brand__logo-link,
+.shell .brand__logo {
+    border-radius: .95rem;
+    transition: opacity .18s ease, transform .18s ease;
+}
+
+.shell .brand__logo-link {
+    cursor: pointer;
+}
+
+.shell .brand__logo-link--static {
+    cursor: default;
+    pointer-events: none;
+}
+
+.shell .sidebar-toggle {
+    width: 2.35rem;
+    height: 2.35rem;
+    border-radius: .8rem;
+    border-color: rgba(92, 201, 255, .2);
+    background: rgba(8, 145, 178, .14);
+    color: #67e8f9;
+    overflow: hidden;
+    position: relative;
+    z-index: 3;
+    transition: background .18s ease, color .18s ease, border-color .18s ease, opacity .18s ease, transform .18s ease;
+}
+
+.shell .sidebar-toggle * {
+    pointer-events: none;
+}
+
+.shell .sidebar-toggle:hover {
+    background: rgba(14, 165, 233, .22);
+    color: #e0f7ff;
+    border-color: rgba(103, 232, 249, .36);
+}
+
+.shell .sidebar-toggle__icon {
+    grid-area: 1 / 1;
+    display: grid;
+    place-items: center;
+    transition: opacity .18s ease, transform .2s ease;
+}
+
+.shell .sidebar-toggle__icon--collapsed {
+    opacity: 0;
+    transform: translateX(.35rem) scale(.88);
+}
+
+.shell--collapsed .sidebar-toggle__icon--expanded {
+    opacity: 0;
+    transform: translateX(-.35rem) scale(.88);
+}
+
+.shell--collapsed .sidebar-toggle__icon--collapsed {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+}
+
+.shell--collapsed .brand__top {
+    justify-content: center;
+    width: 3.1rem;
+}
+
+.shell--collapsed .brand__logo-link {
+    opacity: 1;
+    transform: scale(1);
+    pointer-events: none;
+}
+
+.shell--collapsed:not(.shell--toggle-hover-blocked) .brand:hover .brand__logo-link {
+    opacity: 0;
+    transform: scale(.88);
+}
+
+.shell--collapsed .sidebar-toggle {
+    position: absolute;
+    inset: 0;
+    width: 3.1rem;
+    height: 3.1rem;
+    opacity: 0;
+    transform: scale(.9);
+    pointer-events: none;
+    background: rgba(14, 165, 233, .22);
+    color: #e0f7ff;
+    border-color: rgba(103, 232, 249, .36);
+    border-radius: .95rem;
+}
+
+.shell--collapsed:not(.shell--toggle-hover-blocked) .brand:hover .sidebar-toggle {
+    opacity: 1;
+    transform: scale(1);
+    pointer-events: auto;
+}
+
+.shell .menu {
+    min-height: calc(100dvh - 11.2rem);
+}
+
+.shell .menu__search {
+    margin-top: 0;
+    padding: 0 1rem .95rem;
+}
+
+.shell--collapsed .menu__search {
+    display: none;
+}
+
+.shell .menu__nav--fixed {
+    margin-bottom: .85rem;
+    padding-bottom: .85rem;
+    border-bottom: 1px solid rgba(148, 163, 184, .1);
+}
+
+.shell .menu__link--home .menu__icon {
+    background: rgba(53, 194, 255, .12);
+    color: #8be9ff;
+}
+
+.shell .menu__link.active {
+    background: linear-gradient(135deg, rgba(53, 194, 255, .22), rgba(45, 212, 191, .12));
+    border-color: rgba(103, 232, 249, .36);
+    color: #f5fbff;
+    box-shadow: inset 0 0 0 1px rgba(125, 211, 252, .08);
+}
+
+.shell .menu__link.active .menu__icon {
+    background: rgba(53, 194, 255, .16);
+    color: #8be9ff;
+}
+
+.shell .menu__link--search-shortcut {
+    display: none;
+}
+
+.shell .menu__link--search-shortcut .menu__icon {
+    background: rgba(15, 23, 42, .76);
+    border: 1px solid rgba(148, 163, 184, .12);
+    color: rgba(148, 163, 184, .92);
+}
+
+.shell--collapsed .menu__link--search-shortcut {
+    display: flex;
+}
+
+.shell--collapsed .menu__link--search-shortcut:hover {
+    background: rgba(148, 163, 184, .08);
+}
+
+.shell--collapsed .menu__link--search-shortcut:hover .menu__icon {
+    background: rgba(30, 41, 59, .92);
+    color: #cbd5e1;
+}
+
+.shell--collapsed .menu__nav--fixed {
+    margin-bottom: .75rem;
+    padding-bottom: .75rem;
+}
+
+.shell .launcher__grid {
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: .85rem;
+}
+
+.shell .launcher__grid--compact {
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+}
+
+.shell .app-card {
+    min-height: 126px;
+    padding: .95rem;
+    border-radius: 18px;
+}
+
+.shell .app-card__icon {
+    width: 3.65rem;
+    height: 3.65rem;
+    margin: .9rem 0 1.2rem;
+    border-radius: 1.05rem;
+    font-size: 1.35rem;
 }

@@ -1,4 +1,4 @@
-﻿@using AlfaCore.Models
+@using AlfaCore.Models
 @inherits LayoutComponentBase
 @implements IDisposable
 @inject IJSRuntime JS
@@ -23,7 +23,7 @@
             </div>
 
             <nav class="main-shell__nav">
-                <a href="/" class="main-shell__back">Aplicaciones</a>
+                <a href="@RouteContext.BuildRoute("/")" class="main-shell__back">Inicio</a>
                 @foreach (var module in _context.Modules)
                 {
                     <a href="@RouteContext.BuildRoute(module.RutaWeb)" class="@GetModuleLinkClass(module)">
@@ -140,7 +140,7 @@
         if (_context.Module is not null)
             return _context.Module.Nombre;
 
-        return "Aplicaciones";
+        return "Inicio";
     }
 
     private async Task ToggleSidebarAsync()

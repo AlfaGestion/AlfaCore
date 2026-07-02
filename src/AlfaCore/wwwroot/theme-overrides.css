@@ -1391,10 +1391,6 @@ html[data-theme="light"] .app-card__icon {
     color: #0284c7;
 }
 
-html[data-theme="light"] .app-card__desc {
-    color: #64748b;
-}
-
 html[data-theme="light"] .app-card__favorite {
     background: rgba(255, 255, 255, 0.96);
     border-color: rgba(148, 163, 184, 0.22);
