@@ -4,6 +4,48 @@ Formato: `[versión] — fecha — descripción`
 
 ---
 
+## [1.7.0] — 2026-07-02
+
+### Menú Web — independencia total de tablas legacy y reestructuración
+
+**Independencia de TA_MENU / TA_TAREAS**
+- `MenuService` y `AutorizacionTareasService` ya no leen de `TA_MENU` ni `TA_TAREAS`. Usan exclusivamente `ALFACORE_MENU_WEB` y `ALFACORE_TAREAS_WEB`.
+- Eliminada la lógica condicional de fallback (`hasLegacyMenu`, `legacyJoin`, `parentExpr`, `nameExpr`, etc.) que generaba SQL dinámico en tiempo de ejecución.
+- La columna `PadreClave` de `ALFACORE_MENU_WEB` reemplaza al JOIN con `TA_MENU` para resolver la jerarquía de módulos.
+- Script `2026-07-01-001__seguridad_menu_web_y_tareas_web.sql`: agrega `PadreClave`, `NombreWeb` y `DescripcionWeb` a `ALFACORE_MENU_WEB` y migra los datos desde `TA_MENU`.
+
+**Reestructuración del árbol de menú**
+- Nuevo módulo raíz **Tableros** (`DTABLEROS`, orden 5): agrupa los cinco dashboards operativos que antes estaban dispersos bajo sus módulos de origen.
+  - D5001 (Compras), D6000 (Ventas), D7510 (Caja y Bancos), D8079 (Stock), D9502 (Contabilidad).
+  - D6000 reclasificado: deja de ser un workspace y pasa a ser "Dashboard de Ventas" (`/ventas`).
+  - D6054 (Punto de venta) pasa directamente bajo el módulo Ventas (`D60`).
+  - D75 (Caja y Bancos) y D80 (Stock) deshabilitados al quedar sin subitems.
+- **Logística** (`D010180`) promovido a módulo raíz (orden 92, antes de Gestión Contable).
+  - Corregido bug: `D010181` (Carga de viaje) tenía `PadreClave=D0101`; corregido a `D010180`.
+- **CRM** (`D010185`) promovido a módulo raíz (orden 97, después de Gestión Contable).
+  - Conversaciones y Tickets pasan directamente bajo CRM (se elimina el agrupador intermedio `D010185WEB`).
+- Script `2026-07-02-001__menu_reestructuracion_tableros_crm_logistica.sql`: idempotente, preserva las claves existentes para no afectar autorizaciones vigentes.
+
+**Módulo Logística — estructura TA_TARIFA**
+- Script `2026-06-30-001__carga_viajes_ta_tarifa_estructura.sql`: crea `TA_TARIFA` si no existe, o agrega las columnas faltantes de forma segura (sin DROP).
+  - Nuevas columnas: `PorcentajeAdic0`–`PorcentajeAdic4`, `ACTIVO`, `FECHAHORA_ALTA`, `FECHAHORA_MODIFICACION`, `AdicionalFijo1–3 Descripcion/Importe`, `USUARIOMODIFICACION`.
+- Script `2026-07-01-002__carga_viajes_ta_tarifa_usuario_modificacion.sql`: complemento para bases donde la tabla ya existía sin esas columnas.
+
+### Correcciones
+
+**NotificacionesPushService — error 8537 en `/api/notificaciones-push/settings`**
+- La query en `UserCanUseConversacionesAsync` tenía `AND ( OR UPPER(...) LIKE ...)` — sintaxis SQL inválida que causaba una excepción en cualquier llamada al endpoint de configuración de notificaciones push.
+- Corregido: la primera condición de cada grupo `AND (...)` ya no incluye el `OR` espurio.
+
+**Ayuda.razor — encoding mojibake**
+- Ocho strings con caracteres españoles almacenados como secuencias Latin-1 (`Ã¡`, `Ã©`, `Ã³`, `Ã±`, etc.) corregidos a UTF-8 literal.
+- Afectaba los títulos y subtítulos de los tópicos "Ayuda" y "Diseñador de Consultas".
+
+**AGENTS.md — regla de encoding UTF-8**
+- Agregada sección con la regla de que todos los archivos fuente deben estar en UTF-8 sin BOM y usar caracteres Unicode correctos en literales de texto. Incluye tabla de sustitución mojibake → correcto.
+
+---
+
 ## [1.6.2] — 2026-06-16
 
 ### Carga de Viajes: autocomplete compacto
