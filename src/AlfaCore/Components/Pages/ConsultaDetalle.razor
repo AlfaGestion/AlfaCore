@@ -1,15 +1,15 @@
-﻿@page "/consultas/{Id:int}"
+@page "/consultas/{Id:int}"
 @page "/{idweb}/{idbase:int}/consultas/{Id:int}"
 @inject AlfaCore.Services.IConsultasService ConsultasSvc
 @inject IJSRuntime JS
 @using AlfaCore.Models
 
-<PageTitle>@(_consulta?.Grupo ?? "Consulta") | Alfa GestiÃ³n</PageTitle>
+<PageTitle>@(_consulta?.Grupo ?? "Consulta") | Alfa Gestión</PageTitle>
 
 @if (_cargando)
 {
     <div class="consultas-loading">
-        <i class="bi bi-hourglass-split"></i> Cargando consultaâ€¦
+        <i class="bi bi-hourglass-split"></i> Cargando consulta…
     </div>
 }
 else if (_consulta is null)
@@ -42,7 +42,7 @@ else
             <nav class="breadcrumb">
                 @foreach (var (nodo, i) in _ruta.SkipLast(1).Select((n, i) => (n, i)))
                 {
-                    @if (i > 0) { <span class="breadcrumb__sep">â€º</span> }
+                    @if (i > 0) { <span class="breadcrumb__sep">›</span> }
                     <span class="breadcrumb__item">@nodo.Nombre</span>
                 }
             </nav>
@@ -60,7 +60,7 @@ else
         @if (_consulta.TieneParametros)
         {
             <div class="consulta-params">
-                <p class="consulta-params__title">ParÃ¡metros</p>
+                <p class="consulta-params__title">Parámetros</p>
                 <div class="consulta-params__grid">
                     @foreach (var param in _consulta.Parametros)
                     {
@@ -82,7 +82,7 @@ else
                                         <button class="btn btn--ghost btn--xs" type="button"
                                                 @onclick="() => SetFecha(orden, DateTime.Today.AddMonths(-3))">-3 meses</button>
                                         <button class="btn btn--ghost btn--xs" type="button"
-                                                @onclick="() => SetFecha(orden, InicioAnio())">AÃ±o actual</button>
+                                                @onclick="() => SetFecha(orden, InicioAnio())">Año actual</button>
                                     </div>
                                     <input class="consulta-params__input"
                                            type="date"
@@ -115,7 +115,7 @@ else
         {
             <div class="consulta-stale-warn">
                 <i class="bi bi-arrow-repeat"></i>
-                Los filtros cambiaron. HacÃ© clic en <strong>Ejecutar</strong> para actualizar el resultado.
+                Los filtros cambiaron. Hacé clic en <strong>Ejecutar</strong> para actualizar el resultado.
             </div>
         }
 
@@ -124,7 +124,7 @@ else
                 @if (_ejecutando)
                 {
                     <i class="bi bi-hourglass-split"></i>
-                    <span>Ejecutandoâ€¦</span>
+                    <span>Ejecutando…</span>
                 }
                 else
                 {
@@ -143,7 +143,7 @@ else
                 </button>
                 <button class="btn btn--ghost @(_mostrarGrafico ? "btn--active" : "")" @onclick="ToggleGrafico">
                     <i class="bi bi-bar-chart-line"></i>
-                    @(_mostrarGrafico ? "Ocultar grÃ¡fico" : "Ver grÃ¡fico")
+                    @(_mostrarGrafico ? "Ocultar gráfico" : "Ver gráfico")
                 </button>
                 <button class="btn btn--ghost @(_mostrarAgrupador ? "btn--active" : "")" @onclick="ToggleAgrupador">
                     <i class="bi bi-table"></i>
@@ -166,7 +166,7 @@ else
                             </button>
                             <button class="result-chart-type__btn @(_tipoGrafico == "Lineas" ? "active" : "")"
                                     @onclick='() => _tipoGrafico = "Lineas"'>
-                                <i class="bi bi-graph-up"></i> LÃ­neas
+                                <i class="bi bi-graph-up"></i> Líneas
                             </button>
                         </div>
                     </div>
@@ -186,7 +186,7 @@ else
                         <div class="result-chart-ycols">
                             @if (_columnasNumericas.Count == 0)
                             {
-                                <span style="font-size:.82rem; color:var(--color-text-muted)">No se detectaron columnas numÃ©ricas.</span>
+                                <span style="font-size:.82rem; color:var(--color-text-muted)">No se detectaron columnas numéricas.</span>
                             }
                             @foreach (var (nombre, idx) in _columnasNumericas)
                             {
@@ -217,7 +217,7 @@ else
                         <label class="result-group-by__label">Agrupar por</label>
                         <select class="editor-field__input editor-field__input--sm"
                                 @bind="_colAgrupador" @bind:after="OnAgrupadorChanged">
-                            <option value="-1">â€” elegir columna â€”</option>
+                            <option value="-1">— elegir columna —</option>
                             @foreach (var (col, i) in _resultado.Columnas.Select((c, i) => (c, i)))
                             {
                                 <option value="@i">@col</option>
@@ -247,7 +247,7 @@ else
                                @bind="_filtroResultado"
                                @bind:event="oninput"
                                @onkeydown="OnFiltroBuscarKeyDown"
-                               placeholder="Buscar en el resultadoâ€¦ (Enter para filtrar, Esc para limpiar)" />
+                               placeholder="Buscar en el resultado… (Enter para filtrar, Esc para limpiar)" />
                         <button type="button" class="btn btn--primary btn--sm" @onclick="AplicarFiltroResultado">
                             <i class="bi bi-search"></i> Aplicar
                         </button>
@@ -336,7 +336,7 @@ else
                         </div>
                     }
                     <p class="result-group-info">
-                        @_tablaAgrupada.Count grupo(s) Â·
+                        @_tablaAgrupada.Count grupo(s) ·
                         @(string.IsNullOrWhiteSpace(_filtroAplicado)
                             ? _resultado.TotalFilas.ToString("N0")
                             : _filasFiltradas.Count.ToString("N0")) filas procesadas
@@ -345,12 +345,12 @@ else
                     {
                         <div class="result-pagination">
                             <div class="result-pagination__info">
-                                Mostrando @(_paginaAgrupada * _filasPorPaginaAgrupada + 1)â€“@(Math.Min((_paginaAgrupada + 1) * _filasPorPaginaAgrupada, _tablaAgrupada.Count))
+                                Mostrando @(_paginaAgrupada * _filasPorPaginaAgrupada + 1)–@(Math.Min((_paginaAgrupada + 1) * _filasPorPaginaAgrupada, _tablaAgrupada.Count))
                                 de @_tablaAgrupada.Count grupos
                             </div>
                             <div class="result-pagination__controls">
-                                <button class="result-pagination__btn" @onclick="() => _paginaAgrupada = 0" disabled="@(_paginaAgrupada == 0)" title="Primera">Â«</button>
-                                <button class="result-pagination__btn" @onclick="() => _paginaAgrupada--" disabled="@(_paginaAgrupada == 0)" title="Anterior">â€¹</button>
+                                <button class="result-pagination__btn" @onclick="() => _paginaAgrupada = 0" disabled="@(_paginaAgrupada == 0)" title="Primera">«</button>
+                                <button class="result-pagination__btn" @onclick="() => _paginaAgrupada--" disabled="@(_paginaAgrupada == 0)" title="Anterior">‹</button>
                                 @{
                                     int desdeAgr = Math.Max(0, _paginaAgrupada - 2);
                                     int hastaAgr = Math.Min(TotalPaginasAgrupada - 1, _paginaAgrupada + 2);
@@ -361,14 +361,14 @@ else
                                     <button class="result-pagination__btn @(pCopy == _paginaAgrupada ? "result-pagination__btn--active" : "")"
                                             @onclick="() => _paginaAgrupada = pCopy">@(pCopy + 1)</button>
                                 }
-                                <button class="result-pagination__btn" @onclick="() => _paginaAgrupada++" disabled="@(_paginaAgrupada >= TotalPaginasAgrupada - 1)" title="Siguiente">â€º</button>
-                                <button class="result-pagination__btn" @onclick="() => _paginaAgrupada = TotalPaginasAgrupada - 1" disabled="@(_paginaAgrupada >= TotalPaginasAgrupada - 1)" title="Ãšltima">Â»</button>
+                                <button class="result-pagination__btn" @onclick="() => _paginaAgrupada++" disabled="@(_paginaAgrupada >= TotalPaginasAgrupada - 1)" title="Siguiente">›</button>
+                                <button class="result-pagination__btn" @onclick="() => _paginaAgrupada = TotalPaginasAgrupada - 1" disabled="@(_paginaAgrupada >= TotalPaginasAgrupada - 1)" title="Última">»</button>
                             </div>
                             <select class="result-pagination__size" @onchange="e => { _filasPorPaginaAgrupada = int.Parse(e.Value!.ToString()!); _paginaAgrupada = 0; }">
-                                <option value="25" selected="@(_filasPorPaginaAgrupada == 25)">25 / pÃ¡g.</option>
-                                <option value="50" selected="@(_filasPorPaginaAgrupada == 50)">50 / pÃ¡g.</option>
-                                <option value="100" selected="@(_filasPorPaginaAgrupada == 100)">100 / pÃ¡g.</option>
-                                <option value="200" selected="@(_filasPorPaginaAgrupada == 200)">200 / pÃ¡g.</option>
+                                <option value="25" selected="@(_filasPorPaginaAgrupada == 25)">25 / pág.</option>
+                                <option value="50" selected="@(_filasPorPaginaAgrupada == 50)">50 / pág.</option>
+                                <option value="100" selected="@(_filasPorPaginaAgrupada == 100)">100 / pág.</option>
+                                <option value="200" selected="@(_filasPorPaginaAgrupada == 200)">200 / pág.</option>
                             </select>
                         </div>
                     }
@@ -409,7 +409,7 @@ else
             {
                 <div class="consulta-result__empty">
                     <i class="bi bi-inbox"></i>
-                    La consulta se ejecutÃ³ correctamente pero no devolviÃ³ datos con los parÃ¡metros actuales.
+                    La consulta se ejecutó correctamente pero no devolvió datos con los parámetros actuales.
                 </div>
             }
             else
@@ -431,7 +431,7 @@ else
                         {
                             <div class="consulta-result__warn">
                                 <i class="bi bi-exclamation-triangle"></i>
-                                Se muestran las primeras 500 filas. UsÃ¡ Excel para ver el resultado completo.
+                                Se muestran las primeras 500 filas. Usá Excel para ver el resultado completo.
                             </div>
                         }
                         <div class="result-search">
@@ -440,7 +440,7 @@ else
                                    @bind="_filtroResultado"
                                    @bind:event="oninput"
                                    @onkeydown="OnFiltroBuscarKeyDown"
-                                   placeholder="Buscar en el resultadoâ€¦ (Enter para filtrar, Esc para limpiar)" />
+                                   placeholder="Buscar en el resultado… (Enter para filtrar, Esc para limpiar)" />
                             <button type="button" class="btn btn--primary btn--sm" @onclick="AplicarFiltroResultado">
                                 <i class="bi bi-search"></i> Aplicar
                             </button>
@@ -531,7 +531,7 @@ else
         _pagina = 0;
     }
 
-    // â”€â”€ Agrupador â”€â”€
+    // ── Agrupador ──
     private bool _mostrarAgrupador;
     private bool _agrupadorInicializado;
     private int _colAgrupador = -1;
@@ -826,7 +826,7 @@ else
     private static string OpLabel(string op) => op switch
     {
         "SUM" => "Suma", "COUNT" => "Conteo", "AVG" => "Promedio",
-        "MIN" => "MÃ­n", "MAX" => "MÃ¡x", _ => op
+        "MIN" => "Mín", "MAX" => "Máx", _ => op
     };
 
     private static Dictionary<string, string> ParseCamposTotaliza(string? valor)
@@ -857,7 +857,7 @@ else
             yield return new TotalGrupoResultado(_columnasAgrupadas[i], _totalesAgrupados[i]);
     }
 
-    // â”€â”€ GrÃ¡fico â”€â”€
+    // ── Gráfico ──
     private bool _mostrarGrafico;
     private bool _graficoInicializado;
     private string _tipoGrafico = "Barras";
@@ -885,13 +885,13 @@ else
             .Select(t => (t.c, t.i))
             .ToList();
 
-        // Eje X: primera columna NO numÃ©rica, o la 0
+        // Eje X: primera columna NO numérica, o la 0
         var noNumerica = _resultado.Columnas
             .Select((c, i) => (c, i))
             .FirstOrDefault(t => !EsColumnaNumerica(t.i));
         _colEtiqueta = noNumerica.i;
 
-        // Eje Y: desde CamposTotaliza si estÃ¡ definido, si no las primeras 2 numÃ©ricas
+        // Eje Y: desde CamposTotaliza si está definido, si no las primeras 2 numéricas
         _colsValores = [];
         if (!string.IsNullOrWhiteSpace(_consulta?.CamposTotaliza))
         {
@@ -1031,7 +1031,7 @@ else
         };
         if (!string.IsNullOrWhiteSpace(_filtroAplicado))
             parts.Add($"{_filasFiltradas.Count:N0} filtradas");
-        return string.Join(" Â· ", parts);
+        return string.Join(" · ", parts);
     }
 
     private async Task ImprimirAsync() =>
@@ -1046,7 +1046,7 @@ else
 
     private sealed record TotalGrupoResultado(string Label, string Valor);
 
-    // â”€â”€ Quick-range helpers â”€â”€
+    // ── Quick-range helpers ──
     private void SetFecha(int orden, DateTime fecha)
     {
         _valores[orden] = fecha.ToString("yyyy-MM-dd");

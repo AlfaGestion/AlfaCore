@@ -1,4 +1,4 @@
-﻿@page "/ayuda"
+@page "/ayuda"
 @page "/{idweb}/{idbase:int}/ayuda"
 @using Markdig
 @using System.Reflection
@@ -15,7 +15,7 @@
         </div>
         <div class="help-toc-toggle">
             <button class="btn btn--ghost" @onclick="() => _tocVisible = !_tocVisible">
-                <i class="bi bi-list-ul"></i> @(_tocVisible ? "Ocultar Ã­ndice" : "Mostrar Ã­ndice")
+                <i class="bi bi-list-ul"></i> @(_tocVisible ? "Ocultar índice" : "Mostrar índice")
             </button>
         </div>
     </div>
@@ -33,7 +33,7 @@
                 <input id="help-search-box"
                        class="help-search__input"
                        type="search"
-                       placeholder="Ej: artÃ­culos, ticket promedio, filtros..."
+                       placeholder="Ej: artículos, ticket promedio, filtros..."
                        @bind="_search"
                        @bind:event="oninput"
                        @onkeydown="HandleSearchKeyDownAsync" />
@@ -52,13 +52,13 @@
         {
             <aside class="help-sidebar panel-card">
                 <div class="help-sidebar__header">
-                    <p class="help-toc__title">Ãndice de contenidos</p>
+                    <p class="help-toc__title">Índice de contenidos</p>
                     <span class="help-sidebar__count">@VisibleToc.Count()</span>
                 </div>
 
                 @if (!string.IsNullOrWhiteSpace(_search) && !VisibleToc.Any())
                 {
-                    <p class="help-sidebar__empty">No hay secciones que coincidan con la bÃºsqueda.</p>
+                    <p class="help-sidebar__empty">No hay secciones que coincidan con la búsqueda.</p>
                 }
                 else
                 {
@@ -89,8 +89,8 @@
                     <section class="help-results panel-card">
                         <div class="panel-card__header">
                             <div>
-                                <h3 class="panel-card__title">Resultados de bÃºsqueda</h3>
-                                <p class="panel-card__subtitle">Saltos directos a las secciones mÃ¡s relevantes del manual</p>
+                                <h3 class="panel-card__title">Resultados de búsqueda</h3>
+                                <p class="panel-card__subtitle">Saltos directos a las secciones más relevantes del manual</p>
                             </div>
                         </div>
 
@@ -98,7 +98,7 @@
                             @foreach (var result in SearchResults)
                             {
                                 <button class="help-result-card" @onclick="() => ScrollTo(result.Anchor)">
-                                    <span class="help-result-card__tag">@(result.Level == 2 ? "SecciÃ³n" : "SubsecciÃ³n")</span>
+                                    <span class="help-result-card__tag">@(result.Level == 2 ? "Sección" : "Subsección")</span>
                                     <strong class="help-result-card__title">@result.Text</strong>
                                     <span class="help-result-card__snippet">@result.Snippet</span>
                                 </button>
@@ -111,7 +111,7 @@
                     <section class="help-results help-results--empty panel-card">
                         <div>
                             <h3 class="panel-card__title">Sin resultados</h3>
-                            <p class="panel-card__subtitle">ProbÃ¡ con otro tÃ©rmino como "proveedores", "filtros", "ticket" o "actividad".</p>
+                            <p class="panel-card__subtitle">Probá con otro término como "proveedores", "filtros", "ticket" o "actividad".</p>
                         </div>
                     </section>
                 }
@@ -361,7 +361,7 @@
     {
         if (string.IsNullOrWhiteSpace(body))
         {
-            return "AbrÃ­ esta secciÃ³n para ver el detalle completo.";
+            return "Abrí esta sección para ver el detalle completo.";
         }
 
         var term = query.Trim();

@@ -1,13 +1,13 @@
-﻿@page "/costos/historial"
+@page "/costos/historial"
 @page "/{idweb}/{idbase:int}/costos/historial"
 @inject AlfaCore.Services.ICostosService CostosSvc
 
-<PageTitle>Historial de Costos | Alfa GestiÃ³n</PageTitle>
+<PageTitle>Historial de Costos | Alfa Gestión</PageTitle>
 
 @if (_loading)
 {
     <div class="consultas-loading">
-        <i class="bi bi-hourglass-split"></i> Cargando historialâ€¦
+        <i class="bi bi-hourglass-split"></i> Cargando historial…
     </div>
 }
 else
@@ -29,8 +29,8 @@ else
                             <th>Usuario</th>
                             <th>Proveedor</th>
                             <th>Fila</th>
-                            <th>ArtÃ­culo</th>
-                            <th>DescripciÃ³n</th>
+                            <th>Artículo</th>
+                            <th>Descripción</th>
                             <th>Anterior</th>
                             <th>Nuevo</th>
                             <th>Match</th>
@@ -46,8 +46,8 @@ else
                                 <td>@item.RowNumber</td>
                                 <td>@item.ArticleId</td>
                                 <td>@item.ImportedDescription</td>
-                                <td>@(item.PreviousCost?.ToString("N2") ?? "â€”")</td>
-                                <td>@(item.NewCost?.ToString("N2") ?? "â€”")</td>
+                                <td>@(item.PreviousCost?.ToString("N2") ?? "—")</td>
+                                <td>@(item.NewCost?.ToString("N2") ?? "—")</td>
                                 <td>@item.MatchType</td>
                             </tr>
                         }

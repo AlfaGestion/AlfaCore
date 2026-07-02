@@ -1,16 +1,16 @@
-﻿@page "/consultas"
+@page "/consultas"
 @page "/{idweb}/{idbase:int}/consultas"
 @inject AlfaCore.Services.IConsultasService ConsultasSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.ISessionService SessionSvc
 @implements IDisposable
 
-<PageTitle>Consultas | Alfa GestiÃ³n</PageTitle>
+<PageTitle>Consultas | Alfa Gestión</PageTitle>
 
 <div class="page-intro">
     <div>
         <h2 class="page-intro__title">Consultas</h2>
-        <p class="page-intro__text">EjecutÃ¡ y exportÃ¡ las consultas guardadas del sistema.</p>
+        <p class="page-intro__text">Ejecutá y exportá las consultas guardadas del sistema.</p>
     </div>
     <a class="btn btn--primary" href="/consultas/nueva">
         <i class="bi bi-plus-lg"></i> Nueva consulta
@@ -20,7 +20,7 @@
 @if (_cargando)
 {
     <div class="consultas-loading">
-        <i class="bi bi-hourglass-split"></i> Cargando consultasâ€¦
+        <i class="bi bi-hourglass-split"></i> Cargando consultas…
     </div>
 }
 else if (_error is not null)
@@ -30,7 +30,7 @@ else if (_error is not null)
         <div>@_error.Message</div>
         @if (_error.HasCode)
         {
-            <div>CÃ³digo: @_error.Code</div>
+            <div>Código: @_error.Code</div>
         }
         @if (_error.HasSuggestion)
         {
@@ -49,14 +49,14 @@ else
 {
     <div class="ctree-layout">
 
-        <!-- Panel izquierdo: Ã¡rbol jerÃ¡rquico -->
+        <!-- Panel izquierdo: árbol jerárquico -->
         <div class="ctree-panel">
 
             <div class="ctree-search">
                 <i class="bi bi-search ctree-search__icon"></i>
                 <input class="ctree-search__input"
                        type="search"
-                       placeholder="Buscar por nombre o cÃ³digoâ€¦"
+                       placeholder="Buscar por nombre o código…"
                        @bind="_busqueda"
                        @bind:event="oninput"
                        @onkeydown="HandleSearchKeyDownAsync" />
@@ -90,7 +90,7 @@ else
                                 <span class="ctree__node-label">@nodo.Nombre</span>
                                 @if (nodo.TieneParametros)
                                 {
-                                    <i class="bi bi-sliders2 ctree__item-badge" title="Requiere parÃ¡metros"></i>
+                                    <i class="bi bi-sliders2 ctree__item-badge" title="Requiere parámetros"></i>
                                 }
                             </a>
                         }
@@ -103,7 +103,7 @@ else
         <div class="ctree-content">
             <div class="ctree-welcome">
                 <i class="bi bi-table ctree-welcome__icon"></i>
-                <p class="ctree-welcome__text">SeleccionÃ¡ una consulta del Ã¡rbol para abrirla.</p>
+                <p class="ctree-welcome__text">Seleccioná una consulta del árbol para abrirla.</p>
                 <a class="btn btn--ghost" href="/consultas/nueva">
                     <i class="bi bi-plus-lg"></i> Crear nueva consulta
                 </a>

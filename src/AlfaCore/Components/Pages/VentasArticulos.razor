@@ -1,19 +1,19 @@
-﻿@page "/ventas/articulos"
+@page "/ventas/articulos"
 @page "/{idweb}/{idbase:int}/ventas/articulos"
 @inject AlfaCore.Services.IGestionDashboardService GestionSvc
 @inject AlfaCore.Services.GestionFilterStateService FilterState
 
-<PageTitle>ArtÃ­culos | Ventas</PageTitle>
+<PageTitle>Artículos | Ventas</PageTitle>
 
 <section class="page-grid">
     <div class="page-intro">
         <div>
-            <h2 class="page-intro__title">ArtÃ­culos mÃ¡s vendidos</h2>
-            <p class="page-intro__text">ArtÃ­culos lÃ­deres por importe y cantidad, con lectura rÃ¡pida de actividad reciente.</p>
+            <h2 class="page-intro__title">Artículos más vendidos</h2>
+            <p class="page-intro__text">Artículos líderes por importe y cantidad, con lectura rápida de actividad reciente.</p>
         </div>
     </div>
 
-    <VentasFiltersBar Model="_filters" Options="_options" OnApply="LoadAsync" Titulo="Filtros de artÃ­culos" Subtitulo="AplicÃ¡ filtros comerciales para analizar artÃ­culos vendidos." />
+    <VentasFiltersBar Model="_filters" Options="_options" OnApply="LoadAsync" Titulo="Filtros de artículos" Subtitulo="Aplicá filtros comerciales para analizar artículos vendidos." />
 
     @if (!string.IsNullOrWhiteSpace(_error))
     {
@@ -21,33 +21,33 @@
     }
     else if (_page is null)
     {
-        <div class="loading">Cargando artÃ­culos...</div>
+        <div class="loading">Cargando artículos...</div>
     }
     else
     {
         <div class="kpi-grid">
             <KpiCard Titulo="Total vendido" Valor="@Moneda(_page.TotalVendido)" Icono="$" />
-            <KpiCard Titulo="ArtÃ­culos activos" Valor="@_page.ArticulosActivos.ToString("N0")" Icono="A" />
+            <KpiCard Titulo="Artículos activos" Valor="@_page.ArticulosActivos.ToString("N0")" Icono="A" />
             <KpiCard Titulo="Cantidad vendida" Valor="@_page.CantidadVendida.ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("es-AR"))" Icono="Q" />
         </div>
 
         <div class="three-grid">
             <section class="panel-card">
-                <HorizontalBarChart Data="_page.TopPorTotal" Titulo="Top por total" Subtitulo="ArtÃ­culos con mayor facturaciÃ³n" />
+                <HorizontalBarChart Data="_page.TopPorTotal" Titulo="Top por total" Subtitulo="Artículos con mayor facturación" />
             </section>
             <section class="panel-card">
-                <HorizontalBarChart Data="_page.TopPorCantidad" Titulo="Top por cantidad" Subtitulo="ArtÃ­culos con mayor volumen" Formato="numero" />
+                <HorizontalBarChart Data="_page.TopPorCantidad" Titulo="Top por cantidad" Subtitulo="Artículos con mayor volumen" Formato="numero" />
             </section>
         </div>
 
-        <DataTable Titulo="Listado de artÃ­culos" Subtitulo="Impacto econÃ³mico y volumen vendido">
+        <DataTable Titulo="Listado de artículos" Subtitulo="Impacto económico y volumen vendido">
             <Header>
                 <tr>
-                    <th>ArtÃ­culo</th>
+                    <th>Artículo</th>
                     <th style="text-align:right;">Cantidad</th>
                     <th style="text-align:right;">Total</th>
                     <th style="text-align:right;">Comprobantes</th>
-                    <th>Ãšltima venta</th>
+                    <th>Última venta</th>
                 </tr>
             </Header>
             <Rows>

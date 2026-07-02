@@ -1,4 +1,4 @@
-﻿@page "/calendario"
+@page "/calendario"
 @page "/{idweb}/{idbase:int}/calendario"
 @using System.Globalization
 @inject AlfaCore.Services.ICalendarioService CalendarioSvc
@@ -43,9 +43,9 @@
         <section class="calendario-search-panel" @onclick:stopPropagation>
             <div class="field">
                 <label>Buscar evento</label>
-                <input value="@_request.Search" @oninput="OnSearchInput" placeholder="Evento, tÃ©cnico o descripciÃ³n..." />
+                <input value="@_request.Search" @oninput="OnSearchInput" placeholder="Evento, técnico o descripción..." />
             </div>
-            <button type="button" class="btn btn--ghost btn--icon" title="Limpiar bÃºsqueda" @onclick="ClearSearchAsync">
+            <button type="button" class="btn btn--ghost btn--icon" title="Limpiar búsqueda" @onclick="ClearSearchAsync">
                 <i class="bi bi-x-lg"></i>
             </button>
         </section>
@@ -204,7 +204,7 @@
 
         <section class="calendario-side-section">
             <div class="calendario-side-head">
-                <span>PrÃ³ximamente</span>
+                <span>Próximamente</span>
                 <button type="button" class="calendario-count-button" @onclick="ToggleUpcomingPopover">@UpcomingEvents.Count</button>
             </div>
             @if (UpcomingEvents.Count == 0)
@@ -219,7 +219,7 @@
                         <span class="calendario-dot" style="background:@evento.Color"></span>
                         <span>
                             <strong>@evento.Titulo</strong>
-                            <small>@evento.Tipo Â· @evento.FechaInicio.ToString("dd/MM", Culture)</small>
+                            <small>@evento.Tipo · @evento.FechaInicio.ToString("dd/MM", Culture)</small>
                         </span>
                     </button>
                 }
@@ -248,7 +248,7 @@
 
 @if (_showUpcomingPopover)
 {
-    <button type="button" class="calendario-upcoming-backdrop" @onclick="ToggleUpcomingPopover" aria-label="Cerrar prÃ³ximos eventos"></button>
+    <button type="button" class="calendario-upcoming-backdrop" @onclick="ToggleUpcomingPopover" aria-label="Cerrar próximos eventos"></button>
     <section class="calendario-upcoming-popover" @onclick:stopPropagation>
         <header>
             <strong>Lo que se viene</strong>
@@ -262,7 +262,7 @@
                 <span class="calendario-dot" style="background:@item.Color"></span>
                 <span>
                     <strong>@item.Titulo</strong>
-                    <small>@item.Tipo Â· @FormatUpcomingDate(item)</small>
+                    <small>@item.Tipo · @FormatUpcomingDate(item)</small>
                 </span>
             </button>
         }
@@ -296,8 +296,8 @@
                     <option value="@CalendarioEventoTipos.Vacaciones">Vacaciones</option>
                     <option value="@CalendarioEventoTipos.Ausencia">Ausencia</option>
                     <option value="@CalendarioEventoTipos.Feriado">Feriado</option>
-                    <option value="@CalendarioEventoTipos.Reunion">ReuniÃ³n</option>
-                    <option value="@CalendarioEventoTipos.Capacitacion">CapacitaciÃ³n</option>
+                    <option value="@CalendarioEventoTipos.Reunion">Reunión</option>
+                    <option value="@CalendarioEventoTipos.Capacitacion">Capacitación</option>
                     <option value="@CalendarioEventoTipos.Otro">Otro</option>
                 </select>
             </div>
@@ -1045,8 +1045,8 @@
             CalendarioEventoTipos.Vacaciones => "Vacaciones",
             CalendarioEventoTipos.Ausencia => "Ausencia",
             CalendarioEventoTipos.Feriado => "Feriado",
-            CalendarioEventoTipos.Reunion => "ReuniÃ³n",
-            CalendarioEventoTipos.Capacitacion => "CapacitaciÃ³n",
+            CalendarioEventoTipos.Reunion => "Reunión",
+            CalendarioEventoTipos.Capacitacion => "Capacitación",
             _ => "Otro"
         };
 
@@ -1057,8 +1057,8 @@
             CalendarioEventoTipos.Vacaciones => string.IsNullOrWhiteSpace(tecnicoNombre) ? "Vacaciones" : $"Vacaciones {tecnicoNombre}",
             CalendarioEventoTipos.Ausencia => string.IsNullOrWhiteSpace(tecnicoNombre) ? "Ausencia" : $"Ausencia {tecnicoNombre}",
             CalendarioEventoTipos.Feriado => "Feriado",
-            CalendarioEventoTipos.Reunion => "ReuniÃ³n",
-            CalendarioEventoTipos.Capacitacion => "CapacitaciÃ³n",
+            CalendarioEventoTipos.Reunion => "Reunión",
+            CalendarioEventoTipos.Capacitacion => "Capacitación",
             _ => "Evento"
         };
 
@@ -1068,8 +1068,8 @@
            || string.Equals(titulo, "Vacaciones", StringComparison.OrdinalIgnoreCase)
            || string.Equals(titulo, "Ausencia", StringComparison.OrdinalIgnoreCase)
            || string.Equals(titulo, "Feriado", StringComparison.OrdinalIgnoreCase)
-           || string.Equals(titulo, "ReuniÃ³n", StringComparison.OrdinalIgnoreCase)
-           || string.Equals(titulo, "CapacitaciÃ³n", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(titulo, "Reunión", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(titulo, "Capacitación", StringComparison.OrdinalIgnoreCase)
            || string.Equals(titulo, "Evento", StringComparison.OrdinalIgnoreCase);
 
     private static string FormatUpcomingDate(UpcomingCalendarItem item)
@@ -1079,14 +1079,14 @@
 
     private static readonly UpcomingCalendarItem[] OfficialArgentinaHolidays =
     [
-        new("Feriado", "Paso a la Inmortalidad del Gral. MartÃ­n Miguel de GÃ¼emes", new DateTime(2026, 6, 15), new DateTime(2026, 6, 15), "#f59e0b", null),
+        new("Feriado", "Paso a la Inmortalidad del Gral. Martín Miguel de Güemes", new DateTime(2026, 6, 15), new DateTime(2026, 6, 15), "#f59e0b", null),
         new("Feriado", "Paso a la Inmortalidad del Gral. Manuel Belgrano", new DateTime(2026, 6, 20), new DateTime(2026, 6, 20), "#f59e0b", null),
-        new("Feriado", "DÃ­a de la Independencia", new DateTime(2026, 7, 9), new DateTime(2026, 7, 9), "#f59e0b", null),
-        new("Feriado", "Paso a la Inmortalidad del Gral. JosÃ© de San MartÃ­n", new DateTime(2026, 8, 17), new DateTime(2026, 8, 17), "#f59e0b", null),
-        new("Feriado", "DÃ­a del Respeto a la Diversidad Cultural", new DateTime(2026, 10, 12), new DateTime(2026, 10, 12), "#f59e0b", null),
-        new("Feriado turÃ­stico", "Feriado con fines turÃ­sticos", new DateTime(2026, 11, 20), new DateTime(2026, 11, 20), "#fbbf24", null),
-        new("Feriado", "DÃ­a de la SoberanÃ­a Nacional", new DateTime(2026, 11, 23), new DateTime(2026, 11, 23), "#f59e0b", null),
-        new("Feriado", "DÃ­a de la Inmaculada ConcepciÃ³n de MarÃ­a", new DateTime(2026, 12, 8), new DateTime(2026, 12, 8), "#f59e0b", null),
+        new("Feriado", "Día de la Independencia", new DateTime(2026, 7, 9), new DateTime(2026, 7, 9), "#f59e0b", null),
+        new("Feriado", "Paso a la Inmortalidad del Gral. José de San Martín", new DateTime(2026, 8, 17), new DateTime(2026, 8, 17), "#f59e0b", null),
+        new("Feriado", "Día del Respeto a la Diversidad Cultural", new DateTime(2026, 10, 12), new DateTime(2026, 10, 12), "#f59e0b", null),
+        new("Feriado turístico", "Feriado con fines turísticos", new DateTime(2026, 11, 20), new DateTime(2026, 11, 20), "#fbbf24", null),
+        new("Feriado", "Día de la Soberanía Nacional", new DateTime(2026, 11, 23), new DateTime(2026, 11, 23), "#f59e0b", null),
+        new("Feriado", "Día de la Inmaculada Concepción de María", new DateTime(2026, 12, 8), new DateTime(2026, 12, 8), "#f59e0b", null),
         new("Feriado", "Navidad", new DateTime(2026, 12, 25), new DateTime(2026, 12, 25), "#f59e0b", null)
     ];
 

@@ -1,4 +1,4 @@
-﻿@page "/contactos"
+@page "/contactos"
 @page "/{idweb}/{idbase:int}/contactos"
 @using AlfaCore.Models
 @using AlfaCore.Services
@@ -13,15 +13,15 @@
 @inject IJSRuntime Js
 @implements IDisposable
 
-<PageTitle>Contactos | Alfa GestiÃ³n</PageTitle>
+<PageTitle>Contactos | Alfa Gestión</PageTitle>
 
 <div class="page-grid contactos-page" @onclick="HandlePageClickAsync">
-    <section class="page-intro">
-        <div>
+    <section class="module-actionbar contactos-commandbar">
+        <div class="module-actionbar__title contactos-commandbar__title">
             <h2 class="page-intro__title">Contactos</h2>
-            <p class="page-intro__text">AdministrÃ¡ la agenda general del sistema con datos de contacto, observaciones y baja lÃ³gica.</p>
+            <p class="page-intro__text">Administrá la agenda general del sistema con datos de contacto, observaciones y baja lógica.</p>
         </div>
-        <div class="actions">
+        <div class="actions module-actionbar__actions">
             <button type="button" class="btn btn--primary" @onclick="BeginNew">
                 <i class="bi bi-plus-circle"></i> Nuevo contacto
             </button>
@@ -44,7 +44,7 @@
                     }
                     @if (_feedback.HasCode)
                     {
-                        <small>CÃ³digo: @_feedback.Code</small>
+                        <small>Código: @_feedback.Code</small>
                     }
                 </div>
             </div>
@@ -56,7 +56,7 @@
             <div class="smart-search__bar">
                 <i class="bi bi-search"></i>
                 <input type="search"
-                       placeholder="Buscar por nombre, contacto, telÃ©fono, email, cargo o localidad..."
+                       placeholder="Buscar por nombre, contacto, teléfono, email, cargo o localidad..."
                        value="@_filters.Texto"
                        @onfocus="OpenContactSearchPanel"
                        @oninput="OnContactSearchInput"
@@ -81,7 +81,8 @@
 
             @if (_showSearchPanel)
             {
-                <div class="smart-search__panel" @onkeydown="HandleContactApplyKeyDownAsync">
+                <button type="button" class="module-actionbar__search-backdrop" aria-label="Cerrar filtros" @onclick="CloseSearchPanel"></button>
+                <div class="smart-search__panel" @onclick:stopPropagation @onkeydown="HandleContactApplyKeyDownAsync">
                     <div class="smart-search__column">
                         <h4><i class="bi bi-funnel-fill"></i> Filtros</h4>
                         <button type="button" class='@GetSmartOptionClass(_activoFiltro == "1")' @onclick='() => SetContactStatusFilterAsync("1")'>Personas activas</button>
@@ -89,7 +90,7 @@
                         <button type="button" class="@GetSmartOptionClass(_filters.TieneEmail == true)" @onclick='() => ToggleContactBoolFilterAsync("email")'>Con email</button>
                         <button type="button" class="@GetSmartOptionClass(_filters.TieneEmail == false)" @onclick='() => ToggleContactBoolFilterAsync("sin-email")'>Sin email</button>
                         <button type="button" class="@GetSmartOptionClass(_filters.TieneCelular == true)" @onclick='() => ToggleContactBoolFilterAsync("celular")'>Con celular</button>
-                        <button type="button" class="@GetSmartOptionClass(_filters.TieneWhatsApp == true)" @onclick='() => ToggleContactBoolFilterAsync("whatsapp")'>Con conversaciÃ³n WhatsApp</button>
+                        <button type="button" class="@GetSmartOptionClass(_filters.TieneWhatsApp == true)" @onclick='() => ToggleContactBoolFilterAsync("whatsapp")'>Con conversación WhatsApp</button>
                     </div>
                     <div class="smart-search__column">
                         <h4><i class="bi bi-stack"></i> Agrupar por</h4>
@@ -110,7 +111,7 @@
                         <h4><i class="bi bi-star-fill"></i> Favoritos</h4>
                         <button type="button" @onclick='() => ApplyContactFavoriteAsync("contactables")'>Contactables</button>
                         <button type="button" @onclick='() => ApplyContactFavoriteAsync("para-soporte")'>Para soporte</button>
-                        <button type="button" @onclick="SaveContactFavorite">Guardar bÃºsqueda actual</button>
+                        <button type="button" @onclick="SaveContactFavorite">Guardar búsqueda actual</button>
                         @foreach (var favorite in _contactFavorites)
                         {
                             <button type="button" @onclick="() => ApplySavedContactFavoriteAsync(favorite)">@favorite.Label</button>
@@ -129,7 +130,7 @@
                         <select @bind="_contactRuleDraft.Campo">
                             <option value="nombre">Nombre</option>
                             <option value="email">Email</option>
-                            <option value="telefono">TelÃ©fono</option>
+                            <option value="telefono">Teléfono</option>
                             <option value="celular">Celular</option>
                             <option value="localidad">Localidad</option>
                             <option value="provincia">Provincia</option>
@@ -139,8 +140,8 @@
                             <option value="contains">contiene</option>
                             <option value="equals">es igual a</option>
                             <option value="starts">empieza con</option>
-                            <option value="empty">estÃ¡ vacÃ­o</option>
-                            <option value="not-empty">no estÃ¡ vacÃ­o</option>
+                            <option value="empty">está vacío</option>
+                            <option value="not-empty">no está vacío</option>
                         </select>
                         <input type="text" placeholder="Valor" @bind="_contactRuleDraft.Valor" disabled="@IsValueOptionalOperator(_contactRuleDraft.Operador)" />
                         <button type="button" class="btn btn--primary btn--sm" @onclick="AddContactRuleAsync">Agregar regla</button>
@@ -155,8 +156,8 @@
         <section class="panel-card">
             <div class="panel-card__header">
                 <div>
-                    <h3 class="panel-card__title">ConfiguraciÃ³n de vista</h3>
-                    <p class="panel-card__subtitle">ElegÃ­ columnas visibles, su orden y agrupaciÃ³n para la grilla de contactos.</p>
+                    <h3 class="panel-card__title">Configuración de vista</h3>
+                    <p class="panel-card__subtitle">Elegí columnas visibles, su orden y agrupación para la grilla de contactos.</p>
                 </div>
             </div>
 
@@ -207,7 +208,7 @@
             <div class="panel-card__header">
                 <div>
                     <h3 class="panel-card__title">@(_isNewMode ? "Nuevo contacto" : $"Editar {_form.NombreApellido}")</h3>
-                    <p class="panel-card__subtitle">@(_isNewMode ? "CompletÃ¡ los datos principales del contacto." : $"CÃ³digo interno: {_selectedId} Â· Estado: {(_selectedActivo ? "Activo" : "Inactivo")}")</p>
+                    <p class="panel-card__subtitle">@(_isNewMode ? "Completá los datos principales del contacto." : $"Código interno: {_selectedId} · Estado: {(_selectedActivo ? "Activo" : "Inactivo")}")</p>
                 </div>
                 <div class="actions">
                     <button type="button" class="btn btn--primary" @onclick="GuardarAsync" disabled="@_saving">
@@ -290,7 +291,7 @@
                             }
                         </div>
                         <div class="field field--md">
-                            <label>CÃ³digo postal</label>
+                            <label>Código postal</label>
                             <input type="text" class="@GetFieldInputClass("codigo-postal")" maxlength="20" @bind="_form.CodigoPostal" disabled="@_saving" />
                             @if (HasFieldError("codigo-postal"))
                             {
@@ -320,7 +321,7 @@
                             }
                         </div>
                         <div class="field field--md">
-                            <label>TelÃ©fono</label>
+                            <label>Teléfono</label>
                             <input type="text" class="@GetFieldInputClass("telefono")" maxlength="100" @bind="_form.Telefono" disabled="@_saving" />
                             @if (HasFieldError("telefono"))
                             {
@@ -352,7 +353,7 @@
                             }
                         </div>
                         <div class="field field--md">
-                            <label>PÃ¡gina web</label>
+                            <label>Página web</label>
                             <input type="text" class="@GetFieldInputClass("website")" maxlength="100" @bind="_form.Website" disabled="@_saving" />
                             @if (HasFieldError("website"))
                             {
@@ -376,11 +377,11 @@
                         </label>
                         <label class="checkbox">
                             <input type="checkbox" @bind="_form.MailOrdenCompra" disabled="@_saving" />
-                            <span>Ã“rdenes de compra</span>
+                            <span>Órdenes de compra</span>
                         </label>
                         <label class="checkbox">
                             <input type="checkbox" @bind="_form.MailOrdenTrabajo" disabled="@_saving" />
-                            <span>Ã“rdenes de trabajo</span>
+                            <span>Órdenes de trabajo</span>
                         </label>
                     </div>
                 </div>
@@ -461,13 +462,13 @@
             <div class="panel-card__header">
                 <div>
                     <h3 class="panel-card__title">Contactos</h3>
-                    <p class="panel-card__subtitle">@_pagedTotal registro(s) Â· PÃ¡gina @_pageNumber de @_totalPages Â· podÃ©s abrir la ficha con el botÃ³n editar o con doble clic.</p>
+                    <p class="panel-card__subtitle">@_pagedTotal registro(s) · Página @_pageNumber de @_totalPages · podés abrir la ficha con el botón editar o con doble clic.</p>
                 </div>
                 <div class="actions">
                     <button type="button" class="btn btn--ghost" @onclick="AbrirConfiguracionVista">
                         <i class="bi bi-sliders"></i> Configurar vista
                     </button>
-                    <span class="panel-card__subtitle">AgrupaciÃ³n: @GetGroupingLabel(_viewSettings.AgruparPor)</span>
+                    <span class="panel-card__subtitle">Agrupación: @GetGroupingLabel(_viewSettings.AgruparPor)</span>
                 </div>
             </div>
 
@@ -515,7 +516,7 @@
                                     <th class="@GetColumnCssClass(col.Key)">@col.Label</th>
                                 }
                                 <th class="interfaces-table__actions">Acciones</th>
-                                <th class="contactos-table__actions-head">ConversaciÃ³n</th>
+                                <th class="contactos-table__actions-head">Conversación</th>
                             </tr>
                         </thead>
                         @foreach (var group in groups)
@@ -548,22 +549,22 @@
                                                         <strong>@item.NombreApellido</strong>
                                                         break;
                                                     case ContactosViewColumnKeys.Localidad:
-                                                        @(string.IsNullOrWhiteSpace(item.Localidad) ? "â€”" : item.Localidad)
+                                                        @(string.IsNullOrWhiteSpace(item.Localidad) ? "—" : item.Localidad)
                                                         break;
                                                     case ContactosViewColumnKeys.Provincia:
                                                         @(string.IsNullOrWhiteSpace(item.ProvinciaDescripcion) ? item.ProvinciaCodigo : item.ProvinciaDescripcion)
                                                         break;
                                                     case ContactosViewColumnKeys.Telefono:
-                                                        @(string.IsNullOrWhiteSpace(item.Telefono) ? "â€”" : item.Telefono)
+                                                        @(string.IsNullOrWhiteSpace(item.Telefono) ? "—" : item.Telefono)
                                                         break;
                                                     case ContactosViewColumnKeys.Celular:
-                                                        @(string.IsNullOrWhiteSpace(item.Celular) ? "â€”" : item.Celular)
+                                                        @(string.IsNullOrWhiteSpace(item.Celular) ? "—" : item.Celular)
                                                         break;
                                                     case ContactosViewColumnKeys.Email:
-                                                        @(string.IsNullOrWhiteSpace(item.Email) ? "â€”" : item.Email)
+                                                        @(string.IsNullOrWhiteSpace(item.Email) ? "—" : item.Email)
                                                         break;
                                                     case ContactosViewColumnKeys.Cargo:
-                                                        @(string.IsNullOrWhiteSpace(item.Cargo) ? "â€”" : item.Cargo)
+                                                        @(string.IsNullOrWhiteSpace(item.Cargo) ? "—" : item.Cargo)
                                                         break;
                                                 }
                                             </td>
@@ -595,19 +596,19 @@
                 <div class="result-pagination">
                     <span class="result-pagination__info">@_pagedTotal registro(s)</span>
                     <div class="result-pagination__controls">
-                        <button class="result-pagination__btn" title="PÃ¡gina anterior"
+                        <button class="result-pagination__btn" title="Página anterior"
                                 @onclick="() => CambiarPaginaAsync(_pageNumber - 1)"
                                 disabled="@(!_hasPrev || _loadingList)">
                             <i class="bi bi-chevron-left"></i>
                         </button>
                         <span class="result-pagination__btn result-pagination__btn--active">@_pageNumber / @_totalPages</span>
-                        <button class="result-pagination__btn" title="PÃ¡gina siguiente"
+                        <button class="result-pagination__btn" title="Página siguiente"
                                 @onclick="() => CambiarPaginaAsync(_pageNumber + 1)"
                                 disabled="@(!_hasNext || _loadingList)">
                             <i class="bi bi-chevron-right"></i>
                         </button>
                     </div>
-                    <select class="result-pagination__size" title="Registros por pÃ¡gina"
+                    <select class="result-pagination__size" title="Registros por página"
                             value="@_filters.PageSize"
                             @onchange="OnPageSizeChangedAsync"
                             disabled="@_loadingList">
@@ -710,7 +711,7 @@
         <section class="cuentas-modal cuentas-modal--compact" role="dialog" aria-modal="true" aria-labelledby="contactos-merge-confirm-title" @onclick:stopPropagation="true">
             <header class="cuentas-modal__header">
                 <div>
-                    <span class="cuentas-modal__eyebrow">ConfirmaciÃ³n</span>
+                    <span class="cuentas-modal__eyebrow">Confirmación</span>
                     <h3 id="contactos-merge-confirm-title">Unificar contactos</h3>
                 </div>
                 <button type="button" class="cuentas-modal__close" @onclick="CloseMergeConfirm" disabled="@_mergingContact" aria-label="Cerrar">
@@ -721,13 +722,13 @@
                 <div class="context-card">
                     <span class="context-card__label">Contacto duplicado</span>
                     <strong>@_mergeConfirmCandidate.NombreApellido</strong>
-                    <span class="context-card__muted">Se unificarÃ¡ dentro de @_form.NombreApellido. Se conservarÃ¡n los datos y relaciones del contacto principal.</span>
+                    <span class="context-card__muted">Se unificará dentro de @_form.NombreApellido. Se conservarán los datos y relaciones del contacto principal.</span>
                 </div>
             </div>
             <footer class="cuentas-modal__actions">
                 <button type="button" class="btn btn--primary" @onclick="ConfirmMergeAsync" disabled="@_mergingContact">
                     <i class="bi bi-intersect"></i>
-                    @(_mergingContact ? "Unificando..." : "Confirmar unificaciÃ³n")
+                    @(_mergingContact ? "Unificando..." : "Confirmar unificación")
                 </button>
                 <button type="button" class="btn btn--ghost" @onclick="CloseMergeConfirm" disabled="@_mergingContact">
                     Cancelar
@@ -743,7 +744,7 @@
         <section class="cuentas-modal" role="dialog" aria-modal="true" aria-labelledby="contactos-bulk-template-title" @onclick:stopPropagation="true">
             <header class="cuentas-modal__header">
                 <div>
-                    <span class="cuentas-modal__eyebrow">AcciÃ³n masiva</span>
+                    <span class="cuentas-modal__eyebrow">Acción masiva</span>
                     <h3 id="contactos-bulk-template-title">Enviar plantilla WhatsApp</h3>
                 </div>
                 <button type="button" class="cuentas-modal__close" @onclick="CloseBulkTemplateModal" disabled="@_sendingBulkTemplate" aria-label="Cerrar">
@@ -759,7 +760,7 @@
 
                 <div class="conversations-context__hint">
                     <i class="bi bi-info-circle"></i>
-                    <span>Se enviarÃ¡ a contactos seleccionados que tengan celular o telÃ©fono. Si la conversaciÃ³n no existe, se crea automÃ¡ticamente.</span>
+                    <span>Se enviará a contactos seleccionados que tengan celular o teléfono. Si la conversación no existe, se crea automáticamente.</span>
                 </div>
 
                 <div class="field">
@@ -787,10 +788,10 @@
                             <label>Valores de variables</label>
                             <textarea class="usuarios-input"
                                       rows="4"
-                                      placeholder="Un valor por lÃ­nea. Para textos largos separÃ¡ variables con ---"
+                                      placeholder="Un valor por línea. Para textos largos separá variables con ---"
                                       @bind="_bulkTemplateValuesText"
                                       disabled="@_sendingBulkTemplate"></textarea>
-                            <small class="panel-card__subtitle">Esta plantilla requiere @CountTemplateVariables(SelectedBulkTemplate.CuerpoTexto) valor(es). Se usarÃ¡n los mismos para todos los contactos seleccionados.</small>
+                            <small class="panel-card__subtitle">Esta plantilla requiere @CountTemplateVariables(SelectedBulkTemplate.CuerpoTexto) valor(es). Se usarán los mismos para todos los contactos seleccionados.</small>
                         </div>
                     }
                 }
@@ -815,7 +816,7 @@
         <section class="cuentas-modal cuentas-modal--compact" role="dialog" aria-modal="true" aria-labelledby="contactos-bulk-deactivate-title" @onclick:stopPropagation="true">
             <header class="cuentas-modal__header">
                 <div>
-                    <span class="cuentas-modal__eyebrow">ConfirmaciÃ³n</span>
+                    <span class="cuentas-modal__eyebrow">Confirmación</span>
                     <h3 id="contactos-bulk-deactivate-title">Dar de baja contactos</h3>
                 </div>
                 <button type="button" class="cuentas-modal__close" @onclick="CloseBulkDeactivateConfirm" disabled="@_saving" aria-label="Cerrar">
@@ -824,9 +825,9 @@
             </header>
             <div class="cuentas-modal__body">
                 <div class="context-card">
-                    <span class="context-card__label">AcciÃ³n masiva</span>
+                    <span class="context-card__label">Acción masiva</span>
                     <strong>@_bulkDeactivateConfirmCount contacto(s)</strong>
-                    <span class="context-card__muted">Se darÃ¡n de baja los contactos seleccionados.</span>
+                    <span class="context-card__muted">Se darán de baja los contactos seleccionados.</span>
                 </div>
             </div>
             <footer class="cuentas-modal__actions">
@@ -848,7 +849,7 @@
         <section class="cuentas-modal cuentas-modal--compact" role="dialog" aria-modal="true" aria-labelledby="contactos-bulk-template-confirm-title" @onclick:stopPropagation="true">
             <header class="cuentas-modal__header">
                 <div>
-                    <span class="cuentas-modal__eyebrow">ConfirmaciÃ³n</span>
+                    <span class="cuentas-modal__eyebrow">Confirmación</span>
                     <h3 id="contactos-bulk-template-confirm-title">Enviar plantilla</h3>
                 </div>
                 <button type="button" class="cuentas-modal__close" @onclick="CloseBulkTemplateConfirm" disabled="@_sendingBulkTemplate" aria-label="Cerrar">
@@ -859,13 +860,13 @@
                 <div class="context-card">
                     <span class="context-card__label">Plantilla</span>
                     <strong>@_bulkTemplateConfirmName</strong>
-                    <span class="context-card__muted">Se enviarÃ¡ a @_bulkTemplateConfirmCount contacto(s). La entrega final puede confirmarse despuÃ©s por WhatsApp.</span>
+                    <span class="context-card__muted">Se enviará a @_bulkTemplateConfirmCount contacto(s). La entrega final puede confirmarse después por WhatsApp.</span>
                 </div>
             </div>
             <footer class="cuentas-modal__actions">
                 <button type="button" class="btn btn--primary" @onclick="ConfirmBulkTemplateSendAsync" disabled="@_sendingBulkTemplate">
                     <i class="bi bi-send"></i>
-                    @(_sendingBulkTemplate ? "Enviando..." : "Confirmar envÃ­o")
+                    @(_sendingBulkTemplate ? "Enviando..." : "Confirmar envío")
                 </button>
                 <button type="button" class="btn btn--ghost" @onclick="CloseBulkTemplateConfirm" disabled="@_sendingBulkTemplate">
                     Cancelar
@@ -1189,7 +1190,7 @@
     private void SaveContactFavorite()
     {
         var label = BuildContactFilterChips().Count == 0
-            ? "BÃºsqueda sin filtros"
+            ? "Búsqueda sin filtros"
             : string.Join(" + ", BuildContactFilterChips().Take(2).Select(c => c.Label));
         _contactFavorites.Add(new SavedContactSearch(label, CloneContactFilters(_filters), _activoFiltro, _viewSettings.AgruparPor));
     }
@@ -1359,7 +1360,7 @@
         {
             Severity = AppUiFeedbackSeverity.Info,
             Title = "Nuevo contacto desde conversaciones",
-            Message = "CompletÃ¡ los datos que falten y guardÃ¡ el contacto para usarlo en soporte."
+            Message = "Completá los datos que falten y guardá el contacto para usarlo en soporte."
         });
     }
 
@@ -1472,7 +1473,7 @@
 
         if (_mergeSearchText.Trim().Length < 2)
         {
-            _mergeError = "EscribÃ­ al menos dos caracteres para buscar duplicados.";
+            _mergeError = "Escribí al menos dos caracteres para buscar duplicados.";
             return;
         }
 
@@ -1539,7 +1540,7 @@
 
             _mergingContact = false;
             CloseMergeModal();
-            SetFeedback(AppUiMessage.Success("Contactos unificados", $"Se unificÃ³ {candidate.NombreApellido} dentro de {_form.NombreApellido}."));
+            SetFeedback(AppUiMessage.Success("Contactos unificados", $"Se unificó {candidate.NombreApellido} dentro de {_form.NombreApellido}."));
             await BuscarAsync();
         }
         finally
@@ -1557,7 +1558,7 @@
             try
             {
                 var savedId = await ContactosSvc.SaveAsync(_form);
-                SetFeedback(AppUiMessage.Success("Contacto guardado", $"El contacto #{savedId} se guardÃ³ correctamente."));
+                SetFeedback(AppUiMessage.Success("Contacto guardado", $"El contacto #{savedId} se guardó correctamente."));
                 await BuscarAsync();
                 await SeleccionarAsync(savedId);
             }
@@ -1567,9 +1568,9 @@
                 SetFeedback(new AppUiMessage
                 {
                     Severity = AppUiFeedbackSeverity.Warning,
-                    Title = "RevisÃ¡ los datos del contacto",
+                    Title = "Revisá los datos del contacto",
                     Message = validationEx.UserMessage,
-                    Suggestion = "CorregÃ­ los campos marcados y volvÃ© a intentar."
+                    Suggestion = "Corregí los campos marcados y volvé a intentar."
                 });
             }
             catch (Exception ex)
@@ -1640,7 +1641,7 @@
                 return;
             }
 
-            SetFeedback(AppUiMessage.Success("Contacto dado de baja", $"El contacto #{_selectedId} quedÃ³ inactivo."));
+            SetFeedback(AppUiMessage.Success("Contacto dado de baja", $"El contacto #{_selectedId} quedó inactivo."));
             BeginNew();
             _showEditor = false;
             await BuscarAsync();
@@ -1733,8 +1734,8 @@
             SetFeedback(new AppUiMessage
             {
                 Severity = AppUiFeedbackSeverity.Warning,
-                Title = "TelÃƒÂ©fono requerido",
-                Message = "SeleccionÃƒÂ¡ contactos con celular o telÃƒÂ©fono para crear conversaciones."
+                Title = "Teléfono requerido",
+                Message = "Seleccioná contactos con celular o teléfono para crear conversaciones."
             });
             return;
         }
@@ -1749,7 +1750,7 @@
                 var phone = FirstNonEmpty(contact.Celular, contact.Telefono);
                 var result = await UiOps.RunAsync(
                     () => ConversacionesSvc.CreateOrGetWhatsAppConversationAsync(new ConversacionCrearWhatsAppRequest { TelefonoWhatsApp = phone }),
-                    $"No se pudo crear la conversaciÃƒÂ³n de {DisplayOrFallback(contact.NombreApellido, phone)}.");
+                    $"No se pudo crear la conversación de {DisplayOrFallback(contact.NombreApellido, phone)}.");
 
                 if (!result.Success || result.Value is null)
                 {
@@ -1762,7 +1763,7 @@
                     created++;
             }
 
-            SetFeedback(AppUiMessage.Success("Conversaciones listas", $"Se prepararon {contacts.Count} conversaciÃƒÂ³n(es). Nuevas: {created}."));
+            SetFeedback(AppUiMessage.Success("Conversaciones listas", $"Se prepararon {contacts.Count} conversación(es). Nuevas: {created}."));
             if (contacts.Count == 1 && firstConversation.HasValue)
                 Nav.NavigateTo($"/conversaciones?id={firstConversation.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
         }
@@ -1779,8 +1780,8 @@
             SetFeedback(new AppUiMessage
             {
                 Severity = AppUiFeedbackSeverity.Warning,
-                Title = "TelÃƒÂ©fono requerido",
-                Message = "SeleccionÃƒÂ¡ contactos con celular o telÃƒÂ©fono para enviar plantillas."
+                Title = "Teléfono requerido",
+                Message = "Seleccioná contactos con celular o teléfono para enviar plantillas."
             });
             return;
         }
@@ -1829,7 +1830,7 @@
             _bulkTemplates.Clear();
             _bulkTemplates.AddRange(result.Value.Where(template => template.Activa && string.Equals(template.EstadoMeta, "APPROVED", StringComparison.OrdinalIgnoreCase)));
             if (_bulkTemplates.Count == 0)
-                _bulkTemplateError = "No hay plantillas aprobadas disponibles para envÃƒÂ­o masivo.";
+                _bulkTemplateError = "No hay plantillas aprobadas disponibles para envío masivo.";
         }
         finally
         {
@@ -1842,7 +1843,7 @@
         var template = SelectedBulkTemplate;
         if (template is null)
         {
-            _bulkTemplateError = "SeleccionÃƒÂ¡ una plantilla aprobada.";
+            _bulkTemplateError = "Seleccioná una plantilla aprobada.";
             return;
         }
 
@@ -1857,7 +1858,7 @@
         var contacts = GetSelectedContactsWithPhone().ToList();
         if (contacts.Count == 0)
         {
-            _bulkTemplateError = "No hay contactos seleccionados con telÃƒÂ©fono o celular.";
+            _bulkTemplateError = "No hay contactos seleccionados con teléfono o celular.";
             return;
         }
 
@@ -1873,7 +1874,7 @@
         if (template is null)
         {
             _showBulkTemplateConfirm = false;
-            _bulkTemplateError = "SeleccionÃƒÂ¡ una plantilla aprobada.";
+            _bulkTemplateError = "Seleccioná una plantilla aprobada.";
             return;
         }
 
@@ -1882,7 +1883,7 @@
         if (contacts.Count == 0)
         {
             _showBulkTemplateConfirm = false;
-            _bulkTemplateError = "No hay contactos seleccionados con telÃƒÂ©fono o celular.";
+            _bulkTemplateError = "No hay contactos seleccionados con teléfono o celular.";
             return;
         }
 
@@ -2017,8 +2018,8 @@
             SetFeedback(new AppUiMessage
             {
                 Severity = AppUiFeedbackSeverity.Warning,
-                Title = "TelÃ©fono requerido",
-                Message = "CargÃ¡ un telÃ©fono o celular para crear una conversaciÃ³n de WhatsApp."
+                Title = "Teléfono requerido",
+                Message = "Cargá un teléfono o celular para crear una conversación de WhatsApp."
             });
             return;
         }
@@ -2028,7 +2029,7 @@
         {
             var result = await UiOps.RunAsync(
                 () => ConversacionesSvc.CreateOrGetWhatsAppConversationAsync(new ConversacionCrearWhatsAppRequest { TelefonoWhatsApp = phone }),
-                "No se pudo crear la conversaciÃ³n.");
+                "No se pudo crear la conversación.");
 
             if (!result.Success || result.Value is null)
             {
@@ -2054,7 +2055,7 @@
             .OrderBy(item => item.NombreApellido, StringComparer.CurrentCultureIgnoreCase);
 
     private static string GetConversationActionLabel(long? idConversacion)
-        => idConversacion.HasValue ? "Ver conversaciÃ³n" : "Crear conversaciÃ³n";
+        => idConversacion.HasValue ? "Ver conversación" : "Crear conversación";
 
     private static string FirstNonEmpty(params string?[] values)
     {
@@ -2132,7 +2133,7 @@
             return;
         }
 
-        var result = await UiOps.RunAsync(() => ContactosSvc.GetViewSettingsAsync(currentUser), "No se pudo cargar la configuraciÃ³n de vista.");
+        var result = await UiOps.RunAsync(() => ContactosSvc.GetViewSettingsAsync(currentUser), "No se pudo cargar la configuración de vista.");
         if (!result.Success || result.Value is null)
         {
             ApplyViewSettings(BuildDefaultViewSettings(), currentUser);
@@ -2192,17 +2193,17 @@
         var currentUser = AppUserSession.GetCurrentUserName(string.Empty).Trim();
         if (string.IsNullOrWhiteSpace(currentUser))
         {
-            SetFeedback(new AppUiMessage { Severity = AppUiFeedbackSeverity.Warning, Title = "SesiÃ³n requerida", Message = "NecesitÃ¡s iniciar sesiÃ³n para guardar la configuraciÃ³n de vista." });
+            SetFeedback(new AppUiMessage { Severity = AppUiFeedbackSeverity.Warning, Title = "Sesión requerida", Message = "Necesitás iniciar sesión para guardar la configuración de vista." });
             return;
         }
 
         var settings = new ContactosViewSettingsDto { AgruparPor = _draftAgruparPor, Columnas = CloneColumns(_viewSettingsDraft) };
-        var result = await UiOps.RunAsync(async () => { await ContactosSvc.SaveViewSettingsAsync(currentUser, settings); return true; }, "No se pudo guardar la configuraciÃ³n de vista.");
+        var result = await UiOps.RunAsync(async () => { await ContactosSvc.SaveViewSettingsAsync(currentUser, settings); return true; }, "No se pudo guardar la configuración de vista.");
         if (!result.Success) { SetFeedback(result.Feedback); return; }
 
         ApplyViewSettings(settings, currentUser);
         _showViewSettings = false;
-        SetFeedback(AppUiMessage.Success("Vista guardada", "La configuraciÃ³n de la grilla quedÃ³ actualizada para tu usuario."));
+        SetFeedback(AppUiMessage.Success("Vista guardada", "La configuración de la grilla quedó actualizada para tu usuario."));
     }
 
     private IReadOnlyList<ContactoViewColumnDto> GetVisibleColumns()
@@ -2234,7 +2235,7 @@
         var values = new[] { candidate.Email, candidate.Celular, candidate.Telefono, candidate.CuentaRel }
             .Where(value => !string.IsNullOrWhiteSpace(value))
             .Select(value => value.Trim());
-        var summary = string.Join(" Â· ", values);
+        var summary = string.Join(" · ", values);
         return string.IsNullOrWhiteSpace(summary) ? "Sin datos de contacto cargados" : summary;
     }
 
@@ -2252,7 +2253,7 @@
         if (normalized.Length <= maxLength)
             return normalized;
 
-        return $"{normalized[..Math.Max(0, maxLength - 1)]}â€¦";
+        return $"{normalized[..Math.Max(0, maxLength - 1)]}…";
     }
 
     private static int CountTemplateVariables(string? text)
@@ -2309,10 +2310,10 @@
         return new AppUiMessage
         {
             Severity = failed > 0 || hasUnconfirmed ? AppUiFeedbackSeverity.Warning : AppUiFeedbackSeverity.Success,
-            Title = "EnvÃ­o masivo finalizado",
+            Title = "Envío masivo finalizado",
             Message = BuildBulkTemplateResultMessage(acceptedByMeta, failed, pendingConfirmation),
             Suggestion = hasUnconfirmed
-                ? "La entrega final puede actualizarse despuÃ©s cuando WhatsApp informe el estado."
+                ? "La entrega final puede actualizarse después cuando WhatsApp informe el estado."
                 : string.Empty
         };
     }
@@ -2326,7 +2327,7 @@
         };
 
         if (pendingConfirmation > 0)
-            parts.Add($"Pendientes de confirmaciÃ³n de entrega: {pendingConfirmation}.");
+            parts.Add($"Pendientes de confirmación de entrega: {pendingConfirmation}.");
 
         return string.Join(" ", parts);
     }
@@ -2388,16 +2389,16 @@
 
     private string GetSelectionSummary()
         => _selectedIds.Count == 0
-            ? "SeleccionÃ¡ uno o mÃ¡s contactos para ejecutar acciones."
+            ? "Seleccioná uno o más contactos para ejecutar acciones."
             : $"{_selectedIds.Count} contacto(s) seleccionado(s).";
 
     private string GetBulkActionHint()
     {
         var actionHint = _bulkAction switch
         {
-            BulkActionOpenWhatsApp => "Crea o abre conversaciones WhatsApp para contactos con telÃ©fono.",
+            BulkActionOpenWhatsApp => "Crea o abre conversaciones WhatsApp para contactos con teléfono.",
             BulkActionSendTemplate => "Permite elegir una plantilla aprobada y enviarla a varios contactos.",
-            _ => "Da de baja lÃ³gica a los contactos seleccionados."
+            _ => "Da de baja lógica a los contactos seleccionados."
         };
 
         return $"{GetSelectionSummary()} {actionHint}";
@@ -2421,8 +2422,8 @@
         {
             "equals" => "es igual a",
             "starts" => "empieza con",
-            "empty" => "estÃ¡ vacÃ­o",
-            "not-empty" => "no estÃ¡ vacÃ­o",
+            "empty" => "está vacío",
+            "not-empty" => "no está vacío",
             _ => "contiene"
         };
 
@@ -2430,7 +2431,7 @@
         => (field ?? string.Empty).Trim().ToLowerInvariant() switch
         {
             "email" => "Email",
-            "telefono" => "TelÃ©fono",
+            "telefono" => "Teléfono",
             "celular" => "Celular",
             "localidad" => "Localidad",
             "provincia" => "Provincia",
@@ -2478,7 +2479,7 @@
                 new() { Key = ContactosViewColumnKeys.Nombre,    Label = "Nombre",    Visible = true,  Order = 0 },
                 new() { Key = ContactosViewColumnKeys.Localidad, Label = "Localidad", Visible = true,  Order = 1 },
                 new() { Key = ContactosViewColumnKeys.Provincia, Label = "Provincia", Visible = true,  Order = 2 },
-                new() { Key = ContactosViewColumnKeys.Telefono,  Label = "TelÃ©fono",  Visible = true,  Order = 3 },
+                new() { Key = ContactosViewColumnKeys.Telefono,  Label = "Teléfono",  Visible = true,  Order = 3 },
                 new() { Key = ContactosViewColumnKeys.Celular,   Label = "Celular",   Visible = true,  Order = 4 },
                 new() { Key = ContactosViewColumnKeys.Email,     Label = "Email",     Visible = true,  Order = 5 },
                 new() { Key = ContactosViewColumnKeys.Cargo,     Label = "Cargo",     Visible = false, Order = 6 }

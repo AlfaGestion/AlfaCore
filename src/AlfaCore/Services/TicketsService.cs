@@ -687,7 +687,7 @@ public sealed class TicketsService(
         {
             ArgumentNullException.ThrowIfNull(request);
             if (request.IdEtiqueta <= 0)
-                throw new InvalidOperationException("No se recibiÃ³ la etiqueta a eliminar.");
+                throw new InvalidOperationException("No se recibió la etiqueta a eliminar.");
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);

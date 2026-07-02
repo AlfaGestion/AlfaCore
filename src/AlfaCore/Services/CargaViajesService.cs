@@ -1,4 +1,4 @@
-﻿using AlfaCore.Models;
+using AlfaCore.Models;
 using Dapper;
 using Microsoft.Data.SqlClient;
 using System.Security.Cryptography;
@@ -33,7 +33,7 @@ public sealed class CargaViajesService(
     private string ConnectionString => sessionService.GetConnectionString().Length > 0
         ? sessionService.GetConnectionString()
         : configuration.GetConnectionString("AlfaGestion")
-          ?? throw new InvalidOperationException("No se configurÃ³ la cadena de conexiÃ³n 'ConnectionStrings:AlfaGestion'.");
+          ?? throw new InvalidOperationException("No se configuró la cadena de conexión 'ConnectionStrings:AlfaGestion'.");
 
     public Task<PagedResult<CargaViajesGridItemDto>> SearchViajesAsync(CargaViajesFilters filters, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "SearchViajes", async token =>
@@ -341,7 +341,7 @@ public sealed class CargaViajesService(
             ArgumentNullException.ThrowIfNull(request);
             request.Tc = string.IsNullOrWhiteSpace(request.Tc) ? DefaultTc : request.Tc.Trim().ToUpperInvariant();
             if (!string.Equals(request.Tc, DefaultTc, StringComparison.OrdinalIgnoreCase))
-                throw new InvalidOperationException("El TC del mÃ³dulo de carga de viajes es fijo y debe ser VJ.");
+                throw new InvalidOperationException("El TC del módulo de carga de viajes es fijo y debe ser VJ.");
 
             var cliente = (request.Cliente ?? string.Empty).Trim();
             var chofer = (request.Chofer ?? string.Empty).Trim();
@@ -571,7 +571,7 @@ public sealed class CargaViajesService(
                 logger.LogInformation("SaveViaje SQL UPDATE {Sql}", updateSql);
                 var affected = await cn.ExecuteAsync(new CommandDefinition(updateSql, parameters, transaction: (SqlTransaction)tx, cancellationToken: token));
                 if (affected <= 0)
-                    throw new InvalidOperationException("No se encontrÃ³ el viaje para actualizar.");
+                    throw new InvalidOperationException("No se encontró el viaje para actualizar.");
 
                 await tx.CommitAsync(token);
                 logger.LogInformation("SaveViaje update OK Id={Id} IdComprobante={IdComprobante} Rows={Rows}", request.Id, nextIdComp, affected);
@@ -585,7 +585,7 @@ public sealed class CargaViajesService(
                 }
                 catch (Exception rollbackEx)
                 {
-                    logger.LogWarning(rollbackEx, "SaveViaje rollback fallÃ³");
+                    logger.LogWarning(rollbackEx, "SaveViaje rollback falló");
                 }
 
                 throw;
@@ -598,7 +598,7 @@ public sealed class CargaViajesService(
         => ExecuteLoggedAsync(ModuleName, "AnularViaje", async token =>
         {
             if (id <= 0)
-                throw new InvalidOperationException("No se recibiÃ³ el viaje a anular.");
+                throw new InvalidOperationException("No se recibió el viaje a anular.");
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
@@ -1204,7 +1204,7 @@ public sealed class CargaViajesService(
         => ExecuteLoggedAsync(ModuleName, "BajaTarifa", async token =>
         {
             if (string.IsNullOrWhiteSpace(idLista))
-                throw new InvalidOperationException("No se recibiÃ³ la tarifa a dar de baja.");
+                throw new InvalidOperationException("No se recibió la tarifa a dar de baja.");
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
@@ -1441,7 +1441,7 @@ public sealed class CargaViajesService(
         => ExecuteLoggedAsync(ModuleName, "BajaChofer", async token =>
         {
             if (string.IsNullOrWhiteSpace(codigo))
-                throw new InvalidOperationException("No se recibiÃ³ el chofer a dar de baja.");
+                throw new InvalidOperationException("No se recibió el chofer a dar de baja.");
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
@@ -1589,14 +1589,14 @@ public sealed class CargaViajesService(
         => ExecuteLoggedAsync(ModuleName, "BajaDestino", async token =>
         {
             if (string.IsNullOrWhiteSpace(codigo))
-                throw new InvalidOperationException("No se recibiÃ³ el destino a dar de baja.");
+                throw new InvalidOperationException("No se recibió el destino a dar de baja.");
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
             const string table = "TA_DESTINOS";
             var codeColumn = "CODIGO";
             if (!await ColumnExistsAsync(cn, table, "Activo", token))
-                throw new InvalidOperationException($"La tabla {table} no tiene columna Activo para hacer baja lÃ³gica.");
+                throw new InvalidOperationException($"La tabla {table} no tiene columna Activo para hacer baja lógica.");
 
             var affected = await cn.ExecuteAsync(new CommandDefinition($"""
                 UPDATE dbo.{table}
@@ -1688,7 +1688,7 @@ public sealed class CargaViajesService(
                 PageNumber = pageNumber,
                 PageSize = pageSize
             };
-        }, "No se pudieron cargar los tipos de vehÃ­culo.", ct);
+        }, "No se pudieron cargar los tipos de vehículo.", ct);
 
     public Task<CargaViajeTipoVehiculoGridItemDto?> GetTipoVehiculoByIdAsync(string codigo, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "GetTipoVehiculoById", async token =>
@@ -1713,16 +1713,16 @@ public sealed class CargaViajesService(
                 """;
 
             return await cn.QuerySingleOrDefaultAsync<CargaViajeTipoVehiculoGridItemDto>(new CommandDefinition(sql, new { Codigo = codigo.Trim().ToUpperInvariant() }, cancellationToken: token));
-        }, "No se pudo cargar el tipo de vehÃ­culo seleccionado.", ct);
+        }, "No se pudo cargar el tipo de vehículo seleccionado.", ct);
 
     public Task<string> SaveTipoVehiculoAsync(CargaViajeTipoVehiculoSaveRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "SaveTipoVehiculo", async token =>
         {
             ArgumentNullException.ThrowIfNull(request);
             if (string.IsNullOrWhiteSpace(request.Codigo))
-                throw new InvalidOperationException("El cÃ³digo del tipo de vehÃ­culo es obligatorio.");
+                throw new InvalidOperationException("El código del tipo de vehículo es obligatorio.");
             if (string.IsNullOrWhiteSpace(request.Descripcion))
-                throw new InvalidOperationException("La descripciÃ³n del tipo de vehÃ­culo es obligatoria.");
+                throw new InvalidOperationException("La descripción del tipo de vehículo es obligatoria.");
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
@@ -1761,7 +1761,7 @@ public sealed class CargaViajesService(
             }, cancellationToken: token));
 
             return request.Codigo.Trim().ToUpperInvariant();
-        }, "No se pudo guardar el tipo de vehÃ­culo.", ct);
+        }, "No se pudo guardar el tipo de vehículo.", ct);
 
     public Task<string> GetNextCodigoTipoVehiculoAsync(CancellationToken ct = default)
         => GetNextCodigoFromTableAsync("TA_TIPOVEHICULO", "CODIGO", ct);
@@ -1770,7 +1770,7 @@ public sealed class CargaViajesService(
         => ExecuteLoggedAsync(ModuleName, "BajaTipoVehiculo", async token =>
         {
             if (string.IsNullOrWhiteSpace(codigo))
-                throw new InvalidOperationException("No se recibiÃ³ el tipo de vehÃ­culo a dar de baja.");
+                throw new InvalidOperationException("No se recibió el tipo de vehículo a dar de baja.");
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
@@ -1791,8 +1791,8 @@ public sealed class CargaViajesService(
 
             var affected = await cn.ExecuteAsync(new CommandDefinition(sql, new { Codigo = codigo.Trim().ToUpperInvariant() }, cancellationToken: token));
             if (affected == 0)
-                throw new InvalidOperationException("El tipo de vehÃ­culo seleccionado ya no existe en la base activa.");
-        }, "No se pudo dar de baja el tipo de vehÃ­culo.", ct);
+                throw new InvalidOperationException("El tipo de vehículo seleccionado ya no existe en la base activa.");
+        }, "No se pudo dar de baja el tipo de vehículo.", ct);
 
     public Task<bool> TipoVehiculoTieneActivoAsync(CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "TipoVehiculoTieneActivo", async token =>
@@ -1800,7 +1800,7 @@ public sealed class CargaViajesService(
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
             return await ColumnExistsAsync(cn, "TA_TIPOVEHICULO", "ACTIVO", token);
-        }, "No se pudo verificar la estructura del tipo de vehÃ­culo.", ct);
+        }, "No se pudo verificar la estructura del tipo de vehículo.", ct);
 
     public Task<IReadOnlyList<CargaViajeLookupOptionDto>> SearchClientesAsync(string texto, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "SearchClientes", async token =>
@@ -1963,7 +1963,7 @@ public sealed class CargaViajesService(
             await cn.OpenAsync(token);
             var rows = (await cn.QueryAsync<CargaViajeLookupOptionDto>(new CommandDefinition(sql, new { Search = searchLike }, cancellationToken: token))).ToList();
             return (IReadOnlyList<CargaViajeLookupOptionDto>)rows;
-        }, "No se pudieron buscar tipos de vehÃ­culo.", ct);
+        }, "No se pudieron buscar tipos de vehículo.", ct);
 
     public Task<IReadOnlyList<CargaViajeLookupOptionDto>> SearchTarifasLookupAsync(string texto, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "SearchTarifasLookup", async token =>
@@ -2462,7 +2462,7 @@ public sealed class CargaViajesService(
                 }
                 catch (Exception rollbackEx)
                 {
-                    logger.LogWarning(rollbackEx, "ClonarTarifaParaViaje rollback fallÃ³");
+                    logger.LogWarning(rollbackEx, "ClonarTarifaParaViaje rollback falló");
                 }
 
                 throw;
@@ -2775,7 +2775,7 @@ public sealed class CargaViajesService(
             result.Destinos = (await SearchDestinosLookupAsync(string.Empty, token)).ToList();
             result.TipoVehiculos = (await SearchTipoVehiculosLookupAsync(string.Empty, token)).ToList();
             return result;
-        }, "No se pudieron cargar los datos auxiliares del mÃ³dulo.", ct);
+        }, "No se pudieron cargar los datos auxiliares del módulo.", ct);
     }
 
     public Task<CargaViajesViewSettingsDto> GetViewSettingsAsync(string userName, CancellationToken ct = default)
@@ -2802,7 +2802,7 @@ public sealed class CargaViajesService(
                 return CreateDefaultViewSettings();
 
             return NormalizeViewSettings(JsonSerializer.Deserialize<CargaViajesViewSettingsDto>(raw, JsonOptions));
-        }, "No se pudo cargar la configuraciÃ³n de vista.", ct);
+        }, "No se pudo cargar la configuración de vista.", ct);
 
     public Task SaveViewSettingsAsync(string userName, CargaViajesViewSettingsDto settings, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "SaveViewSettings", async token =>
@@ -2859,8 +2859,8 @@ public sealed class CargaViajesService(
                 Grupo = ConfigGroup
             }, cancellationToken: token));
 
-            await appEvents.LogAuditAsync(ModuleName, "SaveViewSettings", "TA_CONFIGURACION", configKey, "ConfiguraciÃ³n de vista de viajes actualizada.", new { UserName = userName.Trim(), normalized.AgruparPor }, token);
-        }, "No se pudo guardar la configuraciÃ³n de vista.", ct);
+            await appEvents.LogAuditAsync(ModuleName, "SaveViewSettings", "TA_CONFIGURACION", configKey, "Configuración de vista de viajes actualizada.", new { UserName = userName.Trim(), normalized.AgruparPor }, token);
+        }, "No se pudo guardar la configuración de vista.", ct);
 
     public Task<CargaViajeTipoVehiculoViewSettingsDto> GetTipoVehiculoViewSettingsAsync(string userName, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "GetTipoVehiculoViewSettings", async token =>
@@ -2886,7 +2886,7 @@ public sealed class CargaViajesService(
                 return CreateDefaultTipoVehiculoViewSettings();
 
             return NormalizeTipoVehiculoViewSettings(JsonSerializer.Deserialize<CargaViajeTipoVehiculoViewSettingsDto>(raw, JsonOptions));
-        }, "No se pudo cargar la configuraciÃ³n de vista del tipo de vehÃ­culo.", ct);
+        }, "No se pudo cargar la configuración de vista del tipo de vehículo.", ct);
 
     public Task SaveTipoVehiculoViewSettingsAsync(string userName, CargaViajeTipoVehiculoViewSettingsDto settings, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "SaveTipoVehiculoViewSettings", async token =>
@@ -2943,8 +2943,8 @@ public sealed class CargaViajesService(
                 Grupo = "TIPOVEHICULO"
             }, cancellationToken: token));
 
-            await appEvents.LogAuditAsync(ModuleName, "SaveTipoVehiculoViewSettings", "TA_CONFIGURACION", configKey, "ConfiguraciÃ³n de vista de tipo de vehÃ­culo actualizada.", new { UserName = userName.Trim(), normalized.AgruparPor }, token);
-        }, "No se pudo guardar la configuraciÃ³n de vista del tipo de vehÃ­culo.", ct);
+            await appEvents.LogAuditAsync(ModuleName, "SaveTipoVehiculoViewSettings", "TA_CONFIGURACION", configKey, "Configuración de vista de tipo de vehículo actualizada.", new { UserName = userName.Trim(), normalized.AgruparPor }, token);
+        }, "No se pudo guardar la configuración de vista del tipo de vehículo.", ct);
 
     public Task<CargaViajesConfigDto> GetConfiguracionAsync(CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "GetConfiguracion", async token =>
@@ -2956,7 +2956,7 @@ public sealed class CargaViajesService(
 
             var map = await LoadConfiguracionAsync(cn, token);
             return BuildConfiguracion(map);
-        }, "No se pudo cargar la configuraciÃ³n del mÃ³dulo de viajes.", ct);
+        }, "No se pudo cargar la configuración del módulo de viajes.", ct);
 
     public Task SaveConfiguracionAsync(CargaViajesConfigDto config, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "SaveConfiguracion", async token =>
@@ -2976,8 +2976,8 @@ public sealed class CargaViajesService(
                 await UpsertConfigValueAsync(cn, (SqlTransaction)tx, detailColumn, item.Key, item.Value, ConfigGroup, token);
 
             await tx.CommitAsync(token);
-            await appEvents.LogAuditAsync(ModuleName, "SaveConfiguracion", "TA_CONFIGURACION", ConfigGroup, "ConfiguraciÃ³n del mÃ³dulo de viajes actualizada.", normalized, token);
-        }, "No se pudo guardar la configuraciÃ³n del mÃ³dulo de viajes.", ct);
+            await appEvents.LogAuditAsync(ModuleName, "SaveConfiguracion", "TA_CONFIGURACION", ConfigGroup, "Configuración del módulo de viajes actualizada.", normalized, token);
+        }, "No se pudo guardar la configuración del módulo de viajes.", ct);
 
     public Task<string> GetNextIdComprobanteAsync(CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "GetNextIdComprobante", async token =>
@@ -3008,7 +3008,7 @@ public sealed class CargaViajesService(
                 next = 1;
             logger.LogInformation("GetNextIdComprobante OK Tabla={Tabla} Sucursal={Sucursal} Letra={Letra} Next={Next}", viajeTable, sucursal, letra, next);
             return $"{sucursal}{next.ToString().PadLeft(8, '0')}{letra}";
-        }, "No se pudo obtener la numeraciÃ³n del viaje.", ct);
+        }, "No se pudo obtener la numeración del viaje.", ct);
 
     private static async Task<CargaViajeLookupOptionDto?> FindLookupByDescriptionAsync(
         SqlConnection cn,
@@ -3535,7 +3535,7 @@ public sealed class CargaViajesService(
             }
             catch (Exception rollbackEx)
             {
-                logger.LogWarning(rollbackEx, "SaveViaje rollback fallÃ³");
+                logger.LogWarning(rollbackEx, "SaveViaje rollback falló");
             }
 
             throw;
@@ -4033,7 +4033,7 @@ public sealed class CargaViajesService(
                 new() { Key = CargaViajesViewColumnKeys.Cliente, Label = "Cliente", Visible = true, Order = 2 },
                 new() { Key = CargaViajesViewColumnKeys.Destino, Label = "Destino", Visible = true, Order = 3 },
                 new() { Key = CargaViajesViewColumnKeys.Chofer, Label = "Chofer", Visible = true, Order = 4 },
-                new() { Key = CargaViajesViewColumnKeys.TipoVehiculo, Label = "Tipo vehÃ­culo", Visible = true, Order = 5 },
+                new() { Key = CargaViajesViewColumnKeys.TipoVehiculo, Label = "Tipo vehículo", Visible = true, Order = 5 },
                 new() { Key = CargaViajesViewColumnKeys.TotalCliente, Label = "Total cliente", Visible = true, Order = 6 },
                 new() { Key = CargaViajesViewColumnKeys.TotalFletero, Label = "Total fletero", Visible = true, Order = 7 },
                 new() { Key = CargaViajesViewColumnKeys.Estado, Label = "Estado", Visible = true, Order = 8 },
@@ -4085,8 +4085,8 @@ public sealed class CargaViajesService(
             AgruparPor = CargaViajeTipoVehiculoViewGroupKeys.None,
             Columnas =
             [
-                new() { Key = CargaViajeTipoVehiculoViewColumnKeys.Codigo, Label = "CÃ³digo", Visible = true, Order = 0 },
-                new() { Key = CargaViajeTipoVehiculoViewColumnKeys.Descripcion, Label = "DescripciÃ³n", Visible = true, Order = 1 },
+                new() { Key = CargaViajeTipoVehiculoViewColumnKeys.Codigo, Label = "Código", Visible = true, Order = 0 },
+                new() { Key = CargaViajeTipoVehiculoViewColumnKeys.Descripcion, Label = "Descripción", Visible = true, Order = 1 },
                 new() { Key = CargaViajeTipoVehiculoViewColumnKeys.Activo, Label = "Activo", Visible = true, Order = 2 }
             ]
         };
@@ -4316,7 +4316,7 @@ public sealed class CargaViajesService(
                 return candidate;
         }
 
-        throw new InvalidOperationException($"No se encontrÃ³ ninguna de las tablas esperadas: {string.Join(", ", candidates)}.");
+        throw new InvalidOperationException($"No se encontró ninguna de las tablas esperadas: {string.Join(", ", candidates)}.");
     }
 
     private static string FirstExistingColumn(HashSet<string> columns, params string[] candidates)
@@ -4327,7 +4327,7 @@ public sealed class CargaViajesService(
                 return candidate;
         }
 
-        throw new InvalidOperationException($"No se encontrÃ³ ninguna de las columnas esperadas: {string.Join(", ", candidates)}.");
+        throw new InvalidOperationException($"No se encontró ninguna de las columnas esperadas: {string.Join(", ", candidates)}.");
     }
 
     private static string? FirstExistingColumnOrNull(HashSet<string> columns, params string[] candidates)

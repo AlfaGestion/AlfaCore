@@ -1,15 +1,15 @@
-﻿@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.AspNetCore.Components.Forms
 @page "/auditoria/errores"
 @page "/{idweb}/{idbase:int}/auditoria/errores"
 @inject AlfaCore.Services.IAuditoriaService AuditoriaSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 
-<PageTitle>Errores | Alfa GestiÃ³n</PageTitle>
+<PageTitle>Errores | Alfa Gestión</PageTitle>
 
 @if (_loading)
 {
     <div class="consultas-loading">
-        <i class="bi bi-hourglass-split"></i> Cargando erroresâ€¦
+        <i class="bi bi-hourglass-split"></i> Cargando errores…
     </div>
 }
 else
@@ -18,7 +18,7 @@ else
         <section class="page-intro">
             <div>
                 <h2 class="page-intro__title">Errores</h2>
-                <p class="page-intro__text">FiltrÃ¡ `AUX_ERR` por fecha, usuario, proceso, equipo y texto tÃ©cnico para investigar incidentes.</p>
+                <p class="page-intro__text">Filtrá `AUX_ERR` por fecha, usuario, proceso, equipo y texto técnico para investigar incidentes.</p>
             </div>
         </section>
 
@@ -29,7 +29,7 @@ else
                 <div>@_feedback.Message</div>
                 @if (_feedback.HasCode)
                 {
-                    <div>CÃ³digo: @_feedback.Code</div>
+                    <div>Código: @_feedback.Code</div>
                 }
                 @if (_feedback.HasSuggestion)
                 {
@@ -42,7 +42,7 @@ else
             <div class="panel-card__header">
                 <div>
                     <h3 class="panel-card__title">Filtros</h3>
-                    <p class="panel-card__subtitle">AplicÃ¡ combinaciones para encontrar incidentes rÃ¡pido.</p>
+                    <p class="panel-card__subtitle">Aplicá combinaciones para encontrar incidentes rápido.</p>
                 </div>
                 <div class="actions">
                     <button class="btn btn--ghost" @onclick="LimpiarFiltros">
@@ -90,12 +90,12 @@ else
                     <input class="field__control" @bind="_pc" placeholder="Equipo o IP..." />
                 </div>
                 <div class="field">
-                    <label class="field__label">CÃ³digo error</label>
+                    <label class="field__label">Código error</label>
                     <input class="field__control" type="number" @bind="_errorCodigoText" placeholder="Ej: 208" />
                 </div>
                 <div class="field field--full">
                     <label class="field__label">Texto</label>
-                    <input class="field__control" @bind="_texto" @bind:event="oninput" placeholder="Buscar en descripciÃ³n, SQL, proceso o usuario..." />
+                    <input class="field__control" @bind="_texto" @bind:event="oninput" placeholder="Buscar en descripción, SQL, proceso o usuario..." />
                 </div>
             </div>
         </section>
@@ -116,8 +116,8 @@ else
                             <th>Usuario</th>
                             <th>PC</th>
                             <th>Error</th>
-                            <th>DescripciÃ³n</th>
-                            <th>AcciÃ³n</th>
+                            <th>Descripción</th>
+                            <th>Acción</th>
                         </tr>
                     </thead>
                     <tbody>
