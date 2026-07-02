@@ -49,9 +49,9 @@ else
             <div class="brand__top">
                 @if (CanShowLauncherAccess)
                 {
-                    <span class="brand__logo-link brand__logo-link--static" aria-hidden="true">
+                    <a class="brand__logo-link" href="@GetLauncherUrl()" title="Ir a Inicio" aria-label="Ir a Inicio" @onclick:preventDefault="true" @onclick="GoToLauncher">
                         <img class="brand__logo" src="/logos/Logo.png" alt="Alfa Gestión" />
-                    </span>
+                    </a>
                 }
                 else
                 {

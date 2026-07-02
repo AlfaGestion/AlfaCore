@@ -167,13 +167,13 @@
     border-radius: 0.95rem;
     position: relative;
     z-index: 2;
-    cursor: default;
-    pointer-events: none;
+    cursor: pointer;
     transition: opacity .18s ease, transform .18s ease;
 }
 
 .brand__logo-link--static {
     cursor: default;
+    pointer-events: none;
 }
 
 .brand__logo-link:focus-visible {
@@ -517,6 +517,7 @@
 .shell--collapsed .brand__logo-link {
     opacity: 1;
     transform: scale(1);
+    pointer-events: none;
 }
 
 .shell--collapsed:not(.shell--toggle-hover-blocked) .brand:hover .brand__logo-link {

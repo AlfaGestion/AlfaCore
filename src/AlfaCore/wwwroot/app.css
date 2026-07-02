@@ -25560,6 +25560,10 @@ body:has(.cuentas-modal .usuarios-view-settings) {
 }
 
 .shell .brand__logo-link {
+    cursor: pointer;
+}
+
+.shell .brand__logo-link--static {
     cursor: default;
     pointer-events: none;
 }
@@ -25617,6 +25621,7 @@ body:has(.cuentas-modal .usuarios-view-settings) {
 .shell--collapsed .brand__logo-link {
     opacity: 1;
     transform: scale(1);
+    pointer-events: none;
 }
 
 .shell--collapsed:not(.shell--toggle-hover-blocked) .brand:hover .brand__logo-link {
