@@ -21,13 +21,33 @@
             <h2 class="page-intro__title">Contactos</h2>
             <p class="page-intro__text">Administrá la agenda general del sistema con datos de contacto, observaciones y baja lógica.</p>
         </div>
+        <div class="sticky-commandbar__history" aria-label="Navegación">
+            <button type="button" class="btn btn--ghost btn--icon" title="Acción anterior" aria-label="Acción anterior" @onclick="GoHistoryBackAsync">
+                <i class="bi bi-chevron-left"></i>
+            </button>
+            <button type="button" class="btn btn--ghost btn--icon" title="Acción posterior" aria-label="Acción posterior" @onclick="GoHistoryForwardAsync">
+                <i class="bi bi-chevron-right"></i>
+            </button>
+        </div>
         <div class="actions module-actionbar__actions">
+            @if (_showEditor)
+            {
+                <button type="button" class="btn btn--primary" @onclick="GuardarAsync" disabled="@_saving">
+                    <i class="bi bi-floppy"></i> @(_saving ? "Guardando..." : "Guardar")
+                </button>
+                <button type="button" class="btn btn--ghost" @onclick="CerrarEditor" disabled="@_saving">
+                    <i class="bi bi-x-circle"></i> Cancelar
+                </button>
+            }
+            else
+            {
             <button type="button" class="btn btn--primary" @onclick="BeginNew">
                 <i class="bi bi-plus-circle"></i> Nuevo contacto
             </button>
             <button type="button" class="btn btn--ghost" @onclick="RecargarAsync" disabled="@_loadingList">
                 <i class="bi bi-arrow-clockwise"></i> Recargar
             </button>
+            }
         </div>
     </section>
 
@@ -211,14 +231,6 @@
                     <p class="panel-card__subtitle">@(_isNewMode ? "Completá los datos principales del contacto." : $"Código interno: {_selectedId} · Estado: {(_selectedActivo ? "Activo" : "Inactivo")}")</p>
                 </div>
                 <div class="actions">
-                    <button type="button" class="btn btn--primary" @onclick="GuardarAsync" disabled="@_saving">
-                        <i class="bi bi-floppy"></i>
-                        <span>@(_saving ? "Guardando..." : "Guardar contacto")</span>
-                    </button>
-                    <button type="button" class="btn btn--ghost" @onclick="ResetForm" disabled="@_saving">
-                        <i class="bi bi-eraser"></i>
-                        <span>@(_isNewMode ? "Limpiar" : "Revertir")</span>
-                    </button>
                     @if (!_isNewMode && _selectedActivo)
                     {
                         <button type="button" class="btn btn--ghost usuarios-btn-danger" @onclick="DarDeBajaAsync" disabled="@_saving">
@@ -237,10 +249,6 @@
                             <span>@GetConversationActionLabel(_selectedConversationId)</span>
                         </button>
                     }
-                    <button type="button" class="btn btn--ghost" @onclick="CerrarEditor" disabled="@_saving">
-                        <i class="bi bi-arrow-left"></i>
-                        <span>Volver al listado</span>
-                    </button>
                 </div>
             </div>
 
@@ -1026,6 +1034,12 @@
         if (!_isNewMode && _selectedId > 0)
             await SeleccionarAsync(_selectedId);
     }
+
+    private async Task GoHistoryBackAsync()
+        => await Js.InvokeVoidAsync("history.back");
+
+    private async Task GoHistoryForwardAsync()
+        => await Js.InvokeVoidAsync("history.forward");
 
     private void OpenContactSearchPanel()
         => _showSearchPanel = true;

@@ -503,7 +503,8 @@ select {
     right: 0;
     z-index: 1180;
     display: flex;
-    justify-content: flex-end;
+    align-items: center;
+    justify-content: space-between;
     margin: 0;
     padding: .45rem .7rem;
     border: 0;
@@ -528,9 +529,11 @@ select {
 .contactos-page > .smart-search-card {
     position: fixed;
     top: .45rem;
-    left: calc(var(--module-actionbar-left, 0px) + .7rem);
+    left: calc(var(--module-actionbar-left, 0px) + 5.75rem);
     right: 22rem;
     z-index: 1181;
+    display: flex;
+    justify-content: center;
     margin: 0;
     padding: 0;
     border: 0;
@@ -575,7 +578,8 @@ select {
     right: 0;
     z-index: 1180;
     display: flex;
-    justify-content: flex-end;
+    align-items: center;
+    justify-content: space-between;
     margin: 0;
     padding: .45rem .7rem;
     border: 0;
@@ -591,13 +595,29 @@ select {
     display: none;
 }
 
+.sticky-commandbar__history {
+    display: inline-flex;
+    align-items: center;
+    gap: .25rem;
+}
+
+.sticky-commandbar__history .btn {
+    width: 2.1rem;
+    min-width: 2.1rem;
+    height: 2.1rem;
+    padding: 0;
+    justify-content: center;
+}
+
 .usuarios-page > .usuarios-search-card,
 .tecnicos-page > .tecnicos-search-card {
     position: fixed;
     top: .45rem;
-    left: calc(var(--module-actionbar-left, 0px) + .7rem);
+    left: calc(var(--module-actionbar-left, 0px) + 5.75rem);
     right: 22rem;
     z-index: 1181;
+    display: flex;
+    justify-content: center;
     margin: 0;
     padding: 0;
     border: 0;
@@ -16428,6 +16448,10 @@ html[data-theme="light"] .interfaces-bulkbar {
     left: var(--tickets-actionbar-left, 0px);
     right: 0;
     z-index: 1200;
+    display: grid;
+    grid-template-columns: auto auto minmax(320px, 560px) auto;
+    align-items: center;
+    gap: .65rem;
     margin: 0;
     padding: .45rem .7rem;
     border: 0;
@@ -16437,6 +16461,66 @@ html[data-theme="light"] .interfaces-bulkbar {
     box-shadow: 0 8px 22px rgba(2, 6, 23, .24);
     backdrop-filter: blur(10px);
     box-sizing: border-box;
+}
+
+.tickets-commandbar__history {
+    display: inline-flex;
+    align-items: center;
+    gap: .25rem;
+}
+
+.tickets-commandbar__history .btn {
+    width: 2.1rem;
+    min-width: 2.1rem;
+    height: 2.1rem;
+    padding: 0;
+    justify-content: center;
+}
+
+.tickets-page--odoo .tickets-commandbar.module-actionbar .tickets-view-switch {
+    display: inline-flex;
+    flex-wrap: nowrap;
+    gap: .35rem;
+}
+
+.tickets-page--odoo .tickets-commandbar.module-actionbar .tickets-smart-search {
+    justify-self: center;
+    width: min(560px, 100%);
+    min-width: 0;
+    max-width: 560px;
+}
+
+.tickets-page--odoo .tickets-commandbar.module-actionbar .tickets-commandbar__actions {
+    justify-self: end;
+    display: inline-flex;
+    flex-wrap: nowrap;
+    gap: .45rem;
+}
+
+.tickets-commandbar__editor-context {
+    min-height: 2.5rem;
+    display: grid;
+    align-content: center;
+    gap: .05rem;
+    padding: .35rem .8rem;
+    border: 1px solid rgba(56, 189, 248, .16);
+    border-radius: 8px;
+    background: rgba(10, 25, 45, .72);
+}
+
+.tickets-commandbar__editor-context span {
+    color: rgba(196, 212, 237, .7);
+    font-size: .72rem;
+    line-height: 1.1;
+}
+
+.tickets-commandbar__editor-context strong {
+    overflow: hidden;
+    color: #f8fafc;
+    font-size: .9rem;
+    line-height: 1.15;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .tickets-page--odoo .tickets-commandbar.module-actionbar .smart-search__hint,
@@ -16466,7 +16550,24 @@ html[data-theme="light"] .interfaces-bulkbar {
     }
 
     .tickets-page--odoo:has(.tickets-commandbar.module-actionbar) {
-        padding-top: 8.25rem;
+        padding-top: 11.25rem;
+    }
+
+    .tickets-page--odoo .tickets-commandbar.module-actionbar {
+        grid-template-columns: 1fr;
+        align-items: stretch;
+    }
+
+    .tickets-commandbar__history,
+    .tickets-page--odoo .tickets-commandbar.module-actionbar .tickets-view-switch,
+    .tickets-page--odoo .tickets-commandbar.module-actionbar .tickets-commandbar__actions {
+        justify-content: stretch;
+    }
+
+    .tickets-commandbar__history .btn,
+    .tickets-page--odoo .tickets-commandbar.module-actionbar .tickets-view-switch .btn,
+    .tickets-page--odoo .tickets-commandbar.module-actionbar .tickets-commandbar__actions .btn {
+        flex: 1 1 auto;
     }
 }
 

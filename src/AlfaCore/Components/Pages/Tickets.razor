@@ -37,9 +37,15 @@
         </section>
     }
 
-    @if (!_showEditor)
-    {
         <section class="module-actionbar tickets-commandbar">
+            <div class="sticky-commandbar__history tickets-commandbar__history" aria-label="Navegación">
+                <button type="button" class="btn btn--ghost btn--icon" title="Acción anterior" aria-label="Acción anterior" @onclick="GoHistoryBackAsync">
+                    <i class="bi bi-chevron-left"></i>
+                </button>
+                <button type="button" class="btn btn--ghost btn--icon" title="Acción posterior" aria-label="Acción posterior" @onclick="GoHistoryForwardAsync">
+                    <i class="bi bi-chevron-right"></i>
+                </button>
+            </div>
             <div class="tickets-view-switch">
                 <button type="button" class="btn @(_viewMode == "kanban" ? "btn--primary" : "btn--ghost")" @onclick='() => CambiarVistaAsync("kanban")'>
                     <i class="bi bi-kanban"></i> Kanban
@@ -48,7 +54,16 @@
                     <i class="bi bi-list-ul"></i> Lista
                 </button>
             </div>
-            <div class="smart-search tickets-smart-search" @onclick:stopPropagation>
+            <div class="smart-search tickets-smart-search @(_showEditor ? "tickets-smart-search--editor" : string.Empty)" @onclick:stopPropagation>
+                @if (_showEditor)
+                {
+                    <div class="tickets-commandbar__editor-context">
+                        <span>@(_isNew ? "Nuevo ticket" : "Editando ticket")</span>
+                        <strong>@(_isNew ? "Sin código asignado" : $"{_detail?.CodigoVisible} {_form.Titulo}")</strong>
+                    </div>
+                }
+                else
+                {
                 <div class="smart-search__bar">
                     <i class="bi bi-search"></i>
                     <input type="search"
@@ -206,17 +221,29 @@
                         </div>
                     </div>
                 }
+                }
             </div>
             <div class="actions tickets-commandbar__actions">
+                @if (_showEditor)
+                {
+                    <button type="button" class="btn btn--primary" @onclick="GuardarAsync" disabled="@_saving">
+                        <i class="bi bi-floppy"></i> @(_saving ? "Guardando..." : "Guardar")
+                    </button>
+                    <button type="button" class="btn btn--ghost" @onclick="CerrarEditor" disabled="@_saving">
+                        <i class="bi bi-x-circle"></i> Cancelar
+                    </button>
+                }
+                else
+                {
                 <button type="button" class="btn btn--primary" @onclick="NuevoTicket">
                     <i class="bi bi-plus-circle"></i> Nuevo
                 </button>
                 <button type="button" class="btn btn--ghost" @onclick="RecargarAsync" disabled="@_loading">
                     <i class="bi bi-arrow-clockwise"></i> Recargar
                 </button>
+                }
             </div>
         </section>
-    }
 
     @if (_showViewSettings && _viewMode == "lista" && !_showEditor)
     {
@@ -502,14 +529,6 @@
                 </aside>
             </div>
 
-            <div class="actions usuarios-editor__actions">
-                <button type="button" class="btn btn--primary" @onclick="GuardarAsync" disabled="@_saving">
-                    <i class="bi bi-floppy"></i> @(_saving ? "Guardando..." : "Guardar ticket")
-                </button>
-                <button type="button" class="btn btn--ghost" @onclick="ResetForm" disabled="@_saving">
-                    <i class="bi bi-eraser"></i> Revertir
-                </button>
-            </div>
         </section>
 
         @if (!_isNew && _detail is not null)
@@ -974,6 +993,12 @@
         if (_detail is not null)
             await AbrirTicketAsync(_detail.IdTicket, updateUrl: false);
     }
+
+    private async Task GoHistoryBackAsync()
+        => await JS.InvokeVoidAsync("history.back");
+
+    private async Task GoHistoryForwardAsync()
+        => await JS.InvokeVoidAsync("history.forward");
 
     private async Task CambiarVistaAsync(string view)
     {

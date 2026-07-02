@@ -19,13 +19,33 @@
             <h2 class="page-intro__title">Técnicos</h2>
             <p class="page-intro__text">Administrá los técnicos del sistema: mecánicos, soporte y personal vinculado a usuarios.</p>
         </div>
+        <div class="sticky-commandbar__history" aria-label="Navegación">
+            <button type="button" class="btn btn--ghost btn--icon" title="Acción anterior" aria-label="Acción anterior" @onclick="GoHistoryBackAsync">
+                <i class="bi bi-chevron-left"></i>
+            </button>
+            <button type="button" class="btn btn--ghost btn--icon" title="Acción posterior" aria-label="Acción posterior" @onclick="GoHistoryForwardAsync">
+                <i class="bi bi-chevron-right"></i>
+            </button>
+        </div>
         <div class="actions">
+            @if (_showEditor)
+            {
+                <button type="button" class="btn btn--primary" @onclick="GuardarAsync" disabled="@_saving">
+                    <i class="bi bi-floppy"></i> @(_saving ? "Guardando..." : "Guardar")
+                </button>
+                <button type="button" class="btn btn--ghost" @onclick="CerrarEditor" disabled="@_saving">
+                    <i class="bi bi-x-circle"></i> Cancelar
+                </button>
+            }
+            else
+            {
             <button type="button" class="btn btn--primary" @onclick="BeginNewAsync">
                 <i class="bi bi-plus-circle"></i> Nuevo técnico
             </button>
             <button type="button" class="btn btn--ghost" @onclick="RecargarAsync" disabled="@_loadingList">
                 <i class="bi bi-arrow-clockwise"></i> Recargar
             </button>
+            }
         </div>
     </section>
 
@@ -181,14 +201,6 @@
                     </p>
                 </div>
                 <div class="actions">
-                    <button type="button" class="btn btn--primary" @onclick="GuardarAsync" disabled="@_saving">
-                        <i class="bi bi-floppy"></i>
-                        <span>@(_saving ? "Guardando..." : "Guardar técnico")</span>
-                    </button>
-                    <button type="button" class="btn btn--ghost" @onclick="ResetFormAsync" disabled="@_saving">
-                        <i class="bi bi-eraser"></i>
-                        <span>@(_isNewMode ? "Limpiar" : "Revertir")</span>
-                    </button>
                     @if (!_isNewMode && _selectedActivo)
                     {
                         <button type="button" class="btn btn--ghost usuarios-btn-danger" @onclick="DarDeBajaAsync" disabled="@_saving">
@@ -196,9 +208,6 @@
                             <span>Dar de baja</span>
                         </button>
                     }
-                    <button type="button" class="btn btn--ghost" @onclick="CerrarEditor" disabled="@_saving">
-                        <i class="bi bi-arrow-left"></i> Volver al listado
-                    </button>
                 </div>
             </div>
 
@@ -375,29 +384,11 @@
                             <div>
                                 <strong>Usuario listo</strong>
                                 <p>@_editorUserCreatedNote</p>
-                                <p><strong>Ahora hacé clic en "Guardar técnico" para confirmar el alta.</strong></p>
+                                <p><strong>Ahora hacé clic en "Guardar" para confirmar el alta.</strong></p>
                             </div>
                         </div>
                     }
 
-                    <!-- Acciones -->
-                    <div class="actions usuarios-editor__actions">
-                        <button type="button" class="btn btn--primary" @onclick="GuardarAsync" disabled="@_saving">
-                            <i class="bi bi-floppy"></i>
-                            <span>@(_saving ? "Guardando..." : "Guardar técnico")</span>
-                        </button>
-                        <button type="button" class="btn btn--ghost" @onclick="ResetFormAsync" disabled="@_saving">
-                            <i class="bi bi-eraser"></i>
-                            <span>@(_isNewMode ? "Limpiar" : "Revertir")</span>
-                        </button>
-                        @if (!_isNewMode && _selectedActivo)
-                        {
-                            <button type="button" class="btn btn--ghost usuarios-btn-danger" @onclick="DarDeBajaAsync" disabled="@_saving">
-                                <i class="bi bi-person-dash"></i>
-                                <span>Dar de baja</span>
-                            </button>
-                        }
-                    </div>
                 </div>
             </div>
         </section>
@@ -801,6 +792,12 @@
         if (!_isNewMode && !string.IsNullOrWhiteSpace(_selectedIdTecnico))
             await CargarEditorAsync(_selectedIdTecnico);
     }
+
+    private async Task GoHistoryBackAsync()
+        => await Js.InvokeVoidAsync("history.back");
+
+    private async Task GoHistoryForwardAsync()
+        => await Js.InvokeVoidAsync("history.forward");
 
     private async Task AplicarFiltrosAsync()
     {
