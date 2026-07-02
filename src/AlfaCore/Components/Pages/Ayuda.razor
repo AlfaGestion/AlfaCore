@@ -133,9 +133,9 @@
     private string _loadedTopic = string.Empty;
 
     private string _pageTitle = "Ayuda";
-    private string _pageSubtitle = "Manual operativo, atajos de navegaciÃ³n y respuestas rÃ¡pidas para cada pantalla del Dashboard de Compras.";
-    private string _heroTitle = "EncontrÃ¡ rÃ¡pido quÃ© hace cada vista y cÃ³mo leer sus mÃ©tricas";
-    private string _heroText = "BuscÃ¡ por pantalla, KPI o concepto. El manual completo sigue disponible, pero ahora podÃ©s saltar directo al punto exacto.";
+    private string _pageSubtitle = "Manual operativo, atajos de navegación y respuestas rápidas para cada pantalla del Dashboard de Compras.";
+    private string _heroTitle = "Encontrá rápido qué hace cada vista y cómo leer sus métricas";
+    private string _heroText = "Buscá por pantalla, KPI o concepto. El manual completo sigue disponible, pero ahora podés saltar directo al punto exacto.";
 
     [Parameter, SupplyParameterFromQuery] public string? Topic { get; set; }
     [Inject] private IJSRuntime JS { get; set; } = default!;
@@ -174,18 +174,18 @@
 
         if (topic == "consultas")
         {
-            _pageTitle = "DiseÃ±ador de Consultas";
-            _pageSubtitle = "Manual del mÃ³dulo de consultas SQL: Ã¡rbol jerÃ¡rquico, ejecuciÃ³n, parÃ¡metros, constructor visual y exportaciÃ³n.";
-            _heroTitle = "CreÃ¡, organizÃ¡ y ejecutÃ¡ consultas SQL directamente desde el navegador";
-            _heroText = "BuscÃ¡ por funciÃ³n, secciÃ³n o concepto tÃ©cnico. Referencia completa del DiseÃ±ador de Consultas de Alfa GestiÃ³n.";
+            _pageTitle = "Diseñador de Consultas";
+            _pageSubtitle = "Manual del módulo de consultas SQL: árbol jerárquico, ejecución, parámetros, constructor visual y exportación.";
+            _heroTitle = "Creá, organizá y ejecutá consultas SQL directamente desde el navegador";
+            _heroText = "Buscá por función, sección o concepto técnico. Referencia completa del Diseñador de Consultas de Alfa Gestión.";
             LoadMarkdown("AlfaCore.Docs.manual_consultas.md");
         }
         else
         {
             _pageTitle = "Ayuda";
-            _pageSubtitle = "Manual operativo, atajos de navegaciÃ³n y respuestas rÃ¡pidas para cada pantalla de AlfaCore.";
-            _heroTitle = "EncontrÃ¡ rÃ¡pido quÃ© hace cada vista y cÃ³mo leer sus mÃ©tricas";
-            _heroText = "BuscÃ¡ por pantalla, KPI o concepto. El manual completo sigue disponible, pero ahora podÃ©s saltar directo al punto exacto.";
+            _pageSubtitle = "Manual operativo, atajos de navegación y respuestas rápidas para cada pantalla de AlfaCore.";
+            _heroTitle = "Encontrá rápido qué hace cada vista y cómo leer sus métricas";
+            _heroText = "Buscá por pantalla, KPI o concepto. El manual completo sigue disponible, pero ahora podés saltar directo al punto exacto.";
             LoadMarkdown("AlfaCore.Docs.manual_usuario.md");
         }
 

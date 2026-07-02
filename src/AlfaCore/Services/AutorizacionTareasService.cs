@@ -76,41 +76,13 @@ public sealed class AutorizacionTareasService(
             var idCaja = ResolveOptionalCatalogValue(userData.IdCaja, cajas);
             var idDeposito = ResolveOptionalCatalogValue(userData.IdDeposito, depositos);
 
-            var hasNombreWeb = await ColumnExistsAsync(cn, "ALFACORE_MENU_WEB", "NombreWeb", token);
-            var hasDescripcionWeb = await ColumnExistsAsync(cn, "ALFACORE_MENU_WEB", "DescripcionWeb", token);
-            var hasPadreClave = await ColumnExistsAsync(cn, "ALFACORE_MENU_WEB", "PadreClave", token);
-            var hasLegacyMenu = await TableExistsAsync(cn, "TA_MENU", token);
-            var legacyJoin = hasLegacyMenu
-                ? """
-                LEFT JOIN dbo.TA_MENU tm
-                    ON tm.Menu = w.Menu
-                   AND tm.Clave = w.Clave
-                """
-                : string.Empty;
-            var parentExpr = hasPadreClave
-                ? (hasLegacyMenu
-                    ? "ISNULL(NULLIF(w.PadreClave, ''), ISNULL(tm.Titulo, ''))"
-                    : "ISNULL(w.PadreClave, '')")
-                : (hasLegacyMenu ? "ISNULL(tm.Titulo, '')" : "''");
-            var nameExpr = hasNombreWeb
-                ? (hasLegacyMenu
-                    ? "ISNULL(NULLIF(w.NombreWeb, ''), ISNULL(NULLIF(tm.Nombre, ''), w.Clave))"
-                    : "ISNULL(NULLIF(w.NombreWeb, ''), w.Clave)")
-                : (hasLegacyMenu ? "ISNULL(NULLIF(tm.Nombre, ''), ISNULL(w.Clave, ''))" : "ISNULL(w.Clave, '')");
-            var descriptionExpr = hasDescripcionWeb
-                ? (hasLegacyMenu
-                    ? "ISNULL(NULLIF(w.DescripcionWeb, ''), ISNULL(CONVERT(nvarchar(500), tm.Descripcion), ISNULL(w.Observacion, '')))"
-                    : "ISNULL(w.DescripcionWeb, '')")
-                : (hasLegacyMenu
-                    ? "ISNULL(CONVERT(nvarchar(500), tm.Descripcion), ISNULL(w.Observacion, ''))"
-                    : "ISNULL(w.Observacion, '')");
-            var sql = $"""
+            const string sql = """
                 SELECT
                     ISNULL(w.Menu, '') AS Menu,
-                    {parentExpr} AS Titulo,
+                    ISNULL(w.PadreClave, '') AS Titulo,
                     ISNULL(w.Clave, '') AS Clave,
-                    {nameExpr} AS Nombre,
-                    {descriptionExpr} AS Descripcion,
+                    ISNULL(NULLIF(w.NombreWeb, ''), w.Clave) AS Nombre,
+                    ISNULL(w.DescripcionWeb, ISNULL(w.Observacion, '')) AS Descripcion,
                     CAST('' AS nvarchar(150)) AS Proceso,
                     ISNULL(w.HabilitadoWeb, 1) AS Habilitado,
                     ISNULL(w.OrdenWeb, 0) AS OrdenMenu,
@@ -118,14 +90,13 @@ public sealed class AutorizacionTareasService(
                     ISNULL(w.HabilitadoWeb, 1) AS HabilitadoWeb,
                     CASE WHEN t.Clave IS NULL THEN CAST(0 AS bit) ELSE CAST(1 AS bit) END AS Autorizado
                 FROM dbo.ALFACORE_MENU_WEB w
-                {legacyJoin}
                 LEFT JOIN dbo.ALFACORE_TAREAS_WEB t
                     ON UPPER(LTRIM(RTRIM(t.USUARIO))) = @Usuario
                    AND UPPER(LTRIM(RTRIM(t.SISTEMA))) = @SistemaPermisos
                    AND UPPER(LTRIM(RTRIM(t.Clave))) = UPPER(LTRIM(RTRIM(w.Clave)))
                 WHERE UPPER(LTRIM(RTRIM(w.Menu))) = @MenuSistema
                   AND ISNULL(w.HabilitadoWeb, 1) = 1
-                ORDER BY ISNULL(w.OrdenWeb, 0), w.Clave, {nameExpr};
+                ORDER BY ISNULL(w.OrdenWeb, 0), w.Clave, ISNULL(NULLIF(w.NombreWeb, ''), w.Clave);
                 """;
 
             var rows = (await cn.QueryAsync<MenuAutorizacionRow>(new CommandDefinition(sql, new
@@ -241,29 +212,11 @@ public sealed class AutorizacionTareasService(
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToArray();
 
-            var hasPadreClave = await ColumnExistsAsync(cn, "ALFACORE_MENU_WEB", "PadreClave", token);
-            var hasLegacyMenu = await TableExistsAsync(cn, "TA_MENU", token);
-            var parentJoin = hasLegacyMenu
-                ? """
-                LEFT JOIN dbo.TA_MENU tm
-                    ON tm.Menu = w.Menu
-                   AND tm.Clave = w.Clave
-                """
-                : string.Empty;
-            var parentSelect = hasPadreClave
-                ? (hasLegacyMenu
-                    ? "UPPER(LTRIM(RTRIM(ISNULL(NULLIF(w.PadreClave, ''), ISNULL(tm.Titulo, ''))))) AS Titulo"
-                    : "UPPER(LTRIM(RTRIM(ISNULL(w.PadreClave, '')))) AS Titulo")
-                : (hasLegacyMenu
-                    ? "UPPER(LTRIM(RTRIM(ISNULL(tm.Titulo, '')))) AS Titulo"
-                    : "CAST('' AS nvarchar(50)) AS Titulo");
-
-            var parentRows = (await cn.QueryAsync<(string Clave, string Titulo)>(new CommandDefinition($"""
+            var parentRows = (await cn.QueryAsync<(string Clave, string Titulo)>(new CommandDefinition("""
                 SELECT
                     UPPER(LTRIM(RTRIM(ISNULL(w.Clave, '')))) AS Clave,
-                    {parentSelect}
+                    UPPER(LTRIM(RTRIM(ISNULL(w.PadreClave, '')))) AS Titulo
                 FROM dbo.ALFACORE_MENU_WEB w
-                {parentJoin}
                 WHERE UPPER(LTRIM(RTRIM(w.Menu))) = @MenuSistema
                   AND ISNULL(w.Clave, '') <> '';
                 """, new

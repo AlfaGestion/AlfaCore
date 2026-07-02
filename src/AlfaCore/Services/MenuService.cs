@@ -84,42 +84,13 @@ public sealed class MenuService(
                 return EmptySnapshot();
             }
 
-            var hasNombreWeb = await ColumnExistsAsync(cn, "ALFACORE_MENU_WEB", "NombreWeb", ct);
-            var hasDescripcionWeb = await ColumnExistsAsync(cn, "ALFACORE_MENU_WEB", "DescripcionWeb", ct);
-            var hasPadreClave = await ColumnExistsAsync(cn, "ALFACORE_MENU_WEB", "PadreClave", ct);
-            var hasLegacyMenu = await TableExistsAsync(cn, "TA_MENU", ct);
-            var legacyJoin = hasLegacyMenu
-                ? """
-                LEFT JOIN dbo.TA_MENU tm
-                    ON tm.Menu = w.Menu
-                   AND tm.Clave = w.Clave
-                """
-                : string.Empty;
-            var parentExpr = hasPadreClave
-                ? (hasLegacyMenu
-                    ? "ISNULL(NULLIF(w.PadreClave, ''), ISNULL(tm.Titulo, ''))"
-                    : "ISNULL(w.PadreClave, '')")
-                : (hasLegacyMenu ? "ISNULL(tm.Titulo, '')" : "''");
-            var nameExpr = hasNombreWeb
-                ? (hasLegacyMenu
-                    ? "ISNULL(NULLIF(w.NombreWeb, ''), ISNULL(NULLIF(tm.Nombre, ''), w.Clave))"
-                    : "ISNULL(NULLIF(w.NombreWeb, ''), w.Clave)")
-                : (hasLegacyMenu ? "ISNULL(NULLIF(tm.Nombre, ''), ISNULL(w.Clave, ''))" : "ISNULL(w.Clave, '')");
-            var descriptionExpr = hasDescripcionWeb
-                ? (hasLegacyMenu
-                    ? "ISNULL(NULLIF(w.DescripcionWeb, ''), ISNULL(CONVERT(nvarchar(500), tm.Descripcion), ISNULL(w.Observacion, '')))"
-                    : "ISNULL(w.DescripcionWeb, '')")
-                : (hasLegacyMenu
-                    ? "ISNULL(CONVERT(nvarchar(500), tm.Descripcion), ISNULL(w.Observacion, ''))"
-                    : "ISNULL(w.Observacion, '')");
-
-            var sql = $"""
+            const string sql = """
                 SELECT
                     ISNULL(w.Menu, '') AS Menu,
                     ISNULL(w.Clave, '') AS Clave,
-                    {parentExpr} AS PadreClave,
-                    {nameExpr} AS Nombre,
-                    {descriptionExpr} AS Descripcion,
+                    ISNULL(w.PadreClave, '') AS PadreClave,
+                    ISNULL(NULLIF(w.NombreWeb, ''), w.Clave) AS Nombre,
+                    ISNULL(w.DescripcionWeb, ISNULL(w.Observacion, '')) AS Descripcion,
                     ISNULL(w.RutaWeb, '') AS RutaWeb,
                     ISNULL(w.Componente, '') AS Componente,
                     ISNULL(w.Icono, '') AS Icono,
@@ -128,7 +99,6 @@ public sealed class MenuService(
                     ISNULL(w.EsFavoritoDefault, 0) AS EsFavoritoDefault,
                     ISNULL(w.Observacion, '') AS Observacion
                 FROM dbo.ALFACORE_MENU_WEB w
-                {legacyJoin}
                 WHERE ISNULL(w.Menu, '') <> '';
                 """;
 
@@ -523,23 +493,6 @@ public sealed class MenuService(
             """;
 
         var count = await cn.ExecuteScalarAsync<int>(new CommandDefinition(sql, new { FullName = $"dbo.{tableName}" }, cancellationToken: ct));
-        return count > 0;
-    }
-
-    private static async Task<bool> ColumnExistsAsync(SqlConnection cn, string tableName, string columnName, CancellationToken ct)
-    {
-        const string sql = """
-            SELECT COUNT(1)
-            FROM sys.columns
-            WHERE object_id = OBJECT_ID(@FullName)
-              AND name = @ColumnName;
-            """;
-
-        var count = await cn.ExecuteScalarAsync<int>(new CommandDefinition(sql, new
-        {
-            FullName = $"dbo.{tableName}",
-            ColumnName = columnName
-        }, cancellationToken: ct));
         return count > 0;
     }
 

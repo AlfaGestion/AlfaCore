@@ -470,7 +470,7 @@ public sealed class NotificacionesPushService(
                 FROM dbo.ALFACORE_MENU_WEB
                 WHERE ISNULL(HabilitadoWeb, 1) = 1
                   AND (
-                      OR UPPER(ISNULL(Clave, '')) LIKE N'%CONVERS%'
+                      UPPER(ISNULL(Clave, '')) LIKE N'%CONVERS%'
                       OR UPPER(ISNULL(NombreWeb, '')) LIKE N'%CONVERS%'
                       OR UPPER(ISNULL(DescripcionWeb, '')) LIKE N'%CONVERS%'
                       OR UPPER(ISNULL(RutaWeb, '')) LIKE N'%CONVERS%'
@@ -490,7 +490,7 @@ public sealed class NotificacionesPushService(
                 WHERE UPPER(LTRIM(RTRIM(t.USUARIO))) = @Usuario
                   AND ISNULL(m.HabilitadoWeb, 1) = 1
                   AND (
-                      OR UPPER(ISNULL(m.Clave, '')) LIKE N'%CONVERS%'
+                      UPPER(ISNULL(m.Clave, '')) LIKE N'%CONVERS%'
                       OR UPPER(ISNULL(m.NombreWeb, '')) LIKE N'%CONVERS%'
                       OR UPPER(ISNULL(m.DescripcionWeb, '')) LIKE N'%CONVERS%'
                       OR UPPER(ISNULL(m.RutaWeb, '')) LIKE N'%CONVERS%'

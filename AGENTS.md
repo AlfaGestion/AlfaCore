@@ -95,6 +95,37 @@ Ver ejemplos reales en:
 
 ---
 
+## Regla obligatoria: encoding de archivos fuente
+
+Todos los archivos fuente (`.cs`, `.razor`, `.ts`, `.js`, `.json`, `.sql`, `.md`) deben guardarse en **UTF-8 sin BOM**.
+
+### Caracteres especiales en literales de texto
+
+- Usar siempre los caracteres Unicode correctos: `á é í ó ú ü ñ Á É Í Ó Ú Ü Ñ ¿ ¡`
+- **Nunca** escribir las secuencias mojibake (UTF-8 interpretado como Latin-1), como:
+  - `Ã¡` en lugar de `á`
+  - `Ã©` en lugar de `é`
+  - `Ã³` en lugar de `ó`
+  - `Ã±` en lugar de `ñ`
+  - `Ã¢â‚¬â„¢` en lugar de `'`, etc.
+- Si al leer un archivo ya existente se detectan secuencias mojibake, **corregirlas** antes de continuar editando.
+
+### Cómo verificar
+
+Si un string en el código muestra `Ã` seguido de una letra, es mojibake. Tabla de sustitución frecuente:
+
+| Mojibake | Correcto |
+|----------|----------|
+| `Ã¡`    | `á`      |
+| `Ã©`    | `é`      |
+| `Ã­`    | `í`      |
+| `Ã³`    | `ó`      |
+| `Ãº`    | `ú`      |
+| `Ã±`    | `ñ`      |
+| `Ã¿`    | `ÿ`      |
+
+---
+
 ## Verificación asistida del catálogo
 
 Antes de finalizar una tarea, ejecutar:
