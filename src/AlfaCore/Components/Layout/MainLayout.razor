@@ -45,13 +45,13 @@ else
     }
 
     <aside class="shell__sidebar" aria-label="Menú principal">
-        <div class="brand">
+        <div class="brand" @onmouseleave="ReleaseSidebarToggleHover">
             <div class="brand__top">
                 @if (CanShowLauncherAccess)
                 {
-                    <a class="brand__logo-link" href="@GetLauncherUrl()" title="Volver al menú principal" aria-label="Volver al menú principal" @onclick:preventDefault="true" @onclick="GoToLauncher">
+                    <span class="brand__logo-link brand__logo-link--static" aria-hidden="true">
                         <img class="brand__logo" src="/logos/Logo.png" alt="Alfa Gestión" />
-                    </a>
+                    </span>
                 }
                 else
                 {
@@ -78,7 +78,7 @@ else
                 <p class="brand__eyebrow">Business Intelligence</p>
                 @if (CanShowLauncherAccess)
                 {
-                    <a class="brand__title" href="@GetLauncherUrl()" @onclick:preventDefault="true" @onclick="GoToLauncher">Alfa Gestión</a>
+                    <span class="brand__title">Alfa Gestión</span>
                 }
                 else
                 {
@@ -95,6 +95,7 @@ else
                     <span class="menu__search-icon"><i class="bi bi-search"></i></span>
                     <input id="main-menu-search"
                            class="menu__search-input"
+                           @ref="_menuSearchInput"
                            type="search"
                            placeholder="Ventas, clientes, auditoría..."
                            @bind="_menuSearchText"
@@ -150,6 +151,24 @@ else
         }
 
         <div class="menu">
+            @if (!IsDirectMode)
+            {
+                <nav class="menu__nav menu__nav--fixed">
+                    <a class="menu__link menu__link--module menu__link--home" href="@GetLauncherUrl()" @onclick:preventDefault="true" @onclick="GoToLauncher">
+                        <span class="menu__icon"><i class="bi bi-house-door"></i></span>
+                        <span>Inicio</span>
+                    </a>
+                    <button type="button"
+                            class="menu__link menu__button menu__link--search-shortcut"
+                            title="Buscar opción"
+                            aria-label="Buscar opción"
+                            @onclick="FocusMenuSearchAsync">
+                        <span class="menu__icon"><i class="bi bi-search"></i></span>
+                        <span>Buscar</span>
+                    </button>
+                </nav>
+            }
+
             @if (_currentModule == "consultas")
             {
                 @ModuleBackLink
@@ -559,16 +578,35 @@ else
             }
             else if (!IsDirectMode)
             {
-                <p class="menu__section">Aplicaciones</p>
                 <nav class="menu__nav">
-                    <a class="menu__link menu__link--module" href="@GetLauncherAnchorUrl("favoritos")" @onclick:preventDefault="true" @onclick='() => GoToLauncherAnchor("favoritos")'>
-                        <span class="menu__icon"><i class="bi bi-star-fill"></i></span>
-                        <span>Favoritos</span>
-                    </a>
-                    <a class="menu__link menu__link--module" href="@GetLauncherAnchorUrl("recientes")" @onclick:preventDefault="true" @onclick='() => GoToLauncherAnchor("recientes")'>
-                        <span class="menu__icon"><i class="bi bi-clock-history"></i></span>
-                        <span>Recientes</span>
-                    </a>
+                    @if (_menuSearchLoading)
+                    {
+                        <div class="menu__link menu__link--disabled">
+                            <span class="menu__icon"><i class="bi bi-hourglass-split"></i></span>
+                            <span>Cargando módulos...</span>
+                        </div>
+                    }
+                    else if (_mainMenuModules.Count == 0)
+                    {
+                        <div class="menu__link menu__link--disabled">
+                            <span class="menu__icon"><i class="bi bi-grid-3x3-gap-fill"></i></span>
+                            <span>Sin módulos visibles</span>
+                        </div>
+                    }
+                    else
+                    {
+                        @foreach (var module in _mainMenuModules)
+                        {
+                            <a class="@GetMainMenuModuleClass(module)"
+                               href="@BuildModuleUrl(module.RutaWeb)"
+                               title="@module.Nombre"
+                               @onclick:preventDefault="true"
+                               @onclick="(() => NavigateToModule(module.RutaWeb))">
+                                <span class="menu__icon"><i class="bi @(string.IsNullOrWhiteSpace(module.Icono) ? "bi-grid" : module.Icono)"></i></span>
+                                <span>@module.Nombre</span>
+                            </a>
+                        }
+                    }
                 </nav>
             }
 
@@ -1142,7 +1180,7 @@ else
             </a>
         : null;
     private string ShellClass
-        => $"shell {(IsSidebarCollapsed ? "shell--collapsed" : string.Empty)} {(_mobileSidebarOpen ? "shell--mobile-open" : string.Empty)} {(IsDirectMode ? "shell--direct" : string.Empty)} {(IsPosFullscreenRoute ? "shell--pos-fullscreen" : string.Empty)}";
+        => $"shell {(IsSidebarCollapsed ? "shell--collapsed" : string.Empty)} {(_sidebarToggleHoverBlocked ? "shell--toggle-hover-blocked" : string.Empty)} {(_mobileSidebarOpen ? "shell--mobile-open" : string.Empty)} {(IsDirectMode ? "shell--direct" : string.Empty)} {(IsPosFullscreenRoute ? "shell--pos-fullscreen" : string.Empty)}";
     private bool ShowShellContext => string.IsNullOrWhiteSpace(_currentModule);
     private bool ShowLauncherContext => ShowShellContext && !IsDirectMode;
     private bool CanShowLauncherAccess => !IsDirectMode;
@@ -1211,9 +1249,11 @@ else
     private List<ShellModuleDto> _mainMenuModules = [];
     private List<ShellMenuSearchItemDto> _menuSearchCatalog = [];
     private string _menuSearchText = string.Empty;
+    private ElementReference _menuSearchInput;
     private string _menuSearchError = string.Empty;
     private bool _menuSearchLoaded;
     private bool _menuSearchLoading;
+    private bool _sidebarToggleHoverBlocked;
     private bool _tasksPanelOpen;
     private bool _tasksPanelLoading;
     private string _tasksPanelQuickTitle = string.Empty;
@@ -1335,18 +1375,30 @@ else
     private void GoToLauncher()
         => Nav.NavigateTo(GetLauncherUrl());
 
-    private string GetLauncherAnchorUrl(string anchor)
-        => $"{GetLauncherUrl()}#{anchor}";
-
-    private void GoToLauncherAnchor(string anchor)
-    {
-        _mobileSidebarOpen = false;
-        Nav.NavigateTo(GetLauncherAnchorUrl(anchor));
-    }
-
     private void ToggleSidebarCollapsed()
     {
         _sidebarCollapsedOverride = !IsSidebarCollapsed;
+        _sidebarToggleHoverBlocked = true;
+    }
+
+    private void ReleaseSidebarToggleHover()
+        => _sidebarToggleHoverBlocked = false;
+
+    private async Task FocusMenuSearchAsync()
+    {
+        _sidebarCollapsedOverride = false;
+        _sidebarToggleHoverBlocked = false;
+        await EnsureMenuSearchCatalogAsync();
+        await InvokeAsync(StateHasChanged);
+        await Task.Yield();
+
+        try
+        {
+            await _menuSearchInput.FocusAsync();
+        }
+        catch
+        {
+        }
     }
 
     private async Task GoBackOrLauncherAsync()
