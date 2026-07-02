@@ -237,15 +237,15 @@ public sealed class CargaViajesService(
                 """;
             var peajeExpr = $"ISNULL(v.{peajeColumn}, 0)";
             var cantidadViajesExpr = $"ISNULL(v.{cantidadViajesColumn}, 1)";
-            var hasAdicionalFijo1Descripcion = columns.Contains("adicional_fijo1_descripcion");
-            var hasAdicionalFijo1Importe = columns.Contains("adicional_fijo1_importe");
-            var hasAdicionalFijo1Aplicado = columns.Contains("adicional_fijo1_aplicado");
-            var hasAdicionalFijo2Descripcion = columns.Contains("adicional_fijo2_descripcion");
-            var hasAdicionalFijo2Importe = columns.Contains("adicional_fijo2_importe");
-            var hasAdicionalFijo2Aplicado = columns.Contains("adicional_fijo2_aplicado");
-            var hasAdicionalFijo3Descripcion = columns.Contains("adicional_fijo3_descripcion");
-            var hasAdicionalFijo3Importe = columns.Contains("adicional_fijo3_importe");
-            var hasAdicionalFijo3Aplicado = columns.Contains("adicional_fijo3_aplicado");
+            var adicionalFijo1DescripcionColumn = FirstExistingColumnOrNull(columns, "ADICIONAL_FIJO1_DESCRIPCION", "ADICIONALFIJO1DESCRIPCION");
+            var adicionalFijo1ImporteColumn = FirstExistingColumnOrNull(columns, "ADICIONAL_FIJO1_IMPORTE", "ADICIONALFIJO1IMPORTE");
+            var adicionalFijo1AplicadoColumn = FirstExistingColumnOrNull(columns, "ADICIONAL_FIJO1_APLICADO", "ADICIONALFIJO1APLICADO");
+            var adicionalFijo2DescripcionColumn = FirstExistingColumnOrNull(columns, "ADICIONAL_FIJO2_DESCRIPCION", "ADICIONALFIJO2DESCRIPCION");
+            var adicionalFijo2ImporteColumn = FirstExistingColumnOrNull(columns, "ADICIONAL_FIJO2_IMPORTE", "ADICIONALFIJO2IMPORTE");
+            var adicionalFijo2AplicadoColumn = FirstExistingColumnOrNull(columns, "ADICIONAL_FIJO2_APLICADO", "ADICIONALFIJO2APLICADO");
+            var adicionalFijo3DescripcionColumn = FirstExistingColumnOrNull(columns, "ADICIONAL_FIJO3_DESCRIPCION", "ADICIONALFIJO3DESCRIPCION");
+            var adicionalFijo3ImporteColumn = FirstExistingColumnOrNull(columns, "ADICIONAL_FIJO3_IMPORTE", "ADICIONALFIJO3IMPORTE");
+            var adicionalFijo3AplicadoColumn = FirstExistingColumnOrNull(columns, "ADICIONAL_FIJO3_APLICADO", "ADICIONALFIJO3APLICADO");
             var hasTotalAdicionalesFijos = columns.Contains("total_adicionales_fijos");
             var sql = $"""
                 SELECT TOP (1)
@@ -281,15 +281,15 @@ public sealed class CargaViajesService(
                     ISNULL(v.{FirstExistingColumn(columns, "TOTAL_ADIC3")}, 0) AS TotalAdic3,
                     ISNULL(v.{FirstExistingColumn(columns, "TOTAL_ADIC4")}, 0) AS TotalAdic4,
                     ISNULL(v.{FirstExistingColumn(columns, "TOTAL_ADICIONALES")}, 0) AS TotalAdicionales,
-                    {(hasAdicionalFijo1Descripcion ? "ISNULL(v.ADICIONAL_FIJO1_DESCRIPCION, '')" : "CAST('' AS nvarchar(100))")} AS AdicionalFijo1Descripcion,
-                    {(hasAdicionalFijo1Importe ? "ISNULL(v.ADICIONAL_FIJO1_IMPORTE, 0)" : "CAST(0 AS money)")} AS AdicionalFijo1Importe,
-                    {(hasAdicionalFijo1Aplicado ? "ISNULL(v.ADICIONAL_FIJO1_APLICADO, 0)" : "CAST(0 AS bit)")} AS AdicionalFijo1Aplicado,
-                    {(hasAdicionalFijo2Descripcion ? "ISNULL(v.ADICIONAL_FIJO2_DESCRIPCION, '')" : "CAST('' AS nvarchar(100))")} AS AdicionalFijo2Descripcion,
-                    {(hasAdicionalFijo2Importe ? "ISNULL(v.ADICIONAL_FIJO2_IMPORTE, 0)" : "CAST(0 AS money)")} AS AdicionalFijo2Importe,
-                    {(hasAdicionalFijo2Aplicado ? "ISNULL(v.ADICIONAL_FIJO2_APLICADO, 0)" : "CAST(0 AS bit)")} AS AdicionalFijo2Aplicado,
-                    {(hasAdicionalFijo3Descripcion ? "ISNULL(v.ADICIONAL_FIJO3_DESCRIPCION, '')" : "CAST('' AS nvarchar(100))")} AS AdicionalFijo3Descripcion,
-                    {(hasAdicionalFijo3Importe ? "ISNULL(v.ADICIONAL_FIJO3_IMPORTE, 0)" : "CAST(0 AS money)")} AS AdicionalFijo3Importe,
-                    {(hasAdicionalFijo3Aplicado ? "ISNULL(v.ADICIONAL_FIJO3_APLICADO, 0)" : "CAST(0 AS bit)")} AS AdicionalFijo3Aplicado,
+                    {(string.IsNullOrWhiteSpace(adicionalFijo1DescripcionColumn) ? "CAST('' AS nvarchar(100))" : $"ISNULL(v.{adicionalFijo1DescripcionColumn}, '')")} AS AdicionalFijo1Descripcion,
+                    {(string.IsNullOrWhiteSpace(adicionalFijo1ImporteColumn) ? "CAST(0 AS money)" : $"ISNULL(v.{adicionalFijo1ImporteColumn}, 0)")} AS AdicionalFijo1Importe,
+                    {(string.IsNullOrWhiteSpace(adicionalFijo1AplicadoColumn) ? "CAST(0 AS bit)" : $"ISNULL(v.{adicionalFijo1AplicadoColumn}, 0)")} AS AdicionalFijo1Aplicado,
+                    {(string.IsNullOrWhiteSpace(adicionalFijo2DescripcionColumn) ? "CAST('' AS nvarchar(100))" : $"ISNULL(v.{adicionalFijo2DescripcionColumn}, '')")} AS AdicionalFijo2Descripcion,
+                    {(string.IsNullOrWhiteSpace(adicionalFijo2ImporteColumn) ? "CAST(0 AS money)" : $"ISNULL(v.{adicionalFijo2ImporteColumn}, 0)")} AS AdicionalFijo2Importe,
+                    {(string.IsNullOrWhiteSpace(adicionalFijo2AplicadoColumn) ? "CAST(0 AS bit)" : $"ISNULL(v.{adicionalFijo2AplicadoColumn}, 0)")} AS AdicionalFijo2Aplicado,
+                    {(string.IsNullOrWhiteSpace(adicionalFijo3DescripcionColumn) ? "CAST('' AS nvarchar(100))" : $"ISNULL(v.{adicionalFijo3DescripcionColumn}, '')")} AS AdicionalFijo3Descripcion,
+                    {(string.IsNullOrWhiteSpace(adicionalFijo3ImporteColumn) ? "CAST(0 AS money)" : $"ISNULL(v.{adicionalFijo3ImporteColumn}, 0)")} AS AdicionalFijo3Importe,
+                    {(string.IsNullOrWhiteSpace(adicionalFijo3AplicadoColumn) ? "CAST(0 AS bit)" : $"ISNULL(v.{adicionalFijo3AplicadoColumn}, 0)")} AS AdicionalFijo3Aplicado,
                     {(hasTotalAdicionalesFijos ? "ISNULL(v.TOTAL_ADICIONALES_FIJOS, 0)" : "CAST(0 AS money)")} AS TotalAdicionalesFijos,
                     ISNULL(v.{FirstExistingColumn(columns, "OBSERVACIONES")}, '') AS Observaciones
                 FROM dbo.{viajeTable} v
@@ -679,12 +679,12 @@ public sealed class CargaViajesService(
                     ELSE {tipoVehiculoCodeExpr} + ' - ' + tv.Valor
                 END
                 """;
-            var hasAdicionalFijo1Descripcion = columns.Contains("adicionalfijo1descripcion");
-            var hasAdicionalFijo1Importe = columns.Contains("adicionalfijo1importe");
-            var hasAdicionalFijo2Descripcion = columns.Contains("adicionalfijo2descripcion");
-            var hasAdicionalFijo2Importe = columns.Contains("adicionalfijo2importe");
-            var hasAdicionalFijo3Descripcion = columns.Contains("adicionalfijo3descripcion");
-            var hasAdicionalFijo3Importe = columns.Contains("adicionalfijo3importe");
+            var adicionalFijo1DescripcionColumn = FirstExistingColumnOrNull(columns, "ADICIONALFIJO1DESCRIPCION", "ADICIONAL_FIJO1_DESCRIPCION");
+            var adicionalFijo1ImporteColumn = FirstExistingColumnOrNull(columns, "ADICIONALFIJO1IMPORTE", "ADICIONAL_FIJO1_IMPORTE");
+            var adicionalFijo2DescripcionColumn = FirstExistingColumnOrNull(columns, "ADICIONALFIJO2DESCRIPCION", "ADICIONAL_FIJO2_DESCRIPCION");
+            var adicionalFijo2ImporteColumn = FirstExistingColumnOrNull(columns, "ADICIONALFIJO2IMPORTE", "ADICIONAL_FIJO2_IMPORTE");
+            var adicionalFijo3DescripcionColumn = FirstExistingColumnOrNull(columns, "ADICIONALFIJO3DESCRIPCION", "ADICIONAL_FIJO3_DESCRIPCION");
+            var adicionalFijo3ImporteColumn = FirstExistingColumnOrNull(columns, "ADICIONALFIJO3IMPORTE", "ADICIONAL_FIJO3_IMPORTE");
             var fechaModificacionColumn = FirstExistingColumnOrNull(columns, "FECHAHORA_MODIFICACION", "FECHA_MODIFICACION", "FECHAMODIFICACION");
             var usuarioModificacionColumn = FirstExistingColumnOrNull(columns, "USUARIOMODIFICACION", "USUARIO_MODIFICACION");
             var idSelectExpr = string.IsNullOrWhiteSpace(idColumn) ? "CAST(0 AS int) AS Id" : $"ISNULL(t.{idColumn}, 0) AS Id";
@@ -727,12 +727,12 @@ public sealed class CargaViajesService(
                         ISNULL(t.PorcentajeAdic2, 0) AS PorcentajeAdic2,
                         ISNULL(t.PorcentajeAdic3, 0) AS PorcentajeAdic3,
                         ISNULL(t.PorcentajeAdic4, 0) AS PorcentajeAdic4,
-                        {(hasAdicionalFijo1Descripcion ? "ISNULL(t.AdicionalFijo1Descripcion, '')" : "CAST('' AS nvarchar(100))")} AS AdicionalFijo1Descripcion,
-                        {(hasAdicionalFijo1Importe ? "ISNULL(t.AdicionalFijo1Importe, 0)" : "CAST(0 AS money)")} AS AdicionalFijo1Importe,
-                        {(hasAdicionalFijo2Descripcion ? "ISNULL(t.AdicionalFijo2Descripcion, '')" : "CAST('' AS nvarchar(100))")} AS AdicionalFijo2Descripcion,
-                        {(hasAdicionalFijo2Importe ? "ISNULL(t.AdicionalFijo2Importe, 0)" : "CAST(0 AS money)")} AS AdicionalFijo2Importe,
-                        {(hasAdicionalFijo3Descripcion ? "ISNULL(t.AdicionalFijo3Descripcion, '')" : "CAST('' AS nvarchar(100))")} AS AdicionalFijo3Descripcion,
-                        {(hasAdicionalFijo3Importe ? "ISNULL(t.AdicionalFijo3Importe, 0)" : "CAST(0 AS money)")} AS AdicionalFijo3Importe,
+                        {(string.IsNullOrWhiteSpace(adicionalFijo1DescripcionColumn) ? "CAST('' AS nvarchar(100))" : $"ISNULL(t.{adicionalFijo1DescripcionColumn}, '')")} AS AdicionalFijo1Descripcion,
+                        {(string.IsNullOrWhiteSpace(adicionalFijo1ImporteColumn) ? "CAST(0 AS money)" : $"ISNULL(t.{adicionalFijo1ImporteColumn}, 0)")} AS AdicionalFijo1Importe,
+                        {(string.IsNullOrWhiteSpace(adicionalFijo2DescripcionColumn) ? "CAST('' AS nvarchar(100))" : $"ISNULL(t.{adicionalFijo2DescripcionColumn}, '')")} AS AdicionalFijo2Descripcion,
+                        {(string.IsNullOrWhiteSpace(adicionalFijo2ImporteColumn) ? "CAST(0 AS money)" : $"ISNULL(t.{adicionalFijo2ImporteColumn}, 0)")} AS AdicionalFijo2Importe,
+                        {(string.IsNullOrWhiteSpace(adicionalFijo3DescripcionColumn) ? "CAST('' AS nvarchar(100))" : $"ISNULL(t.{adicionalFijo3DescripcionColumn}, '')")} AS AdicionalFijo3Descripcion,
+                        {(string.IsNullOrWhiteSpace(adicionalFijo3ImporteColumn) ? "CAST(0 AS money)" : $"ISNULL(t.{adicionalFijo3ImporteColumn}, 0)")} AS AdicionalFijo3Importe,
                         ISNULL(t.Activo, 1) AS Activo,
                         {(string.IsNullOrWhiteSpace(fechaModificacionColumn) ? "CAST(NULL AS datetime)" : $"t.{fechaModificacionColumn}")} AS FechaHoraModificacion,
                         {(string.IsNullOrWhiteSpace(usuarioModificacionColumn) ? "CAST('' AS nvarchar(50))" : $"ISNULL(t.{usuarioModificacionColumn}, '')")} AS UsuarioModificacion
@@ -871,17 +871,17 @@ public sealed class CargaViajesService(
             var choferColumn = FirstExistingColumn(columns, "IDCHOFER", "CHOFER");
             var destinoColumn = FirstExistingColumn(columns, "IDDESTINO", "DESTINO");
             var tipoVehiculoColumn = FirstExistingColumn(columns, "IDTIPOVEHICULO", "TIPOVEHICULO");
-            var hasAdicionalFijo1Descripcion = columns.Contains("adicionalfijo1descripcion");
-            var hasAdicionalFijo1Importe = columns.Contains("adicionalfijo1importe");
-            var hasAdicionalFijo2Descripcion = columns.Contains("adicionalfijo2descripcion");
-            var hasAdicionalFijo2Importe = columns.Contains("adicionalfijo2importe");
-            var hasAdicionalFijo3Descripcion = columns.Contains("adicionalfijo3descripcion");
-            var hasAdicionalFijo3Importe = columns.Contains("adicionalfijo3importe");
+            var adicionalFijo1DescripcionColumn = FirstExistingColumnOrNull(columns, "ADICIONALFIJO1DESCRIPCION", "ADICIONAL_FIJO1_DESCRIPCION");
+            var adicionalFijo1ImporteColumn = FirstExistingColumnOrNull(columns, "ADICIONALFIJO1IMPORTE", "ADICIONAL_FIJO1_IMPORTE");
+            var adicionalFijo2DescripcionColumn = FirstExistingColumnOrNull(columns, "ADICIONALFIJO2DESCRIPCION", "ADICIONAL_FIJO2_DESCRIPCION");
+            var adicionalFijo2ImporteColumn = FirstExistingColumnOrNull(columns, "ADICIONALFIJO2IMPORTE", "ADICIONAL_FIJO2_IMPORTE");
+            var adicionalFijo3DescripcionColumn = FirstExistingColumnOrNull(columns, "ADICIONALFIJO3DESCRIPCION", "ADICIONAL_FIJO3_DESCRIPCION");
+            var adicionalFijo3ImporteColumn = FirstExistingColumnOrNull(columns, "ADICIONALFIJO3IMPORTE", "ADICIONAL_FIJO3_IMPORTE");
             var fechaModificacionColumn = FirstExistingColumnOrNull(columns, "FECHAHORA_MODIFICACION", "FECHA_MODIFICACION", "FECHAMODIFICACION");
             var usuarioModificacionColumn = FirstExistingColumnOrNull(columns, "USUARIOMODIFICACION", "USUARIO_MODIFICACION");
             var sql = $"""
                 SELECT TOP (1)
-                    {(string.IsNullOrWhiteSpace(idColumn) ? "CAST(0 AS int)" : $"ISNULL({idColumn}, 0)") } AS Id,
+                    {(string.IsNullOrWhiteSpace(idColumn) ? "CAST(0 AS int)" : $"ISNULL(t.{idColumn}, 0)") } AS Id,
                     LTRIM(RTRIM(ISNULL(t.{idListaColumn}, ''))) AS IdLista,
                     ISNULL(t.Nombre, '') AS Nombre,
                     ISNULL(t.Importe, 0) AS Importe,
@@ -895,12 +895,12 @@ public sealed class CargaViajesService(
                     ISNULL(t.PorcentajeAdic2, 0) AS PorcentajeAdic2,
                     ISNULL(t.PorcentajeAdic3, 0) AS PorcentajeAdic3,
                     ISNULL(t.PorcentajeAdic4, 0) AS PorcentajeAdic4,
-                    {(hasAdicionalFijo1Descripcion ? "ISNULL(t.AdicionalFijo1Descripcion, '')" : "CAST('' AS nvarchar(100))")} AS AdicionalFijo1Descripcion,
-                    {(hasAdicionalFijo1Importe ? "ISNULL(t.AdicionalFijo1Importe, 0)" : "CAST(0 AS money)")} AS AdicionalFijo1Importe,
-                    {(hasAdicionalFijo2Descripcion ? "ISNULL(t.AdicionalFijo2Descripcion, '')" : "CAST('' AS nvarchar(100))")} AS AdicionalFijo2Descripcion,
-                    {(hasAdicionalFijo2Importe ? "ISNULL(t.AdicionalFijo2Importe, 0)" : "CAST(0 AS money)")} AS AdicionalFijo2Importe,
-                    {(hasAdicionalFijo3Descripcion ? "ISNULL(t.AdicionalFijo3Descripcion, '')" : "CAST('' AS nvarchar(100))")} AS AdicionalFijo3Descripcion,
-                    {(hasAdicionalFijo3Importe ? "ISNULL(t.AdicionalFijo3Importe, 0)" : "CAST(0 AS money)")} AS AdicionalFijo3Importe,
+                    {(string.IsNullOrWhiteSpace(adicionalFijo1DescripcionColumn) ? "CAST('' AS nvarchar(100))" : $"ISNULL(t.{adicionalFijo1DescripcionColumn}, '')")} AS AdicionalFijo1Descripcion,
+                    {(string.IsNullOrWhiteSpace(adicionalFijo1ImporteColumn) ? "CAST(0 AS money)" : $"ISNULL(t.{adicionalFijo1ImporteColumn}, 0)")} AS AdicionalFijo1Importe,
+                    {(string.IsNullOrWhiteSpace(adicionalFijo2DescripcionColumn) ? "CAST('' AS nvarchar(100))" : $"ISNULL(t.{adicionalFijo2DescripcionColumn}, '')")} AS AdicionalFijo2Descripcion,
+                    {(string.IsNullOrWhiteSpace(adicionalFijo2ImporteColumn) ? "CAST(0 AS money)" : $"ISNULL(t.{adicionalFijo2ImporteColumn}, 0)")} AS AdicionalFijo2Importe,
+                    {(string.IsNullOrWhiteSpace(adicionalFijo3DescripcionColumn) ? "CAST('' AS nvarchar(100))" : $"ISNULL(t.{adicionalFijo3DescripcionColumn}, '')")} AS AdicionalFijo3Descripcion,
+                    {(string.IsNullOrWhiteSpace(adicionalFijo3ImporteColumn) ? "CAST(0 AS money)" : $"ISNULL(t.{adicionalFijo3ImporteColumn}, 0)")} AS AdicionalFijo3Importe,
                     ISNULL(t.Activo, 1) AS Activo,
                     {(string.IsNullOrWhiteSpace(fechaModificacionColumn) ? "CAST(NULL AS datetime)" : $"t.{fechaModificacionColumn}")} AS FechaHoraModificacion,
                     {(string.IsNullOrWhiteSpace(usuarioModificacionColumn) ? "CAST('' AS nvarchar(50))" : $"ISNULL(t.{usuarioModificacionColumn}, '')")} AS UsuarioModificacion
@@ -934,18 +934,18 @@ public sealed class CargaViajesService(
                 : null;
             if (string.IsNullOrWhiteSpace(idColumn))
                 return null;
-            var hasAdicionalFijo1Descripcion = columns.Contains("adicionalfijo1descripcion");
-            var hasAdicionalFijo1Importe = columns.Contains("adicionalfijo1importe");
-            var hasAdicionalFijo2Descripcion = columns.Contains("adicionalfijo2descripcion");
-            var hasAdicionalFijo2Importe = columns.Contains("adicionalfijo2importe");
-            var hasAdicionalFijo3Descripcion = columns.Contains("adicionalfijo3descripcion");
-            var hasAdicionalFijo3Importe = columns.Contains("adicionalfijo3importe");
+            var adicionalFijo1DescripcionColumn = FirstExistingColumnOrNull(columns, "ADICIONALFIJO1DESCRIPCION", "ADICIONAL_FIJO1_DESCRIPCION");
+            var adicionalFijo1ImporteColumn = FirstExistingColumnOrNull(columns, "ADICIONALFIJO1IMPORTE", "ADICIONAL_FIJO1_IMPORTE");
+            var adicionalFijo2DescripcionColumn = FirstExistingColumnOrNull(columns, "ADICIONALFIJO2DESCRIPCION", "ADICIONAL_FIJO2_DESCRIPCION");
+            var adicionalFijo2ImporteColumn = FirstExistingColumnOrNull(columns, "ADICIONALFIJO2IMPORTE", "ADICIONAL_FIJO2_IMPORTE");
+            var adicionalFijo3DescripcionColumn = FirstExistingColumnOrNull(columns, "ADICIONALFIJO3DESCRIPCION", "ADICIONAL_FIJO3_DESCRIPCION");
+            var adicionalFijo3ImporteColumn = FirstExistingColumnOrNull(columns, "ADICIONALFIJO3IMPORTE", "ADICIONAL_FIJO3_IMPORTE");
             var fechaModificacionColumn = FirstExistingColumnOrNull(columns, "FECHAHORA_MODIFICACION", "FECHA_MODIFICACION", "FECHAMODIFICACION");
             var usuarioModificacionColumn = FirstExistingColumnOrNull(columns, "USUARIOMODIFICACION", "USUARIO_MODIFICACION");
 
             var row = await cn.QuerySingleOrDefaultAsync<CargaViajeTarifaGridItemDto>(new CommandDefinition($"""
                 SELECT TOP (1)
-                    ISNULL({idColumn}, 0) AS Id,
+                    ISNULL(t.{idColumn}, 0) AS Id,
                     LTRIM(RTRIM(ISNULL(t.{FirstExistingColumn(columns, "IDLISTA", "ID_LISTA")}, ''))) AS IdLista,
                     ISNULL(t.Nombre, '') AS Nombre,
                     ISNULL(t.Importe, 0) AS Importe,
@@ -959,12 +959,12 @@ public sealed class CargaViajesService(
                     ISNULL(t.PorcentajeAdic2, 0) AS PorcentajeAdic2,
                     ISNULL(t.PorcentajeAdic3, 0) AS PorcentajeAdic3,
                     ISNULL(t.PorcentajeAdic4, 0) AS PorcentajeAdic4,
-                    {(hasAdicionalFijo1Descripcion ? "ISNULL(t.AdicionalFijo1Descripcion, '')" : "CAST('' AS nvarchar(100))")} AS AdicionalFijo1Descripcion,
-                    {(hasAdicionalFijo1Importe ? "ISNULL(t.AdicionalFijo1Importe, 0)" : "CAST(0 AS money)")} AS AdicionalFijo1Importe,
-                    {(hasAdicionalFijo2Descripcion ? "ISNULL(t.AdicionalFijo2Descripcion, '')" : "CAST('' AS nvarchar(100))")} AS AdicionalFijo2Descripcion,
-                    {(hasAdicionalFijo2Importe ? "ISNULL(t.AdicionalFijo2Importe, 0)" : "CAST(0 AS money)")} AS AdicionalFijo2Importe,
-                    {(hasAdicionalFijo3Descripcion ? "ISNULL(t.AdicionalFijo3Descripcion, '')" : "CAST('' AS nvarchar(100))")} AS AdicionalFijo3Descripcion,
-                    {(hasAdicionalFijo3Importe ? "ISNULL(t.AdicionalFijo3Importe, 0)" : "CAST(0 AS money)")} AS AdicionalFijo3Importe,
+                    {(string.IsNullOrWhiteSpace(adicionalFijo1DescripcionColumn) ? "CAST('' AS nvarchar(100))" : $"ISNULL(t.{adicionalFijo1DescripcionColumn}, '')")} AS AdicionalFijo1Descripcion,
+                    {(string.IsNullOrWhiteSpace(adicionalFijo1ImporteColumn) ? "CAST(0 AS money)" : $"ISNULL(t.{adicionalFijo1ImporteColumn}, 0)")} AS AdicionalFijo1Importe,
+                    {(string.IsNullOrWhiteSpace(adicionalFijo2DescripcionColumn) ? "CAST('' AS nvarchar(100))" : $"ISNULL(t.{adicionalFijo2DescripcionColumn}, '')")} AS AdicionalFijo2Descripcion,
+                    {(string.IsNullOrWhiteSpace(adicionalFijo2ImporteColumn) ? "CAST(0 AS money)" : $"ISNULL(t.{adicionalFijo2ImporteColumn}, 0)")} AS AdicionalFijo2Importe,
+                    {(string.IsNullOrWhiteSpace(adicionalFijo3DescripcionColumn) ? "CAST('' AS nvarchar(100))" : $"ISNULL(t.{adicionalFijo3DescripcionColumn}, '')")} AS AdicionalFijo3Descripcion,
+                    {(string.IsNullOrWhiteSpace(adicionalFijo3ImporteColumn) ? "CAST(0 AS money)" : $"ISNULL(t.{adicionalFijo3ImporteColumn}, 0)")} AS AdicionalFijo3Importe,
                     ISNULL(t.Activo, 1) AS Activo,
                     {(string.IsNullOrWhiteSpace(fechaModificacionColumn) ? "CAST(NULL AS datetime)" : $"t.{fechaModificacionColumn}")} AS FechaHoraModificacion,
                     {(string.IsNullOrWhiteSpace(usuarioModificacionColumn) ? "CAST('' AS nvarchar(50))" : $"ISNULL(t.{usuarioModificacionColumn}, '')")} AS UsuarioModificacion
@@ -973,7 +973,7 @@ public sealed class CargaViajesService(
                 LEFT JOIN dbo.TA_CHOFERES ch ON UPPER(LTRIM(RTRIM(ch.CODIGO))) = UPPER(LTRIM(RTRIM(ISNULL(t.{FirstExistingColumn(columns, "IDCHOFER", "CHOFER")}, ''))))
                 LEFT JOIN dbo.TA_DESTINOS d ON UPPER(LTRIM(RTRIM(d.CODIGO))) = UPPER(LTRIM(RTRIM(ISNULL(t.{FirstExistingColumn(columns, "IDDESTINO", "DESTINO")}, ''))))
                 LEFT JOIN dbo.TA_TIPOVEHICULO tv ON UPPER(LTRIM(RTRIM(tv.CODIGO))) = UPPER(LTRIM(RTRIM(ISNULL(t.{FirstExistingColumn(columns, "IDTIPOVEHICULO", "TIPOVEHICULO")}, ''))))
-                WHERE {idColumn} = @Id;
+                WHERE t.{idColumn} = @Id;
                 """, new { Id = id }, cancellationToken: token));
             return row;
         }, "No se pudo cargar la tarifa seleccionada.", ct);
@@ -1059,12 +1059,12 @@ public sealed class CargaViajesService(
             var fechaModificacionColumn = FirstExistingColumnOrNull(columns, "FECHAHORA_MODIFICACION", "FECHA_MODIFICACION", "FECHAMODIFICACION");
             var usuarioModificacionColumn = FirstExistingColumnOrNull(columns, "USUARIOMODIFICACION", "USUARIO_MODIFICACION");
             var usuarioActual = NormalizeUser(Environment.UserName);
-            var hasAdicFijo1Desc = columns.Contains("adicional_fijo1_descripcion");
-            var hasAdicFijo1Importe = columns.Contains("adicional_fijo1_importe");
-            var hasAdicFijo2Desc = columns.Contains("adicional_fijo2_descripcion");
-            var hasAdicFijo2Importe = columns.Contains("adicional_fijo2_importe");
-            var hasAdicFijo3Desc = columns.Contains("adicional_fijo3_descripcion");
-            var hasAdicFijo3Importe = columns.Contains("adicional_fijo3_importe");
+            var adicionalFijo1DescripcionColumn = FirstExistingColumnOrNull(columns, "ADICIONALFIJO1DESCRIPCION", "ADICIONAL_FIJO1_DESCRIPCION");
+            var adicionalFijo1ImporteColumn = FirstExistingColumnOrNull(columns, "ADICIONALFIJO1IMPORTE", "ADICIONAL_FIJO1_IMPORTE");
+            var adicionalFijo2DescripcionColumn = FirstExistingColumnOrNull(columns, "ADICIONALFIJO2DESCRIPCION", "ADICIONAL_FIJO2_DESCRIPCION");
+            var adicionalFijo2ImporteColumn = FirstExistingColumnOrNull(columns, "ADICIONALFIJO2IMPORTE", "ADICIONAL_FIJO2_IMPORTE");
+            var adicionalFijo3DescripcionColumn = FirstExistingColumnOrNull(columns, "ADICIONALFIJO3DESCRIPCION", "ADICIONAL_FIJO3_DESCRIPCION");
+            var adicionalFijo3ImporteColumn = FirstExistingColumnOrNull(columns, "ADICIONALFIJO3IMPORTE", "ADICIONAL_FIJO3_IMPORTE");
 
             var idLista = request.IdLista.Trim().ToUpperInvariant();
             var originalIdLista = string.IsNullOrWhiteSpace(request.OriginalIdLista)
@@ -1122,12 +1122,12 @@ public sealed class CargaViajesService(
                 "@PorcentajeAdic3",
                 "@PorcentajeAdic4"
             };
-            AddColumnPair(insertColumns, insertValues, hasAdicFijo1Desc ? "AdicionalFijo1Descripcion" : null, "@AdicionalFijo1Descripcion");
-            AddColumnPair(insertColumns, insertValues, hasAdicFijo1Importe ? "AdicionalFijo1Importe" : null, "@AdicionalFijo1Importe");
-            AddColumnPair(insertColumns, insertValues, hasAdicFijo2Desc ? "AdicionalFijo2Descripcion" : null, "@AdicionalFijo2Descripcion");
-            AddColumnPair(insertColumns, insertValues, hasAdicFijo2Importe ? "AdicionalFijo2Importe" : null, "@AdicionalFijo2Importe");
-            AddColumnPair(insertColumns, insertValues, hasAdicFijo3Desc ? "AdicionalFijo3Descripcion" : null, "@AdicionalFijo3Descripcion");
-            AddColumnPair(insertColumns, insertValues, hasAdicFijo3Importe ? "AdicionalFijo3Importe" : null, "@AdicionalFijo3Importe");
+            AddColumnPair(insertColumns, insertValues, adicionalFijo1DescripcionColumn, "@AdicionalFijo1Descripcion");
+            AddColumnPair(insertColumns, insertValues, adicionalFijo1ImporteColumn, "@AdicionalFijo1Importe");
+            AddColumnPair(insertColumns, insertValues, adicionalFijo2DescripcionColumn, "@AdicionalFijo2Descripcion");
+            AddColumnPair(insertColumns, insertValues, adicionalFijo2ImporteColumn, "@AdicionalFijo2Importe");
+            AddColumnPair(insertColumns, insertValues, adicionalFijo3DescripcionColumn, "@AdicionalFijo3Descripcion");
+            AddColumnPair(insertColumns, insertValues, adicionalFijo3ImporteColumn, "@AdicionalFijo3Importe");
             insertColumns.Add("Activo");
             insertValues.Add("@Activo");
 
@@ -1146,12 +1146,12 @@ public sealed class CargaViajesService(
                 "PorcentajeAdic3 = @PorcentajeAdic3",
                 "PorcentajeAdic4 = @PorcentajeAdic4"
             };
-            AddUpdatePart(updateParts, hasAdicFijo1Desc ? "AdicionalFijo1Descripcion" : null, "@AdicionalFijo1Descripcion");
-            AddUpdatePart(updateParts, hasAdicFijo1Importe ? "AdicionalFijo1Importe" : null, "@AdicionalFijo1Importe");
-            AddUpdatePart(updateParts, hasAdicFijo2Desc ? "AdicionalFijo2Descripcion" : null, "@AdicionalFijo2Descripcion");
-            AddUpdatePart(updateParts, hasAdicFijo2Importe ? "AdicionalFijo2Importe" : null, "@AdicionalFijo2Importe");
-            AddUpdatePart(updateParts, hasAdicFijo3Desc ? "AdicionalFijo3Descripcion" : null, "@AdicionalFijo3Descripcion");
-            AddUpdatePart(updateParts, hasAdicFijo3Importe ? "AdicionalFijo3Importe" : null, "@AdicionalFijo3Importe");
+            AddUpdatePart(updateParts, adicionalFijo1DescripcionColumn, "@AdicionalFijo1Descripcion");
+            AddUpdatePart(updateParts, adicionalFijo1ImporteColumn, "@AdicionalFijo1Importe");
+            AddUpdatePart(updateParts, adicionalFijo2DescripcionColumn, "@AdicionalFijo2Descripcion");
+            AddUpdatePart(updateParts, adicionalFijo2ImporteColumn, "@AdicionalFijo2Importe");
+            AddUpdatePart(updateParts, adicionalFijo3DescripcionColumn, "@AdicionalFijo3Descripcion");
+            AddUpdatePart(updateParts, adicionalFijo3ImporteColumn, "@AdicionalFijo3Importe");
             updateParts.Add("Activo = @Activo");
 
             var sql = isNew
@@ -1187,12 +1187,12 @@ public sealed class CargaViajesService(
             parameters.Add("@PorcentajeAdic2", request.PorcentajeAdic2);
             parameters.Add("@PorcentajeAdic3", request.PorcentajeAdic3);
             parameters.Add("@PorcentajeAdic4", request.PorcentajeAdic4);
-            if (hasAdicFijo1Desc) parameters.Add("@AdicionalFijo1Descripcion", (request.AdicionalFijo1Descripcion ?? string.Empty).Trim());
-            if (hasAdicFijo1Importe) parameters.Add("@AdicionalFijo1Importe", request.AdicionalFijo1Importe);
-            if (hasAdicFijo2Desc) parameters.Add("@AdicionalFijo2Descripcion", (request.AdicionalFijo2Descripcion ?? string.Empty).Trim());
-            if (hasAdicFijo2Importe) parameters.Add("@AdicionalFijo2Importe", request.AdicionalFijo2Importe);
-            if (hasAdicFijo3Desc) parameters.Add("@AdicionalFijo3Descripcion", (request.AdicionalFijo3Descripcion ?? string.Empty).Trim());
-            if (hasAdicFijo3Importe) parameters.Add("@AdicionalFijo3Importe", request.AdicionalFijo3Importe);
+            if (!string.IsNullOrWhiteSpace(adicionalFijo1DescripcionColumn)) parameters.Add("@AdicionalFijo1Descripcion", (request.AdicionalFijo1Descripcion ?? string.Empty).Trim());
+            if (!string.IsNullOrWhiteSpace(adicionalFijo1ImporteColumn)) parameters.Add("@AdicionalFijo1Importe", request.AdicionalFijo1Importe);
+            if (!string.IsNullOrWhiteSpace(adicionalFijo2DescripcionColumn)) parameters.Add("@AdicionalFijo2Descripcion", (request.AdicionalFijo2Descripcion ?? string.Empty).Trim());
+            if (!string.IsNullOrWhiteSpace(adicionalFijo2ImporteColumn)) parameters.Add("@AdicionalFijo2Importe", request.AdicionalFijo2Importe);
+            if (!string.IsNullOrWhiteSpace(adicionalFijo3DescripcionColumn)) parameters.Add("@AdicionalFijo3Descripcion", (request.AdicionalFijo3Descripcion ?? string.Empty).Trim());
+            if (!string.IsNullOrWhiteSpace(adicionalFijo3ImporteColumn)) parameters.Add("@AdicionalFijo3Importe", request.AdicionalFijo3Importe);
             parameters.Add("@Activo", request.Activo);
 
             await cn.ExecuteAsync(new CommandDefinition(sql, parameters, cancellationToken: token));
@@ -2361,12 +2361,12 @@ public sealed class CargaViajesService(
             var hasPorc2 = columns.Contains("porcentaje_adic2");
             var hasPorc3 = columns.Contains("porcentaje_adic3");
             var hasPorc4 = columns.Contains("porcentaje_adic4");
-            var hasAdicFijo1Desc = columns.Contains("adicionalfijo1descripcion");
-            var hasAdicFijo1Importe = columns.Contains("adicionalfijo1importe");
-            var hasAdicFijo2Desc = columns.Contains("adicionalfijo2descripcion");
-            var hasAdicFijo2Importe = columns.Contains("adicionalfijo2importe");
-            var hasAdicFijo3Desc = columns.Contains("adicionalfijo3descripcion");
-            var hasAdicFijo3Importe = columns.Contains("adicionalfijo3importe");
+            var adicionalFijo1DescripcionColumn = FirstExistingColumnOrNull(columns, "ADICIONALFIJO1DESCRIPCION", "ADICIONAL_FIJO1_DESCRIPCION");
+            var adicionalFijo1ImporteColumn = FirstExistingColumnOrNull(columns, "ADICIONALFIJO1IMPORTE", "ADICIONAL_FIJO1_IMPORTE");
+            var adicionalFijo2DescripcionColumn = FirstExistingColumnOrNull(columns, "ADICIONALFIJO2DESCRIPCION", "ADICIONAL_FIJO2_DESCRIPCION");
+            var adicionalFijo2ImporteColumn = FirstExistingColumnOrNull(columns, "ADICIONALFIJO2IMPORTE", "ADICIONAL_FIJO2_IMPORTE");
+            var adicionalFijo3DescripcionColumn = FirstExistingColumnOrNull(columns, "ADICIONALFIJO3DESCRIPCION", "ADICIONAL_FIJO3_DESCRIPCION");
+            var adicionalFijo3ImporteColumn = FirstExistingColumnOrNull(columns, "ADICIONALFIJO3IMPORTE", "ADICIONAL_FIJO3_IMPORTE");
 
             var parameters = new DynamicParameters();
             parameters.Add("@IdLista", derivedIdLista);
@@ -2405,12 +2405,12 @@ public sealed class CargaViajesService(
             AddColumnPair(insertColumns, insertValues, hasPorc2 ? "PorcentajeAdic2" : null, "@PorcentajeAdic2");
             AddColumnPair(insertColumns, insertValues, hasPorc3 ? "PorcentajeAdic3" : null, "@PorcentajeAdic3");
             AddColumnPair(insertColumns, insertValues, hasPorc4 ? "PorcentajeAdic4" : null, "@PorcentajeAdic4");
-            AddColumnPair(insertColumns, insertValues, hasAdicFijo1Desc ? "AdicionalFijo1Descripcion" : null, "@AdicionalFijo1Descripcion");
-            AddColumnPair(insertColumns, insertValues, hasAdicFijo1Importe ? "AdicionalFijo1Importe" : null, "@AdicionalFijo1Importe");
-            AddColumnPair(insertColumns, insertValues, hasAdicFijo2Desc ? "AdicionalFijo2Descripcion" : null, "@AdicionalFijo2Descripcion");
-            AddColumnPair(insertColumns, insertValues, hasAdicFijo2Importe ? "AdicionalFijo2Importe" : null, "@AdicionalFijo2Importe");
-            AddColumnPair(insertColumns, insertValues, hasAdicFijo3Desc ? "AdicionalFijo3Descripcion" : null, "@AdicionalFijo3Descripcion");
-            AddColumnPair(insertColumns, insertValues, hasAdicFijo3Importe ? "AdicionalFijo3Importe" : null, "@AdicionalFijo3Importe");
+            AddColumnPair(insertColumns, insertValues, adicionalFijo1DescripcionColumn, "@AdicionalFijo1Descripcion");
+            AddColumnPair(insertColumns, insertValues, adicionalFijo1ImporteColumn, "@AdicionalFijo1Importe");
+            AddColumnPair(insertColumns, insertValues, adicionalFijo2DescripcionColumn, "@AdicionalFijo2Descripcion");
+            AddColumnPair(insertColumns, insertValues, adicionalFijo2ImporteColumn, "@AdicionalFijo2Importe");
+            AddColumnPair(insertColumns, insertValues, adicionalFijo3DescripcionColumn, "@AdicionalFijo3Descripcion");
+            AddColumnPair(insertColumns, insertValues, adicionalFijo3ImporteColumn, "@AdicionalFijo3Importe");
             AddColumnPair(insertColumns, insertValues, hasActivo ? "Activo" : null, "@Activo");
 
             var updateParts = new List<string>();
@@ -2427,12 +2427,12 @@ public sealed class CargaViajesService(
             AddUpdatePart(updateParts, hasPorc2 ? "PorcentajeAdic2" : null, "@PorcentajeAdic2");
             AddUpdatePart(updateParts, hasPorc3 ? "PorcentajeAdic3" : null, "@PorcentajeAdic3");
             AddUpdatePart(updateParts, hasPorc4 ? "PorcentajeAdic4" : null, "@PorcentajeAdic4");
-            AddUpdatePart(updateParts, hasAdicFijo1Desc ? "AdicionalFijo1Descripcion" : null, "@AdicionalFijo1Descripcion");
-            AddUpdatePart(updateParts, hasAdicFijo1Importe ? "AdicionalFijo1Importe" : null, "@AdicionalFijo1Importe");
-            AddUpdatePart(updateParts, hasAdicFijo2Desc ? "AdicionalFijo2Descripcion" : null, "@AdicionalFijo2Descripcion");
-            AddUpdatePart(updateParts, hasAdicFijo2Importe ? "AdicionalFijo2Importe" : null, "@AdicionalFijo2Importe");
-            AddUpdatePart(updateParts, hasAdicFijo3Desc ? "AdicionalFijo3Descripcion" : null, "@AdicionalFijo3Descripcion");
-            AddUpdatePart(updateParts, hasAdicFijo3Importe ? "AdicionalFijo3Importe" : null, "@AdicionalFijo3Importe");
+            AddUpdatePart(updateParts, adicionalFijo1DescripcionColumn, "@AdicionalFijo1Descripcion");
+            AddUpdatePart(updateParts, adicionalFijo1ImporteColumn, "@AdicionalFijo1Importe");
+            AddUpdatePart(updateParts, adicionalFijo2DescripcionColumn, "@AdicionalFijo2Descripcion");
+            AddUpdatePart(updateParts, adicionalFijo2ImporteColumn, "@AdicionalFijo2Importe");
+            AddUpdatePart(updateParts, adicionalFijo3DescripcionColumn, "@AdicionalFijo3Descripcion");
+            AddUpdatePart(updateParts, adicionalFijo3ImporteColumn, "@AdicionalFijo3Importe");
             AddUpdatePart(updateParts, hasActivo ? "Activo" : null, "@Activo");
 
             var sql = existing is null
@@ -3691,12 +3691,12 @@ public sealed class CargaViajesService(
         var principalColumn = FirstExistingColumn(columns, principalColumnCandidates.ToArray());
         var destinoColumn = FirstExistingColumn(columns, destinoColumnCandidates.ToArray());
         var tipoVehiculoColumn = FirstExistingColumn(columns, tipoVehiculoColumnCandidates.ToArray());
-        var hasAdicionalFijo1Descripcion = columns.Contains("adicionalfijo1descripcion");
-        var hasAdicionalFijo1Importe = columns.Contains("adicionalfijo1importe");
-        var hasAdicionalFijo2Descripcion = columns.Contains("adicionalfijo2descripcion");
-        var hasAdicionalFijo2Importe = columns.Contains("adicionalfijo2importe");
-        var hasAdicionalFijo3Descripcion = columns.Contains("adicionalfijo3descripcion");
-        var hasAdicionalFijo3Importe = columns.Contains("adicionalfijo3importe");
+        var adicionalFijo1DescripcionColumn = FirstExistingColumnOrNull(columns, "ADICIONALFIJO1DESCRIPCION", "ADICIONAL_FIJO1_DESCRIPCION");
+        var adicionalFijo1ImporteColumn = FirstExistingColumnOrNull(columns, "ADICIONALFIJO1IMPORTE", "ADICIONAL_FIJO1_IMPORTE");
+        var adicionalFijo2DescripcionColumn = FirstExistingColumnOrNull(columns, "ADICIONALFIJO2DESCRIPCION", "ADICIONAL_FIJO2_DESCRIPCION");
+        var adicionalFijo2ImporteColumn = FirstExistingColumnOrNull(columns, "ADICIONALFIJO2IMPORTE", "ADICIONAL_FIJO2_IMPORTE");
+        var adicionalFijo3DescripcionColumn = FirstExistingColumnOrNull(columns, "ADICIONALFIJO3DESCRIPCION", "ADICIONAL_FIJO3_DESCRIPCION");
+        var adicionalFijo3ImporteColumn = FirstExistingColumnOrNull(columns, "ADICIONALFIJO3IMPORTE", "ADICIONAL_FIJO3_IMPORTE");
 
         var principal = (principalValue ?? string.Empty).Trim().ToUpperInvariant();
         var destino = (destinoValue ?? string.Empty).Trim().ToUpperInvariant();
@@ -3720,12 +3720,12 @@ public sealed class CargaViajesService(
                     ISNULL(PorcentajeAdic2, 0) AS PorcentajeAdic2,
                     ISNULL(PorcentajeAdic3, 0) AS PorcentajeAdic3,
                     ISNULL(PorcentajeAdic4, 0) AS PorcentajeAdic4,
-                    {(hasAdicionalFijo1Descripcion ? "ISNULL(AdicionalFijo1Descripcion, '')" : "CAST('' AS nvarchar(100))")} AS AdicionalFijo1Descripcion,
-                    {(hasAdicionalFijo1Importe ? "ISNULL(AdicionalFijo1Importe, 0)" : "CAST(0 AS money)")} AS AdicionalFijo1Importe,
-                    {(hasAdicionalFijo2Descripcion ? "ISNULL(AdicionalFijo2Descripcion, '')" : "CAST('' AS nvarchar(100))")} AS AdicionalFijo2Descripcion,
-                    {(hasAdicionalFijo2Importe ? "ISNULL(AdicionalFijo2Importe, 0)" : "CAST(0 AS money)")} AS AdicionalFijo2Importe,
-                    {(hasAdicionalFijo3Descripcion ? "ISNULL(AdicionalFijo3Descripcion, '')" : "CAST('' AS nvarchar(100))")} AS AdicionalFijo3Descripcion,
-                    {(hasAdicionalFijo3Importe ? "ISNULL(AdicionalFijo3Importe, 0)" : "CAST(0 AS money)")} AS AdicionalFijo3Importe,
+                    {(string.IsNullOrWhiteSpace(adicionalFijo1DescripcionColumn) ? "CAST('' AS nvarchar(100))" : $"ISNULL({adicionalFijo1DescripcionColumn}, '')")} AS AdicionalFijo1Descripcion,
+                    {(string.IsNullOrWhiteSpace(adicionalFijo1ImporteColumn) ? "CAST(0 AS money)" : $"ISNULL({adicionalFijo1ImporteColumn}, 0)")} AS AdicionalFijo1Importe,
+                    {(string.IsNullOrWhiteSpace(adicionalFijo2DescripcionColumn) ? "CAST('' AS nvarchar(100))" : $"ISNULL({adicionalFijo2DescripcionColumn}, '')")} AS AdicionalFijo2Descripcion,
+                    {(string.IsNullOrWhiteSpace(adicionalFijo2ImporteColumn) ? "CAST(0 AS money)" : $"ISNULL({adicionalFijo2ImporteColumn}, 0)")} AS AdicionalFijo2Importe,
+                    {(string.IsNullOrWhiteSpace(adicionalFijo3DescripcionColumn) ? "CAST('' AS nvarchar(100))" : $"ISNULL({adicionalFijo3DescripcionColumn}, '')")} AS AdicionalFijo3Descripcion,
+                    {(string.IsNullOrWhiteSpace(adicionalFijo3ImporteColumn) ? "CAST(0 AS money)" : $"ISNULL({adicionalFijo3ImporteColumn}, 0)")} AS AdicionalFijo3Importe,
                     ISNULL(Activo, 1) AS Activo
                 FROM dbo.TA_TARIFA
                 WHERE ISNULL(Activo, 1) = 1
@@ -3787,12 +3787,12 @@ public sealed class CargaViajesService(
                     ISNULL(PorcentajeAdic2, 0) AS PorcentajeAdic2,
                     ISNULL(PorcentajeAdic3, 0) AS PorcentajeAdic3,
                     ISNULL(PorcentajeAdic4, 0) AS PorcentajeAdic4,
-                    {(hasAdicionalFijo1Descripcion ? "ISNULL(AdicionalFijo1Descripcion, '')" : "CAST('' AS nvarchar(100))")} AS AdicionalFijo1Descripcion,
-                    {(hasAdicionalFijo1Importe ? "ISNULL(AdicionalFijo1Importe, 0)" : "CAST(0 AS money)")} AS AdicionalFijo1Importe,
-                    {(hasAdicionalFijo2Descripcion ? "ISNULL(AdicionalFijo2Descripcion, '')" : "CAST('' AS nvarchar(100))")} AS AdicionalFijo2Descripcion,
-                    {(hasAdicionalFijo2Importe ? "ISNULL(AdicionalFijo2Importe, 0)" : "CAST(0 AS money)")} AS AdicionalFijo2Importe,
-                    {(hasAdicionalFijo3Descripcion ? "ISNULL(AdicionalFijo3Descripcion, '')" : "CAST('' AS nvarchar(100))")} AS AdicionalFijo3Descripcion,
-                    {(hasAdicionalFijo3Importe ? "ISNULL(AdicionalFijo3Importe, 0)" : "CAST(0 AS money)")} AS AdicionalFijo3Importe,
+                    {(string.IsNullOrWhiteSpace(adicionalFijo1DescripcionColumn) ? "CAST('' AS nvarchar(100))" : $"ISNULL({adicionalFijo1DescripcionColumn}, '')")} AS AdicionalFijo1Descripcion,
+                    {(string.IsNullOrWhiteSpace(adicionalFijo1ImporteColumn) ? "CAST(0 AS money)" : $"ISNULL({adicionalFijo1ImporteColumn}, 0)")} AS AdicionalFijo1Importe,
+                    {(string.IsNullOrWhiteSpace(adicionalFijo2DescripcionColumn) ? "CAST('' AS nvarchar(100))" : $"ISNULL({adicionalFijo2DescripcionColumn}, '')")} AS AdicionalFijo2Descripcion,
+                    {(string.IsNullOrWhiteSpace(adicionalFijo2ImporteColumn) ? "CAST(0 AS money)" : $"ISNULL({adicionalFijo2ImporteColumn}, 0)")} AS AdicionalFijo2Importe,
+                    {(string.IsNullOrWhiteSpace(adicionalFijo3DescripcionColumn) ? "CAST('' AS nvarchar(100))" : $"ISNULL({adicionalFijo3DescripcionColumn}, '')")} AS AdicionalFijo3Descripcion,
+                    {(string.IsNullOrWhiteSpace(adicionalFijo3ImporteColumn) ? "CAST(0 AS money)" : $"ISNULL({adicionalFijo3ImporteColumn}, 0)")} AS AdicionalFijo3Importe,
                     ISNULL(Activo, 1) AS Activo
                 FROM dbo.TA_TARIFA
                 WHERE ISNULL(Activo, 1) = 1

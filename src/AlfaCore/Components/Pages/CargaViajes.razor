@@ -2543,24 +2543,27 @@
                                     </label>
                                 }
                             </div>
+                        </div>
 
                         <div class="carga-viajes-viaje__totals ac-grid ac-grid-3 ac-form-grid">
                             <div class="carga-viajes-viaje__total-card">
                                 <span>Total Cliente</span>
                                 <strong>@GetViajeTotalCliente().ToString("C2")</strong>
-                                </div>
-                                <div class="carga-viajes-viaje__total-card">
-                                    <span>Total Fletero</span>
-                                    <strong>@GetViajeTotalFletero().ToString("C2")</strong>
-                                </div>
-                                <div class="carga-viajes-viaje__total-card carga-viajes-viaje__total-card--result">
-                                    <span>Resultado</span>
+                            </div>
+                            <div class="carga-viajes-viaje__total-card">
+                                <span>Total Fletero</span>
+                                <strong>@GetViajeTotalFletero().ToString("C2")</strong>
+                            </div>
+                            <div class="carga-viajes-viaje__total-card carga-viajes-viaje__total-card--result">
+                                <span>Resultado</span>
                                 <strong>@GetViajeResultado().ToString("C2")</strong>
                             </div>
                         </div>
                     </div>
 
-                        <div class="field field--wide"><label>Observaciones</label><textarea @ref="_viajeObservacionesInput" rows="4" @bind="_viajeForm.Observaciones" disabled="@_viajeReadOnly"></textarea></div>
+                    <div class="field field--wide">
+                        <label>Observaciones</label>
+                        <textarea @ref="_viajeObservacionesInput" rows="4" @bind="_viajeForm.Observaciones" disabled="@_viajeReadOnly"></textarea>
                     </div>
                 </div>
 
