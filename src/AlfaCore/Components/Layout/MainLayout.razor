@@ -154,10 +154,6 @@ else
             @if (!IsDirectMode)
             {
                 <nav class="menu__nav menu__nav--fixed">
-                    <a class="menu__link menu__link--module menu__link--home" href="@GetLauncherUrl()" @onclick:preventDefault="true" @onclick="GoToLauncher">
-                        <span class="menu__icon"><i class="bi bi-house-door"></i></span>
-                        <span>Inicio</span>
-                    </a>
                     <button type="button"
                             class="menu__link menu__button menu__link--search-shortcut"
                             title="Buscar opción"
@@ -166,6 +162,10 @@ else
                         <span class="menu__icon"><i class="bi bi-search"></i></span>
                         <span>Buscar</span>
                     </button>
+                    <a class="menu__link menu__link--module menu__link--home" href="@GetLauncherUrl()" @onclick:preventDefault="true" @onclick="GoToLauncher">
+                        <span class="menu__icon"><i class="bi bi-house-door"></i></span>
+                        <span>Inicio</span>
+                    </a>
                 </nav>
             }
 
@@ -237,7 +237,7 @@ else
                 <nav class="menu__nav">
                     <NavLink class="menu__link" href="@BuildModuleUrl("/conversaciones")" Match="NavLinkMatch.All">
                         <span class="menu__icon"><i class="bi bi-chat-dots-fill"></i></span>
-                        <span>Inbox</span>
+                        <span>Conversaciones</span>
                     </NavLink>
                     @if (!IsDirectMode)
                     {
@@ -576,7 +576,16 @@ else
                     </NavLink>
                 </nav>
             }
-            else if (!IsDirectMode)
+            else if (!IsDirectMode && !string.IsNullOrWhiteSpace(_currentModule))
+            {
+                <nav class="menu__nav">
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/" + _currentModule)" Match="NavLinkMatch.Prefix">
+                        <span class="menu__icon"><i class="bi @GetContextModuleIcon()"></i></span>
+                        <span>@GetContextModuleLabel()</span>
+                    </NavLink>
+                </nav>
+            }
+            else if (!IsDirectMode && IsWorkspaceRoute)
             {
                 <nav class="menu__nav">
                     @if (_menuSearchLoading)
@@ -738,7 +747,7 @@ else
             {
                 <div class="print-banner print-only">
                     <div>
-                        <p class="print-banner__eyebrow">Aplicaciones</p>
+                        <p class="print-banner__eyebrow">Inicio</p>
                         <h2 class="print-banner__title">@CurrentPageTitle</h2>
                     </div>
                     <p class="print-banner__meta">Exportado el @DateTime.Now.ToString("dd/MM/yyyy HH:mm")</p>
@@ -1173,12 +1182,7 @@ else
     private string _pushDiagnosticsLastProviderError = string.Empty;
     private List<NotificacionesPushEndpointResultDto> _pushLastTestResults = [];
     private string CurrentPageTitle => GetCurrentPageTitle();
-    private RenderFragment? ModuleBackLink => !IsDirectMode
-        ? @<a class="menu__back" href="@GetLauncherUrl()" @onclick:preventDefault="true" @onclick="GoBackOrLauncherAsync">
-                <i class="bi bi-grid-3x3-gap-fill"></i>
-                <span>Aplicaciones</span>
-            </a>
-        : null;
+    private RenderFragment? ModuleBackLink => null;
     private string ShellClass
         => $"shell {(IsSidebarCollapsed ? "shell--collapsed" : string.Empty)} {(_sidebarToggleHoverBlocked ? "shell--toggle-hover-blocked" : string.Empty)} {(_mobileSidebarOpen ? "shell--mobile-open" : string.Empty)} {(IsDirectMode ? "shell--direct" : string.Empty)} {(IsPosFullscreenRoute ? "shell--pos-fullscreen" : string.Empty)}";
     private bool ShowShellContext => string.IsNullOrWhiteSpace(_currentModule);
@@ -1936,6 +1940,43 @@ else
         }
 
         return css;
+    }
+
+    private string GetContextModuleLabel()
+    {
+        var title = GetModuleTitle();
+        if (!string.IsNullOrWhiteSpace(title) && !string.Equals(title, "Inicio", StringComparison.OrdinalIgnoreCase))
+            return title;
+
+        title = GetCurrentPageTitle();
+        return string.Equals(title, "Inicio", StringComparison.OrdinalIgnoreCase)
+            ? ToTitleFromSlug(_currentModule)
+            : title;
+    }
+
+    private string GetContextModuleIcon() => _currentModule switch
+    {
+        "partes-horas" => "bi-clock-history",
+        "conversaciones" => "bi-chat-dots-fill",
+        "tickets" => "bi-life-preserver",
+        "informes" => "bi-journal-richtext",
+        "contactos" => "bi-person-lines-fill",
+        "clientes" => "bi-people-fill",
+        "calendario" => "bi-calendar3",
+        "carga-viajes" => "bi-truck",
+        "compras" => "bi-cart-fill",
+        "ventas" => "bi-graph-up-arrow",
+        "usuarios" => "bi-people-fill",
+        "seguridad" => "bi-shield-lock-fill",
+        _ => "bi-grid-3x3-gap-fill"
+    };
+
+    private static string ToTitleFromSlug(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return "Inicio";
+
+        return CultureInfo.CurrentCulture.TextInfo.ToTitleCase(value.Replace('-', ' '));
     }
 
     private async Task OpenMenuSearchResultAsync(ShellMenuSearchItemDto item)
@@ -3101,9 +3142,9 @@ else
 
         return path switch
         {
-        "" => "Aplicaciones",
-        _ when IsLauncherContextRoute(path) => "Aplicaciones",
-        _ when path.StartsWith("shell/") => "Aplicaciones",
+        "" => "Inicio",
+        _ when IsLauncherContextRoute(path) => "Inicio",
+        _ when path.StartsWith("shell/") => "Inicio",
         "clientes" => "Clientes",
         "tecnicos" => "Técnicos",
         "ventas" => "Ventas",
@@ -3130,6 +3171,7 @@ else
             "conversaciones/configuracion" => "Configuración de WhatsApp",
             "conversaciones/estadisticas" => "Estadisticas de conversaciones",
             "tickets" => "Tickets de asistencia",
+            "partes-horas" => "Partes de horas",
             "tareas" => "Tareas",
             "calendario" => "Calendario",
             "carga-viajes" => "Carga de Viajes",
@@ -3169,7 +3211,7 @@ else
             "consultas/nueva" => "Nueva consulta",
             _ when path.StartsWith("consultas/") && path.EndsWith("/editar") => "Editar consulta",
             _ when path.StartsWith("consultas/") => "Consulta",
-            _ => "Aplicaciones"
+            _ => "Inicio"
         };
     }
 
@@ -3188,6 +3230,7 @@ else
         "auditoria" => "Auditoría",
         "conversaciones" => "Conversaciones",
         "tickets" => "Tickets de asistencia",
+        "partes-horas" => "Partes de horas",
         "tareas" => "Tareas",
         "calendario" => "Calendario",
         "carga-viajes" => "Carga de Viajes",
