@@ -47,6 +47,8 @@ html[data-theme="light"] .cuentas-partner-summary__address {
 }
 
 html[data-theme="light"] .panel-card,
+html[data-theme="light"] .module-actionbar,
+html[data-theme="light"] .page-grid:not(.pos-page):not(.pos-page--odoo) > .page-intro:has(.actions),
 html[data-theme="light"] .context-card,
 html[data-theme="light"] .modal-card,
 html[data-theme="light"] .cuentas-modal,
@@ -61,6 +63,16 @@ html[data-theme="light"] .templates-variable-guide {
     border-color: rgba(15, 23, 42, 0.12);
     color: #0f172a;
     box-shadow: 0 8px 26px rgba(15, 23, 42, 0.08);
+}
+
+html[data-theme="light"] .module-actionbar__title strong,
+html[data-theme="light"] .module-actionbar .page-intro__title {
+    color: #0f172a;
+}
+
+html[data-theme="light"] .module-actionbar__title span,
+html[data-theme="light"] .module-actionbar .page-intro__text {
+    color: #64748b;
 }
 
 html[data-theme="light"] .context-card,

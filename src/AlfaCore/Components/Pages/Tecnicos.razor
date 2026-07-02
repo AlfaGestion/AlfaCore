@@ -1,4 +1,4 @@
-﻿@page "/tecnicos"
+@page "/tecnicos"
 @page "/{idweb}/{idbase:int}/tecnicos"
 @using AlfaCore.Models
 @using AlfaCore.Services
@@ -9,19 +9,19 @@
 @inject IJSRuntime Js
 @implements IDisposable
 
-<PageTitle>TÃ©cnicos | Alfa GestiÃ³n</PageTitle>
+<PageTitle>Técnicos | Alfa Gestión</PageTitle>
 
-<div class="page-grid" @onclick="HandlePageClickAsync">
+<div class="page-grid tecnicos-page" @onclick="HandlePageClickAsync">
 
-    <!-- â”€â”€ Intro â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
-    <section class="page-intro">
+    <!-- ── Intro ───────────────────────────────────────────────────────── -->
+    <section class="page-intro tecnicos-commandbar">
         <div>
-            <h2 class="page-intro__title">TÃ©cnicos</h2>
-            <p class="page-intro__text">AdministrÃ¡ los tÃ©cnicos del sistema: mecÃ¡nicos, soporte y personal vinculado a usuarios.</p>
+            <h2 class="page-intro__title">Técnicos</h2>
+            <p class="page-intro__text">Administrá los técnicos del sistema: mecánicos, soporte y personal vinculado a usuarios.</p>
         </div>
         <div class="actions">
             <button type="button" class="btn btn--primary" @onclick="BeginNewAsync">
-                <i class="bi bi-plus-circle"></i> Nuevo tÃ©cnico
+                <i class="bi bi-plus-circle"></i> Nuevo técnico
             </button>
             <button type="button" class="btn btn--ghost" @onclick="RecargarAsync" disabled="@_loadingList">
                 <i class="bi bi-arrow-clockwise"></i> Recargar
@@ -29,7 +29,7 @@
         </div>
     </section>
 
-    <!-- â”€â”€ Feedback â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+    <!-- ── Feedback ────────────────────────────────────────────────────── -->
     @if (_feedback is not null)
     {
         <section class="panel-card">
@@ -43,20 +43,20 @@
                     }
                     @if (_feedback.HasCode)
                     {
-                        <small>CÃ³digo: @_feedback.Code</small>
+                        <small>Código: @_feedback.Code</small>
                     }
                 </div>
             </div>
         </section>
     }
 
-    <!-- â”€â”€ Buscador â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
-    <section class="panel-card smart-search-card" @onclick:stopPropagation>
+    <!-- ── Buscador ────────────────────────────────────────────────────── -->
+    <section class="panel-card smart-search-card tecnicos-search-card" @onclick:stopPropagation>
         <div class="smart-search">
             <div class="smart-search__bar">
                 <i class="bi bi-search"></i>
                 <input type="search"
-                       placeholder="Buscar por cÃ³digo, nombre, telÃ©fono, cargo o usuario asociado..."
+                       placeholder="Buscar por código, nombre, teléfono, cargo o usuario asociado..."
                        value="@_filters.Texto"
                        @onfocus="OpenSearchPanel"
                        @oninput="OnSearchInputAsync"
@@ -76,7 +76,7 @@
                 }
                 @if (chips.Count == 0)
                 {
-                    <span class="smart-search__hint">HacÃ© clic en el buscador para filtros rÃ¡pidos y agrupaciÃ³n.</span>
+                    <span class="smart-search__hint">Hacé clic en el buscador para filtros rápidos y agrupación.</span>
                 }
             </div>
 
@@ -101,21 +101,21 @@
                             <i class="bi bi-search"></i> Aplicar
                         </button>
                         <h4><i class="bi bi-eraser"></i> Limpiar</h4>
-                        <button type="button" @onclick="LimpiarFiltrosAsync">Limpiar bÃºsqueda</button>
+                        <button type="button" @onclick="LimpiarFiltrosAsync">Limpiar búsqueda</button>
                     </div>
                 </div>
             }
         </div>
     </section>
 
-    <!-- â”€â”€ Configurar vista â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+    <!-- ── Configurar vista ────────────────────────────────────────────── -->
     @if (_showViewSettings && !_showEditor)
     {
         <section class="panel-card">
             <div class="panel-card__header">
                 <div>
-                    <h3 class="panel-card__title">ConfiguraciÃ³n de vista</h3>
-                    <p class="panel-card__subtitle">ElegÃ­ columnas visibles, orden y agrupaciÃ³n para tu grilla de tÃ©cnicos.</p>
+                    <h3 class="panel-card__title">Configuración de vista</h3>
+                    <p class="panel-card__subtitle">Elegí columnas visibles, orden y agrupación para tu grilla de técnicos.</p>
                 </div>
             </div>
 
@@ -162,21 +162,21 @@
         </section>
     }
 
-    <!-- â”€â”€ Editor â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+    <!-- ── Editor ──────────────────────────────────────────────────────── -->
     @if (_showEditor)
     {
         <section class="panel-card">
             <div class="panel-card__header">
                 <div>
-                    <h3 class="panel-card__title">@(_isNewMode ? "Nuevo tÃ©cnico" : $"Editar â€” {_form.Nombre}")</h3>
+                    <h3 class="panel-card__title">@(_isNewMode ? "Nuevo técnico" : $"Editar — {_form.Nombre}")</h3>
                     <p class="panel-card__subtitle">
                         @if (_isNewMode)
                         {
-                            <span>CompletÃ¡ los datos del tÃ©cnico.</span>
+                            <span>Completá los datos del técnico.</span>
                         }
                         else
                         {
-                            <span>CÃ³digo: @_form.IdTecnicoOriginal Â· Estado: @(_selectedActivo ? "Activo" : "Dado de baja")</span>
+                            <span>Código: @_form.IdTecnicoOriginal · Estado: @(_selectedActivo ? "Activo" : "Dado de baja")</span>
                         }
                     </p>
                 </div>
@@ -205,10 +205,10 @@
             <div class="usuarios-editor">
                 <div class="usuarios-editor__form" style="max-width:720px;">
 
-                    <!-- Fila 1: CÃ³digo y Nombre -->
+                    <!-- Fila 1: Código y Nombre -->
                     <div class="usuarios-editor__grid">
                         <div class="field">
-                            <label>CÃ³digo</label>
+                            <label>Código</label>
                             <input type="text"
                                    class="@GetFieldInputClass("id-tecnico")"
                                    maxlength="4"
@@ -235,7 +235,7 @@
                         </div>
                     </div>
 
-                    <!-- Fila 2: Cargo y TelÃ©fono -->
+                    <!-- Fila 2: Cargo y Teléfono -->
                     <div class="usuarios-editor__grid">
                         <div class="field">
                             <label>Cargo</label>
@@ -250,7 +250,7 @@
                             }
                         </div>
                         <div class="field">
-                            <label>TelÃ©fono</label>
+                            <label>Teléfono</label>
                             <input type="text"
                                    class="@GetFieldInputClass("telefono")"
                                    maxlength="50"
@@ -298,7 +298,7 @@
                             <select class="@GetFieldInputClass("id-provincia")"
                                     @bind="_form.IdProvincia"
                                     disabled="@_saving">
-                                <option value="">â€” Sin provincia â€”</option>
+                                <option value="">— Sin provincia —</option>
                                 @foreach (var estado in _estados)
                                 {
                                     <option value="@estado.Codigo">@estado.Descripcion</option>
@@ -333,7 +333,7 @@
                                     style="flex:1;"
                                     @bind="_form.UsuarioAsociado"
                                     disabled="@_saving">
-                                <option value="">â€” Sin usuario asociado â€”</option>
+                                <option value="">— Sin usuario asociado —</option>
                                 @foreach (var u in _usuarios)
                                 {
                                     <option value="@u">@u</option>
@@ -368,14 +368,14 @@
                         </label>
                     </div>
 
-                    <!-- Aviso: usuario reciÃ©n creado desde el modal -->
+                    <!-- Aviso: usuario recién creado desde el modal -->
                     @if (!string.IsNullOrEmpty(_editorUserCreatedNote))
                     {
                         <div class="editor-msg editor-msg--ok" style="margin-bottom:1rem;">
                             <div>
                                 <strong>Usuario listo</strong>
                                 <p>@_editorUserCreatedNote</p>
-                                <p><strong>Ahora hacÃ© clic en "Guardar tÃ©cnico" para confirmar el alta.</strong></p>
+                                <p><strong>Ahora hacé clic en "Guardar técnico" para confirmar el alta.</strong></p>
                             </div>
                         </div>
                     }
@@ -404,31 +404,31 @@
     }
     else
     {
-        <!-- â”€â”€ Grilla â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+        <!-- ── Grilla ───────────────────────────────────────────────────────── -->
         var visibleColumns = GetVisibleColumns();
         var groups         = BuildGridGroups();
 
         <section class="panel-card">
             <div class="panel-card__header">
                 <div>
-                    <h3 class="panel-card__title">TÃ©cnicos</h3>
-                    <p class="panel-card__subtitle">@_pagedTotal registro(s) Â· PÃ¡gina @_pageNumber de @_totalPages Â· abrÃ­ la ficha con el botÃ³n editar o doble clic.</p>
+                    <h3 class="panel-card__title">Técnicos</h3>
+                    <p class="panel-card__subtitle">@_pagedTotal registro(s) · Página @_pageNumber de @_totalPages · abrí la ficha con el botón editar o doble clic.</p>
                 </div>
                 <div class="actions">
                     <button type="button" class="btn btn--ghost" @onclick="AbrirConfiguracionVista">
                         <i class="bi bi-sliders"></i> Configurar vista
                     </button>
-                    <span class="panel-card__subtitle">AgrupaciÃ³n: @GetGroupingLabel(_viewSettings.AgruparPor)</span>
+                    <span class="panel-card__subtitle">Agrupación: @GetGroupingLabel(_viewSettings.AgruparPor)</span>
                 </div>
             </div>
 
             @if (_loadingList)
             {
-                <div class="usuarios-empty">Cargando tÃ©cnicos...</div>
+                <div class="usuarios-empty">Cargando técnicos...</div>
             }
             else if (_items.Count == 0)
             {
-                <div class="usuarios-empty">No hay tÃ©cnicos para los filtros seleccionados.</div>
+                <div class="usuarios-empty">No hay técnicos para los filtros seleccionados.</div>
             }
             else
             {
@@ -473,22 +473,22 @@
                                                         @item.Cargo
                                                         break;
                                                     case TecnicosViewColumnKeys.Localidad:
-                                                        @(string.IsNullOrWhiteSpace(item.Localidad) ? "â€”" : item.Localidad)
+                                                        @(string.IsNullOrWhiteSpace(item.Localidad) ? "—" : item.Localidad)
                                                         break;
                                                     case TecnicosViewColumnKeys.Telefono:
-                                                        @(string.IsNullOrWhiteSpace(item.Telefono) ? "â€”" : item.Telefono)
+                                                        @(string.IsNullOrWhiteSpace(item.Telefono) ? "—" : item.Telefono)
                                                         break;
                                                     case TecnicosViewColumnKeys.CostoHora:
                                                         <span style="display:block; text-align:right;">@FormatMoney(item.CostoHora)</span>
                                                         break;
                                                     case TecnicosViewColumnKeys.OcultarCliente:
-                                                        @(item.OcultarCliente ? "SÃ­" : "No")
+                                                        @(item.OcultarCliente ? "Sí" : "No")
                                                         break;
                                                     case TecnicosViewColumnKeys.UsuarioAsociado:
-                                                        @(string.IsNullOrWhiteSpace(item.UsuarioAsociado) ? "â€”" : item.UsuarioAsociado)
+                                                        @(string.IsNullOrWhiteSpace(item.UsuarioAsociado) ? "—" : item.UsuarioAsociado)
                                                         break;
                                                     case TecnicosViewColumnKeys.Activo:
-                                                        @(item.Baja ? "No" : "SÃ­")
+                                                        @(item.Baja ? "No" : "Sí")
                                                         break;
                                                 }
                                             </td>
@@ -510,19 +510,19 @@
                 <div class="result-pagination">
                     <span class="result-pagination__info">@_pagedTotal registro(s)</span>
                     <div class="result-pagination__controls">
-                        <button class="result-pagination__btn" title="PÃ¡gina anterior"
+                        <button class="result-pagination__btn" title="Página anterior"
                                 @onclick="() => CambiarPaginaAsync(_pageNumber - 1)"
                                 disabled="@(!_hasPrev || _loadingList)">
                             <i class="bi bi-chevron-left"></i>
                         </button>
                         <span class="result-pagination__btn result-pagination__btn--active">@_pageNumber / @_totalPages</span>
-                        <button class="result-pagination__btn" title="PÃ¡gina siguiente"
+                        <button class="result-pagination__btn" title="Página siguiente"
                                 @onclick="() => CambiarPaginaAsync(_pageNumber + 1)"
                                 disabled="@(!_hasNext || _loadingList)">
                             <i class="bi bi-chevron-right"></i>
                         </button>
                     </div>
-                    <select class="result-pagination__size" title="Registros por pÃ¡gina"
+                    <select class="result-pagination__size" title="Registros por página"
                             value="@_filters.PageSize"
                             @onchange="OnPageSizeChangedAsync"
                             disabled="@_loadingList">
@@ -537,7 +537,7 @@
 
 </div>
 
-<!-- â”€â”€ Modal: Crear usuario â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+<!-- ── Modal: Crear usuario ──────────────────────────────────────────────── -->
 @if (_showCrearUsuarioModal)
 {
     <button type="button" class="modal-backdrop app-modal-backdrop" aria-label="Cerrar" @onclick="CerrarModalCrearUsuario"></button>
@@ -545,7 +545,7 @@
         <div class="panel-card__header">
             <div>
                 <h3 class="panel-card__title">Crear usuario del sistema</h3>
-                <p class="panel-card__subtitle">El usuario se crearÃ¡ con acceso bÃ¡sico al sistema.</p>
+                <p class="panel-card__subtitle">El usuario se creará con acceso básico al sistema.</p>
             </div>
             <button type="button" class="btn btn--ghost btn--sm" @onclick="CerrarModalCrearUsuario" title="Cerrar">
                 <i class="bi bi-x-lg"></i>
@@ -554,8 +554,8 @@
 
         <div class="editor-msg editor-msg--warning" style="margin-bottom:1rem;">
             <div>
-                <strong>RecordÃ¡ asignar permisos</strong>
-                <p>DespuÃ©s de crear el usuario, asignale las opciones del menÃº en <strong>Seguridad â†’ AutorizaciÃ³n de tareas</strong>. Sin eso, el usuario tendrÃ¡ acceso irrestricto a todo el sistema.</p>
+                <strong>Recordá asignar permisos</strong>
+                <p>Después de crear el usuario, asignale las opciones del menú en <strong>Seguridad → Autorización de tareas</strong>. Sin eso, el usuario tendrá acceso irrestricto a todo el sistema.</p>
             </div>
         </div>
 
@@ -596,17 +596,17 @@
             </div>
 
             <div class="field">
-                <label>ContraseÃ±a</label>
+                <label>Contraseña</label>
                 <div style="display:flex; gap:0.4rem;">
                     <input type="@(_modalShowClave ? "text" : "password")"
                            class="@GetModalInputClass("clave")"
                            style="flex:1;"
-                           placeholder="ContraseÃ±a"
+                           placeholder="Contraseña"
                            @bind="_modalClave"
                            disabled="@_modalSaving" />
                     <button type="button" class="btn btn--ghost btn--sm"
                             @onclick="() => _modalShowClave = !_modalShowClave"
-                            title="@(_modalShowClave ? "Ocultar" : "Mostrar") contraseÃ±a">
+                            title="@(_modalShowClave ? "Ocultar" : "Mostrar") contraseña">
                         <i class="bi @(_modalShowClave ? "bi-eye-slash" : "bi-eye")"></i>
                     </button>
                 </div>
@@ -617,10 +617,10 @@
             </div>
 
             <div class="field">
-                <label>ConfirmaciÃ³n</label>
+                <label>Confirmación</label>
                 <input type="@(_modalShowClave ? "text" : "password")"
                        class="@GetModalInputClass("confirmacion")"
-                       placeholder="RepetÃ­ la contraseÃ±a"
+                       placeholder="Repetí la contraseña"
                        @bind="_modalConfirmacion"
                        disabled="@_modalSaving" />
                 @if (_modalErrors.ContainsKey("confirmacion"))
@@ -648,8 +648,8 @@
     <section class="panel-card app-modal no-print" @onclick:stopPropagation>
         <div class="panel-card__header">
             <div>
-                <h3 class="panel-card__title">Dar de baja tÃ©cnico</h3>
-                <p class="panel-card__subtitle">Se darÃ¡ de baja @_form.Nombre.</p>
+                <h3 class="panel-card__title">Dar de baja técnico</h3>
+                <p class="panel-card__subtitle">Se dará de baja @_form.Nombre.</p>
             </div>
             <button type="button" class="btn btn--ghost btn--sm" @onclick="CloseDeactivateConfirm" disabled="@_saving" title="Cerrar">
                 <i class="bi bi-x-lg"></i>
@@ -672,8 +672,8 @@
     <section class="panel-card app-modal no-print" @onclick:stopPropagation>
         <div class="panel-card__header">
             <div>
-                <h3 class="panel-card__title">Usuario sin tÃ©cnico guardado</h3>
-                <p class="panel-card__subtitle">Se creÃ³ el usuario @_pendingCleanupUserName, pero el tÃ©cnico no fue guardado.</p>
+                <h3 class="panel-card__title">Usuario sin técnico guardado</h3>
+                <p class="panel-card__subtitle">Se creó el usuario @_pendingCleanupUserName, pero el técnico no fue guardado.</p>
             </div>
             <button type="button" class="btn btn--ghost btn--sm" @onclick="() => ResolvePendingUserCleanupAsync(false)" title="Cerrar">
                 <i class="bi bi-x-lg"></i>
@@ -682,7 +682,7 @@
         <div class="editor-msg editor-msg--warning" style="margin-bottom:1rem;">
             <div>
                 <strong>Acceso pendiente</strong>
-                <p>PodÃ©s desactivar ese usuario para evitar dejar un acceso sin completar, o mantenerlo y continuar.</p>
+                <p>Podés desactivar ese usuario para evitar dejar un acceso sin completar, o mantenerlo y continuar.</p>
             </div>
         </div>
         <div class="actions">
@@ -697,7 +697,7 @@
 }
 
 @code {
-    // â”€â”€ Estado de lista â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Estado de lista ──────────────────────────────────────────────────────
     private readonly TecnicosFilters          _filters          = new();
     private readonly List<TecnicoGridItemDto> _items            = [];
     private readonly List<TecnicoViewColumnDto> _viewSettingsDraft = [];
@@ -721,7 +721,7 @@
     private string _draftAgruparPor   = TecnicosViewGroupKeys.None;
     private string _viewSettingsUserName = string.Empty;
 
-    // â”€â”€ Estado de editor â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Estado de editor ─────────────────────────────────────────────────────
     private readonly TecnicoSaveRequest _form = new();
     private bool   _isNewMode    = true;
     private bool   _selectedActivo = true;
@@ -729,7 +729,7 @@
     private bool   _shouldFocusNombre;
     private ElementReference _nombreRef;
 
-    // â”€â”€ Modal crear usuario â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Modal crear usuario ───────────────────────────────────────────────────
     private bool   _showCrearUsuarioModal;
     private bool   _modalSaving;
     private bool   _modalShowClave;
@@ -745,11 +745,11 @@
     private string _pendingCleanupTargetId = string.Empty;
     private readonly Dictionary<string, string> _modalErrors = new(StringComparer.OrdinalIgnoreCase);
 
-    // â”€â”€ Datos de combos â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Datos de combos ───────────────────────────────────────────────────────
     private IReadOnlyList<EstadoItemDto> _estados   = [];
     private IReadOnlyList<string>        _usuarios  = [];
 
-    // â”€â”€ Ciclo de vida â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Ciclo de vida ─────────────────────────────────────────────────────────
 
     protected override async Task OnInitializedAsync()
     {
@@ -792,7 +792,7 @@
             _usuarios = result.Value;
     }
 
-    // â”€â”€ BÃºsqueda y paginaciÃ³n â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Búsqueda y paginación ─────────────────────────────────────────────────
 
     private async Task RecargarAsync()
     {
@@ -828,7 +828,7 @@
         SyncFilters();
         try
         {
-            var result = await UiOps.RunAsync(() => TecnicosSvc.SearchAsync(_filters), "No se pudieron cargar los tÃ©cnicos.");
+            var result = await UiOps.RunAsync(() => TecnicosSvc.SearchAsync(_filters), "No se pudieron cargar los técnicos.");
             if (!result.Success || result.Value is null)
             {
                 SetFeedback(result.Feedback);
@@ -879,7 +879,7 @@
         };
     }
 
-    // â”€â”€ Smart search â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Smart search ─────────────────────────────────────────────────────────
 
     private void OpenSearchPanel() => _showSearchPanel = true;
     private void ToggleSearchPanel() => _showSearchPanel = !_showSearchPanel;
@@ -922,7 +922,7 @@
             {
                 await TecnicosSvc.SaveViewSettingsAsync(currentUser, newSettings);
                 return true;
-            }, "No se pudo guardar la agrupaciÃ³n.");
+            }, "No se pudo guardar la agrupación.");
             if (!result.Success)
             {
                 SetFeedback(result.Feedback);
@@ -969,7 +969,7 @@
     private static string GetSmartOptionClass(bool active)
         => active ? "btn btn--primary" : "btn btn--ghost";
 
-    // â”€â”€ Editor â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Editor ────────────────────────────────────────────────────────────────
 
     private async Task BeginNewAsync()
     {
@@ -987,7 +987,7 @@
 
         var result = await UiOps.RunAsync(
             () => TecnicosSvc.GetNextIdTecnicoAsync(),
-            "No se pudo obtener el prÃ³ximo cÃ³digo.");
+            "No se pudo obtener el próximo código.");
         _form.IdTecnico = result.Success && result.Value is not null ? result.Value : string.Empty;
 
         _shouldFocusNombre = true;
@@ -1037,7 +1037,7 @@
 
     private async Task CargarEditorAsync(string idTecnico)
     {
-        var result = await UiOps.RunAsync(() => TecnicosSvc.GetByIdAsync(idTecnico), "No se pudo cargar el tÃ©cnico.");
+        var result = await UiOps.RunAsync(() => TecnicosSvc.GetByIdAsync(idTecnico), "No se pudo cargar el técnico.");
         if (!result.Success)
         {
             SetFeedback(result.Feedback);
@@ -1048,8 +1048,8 @@
             SetFeedback(new AppUiMessage
             {
                 Severity = AppUiFeedbackSeverity.Warning,
-                Title    = "TÃ©cnico no disponible",
-                Message  = "El tÃ©cnico seleccionado ya no existe en la base activa."
+                Title    = "Técnico no disponible",
+                Message  = "El técnico seleccionado ya no existe en la base activa."
             });
             await BuscarAsync();
             ResetFormState();
@@ -1070,7 +1070,7 @@
             try
             {
                 var savedId = await TecnicosSvc.SaveAsync(_form);
-                SetFeedback(AppUiMessage.Success("TÃ©cnico guardado", $"El tÃ©cnico {savedId} se guardÃ³ correctamente."));
+                SetFeedback(AppUiMessage.Success("Técnico guardado", $"El técnico {savedId} se guardó correctamente."));
                 await BuscarAsync();
                 await CargarEditorAsync(savedId);
             }
@@ -1080,14 +1080,14 @@
                 SetFeedback(new AppUiMessage
                 {
                     Severity   = AppUiFeedbackSeverity.Warning,
-                    Title      = "RevisÃ¡ los datos del tÃ©cnico",
+                    Title      = "Revisá los datos del técnico",
                     Message    = validationEx.UserMessage,
-                    Suggestion = "CorregÃ­ los campos marcados y volvÃ© a intentar."
+                    Suggestion = "Corregí los campos marcados y volvé a intentar."
                 });
             }
             catch (Exception ex)
             {
-                SetFeedback(UiOps.BuildMessage(ex, "No se pudo guardar el tÃ©cnico."));
+                SetFeedback(UiOps.BuildMessage(ex, "No se pudo guardar el técnico."));
             }
         }
         finally
@@ -1127,7 +1127,7 @@
         {
             var result = await UiOps.RunAsync(
                 () => TecnicosSvc.DarDeBajaAsync(_selectedIdTecnico),
-                "No se pudo dar de baja el tÃ©cnico.");
+                "No se pudo dar de baja el técnico.");
 
             if (!result.Success)
             {
@@ -1135,7 +1135,7 @@
                 return;
             }
 
-            SetFeedback(AppUiMessage.Success("TÃ©cnico dado de baja", $"El tÃ©cnico {_form.Nombre} quedÃ³ inactivo."));
+            SetFeedback(AppUiMessage.Success("Técnico dado de baja", $"El técnico {_form.Nombre} quedó inactivo."));
             ResetFormState();
             _showEditor = false;
             await BuscarAsync();
@@ -1206,7 +1206,7 @@
             : null;
     }
 
-    // â”€â”€ Modal: crear usuario â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Modal: crear usuario ──────────────────────────────────────────────────
 
     private void AbrirModalCrearUsuario()
     {
@@ -1282,12 +1282,12 @@
         }
         if (string.IsNullOrWhiteSpace(_modalClave))
         {
-            _modalErrors["clave"] = "La contraseÃ±a es obligatoria.";
+            _modalErrors["clave"] = "La contraseña es obligatoria.";
             return;
         }
         if (_modalClave != _modalConfirmacion)
         {
-            _modalErrors["confirmacion"] = "La confirmaciÃ³n no coincide con la contraseÃ±a.";
+            _modalErrors["confirmacion"] = "La confirmación no coincide con la contraseña.";
             return;
         }
 
@@ -1312,7 +1312,7 @@
                 await RecargarUsuariosAsync();
                 _form.UsuarioAsociado   = nombreCreado;
                 _pendingCreatedUserName = nombreCreado;
-                _editorUserCreatedNote  = $"El usuario '{nombreCreado}' fue creado y asociado al tÃ©cnico. RecordÃ¡ asignarle permisos en Seguridad â†’ AutorizaciÃ³n de tareas.";
+                _editorUserCreatedNote  = $"El usuario '{nombreCreado}' fue creado y asociado al técnico. Recordá asignarle permisos en Seguridad → Autorización de tareas.";
             }
             catch (AppValidationException validationEx)
             {
@@ -1333,7 +1333,7 @@
         }
     }
 
-    // â”€â”€ Configurar vista â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Configurar vista ──────────────────────────────────────────────────────
 
     private async Task EnsureViewSettingsLoadedAsync(bool force = false)
     {
@@ -1349,7 +1349,7 @@
 
         var result = await UiOps.RunAsync(
             () => TecnicosSvc.GetViewSettingsAsync(currentUser),
-            "No se pudo cargar la configuraciÃ³n de vista.");
+            "No se pudo cargar la configuración de vista.");
 
         ApplyViewSettings(result.Success && result.Value is not null ? result.Value : BuildDefaultViewSettings(), currentUser);
     }
@@ -1399,8 +1399,8 @@
             SetFeedback(new AppUiMessage
             {
                 Severity = AppUiFeedbackSeverity.Warning,
-                Title    = "SesiÃ³n requerida",
-                Message  = "NecesitÃ¡s iniciar sesiÃ³n para guardar la configuraciÃ³n de vista."
+                Title    = "Sesión requerida",
+                Message  = "Necesitás iniciar sesión para guardar la configuración de vista."
             });
             return;
         }
@@ -1415,7 +1415,7 @@
         {
             await TecnicosSvc.SaveViewSettingsAsync(currentUser, settings);
             return true;
-        }, "No se pudo guardar la configuraciÃ³n de vista.");
+        }, "No se pudo guardar la configuración de vista.");
 
         if (!result.Success)
         {
@@ -1425,7 +1425,7 @@
 
         ApplyViewSettings(settings, currentUser);
         _showViewSettings = false;
-        SetFeedback(AppUiMessage.Success("Vista guardada", "La configuraciÃ³n de la grilla quedÃ³ actualizada para tu usuario."));
+        SetFeedback(AppUiMessage.Success("Vista guardada", "La configuración de la grilla quedó actualizada para tu usuario."));
     }
 
     private void ApplyViewSettings(TecnicosViewSettingsDto settings, string userName)
@@ -1445,7 +1445,7 @@
             StateHasChanged();
         });
 
-    // â”€â”€ Grilla: agrupaciÃ³n y columnas visibles â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Grilla: agrupación y columnas visibles ────────────────────────────────
 
     private IReadOnlyList<TecnicoViewColumnDto> GetVisibleColumns()
         => _viewSettings.Columnas.Where(c => c.Visible).OrderBy(c => c.Order).ToList();
@@ -1485,11 +1485,11 @@
         AgruparPor = TecnicosViewGroupKeys.None,
         Columnas =
         [
-            new() { Key = TecnicosViewColumnKeys.IdTecnico,       Label = "CÃ³digo",         Visible = true,  Order = 0 },
+            new() { Key = TecnicosViewColumnKeys.IdTecnico,       Label = "Código",         Visible = true,  Order = 0 },
             new() { Key = TecnicosViewColumnKeys.Nombre,          Label = "Nombre",          Visible = true,  Order = 1 },
             new() { Key = TecnicosViewColumnKeys.Cargo,           Label = "Cargo",           Visible = true,  Order = 2 },
             new() { Key = TecnicosViewColumnKeys.Localidad,       Label = "Localidad",       Visible = false, Order = 3 },
-            new() { Key = TecnicosViewColumnKeys.Telefono,        Label = "TelÃ©fono",        Visible = true,  Order = 4 },
+            new() { Key = TecnicosViewColumnKeys.Telefono,        Label = "Teléfono",        Visible = true,  Order = 4 },
             new() { Key = TecnicosViewColumnKeys.CostoHora,       Label = "Costo/hora",      Visible = true,  Order = 5 },
             new() { Key = TecnicosViewColumnKeys.OcultarCliente,  Label = "Ocultar cliente", Visible = false, Order = 6 },
             new() { Key = TecnicosViewColumnKeys.UsuarioAsociado, Label = "Usuario sistema", Visible = true,  Order = 7 },
@@ -1502,7 +1502,7 @@
                   .Select(c => new TecnicoViewColumnDto { Key = c.Key, Label = c.Label, Visible = c.Visible, Order = c.Order })
                   .ToList();
 
-    // â”€â”€ Helpers de UI â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Helpers de UI ──────────────────────────────────────────────────────────
 
     private bool IsSelected(TecnicoGridItemDto item)
         => !_isNewMode && string.Equals(_selectedIdTecnico, item.IdTecnico, StringComparison.OrdinalIgnoreCase);
@@ -1539,9 +1539,9 @@
         };
 
     private static string FormatMoney(decimal? value)
-        => value.HasValue ? value.Value.ToString("N2") : "â€”";
+        => value.HasValue ? value.Value.ToString("N2") : "—";
 
-    // â”€â”€ Tipos internos â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Tipos internos ────────────────────────────────────────────────────────
 
     private sealed class TecnicoGridGroup
     {

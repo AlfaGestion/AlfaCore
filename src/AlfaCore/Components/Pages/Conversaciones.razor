@@ -1,4 +1,4 @@
-﻿@page "/conversaciones"
+@page "/conversaciones"
 @page "/{idweb}/{idbase:int}/conversaciones"
 @using System.IO
 @using System.Net
@@ -22,7 +22,7 @@
     {
         <div class="panel-card empty-state">
             <span class="empty-state__eyebrow">Conversaciones</span>
-            <h3>No fue posible cargar el mÃ³dulo</h3>
+            <h3>No fue posible cargar el módulo</h3>
             <p>@_loadError</p>
             @if (IsInitializationPending(_loadError))
             {
@@ -36,7 +36,7 @@
             <div class="conversations-mobile-header">
                 <div>
                     <h2>Conversaciones</h2>
-                    <span>@_inbox.Count conversaciÃ³n(es)</span>
+                    <span>@_inbox.Count conversación(es)</span>
                 </div>
                 <button type="button" class="conversations-mobile-icon-button" @onclick="RecargarAsync" disabled="@(_loadingInbox || _loadingConversation)" title="Recargar">
                     <i class="bi bi-arrow-clockwise"></i>
@@ -76,7 +76,7 @@
                 </button>
             </div>
 
-            <div class="conversations-mobile-quick-filters mobile-filter-chips" aria-label="Filtros rÃ¡pidos">
+            <div class="conversations-mobile-quick-filters mobile-filter-chips" aria-label="Filtros rápidos">
                 <button type="button"
                         class="conversations-mobile-chip @(_filters.Modo == "todas" ? "is-active" : string.Empty)"
                         @onclick='() => ChangeModeAsync("todas")'>
@@ -90,7 +90,7 @@
                 <button type="button"
                         class="conversations-mobile-chip @(_filters.Modo == "asignadas_a_mi" ? "is-active" : string.Empty)"
                         @onclick='() => ChangeModeAsync("asignadas_a_mi")'>
-                    Asignadas a mÃ­
+                    Asignadas a mí
                 </button>
                 <button type="button"
                         class="conversations-mobile-chip conversations-mobile-chip--icon"
@@ -119,15 +119,15 @@
                 <div class="field">
                     <label for="conv-mobile-search">Buscar</label>
                     <input id="conv-mobile-search"
-                           type="search"
-                           placeholder="Buscar por telÃ©fono, cliente, contacto, email, resumen o mensaje..."
+                           type="text"
+                           placeholder="Buscar por teléfono, cliente, contacto, email, resumen o mensaje..."
                            value="@_filters.Search"
                            @oninput="HandleSearchInputAsync"
                            @onkeydown="HandleSearchEnter" />
                 </div>
 
                 <div class="field">
-                    <label for="conv-mobile-my-tech">TÃ©cnico</label>
+                    <label for="conv-mobile-my-tech">Técnico</label>
                     <select id="conv-mobile-my-tech" value="@_filters.IdTecnicoActual" @onchange="HandleTechnicianFilterChangedAsync">
                         <option value="">Todos</option>
                         @foreach (var tech in _technicians)
@@ -201,14 +201,18 @@
                 <div class="field">
                     <label for="conv-search">Buscar</label>
                     <input id="conv-search"
-                           type="search"
-                           placeholder="Buscar por telÃ©fono, cliente, contacto, email, resumen o mensaje..."
+                           type="text"
+                           placeholder="Buscar por teléfono, cliente, contacto, email, resumen o mensaje..."
                            value="@_filters.Search"
                            @oninput="HandleSearchInputAsync"
                            @onkeydown="HandleSearchEnter"
                            @onfocus="() => _showContactSuggestions = ShouldShowContactSuggestions" />
                     @if (_showContactSuggestions)
                     {
+                        <button type="button"
+                                class="conversations-contact-suggest-backdrop"
+                                aria-label="Cerrar sugerencias"
+                                @onclick="CloseContactSuggestions"></button>
                         <div class="conversations-contact-suggest">
                             @if (_loadingContactSuggestions)
                             {
@@ -223,9 +227,6 @@
                                 {
                                     <div class="conversations-contact-suggest__header">
                                         <span>Coincidencias encontradas</span>
-                                        <button type="button" class="btn btn--ghost btn--sm" @onclick="CloseContactSuggestions" title="Cerrar">
-                                            <i class="bi bi-x-lg"></i>
-                                        </button>
                                     </div>
                                     @foreach (var conversation in _conversationSuggestions)
                                     {
@@ -252,12 +253,6 @@
                                 {
                                     <div class="conversations-contact-suggest__header">
                                         <span>Contactos encontrados</span>
-                                        @if (_conversationSuggestions.Count == 0)
-                                        {
-                                            <button type="button" class="btn btn--ghost btn--sm" @onclick="CloseContactSuggestions" title="Cerrar">
-                                                <i class="bi bi-x-lg"></i>
-                                            </button>
-                                        }
                                     </div>
                                     @foreach (var contact in _contactSuggestions)
                                     {
@@ -321,13 +316,13 @@
                                 style="margin-top: .45rem; width: fit-content;"
                                 @onclick="CreateWhatsAppFromSearchAsync"
                                 disabled="@_busyAction">
-                            <i class="bi bi-plus-circle-fill"></i> Crear conversaciÃ³n con este celular
+                            <i class="bi bi-plus-circle-fill"></i> Crear conversación con este celular
                         </button>
                     }
                 </div>
 
                 <div class="field">
-                    <label for="conv-my-tech">Mi tÃ©cnico</label>
+                    <label for="conv-my-tech">Mi técnico</label>
                     <select id="conv-my-tech" @bind="_filters.IdTecnicoActual">
                         <option value="">Todos</option>
                         @foreach (var tech in _technicians)
@@ -457,9 +452,93 @@
                     </div>
                 </div>
 
+                <div class="conversations-inbox-tools desktop-only" @onclick:stopPropagation>
+                    <div class="conversations-inbox-search">
+                        <div class="conversations-inbox-searchbox">
+                            <i class="bi bi-search"></i>
+                            <input id="conv-inbox-search"
+                                   type="text"
+                                   placeholder="Buscar conversación o mensaje..."
+                                   value="@_filters.Search"
+                                   @oninput="HandleSearchInputAsync"
+                                   @onkeydown="HandleSearchEnter"
+                                   @onfocus="HandleSearchFocusAsync" />
+                        </div>
+
+                        @if (_showContactSuggestions)
+                        {
+                            <button type="button"
+                                    class="conversations-contact-suggest-backdrop"
+                                    aria-label="Cerrar sugerencias"
+                                    @onclick="CloseContactSuggestions"></button>
+                            <div class="conversations-contact-suggest">
+                                @if (_loadingContactSuggestions)
+                                {
+                                    <div class="conversations-contact-suggest__state">
+                                        <i class="bi bi-hourglass-split"></i>
+                                        <span>Buscando contactos...</span>
+                                    </div>
+                                }
+                                else if (_conversationSuggestions.Count > 0 || _contactSuggestions.Count > 0)
+                                {
+                                    @if (_conversationSuggestions.Count > 0)
+                                    {
+                                        <div class="conversations-contact-suggest__header">
+                                            <span>Coincidencias encontradas</span>
+                                        </div>
+                                        @foreach (var conversation in _conversationSuggestions)
+                                        {
+                                            <div class="conversations-contact-suggest__item">
+                                                <div class="conversations-contact-suggest__main">
+                                                    <strong>@GetDisplayName(conversation)</strong>
+                                                    <small>@DisplayOrFallback(conversation.TelefonoWhatsApp)</small>
+                                                </div>
+                                                <div class="conversations-contact-suggest__actions">
+                                                    <button type="button" class="btn btn--primary btn--sm" @onclick="() => SelectConversationFromSuggestionAsync(conversation.IdConversacion)">
+                                                        <i class="bi bi-chat-dots"></i> Conversar
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        }
+                                    }
+                                    @if (_contactSuggestions.Count > 0)
+                                    {
+                                        <div class="conversations-contact-suggest__header">
+                                            <span>Contactos encontrados</span>
+                                        </div>
+                                        @foreach (var contact in _contactSuggestions)
+                                        {
+                                            var phone = GetContactPhone(contact);
+                                            <div class="conversations-contact-suggest__item">
+                                                <div class="conversations-contact-suggest__main">
+                                                    <strong>@contact.NombreApellido</strong>
+                                                    <span>@DisplayOrFallback(contact.Cargo)</span>
+                                                    <small>@DisplayOrFallback(phone, contact.Email)</small>
+                                                </div>
+                                                <div class="conversations-contact-suggest__actions">
+                                                    <button type="button" class="btn btn--primary btn--sm" disabled="@string.IsNullOrWhiteSpace(phone)" @onclick="() => OpenWhatsAppForContactAsync(contact)">
+                                                        <i class="bi bi-chat-dots"></i> Conversar
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        }
+                                    }
+                                }
+                                else
+                                {
+                                    <div class="conversations-contact-suggest__state">
+                                        <i class="bi bi-search"></i>
+                                        <span>No encontramos coincidencias para esa búsqueda.</span>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+
                 @if (_loadingInbox && _inbox.Count == 0)
                 {
-                    <div class="loading">Cargando conversacionesâ€¦</div>
+                    <div class="loading">Cargando conversaciones…</div>
                 }
                 else if (_inbox.Count == 0)
                 {
@@ -485,7 +564,7 @@
                                         <button type="button"
                                                 class="conversation-pin @(item.FijadaPorUsuario ? "is-pinned" : string.Empty)"
                                                 title="@(item.FijadaPorUsuario ? "Desfijar para mi usuario" : "Fijar para mi usuario")"
-                                                aria-label="@(item.FijadaPorUsuario ? "Desfijar conversaciÃ³n" : "Fijar conversaciÃ³n")"
+                                                aria-label="@(item.FijadaPorUsuario ? "Desfijar conversación" : "Fijar conversación")"
                                                 @onclick:stopPropagation
                                                 @onclick="() => ToggleConversationPinAsync(item)">
                                             <i class="bi @(item.FijadaPorUsuario ? "bi-pin-angle-fill" : "bi-pin-angle")"></i>
@@ -497,19 +576,8 @@
                                         }
                                     </span>
                                 </div>
-                                <div class="conversation-row__meta">
-                                    <span>@item.TelefonoWhatsApp</span>
-                                    @if (!string.IsNullOrWhiteSpace(item.TecnicoNombre))
-                                    {
-                                        <span>â€¢ @item.TecnicoNombre</span>
-                                    }
-                                </div>
                                 <div class="conversation-row__badges">
                                     <span class="conversation-badge conversation-badge--state">@item.EstadoDescripcion</span>
-                                    @if (!item.VentanaWhatsAppActiva)
-                                    {
-                                        <span class="conversation-badge">Ventana vencida</span>
-                                    }
                                     @if (!string.IsNullOrWhiteSpace(item.ClienteNombre))
                                     {
                                         <span class="conversation-badge">@item.ClienteNombre</span>
@@ -533,7 +601,7 @@
                 }
                 @if (_loadingConversation)
                 {
-                    <div class="loading">Cargando conversaciÃ³nâ€¦</div>
+                    <div class="loading">Cargando conversación…</div>
                 }
                 else if (_selectedConversation is null && IsAuditResultsMode)
                 {
@@ -583,7 +651,7 @@
                 else if (_selectedConversation is null)
                 {
                     <div class="conversations-empty conversations-empty--center">
-                        SeleccionÃ¡ una conversaciÃ³n del panel izquierdo para verla y responder.
+                        Seleccioná una conversación del panel izquierdo para verla y responder.
                     </div>
                 }
                 else
@@ -682,13 +750,13 @@
                             @if (!IsSelectedConversationClosed)
                             {
                                 <button type="button" class="btn btn--ghost btn--sm conversation-header-state__close" @onclick="CloseConversationAsync" disabled="@_busyAction">
-                                    <i class="bi bi-lock-fill"></i> Cerrar conversaciÃ³n
+                                    <i class="bi bi-lock-fill"></i> Cerrar conversación
                                 </button>
                             }
                             else
                             {
                                 <span class="conversation-header-state__closed">
-                                    <i class="bi bi-lock-fill"></i> ConversaciÃ³n cerrada
+                                    <i class="bi bi-lock-fill"></i> Conversación cerrada
                                 </span>
                             }
                         </div>
@@ -702,7 +770,7 @@
                     @if (IsWhatsAppWindowExpired && !_showStatusMenu)
                     {
                         <div class="conversations-window-banner">
-                            <span>Esta conversaciÃ³n superÃ³ la ventana de 24 horas de WhatsApp.</span>
+                            <span>Esta conversación superó la ventana de 24 horas de WhatsApp.</span>
                             <button type="button" class="btn btn--primary btn--sm" @onclick="OpenTemplatePanel" disabled="@(!CanOpenTemplatePanel)">
                                 <i class="bi bi-send-fill"></i> Enviar plantilla
                             </button>
@@ -712,7 +780,7 @@
                     @if (_ticketSelectionMode)
                     {
                         <div class="conversations-window-banner conversations-ticket-selection">
-                            <span>SeleccionÃ¡ los mensajes que querÃ©s guardar dentro del ticket. Elegidos: @_selectedTicketMessageIds.Count</span>
+                            <span>Seleccioná los mensajes que querés guardar dentro del ticket. Elegidos: @_selectedTicketMessageIds.Count</span>
                             <div class="actions">
                                 <button type="button" class="btn btn--primary btn--sm" @onclick="OpenTicketDialog" disabled="@(_selectedTicketMessageIds.Count == 0)">
                                     <i class="bi bi-check2-circle"></i> Continuar
@@ -729,7 +797,7 @@
                         @if (_messages.Count == 0)
                         {
                             <div class="conversations-empty conversations-empty--center">
-                                La conversaciÃ³n todavÃ­a no tiene mensajes registrados.
+                                La conversación todavía no tiene mensajes registrados.
                             </div>
                         }
                         else
@@ -995,7 +1063,7 @@
                                         <span>@GetMessageTypeLabel(message)</span>
                                         @if (!string.IsNullOrWhiteSpace(message.EstadoEnvio))
                                         {
-                                            <span>â€¢ @message.EstadoEnvio</span>
+                                            <span>• @message.EstadoEnvio</span>
                                         }
                                     </div>
                                     @if (IsOutgoingMessage(message))
@@ -1095,7 +1163,7 @@
                                           @ref="_replyTextArea"
                                           @key="_selectedConversationId"
                                           rows="2"
-                                          placeholder="@(_selectedConversation.Canal == "INTERNO" ? "EscribÃ­ un mensaje para el equipoâ€¦" : "EscribÃ­ una respuesta para WhatsAppâ€¦")"
+                                          placeholder="@(_selectedConversation.Canal == "INTERNO" ? "Escribí un mensaje para el equipo…" : "Escribí una respuesta para WhatsApp…")"
                                           @onfocus="MarkSelectedConversationAsRead"
                                           @onfocusin="OnReplyFocusAsync"
                                           @oninput="HandleReplyInputAsync"></textarea>
@@ -1156,7 +1224,7 @@
                                 </button>
                                 <button type="button"
                                         class="btn btn--ghost"
-                                        title="MÃ¡s opciones"
+                                        title="Más opciones"
                                         @onclick="ToggleComposerTools"
                                         @onclick:stopPropagation>
                                     <i class="bi bi-plus-lg"></i>
@@ -1196,7 +1264,7 @@
                                             </label>
                                     @if (_favoriteStickers.Count == 0)
                                     {
-                                        <span class="context-card__muted">TodavÃ­a no hay stickers favoritos.</span>
+                                        <span class="context-card__muted">Todavía no hay stickers favoritos.</span>
                                     }
                                     @foreach (var sticker in _favoriteStickers)
                                     {
@@ -1218,7 +1286,7 @@
                                                 <span>Archivo</span>
                                                 <InputFile OnChange="HandleFileSelectedAsync" style="display:none" multiple accept="image/*,audio/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.zip,.rar" />
                                             </label>
-                                            <button type="button" class="btn btn--ghost conversations-tools-panel__tool @(_recording ? "is-recording" : string.Empty)" @onclick="ToggleRecordingAsync" title="@(_recording ? "Detener grabaciÃ³n" : "Grabar mensaje de voz")" disabled="@_uploadingAudio">
+                                            <button type="button" class="btn btn--ghost conversations-tools-panel__tool @(_recording ? "is-recording" : string.Empty)" @onclick="ToggleRecordingAsync" title="@(_recording ? "Detener grabación" : "Grabar mensaje de voz")" disabled="@_uploadingAudio">
                                                 <i class="bi @(_recording ? "bi-stop-circle-fill" : "bi-mic-fill")"></i>
                                                 <span>Audio</span>
                                             </button>
@@ -1231,7 +1299,7 @@
                                             <textarea id="conv-note-mobile"
                                                       @ref="_internalNoteMobileTextArea"
                                                       rows="1"
-                                                      placeholder="EscribÃ­ una nota interna visible solo para el equipoâ€¦"
+                                                      placeholder="Escribí una nota interna visible solo para el equipo…"
                                                       value="@_internalNoteText"
                                                       @oninput="HandleInternalNoteInputAsync"></textarea>
                                         </div>
@@ -1249,7 +1317,7 @@
                             <label for="conv-note">Nota interna</label>
                             <textarea id="conv-note"
                                       rows="1"
-                                      placeholder="EscribÃ­ una nota interna visible solo para el equipoâ€¦"
+                                      placeholder="Escribí una nota interna visible solo para el equipo…"
                                       @bind="_internalNoteText"></textarea>
                         </div>
                         <div class="conversations-composer__actions conversations-composer__actions--note">
@@ -1267,13 +1335,13 @@
                 </button>
                 <div class="conversations-context__section">
                     <h3 class="panel-card__title">Contexto</h3>
-                    <p class="panel-card__subtitle">Cliente, contacto y gestiÃ³n</p>
+                    <p class="panel-card__subtitle">Cliente, contacto y gestión</p>
                 </div>
 
                 @if (_selectedConversation is null)
                 {
                     <div class="conversations-empty">
-                        SeleccionÃ¡ una conversaciÃ³n para ver sus datos.
+                        Seleccioná una conversación para ver sus datos.
                     </div>
                 }
                 else
@@ -1355,7 +1423,7 @@
                                         <article class="conversations-context-ticket">
                                             <div>
                                                 <strong>@match.Ticket.CodigoVisible @match.Ticket.Titulo</strong>
-                                                <span>@match.Ticket.EstadoNombre Â· @RenderTicketPriority(match.Ticket.Prioridad) Â· @DisplayOrFallback(match.Ticket.TecnicoNombre, "Sin asignar")</span>
+                                                <span>@match.Ticket.EstadoNombre · @RenderTicketPriority(match.Ticket.Prioridad) · @DisplayOrFallback(match.Ticket.TecnicoNombre, "Sin asignar")</span>
                                                 <small>@BuildContextTicketPreview(match)</small>
                                             </div>
                                             <button type="button" class="btn btn--ghost btn--sm" @onclick="() => OpenTicket(match.Ticket.IdTicket)">
@@ -1376,9 +1444,9 @@
                     }
 
                     <div class="conversations-context__section">
-                        <h4 class="panel-card__title">AsignaciÃ³n</h4>
+                        <h4 class="panel-card__title">Asignación</h4>
                         <div class="field">
-                            <label for="conv-tech">TÃ©cnico</label>
+                            <label for="conv-tech">Técnico</label>
                             <select id="conv-tech" value="@_assignmentTechnicianId" @onchange="OnAssignmentChangedAsync" disabled="@_busyAction">
                                 <option value="">Sin asignar</option>
                                 @foreach (var tech in _technicians)
@@ -1439,7 +1507,7 @@
                 @if (ActiveContextNoteSections.Count == 0)
                 {
                     <div class="context-card" style="background:#0b1828;color:#cbd5e1;border-color:rgba(148,163,184,.28);">
-                        No hay informaciÃ³n cargada en esta solapa.
+                        No hay información cargada en esta solapa.
                     </div>
                 }
             </div>
@@ -1454,7 +1522,7 @@
             <header class="conversations-template-modal__header">
                 <div>
                     <h3 class="modal-card__title">Enviar plantilla de WhatsApp</h3>
-                    <p>La conversaciÃ³n queda visible detrÃ¡s para revisar el contexto antes de enviar.</p>
+                    <p>La conversación queda visible detrás para revisar el contexto antes de enviar.</p>
                 </div>
                 <button type="button" class="btn btn--ghost btn--sm" @onclick="CloseTemplatePanel">
                     <i class="bi bi-x-lg"></i>
@@ -1476,7 +1544,7 @@
                             }
                             else
                             {
-                                <option value="0">SeleccionÃ¡ una plantilla</option>
+                                <option value="0">Seleccioná una plantilla</option>
                                 @foreach (var template in _availableTemplates)
                                 {
                                     <option value="@template.IdPlantilla">@template.NombreVisible (@GetTemplateStatusLabel(template.EstadoMeta))</option>
@@ -1491,7 +1559,7 @@
                             <label for="conv-template-values-modal">Variables editables</label>
                             <textarea id="conv-template-values-modal"
                                       rows="4"
-                                      placeholder="Un valor por lÃ­nea"
+                                      placeholder="Un valor por línea"
                                       @bind="_templateValuesText"></textarea>
                         </div>
                     }
@@ -1562,7 +1630,7 @@
                     <article class="message-card message-card--outgoing">
                         @if (SelectedTemplate is null)
                         {
-                            <p class="message-card__text">SeleccionÃ¡ una plantilla para ver el mensaje.</p>
+                            <p class="message-card__text">Seleccioná una plantilla para ver el mensaje.</p>
                         }
                         else
                         {
@@ -1593,10 +1661,10 @@
             <div class="field">
                 <label for="hilo-nombre">Nombre del hilo</label>
                 <input id="hilo-nombre" type="text" @bind="_nuevoHiloNombre"
-                       placeholder="Ej: RevisiÃ³n instalaciÃ³n cliente Xâ€¦" />
+                       placeholder="Ej: Revisión instalación cliente X…" />
             </div>
             <div class="field">
-                <label for="hilo-tecnico">Asignar a tÃ©cnico (opcional)</label>
+                <label for="hilo-tecnico">Asignar a técnico (opcional)</label>
                 <select id="hilo-tecnico" @bind="_nuevoHiloTecnico">
                     <option value="">Sin asignar</option>
                     @foreach (var tech in _technicians)
@@ -1740,7 +1808,7 @@
         <div class="panel-card__header">
             <div>
                 <h3 class="panel-card__title">Crear ticket</h3>
-                <p class="panel-card__subtitle">@_selectedTicketMessageIds.Count mensaje(s) quedarÃ¡n vinculados al ticket.</p>
+                <p class="panel-card__subtitle">@_selectedTicketMessageIds.Count mensaje(s) quedarán vinculados al ticket.</p>
             </div>
             <button type="button" class="btn btn--ghost btn--sm" @onclick="CloseTicketDialog" disabled="@_creatingTicket">
                 <i class="bi bi-x-lg"></i>
@@ -1764,7 +1832,7 @@
                     <i class="bi bi-exclamation-triangle-fill"></i>
                     <div>
                         <strong>Posible ticket existente</strong>
-                        <span>Encontramos @_relatedTicketMatches.Count ticket(s) abierto(s) que podrÃ­an ser la misma consulta.</span>
+                        <span>Encontramos @_relatedTicketMatches.Count ticket(s) abierto(s) que podrían ser la misma consulta.</span>
                     </div>
                 </div>
                 @if (GetRelatedTerms().Count > 0)
@@ -1782,7 +1850,7 @@
                         <article class="conversations-ticket-duplicate">
                             <div>
                                 <strong>@match.Ticket.CodigoVisible @match.Ticket.Titulo</strong>
-                                <span>@match.Ticket.EstadoNombre Â· @RenderTicketPriority(match.Ticket.Prioridad) Â· @DisplayOrFallback(match.Ticket.TecnicoNombre, "Sin asignar")</span>
+                                <span>@match.Ticket.EstadoNombre · @RenderTicketPriority(match.Ticket.Prioridad) · @DisplayOrFallback(match.Ticket.TecnicoNombre, "Sin asignar")</span>
                                 <small>@BuildRelatedReason(match)</small>
                             </div>
                             <button type="button" class="btn btn--ghost btn--sm" @onclick="() => OpenTicket(match.Ticket.IdTicket)">
@@ -1816,14 +1884,14 @@
                 </select>
             </div>
             <div class="field">
-                <label>Comentario / observaciÃ³n</label>
+                <label>Comentario / observación</label>
                 <textarea rows="4" maxlength="4000" @bind="_ticketDescription" disabled="@_creatingTicket" placeholder="Detalle adicional para el ticket..."></textarea>
             </div>
             <div class="field">
                 <label>Asignado a</label>
                 <div class="ticket-creator-assignment">
                     <span>@CurrentMessageTechnicianName</span>
-                    <small>Se asignarÃ¡ automÃ¡ticamente al usuario que crea el ticket.</small>
+                    <small>Se asignará automáticamente al usuario que crea el ticket.</small>
                 </div>
             </div>
         </div>
@@ -1845,7 +1913,7 @@
         <div class="panel-card__header">
             <div>
                 <h3 class="panel-card__title">Relacionar cliente</h3>
-                <p class="panel-card__subtitle">BuscÃ¡ la empresa y vinculala con esta conversaciÃ³n.</p>
+                <p class="panel-card__subtitle">Buscá la empresa y vinculala con esta conversación.</p>
             </div>
             <button type="button" class="btn btn--ghost btn--sm" @onclick="CloseRelacionarClienteModal" disabled="@(_loadingClientCandidates || _linkingClient)">
                 <i class="bi bi-x-lg"></i>
@@ -1861,7 +1929,7 @@
             <div class="field">
                 <label>Cliente / empresa</label>
                 <input type="search"
-                       placeholder="CÃ³digo, razÃ³n social, telÃ©fono o email..."
+                       placeholder="Código, razón social, teléfono o email..."
                        @bind="_clientSearchText"
                        @bind:event="oninput"
                        @onkeydown="OnClientSearchKeyDownAsync"
@@ -1914,7 +1982,7 @@
     [
         ("todas", "Todas"),
         ("sin_asignar", "Sin asignar"),
-        ("asignadas_a_mi", "Asignadas a mÃ­"),
+        ("asignadas_a_mi", "Asignadas a mí"),
         ("pendientes", "Pendientes"),
         ("cerradas", "Cerradas")
     ];
@@ -2059,14 +2127,14 @@
 
     private static readonly TimeSpan PollingInterval = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan TypingPollingInterval = TimeSpan.FromMilliseconds(650);
-    private static readonly string[] QuickReactionEmojis = ["ðŸ‘", "â¤ï¸", "ðŸ˜‚", "ðŸ˜®", "ðŸ˜¢", "ðŸ™"];
+    private static readonly string[] QuickReactionEmojis = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
     private static readonly IReadOnlyList<EmojiGroup> EmojiGroups =
     [
-        new("Recientes", ["ðŸ¤£", "ðŸ¥°", "ðŸ‘‰", "ðŸ˜­", "ðŸ˜”", "ðŸ˜", "ðŸ§˜", "ðŸ˜©", "ðŸ’”", "ðŸ™", "ðŸ•¯ï¸", "ðŸ˜Œ", "ðŸ˜‚", "ðŸ˜", "ðŸ˜…", "ðŸ¤©"]),
-        new("Emoticones y personas", ["ðŸ˜€", "ðŸ˜ƒ", "ðŸ˜„", "ðŸ˜", "ðŸ˜†", "ðŸ¥¹", "ðŸ˜…", "ðŸ˜‚", "ðŸ¤£", "ðŸ™‚", "ðŸ˜Š", "ðŸ˜‡", "ðŸ˜‰", "ðŸ˜Œ", "ðŸ˜", "ðŸ¥°", "ðŸ˜˜", "ðŸ˜—", "ðŸ˜™", "ðŸ˜š", "ðŸ˜‹", "ðŸ˜œ", "ðŸ˜", "ðŸ˜›", "ðŸ§", "ðŸ¤“", "ðŸ˜Ž", "ðŸ¥³", "ðŸ˜´"]),
-        new("Gestos", ["ðŸ‘", "ðŸ‘Ž", "ðŸ‘Œ", "ðŸ‘", "ðŸ™Œ", "ðŸ¤", "ðŸ™", "ðŸ’ª", "âœŒï¸", "ðŸ¤ž", "ðŸ‘‹", "ðŸ¤™", "â˜ï¸", "ðŸ‘‡", "ðŸ‘ˆ", "ðŸ‘‰"]),
-        new("Corazones", ["â¤ï¸", "ðŸ§¡", "ðŸ’›", "ðŸ’š", "ðŸ’™", "ðŸ’œ", "ðŸ–¤", "ðŸ¤", "ðŸ¤Ž", "ðŸ’”", "ðŸ’•", "ðŸ’ž", "ðŸ’“", "ðŸ’—", "ðŸ’–", "ðŸ’˜"]),
-        new("Objetos", ["âœ…", "âŒ", "âš ï¸", "ðŸ“Œ", "ðŸ“Ž", "ðŸ§¾", "ðŸ“„", "ðŸ’¬", "ðŸ“ž", "ðŸ“±", "ðŸ’»", "ðŸ”§", "ðŸ› ï¸", "ðŸ’¡", "ðŸš€", "â°"])
+        new("Recientes", ["🤣", "🥰", "👉", "😭", "😔", "😁", "🧘", "😩", "💔", "🙏", "🕯️", "😌", "😂", "😍", "😅", "🤩"]),
+        new("Emoticones y personas", ["😀", "😃", "😄", "😁", "😆", "🥹", "😅", "😂", "🤣", "🙂", "😊", "😇", "😉", "😌", "😍", "🥰", "😘", "😗", "😙", "😚", "😋", "😜", "😝", "😛", "🧐", "🤓", "😎", "🥳", "😴"]),
+        new("Gestos", ["👍", "👎", "👌", "👏", "🙌", "🤝", "🙏", "💪", "✌️", "🤞", "👋", "🤙", "☝️", "👇", "👈", "👉"]),
+        new("Corazones", ["❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "🤎", "💔", "💕", "💞", "💓", "💗", "💖", "💘"]),
+        new("Objetos", ["✅", "❌", "⚠️", "📌", "📎", "🧾", "📄", "💬", "📞", "📱", "💻", "🔧", "🛠️", "💡", "🚀", "⏰"])
     ];
     private IReadOnlyList<EmojiGroup> FilteredEmojiGroups
         => string.IsNullOrWhiteSpace(_emojiSearch)
@@ -2108,8 +2176,8 @@
     private int TotalNewMessagesCount => _inbox.Sum(x => GetConversationNewCount(x.IdConversacion));
     private string ConversationPageTitle
         => TotalNewMessagesCount > 0
-            ? $"({TotalNewMessagesCount}) Conversaciones | Alfa GestiÃ³n"
-            : "Conversaciones | Alfa GestiÃ³n";
+            ? $"({TotalNewMessagesCount}) Conversaciones | Alfa Gestión"
+            : "Conversaciones | Alfa Gestión";
     private bool IsWhatsAppConversation
         => _selectedConversation is not null
            && _selectedConversation.Canal == "WHATSAPP";
@@ -2256,7 +2324,7 @@
         {
             try
             {
-                await JS.InvokeVoidAsync("conversacionesUi.initNotifications", "AlfaCore - Alfa GestiÃ³n");
+                await JS.InvokeVoidAsync("conversacionesUi.initNotifications", "AlfaCore - Alfa Gestión");
                 await UpdateSoundDiagnosticsAsync();
             }
             catch
@@ -2494,6 +2562,7 @@
     {
         _filters.Search = Convert.ToString(args.Value, System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
         _filters.ClienteCodigo = string.Empty;
+        ResetInboxSearchScope();
         _actionError = null;
         if (string.IsNullOrWhiteSpace(_filters.Search))
         {
@@ -2506,7 +2575,38 @@
             return;
         }
 
-        await DebounceContactSuggestionsAsync();
+        await Task.WhenAll(DebounceSearchAsync(), DebounceContactSuggestionsAsync());
+    }
+
+    private async Task HandleSearchFocusAsync()
+    {
+        if (!ShouldShowContactSuggestions)
+            return;
+
+        _showContactSuggestions = true;
+
+        if (_conversationSuggestions.Count == 0 && _contactSuggestions.Count == 0)
+            await DebounceContactSuggestionsAsync();
+    }
+
+    private async Task ClearInboxSearchAsync()
+    {
+        CancelSearchDebounce();
+        CancelContactSearch();
+        _filters.Search = string.Empty;
+        _filters.ClienteCodigo = string.Empty;
+        ResetInboxSearchScope();
+        _showContactSuggestions = false;
+        _contactSuggestions = [];
+        _conversationSuggestions = [];
+        await LoadInboxAsync();
+    }
+
+    private void ResetInboxSearchScope()
+    {
+        _filters.Modo = "todas";
+        _filters.IdTecnicoActual = string.Empty;
+        _filters.CodigoEstado = string.Empty;
     }
 
     private async Task HandleTechnicianFilterChangedAsync(ChangeEventArgs args)
@@ -2951,24 +3051,24 @@
             return;
         if (_selectedTicketMessageIds.Count == 0)
         {
-            _ticketError = "SeleccionÃ¡ al menos un mensaje para crear el ticket.";
+            _ticketError = "Seleccioná al menos un mensaje para crear el ticket.";
             return;
         }
         if (string.IsNullOrWhiteSpace(_ticketTitle))
         {
-            _ticketError = "IngresÃ¡ el nombre del ticket.";
+            _ticketError = "Ingresá el nombre del ticket.";
             return;
         }
         var creatorTechnicianId = CurrentMessageTechnicianId;
         if (string.IsNullOrWhiteSpace(creatorTechnicianId))
         {
-            _ticketError = "No se pudo crear el ticket porque tu usuario no tiene un tÃ©cnico asociado.";
+            _ticketError = "No se pudo crear el ticket porque tu usuario no tiene un técnico asociado.";
             return;
         }
 
         if (_relatedTicketMatches.Count > 0 && !_allowCreateDespiteRelated)
         {
-            _ticketError = "RevisÃ¡ los tickets relacionados o elegÃ­ Crear igual para continuar.";
+            _ticketError = "Revisá los tickets relacionados o elegí Crear igual para continuar.";
             return;
         }
 
@@ -3018,7 +3118,7 @@
         {
             _ticketError = ex is AlfaCore.Services.AppUserFacingException userFacing
                 ? userFacing.Message
-                : "No se pudo crear el ticket. RevisÃ¡ la base activa y volvÃ© a intentar.";
+                : "No se pudo crear el ticket. Revisá la base activa y volvé a intentar.";
         }
         finally
         {
@@ -3470,10 +3570,10 @@
             var conversationTask = ConversacionesSvc.GetInboxAsync(new ConversacionesInboxFilters
             {
                 Canal = _canalActivo,
-                Modo = _filters.Modo,
+                Modo = "todas",
                 Search = _filters.Search.Trim(),
-                IdTecnicoActual = _filters.IdTecnicoActual,
-                CodigoEstado = _filters.CodigoEstado,
+                IdTecnicoActual = string.Empty,
+                CodigoEstado = string.Empty,
                 UsuarioActual = CurrentUserNameForAudit,
                 SistemaActual = CurrentUserSystemForAudit,
                 Limit = 6
@@ -4160,7 +4260,7 @@
                 await SelectConversationAsync(_selectedConversation.IdConversacion, updateUrl: false);
 
             foreach (var pending in _pendingAttachments)
-                pending.Error ??= "No se pudo enviar. ReintentÃ¡ con el botÃ³n de enviar.";
+                pending.Error ??= "No se pudo enviar. Reintentá con el botón de enviar.";
 
             if (!string.IsNullOrWhiteSpace(textToSend) && !_messages.Any(x => x.Texto == textToSend && IsOutgoingMessage(x)))
             {
@@ -4276,12 +4376,12 @@
                 var autoValues = await ConversacionesSvc.GetTemplateAutoValuesAsync(_selectedConversation.IdConversacion, required);
                 automaticValues = autoValues.Valores.ToList();
                 _templateAutoNotice = string.IsNullOrWhiteSpace(autoValues.Observaciones)
-                    ? "Variables cargadas automÃ¡ticamente desde la conversaciÃ³n y la cuenta del cliente."
+                    ? "Variables cargadas automáticamente desde la conversación y la cuenta del cliente."
                     : autoValues.Observaciones;
             }
             catch (Exception ex)
             {
-                _templateAutoNotice = $"No se pudieron cargar variables automÃ¡ticas: {ex.Message}";
+                _templateAutoNotice = $"No se pudieron cargar variables automáticas: {ex.Message}";
             }
         }
 
@@ -4429,7 +4529,7 @@
                 SistemaAccion = CurrentUserSystemForAudit
             });
 
-            _actionMessage = "AsignaciÃ³n actualizada.";
+            _actionMessage = "Asignación actualizada.";
             await SelectConversationAsync(_selectedConversation.IdConversacion, updateUrl: false);
             await RefreshInboxAsync(showLoading: false, allowSelectionChange: false);
             return true;
@@ -4631,7 +4731,7 @@
     {
         if (!IsPotentialPhone(_filters.Search))
         {
-            _actionError = "IngresÃ¡ un nÃºmero de celular vÃ¡lido para iniciar la conversaciÃ³n.";
+            _actionError = "Ingresá un número de celular válido para iniciar la conversación.";
             return;
         }
 
@@ -4653,8 +4753,8 @@
             await LoadInboxAsync();
             await SelectConversationAsync(result.IdConversacion, showMobileChat: true);
 
-            var action = result.Creada ? "ConversaciÃ³n creada" : "ConversaciÃ³n existente abierta";
-            var contact = result.ContactoAsociado ? " y asociada al contacto encontrado." : ". No se encontrÃ³ un contacto existente para asociar.";
+            var action = result.Creada ? "Conversación creada" : "Conversación existente abierta";
+            var contact = result.ContactoAsociado ? " y asociada al contacto encontrado." : ". No se encontró un contacto existente para asociar.";
             _actionMessage = $"{action} para {DisplayOrFallback(result.NombreVisible, result.TelefonoWhatsApp)}{contact}";
         }
         catch (Exception ex)
@@ -4743,7 +4843,7 @@
 
         if (string.IsNullOrWhiteSpace(_clientSearchText))
         {
-            _linkClientError = "EscribÃ­ parte del cÃ³digo, razÃ³n social, telÃ©fono o email del cliente.";
+            _linkClientError = "Escribí parte del código, razón social, teléfono o email del cliente.";
             return;
         }
 
@@ -5092,7 +5192,7 @@
         }
         catch (Exception ex)
         {
-            _actionError = $"No se pudo iniciar la grabaciÃ³n: {ex.Message}";
+            _actionError = $"No se pudo iniciar la grabación: {ex.Message}";
         }
     }
 
@@ -5132,7 +5232,7 @@
     private void MarkPendingAttachmentsError(string? message)
     {
         var error = string.IsNullOrWhiteSpace(message)
-            ? "No se pudo enviar. ReintentÃ¡ con el botÃ³n de enviar."
+            ? "No se pudo enviar. Reintentá con el botón de enviar."
             : message;
 
         foreach (var pending in _pendingAttachments)
@@ -5211,7 +5311,7 @@
             _openReactionMessageId = null;
             await SelectConversationAsync(_selectedConversation.IdConversacion, updateUrl: false);
             await LoadInboxAsync();
-            _actionMessage = $"ReacciÃ³n enviada: {emoji}";
+            _actionMessage = $"Reacción enviada: {emoji}";
         }
         catch (Exception ex)
         {
@@ -5659,7 +5759,7 @@
 
     private static bool IsReactionMessage(ConversacionMensajeDto message)
         => string.Equals(message.MessageType, "REACTION", StringComparison.OrdinalIgnoreCase)
-           || (message.Texto ?? string.Empty).StartsWith("ReacciÃ³n ", StringComparison.OrdinalIgnoreCase);
+           || (message.Texto ?? string.Empty).StartsWith("Reacción ", StringComparison.OrdinalIgnoreCase);
 
     private IReadOnlyList<string> GetInlineReactions(ConversacionMensajeDto message)
     {
@@ -5733,9 +5833,9 @@
     private static string FormatClientCandidateSummary(ConversacionClienteCandidateDto client)
     {
         var location = FirstNonEmpty(
-            string.Join(" Â· ", new[] { client.Localidad, client.Provincia }.Where(x => !string.IsNullOrWhiteSpace(x))),
+            string.Join(" · ", new[] { client.Localidad, client.Provincia }.Where(x => !string.IsNullOrWhiteSpace(x))),
             string.Empty);
-        var contact = string.Join(" Â· ", new[] { client.Telefono, client.Mail }.Where(x => !string.IsNullOrWhiteSpace(x)));
+        var contact = string.Join(" · ", new[] { client.Telefono, client.Mail }.Where(x => !string.IsNullOrWhiteSpace(x)));
         return FirstNonEmpty(location, contact, "Sin datos adicionales");
     }
 
@@ -5748,11 +5848,11 @@
     private static string BuildRelatedReason(TicketRelatedMatchDto match)
     {
         var parts = new List<string>();
-        if (match.MismaConversacion) parts.Add("misma conversaciÃ³n");
+        if (match.MismaConversacion) parts.Add("misma conversación");
         if (match.MismoContacto) parts.Add("mismo contacto");
         if (match.MismoCliente) parts.Add("mismo cliente");
         if (match.Terminos.Count > 0) parts.Add($"coincide: {string.Join(", ", match.Terminos.Take(3))}");
-        return parts.Count == 0 ? "posible relaciÃ³n por texto" : string.Join(" Â· ", parts);
+        return parts.Count == 0 ? "posible relación por texto" : string.Join(" · ", parts);
     }
 
     private static string BuildContextTicketPreview(TicketRelatedMatchDto match)
@@ -5814,7 +5914,7 @@
     private static bool IsInitializationPending(string? message)
         => !string.IsNullOrWhiteSpace(message)
            && (message.Contains("todavia no esta inicializado", StringComparison.OrdinalIgnoreCase)
-               || message.Contains("todavÃ­a no estÃ¡ inicializado", StringComparison.OrdinalIgnoreCase));
+               || message.Contains("todavía no está inicializado", StringComparison.OrdinalIgnoreCase));
 
     private static string InferTipoArchivo(string mimeType)
     {
@@ -5882,8 +5982,8 @@
 
         var unsupportedType = ExtractUnsupportedType(message.PayloadJson);
         return string.IsNullOrWhiteSpace(unsupportedType)
-            ? "WhatsApp enviÃ³ un tipo de mensaje que todavÃ­a no es compatible con el mÃ³dulo."
-            : $"WhatsApp enviÃ³ un formato no compatible: {unsupportedType}.";
+            ? "WhatsApp envió un tipo de mensaje que todavía no es compatible con el módulo."
+            : $"WhatsApp envió un formato no compatible: {unsupportedType}.";
     }
 
     private static readonly Regex MessageUrlRegex = new(
@@ -6032,8 +6132,8 @@
             parts.Add($"ID WhatsApp: {message.WhatsAppMessageId}");
 
         return parts.Count == 0
-            ? "Sin detalle tÃ©cnico disponible en el webhook."
-            : string.Join(" Â· ", parts);
+            ? "Sin detalle técnico disponible en el webhook."
+            : string.Join(" · ", parts);
     }
 
     private static bool IsUnsupportedMessage(ConversacionMensajeDto message)
@@ -6525,7 +6625,7 @@
         return state switch
         {
             "PENDIENTE" => "Enviando",
-            "PENDIENTE_CONFIG" => "Sin configuraciÃ³n",
+            "PENDIENTE_CONFIG" => "Sin configuración",
             "ENVIADO_META" => "Enviado a WhatsApp",
             "ENVIADO" => "Enviado",
             "ENTREGADO" => "Entregado",

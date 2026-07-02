@@ -386,6 +386,314 @@ select {
     line-height: 1.45;
 }
 
+.module-actionbar,
+.page-grid:not(.pos-page):not(.pos-page--odoo) > .page-intro:has(.actions) {
+    position: sticky;
+    top: 0;
+    z-index: 860;
+    display: grid;
+    grid-template-columns: auto minmax(280px, 1fr) auto;
+    align-items: center;
+    gap: .65rem;
+    margin: -0.15rem 0 .85rem;
+    padding: .55rem .65rem;
+    border: 1px solid rgba(56, 189, 248, .16);
+    border-radius: 8px;
+    background: rgba(7, 18, 32, .94);
+    box-shadow: 0 10px 28px rgba(2, 6, 23, .28);
+    backdrop-filter: blur(10px);
+    overflow: visible;
+}
+
+.module-actionbar__title {
+    min-width: 0;
+    display: grid;
+    gap: .08rem;
+}
+
+.module-actionbar__title strong,
+.module-actionbar .page-intro__title {
+    margin: 0;
+    color: var(--color-text);
+    font-size: .98rem;
+    font-weight: 800;
+    line-height: 1.2;
+    white-space: nowrap;
+}
+
+.module-actionbar__title span,
+.module-actionbar .page-intro__text {
+    margin: 0;
+    max-width: 28ch;
+    overflow: hidden;
+    color: var(--color-muted);
+    font-size: .78rem;
+    line-height: 1.25;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.module-actionbar__search {
+    min-width: 0;
+}
+
+.module-actionbar__actions,
+.module-actionbar .actions,
+.page-grid:not(.pos-page):not(.pos-page--odoo) > .page-intro:has(.actions) .actions {
+    justify-content: flex-end;
+    flex-wrap: nowrap;
+    min-width: 0;
+}
+
+.module-actionbar__search-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 850;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: default;
+}
+
+.module-actionbar .smart-search__panel,
+.module-actionbar + .smart-search-card .smart-search__panel {
+    z-index: 870;
+}
+
+.module-actionbar + .smart-search-card {
+    margin-top: -.85rem;
+}
+
+.contactos-commandbar + .smart-search-card {
+    position: sticky;
+    top: 3.45rem;
+    z-index: 855;
+    margin-top: -1.15rem;
+    padding: .55rem .65rem .65rem;
+    border-top-color: rgba(56, 189, 248, .08);
+    border-radius: 0 0 8px 8px;
+    background: rgba(7, 18, 32, .94);
+    backdrop-filter: blur(10px);
+}
+
+.contactos-commandbar {
+    border-radius: 8px 8px 0 0;
+}
+
+.shell:has(.contactos-page) {
+    --module-actionbar-left: 300px;
+}
+
+.shell.shell--collapsed:has(.contactos-page) {
+    --module-actionbar-left: 92px;
+}
+
+.shell.shell--direct:has(.contactos-page) {
+    --module-actionbar-left: 0px;
+}
+
+.contactos-page {
+    padding-top: 3.25rem;
+}
+
+.contactos-page > .contactos-commandbar {
+    position: fixed;
+    top: 0;
+    left: var(--module-actionbar-left, 0px);
+    right: 0;
+    z-index: 1180;
+    display: flex;
+    justify-content: flex-end;
+    margin: 0;
+    padding: .45rem .7rem;
+    border: 0;
+    border-bottom: 1px solid rgba(56, 189, 248, .16);
+    border-radius: 0;
+    background: rgba(7, 18, 32, .94);
+    box-shadow: 0 8px 22px rgba(2, 6, 23, .24);
+    backdrop-filter: blur(10px);
+}
+
+.contactos-page > .contactos-commandbar .module-actionbar__actions,
+.usuarios-page > .usuarios-commandbar .actions,
+.tecnicos-page > .tecnicos-commandbar .actions {
+    position: relative;
+    z-index: 1185;
+}
+
+.contactos-commandbar__title {
+    display: none;
+}
+
+.contactos-page > .smart-search-card {
+    position: fixed;
+    top: .45rem;
+    left: calc(var(--module-actionbar-left, 0px) + .7rem);
+    right: 22rem;
+    z-index: 1181;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+}
+
+.contactos-page > .smart-search-card .smart-search__bar {
+    width: min(520px, 100%);
+}
+
+.contactos-page > .smart-search-card .smart-search__hint,
+.contactos-page > .smart-search-card .smart-search__chips:has(.smart-search__hint) {
+    display: none;
+}
+
+.shell:has(.usuarios-page),
+.shell:has(.tecnicos-page) {
+    --module-actionbar-left: 300px;
+}
+
+.shell.shell--collapsed:has(.usuarios-page),
+.shell.shell--collapsed:has(.tecnicos-page) {
+    --module-actionbar-left: 92px;
+}
+
+.shell.shell--direct:has(.usuarios-page),
+.shell.shell--direct:has(.tecnicos-page) {
+    --module-actionbar-left: 0px;
+}
+
+.usuarios-page,
+.tecnicos-page {
+    padding-top: 3.25rem;
+}
+
+.usuarios-page > .usuarios-commandbar,
+.tecnicos-page > .tecnicos-commandbar {
+    position: fixed;
+    top: 0;
+    left: var(--module-actionbar-left, 0px);
+    right: 0;
+    z-index: 1180;
+    display: flex;
+    justify-content: flex-end;
+    margin: 0;
+    padding: .45rem .7rem;
+    border: 0;
+    border-bottom: 1px solid rgba(56, 189, 248, .16);
+    border-radius: 0;
+    background: rgba(7, 18, 32, .94);
+    box-shadow: 0 8px 22px rgba(2, 6, 23, .24);
+    backdrop-filter: blur(10px);
+}
+
+.usuarios-commandbar > div:first-child,
+.tecnicos-commandbar > div:first-child {
+    display: none;
+}
+
+.usuarios-page > .usuarios-search-card,
+.tecnicos-page > .tecnicos-search-card {
+    position: fixed;
+    top: .45rem;
+    left: calc(var(--module-actionbar-left, 0px) + .7rem);
+    right: 22rem;
+    z-index: 1181;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+}
+
+.usuarios-search-card > .panel-card__header,
+.usuarios-search-card > .filters-grid {
+    display: none;
+}
+
+.usuarios-page > .usuarios-search-card .smart-search__bar {
+    width: min(520px, 100%);
+}
+
+.tecnicos-page > .tecnicos-search-card .smart-search__bar {
+    width: min(520px, 100%);
+}
+
+.tecnicos-page > .tecnicos-search-card .smart-search__hint,
+.tecnicos-page > .tecnicos-search-card .smart-search__chips:has(.smart-search__hint) {
+    display: none;
+}
+
+@media (max-width: 900px) {
+    .shell:has(.contactos-page) {
+        --module-actionbar-left: 0px;
+    }
+
+    .shell:has(.usuarios-page),
+    .shell:has(.tecnicos-page) {
+        --module-actionbar-left: 0px;
+    }
+
+    .contactos-page {
+        padding-top: 7.25rem;
+    }
+
+    .usuarios-page,
+    .tecnicos-page {
+        padding-top: 10.5rem;
+    }
+
+    .contactos-page > .contactos-commandbar {
+        align-items: stretch;
+        justify-content: stretch;
+        padding-top: 3.65rem;
+    }
+
+    .usuarios-page > .usuarios-commandbar,
+    .tecnicos-page > .tecnicos-commandbar {
+        align-items: stretch;
+        justify-content: stretch;
+        padding-top: 3.65rem;
+    }
+
+    .contactos-page > .smart-search-card {
+        left: .7rem;
+        right: .7rem;
+    }
+
+    .usuarios-page > .usuarios-search-card,
+    .tecnicos-page > .tecnicos-search-card {
+        left: .7rem;
+        right: .7rem;
+    }
+
+    .contactos-page > .smart-search-card .smart-search__bar {
+        width: 100%;
+    }
+
+    .usuarios-page > .usuarios-search-card .smart-search__bar,
+    .tecnicos-page > .tecnicos-search-card .smart-search__bar {
+        width: 100%;
+    }
+
+    .module-actionbar,
+    .page-grid:not(.pos-page):not(.pos-page--odoo) > .page-intro:has(.actions) {
+        grid-template-columns: minmax(0, 1fr);
+        align-items: stretch;
+    }
+
+    .module-actionbar__actions,
+    .module-actionbar .actions,
+    .page-grid:not(.pos-page):not(.pos-page--odoo) > .page-intro:has(.actions) .actions {
+        justify-content: stretch;
+    }
+
+    .module-actionbar__actions .btn,
+    .module-actionbar .actions .btn,
+    .page-grid:not(.pos-page):not(.pos-page--odoo) > .page-intro:has(.actions) .actions .btn {
+        flex: 1 1 auto;
+    }
+}
+
 .page-grid {
     display: grid;
     gap: 1.25rem;
@@ -16118,6 +16426,54 @@ html[data-theme="light"] .interfaces-bulkbar {
     box-shadow: none;
     overflow: visible;
     animation: support-panel-in .16s ease-out both;
+}
+
+.tickets-page--odoo .tickets-commandbar.module-actionbar {
+    position: fixed;
+    top: 0;
+    left: var(--tickets-actionbar-left, 0px);
+    right: 0;
+    z-index: 1200;
+    margin: 0;
+    padding: .45rem .7rem;
+    border: 0;
+    border-bottom: 1px solid rgba(56, 189, 248, .16);
+    border-radius: 0;
+    background: rgba(7, 18, 32, .94);
+    box-shadow: 0 8px 22px rgba(2, 6, 23, .24);
+    backdrop-filter: blur(10px);
+    box-sizing: border-box;
+}
+
+.tickets-page--odoo .tickets-commandbar.module-actionbar .smart-search__hint,
+.tickets-page--odoo .tickets-commandbar.module-actionbar .smart-search__chips:has(.smart-search__hint) {
+    display: none;
+}
+
+.shell:has(.tickets-page--odoo) {
+    --tickets-actionbar-left: 300px;
+}
+
+.shell.shell--collapsed:has(.tickets-page--odoo) {
+    --tickets-actionbar-left: 92px;
+}
+
+.shell.shell--direct:has(.tickets-page--odoo) {
+    --tickets-actionbar-left: 0px;
+}
+
+.tickets-page--odoo:has(.tickets-commandbar.module-actionbar) {
+    padding-top: 3.25rem;
+}
+
+@media (max-width: 900px) {
+    .shell:has(.tickets-page--odoo) {
+        --tickets-actionbar-left: 0px;
+    }
+
+    .tickets-page--odoo:has(.tickets-commandbar.module-actionbar) {
+        padding-top: 8.25rem;
+    }
 }
 
 .tickets-view-switch {

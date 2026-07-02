@@ -1,4 +1,4 @@
-﻿@page "/usuarios"
+@page "/usuarios"
 @page "/{idweb}/{idbase:int}/usuarios"
 @using AlfaCore.Models
 @using AlfaCore.Services
@@ -9,13 +9,13 @@
 @inject IJSRuntime Js
 @implements IDisposable
 
-<PageTitle>Usuarios | Alfa GestiÃ³n</PageTitle>
+<PageTitle>Usuarios | Alfa Gestión</PageTitle>
 
-<div class="page-grid">
-    <section class="page-intro">
+<div class="page-grid usuarios-page" @onclick="CloseUsuariosSearchPanel">
+    <section class="page-intro usuarios-commandbar">
         <div>
             <h2 class="page-intro__title">Usuarios</h2>
-            <p class="page-intro__text">AdministrÃ¡ usuarios y grupos del sistema actual, con baja lÃ³gica, contraseÃ±a compatible e imagen opcional por archivo.</p>
+            <p class="page-intro__text">Administrá usuarios y grupos del sistema actual, con baja lógica, contraseña compatible e imagen opcional por archivo.</p>
         </div>
         <div class="actions">
             <button type="button" class="btn btn--primary" @onclick="BeginNew">
@@ -40,18 +40,69 @@
                     }
                     @if (_feedback.HasCode)
                     {
-                        <small>CÃ³digo: @_feedback.Code</small>
+                        <small>Código: @_feedback.Code</small>
                     }
                 </div>
             </div>
         </section>
     }
 
-    <section class="panel-card">
+    <section class="panel-card smart-search-card usuarios-search-card" @onclick:stopPropagation>
+        <div class="smart-search" @onkeydown="HandleApplyKeyDownAsync">
+            <div class="smart-search__bar">
+                <i class="bi bi-search"></i>
+                <input type="search"
+                       placeholder="Buscar por nombre o email..."
+                       value="@_filters.Texto"
+                       @onfocus="OpenUsuariosSearchPanel"
+                       @oninput="OnUsuariosSearchInput"
+                       @onkeydown="HandleApplyKeyDownAsync" />
+                <button type="button" class="smart-search__toggle" @onclick="ToggleUsuariosSearchPanel" aria-label="Mostrar filtros">
+                    <i class="bi @(_showUsuariosSearchPanel ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
+                </button>
+            </div>
+
+            <div class="smart-search__chips" aria-live="polite">
+                @foreach (var chip in BuildUsuariosFilterChips())
+                {
+                    <button type="button" class="smart-chip" @onclick="() => RemoveUsuariosChipAsync(chip.Key)">
+                        @chip.Label <i class="bi bi-x"></i>
+                    </button>
+                }
+            </div>
+
+            @if (_showUsuariosSearchPanel)
+            {
+                <button type="button" class="module-actionbar__search-backdrop" aria-label="Cerrar filtros" @onclick="CloseUsuariosSearchPanel"></button>
+                <div class="smart-search__panel" @onclick:stopPropagation @onkeydown="HandleApplyKeyDownAsync">
+                    <div class="smart-search__column">
+                        <h4><i class="bi bi-funnel-fill"></i> Estado</h4>
+                        <button type="button" class="@GetUsuariosSmartOptionClass(_activoFiltro == "1")" @onclick='() => SetUsuariosStatusFilterAsync("1")'>Activos</button>
+                        <button type="button" class="@GetUsuariosSmartOptionClass(_activoFiltro == "0")" @onclick='() => SetUsuariosStatusFilterAsync("0")'>Inactivos</button>
+                        <button type="button" class="@GetUsuariosSmartOptionClass(string.IsNullOrWhiteSpace(_activoFiltro))" @onclick='() => SetUsuariosStatusFilterAsync("")'>Todos</button>
+                    </div>
+                    <div class="smart-search__column">
+                        <h4><i class="bi bi-people-fill"></i> Tipo</h4>
+                        <button type="button" class="@GetUsuariosSmartOptionClass(string.IsNullOrWhiteSpace(_grupoFiltro))" @onclick='() => SetUsuariosTypeFilterAsync("")'>Todos</button>
+                        <button type="button" class="@GetUsuariosSmartOptionClass(_grupoFiltro == "0")" @onclick='() => SetUsuariosTypeFilterAsync("0")'>Usuarios</button>
+                        <button type="button" class="@GetUsuariosSmartOptionClass(_grupoFiltro == "1")" @onclick='() => SetUsuariosTypeFilterAsync("1")'>Grupos</button>
+                    </div>
+                    <div class="smart-search__column">
+                        <h4><i class="bi bi-lightning-charge-fill"></i> Acciones</h4>
+                        <button type="button" class="btn btn--primary btn--sm" @onclick="AplicarFiltrosAsync" disabled="@_loadingList">
+                            <i class="bi bi-search"></i> Aplicar
+                        </button>
+                        <button type="button" class="btn btn--ghost btn--sm" @onclick="LimpiarFiltros" disabled="@_loadingList">
+                            <i class="bi bi-eraser"></i> Limpiar
+                        </button>
+                    </div>
+                </div>
+            }
+        </div>
         <div class="panel-card__header">
             <div>
                 <h3 class="panel-card__title">Filtros</h3>
-                <p class="panel-card__subtitle">La bÃºsqueda trabaja sobre el sistema fijo `CN000PR` y lista activos por defecto.</p>
+                <p class="panel-card__subtitle">La búsqueda trabaja sobre el sistema fijo `CN000PR` y lista activos por defecto.</p>
             </div>
         </div>
 
@@ -95,8 +146,8 @@
         <section class="panel-card">
             <div class="panel-card__header">
                 <div>
-                    <h3 class="panel-card__title">ConfiguraciÃ³n de vista</h3>
-                    <p class="panel-card__subtitle">ElegÃ­ columnas visibles, orden y agrupaciÃ³n para tu grilla de usuarios.</p>
+                    <h3 class="panel-card__title">Configuración de vista</h3>
+                    <p class="panel-card__subtitle">Elegí columnas visibles, orden y agrupación para tu grilla de usuarios.</p>
                 </div>
             </div>
 
@@ -107,7 +158,7 @@
                         <option value="@UsuariosViewGroupKeys.None">Sin agrupar</option>
                         <option value="@UsuariosViewGroupKeys.Tipo">Tipo</option>
                         <option value="@UsuariosViewGroupKeys.Activo">Activo</option>
-                        <option value="@UsuariosViewGroupKeys.CambiarClave">Clave prÃ³ximo inicio</option>
+                        <option value="@UsuariosViewGroupKeys.CambiarClave">Clave próximo inicio</option>
                     </select>
                 </div>
 
@@ -149,7 +200,7 @@
             <div class="panel-card__header">
                 <div>
                     <h3 class="panel-card__title">@(_isNewMode ? "Nuevo usuario" : $"Editar {_form.Nombre}")</h3>
-                    <p class="panel-card__subtitle">@(_isNewMode ? "CompletÃ¡ los datos bÃ¡sicos del usuario o grupo." : $"Sistema fijo: CN000PR Â· Estado: {(_selectedActivo ? "Activo" : "Inactivo")}")</p>
+                    <p class="panel-card__subtitle">@(_isNewMode ? "Completá los datos básicos del usuario o grupo." : $"Sistema fijo: CN000PR · Estado: {(_selectedActivo ? "Activo" : "Inactivo")}")</p>
                 </div>
                 <div class="actions">
                     <button type="button" class="btn btn--primary" @onclick="GuardarAsync" disabled="@_saving">
@@ -253,7 +304,7 @@
                         </label>
                         <label class="checkbox">
                             <input type="checkbox" @bind="_form.CambiarProximoInicio" disabled="@(_saving || _form.EsGrupo)" />
-                            <span>Cambiar contraseÃ±a en el prÃ³ximo inicio</span>
+                            <span>Cambiar contraseña en el próximo inicio</span>
                         </label>
                     </div>
                     @if (HasFieldError("cambiar-proximo-inicio"))
@@ -264,7 +315,7 @@
                     @if (_form.EsGrupo)
                     {
                         <div class="usuarios-empty">
-                            Los grupos no usan contraseÃ±a en esta primera versiÃ³n.
+                            Los grupos no usan contraseña en esta primera versión.
                         </div>
                     }
                     else
@@ -272,8 +323,8 @@
                         <div class="usuarios-password-card">
                             <div class="usuarios-password-card__head">
                                 <div>
-                                    <span class="interfaces-detail__label">ContraseÃ±a</span>
-                                    <p class="panel-card__subtitle">Compatible con la codificaciÃ³n actual del sistema de escritorio.</p>
+                                    <span class="interfaces-detail__label">Contraseña</span>
+                                    <p class="panel-card__subtitle">Compatible con la codificación actual del sistema de escritorio.</p>
                                 </div>
                                 <button type="button" class="btn btn--ghost btn--sm" @onclick="TogglePasswordVisibility">
                                     <i class="bi @(_showPassword ? "bi-eye-slash" : "bi-eye")"></i>
@@ -282,7 +333,7 @@
                             </div>
                             <div class="usuarios-editor__grid">
                                 <div class="field">
-                                    <label>ContraseÃ±a</label>
+                                    <label>Contraseña</label>
                                     <input type="@(_showPassword ? "text" : "password")"
                                            class="@GetFieldInputClass("contrasena")"
                                            maxlength="13"
@@ -294,7 +345,7 @@
                                     }
                                 </div>
                                 <div class="field">
-                                    <label>ConfirmaciÃ³n</label>
+                                    <label>Confirmación</label>
                                     <input type="@(_showPassword ? "text" : "password")"
                                            class="@GetFieldInputClass("confirmacion")"
                                            maxlength="13"
@@ -313,7 +364,7 @@
                     {
                         <div class="usuarios-editor__meta">
                             <span>Alta: @FormatDate(_selectedAlta)</span>
-                            <span>ModificaciÃ³n: @FormatDate(_selectedModificacion)</span>
+                            <span>Modificación: @FormatDate(_selectedModificacion)</span>
                         </div>
                     }
                 </div>
@@ -329,13 +380,13 @@
             <div class="panel-card__header">
                 <div>
                     <h3 class="panel-card__title">Usuarios</h3>
-                    <p class="panel-card__subtitle">@_pagedTotal registro(s) Â· PÃ¡gina @_pageNumber de @_totalPages Â· podÃ©s abrir la ficha con el botÃ³n editar o con doble clic.</p>
+                    <p class="panel-card__subtitle">@_pagedTotal registro(s) · Página @_pageNumber de @_totalPages · podés abrir la ficha con el botón editar o con doble clic.</p>
                 </div>
                 <div class="actions">
                     <button type="button" class="btn btn--ghost" @onclick="AbrirConfiguracionVista">
                         <i class="bi bi-sliders"></i> Configurar vista
                     </button>
-                    <span class="panel-card__subtitle">AgrupaciÃ³n: @GetGroupingLabel(_viewSettings.AgruparPor)</span>
+                    <span class="panel-card__subtitle">Agrupación: @GetGroupingLabel(_viewSettings.AgruparPor)</span>
                 </div>
             </div>
 
@@ -428,16 +479,16 @@
                                                         </div>
                                                         break;
                                                     case UsuariosViewColumnKeys.Email:
-                                                        @(string.IsNullOrWhiteSpace(item.Email) ? "â€”" : item.Email)
+                                                        @(string.IsNullOrWhiteSpace(item.Email) ? "—" : item.Email)
                                                         break;
                                                     case UsuariosViewColumnKeys.Tipo:
                                                         @(item.EsGrupo ? "Grupo" : "Usuario")
                                                         break;
                                                     case UsuariosViewColumnKeys.CambiarClave:
-                                                        @(item.EsGrupo ? "No aplica" : item.CambiarProximoInicio ? "SÃ­" : "No")
+                                                        @(item.EsGrupo ? "No aplica" : item.CambiarProximoInicio ? "Sí" : "No")
                                                         break;
                                                     case UsuariosViewColumnKeys.Activo:
-                                                        @(item.Activo ? "SÃ­" : "No")
+                                                        @(item.Activo ? "Sí" : "No")
                                                         break;
                                                     case UsuariosViewColumnKeys.Alta:
                                                         @FormatDate(item.FechaHoraGrabacion)
@@ -464,19 +515,19 @@
                 <div class="result-pagination">
                     <span class="result-pagination__info">@_pagedTotal registro(s)</span>
                     <div class="result-pagination__controls">
-                        <button class="result-pagination__btn" title="PÃ¡gina anterior"
+                        <button class="result-pagination__btn" title="Página anterior"
                                 @onclick="() => CambiarPaginaAsync(_pageNumber - 1)"
                                 disabled="@(!_hasPrev || _loadingList)">
                             <i class="bi bi-chevron-left"></i>
                         </button>
                         <span class="result-pagination__btn result-pagination__btn--active">@_pageNumber / @_totalPages</span>
-                        <button class="result-pagination__btn" title="PÃ¡gina siguiente"
+                        <button class="result-pagination__btn" title="Página siguiente"
                                 @onclick="() => CambiarPaginaAsync(_pageNumber + 1)"
                                 disabled="@(!_hasNext || _loadingList)">
                             <i class="bi bi-chevron-right"></i>
                         </button>
                     </div>
-                    <select class="result-pagination__size" title="Registros por pÃ¡gina"
+                    <select class="result-pagination__size" title="Registros por página"
                             value="@_filters.PageSize"
                             @onchange="OnPageSizeChangedAsync"
                             disabled="@_loadingList">
@@ -496,7 +547,7 @@
                 <div class="panel-card__header">
                     <div>
                         <h3 id="usuarios-bulk-deactivate-title" class="panel-card__title">Dar de baja usuarios</h3>
-                        <p class="panel-card__subtitle">Se darÃ¡n de baja @_bulkDeactivateConfirmCount usuario(s) o grupo(s) seleccionados.</p>
+                        <p class="panel-card__subtitle">Se darán de baja @_bulkDeactivateConfirmCount usuario(s) o grupo(s) seleccionados.</p>
                     </div>
                     <button type="button" class="btn btn--ghost btn--sm" @onclick="CloseBulkDeactivateConfirm" disabled="@_saving" aria-label="Cerrar">
                         <i class="bi bi-x-lg"></i>
@@ -533,6 +584,7 @@
     private bool _selectedActivo = true;
     private bool _showViewSettings;
     private bool _showBulkDeactivateConfirm;
+    private bool _showUsuariosSearchPanel;
     private bool _viewSettingsLoaded;
     private int _photoPickerVersion;
     private int _pagedTotal;
@@ -584,8 +636,76 @@
     private async Task AplicarFiltrosAsync()
     {
         _filters.PageNumber = 1;
+        _showUsuariosSearchPanel = false;
         await BuscarAsync();
     }
+
+    private void OpenUsuariosSearchPanel()
+        => _showUsuariosSearchPanel = true;
+
+    private void ToggleUsuariosSearchPanel()
+        => _showUsuariosSearchPanel = !_showUsuariosSearchPanel;
+
+    private void CloseUsuariosSearchPanel()
+        => _showUsuariosSearchPanel = false;
+
+    private void OnUsuariosSearchInput(ChangeEventArgs e)
+    {
+        _filters.Texto = Convert.ToString(e.Value) ?? string.Empty;
+        _showUsuariosSearchPanel = true;
+    }
+
+    private async Task SetUsuariosStatusFilterAsync(string value)
+    {
+        _activoFiltro = value;
+        await AplicarFiltrosAsync();
+    }
+
+    private async Task SetUsuariosTypeFilterAsync(string value)
+    {
+        _grupoFiltro = value;
+        await AplicarFiltrosAsync();
+    }
+
+    private async Task RemoveUsuariosChipAsync(string key)
+    {
+        switch (key)
+        {
+            case "texto":
+                _filters.Texto = string.Empty;
+                break;
+            case "estado":
+                _activoFiltro = "1";
+                break;
+            case "tipo":
+                _grupoFiltro = string.Empty;
+                break;
+        }
+
+        await AplicarFiltrosAsync();
+    }
+
+    private IReadOnlyList<(string Key, string Label)> BuildUsuariosFilterChips()
+    {
+        var chips = new List<(string Key, string Label)>();
+        if (!string.IsNullOrWhiteSpace(_filters.Texto))
+            chips.Add(("texto", _filters.Texto.Trim()));
+
+        chips.Add(("estado", _activoFiltro switch
+        {
+            "0" => "Inactivos",
+            "" => "Todos",
+            _ => "Activos"
+        }));
+
+        if (!string.IsNullOrWhiteSpace(_grupoFiltro))
+            chips.Add(("tipo", _grupoFiltro == "1" ? "Grupos" : "Usuarios"));
+
+        return chips;
+    }
+
+    private static string GetUsuariosSmartOptionClass(bool active)
+        => active ? "smart-option is-active" : "smart-option";
 
     private async Task HandleApplyKeyDownAsync(KeyboardEventArgs args)
     {
@@ -724,12 +844,12 @@
         ClearFieldErrors();
         if (!_form.EsGrupo && !string.Equals(_form.Contrasena, _confirmacionContrasena, StringComparison.Ordinal))
         {
-            SetFieldError("confirmacion", "La confirmaciÃ³n de la contraseÃ±a no coincide.");
+            SetFieldError("confirmacion", "La confirmación de la contraseña no coincide.");
             SetFeedback(new AppUiMessage
             {
                 Severity = AppUiFeedbackSeverity.Warning,
-                Title = "RevisÃ¡ los datos del usuario",
-                Message = "CorregÃ­ los campos marcados antes de guardar."
+                Title = "Revisá los datos del usuario",
+                Message = "Corregí los campos marcados antes de guardar."
             });
             return;
         }
@@ -745,7 +865,7 @@
             try
             {
                 var savedName = await UsuariosSvc.SaveAsync(_form);
-                SetFeedback(AppUiMessage.Success("Usuario guardado", $"El usuario {savedName} se guardÃ³ correctamente."));
+                SetFeedback(AppUiMessage.Success("Usuario guardado", $"El usuario {savedName} se guardó correctamente."));
                 await BuscarAsync();
                 await SeleccionarAsync(savedName);
             }
@@ -755,9 +875,9 @@
                 SetFeedback(new AppUiMessage
                 {
                     Severity = AppUiFeedbackSeverity.Warning,
-                    Title = "RevisÃ¡ los datos del usuario",
+                    Title = "Revisá los datos del usuario",
                     Message = validationEx.UserMessage,
-                    Suggestion = "CorregÃ­ los campos marcados y volvÃ© a intentar."
+                    Suggestion = "Corregí los campos marcados y volvé a intentar."
                 });
             }
             catch (Exception ex)
@@ -822,7 +942,7 @@
                 return;
             }
 
-            SetFeedback(AppUiMessage.Success("Usuario dado de baja", $"El usuario {_selectedNombre} quedÃ³ inactivo."));
+            SetFeedback(AppUiMessage.Success("Usuario dado de baja", $"El usuario {_selectedNombre} quedó inactivo."));
             BeginNew();
             _showEditor = false;
             await BuscarAsync();
@@ -922,11 +1042,14 @@
 
     private void TogglePasswordVisibility() => _showPassword = !_showPassword;
 
-    private void LimpiarFiltros()
+    private async Task LimpiarFiltros()
     {
         _filters.Texto = string.Empty;
         _activoFiltro = "1";
         _grupoFiltro = string.Empty;
+        _filters.PageNumber = 1;
+        _showUsuariosSearchPanel = false;
+        await BuscarAsync();
     }
 
     private void SyncFilters()
@@ -986,7 +1109,7 @@
             return;
         }
 
-        var result = await UiOps.RunAsync(() => UsuariosSvc.GetViewSettingsAsync(currentUser), "No se pudo cargar la configuraciÃ³n de vista.");
+        var result = await UiOps.RunAsync(() => UsuariosSvc.GetViewSettingsAsync(currentUser), "No se pudo cargar la configuración de vista.");
         if (!result.Success || result.Value is null)
         {
             SetFeedback(result.Feedback);
@@ -1051,8 +1174,8 @@
             SetFeedback(new AppUiMessage
             {
                 Severity = AppUiFeedbackSeverity.Warning,
-                Title = "SesiÃ³n requerida",
-                Message = "NecesitÃ¡s iniciar sesiÃ³n para guardar la configuraciÃ³n de vista."
+                Title = "Sesión requerida",
+                Message = "Necesitás iniciar sesión para guardar la configuración de vista."
             });
             return;
         }
@@ -1067,7 +1190,7 @@
         {
             await UsuariosSvc.SaveViewSettingsAsync(currentUser, settings);
             return true;
-        }, "No se pudo guardar la configuraciÃ³n de vista.");
+        }, "No se pudo guardar la configuración de vista.");
 
         if (!result.Success)
         {
@@ -1077,7 +1200,7 @@
 
         ApplyViewSettings(settings, currentUser);
         _showViewSettings = false;
-        SetFeedback(AppUiMessage.Success("Vista guardada", "La configuraciÃ³n de la grilla quedÃ³ actualizada para tu usuario."));
+        SetFeedback(AppUiMessage.Success("Vista guardada", "La configuración de la grilla quedó actualizada para tu usuario."));
     }
 
     private void ApplyViewSettings(UsuariosViewSettingsDto settings, string userName)
@@ -1146,7 +1269,7 @@
         {
             UsuariosViewGroupKeys.Tipo => "Tipo",
             UsuariosViewGroupKeys.Activo => "Activo",
-            UsuariosViewGroupKeys.CambiarClave => "Clave prÃ³ximo inicio",
+            UsuariosViewGroupKeys.CambiarClave => "Clave próximo inicio",
             _ => "Sin agrupar"
         };
 
@@ -1159,10 +1282,10 @@
                 new() { Key = UsuariosViewColumnKeys.Nombre, Label = "Nombre", Visible = true, Order = 0 },
                 new() { Key = UsuariosViewColumnKeys.Email, Label = "Email", Visible = true, Order = 1 },
                 new() { Key = UsuariosViewColumnKeys.Tipo, Label = "Tipo", Visible = true, Order = 2 },
-                new() { Key = UsuariosViewColumnKeys.CambiarClave, Label = "Clave prÃ³ximo inicio", Visible = true, Order = 3 },
+                new() { Key = UsuariosViewColumnKeys.CambiarClave, Label = "Clave próximo inicio", Visible = true, Order = 3 },
                 new() { Key = UsuariosViewColumnKeys.Activo, Label = "Activo", Visible = true, Order = 4 },
                 new() { Key = UsuariosViewColumnKeys.Alta, Label = "Alta", Visible = false, Order = 5 },
-                new() { Key = UsuariosViewColumnKeys.Modificacion, Label = "ModificaciÃ³n", Visible = true, Order = 6 }
+                new() { Key = UsuariosViewColumnKeys.Modificacion, Label = "Modificación", Visible = true, Order = 6 }
             ]
         };
 
@@ -1232,11 +1355,11 @@
             .ToList();
 
     private static string FormatDate(DateTime? value)
-        => value.HasValue ? value.Value.ToString("dd/MM/yyyy HH:mm") : "â€”";
+        => value.HasValue ? value.Value.ToString("dd/MM/yyyy HH:mm") : "—";
 
     private string GetSelectionSummary()
         => _selectedNames.Count == 0
-            ? "SeleccionÃ¡ uno o mÃ¡s usuarios para ejecutar acciones."
+            ? "Seleccioná uno o más usuarios para ejecutar acciones."
             : $"{_selectedNames.Count} usuario(s) o grupo(s) seleccionado(s).";
 
     private void ClearFieldErrors()

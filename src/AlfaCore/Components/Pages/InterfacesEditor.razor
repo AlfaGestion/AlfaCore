@@ -1,4 +1,4 @@
-﻿@page "/interfaces/nuevo"
+@page "/interfaces/nuevo"
 @page "/{idweb}/{idbase:int}/interfaces/nuevo"
 @page "/interfaces/{IdComprobanteRecibido:long}"
 @page "/{idweb}/{idbase:int}/interfaces/{IdComprobanteRecibido:long}"
@@ -17,7 +17,7 @@
     <section class="page-intro">
         <div>
             <h2 class="page-intro__title">@(_isNewMode ? "Nuevo documento recibido" : $"Documento #{IdComprobanteRecibido}")</h2>
-            <p class="page-intro__text">@(_isNewMode ? "CompletÃ¡ los datos del comprobante y adjuntÃ¡ los archivos necesarios antes de registrarlo." : "EditÃ¡ la ficha completa del documento desde una pantalla separada del listado principal.")</p>
+            <p class="page-intro__text">@(_isNewMode ? "Completá los datos del comprobante y adjuntá los archivos necesarios antes de registrarlo." : "Editá la ficha completa del documento desde una pantalla separada del listado principal.")</p>
         </div>
         <div class="actions">
             <a class="btn btn--ghost" href="/interfaces">
@@ -39,7 +39,7 @@
                     }
                     @if (_feedback.HasCode)
                     {
-                        <small>CÃ³digo: @_feedback.Code</small>
+                        <small>Código: @_feedback.Code</small>
                     }
                 </div>
                 @if (_isNewMode && _lastSavedId.HasValue && _feedback?.Severity == AppUiFeedbackSeverity.Success)
@@ -64,7 +64,7 @@
             <div class="panel-card__header">
                 <div>
                     <h3 class="panel-card__title">Alta de documento</h3>
-                    <p class="panel-card__subtitle">La carga usa la configuraciÃ³n activa del mÃ³dulo y exige al menos un adjunto.</p>
+                    <p class="panel-card__subtitle">La carga usa la configuración activa del módulo y exige al menos un adjunto.</p>
                 </div>
             </div>
 
@@ -81,7 +81,7 @@
                         </select>
                     </div>
                     <div class="field field--wide">
-                        <label>ObservaciÃ³n</label>
+                        <label>Observación</label>
                         <textarea class="contactos-observaciones" @bind="_nuevo.Observacion" disabled="@_saving"></textarea>
                     </div>
                     <div class="field field--wide">
@@ -89,7 +89,7 @@
                         <textarea class="contactos-observaciones interfaces-prompt-editor"
                                   @bind="_nuevo.PromptIaAdicional"
                                   disabled="@_saving"
-                                  placeholder="Ej: esta factura incluye bonificaciÃ³n en pie y el proveedor usa cÃ³digos propios."></textarea>
+                                  placeholder="Ej: esta factura incluye bonificación en pie y el proveedor usa códigos propios."></textarea>
                     </div>
                 </div>
 
@@ -97,7 +97,7 @@
                     <div class="interfaces-upload-dropzone__head">
                         <div>
                             <h4>Adjuntos iniciales</h4>
-                            <p>PodÃ©s cargar archivos desde explorador o cÃ¡mara. TambiÃ©n podÃ©s pegar con Ctrl+V o menÃº contextual Pegar.</p>
+                            <p>Podés cargar archivos desde explorador o cámara. También podés pegar con Ctrl+V o menú contextual Pegar.</p>
                         </div>
                         <div class="interfaces-upload-actions">
                             <InputFile id="interfaces-file-picker"
@@ -121,7 +121,7 @@
 
                     @if (_selectedFiles.Count == 0)
                     {
-                        <div class="interfaces-empty-upload">TodavÃ­a no agregaste archivos para este documento.</div>
+                        <div class="interfaces-empty-upload">Todavía no agregaste archivos para este documento.</div>
                     }
                     else
                     {
@@ -203,7 +203,7 @@
             <div class="panel-card__header">
                 <div>
                     <h3 class="panel-card__title">Ficha del documento</h3>
-                    <p class="panel-card__subtitle">Alta: @_detail.FechaHoraGrabacion.ToString("dd/MM/yyyy HH:mm") Â· Usuario: @_detail.UsuarioAlta Â· Estado actual: @_detail.EstadoDescripcion</p>
+                    <p class="panel-card__subtitle">Alta: @_detail.FechaHoraGrabacion.ToString("dd/MM/yyyy HH:mm") · Usuario: @_detail.UsuarioAlta · Estado actual: @_detail.EstadoDescripcion</p>
                 </div>
             </div>
 
@@ -245,8 +245,8 @@
                         <div class="interfaces-inline-note">
                             <i class="bi bi-info-circle"></i>
                             <div>
-                                <strong>EdiciÃ³n limitada por estado</strong>
-                                <span>En este estado no se modifican tipo ni adjuntos, pero sÃ­ podÃ©s agregar una nota al documento.</span>
+                                <strong>Edición limitada por estado</strong>
+                                <span>En este estado no se modifican tipo ni adjuntos, pero sí podés agregar una nota al documento.</span>
                             </div>
                         </div>
                     }
@@ -256,8 +256,8 @@
                         <div class="interfaces-inline-note">
                             <i class="bi bi-robot"></i>
                             <div>
-                                <strong>Lectura automÃ¡tica de factura</strong>
-                                <span>EnvÃ­a el documento a la cola del lector de compras para detectar proveedor, comprobante y totales desde los adjuntos activos.</span>
+                                <strong>Lectura automática de factura</strong>
+                                <span>Envía el documento a la cola del lector de compras para detectar proveedor, comprobante y totales desde los adjuntos activos.</span>
                             </div>
                             <button type="button" class="btn btn--secondary" @onclick="DetectarCompraAsync" disabled="@(_detectingCompra || IsSavingDetalle)">
                                 <i class="bi bi-search"></i>
@@ -313,7 +313,7 @@
                     }
 
                     <div class="field">
-                        <label>ObservaciÃ³n</label>
+                        <label>Observación</label>
                         <textarea class="contactos-observaciones" @bind="_editForm.Observacion" disabled="@IsSavingDetalle"></textarea>
                     </div>
                     <div class="field">
@@ -321,7 +321,7 @@
                         <textarea class="contactos-observaciones interfaces-prompt-editor"
                                   @bind="_editForm.PromptIaAdicional"
                                   disabled="@IsSavingDetalle"
-                                  placeholder="Contexto extra para ayudar al lector automÃ¡tico en este comprobante."></textarea>
+                                  placeholder="Contexto extra para ayudar al lector automático en este comprobante."></textarea>
                     </div>
 
                     <div class="field">
@@ -329,7 +329,7 @@
                         <textarea class="contactos-observaciones"
                                   @bind="_statusChange.Observacion"
                                   disabled="@IsSavingDetalle"
-                                  placeholder="@(_detail.PermiteEdicion ? "Opcional: explicaciÃ³n del cambio de estado" : "EscribÃ­ la nota que querÃ©s agregar al documento")"></textarea>
+                                  placeholder="@(_detail.PermiteEdicion ? "Opcional: explicación del cambio de estado" : "Escribí la nota que querés agregar al documento")"></textarea>
                     </div>
 
                     <div class="contactos-form__grid">
@@ -364,7 +364,7 @@
                         <div class="interfaces-upload-dropzone__head">
                             <div>
                                 <h4>Adjuntos activos</h4>
-                                <p>PodÃ©s sumar mÃ¡s archivos al documento desde esta ficha o pegarlos con Ctrl+V / menÃº contextual Pegar.</p>
+                                <p>Podés sumar más archivos al documento desde esta ficha o pegarlos con Ctrl+V / menú contextual Pegar.</p>
                             </div>
                             <div class="interfaces-upload-actions">
                                 <InputFile id="interfaces-extra-picker"
@@ -393,7 +393,7 @@
 
                     @if (_detail.Adjuntos.Count == 0)
                     {
-                        <div class="interfaces-empty-upload">Este comprobante todavÃ­a no tiene adjuntos activos.</div>
+                        <div class="interfaces-empty-upload">Este comprobante todavía no tiene adjuntos activos.</div>
                     }
                     else
                     {
@@ -406,7 +406,7 @@
                                     </div>
                                     <div class="interfaces-attachment-row__content">
                                         <strong>@attachment.NombreOriginal</strong>
-                                        <span>@FormatSize(attachment.TamanoBytes) Â· @attachment.FechaHoraGrabacion.ToString("dd/MM/yyyy HH:mm")</span>
+                                        <span>@FormatSize(attachment.TamanoBytes) · @attachment.FechaHoraGrabacion.ToString("dd/MM/yyyy HH:mm")</span>
                                     </div>
                                     <div class="interfaces-attachment-row__actions">
                                         <a class="btn btn--ghost btn--sm" href="@GetAttachmentDownloadUrl(attachment.IdAdjunto)" target="_blank">
@@ -439,7 +439,7 @@
                                 <span>@item.FechaHora.ToString("dd/MM/yyyy HH:mm")</span>
                             </div>
                             <p>@item.Observacion</p>
-                            <span>@item.Usuario Â· @item.EstadoAnteriorDescripcion @(string.IsNullOrWhiteSpace(item.EstadoNuevoDescripcion) ? string.Empty : $"-> {item.EstadoNuevoDescripcion}")</span>
+                            <span>@item.Usuario · @item.EstadoAnteriorDescripcion @(string.IsNullOrWhiteSpace(item.EstadoNuevoDescripcion) ? string.Empty : $"-> {item.EstadoNuevoDescripcion}")</span>
                         </article>
                     }
                 </div>
@@ -579,7 +579,7 @@
 
         if (_settings is null)
         {
-            SetFeedback(UiOps.BuildMessage(new InvalidOperationException("No se pudo cargar la configuraciÃ³n de carga."), "No se pudo guardar el documento."));
+            SetFeedback(UiOps.BuildMessage(new InvalidOperationException("No se pudo cargar la configuración de carga."), "No se pudo guardar el documento."));
             return;
         }
 
@@ -589,8 +589,8 @@
             {
                 Severity = AppUiFeedbackSeverity.Warning,
                 Title = "Falta el tipo documental",
-                Message = "SeleccionÃ¡ un tipo documental antes de guardar el documento.",
-                Suggestion = "CompletÃ¡ el dato requerido y volvÃ© a intentar."
+                Message = "Seleccioná un tipo documental antes de guardar el documento.",
+                Suggestion = "Completá el dato requerido y volvé a intentar."
             });
             return;
         }
@@ -601,8 +601,8 @@
             {
                 Severity = AppUiFeedbackSeverity.Warning,
                 Title = "Faltan adjuntos",
-                Message = "DebÃ©s adjuntar al menos un archivo para registrar el documento.",
-                Suggestion = "UsÃ¡ â€œSeleccionar archivosâ€ y luego volvÃ© a guardar."
+                Message = "Debés adjuntar al menos un archivo para registrar el documento.",
+                Suggestion = "Usá “Seleccionar archivos” y luego volvé a guardar."
             });
             return;
         }
@@ -670,7 +670,7 @@
                 LimpiarNuevo();
                 SetFeedback(AppUiMessage.Success(
                     "Documento registrado",
-                    $"El comprobante #{result.Value} quedÃ³ registrado. El formulario estÃ¡ limpio para ingresar otro."));
+                    $"El comprobante #{result.Value} quedó registrado. El formulario está limpio para ingresar otro."));
             }
             finally
             {
@@ -706,7 +706,7 @@
                     {
                         Severity = AppUiFeedbackSeverity.Warning,
                         Title = "Falta la nota",
-                        Message = "EscribÃ­ la nota en el bloque inferior para poder guardarla en este estado."
+                        Message = "Escribí la nota en el bloque inferior para poder guardarla en este estado."
                     });
                     return;
                 }
@@ -773,7 +773,7 @@
                 return;
             }
 
-            SetFeedback(AppUiMessage.Success("Estado actualizado", "El estado del documento quedÃ³ actualizado correctamente."));
+            SetFeedback(AppUiMessage.Success("Estado actualizado", "El estado del documento quedó actualizado correctamente."));
             await CargarDetalleAsync();
         }
         finally
@@ -799,7 +799,7 @@
                     UsuarioAccion = CurrentUserName,
                     PcAccion = Environment.MachineName
                 });
-            }, "No se pudo detectar la informaciÃ³n del comprobante.");
+            }, "No se pudo detectar la información del comprobante.");
 
             if (!result.Success)
             {
@@ -809,7 +809,7 @@
 
             SetFeedback(AppUiMessage.Success(
                 "Documento en cola",
-                "La factura quedÃ³ encolada para procesamiento automÃ¡tico. PodÃ©s seguir trabajando y revisar el estado desde la ficha o el listado."));
+                "La factura quedó encolada para procesamiento automático. Podés seguir trabajando y revisar el estado desde la ficha o el listado."));
             await CargarDetalleAsync();
         }
         finally
@@ -897,7 +897,7 @@
             return;
         }
 
-        SetFeedback(AppUiMessage.Success("Adjunto quitado", "El archivo quedÃ³ dado de baja lÃ³gicamente."));
+        SetFeedback(AppUiMessage.Success("Adjunto quitado", "El archivo quedó dado de baja lógicamente."));
         await CargarDetalleAsync();
     }
 
@@ -912,12 +912,12 @@
         if (skipped.Count > 0)
         {
             var names = string.Join(", ", skipped.Take(3).Select(static n => $"\"{n}\""));
-            var extra = skipped.Count > 3 ? $" y {skipped.Count - 3} mÃ¡s" : string.Empty;
+            var extra = skipped.Count > 3 ? $" y {skipped.Count - 3} más" : string.Empty;
             SetFeedback(new AppUiMessage
             {
                 Severity = AppUiFeedbackSeverity.Warning,
                 Title = skipped.Count == 1 ? "Archivo duplicado ignorado" : "Archivos duplicados ignorados",
-                Message = $"{names}{extra} ya {(skipped.Count == 1 ? "estaba" : "estaban")} en la lista y no {(skipped.Count == 1 ? "se agregÃ³" : "se agregaron")} nuevamente."
+                Message = $"{names}{extra} ya {(skipped.Count == 1 ? "estaba" : "estaban")} en la lista y no {(skipped.Count == 1 ? "se agregó" : "se agregaron")} nuevamente."
             });
         }
     }
@@ -940,8 +940,8 @@
         {
             Severity = AppUiFeedbackSeverity.Warning,
             Title = "No se pudo pegar la imagen",
-            Message = string.IsNullOrWhiteSpace(result.Message) ? "No se detectÃ³ ninguna imagen en el portapapeles." : result.Message,
-            Suggestion = "CopiÃ¡ la imagen y volvÃ© a intentar. TambiÃ©n podÃ©s usar Ctrl+V sobre esta pantalla."
+            Message = string.IsNullOrWhiteSpace(result.Message) ? "No se detectó ninguna imagen en el portapapeles." : result.Message,
+            Suggestion = "Copiá la imagen y volvé a intentar. También podés usar Ctrl+V sobre esta pantalla."
         });
     }
 
@@ -955,8 +955,8 @@
         {
             Severity = AppUiFeedbackSeverity.Warning,
             Title = "No se pudo pegar la imagen",
-            Message = string.IsNullOrWhiteSpace(result.Message) ? "No se detectÃ³ ninguna imagen en el portapapeles." : result.Message,
-            Suggestion = "CopiÃ¡ la imagen y volvÃ© a intentar. TambiÃ©n podÃ©s usar Ctrl+V sobre esta pantalla."
+            Message = string.IsNullOrWhiteSpace(result.Message) ? "No se detectó ninguna imagen en el portapapeles." : result.Message,
+            Suggestion = "Copiá la imagen y volvé a intentar. También podés usar Ctrl+V sobre esta pantalla."
         });
     }
 
@@ -997,8 +997,8 @@
             {
                 Severity = AppUiFeedbackSeverity.Info,
                 Title = "Vista previa no disponible",
-                Message = "La vista embebida estÃ¡ disponible para imÃ¡genes. PodÃ©s descargar el archivo para abrirlo.",
-                Suggestion = "UsÃ¡ â€œDescargarâ€ desde la vista previa de imagen o desde adjuntos activos."
+                Message = "La vista embebida está disponible para imágenes. Podés descargar el archivo para abrirlo.",
+                Suggestion = "Usá “Descargar” desde la vista previa de imagen o desde adjuntos activos."
             });
             return;
         }
@@ -1084,7 +1084,7 @@
         {
             return AppUiMessage.Success(
                 "Documento actualizado",
-                "La nota del bloque inferior se agregÃ³ a la observaciÃ³n del documento.");
+                "La nota del bloque inferior se agregó a la observación del documento.");
         }
 
         if (cambioEstado)
@@ -1096,7 +1096,7 @@
 
         return AppUiMessage.Success(
             "Documento actualizado",
-            "La ficha se guardÃ³ correctamente.");
+            "La ficha se guardó correctamente.");
     }
 
     private string GetAttachmentDownloadUrl(long idAdjunto)
@@ -1140,7 +1140,7 @@
         if (!string.IsNullOrWhiteSpace(suffix))
             parts.Add(suffix);
 
-        return parts.Count == 0 ? "Sin dato" : string.Join(" Â· ", parts);
+        return parts.Count == 0 ? "Sin dato" : string.Join(" · ", parts);
     }
 
     private static string FormatMoney(decimal? amount)

@@ -1,16 +1,16 @@
-﻿@page "/interfaces/configuracion"
+@page "/interfaces/configuracion"
 @page "/{idweb}/{idbase:int}/interfaces/configuracion"
 @using AlfaCore.Models
 @inject AlfaCore.Services.IInterfacesConfigService ConfigSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 
-<PageTitle>ConfiguraciÃ³n de Interfaces | Alfa GestiÃ³n</PageTitle>
+<PageTitle>Configuración de Interfaces | Alfa Gestión</PageTitle>
 
 <section class="page-grid">
     <div class="page-intro">
         <div>
-            <h2 class="page-intro__title">ConfiguraciÃ³n de recepciÃ³n documental</h2>
-            <p class="page-intro__text">DefinÃ­ dÃ³nde se guardan los documentos recibidos por la bandeja de Interfaces y quÃ© reglas de carga aplica la base activa.</p>
+            <h2 class="page-intro__title">Configuración de recepción documental</h2>
+            <p class="page-intro__text">Definí dónde se guardan los documentos recibidos por la bandeja de Interfaces y qué reglas de carga aplica la base activa.</p>
         </div>
         <div class="actions">
             <a class="btn btn--ghost" href="/interfaces">
@@ -29,7 +29,7 @@
             <div>@_feedback.Message</div>
             @if (_feedback.HasCode)
             {
-                <div>CÃ³digo: @_feedback.Code</div>
+                <div>Código: @_feedback.Code</div>
             }
             @if (_feedback.HasSuggestion)
             {
@@ -51,7 +51,7 @@
             <div class="conv-config-fields">
                 <div class="field">
                     <label>Nombre del destino</label>
-                    <input @bind="_config.DestinoNombre" placeholder="RecepciÃ³n principal" />
+                    <input @bind="_config.DestinoNombre" placeholder="Recepción principal" />
                 </div>
 
                 <div class="field">
@@ -100,7 +100,7 @@
                     <div class="field">
                         <label>Modo pasivo</label>
                         <select @bind="_ftpPassiveText">
-                            <option value="SI">SÃ­</option>
+                            <option value="SI">Sí</option>
                             <option value="NO">No</option>
                         </select>
                     </div>
@@ -112,7 +112,7 @@
                 </div>
 
                 <div class="field">
-                    <label>TamaÃ±o mÃ¡ximo por archivo (MB)</label>
+                    <label>Tamaño máximo por archivo (MB)</label>
                     <input type="number" min="1" @bind="_config.TamanoMaximoMb" />
                 </div>
 
@@ -125,12 +125,12 @@
             <div class="context-card">
                 <span class="context-card__label">Destino actual esperado</span>
                 <strong>@_config.GetDestinoResumen()</strong>
-                <span class="context-card__muted">Este destino se usa para la recepciÃ³n documental del mÃ³dulo Interfaces en la base activa.</span>
+                <span class="context-card__muted">Este destino se usa para la recepción documental del módulo Interfaces en la base activa.</span>
             </div>
 
             <div class="actions">
                 <button type="button" class="btn btn--primary" @onclick="SaveAsync" disabled="@(Loading || Saving)">
-                    <i class="bi bi-floppy-fill"></i> Guardar configuraciÃ³n
+                    <i class="bi bi-floppy-fill"></i> Guardar configuración
                 </button>
             </div>
         </section>
@@ -138,8 +138,8 @@
         <section class="panel-card conv-config-form">
             <div class="panel-card__header">
                 <div>
-                    <h3 class="panel-card__title">Lectura automÃ¡tica de compras</h3>
-                    <p class="panel-card__subtitle">ConfigurÃ¡ el lector Python reutilizado por Interfaces para detectar proveedor, comprobante y totales.</p>
+                    <h3 class="panel-card__title">Lectura automática de compras</h3>
+                    <p class="panel-card__subtitle">Configurá el lector Python reutilizado por Interfaces para detectar proveedor, comprobante y totales.</p>
                 </div>
                 <span class="panel-card__tag">IA COMPRAS</span>
             </div>
@@ -148,7 +148,7 @@
                 <div class="field">
                     <label>Habilitado</label>
                     <select @bind="_compraIaEnabledText">
-                        <option value="SI">SÃ­</option>
+                        <option value="SI">Sí</option>
                         <option value="NO">No</option>
                     </select>
                 </div>
@@ -186,13 +186,13 @@
                 <div class="field">
                     <label>Worker habilitado</label>
                     <select @bind="_compraIaWorkerEnabledText">
-                        <option value="SI">SÃ­</option>
+                        <option value="SI">Sí</option>
                         <option value="NO">No</option>
                     </select>
                 </div>
 
                 <div class="field">
-                    <label>Procesos simultÃ¡neos</label>
+                    <label>Procesos simultáneos</label>
                     <input type="number" min="1" max="4" @bind="_compraIaConfig.WorkerMaxParalelo" />
                 </div>
 
@@ -205,12 +205,12 @@
             <div class="context-card">
                 <span class="context-card__label">Uso actual</span>
                 <strong>@GetCompraIaResumen()</strong>
-                <span class="context-card__muted">Si el script no estÃ¡ configurado, el botÃ³n <code>Detectar datos</code> va a fallar aunque el documento tenga adjuntos vÃ¡lidos.</span>
+                <span class="context-card__muted">Si el script no está configurado, el botón <code>Detectar datos</code> va a fallar aunque el documento tenga adjuntos válidos.</span>
             </div>
 
             <div class="actions">
                 <button type="button" class="btn btn--ghost" @onclick="TestCompraIaAsync" disabled="@(Loading || Saving || TestingCompraIa)">
-                    <i class="bi bi-clipboard2-check"></i> Probar configuraciÃ³n
+                    <i class="bi bi-clipboard2-check"></i> Probar configuración
                 </button>
                 <button type="button" class="btn btn--primary" @onclick="SaveCompraIaAsync" disabled="@(Loading || Saving)">
                     <i class="bi bi-cpu"></i> Guardar lector de compras
@@ -221,8 +221,8 @@
         <aside class="panel-card conv-config-help">
             <div class="panel-card__header">
                 <div>
-                    <h3 class="panel-card__title">Sugerencia tÃ©cnica</h3>
-                    <p class="panel-card__subtitle">QuÃ© conviene usar segÃºn el escenario.</p>
+                    <h3 class="panel-card__title">Sugerencia técnica</h3>
+                    <p class="panel-card__subtitle">Qué conviene usar según el escenario.</p>
                 </div>
                 <span class="panel-card__tag">Destino</span>
             </div>
@@ -230,11 +230,11 @@
             <div class="context-card">
                 <span class="context-card__label">Para esta etapa</span>
                 <strong>FTP funciona, pero no es lo ideal en seguridad.</strong>
-                <span class="context-card__muted">Como prueba y salida rÃ¡pida estÃ¡ bien. A mediano plazo conviene migrar a <code>SFTP</code> o <code>FTPS</code>.</span>
+                <span class="context-card__muted">Como prueba y salida rápida está bien. A mediano plazo conviene migrar a <code>SFTP</code> o <code>FTPS</code>.</span>
             </div>
 
             <div class="context-card">
-                <span class="context-card__label">Si querÃ©s acceso desde celular</span>
+                <span class="context-card__label">Si querés acceso desde celular</span>
                 <strong>Un destino remoto tiene mucho sentido.</strong>
                 <span class="context-card__muted">Te evita depender de una ruta de Windows y deja listo el camino para cargas externas.</span>
             </div>
@@ -276,7 +276,7 @@
             var iaTask = ConfigSvc.GetCompraIaSettingsAsync();
             await Task.WhenAll(uploadTask, iaTask);
             return (Upload: await uploadTask, Ia: await iaTask);
-        }, "No se pudo cargar la configuraciÃ³n de Interfaces.");
+        }, "No se pudo cargar la configuración de Interfaces.");
 
         if (result.Success)
         {
@@ -302,13 +302,13 @@
 
         var result = await UiOps.RunAsync(
             () => ConfigSvc.SaveUploadSettingsAsync(_config),
-            "No se pudo guardar la configuraciÃ³n de Interfaces.");
+            "No se pudo guardar la configuración de Interfaces.");
 
         if (result.Success)
         {
             _feedback = AppUiMessage.Success(
-                "ConfiguraciÃ³n guardada",
-                "El destino de recepciÃ³n documental quedÃ³ actualizado para la base activa.");
+                "Configuración guardada",
+                "El destino de recepción documental quedó actualizado para la base activa.");
         }
         else
         {
@@ -383,13 +383,13 @@
 
         var result = await UiOps.RunAsync(
             () => ConfigSvc.SaveCompraIaSettingsAsync(_compraIaConfig),
-            "No se pudo guardar la configuraciÃ³n de lectura automÃ¡tica de compras.");
+            "No se pudo guardar la configuración de lectura automática de compras.");
 
         if (result.Success)
         {
             _feedback = AppUiMessage.Success(
-                "ConfiguraciÃ³n guardada",
-                "El lector automÃ¡tico de comprobantes de compra quedÃ³ configurado para la base activa.");
+                "Configuración guardada",
+                "El lector automático de comprobantes de compra quedó configurado para la base activa.");
         }
         else
         {
@@ -412,7 +412,7 @@
             {
                 Severity = AppUiFeedbackSeverity.Warning,
                 Title = "Lectura deshabilitada",
-                Message = "ActivÃ¡ la detecciÃ³n automÃ¡tica de compras antes de probar la configuraciÃ³n."
+                Message = "Activá la detección automática de compras antes de probar la configuración."
             };
             TestingCompraIa = false;
             return;
@@ -420,13 +420,13 @@
 
         var result = await UiOps.RunAsync(
             () => ConfigSvc.ProbeCompraIaSettingsAsync(_compraIaConfig),
-            "No se pudo probar la configuraciÃ³n de lectura automÃ¡tica de compras.");
+            "No se pudo probar la configuración de lectura automática de compras.");
 
         if (result.Success && result.Value is not null)
         {
             _feedback = AppUiMessage.Success(
-                "ConfiguraciÃ³n vÃ¡lida",
-                $"Python respondiÃ³ correctamente ({result.Value.PythonVersion}) y el lector quedÃ³ listo para usarse.");
+                "Configuración válida",
+                $"Python respondió correctamente ({result.Value.PythonVersion}) y el lector quedó listo para usarse.");
         }
         else
         {
@@ -447,13 +447,13 @@
     private string GetCompraIaResumen()
     {
         if (!_compraIaConfig.Habilitado)
-            return "La detecciÃ³n automÃ¡tica estÃ¡ deshabilitada.";
+            return "La detección automática está deshabilitada.";
 
         var script = string.IsNullOrWhiteSpace(_compraIaConfig.ScriptPath)
             ? "sin script configurado"
             : _compraIaConfig.ScriptPath;
 
-        return $"Activo Â· {script} Â· worker {(_compraIaConfig.WorkerHabilitado ? "habilitado" : "deshabilitado")}";
+        return $"Activo · {script} · worker {(_compraIaConfig.WorkerHabilitado ? "habilitado" : "deshabilitado")}";
     }
 
     private static IReadOnlyList<string> ParseExtensions(string? value)

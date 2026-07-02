@@ -1,4 +1,4 @@
-﻿@page "/compras/informesia/resultado/{ExecutionId:guid}"
+@page "/compras/informesia/resultado/{ExecutionId:guid}"
 @page "/{idweb}/{idbase:int}/compras/informesia/resultado/{ExecutionId:guid}"
 @inject AlfaCore.Services.IInformesIaService InformesIaService
 @inject IJSRuntime JS
@@ -101,7 +101,7 @@
             @if (_result.SugerenciasRelacionadas.Any())
             {
                 <div class="ia-related">
-                    <span class="ia-summary__label">Probar tambiÃ©n</span>
+                    <span class="ia-summary__label">Probar también</span>
                     <div class="ia-chip-list">
                         @foreach (var item in _result.SugerenciasRelacionadas)
                         {
@@ -128,7 +128,7 @@
             Exitoso = false,
             Titulo = "Informes IA",
             Subtitulo = "Resultado no disponible",
-            Mensaje = "No encontrÃ© un resultado guardado para esta ejecuciÃ³n. Probablemente ya no estÃ© disponible o el enlace sea invÃ¡lido."
+            Mensaje = "No encontré un resultado guardado para esta ejecución. Probablemente ya no esté disponible o el enlace sea inválido."
         };
     }
 
@@ -146,15 +146,15 @@
         }
 
         AddFilter(parts, "Proveedor", filters.Proveedor);
-        AddFilter(parts, "ArtÃ­culo", filters.Articulo ?? filters.ArticuloDescripcion ?? filters.ArticuloCodigo);
+        AddFilter(parts, "Artículo", filters.Articulo ?? filters.ArticuloDescripcion ?? filters.ArticuloCodigo);
         AddFilter(parts, "Rubro", filters.Rubro);
         AddFilter(parts, "Familia", filters.Familia);
         AddFilter(parts, "Usuario", filters.Usuario);
         AddFilter(parts, "Sucursal", filters.Sucursal);
-        AddFilter(parts, "DepÃ³sito", filters.Deposito);
+        AddFilter(parts, "Depósito", filters.Deposito);
         AddFilter(parts, "Estado", filters.Estado);
         AddFilter(parts, "TC", filters.TipoComprobante);
-        return parts.Count == 0 ? "Sin filtros adicionales" : string.Join(" Â· ", parts);
+        return parts.Count == 0 ? "Sin filtros adicionales" : string.Join(" · ", parts);
     }
 
     private static void AddFilter(List<string> parts, string label, string? value)

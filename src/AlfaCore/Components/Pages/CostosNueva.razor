@@ -1,4 +1,4 @@
-﻿@page "/costos/nueva"
+@page "/costos/nueva"
 @page "/{idweb}/{idbase:int}/costos/nueva"
 @using Microsoft.AspNetCore.Components.Forms
 @inject AlfaCore.Services.ICostosService CostosSvc
@@ -6,20 +6,20 @@
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject NavigationManager Nav
 
-<PageTitle>Nueva ImportaciÃ³n de Costos | Alfa GestiÃ³n</PageTitle>
+<PageTitle>Nueva Importación de Costos | Alfa Gestión</PageTitle>
 
 <div class="page-grid">
     <section class="page-intro">
         <div>
-            <h2 class="page-intro__title">Nueva ImportaciÃ³n</h2>
-            <p class="page-intro__text">SeleccionÃ¡ un perfil y cargÃ¡ un archivo estructurado (`.xlsx`, `.csv`, `.txt`). PDF e imagen quedan para la siguiente etapa IA.</p>
+            <h2 class="page-intro__title">Nueva Importación</h2>
+            <p class="page-intro__text">Seleccioná un perfil y cargá un archivo estructurado (`.xlsx`, `.csv`, `.txt`). PDF e imagen quedan para la siguiente etapa IA.</p>
         </div>
     </section>
 
     <section class="panel-card">
         <div class="panel-card__header">
             <div>
-                <h3 class="panel-card__title">ConfiguraciÃ³n</h3>
+                <h3 class="panel-card__title">Configuración</h3>
             </div>
         </div>
 
@@ -28,7 +28,7 @@
                 <label>Perfil</label>
                 <input type="text"
                        class="costos-nueva__search-input"
-                       placeholder="Buscar perfil por nombre o cÃ³digoâ€¦"
+                       placeholder="Buscar perfil por nombre o código…"
                        value="@_filterText"
                        @oninput="OnFilterInput" />
 
@@ -80,7 +80,7 @@
                 <InputFile OnChange="OnFileSelectedAsync" disabled="@_busy" />
                 @if (_detectingColumns)
                 {
-                    <small style="color:var(--color-accent); display:block; margin-top:.25rem;">Analizando columnasâ€¦</small>
+                    <small style="color:var(--color-accent); display:block; margin-top:.25rem;">Analizando columnas…</small>
                 }
                 @if (_upload is not null && !_detectingColumns)
                 {
@@ -101,7 +101,7 @@
                     Cual columna usar como costo?
                 </label>
                 <p class="panel-card__subtitle" style="margin-bottom:.5rem;">
-                    El archivo tiene @_fileColumns.PriceCandidates.Count columnas con precios. ElegÃ­ la que corresponde al costo de importaciÃ³n.
+                    El archivo tiene @_fileColumns.PriceCandidates.Count columnas con precios. Elegí la que corresponde al costo de importación.
                 </p>
                 <select value="@_chosenPriceColIndex" @onchange="OnPriceColumnChanged">
                     @foreach (var col in _fileColumns.PriceCandidates)
@@ -118,7 +118,7 @@
             <div class="field" style="margin-top:1rem;">
                 <label>Notas / Prompt</label>
                 <textarea rows="3"
-                          placeholder="Notas o instrucciones para esta corrida (por ejemplo: usar PRECIO NETO con 10% de descuento como costoâ€¦)."
+                          placeholder="Notas o instrucciones para esta corrida (por ejemplo: usar PRECIO NETO con 10% de descuento como costo…)."
                           @bind="_notes"
                           disabled="@_busy"
                           style="width:100%; resize:vertical;"></textarea>
@@ -140,7 +140,7 @@
                     <div style="width:@(_importProgress)%; height:100%; background:var(--color-primary); border-radius:4px; transition:width .25s ease;"></div>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-top:.3rem;">
-                    <small style="color:var(--color-muted);">@_importProgress% â€” @ImportStepLabel()</small>
+                    <small style="color:var(--color-muted);">@_importProgress% — @ImportStepLabel()</small>
                     <button class="btn-link btn-link--danger" @onclick="CancelImport" style="font-size:.82rem;">
                         <i class="bi bi-x-circle"></i> Cancelar
                     </button>
@@ -153,12 +153,12 @@
                 @if (_busy)
                 {
                     <i class="bi bi-hourglass-split"></i>
-                    <span>Importandoâ€¦</span>
+                    <span>Importando…</span>
                 }
                 else
                 {
                     <i class="bi bi-upload"></i>
-                    <span>Iniciar importaciÃ³n</span>
+                    <span>Iniciar importación</span>
                 }
             </button>
             @if (_result is not null && !_busy)
@@ -181,7 +181,7 @@
             <div class="panel-card__header">
                 <div>
                     <h3 class="panel-card__title">Vista previa</h3>
-                    <p class="panel-card__subtitle">Corrida #@_result.Batch.Id Â· @_result.Rows.Count filas vÃ¡lidas Â· @_result.Batch.SourceFileName</p>
+                    <p class="panel-card__subtitle">Corrida #@_result.Batch.Id · @_result.Rows.Count filas válidas · @_result.Batch.SourceFileName</p>
                 </div>
             </div>
 
@@ -200,8 +200,8 @@
                     <thead>
                         <tr>
                             <th>Fila</th>
-                            <th>CÃ³digo prov.</th>
-                            <th>DescripciÃ³n</th>
+                            <th>Código prov.</th>
+                            <th>Descripción</th>
                             <th>Costo</th>
                             <th>Hoja</th>
                         </tr>
@@ -213,8 +213,8 @@
                                 <td>@row.RowNumber</td>
                                 <td>@row.ProviderCode</td>
                                 <td>@row.Description</td>
-                                <td>@(row.CostPrice?.ToString("N2") ?? "â€”")</td>
-                                <td>@(row.SourceSheet ?? "â€”")</td>
+                                <td>@(row.CostPrice?.ToString("N2") ?? "—")</td>
+                                <td>@(row.SourceSheet ?? "—")</td>
                             </tr>
                         }
                     </tbody>
@@ -265,7 +265,7 @@
                 _profileId = lastId.Value;
                 _notes = _profiles.First(p => p.Id == _profileId).Notes;
             }
-        }, "No se pudo cargar la configuraciÃ³n de importaciÃ³n.");
+        }, "No se pudo cargar la configuración de importación.");
 
         _feedback = result.Feedback;
         if (!result.Success)
@@ -403,17 +403,17 @@
             _result = await CostosSvc.ImportStructuredFileAsync(
                 _profileId, _upload.Name, stream, CurrentUserName,
                 _notes, priceColOverride, progress, _importCts.Token);
-            _message = $"Corrida #{_result.Batch.Id} creada correctamente â€” {_result.Rows.Count} filas.";
+            _message = $"Corrida #{_result.Batch.Id} creada correctamente — {_result.Rows.Count} filas.";
         }
         catch (OperationCanceledException)
         {
             _isError = true;
-            _message = "ImportaciÃ³n cancelada.";
+            _message = "Importación cancelada.";
             _result = null;
         }
         catch (Exception ex)
         {
-            _feedback = UiOps.BuildMessage(ex, "No se pudo completar la importaciÃ³n.");
+            _feedback = UiOps.BuildMessage(ex, "No se pudo completar la importación.");
             _isError = true;
             _message = BuildFeedbackText(_feedback);
         }
@@ -444,7 +444,7 @@
         if (feedback.HasSuggestion)
             parts.Add(feedback.Suggestion);
         if (feedback.HasCode)
-            parts.Add($"CÃ³digo: {feedback.Code}");
+            parts.Add($"Código: {feedback.Code}");
         return string.Join(" ", parts.Where(static part => !string.IsNullOrWhiteSpace(part)));
     }
 

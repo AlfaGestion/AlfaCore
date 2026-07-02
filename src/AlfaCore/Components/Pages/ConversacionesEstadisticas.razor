@@ -1,4 +1,4 @@
-﻿@page "/conversaciones/estadisticas"
+@page "/conversaciones/estadisticas"
 @page "/{idweb}/{idbase:int}/conversaciones/estadisticas"
 @inject AlfaCore.Services.IConversacionesService ConversacionesSvc
 @inject NavigationManager Nav
@@ -226,7 +226,7 @@
             <button type="button" class="@GetRangeButtonClass(StatsRange.Week)" @onclick="() => SetRangeAsync(StatsRange.Week)" disabled="@_loading">7 dias</button>
             <button type="button" class="@GetRangeButtonClass(StatsRange.Month)" @onclick="() => SetRangeAsync(StatsRange.Month)" disabled="@_loading">1 mes</button>
             <button type="button" class="@GetRangeButtonClass(StatsRange.ThreeMonths)" @onclick="() => SetRangeAsync(StatsRange.ThreeMonths)" disabled="@_loading">3 meses</button>
-            <button type="button" class="@GetRangeButtonClass(StatsRange.Year)" @onclick="() => SetRangeAsync(StatsRange.Year)" disabled="@_loading">1 aÃ±o</button>
+            <button type="button" class="@GetRangeButtonClass(StatsRange.Year)" @onclick="() => SetRangeAsync(StatsRange.Year)" disabled="@_loading">1 año</button>
         </div>
     </section>
 
@@ -494,12 +494,12 @@
                                             @DisplayOrFallback(item.Telefono)
                                             @if (item.IdContacto.HasValue)
                                             {
-                                                <span> Â· </span>
+                                                <span> · </span>
                                                 <span class="conv-stats-inline-link">
                                                     <a href="@GetContactUrl(item.IdContacto.Value)" @onclick:stopPropagation="true">Ver contacto</a>
                                                 </span>
                                             }
-                                            <span> Â· @DisplayOrFallback(item.Tecnico)</span>
+                                            <span> · @DisplayOrFallback(item.Tecnico)</span>
                                         </span>
                                     </div>
                                     <div class="conv-stats-top-item__numbers">
@@ -788,7 +788,7 @@
         {
             "texto" => "TEXT",
             "imagenes" => "IMAGE",
-            "imÃ¡genes" => "IMAGE",
+            "imágenes" => "IMAGE",
             "documentos" => "DOCUMENT",
             "audio" => "AUDIO",
             "videos" => "VIDEO",

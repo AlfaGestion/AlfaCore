@@ -1,15 +1,15 @@
-﻿@page "/contabilidad/posicion-iva"
+@page "/contabilidad/posicion-iva"
 @page "/{idweb}/{idbase:int}/contabilidad/posicion-iva"
 @inject AlfaCore.Services.IGestionDashboardService GestionSvc
 @inject AlfaCore.Services.GestionFilterStateService FilterState
 
-<PageTitle>PosiciÃ³n de IVA | Contabilidad</PageTitle>
+<PageTitle>Posición de IVA | Contabilidad</PageTitle>
 
 <div class="page-grid">
     <section class="page-intro">
         <div>
-            <h2 class="page-intro__title">PosiciÃ³n de IVA</h2>
-            <p class="page-intro__text">Comparativa dÃ©bito fiscal (ventas) vs. crÃ©dito fiscal (compras). Saldo a pagar o a favor segÃºn el perÃ­odo.</p>
+            <h2 class="page-intro__title">Posición de IVA</h2>
+            <p class="page-intro__text">Comparativa débito fiscal (ventas) vs. crédito fiscal (compras). Saldo a pagar o a favor según el período.</p>
         </div>
     </section>
 
@@ -17,15 +17,15 @@
         <div class="panel-card__header">
             <div>
                 <h3 class="panel-card__title">Filtros</h3>
-                <p class="panel-card__subtitle">PerÃ­odo y sucursal. Los libros IVA no filtran por cuenta, usuario ni tipo.</p>
+                <p class="panel-card__subtitle">Período y sucursal. Los libros IVA no filtran por cuenta, usuario ni tipo.</p>
             </div>
             <div class="quick-range">
                 <button class="btn btn--ghost" @onclick="HoyAsync">Hoy</button>
                 <button class="btn btn--ghost" @onclick="SemanaAsync">Esta semana</button>
                 <button class="btn btn--ghost" @onclick="MesAsync">Este mes</button>
                 <button class="btn btn--ghost" @onclick="MesAnteriorAsync">Mes anterior</button>
-                <button class="btn btn--ghost" @onclick="UltimosTresAsync">Ãšltimos 3 meses</button>
-                <button class="btn btn--ghost" @onclick="AnioAsync">AÃ±o actual</button>
+                <button class="btn btn--ghost" @onclick="UltimosTresAsync">Últimos 3 meses</button>
+                <button class="btn btn--ghost" @onclick="AnioAsync">Año actual</button>
             </div>
         </div>
 
@@ -53,7 +53,7 @@
 
     @if (_loading)
     {
-        <div class="consultas-loading"><i class="bi bi-hourglass-split"></i> Calculando posiciÃ³n de IVAâ€¦</div>
+        <div class="consultas-loading"><i class="bi bi-hourglass-split"></i> Calculando posición de IVA…</div>
     }
     else if (!string.IsNullOrWhiteSpace(_error))
     {
@@ -65,7 +65,7 @@
             <article class="kpi-card">
                 <div class="kpi-card__icon">D</div>
                 <div class="kpi-card__body">
-                    <p class="kpi-card__label">IVA Ventas â€” DÃ©bito fiscal</p>
+                    <p class="kpi-card__label">IVA Ventas — Débito fiscal</p>
                     <h3 class="kpi-card__value">@FmtCompact(_iva.TotalIvaVentas)</h3>
                     <p class="kpi-card__description">@FmtMoney(_iva.TotalIvaVentas)</p>
                     <p class="kpi-card__description">Neto: @FmtMoney(_iva.NetoGravadoVentas)</p>
@@ -74,19 +74,19 @@
             <article class="kpi-card">
                 <div class="kpi-card__icon">C</div>
                 <div class="kpi-card__body">
-                    <p class="kpi-card__label">IVA Compras â€” CrÃ©dito fiscal</p>
+                    <p class="kpi-card__label">IVA Compras — Crédito fiscal</p>
                     <h3 class="kpi-card__value">@FmtCompact(_iva.TotalIvaCompras)</h3>
                     <p class="kpi-card__description">@FmtMoney(_iva.TotalIvaCompras)</p>
                     <p class="kpi-card__description">Neto: @FmtMoney(_iva.NetoGravadoCompras)</p>
                 </div>
             </article>
             <article class="kpi-card @(_iva.Saldo >= 0 ? "kpi-card--iva-pagar" : "kpi-card--iva-favor")">
-                <div class="kpi-card__icon">@(_iva.Saldo >= 0 ? "!" : "âœ“")</div>
+                <div class="kpi-card__icon">@(_iva.Saldo >= 0 ? "!" : "✓")</div>
                 <div class="kpi-card__body">
                     <p class="kpi-card__label">@(_iva.Saldo >= 0 ? "Saldo a pagar a AFIP" : "Saldo a favor")</p>
                     <h3 class="kpi-card__value">@FmtCompact(Math.Abs(_iva.Saldo))</h3>
                     <p class="kpi-card__description">@FmtMoney(Math.Abs(_iva.Saldo))</p>
-                    <p class="kpi-card__description">DÃ©bito âˆ’ CrÃ©dito</p>
+                    <p class="kpi-card__description">Débito − Crédito</p>
                 </div>
             </article>
         </section>
@@ -94,19 +94,19 @@
         <article class="panel-card">
             <div class="panel-card__header">
                 <div>
-                    <h3 class="panel-card__title">IVA DÃ©bito vs. CrÃ©dito por mes</h3>
-                    <p class="panel-card__subtitle">Ãšltimos 12 meses â€” azul: dÃ©bito fiscal (ventas) Â· naranja: crÃ©dito fiscal (compras)</p>
+                    <h3 class="panel-card__title">IVA Débito vs. Crédito por mes</h3>
+                    <p class="panel-card__subtitle">Últimos 12 meses — azul: débito fiscal (ventas) · naranja: crédito fiscal (compras)</p>
                 </div>
             </div>
-            <DualBarChart Data="_iva.EvolucionIvaMensual" Label1="DÃ©bito" Label2="CrÃ©dito" />
+            <DualBarChart Data="_iva.EvolucionIvaMensual" Label1="Débito" Label2="Crédito" />
         </article>
 
         <section class="two-grid">
             <article class="panel-card">
-                <HorizontalBarChart Data="Comparativa" Titulo="Comparativa del perÃ­odo" Subtitulo="DÃ©bito vs. crÃ©dito fiscal" />
+                <HorizontalBarChart Data="Comparativa" Titulo="Comparativa del período" Subtitulo="Débito vs. crédito fiscal" />
             </article>
             <article class="panel-card">
-                <LineChart Data="_iva.EvolucionSaldo" Titulo="Saldo IVA â€” Ãºltimos 12 meses" Subtitulo="Diferencia mensual dÃ©bito âˆ’ crÃ©dito" />
+                <LineChart Data="_iva.EvolucionSaldo" Titulo="Saldo IVA — últimos 12 meses" Subtitulo="Diferencia mensual débito − crédito" />
             </article>
         </section>
 
@@ -116,7 +116,7 @@
                 <div class="panel-card__header">
                     <div>
                         <h3 class="panel-card__title">Detalle por concepto</h3>
-                        <p class="panel-card__subtitle">Solo se muestran los conceptos con movimiento en el perÃ­odo. Solo se muestran los filas con valores != 0.</p>
+                        <p class="panel-card__subtitle">Solo se muestran los conceptos con movimiento en el período. Solo se muestran los filas con valores != 0.</p>
                     </div>
                 </div>
                 <div class="table-scroll">
@@ -124,8 +124,8 @@
                         <thead>
                             <tr>
                                 <th>Concepto</th>
-                                <th class="col-num">Ventas (DÃ©bito)</th>
-                                <th class="col-num">Compras (CrÃ©dito)</th>
+                                <th class="col-num">Ventas (Débito)</th>
+                                <th class="col-num">Compras (Crédito)</th>
                                 <th class="col-num">Diferencia</th>
                             </tr>
                         </thead>
@@ -154,14 +154,14 @@
         }
         else
         {
-            <div class="panel-card empty-state"><p>Sin movimientos de IVA en el perÃ­odo seleccionado.</p></div>
+            <div class="panel-card empty-state"><p>Sin movimientos de IVA en el período seleccionado.</p></div>
         }
 
         <section class="panel-card">
             <div class="panel-card__header">
                 <div>
-                    <h3 class="panel-card__title">Ventas â€” Resumen por alÃ­cuota</h3>
-                    <p class="panel-card__subtitle">IVA dÃ©bito fiscal agrupado por condiciÃ³n IVA y alÃ­cuota. Columnas FC / NC / ND segÃºn tipo de comprobante.</p>
+                    <h3 class="panel-card__title">Ventas — Resumen por alícuota</h3>
+                    <p class="panel-card__subtitle">IVA débito fiscal agrupado por condición IVA y alícuota. Columnas FC / NC / ND según tipo de comprobante.</p>
                 </div>
             </div>
             <ResumenIvaTable Data="_iva.ResumenVentas" FcLabel="FC" />
@@ -170,8 +170,8 @@
         <section class="panel-card">
             <div class="panel-card__header">
                 <div>
-                    <h3 class="panel-card__title">Compras â€” Resumen por alÃ­cuota</h3>
-                    <p class="panel-card__subtitle">IVA crÃ©dito fiscal agrupado por condiciÃ³n IVA y alÃ­cuota.</p>
+                    <h3 class="panel-card__title">Compras — Resumen por alícuota</h3>
+                    <p class="panel-card__subtitle">IVA crédito fiscal agrupado por condición IVA y alícuota.</p>
                 </div>
             </div>
             <ResumenIvaTable Data="_iva.ResumenCompras" FcLabel="FC" />
@@ -236,8 +236,8 @@
     private IReadOnlyList<CategoryTotalDto> Comparativa =>
         _iva is null ? Array.Empty<CategoryTotalDto>() : new[]
         {
-            new CategoryTotalDto { Categoria = "DÃ©bito fiscal (Ventas)", Total = _iva.TotalIvaVentas },
-            new CategoryTotalDto { Categoria = "CrÃ©dito fiscal (Compras)", Total = _iva.TotalIvaCompras },
+            new CategoryTotalDto { Categoria = "Débito fiscal (Ventas)", Total = _iva.TotalIvaVentas },
+            new CategoryTotalDto { Categoria = "Crédito fiscal (Compras)", Total = _iva.TotalIvaCompras },
             new CategoryTotalDto { Categoria = _iva.Saldo >= 0 ? "Saldo (a pagar)" : "Saldo (a favor)", Total = Math.Abs(_iva.Saldo) },
         };
 
