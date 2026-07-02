@@ -227,6 +227,17 @@ else
                         <span class="menu__icon"><i class="bi bi-person-check"></i></span>
                         <span>Auditoría de usuarios</span>
                     </NavLink>
+                    @if (!IsDirectMode)
+                    {
+                        <NavLink class="menu__link" href="@BuildModuleUrl("/usuarios")" Match="NavLinkMatch.All">
+                            <span class="menu__icon"><i class="bi bi-people-fill"></i></span>
+                            <span>Usuarios</span>
+                        </NavLink>
+                        <NavLink class="menu__link" href="@BuildModuleUrl("/seguridad/autorizacion-tareas")" Match="NavLinkMatch.All">
+                            <span class="menu__icon"><i class="bi bi-shield-lock-fill"></i></span>
+                            <span>Autorización</span>
+                        </NavLink>
+                    }
                 </nav>
             }
             else if (_currentModule == "conversaciones")
@@ -384,11 +395,19 @@ else
             {
                 @ModuleBackLink
 
-                <p class="menu__section">Usuarios</p>
+                <p class="menu__section">Seguridad</p>
                 <nav class="menu__nav">
                     <NavLink class="menu__link" href="@BuildModuleUrl("/usuarios")" Match="NavLinkMatch.All">
                         <span class="menu__icon"><i class="bi bi-people-fill"></i></span>
-                        <span>Gestión de usuarios</span>
+                        <span>Usuarios</span>
+                    </NavLink>
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/seguridad/autorizacion-tareas")" Match="NavLinkMatch.All">
+                        <span class="menu__icon"><i class="bi bi-shield-lock-fill"></i></span>
+                        <span>Autorización</span>
+                    </NavLink>
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/auditoria")" Match="NavLinkMatch.Prefix">
+                        <span class="menu__icon"><i class="bi bi-clipboard2-check"></i></span>
+                        <span>Auditoría</span>
                     </NavLink>
                 </nav>
             }
@@ -416,11 +435,19 @@ else
             {
                 @ModuleBackLink
 
-                <p class="menu__section">Contactos</p>
+                <p class="menu__section">Conversaciones</p>
                 <nav class="menu__nav">
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/conversaciones")" Match="NavLinkMatch.All">
+                        <span class="menu__icon"><i class="bi bi-chat-dots-fill"></i></span>
+                        <span>Conversaciones</span>
+                    </NavLink>
                     <NavLink class="menu__link" href="@BuildModuleUrl("/contactos")" Match="NavLinkMatch.All">
                         <span class="menu__icon"><i class="bi bi-person-lines-fill"></i></span>
-                        <span>Agenda de contactos</span>
+                        <span>Contactos</span>
+                    </NavLink>
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/clientes")" Match="NavLinkMatch.All">
+                        <span class="menu__icon"><i class="bi bi-people-fill"></i></span>
+                        <span>Clientes</span>
                     </NavLink>
                 </nav>
             }
@@ -428,11 +455,19 @@ else
             {
                 @ModuleBackLink
 
-                <p class="menu__section">Clientes</p>
+                <p class="menu__section">Conversaciones</p>
                 <nav class="menu__nav">
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/conversaciones")" Match="NavLinkMatch.All">
+                        <span class="menu__icon"><i class="bi bi-chat-dots-fill"></i></span>
+                        <span>Conversaciones</span>
+                    </NavLink>
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/contactos")" Match="NavLinkMatch.All">
+                        <span class="menu__icon"><i class="bi bi-person-lines-fill"></i></span>
+                        <span>Contactos</span>
+                    </NavLink>
                     <NavLink class="menu__link" href="@BuildModuleUrl("/clientes")" Match="NavLinkMatch.All">
                         <span class="menu__icon"><i class="bi bi-people-fill"></i></span>
-                        <span>Maestro de clientes</span>
+                        <span>Clientes</span>
                     </NavLink>
                 </nav>
             }
@@ -585,7 +620,7 @@ else
                     </NavLink>
                 </nav>
             }
-            else if (!IsDirectMode && IsWorkspaceRoute)
+            else if (!IsDirectMode && string.IsNullOrWhiteSpace(_currentModule))
             {
                 <nav class="menu__nav">
                     @if (_menuSearchLoading)
