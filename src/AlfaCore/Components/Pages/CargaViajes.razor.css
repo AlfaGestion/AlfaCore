@@ -685,10 +685,10 @@
 }
 
 .carga-viajes-liquidaciones__modal {
-    width: min(95vw, 1500px);
-    max-width: 1500px;
-    height: min(92vh, 1100px);
-    max-height: min(92vh, 1100px);
+    width: min(calc(100vw - 2rem), 1500px);
+    max-width: calc(100vw - 2rem);
+    height: auto;
+    max-height: min(calc(100dvh - 2rem), 1100px);
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -1506,10 +1506,10 @@
 }
 
 .carga-viajes-modal--bulk {
-    width: min(95vw, 1500px);
-    max-width: 1500px;
-    height: min(92vh, 1100px);
-    max-height: min(92vh, 1100px);
+    width: min(calc(100vw - 2rem), 1500px);
+    max-width: calc(100vw - 2rem);
+    height: auto;
+    max-height: min(calc(100dvh - 2rem), 1100px);
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -2257,10 +2257,10 @@ html[data-theme="light"] .carga-viajes-tarifas-aumento-v2__preview-header {
 }
 
 .carga-viajes-modal {
-    width: min(95vw, 1500px);
-    max-width: 1500px;
-    height: min(92vh, 1100px);
-    max-height: min(92vh, 1100px);
+    width: min(calc(100vw - 2rem), 1500px);
+    max-width: calc(100vw - 2rem);
+    height: auto;
+    max-height: min(calc(100dvh - 2rem), 1100px);
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -2269,24 +2269,21 @@ html[data-theme="light"] .carga-viajes-tarifas-aumento-v2__preview-header {
 }
 
 .carga-viajes-modal--wide {
-    width: min(95vw, 1500px);
-    max-width: 1500px;
-    height: min(92vh, 1100px);
-    max-height: min(92vh, 1100px);
+    width: min(calc(100vw - 2rem), 1500px);
+    max-width: calc(100vw - 2rem);
+    max-height: min(calc(100dvh - 2rem), 1100px);
 }
 
 .carga-viajes-modal--compact {
-    width: min(95vw, 1000px);
-    max-width: 1000px;
-    height: min(92vh, 1100px);
-    max-height: min(92vh, 1100px);
+    width: min(calc(100vw - 2rem), 1000px);
+    max-width: calc(100vw - 2rem);
+    max-height: min(calc(100dvh - 2rem), 1100px);
 }
 
 .carga-viajes-modal--config {
-    width: min(95vw, 1200px);
-    max-width: 1200px;
-    height: min(92vh, 1100px);
-    max-height: min(92vh, 1100px);
+    width: min(calc(100vw - 2rem), 1200px);
+    max-width: calc(100vw - 2rem);
+    max-height: min(calc(100dvh - 2rem), 1100px);
 }
 
 .carga-viajes-modal__body,
@@ -2297,6 +2294,11 @@ html[data-theme="light"] .carga-viajes-tarifas-aumento-v2__preview-header {
     flex-direction: column;
     gap: 16px;
     overflow: auto;
+}
+
+.carga-viajes-modal-backdrop {
+    z-index: 1505;
+    padding: 1rem;
 }
 
 .carga-viajes-switch {
@@ -3041,11 +3043,15 @@ html[data-theme="light"] .carga-viajes-tarifas-aumento-v2__preview-header {
     .carga-viajes-modal,
     .carga-viajes-modal--wide,
     .carga-viajes-modal--config {
-        width: min(95vw, 1500px);
+        width: calc(100vw - 2rem);
+        max-width: calc(100vw - 2rem);
+        max-height: min(calc(100dvh - 2rem), 1100px);
     }
 
     .carga-viajes-modal--compact {
-        width: min(95vw, 1000px);
+        width: calc(100vw - 2rem);
+        max-width: calc(100vw - 2rem);
+        max-height: min(calc(100dvh - 2rem), 1100px);
     }
 
     .carga-viajes-floating-pay {
@@ -3110,8 +3116,9 @@ html[data-theme="light"] .carga-viajes-tarifas-aumento-v2__preview-header {
 
 @media (max-width: 1200px) {
     .carga-viajes-modal--bulk {
-        width: min(94vw, 1500px);
-        height: min(94vh, 1080px);
+        width: calc(100vw - 2rem);
+        max-width: calc(100vw - 2rem);
+        max-height: min(calc(100dvh - 2rem), 1080px);
     }
 
     .carga-viajes-tarifas-aumento-v2 {
@@ -3142,10 +3149,10 @@ html[data-theme="light"] .carga-viajes-tarifas-aumento-v2__preview-header {
 }
 
 .tarifa-aumento-modal-v2 {
-    width: min(95vw, 1500px);
-    max-width: 1500px;
-    height: min(92vh, 1100px);
-    max-height: min(92vh, 1100px);
+    width: min(calc(100vw - 2rem), 1500px);
+    max-width: calc(100vw - 2rem);
+    height: auto;
+    max-height: min(calc(100dvh - 2rem), 1100px);
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -3161,7 +3168,7 @@ html[data-theme="light"] .carga-viajes-tarifas-aumento-v2__preview-header {
 .tarifa-aumento-backdrop-v2 {
     position: fixed;
     inset: 0;
-    z-index: 1105;
+    z-index: 1505;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -3171,10 +3178,10 @@ html[data-theme="light"] .carga-viajes-tarifas-aumento-v2__preview-header {
 }
 
 .carga-viajes-modal {
-    width: min(95vw, 1500px);
-    max-width: 1500px;
-    height: min(92vh, 1100px);
-    max-height: min(92vh, 1100px);
+    width: min(calc(100vw - 2rem), 1500px);
+    max-width: calc(100vw - 2rem);
+    height: auto;
+    max-height: min(calc(100dvh - 2rem), 1100px);
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -3183,17 +3190,15 @@ html[data-theme="light"] .carga-viajes-tarifas-aumento-v2__preview-header {
 }
 
 .carga-viajes-modal--compact {
-    width: min(95vw, 1000px);
-    max-width: 1000px;
-    height: min(92vh, 1100px);
-    max-height: min(92vh, 1100px);
+    width: min(calc(100vw - 2rem), 1000px);
+    max-width: calc(100vw - 2rem);
+    max-height: min(calc(100dvh - 2rem), 1100px);
 }
 
 .carga-viajes-modal--config {
-    width: min(95vw, 1200px);
-    max-width: 1200px;
-    height: min(92vh, 1100px);
-    max-height: min(92vh, 1100px);
+    width: min(calc(100vw - 2rem), 1200px);
+    max-width: calc(100vw - 2rem);
+    max-height: min(calc(100dvh - 2rem), 1100px);
 }
 
 @media (max-width: 1599px) {
@@ -3234,17 +3239,18 @@ html[data-theme="light"] .carga-viajes-tarifas-aumento-v2__preview-header {
 @media (max-width: 992px) {
     .carga-viajes-modal,
     .tarifa-aumento-modal-v2 {
-        width: min(96vw, 1600px);
-        height: min(92vh, 1100px);
+        width: calc(100vw - 2rem);
+        max-width: calc(100vw - 2rem);
+        max-height: min(calc(100dvh - 2rem), 1100px);
     }
 }
 
 @media (max-width: 768px) {
     .carga-viajes-modal,
     .tarifa-aumento-modal-v2 {
-        width: calc(100vw - 1rem);
-        height: calc(100dvh - 1rem);
-        max-width: none;
+        width: calc(100vw - 2rem);
+        max-width: calc(100vw - 2rem);
+        max-height: calc(100dvh - 2rem);
     }
 
     .viajes-filter-row-v2 {
@@ -3685,7 +3691,9 @@ html[data-theme="light"] .carga-viajes-tarifas-aumento-v2__preview-header {
 
 @media (max-width: 1200px) {
     .tarifa-aumento-modal-v2 {
-        width: min(94vw, 1500px);
+        width: calc(100vw - 2rem);
+        max-width: calc(100vw - 2rem);
+        max-height: min(calc(100dvh - 2rem), 1100px);
     }
 
     .tarifa-aumento-body-v2 {

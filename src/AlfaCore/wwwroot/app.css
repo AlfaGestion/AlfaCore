@@ -10289,34 +10289,51 @@ html[data-theme="light"] .editor-builder__col-grid {
 }
 
 .carga-viajes-modal-backdrop {
-    z-index: 1105;
+    z-index: 1505;
+    padding: 1rem;
+}
+
+.shell:has(.carga-viajes-modal-backdrop) .shell__main,
+.shell:has(.tarifa-aumento-backdrop-v2) .shell__main {
+    position: relative;
+    z-index: 1501;
+}
+
+.shell:has(.carga-viajes-modal-backdrop) .shell__content,
+.shell:has(.tarifa-aumento-backdrop-v2) .shell__content {
+    position: relative;
+    z-index: 1501;
 }
 
 .carga-viajes-modal {
-    grid-template-rows: auto minmax(0, 1fr) auto;
-    height: min(85vh, 85vh);
-    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    grid-template-rows: none;
+    height: auto;
+    max-height: min(calc(100dvh - 2rem), 1100px);
     min-width: min(1000px, calc(100vw - 2rem));
     overflow: hidden;
-    width: min(80vw, 1400px);
+    width: min(calc(100vw - 2rem), 1400px);
 }
 
 .carga-viajes-modal--wide {
-    width: min(80vw, 1400px);
+    width: min(calc(100vw - 2rem), 1400px);
 }
 
 .carga-viajes-modal--compact {
     min-width: min(560px, calc(100vw - 2rem));
-    max-height: min(85vh, 48rem);
+    max-height: min(calc(100dvh - 2rem), 48rem);
     height: auto;
-    width: min(640px, calc(100vw - 2rem));
+    width: min(calc(100vw - 2rem), 640px);
 }
 
 .carga-viajes-modal--config {
-    width: min(80vw, 1200px);
+    width: min(calc(100vw - 2rem), 1200px);
 }
 
 .carga-viajes-modal__body {
+    flex: 1 1 auto;
+    min-height: 0;
     overflow: auto;
 }
 
@@ -10349,7 +10366,7 @@ html[data-theme="light"] .editor-builder__col-grid {
 @media (max-width: 1400px) {
     .carga-viajes-modal {
         min-width: min(920px, calc(100vw - 2rem));
-        width: min(84vw, 1200px);
+        width: min(calc(100vw - 2rem), 1200px);
     }
 
     .carga-viajes-form-grid {
@@ -10360,9 +10377,9 @@ html[data-theme="light"] .editor-builder__col-grid {
 @media (max-width: 900px) {
     .carga-viajes-modal {
         height: auto;
-        max-height: calc(100dvh - 1.5rem);
+        max-height: calc(100dvh - 2rem);
         min-width: 0;
-        width: auto;
+        width: calc(100vw - 2rem);
     }
 
     .carga-viajes-form-grid {
