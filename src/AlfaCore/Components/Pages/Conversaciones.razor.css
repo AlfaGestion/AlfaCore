@@ -1044,8 +1044,8 @@
 /* Mobile: Conversaciones funciona como inbox -> chat, sin paneles cruzados. */
 @media (max-width: 768px) {
     .conversations-page--odoo {
-        height: 100dvh !important;
-        min-height: 100dvh !important;
+        height: 100% !important;
+        min-height: 0 !important;
         padding: 0 !important;
         overflow: hidden !important;
     }
@@ -1092,7 +1092,7 @@
         align-items: center !important;
         justify-content: space-between !important;
         gap: .75rem !important;
-        padding: 1rem 1rem .7rem !important;
+        padding: .78rem .9rem .52rem !important;
         border-bottom: 0 !important;
     }
 
@@ -1128,7 +1128,7 @@
 
     .conversations-page--odoo .conversations-inbox-tools {
         display: block !important;
-        padding: .35rem 1rem .9rem !important;
+        padding: .25rem .9rem .72rem !important;
         border-bottom: 1px solid rgba(56, 189, 248, .13) !important;
         background: transparent !important;
     }
@@ -1149,8 +1149,8 @@
     }
 
     .conversations-page--odoo .conversation-row {
-        min-height: 104px !important;
-        padding: 1rem 1rem .95rem !important;
+        min-height: 92px !important;
+        padding: .82rem .9rem .78rem !important;
         border-radius: 0 !important;
         border-inline: 0 !important;
         border-top: 0 !important;
@@ -1228,7 +1228,8 @@
     .conversations-page--odoo.conversations-page--chat-active .conversations-chat {
         display: grid !important;
         grid-template-rows: auto auto minmax(0, 1fr) auto !important;
-        height: 100dvh !important;
+        height: 100% !important;
+        max-height: 100% !important;
         border: 0 !important;
         border-radius: 0 !important;
         background: #071323 !important;
@@ -1296,12 +1297,6 @@
         white-space: nowrap !important;
         overflow: hidden !important;
         text-overflow: ellipsis !important;
-    }
-
-    .conversations-page--odoo .conversations-mobile-chat-actions {
-        position: relative !important;
-        display: flex !important;
-        justify-content: flex-end !important;
     }
 
     .conversations-page--odoo .conversations-mobile-chat-actions__toggle {
@@ -1377,7 +1372,7 @@
 
     .conversations-page--odoo .conversations-thread {
         min-height: 0 !important;
-        padding: .75rem .6rem .9rem !important;
+        padding: .75rem .6rem calc(1.4rem + env(safe-area-inset-bottom)) !important;
     }
 
     .conversations-page--odoo .message-bubble-shell,
@@ -1390,8 +1385,8 @@
     }
 
     .conversations-page--odoo .conversations-composer {
-        position: sticky !important;
-        bottom: 0 !important;
+        position: relative !important;
+        bottom: auto !important;
         z-index: 30 !important;
         grid-template-columns: minmax(0, 1fr) auto !important;
         padding: .55rem .65rem max(.55rem, env(safe-area-inset-bottom)) !important;
