@@ -15,7 +15,7 @@
 <PageTitle>Login | AlfaCore</PageTitle>
 
 <div class="auth-page">
-    <section class="auth-shell">
+    <section class="auth-shell @(_showLegacyBasePicker ? "auth-shell--legacy-bases-open" : string.Empty)">
         <aside class="auth-hero">
             <div class="auth-hero__brand">
                 <img class="central-brand-logo central-login-logo"
@@ -57,7 +57,7 @@
             <div class="auth-form-panel__glow auth-form-panel__glow--one" aria-hidden="true"></div>
             <div class="auth-form-panel__glow auth-form-panel__glow--two" aria-hidden="true"></div>
 
-            <div class="auth-form-panel__surface">
+            <div class="auth-form-panel__surface auth-form-panel__surface--legacy-bases">
                 @if (AppMode.IsSaaSMode)
                 {
                     <header class="auth-form-panel__header">
@@ -215,7 +215,7 @@
                         <aside class="auth-legacy-login__sidebar">
                             <div class="auth-legacy-login__sidebar-header">
                                 <div>
-                                    <p class="auth-card__eyebrow">Panel lateral</p>
+                                    <p class="auth-card__eyebrow">Seleccionar base</p>
                                     <h2 class="auth-card__title">Bases disponibles</h2>
                                 </div>
                             </div>

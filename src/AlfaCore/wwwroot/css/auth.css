@@ -30,6 +30,10 @@
     grid-template-columns: minmax(0, 1fr) minmax(420px, .96fr);
 }
 
+.auth-shell--legacy-bases-open {
+    grid-template-columns: minmax(0, .92fr) minmax(0, 1.08fr);
+}
+
 .auth-hero {
     position: relative;
     display: flex;
@@ -343,6 +347,10 @@
     width: min(100%, 530px);
     display: flex;
     flex-direction: column;
+}
+
+.auth-form-panel__surface--legacy-bases {
+    width: min(100%, 920px);
 }
 
 .auth-form-panel__glow {
@@ -810,22 +818,19 @@ html[data-theme="light"] .auth-page .base-search-input:focus-visible {
 }
 
 .auth-legacy-login.is-bases-open {
-    grid-template-columns: minmax(0, .52fr) minmax(320px, .48fr);
+    grid-template-columns: 1fr;
     gap: 16px;
     align-items: start;
 }
 
 .auth-legacy-login.is-bases-open .auth-legacy-login__login {
-    grid-column: 1;
-    grid-row: 1;
     gap: 14px;
     padding: 22px 22px 20px;
     align-content: start;
 }
 
 .auth-legacy-login.is-bases-open .auth-legacy-login__sidebar {
-    grid-column: 2;
-    grid-row: 1;
+    min-height: 0;
 }
 
 .auth-legacy-login__sidebar-header {
@@ -848,7 +853,7 @@ html[data-theme="light"] .auth-page .base-search-input:focus-visible {
 }
 
 .auth-legacy-login__base-grid {
-    max-height: min(48vh, 400px);
+    max-height: min(44vh, 380px);
 }
 
 .auth-legacy-login__selected {
@@ -1008,6 +1013,10 @@ html[data-theme="light"] .auth-page .base-search-input:focus-visible {
 
     .auth-form-panel__surface {
         width: min(100%, 520px);
+    }
+
+    .auth-form-panel__surface--legacy-bases {
+        width: min(100%, 640px);
     }
 
     .auth-card__hero {
