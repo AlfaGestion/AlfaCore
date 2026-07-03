@@ -15,6 +15,7 @@
 @inject IPartesHorasService PartesSvc
 @inject IAppUiOperationService UiOps
 @inject IAppUserSessionService AppUserSession
+@inject IJSRuntime JS
 
 <PageTitle>Partes de horas | Alfa Gestión</PageTitle>
 
@@ -207,6 +208,48 @@
         max-height: 520px;
     }
 
+    .partes-lines {
+        display: grid;
+        gap: 8px;
+    }
+
+    .partes-lines__header,
+    .partes-lines__row {
+        display: grid;
+        grid-template-columns: minmax(150px, .9fr) minmax(120px, .7fr) minmax(220px, 1.5fr) 96px 38px;
+        gap: 8px;
+        align-items: center;
+    }
+
+    .partes-lines__header {
+        color: var(--color-muted);
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+    }
+
+    .partes-lines__row input,
+    .partes-lines__row select {
+        min-width: 0;
+        width: 100%;
+        border: 1px solid rgba(125, 161, 207, .28);
+        border-radius: 8px;
+        background: rgba(15, 23, 42, .62);
+        color: var(--color-text);
+        outline: none;
+    }
+
+    .partes-lines__row input:focus,
+    .partes-lines__row select:focus {
+        border-color: rgba(8, 197, 218, .85);
+        box-shadow: 0 0 0 1px rgba(8, 197, 218, .18);
+    }
+
+    .partes-lines__row select option {
+        background: #111827;
+        color: var(--color-text);
+    }
+
     @@media (max-width: 1280px) {
         .partes-horas-page .partes-hero {
             grid-template-columns: minmax(220px, 1fr) minmax(360px, 1.7fr);
@@ -251,6 +294,21 @@
             grid-template-columns: 1fr 1fr;
         }
 
+        .partes-lines__header {
+            display: none;
+        }
+
+        .partes-lines__row {
+            grid-template-columns: 1fr 1fr;
+            padding: 10px;
+            border: 1px solid var(--color-border);
+            border-radius: 8px;
+        }
+
+        .partes-lines__row input[type="text"] {
+            grid-column: 1 / -1;
+        }
+
         .partes-horas-page .partes-filter-checks,
         .partes-horas-page .partes-filters-panel__actions {
             grid-column: 1 / -1;
@@ -280,6 +338,10 @@
         .partes-horas-page .partes-filter-checks {
             display: grid;
             gap: 8px;
+        }
+
+        .partes-lines__row {
+            grid-template-columns: 1fr;
         }
     }
 </style>
@@ -482,10 +544,6 @@
                     </select>
                 </div>
                 <div class="field">
-                    <label>Minutos</label>
-                    <input type="number" min="1" max="1440" step="15" @bind="_form.Minutos" />
-                </div>
-                <div class="field">
                     <label>Estado</label>
                     <select @bind="_form.Estado">
                         @foreach (var estado in _lookups.Estados)
@@ -504,9 +562,49 @@
                 </label>
             </div>
 
-            <div class="field">
-                <label>Descripción</label>
-                <textarea rows="3" @bind="_form.Descripcion" @bind:event="oninput"></textarea>
+            <div class="partes-lines">
+                <div class="partes-lines__header">
+                    <span>Técnico</span>
+                    <span>Tipo</span>
+                    <span>Tarea</span>
+                    <span>Minutos</span>
+                    <span></span>
+                </div>
+                @for (var i = 0; i < _lineas.Count; i++)
+                {
+                    var index = i;
+                    var linea = _lineas[index];
+                    <div class="partes-lines__row" @key="linea">
+                        <select @bind="linea.IdTecnico">
+                            <option value="">Sin técnico</option>
+                            @foreach (var tecnico in _lookups.Tecnicos)
+                            {
+                                <option value="@tecnico.Codigo">@tecnico.Titulo</option>
+                            }
+                        </select>
+                        <select @bind="linea.TipoTrabajo">
+                            @foreach (var tipo in _lookups.TiposTrabajo)
+                            {
+                                <option value="@tipo">@LabelTipo(tipo)</option>
+                            }
+                        </select>
+                        <input type="text"
+                               id="@GetLineaDescripcionId(index)"
+                               value="@linea.Descripcion"
+                               @oninput="args => linea.Descripcion = Convert.ToString(args.Value) ?? string.Empty"
+                               @onkeydown="args => HandleLineaKeyDownAsync(args, index)"
+                               placeholder="Descripción de la tarea" />
+                        <input type="number" min="1" max="1440" step="5" @bind="linea.Minutos" />
+                        <button type="button" class="btn btn--ghost btn--sm" @onclick="() => QuitarLinea(index)" disabled="@(_lineas.Count <= 1)">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </div>
+                }
+                <div class="actions">
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="AgregarLinea">
+                        <i class="bi bi-plus-circle"></i> Agregar línea
+                    </button>
+                </div>
             </div>
 
             <div class="actions">
@@ -690,11 +788,20 @@
 </div>
 
 @code {
+    private sealed class ParteHoraLineaForm
+    {
+        public string IdTecnico { get; set; } = string.Empty;
+        public string TipoTrabajo { get; set; } = ParteHoraTipoTrabajoKeys.Soporte;
+        public string Descripcion { get; set; } = string.Empty;
+        public int Minutos { get; set; } = 15;
+    }
+
     private PartesHorasFilters _filters = new();
     private PagedResult<ParteHoraGridItemDto> _result = new();
     private ParteHoraDashboardDto _dashboard = new();
     private ParteHoraLookupDto _lookups = new();
     private ParteHoraSaveRequest _form = new();
+    private List<ParteHoraLineaForm> _lineas = [];
     private ParteHoraClienteConfigDto _config = new();
     private List<ParteHoraTicketOptionDto> _ticketOptions = [];
     private AppUiMessage? _feedback;
@@ -704,12 +811,29 @@
     private bool _filtersExpanded;
     private string _quickSearch = string.Empty;
     private int? _ticketNumeroBusqueda;
+    private int? _pendingLineaDescripcionFocusIndex;
 
     protected override async Task OnInitializedAsync()
     {
         NuevoParte();
         _showEditor = false;
         await RecargarAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_pendingLineaDescripcionFocusIndex.HasValue)
+            return;
+
+        var focusIndex = _pendingLineaDescripcionFocusIndex.Value;
+        _pendingLineaDescripcionFocusIndex = null;
+        try
+        {
+            await JS.InvokeVoidAsync("eval", $"document.getElementById('{GetLineaDescripcionId(focusIndex)}')?.focus()");
+        }
+        catch
+        {
+        }
     }
 
     private async Task RecargarAsync()
@@ -796,9 +920,17 @@
             UsuarioAccion = AppUserSession.GetCurrentUserName(Environment.UserName),
             TipoTrabajo = ParteHoraTipoTrabajoKeys.Soporte,
             Estado = ParteHoraEstadoKeys.Borrador,
-            Facturable = true,
+            Facturable = false,
             Minutos = 60
         };
+        _lineas =
+        [
+            new ParteHoraLineaForm
+            {
+                TipoTrabajo = _form.TipoTrabajo,
+                Minutos = 15
+            }
+        ];
         _ticketNumeroBusqueda = null;
         _ticketOptions.Clear();
         _showEditor = true;
@@ -837,6 +969,16 @@
             Descripcion = detail.Descripcion,
             UsuarioAccion = AppUserSession.GetCurrentUserName(Environment.UserName)
         };
+        _lineas =
+        [
+            new ParteHoraLineaForm
+            {
+                IdTecnico = detail.IdTecnico,
+                TipoTrabajo = detail.TipoTrabajo,
+                Minutos = detail.Minutos,
+                Descripcion = detail.Descripcion
+            }
+        ];
         _ticketNumeroBusqueda = null;
         _showEditor = true;
     }
@@ -847,14 +989,58 @@
         try
         {
             _form.UsuarioAccion = AppUserSession.GetCurrentUserName(Environment.UserName);
-            var result = await UiOps.RunAsync(() => PartesSvc.SaveAsync(_form), "No se pudo guardar el parte de horas.");
-            if (!result.Success)
+            var lineas = _lineas
+                .Where(linea => linea.Minutos > 0 || !string.IsNullOrWhiteSpace(linea.Descripcion) || !string.IsNullOrWhiteSpace(linea.IdTecnico))
+                .ToList();
+
+            if (lineas.Count == 0)
             {
-                _feedback = result.Feedback;
+                _feedback = new AppUiMessage { Severity = AppUiFeedbackSeverity.Warning, Title = "Parte incompleto", Message = "Agregá al menos una línea de trabajo." };
                 return;
             }
 
-            _feedback = AppUiMessage.Success("Parte guardado", "Las horas quedaron registradas correctamente.");
+            if (lineas.Any(linea => linea.Minutos <= 0))
+            {
+                _feedback = new AppUiMessage { Severity = AppUiFeedbackSeverity.Warning, Title = "Duración inválida", Message = "Todas las líneas deben tener una duración mayor a cero." };
+                return;
+            }
+
+            if (lineas.Any(linea => linea.Minutos > 24 * 60))
+            {
+                _feedback = new AppUiMessage { Severity = AppUiFeedbackSeverity.Warning, Title = "Duración inválida", Message = "Ninguna línea puede superar 24 horas." };
+                return;
+            }
+
+            for (var i = 0; i < lineas.Count; i++)
+            {
+                var linea = lineas[i];
+                var request = new ParteHoraSaveRequest
+                {
+                    IdParteHora = lineas.Count == 1 ? _form.IdParteHora : null,
+                    Fecha = _form.Fecha,
+                    ClienteCodigo = _form.ClienteCodigo,
+                    IdContacto = _form.IdContacto,
+                    IdTicket = _form.IdTicket,
+                    IdTecnico = linea.IdTecnico,
+                    Usuario = _form.Usuario,
+                    TipoTrabajo = linea.TipoTrabajo,
+                    Minutos = linea.Minutos,
+                    Facturable = _form.Facturable,
+                    Excedente = _form.Excedente,
+                    Estado = _form.Estado,
+                    Descripcion = linea.Descripcion,
+                    UsuarioAccion = _form.UsuarioAccion
+                };
+
+                var result = await UiOps.RunAsync(() => PartesSvc.SaveAsync(request), "No se pudo guardar el parte de horas.");
+                if (!result.Success)
+                {
+                    _feedback = result.Feedback;
+                    return;
+                }
+            }
+
+            _feedback = AppUiMessage.Success("Parte guardado", lineas.Count == 1 ? "Las horas quedaron registradas correctamente." : $"Se registraron {lineas.Count} líneas de trabajo.");
             _showEditor = false;
             await BuscarAsync();
         }
@@ -863,6 +1049,55 @@
             _saving = false;
         }
     }
+
+    private void AgregarLinea()
+    {
+        var previous = _lineas.LastOrDefault();
+        _lineas.Add(new ParteHoraLineaForm
+        {
+            IdTecnico = previous?.IdTecnico ?? _form.IdTecnico,
+            TipoTrabajo = previous?.TipoTrabajo ?? _form.TipoTrabajo,
+            Minutos = 15
+        });
+    }
+
+    private void QuitarLinea(int index)
+    {
+        if (_lineas.Count <= 1 || index < 0 || index >= _lineas.Count)
+            return;
+
+        _lineas.RemoveAt(index);
+    }
+
+    private Task HandleLineaKeyDownAsync(KeyboardEventArgs args, int index)
+    {
+        if (string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase))
+            return InsertarLineaDespuesAsync(index);
+
+        return Task.CompletedTask;
+    }
+
+    private Task InsertarLineaDespuesAsync(int index)
+    {
+        var previous = index >= 0 && index < _lineas.Count ? _lineas[index] : _lineas.LastOrDefault();
+        var nueva = new ParteHoraLineaForm
+        {
+            IdTecnico = previous?.IdTecnico ?? _form.IdTecnico,
+            TipoTrabajo = previous?.TipoTrabajo ?? _form.TipoTrabajo,
+            Minutos = 15
+        };
+
+        if (index < 0 || index >= _lineas.Count - 1)
+            _lineas.Add(nueva);
+        else
+            _lineas.Insert(index + 1, nueva);
+
+        _pendingLineaDescripcionFocusIndex = Math.Min(index + 1, _lineas.Count - 1);
+        return Task.CompletedTask;
+    }
+
+    private static string GetLineaDescripcionId(int index)
+        => $"parte-linea-desc-{index.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
 
     private async Task BuscarTicketsAsync()
     {

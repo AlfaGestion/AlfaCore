@@ -413,6 +413,66 @@
     margin-top: 1.15rem;
 }
 
+.conversations-hours-lines {
+    display: grid;
+    gap: 8px;
+    grid-column: 1 / -1;
+}
+
+.conversations-hours-lines__header,
+.conversations-hours-lines__row {
+    display: grid;
+    grid-template-columns: minmax(135px, .8fr) minmax(125px, .65fr) minmax(240px, 1.45fr) 84px 92px 38px;
+    gap: 8px;
+    align-items: center;
+}
+
+.conversations-hours-lines__header {
+    color: var(--color-muted);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.conversations-hours-lines__row input,
+.conversations-hours-lines__row select {
+    min-width: 0;
+    width: 100%;
+    border: 1px solid rgba(125, 161, 207, .28);
+    border-radius: 8px;
+    background: rgba(15, 23, 42, .62);
+    color: var(--color-text);
+    outline: none;
+}
+
+.conversations-hours-lines__row input:focus,
+.conversations-hours-lines__row select:focus {
+    border-color: rgba(8, 197, 218, .85);
+    box-shadow: 0 0 0 1px rgba(8, 197, 218, .18);
+}
+
+.conversations-hours-lines__row select option {
+    background: #111827;
+    color: var(--color-text);
+}
+
+@media (max-width: 720px) {
+    .conversations-hours-lines__header {
+        display: none;
+    }
+
+    .conversations-hours-lines__row {
+        grid-template-columns: 1fr 1fr;
+        padding: 10px;
+        border: 1px solid var(--color-border);
+        border-radius: 8px;
+    }
+
+    .conversations-hours-lines__row input[type="text"] {
+        grid-column: 1 / -1;
+    }
+}
+
 /* Capa final de orden visual del chat operativo. Mantiene el alcance en Conversaciones. */
 .conversations-page--odoo {
     overflow: hidden;
