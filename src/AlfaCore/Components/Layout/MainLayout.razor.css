@@ -880,3 +880,124 @@ html[data-theme="light"] .shell--collapsed .menu__link:hover > span:not(.menu__i
 .shell__main--calendario .shell__content {
     min-height: 100dvh;
 }
+
+.shell__mobile-toggle,
+.shell__overlay {
+    display: none;
+}
+
+@media (max-width: 768px) {
+    .shell,
+    .shell.shell--collapsed {
+        display: block !important;
+        grid-template-columns: minmax(0, 1fr) !important;
+        overflow-x: hidden;
+    }
+
+    .shell__main {
+        grid-column: 1 !important;
+        width: 100% !important;
+        min-width: 0;
+        padding: 0.85rem;
+    }
+
+    .shell__content {
+        width: 100%;
+        min-width: 0;
+    }
+
+    .shell__sidebar,
+    .shell.shell--collapsed .shell__sidebar {
+        position: fixed;
+        inset: 0 auto 0 0;
+        width: min(86vw, 320px);
+        max-width: 320px;
+        transform: translateX(-105%) !important;
+        box-shadow: none;
+        transition: transform .22s ease, box-shadow .18s ease;
+    }
+
+    .shell.shell--mobile-open .shell__sidebar,
+    .shell.shell--mobile-open.shell--collapsed .shell__sidebar {
+        transform: translateX(0) !important;
+        box-shadow: 18px 0 48px rgba(2, 6, 23, 0.42);
+    }
+
+    .shell__overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 1390;
+        display: block;
+        border: 0;
+        background: rgba(2, 6, 23, 0.58);
+        backdrop-filter: blur(2px);
+    }
+
+    .shell__mobile-toggle {
+        width: 2.5rem;
+        height: 2.5rem;
+        display: inline-grid !important;
+        place-items: center;
+        flex: 0 0 auto;
+        border: 1px solid rgba(92, 201, 255, 0.2);
+        border-radius: 0.8rem;
+        background: rgba(8, 145, 178, 0.14);
+        color: #67e8f9;
+    }
+
+    .shell__header {
+        align-items: center;
+        gap: 0.75rem;
+        margin-bottom: 0.9rem;
+    }
+
+    .shell__header > div:first-of-type {
+        min-width: 0;
+        flex: 1 1 auto;
+    }
+
+    .shell__eyebrow {
+        display: none;
+    }
+
+    .shell__module {
+        margin: 0;
+        font-size: 0.95rem;
+        line-height: 1.2;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .shell__actions {
+        flex: 0 1 auto;
+        justify-content: flex-end;
+        gap: 0.45rem;
+    }
+
+    .shell__actions .btn,
+    .shell__actions .session-chip {
+        min-height: 2.35rem;
+    }
+
+    .shell__actions .session-chip__text {
+        max-width: 5.8rem;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .shell__status {
+        display: none;
+    }
+}
+
+@media (max-width: 430px) {
+    .shell__main {
+        padding: 0.65rem;
+    }
+
+    .shell__actions .session-chip:first-of-type {
+        display: none;
+    }
+}

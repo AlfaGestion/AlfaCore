@@ -22,7 +22,7 @@
 .launcher-favorites-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(142px, 168px));
-    justify-content: center;
+    justify-content: start;
     gap: clamp(0.95rem, 1.35vw, 1.35rem);
     width: 100%;
 }
@@ -88,7 +88,7 @@
     text-align: center;
     overflow-wrap: anywhere;
     font-size: 0.95rem;
-    font-weight: 650;
+    font-weight: 400;
 }
 
 .launcher-recents-list {
@@ -138,7 +138,7 @@
     min-width: 0;
     color: #f5f8ff;
     font-size: 0.96rem;
-    font-weight: 620;
+    font-weight: 400;
     line-height: 1.25;
     overflow: hidden;
     text-overflow: ellipsis;
