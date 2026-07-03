@@ -19459,7 +19459,8 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
     }
 
     .shell__main:has(.conversations-page--chat-active) .shell__header,
-    .shell__main:has(.conversations-page--chat-active) .pwa-mobile-actions {
+    .shell__main:has(.conversations-page--chat-active) .pwa-mobile-actions,
+    .shell:has(.conversations-page--chat-active) .shell__mobile-floating-toggle {
         display: none;
     }
 
@@ -19615,7 +19616,7 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
         flex: 1 1 auto;
         min-height: 0;
         max-height: none;
-        padding: .62rem .58rem .62rem;
+        padding: .62rem .58rem calc(5.5rem + env(safe-area-inset-bottom));
         overflow-y: auto;
         overflow-x: hidden;
         background: #07111f;
@@ -19665,9 +19666,11 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
     }
 
     .conversations-page--odoo.conversations-page--chat-active .conversations-composer {
-        position: relative;
-        bottom: auto;
-        z-index: 7;
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 1100;
         flex: 0 0 auto;
         display: grid;
         grid-template-columns: minmax(0, 1fr) auto;
@@ -19681,6 +19684,11 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
         border-top: 1px solid rgba(148, 163, 184, .14);
         background: rgba(7, 17, 31, .98);
         overflow: hidden;
+    }
+
+    .conversations-page--odoo.conversations-page--chat-active .conversations-composer__reply {
+        display: block;
+        min-width: 0;
     }
 
     .conversations-page--odoo.conversations-page--chat-active .conversations-composer__reply label,

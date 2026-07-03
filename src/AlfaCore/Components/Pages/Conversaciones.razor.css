@@ -1372,7 +1372,7 @@
 
     .conversations-page--odoo .conversations-thread {
         min-height: 0 !important;
-        padding: .75rem .6rem calc(1.4rem + env(safe-area-inset-bottom)) !important;
+        padding: .75rem .6rem calc(5.5rem + env(safe-area-inset-bottom)) !important;
     }
 
     .conversations-page--odoo .message-bubble-shell,
@@ -1385,13 +1385,20 @@
     }
 
     .conversations-page--odoo .conversations-composer {
-        position: relative !important;
-        bottom: auto !important;
-        z-index: 30 !important;
+        position: fixed !important;
+        left: 0 !important;
+        right: 0 !important;
+        bottom: 0 !important;
+        z-index: 1100 !important;
         grid-template-columns: minmax(0, 1fr) auto !important;
         padding: .55rem .65rem max(.55rem, env(safe-area-inset-bottom)) !important;
         border-top: 1px solid rgba(56, 189, 248, .14) !important;
         background: rgba(8, 20, 34, .98) !important;
+    }
+
+    .conversations-page--odoo .conversations-composer__reply {
+        display: block !important;
+        min-width: 0 !important;
     }
 
     .conversations-page--odoo .conversations-composer__reply label,
