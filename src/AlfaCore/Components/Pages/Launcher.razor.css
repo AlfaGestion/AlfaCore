@@ -40,9 +40,20 @@
 
 .launcher-home .launcher-favorite-card__star,
 .launcher-home .launcher-recent-row__star {
-    width: 1.8rem;
-    height: 1.8rem;
+    width: 1.8rem !important;
+    min-width: 1.8rem;
+    max-width: 1.8rem;
+    height: 1.8rem !important;
+    min-height: 1.8rem;
+    max-height: 1.8rem;
+    aspect-ratio: 1;
+    display: inline-grid;
+    place-items: center;
+    padding: 0;
+    border-radius: 50%;
     font-size: 0.9rem;
+    line-height: 1;
+    flex: 0 0 1.8rem;
 }
 
 .launcher-home .launcher-favorite-card__star {
@@ -159,6 +170,7 @@
 .launcher-home .launcher-recent-row .launcher-recent-row__star {
     position: static;
     opacity: 1;
+    justify-self: end;
 }
 
 .launcher-home .launcher-module-badge.app-card__icon--compras {

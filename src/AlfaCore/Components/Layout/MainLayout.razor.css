@@ -952,7 +952,7 @@ html[data-theme="light"] .shell--collapsed .menu__link:hover > span:not(.menu__i
     .shell__header {
         display: block;
         min-height: 2.5rem;
-        padding-left: 3.15rem;
+        padding-left: 3.6rem;
         margin-bottom: 1.1rem;
     }
 
@@ -976,7 +976,7 @@ html[data-theme="light"] .shell--collapsed .menu__link:hover > span:not(.menu__i
     .shell__actions {
         width: 100%;
         display: grid;
-        grid-template-columns: 2.5rem minmax(0, 1fr) minmax(0, 0.86fr);
+        grid-template-columns: minmax(0, 1fr) minmax(0, 0.86fr);
         align-items: center;
         gap: 0.5rem;
     }
@@ -1041,15 +1041,14 @@ html[data-theme="light"] .shell--collapsed .menu__link:hover > span:not(.menu__i
     }
 
     .shell__header {
-        padding-left: 3rem;
+        padding-left: 3.35rem;
     }
 
     .shell__actions {
-        grid-template-columns: 2.45rem minmax(0, 1fr);
+        grid-template-columns: minmax(0, 1fr);
     }
 
     .shell__actions .session-chip:first-of-type {
-        grid-column: 1 / -1;
-        order: 3;
+        order: 2;
     }
 }
