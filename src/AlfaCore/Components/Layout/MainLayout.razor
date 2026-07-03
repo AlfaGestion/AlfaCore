@@ -1415,6 +1415,12 @@ else
 
     private void ToggleSidebarCollapsed()
     {
+        if (_mobileSidebarOpen)
+        {
+            _mobileSidebarOpen = false;
+            return;
+        }
+
         _sidebarCollapsedOverride = !IsSidebarCollapsed;
         _sidebarToggleHoverBlocked = true;
     }

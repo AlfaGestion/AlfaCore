@@ -949,6 +949,10 @@ html[data-theme="light"] .shell--collapsed .menu__link:hover > span:not(.menu__i
         color: #67e8f9;
     }
 
+    .shell.shell--mobile-open .shell__mobile-toggle {
+        display: none !important;
+    }
+
     .shell__header {
         display: grid;
         grid-template-columns: 2.5rem minmax(0, 1fr) 2.5rem;
