@@ -117,6 +117,12 @@ else
     {
         SessionSvc.SessionChanged += OnContextChanged;
         AppUserSession.StateChanged += OnContextChanged;
+
+        if (WorkspaceSvc.TryGetCachedHome(out var cachedHome))
+        {
+            _home = cachedHome;
+            _loading = false;
+        }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -257,10 +263,13 @@ else
                 }
             }
 
-            var loadTask = LoadHomeAsync();
+            var showInitialLoader = _loading;
+            var loadTask = LoadHomeAsync(showInitialLoader);
             var completedTask = await Task.WhenAny(loadTask, Task.Delay(TimeSpan.FromSeconds(15)));
             if (completedTask != loadTask)
             {
+                if (!showInitialLoader)
+                    return;
                 _error = "No se pudo cargar el shell principal a tiempo. Revisá la base activa o intentá nuevamente.";
                 _loading = false;
                 return;
@@ -278,7 +287,7 @@ else
                     idweb ?? "(sin ruta)",
                     idbase?.ToString() ?? "(sin base)");
                 await Task.Delay(300);
-                await LoadHomeAsync();
+                await LoadHomeAsync(showLoader: false);
             }
             await InvokeAsync(StateHasChanged);
         }
@@ -323,7 +332,8 @@ else
     private async Task ToggleFavoriteAsync(string menu, string clave)
     {
         await FavoritesSvc.ToggleFavoriteAsync(menu, clave);
-        _home = await WorkspaceSvc.GetHomeAsync();
+        WorkspaceSvc.InvalidateHomeCache();
+        _home = await WorkspaceSvc.RefreshHomeAsync();
     }
 
     private static bool IsActivationKey(string? key)
@@ -351,17 +361,30 @@ else
                 return;
             }
 
-            await LoadHomeAsync();
+            var hasCachedHome = WorkspaceSvc.TryGetCachedHome(out var cachedHome);
+            if (hasCachedHome)
+            {
+                _home = cachedHome;
+                _loading = false;
+                StateHasChanged();
+            }
+
+            await LoadHomeAsync(showLoader: !hasCachedHome);
             StateHasChanged();
         });
     }
 
-    private async Task LoadHomeAsync()
+    private async Task LoadHomeAsync(bool showLoader = true)
     {
         var version = Interlocked.Increment(ref _loadVersion);
-        _loading = true;
-        _error = string.Empty;
-        StateHasChanged();
+        var hadVisibleHome = HasVisibleHome();
+        if (showLoader || !hadVisibleHome)
+        {
+            _loading = true;
+            _error = string.Empty;
+            StateHasChanged();
+        }
+
         try
         {
             var activeSession = SessionSvc.GetActiveSession();
@@ -372,11 +395,14 @@ else
                 activeSession?.Nombre ?? "(sin base)",
                 AppMode.IsSaaSMode ? "saas" : "legacy");
 
-            var home = await WorkspaceSvc.GetHomeAsync();
+            var home = showLoader || !hadVisibleHome
+                ? await WorkspaceSvc.GetHomeAsync()
+                : await WorkspaceSvc.RefreshHomeAsync();
             if (version != _loadVersion)
                 return;
 
             _home = home;
+            _error = string.Empty;
             Logger.LogInformation(
                 "Launcher: home loaded. ModuleGroups={ModuleGroups}, Favorites={Favorites}, Recents={Recents}",
                 _home.Modules.Count,
@@ -387,6 +413,16 @@ else
         {
             if (version == _loadVersion)
             {
+                if (!showLoader && hadVisibleHome)
+                {
+                    Logger.LogWarning(
+                        ex,
+                        "Launcher: background RefreshHomeAsync failed. User={User}, BaseId={BaseId}, BaseName={BaseName}",
+                        AppUserSession.CurrentUser?.UserName ?? "(sin usuario)",
+                        SessionSvc.GetActiveSession()?.Id.ToString() ?? "(sin base)",
+                        SessionSvc.GetActiveSession()?.Nombre ?? "(sin base)");
+                    return;
+                }
                 _error = "No se pudieron cargar los módulos del usuario. Revisá la base activa o intentá nuevamente.";
                 Logger.LogWarning(
                     ex,
@@ -403,6 +439,9 @@ else
                 _loading = false;
         }
     }
+
+    private bool HasVisibleHome()
+        => _home.Modules.Count > 0 || _home.Favorites.Count > 0 || _home.Recents.Count > 0;
 
     private static string? NormalizeRouteIdWeb(string? value)
     {
