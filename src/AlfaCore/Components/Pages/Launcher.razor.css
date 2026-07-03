@@ -1,0 +1,238 @@
+.launcher-home {
+    width: 100%;
+}
+
+.launcher-section {
+    width: 100%;
+}
+
+.launcher-favorites-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 0.95rem;
+    width: 100%;
+}
+
+.launcher-home .launcher-favorite-card {
+    min-height: 156px;
+    aspect-ratio: 1 / 0.92;
+    align-items: center;
+    justify-content: center;
+    gap: 0.9rem;
+    padding: 1.25rem 0.9rem 1rem;
+    text-align: center;
+}
+
+.launcher-home .launcher-favorite-card__star,
+.launcher-home .launcher-recent-row__star {
+    width: 1.8rem;
+    height: 1.8rem;
+    font-size: 0.9rem;
+}
+
+.launcher-home .launcher-favorite-card__star {
+    top: 0.65rem;
+    right: 0.65rem;
+}
+
+.launcher-home .launcher-favorite-card .launcher-favorite-card__star {
+    position: absolute;
+}
+
+.launcher-home .launcher-module-badge {
+    flex: 0 0 auto;
+    margin: 0;
+    background: rgba(8, 145, 178, 0.16);
+    color: #67e8f9;
+}
+
+.launcher-home .launcher-module-badge--lg {
+    width: 4.25rem;
+    height: 4.25rem;
+    border-radius: 1.25rem;
+    font-size: 2rem;
+}
+
+.launcher-home .launcher-module-badge--sm {
+    width: 1.9rem;
+    height: 1.9rem;
+    border-radius: 0.65rem;
+    font-size: 0.92rem;
+}
+
+.launcher-home .launcher-favorite-card__name {
+    max-width: 100%;
+    line-height: 1.22;
+    text-align: center;
+    overflow-wrap: anywhere;
+}
+
+.launcher-recents-list {
+    width: 100%;
+    border-radius: 18px;
+    border: 1px solid rgba(148, 163, 184, 0.12);
+    overflow: hidden;
+    background: rgba(7, 20, 38, 0.18);
+}
+
+.launcher-recent-row {
+    width: 100%;
+    min-height: 3.55rem;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 0.85rem;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+    color: #e2e8f0;
+    cursor: pointer;
+    transition: background 0.16s ease;
+}
+
+.launcher-recent-row:last-child {
+    border-bottom: 0;
+}
+
+.launcher-recent-row:hover,
+.launcher-recent-row:focus-visible {
+    background: rgba(14, 165, 233, 0.08);
+    outline: none;
+}
+
+.launcher-recent-row__body {
+    min-width: 0;
+    display: grid;
+    gap: 0.12rem;
+}
+
+.launcher-recent-row__name {
+    min-width: 0;
+    color: #f5f8ff;
+    font-size: 0.96rem;
+    font-weight: 750;
+    line-height: 1.25;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.launcher-recent-row__time {
+    color: #9fb7d0;
+    font-size: 0.84rem;
+    font-weight: 650;
+    white-space: nowrap;
+}
+
+.launcher-recent-row__time--mobile {
+    display: none;
+}
+
+.launcher-home .launcher-recent-row .launcher-recent-row__star {
+    position: static;
+    opacity: 1;
+}
+
+.launcher-home .launcher-module-badge.app-card__icon--compras {
+    background: linear-gradient(135deg, #0ea5e9, #0284c7);
+    color: #fff;
+}
+
+.launcher-home .launcher-module-badge.app-card__icon--ventas {
+    background: linear-gradient(135deg, #10b981, #059669);
+    color: #fff;
+}
+
+.launcher-home .launcher-module-badge.app-card__icon--stock {
+    background: linear-gradient(135deg, #f59e0b, #d97706);
+    color: #fff;
+}
+
+.launcher-home .launcher-module-badge.app-card__icon--caja {
+    background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+    color: #fff;
+}
+
+.launcher-home .launcher-module-badge.app-card__icon--contabilidad {
+    background: linear-gradient(135deg, #ec4899, #db2777);
+    color: #fff;
+}
+
+.launcher-home .launcher-module-badge.app-card__icon--consultas {
+    background: linear-gradient(135deg, #14b8a6, #0d9488);
+    color: #fff;
+}
+
+.launcher-home .launcher-module-badge.app-card__icon--usuarios {
+    background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    color: #fff;
+}
+
+.launcher-home .launcher-module-badge.app-card__icon--contactos {
+    background: linear-gradient(135deg, #f97316, #ea580c);
+    color: #fff;
+}
+
+.launcher-home .launcher-module-badge.app-card__icon--calendario {
+    background: linear-gradient(135deg, #14b8a6, #0ea5e9);
+    color: #fff;
+}
+
+.launcher-home .launcher-module-badge.app-card__icon--logistica {
+    background: linear-gradient(135deg, #0f766e, #14b8a6);
+    color: #fff;
+}
+
+.launcher-home .launcher-module-badge.app-card__icon--tickets {
+    background: linear-gradient(135deg, #38bdf8, #0284c7);
+    color: #fff;
+}
+
+@media (min-width: 1280px) {
+    .launcher-favorites-grid {
+        grid-template-columns: repeat(auto-fit, minmax(155px, 1fr));
+    }
+}
+
+@media (max-width: 720px) {
+    .launcher-favorites-grid {
+        grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+        gap: 0.75rem;
+    }
+
+    .launcher-home .launcher-favorite-card {
+        min-height: 136px;
+        padding: 1.1rem 0.75rem 0.85rem;
+    }
+
+    .launcher-home .launcher-module-badge--lg {
+        width: 3.65rem;
+        height: 3.65rem;
+        border-radius: 1.05rem;
+        font-size: 1.65rem;
+    }
+
+    .launcher-recent-row {
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        gap: 0.65rem;
+        padding: 0.72rem 0.75rem;
+    }
+
+    .launcher-recent-row > .launcher-recent-row__time {
+        display: none;
+    }
+
+    .launcher-recent-row__time--mobile {
+        display: block;
+        white-space: normal;
+    }
+
+    .launcher-recent-row__name {
+        white-space: normal;
+    }
+}
+
+@media (max-width: 360px) {
+    .launcher-favorites-grid {
+        grid-template-columns: 1fr;
+    }
+}

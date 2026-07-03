@@ -31,32 +31,31 @@ else if (!string.IsNullOrWhiteSpace(_error))
 }
 else
 {
-    <div class="page-grid">
+    <div class="page-grid launcher-home">
         @if (_home.Favorites.Count > 0)
         {
-            <section id="favoritos" class="panel-card">
+            <section id="favoritos" class="panel-card launcher-section launcher-section--favorites">
                 <div class="panel-card__header">
                     <div>
                         <h3 class="panel-card__title">Favoritos</h3>
                     </div>
                 </div>
-                <div class="launcher__grid">
+                <div class="launcher-favorites-grid">
                     @foreach (var item in _home.Favorites)
                     {
-                        <article class="app-card app-card--button" role="button" tabindex="0" @onclick="() => OpenNodeAsync(item)" @onkeydown="args => HandleNodeCardKeyDownAsync(args, item)">
+                        <article class="app-card app-card--button launcher-favorite-card" role="button" tabindex="0" @onclick="() => OpenNodeAsync(item)" @onkeydown="args => HandleNodeCardKeyDownAsync(args, item)">
                             <button type="button"
-                                    class="@GetFavoriteButtonClass(item.Clave)"
-                                    style="@GetFavoriteButtonStyle(item.Clave)"
+                                    class="@GetFavoriteButtonClass(item.Clave, "launcher-favorite-card__star")"
                                     title="Quitar de favoritos"
                                     aria-label="Quitar @item.Nombre de favoritos"
                                     @onclick="() => ToggleFavoriteAsync(item.Menu, item.Clave)"
                                     @onclick:stopPropagation>
                                 <i class="bi bi-star-fill"></i>
                             </button>
-                            <div class="app-card__icon @ShellNavigationUiHelper.GetNodeIconClass(item)">
+                            <div class="app-card__icon launcher-module-badge launcher-module-badge--lg @ShellNavigationUiHelper.GetNodeIconClass(item)">
                                 <i class="bi @(string.IsNullOrWhiteSpace(item.Icono) ? "bi-star-fill" : item.Icono)"></i>
                             </div>
-                            <span class="app-card__name">@item.Nombre</span>
+                            <span class="app-card__name launcher-favorite-card__name">@item.Nombre</span>
                         </article>
                     }
                 </div>
@@ -65,29 +64,32 @@ else
 
         @if (_home.Recents.Count > 0)
         {
-            <section id="recientes" class="panel-card">
+            <section id="recientes" class="panel-card launcher-section launcher-section--recents">
                 <div class="panel-card__header">
                     <div>
                         <h3 class="panel-card__title">Recientes</h3>
                     </div>
                 </div>
-                <div class="launcher__grid launcher__grid--compact">
+                <div class="launcher-recents-list">
                     @foreach (var item in _home.Recents)
                     {
-                        <article class="app-card app-card--button" role="button" tabindex="0" @onclick="() => OpenNodeAsync(item)" @onkeydown="args => HandleNodeCardKeyDownAsync(args, item)">
+                        <article class="launcher-recent-row" role="button" tabindex="0" @onclick="() => OpenNodeAsync(item)" @onkeydown="args => HandleNodeCardKeyDownAsync(args, item)">
+                            <div class="app-card__icon launcher-module-badge launcher-module-badge--sm @ShellNavigationUiHelper.GetNodeIconClass(item)">
+                                <i class="bi @(string.IsNullOrWhiteSpace(item.Icono) ? "bi-clock-history" : item.Icono)"></i>
+                            </div>
+                            <div class="launcher-recent-row__body">
+                                <span class="launcher-recent-row__name">@item.Nombre</span>
+                                <span class="launcher-recent-row__time launcher-recent-row__time--mobile">@FormatRelativeTime(item.UltimoAcceso)</span>
+                            </div>
+                            <span class="launcher-recent-row__time">@FormatRelativeTime(item.UltimoAcceso)</span>
                             <button type="button"
-                                    class="@GetFavoriteButtonClass(item.Clave)"
-                                    style="@GetFavoriteButtonStyle(item.Clave)"
+                                    class="@GetFavoriteButtonClass(item.Clave, "launcher-recent-row__star")"
                                     title="@(IsFavorite(item.Clave) ? "Quitar de favoritos" : "Agregar a favoritos")"
                                     aria-label="@(IsFavorite(item.Clave) ? $"Quitar {item.Nombre} de favoritos" : $"Agregar {item.Nombre} a favoritos")"
                                     @onclick="() => ToggleFavoriteAsync(item.Menu, item.Clave)"
                                     @onclick:stopPropagation>
                                 <i class="bi @(IsFavorite(item.Clave) ? "bi-star-fill" : "bi-star")"></i>
                             </button>
-                            <div class="app-card__icon @ShellNavigationUiHelper.GetNodeIconClass(item)">
-                                <i class="bi @(string.IsNullOrWhiteSpace(item.Icono) ? "bi-clock-history" : item.Icono)"></i>
-                            </div>
-                            <span class="app-card__name">@item.Nombre</span>
                         </article>
                     }
                 </div>
@@ -319,15 +321,11 @@ else
         return _home.Favorites.Any(item => string.Equals(item.Clave, clave, StringComparison.OrdinalIgnoreCase));
     }
 
-    private string GetFavoriteButtonClass(string clave)
+    private string GetFavoriteButtonClass(string clave, string extraClass)
     {
-        return IsFavorite(clave) ? "app-card__favorite is-active" : "app-card__favorite";
+        var css = $"app-card__favorite {extraClass}";
+        return IsFavorite(clave) ? css + " is-active" : css;
     }
-
-    private string GetFavoriteButtonStyle(string clave)
-        => IsFavorite(clave)
-            ? "appearance:none;-webkit-appearance:none;width:2.1rem;height:2.1rem;padding:0;border-radius:999px;background:rgba(251,191,36,.14);border:1px solid rgba(251,191,36,.48);color:#fbbf24;box-shadow:none;"
-            : "appearance:none;-webkit-appearance:none;width:2.1rem;height:2.1rem;padding:0;border-radius:999px;background:rgba(15,23,42,.45);border:1px solid rgba(148,163,184,.18);color:rgba(226,232,240,.72);box-shadow:none;";
 
     private async Task ToggleFavoriteAsync(string menu, string clave)
     {
@@ -342,6 +340,39 @@ else
             || string.Equals(key, " ", StringComparison.Ordinal)
             || string.Equals(key, "Space", StringComparison.OrdinalIgnoreCase)
             || string.Equals(key, "Spacebar", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string FormatRelativeTime(DateTime? value)
+    {
+        if (value is null)
+            return "reciente";
+
+        var elapsed = DateTime.Now - value.Value;
+        if (elapsed < TimeSpan.Zero)
+            elapsed = TimeSpan.Zero;
+
+        if (elapsed.TotalMinutes < 1)
+            return "recién";
+
+        if (elapsed.TotalHours < 1)
+        {
+            var minutes = Math.Max(1, (int)Math.Round(elapsed.TotalMinutes));
+            return $"hace {minutes} min";
+        }
+
+        if (elapsed.TotalDays < 1)
+        {
+            var hours = Math.Max(1, (int)Math.Round(elapsed.TotalHours));
+            return $"hace {hours} h";
+        }
+
+        if (elapsed.TotalDays < 30)
+        {
+            var days = Math.Max(1, (int)Math.Round(elapsed.TotalDays));
+            return days == 1 ? "ayer" : $"hace {days} días";
+        }
+
+        return value.Value.ToString("dd/MM/yyyy");
     }
 
     private async void OnContextChanged()
