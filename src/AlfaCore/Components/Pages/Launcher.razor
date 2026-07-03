@@ -332,7 +332,7 @@ else
     private async Task ToggleFavoriteAsync(string menu, string clave)
     {
         await FavoritesSvc.ToggleFavoriteAsync(menu, clave);
-        WorkspaceSvc.InvalidateHomeCache();
+        WorkspaceSvc.InvalidateWorkspaceCache();
         _home = await WorkspaceSvc.RefreshHomeAsync();
     }
 
