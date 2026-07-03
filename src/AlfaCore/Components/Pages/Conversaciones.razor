@@ -579,12 +579,16 @@
                 }
                 <div class="conversations-list__header">
                     <div>
-                        <h3 class="panel-card__title">Inbox <span class="conversations-mobile-inbox-count mobile-only">@_inbox.Count</span></h3>
+                        <h3 class="panel-card__title">
+                            <span class="desktop-only">Inbox</span>
+                            <span class="mobile-only">Conversaciones</span>
+                            <span class="conversations-mobile-inbox-count mobile-only">@_inbox.Count</span>
+                        </h3>
                         <p class="panel-card__subtitle">@_inbox.Count conversación(es)</p>
                     </div>
                 </div>
 
-                <div class="conversations-inbox-tools desktop-only" @onclick:stopPropagation>
+                <div class="conversations-inbox-tools" @onclick:stopPropagation>
                     <div class="conversations-inbox-search">
                         <div class="conversations-inbox-searchbox">
                             <i class="bi bi-search"></i>
@@ -848,6 +852,61 @@
                                 <span class="conversation-badge">@_selectedConversation.TecnicoNombre</span>
                             }
                             </div>
+                        </div>
+                        <div class="conversations-mobile-chat-actions mobile-only" @onclick:stopPropagation>
+                            <button type="button"
+                                    class="conversations-mobile-chat-actions__toggle"
+                                    title="Acciones"
+                                    aria-label="Acciones de conversación"
+                                    aria-haspopup="menu"
+                                    aria-expanded="@_showMobileChatActions"
+                                    @onclick="ToggleMobileChatActions">
+                                <i class="bi bi-three-dots-vertical"></i>
+                            </button>
+                            @if (_showMobileChatActions)
+                            {
+                                <div class="conversations-mobile-chat-actions__menu" role="menu">
+                                    <button type="button" role="menuitem" @onclick="OpenMobileContextPanel" disabled="@(_selectedConversation is null)">
+                                        <i class="bi bi-layout-sidebar-inset-reverse"></i>
+                                        <span>Contexto</span>
+                                        @if (HasContextNotes)
+                                        {
+                                            <strong>Notas</strong>
+                                        }
+                                    </button>
+                                    <button type="button" role="menuitem" @onclick="StartMobileTicketSelection" disabled="@(_selectedConversation is null || _messages.Count == 0)">
+                                        <i class="bi bi-life-preserver"></i>
+                                        <span>Crear ticket</span>
+                                    </button>
+                                    <button type="button" role="menuitem" @onclick="ToggleStatusMenu" disabled="@_busyAction">
+                                        <i class="bi bi-circle-half"></i>
+                                        <span>Estado: @GetCurrentStatusDescription()</span>
+                                    </button>
+                                    @if (_showStatusMenu)
+                                    {
+                                        <div class="conversations-mobile-chat-actions__states" role="listbox">
+                                            @foreach (var state in HeaderStatusOptions)
+                                            {
+                                                var isCurrent = string.Equals(state.CodigoEstado, _statusCode, StringComparison.OrdinalIgnoreCase);
+                                                <button type="button"
+                                                        class="@(isCurrent ? "is-active" : string.Empty)"
+                                                        @onclick="() => SelectMobileStatusAsync(state.CodigoEstado)"
+                                                        role="option"
+                                                        aria-selected="@isCurrent">
+                                                    @state.Descripcion
+                                                </button>
+                                            }
+                                        </div>
+                                    }
+                                    @if (!IsSelectedConversationClosed)
+                                    {
+                                        <button type="button" role="menuitem" @onclick="CloseMobileConversationAsync" disabled="@_busyAction">
+                                            <i class="bi bi-lock-fill"></i>
+                                            <span>Cerrar conversación</span>
+                                        </button>
+                                    }
+                                </div>
+                            }
                         </div>
                         <div class="conversation-header-state">
                             <div class="conversation-header-state__row @(_showStatusMenu ? "is-open" : string.Empty)" @onclick:stopPropagation="true">
@@ -2379,6 +2438,7 @@
     private string _assignmentTechnicianId = string.Empty;
     private string _statusCode = "ABIERTA";
     private bool _showStatusMenu;
+    private bool _showMobileChatActions;
     private IDisposable? _floatingWindowRegistration;
     private ElementReference _threadElement;
     private ElementReference _composerDropZone;
@@ -3260,6 +3320,7 @@
         await ClearTypingAsync();
         _showTemplatePanel = false;
         _showStatusMenu = false;
+        _showMobileChatActions = false;
         CancelTicketSelection();
         await LoadConversationAsync(idConversacion, showLoading: true, clearActionState: true);
     }
@@ -5555,12 +5616,43 @@
         _showStatusMenu = !_showStatusMenu;
     }
 
+    private void ToggleMobileChatActions()
+    {
+        _showStatusMenu = false;
+        _showMobileChatActions = !_showMobileChatActions;
+    }
+
+    private void OpenMobileContextPanel()
+    {
+        _showMobileChatActions = false;
+        OpenContextPanel();
+    }
+
+    private void StartMobileTicketSelection()
+    {
+        _showMobileChatActions = false;
+        StartTicketSelection();
+    }
+
+    private async Task SelectMobileStatusAsync(string codigoEstado)
+    {
+        await SelectStatusAsync(codigoEstado);
+        _showMobileChatActions = false;
+    }
+
+    private async Task CloseMobileConversationAsync()
+    {
+        _showMobileChatActions = false;
+        await CloseConversationAsync();
+    }
+
     private Task CloseFloatingWindowsAsync()
     {
-        if (!_showStatusMenu)
+        if (!_showStatusMenu && !_showMobileChatActions)
             return Task.CompletedTask;
 
         _showStatusMenu = false;
+        _showMobileChatActions = false;
         return InvokeAsync(StateHasChanged);
     }
 
@@ -6450,6 +6542,7 @@
         _showTemplatePanel = false;
         _showContextNotesModal = false;
         _mobileChatActive = false;
+        _showMobileChatActions = false;
         ClearContextNotesState();
         ClearTemplateSelection();
         _scrollHandlerConversationId = null;
