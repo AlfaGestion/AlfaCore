@@ -697,6 +697,14 @@ else
         </div>
     </aside>
 
+    <button type="button"
+            class="shell__mobile-floating-toggle no-print"
+            @onclick="ToggleMobileSidebar"
+            aria-label="Abrir menú"
+            aria-expanded="@_mobileSidebarOpen">
+        <i class="bi bi-list"></i>
+    </button>
+
     <main class="shell__main">
         <header class="shell__header">
             <button type="button"
@@ -1415,6 +1423,12 @@ else
 
     private void ToggleSidebarCollapsed()
     {
+        if (_mobileSidebarOpen)
+        {
+            _mobileSidebarOpen = false;
+            return;
+        }
+
         _sidebarCollapsedOverride = !IsSidebarCollapsed;
         _sidebarToggleHoverBlocked = true;
     }

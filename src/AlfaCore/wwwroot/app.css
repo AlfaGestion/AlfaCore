@@ -392,7 +392,7 @@ select {
     top: 0;
     z-index: 860;
     display: grid;
-    grid-template-columns: auto minmax(280px, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
     gap: .65rem;
     margin: -0.15rem 0 .85rem;
@@ -403,6 +403,7 @@ select {
     box-shadow: 0 10px 28px rgba(2, 6, 23, .28);
     backdrop-filter: blur(10px);
     overflow: visible;
+    min-width: 0;
 }
 
 .module-actionbar__title {
@@ -440,9 +441,22 @@ select {
 .module-actionbar__actions,
 .module-actionbar .actions,
 .page-grid:not(.pos-page):not(.pos-page--odoo) > .page-intro:has(.actions) .actions {
+    display: flex;
+    align-items: center;
     justify-content: flex-end;
     flex-wrap: nowrap;
     min-width: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+}
+
+.module-actionbar__actions .btn,
+.module-actionbar .actions .btn,
+.page-grid:not(.pos-page):not(.pos-page--odoo) > .page-intro:has(.actions) .actions .btn,
+.sticky-commandbar__history .btn {
+    flex: 0 0 auto;
+    white-space: nowrap;
 }
 
 .module-actionbar__search-backdrop {
@@ -492,27 +506,24 @@ select {
     --module-actionbar-left: 0px;
 }
 
-.contactos-page {
-    padding-top: 3.25rem;
-}
-
 .contactos-page > .contactos-commandbar {
-    position: fixed;
+    position: sticky;
     top: 0;
-    left: var(--module-actionbar-left, 0px);
-    right: 0;
-    z-index: 1180;
-    display: flex;
+    left: auto;
+    right: auto;
+    z-index: 860;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
-    justify-content: space-between;
-    margin: 0;
-    padding: .45rem .7rem;
-    border: 0;
-    border-bottom: 1px solid rgba(56, 189, 248, .16);
-    border-radius: 0;
+    justify-content: stretch;
+    margin: -0.15rem 0 .85rem;
+    padding: .55rem .65rem;
+    border: 1px solid rgba(56, 189, 248, .16);
+    border-radius: 8px;
     background: rgba(7, 18, 32, .94);
-    box-shadow: 0 8px 22px rgba(2, 6, 23, .24);
+    box-shadow: 0 10px 28px rgba(2, 6, 23, .28);
     backdrop-filter: blur(10px);
+    overflow: visible;
 }
 
 .contactos-page > .contactos-commandbar .module-actionbar__actions,
@@ -527,14 +538,10 @@ select {
 }
 
 .contactos-page > .smart-search-card {
-    position: fixed;
-    top: .45rem;
-    left: calc(var(--module-actionbar-left, 0px) + 5.75rem);
-    right: 22rem;
-    z-index: 1181;
+    position: static;
     display: flex;
     justify-content: center;
-    margin: 0;
+    margin-top: -.85rem;
     padding: 0;
     border: 0;
     background: transparent;
@@ -565,29 +572,25 @@ select {
     --module-actionbar-left: 0px;
 }
 
-.usuarios-page,
-.tecnicos-page {
-    padding-top: 3.25rem;
-}
-
 .usuarios-page > .usuarios-commandbar,
 .tecnicos-page > .tecnicos-commandbar {
-    position: fixed;
+    position: sticky;
     top: 0;
-    left: var(--module-actionbar-left, 0px);
-    right: 0;
-    z-index: 1180;
-    display: flex;
+    left: auto;
+    right: auto;
+    z-index: 860;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
-    justify-content: space-between;
-    margin: 0;
-    padding: .45rem .7rem;
-    border: 0;
-    border-bottom: 1px solid rgba(56, 189, 248, .16);
-    border-radius: 0;
+    justify-content: stretch;
+    margin: -0.15rem 0 .85rem;
+    padding: .55rem .65rem;
+    border: 1px solid rgba(56, 189, 248, .16);
+    border-radius: 8px;
     background: rgba(7, 18, 32, .94);
-    box-shadow: 0 8px 22px rgba(2, 6, 23, .24);
+    box-shadow: 0 10px 28px rgba(2, 6, 23, .28);
     backdrop-filter: blur(10px);
+    overflow: visible;
 }
 
 .usuarios-commandbar > div:first-child,
@@ -611,14 +614,10 @@ select {
 
 .usuarios-page > .usuarios-search-card,
 .tecnicos-page > .tecnicos-search-card {
-    position: fixed;
-    top: .45rem;
-    left: calc(var(--module-actionbar-left, 0px) + 5.75rem);
-    right: 22rem;
-    z-index: 1181;
+    position: static;
     display: flex;
     justify-content: center;
-    margin: 0;
+    margin-top: -.85rem;
     padding: 0;
     border: 0;
     background: transparent;
@@ -653,26 +652,19 @@ select {
         --module-actionbar-left: 0px;
     }
 
-    .contactos-page {
-        padding-top: 7.25rem;
-    }
-
-    .usuarios-page,
-    .tecnicos-page {
-        padding-top: 10.5rem;
-    }
-
     .contactos-page > .contactos-commandbar {
-        align-items: stretch;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        align-items: center;
         justify-content: stretch;
-        padding-top: 3.65rem;
+        padding: .5rem .55rem;
     }
 
     .usuarios-page > .usuarios-commandbar,
     .tecnicos-page > .tecnicos-commandbar {
-        align-items: stretch;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        align-items: center;
         justify-content: stretch;
-        padding-top: 3.65rem;
+        padding: .5rem .55rem;
     }
 
     .contactos-page > .smart-search-card {
@@ -697,20 +689,26 @@ select {
 
     .module-actionbar,
     .page-grid:not(.pos-page):not(.pos-page--odoo) > .page-intro:has(.actions) {
-        grid-template-columns: minmax(0, 1fr);
-        align-items: stretch;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        align-items: center;
+        overflow-x: auto;
+        overflow-y: visible;
+        scrollbar-width: thin;
     }
 
     .module-actionbar__actions,
     .module-actionbar .actions,
     .page-grid:not(.pos-page):not(.pos-page--odoo) > .page-intro:has(.actions) .actions {
-        justify-content: stretch;
+        justify-content: flex-end;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        overflow-y: hidden;
     }
 
     .module-actionbar__actions .btn,
     .module-actionbar .actions .btn,
     .page-grid:not(.pos-page):not(.pos-page--odoo) > .page-intro:has(.actions) .actions .btn {
-        flex: 1 1 auto;
+        flex: 0 0 auto;
     }
 }
 
@@ -16443,24 +16441,24 @@ html[data-theme="light"] .interfaces-bulkbar {
 }
 
 .tickets-page--odoo .tickets-commandbar.module-actionbar {
-    position: fixed;
+    position: sticky;
     top: 0;
-    left: var(--tickets-actionbar-left, 0px);
-    right: 0;
-    z-index: 1200;
+    left: auto;
+    right: auto;
+    z-index: 860;
     display: grid;
-    grid-template-columns: auto auto minmax(320px, 560px) auto;
+    grid-template-columns: auto auto minmax(260px, 560px) auto;
     align-items: center;
     gap: .65rem;
-    margin: 0;
-    padding: .45rem .7rem;
-    border: 0;
-    border-bottom: 1px solid rgba(56, 189, 248, .16);
-    border-radius: 0;
+    margin: -0.15rem 0 .85rem;
+    padding: .55rem .65rem;
+    border: 1px solid rgba(56, 189, 248, .16);
+    border-radius: 8px;
     background: rgba(7, 18, 32, .94);
-    box-shadow: 0 8px 22px rgba(2, 6, 23, .24);
+    box-shadow: 0 10px 28px rgba(2, 6, 23, .28);
     backdrop-filter: blur(10px);
     box-sizing: border-box;
+    overflow: visible;
 }
 
 .tickets-commandbar__history {
@@ -16540,34 +16538,30 @@ html[data-theme="light"] .interfaces-bulkbar {
     --tickets-actionbar-left: 0px;
 }
 
-.tickets-page--odoo:has(.tickets-commandbar.module-actionbar) {
-    padding-top: 3.25rem;
-}
-
 @media (max-width: 900px) {
     .shell:has(.tickets-page--odoo) {
         --tickets-actionbar-left: 0px;
     }
 
-    .tickets-page--odoo:has(.tickets-commandbar.module-actionbar) {
-        padding-top: 11.25rem;
-    }
-
     .tickets-page--odoo .tickets-commandbar.module-actionbar {
-        grid-template-columns: 1fr;
-        align-items: stretch;
+        grid-template-columns: auto auto minmax(180px, 1fr) auto;
+        align-items: center;
+        overflow-x: auto;
+        overflow-y: visible;
+        scrollbar-width: thin;
     }
 
     .tickets-commandbar__history,
     .tickets-page--odoo .tickets-commandbar.module-actionbar .tickets-view-switch,
     .tickets-page--odoo .tickets-commandbar.module-actionbar .tickets-commandbar__actions {
-        justify-content: stretch;
+        justify-content: flex-start;
+        flex-wrap: nowrap;
     }
 
     .tickets-commandbar__history .btn,
     .tickets-page--odoo .tickets-commandbar.module-actionbar .tickets-view-switch .btn,
     .tickets-page--odoo .tickets-commandbar.module-actionbar .tickets-commandbar__actions .btn {
-        flex: 1 1 auto;
+        flex: 0 0 auto;
     }
 }
 
@@ -19440,11 +19434,11 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
     }
 
     .conversations-page--odoo .conversations-list__items {
-        max-height: calc(100dvh - 345px);
+        max-height: none;
     }
 
     .conversations-page--odoo.conversations-page--chat-active .conversations-layout {
-        height: calc(100dvh - 84px);
+        height: 100%;
     }
 }
 
@@ -19462,13 +19456,14 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
     }
 
     .shell__main:has(.conversations-page--chat-active) .shell__header,
-    .shell__main:has(.conversations-page--chat-active) .pwa-mobile-actions {
+    .shell__main:has(.conversations-page--chat-active) .pwa-mobile-actions,
+    .shell:has(.conversations-page--chat-active) .shell__mobile-floating-toggle {
         display: none;
     }
 
     .shell__content:has(.conversations-page--chat-active) {
-        height: 100dvh;
-        min-height: 100dvh;
+        height: 100%;
+        min-height: 0;
         padding: 0;
         overflow: hidden;
     }
@@ -19483,7 +19478,7 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
         width: 100vw;
         max-width: 100vw;
         height: 100dvh;
-        min-height: 100dvh;
+        min-height: 0;
         padding: 0;
         overflow: hidden;
         background: #07111f;
@@ -19499,7 +19494,7 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
     .conversations-page--odoo.conversations-page--chat-active .conversations-layout {
         display: block;
         width: 100%;
-        height: 100dvh;
+        height: 100%;
         min-height: 0;
         overflow: hidden;
         overflow-x: hidden;
@@ -19510,8 +19505,8 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
         flex-direction: column;
         width: 100%;
         max-width: 100%;
-        height: 100dvh;
-        max-height: 100dvh;
+        height: 100%;
+        max-height: 100%;
         min-height: 0;
         padding: 0;
         border: 0;
@@ -19618,7 +19613,7 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
         flex: 1 1 auto;
         min-height: 0;
         max-height: none;
-        padding: .62rem .58rem .62rem;
+        padding: .62rem .58rem calc(5.5rem + env(safe-area-inset-bottom));
         overflow-y: auto;
         overflow-x: hidden;
         background: #07111f;
@@ -19668,9 +19663,11 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
     }
 
     .conversations-page--odoo.conversations-page--chat-active .conversations-composer {
-        position: sticky;
+        position: fixed;
+        left: 0;
+        right: 0;
         bottom: 0;
-        z-index: 7;
+        z-index: 1100;
         flex: 0 0 auto;
         display: grid;
         grid-template-columns: minmax(0, 1fr) auto;
@@ -19684,6 +19681,11 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
         border-top: 1px solid rgba(148, 163, 184, .14);
         background: rgba(7, 17, 31, .98);
         overflow: hidden;
+    }
+
+    .conversations-page--odoo.conversations-page--chat-active .conversations-composer__reply {
+        display: block;
+        min-width: 0;
     }
 
     .conversations-page--odoo.conversations-page--chat-active .conversations-composer__reply label,

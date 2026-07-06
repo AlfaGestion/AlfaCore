@@ -92,12 +92,20 @@ else
     {
         SessionSvc.SessionChanged += OnContextChanged;
         AppUserSession.StateChanged += OnContextChanged;
+
+        if (WorkspaceSvc.TryGetCachedModuleWorkspace(ModuleKey, out var cachedWorkspace))
+        {
+            _workspace = cachedWorkspace;
+            _loading = false;
+        }
     }
 
     protected override async Task OnParametersSetAsync()
     {
-        if (_interactiveReady)
-            await LoadWorkspaceAsync();
+        if (!_interactiveReady)
+            return;
+
+        await LoadWorkspaceAsync(showLoader: !TryUseCachedWorkspace());
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -107,7 +115,8 @@ else
 
         _interactiveReady = true;
         await Task.Yield();
-        await LoadWorkspaceAsync();
+        var hasCachedWorkspace = TryUseCachedWorkspace();
+        await LoadWorkspaceAsync(showLoader: !hasCachedWorkspace);
         await InvokeAsync(StateHasChanged);
     }
 
@@ -141,7 +150,8 @@ else
     private async Task ToggleFavoriteAsync(string menu, string clave)
     {
         await FavoritesSvc.ToggleFavoriteAsync(menu, clave);
-        _workspace = await WorkspaceSvc.GetModuleWorkspaceAsync(ModuleKey);
+        WorkspaceSvc.InvalidateWorkspaceCache();
+        _workspace = await WorkspaceSvc.RefreshModuleWorkspaceAsync(ModuleKey);
     }
 
     private static bool IsActivationKey(string? key)
@@ -159,33 +169,58 @@ else
 
         await InvokeAsync(async () =>
         {
-            await LoadWorkspaceAsync();
+            await LoadWorkspaceAsync(showLoader: !TryUseCachedWorkspace());
             StateHasChanged();
         });
     }
 
-    private async Task LoadWorkspaceAsync()
+    private bool TryUseCachedWorkspace()
+    {
+        if (!WorkspaceSvc.TryGetCachedModuleWorkspace(ModuleKey, out var cachedWorkspace))
+            return false;
+
+        _workspace = cachedWorkspace;
+        _loading = false;
+        _error = string.Empty;
+        return true;
+    }
+
+    private async Task LoadWorkspaceAsync(bool showLoader = true)
     {
         var version = Interlocked.Increment(ref _loadVersion);
-        _loading = true;
-        _error = string.Empty;
-        StateHasChanged();
+        var hadVisibleWorkspace = HasVisibleWorkspace();
+        if (showLoader || !hadVisibleWorkspace)
+        {
+            _loading = true;
+            _error = string.Empty;
+            StateHasChanged();
+        }
+
         try
         {
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
-            var workspace = await WorkspaceSvc.GetModuleWorkspaceAsync(ModuleKey, cts.Token);
+            var workspace = showLoader || !hadVisibleWorkspace
+                ? await WorkspaceSvc.GetModuleWorkspaceAsync(ModuleKey, cts.Token)
+                : await WorkspaceSvc.RefreshModuleWorkspaceAsync(ModuleKey, cts.Token);
             if (version != _loadVersion)
                 return;
 
             _workspace = workspace;
+            _error = string.Empty;
         }
         catch (OperationCanceledException)
         {
+            if (!showLoader && hadVisibleWorkspace)
+                return;
+
             if (version == _loadVersion)
                 _error = "La carga del módulo demoró demasiado. Revisá la base activa o intentá nuevamente.";
         }
         catch
         {
+            if (!showLoader && hadVisibleWorkspace)
+                return;
+
             if (version == _loadVersion)
                 _error = "No se pudo cargar el módulo seleccionado.";
         }
@@ -195,6 +230,9 @@ else
                 _loading = false;
         }
     }
+
+    private bool HasVisibleWorkspace()
+        => _workspace.Module is not null || _workspace.Sections.Count > 0 || _workspace.Favorites.Count > 0 || _workspace.Recents.Count > 0;
 
     public void Dispose()
     {

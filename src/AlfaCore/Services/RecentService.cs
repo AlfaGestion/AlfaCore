@@ -81,7 +81,8 @@ public sealed class RecentService(
                     ISNULL(w.Icono, '') AS Icono,
                     ISNULL(w.OrdenWeb, 0) AS OrdenWeb,
                     ISNULL(w.EsFavoritoDefault, 0) AS EsFavoritoDefault,
-                    ISNULL(w.Observacion, '') AS Observacion
+                    ISNULL(w.Observacion, '') AS Observacion,
+                    l.FechaHora AS UltimoAcceso
                 FROM latest l
                 INNER JOIN dbo.ALFACORE_MENU_WEB w
                     ON w.Clave = l.Clave
