@@ -1,4 +1,5 @@
 @using AlfaCore.Models
+@inject AlfaCore.Services.IAppModeService AppMode
 @inject AlfaCore.Services.ISessionService SessionSvc
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject AlfaCore.Services.ICentralBasesService CentralBasesSvc
@@ -14,12 +15,72 @@
             <h3 class="drawer__title">
                 <i class="bi bi-database"></i> Bases disponibles
             </h3>
-            <button class="drawer__close" @onclick="Close" title="Cerrar">
-                <i class="bi bi-x-lg"></i>
-            </button>
+            <div class="drawer__header-actions">
+                @if (!AppMode.IsSaaSMode)
+                {
+                    <button type="button"
+                            class="btn btn--ghost btn--sm drawer__add"
+                            @onclick="ToggleAddSessionForm"
+                            title="@(_showAddSessionForm ? "Cerrar formulario" : "Agregar base")">
+                        <i class="bi bi-plus-lg"></i>
+                        <span>@(_showAddSessionForm ? "Cerrar" : "Agregar base")</span>
+                    </button>
+                }
+                <button class="drawer__close" @onclick="Close" title="Cerrar">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </div>
         </div>
 
         <div class="drawer__body">
+            @if (_showAddSessionForm && !AppMode.IsSaaSMode)
+            {
+                <form class="drawer-add-session" @onsubmit="SaveNewSessionAsync" @onsubmit:preventDefault="true">
+                    <div class="drawer-add-session__head">
+                        <div>
+                            <p class="drawer-add-session__eyebrow">Archivo local</p>
+                            <h4>Agregar base</h4>
+                        </div>
+                        <span class="drawer-add-session__hint">Se guarda en `App_Data/sessions.json`</span>
+                    </div>
+
+                    @if (!string.IsNullOrWhiteSpace(_addSessionError))
+                    {
+                        <div class="drawer-add-session__error">@_addSessionError</div>
+                    }
+
+                    <div class="drawer-add-session__grid">
+                        <div class="drawer-add-session__field">
+                            <label>Nombre</label>
+                            <input class="drawer-search__input" @bind="_newSessionNombre" placeholder="Nombre visible" />
+                        </div>
+                        <div class="drawer-add-session__field">
+                            <label>Servidor</label>
+                            <input class="drawer-search__input" @bind="_newSessionServidor" placeholder="SERVER\\INSTANCIA" />
+                        </div>
+                        <div class="drawer-add-session__field">
+                            <label>Base de datos</label>
+                            <input class="drawer-search__input" @bind="_newSessionBaseDatos" placeholder="BASE" />
+                        </div>
+                        <div class="drawer-add-session__field">
+                            <label>Usuario SQL</label>
+                            <input class="drawer-search__input" @bind="_newSessionUsuario" placeholder="usuario" />
+                        </div>
+                        <div class="drawer-add-session__field drawer-add-session__field--full">
+                            <label>Contraseña SQL</label>
+                            <input class="drawer-search__input" type="password" @bind="_newSessionPassword" placeholder="••••••••" />
+                        </div>
+                    </div>
+
+                    <div class="drawer-add-session__actions">
+                        <button type="button" class="btn btn--ghost btn--sm" @onclick="CancelAddSessionForm">Cancelar</button>
+                        <button type="submit" class="btn btn--primary btn--sm" disabled="@_savingSession">
+                            @(_savingSession ? "Guardando..." : "Guardar base")
+                        </button>
+                    </div>
+                </form>
+            }
+
             <div class="drawer-search">
                 <input class="drawer-search__input"
                        value="@_searchText"
@@ -95,6 +156,14 @@
     private List<SessionDto> _sesiones = [];
     private string _searchText = string.Empty;
     private int _selectedIndex;
+    private bool _showAddSessionForm;
+    private bool _savingSession;
+    private string _addSessionError = string.Empty;
+    private string _newSessionNombre = string.Empty;
+    private string _newSessionServidor = string.Empty;
+    private string _newSessionBaseDatos = string.Empty;
+    private string _newSessionUsuario = string.Empty;
+    private string _newSessionPassword = string.Empty;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -148,6 +217,61 @@
             var activeById = _sesiones.FirstOrDefault(x => x.Id == active.Id);
             if (activeById is not null)
                 activeById.Activa = true;
+        }
+    }
+
+    private void ToggleAddSessionForm()
+    {
+        _showAddSessionForm = !_showAddSessionForm;
+        _addSessionError = string.Empty;
+    }
+
+    private void CancelAddSessionForm()
+    {
+        _showAddSessionForm = false;
+        _addSessionError = string.Empty;
+        _newSessionNombre = string.Empty;
+        _newSessionServidor = string.Empty;
+        _newSessionBaseDatos = string.Empty;
+        _newSessionUsuario = string.Empty;
+        _newSessionPassword = string.Empty;
+    }
+
+    private async Task SaveNewSessionAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_newSessionServidor) ||
+            string.IsNullOrWhiteSpace(_newSessionBaseDatos) ||
+            string.IsNullOrWhiteSpace(_newSessionUsuario) ||
+            string.IsNullOrWhiteSpace(_newSessionPassword))
+        {
+            _addSessionError = "Completá servidor, base, usuario y contraseña.";
+            return;
+        }
+
+        _savingSession = true;
+        _addSessionError = string.Empty;
+
+        try
+        {
+            var id = SessionSvc.AddSession(
+                _newSessionNombre,
+                _newSessionServidor,
+                _newSessionBaseDatos,
+                _newSessionUsuario,
+                _newSessionPassword);
+
+            SessionSvc.SwitchSession(id);
+            await JS.InvokeVoidAsync("alfaCoreSqlSession.setActive", id.ToString());
+            await ReloadAsync();
+            CancelAddSessionForm();
+        }
+        catch (Exception ex)
+        {
+            _addSessionError = $"No se pudo guardar la base: {ex.Message}";
+        }
+        finally
+        {
+            _savingSession = false;
         }
     }
 

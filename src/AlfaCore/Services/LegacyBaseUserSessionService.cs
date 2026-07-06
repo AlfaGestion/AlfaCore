@@ -93,6 +93,16 @@ public sealed class LegacyBaseUserSessionService(
             var incidentId = await TryLogErrorAsync("Central", "LoginInterno", sqlEx, msg, new { Usuario = userName.Trim() }, ct);
             throw new AppUserFacingException(msg, incidentId, sqlEx);
         }
+        catch (Microsoft.Data.SqlClient.SqlException sqlEx) when (sqlEx.Number is 18456 or 4060)
+        {
+            var servidor = TryGetDataSource(connectionString);
+            var msg = string.IsNullOrWhiteSpace(servidor)
+                ? "No se pudo autenticar contra la base seleccionada. RevisÃ¡ el usuario y la contraseÃ±a SQL configurados para esa base."
+                : $"No se pudo autenticar contra la base seleccionada ({servidor}). RevisÃ¡ el usuario y la contraseÃ±a SQL configurados para esa base.";
+
+            var incidentId = await TryLogErrorAsync("Central", "LoginInterno", sqlEx, msg, new { Usuario = userName.Trim() }, ct);
+            throw new AppUserFacingException(msg, incidentId, sqlEx);
+        }
         catch (Exception ex)
         {
             var incidentId = await TryLogErrorAsync(

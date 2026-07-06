@@ -98,24 +98,45 @@ public sealed class ConexionClienteService : IConexionClienteService, IDisposabl
         SessionChanged?.Invoke();
     }
 
-    public void AddSession(string nombre, string servidor, string baseDatos, string usuario, string password)
+    public Guid AddSession(string nombre, string servidor, string baseDatos, string usuario, string password)
     {
         if (_appMode.IsSaaSMode)
             throw new NotSupportedException("La administracion manual de conexiones fue reemplazada por ALFA_CENTRAL.");
 
         var sessions = LoadLegacySessions().Sessions;
+        var id = Guid.NewGuid();
         sessions.Add(new SessionDto
         {
-            Id = Guid.NewGuid(),
+            Id = id,
             Nombre = string.IsNullOrWhiteSpace(nombre) ? $"{servidor} - {baseDatos}" : nombre.Trim(),
             Servidor = servidor.Trim(),
             BaseDatos = baseDatos.Trim(),
             Usuario = usuario.Trim(),
-            Password = password,
+            Password = password.Trim(),
             TrustServerCertificate = true,
             Activa = sessions.Count == 0
         });
         SaveLegacySessions(new SessionesData { Sessions = sessions });
+        SessionChanged?.Invoke();
+        return id;
+    }
+
+    public void UpdateSession(Guid id, string nombre, string servidor, string baseDatos, string usuario, string password)
+    {
+        if (_appMode.IsSaaSMode)
+            throw new NotSupportedException("La administracion manual de conexiones fue reemplazada por ALFA_CENTRAL.");
+
+        var legacy = LoadLegacySessions();
+        var session = legacy.Sessions.FirstOrDefault(s => s.Id == id)
+            ?? throw new InvalidOperationException("Base no encontrada.");
+
+        session.Nombre = string.IsNullOrWhiteSpace(nombre) ? $"{servidor} - {baseDatos}" : nombre.Trim();
+        session.Servidor = servidor.Trim();
+        session.BaseDatos = baseDatos.Trim();
+        session.Usuario = usuario.Trim();
+        session.Password = password.Trim();
+
+        SaveLegacySessions(legacy);
         SessionChanged?.Invoke();
     }
 
@@ -312,7 +333,7 @@ public sealed class ConexionClienteService : IConexionClienteService, IDisposabl
             Servidor = source.Servidor,
             BaseDatos = source.BaseDatos,
             Usuario = source.Usuario,
-            Password = source.Password,
+            Password = source.Password.Trim(),
             TrustServerCertificate = source.TrustServerCertificate,
             Activa = activa
         };

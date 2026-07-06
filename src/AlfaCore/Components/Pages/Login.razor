@@ -15,118 +15,221 @@
 <PageTitle>Login | AlfaCore</PageTitle>
 
 <div class="auth-page">
-    <section class="auth-shell @(_showLegacyBasePicker ? "auth-shell--legacy-bases-open" : string.Empty)">
-        <aside class="auth-hero">
+    <LoginShell RootClass="@LoginShellClass">
+        <HeroContent>
             <div class="auth-hero__brand">
                 <img class="central-brand-logo central-login-logo"
                      src="@LogoPrincipal"
-                     alt="Alfa Gestión"
+                     alt="AlfaCore"
                      loading="eager"
                      decoding="async" />
             </div>
 
-            <div class="auth-hero__copy">
-                <h2 class="auth-hero__title">
-                    @(AppMode.IsSaaSMode
-                        ? "Gestion central de clientes, bases y operaciones"
-                        : "Acceso directo al sistema")
-                </h2>
-                <p class="auth-hero__text">
-                    @(AppMode.IsSaaSMode
-                        ? "Ingresar con tu usuario central y trabajar sobre la base que corresponda a cada cliente."
-                        : "Ingresá con tu usuario y contraseña para entrar a la base activa.")
-                </p>
-            </div>
-
             @if (AppMode.IsSaaSMode)
             {
-                <ul class="auth-hero__points">
-                    <li><i class="bi bi-check-circle-fill"></i> Acceso multi-cliente</li>
-                    <li><i class="bi bi-check-circle-fill"></i> Selector de bases seguro</li>
-                    <li><i class="bi bi-check-circle-fill"></i> Administracion centralizada</li>
-                </ul>
+                <div class="auth-hero__copy">
+                    <h2 class="auth-hero__title">Bienvenido a AlfaCore</h2>
+                    <p class="auth-hero__text">Ingresá a tu cuenta para acceder a tus empresas y bases disponibles.</p>
+                </div>
 
-                <div class="auth-hero__note">Todo el acceso queda unido a tu cliente central.</div>
+                <div class="auth-hero__summary">
+                    <article class="auth-hero__summary-card auth-hero__summary-card--accent">
+                        <span class="auth-hero__summary-icon" aria-hidden="true"><i class="bi bi-shield-check"></i></span>
+                        <span class="auth-hero__summary-label">Cuenta segura</span>
+                        <strong>Protegemos tus datos</strong>
+                        <small>Tu ingreso se valida contra la cuenta AlfaCore.</small>
+                    </article>
+                    <article class="auth-hero__summary-card">
+                        <span class="auth-hero__summary-icon" aria-hidden="true"><i class="bi bi-display"></i></span>
+                        <span class="auth-hero__summary-label">Acceso web</span>
+                        <strong>Desde cualquier dispositivo</strong>
+                        <small>Entrá desde escritorio, tablet o móvil con la misma experiencia.</small>
+                    </article>
+                    <article class="auth-hero__summary-card auth-hero__summary-card--status">
+                        <span class="auth-hero__summary-icon" aria-hidden="true"><i class="bi bi-building"></i></span>
+                        <span class="auth-hero__summary-label">Empresas disponibles</span>
+                        <strong class="auth-hero__status">
+                            <span class="auth-hero__status-dot" aria-hidden="true"></span>
+                            <span>Se muestran después del ingreso</span>
+                        </strong>
+                        <small>Al autenticarte vas a ver las bases habilitadas para tu cuenta.</small>
+                    </article>
+                </div>
+
+                <div class="auth-hero__note">Ingresá con tus credenciales de AlfaCore para continuar.</div>
             }
             else
             {
-            }
-        </aside>
+                <div class="auth-hero__copy">
+                    <h2 class="auth-hero__title">Bienvenido a Alfa Gestión</h2>
+                    <p class="auth-hero__text">Ingresá con tu usuario y contraseña para acceder a la empresa seleccionada.</p>
+                </div>
 
-        <section class="auth-form-panel">
+                <div class="auth-hero__summary">
+                    <article class="auth-hero__summary-card auth-hero__summary-card--accent">
+                        <span class="auth-hero__summary-label">Entorno</span>
+                        <strong>Acceso local</strong>
+                        <small>La base activa define el sistema disponible.</small>
+                    </article>
+                    <article class="auth-hero__summary-card">
+                        <span class="auth-hero__summary-label">Empresa/Base activa</span>
+                        <strong>@GetSelectedBaseName()</strong>
+                        <small>Validación con credenciales de la base elegida.</small>
+                    </article>
+                    <article class="auth-hero__summary-card auth-hero__summary-card--status">
+                        <span class="auth-hero__summary-label">Estado</span>
+                        <strong class="auth-hero__status">
+                            <span class="auth-hero__status-dot" aria-hidden="true"></span>
+                            <span>@GetLoginStatusLabel()</span>
+                        </strong>
+                        <small>Listo para ingresar.</small>
+                    </article>
+                </div>
+
+                <div class="auth-hero__system">
+                    <div class="auth-hero__system-head">
+                        <span class="auth-hero__summary-label">Sistema</span>
+                        <strong>Información disponible</strong>
+                    </div>
+                    <div class="auth-hero__system-grid">
+                        <article class="auth-hero__system-card">
+                            <span>Base seleccionada</span>
+                            <strong>@GetSelectedBaseLabel()</strong>
+                        </article>
+                        <article class="auth-hero__system-card">
+                            <span>Modo</span>
+                            <strong>Local</strong>
+                        </article>
+                        <article class="auth-hero__system-card">
+                            <span>Versión</span>
+                            <strong>@GetAppVersionLabel()</strong>
+                        </article>
+                        <article class="auth-hero__system-card">
+                            <span>Conexión</span>
+                            <strong>@GetConnectionContextLabel()</strong>
+                        </article>
+                    </div>
+                </div>
+
+                <div class="auth-hero__note">El acceso queda vinculado a la base activa.</div>
+            }
+        </HeroContent>
+
+        <FormContent>
             <div class="auth-form-panel__glow auth-form-panel__glow--one" aria-hidden="true"></div>
             <div class="auth-form-panel__glow auth-form-panel__glow--two" aria-hidden="true"></div>
 
             <div class="auth-form-panel__surface auth-form-panel__surface--legacy-bases">
                 @if (AppMode.IsSaaSMode)
                 {
-                    <header class="auth-form-panel__header">
-                        <h1 class="auth-card__title">Ingresar al sistema</h1>
-                        <p class="auth-card__subtitle">Valida tus credenciales centrales y elegi la base disponible para tu cliente.</p>
-                    </header>
-
-                    @if (!string.IsNullOrWhiteSpace(_error))
-                    {
-                        <div class="editor-msg editor-msg--error auth-card__error">
-                            <strong>Ingreso rechazado</strong>
-                            <p>@_error</p>
-                        </div>
-                    }
-
-                    <form class="auth-form" @onsubmit="LoginAsync" @onsubmit:preventDefault="true">
-                        <div class="auth-field">
-                            <label for="login-user">Usuario o email</label>
-                            <input id="login-user"
-                                   class="central-login-input"
-                                   @bind="_userName"
-                                   @bind:event="oninput"
-                                   placeholder="usuario@empresa.com"
-                                   disabled="@_busy"
-                                   autocomplete="username"
-                                   inputmode="text"
-                                   @onkeydown="OnKeyDownAsync" />
+                    <div class="auth-saas-login">
+                        <div class="auth-mobile-brand auth-mobile-brand--saas" aria-hidden="true">
+                            <img class="central-brand-logo central-login-logo"
+                                 src="@LogoPrincipal"
+                                 alt="AlfaCore"
+                                 loading="eager"
+                                 decoding="async" />
                         </div>
 
-                        <div class="auth-field">
-                            <label for="login-password">Contraseña</label>
-                            <div class="auth-password central-login-password">
-                                <input id="login-password"
-                                       class="central-login-input central-login-password__input"
-                                       type="@(_showPassword ? "text" : "password")"
-                                       @bind="_password"
-                                       @bind:event="oninput"
-                                       placeholder="Contraseña"
-                                       disabled="@_busy"
-                                       autocomplete="current-password"
-                                       @onkeydown="OnKeyDownAsync" />
-                                <button type="button"
-                                        class="auth-password__toggle central-login-password__toggle"
-                                        title="@(_showPassword ? "Ocultar contraseña" : "Mostrar contraseña")"
-                                        aria-label="@(_showPassword ? "Ocultar contraseña" : "Mostrar contraseña")"
-                                        @onclick="TogglePasswordAsync"
-                                        disabled="@_busy">
-                                    <i class="bi @(_showPassword ? "bi-eye-slash" : "bi-eye")"></i>
-                                </button>
+                        @if (!string.IsNullOrWhiteSpace(_error))
+                        {
+                            <div class="editor-msg editor-msg--error auth-card__error">
+                                <strong>Ingreso rechazado</strong>
+                                <p>@_error</p>
+                            </div>
+                        }
+
+                        <div class="auth-saas-login__header">
+                            <span class="auth-saas-login__header-icon" aria-hidden="true">
+                                <i class="bi bi-lock"></i>
+                            </span>
+                            <div class="auth-saas-login__header-copy">
+                                <h1 class="auth-card__title">Ingresar a tu cuenta</h1>
+                                <p class="auth-card__subtitle">Usá tus credenciales de AlfaCore para continuar.</p>
                             </div>
                         </div>
 
-                        <button type="submit" class="btn btn--primary auth-card__submit" disabled="@_busy">
-                            @if (_busy)
-                            {
-                                <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
-                            }
-                            else
-                            {
-                                <i class="bi bi-box-arrow-in-right"></i>
-                            }
-                            <span>@(_busy ? "Ingresando..." : "Ingresar")</span>
-                        </button>
-                    </form>
+                        <div class="auth-saas-login__lead">Ingresá tus credenciales</div>
+
+                        <form class="auth-form" @onsubmit="LoginAsync" @onsubmit:preventDefault="true">
+                            <div class="auth-field">
+                                <label for="login-user">Usuario o email</label>
+                                <AuthInputField @ref="_userNameField"
+                                                Id="login-user"
+                                                Value="@_userName"
+                                                ValueChanged="OnUserNameChangedAsync"
+                                                Placeholder="usuario@empresa.com"
+                                                Disabled="@_busy"
+                                                Autocomplete="username"
+                                                InputMode="text"
+                                                InputClass="central-login-input auth-input-shell__input"
+                                                WrapperClass="auth-input-shell auth-input-shell--user"
+                                                IconClass="bi bi-person"
+                                                OnKeyDown="OnKeyDownAsync" />
+                            </div>
+
+                            <div class="auth-field">
+                                <label for="login-password">Contraseña</label>
+                                <AuthInputField Id="login-password"
+                                                Value="@_password"
+                                                ValueChanged="OnPasswordChangedAsync"
+                                                Placeholder="Contraseña"
+                                                Disabled="@_busy"
+                                                Autocomplete="current-password"
+                                                InputClass="central-login-input central-login-password__input auth-input-shell__input"
+                                                WrapperClass="auth-password central-login-password auth-input-shell auth-input-shell--password"
+                                                IconClass="bi bi-lock"
+                                                ShowPasswordToggle="true"
+                                                ShowPassword="@_showPassword"
+                                                ShowPasswordChanged="OnShowPasswordChangedAsync"
+                                                PasswordToggleClass="auth-password__toggle central-login-password__toggle"
+                                                PasswordToggleIconClass="@(_showPassword ? "bi bi-eye-slash" : "bi bi-eye")"
+                                                PasswordToggleTitle="@(_showPassword ? "Ocultar contraseña" : "Mostrar contraseña")"
+                                                OnKeyDown="OnKeyDownAsync" />
+                            </div>
+
+                            <AuthActionButton Type="submit"
+                                              CssClass="btn btn--primary auth-card__submit"
+                                              Text="Ingresar"
+                                              BusyText="Ingresando..."
+                                              IconClass="bi bi-box-arrow-in-right"
+                                              BusyIconClass="spinner-border spinner-border-sm"
+                                              IsBusy="@_busy"
+                                              Disabled="@_busy" />
+
+                            <div class="auth-saas-login__info">
+                                <i class="bi bi-info-circle"></i>
+                                <span>Luego del ingreso podrás seleccionar la empresa y la base con la que deseas trabajar.</span>
+                            </div>
+
+                            <div class="auth-saas-login__footer">
+                                <span class="auth-saas-login__forgot">
+                                    <i class="bi bi-lock"></i>
+                                    <span>¿Olvidaste tu contraseña?</span>
+                                </span>
+
+                                <button type="button"
+                                        class="auth-saas-login__cancel"
+                                        @onclick="ClearSaasCredentialsAsync"
+                                        disabled="@_busy">
+                                    <i class="bi bi-x-lg"></i>
+                                    <span>Cancelar</span>
+                                </button>
+                            </div>
+                        </form>
+                    </div>
                 }
                 else
                 {
                     <div class="auth-legacy-login @(_showLegacyBasePicker ? "is-bases-open" : string.Empty)">
                         <div class="auth-legacy-login__login">
+                            <div class="auth-mobile-brand" aria-hidden="true">
+                                <img class="central-brand-logo central-login-logo"
+                                     src="@LogoPrincipal"
+                                     alt="Alfa Gestión"
+                                     loading="eager"
+                                     decoding="async" />
+                            </div>
                             <header class="auth-form-panel__header">
                                 <h1 class="auth-card__title">Ingresar al sistema</h1>
                                 <p class="auth-card__subtitle">Escribí tu usuario y contraseña para ingresar.</p>
@@ -149,76 +252,160 @@
                                         @onclick="ToggleLegacyBasePickerAsync"
                                         disabled="@_busy">
                                     <i class="bi bi-database"></i>
-                                    <span>@(_showLegacyBasePicker ? "Ocultar bases" : "Elegir base")</span>
+                                    <span>@(_showLegacyBasePicker ? "Ocultar bases" : "Cambiar base")</span>
                                 </button>
                             </div>
 
-                            @if (!string.IsNullOrWhiteSpace(_error))
-                            {
-                                <div class="editor-msg editor-msg--error auth-card__error">
-                                    <strong>Ingreso rechazado</strong>
-                                    <p>@_error</p>
+                            <details class="auth-mobile-system">
+                                <summary>Información del sistema</summary>
+                                <div class="auth-mobile-system__grid">
+                                    <article class="auth-mobile-system__card">
+                                        <span>Modo</span>
+                                        <strong>Local</strong>
+                                    </article>
+                                    <article class="auth-mobile-system__card">
+                                        <span>Estado</span>
+                                        <strong>@GetLoginStatusLabel()</strong>
+                                    </article>
+                                    <article class="auth-mobile-system__card">
+                                        <span>Versión</span>
+                                        <strong>@GetAppVersionLabel()</strong>
+                                    </article>
+                                    <article class="auth-mobile-system__card">
+                                        <span>Conexión</span>
+                                        <strong>@GetConnectionContextLabel()</strong>
+                                    </article>
                                 </div>
-                            }
+                            </details>
 
-                            <form class="auth-form" @onsubmit="LoginAsync" @onsubmit:preventDefault="true">
-                                <div class="auth-field">
-                                    <label for="login-user">Usuario</label>
-                                    <input id="login-user"
-                                           class="central-login-input"
-                                           @bind="_userName"
-                                           @bind:event="oninput"
-                                           placeholder="usuario"
-                                           disabled="@_busy"
-                                           autocomplete="username"
-                                           inputmode="text"
-                                           @onkeydown="OnKeyDownAsync" />
-                                </div>
+                        @if (!string.IsNullOrWhiteSpace(_error))
+                        {
+                            <div class="editor-msg editor-msg--error auth-card__error">
+                                <strong>Ingreso rechazado</strong>
+                                <p>@_error</p>
+                            </div>
+                        }
 
-                                <div class="auth-field">
-                                    <label for="login-password">Contraseña</label>
-                                    <div class="auth-password central-login-password">
-                                        <input id="login-password"
-                                               class="central-login-input central-login-password__input"
-                                               type="@(_showPassword ? "text" : "password")"
-                                               @bind="_password"
-                                               @bind:event="oninput"
-                                               placeholder="Contraseña"
-                                               disabled="@_busy"
-                                               autocomplete="current-password"
-                                               @onkeydown="OnKeyDownAsync" />
-                                        <button type="button"
-                                                class="auth-password__toggle central-login-password__toggle"
-                                                title="@(_showPassword ? "Ocultar contraseña" : "Mostrar contraseña")"
-                                                aria-label="@(_showPassword ? "Ocultar contraseña" : "Mostrar contraseña")"
-                                                @onclick="TogglePasswordAsync"
-                                                disabled="@_busy">
-                                            <i class="bi @(_showPassword ? "bi-eye-slash" : "bi-eye")"></i>
-                                        </button>
-                                    </div>
-                                </div>
+                        <div class="auth-saas-login__lead">Ingresá tus credenciales</div>
 
-                                <button type="submit" class="btn btn--primary auth-card__submit" disabled="@_busy">
-                                    @if (_busy)
-                                    {
-                                        <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
-                                    }
-                                    else
-                                    {
-                                        <i class="bi bi-box-arrow-in-right"></i>
-                                    }
-                                    <span>@(_busy ? "Ingresando..." : "Ingresar")</span>
-                                </button>
+                        <form class="auth-form" @onsubmit="LoginAsync" @onsubmit:preventDefault="true">
+                            <div class="auth-field">
+                                <label for="login-user">Usuario</label>
+                                <AuthInputField @ref="_userNameField"
+                                                Id="login-user"
+                                                Value="@_userName"
+                                                ValueChanged="OnUserNameChangedAsync"
+                                                Placeholder="usuario"
+                                                Disabled="@_busy"
+                                                Autocomplete="username"
+                                                InputMode="text"
+                                                InputClass="central-login-input auth-input-shell__input"
+                                                WrapperClass="auth-input-shell auth-input-shell--user"
+                                                IconClass="bi bi-person"
+                                                OnKeyDown="OnKeyDownAsync" />
+                            </div>
+
+                            <div class="auth-field">
+                                <label for="login-password">Contraseña</label>
+                                <AuthInputField Id="login-password"
+                                                Value="@_password"
+                                                ValueChanged="OnPasswordChangedAsync"
+                                                Placeholder="Contraseña"
+                                                Disabled="@_busy"
+                                                Autocomplete="current-password"
+                                                InputClass="central-login-input central-login-password__input auth-input-shell__input"
+                                                WrapperClass="auth-password central-login-password auth-input-shell auth-input-shell--password"
+                                                IconClass="bi bi-lock"
+                                                ShowPasswordToggle="true"
+                                                ShowPassword="@_showPassword"
+                                                ShowPasswordChanged="OnShowPasswordChangedAsync"
+                                                PasswordToggleClass="auth-password__toggle central-login-password__toggle"
+                                                PasswordToggleIconClass="@(_showPassword ? "bi bi-eye-slash" : "bi bi-eye")"
+                                                PasswordToggleTitle="@(_showPassword ? "Ocultar contraseña" : "Mostrar contraseña")"
+                                                OnKeyDown="OnKeyDownAsync" />
+                            </div>
+
+                                <AuthActionButton Type="submit"
+                                                  CssClass="btn btn--primary auth-card__submit"
+                                                  Text="Ingresar"
+                                                  BusyText="Ingresando..."
+                                                  IconClass="bi bi-box-arrow-in-right"
+                                                  BusyIconClass="spinner-border spinner-border-sm"
+                                                  IsBusy="@_busy"
+                                                  Disabled="@_busy" />
                             </form>
                         </div>
 
                         <aside class="auth-legacy-login__sidebar">
                             <div class="auth-legacy-login__sidebar-header">
-                                <div>
+                                <div class="auth-legacy-login__sidebar-title">
                                     <p class="auth-card__eyebrow">Seleccionar base</p>
                                     <h2 class="auth-card__title">Bases disponibles</h2>
                                 </div>
+                                <div class="auth-legacy-login__sidebar-actions">
+                                    <button type="button"
+                                            class="btn btn--ghost auth-legacy-login__add-toggle"
+                                            @onclick="OpenLegacySessionAddFormAsync"
+                                            disabled="@_busy"
+                                            title="Agregar base">
+                                        <i class="bi bi-plus-lg"></i>
+                                        <span>Agregar base</span>
+                                    </button>
+                                    <button type="button"
+                                            class="btn btn--ghost auth-legacy-login__add-toggle"
+                                            @onclick="OpenLegacySessionEditFormAsync"
+                                            disabled="@_busy || SessionSvc.GetActiveSession() is null"
+                                            title="Editar base activa">
+                                        <i class="bi bi-pencil-square"></i>
+                                        <span>Editar</span>
+                                    </button>
+                                </div>
                             </div>
+
+                            @if (_showLegacySessionForm)
+                            {
+                                <form class="auth-legacy-login__add-form" @onsubmit="SaveLegacySessionAsync" @onsubmit:preventDefault="true">
+                                    <div class="auth-legacy-login__add-form-head">
+                                        <strong>@(_editingLegacySession ? "Editar base" : "Agregar base")</strong>
+                                        <span>@(_editingLegacySession ? "Actualizá los datos guardados en sessions.json" : "Creá una nueva base para el login local")</span>
+                                    </div>
+
+                                    @if (!string.IsNullOrWhiteSpace(_legacySessionFormError))
+                                    {
+                                        <div class="auth-legacy-login__add-error">@_legacySessionFormError</div>
+                                    }
+
+                                    <div class="auth-legacy-login__add-grid">
+                                        <div class="auth-legacy-login__add-field">
+                                            <label>Nombre</label>
+                                            <input class="drawer-search__input" @bind="_legacySessionNombre" placeholder="Nombre visible" />
+                                        </div>
+                                        <div class="auth-legacy-login__add-field">
+                                            <label>Servidor</label>
+                                            <input class="drawer-search__input" @bind="_legacySessionServidor" placeholder="SERVER\\INSTANCIA" />
+                                        </div>
+                                        <div class="auth-legacy-login__add-field">
+                                            <label>Base de datos</label>
+                                            <input class="drawer-search__input" @bind="_legacySessionBaseDatos" placeholder="BASE" />
+                                        </div>
+                                        <div class="auth-legacy-login__add-field">
+                                            <label>Usuario SQL</label>
+                                            <input class="drawer-search__input" @bind="_legacySessionUsuario" placeholder="usuario" />
+                                        </div>
+                                        <div class="auth-legacy-login__add-field auth-legacy-login__add-field--full">
+                                            <label>Contraseña SQL</label>
+                                            <input class="drawer-search__input" type="password" @bind="_legacySessionPassword" placeholder="••••••••" />
+                                        </div>
+                                    </div>
+
+                                    <div class="auth-legacy-login__add-actions">
+                                        <button type="button" class="btn btn--ghost btn--sm" @onclick="CancelLegacySessionFormAsync">Cancelar</button>
+                                        <button type="submit" class="btn btn--primary btn--sm" disabled="@_savingLegacySession">
+                                            @(_savingLegacySession ? "Guardando..." : (_editingLegacySession ? "Guardar cambios" : "Guardar base"))
+                                        </button>
+                                    </div>
+                                </form>
+                            }
 
                             <div class="auth-base-search">
                                 <input type="text"
@@ -244,12 +431,21 @@
                                                 <p class="auth-base-card__meta">@item.Servidor · @item.BaseDatos</p>
                                                 <small class="auth-base-card__id">Base #@item.BaseId</small>
                                             </div>
-                                            <button type="button"
-                                                    class="auth-base-card__action @(item.Activa ? "auth-base-card__action--active" : string.Empty)"
-                                                    @onclick="() => SelectLegacyBaseAsync(item)"
-                                                    disabled="@_busy">
-                                                @(item.Activa ? "✔ Activa" : "Seleccionar")
-                                            </button>
+                                            <div class="auth-base-card__actions">
+                                                <button type="button"
+                                                        class="auth-base-card__edit"
+                                                        @onclick="() => OpenLegacySessionEditFormAsync(item)"
+                                                        disabled="@_busy">
+                                                    <i class="bi bi-pencil-square"></i>
+                                                    <span>Editar</span>
+                                                </button>
+                                                <button type="button"
+                                                        class="auth-base-card__action @(item.Activa ? "auth-base-card__action--active" : string.Empty)"
+                                                        @onclick="() => SelectLegacyBaseAsync(item)"
+                                                        disabled="@_busy">
+                                                    @(item.Activa ? "? Activa" : "Seleccionar")
+                                                </button>
+                                            </div>
                                         </article>
                                     }
                                 </div>
@@ -258,8 +454,8 @@
                     </div>
                 }
             </div>
-        </section>
-    </section>
+        </FormContent>
+    </LoginShell>
 </div>
 
 @code {
@@ -268,11 +464,22 @@
     private string _error = string.Empty;
     private string _baseSearch = string.Empty;
     private bool _showLegacyBasePicker;
+    private bool _showLegacySessionForm;
+    private bool _editingLegacySession;
     private bool _busy;
+    private bool _savingLegacySession;
     private bool _showPassword;
     private bool _isDarkTheme;
     private IReadOnlyList<SessionDto> _legacyBases = [];
+    private AuthInputField? _userNameField;
     private DotNetObjectReference<Login>? _themeRef;
+    private Guid? _editingLegacySessionId;
+    private string _legacySessionFormError = string.Empty;
+    private string _legacySessionNombre = string.Empty;
+    private string _legacySessionServidor = string.Empty;
+    private string _legacySessionBaseDatos = string.Empty;
+    private string _legacySessionUsuario = string.Empty;
+    private string _legacySessionPassword = string.Empty;
     [SupplyParameterFromQuery(Name = "returnUrl")]
     public string? ReturnUrl { get; set; }
 
@@ -300,6 +507,8 @@
             ApplyTheme(theme);
             _themeRef = DotNetObjectReference.Create(this);
             await JS.InvokeVoidAsync("dashboardTheme.watch", _themeRef);
+            if (_userNameField is not null)
+                await _userNameField.FocusAsync(preventScroll: true);
             await InvokeAsync(StateHasChanged);
         }
         catch (Exception ex)
@@ -315,6 +524,113 @@
             _legacyBases = SessionSvc.GetAllSessions();
 
         await InvokeAsync(StateHasChanged);
+    }
+
+    private Task OpenLegacySessionAddFormAsync()
+    {
+        _editingLegacySession = false;
+        _editingLegacySessionId = null;
+        _showLegacySessionForm = true;
+        _legacySessionFormError = string.Empty;
+        _legacySessionNombre = string.Empty;
+        _legacySessionServidor = string.Empty;
+        _legacySessionBaseDatos = string.Empty;
+        _legacySessionUsuario = string.Empty;
+        _legacySessionPassword = string.Empty;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private Task OpenLegacySessionEditFormAsync()
+    {
+        var active = SessionSvc.GetActiveSession();
+        if (active is null)
+        {
+            _legacySessionFormError = "No hay base activa para editar.";
+            _showLegacySessionForm = true;
+            _editingLegacySession = false;
+            _editingLegacySessionId = null;
+            return InvokeAsync(StateHasChanged);
+        }
+
+        return OpenLegacySessionEditFormAsync(active);
+    }
+
+    private Task OpenLegacySessionEditFormAsync(SessionDto session)
+    {
+        _editingLegacySession = true;
+        _editingLegacySessionId = session.Id;
+        _showLegacySessionForm = true;
+        _legacySessionFormError = string.Empty;
+        _legacySessionNombre = session.Nombre;
+        _legacySessionServidor = session.Servidor;
+        _legacySessionBaseDatos = session.BaseDatos;
+        _legacySessionUsuario = session.Usuario;
+        _legacySessionPassword = session.Password;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private Task CancelLegacySessionFormAsync()
+    {
+        _showLegacySessionForm = false;
+        _editingLegacySession = false;
+        _editingLegacySessionId = null;
+        _legacySessionFormError = string.Empty;
+        _legacySessionNombre = string.Empty;
+        _legacySessionServidor = string.Empty;
+        _legacySessionBaseDatos = string.Empty;
+        _legacySessionUsuario = string.Empty;
+        _legacySessionPassword = string.Empty;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private async Task SaveLegacySessionAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_legacySessionServidor) ||
+            string.IsNullOrWhiteSpace(_legacySessionBaseDatos) ||
+            string.IsNullOrWhiteSpace(_legacySessionUsuario) ||
+            string.IsNullOrWhiteSpace(_legacySessionPassword))
+        {
+            _legacySessionFormError = "Completá servidor, base, usuario y contraseña.";
+            return;
+        }
+
+        _savingLegacySession = true;
+        _legacySessionFormError = string.Empty;
+
+        try
+        {
+            if (_editingLegacySession && _editingLegacySessionId is Guid editId)
+            {
+                SessionSvc.UpdateSession(
+                    editId,
+                    _legacySessionNombre,
+                    _legacySessionServidor,
+                    _legacySessionBaseDatos,
+                    _legacySessionUsuario,
+                    _legacySessionPassword);
+            }
+            else
+            {
+                SessionSvc.AddSession(
+                    _legacySessionNombre,
+                    _legacySessionServidor,
+                    _legacySessionBaseDatos,
+                    _legacySessionUsuario,
+                    _legacySessionPassword);
+            }
+
+            _legacyBases = SessionSvc.GetAllSessions();
+            await CancelLegacySessionFormAsync();
+        }
+        catch (Exception ex)
+        {
+            _legacySessionFormError = "No se pudo guardar la base.";
+            Logger.LogWarning(ex, "Login: no se pudo guardar la base local.");
+        }
+        finally
+        {
+            _savingLegacySession = false;
+        }
     }
 
     private IReadOnlyList<SessionDto> FilteredLegacyBases => string.IsNullOrWhiteSpace(_baseSearch)
@@ -459,13 +775,71 @@
             await LoginAsync();
     }
 
-    private Task TogglePasswordAsync()
+    private Task OnUserNameChangedAsync(string value)
     {
-        _showPassword = !_showPassword;
+        _userName = value;
         return Task.CompletedTask;
     }
 
+    private Task OnPasswordChangedAsync(string value)
+    {
+        _password = value;
+        return Task.CompletedTask;
+    }
+
+    private Task OnShowPasswordChangedAsync(bool value)
+    {
+        _showPassword = value;
+        return Task.CompletedTask;
+    }
+
+    private Task ClearSaasCredentialsAsync()
+    {
+        _userName = string.Empty;
+        _password = string.Empty;
+        _showPassword = false;
+        _error = string.Empty;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private string LoginShellClass
+        => AppMode.IsSaaSMode
+            ? "auth-shell auth-shell--saas"
+            : "auth-shell auth-shell--local";
+
     private string LogoPrincipal => AuthThemeAssets.GetLoginLogo(_isDarkTheme);
+
+    private string GetSelectedBaseName()
+    {
+        var current = SessionSvc.GetActiveSession();
+        if (current is null)
+            return "Sin base seleccionada";
+
+        return current.Nombre;
+    }
+
+    private string GetLoginStatusLabel()
+        => SessionSvc.GetActiveSession() is null ? "Listo para ingresar" : "Operativo";
+
+    private string GetAppVersionLabel()
+    {
+        var version = typeof(Login).Assembly.GetName().Version;
+        if (version is null)
+            return "N/D";
+
+        return $"v{version.Major}.{version.Minor}.{version.Build}";
+    }
+
+    private string GetConnectionContextLabel()
+    {
+        var current = SessionSvc.GetActiveSession();
+        if (current is null)
+            return "Sin conexión activa";
+
+        return string.IsNullOrWhiteSpace(current.Servidor)
+            ? "Contexto local"
+            : current.Servidor;
+    }
 
     private string GetSelectedBaseLabel()
     {
@@ -477,7 +851,6 @@
             ? $"Base #{current.BaseId} - {current.Nombre}"
             : current.Nombre;
     }
-
     private static bool Contains(string? value, string search)
         => !string.IsNullOrWhiteSpace(value)
            && value.Contains(search, StringComparison.OrdinalIgnoreCase);

@@ -17838,7 +17838,8 @@ html[data-theme="light"] .tickets-activity__item {
 }
 
 .app-login-overlay {
-    backdrop-filter: blur(4px);
+    backdrop-filter: blur(10px);
+    background: rgba(4, 9, 18, .66);
     z-index: 5000;
 }
 
@@ -17846,13 +17847,14 @@ html[data-theme="light"] .tickets-activity__item {
     position: fixed;
     inset: 50% auto auto 50%;
     transform: translate(-50%, -50%);
-    width: min(520px, calc(100vw - 2rem));
+    width: min(1100px, calc(100vw - 1.5rem));
+    max-height: calc(100dvh - 1.5rem);
+    overflow: auto;
     z-index: 5001;
-    border-radius: 14px;
-    border: 1px solid rgba(148, 163, 184, 0.2);
-    background: linear-gradient(180deg, rgba(15, 23, 42, 0.98), rgba(13, 20, 36, 0.98));
-    box-shadow: 0 28px 70px rgba(2, 8, 23, 0.72);
-    overflow: hidden;
+    border-radius: 30px;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
 }
 
 .app-login-modal__header,
@@ -18042,8 +18044,8 @@ html[data-theme="light"] .app-login-userlist__item.is-active {
 }
 
 html[data-theme="light"] .app-login-modal {
-    background: var(--surface-1);
-    border-color: var(--border-color);
+    background: transparent;
+    border-color: transparent;
 }
 
 html[data-theme="light"] .app-login-modal__header {
@@ -18055,9 +18057,9 @@ html[data-theme="light"] .app-login-modal__body {
 }
 
 .app-login-overlay .app-login-modal {
-    background: var(--surface-1);
-    border-color: var(--border-color);
-    color: var(--text-main);
+    background: transparent;
+    border-color: transparent;
+    color: inherit;
 }
 
 .app-login-overlay .app-login-modal__header {
@@ -18104,7 +18106,8 @@ html[data-theme="light"] .app-login-modal__body {
 
 @media (max-width: 768px) {
     .app-login-modal {
-        width: min(460px, calc(100vw - 1rem));
+        width: min(100vw - 1rem, 520px);
+        max-height: calc(100dvh - .75rem);
     }
 
     .app-login-modal__actions .btn {

@@ -1844,6 +1844,629 @@ html[data-theme="light"] .app-login-overlay .app-login-modal__actions .btn.btn--
     border-color: rgba(14, 165, 233, .28) !important;
 }
 
+html[data-theme="light"] body .app-login-overlay {
+    background: rgba(226, 232, 240, .72) !important;
+    backdrop-filter: blur(12px) !important;
+}
+
+html[data-theme="light"] body .app-login-overlay .app-login-modal--compact,
+html[data-theme="light"] body .app-login-overlay .auth-shell--overlay,
+html[data-theme="light"] body .app-login-overlay .auth-form-panel__surface {
+    color: #0f172a !important;
+}
+
+html[data-theme="light"] body .app-login-overlay .auth-shell--overlay {
+    background:
+        radial-gradient(900px 540px at 0% 0%, rgba(14, 165, 233, .10), transparent 50%),
+        linear-gradient(135deg, rgba(255, 255, 255, .98), rgba(240, 246, 252, .98)) !important;
+    border: 1px solid rgba(148, 163, 184, .20) !important;
+    box-shadow: 0 26px 72px rgba(15, 23, 42, .16) !important;
+}
+
+html[data-theme="light"] body .app-login-overlay .auth-hero--overlay {
+    color: #0f172a !important;
+    background:
+        radial-gradient(560px 420px at 82% 0%, rgba(14, 165, 233, .10), transparent 60%),
+        linear-gradient(145deg, #ffffff 0%, #eef5fc 54%, #e6eff8 100%) !important;
+    border-right-color: rgba(148, 163, 184, .20) !important;
+}
+
+html[data-theme="light"] body .app-login-overlay .auth-form-panel,
+html[data-theme="light"] body .app-login-overlay .auth-form-panel__surface--overlay {
+    background: transparent !important;
+}
+
+html[data-theme="light"] body .app-login-overlay .auth-form-panel__surface {
+    background: linear-gradient(180deg, rgba(255, 255, 255, .98), rgba(248, 250, 252, .98)) !important;
+    border-color: rgba(148, 163, 184, .18) !important;
+}
+
+html[data-theme="light"] body .app-login-overlay .app-login-modal__close {
+    background: rgba(255, 255, 255, .96) !important;
+    border-color: rgba(148, 163, 184, .30) !important;
+    box-shadow: 0 12px 28px rgba(15, 23, 42, .14) !important;
+    z-index: 20 !important;
+    color: #0f172a !important;
+}
+
+html[data-theme="light"] body .app-login-overlay .app-login-input,
+html[data-theme="light"] body .app-login-overlay .drawer-new__password input,
+html[data-theme="light"] body .auth-page .auth-shell--local .central-login-input {
+    background: rgba(255, 255, 255, .98) !important;
+    color: #0f172a !important;
+    border-color: rgba(148, 163, 184, .28) !important;
+    -webkit-text-fill-color: #0f172a !important;
+    caret-color: #0f172a !important;
+}
+
+html[data-theme="light"] body .app-login-overlay .auth-input-shell__icon,
+html[data-theme="light"] body .app-login-overlay .auth-input-shell__icon--password {
+    color: #0284c7 !important;
+}
+
+html[data-theme="light"] body .app-login-overlay .auth-password__toggle,
+html[data-theme="light"] body .app-login-overlay .drawer-new__eye,
+html[data-theme="light"] body .app-login-overlay .app-login-action-btn.btn--secondary,
+html[data-theme="light"] body .app-login-overlay .app-login-modal__actions .btn.btn--ghost {
+    background: rgba(255, 255, 255, .96) !important;
+    color: #0f172a !important;
+    border-color: rgba(148, 163, 184, .22) !important;
+}
+
+@media (max-width: 768px) {
+    html[data-theme="light"] body .auth-page .auth-shell--local {
+        background: linear-gradient(180deg, #ffffff, #f5f8fc) !important;
+        color: #0f172a !important;
+        box-shadow: 0 20px 56px rgba(15, 23, 42, .12) !important;
+    }
+
+    html[data-theme="light"] body .auth-page .auth-shell--local .auth-form-panel__surface,
+    html[data-theme="light"] body .auth-page .auth-shell--local .auth-form-panel__surface--legacy-bases {
+        background: rgba(255, 255, 255, .98) !important;
+        border-color: rgba(148, 163, 184, .20) !important;
+        box-shadow: 0 18px 42px rgba(15, 23, 42, .08) !important;
+    }
+}
+
+html[data-theme="light"] .app-login-overlay {
+    background: rgba(226, 232, 240, .72) !important;
+    backdrop-filter: blur(12px) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-modal--compact,
+html[data-theme="light"] .app-login-overlay .auth-shell--overlay,
+html[data-theme="light"] .app-login-overlay .auth-form-panel__surface {
+    color: #0f172a !important;
+}
+
+html[data-theme="light"] .app-login-overlay .auth-shell--overlay {
+    background:
+        radial-gradient(900px 540px at 0% 0%, rgba(14, 165, 233, .10), transparent 50%),
+        linear-gradient(135deg, rgba(255, 255, 255, .98), rgba(240, 246, 252, .98)) !important;
+    border: 1px solid rgba(148, 163, 184, .20) !important;
+    box-shadow: 0 26px 72px rgba(15, 23, 42, .16) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .auth-hero--overlay {
+    color: #0f172a !important;
+    background:
+        radial-gradient(560px 420px at 82% 0%, rgba(14, 165, 233, .10), transparent 60%),
+        linear-gradient(145deg, #ffffff 0%, #eef5fc 54%, #e6eff8 100%) !important;
+    border-right-color: rgba(148, 163, 184, .20) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .auth-form-panel,
+html[data-theme="light"] .app-login-overlay .auth-form-panel__surface--overlay {
+    background: transparent !important;
+}
+
+html[data-theme="light"] .app-login-overlay .auth-form-panel__surface {
+    background: linear-gradient(180deg, rgba(255, 255, 255, .98), rgba(248, 250, 252, .98)) !important;
+    border-color: rgba(148, 163, 184, .18) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .auth-card__eyebrow,
+html[data-theme="light"] .app-login-overlay .auth-card__subtitle,
+html[data-theme="light"] .app-login-overlay .auth-hero__text,
+html[data-theme="light"] .app-login-overlay .auth-hero__note,
+html[data-theme="light"] .app-login-overlay .auth-legacy-login__selected-body small,
+html[data-theme="light"] .app-login-overlay .app-login-session-note p,
+html[data-theme="light"] .app-login-overlay .app-login-session-note small {
+    color: #475569 !important;
+}
+
+html[data-theme="light"] .app-login-overlay .auth-card__title,
+html[data-theme="light"] .app-login-overlay .auth-hero__title,
+html[data-theme="light"] .app-login-overlay .auth-legacy-login__selected-body p,
+html[data-theme="light"] .app-login-overlay .app-login-modal__close,
+html[data-theme="light"] .app-login-overlay .app-login-modal__close i {
+    color: #0f172a !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-modal__close {
+    background: rgba(255, 255, 255, .96) !important;
+    border-color: rgba(148, 163, 184, .30) !important;
+    box-shadow: 0 12px 28px rgba(15, 23, 42, .14) !important;
+    z-index: 20 !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-modal__close:hover,
+html[data-theme="light"] .app-login-overlay .app-login-modal__close:focus-visible {
+    background: rgba(241, 245, 249, .98) !important;
+    border-color: rgba(14, 165, 233, .30) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-session-note {
+    background: rgba(255, 255, 255, .92) !important;
+    border-color: rgba(148, 163, 184, .18) !important;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, .05) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-input,
+html[data-theme="light"] .app-login-overlay .drawer-new__password input {
+    background: rgba(255, 255, 255, .98) !important;
+    color: #0f172a !important;
+    border-color: rgba(148, 163, 184, .28) !important;
+    -webkit-text-fill-color: #0f172a !important;
+    caret-color: #0f172a !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-input::placeholder,
+html[data-theme="light"] .app-login-overlay .drawer-new__password input::placeholder {
+    color: #94a3b8 !important;
+}
+
+html[data-theme="light"] .app-login-overlay .auth-input-shell__icon,
+html[data-theme="light"] .app-login-overlay .auth-input-shell__icon--password {
+    color: #0284c7 !important;
+}
+
+html[data-theme="light"] .app-login-overlay .auth-password__toggle,
+html[data-theme="light"] .app-login-overlay .drawer-new__eye {
+    background: rgba(248, 250, 252, .98) !important;
+    color: #0f172a !important;
+    border-color: rgba(148, 163, 184, .28) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .auth-password__toggle:hover,
+html[data-theme="light"] .app-login-overlay .auth-password__toggle:focus-visible,
+html[data-theme="light"] .app-login-overlay .drawer-new__eye:hover,
+html[data-theme="light"] .app-login-overlay .drawer-new__eye:focus-visible {
+    background: rgba(241, 245, 249, .98) !important;
+    border-color: rgba(14, 165, 233, .34) !important;
+    color: #0f172a !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-action-btn.btn--secondary,
+html[data-theme="light"] .app-login-overlay .app-login-modal__actions .btn.btn--ghost {
+    background: rgba(255, 255, 255, .96) !important;
+    color: #0f172a !important;
+    border-color: rgba(148, 163, 184, .22) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-action-btn.btn--secondary:hover,
+html[data-theme="light"] .app-login-overlay .app-login-action-btn.btn--secondary:focus-visible,
+html[data-theme="light"] .app-login-overlay .app-login-modal__actions .btn.btn--ghost:hover,
+html[data-theme="light"] .app-login-overlay .app-login-modal__actions .btn.btn--ghost:focus-visible {
+    background: rgba(241, 245, 249, .98) !important;
+    border-color: rgba(14, 165, 233, .28) !important;
+    color: #0f172a !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-action-btn.btn--primary {
+    border-color: rgba(6, 182, 212, .34) !important;
+    background: linear-gradient(135deg, #0284c7 0%, #14b8a6 100%) !important;
+    box-shadow: 0 16px 34px rgba(14, 165, 233, .20) !important;
+}
+
+@media (max-width: 768px) {
+    html[data-theme="light"] .auth-page .auth-shell--local {
+        background: linear-gradient(180deg, #ffffff, #f5f8fc) !important;
+        color: #0f172a !important;
+        box-shadow: 0 20px 56px rgba(15, 23, 42, .12) !important;
+    }
+
+    html[data-theme="light"] .auth-page .auth-shell--local .auth-form-panel__surface,
+    html[data-theme="light"] .auth-page .auth-shell--local .auth-form-panel__surface--legacy-bases {
+        background: rgba(255, 255, 255, .98) !important;
+        border-color: rgba(148, 163, 184, .20) !important;
+        box-shadow: 0 18px 42px rgba(15, 23, 42, .08) !important;
+    }
+
+    html[data-theme="light"] .auth-page .auth-shell--local .auth-legacy-login__selected,
+    html[data-theme="light"] .auth-page .auth-shell--local .auth-mobile-system__grid {
+        background: rgba(248, 250, 252, .98) !important;
+        border-color: rgba(148, 163, 184, .20) !important;
+    }
+
+    html[data-theme="light"] .auth-page .auth-shell--local .auth-mobile-system > summary::before {
+        background: rgba(2, 132, 199, .92) !important;
+    }
+
+    html[data-theme="light"] .auth-page .auth-shell--local .auth-mobile-system > summary::after {
+        color: #0f172a !important;
+        text-decoration-color: rgba(2, 132, 199, .36) !important;
+    }
+
+    html[data-theme="light"] .auth-page .auth-shell--local .auth-mobile-system__item span,
+    html[data-theme="light"] .auth-page .auth-shell--local .auth-mobile-system__card span {
+        color: #0284c7 !important;
+    }
+
+    html[data-theme="light"] .auth-page .auth-shell--local .auth-mobile-system__item strong,
+    html[data-theme="light"] .auth-page .auth-shell--local .auth-mobile-system__card strong {
+        color: #0f172a !important;
+    }
+
+    html[data-theme="light"] .auth-page .auth-shell--local .central-login-input {
+        background: rgba(255, 255, 255, .98) !important;
+        color: #0f172a !important;
+        border-color: rgba(148, 163, 184, .28) !important;
+    }
+}
+
+/* Final light-mode overrides for login surfaces */
+html[data-theme="light"] .app-login-overlay {
+    background: rgba(226, 232, 240, .72) !important;
+    backdrop-filter: blur(12px) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-modal--compact,
+html[data-theme="light"] .app-login-overlay .auth-shell--overlay,
+html[data-theme="light"] .app-login-overlay .auth-form-panel__surface {
+    color: #0f172a !important;
+}
+
+html[data-theme="light"] .app-login-overlay .auth-shell--overlay {
+    background:
+        radial-gradient(900px 540px at 0% 0%, rgba(14, 165, 233, .10), transparent 50%),
+        linear-gradient(135deg, rgba(255, 255, 255, .98), rgba(240, 246, 252, .98)) !important;
+    border: 1px solid rgba(148, 163, 184, .20) !important;
+    box-shadow: 0 26px 72px rgba(15, 23, 42, .16) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .auth-hero--overlay {
+    color: #0f172a !important;
+    background:
+        radial-gradient(560px 420px at 82% 0%, rgba(14, 165, 233, .10), transparent 60%),
+        linear-gradient(145deg, #ffffff 0%, #eef5fc 54%, #e6eff8 100%) !important;
+    border-right-color: rgba(148, 163, 184, .20) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .auth-form-panel,
+html[data-theme="light"] .app-login-overlay .auth-form-panel__surface--overlay {
+    background: transparent !important;
+}
+
+html[data-theme="light"] .app-login-overlay .auth-form-panel__surface {
+    background: linear-gradient(180deg, rgba(255, 255, 255, .98), rgba(248, 250, 252, .98)) !important;
+    border-color: rgba(148, 163, 184, .18) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .auth-card__eyebrow,
+html[data-theme="light"] .app-login-overlay .auth-card__subtitle,
+html[data-theme="light"] .app-login-overlay .auth-hero__text,
+html[data-theme="light"] .app-login-overlay .auth-hero__note,
+html[data-theme="light"] .app-login-overlay .auth-legacy-login__selected-body small,
+html[data-theme="light"] .app-login-overlay .app-login-session-note p,
+html[data-theme="light"] .app-login-overlay .app-login-session-note small {
+    color: #475569 !important;
+}
+
+html[data-theme="light"] .app-login-overlay .auth-card__title,
+html[data-theme="light"] .app-login-overlay .auth-hero__title,
+html[data-theme="light"] .app-login-overlay .auth-legacy-login__selected-body p,
+html[data-theme="light"] .app-login-overlay .app-login-modal__close,
+html[data-theme="light"] .app-login-overlay .app-login-modal__close i {
+    color: #0f172a !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-modal__close {
+    background: rgba(255, 255, 255, .96) !important;
+    border-color: rgba(148, 163, 184, .30) !important;
+    box-shadow: 0 12px 28px rgba(15, 23, 42, .14) !important;
+    z-index: 20 !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-modal__close:hover,
+html[data-theme="light"] .app-login-overlay .app-login-modal__close:focus-visible {
+    background: rgba(241, 245, 249, .98) !important;
+    border-color: rgba(14, 165, 233, .30) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-session-note {
+    background: rgba(255, 255, 255, .92) !important;
+    border-color: rgba(148, 163, 184, .18) !important;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, .05) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-input,
+html[data-theme="light"] .app-login-overlay .drawer-new__password input {
+    background: rgba(255, 255, 255, .98) !important;
+    color: #0f172a !important;
+    border-color: rgba(148, 163, 184, .28) !important;
+    -webkit-text-fill-color: #0f172a !important;
+    caret-color: #0f172a !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-input::placeholder,
+html[data-theme="light"] .app-login-overlay .drawer-new__password input::placeholder {
+    color: #94a3b8 !important;
+}
+
+html[data-theme="light"] .app-login-overlay .auth-input-shell__icon,
+html[data-theme="light"] .app-login-overlay .auth-input-shell__icon--password {
+    color: #0284c7 !important;
+}
+
+html[data-theme="light"] .app-login-overlay .auth-password__toggle,
+html[data-theme="light"] .app-login-overlay .drawer-new__eye {
+    background: rgba(248, 250, 252, .98) !important;
+    color: #0f172a !important;
+    border-color: rgba(148, 163, 184, .28) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .auth-password__toggle:hover,
+html[data-theme="light"] .app-login-overlay .auth-password__toggle:focus-visible,
+html[data-theme="light"] .app-login-overlay .drawer-new__eye:hover,
+html[data-theme="light"] .app-login-overlay .drawer-new__eye:focus-visible {
+    background: rgba(241, 245, 249, .98) !important;
+    border-color: rgba(14, 165, 233, .34) !important;
+    color: #0f172a !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-action-btn.btn--secondary,
+html[data-theme="light"] .app-login-overlay .app-login-modal__actions .btn.btn--ghost {
+    background: rgba(255, 255, 255, .96) !important;
+    color: #0f172a !important;
+    border-color: rgba(148, 163, 184, .22) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-action-btn.btn--secondary:hover,
+html[data-theme="light"] .app-login-overlay .app-login-action-btn.btn--secondary:focus-visible,
+html[data-theme="light"] .app-login-overlay .app-login-modal__actions .btn.btn--ghost:hover,
+html[data-theme="light"] .app-login-overlay .app-login-modal__actions .btn.btn--ghost:focus-visible {
+    background: rgba(241, 245, 249, .98) !important;
+    border-color: rgba(14, 165, 233, .28) !important;
+    color: #0f172a !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-action-btn.btn--primary {
+    border-color: rgba(6, 182, 212, .34) !important;
+    background: linear-gradient(135deg, #0284c7 0%, #14b8a6 100%) !important;
+    box-shadow: 0 16px 34px rgba(14, 165, 233, .20) !important;
+}
+
+@media (max-width: 768px) {
+    html[data-theme="light"] .auth-page .auth-shell--local {
+        background: linear-gradient(180deg, #ffffff, #f5f8fc) !important;
+        color: #0f172a !important;
+        box-shadow: 0 20px 56px rgba(15, 23, 42, .12) !important;
+    }
+
+    html[data-theme="light"] .auth-page .auth-shell--local .auth-form-panel__surface,
+    html[data-theme="light"] .auth-page .auth-shell--local .auth-form-panel__surface--legacy-bases {
+        background: rgba(255, 255, 255, .98) !important;
+        border-color: rgba(148, 163, 184, .20) !important;
+        box-shadow: 0 18px 42px rgba(15, 23, 42, .08) !important;
+    }
+
+    html[data-theme="light"] .auth-page .auth-shell--local .auth-legacy-login__selected,
+    html[data-theme="light"] .auth-page .auth-shell--local .auth-mobile-system__grid {
+        background: rgba(248, 250, 252, .98) !important;
+        border-color: rgba(148, 163, 184, .20) !important;
+    }
+
+    html[data-theme="light"] .auth-page .auth-shell--local .auth-mobile-system > summary::before {
+        background: rgba(2, 132, 199, .92) !important;
+    }
+
+    html[data-theme="light"] .auth-page .auth-shell--local .auth-mobile-system > summary::after {
+        color: #0f172a !important;
+        text-decoration-color: rgba(2, 132, 199, .36) !important;
+    }
+
+    html[data-theme="light"] .auth-page .auth-shell--local .auth-mobile-system__item span,
+    html[data-theme="light"] .auth-page .auth-shell--local .auth-mobile-system__card span {
+        color: #0284c7 !important;
+    }
+
+    html[data-theme="light"] .auth-page .auth-shell--local .auth-mobile-system__item strong,
+    html[data-theme="light"] .auth-page .auth-shell--local .auth-mobile-system__card strong {
+        color: #0f172a !important;
+    }
+
+    html[data-theme="light"] .auth-page .auth-shell--local .central-login-input {
+        background: rgba(255, 255, 255, .98) !important;
+        color: #0f172a !important;
+        border-color: rgba(148, 163, 184, .28) !important;
+    }
+}
+
+html[data-theme="light"] .app-login-overlay {
+    background: rgba(226, 232, 240, .68) !important;
+    backdrop-filter: blur(12px);
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-modal--compact {
+    color: #0f172a !important;
+}
+
+html[data-theme="light"] .app-login-overlay .auth-shell--overlay {
+    background:
+        radial-gradient(900px 540px at 0% 0%, rgba(14, 165, 233, .10), transparent 50%),
+        linear-gradient(135deg, rgba(255, 255, 255, .98), rgba(240, 246, 252, .98)) !important;
+    border: 1px solid rgba(148, 163, 184, .20);
+    box-shadow: 0 26px 72px rgba(15, 23, 42, .16);
+}
+
+html[data-theme="light"] .app-login-overlay .auth-hero--overlay {
+    color: #0f172a !important;
+    background:
+        radial-gradient(560px 420px at 82% 0%, rgba(14, 165, 233, .10), transparent 60%),
+        linear-gradient(145deg, #ffffff 0%, #eef5fc 54%, #e6eff8 100%) !important;
+    border-right-color: rgba(148, 163, 184, .20) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .auth-hero__title,
+html[data-theme="light"] .app-login-overlay .auth-card__title,
+html[data-theme="light"] .app-login-overlay .auth-hero__summary strong,
+html[data-theme="light"] .app-login-overlay .auth-legacy-login__selected-body p,
+html[data-theme="light"] .app-login-overlay .auth-legacy-login__logout,
+html[data-theme="light"] .app-login-overlay .auth-legacy-login__cancel {
+    color: #0f172a !important;
+}
+
+html[data-theme="light"] .app-login-overlay .auth-hero__text,
+html[data-theme="light"] .app-login-overlay .auth-hero__note,
+html[data-theme="light"] .app-login-overlay .auth-card__subtitle,
+html[data-theme="light"] .app-login-overlay .auth-legacy-login__selected-body small,
+html[data-theme="light"] .app-login-overlay .auth-card__eyebrow {
+    color: #475569 !important;
+}
+
+html[data-theme="light"] .app-login-overlay .auth-form-panel,
+html[data-theme="light"] .app-login-overlay .auth-form-panel__surface--overlay {
+    background: transparent !important;
+}
+
+html[data-theme="light"] .app-login-overlay .auth-form-panel__surface {
+    background: linear-gradient(180deg, rgba(255, 255, 255, .98), rgba(248, 250, 252, .98)) !important;
+    border-color: rgba(148, 163, 184, .18) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-modal__close {
+    background: rgba(255, 255, 255, .96) !important;
+    color: #0f172a !important;
+    border-color: rgba(148, 163, 184, .30) !important;
+    box-shadow: 0 12px 28px rgba(15, 23, 42, .14);
+    z-index: 20;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-modal__close:hover,
+html[data-theme="light"] .app-login-overlay .app-login-modal__close:focus-visible {
+    background: rgba(241, 245, 249, .98) !important;
+    border-color: rgba(14, 165, 233, .30) !important;
+    color: #0f172a !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-session-note {
+    background: rgba(255, 255, 255, .92) !important;
+    border-color: rgba(148, 163, 184, .18) !important;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, .05);
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-userlist__item,
+html[data-theme="light"] .app-login-overlay .app-login-userlist__manual,
+html[data-theme="light"] .app-login-overlay .app-login-userlist__manual-row input,
+html[data-theme="light"] .app-login-overlay .drawer-new__password input,
+html[data-theme="light"] .app-login-overlay .app-login-input {
+    background: rgba(255, 255, 255, .98) !important;
+    color: #0f172a !important;
+    border-color: rgba(148, 163, 184, .28) !important;
+    -webkit-text-fill-color: #0f172a !important;
+    caret-color: #0f172a !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-input::placeholder,
+html[data-theme="light"] .app-login-overlay .app-login-userlist__manual-row input::placeholder,
+html[data-theme="light"] .app-login-overlay .drawer-new__password input::placeholder {
+    color: #94a3b8 !important;
+}
+
+html[data-theme="light"] .app-login-overlay .auth-input-shell__icon,
+html[data-theme="light"] .app-login-overlay .auth-input-shell__icon--password {
+    color: #0284c7 !important;
+}
+
+html[data-theme="light"] .app-login-overlay .auth-password__toggle,
+html[data-theme="light"] .app-login-overlay .drawer-new__eye {
+    background: rgba(248, 250, 252, .98) !important;
+    color: #0f172a !important;
+    border-color: rgba(148, 163, 184, .28) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .auth-password__toggle:hover,
+html[data-theme="light"] .app-login-overlay .auth-password__toggle:focus-visible,
+html[data-theme="light"] .app-login-overlay .drawer-new__eye:hover,
+html[data-theme="light"] .app-login-overlay .drawer-new__eye:focus-visible {
+    background: rgba(241, 245, 249, .98) !important;
+    border-color: rgba(14, 165, 233, .34) !important;
+    color: #0f172a !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-action-btn.btn--secondary,
+html[data-theme="light"] .app-login-overlay .app-login-modal__actions .btn.btn--ghost {
+    background: rgba(255, 255, 255, .96) !important;
+    color: #0f172a !important;
+    border-color: rgba(148, 163, 184, .22) !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-action-btn.btn--secondary:hover,
+html[data-theme="light"] .app-login-overlay .app-login-action-btn.btn--secondary:focus-visible,
+html[data-theme="light"] .app-login-overlay .app-login-modal__actions .btn.btn--ghost:hover,
+html[data-theme="light"] .app-login-overlay .app-login-modal__actions .btn.btn--ghost:focus-visible {
+    background: rgba(241, 245, 249, .98) !important;
+    border-color: rgba(14, 165, 233, .28) !important;
+    color: #0f172a !important;
+}
+
+html[data-theme="light"] .app-login-overlay .app-login-action-btn.btn--primary {
+    border-color: rgba(6, 182, 212, .34) !important;
+    background: linear-gradient(135deg, #0284c7 0%, #14b8a6 100%) !important;
+    box-shadow: 0 16px 34px rgba(14, 165, 233, .20) !important;
+}
+
+@media (max-width: 768px) {
+    html[data-theme="light"] .auth-page .auth-shell--local {
+        background: linear-gradient(180deg, #ffffff, #f5f8fc) !important;
+        color: #0f172a !important;
+        box-shadow: 0 20px 56px rgba(15, 23, 42, .12);
+    }
+
+    html[data-theme="light"] .auth-page .auth-shell--local .auth-form-panel__surface,
+    html[data-theme="light"] .auth-page .auth-shell--local .auth-form-panel__surface--legacy-bases {
+        background: rgba(255, 255, 255, .98) !important;
+        border-color: rgba(148, 163, 184, .20) !important;
+        box-shadow: 0 18px 42px rgba(15, 23, 42, .08);
+    }
+
+    html[data-theme="light"] .auth-page .auth-shell--local .auth-legacy-login__selected {
+        background: rgba(248, 250, 252, .98) !important;
+        border-color: rgba(148, 163, 184, .20) !important;
+    }
+
+    html[data-theme="light"] .auth-page .auth-shell--local .auth-mobile-system__grid {
+        background: rgba(248, 250, 252, .98) !important;
+        border-color: rgba(148, 163, 184, .20) !important;
+    }
+
+    html[data-theme="light"] .auth-page .auth-shell--local .auth-mobile-system > summary::before {
+        background: rgba(2, 132, 199, .92) !important;
+    }
+
+    html[data-theme="light"] .auth-page .auth-shell--local .auth-mobile-system > summary::after {
+        color: #0f172a !important;
+        text-decoration-color: rgba(2, 132, 199, .36) !important;
+    }
+
+    html[data-theme="light"] .auth-page .auth-shell--local .auth-mobile-system__item span,
+    html[data-theme="light"] .auth-page .auth-shell--local .auth-mobile-system__card span {
+        color: #0284c7 !important;
+    }
+
+    html[data-theme="light"] .auth-page .auth-shell--local .auth-mobile-system__item strong,
+    html[data-theme="light"] .auth-page .auth-shell--local .auth-mobile-system__card strong {
+        color: #0f172a !important;
+    }
+
+    html[data-theme="light"] .auth-page .auth-shell--local .central-login-input {
+        background: rgba(255, 255, 255, .98) !important;
+        color: #0f172a !important;
+        border-color: rgba(148, 163, 184, .28) !important;
+    }
+}
+
 html[data-theme="light"] .app-login-overlay {
     backdrop-filter: blur(4px);
 }

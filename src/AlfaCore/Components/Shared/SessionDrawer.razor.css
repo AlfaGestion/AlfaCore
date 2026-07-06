@@ -20,6 +20,25 @@
     background: linear-gradient(180deg, rgba(17, 28, 45, .98), rgba(15, 23, 38, .98));
 }
 
+.drawer__header-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: .45rem;
+}
+
+.drawer__add {
+    gap: .35rem;
+    color: #dbeafe;
+    border-color: rgba(56, 189, 248, .24);
+    background: rgba(14, 165, 233, .10);
+}
+
+.drawer__add:hover {
+    background: rgba(14, 165, 233, .18);
+    border-color: rgba(56, 189, 248, .42);
+    color: #f8fafc;
+}
+
 .drawer--login .drawer__title {
     color: #f8fafc;
 }
@@ -82,6 +101,95 @@
 
 .drawer-search {
     margin-bottom: .75rem;
+}
+
+.drawer-add-session {
+    display: grid;
+    gap: .8rem;
+    margin-bottom: .9rem;
+    padding: .85rem;
+    border: 1px solid rgba(148, 163, 184, .14);
+    border-radius: 16px;
+    background: rgba(15, 23, 42, .34);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.03);
+}
+
+.drawer-add-session__head {
+    display: flex;
+    align-items: start;
+    justify-content: space-between;
+    gap: .75rem;
+}
+
+.drawer-add-session__eyebrow {
+    margin: 0 0 .15rem;
+    color: #67e8f9;
+    font-size: .72rem;
+    font-weight: 900;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+}
+
+.drawer-add-session__head h4 {
+    margin: 0;
+    color: #f8fafc;
+    font-size: 1rem;
+    line-height: 1.1;
+}
+
+.drawer-add-session__hint {
+    color: #94a3b8;
+    font-size: .78rem;
+    line-height: 1.2;
+    text-align: right;
+}
+
+.drawer-add-session__error {
+    padding: .55rem .7rem;
+    border: 1px solid rgba(248, 113, 113, .24);
+    border-radius: 12px;
+    background: rgba(127, 29, 29, .18);
+    color: #fecaca;
+    font-size: .82rem;
+    line-height: 1.35;
+}
+
+.drawer-add-session__grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: .7rem;
+}
+
+.drawer-add-session__field {
+    display: grid;
+    gap: .3rem;
+}
+
+.drawer-add-session__field--full {
+    grid-column: 1 / -1;
+}
+
+.drawer-add-session__field label {
+    color: #cbd5e1;
+    font-size: .8rem;
+    font-weight: 800;
+}
+
+.drawer-add-session__field .drawer-search__input {
+    min-height: 40px;
+    background: rgba(15, 23, 42, .64);
+    border-color: rgba(148, 163, 184, .22);
+    color: #f8fafc;
+}
+
+.drawer-add-session__field .drawer-search__input::placeholder {
+    color: rgba(203, 213, 225, .55);
+}
+
+.drawer-add-session__actions {
+    display: flex;
+    justify-content: end;
+    gap: .5rem;
 }
 
 .drawer-search__input {

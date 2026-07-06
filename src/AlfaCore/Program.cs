@@ -13,24 +13,31 @@ public class Program
 {
     public static void Main(string[] args)
     {
-        var builder = WebApplication.CreateBuilder(args);
-        DotEnvLoader.LoadIfPresent(builder.Environment.ContentRootPath);
-        var startupConnectionString = StartupConnectionResolver.Resolve(args, builder.Configuration);
-
         var webRootCandidates = new[]
         {
+            Path.Combine(AppContext.BaseDirectory, "wwwroot"),
             Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../wwwroot")),
-            Path.Combine(builder.Environment.ContentRootPath, "wwwroot")
+            Path.Combine(Directory.GetCurrentDirectory(), "wwwroot")
         };
 
-        foreach (var candidate in webRootCandidates)
+        var projectRootCandidates = new[]
         {
-            if (Directory.Exists(candidate))
+            Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..")),
+            Directory.GetCurrentDirectory(),
+            Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../.."))
+        };
+
+        var selectedWebRoot = webRootCandidates.FirstOrDefault(Directory.Exists);
+        var builder = selectedWebRoot is null
+            ? WebApplication.CreateBuilder(args)
+            : WebApplication.CreateBuilder(new WebApplicationOptions
             {
-                builder.WebHost.UseWebRoot(candidate);
-                break;
-            }
-        }
+                Args = args,
+                WebRootPath = selectedWebRoot
+            });
+
+        DotEnvLoader.LoadIfPresent(builder.Environment.ContentRootPath);
+        var startupConnectionString = StartupConnectionResolver.Resolve(args, builder.Configuration);
 
         string? ResolveStaticAsset(string relativePath)
         {
@@ -41,18 +48,14 @@ public class Program
                     return fullPath;
             }
 
-            foreach (var candidate in webRootCandidates)
+            foreach (var candidate in projectRootCandidates)
             {
-                var projectDir = Path.GetDirectoryName(candidate);
-                if (string.IsNullOrWhiteSpace(projectDir))
-                    continue;
-
                 var scopedCssCandidates = new[]
                 {
-                    Path.Combine(projectDir, "obj", "Debug", "net8.0", "scopedcss", "bundle", relativePath),
-                    Path.Combine(projectDir, "obj", "Release", "net8.0", "scopedcss", "bundle", relativePath),
-                    Path.Combine(projectDir, "bin", "Debug", "net8.0", "scopedcss", "bundle", relativePath),
-                    Path.Combine(projectDir, "bin", "Release", "net8.0", "scopedcss", "bundle", relativePath)
+                    Path.Combine(candidate, "obj", "Debug", "net8.0", "scopedcss", "bundle", relativePath),
+                    Path.Combine(candidate, "obj", "Release", "net8.0", "scopedcss", "bundle", relativePath),
+                    Path.Combine(candidate, "bin", "Debug", "net8.0", "scopedcss", "bundle", relativePath),
+                    Path.Combine(candidate, "bin", "Release", "net8.0", "scopedcss", "bundle", relativePath)
                 };
 
                 foreach (var scopedCssPath in scopedCssCandidates)

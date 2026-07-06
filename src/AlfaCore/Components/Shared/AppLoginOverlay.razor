@@ -1,145 +1,148 @@
-@inject AlfaCore.Services.IAppModeService AppMode
+<LoginModalHost Open="Open"
+                CanClose="CanClose"
+                AriaLabel="Cambio de usuario"
+                OnClose="CloseAsync">
+    <LoginShell RootClass="app-login-shell auth-shell auth-shell--selection auth-shell--overlay"
+                HeroClass="app-login-shell__hero auth-hero auth-hero--overlay"
+                FormClass="app-login-shell__form auth-form-panel auth-form-panel--selection auth-form-panel--overlay">
+        <HeroContent>
+                <div class="auth-hero__brand app-login-shell__brand">
+                    <img class="central-brand-logo central-login-logo"
+                         src="@AlfaCore.Components.Shared.AuthThemeAssets.GetLoginLogo(DarkTheme)"
+                         alt="AlfaCore"
+                         loading="eager"
+                         decoding="async" />
+                </div>
 
-@if (Open)
-{
-    <div class="drawer-overlay app-login-overlay"></div>
+                <div class="auth-hero__copy app-login-shell__copy">
+                    <h2 class="auth-hero__title">Cambiar de usuario</h2>
+                    <p class="auth-hero__text">El sistema seguirá abierto.</p>
+                </div>
 
-    <div class="app-login-modal app-login-modal--compact" role="dialog" aria-label="Ingreso al sistema">
-        @if (CanClose)
-        {
-            <button type="button" class="app-login-modal__close" @onclick="CloseAsync" title="Volver" aria-label="Cerrar">
-                <i class="bi bi-x-lg"></i>
-            </button>
-        }
-        <div class="auth-shell auth-shell--selection">
-        <aside class="auth-hero" aria-hidden="true">
-            <div class="auth-hero__brand">
-                <img class="central-brand-logo central-login-logo"
-                     src="@AlfaCore.Components.Shared.AuthThemeAssets.GetLoginLogo(DarkTheme)"
-                     alt="Alfa Gestion"
-                     loading="eager"
-                     decoding="async" />
-            </div>
-
-            <div class="auth-hero__copy">
-                <h2 class="auth-hero__title">Acceso directo al sistema</h2>
-                <p class="auth-hero__text">
-                    Ingresa con tu usuario y contrasena para entrar a la base activa.
-                </p>
-            </div>
-
-            <div class="auth-hero__note">
-                El contexto de base se mantiene visible para evitar errores de acceso.
-            </div>
-        </aside>
-
-        <section class="auth-form-panel auth-form-panel--selection">
-            <div class="auth-form-panel__surface auth-form-panel__surface--selection">
-                <header class="auth-form-panel__header">
-                    <p class="auth-card__eyebrow">Alfa Gestion</p>
-                    <h2 class="auth-card__title">Ingresar</h2>
-                    <p class="auth-card__subtitle">Ingresa con tu usuario y contrasena para entrar a la base activa.</p>
-                </header>
-
-                <div class="auth-legacy-login__selected-row">
-                    <div class="auth-legacy-login__selected app-login-session-note">
-                        <div class="auth-legacy-login__selected-icon" aria-hidden="true">
+                <div class="app-login-shell__base-card">
+                    <span class="app-login-shell__base-eyebrow">Base activa</span>
+                    <div class="app-login-shell__base-head">
+                        <span class="app-login-shell__base-icon" aria-hidden="true">
                             <i class="bi bi-database-fill"></i>
+                        </span>
+                        <div class="app-login-shell__base-copy">
+                            <strong>@GetSessionName()</strong>
+                            <small>@GetSessionDetails()</small>
                         </div>
-                        <div class="auth-legacy-login__selected-body">
-                            <strong>Base activa</strong>
-                            <p>@SqlSessionLabel</p>
-                            <small>Si cambias de base, se cierra la sesion funcional actual y tenes que volver a ingresar.</small>
-                        </div>
+                        <span class="app-login-shell__base-info" aria-hidden="true">
+                            <i class="bi bi-info-circle"></i>
+                        </span>
                     </div>
+                </div>
 
-                    @if (AppMode.IsSaaSMode)
-                    {
-                        <button type="button"
-                                class="btn btn--ghost auth-legacy-login__selected-action"
-                                @onclick="OpenSqlSessionsAsync"
-                                disabled="@IsBusy">
+                <div class="app-login-shell__note">
+                    <i class="bi bi-info-circle"></i>
+                    <span>La base activa se mantiene para evitar errores de operación.</span>
+                </div>
+        </HeroContent>
+
+        <FormContent>
+                <div class="auth-form-panel__surface auth-form-panel__surface--selection auth-form-panel__surface--overlay app-login-shell__surface">
+                    <header class="app-login-shell__header">
+                        <p class="app-login-shell__eyebrow">Acceso</p>
+                        <h2 class="app-login-shell__title">Ingresar</h2>
+                        <p class="app-login-shell__subtitle">Ingresá tu usuario y contraseña para continuar.</p>
+                    </header>
+
+                    <button type="button"
+                            class="app-login-shell__change-base"
+                            @onclick="OpenSqlSessionsAsync"
+                            disabled="@IsBusy">
+                        <span class="app-login-shell__change-base-icon" aria-hidden="true">
                             <i class="bi bi-database"></i>
-                            <span>Cambiar base</span>
-                        </button>
-                    }
-                </div>
-
-                @if (!string.IsNullOrWhiteSpace(ErrorMessage))
-                {
-                    <div class="editor-msg editor-msg--error">
-                        <div>
-                            <strong>No se pudo iniciar sesion</strong>
-                            <p>@ErrorMessage</p>
-                        </div>
-                    </div>
-                }
-
-                <div class="field">
-                    <label>Usuario</label>
-                    <input class="central-login-input"
-                           value="@UserName"
-                           @oninput="OnUserNameInput"
-                           placeholder="Ej: albert"
-                           disabled="@IsBusy"
-                           autocomplete="username" />
-                </div>
-
-                <div class="field">
-                    <label>Contrasena</label>
-                    <div class="central-login-password drawer-new__password">
-                        <input class="central-login-input central-login-password__input"
-                               type="@(ShowPassword ? "text" : "password")"
-                               value="@Password"
-                               @oninput="OnPasswordInput"
-                               @onkeydown="OnPasswordKeyDownAsync"
-                               placeholder="Contrasena"
-                               disabled="@IsBusy"
-                               autocomplete="current-password" />
-                        <button type="button"
-                                class="drawer-new__eye central-login-password__toggle"
-                                @onclick="TogglePassword"
-                                title="@(ShowPassword ? "Ocultar" : "Mostrar")"
-                                disabled="@IsBusy">
-                            <i class="bi @(ShowPassword ? "bi-eye-slash" : "bi-eye")"></i>
-                        </button>
-                    </div>
-                </div>
-
-                <label class="toggle-row toggle-row--compact">
-                    <input type="checkbox"
-                           checked="@RememberCredentials"
-                           @onchange="OnRememberCredentialsChangedAsync"
-                           disabled="@IsBusy" />
-                    <span>Recordar usuario y contrasena en este equipo</span>
-                </label>
-
-                <div class="actions app-login-modal__actions auth-legacy-login__actions">
-                    <button type="button" class="btn btn--primary auth-card__submit" @onclick="SubmitAsync" disabled="@IsBusy">
-                        @if (IsBusy)
-                        {
-                            <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
-                        }
-                        else
-                        {
-                            <i class="bi bi-box-arrow-in-right"></i>
-                        }
-                        <span>@(IsBusy ? "Ingresando..." : "Ingresar")</span>
+                        </span>
+                        <span class="app-login-shell__change-base-label">Cambiar base</span>
+                        <i class="bi bi-chevron-right app-login-shell__change-base-chevron" aria-hidden="true"></i>
                     </button>
-                </div>
 
-                <button type="button"
-                        class="btn btn--ghost auth-legacy-login__logout"
-                        @onclick="LogoutAsync"
-                        disabled="@IsBusy">
-                    <i class="bi bi-person-circle"></i>
-                    <span>Cambiar usuario</span>
-                </button>
-            </div>
-        </section>
-        </div>
-    </div>
-}
+                    @if (!string.IsNullOrWhiteSpace(ErrorMessage))
+                    {
+                        <div class="editor-msg editor-msg--error auth-card__error">
+                            <div>
+                                <strong>No se pudo iniciar sesión</strong>
+                                <p>@ErrorMessage</p>
+                            </div>
+                        </div>
+                    }
+
+                    <form class="app-login-shell__form-fields auth-form auth-legacy-login__form" @onsubmit="SubmitAsync" @onsubmit:preventDefault="true">
+                        <div class="auth-field">
+                            <label for="app-login-username">Usuario</label>
+                            <AuthInputField @ref="_userNameField"
+                                            Id="app-login-username"
+                                            Value="@UserName"
+                                            ValueChanged="OnUserNameChangedAsync"
+                                            Placeholder="Usuario"
+                                            Disabled="@IsBusy"
+                                            Autocomplete="username"
+                                            InputClass="central-login-input auth-input-shell__input"
+                                            WrapperClass="auth-input-shell auth-input-shell--user"
+                                            IconClass="bi bi-person"
+                                            OnKeyDown="OnKeyDownAsync" />
+                        </div>
+
+                        <div class="auth-field">
+                            <label for="app-login-password">Contraseña</label>
+                            <AuthInputField Id="app-login-password"
+                                            Value="@Password"
+                                            ValueChanged="OnPasswordChangedAsync"
+                                            Placeholder="Contraseña"
+                                            Disabled="@IsBusy"
+                                            Autocomplete="current-password"
+                                            InputClass="central-login-input central-login-password__input auth-input-shell__input"
+                                            WrapperClass="auth-password central-login-password auth-input-shell auth-input-shell--password"
+                                            IconClass="bi bi-lock"
+                                            ShowPasswordToggle="true"
+                                            ShowPassword="@ShowPassword"
+                                            ShowPasswordChanged="OnShowPasswordChangedAsync"
+                                            PasswordToggleClass="auth-password__toggle central-login-password__toggle"
+                                            PasswordToggleIconClass="@(ShowPassword ? "bi bi-eye-slash" : "bi bi-eye")"
+                                            PasswordToggleTitle="@(ShowPassword ? "Ocultar contraseña" : "Mostrar contraseña")"
+                                            OnKeyDown="OnKeyDownAsync" />
+                        </div>
+
+                        <label class="toggle-row toggle-row--compact auth-legacy-login__remember">
+                            <input type="checkbox"
+                                   checked="@RememberCredentials"
+                                   @onchange="OnRememberCredentialsChangedAsync"
+                                   disabled="@IsBusy" />
+                            <span>Recordar usuario en este equipo</span>
+                        </label>
+
+                        <AuthActionButton Type="submit"
+                                          CssClass="btn btn--primary auth-card__submit auth-card__submit--large"
+                                          Text="Ingresar"
+                                          BusyText="Ingresando..."
+                                          IconClass="bi bi-box-arrow-in-right"
+                                          BusyIconClass="spinner-border spinner-border-sm"
+                                          IsBusy="@IsBusy"
+                                          Disabled="@IsBusy" />
+                    </form>
+
+                    <AuthActionButton Type="button"
+                                      CssClass="btn btn--secondary app-login-action-btn auth-legacy-login__logout"
+                                      Text="Cerrar sesión"
+                                      IconClass="bi bi-person-circle"
+                                      OnClick="HandleLogoutClickAsync"
+                                      Disabled="@IsBusy" />
+
+                    <div class="auth-legacy-login__footer">
+                        <AuthActionButton Type="button"
+                                          CssClass="btn btn--secondary app-login-action-btn auth-legacy-login__cancel"
+                                          Text="Cancelar"
+                                          IconClass="bi bi-x-lg"
+                                          OnClick="HandleCloseClickAsync"
+                                          Disabled="@IsBusy" />
+                    </div>
+                </div>
+        </FormContent>
+    </LoginShell>
+</LoginModalHost>
 
 @code {
     [Parameter] public bool Open { get; set; }
@@ -161,6 +164,34 @@
     [Parameter] public EventCallback OnClose { get; set; }
     [Parameter] public bool CanClose { get; set; }
 
+    private AuthInputField? _userNameField;
+    private bool _shouldFocusUserName;
+    private bool _lastOpenState;
+
+    protected override void OnParametersSet()
+    {
+        if (Open && !_lastOpenState)
+            _shouldFocusUserName = true;
+
+        _lastOpenState = Open;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_shouldFocusUserName)
+            return;
+
+        _shouldFocusUserName = false;
+        try
+        {
+            if (_userNameField is not null)
+                await _userNameField.FocusAsync(preventScroll: true);
+        }
+        catch
+        {
+        }
+    }
+
     private async Task SubmitAsync() => await OnSubmit.InvokeAsync();
 
     private async Task OpenSqlSessionsAsync() => await OnOpenSqlSessions.InvokeAsync();
@@ -169,21 +200,48 @@
 
     private async Task LogoutAsync() => await OnLogout.InvokeAsync();
 
-    private async Task TogglePassword()
-        => await ShowPasswordChanged.InvokeAsync(!ShowPassword);
+    private async Task HandleLogoutClickAsync(Microsoft.AspNetCore.Components.Web.MouseEventArgs args) => await LogoutAsync();
 
-    private async Task OnUserNameInput(ChangeEventArgs args)
-        => await UserNameChanged.InvokeAsync(args.Value?.ToString() ?? string.Empty);
+    private async Task HandleCloseClickAsync(Microsoft.AspNetCore.Components.Web.MouseEventArgs args) => await CloseAsync();
 
-    private async Task OnPasswordInput(ChangeEventArgs args)
-        => await PasswordChanged.InvokeAsync(args.Value?.ToString() ?? string.Empty);
+    private async Task OnUserNameChangedAsync(string value)
+        => await UserNameChanged.InvokeAsync(value);
 
-    private async Task OnRememberCredentialsChangedAsync(ChangeEventArgs args)
-        => await RememberCredentialsChanged.InvokeAsync(args.Value is bool value && value);
+    private async Task OnPasswordChangedAsync(string value)
+        => await PasswordChanged.InvokeAsync(value);
 
-    private async Task OnPasswordKeyDownAsync(KeyboardEventArgs args)
+    private async Task OnShowPasswordChangedAsync(bool value)
+        => await ShowPasswordChanged.InvokeAsync(value);
+
+    private async Task OnKeyDownAsync(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs args)
     {
         if (string.Equals(args.Key, "Enter", StringComparison.Ordinal))
             await SubmitAsync();
     }
+
+    private async Task OnRememberCredentialsChangedAsync(ChangeEventArgs args)
+        => await RememberCredentialsChanged.InvokeAsync(args.Value is bool value && value);
+
+    private string GetSessionName()
+    {
+        var parts = GetSessionLabelParts();
+        return parts.Length > 0 ? parts[0] : string.IsNullOrWhiteSpace(SqlSessionLabel) ? "Sin base activa" : SqlSessionLabel;
+    }
+
+    private string GetSessionDetails()
+    {
+        var parts = GetSessionLabelParts();
+        if (parts.Length >= 3)
+            return $"{parts[1]} · {parts[2]}";
+
+        if (parts.Length == 2)
+            return parts[1];
+
+        return "Contexto de conexión activo";
+    }
+
+    private string[] GetSessionLabelParts()
+        => string.IsNullOrWhiteSpace(SqlSessionLabel)
+            ? []
+            : SqlSessionLabel.Split('·', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 }

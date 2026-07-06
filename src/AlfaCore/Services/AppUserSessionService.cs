@@ -30,7 +30,7 @@ public sealed class AppUserSessionService(
         _currentUser = new AppUserSessionInfo
         {
             UserName = result.Session.Usuario.UserName,
-            Email = string.Empty,
+            Email = result.Session.Usuario.UserName,
             CentralLogin = userName.Trim(),
             SystemCode = "CENTRAL",
             LoginAt = DateTime.Now,

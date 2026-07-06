@@ -17,8 +17,8 @@
 <PageTitle>Seleccionar base | AlfaCore</PageTitle>
 
 <div class="auth-page">
-    <section class="auth-shell auth-shell--selection">
-        <aside class="auth-hero">
+    <LoginShell RootClass="auth-shell auth-shell--selection">
+        <HeroContent>
             <div class="auth-hero__brand">
                 <img class="central-brand-logo auth-hero__logo auth-hero__logo--selection"
                      src="@LogoPrincipal"
@@ -50,13 +50,21 @@
             <div class="auth-hero__note">
                 @_bases.Count base(s) disponibles
             </div>
-        </aside>
+        </HeroContent>
 
-        <section class="auth-form-panel auth-form-panel--selection">
+        <FormContent>
             <div class="auth-form-panel__glow auth-form-panel__glow--one" aria-hidden="true"></div>
             <div class="auth-form-panel__glow auth-form-panel__glow--two" aria-hidden="true"></div>
 
             <div class="auth-form-panel__surface auth-form-panel__surface--selection">
+                <div class="auth-mobile-brand auth-mobile-brand--selection" aria-hidden="true">
+                    <img class="central-brand-logo auth-mobile-brand__logo"
+                         src="@LogoPrincipal"
+                         alt="Alfa Gestión"
+                         loading="eager"
+                         decoding="async" />
+                </div>
+
                 <header class="auth-form-panel__header">
                     <h1 class="auth-card__title">Elegí una base</h1>
                     <p class="auth-card__subtitle">Usá la base correcta para entrar con el cliente actual.</p>
@@ -100,25 +108,26 @@
                             @for (var index = 0; index < VisibleBases.Count; index++)
                             {
                                 var item = VisibleBases[index];
+                                var actionClass = item.Activa ? "auth-base-card__action auth-base-card__action--active" : "auth-base-card__action";
                                 <article class="auth-base-card @(item.Activa ? "auth-base-card--active" : string.Empty) @(index == _selectedIndex ? "auth-base-card--selected" : string.Empty)">
                                     <div class="auth-base-card__content">
                                         <p class="auth-base-card__name">@item.Nombre</p>
                                         <p class="auth-base-card__meta">@item.Servidor · @item.BaseDatos</p>
                                         <small class="auth-base-card__id">Base #@item.BaseId</small>
                                     </div>
-                                    <button type="button"
-                                            class="auth-base-card__action @(item.Activa ? "auth-base-card__action--active" : string.Empty)"
-                                            @onclick="() => SelectBaseAsync(item)">
-                                        @(item.Activa ? "Activa" : "Seleccionar")
-                                    </button>
+                                    <AuthActionButton Type="button"
+                                                      CssClass="@actionClass"
+                                                      Text="@(item.Activa ? "Activa" : "Seleccionar")"
+                                                      IconClass="@(item.Activa ? string.Empty : string.Empty)"
+                                                      OnClick="async _ => await SelectBaseAsync(item)" />
                                 </article>
                             }
                         </div>
                     }
                 }
             </div>
-        </section>
-    </section>
+        </FormContent>
+    </LoginShell>
 </div>
 
 @code {
@@ -291,18 +300,37 @@
 
             AppUserSession.HandleSqlSessionChanged();
 
-            var loginCentral = AppUserSession.CurrentUser?.CentralLogin ?? string.Empty;
-            var internalSession = await LegacyBaseUserSession.ResolveByCentralLoginAsync(loginCentral);
-            Logger.LogInformation(
-                "SeleccionarBase: busqueda TA_USUARIOS para {LoginCentral}: {Resultado}",
-                loginCentral,
-                internalSession is null ? "sin coincidencia" : "coincidencia");
+            if (!AppMode.IsSaaSMode)
+            {
+                Logger.LogInformation("SeleccionarBase: modo no SaaS; enviando a login para validar credenciales del sistema. ReturnUrl={Destino}", destination);
+                Nav.NavigateTo($"/login?returnUrl={Uri.EscapeDataString(destination)}", replace: true);
+                return;
+            }
 
-            if (internalSession is not null)
-                AppUserSession.AdoptInternalUser(internalSession);
+            var loginIdentity = AppUserSession.CurrentUser?.Email?.Trim();
+            if (string.IsNullOrWhiteSpace(loginIdentity))
+                loginIdentity = AppUserSession.CurrentUser?.CentralLogin?.Trim();
 
-            Logger.LogInformation("SeleccionarBase: destino posterior a la seleccion de base: {Destino}", destination);
-            Nav.NavigateTo(destination, replace: true);
+            if (!string.IsNullOrWhiteSpace(loginIdentity))
+            {
+                var internalSession = await LegacyBaseUserSession.ResolveByCentralLoginAsync(loginIdentity);
+                Logger.LogInformation(
+                    "SeleccionarBase: busqueda TA_USUARIOS para {LoginIdentity}: {Resultado}",
+                    loginIdentity,
+                    internalSession is null ? "sin coincidencia" : "coincidencia");
+
+                if (internalSession is not null &&
+                    string.Equals(internalSession.Email, loginIdentity, StringComparison.OrdinalIgnoreCase))
+                {
+                    AppUserSession.AdoptInternalUser(internalSession);
+                    Logger.LogInformation("SeleccionarBase: email coincidente; destino posterior a la seleccion de base: {Destino}", destination);
+                    Nav.NavigateTo(destination, replace: true);
+                    return;
+                }
+            }
+
+            Logger.LogInformation("SeleccionarBase: email no coincide o no hay usuario interno; enviando a login. ReturnUrl={Destino}", destination);
+            Nav.NavigateTo($"/login?returnUrl={Uri.EscapeDataString(destination)}", replace: true);
         }
         catch (Exception ex)
         {
