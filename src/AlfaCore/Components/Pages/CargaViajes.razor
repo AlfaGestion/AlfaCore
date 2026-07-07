@@ -11,19 +11,16 @@
 @inject IAppUserSessionService AppUserSession
 @inject IViajePreviewStateService ViajePreviewState
 @inject IRouteContextService RouteContext
+@inject IPageHeaderService PageHeader
 @inject IJSRuntime Js
 @inject ILogger<CargaViajes> Logger
 @inject NavigationManager Nav
+@implements IDisposable
 
 <PageTitle>Carga de Viajes | Alfa Gestión</PageTitle>
 
 <div class="page-grid carga-viajes-page @(IsAnyOverlayOpen() ? "carga-viajes-page--overlay-open" : string.Empty)" @onclick="HandlePageClickAsync">
-    <header class="carga-viajes-brand">
-        <span class="carga-viajes-brand__eyebrow">ALFA GESTIÓN</span>
-        <h1 class="carga-viajes-brand__title">Carga de Viajes</h1>
-    </header>
-
-    <section class="carga-viajes-tabs">
+    <section class="carga-viajes-tabs" hidden>
         <div class="actions carga-viajes-tabs__actions">
             <button type="button" class="btn btn--sm @(_activeSection == SectionViajes ? "btn--primary" : "btn--ghost")" @onclick="() => NavigateSectionAsync(SectionViajes)">Viajes</button>
             <button type="button" class="btn btn--sm @(_activeSection == SectionTarifas ? "btn--primary" : "btn--ghost")" @onclick="() => NavigateSectionAsync(SectionTarifas)">Tarifas</button>
@@ -2868,12 +2865,298 @@
     private string _configSnapshot = string.Empty;
     private string _viewSettingsSnapshot = string.Empty;
     private string _tipoVehiculoViewSettingsSnapshot = string.Empty;
+    private string _lastPageHeaderSignature = string.Empty;
     private CargaViajeSaveRequest _viajeForm = new()
     {
         Fecha = DateTime.Today,
         Estado = CargaViajeEstadoKeys.Pendiente,
         CantidadViajes = 1
     };
+
+    private void UpdatePageHeader()
+    {
+        _lastPageHeaderSignature = BuildPageHeaderSignature();
+        var actions = new List<PageHeaderAction>();
+        RenderFragment? searchContent = null;
+
+        if (IsAnyEditingOverlayOpen())
+        {
+            AddEditorHeaderActions(actions);
+        }
+        else
+        {
+            AddListHeaderActions(actions);
+        }
+
+        PageHeader.Set(new PageHeaderConfig
+        {
+            Title = GetHeaderTitle(),
+            Breadcrumb = ["Logística", "Carga de viajes"],
+            State = GetHeaderState(),
+            SearchContent = searchContent,
+            Actions = actions,
+            ViewButtons = BuildHeaderViewButtons(),
+            OnBack = IsAnyOverlayOpen() ? HandleHeaderBackAsync : null
+        });
+
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private string BuildPageHeaderSignature()
+        => string.Join('|',
+            _activeSection,
+            _showViajeEditor,
+            _showTarifaEditor,
+            _showChoferEditor,
+            _showDestinoEditor,
+            _showTipoVehiculoEditor,
+            _showConfigEditor,
+            _showViewSettings,
+            _showTipoVehiculoViewSettings,
+            _showLiquidacionesPagoModal,
+            _isNewViaje,
+            _isNewTarifa,
+            _isNewChofer,
+            _isNewDestino,
+            _isNewTipoVehiculo,
+            _savingViaje,
+            _viajesLoading,
+            _tarifasLoading,
+            _tipoVehiculosLoading,
+            _reportesLoading,
+            _liquidacionesLoading,
+            _liquidacionesSeleccionadas.Count);
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        var signature = BuildPageHeaderSignature();
+        if (!string.Equals(signature, _lastPageHeaderSignature, StringComparison.Ordinal))
+            UpdatePageHeader();
+    }
+
+    private bool IsAnyEditingOverlayOpen()
+        => _showViajeEditor
+           || _showTarifaEditor
+           || _showChoferEditor
+           || _showDestinoEditor
+           || _showTipoVehiculoEditor
+           || _showConfigEditor
+           || _showViewSettings
+           || _showTipoVehiculoViewSettings
+           || _showLiquidacionesPagoModal;
+
+    private void AddEditorHeaderActions(List<PageHeaderAction> actions)
+    {
+        if (_showViajeEditor)
+        {
+            if (!_viajeReadOnly)
+            {
+                actions.Add(new PageHeaderAction { Key = "guardar-viaje", Label = _savingViaje ? "Guardando..." : "Guardar", Icon = "bi-floppy", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, Disabled = _savingViaje, Busy = _savingViaje, OnClick = () => RunHeaderActionAsync(GuardarViajeAsync) });
+                actions.Add(new PageHeaderAction { Key = "limpiar-viaje", Label = "Limpiar", Icon = "bi-eraser", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, Disabled = _savingViaje, OnClick = () => RunHeaderActionAsync(LimpiarViajeFormAsync) });
+            }
+
+            actions.Add(new PageHeaderAction { Key = "cancelar-viaje", Label = "Cancelar", Icon = "bi-x-circle", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, Disabled = _savingViaje, OnClick = () => RunHeaderActionAsync(CerrarViajeEditorAsync) });
+            return;
+        }
+
+        if (_showTarifaEditor)
+        {
+            actions.Add(new PageHeaderAction { Key = "guardar-tarifa", Label = "Guardar", Icon = "bi-floppy", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, OnClick = () => RunHeaderActionAsync(GuardarTarifaAsync) });
+            actions.Add(new PageHeaderAction { Key = "cancelar-tarifa", Label = "Cancelar", Icon = "bi-x-circle", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, OnClick = () => RunHeaderActionAsync(CerrarTarifaEditorAsync) });
+            return;
+        }
+
+        if (_showChoferEditor)
+        {
+            actions.Add(new PageHeaderAction { Key = "guardar-chofer", Label = "Guardar", Icon = "bi-floppy", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, OnClick = () => RunHeaderActionAsync(GuardarChoferAsync) });
+            actions.Add(new PageHeaderAction { Key = "cancelar-chofer", Label = "Cancelar", Icon = "bi-x-circle", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, OnClick = () => RunHeaderActionAsync(CerrarChoferEditorAsync) });
+            return;
+        }
+
+        if (_showDestinoEditor)
+        {
+            actions.Add(new PageHeaderAction { Key = "guardar-destino", Label = "Guardar", Icon = "bi-floppy", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, OnClick = () => RunHeaderActionAsync(GuardarDestinoAsync) });
+            actions.Add(new PageHeaderAction { Key = "cancelar-destino", Label = "Cancelar", Icon = "bi-x-circle", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, OnClick = () => RunHeaderActionAsync(CerrarDestinoEditorAsync) });
+            return;
+        }
+
+        if (_showTipoVehiculoEditor)
+        {
+            actions.Add(new PageHeaderAction { Key = "guardar-tipo", Label = "Guardar", Icon = "bi-floppy", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, OnClick = () => RunHeaderActionAsync(GuardarTipoVehiculoAsync) });
+            actions.Add(new PageHeaderAction { Key = "cancelar-tipo", Label = "Cancelar", Icon = "bi-x-circle", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, OnClick = () => RunHeaderActionAsync(CerrarTipoVehiculoEditorAsync) });
+            return;
+        }
+
+        if (_showConfigEditor)
+        {
+            actions.Add(new PageHeaderAction { Key = "guardar-config", Label = "Guardar", Icon = "bi-floppy", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, OnClick = () => RunHeaderActionAsync(GuardarConfiguracionModuloAsync) });
+            actions.Add(new PageHeaderAction { Key = "cancelar-config", Label = "Cancelar", Icon = "bi-x-circle", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, OnClick = () => RunHeaderActionAsync(CerrarConfiguracionModulo) });
+            return;
+        }
+
+        if (_showViewSettings)
+        {
+            actions.Add(new PageHeaderAction { Key = "guardar-vista", Label = "Guardar vista", Icon = "bi-floppy", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, OnClick = () => RunHeaderActionAsync(GuardarConfiguracionVistaAsync) });
+            actions.Add(new PageHeaderAction { Key = "cancelar-vista", Label = "Cancelar", Icon = "bi-x-circle", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, OnClick = () => RunHeaderActionAsync(CancelarConfiguracionVista) });
+            return;
+        }
+
+        if (_showTipoVehiculoViewSettings)
+        {
+            actions.Add(new PageHeaderAction { Key = "guardar-vista-tipo", Label = "Guardar vista", Icon = "bi-floppy", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, OnClick = () => RunHeaderActionAsync(GuardarConfiguracionTipoVehiculoVistaAsync) });
+            actions.Add(new PageHeaderAction { Key = "cancelar-vista-tipo", Label = "Cancelar", Icon = "bi-x-circle", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, OnClick = () => RunHeaderActionAsync(CancelarConfiguracionTipoVehiculoVista) });
+            return;
+        }
+
+        if (_showLiquidacionesPagoModal)
+        {
+            actions.Add(new PageHeaderAction { Key = "confirmar-pago", Label = "Confirmar pago", Icon = "bi-check2-circle", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, Disabled = !_liquidacionesSeleccionadas.Any(), OnClick = () => RunHeaderActionAsync(ConfirmarLiquidacionesPagoAsync) });
+            actions.Add(new PageHeaderAction { Key = "cancelar-pago", Label = "Cancelar", Icon = "bi-x-circle", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, OnClick = () => RunHeaderActionAsync(CerrarLiquidacionesPagoModalAsync) });
+        }
+    }
+
+    private void AddListHeaderActions(List<PageHeaderAction> actions)
+    {
+        switch (_activeSection)
+        {
+            case SectionTarifas:
+                actions.Add(new PageHeaderAction { Key = "nueva-tarifa", Label = "Nueva tarifa", Icon = "bi-plus-circle", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, OnClick = () => RunHeaderActionAsync(NuevaTarifaAsync) });
+                actions.Add(new PageHeaderAction { Key = "recargar-tarifas", Label = "Recargar", Icon = "bi-arrow-clockwise", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, Disabled = _tarifasLoading, OnClick = () => RunHeaderActionAsync(RecargarTarifasAsync) });
+                actions.Add(new PageHeaderAction { Key = "aumento-tarifas", Label = "Aumento de tarifa", Icon = "bi-percent", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, OnClick = () => RunHeaderActionAsync(AbrirTarifasBulkEditAsync) });
+                break;
+            case SectionChoferes:
+                actions.Add(new PageHeaderAction { Key = "nuevo-chofer", Label = "Nuevo chofer", Icon = "bi-plus-circle", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, OnClick = () => RunHeaderActionAsync(NuevoChoferAsync) });
+                actions.Add(new PageHeaderAction { Key = "recargar-choferes", Label = "Recargar", Icon = "bi-arrow-clockwise", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, OnClick = () => RunHeaderActionAsync(RecargarChoferesAsync) });
+                break;
+            case SectionDestinos:
+                actions.Add(new PageHeaderAction { Key = "nuevo-destino", Label = "Nuevo destino", Icon = "bi-plus-circle", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, OnClick = () => RunHeaderActionAsync(NuevoDestinoAsync) });
+                actions.Add(new PageHeaderAction { Key = "recargar-destinos", Label = "Recargar", Icon = "bi-arrow-clockwise", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, OnClick = () => RunHeaderActionAsync(RecargarDestinosAsync) });
+                break;
+            case SectionTipoVehiculo:
+                actions.Add(new PageHeaderAction { Key = "nuevo-tipo", Label = "Nuevo tipo", Icon = "bi-plus-circle", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, OnClick = () => RunHeaderActionAsync(NuevoTipoVehiculoAsync) });
+                actions.Add(new PageHeaderAction { Key = "recargar-tipos", Label = "Recargar", Icon = "bi-arrow-clockwise", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, Disabled = _tipoVehiculosLoading, OnClick = () => RunHeaderActionAsync(RecargarTipoVehiculosAsync) });
+                actions.Add(new PageHeaderAction { Key = "vista-tipos", Label = "Configurar vista", Icon = "bi-sliders", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, OnClick = () => RunHeaderActionAsync(() => { AbrirConfiguracionTipoVehiculoVista(); return Task.CompletedTask; }) });
+                break;
+            case SectionReportes:
+                actions.Add(new PageHeaderAction { Key = "buscar-reporte", Label = "Buscar", Icon = "bi-search", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, Disabled = _reportesLoading, OnClick = () => RunHeaderActionAsync(BuscarReporteLiquidacionAsync) });
+                actions.Add(new PageHeaderAction { Key = "limpiar-reporte", Label = "Limpiar filtros", Icon = "bi-eraser", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Normal, Disabled = _reportesLoading, OnClick = () => RunHeaderActionAsync(LimpiarFiltrosReporteAsync) });
+                actions.Add(new PageHeaderAction { Key = "imprimir-reporte", Label = "Imprimir", Icon = "bi-printer", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, Disabled = _reportesLoading, OnClick = () => RunHeaderActionAsync(ImprimirLiquidacionAsync) });
+                actions.Add(new PageHeaderAction { Key = "exportar-reporte", Label = "Exportar Excel", Icon = "bi-file-earmark-excel", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, Disabled = _reportesLoading, OnClick = () => RunHeaderActionAsync(ExportarReporteExcelAsync) });
+                break;
+            case SectionLiquidaciones:
+                actions.Add(new PageHeaderAction { Key = "buscar-liquidaciones", Label = "Buscar", Icon = "bi-search", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, Disabled = _liquidacionesLoading, OnClick = () => RunHeaderActionAsync(BuscarLiquidacionesAsync) });
+                actions.Add(new PageHeaderAction { Key = "limpiar-liquidaciones", Label = "Limpiar filtros", Icon = "bi-eraser", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Normal, Disabled = _liquidacionesLoading, OnClick = () => RunHeaderActionAsync(LimpiarFiltrosLiquidacionesAsync) });
+                if (_liquidacionesSeleccionadas.Count > 0)
+                    actions.Add(new PageHeaderAction { Key = "marcar-pagados", Label = "Marcar pagados", Icon = "bi-cash-coin", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, OnClick = () => RunHeaderActionAsync(MarcarSeleccionadosComoPagadosAsync) });
+                break;
+            case SectionConfiguracion:
+                actions.Add(new PageHeaderAction { Key = "editar-config", Label = "Editar configuración", Icon = "bi-pencil-square", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, OnClick = () => RunHeaderActionAsync(AbrirConfiguracionModuloAsync) });
+                break;
+            default:
+                actions.Add(new PageHeaderAction { Key = "nuevo-viaje", Label = "Nuevo viaje", Icon = "bi-plus-circle", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, OnClick = () => RunHeaderActionAsync(AbrirNuevoViajeAsync) });
+                actions.Add(new PageHeaderAction { Key = "recargar-viajes", Label = "Recargar", Icon = "bi-arrow-clockwise", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, Disabled = _viajesLoading, OnClick = () => RunHeaderActionAsync(RecargarViajesAsync) });
+                actions.Add(new PageHeaderAction { Key = "vista-viajes", Label = "Configurar vista", Icon = "bi-sliders", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, OnClick = () => RunHeaderActionAsync(() => { AbrirConfiguracionVista(); return Task.CompletedTask; }) });
+                break;
+        }
+    }
+
+    private IReadOnlyList<PageHeaderViewButton> BuildHeaderViewButtons()
+        =>
+        [
+            BuildSectionHeaderButton(SectionViajes, "Viajes", "bi-truck"),
+            BuildSectionHeaderButton(SectionTarifas, "Tarifas", "bi-tags"),
+            BuildSectionHeaderButton(SectionChoferes, "Choferes", "bi-person-vcard"),
+            BuildSectionHeaderButton(SectionDestinos, "Destinos", "bi-geo-alt"),
+            BuildSectionHeaderButton(SectionTipoVehiculo, "Tipo vehículo", "bi-car-front"),
+            BuildSectionHeaderButton(SectionReportes, "Reportes", "bi-bar-chart"),
+            BuildSectionHeaderButton(SectionLiquidaciones, "Liquidaciones", "bi-cash-stack"),
+            BuildSectionHeaderButton(SectionConfiguracion, "Configuración", "bi-gear")
+        ];
+
+    private PageHeaderViewButton BuildSectionHeaderButton(string section, string label, string icon)
+        => new()
+        {
+            Key = section,
+            Label = label,
+            Title = label,
+            Icon = icon,
+            Active = string.Equals(_activeSection, section, StringComparison.OrdinalIgnoreCase)
+                     || (string.Equals(section, SectionViajes, StringComparison.OrdinalIgnoreCase) && string.Equals(_activeSection, SectionNuevo, StringComparison.OrdinalIgnoreCase)),
+            Disabled = IsAnyOverlayOpen(),
+            OnClick = () => RunHeaderActionAsync(() => NavigateSectionAsync(section))
+        };
+
+    private PageHeaderState GetHeaderState()
+    {
+        if (_viajesLoading || _tarifasLoading || _tipoVehiculosLoading || _reportesLoading || _liquidacionesLoading)
+            return PageHeaderState.Loading;
+        if (_showViajeEditor || _showTarifaEditor || _showChoferEditor || _showDestinoEditor || _showTipoVehiculoEditor || _showConfigEditor)
+            return IsCurrentEditorNew() ? PageHeaderState.Creating : PageHeaderState.Editing;
+        if (_liquidacionesSeleccionadas.Count > 0 && _activeSection == SectionLiquidaciones)
+            return PageHeaderState.Selection;
+        return PageHeaderState.List;
+    }
+
+    private bool IsCurrentEditorNew()
+        => (_showViajeEditor && _isNewViaje)
+           || (_showTarifaEditor && _isNewTarifa)
+           || (_showChoferEditor && _isNewChofer)
+           || (_showDestinoEditor && _isNewDestino)
+           || (_showTipoVehiculoEditor && _isNewTipoVehiculo);
+
+    private string GetHeaderTitle()
+    {
+        if (_showViajeEditor)
+            return _isNewViaje ? "Nuevo viaje" : "Editar viaje";
+        if (_showTarifaEditor)
+            return _isNewTarifa ? "Nueva tarifa" : "Editar tarifa";
+        if (_showChoferEditor)
+            return _isNewChofer ? "Nuevo chofer" : "Editar chofer";
+        if (_showDestinoEditor)
+            return _isNewDestino ? "Nuevo destino" : "Editar destino";
+        if (_showTipoVehiculoEditor)
+            return _isNewTipoVehiculo ? "Nuevo tipo de vehículo" : "Editar tipo de vehículo";
+        if (_showConfigEditor)
+            return "Configurar carga de viajes";
+        if (_showViewSettings || _showTipoVehiculoViewSettings)
+            return "Configurar vista";
+        if (_showLiquidacionesPagoModal)
+            return "Confirmar pago";
+
+        return _activeSection switch
+        {
+            SectionTarifas => "Tarifas",
+            SectionChoferes => "Choferes",
+            SectionDestinos => "Destinos",
+            SectionTipoVehiculo => "Tipos de vehículo",
+            SectionReportes => "Reportes",
+            SectionLiquidaciones => "Liquidaciones",
+            SectionConfiguracion => "Configuración",
+            SectionNuevo => "Nuevo viaje",
+            _ => "Carga de viajes"
+        };
+    }
+
+    private async Task HandleHeaderBackAsync()
+    {
+        await HandleModalKeyDownAsync(new KeyboardEventArgs { Key = "Escape" });
+        UpdatePageHeader();
+    }
+
+    private async Task RunHeaderActionAsync(Func<Task> action)
+    {
+        await action();
+        UpdatePageHeader();
+    }
+
+    public void Dispose()
+    {
+        PageHeader.Clear();
+        _reportesCancellationCts?.Cancel();
+        _reportesCancellationCts?.Dispose();
+        _feedbackAutoClearCts?.Cancel();
+        _feedbackAutoClearCts?.Dispose();
+    }
 
     protected override async Task OnParametersSetAsync()
     {
@@ -2885,6 +3168,7 @@
         if (!await EnsureViajesSchemaLoadedAsync())
             return;
         await LoadActiveSectionAsync();
+        UpdatePageHeader();
     }
 
     private async Task<bool> EnsureViajesSchemaLoadedAsync()
@@ -8072,6 +8356,11 @@
         ClearMessages();
         await ForceCloseAllEditorsAsync();
         Nav.NavigateTo(normalized == SectionViajes ? "/carga-viajes" : $"/carga-viajes/{normalized}");
+        _ = InvokeAsync(async () =>
+        {
+            await Task.Yield();
+            UpdatePageHeader();
+        });
     }
 
     private Task ForceCloseAllEditorsAsync()

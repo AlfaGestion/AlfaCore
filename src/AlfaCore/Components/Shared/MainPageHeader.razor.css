@@ -23,6 +23,42 @@
     height: 3.7rem;
 }
 
+.main-page-header--no-search {
+    grid-template-columns: auto minmax(160px, 0.3fr) minmax(0, 1fr) auto;
+    grid-template-areas:
+        "nav context filler actions"
+        "views views views views";
+    row-gap: 0.42rem;
+    min-height: 5.85rem;
+    padding-block: 0.42rem 0.5rem;
+}
+
+.main-page-header--no-search .main-page-header__search {
+    display: none;
+}
+
+.main-page-header--no-search .main-page-header__nav {
+    grid-area: nav;
+}
+
+.main-page-header--no-search .main-page-header__context {
+    grid-area: context;
+}
+
+.main-page-header--no-search .main-page-header__view {
+    grid-area: views;
+    justify-content: center;
+    max-width: 100%;
+}
+
+.main-page-header--no-search .main-page-header__actions {
+    grid-area: actions;
+}
+
+.main-page-header--no-search + .main-page-header__spacer {
+    height: 6.2rem;
+}
+
 .shell--collapsed .main-page-header,
 .shell--direct .main-page-header {
     left: 92px;
@@ -35,6 +71,17 @@
     align-items: center;
     gap: 0.4rem;
     min-width: 0;
+}
+
+.main-page-header__view {
+    justify-content: flex-start;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+}
+
+.main-page-header__view::-webkit-scrollbar {
+    display: none;
 }
 
 .main-page-header__context {
@@ -174,6 +221,46 @@
     cursor: pointer;
 }
 
+.main-page-header__view-btn {
+    width: auto;
+    min-width: max-content;
+    max-width: 10rem;
+    min-height: 2.05rem;
+    height: 2.05rem;
+    padding: 0 0.7rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.42rem;
+    flex: 0 0 auto;
+    border: 1px solid rgba(148, 163, 184, 0.14);
+    border-radius: 0.7rem;
+    background: rgba(15, 23, 42, 0.68);
+    color: rgba(226, 232, 240, 0.86);
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.main-page-header__view-label {
+    font-size: 0.78rem;
+    font-weight: 800;
+    line-height: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.main-page-header__view-btn:hover,
+.main-page-header__view-btn.is-active {
+    border-color: rgba(45, 212, 191, 0.34);
+    background: rgba(20, 184, 166, 0.14);
+    color: #f8fafc;
+}
+
+.main-page-header__view-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
 .main-page-header__icon-btn:hover,
 .main-page-header__overflow summary:hover,
 .main-page-header__icon-btn.is-active {
@@ -278,6 +365,15 @@
     }
 
     .main-page-header__view {
+        overflow-x: auto;
+        scrollbar-width: none;
+    }
+
+    .main-page-header__view::-webkit-scrollbar {
+        display: none;
+    }
+
+    .main-page-header__view-label {
         display: none;
     }
 
