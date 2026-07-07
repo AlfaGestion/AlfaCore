@@ -74,7 +74,10 @@
     align-content: space-between;
     gap: 18px;
     color: #eef6ff;
-    background: var(--login-hero-bg);
+    background:
+        radial-gradient(820px 540px at 86% 2%, rgba(255, 255, 255, .18), transparent 56%),
+        linear-gradient(145deg, #1d67b7 0%, #14559b 48%, #0f4178 100%);
+    border-right: 1px solid rgba(255,255,255,.06);
 }
 
 .app-login-shell__hero::before {
@@ -83,6 +86,20 @@
     inset: 0;
     background: var(--login-hero-glow);
     pointer-events: none;
+}
+
+.app-login-shell__hero::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    width: 48%;
+    height: 48%;
+    background:
+        radial-gradient(circle, rgba(255,255,255,.28) 1.6px, transparent 1.8px) 0 0 / 16px 16px;
+    opacity: .22;
+    pointer-events: none;
+    mask-image: linear-gradient(180deg, transparent 0%, rgba(0, 0, 0, .78) 28%, rgba(0, 0, 0, 1) 100%);
 }
 
 .app-login-shell__hero > * {
@@ -194,28 +211,30 @@
 }
 
 .app-login-shell__form {
-    padding: 18px 18px 18px 16px;
+    padding: 24px 18px 24px 16px;
     display: flex;
     align-items: stretch;
-    background: var(--login-panel-surface-bg);
+    background:
+        radial-gradient(circle at 92% 12%, rgba(34, 211, 238, .04), transparent 18%),
+        linear-gradient(180deg, rgba(8, 18, 34, .22), rgba(8, 18, 34, .34));
 }
 
 .app-login-shell__surface {
     width: 100%;
     display: grid;
     align-content: start;
-    gap: 13px;
-    padding: 20px 20px 18px;
-    border-radius: 26px;
-    border: 1px solid var(--login-surface-border);
+    gap: 14px;
+    padding: 26px 24px 22px;
+    border-radius: 30px;
+    border: 1px solid rgba(125, 183, 235, .12);
     background: var(--login-card-bg);
-    box-shadow: inset 0 1px 0 rgba(255,255,255,.04), var(--login-shadow-soft);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.05), var(--login-shadow-soft);
 }
 
 .app-login-shell__header {
     display: grid;
     gap: 7px;
-    padding-bottom: 2px;
+    padding-bottom: 4px;
 }
 
 .app-login-shell__eyebrow {
@@ -231,7 +250,7 @@
     margin: 0;
     color: #f8fbff;
     font-size: clamp(1.74rem, 2.2vw, 2.4rem);
-    line-height: 1;
+    line-height: .96;
     letter-spacing: -.045em;
     font-weight: 800;
 }
@@ -239,13 +258,13 @@
 .app-login-shell__subtitle {
     margin: 0;
     color: rgba(226, 232, 240, .84);
-    font-size: .93rem;
-    line-height: 1.4;
+    font-size: .94rem;
+    line-height: 1.45;
 }
 
 .app-login-shell__change-base {
     width: 100%;
-    min-height: 56px;
+    min-height: 58px;
     display: grid;
     grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
@@ -296,7 +315,7 @@
 }
 
 .app-login-shell__form-fields {
-    gap: 13px;
+    gap: 14px;
 }
 
 .app-login-shell__form-fields .auth-field label {
@@ -309,21 +328,21 @@
 
 .app-login-shell__form-fields .auth-input-shell__icon {
     position: absolute;
-    left: 16px !important;
+    left: 12px !important;
     top: 50%;
     transform: translateY(-50%);
-    width: 22px !important;
-    height: 22px !important;
+    width: 30px !important;
+    height: 30px !important;
     display: flex;
     align-items: center;
     justify-content: center;
-    color: rgba(141, 227, 244, .92);
+    color: #dbeafe;
     pointer-events: none;
     z-index: 2;
-    border-radius: 0;
-    background: transparent !important;
-    border: 0 !important;
-    box-shadow: none !important;
+    border-radius: 12px;
+    background: rgba(15, 27, 45, .88) !important;
+    border: 1px solid rgba(125, 183, 235, .18) !important;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.03), 0 4px 10px rgba(0, 0, 0, .10);
     line-height: 1;
     padding: 0 !important;
     min-width: 0 !important;
@@ -331,15 +350,15 @@
 }
 
 .app-login-shell__form-fields .auth-input-shell__icon i {
-    font-size: .9rem;
+    font-size: .86rem;
 }
 
 .app-login-shell__form-fields .auth-input-shell__icon--password {
-    color: rgba(125, 211, 252, .95);
+    color: #7dd3fc;
 }
 
 .app-login-shell__form-fields .auth-input-shell__input {
-    padding-left: 58px !important;
+    padding-left: 72px !important;
 }
 
 .app-login-shell__form-fields .auth-password .auth-input-shell__input {
@@ -621,13 +640,13 @@
     }
 
     .app-login-shell__form-fields .auth-input-shell__icon {
-        left: 16px !important;
-        width: 22px !important;
-        height: 22px !important;
+        left: 14px !important;
+        width: 38px !important;
+        height: 38px !important;
     }
 
     .app-login-shell__form-fields .auth-input-shell__input {
-        padding-left: 60px !important;
+        padding-left: 72px !important;
     }
 
     .app-login-shell__form-fields .auth-password .auth-input-shell__input {
@@ -1193,11 +1212,11 @@ html[data-theme="light"] .app-login-shell__form-fields .auth-card__submit {
     }
 
     .app-login-shell__form {
-        padding: 26px;
+        padding: 24px;
     }
 
     .app-login-shell__surface {
-        padding: 34px 30px 28px;
+        padding: 32px 28px 26px;
         border-radius: 30px;
         gap: 18px;
     }

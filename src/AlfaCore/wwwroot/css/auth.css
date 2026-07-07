@@ -770,10 +770,10 @@ html:has(.app-login-overlay) {
 
 .app-login-modal--compact .auth-input-shell__icon {
     position: absolute;
-    left: 10px;
+    left: 12px;
     top: 50%;
-    width: 40px;
-    height: 40px;
+    width: 30px;
+    height: 30px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -781,21 +781,23 @@ html:has(.app-login-overlay) {
     pointer-events: none;
     z-index: 2;
     line-height: 1;
-    border-radius: 0;
-    background: transparent;
-    box-shadow: none;
+    border-radius: 12px;
+    background: rgba(15, 27, 45, .88);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.03), 0 4px 10px rgba(0, 0, 0, .10);
+    border: 1px solid rgba(125, 183, 235, .18);
+    color: #dbeafe;
 }
 
 .app-login-modal--compact .auth-input-shell__icon i {
-    font-size: 1rem;
+    font-size: .86rem;
+}
+
+.app-login-modal--compact .auth-input-shell__input {
+    padding-left: 72px;
 }
 
 html:not([data-theme="light"]) .app-login-modal--compact .auth-input-shell__icon {
-    border: 1px solid rgba(148, 163, 184, .35);
-    border-radius: 16px;
-    background: var(--login-toggle-bg);
-    color: #e2e8f0;
-    box-shadow: inset 0 1px 0 rgba(255,255,255,.03), 0 6px 16px rgba(0, 0, 0, .14);
+    color: #dbeafe;
 }
 
 .app-login-modal--compact .app-login-modal__close {
@@ -2106,7 +2108,7 @@ html[data-theme="light"] .auth-page .base-search-input:focus-visible {
     .auth-page .auth-shell--saas .auth-form-panel {
         width: 100%;
         padding: 0 10px 10px;
-        background: transparent;
+        background: var(--login-panel-surface-bg);
         flex: 1 1 auto;
         min-height: 0;
     }
@@ -2117,6 +2119,9 @@ html[data-theme="light"] .auth-page .base-search-input:focus-visible {
         margin: 0;
         padding: 12px 12px 10px;
         border-radius: 18px;
+        border: 1px solid var(--login-surface-border);
+        background: var(--login-card-bg);
+        box-shadow: var(--login-shadow-soft), inset 0 1px 0 rgba(255, 255, 255, .06);
         display: grid;
         gap: 6px;
     }
@@ -2855,6 +2860,273 @@ html[data-theme="light"] .auth-legacy-login__actions .btn.btn--ghost:focus-visib
     border-color: rgba(14, 165, 233, .34);
 }
 
+html[data-theme="light"] .auth-page .auth-shell--saas .auth-form-panel {
+    background:
+        radial-gradient(circle at 92% 12%, rgba(14, 165, 233, .10), transparent 20%),
+        linear-gradient(180deg, #eef5fc 0%, #e4edf8 100%);
+}
+
+html[data-theme="light"] .auth-page .auth-shell--saas .auth-form-panel__surface {
+    background:
+        radial-gradient(circle at 88% 12%, rgba(14, 165, 233, .08), transparent 24%),
+        linear-gradient(180deg, rgba(255, 255, 255, .98), rgba(243, 247, 252, .98));
+}
+
+html[data-theme="light"] .auth-page .auth-shell--saas .auth-input-shell__icon {
+    background: rgba(224, 242, 254, .98) !important;
+    border-color: rgba(14, 165, 233, .20) !important;
+    color: #0284c7 !important;
+    box-shadow:
+        inset 0 1px 0 rgba(255,255,255,.90),
+        0 6px 14px rgba(15, 23, 42, .06) !important;
+}
+
+html[data-theme="light"] .auth-page .auth-shell--saas .auth-input-shell__icon--password {
+    color: #0369a1 !important;
+}
+
+html[data-theme="light"] .auth-page .auth-shell--saas .auth-input-shell__input {
+    padding-left: 54px !important;
+}
+
+html[data-theme="light"] .auth-page .auth-shell--saas .auth-password__toggle {
+    background: rgba(241, 249, 255, .98) !important;
+    border-color: rgba(14, 165, 233, .22) !important;
+}
+
+@media (max-width: 768px) {
+    html[data-theme="light"] .auth-page .auth-shell--saas .auth-form-panel {
+        background:
+            radial-gradient(circle at 92% 12%, rgba(14, 165, 233, .08), transparent 20%),
+            linear-gradient(180deg, #f5f9fe 0%, #eaf2fb 100%);
+    }
+
+    html[data-theme="light"] .auth-page .auth-shell--saas .auth-form-panel__surface {
+        background:
+            radial-gradient(circle at 88% 12%, rgba(14, 165, 233, .08), transparent 24%),
+            linear-gradient(180deg, rgba(255, 255, 255, .98), rgba(243, 247, 252, .98));
+    }
+
+    html[data-theme="light"] .auth-page .auth-shell--saas .auth-input-shell__icon {
+        left: 12px;
+        width: 30px;
+        height: 30px;
+    }
+
+    html[data-theme="light"] .auth-page .auth-shell--saas .auth-input-shell__input {
+        padding-left: 52px !important;
+    }
+}
+
+html[data-theme="light"] .auth-page .auth-shell--saas {
+    border-color: rgba(148, 163, 184, .28);
+    background:
+        linear-gradient(135deg, rgba(255, 255, 255, .94), rgba(246, 250, 255, .97));
+    box-shadow: 0 24px 64px rgba(15, 23, 42, .14);
+}
+
+html[data-theme="light"] .auth-page .auth-shell--saas .auth-hero {
+    color: #ffffff;
+    background:
+        radial-gradient(680px 460px at 88% 0%, rgba(255, 255, 255, .16), transparent 62%),
+        linear-gradient(145deg, #0f4c95 0%, #1162ba 56%, #0b345f 100%);
+    border-right-color: rgba(255, 255, 255, .10);
+}
+
+html[data-theme="light"] .auth-page .auth-shell--saas .auth-hero::before {
+    background:
+        radial-gradient(420px 260px at 92% 10%, rgba(255, 255, 255, .16), transparent 68%),
+        radial-gradient(560px 360px at 0% 100%, rgba(255, 255, 255, .10), transparent 66%);
+}
+
+html[data-theme="light"] .auth-page .auth-shell--saas .auth-hero__title,
+html[data-theme="light"] .auth-page .auth-shell--saas .auth-hero__text,
+html[data-theme="light"] .auth-page .auth-shell--saas .auth-hero__note {
+    color: #ffffff;
+}
+
+html[data-theme="light"] .auth-page .auth-shell--saas .auth-hero__text {
+    color: rgba(255, 255, 255, .90);
+}
+
+html[data-theme="light"] .auth-page .auth-shell--saas .auth-hero__summary-card {
+    border-color: rgba(255, 255, 255, .14);
+    background:
+        linear-gradient(180deg, rgba(8, 18, 35, .20), rgba(8, 18, 35, .14));
+    box-shadow:
+        inset 0 1px 0 rgba(255,255,255,.05),
+        0 10px 24px rgba(0, 0, 0, .10);
+}
+
+html[data-theme="light"] .auth-page .auth-shell--saas .auth-hero__summary-card--accent {
+    background:
+        linear-gradient(180deg, rgba(8, 18, 35, .26), rgba(8, 18, 35, .18));
+}
+
+html[data-theme="light"] .auth-page .auth-shell--saas .auth-hero__summary-label,
+html[data-theme="light"] .auth-page .auth-shell--saas .auth-hero__summary-card strong,
+html[data-theme="light"] .auth-page .auth-shell--saas .auth-hero__summary-card small {
+    color: #f8fbff;
+}
+
+html[data-theme="light"] .auth-page .auth-shell--saas .auth-hero__summary-icon {
+    color: #7dd3fc;
+}
+
+html[data-theme="light"] .auth-page .auth-shell--saas .auth-hero__note {
+    background: rgba(255, 255, 255, .12);
+    border-color: rgba(255, 255, 255, .20);
+}
+
+html[data-theme="light"] .auth-page .auth-shell--saas .auth-form-panel {
+    background:
+        radial-gradient(circle at 92% 12%, rgba(14, 165, 233, .06), transparent 18%),
+        linear-gradient(180deg, #fdfefe 0%, #f3f7fd 100%);
+}
+
+html[data-theme="light"] .auth-page .auth-shell--saas .auth-form-panel__surface {
+    border-color: rgba(148, 163, 184, .22);
+    background:
+        radial-gradient(circle at 88% 12%, rgba(14, 165, 233, .06), transparent 24%),
+        linear-gradient(180deg, rgba(255, 255, 255, .98), rgba(246, 249, 253, .98));
+    box-shadow:
+        0 18px 38px rgba(15, 23, 42, .10),
+        inset 0 1px 0 rgba(255, 255, 255, .88);
+}
+
+html[data-theme="light"] .auth-page .auth-shell--saas .auth-saas-login__header-icon {
+    display: grid;
+    place-items: center;
+    color: #0284c7;
+    background: rgba(14, 165, 233, .10);
+    border: 1px solid rgba(14, 165, 233, .18);
+}
+
+html[data-theme="light"] .auth-page .auth-shell--saas .auth-card__title,
+html[data-theme="light"] .auth-page .auth-shell--saas .auth-saas-login__forgot,
+html[data-theme="light"] .auth-page .auth-shell--saas .auth-saas-login__cancel {
+    color: #0f172a;
+}
+
+html[data-theme="light"] .auth-page .auth-shell--saas .auth-saas-login__lead,
+html[data-theme="light"] .auth-page .auth-shell--saas .auth-saas-login__info,
+html[data-theme="light"] .auth-page .auth-shell--saas .auth-card__subtitle {
+    color: #475569;
+}
+
+html[data-theme="light"] .auth-page .auth-shell--saas .auth-saas-login__info {
+    border-color: rgba(148, 163, 184, .22);
+    background: rgba(255, 255, 255, .86);
+    box-shadow: 0 10px 24px rgba(15, 23, 42, .05);
+}
+
+html[data-theme="light"] .auth-page .auth-shell--saas .auth-saas-login__forgot i,
+html[data-theme="light"] .auth-page .auth-shell--saas .auth-saas-login__cancel i {
+    color: #334155;
+}
+
+html[data-theme="light"] .auth-page .auth-shell--saas .auth-input-shell__icon {
+    color: rgba(14, 165, 233, .92);
+}
+
+html[data-theme="light"] .auth-page .auth-shell--saas .auth-input-shell__icon--password {
+    color: rgba(2, 132, 199, .95);
+}
+
+html[data-theme="light"] .auth-page .auth-shell--saas .auth-password__toggle {
+    background: rgba(248, 250, 252, .98);
+    color: #0f172a;
+    border-color: rgba(148, 163, 184, .28);
+}
+
+html[data-theme="light"] .auth-page .auth-shell--saas .auth-password__toggle:hover,
+html[data-theme="light"] .auth-page .auth-shell--saas .auth-password__toggle:focus-visible {
+    background: rgba(241, 245, 249, .98);
+    border-color: rgba(14, 165, 233, .34);
+    color: #0f172a;
+}
+
+@media (max-width: 768px) {
+    html[data-theme="light"] .auth-page .auth-shell--saas {
+        border-color: rgba(148, 163, 184, .24);
+        background:
+            linear-gradient(135deg, rgba(255, 255, 255, .96), rgba(247, 250, 255, .98));
+    }
+
+    html[data-theme="light"] .auth-page .auth-shell--saas .auth-hero {
+        padding: 12px 12px 10px;
+        gap: 8px;
+    }
+
+    html[data-theme="light"] .auth-page .auth-shell--saas .auth-hero__brand .central-login-logo {
+        width: min(154px, 56vw);
+        max-width: 154px;
+    }
+
+    html[data-theme="light"] .auth-page .auth-shell--saas .auth-form-panel {
+        padding: 0 8px 10px;
+        background:
+            radial-gradient(circle at 92% 12%, rgba(14, 165, 233, .06), transparent 18%),
+            linear-gradient(180deg, #fdfefe 0%, #f3f7fd 100%);
+    }
+
+    html[data-theme="light"] .auth-page .auth-shell--saas .auth-form-panel__surface {
+        padding: 12px 10px 10px;
+        border-radius: 18px;
+    }
+
+    html[data-theme="light"] .auth-page .auth-shell--saas .auth-saas-login {
+        gap: 6px;
+    }
+
+    html[data-theme="light"] .auth-page .auth-shell--saas .auth-saas-login__info {
+        padding: 7px 9px;
+        border-radius: 12px;
+        font-size: .74rem;
+    }
+
+    html[data-theme="light"] .auth-page .auth-shell--saas .auth-saas-login__footer {
+        gap: 4px;
+    }
+
+    html[data-theme="light"] .auth-page .auth-shell--saas .auth-saas-login__forgot,
+    html[data-theme="light"] .auth-page .auth-shell--saas .auth-saas-login__cancel {
+        font-size: .74rem;
+    }
+
+    html[data-theme="light"] .auth-page .auth-shell--saas .auth-saas-login__cancel {
+        min-height: 40px;
+    }
+
+    html[data-theme="light"] .auth-page .auth-shell--saas .auth-hero__summary-card {
+        min-height: 0;
+        padding: 8px 7px 7px;
+        gap: 4px;
+        border-radius: 15px;
+    }
+
+    html[data-theme="light"] .auth-page .auth-shell--saas .auth-hero__summary-icon {
+        width: 22px;
+        height: 22px;
+        font-size: .86rem;
+    }
+
+    html[data-theme="light"] .auth-page .auth-shell--saas .auth-hero__summary-label {
+        font-size: .55rem;
+        letter-spacing: .1em;
+    }
+
+    html[data-theme="light"] .auth-page .auth-shell--saas .auth-hero__summary-card strong {
+        font-size: .78rem;
+        line-height: 1.08;
+    }
+
+    html[data-theme="light"] .auth-page .auth-shell--saas .auth-hero__summary-card small {
+        font-size: .64rem;
+        line-height: 1.24;
+    }
+}
+
 @media (max-width: 768px) {
     .auth-page {
         padding: 0;
@@ -3112,7 +3384,7 @@ html[data-theme="light"] .auth-legacy-login__actions .btn.btn--ghost:focus-visib
     .auth-page .auth-shell--saas .auth-form-panel {
         width: 100%;
         padding: 0 8px 10px;
-        background: transparent;
+        background: var(--login-panel-surface-bg);
         flex: 1 1 auto;
         min-height: 0;
     }
@@ -3123,6 +3395,9 @@ html[data-theme="light"] .auth-legacy-login__actions .btn.btn--ghost:focus-visib
         margin: 0;
         padding: 12px 10px 10px;
         border-radius: 18px;
+        border: 1px solid var(--login-surface-border);
+        background: var(--login-card-bg);
+        box-shadow: var(--login-shadow-soft), inset 0 1px 0 rgba(255, 255, 255, .06);
         display: grid;
         gap: 6px;
         min-height: 0;
