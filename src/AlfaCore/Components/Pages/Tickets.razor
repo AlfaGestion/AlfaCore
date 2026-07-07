@@ -1,12 +1,14 @@
 @page "/tickets"
 @page "/{idweb}/{idbase:int}/tickets"
 @using Microsoft.AspNetCore.WebUtilities
+@using AlfaCore.Models
 @using Microsoft.JSInterop
 @inject IJSRuntime JS
 @inject AlfaCore.Services.ITicketsService TicketsSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject AlfaCore.Services.IRouteContextService RouteContext
+@inject AlfaCore.Services.IPageHeaderService PageHeader
 @inject NavigationManager Nav
 @implements IDisposable
 
@@ -36,214 +38,6 @@
             </div>
         </section>
     }
-
-        <section class="module-actionbar tickets-commandbar">
-            <div class="sticky-commandbar__history tickets-commandbar__history" aria-label="Navegación">
-                <button type="button" class="btn btn--ghost btn--icon" title="Acción anterior" aria-label="Acción anterior" @onclick="GoHistoryBackAsync">
-                    <i class="bi bi-chevron-left"></i>
-                </button>
-                <button type="button" class="btn btn--ghost btn--icon" title="Acción posterior" aria-label="Acción posterior" @onclick="GoHistoryForwardAsync">
-                    <i class="bi bi-chevron-right"></i>
-                </button>
-            </div>
-            <div class="tickets-view-switch">
-                <button type="button" class="btn @(_viewMode == "kanban" ? "btn--primary" : "btn--ghost")" @onclick='() => CambiarVistaAsync("kanban")'>
-                    <i class="bi bi-kanban"></i> Kanban
-                </button>
-                <button type="button" class="btn @(_viewMode == "lista" ? "btn--primary" : "btn--ghost")" @onclick='() => CambiarVistaAsync("lista")'>
-                    <i class="bi bi-list-ul"></i> Lista
-                </button>
-            </div>
-            <div class="smart-search tickets-smart-search @(_showEditor ? "tickets-smart-search--editor" : string.Empty)" @onclick:stopPropagation>
-                @if (_showEditor)
-                {
-                    <div class="tickets-commandbar__editor-context">
-                        <span>@(_isNew ? "Nuevo ticket" : "Editando ticket")</span>
-                        <strong>@(_isNew ? "Sin código asignado" : $"{_detail?.CodigoVisible} {_form.Titulo}")</strong>
-                    </div>
-                }
-                else
-                {
-                <div class="smart-search__bar">
-                    <i class="bi bi-search"></i>
-                    <input type="search"
-                           placeholder="Buscar por ticket, cliente, contacto, teléfono, email o técnico..."
-                           value="@_filters.Texto"
-                           @onfocus="OpenTicketSearchPanel"
-                           @oninput="OnTicketSearchInput"
-                           @onkeydown="HandleTicketApplyKeyDownAsync" />
-                    <button type="button" class="smart-search__toggle" @onclick="ToggleTicketSearchPanel" aria-label="Mostrar filtros">
-                        <i class="bi @(_showSearchPanel ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
-                    </button>
-                </div>
-
-                <div class="smart-search__chips" aria-live="polite">
-                    @foreach (var chip in BuildTicketFilterChips())
-                    {
-                        <button type="button" class="smart-chip" @onclick="() => RemoveTicketChipAsync(chip.Key)">
-                            @chip.Label <i class="bi bi-x"></i>
-                        </button>
-                    }
-                    @if (BuildTicketFilterChips().Count == 0)
-                    {
-                        <span class="smart-search__hint">Filtrá por etapa, prioridad, técnico o reglas personalizadas.</span>
-                    }
-                </div>
-
-                @if (_showSearchPanel)
-                {
-                    <div class="tickets-search-backdrop" @onclick="CloseTicketSearchPanel"></div>
-                    <div class="smart-search__panel" @onclick="CloseTicketLookupSuggestions" @onclick:stopPropagation @onkeydown="HandleTicketApplyKeyDownAsync">
-                        <div class="smart-search__column">
-                            <h4><i class="bi bi-funnel-fill"></i> Filtros</h4>
-                            <button type="button" class="@GetSmartOptionClass(_filters.IncluirCerrados)" @onclick='() => ToggleTicketClosedAsync(true)'>Todos</button>
-                            <button type="button" class="@GetSmartOptionClass(!_filters.IncluirCerrados)" @onclick='() => ToggleTicketClosedAsync(false)'>Abiertos</button>
-                            <button type="button" class="@GetSmartOptionClass(_filters.TieneAsignado == false)" @onclick='() => ToggleTicketBoolFilterAsync("sin-asignar")'>Sin asignar</button>
-                            <button type="button" class="@GetSmartOptionClass(_filters.TieneMensajes == true)" @onclick='() => ToggleTicketBoolFilterAsync("mensajes")'>Con mensajes</button>
-                            <button type="button" class='@GetSmartOptionClass(_filters.FechaRapida == "hoy")' @onclick='() => SetTicketDateFilterAsync("hoy")'>Creados hoy</button>
-                            <button type="button" class='@GetSmartOptionClass(_filters.FechaRapida == "recientes")' @onclick='() => SetTicketDateFilterAsync("recientes")'>Actualizados 7 días</button>
-                        </div>
-                        <div class="smart-search__column">
-                            <h4><i class="bi bi-kanban"></i> Soporte</h4>
-                            <div class="smart-search__inline">
-                                <label>Etapa</label>
-                                <select value="@_filters.CodigoEstado" @onchange="OnTicketStateChangedAsync">
-                                    <option value="">Todas</option>
-                                    @foreach (var state in _lookups.Estados)
-                                    {
-                                        <option value="@state.CodigoEstado">@state.Nombre</option>
-                                    }
-                                </select>
-                            </div>
-                            <div class="smart-search__inline">
-                                <label>Asignado</label>
-                                <select value="@_filters.IdTecnico" @onchange="OnTicketTechChangedAsync">
-                                    <option value="">Todos</option>
-                                    @foreach (var tech in _lookups.Tecnicos)
-                                    {
-                                        <option value="@tech.IdTecnico">@tech.Nombre</option>
-                                    }
-                                </select>
-                            </div>
-                            <div class="smart-search__inline">
-                                <label>Prioridad</label>
-                                <select value="@_prioridadFiltro" @onchange="OnTicketPriorityChangedAsync">
-                                    <option value="">Todas</option>
-                                    <option value="3">Alta</option>
-                                    <option value="2">Media</option>
-                                    <option value="1">Baja</option>
-                                    <option value="0">Sin prioridad</option>
-                                </select>
-                            </div>
-                            <div class="smart-search__inline">
-                                <label>Etiqueta</label>
-                                <select value="@_filters.IdEtiqueta" @onchange="OnTicketTagFilterChangedAsync">
-                                    <option value="">Todas</option>
-                                    @foreach (var tag in _lookups.Etiquetas)
-                                    {
-                                        <option value="@tag.IdEtiqueta">@tag.Nombre</option>
-                                    }
-                                </select>
-                            </div>
-                        </div>
-                        <div class="smart-search__column">
-                            <h4><i class="bi bi-building"></i> Cliente / usuario</h4>
-                            <div class="smart-search__inline tickets-lookup" @onclick:stopPropagation>
-                                <label>Cliente</label>
-                                <input type="text" value="@_filterClientSearch" @oninput="OnFilterClientSearchInputAsync" placeholder="Buscar empresa..." />
-                                @if (_filterClientSuggestions.Count > 0)
-                                {
-                                    <div class="tickets-lookup__results">
-                                        @foreach (var client in _filterClientSuggestions)
-                                        {
-                                            <button type="button" @onclick="() => SelectFilterClientAsync(client)">
-                                                <strong>@client.RazonSocial</strong>
-                                                <small>@client.Codigo @client.Localidad</small>
-                                            </button>
-                                        }
-                                    </div>
-                                }
-                            </div>
-                            <div class="smart-search__inline tickets-lookup" @onclick:stopPropagation>
-                                <label>Contacto</label>
-                                <input type="text" value="@_filterContactSearch" @oninput="OnFilterContactSearchInputAsync" placeholder="Buscar usuario/contacto..." />
-                                @if (_filterContactSuggestions.Count > 0)
-                                {
-                                    <div class="tickets-lookup__results">
-                                        @foreach (var contact in _filterContactSuggestions)
-                                        {
-                                            <button type="button" @onclick="() => SelectFilterContactAsync(contact)">
-                                                <strong>@contact.Nombre</strong>
-                                                <small>@DisplayOrFallback(contact.ClienteNombre, contact.Email, contact.Celular)</small>
-                                            </button>
-                                        }
-                                    </div>
-                                }
-                            </div>
-                        </div>
-                        <div class="smart-search__column">
-                            <h4><i class="bi bi-star-fill"></i> Favoritos</h4>
-                            <button type="button" @onclick='() => ApplyTicketFavoriteAsync("urgentes")'>Alta prioridad abiertos</button>
-                            <button type="button" @onclick='() => ApplyTicketFavoriteAsync("seguimiento")'>Seguimiento soporte</button>
-                            <button type="button" @onclick="SaveTicketFavorite">Guardar búsqueda actual</button>
-                            <button type="button" @onclick="OpenTagManager">Administrar etiquetas</button>
-                            @foreach (var favorite in _ticketFavorites)
-                            {
-                                <button type="button" @onclick="() => ApplySavedTicketFavoriteAsync(favorite)">@favorite.Label</button>
-                            }
-                            <div class="actions">
-                                <button type="button" class="btn btn--primary btn--sm" @onclick="AplicarFiltrosAsync" disabled="@_loading">
-                                    <i class="bi bi-search"></i> Aplicar
-                                </button>
-                                <button type="button" class="btn btn--ghost btn--sm" @onclick="LimpiarFiltros" disabled="@_loading">
-                                    <i class="bi bi-eraser"></i> Limpiar
-                                </button>
-                            </div>
-                        </div>
-                        <div class="smart-search__custom">
-                            <h4><i class="bi bi-sliders"></i> Filtro personalizado</h4>
-                            <select @bind="_ticketRuleDraft.Campo">
-                                <option value="titulo">Título</option>
-                                <option value="descripcion">Descripción</option>
-                                <option value="cliente">Cliente</option>
-                                <option value="contacto">Contacto</option>
-                                <option value="tecnico">Técnico</option>
-                            </select>
-                            <select @bind="_ticketRuleDraft.Operador">
-                                <option value="contains">contiene</option>
-                                <option value="equals">es igual a</option>
-                                <option value="starts">empieza con</option>
-                                <option value="empty">está vacío</option>
-                                <option value="not-empty">no está vacío</option>
-                            </select>
-                            <input type="text" placeholder="Valor" @bind="_ticketRuleDraft.Valor" disabled="@IsValueOptionalOperator(_ticketRuleDraft.Operador)" />
-                            <button type="button" class="btn btn--primary btn--sm" @onclick="AddTicketRuleAsync">Agregar regla</button>
-                        </div>
-                    </div>
-                }
-                }
-            </div>
-            <div class="actions tickets-commandbar__actions">
-                @if (_showEditor)
-                {
-                    <button type="button" class="btn btn--primary" @onclick="GuardarAsync" disabled="@_saving">
-                        <i class="bi bi-floppy"></i> @(_saving ? "Guardando..." : "Guardar")
-                    </button>
-                    <button type="button" class="btn btn--ghost" @onclick="CerrarEditor" disabled="@_saving">
-                        <i class="bi bi-x-circle"></i> Cancelar
-                    </button>
-                }
-                else
-                {
-                <button type="button" class="btn btn--primary" @onclick="NuevoTicket">
-                    <i class="bi bi-plus-circle"></i> Nuevo
-                </button>
-                <button type="button" class="btn btn--ghost" @onclick="RecargarAsync" disabled="@_loading">
-                    <i class="bi bi-arrow-clockwise"></i> Recargar
-                </button>
-                }
-            </div>
-        </section>
 
     @if (_showViewSettings && _viewMode == "lista" && !_showEditor)
     {
@@ -828,6 +622,282 @@
     private int _resizeStartWidth;
     private SearchRuleDto _ticketRuleDraft = new() { Campo = "titulo", Operador = "contains" };
     private readonly List<SavedTicketSearch> _ticketFavorites = [];
+
+    private RenderFragment RenderTicketSmartSearch() => @<div class="smart-search tickets-smart-search" @onclick:stopPropagation>
+                <div class="smart-search__bar">
+                    <i class="bi bi-search"></i>
+                    <input type="search"
+                           placeholder="Buscar por ticket, cliente, contacto, teléfono, email o técnico..."
+                           value="@_filters.Texto"
+                           @onfocus="OpenTicketSearchPanel"
+                           @oninput="OnTicketSearchInput"
+                           @onkeydown="HandleTicketApplyKeyDownAsync" />
+                    <button type="button" class="smart-search__toggle" @onclick="ToggleTicketSearchPanel" aria-label="Mostrar filtros">
+                        <i class="bi @(_showSearchPanel ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
+                    </button>
+                </div>
+
+                <div class="smart-search__chips" aria-live="polite">
+                    @foreach (var chip in BuildTicketFilterChips())
+                    {
+                        <button type="button" class="smart-chip" @onclick="() => RemoveTicketChipAsync(chip.Key)">
+                            @chip.Label <i class="bi bi-x"></i>
+                        </button>
+                    }
+                    @if (BuildTicketFilterChips().Count == 0)
+                    {
+                        <span class="smart-search__hint">Filtrá por etapa, prioridad, técnico o reglas personalizadas.</span>
+                    }
+                </div>
+
+                @if (_showSearchPanel)
+                {
+                    <div class="tickets-search-backdrop" @onclick="CloseTicketSearchPanel"></div>
+                    <div class="smart-search__panel" @onclick="CloseTicketLookupSuggestions" @onclick:stopPropagation @onkeydown="HandleTicketApplyKeyDownAsync">
+                        <div class="smart-search__column">
+                            <h4><i class="bi bi-funnel-fill"></i> Filtros</h4>
+                            <button type="button" class="@GetSmartOptionClass(_filters.IncluirCerrados)" @onclick='() => ToggleTicketClosedAsync(true)'>Todos</button>
+                            <button type="button" class="@GetSmartOptionClass(!_filters.IncluirCerrados)" @onclick='() => ToggleTicketClosedAsync(false)'>Abiertos</button>
+                            <button type="button" class="@GetSmartOptionClass(_filters.TieneAsignado == false)" @onclick='() => ToggleTicketBoolFilterAsync("sin-asignar")'>Sin asignar</button>
+                            <button type="button" class="@GetSmartOptionClass(_filters.TieneMensajes == true)" @onclick='() => ToggleTicketBoolFilterAsync("mensajes")'>Con mensajes</button>
+                            <button type="button" class='@GetSmartOptionClass(_filters.FechaRapida == "hoy")' @onclick='() => SetTicketDateFilterAsync("hoy")'>Creados hoy</button>
+                            <button type="button" class='@GetSmartOptionClass(_filters.FechaRapida == "recientes")' @onclick='() => SetTicketDateFilterAsync("recientes")'>Actualizados 7 días</button>
+                        </div>
+                        <div class="smart-search__column">
+                            <h4><i class="bi bi-kanban"></i> Soporte</h4>
+                            <div class="smart-search__inline">
+                                <label>Etapa</label>
+                                <select value="@_filters.CodigoEstado" @onchange="OnTicketStateChangedAsync">
+                                    <option value="">Todas</option>
+                                    @foreach (var state in _lookups.Estados)
+                                    {
+                                        <option value="@state.CodigoEstado">@state.Nombre</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="smart-search__inline">
+                                <label>Asignado</label>
+                                <select value="@_filters.IdTecnico" @onchange="OnTicketTechChangedAsync">
+                                    <option value="">Todos</option>
+                                    @foreach (var tech in _lookups.Tecnicos)
+                                    {
+                                        <option value="@tech.IdTecnico">@tech.Nombre</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="smart-search__inline">
+                                <label>Prioridad</label>
+                                <select value="@_prioridadFiltro" @onchange="OnTicketPriorityChangedAsync">
+                                    <option value="">Todas</option>
+                                    <option value="3">Alta</option>
+                                    <option value="2">Media</option>
+                                    <option value="1">Baja</option>
+                                    <option value="0">Sin prioridad</option>
+                                </select>
+                            </div>
+                            <div class="smart-search__inline">
+                                <label>Etiqueta</label>
+                                <select value="@_filters.IdEtiqueta" @onchange="OnTicketTagFilterChangedAsync">
+                                    <option value="">Todas</option>
+                                    @foreach (var tag in _lookups.Etiquetas)
+                                    {
+                                        <option value="@tag.IdEtiqueta">@tag.Nombre</option>
+                                    }
+                                </select>
+                            </div>
+                        </div>
+                        <div class="smart-search__column">
+                            <h4><i class="bi bi-building"></i> Cliente / usuario</h4>
+                            <div class="smart-search__inline tickets-lookup" @onclick:stopPropagation>
+                                <label>Cliente</label>
+                                <input type="text" value="@_filterClientSearch" @oninput="OnFilterClientSearchInputAsync" placeholder="Buscar empresa..." />
+                                @if (_filterClientSuggestions.Count > 0)
+                                {
+                                    <div class="tickets-lookup__results">
+                                        @foreach (var client in _filterClientSuggestions)
+                                        {
+                                            <button type="button" @onclick="() => SelectFilterClientAsync(client)">
+                                                <strong>@client.RazonSocial</strong>
+                                                <small>@client.Codigo @client.Localidad</small>
+                                            </button>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                            <div class="smart-search__inline tickets-lookup" @onclick:stopPropagation>
+                                <label>Contacto</label>
+                                <input type="text" value="@_filterContactSearch" @oninput="OnFilterContactSearchInputAsync" placeholder="Buscar usuario/contacto..." />
+                                @if (_filterContactSuggestions.Count > 0)
+                                {
+                                    <div class="tickets-lookup__results">
+                                        @foreach (var contact in _filterContactSuggestions)
+                                        {
+                                            <button type="button" @onclick="() => SelectFilterContactAsync(contact)">
+                                                <strong>@contact.Nombre</strong>
+                                                <small>@DisplayOrFallback(contact.ClienteNombre, contact.Email, contact.Celular)</small>
+                                            </button>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                        <div class="smart-search__column">
+                            <h4><i class="bi bi-star-fill"></i> Favoritos</h4>
+                            <button type="button" @onclick='() => ApplyTicketFavoriteAsync("urgentes")'>Alta prioridad abiertos</button>
+                            <button type="button" @onclick='() => ApplyTicketFavoriteAsync("seguimiento")'>Seguimiento soporte</button>
+                            <button type="button" @onclick="SaveTicketFavorite">Guardar búsqueda actual</button>
+                            <button type="button" @onclick="OpenTagManager">Administrar etiquetas</button>
+                            @foreach (var favorite in _ticketFavorites)
+                            {
+                                <button type="button" @onclick="() => ApplySavedTicketFavoriteAsync(favorite)">@favorite.Label</button>
+                            }
+                            <div class="actions">
+                                <button type="button" class="btn btn--primary btn--sm" @onclick="AplicarFiltrosAsync" disabled="@_loading">
+                                    <i class="bi bi-search"></i> Aplicar
+                                </button>
+                                <button type="button" class="btn btn--ghost btn--sm" @onclick="LimpiarFiltros" disabled="@_loading">
+                                    <i class="bi bi-eraser"></i> Limpiar
+                                </button>
+                            </div>
+                        </div>
+                        <div class="smart-search__custom">
+                            <h4><i class="bi bi-sliders"></i> Filtro personalizado</h4>
+                            <select @bind="_ticketRuleDraft.Campo">
+                                <option value="titulo">Título</option>
+                                <option value="descripcion">Descripción</option>
+                                <option value="cliente">Cliente</option>
+                                <option value="contacto">Contacto</option>
+                                <option value="tecnico">Técnico</option>
+                            </select>
+                            <select @bind="_ticketRuleDraft.Operador">
+                                <option value="contains">contiene</option>
+                                <option value="equals">es igual a</option>
+                                <option value="starts">empieza con</option>
+                                <option value="empty">está vacío</option>
+                                <option value="not-empty">no está vacío</option>
+                            </select>
+                            <input type="text" placeholder="Valor" @bind="_ticketRuleDraft.Valor" disabled="@IsValueOptionalOperator(_ticketRuleDraft.Operador)" />
+                            <button type="button" class="btn btn--primary btn--sm" @onclick="AddTicketRuleAsync">Agregar regla</button>
+                        </div>
+                    </div>
+                }
+    </div>;
+
+    private void UpdatePageHeader()
+    {
+        var actions = new List<PageHeaderAction>();
+        if (_showEditor)
+        {
+            actions.Add(new PageHeaderAction
+            {
+                Key = "guardar",
+                Label = _saving ? "Guardando..." : "Guardar",
+                Icon = "bi-floppy",
+                Style = PageHeaderActionStyle.Primary,
+                Priority = PageHeaderActionPriority.Essential,
+                Disabled = _saving,
+                Busy = _saving,
+                OnClick = GuardarAsync
+            });
+            actions.Add(new PageHeaderAction
+            {
+                Key = "cancelar",
+                Label = "Cancelar",
+                Icon = "bi-x-circle",
+                Style = PageHeaderActionStyle.Ghost,
+                Priority = PageHeaderActionPriority.Essential,
+                Disabled = _saving,
+                OnClick = () => { CerrarEditor(); return Task.CompletedTask; }
+            });
+        }
+        else
+        {
+            actions.Add(new PageHeaderAction
+            {
+                Key = "nuevo",
+                Label = "Nuevo",
+                Icon = "bi-plus-circle",
+                Style = PageHeaderActionStyle.Primary,
+                Priority = PageHeaderActionPriority.Essential,
+                OnClick = () => { NuevoTicket(); return Task.CompletedTask; }
+            });
+            actions.Add(new PageHeaderAction
+            {
+                Key = "recargar",
+                Label = "Recargar",
+                Icon = "bi-arrow-clockwise",
+                Style = PageHeaderActionStyle.Ghost,
+                Priority = PageHeaderActionPriority.Essential,
+                Disabled = _loading,
+                OnClick = RecargarAsync
+            });
+            if (_viewMode == "lista")
+            {
+                actions.Add(new PageHeaderAction
+                {
+                    Key = "vista",
+                    Label = "Configurar vista",
+                    Icon = "bi-sliders",
+                    Style = PageHeaderActionStyle.Ghost,
+                    Priority = PageHeaderActionPriority.Overflow,
+                    OnClick = () => { AbrirConfiguracionVista(); return Task.CompletedTask; }
+                });
+            }
+            actions.Add(new PageHeaderAction
+            {
+                Key = "etiquetas",
+                Label = "Administrar etiquetas",
+                Icon = "bi-tags",
+                Style = PageHeaderActionStyle.Ghost,
+                Priority = PageHeaderActionPriority.Overflow,
+                OnClick = () => { OpenTagManager(); return Task.CompletedTask; }
+            });
+        }
+
+        var title = _showEditor
+            ? _isNew ? "Nuevo ticket" : $"{_detail?.CodigoVisible} {_form.Titulo}".Trim()
+            : "Tickets";
+
+        PageHeader.Set(new PageHeaderConfig
+        {
+            Title = title,
+            Breadcrumb = ["Soporte", "Tickets"],
+            State = _saving
+                ? PageHeaderState.Loading
+                : _showEditor
+                    ? (_isNew ? PageHeaderState.Creating : PageHeaderState.Editing)
+                    : _viewMode == "kanban" ? PageHeaderState.Kanban : PageHeaderState.List,
+            OnBack = _showEditor && _isNew ? new Func<Task>(() => { CerrarEditor(); return Task.CompletedTask; }) : null,
+            Search = _showEditor ? null : new PageHeaderSearchConfig(),
+            SearchContent = _showEditor ? null : RenderTicketSmartSearch(),
+            ViewButtons = _showEditor
+                ? []
+                :
+                [
+                    new PageHeaderViewButton
+                    {
+                        Key = "kanban",
+                        Label = "Kanban",
+                        Icon = "bi-kanban",
+                        Active = _viewMode == "kanban",
+                        Disabled = _loading,
+                        OnClick = () => CambiarVistaAsync("kanban")
+                    },
+                    new PageHeaderViewButton
+                    {
+                        Key = "lista",
+                        Label = "Lista",
+                        Icon = "bi-list-ul",
+                        Active = _viewMode == "lista",
+                        Disabled = _loading,
+                        OnClick = () => CambiarVistaAsync("lista")
+                    }
+                ],
+            Actions = actions
+        });
+        _ = InvokeAsync(StateHasChanged);
+    }
+
     private string _ticketClientSearch = string.Empty;
     private string _ticketContactSearch = string.Empty;
     private string _selectedClientLabel = string.Empty;
@@ -886,18 +956,21 @@
     {
         AppUserSession.StateChanged += OnAppUserSessionChanged;
         Nav.LocationChanged += OnLocationChanged;
+        UpdatePageHeader();
         ApplyStartupQuery();
         await EnsureViewSettingsLoadedAsync();
         await CargarLookupsAsync();
         await BuscarAsync();
         if (_startupTicketId.HasValue)
             await AbrirTicketAsync(_startupTicketId.Value);
+        UpdatePageHeader();
     }
 
     public void Dispose()
     {
         AppUserSession.StateChanged -= OnAppUserSessionChanged;
         Nav.LocationChanged -= OnLocationChanged;
+        PageHeader.Clear();
         _ = DisposeEditorAsync();
         _kanbanDotNetRef?.Dispose();
         _searchDebounceCts?.Cancel();
@@ -988,33 +1061,40 @@
 
     private async Task RecargarAsync()
     {
+        UpdatePageHeader();
         await CargarLookupsAsync();
         await BuscarAsync(keepCurrent: true);
         if (_detail is not null)
             await AbrirTicketAsync(_detail.IdTicket, updateUrl: false);
+        UpdatePageHeader();
     }
-
-    private async Task GoHistoryBackAsync()
-        => await JS.InvokeVoidAsync("history.back");
-
-    private async Task GoHistoryForwardAsync()
-        => await JS.InvokeVoidAsync("history.forward");
 
     private async Task CambiarVistaAsync(string view)
     {
         _viewMode = view;
         _showEditor = false;
+        UpdatePageHeader();
         await BuscarAsync(keepCurrent: true);
+        UpdatePageHeader();
     }
 
     private void OpenTicketSearchPanel()
-        => _showSearchPanel = true;
+    {
+        _showSearchPanel = true;
+        UpdatePageHeader();
+    }
 
     private void ToggleTicketSearchPanel()
-        => _showSearchPanel = !_showSearchPanel;
+    {
+        _showSearchPanel = !_showSearchPanel;
+        UpdatePageHeader();
+    }
 
     private void CloseTicketSearchPanel()
-        => _showSearchPanel = false;
+    {
+        _showSearchPanel = false;
+        UpdatePageHeader();
+    }
 
     private async Task HandleTicketPageClickAsync()
     {
@@ -1027,6 +1107,7 @@
     {
         _filters.Texto = e.Value?.ToString() ?? string.Empty;
         DebounceTicketSearch();
+        UpdatePageHeader();
     }
 
     private void DebounceTicketSearch()
@@ -1356,6 +1437,7 @@
         };
         _formTagIds = [];
         ClearTicketRelations();
+        UpdatePageHeader();
     }
 
     private async Task AbrirTicketAsync(long idTicket, bool updateUrl = true)
@@ -1399,6 +1481,7 @@
         _showEditor = true;
         _newNote = string.Empty;
         _descriptionEditorReady = false;
+        UpdatePageHeader();
     }
 
     private bool NavigateToTicketUrl(long idTicket)
@@ -1833,6 +1916,9 @@
         _newNote = string.Empty;
         _showDescriptionCommands = false;
         _descriptionEditorReady = false;
+        _ticketClientSuggestions = [];
+        _ticketContactSuggestions = [];
+        UpdatePageHeader();
     }
 
     private async Task EnsureViewSettingsLoadedAsync(bool force = false)
@@ -1866,12 +1952,14 @@
         _draftAgruparPor = _viewSettings.AgruparPor;
         _viewSettingsDraft.Clear();
         _viewSettingsDraft.AddRange(CloneColumns(_viewSettings.Columnas));
+        UpdatePageHeader();
     }
 
     private void CloseViewSettings()
     {
         _showViewSettings = false;
         _viewSettingsFocusPending = false;
+        UpdatePageHeader();
     }
 
     private void HandleViewSettingsKeyDown(KeyboardEventArgs args)

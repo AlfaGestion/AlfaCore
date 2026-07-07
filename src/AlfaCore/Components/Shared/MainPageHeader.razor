@@ -1,0 +1,202 @@
+@using AlfaCore.Models
+@using AlfaCore.Services
+@inject IPageHeaderService PageHeader
+@inject IPageHeaderNavigationService HeaderNavigation
+@inject NavigationManager Nav
+@implements IDisposable
+
+@if (HasHeader)
+{
+    <section class="@HeaderClass" aria-label="Acciones de la página">
+        <div class="main-page-header__nav">
+            @if (Config.ShowHistoryNavigation)
+            {
+                <button type="button" class="main-page-header__icon-btn" title="Acción anterior" aria-label="Acción anterior" disabled="@(!CanGoBack)" @onclick="GoBackAsync">
+                    <i class="bi bi-chevron-left"></i>
+                </button>
+                <button type="button" class="main-page-header__icon-btn" title="Acción posterior" aria-label="Acción posterior" disabled="@(!CanGoForward)" @onclick="GoForwardAsync">
+                    <i class="bi bi-chevron-right"></i>
+                </button>
+            }
+        </div>
+
+        <div class="main-page-header__context">
+            @if (Config.Breadcrumb.Count > 0)
+            {
+                <div class="main-page-header__breadcrumb" title="@BreadcrumbTitle">
+                    @for (var i = 0; i < Config.Breadcrumb.Count; i++)
+                    {
+                        if (i > 0)
+                        {
+                            <span>/</span>
+                        }
+                        <span>@Config.Breadcrumb[i]</span>
+                    }
+                </div>
+            }
+            <h1>@Config.Title</h1>
+        </div>
+
+        <div class="main-page-header__search">
+            @if (Config.SearchContent is not null)
+            {
+                @Config.SearchContent
+            }
+            else if (Config.Search is not null)
+            {
+                <div class="main-page-header__search-box">
+                    <i class="bi bi-search"></i>
+                    <input type="search"
+                           value="@Config.Search.Text"
+                           placeholder="@Config.Search.Placeholder"
+                           disabled="@Config.Search.Disabled"
+                           @oninput="OnSearchInputAsync"
+                           @onkeydown="OnSearchKeyDownAsync" />
+                    @if (Config.Search.ShowFiltersToggle)
+                    {
+                        <button type="button"
+                                class="main-page-header__icon-btn main-page-header__filter-btn @(Config.Search.FiltersOpen ? "is-active" : string.Empty)"
+                                title="Filtros"
+                                aria-label="Filtros"
+                                @onclick="ToggleFiltersAsync">
+                            <i class="bi bi-funnel"></i>
+                        </button>
+                    }
+                </div>
+            }
+        </div>
+
+        <div class="main-page-header__view">
+            @foreach (var view in Config.ViewButtons)
+            {
+                <button type="button"
+                        class="main-page-header__view-btn @(view.Active ? "is-active" : string.Empty)"
+                        title="@DisplayTitle(view.Title, view.Label)"
+                        aria-label="@view.Label"
+                        disabled="@view.Disabled"
+                        @onclick="() => RunAsync(view.OnClick)">
+                    <i class="bi @view.Icon"></i>
+                    <span class="main-page-header__view-label">@view.Label</span>
+                </button>
+            }
+        </div>
+
+        <div class="main-page-header__actions">
+            @foreach (var action in VisibleActions)
+            {
+                <button type="button"
+                        class="@GetActionClass(action)"
+                        title="@DisplayTitle(action.Title, action.Label)"
+                        disabled="@(action.Disabled || action.Busy)"
+                        @onclick="() => RunAsync(action.OnClick)">
+                    @if (!string.IsNullOrWhiteSpace(action.Icon))
+                    {
+                        <i class="bi @action.Icon"></i>
+                    }
+                    <span>@(action.Busy ? "Procesando..." : action.Label)</span>
+                </button>
+            }
+
+            @if (OverflowActions.Count > 0)
+            {
+                <details class="main-page-header__overflow">
+                    <summary title="Más acciones" aria-label="Más acciones">
+                        <i class="bi bi-three-dots"></i>
+                    </summary>
+                    <div class="main-page-header__overflow-menu">
+                        @foreach (var action in OverflowActions)
+                        {
+                            <button type="button" disabled="@(action.Disabled || action.Busy)" @onclick="() => RunAsync(action.OnClick)">
+                                @if (!string.IsNullOrWhiteSpace(action.Icon))
+                                {
+                                    <i class="bi @action.Icon"></i>
+                                }
+                                <span>@action.Label</span>
+                            </button>
+                        }
+                    </div>
+                </details>
+            }
+        </div>
+    </section>
+    <div class="main-page-header__spacer no-print" aria-hidden="true"></div>
+}
+
+@code {
+    private PageHeaderConfig Config => PageHeader.Current;
+    private string HeaderClass => $"main-page-header no-print {(HasSearch ? string.Empty : "main-page-header--no-search")}";
+    private bool HasSearch => Config.Search is not null || Config.SearchContent is not null;
+    private bool HasHeader => !string.IsNullOrWhiteSpace(Config.Title) || Config.Search is not null || Config.SearchContent is not null || Config.Actions.Count > 0;
+    private bool CanGoBack => Config.OnBack is not null || HeaderNavigation.CanGoBack;
+    private bool CanGoForward => Config.OnForward is not null || HeaderNavigation.CanGoForward;
+    private IReadOnlyList<PageHeaderAction> VisibleActions => Config.Actions.Where(a => a.Priority != PageHeaderActionPriority.Overflow).ToList();
+    private IReadOnlyList<PageHeaderAction> OverflowActions => Config.Actions.Where(a => a.Priority == PageHeaderActionPriority.Overflow).ToList();
+    private string BreadcrumbTitle => string.Join(" / ", Config.Breadcrumb);
+    protected override void OnInitialized()
+        => PageHeader.Changed += OnHeaderChanged;
+
+    public void Dispose()
+        => PageHeader.Changed -= OnHeaderChanged;
+
+    private void OnHeaderChanged()
+        => _ = InvokeAsync(StateHasChanged);
+
+    private async Task OnSearchInputAsync(ChangeEventArgs args)
+    {
+        if (Config.Search?.OnTextChanged is null)
+            return;
+
+        await Config.Search.OnTextChanged.Invoke(args.Value?.ToString() ?? string.Empty);
+    }
+
+    private async Task OnSearchKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (!string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase) || Config.Search?.OnSearch is null)
+            return;
+
+        await Config.Search.OnSearch.Invoke();
+    }
+
+    private Task ToggleFiltersAsync()
+        => RunAsync(Config.Search?.OnToggleFilters);
+
+    private async Task GoBackAsync()
+    {
+        if (Config.OnBack is not null)
+        {
+            await Config.OnBack.Invoke();
+            return;
+        }
+
+        HeaderNavigation.GoBack(Nav);
+    }
+
+    private async Task GoForwardAsync()
+    {
+        if (Config.OnForward is not null)
+        {
+            await Config.OnForward.Invoke();
+            return;
+        }
+
+        HeaderNavigation.GoForward(Nav);
+    }
+
+    private static async Task RunAsync(Func<Task>? action)
+    {
+        if (action is not null)
+            await action.Invoke();
+    }
+
+    private static string DisplayTitle(string title, string fallback)
+        => string.IsNullOrWhiteSpace(title) ? fallback : title;
+
+    private static string GetActionClass(PageHeaderAction action)
+        => action.Style switch
+        {
+            PageHeaderActionStyle.Primary => "main-page-header__action main-page-header__action--primary",
+            PageHeaderActionStyle.Danger => "main-page-header__action main-page-header__action--danger",
+            PageHeaderActionStyle.Ghost => "main-page-header__action main-page-header__action--ghost",
+            _ => "main-page-header__action"
+        };
+}

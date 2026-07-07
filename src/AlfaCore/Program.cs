@@ -159,6 +159,8 @@ public class Program
         builder.Services.AddScoped<IAppUiOperationService, AppUiOperationService>();
         builder.Services.AddScoped<IAppUiDialogService, AppUiDialogService>();
         builder.Services.AddScoped<IFloatingWindowService, FloatingWindowService>();
+        builder.Services.AddScoped<IPageHeaderService, PageHeaderService>();
+        builder.Services.AddScoped<IPageHeaderNavigationService, PageHeaderNavigationService>();
         builder.Services.AddScoped<IAuxErrRepository, AuxErrRepository>();
         builder.Services.AddScoped<IAppEventService, AppEventService>();
         builder.Services.AddSingleton<ConsultasExcelExporter>();

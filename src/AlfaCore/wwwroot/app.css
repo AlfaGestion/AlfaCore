@@ -10609,20 +10609,20 @@ html[data-theme="light"] .editor-builder__col-grid {
 }
 
 .carga-viajes-modal-backdrop {
-    z-index: 1505;
+    z-index: 2300;
     padding: 1rem;
 }
 
 .shell:has(.carga-viajes-modal-backdrop) .shell__main,
 .shell:has(.tarifa-aumento-backdrop-v2) .shell__main {
     position: relative;
-    z-index: 1501;
+    z-index: 2300;
 }
 
 .shell:has(.carga-viajes-modal-backdrop) .shell__content,
 .shell:has(.tarifa-aumento-backdrop-v2) .shell__content {
     position: relative;
-    z-index: 1501;
+    z-index: 2300;
 }
 
 .carga-viajes-modal {
@@ -25170,6 +25170,40 @@ body:has(.cuentas-modal .usuarios-view-settings) {
     margin-top: .4rem !important;
 }
 
+/* Header global: el dropdown de filtros se ancla al centro real de la barra de búsqueda. */
+.main-page-header .main-page-header__search {
+    display: flex !important;
+    justify-content: center !important;
+}
+
+.main-page-header .main-page-header__search .smart-search {
+    position: relative !important;
+    width: min(100%, 620px) !important;
+    max-width: 620px !important;
+}
+
+.main-page-header .main-page-header__search .smart-search__bar {
+    width: 100% !important;
+    max-width: none !important;
+}
+
+.main-page-header .main-page-header__search .smart-search__chips {
+    right: 2.75rem !important;
+    max-width: 56% !important;
+}
+
+.main-page-header .main-page-header__search .smart-search__panel:not(.interfaces-filters-panel-grid) {
+    position: absolute !important;
+    top: calc(100% + .52rem) !important;
+    left: 0 !important;
+    right: auto !important;
+    width: min(700px, calc(100vw - 6rem)) !important;
+    max-width: none !important;
+    transform: none !important;
+    transform-origin: top left !important;
+    z-index: 1920 !important;
+}
+
 .ctree-search,
 .result-search,
 .help-search {
@@ -25840,4 +25874,95 @@ body:has(.cuentas-modal .usuarios-view-settings) {
     margin: .9rem 0 1.2rem;
     border-radius: 1.05rem;
     font-size: 1.35rem;
+}
+
+/* MainPageHeader without search: keep section labels readable and away from actions. */
+.main-page-header.main-page-header--no-search {
+    display: grid !important;
+    grid-template-columns: auto minmax(160px, .32fr) minmax(0, 1fr) auto !important;
+    grid-template-areas:
+        "nav context filler actions"
+        "views views views views" !important;
+    row-gap: .42rem !important;
+    min-height: 5.85rem !important;
+    padding-block: .42rem .5rem !important;
+}
+
+.main-page-header.main-page-header--no-search .main-page-header__search {
+    display: none !important;
+}
+
+.main-page-header.main-page-header--no-search .main-page-header__nav {
+    grid-area: nav !important;
+}
+
+.main-page-header.main-page-header--no-search .main-page-header__context {
+    grid-area: context !important;
+}
+
+.main-page-header.main-page-header--no-search .main-page-header__view {
+    grid-area: views !important;
+    display: flex !important;
+    justify-content: center !important;
+    align-items: center !important;
+    gap: .4rem !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    scrollbar-width: none !important;
+}
+
+.main-page-header.main-page-header--no-search .main-page-header__view::-webkit-scrollbar {
+    display: none !important;
+}
+
+.main-page-header.main-page-header--no-search .main-page-header__actions {
+    grid-area: actions !important;
+}
+
+.main-page-header.main-page-header--no-search + .main-page-header__spacer {
+    height: 6.2rem !important;
+}
+
+.main-page-header .main-page-header__view-btn {
+    width: auto !important;
+    min-width: max-content !important;
+    max-width: 10rem !important;
+    height: 2.05rem !important;
+    min-height: 2.05rem !important;
+    padding: 0 .7rem !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: .42rem !important;
+    flex: 0 0 auto !important;
+    border: 1px solid rgba(148, 163, 184, .16) !important;
+    border-radius: .7rem !important;
+    background: rgba(15, 23, 42, .68) !important;
+    color: rgba(226, 232, 240, .9) !important;
+    font-size: .78rem !important;
+    font-weight: 800 !important;
+    line-height: 1 !important;
+    white-space: nowrap !important;
+    cursor: pointer !important;
+}
+
+.main-page-header .main-page-header__view-btn:hover,
+.main-page-header .main-page-header__view-btn.is-active {
+    border-color: rgba(45, 212, 191, .42) !important;
+    background: rgba(20, 184, 166, .18) !important;
+    color: #fff !important;
+}
+
+.main-page-header .main-page-header__view-btn:disabled {
+    opacity: .55 !important;
+    cursor: not-allowed !important;
+}
+
+.main-page-header .main-page-header__view-label {
+    display: inline !important;
+    max-width: 7rem !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
 }
