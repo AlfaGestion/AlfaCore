@@ -61,11 +61,6 @@
                 <div>
                     <h3 class="panel-card__title">Viajes</h3>
                 </div>
-                <div class="actions">
-                    <button type="button" class="btn btn--primary btn--sm" @onclick="AbrirNuevoViajeAsync"><i class="bi bi-plus-lg"></i> Nuevo viaje</button>
-                    <button type="button" class="btn btn--ghost btn--sm" @onclick="RecargarViajesAsync" disabled="@_viajesLoading">Recargar</button>
-                    <button type="button" class="btn btn--ghost btn--sm" @onclick="AbrirConfiguracionVista">Configurar vista</button>
-                </div>
             </div>
 
             <div class="smart-search carga-viajes-smart-search carga-viajes-smart-search--viajes" @onkeydown="HandleViajesFilterKeyDownAsync">
@@ -228,9 +223,6 @@
                 <div>
                     <h3 class="panel-card__title">Viajes</h3>
                     <span class="panel-card__subtitle">@_viajesTotal registro(s) · Página @_viajesPage de @_viajesTotalPages</span>
-                </div>
-                <div class="actions">
-                    <button type="button" class="btn btn--ghost btn--sm" @onclick="RecargarViajesAsync" disabled="@_viajesLoading">Recargar</button>
                 </div>
             </div>
 
@@ -1388,7 +1380,7 @@
                 </div>
 
                 <div class="viajes-filter-panel-v2 viajes-report-filter-panel-v2">
-                    <div class="viajes-filter-row-v2">
+                    <div class="viajes-filter-row-v2 carga-viajes-reportes__date-row">
                         <div class="viajes-filter-field-v2 sm">
                             <label>Rango rápido</label>
                             <select value="@_reporteLiquidacionFilters.RangoRapido" @onchange="OnReporteRangoRapidoChangedAsync">
@@ -1410,70 +1402,89 @@
                             <label>Fecha hasta</label>
                             <InputDate TValue="DateTime?" Value="_reporteLiquidacionFilters.FechaHasta" ValueChanged="OnReporteFechaHastaChangedAsync" ValueExpression="() => _reporteLiquidacionFilters.FechaHasta" />
                         </div>
-                        <div class="viajes-filter-field-v2 lg">
-                            <label>Chofer/Fletero</label>
-                            <LookupAutocomplete Label="" Placeholder="Buscar persona..." Text="@_reporteChoferFleteroTexto" TextChanged="OnReporteChoferFleteroTextoChangedAsync" SelectedChanged="OnReporteChoferFleteroSeleccionadoAsync" SearchFunc="SearchReporteChoferFleteroLookupAsync" />
-                        </div>
-                        <div class="viajes-filter-field-v2 sm">
-                            <label>Estado</label>
-                            <select value="@_reporteLiquidacionFilters.Estado" @onchange="OnReporteEstadoChangedAsync">
-                                <option value="@CargaViajesReporteEstadoKeys.Todos">Todos</option>
-                                <option value="@CargaViajesReporteEstadoKeys.Pendiente">Pendiente</option>
-                                <option value="@CargaViajesReporteEstadoKeys.Finalizado">Finalizado</option>
-                                <option value="@CargaViajesReporteEstadoKeys.PendientePago">Pendiente pago</option>
-                            </select>
-                        </div>
-                        <div class="viajes-filter-field-v2 sm">
-                            <label>Estado pago</label>
-                            <select value="@_reporteLiquidacionFilters.EstadoPago" @onchange="OnReporteEstadoPagoChangedAsync">
-                                <option value="@CargaViajesLiquidacionEstadoPagoKeys.Todos">Todos</option>
-                                <option value="@CargaViajesLiquidacionEstadoPagoKeys.Pendientes">Pendiente</option>
-                                <option value="@CargaViajesLiquidacionEstadoPagoKeys.Pagados">Pagado</option>
-                            </select>
-                        </div>
-                        <div class="viajes-filter-field-v2 sm">
-                            <label>Visualización</label>
-                            <select value="@_reporteLiquidacionFilters.Modo" @onchange="OnReporteModoChangedAsync">
-                                <option value="@CargaViajesReporteModoKeys.Detallado">Detallado</option>
-                                <option value="@CargaViajesReporteModoKeys.Resumen">Resumen</option>
-                            </select>
+                        <div class="viajes-filter-field-v2 sm carga-viajes-reportes__toggle-field">
+                            <label>&nbsp;</label>
+                            <button type="button"
+                                    class="btn btn--ghost btn--sm carga-viajes-filter-pill carga-viajes-reportes__detail-toggle @(_showReportesAdvancedFilters ? "carga-viajes-filter-pill--active" : string.Empty)"
+                                    @onclick="ToggleReportesAdvancedFilters"
+                                    aria-expanded="@_showReportesAdvancedFilters"
+                                    aria-controls="carga-viajes-reportes-advanced">
+                                <i class="bi @(_showReportesAdvancedFilters ? "bi-caret-up-fill" : "bi-sliders")"></i>
+                                <span>@(_showReportesAdvancedFilters ? "Ocultar filtros" : "Mostrar filtros")</span>
+                            </button>
                         </div>
                     </div>
-                    <div class="viajes-filter-row-v2">
-                        <div class="viajes-filter-field-v2 type">
-                            <label>Tipo</label>
-                            <div class="viajes-report-type-toggle-v2" role="group" aria-label="Tipo de persona en reportes">
-                                <button type="button" class="viajes-type-toggle-v2__button @(_reporteLiquidacionFilters.IncluirChoferes ? "viajes-type-toggle-v2__button--active" : string.Empty)" aria-pressed="@_reporteLiquidacionFilters.IncluirChoferes" @onclick="ToggleReporteChoferesAsync">
-                                    <span class="viajes-type-toggle-v2__check" aria-hidden="true"><i class="bi bi-check-lg"></i></span>
-                                    <span>Choferes</span>
-                                </button>
-                                <button type="button" class="viajes-type-toggle-v2__button @(_reporteLiquidacionFilters.IncluirFleteros ? "viajes-type-toggle-v2__button--active" : string.Empty)" aria-pressed="@_reporteLiquidacionFilters.IncluirFleteros" @onclick="ToggleReporteFleterosAsync">
-                                    <span class="viajes-type-toggle-v2__check" aria-hidden="true"><i class="bi bi-check-lg"></i></span>
-                                    <span>Fleteros</span>
-                                </button>
+
+                    @if (_showReportesAdvancedFilters)
+                    {
+                        <div id="carga-viajes-reportes-advanced" class="carga-viajes-reportes__advanced">
+                            <div class="viajes-filter-row-v2">
+                                <div class="viajes-filter-field-v2 lg">
+                                    <label>Chofer/Fletero</label>
+                                    <LookupAutocomplete Label="" Placeholder="Buscar persona..." Text="@_reporteChoferFleteroTexto" TextChanged="OnReporteChoferFleteroTextoChangedAsync" SelectedChanged="OnReporteChoferFleteroSeleccionadoAsync" SearchFunc="SearchReporteChoferFleteroLookupAsync" />
+                                </div>
+                                <div class="viajes-filter-field-v2 sm">
+                                    <label>Estado</label>
+                                    <select value="@_reporteLiquidacionFilters.Estado" @onchange="OnReporteEstadoChangedAsync">
+                                        <option value="@CargaViajesReporteEstadoKeys.Todos">Todos</option>
+                                        <option value="@CargaViajesReporteEstadoKeys.Pendiente">Pendiente</option>
+                                        <option value="@CargaViajesReporteEstadoKeys.Finalizado">Finalizado</option>
+                                        <option value="@CargaViajesReporteEstadoKeys.PendientePago">Pendiente pago</option>
+                                    </select>
+                                </div>
+                                <div class="viajes-filter-field-v2 sm">
+                                    <label>Estado pago</label>
+                                    <select value="@_reporteLiquidacionFilters.EstadoPago" @onchange="OnReporteEstadoPagoChangedAsync">
+                                        <option value="@CargaViajesLiquidacionEstadoPagoKeys.Todos">Todos</option>
+                                        <option value="@CargaViajesLiquidacionEstadoPagoKeys.Pendientes">Pendiente</option>
+                                        <option value="@CargaViajesLiquidacionEstadoPagoKeys.Pagados">Pagado</option>
+                                    </select>
+                                </div>
+                                <div class="viajes-filter-field-v2 sm">
+                                    <label>Visualización</label>
+                                    <select value="@_reporteLiquidacionFilters.Modo" @onchange="OnReporteModoChangedAsync">
+                                        <option value="@CargaViajesReporteModoKeys.Detallado">Detallado</option>
+                                        <option value="@CargaViajesReporteModoKeys.Resumen">Resumen</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="viajes-filter-row-v2">
+                                <div class="viajes-filter-field-v2 type">
+                                    <label>Tipo</label>
+                                    <div class="viajes-report-type-toggle-v2" role="group" aria-label="Tipo de persona en reportes">
+                                        <button type="button" class="viajes-type-toggle-v2__button @(_reporteLiquidacionFilters.IncluirChoferes ? "viajes-type-toggle-v2__button--active" : string.Empty)" aria-pressed="@_reporteLiquidacionFilters.IncluirChoferes" @onclick="ToggleReporteChoferesAsync">
+                                            <span class="viajes-type-toggle-v2__check" aria-hidden="true"><i class="bi bi-check-lg"></i></span>
+                                            <span>Choferes</span>
+                                        </button>
+                                        <button type="button" class="viajes-type-toggle-v2__button @(_reporteLiquidacionFilters.IncluirFleteros ? "viajes-type-toggle-v2__button--active" : string.Empty)" aria-pressed="@_reporteLiquidacionFilters.IncluirFleteros" @onclick="ToggleReporteFleterosAsync">
+                                            <span class="viajes-type-toggle-v2__check" aria-hidden="true"><i class="bi bi-check-lg"></i></span>
+                                            <span>Fleteros</span>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="viajes-filter-field-v2 md">
+                                    <label>Agrupar por</label>
+                                    <select value="@_reporteLiquidacionFilters.AgruparPor" @onchange="async args => await SetReporteAgruparPorAsync(args.Value?.ToString() ?? string.Empty)">
+                                        <option value="@CargaViajesViewGroupKeys.None">Sin agrupar</option>
+                                        <option value="@CargaViajesViewGroupKeys.Chofer">Chofer/Fletero</option>
+                                        <option value="@CargaViajesViewGroupKeys.Cliente">Cliente</option>
+                                        <option value="@CargaViajesViewGroupKeys.Destino">Destino</option>
+                                        <option value="@CargaViajesViewGroupKeys.TipoVehiculo">Tipo vehículo</option>
+                                        <option value="@CargaViajesViewGroupKeys.Estado">Estado</option>
+                                        <option value="@CargaViajesViewGroupKeys.Usuario">Usuario</option>
+                                    </select>
+                                </div>
+                                <div class="viajes-filter-field-v2 lg">
+                                    <label>Cliente</label>
+                                    <LookupAutocomplete Label="" Placeholder="Buscar cliente..." Text="@_reporteClienteTexto" TextChanged="OnReporteClienteTextoChangedAsync" SelectedChanged="OnReporteClienteSeleccionadoAsync" SearchFunc="SearchReporteClienteLookupAsync" MinimumCharacters="0" />
+                                </div>
+                                <div class="viajes-filter-field-v2 lg">
+                                    <label>Destino</label>
+                                    <LookupAutocomplete Label="" Placeholder="Buscar destino..." Text="@_reporteDestinoTexto" TextChanged="OnReporteDestinoTextoChangedAsync" SelectedChanged="OnReporteDestinoSeleccionadoAsync" SearchFunc="SearchReporteDestinoLookupAsync" MinimumCharacters="0" />
+                                </div>
                             </div>
                         </div>
-                        <div class="viajes-filter-field-v2 md">
-                            <label>Agrupar por</label>
-                            <select value="@_reporteLiquidacionFilters.AgruparPor" @onchange="async args => await SetReporteAgruparPorAsync(args.Value?.ToString() ?? string.Empty)">
-                                <option value="@CargaViajesViewGroupKeys.None">Sin agrupar</option>
-                                <option value="@CargaViajesViewGroupKeys.Chofer">Chofer/Fletero</option>
-                                <option value="@CargaViajesViewGroupKeys.Cliente">Cliente</option>
-                                <option value="@CargaViajesViewGroupKeys.Destino">Destino</option>
-                                <option value="@CargaViajesViewGroupKeys.TipoVehiculo">Tipo vehículo</option>
-                                <option value="@CargaViajesViewGroupKeys.Estado">Estado</option>
-                                <option value="@CargaViajesViewGroupKeys.Usuario">Usuario</option>
-                            </select>
-                        </div>
-                        <div class="viajes-filter-field-v2 lg">
-                            <label>Cliente</label>
-                            <LookupAutocomplete Label="" Placeholder="Buscar cliente..." Text="@_reporteClienteTexto" TextChanged="OnReporteClienteTextoChangedAsync" SelectedChanged="OnReporteClienteSeleccionadoAsync" SearchFunc="SearchReporteClienteLookupAsync" MinimumCharacters="0" />
-                        </div>
-                        <div class="viajes-filter-field-v2 lg">
-                            <label>Destino</label>
-                            <LookupAutocomplete Label="" Placeholder="Buscar destino..." Text="@_reporteDestinoTexto" TextChanged="OnReporteDestinoTextoChangedAsync" SelectedChanged="OnReporteDestinoSeleccionadoAsync" SearchFunc="SearchReporteDestinoLookupAsync" MinimumCharacters="0" />
-                        </div>
-                    </div>
+                    }
                 </div>
             </div>
         </section>
@@ -1933,8 +1944,8 @@
                 </div>
             </div>
 
-                <div class="viajes-filter-panel-v2 viajes-liquidaciones-filter-panel-v2">
-                <div class="viajes-filter-row-v2">
+            <div class="viajes-filter-panel-v2 viajes-liquidaciones-filter-panel-v2">
+                <div class="viajes-filter-row-v2 carga-viajes-liquidaciones__date-row">
                     <div class="viajes-filter-field-v2 sm">
                         <label>Rango rápido</label>
                         <select value="@_liquidacionesFilters.RangoRapido" @onchange="OnLiquidacionesRangoRapidoChangedAsync">
@@ -1956,84 +1967,103 @@
                         <label>Fecha hasta</label>
                         <InputDate TValue="DateTime?" Value="_liquidacionesFilters.FechaHasta" ValueChanged="OnLiquidacionesFechaHastaChangedAsync" ValueExpression="() => _liquidacionesFilters.FechaHasta" />
                     </div>
-                    <div class="viajes-filter-field-v2 sm">
-                        <label>Estado</label>
-                        <select value="@_liquidacionesFilters.Estado" @onchange="OnLiquidacionesEstadoChangedAsync">
-                            <option value="@CargaViajeEstadoKeys.Pendiente">Pendiente</option>
-                            <option value="@CargaViajeEstadoKeys.Finalizado">Finalizado</option>
-                            <option value="@CargaViajeEstadoKeys.Anulado">Anulado</option>
-                            <option value="">Todos</option>
-                        </select>
-                    </div>
-                    <div class="viajes-filter-field-v2 lg">
+                    <div class="viajes-filter-field-v2 sm carga-viajes-liquidaciones__toggle-field">
                         <label>&nbsp;</label>
-                        <label class="viajes-liquidaciones-toggle-v2">
-                            <input type="checkbox" checked="@_liquidacionesFilters.MostrarLiquidados" @onchange="OnLiquidacionesMostrarLiquidadosChangedAsync" />
-                            <span>Mostrar viajes liquidados</span>
-                        </label>
+                        <button type="button"
+                                class="btn btn--ghost btn--sm carga-viajes-filter-pill carga-viajes-liquidaciones__detail-toggle @(_showLiquidacionesAdvancedFilters ? "carga-viajes-filter-pill--active" : string.Empty)"
+                                @onclick="ToggleLiquidacionesAdvancedFilters"
+                                aria-expanded="@_showLiquidacionesAdvancedFilters"
+                                aria-controls="carga-viajes-liquidaciones-advanced">
+                            <i class="bi @(_showLiquidacionesAdvancedFilters ? "bi-caret-up-fill" : "bi-sliders")"></i>
+                            <span>@(_showLiquidacionesAdvancedFilters ? "Ocultar filtros" : "Mostrar filtros")</span>
+                        </button>
                     </div>
                 </div>
 
-                <div class="viajes-filter-row-v2">
-                    <div class="viajes-filter-field-v2 type">
-                        <label>Tipo</label>
-                        <div class="viajes-type-toggle-v2" role="group" aria-label="Tipo de persona en liquidaciones">
-                            <button type="button"
-                                    class="viajes-type-toggle-v2__button @(_liquidacionesFilters.IncluirChoferes ? "viajes-type-toggle-v2__button--active" : string.Empty)"
-                                    aria-pressed="@_liquidacionesFilters.IncluirChoferes"
-                                    @onclick="ToggleLiquidacionesChoferesAsync">
-                                <span class="viajes-type-toggle-v2__check" aria-hidden="true"><i class="bi bi-check-lg"></i></span>
-                                <span>Choferes</span>
-                            </button>
-                            <button type="button"
-                                    class="viajes-type-toggle-v2__button @(_liquidacionesFilters.IncluirFleteros ? "viajes-type-toggle-v2__button--active" : string.Empty)"
-                                    aria-pressed="@_liquidacionesFilters.IncluirFleteros"
-                                    @onclick="ToggleLiquidacionesFleterosAsync">
-                                <span class="viajes-type-toggle-v2__check" aria-hidden="true"><i class="bi bi-check-lg"></i></span>
-                                <span>Fleteros</span>
-                            </button>
+                @if (_showLiquidacionesAdvancedFilters)
+                {
+                    <div id="carga-viajes-liquidaciones-advanced" class="carga-viajes-liquidaciones__advanced">
+                        <div class="viajes-filter-row-v2">
+                            <div class="viajes-filter-field-v2 sm">
+                                <label>Estado</label>
+                                <select value="@_liquidacionesFilters.Estado" @onchange="OnLiquidacionesEstadoChangedAsync">
+                                    <option value="@CargaViajeEstadoKeys.Pendiente">Pendiente</option>
+                                    <option value="@CargaViajeEstadoKeys.Finalizado">Finalizado</option>
+                                    <option value="@CargaViajeEstadoKeys.Anulado">Anulado</option>
+                                    <option value="">Todos</option>
+                                </select>
+                            </div>
+                            <div class="viajes-filter-field-v2 lg">
+                                <label>&nbsp;</label>
+                                <label class="viajes-liquidaciones-toggle-v2">
+                                    <input type="checkbox" checked="@_liquidacionesFilters.MostrarLiquidados" @onchange="OnLiquidacionesMostrarLiquidadosChangedAsync" />
+                                    <span>Mostrar viajes liquidados</span>
+                                </label>
+                            </div>
+                            <div class="viajes-filter-field-v2 type">
+                                <label>Tipo</label>
+                                <div class="viajes-type-toggle-v2" role="group" aria-label="Tipo de persona en liquidaciones">
+                                    <button type="button"
+                                            class="viajes-type-toggle-v2__button @(_liquidacionesFilters.IncluirChoferes ? "viajes-type-toggle-v2__button--active" : string.Empty)"
+                                            aria-pressed="@_liquidacionesFilters.IncluirChoferes"
+                                            @onclick="ToggleLiquidacionesChoferesAsync">
+                                        <span class="viajes-type-toggle-v2__check" aria-hidden="true"><i class="bi bi-check-lg"></i></span>
+                                        <span>Choferes</span>
+                                    </button>
+                                    <button type="button"
+                                            class="viajes-type-toggle-v2__button @(_liquidacionesFilters.IncluirFleteros ? "viajes-type-toggle-v2__button--active" : string.Empty)"
+                                            aria-pressed="@_liquidacionesFilters.IncluirFleteros"
+                                            @onclick="ToggleLiquidacionesFleterosAsync">
+                                        <span class="viajes-type-toggle-v2__check" aria-hidden="true"><i class="bi bi-check-lg"></i></span>
+                                        <span>Fleteros</span>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="viajes-filter-field-v2 lg">
+                                <label>Chofer/Fletero</label>
+                                <LookupAutocomplete Label=""
+                                                     Placeholder="Buscar chofer o fletero..."
+                                                     Text="@_liquidacionesChoferFleteroTexto"
+                                                     TextChanged="OnLiquidacionesChoferFleteroTextoChangedAsync"
+                                                     SelectedChanged="OnLiquidacionesChoferFleteroSeleccionadoAsync"
+                                                     SearchFunc="SearchLiquidacionesChoferFleteroLookupAsync" />
+                            </div>
+                        </div>
+
+                        <div class="viajes-filter-row-v2">
+                            <div class="viajes-filter-field-v2 lg">
+                                <label>Cliente</label>
+                                <LookupAutocomplete Label=""
+                                                     Placeholder="Buscar cliente..."
+                                                     Text="@_liquidacionesClienteTexto"
+                                                     TextChanged="OnLiquidacionesClienteTextoChangedAsync"
+                                                     SelectedChanged="OnLiquidacionesClienteSeleccionadoAsync"
+                                                     SearchFunc="CargaViajesSvc.SearchClientesAsync"
+                                                     MinimumCharacters="0" />
+                            </div>
+                            <div class="viajes-filter-field-v2 lg">
+                                <label>Destino</label>
+                                <LookupAutocomplete Label=""
+                                                     Placeholder="Buscar destino..."
+                                                     Text="@_liquidacionesDestinoTexto"
+                                                     TextChanged="OnLiquidacionesDestinoTextoChangedAsync"
+                                                     SelectedChanged="OnLiquidacionesDestinoSeleccionadoAsync"
+                                                     SearchFunc="SearchLiquidacionesDestinoLookupAsync"
+                                                     MinimumCharacters="0" />
+                            </div>
+                            <div class="viajes-filter-field-v2 md">
+                                <label>Tipo vehículo</label>
+                                <LookupAutocomplete Label=""
+                                                     Placeholder="Buscar tipo..."
+                                                     Text="@_liquidacionesTipoVehiculoTexto"
+                                                     TextChanged="OnLiquidacionesTipoVehiculoTextoChangedAsync"
+                                                     SelectedChanged="OnLiquidacionesTipoVehiculoSeleccionadoAsync"
+                                                     SearchFunc="SearchLiquidacionesTipoVehiculoLookupAsync"
+                                                     MinimumCharacters="0" />
+                            </div>
                         </div>
                     </div>
-                    <div class="viajes-filter-field-v2 lg">
-                        <label>Chofer/Fletero</label>
-                        <LookupAutocomplete Label=""
-                                             Placeholder="Buscar chofer o fletero..."
-                                             Text="@_liquidacionesChoferFleteroTexto"
-                                             TextChanged="OnLiquidacionesChoferFleteroTextoChangedAsync"
-                                             SelectedChanged="OnLiquidacionesChoferFleteroSeleccionadoAsync"
-                                             SearchFunc="SearchLiquidacionesChoferFleteroLookupAsync" />
-                    </div>
-                    <div class="viajes-filter-field-v2 lg">
-                        <label>Cliente</label>
-                        <LookupAutocomplete Label=""
-                                             Placeholder="Buscar cliente..."
-                                             Text="@_liquidacionesClienteTexto"
-                                             TextChanged="OnLiquidacionesClienteTextoChangedAsync"
-                                             SelectedChanged="OnLiquidacionesClienteSeleccionadoAsync"
-                                             SearchFunc="CargaViajesSvc.SearchClientesAsync"
-                                             MinimumCharacters="0" />
-                    </div>
-                    <div class="viajes-filter-field-v2 lg">
-                        <label>Destino</label>
-                        <LookupAutocomplete Label=""
-                                             Placeholder="Buscar destino..."
-                                             Text="@_liquidacionesDestinoTexto"
-                                             TextChanged="OnLiquidacionesDestinoTextoChangedAsync"
-                                             SelectedChanged="OnLiquidacionesDestinoSeleccionadoAsync"
-                                             SearchFunc="SearchLiquidacionesDestinoLookupAsync"
-                                             MinimumCharacters="0" />
-                    </div>
-                    <div class="viajes-filter-field-v2 md">
-                        <label>Tipo vehículo</label>
-                        <LookupAutocomplete Label=""
-                                             Placeholder="Buscar tipo..."
-                                             Text="@_liquidacionesTipoVehiculoTexto"
-                                             TextChanged="OnLiquidacionesTipoVehiculoTextoChangedAsync"
-                                             SelectedChanged="OnLiquidacionesTipoVehiculoSeleccionadoAsync"
-                                             SearchFunc="SearchLiquidacionesTipoVehiculoLookupAsync"
-                                             MinimumCharacters="0" />
-                    </div>
-                </div>
+                }
             </div>
 
             <div class="smart-search__chips" aria-live="polite">
@@ -2873,6 +2903,12 @@
         CantidadViajes = 1
     };
 
+    protected override void OnInitialized()
+    {
+        Nav.LocationChanged += OnLocationChanged;
+        UpdatePageHeader();
+    }
+
     private void UpdatePageHeader()
     {
         _lastPageHeaderSignature = BuildPageHeaderSignature();
@@ -2896,6 +2932,8 @@
             SearchContent = searchContent,
             Actions = actions,
             ViewButtons = BuildHeaderViewButtons(),
+            InlineViewButtons = true,
+            AlwaysVisible = true,
             OnBack = IsAnyOverlayOpen() ? HandleHeaderBackAsync : null
         });
 
@@ -2932,6 +2970,15 @@
         var signature = BuildPageHeaderSignature();
         if (!string.Equals(signature, _lastPageHeaderSignature, StringComparison.Ordinal))
             UpdatePageHeader();
+    }
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        var currentPath = Nav.ToBaseRelativePath(e.Location).Split('?')[0].Split('#')[0].Trim('/');
+        if (!currentPath.StartsWith("carga-viajes", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        _ = InvokeAsync(UpdatePageHeader);
     }
 
     private bool IsAnyEditingOverlayOpen()
@@ -3151,6 +3198,7 @@
 
     public void Dispose()
     {
+        Nav.LocationChanged -= OnLocationChanged;
         PageHeader.Clear();
         _reportesCancellationCts?.Cancel();
         _reportesCancellationCts?.Dispose();
@@ -3161,6 +3209,7 @@
     protected override async Task OnParametersSetAsync()
     {
         _activeSection = NormalizeSection(Vista);
+        UpdatePageHeader();
         await EnsureLookupsLoadedAsync();
         await EnsureViewSettingsLoadedAsync();
         await EnsureTipoVehiculoSchemaLoadedAsync();
@@ -5881,6 +5930,7 @@
     }
 
     private void ToggleReportesAdvancedFilters() => _showReportesAdvancedFilters = !_showReportesAdvancedFilters;
+    private void ToggleLiquidacionesAdvancedFilters() => _showLiquidacionesAdvancedFilters = !_showLiquidacionesAdvancedFilters;
 
     private IReadOnlyList<FilterChipItem> BuildReporteFilterChips()
     {

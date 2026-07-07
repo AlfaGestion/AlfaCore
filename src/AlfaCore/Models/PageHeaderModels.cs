@@ -40,6 +40,8 @@ public sealed class PageHeaderConfig
     public RenderFragment? SearchContent { get; init; }
     public IReadOnlyList<PageHeaderAction> Actions { get; init; } = [];
     public IReadOnlyList<PageHeaderViewButton> ViewButtons { get; init; } = [];
+    public bool InlineViewButtons { get; init; }
+    public bool AlwaysVisible { get; init; }
     public bool ShowHistoryNavigation { get; init; } = true;
     public Func<Task>? OnBack { get; init; }
     public Func<Task>? OnForward { get; init; }

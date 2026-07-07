@@ -25925,6 +25925,30 @@ body:has(.cuentas-modal .usuarios-view-settings) {
     height: 6.2rem !important;
 }
 
+@media (min-width: 981px) {
+    .main-page-header.main-page-header--no-search.main-page-header--inline-views {
+        grid-template-columns: auto minmax(160px, .24fr) minmax(0, 1fr) auto auto !important;
+        grid-template-areas: "nav context filler views actions" !important;
+        row-gap: 0 !important;
+        min-height: 3.45rem !important;
+        padding-block: .38rem .5rem !important;
+    }
+
+    .main-page-header.main-page-header--no-search.main-page-header--inline-views .main-page-header__view {
+        grid-area: views !important;
+        justify-content: flex-start !important;
+        max-width: 100% !important;
+    }
+
+    .main-page-header.main-page-header--no-search.main-page-header--inline-views .main-page-header__actions {
+        grid-area: actions !important;
+    }
+
+    .main-page-header.main-page-header--no-search.main-page-header--inline-views + .main-page-header__spacer {
+        height: 3.7rem !important;
+    }
+}
+
 .main-page-header .main-page-header__view-btn {
     width: auto !important;
     min-width: max-content !important;

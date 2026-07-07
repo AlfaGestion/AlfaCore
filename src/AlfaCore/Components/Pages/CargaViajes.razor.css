@@ -157,6 +157,33 @@
     animation: none !important;
 }
 
+.carga-viajes-reportes__advanced,
+.carga-viajes-liquidaciones__advanced {
+    display: grid;
+    gap: .6rem;
+    margin-top: .55rem;
+}
+
+.carga-viajes-reportes__date-row,
+.carga-viajes-liquidaciones__date-row {
+    grid-template-columns: minmax(160px, .9fr) repeat(2, minmax(170px, 1fr)) minmax(180px, auto);
+    align-items: end;
+}
+
+.carga-viajes-reportes__toggle-field,
+.carga-viajes-liquidaciones__toggle-field {
+    align-self: stretch;
+}
+
+.carga-viajes-reportes__detail-toggle,
+.carga-viajes-liquidaciones__detail-toggle {
+    width: 100%;
+    min-height: 2.35rem;
+    justify-content: center;
+    gap: .45rem;
+    white-space: nowrap;
+}
+
 .carga-viajes-liquidaciones__filters {
     width: 100%;
     max-width: none;
@@ -197,6 +224,11 @@
 
 .carga-viajes-reportes__filters .actions,
 .carga-viajes-liquidaciones__filters .actions {
+    flex-wrap: wrap;
+}
+
+.carga-viajes-reportes__advanced .viajes-filter-row-v2,
+.carga-viajes-liquidaciones__advanced .viajes-filter-row-v2 {
     flex-wrap: wrap;
 }
 
@@ -3008,6 +3040,11 @@ html[data-theme="light"] .carga-viajes-tarifas-aumento-v2__preview-header {
 
     .carga-viajes-reportes__filters,
     .carga-viajes-liquidaciones__filters {
+        grid-template-columns: 1fr;
+    }
+
+    .carga-viajes-reportes__date-row,
+    .carga-viajes-liquidaciones__date-row {
         grid-template-columns: 1fr;
     }
 
