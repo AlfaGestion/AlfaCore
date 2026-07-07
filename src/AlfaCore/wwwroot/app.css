@@ -25170,6 +25170,40 @@ body:has(.cuentas-modal .usuarios-view-settings) {
     margin-top: .4rem !important;
 }
 
+/* Header global: el dropdown de filtros se ancla al centro real de la barra de búsqueda. */
+.main-page-header .main-page-header__search {
+    display: flex !important;
+    justify-content: center !important;
+}
+
+.main-page-header .main-page-header__search .smart-search {
+    position: relative !important;
+    width: min(100%, 620px) !important;
+    max-width: 620px !important;
+}
+
+.main-page-header .main-page-header__search .smart-search__bar {
+    width: 100% !important;
+    max-width: none !important;
+}
+
+.main-page-header .main-page-header__search .smart-search__chips {
+    right: 2.75rem !important;
+    max-width: 56% !important;
+}
+
+.main-page-header .main-page-header__search .smart-search__panel:not(.interfaces-filters-panel-grid) {
+    position: absolute !important;
+    top: calc(100% + .52rem) !important;
+    left: 0 !important;
+    right: auto !important;
+    width: min(700px, calc(100vw - 6rem)) !important;
+    max-width: none !important;
+    transform: none !important;
+    transform-origin: top left !important;
+    z-index: 1920 !important;
+}
+
 .ctree-search,
 .result-search,
 .help-search {

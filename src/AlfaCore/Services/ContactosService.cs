@@ -1,5 +1,6 @@
 using AlfaCore.Models;
 using Microsoft.Data.SqlClient;
+using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -15,6 +16,7 @@ public sealed class ContactosService(
     private const string ModuleName       = "Contactos";
     private const string ConfigGroup      = "CONTACTOS";
     private const string ViewConfigPrefix = "USUVIEW-CONTACTOS-";
+    private static readonly ConcurrentDictionary<string, bool> ActiveColumnCache = new(StringComparer.OrdinalIgnoreCase);
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -45,49 +47,65 @@ public sealed class ContactosService(
                 ? $"{activoExpr} DESC, ISNULL(c.Nombre_y_Apellido, '') ASC"
                 : "ISNULL(c.Nombre_y_Apellido, '') ASC";
 
-            var conversationMatchSql = BuildConversationMatchSql("c");
-            var advancedFilterSql = BuildAdvancedFilterSql(conversationMatchSql);
+            var filterConversationMatchSql = BuildConversationMatchSql("c");
+            var pageConversationMatchSql = BuildConversationMatchSql("pageContacts");
+            var advancedFilterSql = BuildAdvancedFilterSql(filters, filterConversationMatchSql);
             var ruleFilterSql = BuildRuleFilterSql(filters.Reglas, GetContactosRuleFieldSql);
             var sql = $"""
                 SELECT
-                    c.id,
-                    ISNULL(c.Nombre_y_Apellido, ''),
-                    ISNULL(c.Localidad, ''),
-                    ISNULL(c.Provincia, ''),
-                    ISNULL(e.DESCRIPCION, ''),
-                    ISNULL(c.Telefono, ''),
-                    ISNULL(c.Celular, ''),
-                    ISNULL(c.email, ''),
-                    ISNULL(c.Cargo, ''),
-                    {activoExpr},
+                    pageContacts.Id,
+                    pageContacts.NombreApellido,
+                    pageContacts.Localidad,
+                    pageContacts.ProvinciaCodigo,
+                    pageContacts.ProvinciaDescripcion,
+                    pageContacts.Telefono,
+                    pageContacts.Celular,
+                    pageContacts.Email,
+                    pageContacts.Cargo,
+                    pageContacts.Activo,
                     conv.IdConversacion
-                FROM dbo.MA_CONTACTOS c
-                LEFT JOIN dbo.TA_ESTADOS e
-                    ON UPPER(LTRIM(RTRIM(e.CODIGO))) = UPPER(LTRIM(RTRIM(ISNULL(c.Provincia, ''))))
+                FROM (
+                    SELECT
+                        c.id AS Id,
+                        ISNULL(c.Nombre_y_Apellido, '') AS NombreApellido,
+                        ISNULL(c.Localidad, '') AS Localidad,
+                        ISNULL(c.Provincia, '') AS ProvinciaCodigo,
+                        ISNULL(e.DESCRIPCION, '') AS ProvinciaDescripcion,
+                        ISNULL(c.Telefono, '') AS Telefono,
+                        ISNULL(c.Celular, '') AS Celular,
+                        ISNULL(c.Fax, '') AS Fax,
+                        ISNULL(c.email, '') AS Email,
+                        ISNULL(c.Cargo, '') AS Cargo,
+                        {activoExpr} AS Activo
+                    FROM dbo.MA_CONTACTOS c
+                    LEFT JOIN dbo.TA_ESTADOS e
+                        ON UPPER(LTRIM(RTRIM(e.CODIGO))) = UPPER(LTRIM(RTRIM(ISNULL(c.Provincia, ''))))
+                    WHERE (
+                            @TextoLike = ''
+                            OR ISNULL(c.Nombre_y_Apellido, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                            OR ISNULL(c.email, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                            OR ISNULL(c.Localidad, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                            OR ISNULL(c.Telefono, '') LIKE @TextoLike
+                            OR ISNULL(c.Celular, '') LIKE @TextoLike
+                            OR ISNULL(c.Cargo, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                      )
+                      {activoFilterSql}
+                      {advancedFilterSql}
+                      {ruleFilterSql}
+                    ORDER BY {orderBySql}
+                    OFFSET @Skip ROWS FETCH NEXT @PageSize ROWS ONLY
+                ) pageContacts
                 OUTER APPLY (
                     SELECT TOP (1) cc.IdConversacion
                     FROM dbo.CONV_CONVERSACIONES cc
                     WHERE cc.Canal = N'WHATSAPP'
                       AND (
-                            cc.IdContacto = c.id
-                            OR {conversationMatchSql}
+                            cc.IdContacto = pageContacts.Id
+                            OR {pageConversationMatchSql}
                           )
                     ORDER BY cc.IdConversacion ASC
                 ) conv
-                WHERE (
-                        @TextoLike = ''
-                        OR ISNULL(c.Nombre_y_Apellido, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
-                        OR ISNULL(c.email, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
-                        OR ISNULL(c.Localidad, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
-                        OR ISNULL(c.Telefono, '') LIKE @TextoLike
-                        OR ISNULL(c.Celular, '') LIKE @TextoLike
-                        OR ISNULL(c.Cargo, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
-                  )
-                  {activoFilterSql}
-                  {advancedFilterSql}
-                  {ruleFilterSql}
-                ORDER BY {orderBySql}
-                OFFSET @Skip ROWS FETCH NEXT @PageSize ROWS ONLY;
+                ORDER BY pageContacts.Activo DESC, pageContacts.NombreApellido ASC;
 
                 SELECT COUNT(*)
                 FROM dbo.MA_CONTACTOS c
@@ -1102,20 +1120,28 @@ public sealed class ContactosService(
         return normalized.Length > 150 ? (string.Empty, normalized) : (normalized, string.Empty);
     }
 
-    private static string BuildAdvancedFilterSql(string conversationMatchSql)
-        => $"""
-              AND (@TieneEmail IS NULL OR CASE WHEN NULLIF(LTRIM(RTRIM(ISNULL(c.email, ''))), '') IS NULL THEN CAST(0 AS bit) ELSE CAST(1 AS bit) END = @TieneEmail)
-              AND (@TieneCelular IS NULL OR CASE WHEN NULLIF(LTRIM(RTRIM(ISNULL(c.Celular, ''))), '') IS NULL THEN CAST(0 AS bit) ELSE CAST(1 AS bit) END = @TieneCelular)
-              AND (@TieneWhatsApp IS NULL OR CASE WHEN EXISTS (
+    private static string BuildAdvancedFilterSql(ContactosFilters filters, string conversationMatchSql)
+    {
+        var whatsappFilterSql = filters.TieneWhatsApp.HasValue
+            ? $"""
+              AND CASE WHEN EXISTS (
                     SELECT 1
                     FROM dbo.CONV_CONVERSACIONES ccFilter
                     WHERE ccFilter.Canal = N'WHATSAPP'
                       AND (ccFilter.IdContacto = c.id OR {conversationMatchSql.Replace("cc.", "ccFilter.")})
-                  ) THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END = @TieneWhatsApp)
+                  ) THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END = @TieneWhatsApp
+            """
+            : string.Empty;
+
+        return $"""
+              AND (@TieneEmail IS NULL OR CASE WHEN NULLIF(LTRIM(RTRIM(ISNULL(c.email, ''))), '') IS NULL THEN CAST(0 AS bit) ELSE CAST(1 AS bit) END = @TieneEmail)
+              AND (@TieneCelular IS NULL OR CASE WHEN NULLIF(LTRIM(RTRIM(ISNULL(c.Celular, ''))), '') IS NULL THEN CAST(0 AS bit) ELSE CAST(1 AS bit) END = @TieneCelular)
+              {whatsappFilterSql}
               AND (@ProvinciaCodigo = '' OR UPPER(LTRIM(RTRIM(ISNULL(c.Provincia, '')))) = @ProvinciaCodigo)
               AND (@Localidad = '' OR ISNULL(c.Localidad, '') LIKE '%' + @Localidad + '%')
               AND (@Cargo = '' OR ISNULL(c.Cargo, '') LIKE '%' + @Cargo + '%')
             """;
+    }
 
     private static void AddAdvancedFilterParameters(SqlCommand cmd, ContactosFilters filters)
     {
@@ -1205,6 +1231,10 @@ public sealed class ContactosService(
 
     private static async Task<bool> HasActivoColumnAsync(SqlConnection cn, CancellationToken ct)
     {
+        var cacheKey = $"{cn.DataSource}|{cn.Database}|dbo.MA_CONTACTOS.Activo";
+        if (ActiveColumnCache.TryGetValue(cacheKey, out var cached))
+            return cached;
+
         const string sql = """
             SELECT COUNT(1)
             FROM sys.columns
@@ -1214,7 +1244,9 @@ public sealed class ContactosService(
 
         await using var cmd = new SqlCommand(sql, cn);
         var result = await cmd.ExecuteScalarAsync(ct);
-        return Convert.ToInt32(result) > 0;
+        var exists = Convert.ToInt32(result) > 0;
+        ActiveColumnCache[cacheKey] = exists;
+        return exists;
     }
 
     private static async Task<bool> TableColumnExistsAsync(SqlConnection cn, string tableName, string columnName, CancellationToken ct)
@@ -1286,6 +1318,10 @@ public sealed class ContactosService(
         {
             return await operation(ct);
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (InvalidOperationException)
         {
             throw;
@@ -1307,6 +1343,10 @@ public sealed class ContactosService(
         try
         {
             await operation(ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
         }
         catch (InvalidOperationException)
         {

@@ -16,6 +16,8 @@
 @inject AlfaCore.Services.ITareasService TareasSvc
 @inject AlfaCore.Services.IAppEventService AppEvents
 @inject AlfaCore.Services.IFloatingWindowService FloatingWindows
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject AlfaCore.Services.IPageHeaderNavigationService HeaderNavigation
 @inject AlfaCore.Services.ICentralBasesService CentralBasesSvc
 @inject ILogger<MainLayout> Logger
 @implements IDisposable
@@ -706,7 +708,7 @@ else
     </button>
 
     <main class="shell__main">
-        <header class="shell__header">
+        <header class="@(ShowLauncherContext ? "shell__header" : "shell__header shell__header--hidden")">
             <button type="button"
                     class="shell__mobile-toggle no-print"
                     @onclick="ToggleMobileSidebar"
@@ -755,6 +757,8 @@ else
                 </div>
             }
         </header>
+
+        <MainPageHeader />
 
         @if (ShouldShowConversationMobilePwaActions)
         {
@@ -1327,6 +1331,7 @@ else
     protected override void OnInitialized()
     {
         _activeSession = SessionSvc.GetActiveSession();
+        HeaderNavigation.Record(Nav.Uri);
         SessionSvc.SessionChanged += OnSessionChanged;
         AppUserSession.StateChanged += OnAppUserStateChanged;
         Nav.LocationChanged += OnLocationChanged;
@@ -1394,6 +1399,8 @@ else
 
     private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs args)
     {
+        HeaderNavigation.Record(args.Location);
+        PageHeader.Clear();
         _mobileSidebarOpen = false;
         if (IsLauncherRoute)
             _sidebarCollapsedOverride = null;
