@@ -1,25 +1,25 @@
 :root {
-    --login-page-bg: linear-gradient(180deg, #060d18 0%, #050914 100%);
-    --login-panel-bg: radial-gradient(circle at 88% 12%, rgba(177, 212, 240, .10), transparent 20%), linear-gradient(135deg, rgba(9, 17, 31, .98) 0%, rgba(7, 12, 24, .98) 100%);
-    --login-hero-bg: radial-gradient(620px 460px at 86% 0%, rgba(255, 255, 255, .16), transparent 62%), linear-gradient(145deg, #16407a 0%, #0f4d94 54%, #0b2748 100%);
-    --login-hero-glow: radial-gradient(420px 260px at 92% 10%, rgba(255, 255, 255, .14), transparent 68%), radial-gradient(560px 360px at 0% 100%, rgba(255, 255, 255, .10), transparent 66%);
-    --login-card-bg: radial-gradient(circle at 88% 12%, rgba(59, 130, 246, .12), transparent 24%), linear-gradient(180deg, rgba(15, 38, 67, .92), rgba(11, 26, 46, .96));
-    --login-card-bg-soft: linear-gradient(180deg, rgba(255, 255, 255, .08), rgba(255, 255, 255, .03));
-    --login-card-bg-accent: radial-gradient(circle at 0% 0%, rgba(34, 211, 238, .12), transparent 46%), linear-gradient(180deg, rgba(15, 34, 62, .80), rgba(11, 26, 46, .92));
-    --login-panel-card-bg: linear-gradient(180deg, rgba(15, 38, 67, .92), rgba(11, 26, 46, .96));
-    --login-panel-surface-bg: radial-gradient(circle at 92% 12%, rgba(148, 197, 255, .24), transparent 18%), linear-gradient(180deg, rgba(15, 34, 62, .98) 0%, rgba(10, 22, 40, .98) 100%);
-    --login-surface-border: rgba(125, 183, 235, .16);
-    --login-card-border: rgba(177, 212, 240, .18);
-    --login-card-shadow: 0 12px 28px rgba(0, 0, 0, .12);
-    --login-input-bg: rgba(15, 27, 45, .98);
-    --login-input-border: rgba(148, 163, 184, .35);
-    --login-input-focus-border: rgba(34, 211, 238, .75);
-    --login-toggle-bg: rgba(15, 27, 45, .92);
-    --login-toggle-bg-hover: rgba(19, 35, 58, 1);
+    --login-page-bg: linear-gradient(180deg, #050b14 0%, #040812 100%);
+    --login-panel-bg: radial-gradient(circle at 88% 12%, rgba(177, 212, 240, .08), transparent 20%), linear-gradient(135deg, rgba(8, 16, 29, .98) 0%, rgba(6, 11, 22, .98) 100%);
+    --login-hero-bg: radial-gradient(720px 520px at 90% 0%, rgba(255, 255, 255, .14), transparent 60%), linear-gradient(145deg, #184780 0%, #115094 54%, #0a2544 100%);
+    --login-hero-glow: radial-gradient(420px 260px at 92% 10%, rgba(255, 255, 255, .12), transparent 68%), radial-gradient(560px 360px at 0% 100%, rgba(255, 255, 255, .08), transparent 66%);
+    --login-card-bg: radial-gradient(circle at 88% 12%, rgba(59, 130, 246, .10), transparent 24%), linear-gradient(180deg, rgba(15, 34, 60, .90), rgba(10, 22, 40, .96));
+    --login-card-bg-soft: linear-gradient(180deg, rgba(255, 255, 255, .07), rgba(255, 255, 255, .025));
+    --login-card-bg-accent: radial-gradient(circle at 0% 0%, rgba(34, 211, 238, .12), transparent 46%), linear-gradient(180deg, rgba(14, 32, 58, .84), rgba(10, 22, 40, .94));
+    --login-panel-card-bg: linear-gradient(180deg, rgba(15, 34, 60, .90), rgba(10, 22, 40, .96));
+    --login-panel-surface-bg: radial-gradient(circle at 92% 12%, rgba(148, 197, 255, .18), transparent 18%), linear-gradient(180deg, rgba(14, 32, 58, .98) 0%, rgba(8, 18, 34, .98) 100%);
+    --login-surface-border: rgba(125, 183, 235, .14);
+    --login-card-border: rgba(177, 212, 240, .16);
+    --login-card-shadow: 0 12px 28px rgba(0, 0, 0, .14);
+    --login-input-bg: rgba(14, 26, 44, .98);
+    --login-input-border: rgba(148, 163, 184, .34);
+    --login-input-focus-border: rgba(34, 211, 238, .78);
+    --login-toggle-bg: rgba(14, 26, 44, .92);
+    --login-toggle-bg-hover: rgba(18, 32, 52, 1);
     --login-secondary-bg: rgba(15, 23, 42, .92);
     --login-secondary-bg-hover: rgba(15, 23, 42, .98);
-    --login-shadow-strong: 0 32px 90px rgba(0, 0, 0, .46);
-    --login-shadow-soft: 0 20px 48px rgba(2, 12, 27, .30);
+    --login-shadow-strong: 0 36px 100px rgba(0, 0, 0, .50);
+    --login-shadow-soft: 0 20px 48px rgba(2, 12, 27, .32);
 }
 
 .auth-page {
@@ -45,8 +45,8 @@ html:has(.app-login-overlay) {
     width: min(100%, 1200px);
     min-height: 680px;
     overflow: hidden;
-    border-radius: 30px;
-    border: 1px solid rgba(110, 164, 224, .22);
+    border-radius: 34px;
+    border: 1px solid rgba(110, 164, 224, .20);
     background: var(--login-panel-bg);
     box-shadow: var(--login-shadow-strong);
     display: grid;
@@ -63,18 +63,56 @@ html:has(.app-login-overlay) {
 }
 
 .auth-shell--saas {
-    grid-template-columns: minmax(0, 1.08fr) minmax(360px, .92fr);
+    grid-template-columns: minmax(0, 1.08fr) minmax(380px, .92fr);
 }
 
 .auth-saas-login {
     display: grid;
-    gap: 16px;
+    gap: 14px;
+}
+
+.auth-shell--saas .auth-form-panel {
+    align-items: center;
+    justify-content: center;
+}
+
+.auth-shell--saas .auth-form-panel__surface {
+    width: min(100%, 470px);
+    margin-inline: auto;
+}
+
+.auth-shell--saas .auth-saas-login {
+    width: 100%;
+    justify-items: stretch;
+}
+
+.auth-shell--saas .auth-saas-login__header,
+.auth-shell--saas .auth-saas-login__lead,
+.auth-shell--saas .auth-saas-login__footer {
+    width: 100%;
+    max-width: 470px;
+    margin-inline: auto;
 }
 
 .auth-saas-login__header,
 .auth-saas-login__header-icon,
 .auth-saas-login__header-copy {
+    display: grid;
+}
+
+.auth-saas-login__header {
+    gap: 6px;
+    justify-items: center;
+    text-align: center;
+}
+
+.auth-saas-login__header-icon {
     display: none;
+}
+
+.auth-saas-login__header-copy {
+    gap: 6px;
+    min-width: 0;
 }
 
 .auth-saas-login__lead,
@@ -95,9 +133,10 @@ html:has(.app-login-overlay) {
     position: relative;
     display: grid;
     grid-template-rows: auto auto auto auto auto;
-    align-content: start;
+    align-content: center;
+    justify-items: center;
     gap: 16px;
-    padding: 38px 36px 32px;
+    padding: 42px 40px 36px;
     color: #eef6ff;
     background: var(--login-hero-bg);
 }
@@ -122,11 +161,11 @@ html:has(.app-login-overlay) {
 
 .auth-hero__brand {
     display: grid;
-    gap: 16px;
-    align-items: start;
-    justify-items: start;
+    gap: 14px;
+    align-items: center;
+    justify-items: center;
     width: 100%;
-    min-height: 196px;
+    min-height: 150px;
 }
 
 .central-brand-logo {
@@ -214,7 +253,9 @@ html:has(.app-login-overlay) {
 }
 
 .auth-hero__copy {
-    max-width: 500px;
+    max-width: 620px;
+    justify-items: center;
+    text-align: center;
 }
 
 .auth-hero__summary {
@@ -222,17 +263,34 @@ html:has(.app-login-overlay) {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 12px;
     align-self: start;
+    width: 100%;
+    max-width: 620px;
 }
 
 .auth-hero__summary-card {
     display: grid;
-    gap: 6px;
-    min-height: 102px;
-    padding: 14px 14px 13px;
-    border-radius: 18px;
+    gap: 7px;
+    min-height: 118px;
+    padding: 15px 15px 14px;
+    border-radius: 20px;
     border: 1px solid var(--login-card-border);
     background: var(--login-card-bg-soft);
-    box-shadow: inset 0 1px 0 rgba(255,255,255,.04), var(--login-card-shadow);
+    box-shadow:
+        inset 0 1px 0 rgba(255,255,255,.04),
+        0 10px 24px rgba(0, 0, 0, .10);
+    backdrop-filter: blur(10px);
+    position: relative;
+    overflow: hidden;
+}
+
+.auth-hero__summary-card::before {
+    content: "";
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: 100%;
+    height: 2px;
+    background: linear-gradient(90deg, rgba(34, 211, 238, .65), rgba(59, 130, 246, .15));
+    opacity: .9;
 }
 
 .auth-hero__summary-icon {
@@ -260,14 +318,14 @@ html:has(.app-login-overlay) {
 .auth-hero__summary-card strong,
 .auth-hero__modules-head strong {
     color: #f8fbff;
-    font-size: .98rem;
+    font-size: 1.03rem;
     line-height: 1.15;
 }
 
 .auth-hero__summary-card small {
     color: rgba(226, 232, 240, .84);
-    font-size: .78rem;
-    line-height: 1.35;
+    font-size: .82rem;
+    line-height: 1.38;
 }
 
 .auth-hero__system {
@@ -275,11 +333,14 @@ html:has(.app-login-overlay) {
     z-index: 1;
     display: grid;
     gap: 12px;
-    padding: 16px 18px 17px;
-    border-radius: 20px;
+    padding: 17px 18px 18px;
+    border-radius: 22px;
     border: 1px solid var(--login-card-border);
     background: var(--login-card-bg-soft);
-    box-shadow: inset 0 1px 0 rgba(255,255,255,.04), var(--login-card-shadow);
+    box-shadow:
+        inset 0 1px 0 rgba(255,255,255,.04),
+        0 10px 24px rgba(0, 0, 0, .10);
+    backdrop-filter: blur(10px);
 }
 
 .auth-hero__system-head {
@@ -309,7 +370,7 @@ html:has(.app-login-overlay) {
     padding: 12px 12px 11px;
     border-radius: 16px;
     border: 1px solid rgba(177, 212, 240, .14);
-    background: rgba(8, 18, 35, .18);
+    background: rgba(8, 18, 35, .20);
 }
 
 .auth-hero__system-card span {
@@ -387,11 +448,13 @@ html:has(.app-login-overlay) {
 
 .auth-hero__title {
     margin: 0;
-    font-size: clamp(1.78rem, 2.7vw, 2.8rem);
+    font-size: clamp(1.95rem, 2.75vw, 3rem);
     line-height: .96;
     letter-spacing: -.05em;
     font-weight: 800;
     color: #f7f3e7;
+    text-wrap: balance;
+    text-align: center;
 }
 
 .auth-hero__text {
@@ -399,6 +462,8 @@ html:has(.app-login-overlay) {
     color: rgba(239, 248, 255, .94);
     font-size: .98rem;
     line-height: 1.52;
+    text-wrap: pretty;
+    text-align: center;
 }
 
 .auth-hero__points {
@@ -537,9 +602,9 @@ html:has(.app-login-overlay) {
 .auth-form-panel {
     position: relative;
     display: flex;
-    align-items: center;
+    align-items: start;
     justify-content: center;
-    padding: 26px 24px;
+    padding: 24px 22px;
     background: var(--login-panel-surface-bg);
     color: #dbeafe;
 }
@@ -552,8 +617,8 @@ html:has(.app-login-overlay) {
     position: relative;
     z-index: 1;
     width: min(100%, 460px);
-    padding: 30px 28px 26px;
-    border-radius: 24px;
+    padding: 28px 26px 24px;
+    border-radius: 26px;
     border: 1px solid var(--login-surface-border);
     background: var(--login-card-bg);
     box-shadow: var(--login-shadow-soft), inset 0 1px 0 rgba(255, 255, 255, .06);
@@ -611,7 +676,7 @@ html:has(.app-login-overlay) {
 
 .auth-form {
     display: grid;
-    gap: 14px;
+    gap: 13px;
 }
 
 .auth-field {
@@ -629,7 +694,7 @@ html:has(.app-login-overlay) {
     width: 100%;
     min-height: 48px;
     padding: 0 16px;
-    border-radius: 14px;
+    border-radius: 16px;
     border: 1px solid rgba(148, 163, 184, .35);
     background: rgba(15, 27, 45, .92);
     color: #e5eefc;
@@ -653,7 +718,7 @@ html:has(.app-login-overlay) {
 .auth-field input:focus-visible {
     background: rgba(15, 27, 45, .98);
     border-color: rgba(34, 211, 238, .75);
-    box-shadow: 0 0 0 3px rgba(34, 211, 238, .12);
+    box-shadow: 0 0 0 3px rgba(34, 211, 238, .12), inset 0 1px 0 rgba(255, 255, 255, .03);
 }
 
 .auth-password {
@@ -699,6 +764,71 @@ html:has(.app-login-overlay) {
     cursor: default;
 }
 
+.app-login-modal--compact .auth-input-shell {
+    position: relative;
+}
+
+.app-login-modal--compact .auth-input-shell__icon {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transform: translateY(-50%);
+    pointer-events: none;
+    z-index: 2;
+    line-height: 1;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+}
+
+.app-login-modal--compact .auth-input-shell__icon i {
+    font-size: 1rem;
+}
+
+html:not([data-theme="light"]) .app-login-modal--compact .auth-input-shell__icon {
+    border: 1px solid rgba(148, 163, 184, .35);
+    border-radius: 16px;
+    background: var(--login-toggle-bg);
+    color: #e2e8f0;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.03), 0 6px 16px rgba(0, 0, 0, .14);
+}
+
+.app-login-modal--compact .app-login-modal__close {
+    position: absolute;
+    top: 18px;
+    right: 18px;
+    z-index: 120;
+    width: 40px;
+    height: 40px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    border: 1px solid rgba(125, 211, 252, .22);
+    background: var(--login-secondary-bg);
+    color: #e2e8f0;
+    opacity: .9;
+    transform: none;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.02);
+    transition: transform .15s ease, background-color .15s ease, border-color .15s ease, color .15s ease, box-shadow .15s ease, opacity .15s ease;
+}
+
+.app-login-modal--compact .app-login-modal__close:hover,
+.app-login-modal--compact .app-login-modal__close:focus-visible {
+    transform: none;
+    opacity: 1;
+    background: var(--login-secondary-bg-hover);
+    border-color: rgba(34, 211, 238, .42);
+    color: #ffffff;
+    outline: none;
+    box-shadow: 0 12px 28px rgba(0, 0, 0, .30);
+}
+
 .auth-page .central-login-input {
     width: 100%;
     min-height: 52px;
@@ -732,19 +862,21 @@ html:has(.app-login-overlay) {
 
 .auth-input-shell__icon {
     position: absolute;
-    left: 18px;
+    left: 16px;
     top: 50%;
     transform: translateY(-50%);
-    width: 20px;
-    height: 20px;
-    display: grid;
-    place-items: center;
+    width: 22px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     color: rgba(125, 211, 252, .92);
     pointer-events: none;
     z-index: 2;
     border-radius: 0;
     background: transparent;
     box-shadow: none;
+    line-height: 1;
 }
 
 .auth-input-shell__icon i {
@@ -758,13 +890,13 @@ html:has(.app-login-overlay) {
 .auth-input-shell__input {
     display: block;
     width: 100%;
-    padding-left: 54px;
+    padding-left: 60px;
     line-height: 1.2;
     box-sizing: border-box;
 }
 
 .auth-password .auth-input-shell__input {
-    padding-right: 58px;
+    padding-right: 60px;
 }
 
 .auth-page .central-login-input::placeholder {
@@ -811,7 +943,7 @@ html:has(.app-login-overlay) {
 
 .auth-card__submit {
     width: 100%;
-    min-height: 56px;
+    min-height: 58px;
     margin-top: 4px;
     display: inline-flex;
     align-items: center;
@@ -824,7 +956,7 @@ html:has(.app-login-overlay) {
     font-size: 1rem;
     font-weight: 900;
     letter-spacing: .01em;
-    box-shadow: 0 18px 40px rgba(8, 145, 178, .34);
+    box-shadow: 0 18px 40px rgba(8, 145, 178, .32);
     transition: transform .15s ease, box-shadow .15s ease, filter .15s ease;
 }
 
@@ -842,7 +974,107 @@ html:has(.app-login-overlay) {
 }
 
 .auth-card__error {
-    margin-bottom: 16px;
+    margin-bottom: 14px;
+}
+
+.auth-saas-login__header-copy .auth-card__title,
+.auth-saas-login__header-copy .auth-card__subtitle,
+.auth-form-panel__header .auth-card__title,
+.auth-form-panel__header .auth-card__subtitle {
+    text-wrap: balance;
+}
+
+.auth-shell--saas .auth-saas-login__header {
+    display: grid;
+}
+
+.auth-shell--saas .auth-saas-login__header-copy {
+    display: grid;
+}
+
+.auth-shell--saas .auth-saas-login__header-copy .auth-card__title {
+    font-size: clamp(1.75rem, 2.2vw, 2.45rem);
+    line-height: .98;
+}
+
+.auth-shell--saas .auth-saas-login__header-copy .auth-card__subtitle {
+    font-size: .94rem;
+    line-height: 1.42;
+}
+
+.auth-shell--saas .auth-saas-login__lead {
+    display: block;
+    margin-top: 2px;
+    color: #1fb6ff;
+    font-size: .92rem;
+    font-weight: 900;
+    line-height: 1.2;
+}
+
+.auth-shell--saas .auth-saas-login__info {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 14px;
+    border: 1px solid rgba(34, 211, 238, .18);
+    background:
+        radial-gradient(circle at 0% 0%, rgba(34, 211, 238, .08), transparent 36%),
+        rgba(8, 18, 35, .10);
+    color: #dbeafe;
+    font-size: .84rem;
+    line-height: 1.45;
+}
+
+.auth-shell--saas .auth-saas-login__info i {
+    margin-top: 2px;
+    color: #1fb6ff;
+    flex: 0 0 auto;
+}
+
+.auth-shell--saas .auth-saas-login__footer {
+    display: grid;
+    gap: 8px;
+    padding-top: 2px;
+}
+
+.auth-shell--saas .auth-saas-login__forgot {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    color: #c7d2fe;
+    font-size: .84rem;
+    font-weight: 700;
+    line-height: 1.2;
+    text-align: center;
+}
+
+.auth-shell--saas .auth-saas-login__forgot i {
+    color: #7dd3fc;
+    font-size: .95rem;
+}
+
+.auth-shell--saas .auth-saas-login__cancel {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    min-height: 42px;
+    padding: 0 14px;
+    border-radius: 14px;
+    border: 0;
+    background: transparent;
+    color: #dbeafe;
+    font-size: .92rem;
+    font-weight: 700;
+    letter-spacing: .01em;
+}
+
+.auth-shell--saas .auth-saas-login__cancel i {
+    color: #cbd5e1;
+    font-size: .92rem;
 }
 
 html[data-theme="light"] .auth-page .central-login-input {
@@ -1459,7 +1691,7 @@ html[data-theme="light"] .auth-page .base-search-input:focus-visible {
     }
 
     .auth-form-panel {
-        padding: 22px 16px 24px;
+        padding: 20px 14px 20px;
     }
 
     .auth-form-panel__surface {
@@ -1485,7 +1717,7 @@ html[data-theme="light"] .auth-page .base-search-input:focus-visible {
 
     .auth-hero {
         grid-template-rows: auto auto auto auto;
-        gap: 16px;
+        gap: 14px;
     }
 
     .auth-hero__summary {
@@ -1790,18 +2022,20 @@ html[data-theme="light"] .auth-page .base-search-input:focus-visible {
     }
 
     .auth-page .auth-shell--saas {
-        display: block;
+        display: flex;
+        flex-direction: column;
         min-height: 0;
         max-height: calc(100dvh - 24px);
-        overflow: auto;
+        overflow: hidden;
         border-radius: 20px;
     }
 
     .auth-page .auth-shell--saas .auth-hero {
         display: grid;
-        gap: 14px;
-        padding: 22px 18px 14px;
+        gap: 10px;
+        padding: 14px 14px 10px;
         text-align: center;
+        flex: 0 0 auto;
     }
 
     .auth-page .auth-shell--saas .auth-hero__brand {
@@ -1810,8 +2044,8 @@ html[data-theme="light"] .auth-page .base-search-input:focus-visible {
     }
 
     .auth-page .auth-shell--saas .auth-hero__brand .central-login-logo {
-        width: min(220px, 72vw);
-        max-width: 220px;
+        width: min(190px, 68vw);
+        max-width: 190px;
         height: auto;
         margin: 0;
         object-position: center center;
@@ -1824,39 +2058,45 @@ html[data-theme="light"] .auth-page .base-search-input:focus-visible {
     }
 
     .auth-page .auth-shell--saas .auth-hero__text {
-        max-width: 26rem;
+        max-width: 24rem;
         margin-inline: auto;
+        font-size: .88rem;
     }
 
     .auth-page .auth-shell--saas .auth-hero__summary {
+        display: grid;
         grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 8px;
+        gap: 6px;
+        width: 100%;
+        max-width: 100%;
     }
 
     .auth-page .auth-shell--saas .auth-hero__summary-card {
         min-height: 0;
-        padding: 12px 10px;
-        gap: 6px;
+        padding: 8px 8px 7px;
+        gap: 4px;
+        border-radius: 15px;
     }
 
     .auth-page .auth-shell--saas .auth-hero__summary-icon {
-        width: 26px;
-        height: 26px;
-        font-size: .98rem;
-    }
-
-    .auth-page .auth-shell--saas .auth-hero__summary-label {
-        font-size: .62rem;
-        letter-spacing: .12em;
-    }
-
-    .auth-page .auth-shell--saas .auth-hero__summary-card strong {
+        width: 22px;
+        height: 22px;
         font-size: .86rem;
     }
 
+    .auth-page .auth-shell--saas .auth-hero__summary-label {
+        font-size: .55rem;
+        letter-spacing: .1em;
+    }
+
+    .auth-page .auth-shell--saas .auth-hero__summary-card strong {
+        font-size: .77rem;
+        line-height: 1.08;
+    }
+
     .auth-page .auth-shell--saas .auth-hero__summary-card small {
-        font-size: .71rem;
-        line-height: 1.3;
+        font-size: .62rem;
+        line-height: 1.22;
     }
 
     .auth-page .auth-shell--saas .auth-hero__note {
@@ -1865,22 +2105,25 @@ html[data-theme="light"] .auth-page .base-search-input:focus-visible {
 
     .auth-page .auth-shell--saas .auth-form-panel {
         width: 100%;
-        padding: 0 12px 12px;
+        padding: 0 10px 10px;
         background: transparent;
+        flex: 1 1 auto;
+        min-height: 0;
     }
 
     .auth-page .auth-shell--saas .auth-form-panel__surface {
         width: 100%;
         max-width: 100%;
         margin: 0;
-        padding: 16px 14px 14px;
-        border-radius: 22px;
+        padding: 12px 12px 10px;
+        border-radius: 18px;
         display: grid;
-        gap: 10px;
+        gap: 6px;
     }
 
     .auth-page .auth-shell--saas .auth-saas-login {
-        gap: 10px;
+        gap: 6px;
+        min-height: 0;
     }
 
     .auth-page .auth-shell--saas .auth-mobile-brand--saas {
@@ -1889,55 +2132,43 @@ html[data-theme="light"] .auth-page .base-search-input:focus-visible {
 
     .auth-page .auth-shell--saas .auth-saas-login__header {
         display: grid;
-        grid-template-columns: 48px minmax(0, 1fr);
+        grid-template-columns: 1fr;
         align-items: center;
-        gap: 12px;
-        padding: 2px 0 0;
+        gap: 4px;
+        padding: 2px 2px 0;
+        text-align: center;
     }
 
     .auth-page .auth-shell--saas .auth-saas-login__header-icon {
-        width: 48px;
-        height: 48px;
-        display: grid;
-        place-items: center;
-        border-radius: 999px;
-        border: 1px solid rgba(34, 211, 238, .18);
-        background:
-            radial-gradient(circle at 30% 25%, rgba(34, 211, 238, .16), transparent 42%),
-            rgba(8, 18, 35, .24);
-        color: #7dd3fc;
-        box-shadow:
-            inset 0 1px 0 rgba(255,255,255,.04),
-            0 10px 22px rgba(0, 0, 0, .10);
-    }
-
-    .auth-page .auth-shell--saas .auth-saas-login__header-icon i {
-        font-size: 1.35rem;
+        display: none;
     }
 
     .auth-page .auth-shell--saas .auth-saas-login__header-copy {
         display: grid;
-        gap: 4px;
+        gap: 3px;
         min-width: 0;
+        justify-items: center;
     }
 
     .auth-page .auth-shell--saas .auth-saas-login__header-copy .auth-card__title {
         margin: 0;
-        font-size: clamp(1.42rem, 7.8vw, 1.9rem);
-        line-height: 1.02;
+        font-size: clamp(1.14rem, 5.9vw, 1.4rem);
+        line-height: 1.06;
+        max-width: 100%;
     }
 
     .auth-page .auth-shell--saas .auth-saas-login__header-copy .auth-card__subtitle {
         margin: 0;
-        font-size: .9rem;
-        line-height: 1.4;
+        font-size: .78rem;
+        line-height: 1.34;
+        max-width: 100%;
     }
 
     .auth-page .auth-shell--saas .auth-saas-login__lead {
         display: block;
-        margin-top: 4px;
+        margin-top: 2px;
         color: #1fb6ff;
-        font-size: .92rem;
+        font-size: .8rem;
         font-weight: 900;
         line-height: 1.2;
     }
@@ -1946,14 +2177,14 @@ html[data-theme="light"] .auth-page .base-search-input:focus-visible {
         display: flex;
         align-items: flex-start;
         gap: 10px;
-        padding: 12px 13px;
-        border-radius: 16px;
+        padding: 8px 10px;
+        border-radius: 12px;
         border: 1px solid rgba(34, 211, 238, .18);
         background:
             radial-gradient(circle at 0% 0%, rgba(34, 211, 238, .10), transparent 38%),
             rgba(8, 18, 35, .10);
         color: #dbeafe;
-        font-size: .82rem;
+        font-size: .7rem;
         line-height: 1.45;
     }
 
@@ -1965,8 +2196,8 @@ html[data-theme="light"] .auth-page .base-search-input:focus-visible {
 
     .auth-page .auth-shell--saas .auth-saas-login__footer {
         display: grid;
-        gap: 8px;
-        padding-top: 2px;
+        gap: 2px;
+        padding-top: 0;
     }
 
     .auth-page .auth-shell--saas .auth-saas-login__forgot {
@@ -1975,7 +2206,7 @@ html[data-theme="light"] .auth-page .base-search-input:focus-visible {
         justify-content: center;
         gap: 8px;
         color: #c7d2fe;
-        font-size: .82rem;
+        font-size: .7rem;
         font-weight: 700;
         line-height: 1.2;
         text-align: center;
@@ -2074,6 +2305,32 @@ html[data-theme="light"] .auth-page .base-search-input:focus-visible {
     .auth-hero__title,
     .auth-card__title {
         font-size: 1.28rem;
+    }
+
+    .auth-page .auth-shell--saas .auth-hero__summary,
+    .auth-page .auth-shell--saas .auth-hero__points,
+    .auth-page .auth-shell--saas .auth-hero__note {
+        display: none !important;
+    }
+
+    .auth-page .auth-shell--saas .auth-hero {
+        padding: 10px 12px 8px;
+        gap: 6px;
+    }
+
+    .auth-page .auth-shell--saas .auth-hero__brand .central-login-logo {
+        width: min(136px, 48vw);
+        max-width: 136px;
+    }
+
+    .auth-page .auth-shell--saas .auth-hero__text {
+        max-width: 20rem;
+        font-size: .84rem;
+        line-height: 1.28;
+    }
+
+    .auth-page .auth-shell--saas .auth-form-panel {
+        padding: 0 10px 10px;
     }
 
     .auth-form-panel__surface {
@@ -2631,7 +2888,6 @@ html[data-theme="light"] .auth-legacy-login__actions .btn.btn--ghost:focus-visib
     }
 
     .auth-page .auth-shell--local .auth-hero,
-    .auth-page .auth-shell--saas .auth-hero,
     .auth-page .auth-shell--selection .auth-hero {
         display: none !important;
     }
@@ -2723,26 +2979,23 @@ html[data-theme="light"] .auth-legacy-login__actions .btn.btn--ghost:focus-visib
     }
 
     .auth-page .auth-saas-login__header {
-        grid-template-columns: 38px minmax(0, 1fr);
+        grid-template-columns: 1fr;
         align-items: center;
-        gap: 8px;
+        gap: 0;
         padding: 0;
-        text-align: left;
+        text-align: center;
     }
 
     .auth-page .auth-shell--saas .auth-saas-login__header-icon {
-        width: 38px;
-        height: 38px;
+        display: none;
     }
 
-    .auth-page .auth-shell--saas .auth-saas-login__header-copy .auth-card__title,
-    .auth-page .auth-shell--local .auth-form-panel__header .auth-card__title {
-        text-align: left;
+    .auth-page .auth-shell--saas .auth-saas-login__header-copy .auth-card__title {
+        text-align: center;
     }
 
-    .auth-page .auth-shell--saas .auth-saas-login__header-copy .auth-card__subtitle,
-    .auth-page .auth-shell--local .auth-form-panel__header .auth-card__subtitle {
-        text-align: left;
+    .auth-page .auth-shell--saas .auth-saas-login__header-copy .auth-card__subtitle {
+        text-align: center;
     }
 
     .auth-page .auth-shell--local .auth-form-panel__header {
@@ -2755,7 +3008,7 @@ html[data-theme="light"] .auth-legacy-login__actions .btn.btn--ghost:focus-visib
 
     .auth-page .auth-shell--saas .auth-saas-login__lead,
     .auth-page .auth-shell--local .auth-saas-login__lead {
-        margin-top: 0;
+        margin-top: 2px;
         font-size: .84rem;
     }
 
@@ -2770,23 +3023,135 @@ html[data-theme="light"] .auth-legacy-login__actions .btn.btn--ghost:focus-visib
         gap: 8px;
     }
 
+    .auth-page .auth-shell--saas {
+        display: flex;
+        flex-direction: column;
+        min-height: calc(100dvh - 24px);
+        max-height: calc(100dvh - 24px);
+        overflow: hidden;
+        border-radius: 22px;
+    }
+
+    .auth-page .auth-shell--saas .auth-hero {
+        display: grid;
+        gap: 8px;
+        padding: 12px 12px 8px;
+        text-align: center;
+        flex: 0 0 auto;
+    }
+
+    .auth-page .auth-shell--saas .auth-hero__brand {
+        min-height: 0;
+        justify-items: center;
+    }
+
+    .auth-page .auth-shell--saas .auth-hero__brand .central-login-logo {
+        width: min(154px, 56vw);
+        max-width: 154px;
+        height: auto;
+        margin: 0;
+        object-position: center center;
+    }
+
+    .auth-page .auth-shell--saas .auth-hero__copy {
+        max-width: none;
+        justify-items: center;
+        text-align: center;
+    }
+
+    .auth-page .auth-shell--saas .auth-hero__title {
+        font-size: clamp(1.56rem, 5.8vw, 1.84rem);
+        line-height: 1.02;
+    }
+
+    .auth-page .auth-shell--saas .auth-hero__text {
+        max-width: 30rem;
+        margin-inline: auto;
+        font-size: .9rem;
+        line-height: 1.3;
+    }
+
+    .auth-page .auth-shell--saas .auth-hero__summary {
+        display: grid !important;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 5px;
+    }
+
+    .auth-page .auth-shell--saas .auth-hero__summary-card {
+        min-height: 0;
+        padding: 8px 7px 7px;
+        gap: 4px;
+        border-radius: 15px;
+    }
+
+    .auth-page .auth-shell--saas .auth-hero__summary-icon {
+        width: 22px;
+        height: 22px;
+        font-size: .86rem;
+    }
+
+    .auth-page .auth-shell--saas .auth-hero__summary-label {
+        font-size: .55rem;
+        letter-spacing: .1em;
+    }
+
+    .auth-page .auth-shell--saas .auth-hero__summary-card strong {
+        font-size: .78rem;
+        line-height: 1.08;
+    }
+
+    .auth-page .auth-shell--saas .auth-hero__summary-card small {
+        font-size: .64rem;
+        line-height: 1.24;
+    }
+
+    .auth-page .auth-shell--saas .auth-hero__note {
+        display: none;
+    }
+
+    .auth-page .auth-shell--saas .auth-form-panel {
+        width: 100%;
+        padding: 0 8px 10px;
+        background: transparent;
+        flex: 1 1 auto;
+        min-height: 0;
+    }
+
+    .auth-page .auth-shell--saas .auth-form-panel__surface {
+        width: 100%;
+        max-width: none;
+        margin: 0;
+        padding: 12px 10px 10px;
+        border-radius: 18px;
+        display: grid;
+        gap: 6px;
+        min-height: 0;
+        height: auto;
+    }
+
+    .auth-page .auth-shell--saas .auth-saas-login {
+        gap: 6px;
+        min-height: 0;
+        flex: 1 1 auto;
+    }
+
     .auth-page .auth-shell--saas .auth-saas-login__info {
-        padding: 8px 10px;
-        border-radius: 13px;
-        font-size: .76rem;
+        padding: 7px 9px;
+        border-radius: 12px;
+        font-size: .74rem;
     }
 
     .auth-page .auth-shell--saas .auth-saas-login__footer {
-        gap: 6px;
+        gap: 4px;
         padding-top: 0;
     }
 
     .auth-page .auth-shell--saas .auth-saas-login__forgot {
-        font-size: .76rem;
+        font-size: .74rem;
     }
 
     .auth-page .auth-shell--saas .auth-saas-login__cancel {
-        min-height: 42px;
+        min-height: 40px;
     }
 
     .auth-page .auth-shell--local .auth-legacy-login__login {

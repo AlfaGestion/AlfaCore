@@ -2458,6 +2458,16 @@
                                                             <small>Fletero</small>
                                                             <strong>@tarifa.ImporteFletero.ToString("C2")</strong>
                                                         }
+                                                        @if (!string.IsNullOrWhiteSpace(tarifa.FleteroNombreSugerido))
+                                                        {
+                                                            <small class="carga-viajes-viaje-tarifas__price-note">
+                                                                Chofer: @DisplayText(tarifa.FleteroNombreSugerido, tarifa.FleteroCodigoSugerido)
+                                                            </small>
+                                                        }
+                                                        @if (tarifa.FleteroCoincidencias > 1)
+                                                        {
+                                                            <small class="carga-viajes-viaje-tarifas__price-note">@(tarifa.FleteroCoincidencias) tarifas asociadas</small>
+                                                        }
                                                     </div>
                                                     <div class="carga-viajes-viaje-tarifas__actions">
                                                         <button type="button" class="btn btn--primary btn--sm" @onclick="() => SeleccionarTarifaClienteAsync(tarifa)">Seleccionar</button>

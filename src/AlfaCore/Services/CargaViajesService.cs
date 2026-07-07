@@ -2087,6 +2087,8 @@ public sealed class CargaViajesService(
                 return Array.Empty<CargaViajeTarifaClienteResumenDto>();
 
             var config = BuildConfiguracion(await LoadConfiguracionAsync(cn, token));
+            var fleteroRowsByDestinoVehiculo = await LoadTarifasFleteroPorDestinoVehiculoAsync(cn, rawRows, token);
+
             var result = new List<CargaViajeTarifaClienteResumenDto>(rawRows.Count);
             foreach (var row in rawRows)
             {
@@ -2095,14 +2097,34 @@ public sealed class CargaViajesService(
                 var tipoVehiculoNombre = string.IsNullOrWhiteSpace(row.TipoVehiculoNombre) ? row.TipoVehiculoCodigo : row.TipoVehiculoNombre.Trim();
                 var fleteroCodigo = row.FleteroCodigoSugerido.Trim();
                 var fleteroNombre = string.IsNullOrWhiteSpace(row.FleteroNombreSugerido) ? fleteroCodigo : row.FleteroNombreSugerido.Trim();
+                var fleteroKey = (Destino: TrimUpper(row.DestinoCodigo), TipoVehiculo: TrimUpper(row.TipoVehiculoCodigo));
+                fleteroRowsByDestinoVehiculo.TryGetValue(fleteroKey, out var fleteroCandidates);
+                fleteroCandidates ??= [];
+                var fleteroCoincidencias = fleteroCandidates.Count;
                 var importeCliente = row.TarifaFletero
                     ? await ResolveTarifaImporteAsync(cn, clienteColumn, row.ClienteCodigo, destinoColumn, row.DestinoCodigo, tipoVehiculoColumn, row.TipoVehiculoCodigo, 0, config.ChoferGeneral, token)
                     : row.ImporteBase;
                 var importeFletero = row.TarifaFletero
                     ? row.ImporteBase
-                    : string.IsNullOrWhiteSpace(fleteroCodigo)
-                        ? 0m
-                        : await ResolveTarifaImporteAsync(cn, choferColumn, fleteroCodigo, destinoColumn, row.DestinoCodigo, tipoVehiculoColumn, row.TipoVehiculoCodigo, 1, config.ChoferGeneral, token);
+                    : 0m;
+
+                if (!row.TarifaFletero && fleteroCoincidencias > 0)
+                {
+                    var fleteroAsociado = SelectBestFleteroCandidate(fleteroCandidates, fleteroCodigo);
+                    if (fleteroAsociado is not null)
+                    {
+                        if (importeFletero <= 0m)
+                            importeFletero = fleteroAsociado.Importe;
+
+                        if (string.IsNullOrWhiteSpace(fleteroCodigo) || fleteroCoincidencias > 1)
+                        {
+                            fleteroCodigo = fleteroAsociado.ChoferCodigo.Trim();
+                            fleteroNombre = string.IsNullOrWhiteSpace(fleteroAsociado.ChoferNombre)
+                                ? fleteroCodigo
+                                : fleteroAsociado.ChoferNombre.Trim();
+                        }
+                    }
+                }
 
                 result.Add(new CargaViajeTarifaClienteResumenDto
                 {
@@ -2119,6 +2141,7 @@ public sealed class CargaViajesService(
                     ImporteFletero = importeFletero,
                     FleteroCodigoSugerido = fleteroCodigo,
                     FleteroNombreSugerido = fleteroNombre,
+                    FleteroCoincidencias = fleteroCoincidencias,
                     Activo = row.Activo,
                     TarifaFletero = row.TarifaFletero
                 });
@@ -3622,6 +3645,99 @@ public sealed class CargaViajesService(
         public decimal ImporteBase { get; set; }
         public bool TarifaFletero { get; set; }
         public bool Activo { get; set; }
+    }
+
+    private sealed class TarifaFleteroLookupRow
+    {
+        public string Codigo { get; set; } = string.Empty;
+        public string Nombre { get; set; } = string.Empty;
+        public string ChoferCodigo { get; set; } = string.Empty;
+        public string ChoferNombre { get; set; } = string.Empty;
+        public decimal Importe { get; set; }
+        public bool Activo { get; set; }
+    }
+
+    private async Task<Dictionary<(string Destino, string TipoVehiculo), List<TarifaFleteroLookupRow>>> LoadTarifasFleteroPorDestinoVehiculoAsync(
+        SqlConnection cn,
+        IReadOnlyCollection<TarifaClienteLookupRow> rawRows,
+        CancellationToken ct)
+    {
+        var combos = rawRows
+            .Select(r => (Destino: TrimUpper(r.DestinoCodigo), TipoVehiculo: TrimUpper(r.TipoVehiculoCodigo)))
+            .Where(key => !string.IsNullOrWhiteSpace(key.Destino) && !string.IsNullOrWhiteSpace(key.TipoVehiculo))
+            .Distinct()
+            .ToList();
+
+        var result = new Dictionary<(string Destino, string TipoVehiculo), List<TarifaFleteroLookupRow>>();
+        if (combos.Count == 0)
+            return result;
+
+        var columns = await LoadColumnsAsync(cn, "TA_TARIFA", ct);
+        var idListaColumn = FirstExistingColumn(columns, "IDLISTA", "ID_LISTA");
+        var choferColumn = FirstExistingColumn(columns, "IDCHOFER", "CHOFER");
+        var destinoColumn = FirstExistingColumn(columns, "IDDESTINO", "DESTINO");
+        var tipoVehiculoColumn = FirstExistingColumn(columns, "IDTIPOVEHICULO", "TIPOVEHICULO");
+        var idColumn = columns.Contains("id") ? "ID"
+            : columns.Contains("idtarifa") ? "IDTARIFA"
+            : columns.Contains("id_tarifa") ? "ID_TARIFA"
+            : null;
+
+        foreach (var combo in combos)
+        {
+            var sql = $"""
+                SELECT
+                    {(string.IsNullOrWhiteSpace(idColumn) ? "CAST(0 AS int)" : $"ISNULL(t.{idColumn}, 0)") } AS IdTarifa,
+                    LTRIM(RTRIM(ISNULL(t.{idListaColumn}, ''))) AS Codigo,
+                    ISNULL(t.Nombre, '') AS Nombre,
+                    LTRIM(RTRIM(ISNULL(t.{choferColumn}, ''))) AS ChoferCodigo,
+                    ISNULL(ch.NOMBRES, '') AS ChoferNombre,
+                    ISNULL(t.Importe, 0) AS Importe,
+                    ISNULL(t.Activo, 1) AS Activo
+                FROM dbo.TA_TARIFA t
+                LEFT JOIN dbo.TA_CHOFERES ch ON UPPER(LTRIM(RTRIM(ISNULL(ch.CODIGO, '')))) = UPPER(LTRIM(RTRIM(ISNULL(t.{choferColumn}, ''))))
+                WHERE ISNULL(t.TarifaFletero, 0) = 1
+                  AND ISNULL(t.Activo, 1) = 1
+                  AND UPPER(LTRIM(RTRIM(ISNULL(t.{destinoColumn}, '')))) = @Destino
+                  AND UPPER(LTRIM(RTRIM(ISNULL(t.{tipoVehiculoColumn}, '')))) = @TipoVehiculo
+                ORDER BY
+                    CASE WHEN LTRIM(RTRIM(ISNULL(t.{choferColumn}, ''))) = '' THEN 1 ELSE 0 END,
+                    ISNULL(ch.NOMBRES, ''),
+                    LTRIM(RTRIM(ISNULL(t.{idListaColumn}, '')));
+                """;
+
+            var rows = (await cn.QueryAsync<TarifaFleteroLookupRow>(new CommandDefinition(sql, new
+            {
+                combo.Destino,
+                combo.TipoVehiculo
+            }, cancellationToken: ct))).ToList();
+
+            if (rows.Count > 0)
+                result[combo] = rows;
+        }
+
+        return result;
+    }
+
+    private static TarifaFleteroLookupRow? SelectBestFleteroCandidate(
+        IReadOnlyList<TarifaFleteroLookupRow> candidates,
+        string preferredChoferCodigo)
+    {
+        if (candidates.Count == 0)
+            return null;
+
+        if (!string.IsNullOrWhiteSpace(preferredChoferCodigo))
+        {
+            var preferred = candidates.FirstOrDefault(candidate =>
+                string.Equals(candidate.ChoferCodigo, preferredChoferCodigo, StringComparison.OrdinalIgnoreCase));
+            if (preferred is not null)
+                return preferred;
+        }
+
+        return candidates
+            .OrderByDescending(candidate => !string.IsNullOrWhiteSpace(candidate.ChoferCodigo))
+            .ThenBy(candidate => candidate.ChoferNombre, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(candidate => candidate.Codigo, StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault();
     }
 
     private static async Task<decimal> ResolveTarifaImporteAsync(

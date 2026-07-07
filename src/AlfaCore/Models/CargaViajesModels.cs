@@ -182,6 +182,7 @@ public sealed class CargaViajeTarifaClienteResumenDto
     public decimal ImporteFletero { get; set; }
     public string FleteroCodigoSugerido { get; set; } = string.Empty;
     public string FleteroNombreSugerido { get; set; } = string.Empty;
+    public int FleteroCoincidencias { get; set; }
     public bool Activo { get; set; } = true;
     public bool TarifaFletero { get; set; }
 }
