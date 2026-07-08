@@ -1235,13 +1235,12 @@
                                                                 <i class="bi bi-arrows-fullscreen"></i>
                                                             </button>
                                                         </div>
-                                                        <div class="attachment-video-meta">
-                                                            <span>@adj.NombreArchivo</span>
-                                                            @if (adj.TamanoBytes > 0)
-                                                            {
+                                                        @if (adj.TamanoBytes > 0)
+                                                        {
+                                                            <div class="attachment-video-meta">
                                                                 <span>@FormatFileSize(adj.TamanoBytes)</span>
-                                                            }
-                                                        </div>
+                                                            </div>
+                                                        }
                                                     </div>
                                                 }
                                                 else
@@ -1907,7 +1906,7 @@
                        aria-label="Descargar">
                         <i class="bi bi-download"></i>
                     </a>
-                    @if (IsImageAttachment(_previewAttachment))
+                    @if (IsPreviewZoomableAttachment(_previewAttachment))
                     {
                         <button type="button" class="attachment-preview-action" @onclick="ZoomPreviewOut" title="Alejar" aria-label="Alejar">
                             <i class="bi bi-zoom-out"></i>
@@ -1918,12 +1917,15 @@
                         <button type="button" class="attachment-preview-action" @onclick="ZoomPreviewIn" title="Acercar" aria-label="Acercar">
                             <i class="bi bi-zoom-in"></i>
                         </button>
-                        <button type="button" class="attachment-preview-action" @onclick="RotatePreviewLeft" title="Rotar a la izquierda" aria-label="Rotar a la izquierda">
-                            <i class="bi bi-arrow-counterclockwise"></i>
-                        </button>
-                        <button type="button" class="attachment-preview-action" @onclick="RotatePreviewRight" title="Rotar a la derecha" aria-label="Rotar a la derecha">
-                            <i class="bi bi-arrow-clockwise"></i>
-                        </button>
+                        @if (IsImageAttachment(_previewAttachment))
+                        {
+                            <button type="button" class="attachment-preview-action" @onclick="RotatePreviewLeft" title="Rotar a la izquierda" aria-label="Rotar a la izquierda">
+                                <i class="bi bi-arrow-counterclockwise"></i>
+                            </button>
+                            <button type="button" class="attachment-preview-action" @onclick="RotatePreviewRight" title="Rotar a la derecha" aria-label="Rotar a la derecha">
+                                <i class="bi bi-arrow-clockwise"></i>
+                            </button>
+                        }
                     }
                     <button type="button" class="attachment-preview-action" @onclick="CloseAttachmentPreview" title="Cerrar" aria-label="Cerrar">
                         <i class="bi bi-x-lg"></i>
@@ -2484,6 +2486,8 @@
     private bool _bindPreviewKeyboardAfterRender;
     private bool _scrollPreviewThumbAfterRender;
     private int _previewRotationDegrees;
+    private double _previewPanX;
+    private double _previewPanY;
     private SoundDiagnosticsVm _soundDiagnostics = new();
     private ElementReference _replyTextArea;
     private ElementReference _internalNoteMobileTextArea;
@@ -2906,7 +2910,7 @@
             _bindPreviewPanAfterRender = false;
             try
             {
-                await JS.InvokeVoidAsync("conversacionesUi.bindAttachmentPreviewPan", _previewCanvas);
+                await JS.InvokeVoidAsync("conversacionesUi.bindAttachmentPreviewPan", _previewCanvas, _dotNetRef);
             }
             catch
             {
@@ -7105,6 +7109,9 @@
     private static bool IsPreviewableAttachment(ConversacionAdjuntoDto adjunto)
         => IsAttachmentAvailable(adjunto) && (IsImageAttachment(adjunto) || IsVideoAttachment(adjunto));
 
+    private static bool IsPreviewZoomableAttachment(ConversacionAdjuntoDto adjunto)
+        => IsAttachmentAvailable(adjunto) && (IsImageAttachment(adjunto) || IsVideoAttachment(adjunto));
+
     private static bool IsAttachmentAvailable(ConversacionAdjuntoDto adjunto)
         => adjunto.ArchivoDisponible;
 
@@ -7145,7 +7152,26 @@
             && adjuntos.Any(x => string.Equals(x.NombreArchivo, text, StringComparison.OrdinalIgnoreCase)))
             return false;
 
+        if (IsGeneratedMediaFileName(text, message.MessageType))
+            return false;
+
         return true;
+    }
+
+    private static bool IsGeneratedMediaFileName(string text, string messageType)
+    {
+        var normalizedType = (messageType ?? string.Empty).Trim().ToUpperInvariant();
+        var prefix = normalizedType switch
+        {
+            "IMAGE" or "STICKER" => "image_",
+            "VIDEO" => "video_",
+            "AUDIO" => "audio_",
+            _ => string.Empty
+        };
+
+        return !string.IsNullOrWhiteSpace(prefix)
+               && text.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+               && Path.HasExtension(text);
     }
 
     private static string GetMessageDisplayText(ConversacionMensajeDto message)
@@ -7562,10 +7588,23 @@
     }
 
     private string PreviewImageStyle
-        => $"--preview-zoom: {_previewZoom.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)}; --preview-rotation: {_previewRotationDegrees.ToString(System.Globalization.CultureInfo.InvariantCulture)}deg;";
+        => BuildPreviewMediaStyle(includeRotation: true);
 
     private string PreviewVideoStyle
-        => "width: 100%; max-width: min(100%, 960px); height: 100%; max-height: 100%; object-fit: contain;";
+        => BuildPreviewMediaStyle(includeRotation: false);
+
+    private string BuildPreviewMediaStyle(bool includeRotation)
+    {
+        var culture = System.Globalization.CultureInfo.InvariantCulture;
+        var rotation = includeRotation ? _previewRotationDegrees.ToString(culture) : "0";
+        return string.Join("; ",
+        [
+            $"--preview-zoom: {_previewZoom.ToString("0.###", culture)}",
+            $"--preview-rotation: {rotation}deg",
+            $"--preview-pan-x: {_previewPanX.ToString("0.###", culture)}px",
+            $"--preview-pan-y: {_previewPanY.ToString("0.###", culture)}px"
+        ]);
+    }
 
     private string PreviewZoomPercent
         => $"{Math.Round(_previewZoom * 100, 0).ToString(System.Globalization.CultureInfo.InvariantCulture)}%";
@@ -7583,6 +7622,8 @@
     {
         ResetPreviewZoom();
         _previewRotationDegrees = 0;
+        _previewPanX = 0;
+        _previewPanY = 0;
     }
 
     private void RotatePreviewLeft()
@@ -7596,7 +7637,7 @@
 
     private void HandlePreviewWheel(WheelEventArgs args)
     {
-        if (_previewAttachment is null || !IsImageAttachment(_previewAttachment))
+        if (_previewAttachment is null || !IsPreviewZoomableAttachment(_previewAttachment))
             return;
 
         SetPreviewZoom(_previewZoom + (args.DeltaY < 0 ? .15d : -.15d));
@@ -7604,6 +7645,17 @@
 
     private void SetPreviewZoom(double value)
         => _previewZoom = Math.Clamp(value, .5d, 4d);
+
+    [JSInvokable]
+    public Task PanAttachmentPreview(double deltaX, double deltaY)
+    {
+        if (_previewAttachment is null || !IsPreviewZoomableAttachment(_previewAttachment) || _previewZoom <= 1d)
+            return Task.CompletedTask;
+
+        _previewPanX += deltaX;
+        _previewPanY += deltaY;
+        return InvokeAsync(StateHasChanged);
+    }
 
     private async Task DismissConversationNoticesAsync()
     {

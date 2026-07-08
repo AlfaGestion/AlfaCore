@@ -2717,22 +2717,26 @@ public sealed class ConversacionesService(
             foreach (var incoming in parsedMessages)
             {
                 var conversationId = await EnsureConversationAsync(incoming, token);
-                var messageId = await InsertMessageAsync(new PendingMessageInsert
+                var messageId = await GetExistingMessageIdByWhatsAppIdAsync(incoming.WhatsAppMessageId, token);
+                if (messageId <= 0)
                 {
-                    ConversationId = conversationId,
-                    Phone = incoming.Phone,
-                    MessageType = incoming.MessageType,
-                    Direction = "ENTRANTE",
-                    EstadoEnvio = "RECIBIDO",
-                    Text = incoming.Text,
-                    PayloadJson = incoming.RawJson,
-                    FechaHora = NormalizeIncomingTimestamp(incoming.Timestamp),
-                    UsuarioAutor = string.Empty,
-                    SistemaAutor = string.Empty,
-                    IdTecnicoAutor = string.Empty,
-                    WhatsAppMessageId = incoming.WhatsAppMessageId,
-                    ReplyToMessageId = incoming.WhatsAppReplyToMessageId
-                }, token);
+                    messageId = await InsertMessageAsync(new PendingMessageInsert
+                    {
+                        ConversationId = conversationId,
+                        Phone = incoming.Phone,
+                        MessageType = incoming.MessageType,
+                        Direction = "ENTRANTE",
+                        EstadoEnvio = "RECIBIDO",
+                        Text = incoming.Text,
+                        PayloadJson = incoming.RawJson,
+                        FechaHora = NormalizeIncomingTimestamp(incoming.Timestamp),
+                        UsuarioAutor = string.Empty,
+                        SistemaAutor = string.Empty,
+                        IdTecnicoAutor = string.Empty,
+                        WhatsAppMessageId = incoming.WhatsAppMessageId,
+                        ReplyToMessageId = incoming.WhatsAppReplyToMessageId
+                    }, token);
+                }
 
                 if (incoming.Attachments.Count > 0 && whatsAppConfig is not null)
                     await StoreIncomingAttachmentsAsync(conversationId, messageId, incoming, whatsAppConfig, token);
@@ -3347,13 +3351,19 @@ public sealed class ConversacionesService(
         CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(config.AccessToken))
-            return 0;
+            throw new InvalidOperationException("No hay token de WhatsApp configurado para descargar el adjunto entrante.");
 
         var stored = 0;
         foreach (var attachment in incoming.Attachments)
         {
             try
             {
+                if (await MessageAttachmentExistsAsync(messageId, attachment.MediaId, ct))
+                {
+                    stored++;
+                    continue;
+                }
+
                 var media = await GetWhatsAppMediaAsync(config, attachment.MediaId, ct);
                 var bytes = await DownloadWhatsAppMediaAsync(config, media.Url, ct);
                 var mimeType = FirstNonEmpty(media.MimeType, attachment.MimeType, InferMimeFromType(attachment.TipoArchivo));
@@ -3387,10 +3397,33 @@ public sealed class ConversacionesService(
                     new { incoming.WhatsAppMessageId, attachment.MediaId, attachment.TipoArchivo },
                     AppEventSeverity.Warning,
                     ct);
+                throw;
             }
         }
 
         return stored;
+    }
+
+    private async Task<bool> MessageAttachmentExistsAsync(long messageId, string mediaId, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT COUNT(1)
+            FROM dbo.CONV_ADJUNTOS
+            WHERE IdMensaje = @IdMensaje
+              AND (
+                    @MediaId = N''
+                    OR ISNULL(PayloadJson, '') LIKE @MediaIdLike
+                  );
+            """;
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@IdMensaje", messageId);
+        cmd.Parameters.AddWithValue("@MediaId", mediaId ?? string.Empty);
+        cmd.Parameters.AddWithValue("@MediaIdLike", $"%{(mediaId ?? string.Empty).Replace("[", "[[]").Replace("%", "[%]").Replace("_", "[_]")}%");
+        var result = await cmd.ExecuteScalarAsync(ct);
+        return Convert.ToInt32(result, CultureInfo.InvariantCulture) > 0;
     }
 
     private async Task HydrateMissingIncomingMediaAsync(List<PendingMediaHydration> pendingItems, CancellationToken ct)
@@ -4132,6 +4165,25 @@ public sealed class ConversacionesService(
         cmd.Parameters.AddWithValue("@IdTecnicoAutor", DbNullablePreserve(idTecnicoAutor));
         var result = await cmd.ExecuteScalarAsync(ct);
         return Convert.ToInt64(result, CultureInfo.InvariantCulture);
+    }
+
+    private async Task<long> GetExistingMessageIdByWhatsAppIdAsync(string whatsAppMessageId, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(whatsAppMessageId))
+            return 0;
+
+        const string sql = """
+            SELECT TOP (1) IdMensaje
+            FROM dbo.CONV_MENSAJES
+            WHERE WhatsAppMessageId = @WhatsAppMessageId;
+            """;
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@WhatsAppMessageId", whatsAppMessageId.Trim());
+        var result = await cmd.ExecuteScalarAsync(ct);
+        return result is null || result is DBNull ? 0 : Convert.ToInt64(result, CultureInfo.InvariantCulture);
     }
 
     private async Task NotifyIncomingMessageAsync(long conversationId, long messageId, CancellationToken ct)

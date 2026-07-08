@@ -234,7 +234,9 @@
     height: min(64vh, calc(92vh - 13rem));
     max-height: calc(92vh - 13rem);
     background: rgba(2, 6, 23, .12);
-    overflow: auto;
+    overflow: hidden;
+    touch-action: none;
+    user-select: none;
 }
 
 .attachment-preview-canvas img {
@@ -244,19 +246,24 @@
     height: auto;
     object-fit: contain;
     transform-origin: center center;
-    transform: scale(var(--preview-zoom, 1)) rotate(var(--preview-rotation, 0deg));
+    transform: translate(var(--preview-pan-x, 0), var(--preview-pan-y, 0)) scale(var(--preview-zoom, 1)) rotate(var(--preview-rotation, 0deg));
     transition: transform .18s ease;
     animation: attachment-preview-media-enter .18s ease both;
+    will-change: transform;
 }
 
 .attachment-preview-canvas video {
     display: block;
-    width: 100%;
+    width: auto;
     max-width: min(100%, 960px);
-    height: 100%;
+    height: auto;
     max-height: 100%;
     object-fit: contain;
+    transform-origin: center center;
+    transform: translate(var(--preview-pan-x, 0), var(--preview-pan-y, 0)) scale(var(--preview-zoom, 1));
+    transition: transform .18s ease;
     animation: attachment-preview-media-enter .18s ease both;
+    will-change: transform;
 }
 
 .attachment-preview-strip {

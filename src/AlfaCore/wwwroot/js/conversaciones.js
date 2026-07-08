@@ -703,7 +703,7 @@ window.conversacionesUi = {
         this._fileDropWatchers.delete(element);
     },
 
-    bindAttachmentPreviewPan: function (element) {
+    bindAttachmentPreviewPan: function (element, dotNetRef) {
         if (!element) return false;
 
         const previous = this._previewPanWatchers.get(element);
@@ -715,16 +715,16 @@ window.conversacionesUi = {
         let dragging = false;
         let startX = 0;
         let startY = 0;
-        let startLeft = 0;
-        let startTop = 0;
+        let lastX = 0;
+        let lastY = 0;
 
         const pointerDown = event => {
             if (event.button !== 0) return;
             dragging = true;
             startX = event.clientX;
             startY = event.clientY;
-            startLeft = element.scrollLeft;
-            startTop = element.scrollTop;
+            lastX = event.clientX;
+            lastY = event.clientY;
             element.classList.add('is-dragging');
             element.setPointerCapture?.(event.pointerId);
             event.preventDefault();
@@ -732,8 +732,11 @@ window.conversacionesUi = {
 
         const pointerMove = event => {
             if (!dragging) return;
-            element.scrollLeft = startLeft - (event.clientX - startX);
-            element.scrollTop = startTop - (event.clientY - startY);
+            const deltaX = event.clientX - lastX;
+            const deltaY = event.clientY - lastY;
+            lastX = event.clientX;
+            lastY = event.clientY;
+            dotNetRef?.invokeMethodAsync('PanAttachmentPreview', deltaX, deltaY).catch(() => {});
             event.preventDefault();
         };
 
