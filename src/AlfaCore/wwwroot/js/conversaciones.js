@@ -715,89 +715,35 @@ window.conversacionesUi = {
         let dragging = false;
         let lastX = 0;
         let lastY = 0;
-        const readZoom = () => {
-            const stage = element.querySelector('.attachment-preview-stage');
-            const value = window.getComputedStyle(stage || element).getPropertyValue('--preview-layout-zoom').trim();
+        let panX = 0;
+        let panY = 0;
+
+        const getMedia = () => element.querySelector('img, video');
+
+        const readZoom = media => {
+            const value = window.getComputedStyle(media || element).getPropertyValue('--preview-zoom').trim();
             const parsed = Number.parseFloat(value);
             return Number.isFinite(parsed) ? parsed : 1;
         };
 
-        const getMediaSize = media => {
-            if (media instanceof HTMLImageElement && media.naturalWidth > 0 && media.naturalHeight > 0)
-                return { width: media.naturalWidth, height: media.naturalHeight };
-
-            if (media instanceof HTMLVideoElement && media.videoWidth > 0 && media.videoHeight > 0)
-                return { width: media.videoWidth, height: media.videoHeight };
-
-            const rect = media.getBoundingClientRect();
-            return rect.width > 0 && rect.height > 0
-                ? { width: rect.width, height: rect.height }
-                : null;
+        const readPixels = (media, name) => {
+            const value = window.getComputedStyle(media).getPropertyValue(name).trim();
+            const parsed = Number.parseFloat(value);
+            return Number.isFinite(parsed) ? parsed : 0;
         };
 
-        const layoutMedia = zoom => {
-            const stage = element.querySelector('.attachment-preview-stage');
-            const media = element.querySelector('img, video');
-            if (!stage || !media) return null;
-
-            const size = getMediaSize(media);
-            if (!size) return null;
-
-            const fitScale = Math.min(
-                element.clientWidth / size.width,
-                element.clientHeight / size.height,
-                1
-            );
-            const targetWidth = Math.max(1, Math.round(size.width * fitScale * zoom));
-            const targetHeight = Math.max(1, Math.round(size.height * fitScale * zoom));
-
-            media.style.width = `${targetWidth}px`;
-            media.style.height = `${targetHeight}px`;
-            stage.style.width = `${Math.max(element.clientWidth, targetWidth)}px`;
-            stage.style.height = `${Math.max(element.clientHeight, targetHeight)}px`;
-            return media;
+        const applyPan = media => {
+            media.style.setProperty('--preview-pan-x', `${panX}px`);
+            media.style.setProperty('--preview-pan-y', `${panY}px`);
         };
 
-        const centerOnMedia = zoom => {
-            const zoomKey = zoom.toFixed(3);
-            const media = layoutMedia(zoom);
-            if (zoom <= 1) {
-                element.scrollLeft = 0;
-                element.scrollTop = 0;
-                element.dataset.previewScrollZoom = zoomKey;
-                return;
-            }
-
-            if (element.dataset.previewScrollZoom === zoomKey)
-                return;
-
+        const resetPan = () => {
+            const media = getMedia();
             if (!media) return;
-
-            const elementRect = element.getBoundingClientRect();
-            const mediaRect = media.getBoundingClientRect();
-            const targetLeft = element.scrollLeft + (mediaRect.left - elementRect.left) + (mediaRect.width / 2) - (element.clientWidth / 2);
-            const targetTop = element.scrollTop + (mediaRect.top - elementRect.top) + (mediaRect.height / 2) - (element.clientHeight / 2);
-
-            element.scrollLeft = Math.max(0, targetLeft);
-            element.scrollTop = Math.max(0, targetTop);
-            element.dataset.previewScrollZoom = zoomKey;
+            panX = 0;
+            panY = 0;
+            applyPan(media);
         };
-
-        const scheduleCenterOnMedia = () => {
-            const zoom = readZoom();
-            window.requestAnimationFrame(() => {
-                window.requestAnimationFrame(() => centerOnMedia(zoom));
-            });
-            window.setTimeout(() => centerOnMedia(zoom), 80);
-        };
-
-        const media = element.querySelector('img, video');
-        if (media) {
-            if (media instanceof HTMLImageElement && !media.complete)
-                media.addEventListener('load', scheduleCenterOnMedia, { once: true });
-            if (media instanceof HTMLVideoElement && media.readyState < 1)
-                media.addEventListener('loadedmetadata', scheduleCenterOnMedia, { once: true });
-        }
 
         const getPoint = event => {
             const touch = event.touches?.[0] || event.changedTouches?.[0];
@@ -808,11 +754,14 @@ window.conversacionesUi = {
 
         const startDrag = event => {
             if (event.button !== undefined && event.button !== 0) return;
-            if (readZoom() <= 1) return;
+            const media = getMedia();
+            if (!media || readZoom(media) <= 1) return;
             const point = getPoint(event);
             dragging = true;
             lastX = point.x;
             lastY = point.y;
+            panX = readPixels(media, '--preview-pan-x');
+            panY = readPixels(media, '--preview-pan-y');
             element.classList.add('is-dragging');
             event.preventDefault();
         };
@@ -824,8 +773,11 @@ window.conversacionesUi = {
             const deltaY = point.y - lastY;
             lastX = point.x;
             lastY = point.y;
-            element.scrollLeft -= deltaX;
-            element.scrollTop -= deltaY;
+            const media = getMedia();
+            if (!media) return;
+            panX += deltaX;
+            panY += deltaY;
+            applyPan(media);
             event.preventDefault();
         };
 
@@ -847,7 +799,7 @@ window.conversacionesUi = {
 
         events.forEach(item => item.target.addEventListener(item.name, item.handler, item.options));
         this._previewPanWatchers.set(element, { events: events });
-        scheduleCenterOnMedia();
+        resetPan();
         return true;
     },
 

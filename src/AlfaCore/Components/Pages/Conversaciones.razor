@@ -1940,22 +1940,20 @@
                      @ref="_previewCanvas"
                      @onwheel="HandlePreviewWheel"
                      @onwheel:preventDefault>
-                    <div class="attachment-preview-stage" style="@PreviewStageStyle">
-                        @if (IsVideoAttachment(_previewAttachment))
-                        {
-                            <video @key="_previewAttachment.IdAdjunto" controls autoplay src="@GetAttachmentUrl(_previewAttachment)" style="@PreviewVideoStyle">
-                                Tu navegador no puede reproducir este video.
-                            </video>
-                        }
-                        else
-                        {
-                            <img @key="_previewAttachment.IdAdjunto"
-                                 src="@GetAttachmentUrl(_previewAttachment)"
-                                 alt="@GetAttachmentLabel(_previewAttachment)"
-                                 draggable="false"
-                                 style="@PreviewImageStyle" />
-                        }
-                    </div>
+                    @if (IsVideoAttachment(_previewAttachment))
+                    {
+                        <video @key="_previewAttachment.IdAdjunto" controls autoplay src="@GetAttachmentUrl(_previewAttachment)" style="@PreviewVideoStyle">
+                            Tu navegador no puede reproducir este video.
+                        </video>
+                    }
+                    else
+                    {
+                        <img @key="_previewAttachment.IdAdjunto"
+                             src="@GetAttachmentUrl(_previewAttachment)"
+                             alt="@GetAttachmentLabel(_previewAttachment)"
+                             draggable="false"
+                             style="@PreviewImageStyle" />
+                    }
                 </div>
                 <button type="button" class="attachment-preview-nav attachment-preview-nav--next" @onclick="ShowNextPreviewAttachment" disabled="@(!CanNavigatePreviewGallery)" title="Siguiente">
                     <i class="bi bi-chevron-right"></i>
@@ -7649,15 +7647,6 @@
         return InvokeAsync(StateHasChanged);
     }
 
-    private string PreviewStageStyle
-        => BuildPreviewStageStyle();
-
-    private string BuildPreviewStageStyle()
-    {
-        var culture = System.Globalization.CultureInfo.InvariantCulture;
-        return $"--preview-layout-zoom: {_previewZoom.ToString("0.###", culture)}";
-    }
-
     private string PreviewImageStyle
         => BuildPreviewMediaStyle(includeRotation: true);
 
@@ -7670,7 +7659,7 @@
         var rotation = includeRotation ? _previewRotationDegrees.ToString(culture) : "0";
         return string.Join("; ",
         [
-            "--preview-zoom: 1",
+            $"--preview-zoom: {_previewZoom.ToString("0.###", culture)}",
             $"--preview-rotation: {rotation}deg",
             $"--preview-pan-x: {_previewPanX.ToString("0.###", culture)}px",
             $"--preview-pan-y: {_previewPanY.ToString("0.###", culture)}px"

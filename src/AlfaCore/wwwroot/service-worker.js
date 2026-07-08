@@ -1,4 +1,4 @@
-const CACHE_NAME = 'alfacore-static-v12';
+const CACHE_NAME = 'alfacore-static-v13';
 const STATIC_ASSETS = [
     '/app.css',
     '/bootstrap/bootstrap.min.css',
