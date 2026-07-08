@@ -13842,7 +13842,7 @@ html[data-theme="light"] .balance-row--detalle td {
     border-radius: var(--radius-md);
     background: rgba(2, 6, 23, .12);
     overscroll-behavior: contain;
-    cursor: grab;
+    cursor: move;
     scrollbar-width: none;
     scrollbar-color: transparent transparent;
 }
@@ -13851,13 +13851,13 @@ html[data-theme="light"] .balance-row--detalle td {
     position: absolute;
     inset: 0;
     z-index: 3;
-    cursor: grab;
+    cursor: move;
     touch-action: none;
     background: transparent;
 }
 
 .attachment-preview-canvas.is-dragging .attachment-preview-drag-surface {
-    cursor: grabbing;
+    cursor: move;
 }
 
 .attachment-preview-canvas::-webkit-scrollbar {
@@ -13866,7 +13866,7 @@ html[data-theme="light"] .balance-row--detalle td {
 }
 
 .attachment-preview-canvas.is-dragging {
-    cursor: grabbing;
+    cursor: move;
 }
 
 .attachment-preview-media-frame {

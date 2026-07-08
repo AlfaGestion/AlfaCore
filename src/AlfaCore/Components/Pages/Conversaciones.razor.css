@@ -239,24 +239,24 @@
     overflow: hidden;
     touch-action: none;
     user-select: none;
-    cursor: grab;
+    cursor: move;
 }
 
 .attachment-preview-drag-surface {
     position: absolute;
     inset: 0;
     z-index: 3;
-    cursor: grab;
+    cursor: move;
     touch-action: none;
     background: transparent;
 }
 
 .attachment-preview-canvas.is-dragging .attachment-preview-drag-surface {
-    cursor: grabbing;
+    cursor: move;
 }
 
 .attachment-preview-canvas.is-dragging {
-    cursor: grabbing;
+    cursor: move;
 }
 
 .attachment-preview-media-frame {
