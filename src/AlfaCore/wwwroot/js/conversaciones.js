@@ -714,6 +714,7 @@ window.conversacionesUi = {
 
         const surface = element.querySelector('.attachment-preview-drag-surface');
         const frame = element.querySelector('.attachment-preview-media-frame');
+        const media = frame?.querySelector('img, video');
         if (!surface || !frame) {
             this._previewPanWatchers.delete(element);
             return false;
@@ -732,6 +733,25 @@ window.conversacionesUi = {
             return Number.isFinite(parsed) ? parsed : 0;
         };
 
+        const readZoom = () => {
+            if (!media) return 1;
+            const value = window.getComputedStyle(media).getPropertyValue('--preview-zoom').trim();
+            const parsed = Number.parseFloat(value);
+            return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+        };
+
+        const stabilizeFrameSize = () => {
+            if (!media) return;
+            const zoom = readZoom();
+            const rect = media.getBoundingClientRect();
+            const width = rect.width / zoom;
+            const height = rect.height / zoom;
+            if (width > 0 && height > 0) {
+                frame.style.setProperty('--preview-frame-width', `${width}px`);
+                frame.style.setProperty('--preview-frame-height', `${height}px`);
+            }
+        };
+
         const applyPan = () => {
             frame.style.setProperty('--preview-pan-x', `${panX}px`);
             frame.style.setProperty('--preview-pan-y', `${panY}px`);
@@ -742,6 +762,12 @@ window.conversacionesUi = {
             panY = 0;
             applyPan();
         };
+
+        stabilizeFrameSize();
+        if (media instanceof HTMLImageElement && !media.complete)
+            media.addEventListener('load', stabilizeFrameSize, { once: true });
+        if (media instanceof HTMLVideoElement && media.readyState < 1)
+            media.addEventListener('loadedmetadata', stabilizeFrameSize, { once: true });
 
         const startDrag = event => {
             if (event.pointerType === 'mouse' && event.button !== 0) return;

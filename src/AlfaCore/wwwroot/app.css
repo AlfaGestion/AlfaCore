@@ -13875,8 +13875,8 @@ html[data-theme="light"] .balance-row--detalle td {
     top: calc(50% + var(--preview-pan-y, 0px));
     display: grid;
     place-items: center;
-    max-width: 100%;
-    max-height: 100%;
+    width: var(--preview-frame-width, auto);
+    height: var(--preview-frame-height, auto);
     transform: translate(-50%, -50%);
     transform-origin: center center;
     will-change: left, top;
