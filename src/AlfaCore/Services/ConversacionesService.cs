@@ -3079,6 +3079,37 @@ public sealed class ConversacionesService(
             return (IReadOnlyList<ConversacionAdjuntoDto>)items;
         }, "No se pudieron cargar los adjuntos.", ct);
 
+    public Task<ConversacionAdjuntosRecoveryResultDto> RecoverConversationAttachmentsAsync(long idConversacion, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "RecoverConversationAttachments", async token =>
+        {
+            if (idConversacion <= 0)
+                return new ConversacionAdjuntosRecoveryResultDto();
+
+            var result = new ConversacionAdjuntosRecoveryResultDto();
+            var pendingMedia = await GetPendingMediaHydrationAsync(idConversacion, token);
+            if (pendingMedia.Count > 0)
+            {
+                await HydrateMissingIncomingMediaAsync(pendingMedia, token);
+                result.MensajesHidratados = pendingMedia.Count(x => x.Message.TieneAdjuntos);
+            }
+
+            var attachmentIds = await GetConversationAttachmentIdsAsync(idConversacion, token);
+            result.AdjuntosRevisados = attachmentIds.Count;
+
+            foreach (var idAdjunto in attachmentIds)
+            {
+                var file = await GetAttachmentForServeAsync(idAdjunto, null, token);
+                if (file is null || string.IsNullOrWhiteSpace(file.RutaLocal))
+                    continue;
+
+                if (File.Exists(file.RutaLocal))
+                    result.AdjuntosDisponibles++;
+            }
+
+            result.AdjuntosRecuperados = Math.Max(0, result.AdjuntosDisponibles - (attachmentIds.Count - pendingMedia.Count));
+            return result;
+        }, "No se pudieron recuperar los adjuntos de la conversaciÃ³n.", ct);
+
     public Task<IReadOnlyList<ConversacionStickerFavoritoDto>> GetFavoriteStickersAsync(CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetFavoriteStickers", async token =>
         {
@@ -3409,6 +3440,89 @@ public sealed class ConversacionesService(
                     ct);
             }
         }
+    }
+
+    private async Task<List<PendingMediaHydration>> GetPendingMediaHydrationAsync(long idConversacion, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT
+                m.IdMensaje,
+                m.IdConversacion,
+                ISNULL(m.TelefonoWhatsApp, ''),
+                ISNULL(m.WhatsAppMessageId, ''),
+                ISNULL(m.MessageType, ''),
+                ISNULL(m.Direction, ''),
+                ISNULL(m.Texto, ''),
+                ISNULL(m.PayloadJson, ''),
+                m.FechaHora
+            FROM dbo.CONV_MENSAJES m
+            WHERE m.IdConversacion = @IdConversacion
+              AND UPPER(ISNULL(m.Direction, '')) = N'ENTRANTE'
+              AND UPPER(ISNULL(m.MessageType, '')) IN (N'IMAGE', N'AUDIO', N'STICKER', N'DOCUMENT', N'VIDEO')
+              AND ISNULL(m.PayloadJson, '') <> ''
+              AND NOT EXISTS (
+                    SELECT 1
+                    FROM dbo.CONV_ADJUNTOS a
+                    WHERE a.IdMensaje = m.IdMensaje
+              )
+            ORDER BY m.IdMensaje;
+            """;
+
+        var items = new List<PendingMediaHydration>();
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
+        await using var rd = await cmd.ExecuteReaderAsync(ct);
+        while (await rd.ReadAsync(ct))
+        {
+            var message = new ConversacionMensajeDto
+            {
+                IdMensaje = rd.GetInt64(0),
+                IdConversacion = rd.GetInt64(1),
+                TelefonoWhatsApp = GetString(rd, 2),
+                WhatsAppMessageId = GetString(rd, 3),
+                MessageType = GetString(rd, 4),
+                Direction = GetString(rd, 5),
+                Texto = GetString(rd, 6),
+                PayloadJson = GetString(rd, 7),
+                FechaHora = rd.IsDBNull(8) ? DateTime.MinValue : NormalizeStoredConversationTime(rd.GetDateTime(8))
+            };
+
+            if (ShouldHydrateIncomingMedia(message, message.PayloadJson))
+            {
+                items.Add(new PendingMediaHydration
+                {
+                    Message = message,
+                    PayloadJson = message.PayloadJson
+                });
+            }
+        }
+
+        return items;
+    }
+
+    private async Task<List<long>> GetConversationAttachmentIdsAsync(long idConversacion, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT a.IdAdjunto
+            FROM dbo.CONV_ADJUNTOS a
+            INNER JOIN dbo.CONV_MENSAJES m
+                ON m.IdMensaje = a.IdMensaje
+            WHERE m.IdConversacion = @IdConversacion
+            ORDER BY a.IdAdjunto;
+            """;
+
+        var ids = new List<long>();
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
+        await using var rd = await cmd.ExecuteReaderAsync(ct);
+        while (await rd.ReadAsync(ct))
+            ids.Add(rd.GetInt64(0));
+
+        return ids;
     }
 
     private string ResolveExistingAttachmentPath(AttachmentServeRecord record)

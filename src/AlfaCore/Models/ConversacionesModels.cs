@@ -394,6 +394,14 @@ public sealed class ConversacionAdjuntoServeDto
     public string NombreDescarga { get; set; } = string.Empty;
 }
 
+public sealed class ConversacionAdjuntosRecoveryResultDto
+{
+    public int AdjuntosRevisados { get; set; }
+    public int AdjuntosDisponibles { get; set; }
+    public int AdjuntosRecuperados { get; set; }
+    public int MensajesHidratados { get; set; }
+}
+
 public sealed class ConversacionCrearHiloInternoRequest
 {
     public string NombreHilo { get; set; } = string.Empty;

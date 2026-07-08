@@ -1165,7 +1165,6 @@
                                                         }
                                                         else
                                                         {
-                                                            <span class="attachment-name">@adj.NombreArchivo</span>
                                                             <a class="btn btn--ghost btn--sm"
                                                                href="@GetAttachmentDownloadUrl(adj)"
                                                                download="@GetAttachmentDownloadName(adj)"
@@ -1251,6 +1250,8 @@
                                             }
                                         </div>
                                     }
+                                    @if (ShouldShowMessageFooter(message))
+                                    {
                                     <div class="message-card__footer">
                                         <span>@GetMessageTypeLabel(message)</span>
                                         @if (!string.IsNullOrWhiteSpace(message.EstadoEnvio))
@@ -1258,6 +1259,7 @@
                                             <span>• @message.EstadoEnvio</span>
                                         }
                                     </div>
+                                    }
                                     @if (IsOutgoingMessage(message))
                                     {
                                         <div class="message-card__delivery">
@@ -2397,6 +2399,7 @@
     private bool _uploadingFile;
     private bool _uploadingAudio;
     private Dictionary<long, List<ConversacionAdjuntoDto>> _adjuntosPorMensaje = [];
+    private HashSet<long> _recoveredAttachmentConversations = [];
     private List<ConversacionPlantillaDto> _availableTemplates = [];
     private long _selectedTemplateId;
     private bool _loadingTemplates;
@@ -3396,6 +3399,20 @@
             _adjuntosPorMensaje = adjuntos
                 .GroupBy(a => a.IdMensaje)
                 .ToDictionary(g => g.Key, g => g.ToList());
+
+            if (_recoveredAttachmentConversations.Add(idConversacion))
+            {
+                var recovery = await ConversacionesSvc.RecoverConversationAttachmentsAsync(idConversacion);
+                if (recovery.MensajesHidratados > 0 || recovery.AdjuntosRecuperados > 0)
+                {
+                    _messages = (await ConversacionesSvc.GetMessagesAsync(idConversacion)).ToList();
+                    adjuntos = await ConversacionesSvc.GetConversationAttachmentsAsync(idConversacion);
+                    _adjuntosPorMensaje = adjuntos
+                        .GroupBy(a => a.IdMensaje)
+                        .ToDictionary(g => g.Key, g => g.ToList());
+                }
+            }
+
             StoreConversationCache(idConversacion);
             _assignmentTechnicianId = _selectedConversation?.IdTecnico ?? string.Empty;
             _statusCode = _selectedConversation?.CodigoEstado ?? (_states.FirstOrDefault()?.CodigoEstado ?? "ABIERTA");
@@ -7086,14 +7103,21 @@
         if (IsContactMessage(message) && GetSharedContacts(message).Count > 0)
             return false;
 
-        if (message.MessageType is "IMAGE" or "AUDIO" or "VIDEO" or "DOCUMENT" or "STICKER")
+        if (IsAttachmentOnlyMessage(message))
         {
-            if (message.TieneAdjuntos)
-                return HasHumanAttachmentText(message);
+            return HasHumanAttachmentText(message);
         }
 
         return true;
     }
+
+    private bool ShouldShowMessageFooter(ConversacionMensajeDto message)
+        => !IsAttachmentOnlyMessage(message);
+
+    private bool IsAttachmentOnlyMessage(ConversacionMensajeDto message)
+        => (message.MessageType ?? string.Empty).Trim().ToUpperInvariant() is "IMAGE" or "AUDIO" or "VIDEO" or "DOCUMENT" or "STICKER"
+           && (message.TieneAdjuntos
+               || (_adjuntosPorMensaje.TryGetValue(message.IdMensaje, out var adjuntos) && adjuntos.Count > 0));
 
     private bool HasHumanAttachmentText(ConversacionMensajeDto message)
     {
