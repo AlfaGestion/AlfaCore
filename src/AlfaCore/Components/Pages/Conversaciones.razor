@@ -1154,7 +1154,7 @@
                                                                     class="attachment-preview-button"
                                                                     title="Ver imagen"
                                                                     @onclick="() => OpenAttachmentPreview(adj)">
-                                                                <img src="@GetAttachmentUrl(adj)" alt="@GetAttachmentLabel(adj)" loading="lazy" />
+                                                                <img src="@GetAttachmentPreviewUrl(adj)" alt="@GetAttachmentLabel(adj)" loading="lazy" decoding="async" />
                                                             </button>
                                                             @if (IsStickerAttachment(adj))
                                                             {
@@ -1983,7 +1983,7 @@
                             }
                             else
                             {
-                                <img src="@GetAttachmentUrl(item)" alt="@GetAttachmentLabel(item)" loading="lazy" />
+                                <img src="@GetAttachmentPreviewUrl(item)" alt="@GetAttachmentLabel(item)" loading="lazy" decoding="async" />
                             }
                         </button>
                     }
@@ -7812,6 +7812,9 @@
 
     private string GetAttachmentUrl(ConversacionAdjuntoDto adjunto)
         => $"/api/conversaciones/adjuntos/{adjunto.IdAdjunto}?idBase={GetAttachmentBaseId()}&base={Uri.EscapeDataString(GetAttachmentScopeKey())}";
+
+    private string GetAttachmentPreviewUrl(ConversacionAdjuntoDto adjunto)
+        => $"/api/conversaciones/adjuntos/{adjunto.IdAdjunto}?preview=1&idBase={GetAttachmentBaseId()}&base={Uri.EscapeDataString(GetAttachmentScopeKey())}";
 
     private string GetAttachmentDownloadUrl(ConversacionAdjuntoDto adjunto)
         => $"/api/conversaciones/adjuntos/{adjunto.IdAdjunto}?download=1&idBase={GetAttachmentBaseId()}&base={Uri.EscapeDataString(GetAttachmentScopeKey())}";

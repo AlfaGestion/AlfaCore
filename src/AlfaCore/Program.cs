@@ -844,19 +844,38 @@ public class Program
             var idBase = int.TryParse(idBaseRaw, out var parsedIdBase) && parsedIdBase > 0
                 ? parsedIdBase
                 : (int?)null;
-            var adjunto = await svc.GetAttachmentForServeAsync(idAdjunto, idBase, ct);
+            var download = string.Equals(request.Query["download"].ToString(), "1", StringComparison.OrdinalIgnoreCase);
+            var preview = string.Equals(request.Query["preview"].ToString(), "1", StringComparison.OrdinalIgnoreCase);
+            var adjunto = await svc.GetAttachmentForServeAsync(idAdjunto, idBase, includeDownloadName: download, ct);
             if (adjunto is null || !File.Exists(adjunto.RutaLocal))
                 return Results.NotFound();
 
             var mime = NormalizeAttachmentMime(adjunto.MimeType, adjunto.NombreArchivo);
-            var download = string.Equals(request.Query["download"].ToString(), "1", StringComparison.OrdinalIgnoreCase);
-            request.HttpContext.Response.Headers.CacheControl = "no-store, no-cache, must-revalidate";
-            request.HttpContext.Response.Headers.Pragma = "no-cache";
-            request.HttpContext.Response.Headers.Expires = "0";
+            var fileInfo = new FileInfo(adjunto.RutaLocal);
+            var lastModified = new DateTimeOffset(fileInfo.LastWriteTimeUtc, TimeSpan.Zero);
+            var entityTag = new Microsoft.Net.Http.Headers.EntityTagHeaderValue($"\"{fileInfo.Length:x}-{fileInfo.LastWriteTimeUtc.Ticks:x}\"");
+
+            if (download)
+            {
+                request.HttpContext.Response.Headers.CacheControl = "no-store, no-cache, must-revalidate";
+                request.HttpContext.Response.Headers.Pragma = "no-cache";
+                request.HttpContext.Response.Headers.Expires = "0";
+            }
+            else
+            {
+                request.HttpContext.Response.Headers.CacheControl = preview
+                    ? "private, max-age=604800, immutable"
+                    : "private, max-age=86400";
+                request.HttpContext.Response.Headers.Pragma = string.Empty;
+                request.HttpContext.Response.Headers.Expires = DateTimeOffset.UtcNow.AddDays(preview ? 7 : 1).ToString("R", System.Globalization.CultureInfo.InvariantCulture);
+            }
+
             return Results.File(
                 adjunto.RutaLocal,
                 contentType: mime,
                 fileDownloadName: download ? (string.IsNullOrWhiteSpace(adjunto.NombreDescarga) ? adjunto.NombreArchivo : adjunto.NombreDescarga) : null,
+                lastModified: lastModified,
+                entityTag: entityTag,
                 enableRangeProcessing: true);
         });
 

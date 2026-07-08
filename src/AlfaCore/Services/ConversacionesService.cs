@@ -3105,7 +3105,7 @@ public sealed class ConversacionesService(
 
             foreach (var idAdjunto in attachmentIds)
             {
-                var file = await GetAttachmentForServeAsync(idAdjunto, null, token);
+                var file = await GetAttachmentForServeAsync(idAdjunto, idBase: null, ct: token);
                 if (file is null || string.IsNullOrWhiteSpace(file.RutaLocal))
                     continue;
 
@@ -3194,7 +3194,7 @@ public sealed class ConversacionesService(
             }, token);
         }, "No se pudo enviar el sticker favorito.", ct);
 
-    public Task<ConversacionAdjuntoServeDto?> GetAttachmentForServeAsync(long idAdjunto, int? idBase = null, CancellationToken ct = default)
+    public Task<ConversacionAdjuntoServeDto?> GetAttachmentForServeAsync(long idAdjunto, int? idBase = null, bool includeDownloadName = true, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetAttachmentForServe", async token =>
         {
             const string sql = """
@@ -3251,7 +3251,9 @@ public sealed class ConversacionesService(
             if (string.IsNullOrWhiteSpace(rutaLocal))
                 rutaLocal = await TryRecoverAttachmentFileAsync(record, connectionString, token);
 
-            var nombreDescarga = await BuildAttachmentDownloadNameAsync(cn, record, token);
+            var nombreDescarga = includeDownloadName
+                ? await BuildAttachmentDownloadNameAsync(cn, record, token)
+                : record.NombreArchivo;
             return new ConversacionAdjuntoServeDto
             {
                 RutaLocal = rutaLocal,
