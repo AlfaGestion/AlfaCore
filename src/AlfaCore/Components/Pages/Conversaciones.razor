@@ -1959,14 +1959,7 @@
                     @if (CanPanPreview)
                     {
                         <div class="attachment-preview-drag-surface"
-                             title="Arrastrar"
-                             @onpointerdown="StartPreviewPan"
-                             @onpointerdown:preventDefault
-                             @onpointermove="MovePreviewPan"
-                             @onpointermove:preventDefault
-                             @onpointerup="EndPreviewPan"
-                             @onpointercancel="EndPreviewPan"
-                             @onpointerleave="EndPreviewPan"></div>
+                             title="Mover"></div>
                     }
                 </div>
                 <button type="button" class="attachment-preview-nav attachment-preview-nav--next" @onclick="ShowNextPreviewAttachment" disabled="@(!CanNavigatePreviewGallery)" title="Siguiente">
@@ -2506,10 +2499,6 @@
     private int _previewRotationDegrees;
     private double _previewPanX;
     private double _previewPanY;
-    private bool _previewPanDragging;
-    private long? _previewPanPointerId;
-    private double _previewPanLastClientX;
-    private double _previewPanLastClientY;
     private SoundDiagnosticsVm _soundDiagnostics = new();
     private ElementReference _replyTextArea;
     private ElementReference _internalNoteMobileTextArea;
@@ -2927,7 +2916,17 @@
             }
         }
 
-        _bindPreviewPanAfterRender = false;
+        if (_bindPreviewPanAfterRender && _previewAttachment is not null)
+        {
+            _bindPreviewPanAfterRender = false;
+            try
+            {
+                await JS.InvokeVoidAsync("conversacionesUi.bindAttachmentPreviewPan", _previewCanvas);
+            }
+            catch
+            {
+            }
+        }
 
         if (_bindPreviewKeyboardAfterRender && _previewAttachment is not null)
         {
@@ -7662,7 +7661,7 @@
         => BuildPreviewMediaStyle(includeRotation: false);
 
     private string PreviewCanvasClass
-        => _previewPanDragging ? "attachment-preview-canvas is-dragging" : "attachment-preview-canvas";
+        => "attachment-preview-canvas";
 
     private bool CanPanPreview
         => _previewAttachment is not null && IsPreviewZoomableAttachment(_previewAttachment) && _previewZoom > 1d;
@@ -7711,8 +7710,6 @@
         _previewRotationDegrees = 0;
         _previewPanX = 0;
         _previewPanY = 0;
-        _previewPanDragging = false;
-        _previewPanPointerId = null;
         _bindPreviewPanAfterRender = _previewAttachment is not null;
     }
 
@@ -7741,46 +7738,7 @@
         _previewZoom = Math.Clamp(value, .5d, 4d);
         _previewPanX = 0;
         _previewPanY = 0;
-        _previewPanDragging = false;
-        _previewPanPointerId = null;
         _bindPreviewPanAfterRender = _previewAttachment is not null;
-    }
-
-    private void StartPreviewPan(PointerEventArgs args)
-    {
-        if (_previewAttachment is null || !IsPreviewZoomableAttachment(_previewAttachment) || _previewZoom <= 1d)
-            return;
-
-        if (string.Equals(args.PointerType, "mouse", StringComparison.OrdinalIgnoreCase) && args.Button != 0)
-            return;
-
-        _previewPanDragging = true;
-        _previewPanPointerId = args.PointerId;
-        _previewPanLastClientX = args.ClientX;
-        _previewPanLastClientY = args.ClientY;
-    }
-
-    private void MovePreviewPan(PointerEventArgs args)
-    {
-        if (!_previewPanDragging || _previewAttachment is null || !IsPreviewZoomableAttachment(_previewAttachment) || _previewZoom <= 1d)
-            return;
-
-        if (_previewPanPointerId is long pointerId && args.PointerId != pointerId)
-            return;
-
-        _previewPanX += args.ClientX - _previewPanLastClientX;
-        _previewPanY += args.ClientY - _previewPanLastClientY;
-        _previewPanLastClientX = args.ClientX;
-        _previewPanLastClientY = args.ClientY;
-    }
-
-    private void EndPreviewPan(PointerEventArgs? args = null)
-    {
-        if (args is not null && _previewPanPointerId is long pointerId && args.PointerId != pointerId)
-            return;
-
-        _previewPanDragging = false;
-        _previewPanPointerId = null;
     }
 
     [JSInvokable]
