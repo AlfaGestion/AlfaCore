@@ -708,7 +708,7 @@ window.conversacionesUi = {
 
         const previous = this._previewPanWatchers.get(element);
         if (previous) {
-            previous.events.forEach(item => element.removeEventListener(item.name, item.handler, item.options));
+            previous.events.forEach(item => (item.target || element).removeEventListener(item.name, item.handler, item.options));
             element.classList.remove('is-dragging');
         }
 
@@ -719,6 +719,8 @@ window.conversacionesUi = {
         let panY = 0;
 
         const getMedia = () => element.querySelector('img, video');
+
+        const readCssVariable = (media, name) => window.getComputedStyle(media).getPropertyValue(name).trim();
 
         const readPixelVariable = (media, name) => {
             const value = window.getComputedStyle(media).getPropertyValue(name).trim();
@@ -732,51 +734,67 @@ window.conversacionesUi = {
             return Number.isFinite(parsed) ? parsed : 1;
         };
 
-        const pointerDown = event => {
-            if (event.button !== 0) return;
+        const applyPan = media => {
+            const zoom = readZoom(media);
+            const rotation = readCssVariable(media, '--preview-rotation') || '0deg';
+            media.style.setProperty('--preview-pan-x', `${panX}px`);
+            media.style.setProperty('--preview-pan-y', `${panY}px`);
+            media.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom}) rotate(${rotation})`;
+        };
+
+        const getPoint = event => {
+            const touch = event.touches?.[0] || event.changedTouches?.[0];
+            return touch
+                ? { x: touch.clientX, y: touch.clientY }
+                : { x: event.clientX, y: event.clientY };
+        };
+
+        const startDrag = event => {
+            if (event.button !== undefined && event.button !== 0) return;
             const media = getMedia();
             if (!media || readZoom(media) <= 1) return;
+            const point = getPoint(event);
             dragging = true;
-            lastX = event.clientX;
-            lastY = event.clientY;
+            lastX = point.x;
+            lastY = point.y;
             panX = readPixelVariable(media, '--preview-pan-x');
             panY = readPixelVariable(media, '--preview-pan-y');
             element.classList.add('is-dragging');
-            element.setPointerCapture?.(event.pointerId);
             event.preventDefault();
         };
 
-        const pointerMove = event => {
+        const moveDrag = event => {
             if (!dragging) return;
             const media = getMedia();
             if (!media) return;
-            const deltaX = event.clientX - lastX;
-            const deltaY = event.clientY - lastY;
-            lastX = event.clientX;
-            lastY = event.clientY;
+            const point = getPoint(event);
+            const deltaX = point.x - lastX;
+            const deltaY = point.y - lastY;
+            lastX = point.x;
+            lastY = point.y;
             panX += deltaX;
             panY += deltaY;
-            media.style.setProperty('--preview-pan-x', `${panX}px`);
-            media.style.setProperty('--preview-pan-y', `${panY}px`);
+            applyPan(media);
             event.preventDefault();
         };
 
-        const endDrag = event => {
+        const endDrag = () => {
             if (!dragging) return;
             dragging = false;
             element.classList.remove('is-dragging');
-            element.releasePointerCapture?.(event.pointerId);
         };
 
         const events = [
-            { name: 'pointerdown', handler: pointerDown, options: { capture: true, passive: false } },
-            { name: 'pointermove', handler: pointerMove, options: { capture: true, passive: false } },
-            { name: 'pointerup', handler: endDrag, options: { capture: true } },
-            { name: 'pointercancel', handler: endDrag, options: { capture: true } },
-            { name: 'pointerleave', handler: endDrag, options: { capture: true } }
+            { target: element, name: 'mousedown', handler: startDrag, options: { capture: true, passive: false } },
+            { target: element, name: 'touchstart', handler: startDrag, options: { capture: true, passive: false } },
+            { target: document, name: 'mousemove', handler: moveDrag, options: { capture: true, passive: false } },
+            { target: document, name: 'touchmove', handler: moveDrag, options: { capture: true, passive: false } },
+            { target: document, name: 'mouseup', handler: endDrag, options: { capture: true } },
+            { target: document, name: 'touchend', handler: endDrag, options: { capture: true } },
+            { target: document, name: 'touchcancel', handler: endDrag, options: { capture: true } }
         ];
 
-        events.forEach(item => element.addEventListener(item.name, item.handler, item.options));
+        events.forEach(item => item.target.addEventListener(item.name, item.handler, item.options));
         this._previewPanWatchers.set(element, { events: events });
         return true;
     },
