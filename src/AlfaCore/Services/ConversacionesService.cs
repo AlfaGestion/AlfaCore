@@ -3265,6 +3265,9 @@ public sealed class ConversacionesService(
 
     private static async Task<string> BuildAttachmentDownloadNameAsync(SqlConnection cn, AttachmentServeRecord record, CancellationToken ct)
     {
+        if (!string.IsNullOrWhiteSpace(record.NombreArchivo))
+            return SanitizeDownloadFileName(record.NombreArchivo, "Attachment", InferExtension(record.MimeType, record.TipoArchivo));
+
         var kind = NormalizeAttachmentDownloadKind(record.TipoArchivo, record.MimeType);
         if (string.IsNullOrWhiteSpace(kind))
             return SanitizeDownloadFileName(record.NombreArchivo, "Attachment", InferExtension(record.MimeType, record.TipoArchivo));
@@ -6003,6 +6006,16 @@ public sealed class ConversacionesService(
             "audio/webm" => ".webm",
             "video/mp4" => ".mp4",
             "application/pdf" => ".pdf",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" => ".xlsx",
+            "application/vnd.ms-excel" => ".xls",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => ".docx",
+            "application/msword" => ".doc",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation" => ".pptx",
+            "application/vnd.ms-powerpoint" => ".ppt",
+            "text/plain" => ".txt",
+            "text/csv" => ".csv",
+            "application/zip" => ".zip",
+            "application/x-rar-compressed" => ".rar",
             _ => NormalizeMessageType(tipoArchivo) == "STICKER" ? ".webp" : ".bin"
         };
     }
