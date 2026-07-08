@@ -1012,6 +1012,24 @@
     opacity: 1 !important;
 }
 
+.conversations-page--odoo .attachment-unavailable {
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: .45rem !important;
+    width: fit-content !important;
+    max-width: 220px !important;
+    padding: .55rem .65rem !important;
+    border: 1px dashed rgba(148, 163, 184, .42) !important;
+    border-radius: 8px !important;
+    color: rgba(226, 232, 240, .82) !important;
+    background: rgba(15, 23, 42, .38) !important;
+    font-size: .82rem !important;
+}
+
+.conversations-page--odoo .attachment-unavailable i {
+    color: rgba(125, 211, 252, .8) !important;
+}
+
 .conversations-page--odoo .message-attachment--audio,
 .conversations-page--odoo .wa-audio-player {
     width: min(370px, 100%) !important;

@@ -1148,29 +1148,39 @@
                                                 @if (IsImageAttachment(adj))
                                                 {
                                                     <div class="message-attachment message-attachment--image">
-                                                        <button type="button"
-                                                                class="attachment-preview-button"
-                                                                title="Ver imagen"
-                                                                @onclick="() => OpenAttachmentPreview(adj)">
-                                                            <img src="@GetAttachmentUrl(adj)" alt="@GetAttachmentLabel(adj)" loading="lazy" />
-                                                        </button>
-                                                        @if (IsStickerAttachment(adj))
+                                                        @if (IsAttachmentAvailable(adj))
                                                         {
                                                             <button type="button"
-                                                                    class="btn btn--ghost btn--sm"
-                                                                    title="Guardar sticker en favoritos"
-                                                                    @onclick="() => SaveStickerFavoriteAsync(adj.IdAdjunto)">
-                                                                <i class="bi bi-star"></i>
+                                                                    class="attachment-preview-button"
+                                                                    title="Ver imagen"
+                                                                    @onclick="() => OpenAttachmentPreview(adj)">
+                                                                <img src="@GetAttachmentUrl(adj)" alt="@GetAttachmentLabel(adj)" loading="lazy" />
                                                             </button>
+                                                            @if (IsStickerAttachment(adj))
+                                                            {
+                                                                <button type="button"
+                                                                        class="btn btn--ghost btn--sm"
+                                                                        title="Guardar sticker en favoritos"
+                                                                        @onclick="() => SaveStickerFavoriteAsync(adj.IdAdjunto)">
+                                                                    <i class="bi bi-star"></i>
+                                                                </button>
+                                                            }
+                                                            else
+                                                            {
+                                                                <a class="btn btn--ghost btn--sm"
+                                                                   href="@GetAttachmentDownloadUrl(adj)"
+                                                                   download="@GetAttachmentDownloadName(adj)"
+                                                                   title="Descargar imagen">
+                                                                    <i class="bi bi-download"></i>
+                                                                </a>
+                                                            }
                                                         }
                                                         else
                                                         {
-                                                            <a class="btn btn--ghost btn--sm"
-                                                               href="@GetAttachmentDownloadUrl(adj)"
-                                                               download="@GetAttachmentDownloadName(adj)"
-                                                               title="Descargar imagen">
-                                                                <i class="bi bi-download"></i>
-                                                            </a>
+                                                            <div class="attachment-unavailable" title="@GetAttachmentUnavailableTitle(adj)">
+                                                                <i class="bi bi-image-alt"></i>
+                                                                <span>Imagen no disponible</span>
+                                                            </div>
                                                         }
                                                     </div>
                                                 }
@@ -7093,7 +7103,13 @@
            || adjunto.MimeType.StartsWith("video/", StringComparison.OrdinalIgnoreCase);
 
     private static bool IsPreviewableAttachment(ConversacionAdjuntoDto adjunto)
-        => IsImageAttachment(adjunto) || IsVideoAttachment(adjunto);
+        => IsAttachmentAvailable(adjunto) && (IsImageAttachment(adjunto) || IsVideoAttachment(adjunto));
+
+    private static bool IsAttachmentAvailable(ConversacionAdjuntoDto adjunto)
+        => adjunto.ArchivoDisponible;
+
+    private static string GetAttachmentUnavailableTitle(ConversacionAdjuntoDto adjunto)
+        => $"No se pudo recuperar {GetAttachmentLabel(adjunto)}. El archivo ya no está disponible en Meta o faltan permisos para descargarlo.";
 
     private bool ShouldShowMessageText(ConversacionMensajeDto message)
     {

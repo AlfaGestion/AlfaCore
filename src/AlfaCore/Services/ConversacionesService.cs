@@ -3032,7 +3032,8 @@ public sealed class ConversacionesService(
                 NombreArchivo = nombreArchivo,
                 MimeType = mimeType,
                 RutaLocal = rutaLocal,
-                TamanoBytes = tamanoBytes
+                TamanoBytes = tamanoBytes,
+                ArchivoDisponible = true
             };
         }, "No se pudo guardar el adjunto.", ct);
 
@@ -3063,6 +3064,7 @@ public sealed class ConversacionesService(
             await using var rd = await cmd.ExecuteReaderAsync(token);
             while (await rd.ReadAsync(token))
             {
+                var rutaLocal = GetString(rd, 6);
                 items.Add(new ConversacionAdjuntoDto
                 {
                     IdAdjunto = rd.GetInt64(0),
@@ -3071,8 +3073,9 @@ public sealed class ConversacionesService(
                     NombreArchivo = GetString(rd, 3),
                     MimeType = GetString(rd, 4),
                     UrlArchivo = GetString(rd, 5),
-                    RutaLocal = GetString(rd, 6),
-                    TamanoBytes = rd.IsDBNull(7) ? 0 : rd.GetInt64(7)
+                    RutaLocal = rutaLocal,
+                    TamanoBytes = rd.IsDBNull(7) ? 0 : rd.GetInt64(7),
+                    ArchivoDisponible = !string.IsNullOrWhiteSpace(rutaLocal) && File.Exists(rutaLocal)
                 });
             }
 

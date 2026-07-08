@@ -286,6 +286,7 @@ public sealed class ConversacionAdjuntoDto
     public string UrlArchivo { get; set; } = string.Empty;
     public string RutaLocal { get; set; } = string.Empty;
     public long TamanoBytes { get; set; }
+    public bool ArchivoDisponible { get; set; }
 }
 
 public sealed class ConversacionStickerFavoritoDto
