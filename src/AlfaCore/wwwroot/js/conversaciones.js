@@ -722,6 +722,39 @@ window.conversacionesUi = {
             return Number.isFinite(parsed) ? parsed : 1;
         };
 
+        const centerOnMedia = zoom => {
+            const zoomKey = zoom.toFixed(3);
+            if (zoom <= 1) {
+                element.scrollLeft = 0;
+                element.scrollTop = 0;
+                element.dataset.previewScrollZoom = zoomKey;
+                return;
+            }
+
+            if (element.dataset.previewScrollZoom === zoomKey)
+                return;
+
+            const media = element.querySelector('img, video');
+            if (!media) return;
+
+            const elementRect = element.getBoundingClientRect();
+            const mediaRect = media.getBoundingClientRect();
+            const targetLeft = element.scrollLeft + (mediaRect.left - elementRect.left) + (mediaRect.width / 2) - (element.clientWidth / 2);
+            const targetTop = element.scrollTop + (mediaRect.top - elementRect.top) + (mediaRect.height / 2) - (element.clientHeight / 2);
+
+            element.scrollLeft = Math.max(0, targetLeft);
+            element.scrollTop = Math.max(0, targetTop);
+            element.dataset.previewScrollZoom = zoomKey;
+        };
+
+        const scheduleCenterOnMedia = () => {
+            const zoom = readZoom();
+            window.requestAnimationFrame(() => {
+                window.requestAnimationFrame(() => centerOnMedia(zoom));
+            });
+            window.setTimeout(() => centerOnMedia(zoom), 80);
+        };
+
         const getPoint = event => {
             const touch = event.touches?.[0] || event.changedTouches?.[0];
             return touch
@@ -770,23 +803,7 @@ window.conversacionesUi = {
 
         events.forEach(item => item.target.addEventListener(item.name, item.handler, item.options));
         this._previewPanWatchers.set(element, { events: events });
-        const zoom = readZoom();
-        window.requestAnimationFrame(() => {
-            const zoomKey = zoom.toFixed(3);
-            if (zoom <= 1) {
-                element.scrollLeft = 0;
-                element.scrollTop = 0;
-                element.dataset.previewScrollZoom = zoomKey;
-                return;
-            }
-
-            if (element.dataset.previewScrollZoom === zoomKey)
-                return;
-
-            element.scrollLeft = Math.max(0, (element.scrollWidth - element.clientWidth) / 2);
-            element.scrollTop = Math.max(0, (element.scrollHeight - element.clientHeight) / 2);
-            element.dataset.previewScrollZoom = zoomKey;
-        });
+        scheduleCenterOnMedia();
         return true;
     },
 
