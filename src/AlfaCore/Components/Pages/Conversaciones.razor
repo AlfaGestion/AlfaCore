@@ -1939,21 +1939,23 @@
                 <div class="@PreviewCanvasClass"
                      @ref="_previewCanvas"
                      @onwheel="HandlePreviewWheel"
-                     @onwheel:preventDefault>
-                    @if (IsVideoAttachment(_previewAttachment))
-                    {
-                        <video @key="_previewAttachment.IdAdjunto" controls autoplay src="@GetAttachmentUrl(_previewAttachment)" style="@PreviewVideoStyle">
-                            Tu navegador no puede reproducir este video.
-                        </video>
-                    }
-                    else
-                    {
-                        <img @key="_previewAttachment.IdAdjunto"
-                             src="@GetAttachmentUrl(_previewAttachment)"
-                             alt="@GetAttachmentLabel(_previewAttachment)"
-                             draggable="false"
-                             style="@PreviewImageStyle" />
-                    }
+                    @onwheel:preventDefault>
+                    <div class="attachment-preview-media-frame" style="@PreviewFrameStyle">
+                        @if (IsVideoAttachment(_previewAttachment))
+                        {
+                            <video @key="_previewAttachment.IdAdjunto" controls autoplay src="@GetAttachmentUrl(_previewAttachment)" style="@PreviewVideoStyle">
+                                Tu navegador no puede reproducir este video.
+                            </video>
+                        }
+                        else
+                        {
+                            <img @key="_previewAttachment.IdAdjunto"
+                                 src="@GetAttachmentUrl(_previewAttachment)"
+                                 alt="@GetAttachmentLabel(_previewAttachment)"
+                                 draggable="false"
+                                 style="@PreviewImageStyle" />
+                        }
+                    </div>
                     @if (CanPanPreview)
                     {
                         <div class="attachment-preview-drag-surface"
@@ -7665,6 +7667,19 @@
     private bool CanPanPreview
         => _previewAttachment is not null && IsPreviewZoomableAttachment(_previewAttachment) && _previewZoom > 1d;
 
+    private string PreviewFrameStyle
+    {
+        get
+        {
+            var culture = System.Globalization.CultureInfo.InvariantCulture;
+            return string.Join("; ",
+            [
+                $"--preview-pan-x: {_previewPanX.ToString("0.###", culture)}px",
+                $"--preview-pan-y: {_previewPanY.ToString("0.###", culture)}px"
+            ]);
+        }
+    }
+
     private string BuildPreviewMediaStyle(bool includeRotation)
     {
         var culture = System.Globalization.CultureInfo.InvariantCulture;
@@ -7673,8 +7688,8 @@
         [
             $"--preview-zoom: {_previewZoom.ToString("0.###", culture)}",
             $"--preview-rotation: {rotation}deg",
-            $"--preview-pan-x: {_previewPanX.ToString("0.###", culture)}px",
-            $"--preview-pan-y: {_previewPanY.ToString("0.###", culture)}px"
+            "--preview-pan-x: 0px",
+            "--preview-pan-y: 0px"
         ]);
     }
 

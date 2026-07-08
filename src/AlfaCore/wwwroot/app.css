@@ -13869,10 +13869,20 @@ html[data-theme="light"] .balance-row--detalle td {
     cursor: grabbing;
 }
 
-.attachment-preview-canvas img {
+.attachment-preview-media-frame {
     position: absolute;
     left: calc(50% + var(--preview-pan-x, 0px));
     top: calc(50% + var(--preview-pan-y, 0px));
+    display: grid;
+    place-items: center;
+    max-width: 100%;
+    max-height: 100%;
+    transform: translate(-50%, -50%);
+    transform-origin: center center;
+    will-change: left, top;
+}
+
+.attachment-preview-canvas img {
     max-width: 100%;
     max-height: calc(92vh - 10rem);
     width: auto;
@@ -13881,7 +13891,7 @@ html[data-theme="light"] .balance-row--detalle td {
     object-fit: contain;
     border-radius: var(--radius-md);
     transform-origin: center center;
-    transform: translate(-50%, -50%) scale(var(--preview-zoom, 1)) rotate(var(--preview-rotation, 0deg));
+    transform: scale(var(--preview-zoom, 1)) rotate(var(--preview-rotation, 0deg));
     transition: transform .18s ease;
     animation: attachment-preview-media-enter .18s ease both;
     user-select: none;
@@ -13889,9 +13899,6 @@ html[data-theme="light"] .balance-row--detalle td {
 }
 
 .attachment-preview-canvas video {
-    position: absolute;
-    left: calc(50% + var(--preview-pan-x, 0px));
-    top: calc(50% + var(--preview-pan-y, 0px));
     align-self: center;
     justify-self: center;
     max-width: 100%;
@@ -13899,7 +13906,7 @@ html[data-theme="light"] .balance-row--detalle td {
     border-radius: var(--radius-md);
     background: rgba(2, 6, 23, .72);
     transform-origin: center center;
-    transform: translate(-50%, -50%) scale(var(--preview-zoom, 1));
+    transform: scale(var(--preview-zoom, 1));
     transition: transform .18s ease;
     animation: attachment-preview-media-enter .18s ease both;
     will-change: transform;
@@ -13964,12 +13971,12 @@ html[data-theme="light"] .balance-row--detalle td {
 @keyframes attachment-preview-media-enter {
     from {
         opacity: 0;
-        transform: translate(-50%, -50%) scale(calc(var(--preview-zoom, 1) * .985)) rotate(var(--preview-rotation, 0deg));
+        transform: scale(calc(var(--preview-zoom, 1) * .985)) rotate(var(--preview-rotation, 0deg));
     }
 
     to {
         opacity: 1;
-        transform: translate(-50%, -50%) scale(var(--preview-zoom, 1)) rotate(var(--preview-rotation, 0deg));
+        transform: scale(var(--preview-zoom, 1)) rotate(var(--preview-rotation, 0deg));
     }
 }
 
