@@ -13864,7 +13864,7 @@ html[data-theme="light"] .balance-row--detalle td {
     object-fit: contain;
     border-radius: var(--radius-md);
     transform-origin: center center;
-    transform: scale(var(--preview-zoom, 1)) rotate(var(--preview-rotation, 0deg));
+    transform: translate(var(--preview-pan-x, 0), var(--preview-pan-y, 0)) scale(var(--preview-zoom, 1)) rotate(var(--preview-rotation, 0deg));
     transition: transform .18s ease;
     animation: attachment-preview-media-enter .18s ease both;
     user-select: none;
@@ -13878,7 +13878,11 @@ html[data-theme="light"] .balance-row--detalle td {
     max-height: 100%;
     border-radius: var(--radius-md);
     background: rgba(2, 6, 23, .72);
+    transform-origin: center center;
+    transform: translate(var(--preview-pan-x, 0), var(--preview-pan-y, 0)) scale(var(--preview-zoom, 1));
+    transition: transform .18s ease;
     animation: attachment-preview-media-enter .18s ease both;
+    will-change: transform;
 }
 
 .attachment-preview-strip {
@@ -13940,12 +13944,12 @@ html[data-theme="light"] .balance-row--detalle td {
 @keyframes attachment-preview-media-enter {
     from {
         opacity: 0;
-        transform: scale(calc(var(--preview-zoom, 1) * .985)) rotate(var(--preview-rotation, 0deg));
+        transform: translate(var(--preview-pan-x, 0), var(--preview-pan-y, 0)) scale(calc(var(--preview-zoom, 1) * .985)) rotate(var(--preview-rotation, 0deg));
     }
 
     to {
         opacity: 1;
-        transform: scale(var(--preview-zoom, 1)) rotate(var(--preview-rotation, 0deg));
+        transform: translate(var(--preview-pan-x, 0), var(--preview-pan-y, 0)) scale(var(--preview-zoom, 1)) rotate(var(--preview-rotation, 0deg));
     }
 }
 
