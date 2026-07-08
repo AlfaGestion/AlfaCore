@@ -54,6 +54,22 @@ window.dashboardExport = {
     },
     openInNewTab: function (url) {
         window.open(url, "_blank", "noopener,noreferrer");
+    },
+    downloadFile: function (url) {
+        if (!url) {
+            return;
+        }
+
+        const frameId = "dashboard-export-download-frame";
+        let frame = document.getElementById(frameId);
+        if (!frame) {
+            frame = document.createElement("iframe");
+            frame.id = frameId;
+            frame.style.display = "none";
+            document.body.appendChild(frame);
+        }
+
+        frame.src = url;
     }
 };
 

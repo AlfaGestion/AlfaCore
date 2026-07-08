@@ -167,6 +167,7 @@ public class Program
         builder.Services.AddSingleton<AuditoriaExcelExporter>();
         builder.Services.AddSingleton<ReporteComprasExcelExporter>();
         builder.Services.AddSingleton<CargaViajesLiquidacionExcelExporter>();
+        builder.Services.AddSingleton<CargaViajesTarifasExcelExporter>();
         builder.Services.AddSingleton<InformesIaHistoryStore>();
         builder.Services.AddSingleton<InformesIaResultStore>();
         builder.Services.AddScoped<FilterStateService>();
@@ -620,6 +621,58 @@ public class Program
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 CargaViajesLiquidacionExcelExporter.NombreArchivo());
         });
+
+        async Task<IResult> DescargarTarifasExcel(
+            HttpRequest request,
+            ICargaViajesService cargaViajesSvc,
+            CargaViajesTarifasExcelExporter exporter,
+            CancellationToken ct)
+        {
+            static bool ParseBool(string? value)
+                => bool.TryParse(value, out var parsed) && parsed;
+
+            static string TrimOrEmpty(string? value)
+                => string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+
+            var filters = new CargaViajesFilters
+            {
+                AgruparPor = TrimOrEmpty(request.Query["agruparPor"]),
+                Texto = TrimOrEmpty(request.Query["texto"]),
+                Cliente = TrimOrEmpty(request.Query["cliente"]),
+                Chofer = TrimOrEmpty(request.Query["chofer"]),
+                Destino = TrimOrEmpty(request.Query["destino"]),
+                TipoVehiculo = TrimOrEmpty(request.Query["tipoVehiculo"]),
+                TarifaFletero = TrimOrEmpty(request.Query["tarifaFletero"]),
+                Activo = TrimOrEmpty(request.Query["activo"]),
+                SortBy = TrimOrEmpty(request.Query["sortBy"]),
+                SortDescending = ParseBool(request.Query["sortDescending"]),
+                PageNumber = 1,
+                PageSize = 500
+            };
+
+            var allItems = new List<CargaViajeTarifaGridItemDto>();
+            while (true)
+            {
+                var page = await cargaViajesSvc.SearchTarifasAsync(filters, ct);
+                if (page.Items.Count == 0)
+                    break;
+
+                allItems.AddRange(page.Items);
+                if (allItems.Count >= page.Total || page.Items.Count < filters.PageSize)
+                    break;
+
+                filters.PageNumber++;
+            }
+
+            var bytes = exporter.Exportar(allItems, filters, filters.AgruparPor);
+            return Results.File(
+                bytes,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                CargaViajesTarifasExcelExporter.NombreArchivo());
+        }
+
+        app.MapGet("/carga-viajes/tarifas/descargar-excel", DescargarTarifasExcel);
+        app.MapGet("/{idweb}/{idbase:int}/carga-viajes/tarifas/descargar-excel", DescargarTarifasExcel);
 
         app.MapGet("/api/conversaciones", async (
             string? modo,

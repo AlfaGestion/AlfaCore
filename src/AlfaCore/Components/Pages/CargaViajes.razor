@@ -304,6 +304,7 @@
                 <div class="actions">
                     <button type="button" class="btn btn--primary btn--sm" @onclick="NuevaTarifaAsync">Nueva tarifa</button>
                     <button type="button" class="btn btn--ghost btn--sm" @onclick="AbrirTarifasBulkEditAsync">Aumento de tarifa</button>
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="ExportarTarifasExcelAsync" disabled="@_tarifasLoading">Exportar Excel</button>
                 </div>
             </div>
 
@@ -335,6 +336,7 @@
                 <div class="carga-viajes-smart-search__actions actions">
                     <button type="button" class="btn btn--ghost btn--sm" @onclick="LimpiarFiltrosTarifasAsync">Limpiar filtros</button>
                     <button type="button" class="btn btn--ghost btn--sm" @onclick="RecargarTarifasAsync">Recargar</button>
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="ExportarTarifasExcelAsync" disabled="@_tarifasLoading">Excel</button>
                 </div>
 
                 @if (_showTarifasAdvancedFilters)
@@ -370,6 +372,14 @@
                                     <option value="0">Desactivado</option>
                                 </select>
                             </div>
+                            <div class="smart-search__inline">
+                                <label>Agrupar por</label>
+                                <select @bind="_tarifasFilters.AgruparPor">
+                                    <option value="">Sin agrupar</option>
+                                    <option value="@CargaViajesViewGroupKeys.Cliente">Cliente</option>
+                                    <option value="@CargaViajesViewGroupKeys.Chofer">Chofer / fletero</option>
+                                </select>
+                            </div>
                         </div>
                         <div class="smart-search__column">
                             <h4><i class="bi bi-people"></i> Entidades</h4>
@@ -392,7 +402,7 @@
                                 <label>Tipo vehículo</label>
                                 <LookupAutocomplete Label="" Placeholder="Buscar tipo..." Text="@_tarifasFilters.TipoVehiculo" TextChanged="OnTarifaTipoVehiculoFiltroChangedAsync" SelectedChanged="OnTarifaTipoVehiculoFiltroSelectedAsync" OnEnterCommitted="AplicarFiltrosTarifasAsync" SearchFunc="CargaViajesSvc.SearchTipoVehiculosLookupAsync" MinimumCharacters="0" />
                             </div>
-                            <button type="button" class="btn btn--primary btn--sm" @onclick="AplicarFiltrosTarifasAsync">Aplicar filtros</button>
+                            <button type="button" class="btn btn--primary btn--sm" @onclick="AplicarFiltrosTarifasYCerrarAsync">Aplicar filtros</button>
                         </div>
                     </div>
                 }
@@ -416,6 +426,7 @@
             }
             else
             {
+                var tarifaGroups = BuildTarifaGroups();
                 <div class="usuarios-table-wrap">
                     <div class="carga-viajes-tarifas__toolbar">
                         <label class="carga-viajes-checkbox carga-viajes-quick-edit-toggle carga-viajes-tarifas__quick-toggle @(_tarifasQuickImportEditMode ? "carga-viajes-check--active" : string.Empty)">
@@ -443,43 +454,53 @@
                             </tr>
                         </thead>
                         <tbody>
-                            @foreach (var item in _tarifas.Select((row, index) => new { row, index }))
+                            @foreach (var group in tarifaGroups)
                             {
-                                <tr class="@GetTarifaRowClass(item.row, item.index)" @ondblclick="() => EditarTarifaAsync(item.row)">
-                                    <td>@item.row.Nombre</td>
-                                    <td>@(item.row.TarifaFletero ? "Fletero" : "Cliente")</td>
-                                    <td>@GetTarifaEntidadDisplay(item.row)</td>
-                                    <td>@ExtractVisibleText(item.row.Destino)</td>
-                                    <td>@ExtractVisibleText(item.row.TipoVehiculo)</td>
-                                    <td class="carga-viajes-tarifas__importe-col @GetTarifaImporteCellClass(item.row)" @onclick:stopPropagation="_tarifasQuickImportEditMode" @ondblclick:stopPropagation="_tarifasQuickImportEditMode">
-                                        @if (_tarifasQuickImportEditMode && _tarifasQuickImportEditId == item.row.Id && item.row.Id > 0)
-                                        {
-                                            <input id="@GetTarifaImporteInputId(item.row.Id)"
-                                                   class="carga-viajes-tarifas__importe-editor"
-                                                   type="number"
-                                                   inputmode="decimal"
-                                                   step="0.01"
-                                                   @bind-value="_tarifasQuickImportValue"
-                                                   @bind-value:event="oninput"
-                                                   @onfocus="() => SelectTarifaImporteAsync(item.row.Id)"
-                                                   @onkeydown="args => HandleTarifaImporteKeyDownAsync(args, item.row, item.index)" />
-                                        }
-                                        else
-                                        {
-                                            <div class="carga-viajes-tarifas__importe-display" @onclick="() => ActivarEdicionRapidaTarifaAsync(item.row, item.index)">
-                                                @item.row.Importe.ToString("N2")
+                                @if (group.ShowHeader)
+                                {
+                                    <tr class="usuarios-group-row">
+                                        <td colspan="9">@group.Label · @group.Items.Count tarifa(s) · Total @FormatMoney(group.TotalImporte)</td>
+                                    </tr>
+                                }
+
+                                @foreach (var item in group.Items.Select((row, index) => new { row, index }))
+                                {
+                                    <tr class="@GetTarifaRowClass(item.row, item.index)" @ondblclick="() => EditarTarifaAsync(item.row)">
+                                        <td>@item.row.Nombre</td>
+                                        <td>@(item.row.TarifaFletero ? "Fletero" : "Cliente")</td>
+                                        <td>@GetTarifaEntidadDisplay(item.row)</td>
+                                        <td>@ExtractVisibleText(item.row.Destino)</td>
+                                        <td>@ExtractVisibleText(item.row.TipoVehiculo)</td>
+                                        <td class="carga-viajes-tarifas__importe-col @GetTarifaImporteCellClass(item.row)" @onclick:stopPropagation="_tarifasQuickImportEditMode" @ondblclick:stopPropagation="_tarifasQuickImportEditMode">
+                                            @if (_tarifasQuickImportEditMode && _tarifasQuickImportEditId == item.row.Id && item.row.Id > 0)
+                                            {
+                                                <input id="@GetTarifaImporteInputId(item.row.Id)"
+                                                       class="carga-viajes-tarifas__importe-editor"
+                                                       type="number"
+                                                       inputmode="decimal"
+                                                       step="0.01"
+                                                       @bind-value="_tarifasQuickImportValue"
+                                                       @bind-value:event="oninput"
+                                                       @onfocus="() => SelectTarifaImporteAsync(item.row.Id)"
+                                                       @onkeydown="args => HandleTarifaImporteKeyDownAsync(args, item.row, item.index)" />
+                                            }
+                                            else
+                                            {
+                                                <div class="carga-viajes-tarifas__importe-display" @onclick="() => ActivarEdicionRapidaTarifaAsync(item.row, item.index)">
+                                                    @item.row.Importe.ToString("N2")
+                                                </div>
+                                            }
+                                        </td>
+                                        <td>@(item.row.Activo ? "Activo" : "Desactivado")</td>
+                                        <td class="carga-viajes-tarifas__mod-col">@FormatTarifaUltimaModificacion(item.row)</td>
+                                        <td>
+                                            <div class="actions">
+                                                <button type="button" class="btn btn--ghost btn--sm" @onclick="() => EditarTarifaAsync(item.row)">Editar</button>
+                                                <button type="button" class="btn btn--ghost btn--sm" @onclick="() => BajaTarifaAsync(item.row)">Baja</button>
                                             </div>
-                                        }
-                                    </td>
-                                    <td>@(item.row.Activo ? "Activo" : "Desactivado")</td>
-                                    <td class="carga-viajes-tarifas__mod-col">@FormatTarifaUltimaModificacion(item.row)</td>
-                                    <td>
-                                        <div class="actions">
-                                            <button type="button" class="btn btn--ghost btn--sm" @onclick="() => EditarTarifaAsync(item.row)">Editar</button>
-                                            <button type="button" class="btn btn--ghost btn--sm" @onclick="() => BajaTarifaAsync(item.row)">Baja</button>
-                                        </div>
-                                    </td>
-                                </tr>
+                                        </td>
+                                    </tr>
+                                }
                             }
                         </tbody>
                     </table>
@@ -3069,6 +3090,7 @@
             case SectionTarifas:
                 actions.Add(new PageHeaderAction { Key = "nueva-tarifa", Label = "Nueva tarifa", Icon = "bi-plus-circle", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, OnClick = () => RunHeaderActionAsync(NuevaTarifaAsync) });
                 actions.Add(new PageHeaderAction { Key = "recargar-tarifas", Label = "Recargar", Icon = "bi-arrow-clockwise", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, Disabled = _tarifasLoading, OnClick = () => RunHeaderActionAsync(RecargarTarifasAsync) });
+                actions.Add(new PageHeaderAction { Key = "exportar-tarifas", Label = "Exportar Excel", Icon = "bi-file-earmark-excel", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, Disabled = _tarifasLoading, OnClick = () => RunHeaderActionAsync(ExportarTarifasExcelAsync) });
                 actions.Add(new PageHeaderAction { Key = "aumento-tarifas", Label = "Aumento de tarifa", Icon = "bi-percent", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, OnClick = () => RunHeaderActionAsync(AbrirTarifasBulkEditAsync) });
                 break;
             case SectionChoferes:
@@ -6002,13 +6024,12 @@
         await Task.CompletedTask;
     }
 
-    private Task ExportarReporteExcelAsync()
+    private async Task ExportarReporteExcelAsync()
     {
         if (!ValidateReporteLiquidacion())
-            return Task.CompletedTask;
+            return;
 
-        Nav.NavigateTo(GetLiquidacionExcelUrl(), forceLoad: true);
-        return Task.CompletedTask;
+        await Js.InvokeVoidAsync("dashboardExport.downloadFile", GetLiquidacionExcelUrl());
     }
 
     private async Task ImprimirLiquidacionAsync()
@@ -7330,6 +7351,11 @@
     }
 
     private async Task AplicarFiltrosTarifasAsync() { _tarifasFilters.PageNumber = 1; await RecargarTarifasAsync(); }
+    private async Task AplicarFiltrosTarifasYCerrarAsync()
+    {
+        await AplicarFiltrosTarifasAsync();
+        _showTarifasAdvancedFilters = false;
+    }
     private async Task LimpiarFiltrosTarifasAsync()
     {
         var sortBy = _tarifasFilters.SortBy;
@@ -7364,6 +7390,9 @@
         if (!string.IsNullOrWhiteSpace(_tarifasFilters.Activo))
             chips.Add(new FilterChipItem("tarifas-activo", _tarifasFilters.Activo == "1" ? "Activo: Activo" : "Activo: Desactivado"));
 
+        if (!string.IsNullOrWhiteSpace(_tarifasFilters.AgruparPor))
+            chips.Add(new FilterChipItem("tarifas-agrupar", $"Agrupar: {GetTarifasAgruparPorLabel(_tarifasFilters.AgruparPor)}"));
+
         return chips;
     }
 
@@ -7388,6 +7417,9 @@
                 break;
             case "tarifas-activo":
                 _tarifasFilters.Activo = string.Empty;
+                break;
+            case "tarifas-agrupar":
+                _tarifasFilters.AgruparPor = string.Empty;
                 break;
             default:
                 return;
@@ -7422,6 +7454,93 @@
         _tarifasFilters.TarifaFletero = "1";
         await AplicarFiltrosTarifasAsync();
     }
+
+    private async Task ExportarTarifasExcelAsync()
+    {
+        await Js.InvokeVoidAsync("dashboardExport.downloadFile", GetTarifasExcelUrl());
+    }
+
+    private string GetTarifasExcelUrl()
+    {
+        var query = new Dictionary<string, string?>
+        {
+            ["agruparPor"] = NormalizeTarifasAgruparPor(_tarifasFilters.AgruparPor),
+            ["texto"] = _tarifasFilters.Texto,
+            ["cliente"] = _tarifasFilters.Cliente,
+            ["chofer"] = _tarifasFilters.Chofer,
+            ["destino"] = _tarifasFilters.Destino,
+            ["tipoVehiculo"] = _tarifasFilters.TipoVehiculo,
+            ["tarifaFletero"] = _tarifasFilters.TarifaFletero,
+            ["activo"] = _tarifasFilters.Activo,
+            ["sortBy"] = _tarifasFilters.SortBy,
+            ["sortDescending"] = _tarifasFilters.SortDescending ? "true" : "false"
+        };
+
+        return QueryHelpers.AddQueryString(RouteContext.BuildRoute("/carga-viajes/tarifas/descargar-excel"), query!);
+    }
+
+    private IReadOnlyList<CargaViajeTarifaGroupDto> BuildTarifaGroups()
+    {
+        var normalized = NormalizeTarifasAgruparPor(_tarifasFilters.AgruparPor);
+        if (normalized == CargaViajesViewGroupKeys.None)
+        {
+            return
+            [
+                new CargaViajeTarifaGroupDto
+                {
+                    ShowHeader = false,
+                    Items = _tarifas.ToList(),
+                    TotalImporte = _tarifas.Sum(x => x.Importe)
+                }
+            ];
+        }
+
+        return _tarifas
+            .Select((row, index) => new { row, index })
+            .GroupBy(x => new
+            {
+                Label = GetTarifaGroupLabel(x.row, normalized)
+            })
+            .Select(g => new CargaViajeTarifaGroupDto
+            {
+                Label = g.Key.Label,
+                ShowHeader = true,
+                FirstIndex = g.Min(x => x.index),
+                TotalImporte = g.Sum(x => x.row.Importe),
+                Items = g.Select(x => x.row).ToList()
+            })
+            .OrderBy(g => g.FirstIndex)
+            .ToList();
+    }
+
+    private static string NormalizeTarifasAgruparPor(string? value)
+        => (value ?? string.Empty).Trim().ToLowerInvariant() switch
+        {
+            CargaViajesViewGroupKeys.Cliente => CargaViajesViewGroupKeys.Cliente,
+            CargaViajesViewGroupKeys.Chofer => CargaViajesViewGroupKeys.Chofer,
+            CargaViajesViewGroupKeys.Fletero => CargaViajesViewGroupKeys.Chofer,
+            _ => CargaViajesViewGroupKeys.None
+        };
+
+    private static string GetTarifasAgruparPorLabel(string? value)
+        => NormalizeTarifasAgruparPor(value) switch
+        {
+            CargaViajesViewGroupKeys.Cliente => "Cliente",
+            CargaViajesViewGroupKeys.Chofer => "Chofer / fletero",
+            _ => "Sin agrupar"
+        };
+
+    private static string GetTarifaGroupLabel(CargaViajeTarifaGridItemDto row, string agruparPor)
+        => agruparPor switch
+        {
+            CargaViajesViewGroupKeys.Cliente => row.TarifaFletero
+                ? "Cliente: Sin cliente"
+                : $"Cliente: {GetTarifaEntidadDisplay(row)}",
+            CargaViajesViewGroupKeys.Chofer => row.TarifaFletero
+                ? $"Chofer / fletero: {GetTarifaEntidadDisplay(row)}"
+                : "Chofer / fletero: Sin chofer / fletero",
+            _ => string.Empty
+        };
 
     private async Task RecargarTarifasAsync()
     {
@@ -8961,6 +9080,15 @@
         public string Label { get; init; } = string.Empty;
         public bool ShowHeader { get; init; }
         public List<CargaViajeTipoVehiculoGridItemDto> Items { get; init; } = [];
+    }
+
+    private sealed class CargaViajeTarifaGroupDto
+    {
+        public string Label { get; init; } = string.Empty;
+        public bool ShowHeader { get; init; }
+        public int FirstIndex { get; init; }
+        public decimal TotalImporte { get; init; }
+        public List<CargaViajeTarifaGridItemDto> Items { get; init; } = [];
     }
 
     private void OnViajeClienteTextoChanged(string text) { _viajeClienteTexto = text; _viajeForm.Cliente = text; }
