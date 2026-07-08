@@ -46,19 +46,40 @@ public sealed class CargaViajesService(
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
             const string viajeTable = "MV_VIAJES_CARGA";
-            var clienteCodeExpr = "ISNULL(v.IDCLIENTE, '')";
-            var destinoCodeExpr = "ISNULL(v.IDDESTINO, '')";
-            var choferCodeExpr = "ISNULL(v.IDCHOFER, '')";
-            var tipoVehiculoCodeExpr = "ISNULL(v.IDTIPOVEHICULO, '')";
+            if (!await TableExistsAsync(cn, viajeTable, token))
+                return new PagedResult<CargaViajesGridItemDto> { Items = [], Total = 0, PageNumber = pageNumber, PageSize = pageSize };
+
+            var columns = await LoadColumnsAsync(cn, viajeTable, token);
+            var clienteColumn = FirstExistingColumnOrNull(columns, "IDCLIENTE", "CLIENTE");
+            var destinoColumn = FirstExistingColumnOrNull(columns, "IDDESTINO", "DESTINO");
+            var choferColumn = FirstExistingColumnOrNull(columns, "IDCHOFER", "CHOFER");
+            var tipoVehiculoColumn = FirstExistingColumnOrNull(columns, "IDTIPOVEHICULO", "TIPOVEHICULO");
+            var idComprobanteColumn = FirstExistingColumnOrNull(columns, "IDCOMPROBANTE", "COMPROBANTE");
+            var totalImporteColumn = FirstExistingColumnOrNull(columns, "TOTAL_IMPORTE", "TOTALIMPORTE");
+            var totalFleteColumn = FirstExistingColumnOrNull(columns, "TOTAL_FLETE", "TOTALFLETE");
+            var estadoColumn = FirstExistingColumnOrNull(columns, "ESTADO");
+            var usuarioColumn = FirstExistingColumnOrNull(columns, "USUARIO");
+            var altaColumn = FirstExistingColumnOrNull(columns, "FECHAHORA_ALTA", "FECHAHORAALTA", "FECHAHORA_GRABACION");
+            var clienteCodeExpr = SqlStringColumnOrEmpty("v", clienteColumn);
+            var destinoCodeExpr = SqlStringColumnOrEmpty("v", destinoColumn);
+            var choferCodeExpr = SqlStringColumnOrEmpty("v", choferColumn);
+            var tipoVehiculoCodeExpr = SqlStringColumnOrEmpty("v", tipoVehiculoColumn);
+            var idComprobanteExpr = SqlStringColumnOrEmpty("v", idComprobanteColumn);
+            var totalImporteExpr = SqlDecimalColumnOrZero("v", totalImporteColumn);
+            var totalFleteExpr = SqlDecimalColumnOrZero("v", totalFleteColumn);
+            var estadoExpr = string.IsNullOrWhiteSpace(estadoColumn) ? "N'PENDIENTE'" : $"ISNULL(v.{estadoColumn}, N'PENDIENTE')";
+            var usuarioExpr = SqlStringColumnOrEmpty("v", usuarioColumn);
+            var altaExpr = string.IsNullOrWhiteSpace(altaColumn) ? "CAST(NULL AS datetime)" : $"v.{altaColumn}";
+            var hasDestinoTable = await TableExistsAsync(cn, "TA_DESTINOS", token);
+            var hasChoferTable = await TableExistsAsync(cn, "TA_CHOFERES", token);
+            var hasVehiculoTable = await TableExistsAsync(cn, "TA_TIPOVEHICULO", token);
             var clienteJoin = $"LEFT JOIN dbo.Vt_Clientes cli ON UPPER(LTRIM(RTRIM(ISNULL(cli.CODIGO, '')))) = UPPER(LTRIM(RTRIM({clienteCodeExpr})))";
-            var destinoJoin = $"LEFT JOIN dbo.TA_DESTINOS d ON UPPER(LTRIM(RTRIM(ISNULL(d.CODIGO, '')))) = UPPER(LTRIM(RTRIM({destinoCodeExpr})))";
-            var choferJoin = $"LEFT JOIN dbo.TA_CHOFERES ch ON UPPER(LTRIM(RTRIM(ISNULL(ch.CODIGO, '')))) = UPPER(LTRIM(RTRIM({choferCodeExpr})))";
-            var vehiculoJoin = $"LEFT JOIN dbo.TA_TIPOVEHICULO tv ON UPPER(LTRIM(RTRIM(ISNULL(tv.CODIGO, '')))) = UPPER(LTRIM(RTRIM({tipoVehiculoCodeExpr})))";
-            var destinoDescExpr = "ISNULL(d.DESCRIPCION, ISNULL(v.DESCRIPCIONDESTINO, ''))";
-            var choferNameExpr = "ISNULL(ch.NOMBRES, v.NOMBRE_CHOFER)";
-            var vehiculoExpr = "ISNULL(tv.DESCRIPCION, '')";
-            var totalFleteExpr = "ISNULL(v.TOTAL_FLETE, 0)";
-            var altaExpr = "ISNULL(v.FECHAHORA_ALTA, GETDATE())";
+            var destinoJoin = hasDestinoTable ? $"LEFT JOIN dbo.TA_DESTINOS d ON UPPER(LTRIM(RTRIM(ISNULL(d.CODIGO, '')))) = UPPER(LTRIM(RTRIM({destinoCodeExpr})))" : string.Empty;
+            var choferJoin = hasChoferTable ? $"LEFT JOIN dbo.TA_CHOFERES ch ON UPPER(LTRIM(RTRIM(ISNULL(ch.CODIGO, '')))) = UPPER(LTRIM(RTRIM({choferCodeExpr})))" : string.Empty;
+            var vehiculoJoin = hasVehiculoTable ? $"LEFT JOIN dbo.TA_TIPOVEHICULO tv ON UPPER(LTRIM(RTRIM(ISNULL(tv.CODIGO, '')))) = UPPER(LTRIM(RTRIM({tipoVehiculoCodeExpr})))" : string.Empty;
+            var destinoDescExpr = hasDestinoTable ? $"ISNULL(d.DESCRIPCION, {SqlStringColumnOrEmpty("v", FirstExistingColumnOrNull(columns, "DESCRIPCIONDESTINO"))})" : SqlStringColumnOrEmpty("v", FirstExistingColumnOrNull(columns, "DESCRIPCIONDESTINO"));
+            var choferNameExpr = hasChoferTable ? $"ISNULL(ch.NOMBRES, {SqlStringColumnOrEmpty("v", FirstExistingColumnOrNull(columns, "NOMBRE_CHOFER", "NOMBRECHOFER"))})" : SqlStringColumnOrEmpty("v", FirstExistingColumnOrNull(columns, "NOMBRE_CHOFER", "NOMBRECHOFER"));
+            var vehiculoExpr = hasVehiculoTable ? "ISNULL(tv.DESCRIPCION, '')" : "CAST('' AS nvarchar(100))";
             var viajesOrderBy = BuildOrderByClause(
                 filters.SortBy,
                 filters.SortDescending,
@@ -82,7 +103,7 @@ public sealed class CargaViajesService(
                 SELECT
                     v.ID AS Id,
                     ISNULL(v.TC, @Tc) AS Tc,
-                    ISNULL(v.IDCOMPROBANTE, '') AS IdComprobante,
+                    {idComprobanteExpr} AS IdComprobante,
                     v.FECHA AS Fecha,
                     {clienteCodeExpr} AS ClienteCodigo,
                     ISNULL(cli.RAZON_SOCIAL, '') AS ClienteNombre,
@@ -92,10 +113,10 @@ public sealed class CargaViajesService(
                     {choferNameExpr} AS ChoferNombre,
                     {tipoVehiculoCodeExpr} AS TipoVehiculoCodigo,
                     {vehiculoExpr} AS TipoVehiculoDescripcion,
-                    ISNULL(v.TOTAL_IMPORTE, 0) AS TotalCliente,
+                    {totalImporteExpr} AS TotalCliente,
                     {totalFleteExpr} AS TotalFletero,
-                    ISNULL(v.ESTADO, N'PENDIENTE') AS Estado,
-                    ISNULL(v.USUARIO, '') AS Usuario,
+                    {estadoExpr} AS Estado,
+                    {usuarioExpr} AS Usuario,
                     {altaExpr} AS FechaHoraAlta
                 FROM dbo.{viajeTable} v
                 {clienteJoin}
@@ -112,9 +133,9 @@ public sealed class CargaViajesService(
                   AND (@Chofer = '' OR UPPER(LTRIM(RTRIM({choferCodeExpr}))) = @Chofer)
                   AND (@Destino = '' OR UPPER(LTRIM(RTRIM({destinoCodeExpr}))) = @Destino)
                   AND (@TipoVehiculo = '' OR UPPER(LTRIM(RTRIM({tipoVehiculoCodeExpr}))) = @TipoVehiculo)
-                  AND (@Estado = '' OR UPPER(LTRIM(RTRIM(ISNULL(v.ESTADO, N'PENDIENTE')))) = @Estado)
-                  AND (@Usuario = '' OR UPPER(LTRIM(RTRIM(ISNULL(v.USUARIO, '')))) = @Usuario)
-                  AND (@IdComprobante = '' OR ISNULL(v.IDCOMPROBANTE, '') = @IdComprobante)
+                  AND (@Estado = '' OR UPPER(LTRIM(RTRIM({estadoExpr}))) = @Estado)
+                  AND (@Usuario = '' OR UPPER(LTRIM(RTRIM({usuarioExpr}))) = @Usuario)
+                  AND (@IdComprobante = '' OR {idComprobanteExpr} = @IdComprobante)
                 ORDER BY {viajesOrderBy}
                 OFFSET @Skip ROWS FETCH NEXT @PageSize ROWS ONLY;
 
@@ -134,9 +155,9 @@ public sealed class CargaViajesService(
                   AND (@Chofer = '' OR UPPER(LTRIM(RTRIM({choferCodeExpr}))) = @Chofer)
                   AND (@Destino = '' OR UPPER(LTRIM(RTRIM({destinoCodeExpr}))) = @Destino)
                   AND (@TipoVehiculo = '' OR UPPER(LTRIM(RTRIM({tipoVehiculoCodeExpr}))) = @TipoVehiculo)
-                  AND (@Estado = '' OR UPPER(LTRIM(RTRIM(ISNULL(v.ESTADO, N'PENDIENTE')))) = @Estado)
-                  AND (@Usuario = '' OR UPPER(LTRIM(RTRIM(ISNULL(v.USUARIO, '')))) = @Usuario)
-                  AND (@IdComprobante = '' OR ISNULL(v.IDCOMPROBANTE, '') = @IdComprobante);
+                  AND (@Estado = '' OR UPPER(LTRIM(RTRIM({estadoExpr}))) = @Estado)
+                  AND (@Usuario = '' OR UPPER(LTRIM(RTRIM({usuarioExpr}))) = @Usuario)
+                  AND (@IdComprobante = '' OR {idComprobanteExpr} = @IdComprobante);
                 """;
 
             var rows = (await cn.QueryAsync<CargaViajesGridItemDto>(new CommandDefinition(sql, new
@@ -169,9 +190,9 @@ public sealed class CargaViajesService(
                   AND (@Chofer = '' OR UPPER(LTRIM(RTRIM({choferCodeExpr}))) = @Chofer)
                   AND (@Destino = '' OR UPPER(LTRIM(RTRIM({destinoCodeExpr}))) = @Destino)
                   AND (@TipoVehiculo = '' OR UPPER(LTRIM(RTRIM({tipoVehiculoCodeExpr}))) = @TipoVehiculo)
-                  AND (@Estado = '' OR UPPER(LTRIM(RTRIM(ISNULL(v.ESTADO, N'PENDIENTE')))) = @Estado)
-                  AND (@Usuario = '' OR UPPER(LTRIM(RTRIM(ISNULL(v.USUARIO, '')))) = @Usuario)
-                  AND (@IdComprobante = '' OR ISNULL(v.IDCOMPROBANTE, '') = @IdComprobante);
+                  AND (@Estado = '' OR UPPER(LTRIM(RTRIM({estadoExpr}))) = @Estado)
+                  AND (@Usuario = '' OR UPPER(LTRIM(RTRIM({usuarioExpr}))) = @Usuario)
+                  AND (@IdComprobante = '' OR {idComprobanteExpr} = @IdComprobante);
                 """, new
             {
                 filters.FechaDesde,
@@ -647,14 +668,18 @@ public sealed class CargaViajesService(
             var clienteColumn = FirstExistingColumn(columns, "IDCLIENTE", "CLIENTE");
             var choferColumn = FirstExistingColumn(columns, "IDCHOFER", "CHOFER");
             var destinoColumn = FirstExistingColumn(columns, "IDDESTINO", "DESTINO");
-            var tipoVehiculoColumn = FirstExistingColumn(columns, "IDTIPOVEHICULO", "TIPOVEHICULO");
+            var tipoVehiculoColumn = FirstExistingColumnOrNull(columns, "IDTIPOVEHICULO", "TIPOVEHICULO");
+            var hasTarifaFletero = columns.Contains("tarifafletero");
+            var hasActivo = columns.Contains("activo");
             var tarifaFleteroFiltro = ParseNullableBitFilter(filters.TarifaFletero);
             var activoFiltro = ParseNullableBitFilter(filters.Activo);
             var textoLike = SearchTextHelper.LikeContains(filters.Texto);
             var clienteCodeExpr = $"LTRIM(RTRIM(ISNULL(t.{clienteColumn}, '')))";
             var choferCodeExpr = $"LTRIM(RTRIM(ISNULL(t.{choferColumn}, '')))";
             var destinoCodeExpr = $"LTRIM(RTRIM(ISNULL(t.{destinoColumn}, '')))";
-            var tipoVehiculoCodeExpr = $"LTRIM(RTRIM(ISNULL(t.{tipoVehiculoColumn}, '')))";
+            var tipoVehiculoCodeExpr = SqlStringColumnOrEmpty("t", tipoVehiculoColumn);
+            var tarifaFleteroExpr = hasTarifaFletero ? "ISNULL(t.TarifaFletero, 0)" : "CAST(0 AS bit)";
+            var activoExpr = hasActivo ? "ISNULL(t.Activo, 1)" : "CAST(1 AS bit)";
             var clienteDisplayExpr = $"""
                 CASE
                     WHEN ISNULL(cli.Valor, '') = '' THEN {clienteCodeExpr}
@@ -695,13 +720,13 @@ public sealed class CargaViajesService(
                 new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
                 {
                     ["nombre"] = $"ISNULL(t.Nombre, '') {{dir}}, LTRIM(RTRIM(ISNULL(t.{idListaColumn}, ''))) {{dir}}, {idOrderExpr} {{dir}}",
-                    ["tipotarifa"] = $"ISNULL(t.TarifaFletero, 0) {{dir}}, ISNULL(t.Nombre, '') {{dir}}, {idOrderExpr} {{dir}}",
+                    ["tipotarifa"] = $"{tarifaFleteroExpr} {{dir}}, ISNULL(t.Nombre, '') {{dir}}, {idOrderExpr} {{dir}}",
                     ["cliente"] = $"{clienteDisplayExpr} {{dir}}, {idOrderExpr} {{dir}}",
                     ["chofer"] = $"{choferDisplayExpr} {{dir}}, {idOrderExpr} {{dir}}",
                     ["destino"] = $"{destinoDisplayExpr} {{dir}}, {idOrderExpr} {{dir}}",
                     ["tipovehiculo"] = $"{tipoVehiculoDisplayExpr} {{dir}}, {idOrderExpr} {{dir}}",
                     ["importe"] = $"ISNULL(t.Importe, 0) {{dir}}, {idOrderExpr} {{dir}}",
-                    ["activo"] = $"ISNULL(t.Activo, 1) {{dir}}, ISNULL(t.Nombre, '') {{dir}}, {idOrderExpr} {{dir}}",
+                    ["activo"] = $"{activoExpr} {{dir}}, ISNULL(t.Nombre, '') {{dir}}, {idOrderExpr} {{dir}}",
                     ["id"] = $"{idOrderExpr} {{dir}}",
                     ["idlista"] = $"LTRIM(RTRIM(ISNULL(t.{idListaColumn}, ''))) {{dir}}, {idOrderExpr} {{dir}}"
                 },
@@ -721,19 +746,19 @@ public sealed class CargaViajesService(
                         {choferDisplayExpr} AS Chofer,
                         {destinoDisplayExpr} AS Destino,
                         {tipoVehiculoDisplayExpr} AS TipoVehiculo,
-                        ISNULL(t.TarifaFletero, 0) AS TarifaFletero,
-                        ISNULL(t.PorcentajeAdic, 0) AS PorcentajeAdic,
-                        ISNULL(t.PorcentajeAdic1, 0) AS PorcentajeAdic1,
-                        ISNULL(t.PorcentajeAdic2, 0) AS PorcentajeAdic2,
-                        ISNULL(t.PorcentajeAdic3, 0) AS PorcentajeAdic3,
-                        ISNULL(t.PorcentajeAdic4, 0) AS PorcentajeAdic4,
+                        {tarifaFleteroExpr} AS TarifaFletero,
+                        {SqlDecimalColumnOrZero("t", FirstExistingColumnOrNull(columns, "PorcentajeAdic"))} AS PorcentajeAdic,
+                        {SqlDecimalColumnOrZero("t", FirstExistingColumnOrNull(columns, "PorcentajeAdic1"))} AS PorcentajeAdic1,
+                        {SqlDecimalColumnOrZero("t", FirstExistingColumnOrNull(columns, "PorcentajeAdic2"))} AS PorcentajeAdic2,
+                        {SqlDecimalColumnOrZero("t", FirstExistingColumnOrNull(columns, "PorcentajeAdic3"))} AS PorcentajeAdic3,
+                        {SqlDecimalColumnOrZero("t", FirstExistingColumnOrNull(columns, "PorcentajeAdic4"))} AS PorcentajeAdic4,
                         {(string.IsNullOrWhiteSpace(adicionalFijo1DescripcionColumn) ? "CAST('' AS nvarchar(100))" : $"ISNULL(t.{adicionalFijo1DescripcionColumn}, '')")} AS AdicionalFijo1Descripcion,
                         {(string.IsNullOrWhiteSpace(adicionalFijo1ImporteColumn) ? "CAST(0 AS money)" : $"ISNULL(t.{adicionalFijo1ImporteColumn}, 0)")} AS AdicionalFijo1Importe,
                         {(string.IsNullOrWhiteSpace(adicionalFijo2DescripcionColumn) ? "CAST('' AS nvarchar(100))" : $"ISNULL(t.{adicionalFijo2DescripcionColumn}, '')")} AS AdicionalFijo2Descripcion,
                         {(string.IsNullOrWhiteSpace(adicionalFijo2ImporteColumn) ? "CAST(0 AS money)" : $"ISNULL(t.{adicionalFijo2ImporteColumn}, 0)")} AS AdicionalFijo2Importe,
                         {(string.IsNullOrWhiteSpace(adicionalFijo3DescripcionColumn) ? "CAST('' AS nvarchar(100))" : $"ISNULL(t.{adicionalFijo3DescripcionColumn}, '')")} AS AdicionalFijo3Descripcion,
                         {(string.IsNullOrWhiteSpace(adicionalFijo3ImporteColumn) ? "CAST(0 AS money)" : $"ISNULL(t.{adicionalFijo3ImporteColumn}, 0)")} AS AdicionalFijo3Importe,
-                        ISNULL(t.Activo, 1) AS Activo,
+                        {activoExpr} AS Activo,
                         {(string.IsNullOrWhiteSpace(fechaModificacionColumn) ? "CAST(NULL AS datetime)" : $"t.{fechaModificacionColumn}")} AS FechaHoraModificacion,
                         {(string.IsNullOrWhiteSpace(usuarioModificacionColumn) ? "CAST('' AS nvarchar(50))" : $"ISNULL(t.{usuarioModificacionColumn}, '')")} AS UsuarioModificacion
                     FROM dbo.TA_TARIFA t
@@ -770,8 +795,8 @@ public sealed class CargaViajesService(
                       AND (@Chofer = '' OR {choferCodeExpr} LIKE @ChoferLike)
                       AND (@Destino = '' OR {destinoCodeExpr} LIKE @DestinoLike)
                       AND (@TipoVehiculo = '' OR {tipoVehiculoCodeExpr} LIKE @TipoVehiculoLike)
-                      AND (@TarifaFletero IS NULL OR ISNULL(t.TarifaFletero, 0) = @TarifaFletero)
-                      AND (@Activo IS NULL OR ISNULL(t.Activo, 1) = @Activo)
+                      AND (@TarifaFletero IS NULL OR {tarifaFleteroExpr} = @TarifaFletero)
+                      AND (@Activo IS NULL OR {activoExpr} = @Activo)
                 )
                 SELECT *
                 FROM base_rows
@@ -787,14 +812,14 @@ public sealed class CargaViajesService(
                         OR LTRIM(RTRIM(ISNULL(t.{clienteColumn}, ''))) LIKE @TextoLike
                         OR LTRIM(RTRIM(ISNULL(t.{choferColumn}, ''))) LIKE @TextoLike
                         OR LTRIM(RTRIM(ISNULL(t.{destinoColumn}, ''))) LIKE @TextoLike
-                        OR LTRIM(RTRIM(ISNULL(t.{tipoVehiculoColumn}, ''))) LIKE @TextoLike
+                        OR {tipoVehiculoCodeExpr} LIKE @TextoLike
                     )
                   AND (@Cliente = '' OR LTRIM(RTRIM(ISNULL(t.{clienteColumn}, ''))) LIKE @ClienteLike)
                   AND (@Chofer = '' OR LTRIM(RTRIM(ISNULL(t.{choferColumn}, ''))) LIKE @ChoferLike)
                   AND (@Destino = '' OR LTRIM(RTRIM(ISNULL(t.{destinoColumn}, ''))) LIKE @DestinoLike)
-                  AND (@TipoVehiculo = '' OR LTRIM(RTRIM(ISNULL(t.{tipoVehiculoColumn}, ''))) LIKE @TipoVehiculoLike)
-                  AND (@TarifaFletero IS NULL OR ISNULL(t.TarifaFletero, 0) = @TarifaFletero)
-                  AND (@Activo IS NULL OR ISNULL(t.Activo, 1) = @Activo);
+                  AND (@TipoVehiculo = '' OR {tipoVehiculoCodeExpr} LIKE @TipoVehiculoLike)
+                  AND (@TarifaFletero IS NULL OR {tarifaFleteroExpr} = @TarifaFletero)
+                  AND (@Activo IS NULL OR {activoExpr} = @Activo);
                 """;
 
             var rows = new List<CargaViajeTarifaGridItemDto>();
@@ -1266,9 +1291,11 @@ public sealed class CargaViajesService(
             const string table = "TA_CHOFERES";
             var columns = await LoadColumnsAsync(cn, table, token);
             var nombreExpr = "LTRIM(RTRIM(ISNULL(NOMBRES, '')))";
+            var activoColumn = columns.Contains("activo") ? "ACTIVO" : null;
             var esFleteroColumn = columns.Contains("es_fletero") ? "ES_FLETERO" : null;
             var disponibleColumn = columns.Contains("disponible") ? "DISPONIBLE" : null;
-            var tipoVehiculoColumn = FirstExistingColumn(columns, "IDTIPOVEHICULO", "TIPOVEHICULO");
+            var tipoVehiculoColumn = FirstExistingColumnOrNull(columns, "IDTIPOVEHICULO", "TIPOVEHICULO");
+            var activoExpr = activoColumn is not null ? "ISNULL(ACTIVO, 1)" : "1";
             var whereClauses = new List<string>
             {
                 @"(
@@ -1277,7 +1304,7 @@ public sealed class CargaViajesService(
                         OR NOMBRES COLLATE Latin1_General_CI_AI LIKE @TextoLike
                     )"
             };
-            if (columns.Contains("activo"))
+            if (activoColumn is not null)
                 whereClauses.Add("(@Activo IS NULL OR ISNULL(ACTIVO, 1) = @Activo)");
             if (disponibleColumn is not null)
                 whereClauses.Add("(@Disponible IS NULL OR ISNULL(DISPONIBLE, 0) = @Disponible)");
@@ -1293,7 +1320,7 @@ public sealed class CargaViajesService(
                 {
                     ["codigo"] = "LTRIM(RTRIM(ISNULL(CODIGO, ''))) {dir}",
                     ["nombre"] = "LTRIM(RTRIM(ISNULL(NOMBRES, ''))) {dir}, LTRIM(RTRIM(ISNULL(CODIGO, ''))) {dir}",
-                    ["activo"] = "ISNULL(ACTIVO, 1) {dir}, LTRIM(RTRIM(ISNULL(NOMBRES, ''))) {dir}",
+                    ["activo"] = $"{activoExpr} {{dir}}, LTRIM(RTRIM(ISNULL(NOMBRES, ''))) {{dir}}",
                     ["disponible"] = $"ISNULL({(disponibleColumn is not null ? disponibleColumn : "0")}, 0) {{dir}}, LTRIM(RTRIM(ISNULL(NOMBRES, ''))) {{dir}}",
                     ["esfletero"] = $"ISNULL({(esFleteroColumn is not null ? esFleteroColumn : "0")}, 0) {{dir}}, LTRIM(RTRIM(ISNULL(NOMBRES, ''))) {{dir}}"
                 },
@@ -1303,7 +1330,7 @@ public sealed class CargaViajesService(
                 SELECT
                     LTRIM(RTRIM(ISNULL(CODIGO, ''))) AS Codigo,
                     {nombreExpr} AS Nombre,
-                    ISNULL(ACTIVO, 1) AS Activo,
+                    CAST({activoExpr} AS bit) AS Activo,
                     {(disponibleColumn is not null ? "ISNULL(DISPONIBLE, 0)" : "CAST(0 AS bit)")} AS Disponible,
                     {(esFleteroColumn is not null ? "ISNULL(ES_FLETERO, 0)" : "CAST(0 AS bit)")} AS EsFletero
                 FROM dbo.{table}
@@ -1464,7 +1491,13 @@ public sealed class CargaViajesService(
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
             const string table = "TA_DESTINOS";
+            if (!await TableExistsAsync(cn, table, token))
+                return new PagedResult<CargaViajeDestinoGridItemDto> { Items = [], Total = 0, PageNumber = pageNumber, PageSize = pageSize };
+
             var codeColumn = "CODIGO";
+            var hasActivo = await ColumnExistsAsync(cn, table, "Activo", token);
+            var activoExpr = hasActivo ? "ISNULL(Activo, 1)" : "1";
+            var activoSelect = hasActivo ? "CAST(ISNULL(Activo, 1) AS bit)" : "CAST(1 AS bit)";
             var textoLike = SearchTextHelper.LikeContains(filters.Texto);
             var activoFiltro = ParseNullableBitFilter(filters.Activo);
             var orderBy = BuildOrderByClause(
@@ -1474,21 +1507,21 @@ public sealed class CargaViajesService(
                 {
                     ["codigo"] = "LTRIM(RTRIM(ISNULL(CODIGO, ''))) {dir}",
                     ["descripcion"] = "LTRIM(RTRIM(ISNULL(Descripcion, ''))) {dir}, LTRIM(RTRIM(ISNULL(CODIGO, ''))) {dir}",
-                    ["activo"] = "ISNULL(Activo, 1) {dir}, LTRIM(RTRIM(ISNULL(Descripcion, ''))) {dir}"
+                    ["activo"] = $"{activoExpr} {{dir}}, LTRIM(RTRIM(ISNULL(Descripcion, ''))) {{dir}}"
                 },
                 "LTRIM(RTRIM(ISNULL(Descripcion, ''))) ASC, LTRIM(RTRIM(ISNULL(CODIGO, ''))) ASC");
             var sql = $"""
                 SELECT
                     LTRIM(RTRIM(ISNULL({codeColumn}, ''))),
                     LTRIM(RTRIM(ISNULL(Descripcion, ''))),
-                    ISNULL(Activo, 1)
+                    {activoSelect}
                 FROM dbo.{table}
                 WHERE (
                         @TextoLike = ''
                         OR {codeColumn} LIKE @TextoLike
                         OR Descripcion COLLATE Latin1_General_CI_AI LIKE @TextoLike
                     )
-                  AND (@Activo IS NULL OR ISNULL(Activo, 1) = @Activo)
+                  AND (@Activo IS NULL OR {activoExpr} = @Activo)
                 ORDER BY {orderBy}
                 OFFSET @Skip ROWS FETCH NEXT @PageSize ROWS ONLY;
 
@@ -1499,7 +1532,7 @@ public sealed class CargaViajesService(
                         OR {codeColumn} LIKE @TextoLike
                         OR Descripcion COLLATE Latin1_General_CI_AI LIKE @TextoLike
                     )
-                  AND (@Activo IS NULL OR ISNULL(Activo, 1) = @Activo);
+                  AND (@Activo IS NULL OR {activoExpr} = @Activo);
                 """;
 
             var rows = new List<CargaViajeDestinoGridItemDto>();
@@ -4476,6 +4509,16 @@ public sealed class CargaViajesService(
 
         return null;
     }
+
+    private static string SqlStringColumnOrEmpty(string alias, string? column)
+        => string.IsNullOrWhiteSpace(column)
+            ? "CAST('' AS nvarchar(100))"
+            : $"LTRIM(RTRIM(ISNULL({alias}.{column}, '')))";
+
+    private static string SqlDecimalColumnOrZero(string alias, string? column)
+        => string.IsNullOrWhiteSpace(column)
+            ? "CAST(0 AS money)"
+            : $"ISNULL({alias}.{column}, 0)";
 
     private static async Task EnsureSchemaColumnAsync(SqlConnection cn, SqlTransaction tx, string tableName, string columnName, string columnDefinition, ICollection<string> createdColumns, CancellationToken ct)
     {
