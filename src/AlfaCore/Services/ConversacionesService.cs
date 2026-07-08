@@ -4,6 +4,7 @@ using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Globalization;
 using System.Net.Http.Headers;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -15,6 +16,7 @@ public sealed class ConversacionesService(
     ISessionService sessionService,
     IAppEventService appEvents,
     IHttpClientFactory httpClientFactory,
+    ICentralBasesService centralBasesService,
     IConversacionesConfigService conversacionesConfigService,
     INotificacionesPushService notificacionesPushService,
     IWebHostEnvironment environment) : IConversacionesService
@@ -42,11 +44,70 @@ public sealed class ConversacionesService(
         "VE_CPTES_SALDOS_TODOS"
     ];
 
-    private string UploadsBasePath => Path.Combine(environment.ContentRootPath, "App_Data", "uploads", "conversaciones");
+    private string LegacyUploadsBasePath => Path.Combine(environment.ContentRootPath, "App_Data", "uploads", "conversaciones");
+    private string UploadsBasePath => Path.Combine(LegacyUploadsBasePath, GetAttachmentStorageScope());
     private string ConnectionString => sessionService.GetConnectionString().Length > 0
         ? sessionService.GetConnectionString()
         : configuration.GetConnectionString("AlfaGestion")
           ?? throw new InvalidOperationException("No se configuró la cadena de conexión 'ConnectionStrings:AlfaGestion'.");
+
+    private async Task<string> ResolveConnectionStringAsync(int? idBase, CancellationToken ct)
+    {
+        var resolvedIdBase = idBase.GetValueOrDefault();
+        if (resolvedIdBase > 0)
+        {
+            var baseInfo = await centralBasesService.GetByIdAsync(resolvedIdBase, ct);
+            if (baseInfo is null)
+                throw new InvalidOperationException("La base indicada para el adjunto no existe.");
+
+            return new SqlConnectionStringBuilder
+            {
+                DataSource = baseInfo.DbServer,
+                InitialCatalog = baseInfo.DbName,
+                UserID = baseInfo.DbUser,
+                Password = baseInfo.DbPassword,
+                TrustServerCertificate = true
+            }.ConnectionString;
+        }
+
+        return ConnectionString;
+    }
+
+    public string GetAttachmentScopeKey()
+        => GetAttachmentScope().ScopeKey;
+
+    private string GetAttachmentStorageScope()
+    {
+        var scope = GetAttachmentScope();
+        var label = SanitizePathSegment(FirstNonEmpty(scope.Database, "base"));
+        return $"{label}-{scope.ScopeKey}";
+    }
+
+    private (string Database, string ScopeKey) GetAttachmentScope()
+    {
+        var activeSession = sessionService.GetActiveSession();
+        var server = activeSession?.Servidor?.Trim() ?? string.Empty;
+        var database = activeSession?.BaseDatos?.Trim() ?? string.Empty;
+        var baseId = activeSession?.BaseId ?? 0;
+
+        if (string.IsNullOrWhiteSpace(server) || string.IsNullOrWhiteSpace(database))
+        {
+            try
+            {
+                var builder = new SqlConnectionStringBuilder(ConnectionString);
+                server = FirstNonEmpty(server, builder.DataSource);
+                database = FirstNonEmpty(database, builder.InitialCatalog);
+            }
+            catch
+            {
+                database = FirstNonEmpty(database, "default");
+            }
+        }
+
+        var source = $"{baseId}|{server}|{database}".Trim('|');
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(source.ToUpperInvariant())))[..16].ToLowerInvariant();
+        return (database, hash);
+    }
 
     public async Task<bool> HasConversationSchemaAsync(CancellationToken ct = default)
     {
@@ -2656,22 +2717,26 @@ public sealed class ConversacionesService(
             foreach (var incoming in parsedMessages)
             {
                 var conversationId = await EnsureConversationAsync(incoming, token);
-                var messageId = await InsertMessageAsync(new PendingMessageInsert
+                var messageId = await GetExistingMessageIdByWhatsAppIdAsync(incoming.WhatsAppMessageId, token);
+                if (messageId <= 0)
                 {
-                    ConversationId = conversationId,
-                    Phone = incoming.Phone,
-                    MessageType = incoming.MessageType,
-                    Direction = "ENTRANTE",
-                    EstadoEnvio = "RECIBIDO",
-                    Text = incoming.Text,
-                    PayloadJson = incoming.RawJson,
-                    FechaHora = NormalizeIncomingTimestamp(incoming.Timestamp),
-                    UsuarioAutor = string.Empty,
-                    SistemaAutor = string.Empty,
-                    IdTecnicoAutor = string.Empty,
-                    WhatsAppMessageId = incoming.WhatsAppMessageId,
-                    ReplyToMessageId = incoming.WhatsAppReplyToMessageId
-                }, token);
+                    messageId = await InsertMessageAsync(new PendingMessageInsert
+                    {
+                        ConversationId = conversationId,
+                        Phone = incoming.Phone,
+                        MessageType = incoming.MessageType,
+                        Direction = "ENTRANTE",
+                        EstadoEnvio = "RECIBIDO",
+                        Text = incoming.Text,
+                        PayloadJson = incoming.RawJson,
+                        FechaHora = NormalizeIncomingTimestamp(incoming.Timestamp),
+                        UsuarioAutor = string.Empty,
+                        SistemaAutor = string.Empty,
+                        IdTecnicoAutor = string.Empty,
+                        WhatsAppMessageId = incoming.WhatsAppMessageId,
+                        ReplyToMessageId = incoming.WhatsAppReplyToMessageId
+                    }, token);
+                }
 
                 if (incoming.Attachments.Count > 0 && whatsAppConfig is not null)
                     await StoreIncomingAttachmentsAsync(conversationId, messageId, incoming, whatsAppConfig, token);
@@ -2971,7 +3036,8 @@ public sealed class ConversacionesService(
                 NombreArchivo = nombreArchivo,
                 MimeType = mimeType,
                 RutaLocal = rutaLocal,
-                TamanoBytes = tamanoBytes
+                TamanoBytes = tamanoBytes,
+                ArchivoDisponible = true
             };
         }, "No se pudo guardar el adjunto.", ct);
 
@@ -3002,6 +3068,7 @@ public sealed class ConversacionesService(
             await using var rd = await cmd.ExecuteReaderAsync(token);
             while (await rd.ReadAsync(token))
             {
+                var rutaLocal = GetString(rd, 6);
                 items.Add(new ConversacionAdjuntoDto
                 {
                     IdAdjunto = rd.GetInt64(0),
@@ -3010,13 +3077,45 @@ public sealed class ConversacionesService(
                     NombreArchivo = GetString(rd, 3),
                     MimeType = GetString(rd, 4),
                     UrlArchivo = GetString(rd, 5),
-                    RutaLocal = GetString(rd, 6),
-                    TamanoBytes = rd.IsDBNull(7) ? 0 : rd.GetInt64(7)
+                    RutaLocal = rutaLocal,
+                    TamanoBytes = rd.IsDBNull(7) ? 0 : rd.GetInt64(7),
+                    ArchivoDisponible = !string.IsNullOrWhiteSpace(rutaLocal) && File.Exists(rutaLocal)
                 });
             }
 
             return (IReadOnlyList<ConversacionAdjuntoDto>)items;
         }, "No se pudieron cargar los adjuntos.", ct);
+
+    public Task<ConversacionAdjuntosRecoveryResultDto> RecoverConversationAttachmentsAsync(long idConversacion, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "RecoverConversationAttachments", async token =>
+        {
+            if (idConversacion <= 0)
+                return new ConversacionAdjuntosRecoveryResultDto();
+
+            var result = new ConversacionAdjuntosRecoveryResultDto();
+            var pendingMedia = await GetPendingMediaHydrationAsync(idConversacion, token);
+            if (pendingMedia.Count > 0)
+            {
+                await HydrateMissingIncomingMediaAsync(pendingMedia, token);
+                result.MensajesHidratados = pendingMedia.Count(x => x.Message.TieneAdjuntos);
+            }
+
+            var attachmentIds = await GetConversationAttachmentIdsAsync(idConversacion, token);
+            result.AdjuntosRevisados = attachmentIds.Count;
+
+            foreach (var idAdjunto in attachmentIds)
+            {
+                var file = await GetAttachmentForServeAsync(idAdjunto, idBase: null, ct: token);
+                if (file is null || string.IsNullOrWhiteSpace(file.RutaLocal))
+                    continue;
+
+                if (File.Exists(file.RutaLocal))
+                    result.AdjuntosDisponibles++;
+            }
+
+            result.AdjuntosRecuperados = Math.Max(0, result.AdjuntosDisponibles - (attachmentIds.Count - pendingMedia.Count));
+            return result;
+        }, "No se pudieron recuperar los adjuntos de la conversaciÃ³n.", ct);
 
     public Task<IReadOnlyList<ConversacionStickerFavoritoDto>> GetFavoriteStickersAsync(CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetFavoriteStickers", async token =>
@@ -3095,7 +3194,7 @@ public sealed class ConversacionesService(
             }, token);
         }, "No se pudo enviar el sticker favorito.", ct);
 
-    public Task<ConversacionAdjuntoServeDto?> GetAttachmentForServeAsync(long idAdjunto, CancellationToken ct = default)
+    public Task<ConversacionAdjuntoServeDto?> GetAttachmentForServeAsync(long idAdjunto, int? idBase = null, bool includeDownloadName = true, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetAttachmentForServe", async token =>
         {
             const string sql = """
@@ -3116,7 +3215,8 @@ public sealed class ConversacionesService(
                 WHERE a.IdAdjunto = @IdAdjunto
                 """;
 
-            await using var cn = new SqlConnection(ConnectionString);
+            var connectionString = await ResolveConnectionStringAsync(idBase, token);
+            await using var cn = new SqlConnection(connectionString);
             await cn.OpenAsync(token);
             await using var cmd = new SqlCommand(sql, cn);
             cmd.Parameters.AddWithValue("@IdAdjunto", idAdjunto);
@@ -3144,14 +3244,16 @@ public sealed class ConversacionesService(
             var rutaLocal = ResolveExistingAttachmentPath(record);
             if (!string.IsNullOrWhiteSpace(rutaLocal) && !string.Equals(rutaLocal, record.RutaLocal, StringComparison.OrdinalIgnoreCase))
             {
-                await UpdateAttachmentLocalPathAsync(record.IdAdjunto, rutaLocal, token);
+                await UpdateAttachmentLocalPathAsync(record.IdAdjunto, rutaLocal, connectionString, token);
                 record.RutaLocal = rutaLocal;
             }
 
             if (string.IsNullOrWhiteSpace(rutaLocal))
-                rutaLocal = await TryRecoverAttachmentFileAsync(record, token);
+                rutaLocal = await TryRecoverAttachmentFileAsync(record, connectionString, token);
 
-            var nombreDescarga = await BuildAttachmentDownloadNameAsync(cn, record, token);
+            var nombreDescarga = includeDownloadName
+                ? await BuildAttachmentDownloadNameAsync(cn, record, token)
+                : record.NombreArchivo;
             return new ConversacionAdjuntoServeDto
             {
                 RutaLocal = rutaLocal,
@@ -3163,6 +3265,9 @@ public sealed class ConversacionesService(
 
     private static async Task<string> BuildAttachmentDownloadNameAsync(SqlConnection cn, AttachmentServeRecord record, CancellationToken ct)
     {
+        if (!string.IsNullOrWhiteSpace(record.NombreArchivo))
+            return SanitizeDownloadFileName(record.NombreArchivo, "Attachment", InferExtension(record.MimeType, record.TipoArchivo));
+
         var kind = NormalizeAttachmentDownloadKind(record.TipoArchivo, record.MimeType);
         if (string.IsNullOrWhiteSpace(kind))
             return SanitizeDownloadFileName(record.NombreArchivo, "Attachment", InferExtension(record.MimeType, record.TipoArchivo));
@@ -3231,6 +3336,18 @@ public sealed class ConversacionesService(
         return string.IsNullOrWhiteSpace(normalized) ? $"{fallbackBase}{extension}" : normalized;
     }
 
+    private static string SanitizePathSegment(string value)
+    {
+        var normalized = string.IsNullOrWhiteSpace(value) ? "base" : value.Trim();
+        foreach (var invalid in Path.GetInvalidFileNameChars())
+            normalized = normalized.Replace(invalid, '_');
+
+        normalized = Regex.Replace(normalized, @"\s+", "_");
+        normalized = Regex.Replace(normalized, @"[^a-zA-Z0-9._-]", "_");
+        normalized = normalized.Trim('.', '_', '-');
+        return string.IsNullOrWhiteSpace(normalized) ? "base" : normalized;
+    }
+
     private async Task<int> StoreIncomingAttachmentsAsync(
         long conversationId,
         long messageId,
@@ -3239,13 +3356,19 @@ public sealed class ConversacionesService(
         CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(config.AccessToken))
-            return 0;
+            throw new InvalidOperationException("No hay token de WhatsApp configurado para descargar el adjunto entrante.");
 
         var stored = 0;
         foreach (var attachment in incoming.Attachments)
         {
             try
             {
+                if (await MessageAttachmentExistsAsync(messageId, attachment.MediaId, ct))
+                {
+                    stored++;
+                    continue;
+                }
+
                 var media = await GetWhatsAppMediaAsync(config, attachment.MediaId, ct);
                 var bytes = await DownloadWhatsAppMediaAsync(config, media.Url, ct);
                 var mimeType = FirstNonEmpty(media.MimeType, attachment.MimeType, InferMimeFromType(attachment.TipoArchivo));
@@ -3279,10 +3402,33 @@ public sealed class ConversacionesService(
                     new { incoming.WhatsAppMessageId, attachment.MediaId, attachment.TipoArchivo },
                     AppEventSeverity.Warning,
                     ct);
+                throw;
             }
         }
 
         return stored;
+    }
+
+    private async Task<bool> MessageAttachmentExistsAsync(long messageId, string mediaId, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT COUNT(1)
+            FROM dbo.CONV_ADJUNTOS
+            WHERE IdMensaje = @IdMensaje
+              AND (
+                    @MediaId = N''
+                    OR ISNULL(PayloadJson, '') LIKE @MediaIdLike
+                  );
+            """;
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@IdMensaje", messageId);
+        cmd.Parameters.AddWithValue("@MediaId", mediaId ?? string.Empty);
+        cmd.Parameters.AddWithValue("@MediaIdLike", $"%{(mediaId ?? string.Empty).Replace("[", "[[]").Replace("%", "[%]").Replace("_", "[_]")}%");
+        var result = await cmd.ExecuteScalarAsync(ct);
+        return Convert.ToInt32(result, CultureInfo.InvariantCulture) > 0;
     }
 
     private async Task HydrateMissingIncomingMediaAsync(List<PendingMediaHydration> pendingItems, CancellationToken ct)
@@ -3337,6 +3483,89 @@ public sealed class ConversacionesService(
         }
     }
 
+    private async Task<List<PendingMediaHydration>> GetPendingMediaHydrationAsync(long idConversacion, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT
+                m.IdMensaje,
+                m.IdConversacion,
+                ISNULL(m.TelefonoWhatsApp, ''),
+                ISNULL(m.WhatsAppMessageId, ''),
+                ISNULL(m.MessageType, ''),
+                ISNULL(m.Direction, ''),
+                ISNULL(m.Texto, ''),
+                ISNULL(m.PayloadJson, ''),
+                m.FechaHora
+            FROM dbo.CONV_MENSAJES m
+            WHERE m.IdConversacion = @IdConversacion
+              AND UPPER(ISNULL(m.Direction, '')) = N'ENTRANTE'
+              AND UPPER(ISNULL(m.MessageType, '')) IN (N'IMAGE', N'AUDIO', N'STICKER', N'DOCUMENT', N'VIDEO')
+              AND ISNULL(m.PayloadJson, '') <> ''
+              AND NOT EXISTS (
+                    SELECT 1
+                    FROM dbo.CONV_ADJUNTOS a
+                    WHERE a.IdMensaje = m.IdMensaje
+              )
+            ORDER BY m.IdMensaje;
+            """;
+
+        var items = new List<PendingMediaHydration>();
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
+        await using var rd = await cmd.ExecuteReaderAsync(ct);
+        while (await rd.ReadAsync(ct))
+        {
+            var message = new ConversacionMensajeDto
+            {
+                IdMensaje = rd.GetInt64(0),
+                IdConversacion = rd.GetInt64(1),
+                TelefonoWhatsApp = GetString(rd, 2),
+                WhatsAppMessageId = GetString(rd, 3),
+                MessageType = GetString(rd, 4),
+                Direction = GetString(rd, 5),
+                Texto = GetString(rd, 6),
+                PayloadJson = GetString(rd, 7),
+                FechaHora = rd.IsDBNull(8) ? DateTime.MinValue : NormalizeStoredConversationTime(rd.GetDateTime(8))
+            };
+
+            if (ShouldHydrateIncomingMedia(message, message.PayloadJson))
+            {
+                items.Add(new PendingMediaHydration
+                {
+                    Message = message,
+                    PayloadJson = message.PayloadJson
+                });
+            }
+        }
+
+        return items;
+    }
+
+    private async Task<List<long>> GetConversationAttachmentIdsAsync(long idConversacion, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT a.IdAdjunto
+            FROM dbo.CONV_ADJUNTOS a
+            INNER JOIN dbo.CONV_MENSAJES m
+                ON m.IdMensaje = a.IdMensaje
+            WHERE m.IdConversacion = @IdConversacion
+            ORDER BY a.IdAdjunto;
+            """;
+
+        var ids = new List<long>();
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
+        await using var rd = await cmd.ExecuteReaderAsync(ct);
+        while (await rd.ReadAsync(ct))
+            ids.Add(rd.GetInt64(0));
+
+        return ids;
+    }
+
     private string ResolveExistingAttachmentPath(AttachmentServeRecord record)
     {
         if (!string.IsNullOrWhiteSpace(record.RutaLocal) && File.Exists(record.RutaLocal))
@@ -3355,7 +3584,10 @@ public sealed class ConversacionesService(
     {
         var fileName = Path.GetFileName(record.RutaLocal);
         if (!string.IsNullOrWhiteSpace(fileName))
+        {
             yield return Path.Combine(UploadsBasePath, record.IdConversacion.ToString(CultureInfo.InvariantCulture), fileName);
+            yield return Path.Combine(LegacyUploadsBasePath, record.IdConversacion.ToString(CultureInfo.InvariantCulture), fileName);
+        }
 
         if (!string.IsNullOrWhiteSpace(record.RutaLocal))
         {
@@ -3381,7 +3613,7 @@ public sealed class ConversacionesService(
         }
     }
 
-    private async Task<string> TryRecoverAttachmentFileAsync(AttachmentServeRecord record, CancellationToken ct)
+    private async Task<string> TryRecoverAttachmentFileAsync(AttachmentServeRecord record, string connectionString, CancellationToken ct)
     {
         if (AttachmentRecoveryFailures.ContainsKey(record.IdAdjunto))
             return string.Empty;
@@ -3393,7 +3625,7 @@ public sealed class ConversacionesService(
 
         try
         {
-            var config = await conversacionesConfigService.GetWhatsAppConfigAsync(ct);
+            var config = await conversacionesConfigService.GetWhatsAppConfigAsync(connectionString, ct);
             if (string.IsNullOrWhiteSpace(config.AccessToken))
                 return string.Empty;
 
@@ -3413,7 +3645,7 @@ public sealed class ConversacionesService(
                 : record.NombreArchivo;
             var rutaLocal = await SaveIncomingAttachmentAsync(record.IdConversacion, fileName, bytes, ct);
 
-            await UpdateRecoveredAttachmentAsync(record.IdAdjunto, rutaLocal, mimeType, bytes.LongLength, ct);
+            await UpdateRecoveredAttachmentAsync(record.IdAdjunto, rutaLocal, mimeType, bytes.LongLength, connectionString, ct);
 
             record.RutaLocal = rutaLocal;
             record.MimeType = mimeType;
@@ -3435,7 +3667,7 @@ public sealed class ConversacionesService(
         }
     }
 
-    private async Task UpdateAttachmentLocalPathAsync(long idAdjunto, string rutaLocal, CancellationToken ct)
+    private async Task UpdateAttachmentLocalPathAsync(long idAdjunto, string rutaLocal, string? connectionString, CancellationToken ct)
     {
         const string sql = """
             UPDATE dbo.CONV_ADJUNTOS
@@ -3443,7 +3675,7 @@ public sealed class ConversacionesService(
             WHERE IdAdjunto = @IdAdjunto
             """;
 
-        await using var cn = new SqlConnection(ConnectionString);
+        await using var cn = new SqlConnection(string.IsNullOrWhiteSpace(connectionString) ? ConnectionString : connectionString);
         await cn.OpenAsync(ct);
         await using var cmd = new SqlCommand(sql, cn);
         cmd.Parameters.AddWithValue("@IdAdjunto", idAdjunto);
@@ -3451,7 +3683,7 @@ public sealed class ConversacionesService(
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
-    private async Task UpdateRecoveredAttachmentAsync(long idAdjunto, string rutaLocal, string mimeType, long tamanoBytes, CancellationToken ct)
+    private async Task UpdateRecoveredAttachmentAsync(long idAdjunto, string rutaLocal, string mimeType, long tamanoBytes, string? connectionString, CancellationToken ct)
     {
         const string sql = """
             UPDATE dbo.CONV_ADJUNTOS
@@ -3462,7 +3694,7 @@ public sealed class ConversacionesService(
             WHERE IdAdjunto = @IdAdjunto
             """;
 
-        await using var cn = new SqlConnection(ConnectionString);
+        await using var cn = new SqlConnection(string.IsNullOrWhiteSpace(connectionString) ? ConnectionString : connectionString);
         await cn.OpenAsync(ct);
         await using var cmd = new SqlCommand(sql, cn);
         cmd.Parameters.AddWithValue("@IdAdjunto", idAdjunto);
@@ -3938,6 +4170,25 @@ public sealed class ConversacionesService(
         cmd.Parameters.AddWithValue("@IdTecnicoAutor", DbNullablePreserve(idTecnicoAutor));
         var result = await cmd.ExecuteScalarAsync(ct);
         return Convert.ToInt64(result, CultureInfo.InvariantCulture);
+    }
+
+    private async Task<long> GetExistingMessageIdByWhatsAppIdAsync(string whatsAppMessageId, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(whatsAppMessageId))
+            return 0;
+
+        const string sql = """
+            SELECT TOP (1) IdMensaje
+            FROM dbo.CONV_MENSAJES
+            WHERE WhatsAppMessageId = @WhatsAppMessageId;
+            """;
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@WhatsAppMessageId", whatsAppMessageId.Trim());
+        var result = await cmd.ExecuteScalarAsync(ct);
+        return result is null || result is DBNull ? 0 : Convert.ToInt64(result, CultureInfo.InvariantCulture);
     }
 
     private async Task NotifyIncomingMessageAsync(long conversationId, long messageId, CancellationToken ct)
@@ -5755,6 +6006,16 @@ public sealed class ConversacionesService(
             "audio/webm" => ".webm",
             "video/mp4" => ".mp4",
             "application/pdf" => ".pdf",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" => ".xlsx",
+            "application/vnd.ms-excel" => ".xls",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => ".docx",
+            "application/msword" => ".doc",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation" => ".pptx",
+            "application/vnd.ms-powerpoint" => ".ppt",
+            "text/plain" => ".txt",
+            "text/csv" => ".csv",
+            "application/zip" => ".zip",
+            "application/x-rar-compressed" => ".rar",
             _ => NormalizeMessageType(tipoArchivo) == "STICKER" ? ".webp" : ".bin"
         };
     }

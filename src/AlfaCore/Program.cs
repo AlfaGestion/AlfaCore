@@ -1,4 +1,4 @@
-﻿using AlfaCore.Components;
+using AlfaCore.Components;
 using AlfaCore.Configuration;
 using AlfaCore.Models;
 using AlfaCore.Repositories;
@@ -167,6 +167,7 @@ public class Program
         builder.Services.AddSingleton<AuditoriaExcelExporter>();
         builder.Services.AddSingleton<ReporteComprasExcelExporter>();
         builder.Services.AddSingleton<CargaViajesLiquidacionExcelExporter>();
+        builder.Services.AddSingleton<CargaViajesTarifasExcelExporter>();
         builder.Services.AddSingleton<InformesIaHistoryStore>();
         builder.Services.AddSingleton<InformesIaResultStore>();
         builder.Services.AddScoped<FilterStateService>();
@@ -621,6 +622,58 @@ public class Program
                 CargaViajesLiquidacionExcelExporter.NombreArchivo());
         });
 
+        async Task<IResult> DescargarTarifasExcel(
+            HttpRequest request,
+            ICargaViajesService cargaViajesSvc,
+            CargaViajesTarifasExcelExporter exporter,
+            CancellationToken ct)
+        {
+            static bool ParseBool(string? value)
+                => bool.TryParse(value, out var parsed) && parsed;
+
+            static string TrimOrEmpty(string? value)
+                => string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+
+            var filters = new CargaViajesFilters
+            {
+                AgruparPor = TrimOrEmpty(request.Query["agruparPor"]),
+                Texto = TrimOrEmpty(request.Query["texto"]),
+                Cliente = TrimOrEmpty(request.Query["cliente"]),
+                Chofer = TrimOrEmpty(request.Query["chofer"]),
+                Destino = TrimOrEmpty(request.Query["destino"]),
+                TipoVehiculo = TrimOrEmpty(request.Query["tipoVehiculo"]),
+                TarifaFletero = TrimOrEmpty(request.Query["tarifaFletero"]),
+                Activo = TrimOrEmpty(request.Query["activo"]),
+                SortBy = TrimOrEmpty(request.Query["sortBy"]),
+                SortDescending = ParseBool(request.Query["sortDescending"]),
+                PageNumber = 1,
+                PageSize = 500
+            };
+
+            var allItems = new List<CargaViajeTarifaGridItemDto>();
+            while (true)
+            {
+                var page = await cargaViajesSvc.SearchTarifasAsync(filters, ct);
+                if (page.Items.Count == 0)
+                    break;
+
+                allItems.AddRange(page.Items);
+                if (allItems.Count >= page.Total || page.Items.Count < filters.PageSize)
+                    break;
+
+                filters.PageNumber++;
+            }
+
+            var bytes = exporter.Exportar(allItems, filters, filters.AgruparPor);
+            return Results.File(
+                bytes,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                CargaViajesTarifasExcelExporter.NombreArchivo());
+        }
+
+        app.MapGet("/carga-viajes/tarifas/descargar-excel", DescargarTarifasExcel);
+        app.MapGet("/{idweb}/{idbase:int}/carga-viajes/tarifas/descargar-excel", DescargarTarifasExcel);
+
         app.MapGet("/api/conversaciones", async (
             string? modo,
             string? search,
@@ -787,16 +840,42 @@ public class Program
             IConversacionesService svc,
             CancellationToken ct) =>
         {
-            var adjunto = await svc.GetAttachmentForServeAsync(idAdjunto, ct);
+            var idBaseRaw = request.Query["idBase"].ToString();
+            var idBase = int.TryParse(idBaseRaw, out var parsedIdBase) && parsedIdBase > 0
+                ? parsedIdBase
+                : (int?)null;
+            var download = string.Equals(request.Query["download"].ToString(), "1", StringComparison.OrdinalIgnoreCase);
+            var preview = string.Equals(request.Query["preview"].ToString(), "1", StringComparison.OrdinalIgnoreCase);
+            var adjunto = await svc.GetAttachmentForServeAsync(idAdjunto, idBase, includeDownloadName: download, ct);
             if (adjunto is null || !File.Exists(adjunto.RutaLocal))
                 return Results.NotFound();
 
             var mime = NormalizeAttachmentMime(adjunto.MimeType, adjunto.NombreArchivo);
-            var download = string.Equals(request.Query["download"].ToString(), "1", StringComparison.OrdinalIgnoreCase);
+            var fileInfo = new FileInfo(adjunto.RutaLocal);
+            var lastModified = new DateTimeOffset(fileInfo.LastWriteTimeUtc, TimeSpan.Zero);
+            var entityTag = new Microsoft.Net.Http.Headers.EntityTagHeaderValue($"\"{fileInfo.Length:x}-{fileInfo.LastWriteTimeUtc.Ticks:x}\"");
+
+            if (download)
+            {
+                request.HttpContext.Response.Headers.CacheControl = "no-store, no-cache, must-revalidate";
+                request.HttpContext.Response.Headers.Pragma = "no-cache";
+                request.HttpContext.Response.Headers.Expires = "0";
+            }
+            else
+            {
+                request.HttpContext.Response.Headers.CacheControl = preview
+                    ? "private, max-age=604800, immutable"
+                    : "private, max-age=86400";
+                request.HttpContext.Response.Headers.Pragma = string.Empty;
+                request.HttpContext.Response.Headers.Expires = DateTimeOffset.UtcNow.AddDays(preview ? 7 : 1).ToString("R", System.Globalization.CultureInfo.InvariantCulture);
+            }
+
             return Results.File(
                 adjunto.RutaLocal,
                 contentType: mime,
                 fileDownloadName: download ? (string.IsNullOrWhiteSpace(adjunto.NombreDescarga) ? adjunto.NombreArchivo : adjunto.NombreDescarga) : null,
+                lastModified: lastModified,
+                entityTag: entityTag,
                 enableRangeProcessing: true);
         });
 

@@ -229,12 +229,47 @@
 }
 
 .attachment-preview-canvas {
+    position: relative;
+    display: grid;
     place-items: center;
     min-height: 0;
     height: min(64vh, calc(92vh - 13rem));
     max-height: calc(92vh - 13rem);
     background: rgba(2, 6, 23, .12);
-    overflow: auto;
+    overflow: hidden;
+    touch-action: none;
+    user-select: none;
+    cursor: move;
+}
+
+.attachment-preview-drag-surface {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    cursor: move;
+    touch-action: none;
+    background: transparent;
+}
+
+.attachment-preview-canvas.is-dragging .attachment-preview-drag-surface {
+    cursor: move;
+}
+
+.attachment-preview-canvas.is-dragging {
+    cursor: move;
+}
+
+.attachment-preview-media-frame {
+    position: absolute;
+    left: calc(50% + var(--preview-pan-x, 0px));
+    top: calc(50% + var(--preview-pan-y, 0px));
+    display: grid;
+    place-items: center;
+    width: var(--preview-frame-width, auto);
+    height: var(--preview-frame-height, auto);
+    transform: translate(-50%, -50%);
+    transform-origin: center center;
+    will-change: left, top;
 }
 
 .attachment-preview-canvas img {
@@ -247,16 +282,30 @@
     transform: scale(var(--preview-zoom, 1)) rotate(var(--preview-rotation, 0deg));
     transition: transform .18s ease;
     animation: attachment-preview-media-enter .18s ease both;
+    will-change: transform;
+    user-select: none;
+    -webkit-user-drag: none;
+    pointer-events: auto;
+}
+
+.attachment-preview-canvas.is-dragging img,
+.attachment-preview-canvas.is-dragging video {
+    transition: none;
 }
 
 .attachment-preview-canvas video {
     display: block;
-    width: 100%;
+    width: auto;
     max-width: min(100%, 960px);
-    height: 100%;
+    height: auto;
     max-height: 100%;
     object-fit: contain;
+    transform-origin: center center;
+    transform: scale(var(--preview-zoom, 1));
+    transition: transform .18s ease;
     animation: attachment-preview-media-enter .18s ease both;
+    will-change: transform;
+    pointer-events: auto;
 }
 
 .attachment-preview-strip {
@@ -931,6 +980,11 @@
     white-space: pre-wrap !important;
 }
 
+.conversations-page--odoo .message-card:has(.message-attachment--image):not(:has(.message-card__text)):not(:has(.message-card__footer)) {
+    width: fit-content !important;
+    padding: .32rem !important;
+}
+
 .conversations-page--odoo .message-card:has(.message-card__delivery) {
     padding-right: 1.8rem !important;
 }
@@ -965,10 +1019,64 @@
     max-width: 100% !important;
 }
 
+.conversations-page--odoo .message-attachment--image {
+    position: relative !important;
+    display: inline-grid !important;
+    width: fit-content !important;
+    gap: 0 !important;
+}
+
+.conversations-page--odoo .message-attachment--image .attachment-preview-button {
+    display: block !important;
+    width: fit-content !important;
+    padding: 0 !important;
+    border: 0 !important;
+    background: transparent !important;
+}
+
 .conversations-page--odoo .message-attachment--image img {
     max-width: min(280px, 100%) !important;
     max-height: 260px !important;
     object-fit: contain !important;
+    display: block !important;
+    border-radius: 8px !important;
+}
+
+.conversations-page--odoo .message-attachment--image > .btn {
+    position: absolute !important;
+    top: .35rem !important;
+    right: .35rem !important;
+    min-width: 0 !important;
+    width: 30px !important;
+    height: 30px !important;
+    padding: 0 !important;
+    border-radius: 999px !important;
+    background: rgba(2, 6, 23, .58) !important;
+    opacity: 0 !important;
+    transition: opacity .15s ease !important;
+}
+
+.conversations-page--odoo .message-attachment--image:hover > .btn,
+.conversations-page--odoo .message-attachment--image:focus-within > .btn {
+    opacity: 1 !important;
+}
+
+.conversations-page--odoo .attachment-unavailable {
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: .45rem !important;
+    width: fit-content !important;
+    max-width: 220px !important;
+    padding: .55rem .65rem !important;
+    border: 1px dashed rgba(148, 163, 184, .42) !important;
+    border-radius: 8px !important;
+    color: rgba(226, 232, 240, .82) !important;
+    background: rgba(15, 23, 42, .38) !important;
+    font-size: .82rem !important;
+}
+
+.conversations-page--odoo .attachment-unavailable i {
+    color: rgba(125, 211, 252, .8) !important;
 }
 
 .conversations-page--odoo .message-attachment--audio,

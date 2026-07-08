@@ -11,6 +11,7 @@
 @inject AlfaCore.Services.ITicketsService TicketsSvc
 @inject AlfaCore.Services.IPartesHorasService PartesHorasSvc
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
+@inject AlfaCore.Services.ISessionService SessionSvc
 @inject AlfaCore.Services.IFloatingWindowService FloatingWindows
 @inject IJSRuntime JS
 @inject NavigationManager Nav
@@ -1147,30 +1148,39 @@
                                                 @if (IsImageAttachment(adj))
                                                 {
                                                     <div class="message-attachment message-attachment--image">
-                                                        <button type="button"
-                                                                class="attachment-preview-button"
-                                                                title="Ver imagen"
-                                                                @onclick="() => OpenAttachmentPreview(adj)">
-                                                            <img src="@GetAttachmentUrl(adj)" alt="@GetAttachmentLabel(adj)" loading="lazy" />
-                                                        </button>
-                                                        @if (IsStickerAttachment(adj))
+                                                        @if (IsAttachmentAvailable(adj))
                                                         {
                                                             <button type="button"
-                                                                    class="btn btn--ghost btn--sm"
-                                                                    title="Guardar sticker en favoritos"
-                                                                    @onclick="() => SaveStickerFavoriteAsync(adj.IdAdjunto)">
-                                                                <i class="bi bi-star"></i>
+                                                                    class="attachment-preview-button"
+                                                                    title="Ver imagen"
+                                                                    @onclick="() => OpenAttachmentPreview(adj)">
+                                                                <img src="@GetAttachmentPreviewUrl(adj)" alt="@GetAttachmentLabel(adj)" loading="lazy" decoding="async" />
                                                             </button>
+                                                            @if (IsStickerAttachment(adj))
+                                                            {
+                                                                <button type="button"
+                                                                        class="btn btn--ghost btn--sm"
+                                                                        title="Guardar sticker en favoritos"
+                                                                        @onclick="() => SaveStickerFavoriteAsync(adj.IdAdjunto)">
+                                                                    <i class="bi bi-star"></i>
+                                                                </button>
+                                                            }
+                                                            else
+                                                            {
+                                                                <a class="btn btn--ghost btn--sm"
+                                                                   href="@GetAttachmentDownloadUrl(adj)"
+                                                                   download="@GetAttachmentDownloadName(adj)"
+                                                                   title="Descargar imagen">
+                                                                    <i class="bi bi-download"></i>
+                                                                </a>
+                                                            }
                                                         }
                                                         else
                                                         {
-                                                            <span class="attachment-name">@adj.NombreArchivo</span>
-                                                            <a class="btn btn--ghost btn--sm"
-                                                               href="@GetAttachmentDownloadUrl(adj)"
-                                                               download="@GetAttachmentDownloadName(adj)"
-                                                               title="Descargar imagen">
-                                                                <i class="bi bi-download"></i>
-                                                            </a>
+                                                            <div class="attachment-unavailable" title="@GetAttachmentUnavailableTitle(adj)">
+                                                                <i class="bi bi-image-alt"></i>
+                                                                <span>Imagen no disponible</span>
+                                                            </div>
                                                         }
                                                     </div>
                                                 }
@@ -1225,13 +1235,12 @@
                                                                 <i class="bi bi-arrows-fullscreen"></i>
                                                             </button>
                                                         </div>
-                                                        <div class="attachment-video-meta">
-                                                            <span>@adj.NombreArchivo</span>
-                                                            @if (adj.TamanoBytes > 0)
-                                                            {
+                                                        @if (adj.TamanoBytes > 0)
+                                                        {
+                                                            <div class="attachment-video-meta">
                                                                 <span>@FormatFileSize(adj.TamanoBytes)</span>
-                                                            }
-                                                        </div>
+                                                            </div>
+                                                        }
                                                     </div>
                                                 }
                                                 else
@@ -1250,6 +1259,8 @@
                                             }
                                         </div>
                                     }
+                                    @if (ShouldShowMessageFooter(message))
+                                    {
                                     <div class="message-card__footer">
                                         <span>@GetMessageTypeLabel(message)</span>
                                         @if (!string.IsNullOrWhiteSpace(message.EstadoEnvio))
@@ -1257,6 +1268,7 @@
                                             <span>• @message.EstadoEnvio</span>
                                         }
                                     </div>
+                                    }
                                     @if (IsOutgoingMessage(message))
                                     {
                                         <div class="message-card__delivery">
@@ -1894,7 +1906,7 @@
                        aria-label="Descargar">
                         <i class="bi bi-download"></i>
                     </a>
-                    @if (IsImageAttachment(_previewAttachment))
+                    @if (IsPreviewZoomableAttachment(_previewAttachment))
                     {
                         <button type="button" class="attachment-preview-action" @onclick="ZoomPreviewOut" title="Alejar" aria-label="Alejar">
                             <i class="bi bi-zoom-out"></i>
@@ -1905,12 +1917,15 @@
                         <button type="button" class="attachment-preview-action" @onclick="ZoomPreviewIn" title="Acercar" aria-label="Acercar">
                             <i class="bi bi-zoom-in"></i>
                         </button>
-                        <button type="button" class="attachment-preview-action" @onclick="RotatePreviewLeft" title="Rotar a la izquierda" aria-label="Rotar a la izquierda">
-                            <i class="bi bi-arrow-counterclockwise"></i>
-                        </button>
-                        <button type="button" class="attachment-preview-action" @onclick="RotatePreviewRight" title="Rotar a la derecha" aria-label="Rotar a la derecha">
-                            <i class="bi bi-arrow-clockwise"></i>
-                        </button>
+                        @if (IsImageAttachment(_previewAttachment))
+                        {
+                            <button type="button" class="attachment-preview-action" @onclick="RotatePreviewLeft" title="Rotar a la izquierda" aria-label="Rotar a la izquierda">
+                                <i class="bi bi-arrow-counterclockwise"></i>
+                            </button>
+                            <button type="button" class="attachment-preview-action" @onclick="RotatePreviewRight" title="Rotar a la derecha" aria-label="Rotar a la derecha">
+                                <i class="bi bi-arrow-clockwise"></i>
+                            </button>
+                        }
                     }
                     <button type="button" class="attachment-preview-action" @onclick="CloseAttachmentPreview" title="Cerrar" aria-label="Cerrar">
                         <i class="bi bi-x-lg"></i>
@@ -1921,20 +1936,30 @@
                 <button type="button" class="attachment-preview-nav attachment-preview-nav--prev" @onclick="ShowPreviousPreviewAttachment" disabled="@(!CanNavigatePreviewGallery)" title="Anterior">
                     <i class="bi bi-chevron-left"></i>
                 </button>
-                <div class="attachment-preview-canvas" @ref="_previewCanvas" @onwheel="HandlePreviewWheel" @onwheel:preventDefault>
-                    @if (IsVideoAttachment(_previewAttachment))
+                <div class="@PreviewCanvasClass"
+                     @ref="_previewCanvas"
+                     @onwheel="HandlePreviewWheel"
+                    @onwheel:preventDefault>
+                    <div class="attachment-preview-media-frame" style="@PreviewFrameStyle">
+                        @if (IsVideoAttachment(_previewAttachment))
+                        {
+                            <video @key="_previewAttachment.IdAdjunto" controls autoplay src="@GetAttachmentUrl(_previewAttachment)" style="@PreviewVideoStyle">
+                                Tu navegador no puede reproducir este video.
+                            </video>
+                        }
+                        else
+                        {
+                            <img @key="_previewAttachment.IdAdjunto"
+                                 src="@GetAttachmentUrl(_previewAttachment)"
+                                 alt="@GetAttachmentLabel(_previewAttachment)"
+                                 draggable="false"
+                                 style="@PreviewImageStyle" />
+                        }
+                    </div>
+                    @if (CanPanPreview)
                     {
-                        <video @key="_previewAttachment.IdAdjunto" controls autoplay src="@GetAttachmentUrl(_previewAttachment)" style="@PreviewVideoStyle">
-                            Tu navegador no puede reproducir este video.
-                        </video>
-                    }
-                    else
-                    {
-                        <img @key="_previewAttachment.IdAdjunto"
-                             src="@GetAttachmentUrl(_previewAttachment)"
-                             alt="@GetAttachmentLabel(_previewAttachment)"
-                             draggable="false"
-                             style="@PreviewImageStyle" />
+                        <div class="attachment-preview-drag-surface"
+                             title="Mover"></div>
                     }
                 </div>
                 <button type="button" class="attachment-preview-nav attachment-preview-nav--next" @onclick="ShowNextPreviewAttachment" disabled="@(!CanNavigatePreviewGallery)" title="Siguiente">
@@ -1958,7 +1983,7 @@
                             }
                             else
                             {
-                                <img src="@GetAttachmentUrl(item)" alt="@GetAttachmentLabel(item)" loading="lazy" />
+                                <img src="@GetAttachmentPreviewUrl(item)" alt="@GetAttachmentLabel(item)" loading="lazy" decoding="async" />
                             }
                         </button>
                     }
@@ -2396,6 +2421,8 @@
     private bool _uploadingFile;
     private bool _uploadingAudio;
     private Dictionary<long, List<ConversacionAdjuntoDto>> _adjuntosPorMensaje = [];
+    private HashSet<long> _recoveredAttachmentConversations = [];
+    private readonly HashSet<long> _recoveringAttachmentConversations = [];
     private List<ConversacionPlantillaDto> _availableTemplates = [];
     private long _selectedTemplateId;
     private bool _loadingTemplates;
@@ -2470,6 +2497,8 @@
     private bool _bindPreviewKeyboardAfterRender;
     private bool _scrollPreviewThumbAfterRender;
     private int _previewRotationDegrees;
+    private double _previewPanX;
+    private double _previewPanY;
     private SoundDiagnosticsVm _soundDiagnostics = new();
     private ElementReference _replyTextArea;
     private ElementReference _internalNoteMobileTextArea;
@@ -3357,6 +3386,8 @@
         {
             ApplyConversationCache(idConversacion, cachedConversation, showLoading || clearActionState || conversationChanged);
             showLoading = false;
+            await InvokeAsync(StateHasChanged);
+            await Task.Yield();
         }
 
         if (showLoading)
@@ -3395,7 +3426,10 @@
             _adjuntosPorMensaje = adjuntos
                 .GroupBy(a => a.IdMensaje)
                 .ToDictionary(g => g.Key, g => g.ToList());
+
             StoreConversationCache(idConversacion);
+            if (ShouldRecoverConversationAttachments(_messages, adjuntos))
+                QueueConversationAttachmentRecovery(idConversacion);
             _assignmentTechnicianId = _selectedConversation?.IdTecnico ?? string.Empty;
             _statusCode = _selectedConversation?.CodigoEstado ?? (_states.FirstOrDefault()?.CodigoEstado ?? "ABIERTA");
 
@@ -3443,6 +3477,71 @@
         {
             if (showLoading)
                 _loadingConversation = false;
+        }
+    }
+
+    private void QueueConversationAttachmentRecovery(long idConversacion)
+    {
+        if (!_recoveredAttachmentConversations.Add(idConversacion))
+            return;
+
+        if (!_recoveringAttachmentConversations.Add(idConversacion))
+            return;
+
+        _ = RecoverConversationAttachmentsInBackgroundAsync(idConversacion);
+    }
+
+    private static bool ShouldRecoverConversationAttachments(
+        IReadOnlyList<ConversacionMensajeDto> messages,
+        IReadOnlyList<ConversacionAdjuntoDto> attachments)
+    {
+        if (attachments.Any(x => !x.ArchivoDisponible || string.IsNullOrWhiteSpace(x.RutaLocal)))
+            return true;
+
+        return messages.Any(message =>
+            !message.TieneAdjuntos
+            && IsGeneratedMediaFileName(message.Texto.Trim(), message.MessageType));
+    }
+
+    private async Task RecoverConversationAttachmentsInBackgroundAsync(long idConversacion)
+    {
+        try
+        {
+            var recovery = await ConversacionesSvc.RecoverConversationAttachmentsAsync(idConversacion);
+            if (recovery.MensajesHidratados <= 0 && recovery.AdjuntosRecuperados <= 0)
+                return;
+
+            await InvokeAsync(async () =>
+            {
+                if (_selectedConversationId != idConversacion)
+                    return;
+
+                var messagesTask = ConversacionesSvc.GetMessagesAsync(idConversacion);
+                var attachmentsTask = ConversacionesSvc.GetConversationAttachmentsAsync(idConversacion);
+                await Task.WhenAll(messagesTask, attachmentsTask);
+
+                _messages = (await messagesTask).ToList();
+                var adjuntos = await attachmentsTask;
+                _adjuntosPorMensaje = adjuntos
+                    .GroupBy(a => a.IdMensaje)
+                    .ToDictionary(g => g.Key, g => g.ToList());
+
+                StoreConversationCache(idConversacion);
+                StateHasChanged();
+            });
+        }
+        catch
+        {
+        }
+        finally
+        {
+            try
+            {
+                await InvokeAsync(() => _recoveringAttachmentConversations.Remove(idConversacion));
+            }
+            catch
+            {
+            }
         }
     }
 
@@ -7075,7 +7174,16 @@
            || adjunto.MimeType.StartsWith("video/", StringComparison.OrdinalIgnoreCase);
 
     private static bool IsPreviewableAttachment(ConversacionAdjuntoDto adjunto)
-        => IsImageAttachment(adjunto) || IsVideoAttachment(adjunto);
+        => IsAttachmentAvailable(adjunto) && (IsImageAttachment(adjunto) || IsVideoAttachment(adjunto));
+
+    private static bool IsPreviewZoomableAttachment(ConversacionAdjuntoDto adjunto)
+        => IsAttachmentAvailable(adjunto) && (IsImageAttachment(adjunto) || IsVideoAttachment(adjunto));
+
+    private static bool IsAttachmentAvailable(ConversacionAdjuntoDto adjunto)
+        => adjunto.ArchivoDisponible;
+
+    private static string GetAttachmentUnavailableTitle(ConversacionAdjuntoDto adjunto)
+        => $"No se pudo recuperar {GetAttachmentLabel(adjunto)}. El archivo ya no está disponible en Meta o faltan permisos para descargarlo.";
 
     private bool ShouldShowMessageText(ConversacionMensajeDto message)
     {
@@ -7085,14 +7193,21 @@
         if (IsContactMessage(message) && GetSharedContacts(message).Count > 0)
             return false;
 
-        if (message.MessageType is "IMAGE" or "AUDIO" or "VIDEO" or "DOCUMENT" or "STICKER")
+        if (IsAttachmentOnlyMessage(message))
         {
-            if (message.TieneAdjuntos)
-                return HasHumanAttachmentText(message);
+            return HasHumanAttachmentText(message);
         }
 
         return true;
     }
+
+    private bool ShouldShowMessageFooter(ConversacionMensajeDto message)
+        => !IsAttachmentOnlyMessage(message);
+
+    private bool IsAttachmentOnlyMessage(ConversacionMensajeDto message)
+        => (message.MessageType ?? string.Empty).Trim().ToUpperInvariant() is "IMAGE" or "AUDIO" or "VIDEO" or "DOCUMENT" or "STICKER"
+           && (message.TieneAdjuntos
+               || (_adjuntosPorMensaje.TryGetValue(message.IdMensaje, out var adjuntos) && adjuntos.Count > 0));
 
     private bool HasHumanAttachmentText(ConversacionMensajeDto message)
     {
@@ -7104,7 +7219,26 @@
             && adjuntos.Any(x => string.Equals(x.NombreArchivo, text, StringComparison.OrdinalIgnoreCase)))
             return false;
 
+        if (IsGeneratedMediaFileName(text, message.MessageType))
+            return false;
+
         return true;
+    }
+
+    private static bool IsGeneratedMediaFileName(string text, string messageType)
+    {
+        var normalizedType = (messageType ?? string.Empty).Trim().ToUpperInvariant();
+        var prefix = normalizedType switch
+        {
+            "IMAGE" or "STICKER" => "image_",
+            "VIDEO" => "video_",
+            "AUDIO" => "audio_",
+            _ => string.Empty
+        };
+
+        return !string.IsNullOrWhiteSpace(prefix)
+               && text.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+               && Path.HasExtension(text);
     }
 
     private static string GetMessageDisplayText(ConversacionMensajeDto message)
@@ -7521,10 +7655,42 @@
     }
 
     private string PreviewImageStyle
-        => $"--preview-zoom: {_previewZoom.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)}; --preview-rotation: {_previewRotationDegrees.ToString(System.Globalization.CultureInfo.InvariantCulture)}deg;";
+        => BuildPreviewMediaStyle(includeRotation: true);
 
     private string PreviewVideoStyle
-        => "width: 100%; max-width: min(100%, 960px); height: 100%; max-height: 100%; object-fit: contain;";
+        => BuildPreviewMediaStyle(includeRotation: false);
+
+    private string PreviewCanvasClass
+        => "attachment-preview-canvas";
+
+    private bool CanPanPreview
+        => _previewAttachment is not null && IsPreviewZoomableAttachment(_previewAttachment) && _previewZoom > 1d;
+
+    private string PreviewFrameStyle
+    {
+        get
+        {
+            var culture = System.Globalization.CultureInfo.InvariantCulture;
+            return string.Join("; ",
+            [
+                $"--preview-pan-x: {_previewPanX.ToString("0.###", culture)}px",
+                $"--preview-pan-y: {_previewPanY.ToString("0.###", culture)}px"
+            ]);
+        }
+    }
+
+    private string BuildPreviewMediaStyle(bool includeRotation)
+    {
+        var culture = System.Globalization.CultureInfo.InvariantCulture;
+        var rotation = includeRotation ? _previewRotationDegrees.ToString(culture) : "0";
+        return string.Join("; ",
+        [
+            $"--preview-zoom: {_previewZoom.ToString("0.###", culture)}",
+            $"--preview-rotation: {rotation}deg",
+            "--preview-pan-x: 0px",
+            "--preview-pan-y: 0px"
+        ]);
+    }
 
     private string PreviewZoomPercent
         => $"{Math.Round(_previewZoom * 100, 0).ToString(System.Globalization.CultureInfo.InvariantCulture)}%";
@@ -7542,6 +7708,9 @@
     {
         ResetPreviewZoom();
         _previewRotationDegrees = 0;
+        _previewPanX = 0;
+        _previewPanY = 0;
+        _bindPreviewPanAfterRender = _previewAttachment is not null;
     }
 
     private void RotatePreviewLeft()
@@ -7551,18 +7720,37 @@
         => SetPreviewRotation(_previewRotationDegrees + 90);
 
     private void SetPreviewRotation(int value)
-        => _previewRotationDegrees = ((value % 360) + 360) % 360;
+    {
+        _previewRotationDegrees = ((value % 360) + 360) % 360;
+        _bindPreviewPanAfterRender = _previewAttachment is not null;
+    }
 
     private void HandlePreviewWheel(WheelEventArgs args)
     {
-        if (_previewAttachment is null || !IsImageAttachment(_previewAttachment))
+        if (_previewAttachment is null || !IsPreviewZoomableAttachment(_previewAttachment))
             return;
 
         SetPreviewZoom(_previewZoom + (args.DeltaY < 0 ? .15d : -.15d));
     }
 
     private void SetPreviewZoom(double value)
-        => _previewZoom = Math.Clamp(value, .5d, 4d);
+    {
+        _previewZoom = Math.Clamp(value, .5d, 4d);
+        _previewPanX = 0;
+        _previewPanY = 0;
+        _bindPreviewPanAfterRender = _previewAttachment is not null;
+    }
+
+    [JSInvokable]
+    public Task PanAttachmentPreview(double deltaX, double deltaY)
+    {
+        if (_previewAttachment is null || !IsPreviewZoomableAttachment(_previewAttachment) || _previewZoom <= 1d)
+            return Task.CompletedTask;
+
+        _previewPanX += deltaX;
+        _previewPanY += deltaY;
+        return InvokeAsync(StateHasChanged);
+    }
 
     private async Task DismissConversationNoticesAsync()
     {
@@ -7622,14 +7810,26 @@
             _ticketError
         }.Where(x => !string.IsNullOrWhiteSpace(x)));
 
-    private static string GetAttachmentUrl(ConversacionAdjuntoDto adjunto)
-        => $"/api/conversaciones/adjuntos/{adjunto.IdAdjunto}";
+    private string GetAttachmentUrl(ConversacionAdjuntoDto adjunto)
+        => $"/api/conversaciones/adjuntos/{adjunto.IdAdjunto}?idBase={GetAttachmentBaseId()}&base={Uri.EscapeDataString(GetAttachmentScopeKey())}";
 
-    private static string GetAttachmentDownloadUrl(ConversacionAdjuntoDto adjunto)
-        => $"/api/conversaciones/adjuntos/{adjunto.IdAdjunto}?download=1";
+    private string GetAttachmentPreviewUrl(ConversacionAdjuntoDto adjunto)
+        => $"/api/conversaciones/adjuntos/{adjunto.IdAdjunto}?preview=1&idBase={GetAttachmentBaseId()}&base={Uri.EscapeDataString(GetAttachmentScopeKey())}";
+
+    private string GetAttachmentDownloadUrl(ConversacionAdjuntoDto adjunto)
+        => $"/api/conversaciones/adjuntos/{adjunto.IdAdjunto}?download=1&idBase={GetAttachmentBaseId()}&base={Uri.EscapeDataString(GetAttachmentScopeKey())}";
+
+    private int GetAttachmentBaseId()
+        => SessionSvc.GetActiveSession()?.BaseId ?? 0;
+
+    private string GetAttachmentScopeKey()
+        => ConversacionesSvc.GetAttachmentScopeKey();
 
     private string GetAttachmentDownloadName(ConversacionAdjuntoDto adjunto)
     {
+        if (!string.IsNullOrWhiteSpace(adjunto.NombreArchivo))
+            return SanitizeDownloadFileName(adjunto.NombreArchivo, "Attachment", GetAttachmentDownloadExtension(adjunto));
+
         var kind = GetAttachmentDownloadKind(adjunto);
         var extension = GetAttachmentDownloadExtension(adjunto);
         var index = _adjuntosPorMensaje.Values
@@ -7643,6 +7843,15 @@
             index = 1;
 
         return $"{kind} ({index}){extension}";
+    }
+
+    private static string SanitizeDownloadFileName(string fileName, string fallbackBase, string extension)
+    {
+        var normalized = string.IsNullOrWhiteSpace(fileName) ? $"{fallbackBase}{extension}" : Path.GetFileName(fileName.Trim());
+        foreach (var invalid in Path.GetInvalidFileNameChars())
+            normalized = normalized.Replace(invalid, '_');
+
+        return string.IsNullOrWhiteSpace(normalized) ? $"{fallbackBase}{extension}" : normalized;
     }
 
     private static string GetAttachmentDownloadKind(ConversacionAdjuntoDto adjunto)
@@ -7687,12 +7896,22 @@
             "video/mp4" => ".mp4",
             "video/webm" => ".webm",
             "application/pdf" => ".pdf",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" => ".xlsx",
+            "application/vnd.ms-excel" => ".xls",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => ".docx",
+            "application/msword" => ".doc",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation" => ".pptx",
+            "application/vnd.ms-powerpoint" => ".ppt",
+            "text/plain" => ".txt",
+            "text/csv" => ".csv",
+            "application/zip" => ".zip",
+            "application/x-rar-compressed" => ".rar",
             _ => string.Equals(adjunto.TipoArchivo, "AUDIO", StringComparison.OrdinalIgnoreCase) ? ".ogg" : ".bin"
         };
     }
 
-    private static string GetFavoriteStickerUrl(ConversacionStickerFavoritoDto sticker)
-        => $"/api/conversaciones/adjuntos/{sticker.IdAdjunto}";
+    private string GetFavoriteStickerUrl(ConversacionStickerFavoritoDto sticker)
+        => $"/api/conversaciones/adjuntos/{sticker.IdAdjunto}?idBase={GetAttachmentBaseId()}&base={Uri.EscapeDataString(GetAttachmentScopeKey())}";
 
     private static string GetAttachmentMime(ConversacionAdjuntoDto adjunto)
     {
