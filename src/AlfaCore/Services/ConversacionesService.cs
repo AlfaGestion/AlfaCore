@@ -4,6 +4,7 @@ using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Globalization;
 using System.Net.Http.Headers;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -42,11 +43,48 @@ public sealed class ConversacionesService(
         "VE_CPTES_SALDOS_TODOS"
     ];
 
-    private string UploadsBasePath => Path.Combine(environment.ContentRootPath, "App_Data", "uploads", "conversaciones");
+    private string LegacyUploadsBasePath => Path.Combine(environment.ContentRootPath, "App_Data", "uploads", "conversaciones");
+    private string UploadsBasePath => Path.Combine(LegacyUploadsBasePath, GetAttachmentStorageScope());
     private string ConnectionString => sessionService.GetConnectionString().Length > 0
         ? sessionService.GetConnectionString()
         : configuration.GetConnectionString("AlfaGestion")
           ?? throw new InvalidOperationException("No se configuró la cadena de conexión 'ConnectionStrings:AlfaGestion'.");
+
+    public string GetAttachmentScopeKey()
+        => GetAttachmentScope().ScopeKey;
+
+    private string GetAttachmentStorageScope()
+    {
+        var scope = GetAttachmentScope();
+        var label = SanitizePathSegment(FirstNonEmpty(scope.Database, "base"));
+        return $"{label}-{scope.ScopeKey}";
+    }
+
+    private (string Database, string ScopeKey) GetAttachmentScope()
+    {
+        var activeSession = sessionService.GetActiveSession();
+        var server = activeSession?.Servidor?.Trim() ?? string.Empty;
+        var database = activeSession?.BaseDatos?.Trim() ?? string.Empty;
+        var baseId = activeSession?.BaseId ?? 0;
+
+        if (string.IsNullOrWhiteSpace(server) || string.IsNullOrWhiteSpace(database))
+        {
+            try
+            {
+                var builder = new SqlConnectionStringBuilder(ConnectionString);
+                server = FirstNonEmpty(server, builder.DataSource);
+                database = FirstNonEmpty(database, builder.InitialCatalog);
+            }
+            catch
+            {
+                database = FirstNonEmpty(database, "default");
+            }
+        }
+
+        var source = $"{baseId}|{server}|{database}".Trim('|');
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(source.ToUpperInvariant())))[..16].ToLowerInvariant();
+        return (database, hash);
+    }
 
     public async Task<bool> HasConversationSchemaAsync(CancellationToken ct = default)
     {
@@ -3231,6 +3269,18 @@ public sealed class ConversacionesService(
         return string.IsNullOrWhiteSpace(normalized) ? $"{fallbackBase}{extension}" : normalized;
     }
 
+    private static string SanitizePathSegment(string value)
+    {
+        var normalized = string.IsNullOrWhiteSpace(value) ? "base" : value.Trim();
+        foreach (var invalid in Path.GetInvalidFileNameChars())
+            normalized = normalized.Replace(invalid, '_');
+
+        normalized = Regex.Replace(normalized, @"\s+", "_");
+        normalized = Regex.Replace(normalized, @"[^a-zA-Z0-9._-]", "_");
+        normalized = normalized.Trim('.', '_', '-');
+        return string.IsNullOrWhiteSpace(normalized) ? "base" : normalized;
+    }
+
     private async Task<int> StoreIncomingAttachmentsAsync(
         long conversationId,
         long messageId,
@@ -3355,7 +3405,10 @@ public sealed class ConversacionesService(
     {
         var fileName = Path.GetFileName(record.RutaLocal);
         if (!string.IsNullOrWhiteSpace(fileName))
+        {
             yield return Path.Combine(UploadsBasePath, record.IdConversacion.ToString(CultureInfo.InvariantCulture), fileName);
+            yield return Path.Combine(LegacyUploadsBasePath, record.IdConversacion.ToString(CultureInfo.InvariantCulture), fileName);
+        }
 
         if (!string.IsNullOrWhiteSpace(record.RutaLocal))
         {

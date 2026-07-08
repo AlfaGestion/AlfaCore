@@ -7622,11 +7622,14 @@
             _ticketError
         }.Where(x => !string.IsNullOrWhiteSpace(x)));
 
-    private static string GetAttachmentUrl(ConversacionAdjuntoDto adjunto)
-        => $"/api/conversaciones/adjuntos/{adjunto.IdAdjunto}";
+    private string GetAttachmentUrl(ConversacionAdjuntoDto adjunto)
+        => $"/api/conversaciones/adjuntos/{adjunto.IdAdjunto}?base={Uri.EscapeDataString(GetAttachmentScopeKey())}";
 
-    private static string GetAttachmentDownloadUrl(ConversacionAdjuntoDto adjunto)
-        => $"/api/conversaciones/adjuntos/{adjunto.IdAdjunto}?download=1";
+    private string GetAttachmentDownloadUrl(ConversacionAdjuntoDto adjunto)
+        => $"/api/conversaciones/adjuntos/{adjunto.IdAdjunto}?download=1&base={Uri.EscapeDataString(GetAttachmentScopeKey())}";
+
+    private string GetAttachmentScopeKey()
+        => ConversacionesSvc.GetAttachmentScopeKey();
 
     private string GetAttachmentDownloadName(ConversacionAdjuntoDto adjunto)
     {
@@ -7691,8 +7694,8 @@
         };
     }
 
-    private static string GetFavoriteStickerUrl(ConversacionStickerFavoritoDto sticker)
-        => $"/api/conversaciones/adjuntos/{sticker.IdAdjunto}";
+    private string GetFavoriteStickerUrl(ConversacionStickerFavoritoDto sticker)
+        => $"/api/conversaciones/adjuntos/{sticker.IdAdjunto}?base={Uri.EscapeDataString(GetAttachmentScopeKey())}";
 
     private static string GetAttachmentMime(ConversacionAdjuntoDto adjunto)
     {

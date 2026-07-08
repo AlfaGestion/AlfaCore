@@ -1,4 +1,4 @@
-﻿using AlfaCore.Components;
+using AlfaCore.Components;
 using AlfaCore.Configuration;
 using AlfaCore.Models;
 using AlfaCore.Repositories;
@@ -787,12 +787,20 @@ public class Program
             IConversacionesService svc,
             CancellationToken ct) =>
         {
+            var requestedScope = request.Query["base"].ToString();
+            if (!string.IsNullOrWhiteSpace(requestedScope)
+                && !string.Equals(requestedScope, svc.GetAttachmentScopeKey(), StringComparison.OrdinalIgnoreCase))
+                return Results.NotFound();
+
             var adjunto = await svc.GetAttachmentForServeAsync(idAdjunto, ct);
             if (adjunto is null || !File.Exists(adjunto.RutaLocal))
                 return Results.NotFound();
 
             var mime = NormalizeAttachmentMime(adjunto.MimeType, adjunto.NombreArchivo);
             var download = string.Equals(request.Query["download"].ToString(), "1", StringComparison.OrdinalIgnoreCase);
+            request.HttpContext.Response.Headers.CacheControl = "no-store, no-cache, must-revalidate";
+            request.HttpContext.Response.Headers.Pragma = "no-cache";
+            request.HttpContext.Response.Headers.Expires = "0";
             return Results.File(
                 adjunto.RutaLocal,
                 contentType: mime,
