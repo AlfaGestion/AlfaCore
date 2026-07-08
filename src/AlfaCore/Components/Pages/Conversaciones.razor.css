@@ -229,6 +229,7 @@
 }
 
 .attachment-preview-canvas {
+    position: relative;
     display: grid;
     place-items: center;
     min-height: 0;
@@ -239,6 +240,19 @@
     touch-action: none;
     user-select: none;
     cursor: grab;
+}
+
+.attachment-preview-drag-surface {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    cursor: grab;
+    touch-action: none;
+    background: transparent;
+}
+
+.attachment-preview-canvas.is-dragging .attachment-preview-drag-surface {
+    cursor: grabbing;
 }
 
 .attachment-preview-canvas.is-dragging {

@@ -1939,14 +1939,7 @@
                 <div class="@PreviewCanvasClass"
                      @ref="_previewCanvas"
                      @onwheel="HandlePreviewWheel"
-                     @onwheel:preventDefault
-                     @onpointerdown="StartPreviewPan"
-                     @onpointerdown:preventDefault
-                     @onpointermove="MovePreviewPan"
-                     @onpointermove:preventDefault
-                     @onpointerup="EndPreviewPan"
-                     @onpointercancel="EndPreviewPan"
-                     @onpointerleave="EndPreviewPan">
+                     @onwheel:preventDefault>
                     @if (IsVideoAttachment(_previewAttachment))
                     {
                         <video @key="_previewAttachment.IdAdjunto" controls autoplay src="@GetAttachmentUrl(_previewAttachment)" style="@PreviewVideoStyle">
@@ -1960,6 +1953,18 @@
                              alt="@GetAttachmentLabel(_previewAttachment)"
                              draggable="false"
                              style="@PreviewImageStyle" />
+                    }
+                    @if (CanPanPreview)
+                    {
+                        <div class="attachment-preview-drag-surface"
+                             title="Arrastrar"
+                             @onpointerdown="StartPreviewPan"
+                             @onpointerdown:preventDefault
+                             @onpointermove="MovePreviewPan"
+                             @onpointermove:preventDefault
+                             @onpointerup="EndPreviewPan"
+                             @onpointercancel="EndPreviewPan"
+                             @onpointerleave="EndPreviewPan"></div>
                     }
                 </div>
                 <button type="button" class="attachment-preview-nav attachment-preview-nav--next" @onclick="ShowNextPreviewAttachment" disabled="@(!CanNavigatePreviewGallery)" title="Siguiente">
@@ -7656,6 +7661,9 @@
 
     private string PreviewCanvasClass
         => _previewPanDragging ? "attachment-preview-canvas is-dragging" : "attachment-preview-canvas";
+
+    private bool CanPanPreview
+        => _previewAttachment is not null && IsPreviewZoomableAttachment(_previewAttachment) && _previewZoom > 1d;
 
     private string BuildPreviewMediaStyle(bool includeRotation)
     {
