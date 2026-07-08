@@ -2756,6 +2756,31 @@ html[data-theme="light"] .carga-viajes-tarifas-aumento-v2__preview-header {
     flex-wrap: wrap;
 }
 
+.carga-viajes-smart-search--tarifas .smart-search__panel {
+    order: 1;
+}
+
+.carga-viajes-smart-search--tarifas .smart-search__chips {
+    order: 2;
+}
+
+.carga-viajes-smart-search--tarifas .carga-viajes-smart-search__actions {
+    order: 3;
+}
+
+html[data-theme="light"] .carga-viajes-page .carga-viajes-smart-search--tarifas .btn--primary {
+    background: #dbeafe;
+    border-color: rgba(2, 132, 199, 0.22);
+    color: #0f172a;
+}
+
+html[data-theme="light"] .carga-viajes-page .carga-viajes-smart-search--tarifas .btn--primary:hover,
+html[data-theme="light"] .carga-viajes-page .carga-viajes-smart-search--tarifas .btn--primary:focus-visible {
+    background: #bfdbfe;
+    border-color: rgba(2, 132, 199, 0.34);
+    color: #0f172a;
+}
+
 .carga-viajes-smart-search__bar-copy {
     display: flex;
     flex-direction: column;

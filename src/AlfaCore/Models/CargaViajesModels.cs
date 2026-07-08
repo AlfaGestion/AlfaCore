@@ -4,6 +4,7 @@ public sealed class CargaViajesFilters
 {
     public DateTime? FechaDesde { get; set; }
     public DateTime? FechaHasta { get; set; }
+    public string AgruparPor { get; set; } = string.Empty;
     public string Texto { get; set; } = string.Empty;
     public string Cliente { get; set; } = string.Empty;
     public string Chofer { get; set; } = string.Empty;
