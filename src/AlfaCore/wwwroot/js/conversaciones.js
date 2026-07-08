@@ -703,7 +703,7 @@ window.conversacionesUi = {
         this._fileDropWatchers.delete(element);
     },
 
-    bindAttachmentPreviewPan: function (element, dotNetRef) {
+    bindAttachmentPreviewPan: function (element) {
         if (!element) return false;
 
         const previous = this._previewPanWatchers.get(element);
@@ -713,18 +713,34 @@ window.conversacionesUi = {
         }
 
         let dragging = false;
-        let startX = 0;
-        let startY = 0;
         let lastX = 0;
         let lastY = 0;
+        let panX = 0;
+        let panY = 0;
+
+        const getMedia = () => element.querySelector('img, video');
+
+        const readPixelVariable = (media, name) => {
+            const value = window.getComputedStyle(media).getPropertyValue(name).trim();
+            const parsed = Number.parseFloat(value);
+            return Number.isFinite(parsed) ? parsed : 0;
+        };
+
+        const readZoom = media => {
+            const value = window.getComputedStyle(media).getPropertyValue('--preview-zoom').trim();
+            const parsed = Number.parseFloat(value);
+            return Number.isFinite(parsed) ? parsed : 1;
+        };
 
         const pointerDown = event => {
             if (event.button !== 0) return;
+            const media = getMedia();
+            if (!media || readZoom(media) <= 1) return;
             dragging = true;
-            startX = event.clientX;
-            startY = event.clientY;
             lastX = event.clientX;
             lastY = event.clientY;
+            panX = readPixelVariable(media, '--preview-pan-x');
+            panY = readPixelVariable(media, '--preview-pan-y');
             element.classList.add('is-dragging');
             element.setPointerCapture?.(event.pointerId);
             event.preventDefault();
@@ -732,11 +748,16 @@ window.conversacionesUi = {
 
         const pointerMove = event => {
             if (!dragging) return;
+            const media = getMedia();
+            if (!media) return;
             const deltaX = event.clientX - lastX;
             const deltaY = event.clientY - lastY;
             lastX = event.clientX;
             lastY = event.clientY;
-            dotNetRef?.invokeMethodAsync('PanAttachmentPreview', deltaX, deltaY).catch(() => {});
+            panX += deltaX;
+            panY += deltaY;
+            media.style.setProperty('--preview-pan-x', `${panX}px`);
+            media.style.setProperty('--preview-pan-y', `${panY}px`);
             event.preventDefault();
         };
 

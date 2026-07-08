@@ -2412,6 +2412,7 @@
     private bool _uploadingAudio;
     private Dictionary<long, List<ConversacionAdjuntoDto>> _adjuntosPorMensaje = [];
     private HashSet<long> _recoveredAttachmentConversations = [];
+    private readonly HashSet<long> _recoveringAttachmentConversations = [];
     private List<ConversacionPlantillaDto> _availableTemplates = [];
     private long _selectedTemplateId;
     private bool _loadingTemplates;
@@ -2910,7 +2911,7 @@
             _bindPreviewPanAfterRender = false;
             try
             {
-                await JS.InvokeVoidAsync("conversacionesUi.bindAttachmentPreviewPan", _previewCanvas, _dotNetRef);
+                await JS.InvokeVoidAsync("conversacionesUi.bindAttachmentPreviewPan", _previewCanvas);
             }
             catch
             {
@@ -3375,6 +3376,8 @@
         {
             ApplyConversationCache(idConversacion, cachedConversation, showLoading || clearActionState || conversationChanged);
             showLoading = false;
+            await InvokeAsync(StateHasChanged);
+            await Task.Yield();
         }
 
         if (showLoading)
@@ -3414,20 +3417,9 @@
                 .GroupBy(a => a.IdMensaje)
                 .ToDictionary(g => g.Key, g => g.ToList());
 
-            if (_recoveredAttachmentConversations.Add(idConversacion))
-            {
-                var recovery = await ConversacionesSvc.RecoverConversationAttachmentsAsync(idConversacion);
-                if (recovery.MensajesHidratados > 0 || recovery.AdjuntosRecuperados > 0)
-                {
-                    _messages = (await ConversacionesSvc.GetMessagesAsync(idConversacion)).ToList();
-                    adjuntos = await ConversacionesSvc.GetConversationAttachmentsAsync(idConversacion);
-                    _adjuntosPorMensaje = adjuntos
-                        .GroupBy(a => a.IdMensaje)
-                        .ToDictionary(g => g.Key, g => g.ToList());
-                }
-            }
-
             StoreConversationCache(idConversacion);
+            if (ShouldRecoverConversationAttachments(_messages, adjuntos))
+                QueueConversationAttachmentRecovery(idConversacion);
             _assignmentTechnicianId = _selectedConversation?.IdTecnico ?? string.Empty;
             _statusCode = _selectedConversation?.CodigoEstado ?? (_states.FirstOrDefault()?.CodigoEstado ?? "ABIERTA");
 
@@ -3475,6 +3467,71 @@
         {
             if (showLoading)
                 _loadingConversation = false;
+        }
+    }
+
+    private void QueueConversationAttachmentRecovery(long idConversacion)
+    {
+        if (!_recoveredAttachmentConversations.Add(idConversacion))
+            return;
+
+        if (!_recoveringAttachmentConversations.Add(idConversacion))
+            return;
+
+        _ = RecoverConversationAttachmentsInBackgroundAsync(idConversacion);
+    }
+
+    private static bool ShouldRecoverConversationAttachments(
+        IReadOnlyList<ConversacionMensajeDto> messages,
+        IReadOnlyList<ConversacionAdjuntoDto> attachments)
+    {
+        if (attachments.Any(x => !x.ArchivoDisponible || string.IsNullOrWhiteSpace(x.RutaLocal)))
+            return true;
+
+        return messages.Any(message =>
+            !message.TieneAdjuntos
+            && IsGeneratedMediaFileName(message.Texto.Trim(), message.MessageType));
+    }
+
+    private async Task RecoverConversationAttachmentsInBackgroundAsync(long idConversacion)
+    {
+        try
+        {
+            var recovery = await ConversacionesSvc.RecoverConversationAttachmentsAsync(idConversacion);
+            if (recovery.MensajesHidratados <= 0 && recovery.AdjuntosRecuperados <= 0)
+                return;
+
+            await InvokeAsync(async () =>
+            {
+                if (_selectedConversationId != idConversacion)
+                    return;
+
+                var messagesTask = ConversacionesSvc.GetMessagesAsync(idConversacion);
+                var attachmentsTask = ConversacionesSvc.GetConversationAttachmentsAsync(idConversacion);
+                await Task.WhenAll(messagesTask, attachmentsTask);
+
+                _messages = (await messagesTask).ToList();
+                var adjuntos = await attachmentsTask;
+                _adjuntosPorMensaje = adjuntos
+                    .GroupBy(a => a.IdMensaje)
+                    .ToDictionary(g => g.Key, g => g.ToList());
+
+                StoreConversationCache(idConversacion);
+                StateHasChanged();
+            });
+        }
+        catch
+        {
+        }
+        finally
+        {
+            try
+            {
+                await InvokeAsync(() => _recoveringAttachmentConversations.Remove(idConversacion));
+            }
+            catch
+            {
+            }
         }
     }
 

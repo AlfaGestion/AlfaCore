@@ -252,6 +252,11 @@
     will-change: transform;
 }
 
+.attachment-preview-canvas.is-dragging img,
+.attachment-preview-canvas.is-dragging video {
+    transition: none;
+}
+
 .attachment-preview-canvas video {
     display: block;
     width: auto;
