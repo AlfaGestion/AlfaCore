@@ -7681,6 +7681,7 @@
         _previewRotationDegrees = 0;
         _previewPanX = 0;
         _previewPanY = 0;
+        _bindPreviewPanAfterRender = _previewAttachment is not null;
     }
 
     private void RotatePreviewLeft()
@@ -7690,7 +7691,10 @@
         => SetPreviewRotation(_previewRotationDegrees + 90);
 
     private void SetPreviewRotation(int value)
-        => _previewRotationDegrees = ((value % 360) + 360) % 360;
+    {
+        _previewRotationDegrees = ((value % 360) + 360) % 360;
+        _bindPreviewPanAfterRender = _previewAttachment is not null;
+    }
 
     private void HandlePreviewWheel(WheelEventArgs args)
     {
@@ -7701,7 +7705,10 @@
     }
 
     private void SetPreviewZoom(double value)
-        => _previewZoom = Math.Clamp(value, .5d, 4d);
+    {
+        _previewZoom = Math.Clamp(value, .5d, 4d);
+        _bindPreviewPanAfterRender = _previewAttachment is not null;
+    }
 
     [JSInvokable]
     public Task PanAttachmentPreview(double deltaX, double deltaY)

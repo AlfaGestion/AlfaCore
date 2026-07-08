@@ -708,7 +708,7 @@ window.conversacionesUi = {
 
         const previous = this._previewPanWatchers.get(element);
         if (previous) {
-            previous.events.forEach(item => element.removeEventListener(item.name, item.handler));
+            previous.events.forEach(item => element.removeEventListener(item.name, item.handler, item.options));
             element.classList.remove('is-dragging');
         }
 
@@ -769,14 +769,14 @@ window.conversacionesUi = {
         };
 
         const events = [
-            { name: 'pointerdown', handler: pointerDown },
-            { name: 'pointermove', handler: pointerMove },
-            { name: 'pointerup', handler: endDrag },
-            { name: 'pointercancel', handler: endDrag },
-            { name: 'pointerleave', handler: endDrag }
+            { name: 'pointerdown', handler: pointerDown, options: { capture: true, passive: false } },
+            { name: 'pointermove', handler: pointerMove, options: { capture: true, passive: false } },
+            { name: 'pointerup', handler: endDrag, options: { capture: true } },
+            { name: 'pointercancel', handler: endDrag, options: { capture: true } },
+            { name: 'pointerleave', handler: endDrag, options: { capture: true } }
         ];
 
-        events.forEach(item => element.addEventListener(item.name, item.handler));
+        events.forEach(item => element.addEventListener(item.name, item.handler, item.options));
         this._previewPanWatchers.set(element, { events: events });
         return true;
     },
