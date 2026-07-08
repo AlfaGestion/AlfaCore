@@ -16,6 +16,7 @@ public sealed class ConversacionesService(
     ISessionService sessionService,
     IAppEventService appEvents,
     IHttpClientFactory httpClientFactory,
+    ICentralBasesService centralBasesService,
     IConversacionesConfigService conversacionesConfigService,
     INotificacionesPushService notificacionesPushService,
     IWebHostEnvironment environment) : IConversacionesService
@@ -49,6 +50,28 @@ public sealed class ConversacionesService(
         ? sessionService.GetConnectionString()
         : configuration.GetConnectionString("AlfaGestion")
           ?? throw new InvalidOperationException("No se configuró la cadena de conexión 'ConnectionStrings:AlfaGestion'.");
+
+    private async Task<string> ResolveConnectionStringAsync(int? idBase, CancellationToken ct)
+    {
+        var resolvedIdBase = idBase.GetValueOrDefault();
+        if (resolvedIdBase > 0)
+        {
+            var baseInfo = await centralBasesService.GetByIdAsync(resolvedIdBase, ct);
+            if (baseInfo is null)
+                throw new InvalidOperationException("La base indicada para el adjunto no existe.");
+
+            return new SqlConnectionStringBuilder
+            {
+                DataSource = baseInfo.DbServer,
+                InitialCatalog = baseInfo.DbName,
+                UserID = baseInfo.DbUser,
+                Password = baseInfo.DbPassword,
+                TrustServerCertificate = true
+            }.ConnectionString;
+        }
+
+        return ConnectionString;
+    }
 
     public string GetAttachmentScopeKey()
         => GetAttachmentScope().ScopeKey;
@@ -3133,7 +3156,7 @@ public sealed class ConversacionesService(
             }, token);
         }, "No se pudo enviar el sticker favorito.", ct);
 
-    public Task<ConversacionAdjuntoServeDto?> GetAttachmentForServeAsync(long idAdjunto, CancellationToken ct = default)
+    public Task<ConversacionAdjuntoServeDto?> GetAttachmentForServeAsync(long idAdjunto, int? idBase = null, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetAttachmentForServe", async token =>
         {
             const string sql = """
@@ -3154,7 +3177,8 @@ public sealed class ConversacionesService(
                 WHERE a.IdAdjunto = @IdAdjunto
                 """;
 
-            await using var cn = new SqlConnection(ConnectionString);
+            var connectionString = await ResolveConnectionStringAsync(idBase, token);
+            await using var cn = new SqlConnection(connectionString);
             await cn.OpenAsync(token);
             await using var cmd = new SqlCommand(sql, cn);
             cmd.Parameters.AddWithValue("@IdAdjunto", idAdjunto);
@@ -3182,12 +3206,12 @@ public sealed class ConversacionesService(
             var rutaLocal = ResolveExistingAttachmentPath(record);
             if (!string.IsNullOrWhiteSpace(rutaLocal) && !string.Equals(rutaLocal, record.RutaLocal, StringComparison.OrdinalIgnoreCase))
             {
-                await UpdateAttachmentLocalPathAsync(record.IdAdjunto, rutaLocal, token);
+                await UpdateAttachmentLocalPathAsync(record.IdAdjunto, rutaLocal, connectionString, token);
                 record.RutaLocal = rutaLocal;
             }
 
             if (string.IsNullOrWhiteSpace(rutaLocal))
-                rutaLocal = await TryRecoverAttachmentFileAsync(record, token);
+                rutaLocal = await TryRecoverAttachmentFileAsync(record, connectionString, token);
 
             var nombreDescarga = await BuildAttachmentDownloadNameAsync(cn, record, token);
             return new ConversacionAdjuntoServeDto
@@ -3434,7 +3458,7 @@ public sealed class ConversacionesService(
         }
     }
 
-    private async Task<string> TryRecoverAttachmentFileAsync(AttachmentServeRecord record, CancellationToken ct)
+    private async Task<string> TryRecoverAttachmentFileAsync(AttachmentServeRecord record, string connectionString, CancellationToken ct)
     {
         if (AttachmentRecoveryFailures.ContainsKey(record.IdAdjunto))
             return string.Empty;
@@ -3446,7 +3470,7 @@ public sealed class ConversacionesService(
 
         try
         {
-            var config = await conversacionesConfigService.GetWhatsAppConfigAsync(ct);
+            var config = await conversacionesConfigService.GetWhatsAppConfigAsync(connectionString, ct);
             if (string.IsNullOrWhiteSpace(config.AccessToken))
                 return string.Empty;
 
@@ -3466,7 +3490,7 @@ public sealed class ConversacionesService(
                 : record.NombreArchivo;
             var rutaLocal = await SaveIncomingAttachmentAsync(record.IdConversacion, fileName, bytes, ct);
 
-            await UpdateRecoveredAttachmentAsync(record.IdAdjunto, rutaLocal, mimeType, bytes.LongLength, ct);
+            await UpdateRecoveredAttachmentAsync(record.IdAdjunto, rutaLocal, mimeType, bytes.LongLength, connectionString, ct);
 
             record.RutaLocal = rutaLocal;
             record.MimeType = mimeType;
@@ -3488,7 +3512,7 @@ public sealed class ConversacionesService(
         }
     }
 
-    private async Task UpdateAttachmentLocalPathAsync(long idAdjunto, string rutaLocal, CancellationToken ct)
+    private async Task UpdateAttachmentLocalPathAsync(long idAdjunto, string rutaLocal, string? connectionString, CancellationToken ct)
     {
         const string sql = """
             UPDATE dbo.CONV_ADJUNTOS
@@ -3496,7 +3520,7 @@ public sealed class ConversacionesService(
             WHERE IdAdjunto = @IdAdjunto
             """;
 
-        await using var cn = new SqlConnection(ConnectionString);
+        await using var cn = new SqlConnection(string.IsNullOrWhiteSpace(connectionString) ? ConnectionString : connectionString);
         await cn.OpenAsync(ct);
         await using var cmd = new SqlCommand(sql, cn);
         cmd.Parameters.AddWithValue("@IdAdjunto", idAdjunto);
@@ -3504,7 +3528,7 @@ public sealed class ConversacionesService(
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
-    private async Task UpdateRecoveredAttachmentAsync(long idAdjunto, string rutaLocal, string mimeType, long tamanoBytes, CancellationToken ct)
+    private async Task UpdateRecoveredAttachmentAsync(long idAdjunto, string rutaLocal, string mimeType, long tamanoBytes, string? connectionString, CancellationToken ct)
     {
         const string sql = """
             UPDATE dbo.CONV_ADJUNTOS
@@ -3515,7 +3539,7 @@ public sealed class ConversacionesService(
             WHERE IdAdjunto = @IdAdjunto
             """;
 
-        await using var cn = new SqlConnection(ConnectionString);
+        await using var cn = new SqlConnection(string.IsNullOrWhiteSpace(connectionString) ? ConnectionString : connectionString);
         await cn.OpenAsync(ct);
         await using var cmd = new SqlCommand(sql, cn);
         cmd.Parameters.AddWithValue("@IdAdjunto", idAdjunto);

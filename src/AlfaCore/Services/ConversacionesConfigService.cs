@@ -57,6 +57,51 @@ public sealed class ConversacionesConfigService(
             return config;
         }, "No se pudo cargar la configuración de WhatsApp.", ct);
 
+    public Task<ConversacionWhatsAppConfigDto> GetWhatsAppConfigAsync(string connectionString, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "GetWhatsAppConfigForConnection", async token =>
+        {
+            if (string.IsNullOrWhiteSpace(connectionString))
+                throw new InvalidOperationException("La cadena de conexiÃ³n es obligatoria para cargar la configuraciÃ³n de WhatsApp.");
+
+            return await LoadWhatsAppConfigFromConnectionAsync(connectionString, token);
+        }, "No se pudo cargar la configuraciÃ³n de WhatsApp.", ct);
+
+    private async Task<ConversacionWhatsAppConfigDto> LoadWhatsAppConfigFromConnectionAsync(string connectionString, CancellationToken token)
+    {
+        await using var cn = new SqlConnection(connectionString);
+        await cn.OpenAsync(token);
+        var detailColumn = await ResolveDetailColumnAsync(cn, token);
+        var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        await using var cmd = new SqlCommand(BuildSelectSql(detailColumn), cn);
+        await using var rd = await cmd.ExecuteReaderAsync(token);
+        while (await rd.ReadAsync(token))
+        {
+            var key = GetString(rd, 0);
+            var value = GetString(rd, 1);
+            var detailValue = GetString(rd, 2);
+            values[key] = ResolveStoredValue(value, detailValue);
+        }
+
+        var config = new ConversacionWhatsAppConfigDto
+        {
+            VerifyToken = ReadValue(values, "CONV_WHATSAPP_VERIFY_TOKEN", _fallbackOptions.VerifyToken),
+            AccessToken = ReadValue(values, "CONV_WHATSAPP_ACCESS_TOKEN", _fallbackOptions.AccessToken),
+            PhoneNumberId = ReadValue(values, "CONV_WHATSAPP_PHONE_NUMBER_ID", _fallbackOptions.PhoneNumberId),
+            BusinessAccountId = ReadValue(values, "CONV_WHATSAPP_BUSINESS_ACCOUNT_ID", _fallbackOptions.BusinessAccountId),
+            AppSecret = ReadValue(values, "CONV_WHATSAPP_APP_SECRET", string.Empty),
+            ApiVersion = ReadValue(values, "CONV_WHATSAPP_API_VERSION", _fallbackOptions.ApiVersion, "v22.0"),
+            PublicBaseUrl = ReadValue(values, "CONV_WHATSAPP_PUBLIC_BASE_URL", string.Empty),
+            WebhookPath = ReadValue(values, "CONV_WHATSAPP_WEBHOOK_PATH", _fallbackOptions.WebhookPath, DefaultWebhookPath),
+            ConfigSource = ResolveConfigSource(values)
+        };
+
+        if (string.IsNullOrWhiteSpace(config.WebhookPath))
+            config.WebhookPath = DefaultWebhookPath;
+
+        return config;
+    }
+
     public async Task SaveWhatsAppConfigAsync(ConversacionWhatsAppConfigDto config, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(config);

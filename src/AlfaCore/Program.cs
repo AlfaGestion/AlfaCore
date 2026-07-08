@@ -787,12 +787,11 @@ public class Program
             IConversacionesService svc,
             CancellationToken ct) =>
         {
-            var requestedScope = request.Query["base"].ToString();
-            if (!string.IsNullOrWhiteSpace(requestedScope)
-                && !string.Equals(requestedScope, svc.GetAttachmentScopeKey(), StringComparison.OrdinalIgnoreCase))
-                return Results.NotFound();
-
-            var adjunto = await svc.GetAttachmentForServeAsync(idAdjunto, ct);
+            var idBaseRaw = request.Query["idBase"].ToString();
+            var idBase = int.TryParse(idBaseRaw, out var parsedIdBase) && parsedIdBase > 0
+                ? parsedIdBase
+                : (int?)null;
+            var adjunto = await svc.GetAttachmentForServeAsync(idAdjunto, idBase, ct);
             if (adjunto is null || !File.Exists(adjunto.RutaLocal))
                 return Results.NotFound();
 
