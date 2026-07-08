@@ -7655,12 +7655,7 @@
     private string BuildPreviewStageStyle()
     {
         var culture = System.Globalization.CultureInfo.InvariantCulture;
-        var mediaBasePercent = 100d / Math.Max(_previewZoom, .01d);
-        return string.Join("; ",
-        [
-            $"--preview-layout-zoom: {_previewZoom.ToString("0.###", culture)}",
-            $"--preview-media-base: {mediaBasePercent.ToString("0.###", culture)}%"
-        ]);
+        return $"--preview-layout-zoom: {_previewZoom.ToString("0.###", culture)}";
     }
 
     private string PreviewImageStyle
@@ -7675,7 +7670,7 @@
         var rotation = includeRotation ? _previewRotationDegrees.ToString(culture) : "0";
         return string.Join("; ",
         [
-            $"--preview-zoom: {_previewZoom.ToString("0.###", culture)}",
+            "--preview-zoom: 1",
             $"--preview-rotation: {rotation}deg",
             $"--preview-pan-x: {_previewPanX.ToString("0.###", culture)}px",
             $"--preview-pan-y: {_previewPanY.ToString("0.###", culture)}px"

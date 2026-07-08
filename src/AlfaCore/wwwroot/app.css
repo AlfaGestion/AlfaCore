@@ -13865,8 +13865,8 @@ html[data-theme="light"] .balance-row--detalle td {
 }
 
 .attachment-preview-canvas img {
-    max-width: var(--preview-media-base, 100%);
-    max-height: var(--preview-media-base, 100%);
+    max-width: none;
+    max-height: none;
     width: auto;
     min-height: 0;
     height: auto;
@@ -13883,8 +13883,8 @@ html[data-theme="light"] .balance-row--detalle td {
 .attachment-preview-canvas video {
     align-self: center;
     justify-self: center;
-    max-width: var(--preview-media-base, 100%);
-    max-height: var(--preview-media-base, 100%);
+    max-width: none;
+    max-height: none;
     border-radius: var(--radius-md);
     background: rgba(2, 6, 23, .72);
     transform-origin: center center;

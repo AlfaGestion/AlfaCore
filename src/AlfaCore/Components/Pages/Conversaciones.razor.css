@@ -255,8 +255,8 @@
 }
 
 .attachment-preview-canvas img {
-    max-width: var(--preview-media-base, 100%);
-    max-height: var(--preview-media-base, 100%);
+    max-width: none;
+    max-height: none;
     width: auto;
     height: auto;
     object-fit: contain;
@@ -275,9 +275,9 @@
 .attachment-preview-canvas video {
     display: block;
     width: auto;
-    max-width: var(--preview-media-base, 100%);
+    max-width: none;
     height: auto;
-    max-height: var(--preview-media-base, 100%);
+    max-height: none;
     object-fit: contain;
     transform-origin: center center;
     transform: translate(var(--preview-pan-x, 0), var(--preview-pan-y, 0)) scale(var(--preview-zoom, 1));

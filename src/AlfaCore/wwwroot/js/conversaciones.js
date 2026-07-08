@@ -722,8 +722,45 @@ window.conversacionesUi = {
             return Number.isFinite(parsed) ? parsed : 1;
         };
 
+        const getMediaSize = media => {
+            if (media instanceof HTMLImageElement && media.naturalWidth > 0 && media.naturalHeight > 0)
+                return { width: media.naturalWidth, height: media.naturalHeight };
+
+            if (media instanceof HTMLVideoElement && media.videoWidth > 0 && media.videoHeight > 0)
+                return { width: media.videoWidth, height: media.videoHeight };
+
+            const rect = media.getBoundingClientRect();
+            return rect.width > 0 && rect.height > 0
+                ? { width: rect.width, height: rect.height }
+                : null;
+        };
+
+        const layoutMedia = zoom => {
+            const stage = element.querySelector('.attachment-preview-stage');
+            const media = element.querySelector('img, video');
+            if (!stage || !media) return null;
+
+            const size = getMediaSize(media);
+            if (!size) return null;
+
+            const fitScale = Math.min(
+                element.clientWidth / size.width,
+                element.clientHeight / size.height,
+                1
+            );
+            const targetWidth = Math.max(1, Math.round(size.width * fitScale * zoom));
+            const targetHeight = Math.max(1, Math.round(size.height * fitScale * zoom));
+
+            media.style.width = `${targetWidth}px`;
+            media.style.height = `${targetHeight}px`;
+            stage.style.width = `${Math.max(element.clientWidth, targetWidth)}px`;
+            stage.style.height = `${Math.max(element.clientHeight, targetHeight)}px`;
+            return media;
+        };
+
         const centerOnMedia = zoom => {
             const zoomKey = zoom.toFixed(3);
+            const media = layoutMedia(zoom);
             if (zoom <= 1) {
                 element.scrollLeft = 0;
                 element.scrollTop = 0;
@@ -734,7 +771,6 @@ window.conversacionesUi = {
             if (element.dataset.previewScrollZoom === zoomKey)
                 return;
 
-            const media = element.querySelector('img, video');
             if (!media) return;
 
             const elementRect = element.getBoundingClientRect();
@@ -754,6 +790,14 @@ window.conversacionesUi = {
             });
             window.setTimeout(() => centerOnMedia(zoom), 80);
         };
+
+        const media = element.querySelector('img, video');
+        if (media) {
+            if (media instanceof HTMLImageElement && !media.complete)
+                media.addEventListener('load', scheduleCenterOnMedia, { once: true });
+            if (media instanceof HTMLVideoElement && media.readyState < 1)
+                media.addEventListener('loadedmetadata', scheduleCenterOnMedia, { once: true });
+        }
 
         const getPoint = event => {
             const touch = event.touches?.[0] || event.changedTouches?.[0];
