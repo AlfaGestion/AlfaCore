@@ -229,6 +229,7 @@
 }
 
 .attachment-preview-canvas {
+    display: block;
     place-items: center;
     min-height: 0;
     height: min(64vh, calc(92vh - 13rem));
@@ -242,6 +243,15 @@
 
 .attachment-preview-canvas.is-dragging {
     cursor: grabbing;
+}
+
+.attachment-preview-stage {
+    display: grid;
+    place-items: center;
+    min-width: 100%;
+    min-height: 100%;
+    width: calc(100% * var(--preview-layout-zoom, 1));
+    height: calc(100% * var(--preview-layout-zoom, 1));
 }
 
 .attachment-preview-canvas img {

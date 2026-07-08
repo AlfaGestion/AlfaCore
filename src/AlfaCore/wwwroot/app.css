@@ -13833,11 +13833,11 @@ html[data-theme="light"] .balance-row--detalle td {
 }
 
 .attachment-preview-canvas {
-    display: grid;
+    display: block;
     place-items: center;
     min-height: min(64vh, 620px);
     max-height: calc(92vh - 6rem);
-    overflow: auto;
+    overflow: hidden;
     border-radius: var(--radius-md);
     background: rgba(2, 6, 23, .12);
     overscroll-behavior: contain;
@@ -13853,6 +13853,15 @@ html[data-theme="light"] .balance-row--detalle td {
 
 .attachment-preview-canvas.is-dragging {
     cursor: grabbing;
+}
+
+.attachment-preview-stage {
+    display: grid;
+    place-items: center;
+    min-width: 100%;
+    min-height: 100%;
+    width: calc(100% * var(--preview-layout-zoom, 1));
+    height: calc(100% * var(--preview-layout-zoom, 1));
 }
 
 .attachment-preview-canvas img {

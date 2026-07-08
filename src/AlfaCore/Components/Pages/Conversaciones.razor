@@ -1936,30 +1936,26 @@
                 <button type="button" class="attachment-preview-nav attachment-preview-nav--prev" @onclick="ShowPreviousPreviewAttachment" disabled="@(!CanNavigatePreviewGallery)" title="Anterior">
                     <i class="bi bi-chevron-left"></i>
                 </button>
-                <div class="@PreviewCanvasClass"
+                <div class="attachment-preview-canvas"
                      @ref="_previewCanvas"
                      @onwheel="HandlePreviewWheel"
-                     @onwheel:preventDefault
-                     @onmousedown="StartPreviewPan"
-                     @onmousedown:preventDefault
-                     @onmousemove="MovePreviewPan"
-                     @onmousemove:preventDefault
-                     @onmouseup="EndPreviewPan"
-                     @onmouseleave="EndPreviewPan">
-                    @if (IsVideoAttachment(_previewAttachment))
-                    {
-                        <video @key="_previewAttachment.IdAdjunto" controls autoplay src="@GetAttachmentUrl(_previewAttachment)" style="@PreviewVideoStyle">
-                            Tu navegador no puede reproducir este video.
-                        </video>
-                    }
-                    else
-                    {
-                        <img @key="_previewAttachment.IdAdjunto"
-                             src="@GetAttachmentUrl(_previewAttachment)"
-                             alt="@GetAttachmentLabel(_previewAttachment)"
-                             draggable="false"
-                             style="@PreviewImageStyle" />
-                    }
+                     @onwheel:preventDefault>
+                    <div class="attachment-preview-stage" style="@PreviewStageStyle">
+                        @if (IsVideoAttachment(_previewAttachment))
+                        {
+                            <video @key="_previewAttachment.IdAdjunto" controls autoplay src="@GetAttachmentUrl(_previewAttachment)" style="@PreviewVideoStyle">
+                                Tu navegador no puede reproducir este video.
+                            </video>
+                        }
+                        else
+                        {
+                            <img @key="_previewAttachment.IdAdjunto"
+                                 src="@GetAttachmentUrl(_previewAttachment)"
+                                 alt="@GetAttachmentLabel(_previewAttachment)"
+                                 draggable="false"
+                                 style="@PreviewImageStyle" />
+                        }
+                    </div>
                 </div>
                 <button type="button" class="attachment-preview-nav attachment-preview-nav--next" @onclick="ShowNextPreviewAttachment" disabled="@(!CanNavigatePreviewGallery)" title="Siguiente">
                     <i class="bi bi-chevron-right"></i>
@@ -2498,9 +2494,6 @@
     private int _previewRotationDegrees;
     private double _previewPanX;
     private double _previewPanY;
-    private bool _previewPanDragging;
-    private double _previewPanLastClientX;
-    private double _previewPanLastClientY;
     private SoundDiagnosticsVm _soundDiagnostics = new();
     private ElementReference _replyTextArea;
     private ElementReference _internalNoteMobileTextArea;
@@ -7640,7 +7633,6 @@
     private void CloseAttachmentPreview()
     {
         _previewAttachment = null;
-        EndPreviewPan();
         _bindPreviewPanAfterRender = false;
         _bindPreviewKeyboardAfterRender = false;
         _scrollPreviewThumbAfterRender = false;
@@ -7657,14 +7649,20 @@
         return InvokeAsync(StateHasChanged);
     }
 
+    private string PreviewStageStyle
+        => BuildPreviewStageStyle();
+
+    private string BuildPreviewStageStyle()
+    {
+        var culture = System.Globalization.CultureInfo.InvariantCulture;
+        return $"--preview-layout-zoom: {_previewZoom.ToString("0.###", culture)}";
+    }
+
     private string PreviewImageStyle
         => BuildPreviewMediaStyle(includeRotation: true);
 
     private string PreviewVideoStyle
         => BuildPreviewMediaStyle(includeRotation: false);
-
-    private string PreviewCanvasClass
-        => _previewPanDragging ? "attachment-preview-canvas is-dragging" : "attachment-preview-canvas";
 
     private string BuildPreviewMediaStyle(bool includeRotation)
     {
@@ -7672,7 +7670,7 @@
         var rotation = includeRotation ? _previewRotationDegrees.ToString(culture) : "0";
         return string.Join("; ",
         [
-            $"--preview-zoom: {_previewZoom.ToString("0.###", culture)}",
+            "--preview-zoom: 1",
             $"--preview-rotation: {rotation}deg",
             $"--preview-pan-x: {_previewPanX.ToString("0.###", culture)}px",
             $"--preview-pan-y: {_previewPanY.ToString("0.###", culture)}px"
@@ -7697,7 +7695,6 @@
         _previewRotationDegrees = 0;
         _previewPanX = 0;
         _previewPanY = 0;
-        _previewPanDragging = false;
         _bindPreviewPanAfterRender = _previewAttachment is not null;
     }
 
@@ -7726,30 +7723,6 @@
         _previewZoom = Math.Clamp(value, .5d, 4d);
         _bindPreviewPanAfterRender = _previewAttachment is not null;
     }
-
-    private void StartPreviewPan(MouseEventArgs args)
-    {
-        if (_previewAttachment is null || !IsPreviewZoomableAttachment(_previewAttachment) || _previewZoom <= 1d)
-            return;
-
-        _previewPanDragging = true;
-        _previewPanLastClientX = args.ClientX;
-        _previewPanLastClientY = args.ClientY;
-    }
-
-    private void MovePreviewPan(MouseEventArgs args)
-    {
-        if (!_previewPanDragging || _previewAttachment is null || !IsPreviewZoomableAttachment(_previewAttachment) || _previewZoom <= 1d)
-            return;
-
-        _previewPanX += args.ClientX - _previewPanLastClientX;
-        _previewPanY += args.ClientY - _previewPanLastClientY;
-        _previewPanLastClientX = args.ClientX;
-        _previewPanLastClientY = args.ClientY;
-    }
-
-    private void EndPreviewPan()
-        => _previewPanDragging = false;
 
     [JSInvokable]
     public Task PanAttachmentPreview(double deltaX, double deltaY)

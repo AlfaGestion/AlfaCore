@@ -715,31 +715,11 @@ window.conversacionesUi = {
         let dragging = false;
         let lastX = 0;
         let lastY = 0;
-        let panX = 0;
-        let panY = 0;
-
-        const getMedia = () => element.querySelector('img, video');
-
-        const readCssVariable = (media, name) => window.getComputedStyle(media).getPropertyValue(name).trim();
-
-        const readPixelVariable = (media, name) => {
-            const value = window.getComputedStyle(media).getPropertyValue(name).trim();
-            const parsed = Number.parseFloat(value);
-            return Number.isFinite(parsed) ? parsed : 0;
-        };
-
-        const readZoom = media => {
-            const value = window.getComputedStyle(media).getPropertyValue('--preview-zoom').trim();
+        const readZoom = () => {
+            const stage = element.querySelector('.attachment-preview-stage');
+            const value = window.getComputedStyle(stage || element).getPropertyValue('--preview-layout-zoom').trim();
             const parsed = Number.parseFloat(value);
             return Number.isFinite(parsed) ? parsed : 1;
-        };
-
-        const applyPan = media => {
-            const zoom = readZoom(media);
-            const rotation = readCssVariable(media, '--preview-rotation') || '0deg';
-            media.style.setProperty('--preview-pan-x', `${panX}px`);
-            media.style.setProperty('--preview-pan-y', `${panY}px`);
-            media.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom}) rotate(${rotation})`;
         };
 
         const getPoint = event => {
@@ -751,30 +731,24 @@ window.conversacionesUi = {
 
         const startDrag = event => {
             if (event.button !== undefined && event.button !== 0) return;
-            const media = getMedia();
-            if (!media || readZoom(media) <= 1) return;
+            if (readZoom() <= 1) return;
             const point = getPoint(event);
             dragging = true;
             lastX = point.x;
             lastY = point.y;
-            panX = readPixelVariable(media, '--preview-pan-x');
-            panY = readPixelVariable(media, '--preview-pan-y');
             element.classList.add('is-dragging');
             event.preventDefault();
         };
 
         const moveDrag = event => {
             if (!dragging) return;
-            const media = getMedia();
-            if (!media) return;
             const point = getPoint(event);
             const deltaX = point.x - lastX;
             const deltaY = point.y - lastY;
             lastX = point.x;
             lastY = point.y;
-            panX += deltaX;
-            panY += deltaY;
-            applyPan(media);
+            element.scrollLeft -= deltaX;
+            element.scrollTop -= deltaY;
             event.preventDefault();
         };
 
@@ -796,6 +770,23 @@ window.conversacionesUi = {
 
         events.forEach(item => item.target.addEventListener(item.name, item.handler, item.options));
         this._previewPanWatchers.set(element, { events: events });
+        const zoom = readZoom();
+        window.requestAnimationFrame(() => {
+            const zoomKey = zoom.toFixed(3);
+            if (zoom <= 1) {
+                element.scrollLeft = 0;
+                element.scrollTop = 0;
+                element.dataset.previewScrollZoom = zoomKey;
+                return;
+            }
+
+            if (element.dataset.previewScrollZoom === zoomKey)
+                return;
+
+            element.scrollLeft = Math.max(0, (element.scrollWidth - element.clientWidth) / 2);
+            element.scrollTop = Math.max(0, (element.scrollHeight - element.clientHeight) / 2);
+            element.dataset.previewScrollZoom = zoomKey;
+        });
         return true;
     },
 
