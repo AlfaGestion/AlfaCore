@@ -2793,12 +2793,32 @@ public sealed class CargaViajesService(
         };
         return await ExecuteLoggedAsync(ModuleName, "GetLookups", async token =>
         {
-            result.Clientes = (await SearchClientesAsync(string.Empty, token)).ToList();
-            result.Choferes = (await SearchChoferLookupAsync(string.Empty, token)).ToList();
-            result.Destinos = (await SearchDestinosLookupAsync(string.Empty, token)).ToList();
-            result.TipoVehiculos = (await SearchTipoVehiculosLookupAsync(string.Empty, token)).ToList();
+            result.Clientes = await LoadOptionalLookupAsync("clientes", t => SearchClientesAsync(string.Empty, t), token);
+            result.Choferes = await LoadOptionalLookupAsync("choferes", t => SearchChoferLookupAsync(string.Empty, t), token);
+            result.Destinos = await LoadOptionalLookupAsync("destinos", t => SearchDestinosLookupAsync(string.Empty, t), token);
+            result.TipoVehiculos = await LoadOptionalLookupAsync("tipos de vehículo", t => SearchTipoVehiculosLookupAsync(string.Empty, t), token);
             return result;
         }, "No se pudieron cargar los datos auxiliares del módulo.", ct);
+    }
+
+    private async Task<List<CargaViajeLookupOptionDto>> LoadOptionalLookupAsync(
+        string lookupName,
+        Func<CancellationToken, Task<IReadOnlyList<CargaViajeLookupOptionDto>>> loader,
+        CancellationToken ct)
+    {
+        try
+        {
+            return (await loader(ct)).ToList();
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (AppUserFacingException ex)
+        {
+            logger.LogWarning(ex, "No se pudo cargar la lista auxiliar {LookupName} de carga de viajes. Se continúa con la lista vacía.", lookupName);
+            return [];
+        }
     }
 
     public Task<CargaViajesViewSettingsDto> GetViewSettingsAsync(string userName, CancellationToken ct = default)
