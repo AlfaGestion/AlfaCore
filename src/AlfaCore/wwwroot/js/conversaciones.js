@@ -733,14 +733,9 @@ window.conversacionesUi = {
             return Number.isFinite(parsed) ? parsed : 0;
         };
 
-        const readRotation = media => window.getComputedStyle(media).getPropertyValue('--preview-rotation').trim() || '0deg';
-
         const applyPan = media => {
-            const zoom = readZoom(media);
-            const rotation = readRotation(media);
             media.style.setProperty('--preview-pan-x', `${panX}px`);
             media.style.setProperty('--preview-pan-y', `${panY}px`);
-            media.style.transform = `translate3d(${panX}px, ${panY}px, 0) scale(${zoom}) rotate(${rotation})`;
         };
 
         const resetPan = () => {
