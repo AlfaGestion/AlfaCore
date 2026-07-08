@@ -1330,6 +1330,7 @@ html[data-theme="light"] .auth-page .base-search-input:focus-visible {
     position: relative;
     display: block;
     min-width: 0;
+    --legacy-sidebar-width: clamp(300px, 32vw, 360px);
 }
 
 .auth-legacy-login__login {
@@ -1349,7 +1350,6 @@ html[data-theme="light"] .auth-page .base-search-input:focus-visible {
 }
 
 .auth-legacy-login__sidebar {
-    --legacy-sidebar-width: clamp(300px, 32vw, 360px);
     display: none;
     position: absolute;
     top: 16px;
@@ -1453,50 +1453,127 @@ html[data-theme="light"] .auth-page .base-search-input:focus-visible {
     margin-bottom: 0;
 }
 
+.auth-legacy-login__editor-frame {
+    position: absolute;
+    inset: 0;
+    padding: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: auto;
+    z-index: 4;
+    background: linear-gradient(180deg, rgba(3, 10, 20, .80), rgba(3, 10, 20, .90));
+    backdrop-filter: blur(12px);
+}
+
+.auth-legacy-login__editor-frame .auth-legacy-login__add-form {
+    width: min(100%, 860px);
+    max-height: calc(100% - 8px);
+    overflow: auto;
+    margin: 0 auto;
+}
+
+.auth-legacy-login__editor-frame .auth-legacy-login__add-grid {
+    grid-template-columns: 1fr;
+}
+
+.auth-legacy-login__editor-close {
+    display: none;
+}
+
 .auth-legacy-login__add-form {
     display: grid;
-    gap: .75rem;
-    padding: .85rem;
-    border: 1px solid rgba(148, 163, 184, .14);
-    border-radius: 16px;
-    background: rgba(15, 23, 42, .34);
-    box-shadow: inset 0 1px 0 rgba(255,255,255,.03);
+    gap: .82rem;
+    padding: 1rem 1.05rem 1.15rem;
+    border: 1px solid rgba(125, 211, 252, .18);
+    border-radius: 24px;
+    background:
+        radial-gradient(circle at 100% 0%, rgba(34, 211, 238, .12), transparent 16%),
+        rgba(15, 23, 42, .40);
+    box-shadow:
+        inset 0 1px 0 rgba(255,255,255,.04),
+        0 22px 48px rgba(0, 0, 0, .18);
+    position: relative;
+    overflow: hidden;
+}
+
+.auth-legacy-login__add-form::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 2px;
+    background: linear-gradient(90deg, rgba(34, 211, 238, .85), rgba(59, 130, 246, .55), rgba(34, 211, 238, .12));
+    opacity: .95;
 }
 
 .auth-legacy-login__add-form-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    padding-bottom: .1rem;
+}
+
+.auth-legacy-login__add-form-head > div {
     display: grid;
-    gap: .2rem;
+    gap: .24rem;
+    min-width: 0;
 }
 
 .auth-legacy-login__add-form-head strong {
     color: #f8fafc;
-    font-size: .95rem;
+    font-size: 1.18rem;
+    font-weight: 900;
+    letter-spacing: -.02em;
 }
 
 .auth-legacy-login__add-form-head span {
-    color: #94a3b8;
-    font-size: .78rem;
+    color: #9fb7d0;
+    font-size: .9rem;
+    line-height: 1.35;
+}
+
+.auth-legacy-login__editor-close {
+    width: 38px;
+    height: 38px;
+    display: grid;
+    place-items: center;
+    flex: 0 0 auto;
+    border-radius: 12px;
+    border: 1px solid rgba(148, 163, 184, .18);
+    background: rgba(15, 23, 42, .42);
+    color: #e2e8f0;
+    transition: background-color .15s ease, border-color .15s ease, color .15s ease, transform .15s ease;
+}
+
+.auth-legacy-login__editor-close:hover,
+.auth-legacy-login__editor-close:focus-visible {
+    background: rgba(15, 118, 110, .18);
+    border-color: rgba(56, 189, 248, .35);
+    color: #f8fafc;
+    transform: translateY(-1px);
+    outline: none;
 }
 
 .auth-legacy-login__add-error {
-    padding: .55rem .7rem;
+    padding: .5rem .65rem;
     border: 1px solid rgba(248, 113, 113, .24);
     border-radius: 12px;
     background: rgba(127, 29, 29, .18);
     color: #fecaca;
-    font-size: .82rem;
+    font-size: .8rem;
     line-height: 1.35;
 }
 
 .auth-legacy-login__add-grid {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: .7rem;
+    grid-template-columns: 1fr;
+    gap: .68rem;
 }
 
 .auth-legacy-login__add-field {
     display: grid;
-    gap: .3rem;
+    gap: .34rem;
 }
 
 .auth-legacy-login__add-field--full {
@@ -1504,26 +1581,56 @@ html[data-theme="light"] .auth-page .base-search-input:focus-visible {
 }
 
 .auth-legacy-login__add-field label {
-    color: #cbd5e1;
-    font-size: .8rem;
-    font-weight: 800;
+    color: #c8f4ff;
+    font-size: .7rem;
+    font-weight: 900;
+    letter-spacing: .14em;
+    text-transform: uppercase;
 }
 
-.auth-legacy-login__add-field .auth-base-search__input {
-    min-height: 40px;
-    background: rgba(15, 23, 42, .64);
-    border-color: rgba(148, 163, 184, .22);
+.auth-legacy-login__add-field .drawer-search__input {
+    min-height: 46px;
+    padding: 0 14px;
+    border-radius: 15px;
+    background:
+        linear-gradient(180deg, rgba(10, 20, 34, .98), rgba(7, 13, 24, .98));
+    border: 1px solid rgba(125, 211, 252, .20);
     color: #f8fafc;
+    box-shadow:
+        inset 0 1px 0 rgba(255,255,255,.04),
+        0 8px 18px rgba(0, 0, 0, .12);
+    transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease, background-color .15s ease;
 }
 
-.auth-legacy-login__add-field .auth-base-search__input::placeholder {
-    color: rgba(203, 213, 225, .55);
+.auth-legacy-login__add-field .drawer-search__input::placeholder {
+    color: rgba(203, 213, 225, .42);
+}
+
+.auth-legacy-login__add-field .drawer-search__input:focus,
+.auth-legacy-login__add-field .drawer-search__input:focus-visible {
+    border-color: rgba(34, 211, 238, .72);
+    box-shadow:
+        0 0 0 3px rgba(34, 211, 238, .12),
+        0 8px 18px rgba(8, 145, 178, .10);
+    transform: translateY(-1px);
 }
 
 .auth-legacy-login__add-actions {
     display: flex;
     justify-content: end;
-    gap: .5rem;
+    gap: .55rem;
+    padding: .6rem .05rem .1rem;
+    position: sticky;
+    bottom: 0;
+    border-top: 1px solid rgba(148, 163, 184, .10);
+    background: linear-gradient(180deg, rgba(10, 18, 31, 0), rgba(10, 18, 31, .96) 24%);
+    backdrop-filter: blur(6px);
+}
+
+.auth-legacy-login__add-actions .btn {
+    min-height: 40px;
+    padding-inline: 1rem;
+    border-radius: 12px;
 }
 
 .auth-legacy-login__base-grid {
@@ -1661,6 +1768,82 @@ html[data-theme="light"] .auth-page .base-search-input:focus-visible {
     gap: 14px;
 }
 
+@media (min-width: 961px) {
+    .auth-page .auth-shell--local {
+        align-self: start;
+        grid-template-columns: minmax(0, 1.04fr) minmax(420px, .96fr);
+        min-height: min(860px, calc(100dvh - 56px));
+    }
+
+    .auth-page .auth-shell--local .auth-hero {
+        align-content: start;
+        justify-items: start;
+        text-align: left;
+        padding: 38px 36px 32px;
+    }
+
+    .auth-page .auth-shell--local .auth-hero__brand {
+        justify-items: start;
+    }
+
+    .auth-page .auth-shell--local .auth-hero__copy {
+        max-width: 560px;
+        justify-items: start;
+        text-align: left;
+    }
+
+    .auth-page .auth-shell--local .auth-hero__title,
+    .auth-page .auth-shell--local .auth-hero__text {
+        text-align: left;
+    }
+
+    .auth-page .auth-shell--local .auth-hero__summary {
+        max-width: none;
+    }
+
+    .auth-page .auth-shell--local .auth-hero__note {
+        justify-self: start;
+    }
+
+    .auth-page .auth-shell--local .auth-form-panel {
+        align-items: stretch;
+        justify-content: flex-start;
+        padding: 22px;
+    }
+
+    .auth-page .auth-shell--local .auth-form-panel__surface--legacy-bases {
+        width: 100%;
+        min-height: 100%;
+        display: grid;
+        align-content: start;
+    }
+
+    .auth-page .auth-shell--local .auth-legacy-login {
+        min-height: 100%;
+    }
+
+    .auth-page .auth-shell--local .auth-legacy-login__login {
+        padding: 22px 22px 20px;
+        gap: 14px;
+    }
+
+    .auth-page .auth-shell--local .auth-legacy-login__selected {
+        margin-top: 2px;
+    }
+
+    .auth-page .auth-shell--local .auth-legacy-login__actions {
+        justify-content: flex-start;
+    }
+
+    .auth-page .auth-shell--local .auth-base-grid {
+        max-height: min(43vh, 360px);
+    }
+
+    .auth-page .auth-shell--local .auth-mobile-system {
+        display: none;
+    }
+}
+
 .auth-legacy-login__login .auth-field label {
     font-size: .95rem;
 }
@@ -1732,6 +1915,20 @@ html[data-theme="light"] .auth-page .base-search-input:focus-visible {
 
     .auth-legacy-login.is-bases-open {
         padding-right: 0;
+    }
+
+    .auth-legacy-login__editor-frame {
+        position: static;
+        inset: auto;
+        display: grid;
+        justify-content: stretch;
+        margin: 12px 0 0;
+        pointer-events: auto;
+    }
+
+    .auth-legacy-login__editor-frame .auth-legacy-login__add-form {
+        width: min(100%, 620px);
+        max-height: none;
     }
 
     .auth-legacy-login__sidebar {
@@ -1945,6 +2142,15 @@ html[data-theme="light"] .auth-page .base-search-input:focus-visible {
     .auth-page .auth-shell--local .auth-legacy-login__add-toggle {
         min-height: 34px;
         padding: 0 .8rem;
+    }
+
+    .auth-page .auth-shell--local .auth-legacy-login__editor-frame {
+        inset: 0;
+        padding: 14px;
+    }
+
+    .auth-page .auth-shell--local .auth-legacy-login__editor-frame .auth-legacy-login__add-form {
+        width: min(100%, 680px);
     }
 
     .auth-page .auth-shell--local .auth-legacy-login__add-form {

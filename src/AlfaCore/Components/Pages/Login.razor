@@ -352,22 +352,33 @@
                                         <span>Agregar base</span>
                                     </button>
                                     <button type="button"
-                                            class="btn btn--ghost auth-legacy-login__add-toggle"
-                                            @onclick="OpenLegacySessionEditFormAsync"
-                                            disabled="@_busy || SessionSvc.GetActiveSession() is null"
-                                            title="Editar base activa">
-                                        <i class="bi bi-pencil-square"></i>
-                                        <span>Editar</span>
+                                            class="auth-legacy-login__sidebar-close"
+                                            @onclick="CloseLegacyBasePickerAsync"
+                                            disabled="@_busy"
+                                            aria-label="Cerrar selector de bases"
+                                            title="Cerrar">
+                                        <i class="bi bi-x-lg"></i>
                                     </button>
                                 </div>
                             </div>
 
                             @if (_showLegacySessionForm)
                             {
-                                <form class="auth-legacy-login__add-form" @onsubmit="SaveLegacySessionAsync" @onsubmit:preventDefault="true">
-                                    <div class="auth-legacy-login__add-form-head">
-                                        <strong>@(_editingLegacySession ? "Editar base" : "Agregar base")</strong>
-                                        <span>@(_editingLegacySession ? "Actualizá los datos guardados en sessions.json" : "Creá una nueva base para el login local")</span>
+                                <div class="auth-legacy-login__editor-frame">
+                                    <form class="auth-legacy-login__add-form" @onsubmit="SaveLegacySessionAsync" @onsubmit:preventDefault="true" @onkeydown="HandleLegacySessionFormKeyDownAsync">
+                                        <div class="auth-legacy-login__add-form-head">
+                                        <div>
+                                            <strong>@(_editingLegacySession ? "Editar base" : "Agregar base")</strong>
+                                            <span>@(_editingLegacySession ? "Actualizá los datos guardados en sessions.json" : "Creá una nueva base para el login local")</span>
+                                        </div>
+                                        <button type="button"
+                                                class="auth-legacy-login__editor-close"
+                                                @onclick="CancelLegacySessionFormAsync"
+                                                disabled="@_savingLegacySession"
+                                                aria-label="Cerrar editor de base"
+                                                title="Cerrar">
+                                            <i class="bi bi-x-lg"></i>
+                                        </button>
                                     </div>
 
                                     @if (!string.IsNullOrWhiteSpace(_legacySessionFormError))
@@ -405,6 +416,7 @@
                                         </button>
                                     </div>
                                 </form>
+                                </div>
                             }
 
                             <div class="auth-base-search">
@@ -526,6 +538,21 @@
         await InvokeAsync(StateHasChanged);
     }
 
+    private Task CloseLegacyBasePickerAsync()
+    {
+        _showLegacyBasePicker = false;
+        _showLegacySessionForm = false;
+        _editingLegacySession = false;
+        _editingLegacySessionId = null;
+        _legacySessionFormError = string.Empty;
+        _legacySessionNombre = string.Empty;
+        _legacySessionServidor = string.Empty;
+        _legacySessionBaseDatos = string.Empty;
+        _legacySessionUsuario = string.Empty;
+        _legacySessionPassword = string.Empty;
+        return InvokeAsync(StateHasChanged);
+    }
+
     private Task OpenLegacySessionAddFormAsync()
     {
         _editingLegacySession = false;
@@ -581,6 +608,12 @@
         _legacySessionUsuario = string.Empty;
         _legacySessionPassword = string.Empty;
         return InvokeAsync(StateHasChanged);
+    }
+
+    private async Task HandleLegacySessionFormKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (string.Equals(args.Key, "Escape", StringComparison.OrdinalIgnoreCase))
+            await CancelLegacySessionFormAsync();
     }
 
     private async Task SaveLegacySessionAsync()

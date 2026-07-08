@@ -12,7 +12,6 @@ set "PREREQ_DIR=%INSTALLER_ROOT%\prerequisitos"
 set "SCRIPTS_DIR=%INSTALLER_ROOT%\scripts"
 set "ISS_FILE=%ROOT%\installer\AlfaCore.iss"
 set "README_SRC=%ROOT%\instalador\README_INSTALACION.txt"
-set "SAMPLE_CFG_SRC=%ROOT%\src\AlfaCore\appsettings.Production.sample.json"
 set "HOSTING_BUNDLE_URL=https://aka.ms/dotnet/8.0/dotnet-hosting-win.exe"
 set "HOSTING_BUNDLE=%PREREQ_DIR%\dotnet-hosting-win.exe"
 set "ISCC_EXE="
@@ -63,12 +62,17 @@ del /q "%INSTALLER_ROOT%\README_INSTALACION.txt" >nul 2>&1
 del /q "%INSTALLER_ROOT%\AlfaCore.iss" >nul 2>&1
 
 echo [3/5] Armando carpeta de instalacion...
-robocopy "%PUBLISH_DIR%" "%STAGE_DIR%" /MIR /R:2 /W:1 /XF "appsettings.Development.json" "appsettings.Production.json" "*.pdb" "*.log" >nul
+robocopy "%PUBLISH_DIR%" "%STAGE_DIR%" /MIR /R:2 /W:1 /XF "appsettings.Development.json" "appsettings.Production.json" "appsettings.Production.sample.json" "appsettings.Server.sample.json" "*.pdb" "*.log" >nul
 set "ROBOCOPY_EXIT=%ERRORLEVEL%"
 if %ROBOCOPY_EXIT% GEQ 8 (
   echo Robocopy devolvio error %ROBOCOPY_EXIT% al copiar la aplicacion.
   exit /b %ROBOCOPY_EXIT%
 )
+
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "$f = '%STAGE_DIR%\appsettings.json'; if (Test-Path $f) { $j = Get-Content $f -Raw | ConvertFrom-Json; $j.ModoSaaS = $false; if ($j.ConnectionStrings) { $j.ConnectionStrings.PSObject.Properties.Remove('AlfaCentral') | Out-Null }; $j | ConvertTo-Json -Depth 10 | Set-Content $f -Encoding UTF8 }"
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "Get-ChildItem -LiteralPath '%STAGE_DIR%' -Filter 'appsettings*.json' -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -ne 'appsettings.json' } | Remove-Item -Force -ErrorAction SilentlyContinue"
 
 if exist "%PUBLISH_DIR%\App_Data\updates" (
   if not exist "%STAGE_DIR%\App_Data\updates" mkdir "%STAGE_DIR%\App_Data\updates" >nul 2>&1
@@ -81,8 +85,6 @@ if exist "%PUBLISH_DIR%\App_Data\updates" (
 )
 
 if exist "%README_SRC%" copy /Y "%README_SRC%" "%INSTALLER_ROOT%\README_INSTALACION.txt" >nul
-if exist "%SAMPLE_CFG_SRC%" copy /Y "%SAMPLE_CFG_SRC%" "%STAGE_DIR%\appsettings.Production.sample.json" >nul
-
 copy /Y "%ROOT%\scripts\instalar_servicio.bat" "%SCRIPTS_DIR%\instalar_servicio.bat" >nul
 copy /Y "%ROOT%\scripts\desinstalar_servicio.bat" "%SCRIPTS_DIR%\desinstalar_servicio.bat" >nul
 copy /Y "%ROOT%\scripts\detener_servicio.bat" "%SCRIPTS_DIR%\detener_servicio.bat" >nul

@@ -45,7 +45,10 @@ if errorlevel 1 goto :error
 
 echo Copiando documentacion y scripts de servidor...
 copy /Y .\README_INSTALACION.md %PUBLISH_DIR%\README_INSTALACION.md >nul
-copy /Y .\src\AlfaCore\appsettings.Server.sample.json %PUBLISH_DIR%\appsettings.Server.sample.json >nul
+if exist "%PUBLISH_DIR%\appsettings.json" powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "$f = '%PUBLISH_DIR%\appsettings.json'; $j = Get-Content $f -Raw | ConvertFrom-Json; $j.ModoSaaS = $false; if ($j.ConnectionStrings) { $j.ConnectionStrings.PSObject.Properties.Remove('AlfaCentral') | Out-Null }; $j | ConvertTo-Json -Depth 10 | Set-Content $f -Encoding UTF8"
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "Get-ChildItem -LiteralPath '%PUBLISH_DIR%' -Filter 'appsettings*.json' -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -ne 'appsettings.json' } | Remove-Item -Force -ErrorAction SilentlyContinue"
 copy /Y .\scripts\Abrir-Firewall.ps1 %PUBLISH_DIR%\Abrir-Firewall.ps1 >nul
 copy /Y .\scripts\instalar_servicio.bat %PUBLISH_DIR%\instalar_servicio.bat >nul
 copy /Y .\scripts\desinstalar_servicio.bat %PUBLISH_DIR%\desinstalar_servicio.bat >nul
@@ -55,8 +58,7 @@ echo @echo off
 echo setlocal
 echo cd /d "%%~dp0"
 echo set "CONFIG_FILE="
-echo if exist "appsettings.Production.json" set "CONFIG_FILE=appsettings.Production.json"
-echo if not defined CONFIG_FILE if exist "appsettings.json" set "CONFIG_FILE=appsettings.json"
+echo if exist "appsettings.json" set "CONFIG_FILE=appsettings.json"
 echo set "PUERTO=5055"
 echo if defined CONFIG_FILE ^(
 echo   for /f "usebackq delims=" %%%%P in ^(`powershell -NoProfile -Command "$cfg = Get-Content '%%CD%%\%%CONFIG_FILE%%' -Raw ^| ConvertFrom-Json; if ($cfg.ServidorWeb.Puerto) { $cfg.ServidorWeb.Puerto } else { 5055 }"`^) do set "PUERTO=%%%%P"
@@ -68,7 +70,7 @@ echo echo Carpeta de trabajo: %%CD%%
 echo if defined CONFIG_FILE ^(
 echo   echo Configuracion detectada: %%CONFIG_FILE%%
 echo ^) else ^(
-echo   echo Configuracion detectada: no se encontro appsettings, se usaran valores por defecto.
+echo   echo Configuracion detectada: no se encontro appsettings.json, se usaran valores por defecto.
 echo ^)
 echo echo URL local esperada: %%URL_LOCAL%%
 echo echo Si la app escucha en LAN, otras PCs podran entrar por:

@@ -1174,6 +1174,7 @@ else
                  IsBusy="@_loginBusy"
                 ShowPassword="@_loginShowPassword"
                  RememberCredentials="@_loginRememberCredentials"
+                 IsSwitchUserMode="@(_manualLoginOverlayOpen && AppUserSession.IsAuthenticated)"
                  UserNameChanged="@(value => _loginUserName = value)"
                  PasswordChanged="@(value => _loginPassword = value)"
                  ShowPasswordChanged="@(value => _loginShowPassword = value)"
