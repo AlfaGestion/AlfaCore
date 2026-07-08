@@ -256,6 +256,9 @@
     transition: transform .18s ease;
     animation: attachment-preview-media-enter .18s ease both;
     will-change: transform;
+    user-select: none;
+    -webkit-user-drag: none;
+    pointer-events: auto;
 }
 
 .attachment-preview-canvas.is-dragging img,
@@ -275,6 +278,7 @@
     transition: transform .18s ease;
     animation: attachment-preview-media-enter .18s ease both;
     will-change: transform;
+    pointer-events: auto;
 }
 
 .attachment-preview-strip {
