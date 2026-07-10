@@ -53,7 +53,7 @@ Si se eligio otro puerto durante la instalacion, usar ese puerto en la URL.
 
 La instalacion crea o deja listo:
 
-    appsettings.Production.json
+    appsettings.json
 
 Ese archivo guarda:
 - servidor SQL
@@ -63,7 +63,7 @@ Ese archivo guarda:
 - puerto web
 
 Para cambiarlo despues:
-- editar appsettings.Production.json
+- editar appsettings.json
 - o reinstalar sobre la misma carpeta sin borrar ese archivo
 
 6. Firewall
@@ -83,9 +83,8 @@ Usar el desinstalador de Windows o ejecutar:
 
 8. Archivos importantes
 
-- appsettings.json: configuración base del sistema
-- appsettings.Production.json: configuración real del cliente
-- appsettings.Production.sample.json: plantilla sin datos sensibles
+- appsettings.json: configuración real del cliente
+- appsettings.Server.sample.json: plantilla opcional del repositorio
 - scripts\instalar_servicio.bat: instala el servicio
 - scripts\desinstalar_servicio.bat: elimina el servicio
 - scripts\abrir_firewall.bat: abre el puerto configurado
@@ -93,6 +92,6 @@ Usar el desinstalador de Windows o ejecutar:
 
 9. Observaciones
 
-- No copiar en producción una appsettings.Production.json de desarrollo.
+- No copiar en producción una appsettings.json de desarrollo.
 - No reemplazar manualmente archivos de configuración si ya están personalizados.
 - La web queda disponible cuando el servicio termina de iniciar.
