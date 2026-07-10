@@ -224,12 +224,11 @@
                     <section class="novedades-settings-section">
                         <header>
                             <i class="bi bi-calendar2-check"></i>
-                            <div><h3>Publicacion</h3><p>Estado, fechas y comportamiento del anuncio para el equipo.</p></div>
+                            <div><h3>Publicacion</h3><p>Programacion y comportamiento del anuncio para el equipo.</p></div>
                         </header>
                         <div class="novedades-form-grid novedades-form-grid--three">
-                            <label><span>Estado</span><select @bind="_draft.Estado"><option value="@NovedadEstados.Borrador">Borrador</option><option value="@NovedadEstados.Programado">Programado</option><option value="@NovedadEstados.Publicado">Publicado</option></select></label>
-                            <label><span>Programar</span><input type="datetime-local" value="@_fechaProgramadaText" @onchange="OnFechaProgramadaChanged" /></label>
-                            <label><span>Vigente hasta</span><input type="datetime-local" value="@_vigenteHastaText" @onchange="OnVigenteHastaChanged" /></label>
+                            <label><span>Estado actual</span><input value="@EstadoLabel(_draft.Estado)" readonly /></label>
+                            <label class="novedades-span-2"><span>Programar para</span><input type="datetime-local" value="@_fechaProgramadaText" @onchange="OnFechaProgramadaChanged" /></label>
                         </div>
                         <div class="novedades-switch-grid">
                             <label><input type="checkbox" @bind="_draft.MostrarPopup" /><span><strong>Mostrar popup</strong><small>Aparece automaticamente al ingresar.</small></span></label>
@@ -237,6 +236,7 @@
                             <label><input type="checkbox" @bind="_draft.RepetirHastaLeer" /><span><strong>Repetir hasta leer</strong><small>Vuelve a mostrarse mientras siga pendiente.</small></span></label>
                         </div>
                         <div class="novedades-settings-actions">
+                            <button type="button" class="btn btn--ghost" @onclick="SchedulePublicationAsync"><i class="bi bi-calendar2-check"></i><span>Programar</span></button>
                             <button type="button" class="btn btn--primary" @onclick="PublishNowAsync"><i class="bi bi-send-check"></i><span>Publicar ahora</span></button>
                             <button type="button" class="btn btn--ghost" @onclick="ArchiveAsync"><i class="bi bi-archive"></i><span>Archivar</span></button>
                             <button type="button" class="btn novedades-btn--danger" @onclick="DeleteAsync"><i class="bi bi-trash3"></i><span>Eliminar</span></button>
@@ -326,7 +326,6 @@
     private string _activeTab = TabDetails;
     private string _feedback = string.Empty;
     private string _fechaProgramadaText = string.Empty;
-    private string _vigenteHastaText = string.Empty;
 
     private string CurrentUser => AppUserSession.CurrentUser?.UserName?.Trim() ?? string.Empty;
 
@@ -497,8 +496,32 @@
     private async Task PublishNowAsync()
     {
         _draft.Estado = NovedadEstados.Publicado;
-        _draft.FechaProgramada = DateTime.Now;
-        _fechaProgramadaText = ToInputDateTime(_draft.FechaProgramada);
+        _draft.FechaProgramada = null;
+        _draft.VigenteHasta = null;
+        _draft.ReiniciarSeguimiento = true;
+        _fechaProgramadaText = string.Empty;
+        await SaveAsync();
+    }
+
+    private async Task SchedulePublicationAsync()
+    {
+        var scheduledAt = ParseInputDateTime(_fechaProgramadaText);
+        if (scheduledAt is null)
+        {
+            _feedback = "Indica la fecha y hora para programar la publicacion.";
+            return;
+        }
+
+        if (scheduledAt <= DateTime.Now)
+        {
+            _feedback = "La fecha programada debe ser posterior a la fecha actual. Para publicarla ahora, usa Publicar ahora.";
+            return;
+        }
+
+        _draft.Estado = NovedadEstados.Programado;
+        _draft.FechaProgramada = scheduledAt;
+        _draft.VigenteHasta = null;
+        _draft.ReiniciarSeguimiento = true;
         await SaveAsync();
     }
 
@@ -617,6 +640,7 @@
         if (selected is null)
         {
             _draft = new();
+            _fechaProgramadaText = string.Empty;
             return;
         }
 
@@ -644,15 +668,18 @@
             UsuarioAccion = CurrentUser
         };
 
-        _fechaProgramadaText = ToInputDateTime(selected.FechaProgramada);
-        _vigenteHastaText = ToInputDateTime(selected.VigenteHasta);
+        _fechaProgramadaText = selected.Estado == NovedadEstados.Programado
+            ? ToInputDateTime(selected.FechaProgramada)
+            : string.Empty;
     }
 
     private NovedadSaveRequest SnapshotDraft()
     {
         _draft.UsuarioAccion = CurrentUser;
-        _draft.FechaProgramada = ParseInputDateTime(_fechaProgramadaText);
-        _draft.VigenteHasta = ParseInputDateTime(_vigenteHastaText);
+        _draft.FechaProgramada = _draft.Estado == NovedadEstados.Programado
+            ? ParseInputDateTime(_fechaProgramadaText)
+            : null;
+        _draft.VigenteHasta = null;
         return _draft;
     }
 
@@ -701,9 +728,6 @@
     private void OnFechaProgramadaChanged(ChangeEventArgs args)
         => _fechaProgramadaText = args.Value?.ToString() ?? string.Empty;
 
-    private void OnVigenteHastaChanged(ChangeEventArgs args)
-        => _vigenteHastaText = args.Value?.ToString() ?? string.Empty;
-
     private string CoverClass => $"novedades-cover novedades-cover--{_draft.Acento} novedades-cover--{_draft.PortadaTipo.ToLowerInvariant()}";
 
     private string CoverStyle => _draft.PortadaTipo == NovedadPortadas.Gradiente
@@ -726,7 +750,9 @@
     private static string BuildItemMeta(NovedadResumenDto item)
     {
         var version = string.IsNullOrWhiteSpace(item.Version) ? TipoLabel(item.Tipo) : item.Version;
-        var date = item.FechaProgramada ?? item.FechaPublicacion ?? item.FechaHoraModificacion;
+        var date = item.Estado == NovedadEstados.Programado
+            ? item.FechaProgramada ?? item.FechaHoraModificacion
+            : item.FechaPublicacion ?? item.FechaHoraModificacion;
         return $"{EstadoLabel(item.Estado)} - {version} - {date:dd/MM HH:mm}";
     }
 

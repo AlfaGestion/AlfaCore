@@ -41,6 +41,7 @@ public sealed class NovedadesService(
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
             await EnsureSchemaAsync(cn, token);
+            await ActivateDueScheduledAnnouncementsAsync(cn, token);
 
             var items = (await cn.QueryAsync<NovedadResumenDto>(new CommandDefinition(
                 BuildListSql(filter),
@@ -139,6 +140,12 @@ public sealed class NovedadesService(
                 : "FechaPublicacion = CASE WHEN @Estado IN (N'BORRADOR', N'PROGRAMADO') THEN NULL ELSE FechaPublicacion END,";
 
             var sql = $"""
+                DECLARE @EstadoAnterior nvarchar(20);
+
+                SELECT @EstadoAnterior = Estado
+                FROM dbo.ALFACORE_NOVEDADES
+                WHERE IdNovedad = @IdNovedad;
+
                 UPDATE dbo.ALFACORE_NOVEDADES
                    SET Tipo = @Tipo,
                        Estado = @Estado,
@@ -155,7 +162,7 @@ public sealed class NovedadesService(
                        Footer = @Footer,
                        FechaProgramada = @FechaProgramada,
                        {fechaPublicacionSql}
-                       VigenteHasta = @VigenteHasta,
+                       VigenteHasta = NULL,
                        MostrarPopup = @MostrarPopup,
                        LecturaObligatoria = @LecturaObligatoria,
                        RepetirHastaLeer = @RepetirHastaLeer,
@@ -164,6 +171,16 @@ public sealed class NovedadesService(
                        FechaHora_Modificacion = GETDATE(),
                        Archivado = CASE WHEN @Estado = N'ARCHIVADO' THEN 1 ELSE 0 END
                  WHERE IdNovedad = @IdNovedad;
+
+                IF @Estado IN (N'PUBLICADO', N'PROGRAMADO')
+                   AND (
+                        @ReiniciarSeguimiento = 1
+                        OR ISNULL(@EstadoAnterior, N'') NOT IN (N'PUBLICADO', N'PROGRAMADO')
+                   )
+                BEGIN
+                    DELETE FROM dbo.ALFACORE_NOVEDADES_LECTURAS
+                    WHERE IdNovedad = @IdNovedad;
+                END;
                 """;
 
             await using var cn = new SqlConnection(ConnectionString);
@@ -186,10 +203,10 @@ public sealed class NovedadesService(
                 PortadaValor = Truncate(request.PortadaValor, 500),
                 Footer = Truncate(request.Footer, 300),
                 request.FechaProgramada,
-                request.VigenteHasta,
                 request.MostrarPopup,
                 request.LecturaObligatoria,
                 request.RepetirHastaLeer,
+                request.ReiniciarSeguimiento,
                 Segmento = NovedadSegmentos.Todos,
                 Usuario = user
             }, cancellationToken: token));
@@ -290,7 +307,6 @@ public sealed class NovedadesService(
                   AND ISNULL(n.Archivado, 0) = 0
                   AND ISNULL(n.MostrarPopup, 0) = 1
                   AND (n.FechaProgramada IS NULL OR n.FechaProgramada <= GETDATE())
-                  AND (n.VigenteHasta IS NULL OR n.VigenteHasta >= GETDATE())
                   AND (
                         l.IdNovedad IS NULL
                         OR l.FechaHoraLeido IS NULL AND ISNULL(n.RepetirHastaLeer, 1) = 1
@@ -304,6 +320,7 @@ public sealed class NovedadesService(
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
             await EnsureSchemaAsync(cn, token);
+            await ActivateDueScheduledAnnouncementsAsync(cn, token);
             var id = await cn.ExecuteScalarAsync<long?>(new CommandDefinition(sql, new { Usuario = user }, cancellationToken: token));
             return id.HasValue ? await GetCoreAsync(cn, id.Value, user, token) : null;
         }, "No se pudo consultar novedades pendientes.", ct);
@@ -435,8 +452,8 @@ public sealed class NovedadesService(
                 ISNULL(n.MostrarPopup, 0) AS MostrarPopup,
                 ISNULL(n.LecturaObligatoria, 0) AS LecturaObligatoria,
                 ISNULL(n.RepetirHastaLeer, 1) AS RepetirHastaLeer,
-                COUNT(l.Usuario) AS Vistas,
-                SUM(CASE WHEN l.FechaHoraLeido IS NULL THEN 0 ELSE 1 END) AS Lecturas,
+                COUNT(DISTINCT UPPER(LTRIM(RTRIM(l.Usuario)))) AS Vistas,
+                COUNT(DISTINCT CASE WHEN l.FechaHoraLeido IS NULL THEN NULL ELSE UPPER(LTRIM(RTRIM(l.Usuario))) END) AS Lecturas,
                 ISNULL(n.FechaHora_Modificacion, n.FechaHora_Alta) AS FechaHoraModificacion
             FROM dbo.ALFACORE_NOVEDADES n
             LEFT JOIN dbo.ALFACORE_NOVEDADES_LECTURAS l ON l.IdNovedad = n.IdNovedad
@@ -520,6 +537,33 @@ public sealed class NovedadesService(
         await cn.ExecuteAsync(new CommandDefinition(sql, cancellationToken: ct));
     }
 
+    private async Task ActivateDueScheduledAnnouncementsAsync(SqlConnection cn, CancellationToken ct)
+    {
+        const string sql = """
+            DECLARE @Activadas TABLE (IdNovedad bigint NOT NULL PRIMARY KEY);
+
+            UPDATE dbo.ALFACORE_NOVEDADES
+               SET Estado = N'PUBLICADO',
+                   FechaPublicacion = COALESCE(FechaPublicacion, GETDATE()),
+                   FechaHora_Modificacion = GETDATE()
+              OUTPUT INSERTED.IdNovedad INTO @Activadas
+             WHERE Estado = N'PROGRAMADO'
+               AND ISNULL(Archivado, 0) = 0
+               AND FechaProgramada IS NOT NULL
+               AND FechaProgramada <= GETDATE();
+
+            DELETE l
+            FROM dbo.ALFACORE_NOVEDADES_LECTURAS l
+            INNER JOIN @Activadas a ON a.IdNovedad = l.IdNovedad;
+
+            SELECT COUNT(1) FROM @Activadas;
+            """;
+
+        var activated = await cn.ExecuteScalarAsync<int>(new CommandDefinition(sql, cancellationToken: ct));
+        if (activated > 0)
+            NotifyAnnouncementsChanged();
+    }
+
     private static async Task<NovedadDetalleDto?> GetCoreAsync(SqlConnection cn, long idNovedad, string usuario, CancellationToken ct)
     {
         const string sql = """
@@ -559,8 +603,8 @@ public sealed class NovedadesService(
             OUTER APPLY
             (
                 SELECT
-                    COUNT(1) AS Vistas,
-                    SUM(CASE WHEN FechaHoraLeido IS NULL THEN 0 ELSE 1 END) AS Lecturas
+                    COUNT(DISTINCT UPPER(LTRIM(RTRIM(Usuario)))) AS Vistas,
+                    COUNT(DISTINCT CASE WHEN FechaHoraLeido IS NULL THEN NULL ELSE UPPER(LTRIM(RTRIM(Usuario))) END) AS Lecturas
                 FROM dbo.ALFACORE_NOVEDADES_LECTURAS lx
                 WHERE lx.IdNovedad = n.IdNovedad
             ) s
@@ -589,7 +633,6 @@ public sealed class NovedadesService(
               AND ISNULL(n.Archivado, 0) = 0
               AND ISNULL(n.MostrarPopup, 0) = 1
               AND (n.FechaProgramada IS NULL OR n.FechaProgramada <= GETDATE())
-              AND (n.VigenteHasta IS NULL OR n.VigenteHasta >= GETDATE())
               AND l.FechaHoraLeido IS NULL;
             """;
 
