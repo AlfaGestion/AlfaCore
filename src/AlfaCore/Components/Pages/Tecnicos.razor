@@ -1,32 +1,18 @@
 @page "/tecnicos"
+@page "/{idweb}/{idbase:int}/tecnicos"
 @using AlfaCore.Models
 @using AlfaCore.Services
 @inject AlfaCore.Services.ITecnicosService TecnicosSvc
 @inject AlfaCore.Services.IUsuariosService UsuariosSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
-@inject IJSRuntime Js
+@inject IPageHeaderService PageHeader
 @implements IDisposable
 
 <PageTitle>Técnicos | Alfa Gestión</PageTitle>
 
-<div class="page-grid" @onclick="HandlePageClickAsync">
+<div class="page-grid tecnicos-page" @onclick="HandlePageClickAsync">
 
-    <!-- ── Intro ───────────────────────────────────────────────────────── -->
-    <section class="page-intro">
-        <div>
-            <h2 class="page-intro__title">Técnicos</h2>
-            <p class="page-intro__text">Administrá los técnicos del sistema: mecánicos, soporte y personal vinculado a usuarios.</p>
-        </div>
-        <div class="actions">
-            <button type="button" class="btn btn--primary" @onclick="BeginNewAsync">
-                <i class="bi bi-plus-circle"></i> Nuevo técnico
-            </button>
-            <button type="button" class="btn btn--ghost" @onclick="RecargarAsync" disabled="@_loadingList">
-                <i class="bi bi-arrow-clockwise"></i> Recargar
-            </button>
-        </div>
-    </section>
 
     <!-- ── Feedback ────────────────────────────────────────────────────── -->
     @if (_feedback is not null)
@@ -48,64 +34,6 @@
             </div>
         </section>
     }
-
-    <!-- ── Buscador ────────────────────────────────────────────────────── -->
-    <section class="panel-card smart-search-card" @onclick:stopPropagation>
-        <div class="smart-search">
-            <div class="smart-search__bar">
-                <i class="bi bi-search"></i>
-                <input type="search"
-                       placeholder="Buscar por código, nombre, teléfono, cargo o usuario asociado..."
-                       value="@_filters.Texto"
-                       @onfocus="OpenSearchPanel"
-                       @oninput="OnSearchInputAsync"
-                       @onkeydown="HandleApplyKeyDownAsync" />
-                <button type="button" class="smart-search__toggle" @onclick="ToggleSearchPanel" aria-label="Mostrar filtros">
-                    <i class="bi @(_showSearchPanel ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
-                </button>
-            </div>
-
-            <div class="smart-search__chips" aria-live="polite">
-                @{ var chips = BuildFilterChips(); }
-                @foreach (var chip in chips)
-                {
-                    <button type="button" class="smart-chip" @onclick="() => RemoveChipAsync(chip.Key)">
-                        @chip.Label <i class="bi bi-x"></i>
-                    </button>
-                }
-                @if (chips.Count == 0)
-                {
-                    <span class="smart-search__hint">Hacé clic en el buscador para filtros rápidos y agrupación.</span>
-                }
-            </div>
-
-            @if (_showSearchPanel)
-            {
-                <div class="smart-search__panel" @onkeydown="HandleApplyKeyDownAsync">
-                    <div class="smart-search__column">
-                        <h4><i class="bi bi-funnel-fill"></i> Filtros</h4>
-                        <button type="button" class="@GetSmartOptionClass(_activoFiltro == "1")" @onclick='() => SetStatusFilterAsync("1")'>Activos</button>
-                        <button type="button" class="@GetSmartOptionClass(_activoFiltro == "0")" @onclick='() => SetStatusFilterAsync("0")'>Dados de baja</button>
-                        <button type="button" class="@GetSmartOptionClass(_activoFiltro == "")"  @onclick='() => SetStatusFilterAsync("")'>Todos</button>
-                    </div>
-                    <div class="smart-search__column">
-                        <h4><i class="bi bi-stack"></i> Agrupar por</h4>
-                        <button type="button" class="@GetSmartOptionClass(_viewSettings.AgruparPor == TecnicosViewGroupKeys.None)"          @onclick='() => SetGroupAsync(TecnicosViewGroupKeys.None)'>Sin agrupar</button>
-                        <button type="button" class="@GetSmartOptionClass(_viewSettings.AgruparPor == TecnicosViewGroupKeys.Cargo)"         @onclick='() => SetGroupAsync(TecnicosViewGroupKeys.Cargo)'>Cargo</button>
-                        <button type="button" class="@GetSmartOptionClass(_viewSettings.AgruparPor == TecnicosViewGroupKeys.OcultarCliente)" @onclick='() => SetGroupAsync(TecnicosViewGroupKeys.OcultarCliente)'>Ocultar cliente</button>
-                        <button type="button" class="@GetSmartOptionClass(_viewSettings.AgruparPor == TecnicosViewGroupKeys.Activo)"        @onclick='() => SetGroupAsync(TecnicosViewGroupKeys.Activo)'>Estado</button>
-                    </div>
-                    <div class="smart-search__column">
-                        <button type="button" class="btn btn--primary btn--sm" @onclick="AplicarFiltrosAsync" disabled="@_loadingList">
-                            <i class="bi bi-search"></i> Aplicar
-                        </button>
-                        <h4><i class="bi bi-eraser"></i> Limpiar</h4>
-                        <button type="button" @onclick="LimpiarFiltrosAsync">Limpiar búsqueda</button>
-                    </div>
-                </div>
-            }
-        </div>
-    </section>
 
     <!-- ── Configurar vista ────────────────────────────────────────────── -->
     @if (_showViewSettings && !_showEditor)
@@ -167,7 +95,7 @@
         <section class="panel-card">
             <div class="panel-card__header">
                 <div>
-                    <h3 class="panel-card__title">@(_isNewMode ? "Nuevo técnico" : $"Editar — {_form.Nombre}")</h3>
+                    <h3 class="panel-card__title">Datos del técnico</h3>
                     <p class="panel-card__subtitle">
                         @if (_isNewMode)
                         {
@@ -178,11 +106,6 @@
                             <span>Código: @_form.IdTecnicoOriginal · Estado: @(_selectedActivo ? "Activo" : "Dado de baja")</span>
                         }
                     </p>
-                </div>
-                <div class="actions">
-                    <button type="button" class="btn btn--ghost" @onclick="CerrarEditor" disabled="@_saving">
-                        <i class="bi bi-arrow-left"></i> Volver al listado
-                    </button>
                 </div>
             </div>
 
@@ -359,29 +282,11 @@
                             <div>
                                 <strong>Usuario listo</strong>
                                 <p>@_editorUserCreatedNote</p>
-                                <p><strong>Ahora hacé clic en "Guardar técnico" para confirmar el alta.</strong></p>
+                                <p><strong>Ahora hacé clic en "Guardar" para confirmar el alta.</strong></p>
                             </div>
                         </div>
                     }
 
-                    <!-- Acciones -->
-                    <div class="actions usuarios-editor__actions">
-                        <button type="button" class="btn btn--primary" @onclick="GuardarAsync" disabled="@_saving">
-                            <i class="bi bi-floppy"></i>
-                            <span>@(_saving ? "Guardando..." : "Guardar técnico")</span>
-                        </button>
-                        <button type="button" class="btn btn--ghost" @onclick="ResetFormAsync" disabled="@_saving">
-                            <i class="bi bi-eraser"></i>
-                            <span>@(_isNewMode ? "Limpiar" : "Revertir")</span>
-                        </button>
-                        @if (!_isNewMode && _selectedActivo)
-                        {
-                            <button type="button" class="btn btn--ghost usuarios-btn-danger" @onclick="DarDeBajaAsync" disabled="@_saving">
-                                <i class="bi bi-person-dash"></i>
-                                <span>Dar de baja</span>
-                            </button>
-                        }
-                    </div>
                 </div>
             </div>
         </section>
@@ -393,18 +298,7 @@
         var groups         = BuildGridGroups();
 
         <section class="panel-card">
-            <div class="panel-card__header">
-                <div>
-                    <h3 class="panel-card__title">Técnicos</h3>
-                    <p class="panel-card__subtitle">@_pagedTotal registro(s) · Página @_pageNumber de @_totalPages · abrí la ficha con el botón editar o doble clic.</p>
-                </div>
-                <div class="actions">
-                    <button type="button" class="btn btn--ghost" @onclick="AbrirConfiguracionVista">
-                        <i class="bi bi-sliders"></i> Configurar vista
-                    </button>
-                    <span class="panel-card__subtitle">Agrupación: @GetGroupingLabel(_viewSettings.AgruparPor)</span>
-                </div>
-            </div>
+            <div class="panel-card__header panel-card__header--compact"><p class="panel-card__subtitle">@_pagedTotal registro(s) · Página @_pageNumber de @_totalPages · abrí la ficha con el botón editar o doble clic.</p></div>
 
             @if (_loadingList)
             {
@@ -626,6 +520,60 @@
     </section>
 }
 
+@if (_showDeactivateConfirm)
+{
+    <button type="button" class="modal-backdrop app-modal-backdrop" aria-label="Cancelar" @onclick="CloseDeactivateConfirm"></button>
+    <section class="panel-card app-modal no-print" @onclick:stopPropagation>
+        <div class="panel-card__header">
+            <div>
+                <h3 class="panel-card__title">Dar de baja técnico</h3>
+                <p class="panel-card__subtitle">Se dará de baja @_form.Nombre.</p>
+            </div>
+            <button type="button" class="btn btn--ghost btn--sm" @onclick="CloseDeactivateConfirm" disabled="@_saving" title="Cerrar">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        </div>
+        <div class="actions">
+            <button type="button" class="btn btn--danger" @onclick="ConfirmDeactivateAsync" disabled="@_saving">
+                <i class="bi bi-person-dash"></i> @(_saving ? "Procesando..." : "Confirmar baja")
+            </button>
+            <button type="button" class="btn btn--ghost" @onclick="CloseDeactivateConfirm" disabled="@_saving">
+                Cancelar
+            </button>
+        </div>
+    </section>
+}
+
+@if (_showPendingUserCleanupConfirm)
+{
+    <button type="button" class="modal-backdrop app-modal-backdrop" aria-label="Mantener usuario" @onclick="() => ResolvePendingUserCleanupAsync(false)"></button>
+    <section class="panel-card app-modal no-print" @onclick:stopPropagation>
+        <div class="panel-card__header">
+            <div>
+                <h3 class="panel-card__title">Usuario sin técnico guardado</h3>
+                <p class="panel-card__subtitle">Se creó el usuario @_pendingCleanupUserName, pero el técnico no fue guardado.</p>
+            </div>
+            <button type="button" class="btn btn--ghost btn--sm" @onclick="() => ResolvePendingUserCleanupAsync(false)" title="Cerrar">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        </div>
+        <div class="editor-msg editor-msg--warning" style="margin-bottom:1rem;">
+            <div>
+                <strong>Acceso pendiente</strong>
+                <p>Podés desactivar ese usuario para evitar dejar un acceso sin completar, o mantenerlo y continuar.</p>
+            </div>
+        </div>
+        <div class="actions">
+            <button type="button" class="btn btn--danger" @onclick="() => ResolvePendingUserCleanupAsync(true)">
+                <i class="bi bi-person-dash"></i> Desactivar usuario
+            </button>
+            <button type="button" class="btn btn--ghost" @onclick="() => ResolvePendingUserCleanupAsync(false)">
+                Mantener usuario
+            </button>
+        </div>
+    </section>
+}
+
 @code {
     // ── Estado de lista ──────────────────────────────────────────────────────
     private readonly TecnicosFilters          _filters          = new();
@@ -639,6 +587,7 @@
     private bool _showEditor;
     private bool _showViewSettings;
     private bool _showSearchPanel;
+    private bool _showDeactivateConfirm;
     private bool _viewSettingsLoaded;
     private int  _pagedTotal;
     private int  _pageNumber  = 1;
@@ -668,6 +617,10 @@
     private string _modalConfirmacion     = string.Empty;
     private string _editorUserCreatedNote = string.Empty;
     private string _pendingCreatedUserName = string.Empty;
+    private bool _showPendingUserCleanupConfirm;
+    private string _pendingCleanupUserName = string.Empty;
+    private string _pendingCleanupAction = string.Empty;
+    private string _pendingCleanupTargetId = string.Empty;
     private readonly Dictionary<string, string> _modalErrors = new(StringComparer.OrdinalIgnoreCase);
 
     // ── Datos de combos ───────────────────────────────────────────────────────
@@ -676,13 +629,104 @@
 
     // ── Ciclo de vida ─────────────────────────────────────────────────────────
 
+    private RenderFragment RenderTecnicosSmartSearch() => @<div class="smart-search" @onclick:stopPropagation>
+        <div class="smart-search__bar">
+            <i class="bi bi-search"></i>
+            <input type="search"
+                   placeholder="Buscar por código, nombre, teléfono, cargo o usuario asociado..."
+                   value="@_filters.Texto"
+                   @onfocus="OpenSearchPanel"
+                   @oninput="OnSearchInputAsync"
+                   @onkeydown="HandleApplyKeyDownAsync" />
+            <button type="button" class="smart-search__toggle" @onclick="ToggleSearchPanel" aria-label="Mostrar filtros">
+                <i class="bi @(_showSearchPanel ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
+            </button>
+        </div>
+
+        <div class="smart-search__chips" aria-live="polite">
+            @{ var chips = BuildFilterChips(); }
+            @foreach (var chip in chips)
+            {
+                <button type="button" class="smart-chip" @onclick="() => RemoveChipAsync(chip.Key)">
+                    @chip.Label <i class="bi bi-x"></i>
+                </button>
+            }
+            @if (chips.Count == 0)
+            {
+                <span class="smart-search__hint">Hacé clic en el buscador para filtros rápidos y agrupación.</span>
+            }
+        </div>
+
+        @if (_showSearchPanel)
+        {
+            <div class="smart-search__panel" @onkeydown="HandleApplyKeyDownAsync">
+                <div class="smart-search__column">
+                    <h4><i class="bi bi-funnel-fill"></i> Filtros</h4>
+                    <button type="button" class="@GetSmartOptionClass(_activoFiltro == "1")" @onclick='() => SetStatusFilterAsync("1")'>Activos</button>
+                    <button type="button" class="@GetSmartOptionClass(_activoFiltro == "0")" @onclick='() => SetStatusFilterAsync("0")'>Dados de baja</button>
+                    <button type="button" class="@GetSmartOptionClass(_activoFiltro == "")"  @onclick='() => SetStatusFilterAsync("")'>Todos</button>
+                </div>
+                <div class="smart-search__column">
+                    <h4><i class="bi bi-stack"></i> Agrupar por</h4>
+                    <button type="button" class="@GetSmartOptionClass(_viewSettings.AgruparPor == TecnicosViewGroupKeys.None)"          @onclick='() => SetGroupAsync(TecnicosViewGroupKeys.None)'>Sin agrupar</button>
+                    <button type="button" class="@GetSmartOptionClass(_viewSettings.AgruparPor == TecnicosViewGroupKeys.Cargo)"         @onclick='() => SetGroupAsync(TecnicosViewGroupKeys.Cargo)'>Cargo</button>
+                    <button type="button" class="@GetSmartOptionClass(_viewSettings.AgruparPor == TecnicosViewGroupKeys.OcultarCliente)" @onclick='() => SetGroupAsync(TecnicosViewGroupKeys.OcultarCliente)'>Ocultar cliente</button>
+                    <button type="button" class="@GetSmartOptionClass(_viewSettings.AgruparPor == TecnicosViewGroupKeys.Activo)"        @onclick='() => SetGroupAsync(TecnicosViewGroupKeys.Activo)'>Estado</button>
+                </div>
+                <div class="smart-search__column">
+                    <button type="button" class="btn btn--primary btn--sm" @onclick="AplicarFiltrosAsync" disabled="@_loadingList">
+                        <i class="bi bi-search"></i> Aplicar
+                    </button>
+                    <h4><i class="bi bi-eraser"></i> Limpiar</h4>
+                    <button type="button" @onclick="LimpiarFiltrosAsync">Limpiar búsqueda</button>
+                </div>
+            </div>
+        }
+    </div>;
+
+    private void UpdatePageHeader()
+    {
+        var actions = new List<PageHeaderAction>();
+
+        if (_showEditor)
+        {
+            actions.Add(new PageHeaderAction { Key = "guardar", Label = _saving ? "Guardando..." : "Guardar", Icon = "bi-floppy", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, Disabled = _saving, Busy = _saving, OnClick = GuardarAsync });
+            actions.Add(new PageHeaderAction { Key = "cancelar", Label = "Cancelar", Icon = "bi-x-circle", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, Disabled = _saving, OnClick = CerrarEditor });
+            if (!_isNewMode && _selectedActivo)
+                actions.Add(new PageHeaderAction { Key = "baja", Label = "Dar de baja", Icon = "bi-person-dash", Style = PageHeaderActionStyle.Danger, Priority = PageHeaderActionPriority.Overflow, Disabled = _saving, OnClick = DarDeBajaAsync });
+        }
+        else
+        {
+            actions.Add(new PageHeaderAction { Key = "nuevo", Label = "Nuevo técnico", Icon = "bi-plus-circle", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, OnClick = BeginNewAsync });
+            actions.Add(new PageHeaderAction { Key = "recargar", Label = "Recargar", Icon = "bi-arrow-clockwise", Style = PageHeaderActionStyle.Ghost, Disabled = _loadingList, OnClick = RecargarAsync });
+            actions.Add(new PageHeaderAction { Key = "vista", Label = "Configurar vista", Icon = "bi-sliders", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, OnClick = () => { AbrirConfiguracionVista(); UpdatePageHeader(); return Task.CompletedTask; } });
+            actions.Add(new PageHeaderAction { Key = "agrupar", Label = GetGroupingLabel(_viewSettings.AgruparPor), Icon = "bi-collection", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, OnClick = ToggleSearchPanelAsync });
+        }
+
+        PageHeader.Set(new PageHeaderConfig
+        {
+            Title = _showEditor ? (_isNewMode ? "Nuevo técnico" : $"Editar {_form.Nombre}") : "Técnicos",
+            Breadcrumb = ["Soporte", "Técnicos"],
+            State = _saving ? PageHeaderState.Loading : _showEditor ? (_isNewMode ? PageHeaderState.Creating : PageHeaderState.Editing) : PageHeaderState.Idle,
+            OnBack = _showEditor ? new Func<Task>(CerrarEditor) : null,
+            Search = _showEditor
+                ? null
+                : new PageHeaderSearchConfig(),
+            SearchContent = _showEditor ? null : RenderTecnicosSmartSearch(),
+            Actions = actions
+        });
+        _ = InvokeAsync(StateHasChanged);
+    }
+
     protected override async Task OnInitializedAsync()
     {
         AppUserSession.StateChanged += OnAppUserSessionChanged;
+        UpdatePageHeader();
         await Task.WhenAll(
             EnsureViewSettingsLoadedAsync(),
             CargarCombosAsync(),
             BuscarAsync());
+        UpdatePageHeader();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -696,7 +740,10 @@
     }
 
     public void Dispose()
-        => AppUserSession.StateChanged -= OnAppUserSessionChanged;
+    {
+        AppUserSession.StateChanged -= OnAppUserSessionChanged;
+        PageHeader.Clear();
+    }
 
     private async Task CargarCombosAsync()
     {
@@ -721,16 +768,20 @@
 
     private async Task RecargarAsync()
     {
+        UpdatePageHeader();
         await EnsureViewSettingsLoadedAsync(force: true);
         await BuscarAsync();
         if (!_isNewMode && !string.IsNullOrWhiteSpace(_selectedIdTecnico))
             await CargarEditorAsync(_selectedIdTecnico);
+        UpdatePageHeader();
     }
 
     private async Task AplicarFiltrosAsync()
     {
         _filters.PageNumber = 1;
         await BuscarAsync();
+        _showSearchPanel = false;
+        UpdatePageHeader();
     }
 
     private async Task HandleApplyKeyDownAsync(KeyboardEventArgs args)
@@ -775,6 +826,7 @@
         finally
         {
             _loadingList = false;
+            UpdatePageHeader();
         }
     }
 
@@ -806,14 +858,30 @@
 
     // ── Smart search ─────────────────────────────────────────────────────────
 
-    private void OpenSearchPanel() => _showSearchPanel = true;
-    private void ToggleSearchPanel() => _showSearchPanel = !_showSearchPanel;
+    private void OpenSearchPanel()
+    {
+        _showSearchPanel = true;
+        UpdatePageHeader();
+    }
+
+    private void ToggleSearchPanel()
+    {
+        _showSearchPanel = !_showSearchPanel;
+        UpdatePageHeader();
+    }
+
+    private Task ToggleSearchPanelAsync()
+    {
+        ToggleSearchPanel();
+        return Task.CompletedTask;
+    }
 
     private async Task HandlePageClickAsync()
     {
         if (_showSearchPanel)
         {
             _showSearchPanel = false;
+            UpdatePageHeader();
             StateHasChanged();
         }
         await Task.CompletedTask;
@@ -824,6 +892,15 @@
         _filters.Texto      = e.Value?.ToString() ?? string.Empty;
         _filters.PageNumber = 1;
         await BuscarAsync();
+        UpdatePageHeader();
+    }
+
+    private async Task OnHeaderSearchChangedAsync(string value)
+    {
+        _filters.Texto = value;
+        _filters.PageNumber = 1;
+        await BuscarAsync();
+        UpdatePageHeader();
     }
 
     private async Task SetStatusFilterAsync(string value)
@@ -898,8 +975,16 @@
 
     private async Task BeginNewAsync()
     {
-        await CheckAndCleanPendingUserAsync();
+        if (TryOpenPendingUserCleanup("begin-new"))
+            return;
+
+        await BeginNewCoreAsync();
+    }
+
+    private async Task BeginNewCoreAsync()
+    {
         ResetFormState();
+        SetFeedback(null);
         _showEditor       = true;
         _showViewSettings = false;
 
@@ -909,14 +994,25 @@
         _form.IdTecnico = result.Success && result.Value is not null ? result.Value : string.Empty;
 
         _shouldFocusNombre = true;
+        UpdatePageHeader();
     }
 
     private async Task CerrarEditor()
     {
-        await CheckAndCleanPendingUserAsync();
+        if (TryOpenPendingUserCleanup("close-editor"))
+            return;
+
+        CloseEditorCore();
+        await Task.CompletedTask;
+    }
+
+    private void CloseEditorCore()
+    {
         ClearFieldErrors();
         _editorUserCreatedNote = string.Empty;
+        SetFeedback(null);
         _showEditor = false;
+        UpdatePageHeader();
     }
 
     private async Task ResetFormAsync()
@@ -932,10 +1028,19 @@
 
     private async Task AbrirEditorAsync(string idTecnico)
     {
-        await CheckAndCleanPendingUserAsync();
+        if (TryOpenPendingUserCleanup("open-editor", idTecnico))
+            return;
+
+        await OpenEditorCoreAsync(idTecnico);
+    }
+
+    private async Task OpenEditorCoreAsync(string idTecnico)
+    {
         _showEditor       = true;
         _showViewSettings = false;
+        SetFeedback(null);
         await CargarEditorAsync(idTecnico);
+        UpdatePageHeader();
     }
 
     private async Task CargarEditorAsync(string idTecnico)
@@ -968,6 +1073,7 @@
         _editorUserCreatedNote  = string.Empty;
         _pendingCreatedUserName = string.Empty;
         _saving = true;
+        UpdatePageHeader();
         try
         {
             try
@@ -975,7 +1081,9 @@
                 var savedId = await TecnicosSvc.SaveAsync(_form);
                 SetFeedback(AppUiMessage.Success("Técnico guardado", $"El técnico {savedId} se guardó correctamente."));
                 await BuscarAsync();
-                await CargarEditorAsync(savedId);
+                _selectedIdTecnico = savedId;
+                _showEditor = false;
+                _isNewMode = false;
             }
             catch (AppValidationException validationEx)
             {
@@ -996,6 +1104,7 @@
         finally
         {
             _saving = false;
+            UpdatePageHeader();
         }
     }
 
@@ -1004,10 +1113,27 @@
         if (_isNewMode || string.IsNullOrWhiteSpace(_selectedIdTecnico))
             return;
 
-        var confirm = await Js.InvokeAsync<bool>("confirm", $"¿Dar de baja al técnico {_form.Nombre}?");
-        if (!confirm)
+        _showDeactivateConfirm = true;
+        await Task.CompletedTask;
+    }
+
+    private void CloseDeactivateConfirm()
+    {
+        if (_saving)
             return;
 
+        _showDeactivateConfirm = false;
+    }
+
+    private async Task ConfirmDeactivateAsync()
+    {
+        if (_isNewMode || string.IsNullOrWhiteSpace(_selectedIdTecnico))
+        {
+            _showDeactivateConfirm = false;
+            return;
+        }
+
+        _showDeactivateConfirm = false;
         _saving = true;
         try
         {
@@ -1112,17 +1238,48 @@
         _modalErrors.Clear();
     }
 
-    private async Task CheckAndCleanPendingUserAsync()
+    private bool TryOpenPendingUserCleanup(string action, string? targetId = null)
     {
-        if (string.IsNullOrEmpty(_pendingCreatedUserName)) return;
+        if (string.IsNullOrEmpty(_pendingCreatedUserName))
+            return false;
+
         var name = _pendingCreatedUserName;
         _pendingCreatedUserName = string.Empty;
-        var confirm = await Js.InvokeAsync<bool>("confirm",
-            $"Se creó el usuario '{name}' pero el técnico no fue guardado. ¿Querés desactivar el usuario para evitar dejar un acceso sin completar?");
-        if (confirm)
+        _pendingCleanupUserName = name;
+        _pendingCleanupAction = action;
+        _pendingCleanupTargetId = targetId ?? string.Empty;
+        _showPendingUserCleanupConfirm = true;
+        return true;
+    }
+
+    private async Task ResolvePendingUserCleanupAsync(bool deactivate)
+    {
+        var name = _pendingCleanupUserName;
+        var action = _pendingCleanupAction;
+        var targetId = _pendingCleanupTargetId;
+
+        _showPendingUserCleanupConfirm = false;
+        _pendingCleanupUserName = string.Empty;
+        _pendingCleanupAction = string.Empty;
+        _pendingCleanupTargetId = string.Empty;
+
+        if (deactivate && !string.IsNullOrWhiteSpace(name))
         {
             await UiOps.RunAsync(() => UsuariosSvc.DeactivateAsync(name), "No se pudo desactivar el usuario.");
             await RecargarUsuariosAsync();
+        }
+
+        switch (action)
+        {
+            case "begin-new":
+                await BeginNewCoreAsync();
+                break;
+            case "close-editor":
+                CloseEditorCore();
+                break;
+            case "open-editor":
+                await OpenEditorCoreAsync(targetId);
+                break;
         }
     }
 

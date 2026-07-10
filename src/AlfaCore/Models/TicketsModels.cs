@@ -6,11 +6,12 @@ public sealed class TicketsFilters
     public string? CodigoEstado { get; set; }
     public string? IdTecnico { get; set; }
     public int? Prioridad { get; set; }
-    public bool IncluirCerrados { get; set; }
+    public bool IncluirCerrados { get; set; } = true;
     public bool? TieneAsignado { get; set; }
     public bool? TieneMensajes { get; set; }
     public string? ClienteCodigo { get; set; }
     public int? IdContacto { get; set; }
+    public int? IdEtiqueta { get; set; }
     public string FechaRapida { get; set; } = string.Empty;
     public List<SearchRuleDto> Reglas { get; set; } = [];
     public int PageNumber { get; set; } = 1;
@@ -108,6 +109,7 @@ public sealed class TicketCreateRequest
     public int? IdContacto { get; set; }
     public long? IdConversacion { get; set; }
     public List<long> IdMensajes { get; set; } = [];
+    public List<int> IdEtiquetas { get; set; } = [];
     public string? UsuarioAccion { get; set; }
 }
 
@@ -121,6 +123,21 @@ public sealed class TicketUpdateRequest
     public string? IdTecnico { get; set; }
     public string? ClienteCodigo { get; set; }
     public int? IdContacto { get; set; }
+    public List<int> IdEtiquetas { get; set; } = [];
+    public string? UsuarioAccion { get; set; }
+}
+
+public sealed class TicketEtiquetaSaveRequest
+{
+    public int IdEtiqueta { get; set; }
+    public string Nombre { get; set; } = string.Empty;
+    public string Color { get; set; } = string.Empty;
+    public string? UsuarioAccion { get; set; }
+}
+
+public sealed class TicketEtiquetaDeleteRequest
+{
+    public int IdEtiqueta { get; set; }
     public string? UsuarioAccion { get; set; }
 }
 
@@ -197,6 +214,7 @@ public sealed class TicketViewColumnDto
     public string Label { get; set; } = string.Empty;
     public bool Visible { get; set; }
     public int Order { get; set; }
+    public int WidthPx { get; set; }
 }
 
 public static class TicketEstadoKeys
@@ -217,6 +235,7 @@ public static class TicketViewColumnKeys
     public const string Asignado = "asignado";
     public const string Cliente = "cliente";
     public const string Contacto = "contacto";
+    public const string Etiquetas = "etiquetas";
     public const string Fecha = "fecha";
     public const string Mensajes = "mensajes";
 }

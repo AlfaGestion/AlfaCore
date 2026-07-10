@@ -1,4 +1,5 @@
 @page "/conversaciones/plantillas"
+@page "/{idweb}/{idbase:int}/conversaciones/plantillas"
 @inject AlfaCore.Services.IConversacionesService ConversacionesSvc
 
 <PageTitle>Plantillas de WhatsApp | Alfa Gestión</PageTitle>
@@ -19,15 +20,24 @@
                 </button>
                 @if (_mostrarMenuCrear)
                 {
-                    <div style="position: absolute; right: 0; top: calc(100% + .45rem); z-index: 40; min-width: 170px; padding: .35rem; border: 1px solid rgba(71, 85, 105, .95); border-radius: 12px; background: #0f172a; box-shadow: 0 16px 36px rgba(0, 0, 0, .32);">
+                    <div style="position: absolute; right: 0; top: calc(100% + .45rem); z-index: 40; min-width: 220px; padding: .35rem; border: 1px solid rgba(71, 85, 105, .95); border-radius: 12px; background: #0f172a; box-shadow: 0 16px 36px rgba(0, 0, 0, .32);">
                         <button type="button" class="btn btn--ghost" style="width: 100%; justify-content: flex-start; margin-bottom: .25rem;" @onclick="CrearPlantillaBase">
                             <i class="bi bi-file-text"></i> Plantilla
                         </button>
                         <button type="button" class="btn btn--ghost" style="width: 100%; justify-content: flex-start; margin-bottom: .25rem;" @onclick="AplicarPlantillaFacturaMantenimientoAsync">
                             <i class="bi bi-file-earmark-text"></i> Factura
                         </button>
-                        <button type="button" class="btn btn--ghost" style="width: 100%; justify-content: flex-start;" @onclick="AplicarPlantillaCobranzaAsync">
+                        <button type="button" class="btn btn--ghost" style="width: 100%; justify-content: flex-start; margin-bottom: .25rem;" @onclick="AplicarPlantillaCobranzaAsync">
                             <i class="bi bi-receipt"></i> Cobranza
+                        </button>
+                        <button type="button" class="btn btn--ghost" style="width: 100%; justify-content: flex-start; margin-bottom: .25rem; white-space: nowrap;" @onclick="AplicarPlantillaTareaAsignadaAsync">
+                            <i class="bi bi-person-check"></i> Tarea asignada
+                        </button>
+                        <button type="button" class="btn btn--ghost" style="width: 100%; justify-content: flex-start; margin-bottom: .25rem; white-space: nowrap;" @onclick="AplicarPlantillaTareaFinalizadaAsync">
+                            <i class="bi bi-check2-circle"></i> Tarea finalizada
+                        </button>
+                        <button type="button" class="btn btn--ghost" style="width: 100%; justify-content: flex-start; white-space: nowrap;" @onclick="AplicarPlantillaGuardiaAsync">
+                            <i class="bi bi-calendar-week"></i> Guardia
                         </button>
                     </div>
                 }
@@ -75,8 +85,13 @@
                 <button type="button" class="btn btn--primary" @onclick="LoadTemplatesAsync" disabled="@_loading">
                     <i class="bi bi-funnel"></i> Aplicar
                 </button>
-                <button type="button" class="btn btn--ghost" @onclick="ClearTemplateFiltersAsync" disabled="@_loading">
-                    <i class="bi bi-eraser"></i> Limpiar
+                <button type="button"
+                        class="btn btn--ghost conversations-filter-clear"
+                        title="Limpiar filtros"
+                        aria-label="Limpiar filtros"
+                        @onclick="ClearTemplateFiltersAsync"
+                        disabled="@_loading">
+                    <i class="bi bi-eraser"></i>
                 </button>
             </div>
         </section>
@@ -179,12 +194,16 @@
                     </div>
                     <div class="templates-variable-guide">
                         <span class="context-card__label">Variables automáticas sugeridas</span>
-                        <button type="button" class="templates-variable-chip" @onclick='() => InsertVariable("{{1}}")'>@("{{1}} Nombre")</button>
-                        <button type="button" class="templates-variable-chip" @onclick='() => InsertVariable("{{2}}")'>@($"{{{{2}}}} {(EsFormularioFacturaMantenimiento ? "Periodo" : "Detalle de deuda")}")</button>
-                        <button type="button" class="templates-variable-chip" @onclick='() => InsertVariable("{{3}}")'>@($"{{{{3}}}} {(EsFormularioFacturaMantenimiento ? "Detalle factura" : "Forma de pago")}")</button>
+                        <button type="button" class="templates-variable-chip" @onclick='() => InsertVariable("{{1}}")'>@($"{{{{1}}}} {VariableLabel(1)}")</button>
+                        <button type="button" class="templates-variable-chip" @onclick='() => InsertVariable("{{2}}")'>@($"{{{{2}}}} {VariableLabel(2)}")</button>
+                        <button type="button" class="templates-variable-chip" @onclick='() => InsertVariable("{{3}}")'>@($"{{{{3}}}} {VariableLabel(3)}")</button>
                         @if (EsFormularioFacturaMantenimiento)
                         {
                             <button type="button" class="templates-variable-chip" @onclick='() => InsertVariable("{{4}}")'>@("{{4}} Forma de pago")</button>
+                        }
+                        @if (EsFormularioTareas)
+                        {
+                            <button type="button" class="templates-variable-chip" @onclick='() => InsertVariable("{{4}}")'>@("{{4}} Fecha y hora")</button>
                         }
                     </div>
                     <label class="field">
@@ -201,6 +220,9 @@
                         <button type="button" class="btn btn--ghost" @onclick="SyncAsync" disabled="@(_busy || _selectedId <= 0)">
                             <i class="bi bi-arrow-repeat"></i> Sincronizar
                         </button>
+                        <button type="button" class="btn btn--ghost" @onclick="ArchiveAsync" disabled="@(_busy || _selectedId <= 0 || !_form.Activa)">
+                            <i class="bi bi-archive"></i> @(_confirmArchive ? "Confirmar archivo" : "Archivar")
+                        </button>
                     </div>
 
                     @if (_feedback is not null)
@@ -209,7 +231,27 @@
                     }
                     @if (_error is not null)
                     {
-                        <div class="conversations-inline conversations-inline--error">@_error</div>
+                        <div class="conversations-inline conversations-inline--error" style="display: flex; align-items: center; gap: .65rem;">
+                            <span style="flex: 1;">@_error</span>
+                            @if (!string.IsNullOrWhiteSpace(_errorDetail))
+                            {
+                                <button type="button"
+                                        class="btn btn--ghost"
+                                        title="Ver detalle del error"
+                                        aria-label="Ver detalle del error"
+                                        style="width: 2.1rem; height: 2.1rem; padding: 0; border-radius: 999px;"
+                                        @onclick="ToggleErrorDetail">
+                                    <i class="bi bi-info-circle"></i>
+                                </button>
+                            }
+                        </div>
+                        @if (_showErrorDetail && !string.IsNullOrWhiteSpace(_errorDetail))
+                        {
+                            <div class="context-card" style="border-color: rgba(56, 189, 248, .38); background: rgba(8, 47, 73, .35);">
+                                <span class="context-card__label">Detalle para resolverlo</span>
+                                <pre style="white-space: pre-wrap; margin: .35rem 0 0; font-family: inherit; line-height: 1.45;">@_errorDetail</pre>
+                            </div>
+                        }
                     }
                 </div>
             </section>
@@ -257,7 +299,10 @@
     private string? _loadError;
     private string? _feedback;
     private string? _error;
+    private string? _errorDetail;
+    private bool _showErrorDetail;
     private bool _mostrarMenuCrear;
+    private bool _confirmArchive;
     private string _crearSeleccion = CrearOpciones.Crear;
     private int _crearPulseVersion;
 
@@ -336,16 +381,53 @@
         "Titular: ALFA NET Soluciones Informáticas"
     ]);
 
+    private static readonly string TareaAsignadaTemplateBody = string.Join(Environment.NewLine,
+    [
+        "Se te asigno la tarea \"{{1}}\".",
+        string.Empty,
+        "El tecnico asignado es {{2}}.",
+        "La asignacion fue realizada por {{3}}.",
+        "Fecha y hora de registro: {{4}}."
+    ]);
+
+    private static readonly string TareaFinalizadaTemplateBody = string.Join(Environment.NewLine,
+    [
+        "La tarea \"{{1}}\" asignada a \"{{2}}\" ha sido finalizada por \"{{3}}\".",
+        string.Empty,
+        "Fecha y hora de cierre: {{4}}."
+    ]);
+
+    private static readonly string GuardiaTemplateBody = string.Join(Environment.NewLine,
+    [
+        "🛡️ *Aviso de guardia*",
+        string.Empty,
+        "Hola {{1}}, te recordamos que esta semana te corresponde estar de guardia.",
+        string.Empty,
+        "📅 Inicio: {{2}}",
+        "🏁 Fin: {{3}}",
+        string.Empty,
+        "Por favor, asegurate de estar disponible ante cualquier eventualidad que pueda surgir.",
+        "Ante cualquier duda, podés contactar al equipo de *AlfaNet*.",
+        string.Empty,
+        "¡Gracias por tu compromiso!",
+        "AlfaNet | Soluciones Informáticas"
+    ]);
+
     private string PreviewBody => RenderPreview(_form.CuerpoTexto, ParseExamples(_examplesText));
     private int BodyLength => _form.CuerpoTexto?.Length ?? 0;
     private bool IsBodyTooLong => BodyLength > MetaBodyMaxLength;
     private bool EsFormularioFacturaMantenimiento => EsPlantillaFacturaMantenimiento(_form);
+    private bool EsFormularioTareas => EsPlantillaTareas(_form);
+    private bool EsFormularioGuardia => EsPlantillaGuardia(_form);
     private string CrearButtonLabel => _crearSeleccion;
     private string CrearButtonIcon => _crearSeleccion switch
     {
         CrearOpciones.Plantilla => "bi-file-text",
         CrearOpciones.Factura => "bi-file-earmark-text",
         CrearOpciones.Cobranza => "bi-receipt",
+        CrearOpciones.TareaAsignada => "bi-person-check",
+        CrearOpciones.TareaFinalizada => "bi-check2-circle",
+        CrearOpciones.Guardia => "bi-calendar-week",
         _ => "bi-plus-circle-fill"
     };
     private string CrearButtonStyle
@@ -432,7 +514,7 @@
         _feedback = _selectedId > 0
             ? "Plantilla de factura de mantenimiento cargada sobre la existente. Revisa los datos y guarda los cambios."
             : "Plantilla de factura de mantenimiento cargada. Revisa los ejemplos y guarda el borrador.";
-        _error = null;
+        ClearError();
 
         await Task.CompletedTask;
     }
@@ -460,9 +542,80 @@
         _feedback = _selectedId > 0
             ? "Plantilla de cobranza cargada sobre la existente. Revisa los datos y guarda los cambios."
             : "Plantilla de cobranza cargada. Revisa los ejemplos y guarda el borrador.";
-        _error = null;
+        ClearError();
 
         await Task.CompletedTask;
+    }
+
+    private async Task AplicarPlantillaTareaAsignadaAsync()
+    {
+        _mostrarMenuCrear = false;
+        MarcarOpcionCrear(CrearOpciones.TareaAsignada);
+        AplicarFiltroModeloSeleccionado();
+        AplicarModeloTarea(NewTareaAsignadaForm(), "Tarea asignada");
+
+        await Task.CompletedTask;
+    }
+
+    private async Task AplicarPlantillaTareaFinalizadaAsync()
+    {
+        _mostrarMenuCrear = false;
+        MarcarOpcionCrear(CrearOpciones.TareaFinalizada);
+        AplicarFiltroModeloSeleccionado();
+        AplicarModeloTarea(NewTareaFinalizadaForm(), "Tarea finalizada");
+
+        await Task.CompletedTask;
+    }
+
+    private async Task AplicarPlantillaGuardiaAsync()
+    {
+        _mostrarMenuCrear = false;
+        MarcarOpcionCrear(CrearOpciones.Guardia);
+        AplicarFiltroModeloSeleccionado();
+        var model = NewGuardiaForm();
+        var existing = _allTemplates.FirstOrDefault(x =>
+            string.Equals(x.NombreMeta, model.NombreMeta, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(x.Idioma, model.Idioma, StringComparison.OrdinalIgnoreCase));
+
+        _selectedId = existing?.IdPlantilla ?? 0;
+        model.IdPlantilla = _selectedId;
+        _form = model;
+        _examplesText = JoinMultilineValues(
+        [
+            "Evelyn",
+            "05/06/2026 09:00",
+            "12/06/2026 09:00"
+        ]);
+        _formEstadoMeta = string.IsNullOrWhiteSpace(existing?.EstadoMeta) ? "DRAFT" : existing.EstadoMeta;
+        _feedback = _selectedId > 0
+            ? "Plantilla de guardia cargada sobre la existente. Revisa los datos y guarda los cambios."
+            : "Plantilla de guardia cargada. Revisa los ejemplos y guarda el borrador.";
+        ClearError();
+
+        await Task.CompletedTask;
+    }
+
+    private void AplicarModeloTarea(ConversacionPlantillaDto model, string nombre)
+    {
+        var existing = _allTemplates.FirstOrDefault(x =>
+            string.Equals(x.NombreMeta, model.NombreMeta, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(x.Idioma, model.Idioma, StringComparison.OrdinalIgnoreCase));
+
+        _selectedId = existing?.IdPlantilla ?? 0;
+        model.IdPlantilla = _selectedId;
+        _form = model;
+        _examplesText = JoinMultilineValues(
+        [
+            "Actualizar servidor AlfaCore",
+            "Evelyn",
+            "Administrador",
+            "05/06/2026 15:30"
+        ]);
+        _formEstadoMeta = string.IsNullOrWhiteSpace(existing?.EstadoMeta) ? "DRAFT" : existing.EstadoMeta;
+        _feedback = _selectedId > 0
+            ? $"{nombre} cargada sobre la existente. Revisa los datos y guarda los cambios."
+            : $"{nombre} cargada. Revisa los ejemplos y guarda el borrador.";
+        ClearError();
     }
 
     private async Task HandleSearchEnter(KeyboardEventArgs args)
@@ -481,13 +634,13 @@
     {
         _busy = true;
         _feedback = null;
-        _error = null;
+        ClearError();
         try
         {
             var item = await ConversacionesSvc.GetTemplateAsync(idPlantilla);
             if (item is null)
             {
-                _error = "La plantilla seleccionada ya no existe.";
+                SetError("La plantilla seleccionada ya no existe.");
                 return;
             }
 
@@ -495,10 +648,11 @@
             _form = item;
             _examplesText = ExamplesToText(item.EjemplosVariablesJson);
             _formEstadoMeta = string.IsNullOrWhiteSpace(item.EstadoMeta) ? "DRAFT" : item.EstadoMeta;
+            _confirmArchive = false;
         }
         catch (Exception ex)
         {
-            _error = ex.Message;
+            SetError(ex);
         }
         finally
         {
@@ -514,7 +668,8 @@
         _examplesText = "Evelyn";
         _formEstadoMeta = "DRAFT";
         _feedback = null;
-        _error = null;
+        _confirmArchive = false;
+        ClearError();
     }
 
     private void MarcarOpcionCrear(string opcion)
@@ -528,28 +683,17 @@
         _form.CuerpoTexto = string.IsNullOrWhiteSpace(_form.CuerpoTexto)
             ? variable
             : $"{_form.CuerpoTexto}{Environment.NewLine}{variable}";
+        _confirmArchive = false;
     }
 
     private async Task SaveAsync()
     {
         _busy = true;
         _feedback = null;
-        _error = null;
+        ClearError();
         try
         {
-            var id = await ConversacionesSvc.SaveTemplateDraftAsync(new ConversacionPlantillaSaveRequest
-            {
-                IdPlantilla = _selectedId,
-                NombreVisible = _form.NombreVisible,
-                NombreMeta = _form.NombreMeta,
-                Categoria = _form.Categoria,
-                Idioma = _form.Idioma,
-                EncabezadoTexto = _form.EncabezadoTexto,
-                CuerpoTexto = _form.CuerpoTexto,
-                PieTexto = _form.PieTexto,
-                EjemplosVariablesJson = _examplesText,
-                Activa = _form.Activa
-            });
+            var id = await ConversacionesSvc.SaveTemplateDraftAsync(BuildSaveRequest());
 
             _feedback = "Plantilla guardada.";
             await LoadTemplatesAsync();
@@ -557,7 +701,7 @@
         }
         catch (Exception ex)
         {
-            _error = ex.Message;
+            SetError(ex);
         }
         finally
         {
@@ -572,18 +716,29 @@
 
         _busy = true;
         _feedback = null;
-        _error = null;
+        ClearError();
         try
         {
             if (IsBodyTooLong)
             {
-                _error = $"Meta permite hasta {MetaBodyMaxLength} caracteres en el cuerpo. Acortá el texto antes de enviarlo a aprobación.";
+                SetError($"Meta permite hasta {MetaBodyMaxLength} caracteres en el cuerpo. Acortá el texto antes de enviarlo a aprobación.");
                 return;
             }
 
+            if (string.IsNullOrWhiteSpace(_form.NombreVisible) ||
+                string.IsNullOrWhiteSpace(_form.NombreMeta) ||
+                string.IsNullOrWhiteSpace(_form.CuerpoTexto))
+            {
+                SetError("Completá nombre, nombre Meta y cuerpo antes de enviar a aprobación.");
+                return;
+            }
+
+            var savedId = await ConversacionesSvc.SaveTemplateDraftAsync(BuildSaveRequest());
+            _selectedId = savedId;
+
             await ConversacionesSvc.SubmitTemplateForApprovalAsync(new ConversacionPlantillaSubmitRequest
             {
-                IdPlantilla = _selectedId
+                IdPlantilla = savedId
             });
 
             _feedback = "Plantilla enviada a aprobación de Meta.";
@@ -592,13 +747,28 @@
         }
         catch (Exception ex)
         {
-            _error = ex.Message;
+            SetError(ex);
         }
         finally
         {
             _busy = false;
         }
     }
+
+    private ConversacionPlantillaSaveRequest BuildSaveRequest()
+        => new()
+        {
+            IdPlantilla = _selectedId,
+            NombreVisible = _form.NombreVisible,
+            NombreMeta = _form.NombreMeta,
+            Categoria = _form.Categoria,
+            Idioma = _form.Idioma,
+            EncabezadoTexto = _form.EncabezadoTexto,
+            CuerpoTexto = _form.CuerpoTexto,
+            PieTexto = _form.PieTexto,
+            EjemplosVariablesJson = _examplesText,
+            Activa = _form.Activa
+        };
 
     private async Task SyncAsync()
     {
@@ -607,7 +777,7 @@
 
         _busy = true;
         _feedback = null;
-        _error = null;
+        ClearError();
         try
         {
             await ConversacionesSvc.SyncTemplateStatusAsync(_selectedId);
@@ -617,13 +787,269 @@
         }
         catch (Exception ex)
         {
-            _error = ex.Message;
+            SetError(ex);
         }
         finally
         {
             _busy = false;
         }
     }
+
+    private async Task ArchiveAsync()
+    {
+        if (_selectedId <= 0 || !_form.Activa)
+            return;
+
+        if (!_confirmArchive)
+        {
+            _confirmArchive = true;
+            _feedback = "Volvé a presionar Confirmar archivo para ocultar esta plantilla.";
+            ClearError();
+            return;
+        }
+
+        _busy = true;
+        _feedback = null;
+        ClearError();
+        try
+        {
+            await ConversacionesSvc.ArchiveTemplateAsync(_selectedId);
+            _feedback = "Plantilla archivada.";
+            _confirmArchive = false;
+            var archivedId = _selectedId;
+            await LoadTemplatesAsync();
+            if (_filters.IncluirInactivas)
+                await SelectTemplateAsync(archivedId);
+            else
+                NuevaPlantilla();
+        }
+        catch (Exception ex)
+        {
+            SetError(ex);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void ClearError()
+    {
+        _error = null;
+        _errorDetail = null;
+        _showErrorDetail = false;
+    }
+
+    private void SetError(string message)
+    {
+        _error = message;
+        _errorDetail = null;
+        _showErrorDetail = false;
+    }
+
+    private void SetError(Exception ex)
+    {
+        var internalCode = ex is AlfaCore.Services.AppUserFacingException appError
+            ? appError.ErrorCode
+            : ExtractInternalCode(ex.Message);
+
+        if (TryGetMetaError(ex, out var metaError))
+        {
+            _error = BuildMetaErrorSummary(metaError, internalCode);
+            _errorDetail = BuildMetaErrorDetail(metaError, internalCode);
+            _showErrorDetail = false;
+            return;
+        }
+
+        _error = ex.Message;
+        _errorDetail = null;
+        _showErrorDetail = false;
+    }
+
+    private void ToggleErrorDetail()
+        => _showErrorDetail = !_showErrorDetail;
+
+    private static string BuildMetaErrorSummary(MetaApiError error, string? internalCode)
+    {
+        var title = FirstText(error.UserTitle, error.Message, "Meta rechazo la solicitud.");
+        var parts = new List<string> { $"Meta rechazo la solicitud: {title}" };
+
+        if (error.Code is not null)
+        {
+            var code = error.Subcode is null
+                ? $"Codigo Meta {error.Code}"
+                : $"Codigo Meta {error.Code}, subcodigo {error.Subcode}";
+            parts.Add(code);
+        }
+
+        if (!string.IsNullOrWhiteSpace(internalCode))
+            parts.Add($"Codigo interno AlfaCore {internalCode}");
+
+        return string.Join(". ", parts) + ".";
+    }
+
+    private static string BuildMetaErrorDetail(MetaApiError error, string? internalCode)
+    {
+        var lines = new List<string>();
+        var meaning = GetMetaErrorMeaning(error);
+        if (!string.IsNullOrWhiteSpace(meaning))
+        {
+            lines.Add("Que significa");
+            lines.Add(meaning);
+            lines.Add(string.Empty);
+        }
+
+        var fix = GetMetaErrorFix(error);
+        if (!string.IsNullOrWhiteSpace(fix))
+        {
+            lines.Add("Como resolverlo");
+            lines.Add(fix);
+            lines.Add(string.Empty);
+        }
+
+        lines.Add("Detalle tecnico");
+        if (error.Code is not null)
+            lines.Add($"Codigo Meta: {error.Code}");
+        if (error.Subcode is not null)
+            lines.Add($"Subcodigo Meta: {error.Subcode}");
+        if (!string.IsNullOrWhiteSpace(error.Type))
+            lines.Add($"Tipo: {error.Type}");
+        if (!string.IsNullOrWhiteSpace(error.FbTraceId))
+            lines.Add($"fbtrace_id: {error.FbTraceId}");
+        if (!string.IsNullOrWhiteSpace(internalCode))
+            lines.Add($"Codigo interno AlfaCore: {internalCode}");
+        if (error.IsTransient is not null)
+            lines.Add($"Transitorio: {(error.IsTransient.Value ? "si" : "no")}");
+
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    private static string GetMetaErrorMeaning(MetaApiError error)
+    {
+        if (!string.IsNullOrWhiteSpace(error.UserMessage))
+            return error.UserMessage;
+
+        if (error.Subcode == 2388299)
+            return "Meta no permite que una plantilla empiece o termine con variables como {{1}}.";
+
+        if (error.Code == 100)
+            return "Meta marco algun parametro de la plantilla como invalido.";
+
+        return FirstText(error.Message, "Meta rechazo la solicitud y devolvio un error sin descripcion de usuario.");
+    }
+
+    private static string GetMetaErrorFix(MetaApiError error)
+    {
+        if (error.Subcode == 2388299)
+            return "Agrega texto fijo antes y despues de cada variable que quede al principio o al final del cuerpo. Ejemplo valido: \"La tarea {{1}} fue asignada a {{2}}.\"";
+
+        if (error.Code == 100)
+            return "Revisa nombre Meta, idioma, categoria, cuerpo, variables y ejemplos. Si Meta envio un subcodigo, usalo para identificar el campo exacto.";
+
+        return "Revisa los datos de la plantilla y reintenta. Si el problema sigue, usa el fbtrace_id para buscar el incidente en Meta.";
+    }
+
+    private static bool TryGetMetaError(Exception ex, out MetaApiError error)
+    {
+        for (var current = ex; current is not null; current = current.InnerException)
+        {
+            if (TryExtractMetaJson(current.Message, out var json) && TryParseMetaError(json, out error))
+                return true;
+        }
+
+        error = default!;
+        return false;
+    }
+
+    private static bool TryExtractMetaJson(string message, out string json)
+    {
+        var start = message.IndexOf("{\"error\"", StringComparison.OrdinalIgnoreCase);
+        if (start < 0)
+        {
+            json = string.Empty;
+            return false;
+        }
+
+        var end = message.LastIndexOf('}');
+        if (end <= start)
+        {
+            json = string.Empty;
+            return false;
+        }
+
+        json = message[start..(end + 1)];
+        return true;
+    }
+
+    private static bool TryParseMetaError(string json, out MetaApiError error)
+    {
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            if (!doc.RootElement.TryGetProperty("error", out var errorElement))
+            {
+                error = default!;
+                return false;
+            }
+
+            error = new MetaApiError(
+                GetJsonString(errorElement, "message"),
+                GetJsonString(errorElement, "type"),
+                GetJsonInt(errorElement, "code"),
+                GetJsonInt(errorElement, "error_subcode"),
+                GetJsonString(errorElement, "error_user_title"),
+                GetJsonString(errorElement, "error_user_msg"),
+                GetJsonString(errorElement, "fbtrace_id"),
+                GetJsonBool(errorElement, "is_transient"));
+            return true;
+        }
+        catch
+        {
+            error = default!;
+            return false;
+        }
+    }
+
+    private static string? GetJsonString(System.Text.Json.JsonElement element, string property)
+        => element.TryGetProperty(property, out var value) && value.ValueKind == System.Text.Json.JsonValueKind.String
+            ? value.GetString()
+            : null;
+
+    private static int? GetJsonInt(System.Text.Json.JsonElement element, string property)
+        => element.TryGetProperty(property, out var value) && value.ValueKind == System.Text.Json.JsonValueKind.Number && value.TryGetInt32(out var number)
+            ? number
+            : null;
+
+    private static bool? GetJsonBool(System.Text.Json.JsonElement element, string property)
+        => element.TryGetProperty(property, out var value) && (value.ValueKind == System.Text.Json.JsonValueKind.True || value.ValueKind == System.Text.Json.JsonValueKind.False)
+            ? value.GetBoolean()
+            : null;
+
+    private static string? ExtractInternalCode(string message)
+    {
+        var markers = new[] { "Codigo:", "Código:", "Código:" };
+        var marker = markers.FirstOrDefault(value => message.IndexOf(value, StringComparison.OrdinalIgnoreCase) >= 0);
+        if (marker is null)
+            return null;
+
+        var index = message.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+
+        var code = message[(index + marker.Length)..].Trim();
+        return string.IsNullOrWhiteSpace(code) ? null : code;
+    }
+
+    private static string FirstText(params string?[] values)
+        => values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim() ?? string.Empty;
+
+    private sealed record MetaApiError(
+        string? Message,
+        string? Type,
+        int? Code,
+        int? Subcode,
+        string? UserTitle,
+        string? UserMessage,
+        string? FbTraceId,
+        bool? IsTransient);
 
     private static ConversacionPlantillaDto NewForm()
         => new()
@@ -658,6 +1084,72 @@
             EstadoMeta = "DRAFT",
             CuerpoTexto = CobranzaTemplateBody
         };
+
+    private static ConversacionPlantillaDto NewTareaAsignadaForm()
+        => new()
+        {
+            NombreVisible = "Tarea asignada",
+            NombreMeta = "nueva_tarea_asignada",
+            Categoria = ConversacionPlantillaCategorias.Utility,
+            Idioma = "es_AR",
+            Activa = true,
+            EstadoMeta = "DRAFT",
+            CuerpoTexto = TareaAsignadaTemplateBody
+        };
+
+    private static ConversacionPlantillaDto NewTareaFinalizadaForm()
+        => new()
+        {
+            NombreVisible = "Tarea finalizada",
+            NombreMeta = "tarea_finalizada",
+            Categoria = ConversacionPlantillaCategorias.Utility,
+            Idioma = "es_AR",
+            Activa = true,
+            EstadoMeta = "DRAFT",
+            CuerpoTexto = TareaFinalizadaTemplateBody
+        };
+
+    private static ConversacionPlantillaDto NewGuardiaForm()
+        => new()
+        {
+            NombreVisible = "Aviso de guardia",
+            NombreMeta = "calendar_attendee",
+            Categoria = ConversacionPlantillaCategorias.Utility,
+            Idioma = "es_AR",
+            Activa = true,
+            EstadoMeta = "DRAFT",
+            CuerpoTexto = GuardiaTemplateBody
+        };
+
+    private string VariableLabel(int index)
+    {
+        if (EsFormularioGuardia)
+            return index switch
+            {
+                1 => "Tecnico",
+                2 => "Inicio",
+                3 => "Fin",
+                _ => $"Dato {index}"
+            };
+
+        if (EsFormularioTareas)
+            return index switch
+            {
+                1 => "Titulo de tarea",
+                2 => "Tecnico asignado",
+                3 => EsPlantillaTareaFinalizada(_form) ? "Finalizada por" : "Asignada por",
+                4 => "Fecha y hora",
+                _ => $"Dato {index}"
+            };
+
+        return index switch
+        {
+            1 => "Nombre",
+            2 => EsFormularioFacturaMantenimiento ? "Periodo" : "Detalle de deuda",
+            3 => EsFormularioFacturaMantenimiento ? "Detalle factura" : "Forma de pago",
+            _ => $"Dato {index}"
+        };
+    }
 
     private static string RenderPreview(string text, IReadOnlyList<string> values)
     {
@@ -755,8 +1247,11 @@
         {
             CrearOpciones.Factura => _allTemplates.Where(EsPlantillaFacturaMantenimiento).ToList(),
             CrearOpciones.Cobranza => _allTemplates.Where(EsPlantillaCobranza).ToList(),
+            CrearOpciones.TareaAsignada => _allTemplates.Where(EsPlantillaTareaAsignada).ToList(),
+            CrearOpciones.TareaFinalizada => _allTemplates.Where(EsPlantillaTareaFinalizada).ToList(),
+            CrearOpciones.Guardia => _allTemplates.Where(EsPlantillaGuardia).ToList(),
             CrearOpciones.Plantilla => _allTemplates
-                .Where(x => !EsPlantillaFacturaMantenimiento(x) && !EsPlantillaCobranza(x))
+                .Where(x => !EsPlantillaFacturaMantenimiento(x) && !EsPlantillaCobranza(x) && !EsPlantillaTareas(x) && !EsPlantillaGuardia(x))
                 .ToList(),
             _ => _allTemplates.ToList()
         };
@@ -774,9 +1269,34 @@
     {
         var text = $"{item.NombreVisible} {item.NombreMeta} {item.CuerpoTexto}".ToUpperInvariant();
         return !EsPlantillaFacturaMantenimiento(item)
+               && !EsPlantillaTareas(item)
                && (text.Contains("DEUDA", StringComparison.Ordinal)
                    || text.Contains("COBRANZA", StringComparison.Ordinal)
                    || text.Contains("TRANSFERENCIA", StringComparison.Ordinal));
+    }
+
+    private static bool EsPlantillaTareas(ConversacionPlantillaDto item)
+        => EsPlantillaTareaAsignada(item) || EsPlantillaTareaFinalizada(item);
+
+    private static bool EsPlantillaGuardia(ConversacionPlantillaDto item)
+    {
+        var text = $"{item.NombreVisible} {item.NombreMeta} {item.CuerpoTexto}".ToUpperInvariant();
+        return text.Contains("CALENDAR_ATTENDEE", StringComparison.Ordinal)
+               || text.Contains("GUARDIA", StringComparison.Ordinal);
+    }
+
+    private static bool EsPlantillaTareaAsignada(ConversacionPlantillaDto item)
+    {
+        var text = $"{item.NombreVisible} {item.NombreMeta} {item.CuerpoTexto}".ToUpperInvariant();
+        return text.Contains("TAREA_ASIGNADA", StringComparison.Ordinal)
+               || (text.Contains("TAREA", StringComparison.Ordinal) && text.Contains("ASIGNADA", StringComparison.Ordinal));
+    }
+
+    private static bool EsPlantillaTareaFinalizada(ConversacionPlantillaDto item)
+    {
+        var text = $"{item.NombreVisible} {item.NombreMeta} {item.CuerpoTexto}".ToUpperInvariant();
+        return text.Contains("TAREA_FINALIZADA", StringComparison.Ordinal)
+               || (text.Contains("TAREA", StringComparison.Ordinal) && text.Contains("FINALIZADA", StringComparison.Ordinal));
     }
 
     private static string FormatDate(DateTime value)
@@ -796,6 +1316,9 @@
         public const string Plantilla = "Plantilla";
         public const string Factura = "Factura";
         public const string Cobranza = "Cobranza";
+        public const string TareaAsignada = "Tarea asignada";
+        public const string TareaFinalizada = "Tarea finalizada";
+        public const string Guardia = "Guardia";
     }
 
 }

@@ -184,6 +184,10 @@ public sealed class ConversacionDetalleDto
     public string ContactoCelular { get; set; } = string.Empty;
     public string ContactoEmail { get; set; } = string.Empty;
     public string ContactoCargo { get; set; } = string.Empty;
+    public string ContactoObservaciones { get; set; } = string.Empty;
+    public string ContactoNotas { get; set; } = string.Empty;
+    public string ClienteObservaciones { get; set; } = string.Empty;
+    public string ClienteNotaCuenta { get; set; } = string.Empty;
     public string CodigoEstado { get; set; } = string.Empty;
     public string EstadoDescripcion { get; set; } = string.Empty;
     public string IdTecnico { get; set; } = string.Empty;
@@ -282,6 +286,7 @@ public sealed class ConversacionAdjuntoDto
     public string UrlArchivo { get; set; } = string.Empty;
     public string RutaLocal { get; set; } = string.Empty;
     public long TamanoBytes { get; set; }
+    public bool ArchivoDisponible { get; set; }
 }
 
 public sealed class ConversacionStickerFavoritoDto
@@ -388,6 +393,14 @@ public sealed class ConversacionAdjuntoServeDto
     public string MimeType { get; set; } = string.Empty;
     public string NombreArchivo { get; set; } = string.Empty;
     public string NombreDescarga { get; set; } = string.Empty;
+}
+
+public sealed class ConversacionAdjuntosRecoveryResultDto
+{
+    public int AdjuntosRevisados { get; set; }
+    public int AdjuntosDisponibles { get; set; }
+    public int AdjuntosRecuperados { get; set; }
+    public int MensajesHidratados { get; set; }
 }
 
 public sealed class ConversacionCrearHiloInternoRequest

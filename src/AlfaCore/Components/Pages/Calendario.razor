@@ -1,6 +1,8 @@
 @page "/calendario"
+@page "/{idweb}/{idbase:int}/calendario"
 @using System.Globalization
 @inject AlfaCore.Services.ICalendarioService CalendarioSvc
+@inject AlfaCore.Services.ITecnicosService TecnicosSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 
@@ -13,10 +15,18 @@
             <h2>Calendario</h2>
         </div>
         <div class="calendario-actions" @onclick:stopPropagation>
+            <button type="button" class="btn btn--ghost" @onclick="ToggleSearchPanel">
+                <i class="bi bi-search"></i>
+                <span>Buscar</span>
+            </button>
             <button type="button" class="btn btn--primary" @onclick="() => OpenNewEvent(DateTime.Today)">
                 <i class="bi bi-plus-circle"></i>
                 <span>Nuevo</span>
             </button>
+            <a class="btn btn--ghost" href="/calendario/reuniones">
+                <i class="bi bi-camera-video"></i>
+                <span>Reuniones</span>
+            </a>
             <button type="button" class="btn btn--ghost" @onclick="LoadAsync" disabled="@_loading">
                 <i class="bi bi-arrow-clockwise"></i>
                 <span>Recargar</span>
@@ -27,6 +37,19 @@
             </button>
         </div>
     </header>
+
+    @if (_showSearchPanel)
+    {
+        <section class="calendario-search-panel" @onclick:stopPropagation>
+            <div class="field">
+                <label>Buscar evento</label>
+                <input value="@_request.Search" @oninput="OnSearchInput" placeholder="Evento, técnico o descripción..." />
+            </div>
+            <button type="button" class="btn btn--ghost btn--icon" title="Limpiar búsqueda" @onclick="ClearSearchAsync">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        </section>
+    }
 
     @if (!string.IsNullOrWhiteSpace(_feedbackText))
     {
@@ -58,10 +81,6 @@
 
         <div class="calendario-filters">
             <div class="field">
-                <label>Buscar</label>
-                <input value="@_request.Search" @oninput="OnSearchInput" placeholder="Evento, tecnico o descripcion..." />
-            </div>
-            <div class="field">
                 <label>Tecnico</label>
                 <select @bind="_request.IdTecnico" @bind:after="LoadAsync">
                     <option value="">Todos</option>
@@ -76,6 +95,9 @@
                 <select @bind="_request.Tipo" @bind:after="LoadAsync">
                     <option value="@CalendarioEventoTipos.Todos">Todos</option>
                     <option value="@CalendarioEventoTipos.Guardia">Guardias</option>
+                    <option value="@CalendarioEventoTipos.Vacaciones">Vacaciones</option>
+                    <option value="@CalendarioEventoTipos.Ausencia">Ausencias</option>
+                    <option value="@CalendarioEventoTipos.Feriado">Feriados</option>
                     <option value="@CalendarioEventoTipos.Reunion">Reuniones</option>
                     <option value="@CalendarioEventoTipos.Capacitacion">Capacitaciones</option>
                     <option value="@CalendarioEventoTipos.Otro">Otros</option>
@@ -102,14 +124,18 @@
                         @foreach (var item in dayEvents.Take(4))
                         {
                             <span class="calendario-event-chip"
-                                  style="--event-color:@EventColor(item)"
+                                  style="@EventChipStyle(item)"
                                   title="@item.Titulo"
                                   @onclick:stopPropagation
-                                  @onclick="() => OpenEvent(item.IdEvento)">
+                                  @onclick="() => OpenCalendarItem(item)">
                                 <span>@item.Titulo</span>
                                 @if (!string.IsNullOrWhiteSpace(item.TecnicoNombre))
                                 {
                                     <small>@item.TecnicoNombre</small>
+                                }
+                                else
+                                {
+                                    <small>@TypeLabel(item.Tipo)</small>
                                 }
                             </span>
                         }
@@ -124,69 +150,6 @@
 
     </section>
 
-    @if (_showSidePanel)
-    {
-        <button type="button" class="calendario-panel-backdrop" @onclick="CloseSidePanel" aria-label="Cerrar panel lateral"></button>
-        <aside class="calendario-side is-open" @onclick:stopPropagation>
-            <header class="calendario-side-title">
-                <div>
-                    <span>Calendario</span>
-                    <strong>Contexto</strong>
-                </div>
-                <button type="button" class="btn btn--ghost btn--icon" @onclick="CloseSidePanel" title="Cerrar">
-                    <i class="bi bi-x-lg"></i>
-                </button>
-            </header>
-
-            <div class="calendario-mini">
-                <strong>@DateTime.Today.ToString("dddd dd", Culture)</strong>
-                <span>@DateTime.Today.ToString("MMMM yyyy", Culture)</span>
-            </div>
-
-            <section class="calendario-side-section">
-                <div class="calendario-side-head">
-                    <span>Guardias del rango</span>
-                    <small>@ActiveGuards.Count</small>
-                </div>
-                @if (ActiveGuards.Count == 0)
-                {
-                    <p class="calendario-empty">Sin guardias para este rango.</p>
-                }
-                else
-                {
-                    @foreach (var guardia in ActiveGuards)
-                    {
-                        <button type="button" class="calendario-side-event" @onclick="() => OpenEventFromPanel(guardia.IdEvento)">
-                            <span class="calendario-dot" style="background:@EventColor(guardia)"></span>
-                            <span>
-                                <strong>@guardia.Titulo</strong>
-                                <small>@guardia.FechaInicio.ToString("dd/MM", Culture) - @guardia.FechaFin.ToString("dd/MM", Culture)</small>
-                            </span>
-                        </button>
-                    }
-                }
-            </section>
-
-            <section class="calendario-side-section">
-                <div class="calendario-side-head">
-                    <span>Tecnicos</span>
-                    <small>@_tecnicos.Count</small>
-                </div>
-                <div class="calendario-technicians">
-                    @foreach (var tecnico in _tecnicos)
-                    {
-                        <button type="button"
-                                class="@(_request.IdTecnico == tecnico.IdTecnico ? "is-active" : string.Empty)"
-                                @onclick="() => FilterTechnicianFromPanelAsync(tecnico.IdTecnico)">
-                            <span class="calendario-dot" style="background:@TechnicianColor(tecnico.IdTecnico)"></span>
-                            <span>@tecnico.Nombre</span>
-                        </button>
-                    }
-                </div>
-            </section>
-        </aside>
-    }
-
     @if (_loading)
     {
         <div class="calendario-loading">
@@ -196,6 +159,116 @@
     }
 </section>
 
+@if (_showSidePanel)
+{
+    <button type="button" class="calendario-panel-backdrop" @onclick="CloseSidePanel" aria-label="Cerrar panel lateral"></button>
+    <aside class="calendario-side is-open" @onclick:stopPropagation>
+        <header class="calendario-side-title">
+            <div>
+                <span>Calendario</span>
+                <strong>Contexto</strong>
+            </div>
+            <button type="button" class="btn btn--ghost btn--icon" @onclick="CloseSidePanel" title="Cerrar">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        </header>
+
+        <div class="calendario-mini">
+            <strong>@DateTime.Today.ToString("dddd dd", Culture)</strong>
+            <span>@DateTime.Today.ToString("MMMM yyyy", Culture)</span>
+        </div>
+
+        <section class="calendario-side-section">
+            <div class="calendario-side-head">
+                <span>Guardias del rango</span>
+                <small>@ActiveGuards.Count</small>
+            </div>
+            @if (ActiveGuards.Count == 0)
+            {
+                <p class="calendario-empty">Sin guardias para este rango.</p>
+            }
+            else
+            {
+                @foreach (var guardia in ActiveGuards)
+                {
+                    <button type="button" class="calendario-side-event" @onclick="() => OpenEventFromPanel(guardia.IdEvento)">
+                        <span class="calendario-dot" style="background:@EventColor(guardia)"></span>
+                        <span>
+                            <strong>@guardia.Titulo</strong>
+                            <small>@guardia.FechaInicio.ToString("dd/MM", Culture) - @guardia.FechaFin.ToString("dd/MM", Culture)</small>
+                        </span>
+                    </button>
+                }
+            }
+        </section>
+
+        <section class="calendario-side-section">
+            <div class="calendario-side-head">
+                <span>Próximamente</span>
+                <button type="button" class="calendario-count-button" @onclick="ToggleUpcomingPopover">@UpcomingEvents.Count</button>
+            </div>
+            @if (UpcomingEvents.Count == 0)
+            {
+                <p class="calendario-empty">Sin vacaciones, ausencias o feriados en el rango.</p>
+            }
+            else
+            {
+                @foreach (var evento in UpcomingEvents.Take(5))
+                {
+                    <button type="button" class="calendario-side-event" @onclick="() => OpenUpcomingFromPanel(evento)">
+                        <span class="calendario-dot" style="background:@evento.Color"></span>
+                        <span>
+                            <strong>@evento.Titulo</strong>
+                            <small>@evento.Tipo · @evento.FechaInicio.ToString("dd/MM", Culture)</small>
+                        </span>
+                    </button>
+                }
+            }
+        </section>
+
+        <section class="calendario-side-section">
+            <div class="calendario-side-head">
+                <span>Tecnicos</span>
+                <small>@_tecnicos.Count</small>
+            </div>
+            <div class="calendario-technicians">
+                @foreach (var tecnico in _tecnicos)
+                {
+                    <button type="button"
+                            class="@(_request.IdTecnico == tecnico.IdTecnico ? "is-active" : string.Empty)"
+                            @onclick="() => FilterTechnicianFromPanelAsync(tecnico.IdTecnico)">
+                        <span class="calendario-dot" style="background:@TechnicianColor(tecnico.IdTecnico, tecnico.Nombre)"></span>
+                        <span>@tecnico.Nombre</span>
+                    </button>
+                }
+            </div>
+        </section>
+    </aside>
+}
+
+@if (_showUpcomingPopover)
+{
+    <button type="button" class="calendario-upcoming-backdrop" @onclick="ToggleUpcomingPopover" aria-label="Cerrar próximos eventos"></button>
+    <section class="calendario-upcoming-popover" @onclick:stopPropagation>
+        <header>
+            <strong>Lo que se viene</strong>
+            <button type="button" class="btn btn--ghost btn--icon" title="Cerrar" @onclick="ToggleUpcomingPopover">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        </header>
+        @foreach (var item in UpcomingEvents)
+        {
+            <button type="button" class="calendario-side-event" @onclick="() => OpenUpcomingFromPanel(item)">
+                <span class="calendario-dot" style="background:@item.Color"></span>
+                <span>
+                    <strong>@item.Titulo</strong>
+                    <small>@item.Tipo · @FormatUpcomingDate(item)</small>
+                </span>
+            </button>
+        }
+    </section>
+}
+
 @if (_showEditor)
 {
     <div class="calendario-modal-backdrop" @onclick="CloseEditor"></div>
@@ -203,7 +276,7 @@
         <header>
             <div>
                 <span>@(_form.IdEvento > 0 ? "Editar evento" : "Nuevo evento")</span>
-                <strong>@(_form.IdEvento > 0 ? _form.Titulo : "Guardia / reunion")</strong>
+                <strong>@(_form.IdEvento > 0 ? _form.Titulo : "Calendario corporativo")</strong>
             </div>
             <button type="button" class="btn btn--ghost btn--icon" @onclick="CloseEditor" title="Cerrar">
                 <i class="bi bi-x-lg"></i>
@@ -220,8 +293,11 @@
                 <label>Tipo</label>
                 <select @bind="_form.Tipo" @bind:after="ApplyTypeDefaults" disabled="@_saving">
                     <option value="@CalendarioEventoTipos.Guardia">Guardia</option>
-                    <option value="@CalendarioEventoTipos.Reunion">Reunion</option>
-                    <option value="@CalendarioEventoTipos.Capacitacion">Capacitacion</option>
+                    <option value="@CalendarioEventoTipos.Vacaciones">Vacaciones</option>
+                    <option value="@CalendarioEventoTipos.Ausencia">Ausencia</option>
+                    <option value="@CalendarioEventoTipos.Feriado">Feriado</option>
+                    <option value="@CalendarioEventoTipos.Reunion">Reunión</option>
+                    <option value="@CalendarioEventoTipos.Capacitacion">Capacitación</option>
                     <option value="@CalendarioEventoTipos.Otro">Otro</option>
                 </select>
             </div>
@@ -238,7 +314,7 @@
 
             <div class="field">
                 <label>Inicio</label>
-                <InputDate Type="InputDateType.DateTimeLocal" @bind-Value="_form.FechaInicio" disabled="@_saving" />
+                <InputDate Type="InputDateType.DateTimeLocal" @bind-Value="_form.FechaInicio" @bind-Value:after="ApplyStartDefaults" disabled="@_saving" />
             </div>
 
             <div class="field">
@@ -253,7 +329,7 @@
 
             <div class="field">
                 <label>Tecnico responsable</label>
-                <select value="@_form.IdTecnico" @onchange="OnTechnicianChanged" disabled="@_saving">
+                <select value="@_form.IdTecnico" @onchange="OnTechnicianChangedAsync" disabled="@_saving">
                     <option value="">Sin asignar</option>
                     @foreach (var tecnico in _tecnicos)
                     {
@@ -338,6 +414,42 @@
     </section>
 }
 
+@if (_selectedHolidayInfo is not null)
+{
+    <div class="calendario-modal-backdrop" @onclick="CloseHolidayInfo"></div>
+    <section class="calendario-modal calendario-modal--info" @onclick:stopPropagation>
+        <header>
+            <div>
+                <span>Feriado oficial</span>
+                <strong>@_selectedHolidayInfo.Titulo</strong>
+            </div>
+            <button type="button" class="btn btn--ghost btn--icon" @onclick="CloseHolidayInfo" title="Cerrar">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        </header>
+
+        <div class="calendario-form">
+            <div class="field field--wide">
+                <label>Fecha</label>
+                <input value="@FormatUpcomingDate(_selectedHolidayInfo)" readonly />
+            </div>
+            <div class="field field--wide">
+                <label>Tipo</label>
+                <input value="@_selectedHolidayInfo.Tipo" readonly />
+            </div>
+            <div class="field field--wide">
+                <label>Detalle</label>
+                <textarea readonly>Feriado nacional de Argentina cargado como referencia del calendario oficial.</textarea>
+            </div>
+        </div>
+
+        <footer>
+            <span></span>
+            <button type="button" class="btn btn--primary" @onclick="CloseHolidayInfo">Cerrar</button>
+        </footer>
+    </section>
+}
+
 @code {
     private static readonly CultureInfo Culture = CultureInfo.GetCultureInfo("es-AR");
     private readonly string[] _dayNames = ["Lun", "Mar", "Mie", "Jue", "Vie", "Sab", "Dom"];
@@ -346,11 +458,14 @@
     private List<ConversacionTecnicoOptionDto> _tecnicos = [];
     private List<ConversacionPlantillaDto> _plantillas = [];
     private CalendarioEventoDto? _selectedEvent;
+    private UpcomingCalendarItem? _selectedHolidayInfo;
     private CalendarioEventoSaveRequest _form = NewForm(DateTime.Today);
     private bool _loading;
     private bool _saving;
     private bool _showEditor;
     private bool _showSidePanel;
+    private bool _showSearchPanel;
+    private bool _showUpcomingPopover;
     private string _feedbackTitle = string.Empty;
     private string _feedbackText = string.Empty;
     private string _feedbackKind = "success";
@@ -371,6 +486,48 @@
         .OrderBy(x => x.FechaInicio)
         .Take(8)
         .ToList();
+    private List<CalendarioEventoDto> CorporateEvents => _events
+        .Where(x => IsCorporateType(x.Tipo) && x.Estado != CalendarioEventoEstados.Cancelado)
+        .OrderBy(x => x.FechaInicio)
+        .Take(10)
+        .ToList();
+    private List<CalendarioEventoDto> OfficialHolidayEvents => OfficialArgentinaHolidays
+        .Select(x => new CalendarioEventoDto
+        {
+            IdEvento = 0,
+            Titulo = x.Titulo,
+            Tipo = CalendarioEventoTipos.Feriado,
+            FechaInicio = x.FechaInicio,
+            FechaFin = x.FechaFin,
+            TodoElDia = true,
+            Estado = CalendarioEventoEstados.Confirmado,
+            Color = x.Color,
+            Descripcion = "Feriado oficial de Argentina."
+        })
+        .ToList();
+    private List<UpcomingCalendarItem> UpcomingEvents
+    {
+        get
+        {
+            var monthStart = new DateTime(_request.Year, _request.Month, 1);
+            var monthEnd = monthStart.AddMonths(1).AddDays(-1);
+            var allUpcoming = CorporateEvents
+                .Select(UpcomingCalendarItem.FromEvent)
+                .Concat(OfficialArgentinaHolidays)
+                .Where(x => x.FechaFin.Date >= DateTime.Today.Date)
+                .OrderBy(x => x.FechaInicio)
+                .ToList();
+
+            var currentMonth = allUpcoming
+                .Where(x => x.FechaInicio.Date <= monthEnd && x.FechaFin.Date >= monthStart)
+                .Take(14)
+                .ToList();
+
+            return currentMonth.Count > 0
+                ? currentMonth
+                : allUpcoming.Take(5).ToList();
+        }
+    }
     private CalendarioEventoDto? CurrentGuard => _events
         .Where(x => x.Tipo == CalendarioEventoTipos.Guardia
                     && x.Estado != CalendarioEventoEstados.Cancelado
@@ -448,7 +605,16 @@
         => _showSidePanel = !_showSidePanel;
 
     private void CloseSidePanel()
-        => _showSidePanel = false;
+    {
+        _showSidePanel = false;
+        _showUpcomingPopover = false;
+    }
+
+    private void ToggleSearchPanel()
+        => _showSearchPanel = !_showSearchPanel;
+
+    private void ToggleUpcomingPopover()
+        => _showUpcomingPopover = !_showUpcomingPopover;
 
     private async Task OnSearchInput(ChangeEventArgs args)
     {
@@ -465,8 +631,34 @@
         catch (TaskCanceledException) { }
     }
 
+    private async Task ClearSearchAsync()
+    {
+        _request.Search = string.Empty;
+        _showSearchPanel = false;
+        await LoadAsync();
+    }
+
     private IEnumerable<CalendarioEventoDto> EventsFor(DateTime day)
-        => _events.Where(x => x.FechaInicio.Date <= day.Date && x.FechaFin.Date >= day.Date);
+        => _events
+            .Concat(OfficialHolidayEvents.Where(ShouldShowOfficialHoliday))
+            .Where(x => x.FechaInicio.Date <= day.Date && x.FechaFin.Date >= day.Date)
+            .OrderBy(x => x.FechaInicio)
+            .ThenBy(x => x.Tipo == CalendarioEventoTipos.Feriado ? 0 : 1)
+            .ThenBy(x => x.Titulo);
+
+    private bool ShouldShowOfficialHoliday(CalendarioEventoDto item)
+    {
+        if (_request.Tipo != CalendarioEventoTipos.Todos && _request.Tipo != CalendarioEventoTipos.Feriado)
+            return false;
+        if (!string.IsNullOrWhiteSpace(_request.IdTecnico))
+            return false;
+        if (string.IsNullOrWhiteSpace(_request.Search))
+            return true;
+
+        var search = _request.Search.Trim();
+        return item.Titulo.Contains(search, StringComparison.OrdinalIgnoreCase)
+               || item.Descripcion.Contains(search, StringComparison.OrdinalIgnoreCase);
+    }
 
     private string DayCellClass(DateTime day)
     {
@@ -478,13 +670,16 @@
 
     private void OpenNewEvent(DateTime day)
     {
+        _selectedHolidayInfo = null;
         _selectedEvent = null;
         _form = NewForm(day);
+        ApplyGuardiaTemplateDefault();
         _showEditor = true;
     }
 
     private async Task OpenEvent(long idEvento)
     {
+        _selectedHolidayInfo = null;
         _showSidePanel = false;
         var result = await UiOps.RunAsync(() => CalendarioSvc.GetByIdAsync(idEvento), "No se pudo cargar el evento.");
         if (!result.Success || result.Value is null)
@@ -515,11 +710,43 @@
         _showEditor = true;
     }
 
+    private async Task OpenCalendarItem(CalendarioEventoDto item)
+    {
+        if (item.IdEvento > 0)
+        {
+            await OpenEvent(item.IdEvento);
+            return;
+        }
+
+        OpenHolidayInfo(item);
+    }
+
     private async Task OpenEventFromPanel(long idEvento)
     {
         _showSidePanel = false;
+        _showUpcomingPopover = false;
         await OpenEvent(idEvento);
     }
+
+    private async Task OpenUpcomingFromPanel(UpcomingCalendarItem item)
+    {
+        if (item.IdEvento is > 0)
+        {
+            await OpenEventFromPanel(item.IdEvento.Value);
+            return;
+        }
+
+        _showUpcomingPopover = false;
+        _selectedHolidayInfo = item;
+    }
+
+    private void OpenHolidayInfo(CalendarioEventoDto item)
+    {
+        _selectedHolidayInfo = new UpcomingCalendarItem(TypeLabel(item.Tipo), item.Titulo, item.FechaInicio, item.FechaFin, EventColor(item), null);
+    }
+
+    private void CloseHolidayInfo()
+        => _selectedHolidayInfo = null;
 
     private async Task OpenActiveGuardAsync()
     {
@@ -600,25 +827,79 @@
         _saving = false;
     }
 
-    private void OnTechnicianChanged(ChangeEventArgs args)
+    private async Task OnTechnicianChangedAsync(ChangeEventArgs args)
     {
         var id = args.Value?.ToString() ?? string.Empty;
         _form.IdTecnico = id;
         var tecnico = _tecnicos.FirstOrDefault(x => x.IdTecnico == id);
         _form.TecnicoNombre = tecnico?.Nombre;
-        if (_form.Tipo == CalendarioEventoTipos.Guardia && tecnico is not null)
-            _form.Titulo = $"GUARDIA {tecnico.Nombre}".Trim();
-        _form.Color = TechnicianColor(id);
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            _form.TelefonoWhatsApp = string.Empty;
+        }
+        else
+        {
+            var detail = await UiOps.RunAsync(() => TecnicosSvc.GetByIdAsync(id), "No se pudo cargar el telefono del tecnico.");
+            if (detail.Success && detail.Value is not null && !string.IsNullOrWhiteSpace(detail.Value.Telefono))
+            {
+                _form.TelefonoWhatsApp = detail.Value.Telefono.Trim();
+            }
+            else if (!detail.Success)
+            {
+                SetFeedback("No se pudo cargar el telefono", FeedbackText(detail.Feedback), "error");
+            }
+        }
+
+        if (tecnico is not null && IsDefaultEditableTitle(_form.Titulo))
+            _form.Titulo = DefaultTitleForType(_form.Tipo, tecnico.Nombre);
+        _form.Color = ColorForTypeOrTechnician(_form.Tipo, id);
     }
 
     private void ApplyTypeDefaults()
     {
         if (_form.Tipo == CalendarioEventoTipos.Guardia)
         {
-            _form.TodoElDia = true;
-            if (_form.FechaFin <= _form.FechaInicio)
-                _form.FechaFin = _form.FechaInicio.AddDays(7);
+            ApplyGuardiaDefaults();
         }
+
+        if (_form.Tipo == CalendarioEventoTipos.Vacaciones || _form.Tipo == CalendarioEventoTipos.Ausencia || _form.Tipo == CalendarioEventoTipos.Feriado)
+        {
+            _form.TodoElDia = true;
+            _form.CrearRecordatorioWhatsApp = false;
+            if (_form.FechaFin <= _form.FechaInicio)
+                _form.FechaFin = _form.FechaInicio.Date.AddDays(1).AddHours(9);
+        }
+
+        if (IsDefaultEditableTitle(_form.Titulo))
+            _form.Titulo = DefaultTitleForType(_form.Tipo, _form.TecnicoNombre);
+
+        _form.Color = ColorForTypeOrTechnician(_form.Tipo, _form.IdTecnico);
+    }
+
+    private void ApplyStartDefaults()
+    {
+        if (_form.Tipo == CalendarioEventoTipos.Guardia)
+            ApplyGuardiaDefaults();
+    }
+
+    private void ApplyGuardiaDefaults()
+    {
+        _form.TodoElDia = true;
+        _form.CrearRecordatorioWhatsApp = true;
+        _form.FechaInicio = GuardiaStart(_form.FechaInicio);
+        _form.FechaFin = GuardiaEnd(_form.FechaInicio);
+        ApplyGuardiaTemplateDefault();
+    }
+
+    private void ApplyGuardiaTemplateDefault()
+    {
+        if (_form.Tipo != CalendarioEventoTipos.Guardia || _plantillas.Count == 0)
+            return;
+
+        var plantilla = _plantillas.FirstOrDefault(x => IsGuardiaTemplateExact(x.NombreVisible) || IsGuardiaTemplateExact(x.NombreMeta))
+            ?? _plantillas.FirstOrDefault(x => IsGuardiaTemplateFallback(x.NombreVisible) || IsGuardiaTemplateFallback(x.NombreMeta));
+        if (plantilla is not null)
+            _form.IdPlantillaWhatsApp = plantilla.IdPlantilla;
     }
 
     private void SetFeedback(string title, string text, string kind)
@@ -642,8 +923,8 @@
         {
             Titulo = "GUARDIA",
             Tipo = CalendarioEventoTipos.Guardia,
-            FechaInicio = day.Date.AddHours(9),
-            FechaFin = day.Date.AddDays(7).AddHours(9),
+            FechaInicio = GuardiaStart(day),
+            FechaFin = GuardiaEnd(day),
             TodoElDia = true,
             Estado = CalendarioEventoEstados.Confirmado,
             Color = "#14b8a6",
@@ -651,8 +932,42 @@
             MinutosAntesRecordatorio = 1440
         };
 
+    private static DateTime GuardiaStart(DateTime value)
+        => value.Date.AddHours(8);
+
+    private static DateTime GuardiaEnd(DateTime value)
+        => value.Date.AddDays(6).AddHours(22);
+
+    private static bool IsGuardiaTemplateExact(string? value)
+        => string.Equals(NormalizeTemplateName(value), "AVISO GUARDIA", StringComparison.Ordinal);
+
+    private static bool IsGuardiaTemplateFallback(string? value)
+    {
+        var normalized = NormalizeTemplateName(value);
+        return normalized.Contains("AVISO", StringComparison.Ordinal)
+               && normalized.Contains("GUARDIA", StringComparison.Ordinal);
+    }
+
+    private static string NormalizeTemplateName(string? value)
+        => (value ?? string.Empty).Trim().ToUpperInvariant().Replace(" DE ", " ", StringComparison.Ordinal);
+
     private static string EventColor(CalendarioEventoDto item)
-        => string.IsNullOrWhiteSpace(item.Color) ? "#14b8a6" : item.Color;
+    {
+        if (item.Tipo == CalendarioEventoTipos.Guardia)
+        {
+            var fixedColor = FixedTechnicianColor(item.IdTecnico, item.TecnicoNombre);
+            if (!string.IsNullOrWhiteSpace(fixedColor))
+                return fixedColor;
+        }
+
+        return string.IsNullOrWhiteSpace(item.Color) ? "#14b8a6" : item.Color;
+    }
+
+    private static string EventChipStyle(CalendarioEventoDto item)
+    {
+        var color = EventColor(item);
+        return $"--event-color:{color};border-left-color:{color};";
+    }
 
     private static string FirstNonEmpty(params string?[] values)
         => values.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x))?.Trim() ?? string.Empty;
@@ -673,12 +988,111 @@
         return string.Join(" ", parts);
     }
 
-    private string TechnicianColor(string? value)
+    private string TechnicianColor(string? idTecnico, string? tecnicoNombre = null)
     {
+        var fixedColor = FixedTechnicianColor(idTecnico, tecnicoNombre);
+        if (!string.IsNullOrWhiteSpace(fixedColor))
+            return fixedColor;
+
+        var value = FirstNonEmpty(idTecnico, tecnicoNombre);
         if (string.IsNullOrWhiteSpace(value))
             return "#14b8a6";
         var hash = value.Aggregate(0, (current, ch) => (current * 31) + ch);
         var colors = new[] { "#14b8a6", "#38bdf8", "#f472b6", "#f59e0b", "#a78bfa", "#22c55e" };
         return colors[Math.Abs(hash) % colors.Length];
+    }
+
+    private static string FixedTechnicianColor(string? idTecnico, string? tecnicoNombre = null)
+    {
+        var value = NormalizeTechnicianKey($"{tecnicoNombre} {idTecnico}");
+        return value switch
+        {
+            var x when x.Contains("FAVIO", StringComparison.Ordinal) => "#ef4444",
+            var x when x.Contains("FRANCO", StringComparison.Ordinal) => "#3b82f6",
+            var x when x.Contains("MARCOS", StringComparison.Ordinal) => "#facc15",
+            var x when x.Contains("DANIEL", StringComparison.Ordinal) => "#22c55e",
+            _ => string.Empty
+        };
+    }
+
+    private static string NormalizeTechnicianKey(string? value)
+        => (value ?? string.Empty).Trim().ToUpperInvariant();
+
+    private string ColorForTypeOrTechnician(string? tipo, string? idTecnico)
+        => tipo switch
+        {
+            CalendarioEventoTipos.Guardia when !string.IsNullOrWhiteSpace(idTecnico) => TechnicianColor(idTecnico, _tecnicos.FirstOrDefault(x => x.IdTecnico == idTecnico)?.Nombre),
+            CalendarioEventoTipos.Vacaciones => "#22c55e",
+            CalendarioEventoTipos.Ausencia => "#f472b6",
+            CalendarioEventoTipos.Feriado => "#f59e0b",
+            CalendarioEventoTipos.Reunion => "#38bdf8",
+            CalendarioEventoTipos.Capacitacion => "#a78bfa",
+            _ => "#14b8a6"
+        };
+
+    private static bool IsCorporateType(string? tipo)
+        => tipo is CalendarioEventoTipos.Vacaciones
+            or CalendarioEventoTipos.Ausencia
+            or CalendarioEventoTipos.Feriado
+            or CalendarioEventoTipos.Reunion
+            or CalendarioEventoTipos.Capacitacion
+            or CalendarioEventoTipos.Otro;
+
+    private static string TypeLabel(string? tipo)
+        => tipo switch
+        {
+            CalendarioEventoTipos.Guardia => "Guardia",
+            CalendarioEventoTipos.Vacaciones => "Vacaciones",
+            CalendarioEventoTipos.Ausencia => "Ausencia",
+            CalendarioEventoTipos.Feriado => "Feriado",
+            CalendarioEventoTipos.Reunion => "Reunión",
+            CalendarioEventoTipos.Capacitacion => "Capacitación",
+            _ => "Otro"
+        };
+
+    private static string DefaultTitleForType(string? tipo, string? tecnicoNombre)
+        => tipo switch
+        {
+            CalendarioEventoTipos.Guardia => string.IsNullOrWhiteSpace(tecnicoNombre) ? "GUARDIA" : $"GUARDIA {tecnicoNombre}",
+            CalendarioEventoTipos.Vacaciones => string.IsNullOrWhiteSpace(tecnicoNombre) ? "Vacaciones" : $"Vacaciones {tecnicoNombre}",
+            CalendarioEventoTipos.Ausencia => string.IsNullOrWhiteSpace(tecnicoNombre) ? "Ausencia" : $"Ausencia {tecnicoNombre}",
+            CalendarioEventoTipos.Feriado => "Feriado",
+            CalendarioEventoTipos.Reunion => "Reunión",
+            CalendarioEventoTipos.Capacitacion => "Capacitación",
+            _ => "Evento"
+        };
+
+    private static bool IsDefaultEditableTitle(string? titulo)
+        => string.IsNullOrWhiteSpace(titulo)
+           || string.Equals(titulo, "GUARDIA", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(titulo, "Vacaciones", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(titulo, "Ausencia", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(titulo, "Feriado", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(titulo, "Reunión", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(titulo, "Capacitación", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(titulo, "Evento", StringComparison.OrdinalIgnoreCase);
+
+    private static string FormatUpcomingDate(UpcomingCalendarItem item)
+        => item.FechaInicio.Date == item.FechaFin.Date
+            ? item.FechaInicio.ToString("dd/MM", Culture)
+            : $"{item.FechaInicio.ToString("dd/MM", Culture)} - {item.FechaFin.ToString("dd/MM", Culture)}";
+
+    private static readonly UpcomingCalendarItem[] OfficialArgentinaHolidays =
+    [
+        new("Feriado", "Paso a la Inmortalidad del Gral. Martín Miguel de Güemes", new DateTime(2026, 6, 15), new DateTime(2026, 6, 15), "#f59e0b", null),
+        new("Feriado", "Paso a la Inmortalidad del Gral. Manuel Belgrano", new DateTime(2026, 6, 20), new DateTime(2026, 6, 20), "#f59e0b", null),
+        new("Feriado", "Día de la Independencia", new DateTime(2026, 7, 9), new DateTime(2026, 7, 9), "#f59e0b", null),
+        new("Feriado", "Paso a la Inmortalidad del Gral. José de San Martín", new DateTime(2026, 8, 17), new DateTime(2026, 8, 17), "#f59e0b", null),
+        new("Feriado", "Día del Respeto a la Diversidad Cultural", new DateTime(2026, 10, 12), new DateTime(2026, 10, 12), "#f59e0b", null),
+        new("Feriado turístico", "Feriado con fines turísticos", new DateTime(2026, 11, 20), new DateTime(2026, 11, 20), "#fbbf24", null),
+        new("Feriado", "Día de la Soberanía Nacional", new DateTime(2026, 11, 23), new DateTime(2026, 11, 23), "#f59e0b", null),
+        new("Feriado", "Día de la Inmaculada Concepción de María", new DateTime(2026, 12, 8), new DateTime(2026, 12, 8), "#f59e0b", null),
+        new("Feriado", "Navidad", new DateTime(2026, 12, 25), new DateTime(2026, 12, 25), "#f59e0b", null)
+    ];
+
+    private sealed record UpcomingCalendarItem(string Tipo, string Titulo, DateTime FechaInicio, DateTime FechaFin, string Color, long? IdEvento)
+    {
+        public static UpcomingCalendarItem FromEvent(CalendarioEventoDto item)
+            => new(TypeLabel(item.Tipo), item.Titulo, item.FechaInicio, item.FechaFin, EventColor(item), item.IdEvento);
     }
 }

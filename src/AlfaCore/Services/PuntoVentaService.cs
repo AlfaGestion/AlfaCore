@@ -101,7 +101,8 @@ public sealed class PuntoVentaService(
                 EmailPort = await TryReadConfigValueAsync(cn, "EMAIL_PORT", token),
                 EmailCuenta = await TryReadConfigValueAsync(cn, "EMAIL_CTA", token),
                 EmailPassword = await TryReadConfigValueAsync(cn, "EMAIL_PASS", token),
-                EmailSsl = await TryReadConfigValueAsync(cn, "EMAIL_SSL", token)
+                EmailSsl = await TryReadConfigValueAsync(cn, "EMAIL_SSL", token),
+                FtpCodigoCta = await TryReadConfigValueAsync(cn, "FTP_CODIGOCTA", token)
             };
         }, "No se pudo cargar la configuración del punto de venta.", ct);
 
@@ -224,7 +225,7 @@ public sealed class PuntoVentaService(
             ArgumentNullException.ThrowIfNull(request);
 
             var items = request.Items
-                .Where(x => !string.IsNullOrWhiteSpace(x.IdArticulo) && x.Cantidad > 0)
+                .Where(x => !string.IsNullOrWhiteSpace(x.IdArticulo) && x.Cantidad != 0)
                 .ToList();
 
             if (items.Count == 0)
@@ -244,6 +245,7 @@ public sealed class PuntoVentaService(
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
+            await EnsureRequiredSaleProceduresAsync(cn, token);
 
             var context = await GetContextAsync(token);
             var settings = await GetSettingsAsync(token);
@@ -575,8 +577,37 @@ public sealed class PuntoVentaService(
             var skip = (pagina - 1) * take;
             var fetch = take + 1;
 
+            // Búsqueda multi-palabra: cada palabra debe aparecer en alguno de los campos
+            var palabras = search.ToUpperInvariant()
+                .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+            var wordFilters = new StringBuilder();
+            foreach (var (_, i) in palabras.Select((p, i) => (p, i)))
+            {
+                wordFilters.Append($"""
+
+                  AND (
+                        UPPER(LTRIM(RTRIM(a.IDARTICULO))) LIKE @Like{i}
+                        OR UPPER(LTRIM(RTRIM(a.DESCRIPCION))) LIKE @Like{i}
+                        OR UPPER(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA, '')))) LIKE @Like{i}
+                        OR UPPER(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA1, '')))) LIKE @Like{i}
+                        OR UPPER(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA2, '')))) LIKE @Like{i}
+                        OR UPPER(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA3, '')))) LIKE @Like{i}
+                        OR UPPER(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA4, '')))) LIKE @Like{i}
+                  )
+                """);
+            }
+
+            var parameters = new DynamicParameters();
+            parameters.Add("Skip", skip);
+            parameters.Add("Fetch", fetch);
+            parameters.Add("IdLista", pricing.ListaPrecioActual);
+            parameters.Add("IdFamilia", familyFilter);
+            for (var i = 0; i < palabras.Length; i++)
+                parameters.Add($"Like{i}", $"%{palabras[i]}%");
+
             var rows = await cn.QueryAsync<PuntoVentaArticleRow>(new CommandDefinition(
-                """
+                $"""
                 SELECT
                     LTRIM(RTRIM(a.IDARTICULO)) AS IdArticulo,
                     ISNULL(LTRIM(RTRIM(a.CODIGOBARRA)), '') AS CodigoBarra,
@@ -610,29 +641,12 @@ public sealed class PuntoVentaService(
                 WHERE ISNULL(a.Suspendido, 0) <> 1
                   AND ISNULL(a.SuspendidoV, 0) <> 1
                   AND (@IdFamilia = '' OR LEFT(LTRIM(RTRIM(ISNULL(a.IdFamilia, ''))), 3) = @IdFamilia)
-                  AND (
-                        @Texto = ''
-                        OR UPPER(LTRIM(RTRIM(a.IDARTICULO))) LIKE @TextoLike
-                        OR UPPER(LTRIM(RTRIM(a.DESCRIPCION))) LIKE @TextoLike
-                        OR UPPER(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA, '')))) LIKE @TextoLike
-                        OR UPPER(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA1, '')))) LIKE @TextoLike
-                        OR UPPER(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA2, '')))) LIKE @TextoLike
-                        OR UPPER(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA3, '')))) LIKE @TextoLike
-                        OR UPPER(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA4, '')))) LIKE @TextoLike
-                  )
+                  {wordFilters}
                 ORDER BY a.DESCRIPCION, a.IDARTICULO
                 OFFSET @Skip ROWS
                 FETCH NEXT @Fetch ROWS ONLY;
                 """,
-                new
-                {
-                    Skip = skip,
-                    Fetch = fetch,
-                    IdLista = pricing.ListaPrecioActual,
-                    IdFamilia = familyFilter,
-                    Texto = search,
-                    TextoLike = $"%{search.ToUpperInvariant()}%"
-                },
+                parameters,
                 cancellationToken: token));
 
             var materializedRows = rows.ToList();
@@ -674,6 +688,90 @@ public sealed class PuntoVentaService(
             };
         }, "No se pudieron cargar los artículos del punto de venta.", ct);
 
+    public Task<PuntoVentaArticleDto?> GetArticuloPorCodigoAsync(string codigo, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "GetArticuloPorCodigo", async token =>
+        {
+            var buscar = (codigo ?? string.Empty).Trim().ToUpperInvariant();
+            if (buscar.Length == 0)
+                return null;
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            if (!await TableExistsAsync(cn, "V_MA_ARTICULOS", token))
+                return null;
+
+            var pricing = await ResolvePricingContextAsync(cn, token);
+            var clasePrecio = ParseClasePrecio(pricing.ClasePrecioActual);
+
+            var row = await cn.QuerySingleOrDefaultAsync<PuntoVentaArticleRow>(new CommandDefinition(
+                """
+                SELECT TOP (1)
+                    LTRIM(RTRIM(a.IDARTICULO)) AS IdArticulo,
+                    ISNULL(LTRIM(RTRIM(a.CODIGOBARRA)), '') AS CodigoBarra,
+                    ISNULL(LTRIM(RTRIM(a.DESCRIPCION)), '') AS Descripcion,
+                    ISNULL(LTRIM(RTRIM(a.Presentacion)), '') AS Presentacion,
+                    ISNULL(LTRIM(RTRIM(a.Procedencia)), '') AS Procedencia,
+                    ISNULL(LTRIM(RTRIM(a.IdFamilia)), '') AS IdFamilia,
+                    ISNULL(LTRIM(RTRIM(f.Descripcion)), '') AS Familia,
+                    ISNULL(LTRIM(RTRIM(a.IDUNIDAD)), '') AS IdUnidad,
+                    ISNULL(a.TasaIVA, 0) AS TasaIva,
+                    ISNULL(a.EXENTO, 0) AS Exento,
+                    ISNULL(a.NO_CONTROLA_STOCK, 0) AS NoControlaStock,
+                    ISNULL(a.PESABLE, 0) AS Pesable,
+                    ISNULL(LTRIM(RTRIM(a.RutaImagen)), '') AS RutaImagen,
+                    ISNULL(a.PRECIO1, 0) AS PrecioBase1,
+                    ISNULL(p.Precio1, 0) AS PrecioLista1,
+                    ISNULL(p.Precio2, 0) AS PrecioLista2,
+                    ISNULL(p.Precio3, 0) AS PrecioLista3,
+                    ISNULL(p.Precio4, 0) AS PrecioLista4,
+                    ISNULL(p.Precio5, 0) AS PrecioLista5,
+                    ISNULL(p.Precio6, 0) AS PrecioLista6,
+                    ISNULL(p.Precio7, 0) AS PrecioLista7,
+                    ISNULL(p.Precio8, 0) AS PrecioLista8
+                FROM dbo.V_MA_ARTICULOS a
+                LEFT JOIN dbo.V_TA_FAMILIAS f
+                    ON LEFT(LTRIM(RTRIM(ISNULL(a.IdFamilia, ''))), 3) = LTRIM(RTRIM(f.IdFamilia))
+                LEFT JOIN dbo.V_MA_Precios p
+                    ON p.IdArticulo = a.IDARTICULO
+                   AND p.IdLista = @IdLista
+                   AND p.TipoLista = 'V'
+                WHERE ISNULL(a.Suspendido, 0) <> 1
+                  AND ISNULL(a.SuspendidoV, 0) <> 1
+                  AND (
+                        UPPER(LTRIM(RTRIM(a.IDARTICULO))) = @Codigo
+                        OR UPPER(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA,  '')))) = @Codigo
+                        OR UPPER(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA1, '')))) = @Codigo
+                        OR UPPER(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA2, '')))) = @Codigo
+                        OR UPPER(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA3, '')))) = @Codigo
+                        OR UPPER(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA4, '')))) = @Codigo
+                      );
+                """,
+                new { Codigo = buscar, IdLista = pricing.ListaPrecioActual },
+                cancellationToken: token));
+
+            if (row is null)
+                return null;
+
+            return new PuntoVentaArticleDto
+            {
+                IdArticulo = row.IdArticulo,
+                CodigoBarra = row.CodigoBarra,
+                Descripcion = row.Descripcion,
+                Presentacion = row.Presentacion,
+                Procedencia = row.Procedencia,
+                IdFamilia = row.IdFamilia,
+                Familia = row.Familia,
+                IdUnidad = row.IdUnidad,
+                PrecioUnitario = ResolvePrice(row, clasePrecio),
+                TasaIva = row.TasaIva,
+                Exento = row.Exento,
+                NoControlaStock = row.NoControlaStock,
+                Pesable = row.Pesable,
+                RutaImagen = row.RutaImagen
+            };
+        }, "No se pudo buscar el artículo por código.", ct);
+
     public Task<PuntoVentaArticleImageDto?> GetArticleImageForServeAsync(string idArticulo, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "GetArticleImage", async token =>
         {
@@ -708,6 +806,144 @@ public sealed class PuntoVentaService(
                 MimeType = InferImageMimeType(path)
             };
         }, "No se pudo resolver la imagen del artículo.", ct);
+
+    public Task<IReadOnlyList<PuntoVentaCuentaImputacionDto>> GetCuentasImputacionAsync(CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "GetCuentasImputacion", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            var rows = await cn.QueryAsync<PuntoVentaCuentaImputacionDto>(new CommandDefinition(
+                """
+                SELECT
+                    LTRIM(RTRIM(codigo))      AS Codigo,
+                    LTRIM(RTRIM(descripcion)) AS Descripcion
+                FROM dbo.MA_CUENTAS
+                WHERE (MEDIODEPAGO = '' OR MEDIODEPAGO IS NULL)
+                  AND ISNULL(titulo, 0) = 0
+                  AND ISNULL(CAJAYBANCO, 0) = 1
+                ORDER BY descripcion;
+                """,
+                cancellationToken: token));
+
+            return (IReadOnlyList<PuntoVentaCuentaImputacionDto>)rows.ToList();
+        }, "No se pudieron cargar las cuentas de imputación.", ct);
+
+    public Task<PuntoVentaMovimientoCajaResultDto> CrearMovimientoCajaAsync(PuntoVentaMovimientoCajaRequestDto request, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "CrearMovimientoCaja", async token =>
+        {
+            ArgumentNullException.ThrowIfNull(request);
+
+            if (request.Importe <= 0)
+                return new PuntoVentaMovimientoCajaResultDto { Ok = false, Mensaje = "El importe debe ser mayor a cero." };
+
+            if (string.IsNullOrWhiteSpace(request.Cuenta))
+                return new PuntoVentaMovimientoCajaResultDto { Ok = false, Mensaje = "Debe seleccionar una cuenta de imputación." };
+
+            var tipo = request.Tipo is "I" or "E" ? request.Tipo : "I";
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            var parameters = new DynamicParameters();
+            parameters.Add("pTipo", tipo);
+            parameters.Add("pImporte", request.Importe);
+            parameters.Add("pDetalle", (request.Detalle ?? string.Empty).Trim());
+            parameters.Add("pCuentaImputacion", request.Cuenta.Trim());
+            parameters.Add("pUsuario", appUserSession.GetCurrentUserName("SYSTEM").Trim());
+            parameters.Add("pRes", dbType: System.Data.DbType.Int32, direction: System.Data.ParameterDirection.Output);
+            parameters.Add("pMensaje", dbType: System.Data.DbType.String, size: 255, direction: System.Data.ParameterDirection.Output);
+
+            await cn.ExecuteAsync(new CommandDefinition(
+                """
+                ALTER TABLE MV_ASIENTOS DISABLE TRIGGER ALL;
+                SET NOCOUNT ON;
+                EXEC sp_web_CreaAsientoIngresoEgreso @pTipo, @pImporte, @pDetalle, @pCuentaImputacion, @pUsuario, @pRes OUTPUT, @pMensaje OUTPUT;
+                ALTER TABLE MV_ASIENTOS ENABLE TRIGGER ALL;
+                """,
+                parameters,
+                cancellationToken: token));
+
+            var resultado = parameters.Get<int>("pRes");
+            var mensaje = parameters.Get<string>("pMensaje") ?? string.Empty;
+
+            return new PuntoVentaMovimientoCajaResultDto
+            {
+                Ok = resultado == 11,
+                Mensaje = mensaje
+            };
+        }, "No se pudo registrar el movimiento de caja.", ct);
+
+    public Task<IReadOnlyList<PuntoVentaMovimientoCajaDetalleDto>> GetDetalleCajaHoyAsync(CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "GetDetalleCajaHoy", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            // El SP inserta 2 asientos por movimiento: uno en la cuenta de cobro/pago
+            // (efectivo, tarjeta, etc.) y otro en la cuenta de imputación.
+            // Las cuentas de cobro/pago tienen MEDIODEPAGO con valor; las de imputación no.
+            // Filtrando por MEDIODEPAGO vacío/NULL obtenemos solo el lado imputación,
+            // sin importar cuántos medios de pago distintos existan.
+            var rows = await cn.QueryAsync<PuntoVentaMovimientoCajaDetalleDto>(new CommandDefinition(
+                """
+                SELECT
+                    ISNULL(LTRIM(RTRIM(m.CUENTA)), '')                       AS Cuenta,
+                    ISNULL(LTRIM(RTRIM(c.descripcion)), '')                  AS Descripcion,
+                    ISNULL(LTRIM(RTRIM(m.DETALLE)), '')                      AS Detalle,
+                    ISNULL(m.FECHAHORA_GRABACION, CAST(m.FECHA AS datetime)) AS Fecha,
+                    ISNULL(LTRIM(RTRIM(m.TC)), '')                           AS Tc,
+                    ISNULL(LTRIM(RTRIM(m.NUMERO)), '')                       AS IdComprobante,
+                    ISNULL(m.IMPORTE, 0)                                     AS Importe,
+                    ISNULL(LTRIM(RTRIM(m.USUARIO_LOGEADO)), '')              AS Usuario,
+                    CASE m.[DEBE-HABER]
+                        WHEN 'H' THEN 'I'
+                        WHEN 'D' THEN 'E'
+                        ELSE ''
+                    END                                                      AS TipoMovimiento
+                FROM dbo.MV_ASIENTOS m
+                INNER JOIN dbo.MA_CUENTAS c ON LTRIM(RTRIM(c.codigo)) = LTRIM(RTRIM(m.CUENTA))
+                WHERE m.TC = 'CJA'
+                  AND CAST(m.FECHA AS date) = CAST(GETDATE() AS date)
+                  AND (c.MEDIODEPAGO = '' OR c.MEDIODEPAGO IS NULL)
+                ORDER BY ISNULL(m.FECHAHORA_GRABACION, CAST(m.FECHA AS datetime)) DESC, m.NUMERO DESC;
+                """,
+                cancellationToken: token));
+
+            return (IReadOnlyList<PuntoVentaMovimientoCajaDetalleDto>)rows.ToList();
+        }, "No se pudo cargar el detalle de caja.", ct);
+
+    public Task<IReadOnlyList<PuntoVentaConsolidadoCajaDto>> GetConsolidadoCajaHoyAsync(CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "GetConsolidadoCajaHoy", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            // Agrupa todos los movimientos de hoy por cuenta de medio de pago.
+            // Las cuentas con MEDIODEPAGO no vacío son efectivo, tarjeta, etc.
+            // DEBE = entrada de dinero (cobranza o ingreso CJA), HABER = salida (egreso CJA).
+            var rows = await cn.QueryAsync<PuntoVentaConsolidadoCajaDto>(new CommandDefinition(
+                """
+                SELECT
+                    ''                                                                      AS IdCajas,
+                    LTRIM(RTRIM(m.CUENTA))                                                  AS Cuenta,
+                    ISNULL(LTRIM(RTRIM(c.DESCRIPCION)), '')                                 AS Descripcion,
+                    ISNULL(SUM(CASE WHEN m.[DEBE-HABER] = 'D' THEN m.IMPORTE ELSE 0 END), 0) AS Ingresos,
+                    ISNULL(SUM(CASE WHEN m.[DEBE-HABER] = 'H' THEN m.IMPORTE ELSE 0 END), 0) AS Egresos,
+                    ISNULL(SUM(CASE WHEN m.[DEBE-HABER] = 'D' THEN m.IMPORTE ELSE -m.IMPORTE END), 0) AS Saldo,
+                    ISNULL(LTRIM(RTRIM(m.MONEDA)), '   1')                                  AS Moneda,
+                    ISNULL(MAX(m.COTIZACION), 1)                                            AS Cotizacion
+                FROM dbo.MV_ASIENTOS m
+                INNER JOIN dbo.MA_CUENTAS c ON LTRIM(RTRIM(c.codigo)) = LTRIM(RTRIM(m.CUENTA))
+                WHERE CAST(m.FECHA AS date) = CAST(GETDATE() AS date)
+                  AND (c.MEDIODEPAGO IS NOT NULL AND LTRIM(RTRIM(c.MEDIODEPAGO)) <> '')
+                GROUP BY LTRIM(RTRIM(m.CUENTA)), LTRIM(RTRIM(c.DESCRIPCION)), LTRIM(RTRIM(m.MONEDA))
+                ORDER BY LTRIM(RTRIM(c.DESCRIPCION));
+                """,
+                cancellationToken: token));
+
+            return (IReadOnlyList<PuntoVentaConsolidadoCajaDto>)rows.ToList();
+        }, "No se pudo cargar el consolidado de caja.", ct);
 
     private async Task<TipoComprobanteRow?> GetTipoComprobanteConfigAsync(SqlConnection cn, CancellationToken ct)
     {
@@ -832,6 +1068,31 @@ public sealed class PuntoVentaService(
         return row;
     }
 
+    private static async Task EnsureRequiredSaleProceduresAsync(SqlConnection cn, CancellationToken ct)
+    {
+        var requiredProcedures = new[]
+        {
+            "sp_web_Alta_Comprobante",
+            "sp_web_CpteInsumos",
+            "sp_web_CreaCobPorFactura",
+            "sp_web_creaLineaAsiento",
+            "sp_web_CreaAplicacionCobranzaFactura"
+        };
+
+        var missing = new List<string>();
+        foreach (var procedure in requiredProcedures)
+        {
+            if (!await ObjectExistsAsync(cn, procedure, "P", ct))
+                missing.Add(procedure);
+        }
+
+        if (missing.Count == 0)
+            return;
+
+        throw new InvalidOperationException(
+            $"La base activa no tiene los procedimientos del POS requeridos: {string.Join(", ", missing)}. Aplicá los updates SQL del punto de venta antes de cobrar.");
+    }
+
     private async Task AddReceiptItemAsync(SqlConnection cn, int idComprobante, PuntoVentaCartItemDto item, CancellationToken ct)
     {
         await using var cmd = new SqlCommand("dbo.sp_web_CpteInsumos", cn)
@@ -915,22 +1176,10 @@ public sealed class PuntoVentaService(
     private async Task CreatePaymentSeedAsync(SqlConnection cn, int idCobranza, CancellationToken ct)
     {
         const string sql = """
-            BEGIN TRY
-                ALTER TABLE dbo.MV_ASIENTOS DISABLE TRIGGER ALL;
-                DECLARE @pResultado INT;
-                DECLARE @pMensaje NVARCHAR(250);
-                EXEC dbo.sp_web_creaLineaAsiento @pIdCobranza, 0, '', 1, NULL, @pResultado OUTPUT, @pMensaje OUTPUT;
-                ALTER TABLE dbo.MV_ASIENTOS ENABLE TRIGGER ALL;
-                SELECT @pResultado AS Resultado, @pMensaje AS Mensaje;
-            END TRY
-            BEGIN CATCH
-                BEGIN TRY
-                    ALTER TABLE dbo.MV_ASIENTOS ENABLE TRIGGER ALL;
-                END TRY
-                BEGIN CATCH
-                END CATCH;
-                THROW;
-            END CATCH
+            DECLARE @pResultado INT;
+            DECLARE @pMensaje NVARCHAR(250);
+            EXEC dbo.sp_web_creaLineaAsiento @pIdCobranza, 0, '', 1, NULL, @pResultado OUTPUT, @pMensaje OUTPUT;
+            SELECT @pResultado AS Resultado, @pMensaje AS Mensaje;
             """;
 
         var result = await cn.QuerySingleAsync<SpResultRow>(new CommandDefinition(
@@ -944,22 +1193,10 @@ public sealed class PuntoVentaService(
     private async Task CreatePaymentLineAsync(SqlConnection cn, int idCobranza, PuntoVentaPaymentLineDto pago, CancellationToken ct)
     {
         const string sql = """
-            BEGIN TRY
-                ALTER TABLE dbo.MV_ASIENTOS DISABLE TRIGGER ALL;
-                DECLARE @pResultado INT;
-                DECLARE @pMensaje NVARCHAR(250);
-                EXEC dbo.sp_web_creaLineaAsiento @pIdCobranza, @Importe, @Codigo, 0, NULL, @pResultado OUTPUT, @pMensaje OUTPUT;
-                ALTER TABLE dbo.MV_ASIENTOS ENABLE TRIGGER ALL;
-                SELECT @pResultado AS Resultado, @pMensaje AS Mensaje;
-            END TRY
-            BEGIN CATCH
-                BEGIN TRY
-                    ALTER TABLE dbo.MV_ASIENTOS ENABLE TRIGGER ALL;
-                END TRY
-                BEGIN CATCH
-                END CATCH;
-                THROW;
-            END CATCH
+            DECLARE @pResultado INT;
+            DECLARE @pMensaje NVARCHAR(250);
+            EXEC dbo.sp_web_creaLineaAsiento @pIdCobranza, @Importe, @Codigo, 0, NULL, @pResultado OUTPUT, @pMensaje OUTPUT;
+            SELECT @pResultado AS Resultado, @pMensaje AS Mensaje;
             """;
 
         var result = await cn.QuerySingleAsync<SpResultRow>(new CommandDefinition(
@@ -978,22 +1215,10 @@ public sealed class PuntoVentaService(
     private async Task CreateCollectionApplicationAsync(SqlConnection cn, int idCobranza, int idComprobante, CancellationToken ct)
     {
         const string sql = """
-            BEGIN TRY
-                ALTER TABLE dbo.MV_ASIENTOS DISABLE TRIGGER ALL;
-                DECLARE @pResultado INT;
-                DECLARE @pMensaje NVARCHAR(250);
-                EXEC dbo.sp_web_CreaAplicacionCobranzaFactura @pIdCobranza, @pIdComprobante, @pResultado OUTPUT, @pMensaje OUTPUT;
-                ALTER TABLE dbo.MV_ASIENTOS ENABLE TRIGGER ALL;
-                SELECT @pResultado AS Resultado, @pMensaje AS Mensaje;
-            END TRY
-            BEGIN CATCH
-                BEGIN TRY
-                    ALTER TABLE dbo.MV_ASIENTOS ENABLE TRIGGER ALL;
-                END TRY
-                BEGIN CATCH
-                END CATCH;
-                THROW;
-            END CATCH
+            DECLARE @pResultado INT;
+            DECLARE @pMensaje NVARCHAR(250);
+            EXEC dbo.sp_web_CreaAplicacionCobranzaFactura @pIdCobranza, @pIdComprobante, @pResultado OUTPUT, @pMensaje OUTPUT;
+            SELECT @pResultado AS Resultado, @pMensaje AS Mensaje;
             """;
 
         var result = await cn.QuerySingleAsync<SpResultRow>(new CommandDefinition(

@@ -1,4 +1,5 @@
 @page "/shell/{ModuleKey}"
+@page "/{idweb}/{idbase:int}/shell/{ModuleKey}"
 @layout AlfaCore.Components.Layout.MainLayout
 @using AlfaCore.Models
 @inject AlfaCore.Services.IWorkspaceService WorkspaceSvc
@@ -6,6 +7,7 @@
 @inject AlfaCore.Services.IFavoritesService FavoritesSvc
 @inject AlfaCore.Services.ISessionService SessionSvc
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
+@inject AlfaCore.Services.IRouteContextService RouteContext
 @inject NavigationManager Nav
 @implements IDisposable
 
@@ -17,13 +19,20 @@
         <i class="bi bi-hourglass-split"></i> Cargando aplicaciones del módulo...
     </div>
 }
+else if (!string.IsNullOrWhiteSpace(_error))
+{
+    <div class="panel-card empty-state">
+        <span class="empty-state__eyebrow">Shell</span>
+        <h1>No se pudo cargar el módulo</h1>
+        <p>@_error</p>
+    </div>
+}
 else
 {
     <div class="page-grid">
         <section class="page-intro">
             <div>
                 <h2 class="page-intro__title">@(_workspace.Module?.Nombre ?? "Módulo")</h2>
-                <p class="page-intro__text">Seleccioná una aplicación disponible. Las rutas web actuales se mantienen; el shell solo organiza el acceso.</p>
             </div>
         </section>
 
@@ -41,26 +50,25 @@ else
                     <div class="panel-card__header">
                         <div>
                             <h3 class="panel-card__title">@workspaceSection.Nombre</h3>
-                            <p class="panel-card__subtitle">Opciones web disponibles para este tramo del árbol funcional.</p>
                         </div>
                     </div>
                     <div class="launcher__grid">
                         @foreach (var item in workspaceSection.Items)
                         {
-                            <article class="app-card app-card--button" role="button" tabindex="0" @onclick="() => OpenNodeAsync(item)" @onkeydown="args => HandleNodeCardKeyDownAsync(args, item)">
-                                <button type="button"
-                                        class="@GetFavoriteButtonClass(item.Clave)"
-                                        title="@(IsFavorite(item.Clave) ? "Quitar de favoritos" : "Agregar a favoritos")"
-                                        aria-label="@(IsFavorite(item.Clave) ? $"Quitar {item.Nombre} de favoritos" : $"Agregar {item.Nombre} a favoritos")"
-                                        @onclick="() => ToggleFavoriteAsync(item.Menu, item.Clave)"
-                                        @onclick:stopPropagation>
-                                    <i class="bi @(IsFavorite(item.Clave) ? "bi-star-fill" : "bi-star")"></i>
+                        <article class="app-card app-card--button" role="button" tabindex="0" @onclick="() => OpenNodeAsync(item)" @onkeydown="args => HandleNodeCardKeyDownAsync(args, item)">
+                            <button type="button"
+                                    class="@GetFavoriteButtonClass(item.Clave)"
+                                    style="@GetFavoriteButtonStyle(item.Clave)"
+                                    title="@(IsFavorite(item.Clave) ? "Quitar de favoritos" : "Agregar a favoritos")"
+                                    aria-label="@(IsFavorite(item.Clave) ? $"Quitar {item.Nombre} de favoritos" : $"Agregar {item.Nombre} a favoritos")"
+                                    @onclick="() => ToggleFavoriteAsync(item.Menu, item.Clave)"
+                                    @onclick:stopPropagation>
+                                <i class="bi @(IsFavorite(item.Clave) ? "bi-star-fill" : "bi-star")"></i>
                                 </button>
                                 <div class="app-card__icon @ShellNavigationUiHelper.GetNodeIconClass(item)">
                                     <i class="bi @(string.IsNullOrWhiteSpace(item.Icono) ? "bi-box-arrow-up-right" : item.Icono)"></i>
                                 </div>
                                 <span class="app-card__name">@item.Nombre</span>
-                                <span class="app-card__desc">@ShellNavigationUiHelper.GetNodeDescription(item)</span>
                             </article>
                         }
                     </div>
@@ -75,6 +83,7 @@ else
 
     private bool _loading = true;
     private ShellWorkspaceDto _workspace = new();
+    private string _error = string.Empty;
     private bool _interactiveReady;
     private bool _disposed;
     private int _loadVersion;
@@ -83,12 +92,20 @@ else
     {
         SessionSvc.SessionChanged += OnContextChanged;
         AppUserSession.StateChanged += OnContextChanged;
+
+        if (WorkspaceSvc.TryGetCachedModuleWorkspace(ModuleKey, out var cachedWorkspace))
+        {
+            _workspace = cachedWorkspace;
+            _loading = false;
+        }
     }
 
     protected override async Task OnParametersSetAsync()
     {
-        if (_interactiveReady)
-            await LoadWorkspaceAsync();
+        if (!_interactiveReady)
+            return;
+
+        await LoadWorkspaceAsync(showLoader: !TryUseCachedWorkspace());
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -98,14 +115,15 @@ else
 
         _interactiveReady = true;
         await Task.Yield();
-        await LoadWorkspaceAsync();
+        var hasCachedWorkspace = TryUseCachedWorkspace();
+        await LoadWorkspaceAsync(showLoader: !hasCachedWorkspace);
         await InvokeAsync(StateHasChanged);
     }
 
     private async Task OpenNodeAsync(ShellMenuNodeDto item)
     {
         await RecentSvc.RegisterRecentAsync(item.Menu, item.Clave);
-        Nav.NavigateTo(item.RutaWeb);
+        Nav.NavigateTo(RouteContext.BuildRoute(item.RutaWeb));
     }
 
     private async Task HandleNodeCardKeyDownAsync(KeyboardEventArgs args, ShellMenuNodeDto item)
@@ -124,10 +142,16 @@ else
         return IsFavorite(clave) ? "app-card__favorite is-active" : "app-card__favorite";
     }
 
+    private string GetFavoriteButtonStyle(string clave)
+        => IsFavorite(clave)
+            ? "appearance:none;-webkit-appearance:none;width:2.1rem;height:2.1rem;padding:0;border-radius:999px;background:rgba(251,191,36,.14);border:1px solid rgba(251,191,36,.48);color:#fbbf24;box-shadow:none;"
+            : "appearance:none;-webkit-appearance:none;width:2.1rem;height:2.1rem;padding:0;border-radius:999px;background:rgba(15,23,42,.45);border:1px solid rgba(148,163,184,.18);color:rgba(226,232,240,.72);box-shadow:none;";
+
     private async Task ToggleFavoriteAsync(string menu, string clave)
     {
         await FavoritesSvc.ToggleFavoriteAsync(menu, clave);
-        _workspace = await WorkspaceSvc.GetModuleWorkspaceAsync(ModuleKey);
+        WorkspaceSvc.InvalidateWorkspaceCache();
+        _workspace = await WorkspaceSvc.RefreshModuleWorkspaceAsync(ModuleKey);
     }
 
     private static bool IsActivationKey(string? key)
@@ -145,23 +169,60 @@ else
 
         await InvokeAsync(async () =>
         {
-            await LoadWorkspaceAsync();
+            await LoadWorkspaceAsync(showLoader: !TryUseCachedWorkspace());
             StateHasChanged();
         });
     }
 
-    private async Task LoadWorkspaceAsync()
+    private bool TryUseCachedWorkspace()
+    {
+        if (!WorkspaceSvc.TryGetCachedModuleWorkspace(ModuleKey, out var cachedWorkspace))
+            return false;
+
+        _workspace = cachedWorkspace;
+        _loading = false;
+        _error = string.Empty;
+        return true;
+    }
+
+    private async Task LoadWorkspaceAsync(bool showLoader = true)
     {
         var version = Interlocked.Increment(ref _loadVersion);
-        _loading = true;
-        StateHasChanged();
+        var hadVisibleWorkspace = HasVisibleWorkspace();
+        if (showLoader || !hadVisibleWorkspace)
+        {
+            _loading = true;
+            _error = string.Empty;
+            StateHasChanged();
+        }
+
         try
         {
-            var workspace = await WorkspaceSvc.GetModuleWorkspaceAsync(ModuleKey);
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            var workspace = showLoader || !hadVisibleWorkspace
+                ? await WorkspaceSvc.GetModuleWorkspaceAsync(ModuleKey, cts.Token)
+                : await WorkspaceSvc.RefreshModuleWorkspaceAsync(ModuleKey, cts.Token);
             if (version != _loadVersion)
                 return;
 
             _workspace = workspace;
+            _error = string.Empty;
+        }
+        catch (OperationCanceledException)
+        {
+            if (!showLoader && hadVisibleWorkspace)
+                return;
+
+            if (version == _loadVersion)
+                _error = "La carga del módulo demoró demasiado. Revisá la base activa o intentá nuevamente.";
+        }
+        catch
+        {
+            if (!showLoader && hadVisibleWorkspace)
+                return;
+
+            if (version == _loadVersion)
+                _error = "No se pudo cargar el módulo seleccionado.";
         }
         finally
         {
@@ -169,6 +230,9 @@ else
                 _loading = false;
         }
     }
+
+    private bool HasVisibleWorkspace()
+        => _workspace.Module is not null || _workspace.Sections.Count > 0 || _workspace.Favorites.Count > 0 || _workspace.Recents.Count > 0;
 
     public void Dispose()
     {

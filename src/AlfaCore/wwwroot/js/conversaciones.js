@@ -142,7 +142,6 @@ window.conversacionesUi = {
     _lastSoundAttemptAt: '',
     _lastSoundError: '',
     _soundInitialized: false,
-    _closeTicketWarningKey: 'alfacore.conversaciones.closeTicketWarningAccepted',
 
     isNearBottom: function (element) {
         if (!element) return false;
@@ -161,25 +160,6 @@ window.conversacionesUi = {
             scrollHeight: element.scrollHeight || 0,
             clientHeight: element.clientHeight || 0
         };
-    },
-
-    getCloseTicketWarningAccepted: function () {
-        try {
-            return window.localStorage?.getItem(this._closeTicketWarningKey) === '1';
-        } catch {
-            return false;
-        }
-    },
-
-    setCloseTicketWarningAccepted: function (accepted) {
-        try {
-            if (accepted) {
-                window.localStorage?.setItem(this._closeTicketWarningKey, '1');
-            } else {
-                window.localStorage?.removeItem(this._closeTicketWarningKey);
-            }
-        } catch {
-        }
     },
 
     scrollToBottom: function (element) {
@@ -728,52 +708,114 @@ window.conversacionesUi = {
 
         const previous = this._previewPanWatchers.get(element);
         if (previous) {
-            previous.events.forEach(item => element.removeEventListener(item.name, item.handler));
+            previous.events.forEach(item => (item.target || element).removeEventListener(item.name, item.handler, item.options));
             element.classList.remove('is-dragging');
         }
 
-        let dragging = false;
-        let startX = 0;
-        let startY = 0;
-        let startLeft = 0;
-        let startTop = 0;
+        const surface = element.querySelector('.attachment-preview-drag-surface');
+        const frame = element.querySelector('.attachment-preview-media-frame');
+        const media = frame?.querySelector('img, video');
+        if (!surface || !frame) {
+            this._previewPanWatchers.delete(element);
+            return false;
+        }
 
-        const pointerDown = event => {
-            if (event.button !== 0) return;
+        let dragging = false;
+        let lastX = 0;
+        let lastY = 0;
+        let panX = 0;
+        let panY = 0;
+        let activePointerId = null;
+
+        const readPixels = name => {
+            const value = window.getComputedStyle(frame).getPropertyValue(name).trim();
+            const parsed = Number.parseFloat(value);
+            return Number.isFinite(parsed) ? parsed : 0;
+        };
+
+        const readZoom = () => {
+            if (!media) return 1;
+            const value = window.getComputedStyle(media).getPropertyValue('--preview-zoom').trim();
+            const parsed = Number.parseFloat(value);
+            return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+        };
+
+        const stabilizeFrameSize = () => {
+            if (!media) return;
+            const zoom = readZoom();
+            const rect = media.getBoundingClientRect();
+            const width = rect.width / zoom;
+            const height = rect.height / zoom;
+            if (width > 0 && height > 0) {
+                frame.style.setProperty('--preview-frame-width', `${width}px`);
+                frame.style.setProperty('--preview-frame-height', `${height}px`);
+            }
+        };
+
+        const applyPan = () => {
+            frame.style.setProperty('--preview-pan-x', `${panX}px`);
+            frame.style.setProperty('--preview-pan-y', `${panY}px`);
+        };
+
+        const resetPan = () => {
+            panX = 0;
+            panY = 0;
+            applyPan();
+        };
+
+        stabilizeFrameSize();
+        if (media instanceof HTMLImageElement && !media.complete)
+            media.addEventListener('load', stabilizeFrameSize, { once: true });
+        if (media instanceof HTMLVideoElement && media.readyState < 1)
+            media.addEventListener('loadedmetadata', stabilizeFrameSize, { once: true });
+
+        const startDrag = event => {
+            if (event.pointerType === 'mouse' && event.button !== 0) return;
             dragging = true;
-            startX = event.clientX;
-            startY = event.clientY;
-            startLeft = element.scrollLeft;
-            startTop = element.scrollTop;
+            activePointerId = event.pointerId;
+            lastX = event.clientX;
+            lastY = event.clientY;
+            panX = readPixels('--preview-pan-x');
+            panY = readPixels('--preview-pan-y');
+            surface.setPointerCapture?.(event.pointerId);
             element.classList.add('is-dragging');
-            element.setPointerCapture?.(event.pointerId);
             event.preventDefault();
         };
 
-        const pointerMove = event => {
+        const moveDrag = event => {
             if (!dragging) return;
-            element.scrollLeft = startLeft - (event.clientX - startX);
-            element.scrollTop = startTop - (event.clientY - startY);
+            if (activePointerId !== null && event.pointerId !== activePointerId) return;
+            const deltaX = event.clientX - lastX;
+            const deltaY = event.clientY - lastY;
+            lastX = event.clientX;
+            lastY = event.clientY;
+            panX += deltaX;
+            panY += deltaY;
+            applyPan();
             event.preventDefault();
         };
 
         const endDrag = event => {
             if (!dragging) return;
+            if (activePointerId !== null && event?.pointerId !== undefined && event.pointerId !== activePointerId) return;
             dragging = false;
+            if (activePointerId !== null)
+                surface.releasePointerCapture?.(activePointerId);
+            activePointerId = null;
             element.classList.remove('is-dragging');
-            element.releasePointerCapture?.(event.pointerId);
         };
 
         const events = [
-            { name: 'pointerdown', handler: pointerDown },
-            { name: 'pointermove', handler: pointerMove },
-            { name: 'pointerup', handler: endDrag },
-            { name: 'pointercancel', handler: endDrag },
-            { name: 'pointerleave', handler: endDrag }
+            { target: surface, name: 'pointerdown', handler: startDrag, options: { capture: true, passive: false } },
+            { target: surface, name: 'pointermove', handler: moveDrag, options: { capture: true, passive: false } },
+            { target: surface, name: 'pointerup', handler: endDrag, options: { capture: true } },
+            { target: surface, name: 'pointercancel', handler: endDrag, options: { capture: true } },
+            { target: surface, name: 'lostpointercapture', handler: endDrag, options: { capture: true } }
         ];
 
-        events.forEach(item => element.addEventListener(item.name, item.handler));
+        events.forEach(item => item.target.addEventListener(item.name, item.handler, item.options));
         this._previewPanWatchers.set(element, { events: events });
+        resetPan();
         return true;
     },
 

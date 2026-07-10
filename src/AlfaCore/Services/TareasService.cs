@@ -1,16 +1,24 @@
 using AlfaCore.Models;
 using Dapper;
 using Microsoft.Data.SqlClient;
+using System.Globalization;
 
 namespace AlfaCore.Services;
 
 public sealed class TareasService(
     IConfiguration configuration,
     ISessionService sessionService,
-    IAppEventService appEvents) : ITareasService
+    IAppEventService appEvents,
+    IConversacionesService conversacionesService) : ITareasService
 {
     private const string ModuleName = "Tareas";
     private const string SistemaFijo = "CN000PR";
+    private const string TaskAssignmentTemplateMetaName = "nueva_tarea_asignada";
+    private const string TaskAssignmentLegacyTemplateMetaName = "tarea_asignada";
+    private const string TaskCompletionTemplateMetaName = "tarea_finalizada";
+    private const string TaskAssignmentTemplateConfigKey = "TAREAS-WHATSAPP-PLANTILLA-ASIGNACION";
+    private const string TaskCompletionTemplateConfigKey = "TAREAS-WHATSAPP-PLANTILLA-FINALIZACION";
+    private const string TaskWhatsAppEnabledConfigKey = "TAREAS-WHATSAPP-NOTIFICACIONES";
     private const long MaxAttachmentBytes = 50L * 1024L * 1024L;
     private static readonly string[] AllowedAttachmentPrefixes = ["image/", "audio/", "video/"];
 
@@ -27,6 +35,9 @@ public sealed class TareasService(
             await cn.OpenAsync(token);
             await EnsureDefaultListAsync(cn, user, token);
             await EnsureTaskPriorityColumnAsync(cn, token);
+            await EnsureTaskCreatorColumnAsync(cn, token);
+            await EnsureTaskGroupsReadyAsync(cn, token);
+            await EnsureQuickNotesColumnsAsync(cn, token);
             var userActiveFilter = await HasUsuarioActivoColumnAsync(cn, token)
                 ? "AND ISNULL(Activo, 1) = 1"
                 : string.Empty;
@@ -109,7 +120,18 @@ public sealed class TareasService(
                       AND (
                             lv.IdLista IS NOT NULL
                          OR UPPER(LTRIM(RTRIM(ISNULL(t.UsuarioAlta, '')))) = UPPER(LTRIM(RTRIM(@Usuario)))
-                         OR UPPER(LTRIM(RTRIM(ISNULL(t.UsuarioAsignado, '')))) = UPPER(LTRIM(RTRIM(@Usuario)))
+                         OR CHARINDEX(N'|' + UPPER(LTRIM(RTRIM(@Usuario))) + N'|', N'|' + REPLACE(REPLACE(UPPER(LTRIM(RTRIM(ISNULL(t.UsuarioAsignado, '')))), N';', N'|'), N',', N'|') + N'|') > 0
+                         OR CHARINDEX(N'|TODOS|', N'|' + REPLACE(REPLACE(UPPER(LTRIM(RTRIM(ISNULL(t.UsuarioAsignado, '')))), N';', N'|'), N',', N'|') + N'|') > 0
+                         OR EXISTS
+                            (
+                                SELECT 1
+                                FROM dbo.ALFACORE_TAREAS_GRUPOS_MIEMBROS gm
+                                INNER JOIN dbo.ALFACORE_TAREAS_GRUPOS g ON g.IdGrupo = gm.IdGrupo
+                                    AND ISNULL(g.Activa, 1) = 1
+                                WHERE ISNULL(gm.Activa, 1) = 1
+                                  AND UPPER(LTRIM(RTRIM(ISNULL(gm.Usuario, '')))) = UPPER(LTRIM(RTRIM(@Usuario)))
+                                  AND CHARINDEX(N'|' + UPPER(LTRIM(RTRIM(gm.Grupo))) + N'|', N'|' + REPLACE(REPLACE(UPPER(LTRIM(RTRIM(ISNULL(t.UsuarioAsignado, '')))), N';', N'|'), N',', N'|') + N'|') > 0
+                            )
                          OR EXISTS
                             (
                                 SELECT 1
@@ -135,6 +157,7 @@ public sealed class TareasService(
                     ISNULL(t.Estado, 'PENDIENTE') AS Estado,
                     ISNULL(t.Prioridad, 'MEDIA') AS Prioridad,
                     ISNULL(t.UsuarioAlta, '') AS UsuarioAlta,
+                    ISNULL(t.UsuarioCreador, ISNULL(t.UsuarioAlta, '')) AS UsuarioCreador,
                     CONVERT(bit, CASE WHEN UPPER(LTRIM(RTRIM(ISNULL(t.UsuarioAlta, '')))) = UPPER(LTRIM(RTRIM(@Usuario))) THEN 1 ELSE 0 END) AS EsPropia,
                     {attachmentCountSelect} AS Adjuntos,
                     t.FechaHoraAlta,
@@ -187,7 +210,18 @@ public sealed class TareasService(
                       AND (
                             lv.IdLista IS NOT NULL
                          OR UPPER(LTRIM(RTRIM(ISNULL(t.UsuarioAlta, '')))) = UPPER(LTRIM(RTRIM(@Usuario)))
-                         OR UPPER(LTRIM(RTRIM(ISNULL(t.UsuarioAsignado, '')))) = UPPER(LTRIM(RTRIM(@Usuario)))
+                         OR CHARINDEX(N'|' + UPPER(LTRIM(RTRIM(@Usuario))) + N'|', N'|' + REPLACE(REPLACE(UPPER(LTRIM(RTRIM(ISNULL(t.UsuarioAsignado, '')))), N';', N'|'), N',', N'|') + N'|') > 0
+                         OR CHARINDEX(N'|TODOS|', N'|' + REPLACE(REPLACE(UPPER(LTRIM(RTRIM(ISNULL(t.UsuarioAsignado, '')))), N';', N'|'), N',', N'|') + N'|') > 0
+                         OR EXISTS
+                            (
+                                SELECT 1
+                                FROM dbo.ALFACORE_TAREAS_GRUPOS_MIEMBROS gm
+                                INNER JOIN dbo.ALFACORE_TAREAS_GRUPOS g ON g.IdGrupo = gm.IdGrupo
+                                    AND ISNULL(g.Activa, 1) = 1
+                                WHERE ISNULL(gm.Activa, 1) = 1
+                                  AND UPPER(LTRIM(RTRIM(ISNULL(gm.Usuario, '')))) = UPPER(LTRIM(RTRIM(@Usuario)))
+                                  AND CHARINDEX(N'|' + UPPER(LTRIM(RTRIM(gm.Grupo))) + N'|', N'|' + REPLACE(REPLACE(UPPER(LTRIM(RTRIM(ISNULL(t.UsuarioAsignado, '')))), N';', N'|'), N',', N'|') + N'|') > 0
+                            )
                          OR EXISTS
                             (
                                 SELECT 1
@@ -213,6 +247,7 @@ public sealed class TareasService(
                     ISNULL(t.Estado, 'PENDIENTE') AS Estado,
                     ISNULL(t.Prioridad, 'MEDIA') AS Prioridad,
                     ISNULL(t.UsuarioAlta, '') AS UsuarioAlta,
+                    ISNULL(t.UsuarioCreador, ISNULL(t.UsuarioAlta, '')) AS UsuarioCreador,
                     CONVERT(bit, CASE WHEN UPPER(LTRIM(RTRIM(ISNULL(t.UsuarioAlta, '')))) = UPPER(LTRIM(RTRIM(@Usuario))) THEN 1 ELSE 0 END) AS EsPropia,
                     {attachmentCountSelect} AS Adjuntos,
                     t.FechaHoraAlta,
@@ -230,10 +265,12 @@ public sealed class TareasService(
                 SELECT
                     IdNota,
                     ISNULL(Texto, '') AS Texto,
+                    ISNULL(CONVERT(nvarchar(max), Detalle), '') AS Detalle,
                     ISNULL(Usuario, '') AS Usuario,
                     CONVERT(bit, CASE WHEN UPPER(LTRIM(RTRIM(Usuario))) = UPPER(LTRIM(RTRIM(@Usuario))) THEN 1 ELSE 0 END) AS EsPropia,
                     Fecha,
                     CONVERT(bit, ISNULL(Completada, 0)) AS Completada,
+                    ISNULL(Orden, 0) AS Orden,
                     FechaHoraAlta,
                     FechaHoraCompletada
                 FROM dbo.ALFACORE_TAREAS_NOTAS_RAPIDAS n
@@ -253,7 +290,7 @@ public sealed class TareasService(
                               )
                         )
                   )
-                ORDER BY Completada, FechaHoraAlta DESC;
+                ORDER BY Completada, ISNULL(Orden, 0), FechaHoraAlta DESC;
 
                 SELECT
                     ISNULL(NOMBRE, '') AS Nombre,
@@ -263,6 +300,15 @@ public sealed class TareasService(
                   AND ISNULL(EsGrupo, 0) = 0
                   {userActiveFilter}
                 ORDER BY NOMBRE;
+
+                SELECT
+                    ISNULL(g.Nombre, '') AS Grupo,
+                    ISNULL(gm.Usuario, '') AS Usuario
+                FROM dbo.ALFACORE_TAREAS_GRUPOS g
+                LEFT JOIN dbo.ALFACORE_TAREAS_GRUPOS_MIEMBROS gm ON gm.IdGrupo = g.IdGrupo
+                    AND ISNULL(gm.Activa, 1) = 1
+                WHERE ISNULL(g.Activa, 1) = 1
+                ORDER BY g.Nombre, gm.Usuario;
 
                 SELECT
                     TipoObjeto,
@@ -284,6 +330,7 @@ public sealed class TareasService(
                 Usuarios = (await multi.ReadAsync<TareaUsuarioDto>()).ToList()
             };
 
+            page.Grupos = BuildTaskGroups((await multi.ReadAsync<TareaGroupMemberRow>()).ToList());
             ApplySharing(page, (await multi.ReadAsync<TareaShareRow>()).ToList());
             return page;
         }, "No se pudieron cargar las tareas.", ct);
@@ -384,6 +431,80 @@ public sealed class TareasService(
                 cancellationToken: token));
         }, "No se pudo eliminar la lista de tareas.", ct);
 
+    public Task SaveGroupsAsync(TareaGruposSaveRequest request, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "SaveGroups", async token =>
+        {
+            ArgumentNullException.ThrowIfNull(request);
+            var user = NormalizeUser(request.UsuarioAccion);
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await EnsureTaskGroupsReadyAsync(cn, token);
+
+            var groups = request.Grupos
+                .Select(x => new TareaGrupoDto
+                {
+                    Grupo = NormalizeGroupName(x.Grupo),
+                    Usuarios = x.Usuarios
+                        .Select(NormalizeUser)
+                        .Where(u => !string.IsNullOrWhiteSpace(u))
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .OrderBy(u => u)
+                        .ToList()
+                })
+                .Where(x => !string.IsNullOrWhiteSpace(x.Grupo))
+                .Where(x => !string.Equals(x.Grupo, "Todos", StringComparison.OrdinalIgnoreCase))
+                .GroupBy(x => x.Grupo, StringComparer.OrdinalIgnoreCase)
+                .Select(x => new TareaGrupoDto
+                {
+                    Grupo = x.First().Grupo,
+                    Usuarios = x.SelectMany(g => g.Usuarios)
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .OrderBy(u => u)
+                        .ToList()
+                })
+                .OrderBy(x => x.Grupo)
+                .ToList();
+
+            using var tx = cn.BeginTransaction();
+            await cn.ExecuteAsync(new CommandDefinition(
+                """
+                UPDATE dbo.ALFACORE_TAREAS_GRUPOS
+                SET Activa = 0,
+                    FechaHoraModificacion = GETDATE(),
+                    UsuarioModificacion = @UsuarioAccion
+                WHERE ISNULL(Activa, 1) = 1;
+
+                UPDATE gm
+                SET Activa = 0,
+                    FechaHoraModificacion = GETDATE(),
+                    UsuarioModificacion = @UsuarioAccion
+                FROM dbo.ALFACORE_TAREAS_GRUPOS_MIEMBROS gm
+                INNER JOIN dbo.ALFACORE_TAREAS_GRUPOS g ON g.IdGrupo = gm.IdGrupo
+                WHERE ISNULL(gm.Activa, 1) = 1;
+                """,
+                new { UsuarioAccion = user },
+                transaction: tx,
+                cancellationToken: token));
+
+            foreach (var group in groups)
+            {
+                var idGrupo = await SaveGroupHeaderAsync(cn, group.Grupo, user, tx, token);
+                foreach (var member in group.Usuarios)
+                    await cn.ExecuteAsync(new CommandDefinition(
+                        """
+                        INSERT INTO dbo.ALFACORE_TAREAS_GRUPOS_MIEMBROS
+                            (IdGrupo, Grupo, Usuario, UsuarioAlta, FechaHoraAlta, Activa)
+                        VALUES
+                            (@IdGrupo, @Grupo, @Usuario, @UsuarioAccion, GETDATE(), 1);
+                        """,
+                        new { IdGrupo = idGrupo, Grupo = group.Grupo, Usuario = member, UsuarioAccion = user },
+                        transaction: tx,
+                        cancellationToken: token));
+            }
+
+            tx.Commit();
+        }, "No se pudieron guardar los grupos de tareas.", ct);
+
     public Task<long> SaveTaskAsync(TareaSaveRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "SaveTask", async token =>
         {
@@ -395,13 +516,18 @@ public sealed class TareasService(
             var estado = NormalizeState(request.Estado);
             var prioridad = NormalizePriority(request.Prioridad);
             var user = NormalizeUser(request.UsuarioAccion);
-            var asignado = string.IsNullOrWhiteSpace(request.UsuarioAsignado) ? user : request.UsuarioAsignado.Trim();
+            var creador = NormalizeUserOrDefault(request.UsuarioCreador, user);
+            var asignado = NormalizeAssignees(request.UsuarioAsignado, user);
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
             await EnsureTaskPriorityColumnAsync(cn, token);
+            await EnsureTaskCreatorColumnAsync(cn, token);
             var defaultId = await EnsureDefaultListAsync(cn, user, token);
             var idLista = request.IdLista <= 0 ? defaultId : request.IdLista;
+            if (!await CanAccessListAsync(cn, idLista, user, token)
+                && await IsDefaultPersonalListAsync(cn, idLista, token))
+                idLista = defaultId;
             if (!await CanAccessListAsync(cn, idLista, user, token))
                 throw new InvalidOperationException("No tenés acceso a la lista seleccionada.");
             if (HasSharingSelection(request.CompartirConTodos, request.UsuariosCompartidos))
@@ -412,6 +538,7 @@ public sealed class TareasService(
                 if (!await CanAccessTaskAsync(cn, id, user, token))
                     throw new InvalidOperationException("No tenés acceso a la tarea seleccionada.");
 
+                var previous = await GetTaskNotificationSnapshotAsync(cn, id, token);
                 await cn.ExecuteAsync(new CommandDefinition(
                     """
                     UPDATE dbo.ALFACORE_TAREAS
@@ -420,6 +547,7 @@ public sealed class TareasService(
                         Descripcion = @Descripcion,
                         FechaVencimiento = @FechaVencimiento,
                         UsuarioAsignado = @UsuarioAsignado,
+                        UsuarioCreador = @UsuarioCreador,
                         Estado = @Estado,
                         Prioridad = @Prioridad,
                         FechaHoraModificacion = GETDATE(),
@@ -439,22 +567,33 @@ public sealed class TareasService(
                         Descripcion = EmptyToNull(request.Descripcion),
                         request.FechaVencimiento,
                         UsuarioAsignado = asignado,
+                        UsuarioCreador = creador,
                         Estado = estado,
                         Prioridad = prioridad
                     },
                     cancellationToken: token));
                 if (await IsTaskOwnedByUserAsync(cn, id, user, token))
                     await SaveSharingRulesAsync(cn, "TAREA", id, request.CompartirConTodos, request.UsuariosCompartidos, user, null, token);
+                if (previous is not null
+                    && !string.Equals(estado, TareaEstadoKeys.Completada, StringComparison.OrdinalIgnoreCase)
+                    && !AssignmentsEquivalent(previous.UsuarioAsignado, asignado))
+                    await NotifyTaskAssignmentAsync(cn, id, titulo, asignado, user, token);
+                if (previous is not null
+                    && !string.Equals(previous.Estado, TareaEstadoKeys.Completada, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(estado, TareaEstadoKeys.Completada, StringComparison.OrdinalIgnoreCase))
+                {
+                    await NotifyTaskCompletionAsync(cn, id, titulo, asignado, previous.UsuarioCreador, user, token);
+                }
                 return id;
             }
 
             var newId = await cn.ExecuteScalarAsync<long>(new CommandDefinition(
                 """
                 INSERT INTO dbo.ALFACORE_TAREAS
-                    (IdLista, Titulo, Descripcion, FechaVencimiento, UsuarioAsignado, Estado, Prioridad, UsuarioAlta, FechaHoraAlta, Activa)
+                    (IdLista, Titulo, Descripcion, FechaVencimiento, UsuarioAsignado, Estado, Prioridad, UsuarioAlta, UsuarioCreador, FechaHoraAlta, Activa)
                 OUTPUT INSERTED.IdTarea
                 VALUES
-                    (@IdLista, @Titulo, @Descripcion, @FechaVencimiento, @UsuarioAsignado, @Estado, @Prioridad, @UsuarioAlta, GETDATE(), 1);
+                    (@IdLista, @Titulo, @Descripcion, @FechaVencimiento, @UsuarioAsignado, @Estado, @Prioridad, @UsuarioAlta, @UsuarioCreador, GETDATE(), 1);
                 """,
                 new
                 {
@@ -465,10 +604,15 @@ public sealed class TareasService(
                     UsuarioAsignado = asignado,
                     Estado = estado,
                     Prioridad = prioridad,
-                    UsuarioAlta = user
+                    UsuarioAlta = user,
+                    UsuarioCreador = creador
                 },
                 cancellationToken: token));
             await SaveSharingRulesAsync(cn, "TAREA", newId, request.CompartirConTodos, request.UsuariosCompartidos, user, null, token);
+            if (!string.Equals(estado, TareaEstadoKeys.Completada, StringComparison.OrdinalIgnoreCase))
+                await NotifyTaskAssignmentAsync(cn, newId, titulo, asignado, user, token);
+            if (string.Equals(estado, TareaEstadoKeys.Completada, StringComparison.OrdinalIgnoreCase))
+                await NotifyTaskCompletionAsync(cn, newId, titulo, asignado, creador, user, token);
             return newId;
         }, "No se pudo guardar la tarea.", ct);
 
@@ -637,9 +781,12 @@ public sealed class TareasService(
             var user = NormalizeUser(usuarioAccion);
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
+            await EnsureTaskCreatorColumnAsync(cn, token);
             if (!await CanAccessTaskAsync(cn, idTarea, user, token))
                 throw new InvalidOperationException("No tenés acceso a la tarea seleccionada.");
 
+            var previous = await GetTaskNotificationSnapshotAsync(cn, idTarea, token);
+            var normalizedState = NormalizeState(estado);
             await cn.ExecuteAsync(new CommandDefinition(
                 """
                 UPDATE dbo.ALFACORE_TAREAS
@@ -649,8 +796,12 @@ public sealed class TareasService(
                 WHERE IdTarea = @IdTarea
                   AND ISNULL(Activa, 1) = 1;
                 """,
-                new { IdTarea = idTarea, Estado = NormalizeState(estado) },
+                new { IdTarea = idTarea, Estado = normalizedState },
                 cancellationToken: token));
+            if (previous is not null
+                && !string.Equals(previous.Estado, TareaEstadoKeys.Completada, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(normalizedState, TareaEstadoKeys.Completada, StringComparison.OrdinalIgnoreCase))
+                await NotifyTaskCompletionAsync(cn, idTarea, previous.Titulo, previous.UsuarioAsignado, previous.UsuarioCreador, user, token);
         }, "No se pudo cambiar el estado de la tarea.", ct);
 
     public Task DuplicateTaskAsync(long idTarea, string usuarioAccion, CancellationToken ct = default)
@@ -660,13 +811,14 @@ public sealed class TareasService(
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
             await EnsureTaskPriorityColumnAsync(cn, token);
+            await EnsureTaskCreatorColumnAsync(cn, token);
             if (!await CanAccessTaskAsync(cn, idTarea, user, token))
                 throw new InvalidOperationException("No tenés acceso a la tarea seleccionada.");
 
             await cn.ExecuteAsync(new CommandDefinition(
                 """
                 INSERT INTO dbo.ALFACORE_TAREAS
-                    (IdLista, Titulo, Descripcion, FechaVencimiento, UsuarioAsignado, Estado, Prioridad, UsuarioAlta, FechaHoraAlta, Activa)
+                    (IdLista, Titulo, Descripcion, FechaVencimiento, UsuarioAsignado, Estado, Prioridad, UsuarioAlta, UsuarioCreador, FechaHoraAlta, Activa)
                 SELECT
                     IdLista,
                     CONCAT(Titulo, N' (copia)'),
@@ -675,6 +827,7 @@ public sealed class TareasService(
                     UsuarioAsignado,
                     'PENDIENTE',
                     ISNULL(Prioridad, N'MEDIA'),
+                    @Usuario,
                     @Usuario,
                     GETDATE(),
                     1
@@ -707,22 +860,66 @@ public sealed class TareasService(
         }, "No se pudo eliminar la tarea.", ct);
 
     public Task<long> AddQuickNoteAsync(string texto, string usuario, CancellationToken ct = default)
+        => SaveQuickNoteAsync(new TareaNotaRapidaSaveRequest
+        {
+            Texto = texto,
+            UsuarioAccion = usuario
+        }, ct);
+
+    public Task<long> SaveQuickNoteAsync(TareaNotaRapidaSaveRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "AddQuickNote", async token =>
         {
-            var clean = texto.Trim();
+            ArgumentNullException.ThrowIfNull(request);
+            var clean = request.Texto.Trim();
+            var detail = request.Detalle.Trim();
             if (string.IsNullOrWhiteSpace(clean))
                 throw new InvalidOperationException("La nota rápida no puede estar vacía.");
 
             await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await EnsureQuickNotesColumnsAsync(cn, token);
+            var user = NormalizeUser(request.UsuarioAccion);
+
+            if (request.IdNota is long idNota && idNota > 0)
+            {
+                var affected = await cn.ExecuteAsync(new CommandDefinition(
+                    """
+                    UPDATE dbo.ALFACORE_TAREAS_NOTAS_RAPIDAS
+                    SET Texto = @Texto,
+                        Detalle = @Detalle
+                    WHERE IdNota = @IdNota
+                      AND UPPER(LTRIM(RTRIM(Usuario))) = UPPER(LTRIM(RTRIM(@Usuario)))
+                      AND ISNULL(Activa, 1) = 1;
+                    """,
+                    new { IdNota = idNota, Texto = clean, Detalle = detail, Usuario = user },
+                    cancellationToken: token));
+
+                if (affected == 0)
+                    throw new InvalidOperationException("Solo podés editar tareas rápidas propias.");
+
+                return idNota;
+            }
+
+            var nextOrder = await cn.ExecuteScalarAsync<int>(new CommandDefinition(
+                """
+                SELECT ISNULL(MAX(Orden), 0) + 10
+                FROM dbo.ALFACORE_TAREAS_NOTAS_RAPIDAS
+                WHERE UPPER(LTRIM(RTRIM(Usuario))) = UPPER(LTRIM(RTRIM(@Usuario)))
+                  AND ISNULL(Activa, 1) = 1
+                  AND ISNULL(Completada, 0) = 0;
+                """,
+                new { Usuario = user },
+                cancellationToken: token));
+
             return await cn.ExecuteScalarAsync<long>(new CommandDefinition(
                 """
                 INSERT INTO dbo.ALFACORE_TAREAS_NOTAS_RAPIDAS
-                    (Texto, Fecha, Usuario, Completada, FechaHoraAlta, Activa)
+                    (Texto, Detalle, Fecha, Usuario, Completada, Orden, FechaHoraAlta, Activa)
                 OUTPUT INSERTED.IdNota
                 VALUES
-                    (@Texto, CONVERT(date, GETDATE()), @Usuario, 0, GETDATE(), 1);
+                    (@Texto, @Detalle, CONVERT(date, GETDATE()), @Usuario, 0, @Orden, GETDATE(), 1);
                 """,
-                new { Texto = clean, Usuario = NormalizeUser(usuario) },
+                new { Texto = clean, Detalle = detail, Usuario = user, Orden = nextOrder },
                 cancellationToken: token));
         }, "No se pudo guardar la nota rápida.", ct);
 
@@ -730,6 +927,8 @@ public sealed class TareasService(
         => ExecuteLoggedAsync(ModuleName, "ToggleQuickNote", async token =>
         {
             await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await EnsureQuickNotesColumnsAsync(cn, token);
             await cn.ExecuteAsync(new CommandDefinition(
                 """
                 UPDATE dbo.ALFACORE_TAREAS_NOTAS_RAPIDAS
@@ -747,6 +946,7 @@ public sealed class TareasService(
         => ExecuteLoggedAsync(ModuleName, "DeleteQuickNote", async token =>
         {
             await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
             await cn.ExecuteAsync(new CommandDefinition(
                 """
                 UPDATE dbo.ALFACORE_TAREAS_NOTAS_RAPIDAS
@@ -762,6 +962,7 @@ public sealed class TareasService(
         => ExecuteLoggedAsync(ModuleName, "ClearCompletedQuickNotes", async token =>
         {
             await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
             await cn.ExecuteAsync(new CommandDefinition(
                 """
                 UPDATE dbo.ALFACORE_TAREAS_NOTAS_RAPIDAS
@@ -772,6 +973,47 @@ public sealed class TareasService(
                 new { Usuario = NormalizeUser(usuario) },
                 cancellationToken: token));
         }, "No se pudieron limpiar las notas completadas.", ct);
+
+    public Task ReorderQuickNotesAsync(IReadOnlyList<long> orderedIds, string usuario, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "ReorderQuickNotes", async token =>
+        {
+            ArgumentNullException.ThrowIfNull(orderedIds);
+            var ids = orderedIds.Where(x => x > 0).Distinct().ToArray();
+            if (ids.Length == 0)
+                return;
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await EnsureQuickNotesColumnsAsync(cn, token);
+            var user = NormalizeUser(usuario);
+
+            await using var tx = await cn.BeginTransactionAsync(token);
+            try
+            {
+                for (var i = 0; i < ids.Length; i++)
+                {
+                    await cn.ExecuteAsync(new CommandDefinition(
+                        """
+                        UPDATE dbo.ALFACORE_TAREAS_NOTAS_RAPIDAS
+                        SET Orden = @Orden
+                        WHERE IdNota = @IdNota
+                          AND UPPER(LTRIM(RTRIM(Usuario))) = UPPER(LTRIM(RTRIM(@Usuario)))
+                          AND ISNULL(Activa, 1) = 1
+                          AND ISNULL(Completada, 0) = 0;
+                        """,
+                        new { IdNota = ids[i], Orden = (i + 1) * 10, Usuario = user },
+                        (SqlTransaction)tx,
+                        cancellationToken: token));
+                }
+
+                await tx.CommitAsync(token);
+            }
+            catch
+            {
+                await tx.RollbackAsync(token);
+                throw;
+            }
+        }, "No se pudo reordenar las notas rápidas.", ct);
 
     public Task SaveSharingAsync(TareaCompartirRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "SaveSharing", async token =>
@@ -864,6 +1106,61 @@ public sealed class TareasService(
             """,
             cancellationToken: ct));
 
+    private static async Task EnsureTaskCreatorColumnAsync(SqlConnection cn, CancellationToken ct)
+        => await cn.ExecuteAsync(new CommandDefinition(
+            """
+            IF COL_LENGTH(N'dbo.ALFACORE_TAREAS', N'UsuarioCreador') IS NULL
+            BEGIN
+                ALTER TABLE dbo.ALFACORE_TAREAS
+                ADD UsuarioCreador nvarchar(50) NULL;
+            END;
+
+            EXEC sys.sp_executesql N'
+            UPDATE dbo.ALFACORE_TAREAS
+            SET UsuarioCreador = UsuarioAlta
+            WHERE UsuarioCreador IS NULL
+               OR LTRIM(RTRIM(UsuarioCreador)) = N'''';
+            ';
+            """,
+            cancellationToken: ct));
+
+    private static async Task EnsureQuickNotesColumnsAsync(SqlConnection cn, CancellationToken ct)
+        => await cn.ExecuteAsync(new CommandDefinition(
+            """
+            IF COL_LENGTH(N'dbo.ALFACORE_TAREAS_NOTAS_RAPIDAS', N'Detalle') IS NULL
+            BEGIN
+                ALTER TABLE dbo.ALFACORE_TAREAS_NOTAS_RAPIDAS
+                ADD Detalle nvarchar(max) NULL;
+            END;
+
+            IF COL_LENGTH(N'dbo.ALFACORE_TAREAS_NOTAS_RAPIDAS', N'Orden') IS NULL
+            BEGIN
+                ALTER TABLE dbo.ALFACORE_TAREAS_NOTAS_RAPIDAS
+                ADD Orden int NOT NULL
+                    CONSTRAINT DF_ALFACORE_TAREAS_NOTAS_Orden DEFAULT (0);
+            END;
+
+            EXEC sys.sp_executesql N'
+                ;WITH Pendientes AS
+                (
+                    SELECT
+                        IdNota,
+                        ROW_NUMBER() OVER
+                        (
+                            PARTITION BY UPPER(LTRIM(RTRIM(Usuario))), ISNULL(Completada, 0)
+                            ORDER BY FechaHoraAlta DESC, IdNota DESC
+                        ) AS RowNum
+                    FROM dbo.ALFACORE_TAREAS_NOTAS_RAPIDAS
+                    WHERE ISNULL(Activa, 1) = 1
+                      AND ISNULL(Orden, 0) = 0
+                )
+                UPDATE n
+                SET Orden = p.RowNum * 10
+                FROM dbo.ALFACORE_TAREAS_NOTAS_RAPIDAS n
+                INNER JOIN Pendientes p ON p.IdNota = n.IdNota;';
+            """,
+            cancellationToken: ct));
+
     private static void ApplySharing(TareasPageDto page, IReadOnlyList<TareaShareRow> shares)
     {
         foreach (var lista in page.Listas)
@@ -908,6 +1205,25 @@ public sealed class TareasService(
                 .ToList();
         }
     }
+
+    private static List<TareaGrupoDto> BuildTaskGroups(IReadOnlyList<TareaGroupMemberRow> rows)
+        => rows
+            .Select(x => x.Grupo)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(x => x)
+            .Select(groupName => new TareaGrupoDto
+            {
+                Grupo = groupName,
+                Usuarios = rows
+                    .Where(x => string.Equals(x.Grupo, groupName, StringComparison.OrdinalIgnoreCase))
+                    .Select(x => x.Usuario)
+                    .Where(x => !string.IsNullOrWhiteSpace(x))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(x => x)
+                    .ToList()
+            })
+            .ToList();
 
     private static async Task<bool> IsListOwnedByUserAsync(SqlConnection cn, int idLista, string usuario, CancellationToken ct)
         => await cn.ExecuteScalarAsync<int>(new CommandDefinition(
@@ -987,8 +1303,27 @@ public sealed class TareasService(
             new { IdLista = idLista, Usuario = usuario },
             cancellationToken: ct)) == 1;
 
-    private static async Task<bool> CanAccessTaskAsync(SqlConnection cn, long idTarea, string usuario, CancellationToken ct)
+    private static async Task<bool> IsDefaultPersonalListAsync(SqlConnection cn, int idLista, CancellationToken ct)
         => await cn.ExecuteScalarAsync<int>(new CommandDefinition(
+            """
+            SELECT CASE WHEN EXISTS
+            (
+                SELECT 1
+                FROM dbo.ALFACORE_TAREAS_LISTAS
+                WHERE IdLista = @IdLista
+                  AND ISNULL(Activa, 1) = 1
+                  AND ISNULL(EsDefault, 0) = 1
+                  AND UPPER(LTRIM(RTRIM(ISNULL(Nombre, '')))) = N'MIS TAREAS'
+            )
+            THEN 1 ELSE 0 END;
+            """,
+            new { IdLista = idLista },
+            cancellationToken: ct)) == 1;
+
+    private static async Task<bool> CanAccessTaskAsync(SqlConnection cn, long idTarea, string usuario, CancellationToken ct)
+    {
+        await EnsureTaskGroupsReadyAsync(cn, ct);
+        return await cn.ExecuteScalarAsync<int>(new CommandDefinition(
             """
             SELECT CASE WHEN EXISTS
             (
@@ -1000,7 +1335,18 @@ public sealed class TareasService(
                   AND ISNULL(l.Activa, 1) = 1
                   AND (
                         UPPER(LTRIM(RTRIM(ISNULL(t.UsuarioAlta, '')))) = UPPER(LTRIM(RTRIM(@Usuario)))
-                     OR UPPER(LTRIM(RTRIM(ISNULL(t.UsuarioAsignado, '')))) = UPPER(LTRIM(RTRIM(@Usuario)))
+                     OR CHARINDEX(N'|' + UPPER(LTRIM(RTRIM(@Usuario))) + N'|', N'|' + REPLACE(REPLACE(UPPER(LTRIM(RTRIM(ISNULL(t.UsuarioAsignado, '')))), N';', N'|'), N',', N'|') + N'|') > 0
+                     OR CHARINDEX(N'|TODOS|', N'|' + REPLACE(REPLACE(UPPER(LTRIM(RTRIM(ISNULL(t.UsuarioAsignado, '')))), N';', N'|'), N',', N'|') + N'|') > 0
+                     OR EXISTS
+                        (
+                            SELECT 1
+                            FROM dbo.ALFACORE_TAREAS_GRUPOS_MIEMBROS gm
+                            INNER JOIN dbo.ALFACORE_TAREAS_GRUPOS g ON g.IdGrupo = gm.IdGrupo
+                                AND ISNULL(g.Activa, 1) = 1
+                            WHERE ISNULL(gm.Activa, 1) = 1
+                              AND UPPER(LTRIM(RTRIM(ISNULL(gm.Usuario, '')))) = UPPER(LTRIM(RTRIM(@Usuario)))
+                              AND CHARINDEX(N'|' + UPPER(LTRIM(RTRIM(gm.Grupo))) + N'|', N'|' + REPLACE(REPLACE(UPPER(LTRIM(RTRIM(ISNULL(t.UsuarioAsignado, '')))), N';', N'|'), N',', N'|') + N'|') > 0
+                        )
                      OR UPPER(LTRIM(RTRIM(ISNULL(l.UsuarioAlta, '')))) = UPPER(LTRIM(RTRIM(@Usuario)))
                      OR EXISTS
                         (
@@ -1032,6 +1378,7 @@ public sealed class TareasService(
             """,
             new { IdTarea = idTarea, Usuario = usuario },
             cancellationToken: ct)) == 1;
+    }
 
     private static string ToSharedObjectType(TareaObjetoCompartidoTipo tipo)
         => tipo switch
@@ -1097,8 +1444,56 @@ public sealed class TareasService(
                 """,
                 new { TipoObjeto = tipoObjeto, IdObjeto = idObjeto, UsuarioDestino = destino, UsuarioAlta = usuarioAlta },
                 transaction: tx,
-                cancellationToken: ct));
+            cancellationToken: ct));
         }
+    }
+
+    private static async Task<long> SaveGroupHeaderAsync(
+        SqlConnection cn,
+        string groupName,
+        string usuarioAccion,
+        SqlTransaction tx,
+        CancellationToken ct)
+    {
+        var existingId = await cn.ExecuteScalarAsync<long?>(new CommandDefinition(
+            """
+            SELECT TOP 1 IdGrupo
+            FROM dbo.ALFACORE_TAREAS_GRUPOS
+            WHERE UPPER(LTRIM(RTRIM(Nombre))) = UPPER(LTRIM(RTRIM(@Nombre)))
+            ORDER BY IdGrupo;
+            """,
+            new { Nombre = groupName },
+            transaction: tx,
+            cancellationToken: ct));
+
+        if (existingId is long idGrupo)
+        {
+            await cn.ExecuteAsync(new CommandDefinition(
+                """
+                UPDATE dbo.ALFACORE_TAREAS_GRUPOS
+                SET Nombre = @Nombre,
+                    Activa = 1,
+                    FechaHoraModificacion = GETDATE(),
+                    UsuarioModificacion = @UsuarioAccion
+                WHERE IdGrupo = @IdGrupo;
+                """,
+                new { IdGrupo = idGrupo, Nombre = groupName, UsuarioAccion = usuarioAccion },
+                transaction: tx,
+                cancellationToken: ct));
+            return idGrupo;
+        }
+
+        return await cn.ExecuteScalarAsync<long>(new CommandDefinition(
+            """
+            INSERT INTO dbo.ALFACORE_TAREAS_GRUPOS
+                (Nombre, UsuarioAlta, FechaHoraAlta, Activa)
+            OUTPUT INSERTED.IdGrupo
+            VALUES
+                (@Nombre, @UsuarioAccion, GETDATE(), 1);
+            """,
+            new { Nombre = groupName, UsuarioAccion = usuarioAccion },
+            transaction: tx,
+            cancellationToken: ct));
     }
 
     private static bool HasSharingSelection(bool compartirConTodos, IEnumerable<string> usuarios)
@@ -1135,6 +1530,79 @@ public sealed class TareasService(
             throw new InvalidOperationException("La base activa todavía no tiene aplicada la actualización para adjuntos de tareas. Ejecutá Actualizaciones y volvé a guardar la tarea.");
     }
 
+    private static async Task EnsureTaskGroupsReadyAsync(SqlConnection cn, CancellationToken ct)
+        => await cn.ExecuteAsync(new CommandDefinition(
+            """
+            IF OBJECT_ID(N'dbo.ALFACORE_TAREAS_GRUPOS', N'U') IS NULL
+            BEGIN
+                CREATE TABLE dbo.ALFACORE_TAREAS_GRUPOS
+                (
+                    IdGrupo bigint IDENTITY(1,1) NOT NULL PRIMARY KEY,
+                    Nombre nvarchar(50) NOT NULL,
+                    UsuarioAlta nvarchar(120) NULL,
+                    FechaHoraAlta datetime NOT NULL CONSTRAINT DF_ALFACORE_TAREAS_GRUPOS_FechaAlta DEFAULT (GETDATE()),
+                    UsuarioModificacion nvarchar(120) NULL,
+                    FechaHoraModificacion datetime NULL,
+                    Activa bit NOT NULL CONSTRAINT DF_ALFACORE_TAREAS_GRUPOS_Activa DEFAULT (1)
+                );
+
+                CREATE INDEX IX_ALFACORE_TAREAS_GRUPOS_Nombre
+                    ON dbo.ALFACORE_TAREAS_GRUPOS (Nombre, Activa);
+            END;
+
+            IF OBJECT_ID(N'dbo.ALFACORE_TAREAS_GRUPOS_MIEMBROS', N'U') IS NULL
+            BEGIN
+                CREATE TABLE dbo.ALFACORE_TAREAS_GRUPOS_MIEMBROS
+                (
+                    IdGrupoMiembro bigint IDENTITY(1,1) NOT NULL PRIMARY KEY,
+                    IdGrupo bigint NULL,
+                    Grupo nvarchar(50) NOT NULL,
+                    Usuario nvarchar(120) NOT NULL,
+                    UsuarioAlta nvarchar(120) NULL,
+                    FechaHoraAlta datetime NOT NULL CONSTRAINT DF_ALFACORE_TAREAS_GRUPOS_MIEMBROS_FechaAlta DEFAULT (GETDATE()),
+                    UsuarioModificacion nvarchar(120) NULL,
+                    FechaHoraModificacion datetime NULL,
+                    Activa bit NOT NULL CONSTRAINT DF_ALFACORE_TAREAS_GRUPOS_MIEMBROS_Activa DEFAULT (1)
+                );
+
+                CREATE INDEX IX_ALFACORE_TAREAS_GRUPOS_MIEMBROS_GrupoUsuario
+                    ON dbo.ALFACORE_TAREAS_GRUPOS_MIEMBROS (Grupo, Usuario, Activa);
+            END;
+
+            IF COL_LENGTH(N'dbo.ALFACORE_TAREAS_GRUPOS_MIEMBROS', N'IdGrupo') IS NULL
+            BEGIN
+                ALTER TABLE dbo.ALFACORE_TAREAS_GRUPOS_MIEMBROS
+                ADD IdGrupo bigint NULL;
+            END;
+
+            INSERT INTO dbo.ALFACORE_TAREAS_GRUPOS (Nombre, UsuarioAlta, FechaHoraAlta, Activa)
+            SELECT src.Nombre, N'Sistema', GETDATE(), 1
+            FROM
+            (
+                SELECT Nombre = N'Soporte'
+                UNION ALL
+                SELECT Nombre = N'Programación'
+                UNION
+                SELECT DISTINCT LTRIM(RTRIM(Grupo)) AS Nombre
+                FROM dbo.ALFACORE_TAREAS_GRUPOS_MIEMBROS
+                WHERE LTRIM(RTRIM(ISNULL(Grupo, N''))) <> N''
+            ) src
+            WHERE NOT EXISTS
+            (
+                SELECT 1
+                FROM dbo.ALFACORE_TAREAS_GRUPOS g
+                WHERE UPPER(LTRIM(RTRIM(g.Nombre))) = UPPER(LTRIM(RTRIM(src.Nombre)))
+            );
+
+            UPDATE gm
+            SET IdGrupo = g.IdGrupo
+            FROM dbo.ALFACORE_TAREAS_GRUPOS_MIEMBROS gm
+            INNER JOIN dbo.ALFACORE_TAREAS_GRUPOS g
+                ON UPPER(LTRIM(RTRIM(g.Nombre))) = UPPER(LTRIM(RTRIM(gm.Grupo)))
+            WHERE gm.IdGrupo IS NULL;
+            """,
+            cancellationToken: ct));
+
     private static void ValidateAttachment(TareaAdjuntoUploadDto adjunto)
     {
         if (adjunto.Contenido.Length == 0 || adjunto.TamanoBytes <= 0)
@@ -1146,6 +1614,239 @@ public sealed class TareasService(
         if (!AllowedAttachmentPrefixes.Any(prefix => mimeType.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
             throw new InvalidOperationException("Solo se permiten imágenes, audios y videos en tareas.");
     }
+
+    private async Task NotifyTaskAssignmentAsync(SqlConnection cn, long idTarea, string titulo, string usuarioAsignado, string usuarioAccion, CancellationToken ct)
+        => await NotifyTaskByWhatsAppAsync(cn, "NotifyTaskAssignment", TaskAssignmentTemplateConfigKey, TaskAssignmentTemplateMetaName, idTarea, titulo, usuarioAsignado, usuarioAccion, ct, null, TaskAssignmentLegacyTemplateMetaName);
+
+    private async Task NotifyTaskCompletionAsync(SqlConnection cn, long idTarea, string titulo, string usuarioAsignado, string usuarioDestino, string usuarioAccion, CancellationToken ct)
+        => await NotifyTaskByWhatsAppAsync(cn, "NotifyTaskCompletion", TaskCompletionTemplateConfigKey, TaskCompletionTemplateMetaName, idTarea, titulo, usuarioAsignado, usuarioAccion, ct, usuarioDestino);
+
+    private async Task NotifyTaskByWhatsAppAsync(SqlConnection cn, string action, string templateConfigKey, string defaultTemplateMetaName, long idTarea, string titulo, string usuarioAsignado, string usuarioAccion, CancellationToken ct, string? usuarioDestino = null, params string[] fallbackTemplateNames)
+    {
+        try
+        {
+            if (!await TaskWhatsAppNotificationsEnabledAsync(cn, ct))
+                return;
+
+            var templateName = await ReadTaskConfigValueAsync(cn, templateConfigKey, ct);
+            var template = await FindTaskTemplateAsync(BuildTaskTemplateCandidates(templateName, defaultTemplateMetaName, fallbackTemplateNames), ct);
+            if (template is null)
+                return;
+
+            var recipients = await GetTaskNotificationRecipientsAsync(cn, string.IsNullOrWhiteSpace(usuarioDestino) ? usuarioAsignado : usuarioDestino, ct);
+            if (recipients.Count == 0)
+                return;
+
+            var values = new List<string>
+            {
+                titulo,
+                DisplayAssignees(usuarioAsignado),
+                usuarioAccion,
+                DateTime.Now.ToString("dd/MM/yyyy HH:mm", CultureInfo.GetCultureInfo("es-AR"))
+            };
+
+            foreach (var recipient in recipients)
+            {
+                var conversation = await conversacionesService.CreateOrGetWhatsAppConversationAsync(new ConversacionCrearWhatsAppRequest
+                {
+                    TelefonoWhatsApp = recipient.TelefonoWhatsApp
+                }, ct);
+
+                await conversacionesService.SendTemplateMessageAsync(new ConversacionPlantillaSendRequest
+                {
+                    IdConversacion = conversation.IdConversacion,
+                    IdPlantilla = template.IdPlantilla,
+                    ValoresVariables = values,
+                    UsuarioAccion = usuarioAccion,
+                    SistemaAccion = SistemaFijo
+                }, ct);
+            }
+        }
+        catch (Exception ex)
+        {
+            await appEvents.LogErrorAsync(
+                ModuleName,
+                action,
+                ex,
+                "No se pudo enviar la notificacion de WhatsApp de la tarea.",
+                new { idTarea, titulo, usuarioAsignado, usuarioDestino, usuarioAccion, templateConfigKey, defaultTemplateMetaName, fallbackTemplateNames },
+                AppEventSeverity.Warning,
+                ct);
+        }
+    }
+
+    private async Task<ConversacionPlantillaDto?> FindTaskTemplateAsync(IEnumerable<string> templateNameOrIds, CancellationToken ct)
+    {
+        foreach (var templateNameOrId in templateNameOrIds)
+        {
+            var value = (templateNameOrId ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(value))
+                continue;
+
+            if (long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var idPlantilla) && idPlantilla > 0)
+            {
+                var byId = await conversacionesService.GetTemplateAsync(idPlantilla, ct);
+                if (byId is not null)
+                    return byId;
+                continue;
+            }
+
+            var matches = await conversacionesService.GetTemplatesAsync(new ConversacionPlantillaFilters
+            {
+                Search = value,
+                IncluirInactivas = false
+            }, ct);
+
+            var match = matches.FirstOrDefault(x =>
+                string.Equals(x.NombreMeta, value, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(x.NombreVisible, value, StringComparison.OrdinalIgnoreCase));
+            if (match is not null)
+                return match;
+        }
+
+        return null;
+    }
+
+    private static IReadOnlyList<string> BuildTaskTemplateCandidates(string configuredValue, string defaultTemplateMetaName, IEnumerable<string> fallbackTemplateNames)
+        => new[] { configuredValue, defaultTemplateMetaName }
+            .Concat(fallbackTemplateNames)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+    private static async Task<bool> TaskWhatsAppNotificationsEnabledAsync(SqlConnection cn, CancellationToken ct)
+    {
+        var value = await ReadTaskConfigValueAsync(cn, TaskWhatsAppEnabledConfigKey, ct);
+        return string.IsNullOrWhiteSpace(value)
+               || !new[] { "NO", "N", "FALSE", "0" }.Contains(value.Trim().ToUpperInvariant(), StringComparer.Ordinal);
+    }
+
+    private static async Task<string> ReadTaskConfigValueAsync(SqlConnection cn, string key, CancellationToken ct)
+    {
+        if (await cn.ExecuteScalarAsync<int>(new CommandDefinition(
+                "SELECT CASE WHEN OBJECT_ID(N'dbo.TA_CONFIGURACION', N'U') IS NULL THEN 0 ELSE 1 END;",
+                cancellationToken: ct)) != 1)
+            return string.Empty;
+
+        return await cn.ExecuteScalarAsync<string?>(new CommandDefinition(
+            """
+            SELECT TOP 1 ISNULL(VALOR, N'')
+            FROM dbo.TA_CONFIGURACION
+            WHERE CLAVE = @Clave;
+            """,
+            new { Clave = key },
+            cancellationToken: ct)) ?? string.Empty;
+    }
+
+    private static async Task<TareaNotificationSnapshot?> GetTaskNotificationSnapshotAsync(SqlConnection cn, long idTarea, CancellationToken ct)
+        => await cn.QueryFirstOrDefaultAsync<TareaNotificationSnapshot>(new CommandDefinition(
+            """
+            SELECT
+                ISNULL(Titulo, '') AS Titulo,
+                ISNULL(UsuarioAsignado, '') AS UsuarioAsignado,
+                ISNULL(UsuarioAlta, '') AS UsuarioAlta,
+                ISNULL(UsuarioCreador, ISNULL(UsuarioAlta, '')) AS UsuarioCreador,
+                ISNULL(Estado, 'PENDIENTE') AS Estado
+            FROM dbo.ALFACORE_TAREAS
+            WHERE IdTarea = @IdTarea
+              AND ISNULL(Activa, 1) = 1;
+            """,
+            new { IdTarea = idTarea },
+            cancellationToken: ct));
+
+    private static async Task<IReadOnlyList<TaskNotificationRecipient>> GetTaskNotificationRecipientsAsync(SqlConnection cn, string usuarioAsignado, CancellationToken ct)
+    {
+        var tokens = ParseAssignees(usuarioAsignado).ToList();
+        if (tokens.Count == 0)
+            return Array.Empty<TaskNotificationRecipient>();
+
+        await EnsureTaskGroupsReadyAsync(cn, ct);
+
+        var technicians = (await cn.QueryAsync<TaskTechnicianRow>(new CommandDefinition(
+            """
+            SELECT
+                ISNULL(Nombre, '') AS Nombre,
+                ISNULL(Telefono, '') AS TelefonoWhatsApp,
+                ISNULL(UsuarioAsociado, '') AS UsuarioAsociado
+            FROM dbo.V_TA_Tecnicos
+            WHERE ISNULL(Baja, 0) = 0;
+            """,
+            cancellationToken: ct))).ToList();
+
+        var groups = (await cn.QueryAsync<TareaGroupMemberRow>(new CommandDefinition(
+            """
+            SELECT
+                ISNULL(g.Nombre, '') AS Grupo,
+                ISNULL(gm.Usuario, '') AS Usuario
+            FROM dbo.ALFACORE_TAREAS_GRUPOS g
+            INNER JOIN dbo.ALFACORE_TAREAS_GRUPOS_MIEMBROS gm ON gm.IdGrupo = g.IdGrupo
+                AND ISNULL(gm.Activa, 1) = 1
+            WHERE ISNULL(g.Activa, 1) = 1;
+            """,
+            cancellationToken: ct))).ToList();
+
+        var selectedUsers = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var token in tokens)
+        {
+            if (string.Equals(token, "Todos", StringComparison.OrdinalIgnoreCase))
+            {
+                foreach (var tech in technicians)
+                    selectedUsers.Add(FirstNonEmpty(tech.UsuarioAsociado, tech.Nombre));
+                continue;
+            }
+
+            var groupMembers = groups
+                .Where(x => string.Equals(x.Grupo, token, StringComparison.OrdinalIgnoreCase))
+                .Select(x => x.Usuario)
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .ToArray();
+
+            if (groupMembers.Length > 0)
+            {
+                foreach (var member in groupMembers)
+                    selectedUsers.Add(member);
+            }
+            else
+            {
+                selectedUsers.Add(token);
+            }
+        }
+
+        return technicians
+            .Where(x => selectedUsers.Contains(x.Nombre) || selectedUsers.Contains(x.UsuarioAsociado))
+            .Where(x => !string.IsNullOrWhiteSpace(x.TelefonoWhatsApp))
+            .GroupBy(x => NormalizePhoneForDistinct(x.TelefonoWhatsApp), StringComparer.OrdinalIgnoreCase)
+            .Where(x => !string.IsNullOrWhiteSpace(x.Key))
+            .Select(x => x.First())
+            .Select(x => new TaskNotificationRecipient
+            {
+                Nombre = FirstNonEmpty(x.Nombre, x.UsuarioAsociado),
+                TelefonoWhatsApp = x.TelefonoWhatsApp
+            })
+            .ToList();
+    }
+
+    private static IEnumerable<string> ParseAssignees(string? usuarios)
+        => (usuarios ?? string.Empty)
+            .Split([',', ';', '|'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(x => !string.IsNullOrWhiteSpace(x));
+
+    private static bool AssignmentsEquivalent(string? left, string? right)
+    {
+        var a = ParseAssignees(left).OrderBy(x => x, StringComparer.OrdinalIgnoreCase);
+        var b = ParseAssignees(right).OrderBy(x => x, StringComparer.OrdinalIgnoreCase);
+        return a.SequenceEqual(b, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static string DisplayAssignees(string usuarioAsignado)
+        => string.Join(", ", ParseAssignees(usuarioAsignado));
+
+    private static string FirstNonEmpty(params string?[] values)
+        => values.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x))?.Trim() ?? string.Empty;
+
+    private static string NormalizePhoneForDistinct(string? value)
+        => new((value ?? string.Empty).Where(char.IsDigit).ToArray());
 
     private static string Truncate(string? value, int maxLength)
     {
@@ -1200,6 +1901,23 @@ public sealed class TareasService(
     private static string NormalizeUser(string? usuario)
         => string.IsNullOrWhiteSpace(usuario) ? Environment.UserName : usuario.Trim();
 
+    private static string NormalizeUserOrDefault(string? usuario, string fallbackUser)
+        => string.IsNullOrWhiteSpace(usuario) ? fallbackUser : usuario.Trim();
+
+    private static string NormalizeGroupName(string? grupo)
+        => Truncate(string.Join(" ", (grupo ?? string.Empty).Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries)), 50);
+
+    private static string NormalizeAssignees(string? usuarios, string fallbackUser)
+    {
+        var values = (usuarios ?? string.Empty)
+            .Split([',', ';', '|'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        return values.Length == 0 ? fallbackUser : string.Join(",", values);
+    }
+
     private static string NormalizeState(string? estado)
     {
         var value = (estado ?? string.Empty).Trim().ToUpperInvariant();
@@ -1223,6 +1941,12 @@ public sealed class TareasService(
         public string UsuarioDestino { get; set; } = string.Empty;
     }
 
+    private sealed class TareaGroupMemberRow
+    {
+        public string Grupo { get; set; } = string.Empty;
+        public string Usuario { get; set; } = string.Empty;
+    }
+
     private sealed class TareaAdjuntoRecord
     {
         public long IdAdjunto { get; set; }
@@ -1233,5 +1957,27 @@ public sealed class TareasService(
         public byte[] Contenido { get; set; } = [];
         public string UsuarioAlta { get; set; } = string.Empty;
         public DateTime FechaHoraAlta { get; set; }
+    }
+
+    private sealed class TareaNotificationSnapshot
+    {
+        public string Titulo { get; set; } = string.Empty;
+        public string UsuarioAsignado { get; set; } = string.Empty;
+        public string UsuarioAlta { get; set; } = string.Empty;
+        public string UsuarioCreador { get; set; } = string.Empty;
+        public string Estado { get; set; } = string.Empty;
+    }
+
+    private sealed class TaskTechnicianRow
+    {
+        public string Nombre { get; set; } = string.Empty;
+        public string TelefonoWhatsApp { get; set; } = string.Empty;
+        public string UsuarioAsociado { get; set; } = string.Empty;
+    }
+
+    private sealed class TaskNotificationRecipient
+    {
+        public string Nombre { get; set; } = string.Empty;
+        public string TelefonoWhatsApp { get; set; } = string.Empty;
     }
 }

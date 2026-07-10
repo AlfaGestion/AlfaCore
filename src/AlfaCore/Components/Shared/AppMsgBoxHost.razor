@@ -1,0 +1,173 @@
+@implements IDisposable
+@inject AlfaCore.Services.IAppUiDialogService DialogSvc
+
+@if (_state is not null)
+{
+    <div class="app-msgbox-root" role="presentation">
+        <button type="button"
+                class="app-msgbox-backdrop"
+                aria-label="Cerrar mensaje"
+                @onclick="CloseFromBackdropAsync"></button>
+
+        <section class="app-msgbox-panel" role="dialog" aria-modal="true" aria-label="@_state.Title" tabindex="0" @ref="_panelRef" @onkeydown="HandleKeyDownAsync">
+            <header class="app-msgbox-header">
+                <div class="app-msgbox-icon app-msgbox-icon--@_state.Kind.ToString().ToLowerInvariant() @(string.IsNullOrWhiteSpace(_state.IconClass) ? string.Empty : _state.IconClass)">
+                    @if (_state.ShowSpinner)
+                    {
+                        <span class="app-msgbox-spinner" aria-hidden="true"></span>
+                    }
+                    else if (string.IsNullOrWhiteSpace(_state.IconClass))
+                    {
+                        <i class="@GetFallbackIconClass(_state.Severity)" aria-hidden="true"></i>
+                    }
+                </div>
+
+                <div class="app-msgbox-header__text">
+                    <p class="app-msgbox-eyebrow">@GetEyebrow(_state)</p>
+                    <h2 class="app-msgbox-title">@_state.Title</h2>
+                </div>
+            </header>
+
+            <div class="app-msgbox-body">
+                <p class="app-msgbox-message">@_state.Message</p>
+                @if (_state.HasDetail)
+                {
+                    <div class="app-msgbox-detail">@_state.Detail</div>
+                }
+            </div>
+
+            @if (_state.Buttons.Count > 0)
+            {
+                <footer class="app-msgbox-actions">
+                    @foreach (var button in _state.Buttons)
+                    {
+                        <button type="button"
+                                class="@button.CssClass"
+                                @onclick="() => HandleButtonAsync(button)">
+                            @if (!string.IsNullOrWhiteSpace(button.IconClass))
+                            {
+                                <i class="@button.IconClass" aria-hidden="true"></i>
+                            }
+                            <span>@button.Label</span>
+                        </button>
+                    }
+                </footer>
+            }
+        </section>
+    </div>
+}
+
+@code {
+    private AppUiDialogState? _state;
+    private CancellationTokenSource? _autoCloseCts;
+    private ElementReference _panelRef;
+    private bool _focusRequested;
+
+    protected override void OnInitialized()
+    {
+        DialogSvc.Changed += OnDialogChanged;
+        _state = DialogSvc.Current;
+    }
+
+    private void OnDialogChanged()
+        => _ = InvokeAsync(() =>
+        {
+            _state = DialogSvc.Current;
+            _focusRequested = _state is not null;
+            ScheduleAutoClose();
+            StateHasChanged();
+        });
+
+    protected override void OnParametersSet()
+        => ScheduleAutoClose();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusRequested && _state is not null)
+        {
+            _focusRequested = false;
+            try
+            {
+                await _panelRef.FocusAsync();
+            }
+            catch
+            {
+            }
+        }
+    }
+
+    private void ScheduleAutoClose()
+    {
+        _autoCloseCts?.Cancel();
+        _autoCloseCts?.Dispose();
+        _autoCloseCts = null;
+
+        var state = _state;
+        if (state is null || state.AutoCloseAfter is null)
+            return;
+
+        var cts = new CancellationTokenSource();
+        _autoCloseCts = cts;
+        _ = AutoCloseAsync(state, cts.Token);
+    }
+
+    private async Task AutoCloseAsync(AppUiDialogState state, CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(state.AutoCloseAfter ?? TimeSpan.FromSeconds(3), token);
+            if (!token.IsCancellationRequested && ReferenceEquals(_state, state))
+                await DialogSvc.HideAsync();
+        }
+        catch (TaskCanceledException)
+        {
+        }
+    }
+
+    private async Task HandleButtonAsync(AppUiDialogButton button)
+    {
+        if (button.Action is not null)
+            await button.Action.Invoke();
+        else
+            await DialogSvc.HideAsync();
+    }
+
+    private async Task CloseFromBackdropAsync()
+    {
+        if (_state?.CloseOnBackdropClick == true)
+            await DialogSvc.HideAsync();
+    }
+
+    private async Task HandleKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (string.Equals(args.Key, "Escape", StringComparison.OrdinalIgnoreCase))
+            await DialogSvc.HideAsync();
+    }
+
+    private static string GetEyebrow(AppUiDialogState state)
+        => state.Kind switch
+        {
+            AppUiDialogKind.Loading => "Pensando",
+            AppUiDialogKind.Success => "Listo",
+            AppUiDialogKind.Warning => "Atención",
+            AppUiDialogKind.Error => "Error",
+            AppUiDialogKind.Confirm => "Confirmación",
+            _ => "Mensaje"
+        };
+
+    private static string GetFallbackIconClass(AppUiFeedbackSeverity severity)
+        => severity switch
+        {
+            AppUiFeedbackSeverity.Success => "bi bi-check2-circle",
+            AppUiFeedbackSeverity.Warning => "bi bi-exclamation-triangle",
+            AppUiFeedbackSeverity.Error => "bi bi-x-circle",
+            _ => "bi bi-info-circle"
+        };
+
+    public void Dispose()
+    {
+        DialogSvc.Changed -= OnDialogChanged;
+        _autoCloseCts?.Cancel();
+        _autoCloseCts?.Dispose();
+    }
+}

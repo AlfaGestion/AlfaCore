@@ -29,6 +29,9 @@ public sealed class TecnicosValidator(
             result.Add("id-tecnico", "El código del técnico es obligatorio.");
         else if (idTecnico.Length > 4)
             result.Add("id-tecnico", "El código no puede superar 4 caracteres.");
+        else if (!string.IsNullOrWhiteSpace(idOriginal) &&
+                 !string.Equals(idOriginal, idTecnico, StringComparison.OrdinalIgnoreCase))
+            result.Add("id-tecnico", "El código del técnico no se puede modificar desde esta pantalla.");
 
         if (string.IsNullOrWhiteSpace(nombre))
             result.Add("nombre", "El nombre es obligatorio.");
@@ -71,11 +74,6 @@ public sealed class TecnicosValidator(
                 return result;
             }
 
-            if (!string.Equals(idOriginal, idTecnico, StringComparison.OrdinalIgnoreCase) &&
-                await ExistsAsync(cn, idTecnico, ct))
-            {
-                result.Add("id-tecnico", "Ya existe otro técnico con ese código.");
-            }
         }
 
         return result;

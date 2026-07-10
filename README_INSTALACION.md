@@ -9,14 +9,14 @@
    - Abrir el puerto en Firewall de Windows.
    - Abrir el manual al finalizar.
 4. La primera vez que la app arranca pedirá los datos de conexión SQL Server por consola.
-5. Esos datos se guardan en `appsettings.Production.json` y no se vuelven a pedir.
+5. Esos datos se guardan en `appsettings.json` y no se vuelven a pedir.
 6. El instalador no incluye configuraciones reales de base de datos ni el contenido de `App_Data` del entorno de desarrollo.
 
 ---
 
 ## Primera configuración de conexión
 
-Si `appsettings.Production.json` no existe o no tiene datos de conexión, la app los pedirá por consola al iniciar:
+Si `appsettings.json` no existe o no tiene datos de conexión, la app los pedirá por consola al iniciar:
 
 ```
 Servidor: AGSERVER\ALFANET
@@ -25,7 +25,7 @@ Usuario:   ALFANET
 Clave:     ****
 ```
 
-Los datos quedan guardados en `appsettings.Production.json` en la carpeta de instalación.  
+Los datos quedan guardados en `appsettings.json` en la carpeta de instalación.  
 Si necesitás cambiarlos, editá ese archivo directamente o eliminalo para que los vuelva a pedir.
 
 ---
@@ -74,10 +74,10 @@ Sugerencia: crear un acceso directo en cada cliente apuntando a `http://NOMBRE-P
 
 1. Ejecutá `scripts\publicar_release.bat` para generar `publish\AlfaCoreLAN`.
 2. Copiá esa carpeta a la PC servidor.
-3. Editá `appsettings.Production.json` con los datos de conexión y puerto.
+3. Editá `appsettings.json` con los datos de conexión y puerto.
 4. Ejecutá `abrir_firewall.bat` como administrador.
 5. Para instalar el servicio: ejecutá `instalar_servicio.bat` como administrador.
-6. Para iniciar sin servicio: ejecutá `iniciar_dashboard.bat`.
+6. Para iniciar sin servicio: ejecutá `iniciar_AlfaCore.bat`.
 
 ---
 
@@ -100,10 +100,10 @@ Si no está instalado, igual queda preparada la carpeta Input para compilar manu
 
 ## Actualizar una instalación existente
 
-Copiá el contenido de `publish\AlfaCoreLAN\` al directorio de instalación, **sin pisar `appsettings.Production.json`**:
+Copiá el contenido de `publish\AlfaCoreLAN\` al directorio de instalación, **sin pisar `appsettings.json`**:
 
 ```batch
-robocopy publish\AlfaCoreLAN "C:\ruta\instalacion" /MIR /XF appsettings.Production.json *.log
+robocopy publish\AlfaCoreLAN "C:\ruta\instalacion" /MIR /XF appsettings.json *.log
 ```
 
 Después reiniciá el servicio:
@@ -115,7 +115,7 @@ sc stop AlfaCore && sc start AlfaCore
 
 ## Configuración
 
-### appsettings.Production.json
+### appsettings.json
 Archivo con la configuración real del servidor. Se crea automáticamente la primera vez o se puede editar a mano:
 
 ```json
@@ -133,9 +133,8 @@ Archivo con la configuración real del servidor. Se crea automáticamente la pri
 ### Separación de archivos
 | Archivo | Uso |
 |---|---|
-| `appsettings.json` | Configuración base (no tocar en producción) |
-| `appsettings.Production.json` | Configuración real del servidor |
-| `appsettings.Server.sample.json` | Plantilla de referencia |
+| `appsettings.json` | Configuración real del servidor |
+| `appsettings.Server.sample.json` | Plantilla opcional del repositorio |
 
 ---
 
@@ -147,7 +146,7 @@ Archivo con la configuración real del servidor. Se crea automáticamente la pri
 | `scripts\publicar_instalador.bat [version]` | Genera el Setup.exe completo |
 | `scripts\instalar_servicio.bat` | Instala el servicio de Windows (requiere admin) |
 | `scripts\desinstalar_servicio.bat` | Desinstala el servicio de Windows (requiere admin) |
-| `iniciar_dashboard.bat` | Inicia la app sin servicio (modo consola) |
+| `iniciar_AlfaCore.bat` | Inicia la app sin servicio (modo consola) |
 | `abrir_firewall.bat` | Abre el puerto en Firewall de Windows |
 
 ---
@@ -157,10 +156,10 @@ Archivo con la configuración real del servidor. Se crea automáticamente la pri
 ### La app no arranca / servicio no inicia
 - Revisá el log: `backend_startup.log` en la carpeta de instalación.
 - Verificá que .NET 8 Hosting Bundle esté instalado.
-- Revisá datos de conexión en `appsettings.Production.json`.
+- Revisá datos de conexión en `appsettings.json`.
 
 ### Puerto ocupado
-- Cambiá `ServidorWeb:Puerto` en `appsettings.Production.json`.
+- Cambiá `ServidorWeb:Puerto` en `appsettings.json`.
 - Ejecutá `abrir_firewall.bat` nuevamente para el nuevo puerto.
 - Reiniciá el servicio.
 
@@ -174,10 +173,10 @@ Archivo con la configuración real del servidor. Se crea automáticamente la pri
 - Verificá que el firewall esté abierto para ese puerto.
 
 ### Falla la conexión SQL Server
-- Revisá servidor, base, usuario y clave en `appsettings.Production.json`.
+- Revisá servidor, base, usuario y clave en `appsettings.json`.
 - Confirmá que la PC servidor tenga acceso de red al SQL Server.
-- Eliminá `appsettings.Production.json` para volver a ingresar los datos desde cero.
+- Eliminá `appsettings.json` para volver a ingresar los datos desde cero.
 
 ### Cambiar los datos de conexión
-- Editá directamente `appsettings.Production.json`, o
+- Editá directamente `appsettings.json`, o
 - Eliminá el archivo y reiniciá el servicio — la app pedirá los datos nuevamente.

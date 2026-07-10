@@ -14,6 +14,7 @@ public sealed class ShellMenuNodeDto
     public int OrdenWeb { get; set; }
     public bool EsFavoritoDefault { get; set; }
     public string Observacion { get; set; } = string.Empty;
+    public DateTime? UltimoAcceso { get; set; }
     public bool TieneRutaWeb => !string.IsNullOrWhiteSpace(RutaWeb);
 }
 

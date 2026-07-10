@@ -5,6 +5,7 @@
 @inject ICuentasComercialesService CuentasSvc
 @inject IAppUiOperationService UiOps
 @inject IAppUserSessionService AppUserSession
+@inject IRouteContextService RouteContext
 @inject NavigationManager Nav
 @inject IJSRuntime Js
 @implements IDisposable
@@ -28,7 +29,7 @@
 
     @if (_feedback is not null)
     {
-        <section class="panel-card">
+        <section id="cuentas-feedback" class="panel-card" @onclick:stopPropagation>
             <div class="editor-msg @GetFeedbackClass(_feedback)">
                 <div>
                     <strong>@_feedback.Title</strong>
@@ -42,6 +43,9 @@
                         <small>Código: @_feedback.Code</small>
                     }
                 </div>
+                <button type="button" class="btn btn--ghost btn--sm" title="Cerrar aviso" aria-label="Cerrar aviso" @onclick="DismissFeedback">
+                    <i class="bi bi-x-lg"></i>
+                </button>
             </div>
         </section>
     }
@@ -746,7 +750,13 @@
 
                     <div class="field field--full">
                         <label>Observaciones</label>
-                        <textarea rows="4" class="@GetFieldInputClass("observaciones")" maxlength="200" @bind="_form.Observaciones" disabled="@_saving"></textarea>
+                        <textarea rows="4"
+                                  class="@GetFieldInputClass("observaciones")"
+                                  maxlength="200"
+                                  value="@_form.Observaciones"
+                                  @oninput="OnObservacionesChanged"
+                                  @onchange="OnObservacionesChanged"
+                                  disabled="@_saving"></textarea>
                         @if (HasFieldError("observaciones"))
                         {
                             <small class="usuarios-field-error">@GetFieldError("observaciones")</small>
@@ -1278,6 +1288,39 @@
     </div>
 }
 
+@if (_showBulkDeactivateConfirm)
+{
+    <div class="cuentas-modal-backdrop" @onclick="CloseBulkDeactivateConfirm">
+        <section class="cuentas-modal cuentas-modal--compact" role="dialog" aria-modal="true" aria-labelledby="cuentas-bulk-deactivate-title" @onclick:stopPropagation="true">
+            <header class="cuentas-modal__header">
+                <div>
+                    <span class="cuentas-modal__eyebrow">Confirmación</span>
+                    <h3 id="cuentas-bulk-deactivate-title">Dar de baja @PluralLabelLower</h3>
+                </div>
+                <button type="button" class="cuentas-modal__close" @onclick="CloseBulkDeactivateConfirm" disabled="@_saving" aria-label="Cerrar">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </header>
+            <div class="cuentas-modal__body">
+                <div class="context-card">
+                    <span class="context-card__label">Acción masiva</span>
+                    <strong>@_bulkDeactivateConfirmCount @PluralLabelLower</strong>
+                    <span class="context-card__muted">Se darán de baja los registros seleccionados.</span>
+                </div>
+            </div>
+            <footer class="cuentas-modal__actions">
+                <button type="button" class="btn btn--danger" @onclick="ConfirmBulkDeactivateAsync" disabled="@_saving">
+                    <i class="bi bi-person-dash"></i>
+                    @(_saving ? "Procesando..." : "Confirmar baja")
+                </button>
+                <button type="button" class="btn btn--ghost" @onclick="CloseBulkDeactivateConfirm" disabled="@_saving">
+                    Cancelar
+                </button>
+            </footer>
+        </section>
+    </div>
+}
+
 @code {
     [Parameter] public CuentaComercialTipo Tipo { get; set; }
 
@@ -1299,6 +1342,8 @@
     private CuentaComercialLookupDataDto _lookups = new();
     private CuentaComercialViewSettingsDto _viewSettings = new();
     private AppUiMessage? _feedback;
+    private DateTime _feedbackSetAtUtc = DateTime.MinValue;
+    private bool _scrollFeedbackAfterRender;
     private bool _loadingList;
     private bool _loadingContactos;
     private bool _saving;
@@ -1310,6 +1355,7 @@
     private bool _showLinkContactoModal;
     private bool _showViewSettings;
     private bool _showSearchPanel;
+    private bool _showBulkDeactivateConfirm;
     private bool _notesEditorsReady;
     private bool _isNewMode = true;
     private bool _selectedActivo = true;
@@ -1334,6 +1380,7 @@
     private CancellationTokenSource? _searchDebounceCts;
     private CuentaComercialTab _activeTab = CuentaComercialTab.Datos;
     private string _bulkAction = BulkActionDeactivate;
+    private int _bulkDeactivateConfirmCount;
     private static readonly IReadOnlyList<RichTextCommandOption> NotesToolbarCommands =
     [
         new("Título", "bi-type-h1", "h1"),
@@ -1349,6 +1396,32 @@
         new("Emoji", "bi-emoji-smile", "emoji")
     ];
 
+    private static readonly HashSet<string> ValidationConditionFields = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "condicion-comercial",
+        "lista-precio",
+        "vendedor",
+        "cuenta-principal",
+        "codigo-imputacion",
+        "codigo-opcional",
+        "moneda",
+        "clasificacion",
+        "lugar-entrega",
+        "datos-pago",
+        "descuentos"
+    };
+
+    private static readonly HashSet<string> ValidationNoteFields = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "manual",
+        "observaciones",
+        "nota-cuenta",
+        "situacion-ib",
+        "convenio-ib",
+        "concepto-ib",
+        "nro-constancia-ib"
+    };
+
     private string SingularLabel => Tipo == CuentaComercialTipo.Cliente ? "Cliente" : "Proveedor";
     private string SingularLabelLower => SingularLabel.ToLowerInvariant();
     private string PluralLabel => Tipo == CuentaComercialTipo.Cliente ? "Clientes" : "Proveedores";
@@ -1362,6 +1435,7 @@
     protected override async Task OnInitializedAsync()
     {
         AppUserSession.StateChanged += OnAppUserSessionChanged;
+        Nav.LocationChanged += OnLocationChanged;
         await LoadLookupsAsync();
         await EnsureViewSettingsLoadedAsync();
         await BuscarAsync();
@@ -1375,13 +1449,43 @@
 
         if (_showEditor && _activeTab == CuentaComercialTab.Notas && !_notesEditorsReady && _richEditorJs is not null)
             await InitializeNotesEditorsAsync();
+
+        if (_scrollFeedbackAfterRender && _feedback is not null)
+        {
+            _scrollFeedbackAfterRender = false;
+            await Js.InvokeVoidAsync("eval", "document.getElementById('cuentas-feedback')?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });");
+        }
     }
 
     public void Dispose()
     {
         AppUserSession.StateChanged -= OnAppUserSessionChanged;
+        Nav.LocationChanged -= OnLocationChanged;
         _searchDebounceCts?.Cancel();
         _searchDebounceCts?.Dispose();
+    }
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+        => _ = InvokeAsync(ApplyCurrentLocationAsync);
+
+    private async Task ApplyCurrentLocationAsync()
+    {
+        var query = QueryHelpers.ParseQuery(Nav.ToAbsoluteUri(Nav.Uri).Query);
+        var codigo = query.TryGetValue("editar", out var editRaw)
+            ? editRaw.ToString()
+            : query.TryGetValue("codigo", out var codigoRaw)
+                ? codigoRaw.ToString()
+                : string.Empty;
+
+        if (string.IsNullOrWhiteSpace(codigo))
+        {
+            if (_showEditor && !_isNewMode)
+                CerrarEditor();
+            return;
+        }
+
+        if (!_showEditor || !string.Equals(_selectedCodigo, codigo, StringComparison.OrdinalIgnoreCase))
+            await AbrirEditorAsync(codigo, updateUrl: false);
     }
 
     public async ValueTask DisposeAsync()
@@ -1402,6 +1506,7 @@
     private async Task HandlePageClickAsync()
     {
         CloseSearchPanel();
+        DismissFeedbackFromOutside();
         await Task.CompletedTask;
     }
 
@@ -1440,6 +1545,9 @@
 
     private async Task OnNotaCuentaChangedAsync()
         => await SyncNoteEditorAsync(_notaCuentaEditor);
+
+    private void OnObservacionesChanged(ChangeEventArgs e)
+        => _form.Observaciones = e.Value?.ToString() ?? string.Empty;
 
     private async Task SyncNoteEditorAsync(ElementReference editor)
     {
@@ -1692,7 +1800,7 @@
         if (string.IsNullOrWhiteSpace(codigo))
             return;
 
-        await AbrirEditorAsync(codigo);
+        await AbrirEditorAsync(codigo, updateUrl: false);
     }
 
     private void SeleccionarFila(string codigo)
@@ -1722,8 +1830,17 @@
         }
     }
 
-    private async Task AbrirEditorAsync(string codigo)
+    private async Task AbrirEditorAsync(string codigo, bool updateUrl = true)
     {
+        if (updateUrl)
+        {
+            var target = QueryHelpers.AddQueryString(Nav.ToAbsoluteUri(Nav.Uri).AbsolutePath, "editar", codigo);
+            var current = Nav.ToBaseRelativePath(Nav.Uri);
+            var next = target.TrimStart('/');
+            if (!string.Equals(current, next, StringComparison.Ordinal))
+                Nav.NavigateTo(target);
+        }
+
         _showEditor = true;
         _showViewSettings = false;
         _showSearchPanel = false;
@@ -1768,11 +1885,12 @@
             catch (AppValidationException validationEx)
             {
                 ApplyFieldErrors(validationEx.Validation);
+                await ShowValidationTabAsync(validationEx.Validation);
                 SetFeedback(new AppUiMessage
                 {
                     Severity = AppUiFeedbackSeverity.Warning,
                     Title = $"Revisá los datos del {SingularLabelLower}",
-                    Message = validationEx.UserMessage,
+                    Message = BuildValidationMessage(validationEx),
                     Suggestion = "Corregí los campos marcados y volvé a intentar."
                 });
             }
@@ -1971,13 +2089,34 @@
 
         var contactoId = _contactoPreview.Id;
         CerrarVistaContacto();
-        Nav.NavigateTo($"/contactos?editar={contactoId}");
+        Nav.NavigateTo(BuildContactEditUrl(contactoId));
     }
 
     private void AbrirContactoCompleto(CuentaComercialContactoDto contacto)
     {
         var contactoId = contacto.Id;
-        Nav.NavigateTo($"/contactos?editar={contactoId}");
+        Nav.NavigateTo(BuildContactEditUrl(contactoId));
+    }
+
+    private string BuildContactEditUrl(int contactoId, bool openMerge = false)
+    {
+        var query = new Dictionary<string, string?>
+        {
+            ["editar"] = contactoId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["returnUrl"] = BuildCurrentRelativeUrl()
+        };
+        if (openMerge)
+            query["unificar"] = "1";
+
+        return QueryHelpers.AddQueryString(RouteContext.BuildRoute("/contactos"), query);
+    }
+
+    private string BuildCurrentRelativeUrl()
+    {
+        var relative = Nav.ToBaseRelativePath(Nav.Uri);
+        return string.IsNullOrWhiteSpace(relative)
+            ? "/"
+            : $"/{relative}";
     }
 
     private void AbrirUnificarContacto()
@@ -1987,7 +2126,7 @@
 
         var contactoId = _contactoPreview.Id;
         CerrarVistaContacto();
-        Nav.NavigateTo($"/contactos?editar={contactoId}&unificar=1");
+        Nav.NavigateTo(BuildContactEditUrl(contactoId, openMerge: true));
     }
 
     private async Task GuardarDatosRapidosContactoAsync()
@@ -2114,7 +2253,7 @@
         }
     }
 
-    private async Task EjecutarAccionSeleccionadaAsync()
+    private void EjecutarAccionSeleccionadaAsync()
     {
         if (_selectedCodes.Count == 0 || _loadingList)
             return;
@@ -2122,14 +2261,36 @@
         if (!string.Equals(_bulkAction, BulkActionDeactivate, StringComparison.OrdinalIgnoreCase))
             return;
 
-        var codigos = _selectedCodes.OrderBy(codigo => codigo, StringComparer.OrdinalIgnoreCase).ToArray();
-        var confirm = await Js.InvokeAsync<bool>(
-            "confirm",
-            $"Se van a dar de baja {codigos.Length} {PluralLabelLower}. ¿Querés continuar?");
+        OpenBulkDeactivateConfirm();
+    }
 
-        if (!confirm)
+    private void OpenBulkDeactivateConfirm()
+    {
+        if (_selectedCodes.Count == 0 || _saving)
             return;
 
+        _bulkDeactivateConfirmCount = _selectedCodes.Count;
+        _showBulkDeactivateConfirm = true;
+    }
+
+    private void CloseBulkDeactivateConfirm()
+    {
+        if (_saving)
+            return;
+
+        _showBulkDeactivateConfirm = false;
+    }
+
+    private async Task ConfirmBulkDeactivateAsync()
+    {
+        var codigos = _selectedCodes.OrderBy(codigo => codigo, StringComparer.OrdinalIgnoreCase).ToArray();
+        if (codigos.Length == 0 || _saving)
+        {
+            _showBulkDeactivateConfirm = false;
+            return;
+        }
+
+        _showBulkDeactivateConfirm = false;
         _saving = true;
         try
         {
@@ -2673,6 +2834,44 @@
         }
     }
 
+    private async Task ShowValidationTabAsync(ValidationResult validation)
+    {
+        var firstKey = validation.Issues
+            .Select(issue => issue.FieldKey)
+            .FirstOrDefault(key => !string.IsNullOrWhiteSpace(key));
+
+        if (string.IsNullOrWhiteSpace(firstKey))
+            return;
+
+        await SetActiveTabAsync(GetValidationTab(firstKey));
+    }
+
+    private static string BuildValidationMessage(AppValidationException validationEx)
+    {
+        var issues = validationEx.Validation.Issues
+            .Select(issue => issue.Message)
+            .Where(message => !string.IsNullOrWhiteSpace(message))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(3)
+            .ToList();
+
+        return issues.Count == 0
+            ? validationEx.UserMessage
+            : string.Join(" ", issues);
+    }
+
+    private static CuentaComercialTab GetValidationTab(string fieldKey)
+    {
+        var key = fieldKey.Trim();
+        if (ValidationNoteFields.Contains(key))
+            return CuentaComercialTab.Notas;
+
+        if (ValidationConditionFields.Contains(key))
+            return CuentaComercialTab.Condiciones;
+
+        return CuentaComercialTab.Datos;
+    }
+
     private bool HasFieldError(string key)
         => !string.IsNullOrWhiteSpace(key) && _fieldErrors.ContainsKey(key.Trim());
 
@@ -2686,7 +2885,25 @@
         => !_isNewMode && string.Equals(_selectedCodigo, item.Codigo, StringComparison.OrdinalIgnoreCase);
 
     private void SetFeedback(AppUiMessage? message)
-        => _feedback = message;
+    {
+        _feedback = message;
+        _feedbackSetAtUtc = message is null ? DateTime.MinValue : DateTime.UtcNow;
+        _scrollFeedbackAfterRender = message?.Severity is AppUiFeedbackSeverity.Warning or AppUiFeedbackSeverity.Error;
+    }
+
+    private void DismissFeedback()
+        => SetFeedback(null);
+
+    private void DismissFeedbackFromOutside()
+    {
+        if (_feedback is null)
+            return;
+
+        if (DateTime.UtcNow - _feedbackSetAtUtc < TimeSpan.FromMilliseconds(250))
+            return;
+
+        SetFeedback(null);
+    }
 
     private static string FormatDate(DateTime? value)
         => value.HasValue ? value.Value.ToString("dd/MM/yyyy HH:mm") : "—";

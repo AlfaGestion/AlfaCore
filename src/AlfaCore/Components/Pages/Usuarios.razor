@@ -1,30 +1,17 @@
 @page "/usuarios"
+@page "/{idweb}/{idbase:int}/usuarios"
 @using AlfaCore.Models
 @using AlfaCore.Services
 @using Microsoft.AspNetCore.Components.Forms
 @inject AlfaCore.Services.IUsuariosService UsuariosSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
-@inject IJSRuntime Js
+@inject IPageHeaderService PageHeader
 @implements IDisposable
 
 <PageTitle>Usuarios | Alfa Gestión</PageTitle>
 
-<div class="page-grid">
-    <section class="page-intro">
-        <div>
-            <h2 class="page-intro__title">Usuarios</h2>
-            <p class="page-intro__text">Administrá usuarios y grupos del sistema actual, con baja lógica, contraseña compatible e imagen opcional por archivo.</p>
-        </div>
-        <div class="actions">
-            <button type="button" class="btn btn--primary" @onclick="BeginNew">
-                <i class="bi bi-plus-circle"></i> Nuevo usuario
-            </button>
-            <button type="button" class="btn btn--ghost" @onclick="RecargarAsync" disabled="@_loadingList">
-                <i class="bi bi-arrow-clockwise"></i> Recargar
-            </button>
-        </div>
-    </section>
+<div class="page-grid usuarios-page" @onclick="CloseUsuariosSearchPanel">
 
     @if (_feedback is not null)
     {
@@ -45,49 +32,6 @@
             </div>
         </section>
     }
-
-    <section class="panel-card">
-        <div class="panel-card__header">
-            <div>
-                <h3 class="panel-card__title">Filtros</h3>
-                <p class="panel-card__subtitle">La búsqueda trabaja sobre el sistema fijo `CN000PR` y lista activos por defecto.</p>
-            </div>
-        </div>
-
-        <div class="filters-grid" @onkeydown="HandleApplyKeyDownAsync">
-            <div class="field field--wide">
-                <label>Buscar</label>
-                <input type="search"
-                       placeholder="Buscar por nombre o email..."
-                       @bind="_filters.Texto"
-                       @bind:event="oninput" />
-            </div>
-            <div class="field">
-                <label>Estado</label>
-                <select @bind="_activoFiltro">
-                    <option value="1">Activos</option>
-                    <option value="">Todos</option>
-                    <option value="0">Inactivos</option>
-                </select>
-            </div>
-            <div class="field">
-                <label>Tipo</label>
-                <select @bind="_grupoFiltro">
-                    <option value="">Todos</option>
-                    <option value="0">Usuarios</option>
-                    <option value="1">Grupos</option>
-                </select>
-            </div>
-            <div class="actions">
-                <button type="button" class="btn btn--primary" @onclick="AplicarFiltrosAsync" disabled="@_loadingList">
-                    <i class="bi bi-funnel"></i> Aplicar
-                </button>
-                <button type="button" class="btn btn--ghost" @onclick="LimpiarFiltros" disabled="@_loadingList">
-                    <i class="bi bi-eraser"></i> Limpiar
-                </button>
-            </div>
-        </div>
-    </section>
 
     @if (_showViewSettings && !_showEditor)
     {
@@ -147,14 +91,8 @@
         <section class="panel-card">
             <div class="panel-card__header">
                 <div>
-                    <h3 class="panel-card__title">@(_isNewMode ? "Nuevo usuario" : $"Editar {_form.Nombre}")</h3>
+                    <h3 class="panel-card__title">Datos del usuario</h3>
                     <p class="panel-card__subtitle">@(_isNewMode ? "Completá los datos básicos del usuario o grupo." : $"Sistema fijo: CN000PR · Estado: {(_selectedActivo ? "Activo" : "Inactivo")}")</p>
-                </div>
-                <div class="actions">
-                    <button type="button" class="btn btn--ghost" @onclick="CerrarEditor" disabled="@_saving">
-                        <i class="bi bi-arrow-left"></i>
-                        <span>Volver al listado</span>
-                    </button>
                 </div>
             </div>
 
@@ -293,24 +231,6 @@
                         </div>
                     }
 
-                    <div class="actions usuarios-editor__actions">
-                        <button type="button" class="btn btn--primary" @onclick="GuardarAsync" disabled="@_saving">
-                            <i class="bi bi-floppy"></i>
-                            <span>@(_saving ? "Guardando..." : "Guardar usuario")</span>
-                        </button>
-                        <button type="button" class="btn btn--ghost" @onclick="ResetForm" disabled="@_saving">
-                            <i class="bi bi-eraser"></i>
-                            <span>@(_isNewMode ? "Limpiar" : "Revertir")</span>
-                        </button>
-                        @if (!_isNewMode && _selectedActivo)
-                        {
-                            <button type="button" class="btn btn--ghost usuarios-btn-danger" @onclick="DarDeBajaAsync" disabled="@_saving">
-                                <i class="bi bi-person-dash"></i>
-                                <span>Dar de baja</span>
-                            </button>
-                        }
-                    </div>
-
                     @if (!_isNewMode)
                     {
                         <div class="usuarios-editor__meta">
@@ -328,34 +248,7 @@
         var groups = BuildGridGroups();
 
         <section class="panel-card">
-            <div class="panel-card__header">
-                <div>
-                    <h3 class="panel-card__title">Usuarios</h3>
-                    <p class="panel-card__subtitle">@_pagedTotal registro(s) · Página @_pageNumber de @_totalPages · podés abrir la ficha con el botón editar o con doble clic.</p>
-                </div>
-                <div class="actions">
-                    <button type="button" class="btn btn--ghost" @onclick="AbrirConfiguracionVista">
-                        <i class="bi bi-sliders"></i> Configurar vista
-                    </button>
-                    <span class="panel-card__subtitle">Agrupación: @GetGroupingLabel(_viewSettings.AgruparPor)</span>
-                </div>
-            </div>
-
-            <div class="interfaces-bulkbar">
-                <div class="field interfaces-bulkbar__field">
-                    <label>Acciones masivas</label>
-                    <select @bind="_bulkAction" disabled="@(_loadingList || _selectedNames.Count == 0)">
-                        <option value="@BulkActionDeactivate">Dar de baja seleccionados</option>
-                    </select>
-                </div>
-                <button type="button"
-                        class="btn btn--ghost interfaces-bulkbar__apply"
-                        @onclick="EjecutarAccionSeleccionadaAsync"
-                        disabled="@(_loadingList || _selectedNames.Count == 0)">
-                    <i class="bi bi-lightning-charge"></i> Aplicar
-                </button>
-                <span class="panel-card__subtitle">@GetSelectionSummary()</span>
-            </div>
+            <div class="panel-card__header panel-card__header--compact"><p class="panel-card__subtitle">@_pagedTotal registro(s) · Página @_pageNumber de @_totalPages · podés abrir la ficha con el botón editar o con doble clic.</p></div>
 
             @if (_loadingList)
             {
@@ -490,6 +383,31 @@
             }
         </section>
     }
+
+    @if (_showBulkDeactivateConfirm)
+    {
+        <div class="modal-overlay" @onclick="CloseBulkDeactivateConfirm">
+            <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="usuarios-bulk-deactivate-title" @onclick:stopPropagation="true">
+                <div class="panel-card__header">
+                    <div>
+                        <h3 id="usuarios-bulk-deactivate-title" class="panel-card__title">Dar de baja usuarios</h3>
+                        <p class="panel-card__subtitle">Se darán de baja @_bulkDeactivateConfirmCount usuario(s) o grupo(s) seleccionados.</p>
+                    </div>
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="CloseBulkDeactivateConfirm" disabled="@_saving" aria-label="Cerrar">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
+                </div>
+                <div class="actions">
+                    <button type="button" class="btn btn--danger" @onclick="ConfirmBulkDeactivateAsync" disabled="@_saving">
+                        <i class="bi bi-person-dash"></i> @(_saving ? "Procesando..." : "Confirmar baja")
+                    </button>
+                    <button type="button" class="btn btn--ghost" @onclick="CloseBulkDeactivateConfirm" disabled="@_saving">
+                        Cancelar
+                    </button>
+                </div>
+            </section>
+        </div>
+    }
 </div>
 
 @code {
@@ -509,6 +427,8 @@
     private bool _showPassword;
     private bool _selectedActivo = true;
     private bool _showViewSettings;
+    private bool _showBulkDeactivateConfirm;
+    private bool _showUsuariosSearchPanel;
     private bool _viewSettingsLoaded;
     private int _photoPickerVersion;
     private int _pagedTotal;
@@ -524,6 +444,7 @@
     private string _draftAgruparPor = UsuariosViewGroupKeys.None;
     private string _viewSettingsUserName = string.Empty;
     private string _bulkAction = BulkActionDeactivate;
+    private int _bulkDeactivateConfirmCount;
     private DateTime? _selectedAlta;
     private DateTime? _selectedModificacion;
 
@@ -537,30 +458,222 @@
     private bool HasExistingOrPendingPhoto => _pendingPhoto is not null || HasExistingPhoto;
     private bool AreAllCurrentPageSelected => _items.Count > 0 && _items.All(item => _selectedNames.Contains(item.Nombre));
 
+    private RenderFragment RenderUsuariosSmartSearch() => @<div class="smart-search" @onclick:stopPropagation @onkeydown="HandleApplyKeyDownAsync">
+        <div class="smart-search__bar">
+            <i class="bi bi-search"></i>
+            <input type="search"
+                   placeholder="Buscar por nombre o email..."
+                   value="@_filters.Texto"
+                   @onfocus="OpenUsuariosSearchPanel"
+                   @oninput="OnUsuariosSearchInput"
+                   @onkeydown="HandleApplyKeyDownAsync" />
+            <button type="button" class="smart-search__toggle" @onclick="ToggleUsuariosSearchPanel" aria-label="Mostrar filtros">
+                <i class="bi @(_showUsuariosSearchPanel ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
+            </button>
+        </div>
+
+        <div class="smart-search__chips" aria-live="polite">
+            @foreach (var chip in BuildUsuariosFilterChips())
+            {
+                <button type="button" class="smart-chip" @onclick="() => RemoveUsuariosChipAsync(chip.Key)">
+                    @chip.Label <i class="bi bi-x"></i>
+                </button>
+            }
+        </div>
+
+        @if (_showUsuariosSearchPanel)
+        {
+            <button type="button" class="module-actionbar__search-backdrop" aria-label="Cerrar filtros" @onclick="CloseUsuariosSearchPanel"></button>
+            <div class="smart-search__panel" @onclick:stopPropagation @onkeydown="HandleApplyKeyDownAsync">
+                <div class="smart-search__column">
+                    <h4><i class="bi bi-funnel-fill"></i> Estado</h4>
+                    <button type="button" class="@GetUsuariosSmartOptionClass(_activoFiltro == "1")" @onclick='() => SetUsuariosStatusFilterAsync("1")'>Activos</button>
+                    <button type="button" class="@GetUsuariosSmartOptionClass(_activoFiltro == "0")" @onclick='() => SetUsuariosStatusFilterAsync("0")'>Inactivos</button>
+                    <button type="button" class="@GetUsuariosSmartOptionClass(string.IsNullOrWhiteSpace(_activoFiltro))" @onclick='() => SetUsuariosStatusFilterAsync("")'>Todos</button>
+                </div>
+                <div class="smart-search__column">
+                    <h4><i class="bi bi-people-fill"></i> Tipo</h4>
+                    <button type="button" class="@GetUsuariosSmartOptionClass(string.IsNullOrWhiteSpace(_grupoFiltro))" @onclick='() => SetUsuariosTypeFilterAsync("")'>Todos</button>
+                    <button type="button" class="@GetUsuariosSmartOptionClass(_grupoFiltro == "0")" @onclick='() => SetUsuariosTypeFilterAsync("0")'>Usuarios</button>
+                    <button type="button" class="@GetUsuariosSmartOptionClass(_grupoFiltro == "1")" @onclick='() => SetUsuariosTypeFilterAsync("1")'>Grupos</button>
+                </div>
+                <div class="smart-search__column">
+                    <h4><i class="bi bi-lightning-charge-fill"></i> Acciones</h4>
+                    <button type="button" class="btn btn--primary btn--sm" @onclick="AplicarFiltrosAsync" disabled="@_loadingList">
+                        <i class="bi bi-search"></i> Aplicar
+                    </button>
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="LimpiarFiltros" disabled="@_loadingList">
+                        <i class="bi bi-eraser"></i> Limpiar
+                    </button>
+                </div>
+            </div>
+        }
+    </div>;
+
+    private void UpdatePageHeader()
+    {
+        var actions = new List<PageHeaderAction>();
+
+        if (_showEditor)
+        {
+            actions.Add(new PageHeaderAction { Key = "guardar", Label = _saving ? "Guardando..." : "Guardar", Icon = "bi-floppy", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, Disabled = _saving, Busy = _saving, OnClick = GuardarAsync });
+            actions.Add(new PageHeaderAction { Key = "cancelar", Label = "Cancelar", Icon = "bi-x-circle", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, Disabled = _saving, OnClick = () => { CerrarEditor(); return Task.CompletedTask; } });
+            if (!_isNewMode && _selectedActivo)
+                actions.Add(new PageHeaderAction { Key = "baja", Label = "Dar de baja", Icon = "bi-person-dash", Style = PageHeaderActionStyle.Danger, Priority = PageHeaderActionPriority.Overflow, Disabled = _saving, OnClick = DarDeBajaAsync });
+        }
+        else
+        {
+            if (_selectedNames.Count > 0)
+            {
+                actions.Add(new PageHeaderAction { Key = "seleccion", Label = $"{_selectedNames.Count} seleccionados", Icon = "bi-check2-square", Style = PageHeaderActionStyle.Ghost, Disabled = true });
+                actions.Add(new PageHeaderAction { Key = "accion-masiva", Label = "Dar de baja", Icon = "bi-person-dash", Style = PageHeaderActionStyle.Danger, Priority = PageHeaderActionPriority.Essential, Disabled = _loadingList, OnClick = EjecutarAccionSeleccionadaHeaderAsync });
+                actions.Add(new PageHeaderAction { Key = "cancelar-seleccion", Label = "Cancelar selección", Icon = "bi-x-lg", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, OnClick = ClearUsuariosSelectionAsync });
+            }
+            actions.Add(new PageHeaderAction { Key = "nuevo", Label = "Nuevo usuario", Icon = "bi-plus-circle", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, OnClick = () => { BeginNew(); return Task.CompletedTask; } });
+            actions.Add(new PageHeaderAction { Key = "recargar", Label = "Recargar", Icon = "bi-arrow-clockwise", Style = PageHeaderActionStyle.Ghost, Disabled = _loadingList, OnClick = RecargarAsync });
+            actions.Add(new PageHeaderAction { Key = "vista", Label = "Configurar vista", Icon = "bi-sliders", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, OnClick = () => { AbrirConfiguracionVista(); UpdatePageHeader(); return Task.CompletedTask; } });
+            actions.Add(new PageHeaderAction { Key = "agrupar", Label = GetGroupingLabel(_viewSettings.AgruparPor), Icon = "bi-collection", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, OnClick = ToggleUsuariosSearchPanelAsync });
+        }
+
+        PageHeader.Set(new PageHeaderConfig
+        {
+            Title = _showEditor ? (_isNewMode ? "Nuevo usuario" : $"Editar {_form.Nombre}") : "Usuarios",
+            Breadcrumb = ["Seguridad", "Usuarios"],
+            State = _saving ? PageHeaderState.Loading : _showEditor ? (_isNewMode ? PageHeaderState.Creating : PageHeaderState.Editing) : PageHeaderState.Idle,
+            OnBack = _showEditor ? new Func<Task>(() => { CerrarEditor(); return Task.CompletedTask; }) : null,
+            Search = _showEditor
+                ? null
+                : new PageHeaderSearchConfig(),
+            SearchContent = _showEditor ? null : RenderUsuariosSmartSearch(),
+            Actions = actions
+        });
+        _ = InvokeAsync(StateHasChanged);
+    }
+
     protected override async Task OnInitializedAsync()
     {
         AppUserSession.StateChanged += OnAppUserSessionChanged;
+        UpdatePageHeader();
         await EnsureViewSettingsLoadedAsync();
         await BuscarAsync();
+        UpdatePageHeader();
     }
 
     public void Dispose()
-        => AppUserSession.StateChanged -= OnAppUserSessionChanged;
+    {
+        AppUserSession.StateChanged -= OnAppUserSessionChanged;
+        PageHeader.Clear();
+    }
 
     private async Task RecargarAsync()
     {
+        UpdatePageHeader();
         await EnsureViewSettingsLoadedAsync(force: true);
         await BuscarAsync();
 
         if (!_isNewMode && !string.IsNullOrWhiteSpace(_selectedNombre))
             await SeleccionarAsync(_selectedNombre);
+        UpdatePageHeader();
     }
 
     private async Task AplicarFiltrosAsync()
     {
         _filters.PageNumber = 1;
+        _showUsuariosSearchPanel = false;
         await BuscarAsync();
+        UpdatePageHeader();
     }
+
+    private void OpenUsuariosSearchPanel()
+    {
+        _showUsuariosSearchPanel = true;
+        UpdatePageHeader();
+    }
+
+    private void ToggleUsuariosSearchPanel()
+    {
+        _showUsuariosSearchPanel = !_showUsuariosSearchPanel;
+        UpdatePageHeader();
+    }
+
+    private Task ToggleUsuariosSearchPanelAsync()
+    {
+        ToggleUsuariosSearchPanel();
+        return Task.CompletedTask;
+    }
+
+    private void CloseUsuariosSearchPanel()
+    {
+        _showUsuariosSearchPanel = false;
+        UpdatePageHeader();
+    }
+
+    private void OnUsuariosSearchInput(ChangeEventArgs e)
+    {
+        _filters.Texto = Convert.ToString(e.Value) ?? string.Empty;
+        _showUsuariosSearchPanel = true;
+        UpdatePageHeader();
+    }
+
+    private Task OnHeaderSearchChangedAsync(string value)
+    {
+        _filters.Texto = value;
+        _showUsuariosSearchPanel = true;
+        UpdatePageHeader();
+        return Task.CompletedTask;
+    }
+
+    private async Task SetUsuariosStatusFilterAsync(string value)
+    {
+        _activoFiltro = value;
+        await AplicarFiltrosAsync();
+    }
+
+    private async Task SetUsuariosTypeFilterAsync(string value)
+    {
+        _grupoFiltro = value;
+        await AplicarFiltrosAsync();
+    }
+
+    private async Task RemoveUsuariosChipAsync(string key)
+    {
+        switch (key)
+        {
+            case "texto":
+                _filters.Texto = string.Empty;
+                break;
+            case "estado":
+                _activoFiltro = "1";
+                break;
+            case "tipo":
+                _grupoFiltro = string.Empty;
+                break;
+        }
+
+        await AplicarFiltrosAsync();
+    }
+
+    private IReadOnlyList<(string Key, string Label)> BuildUsuariosFilterChips()
+    {
+        var chips = new List<(string Key, string Label)>();
+        if (!string.IsNullOrWhiteSpace(_filters.Texto))
+            chips.Add(("texto", _filters.Texto.Trim()));
+
+        chips.Add(("estado", _activoFiltro switch
+        {
+            "0" => "Inactivos",
+            "" => "Todos",
+            _ => "Activos"
+        }));
+
+        if (!string.IsNullOrWhiteSpace(_grupoFiltro))
+            chips.Add(("tipo", _grupoFiltro == "1" ? "Grupos" : "Usuarios"));
+
+        return chips;
+    }
+
+    private static string GetUsuariosSmartOptionClass(bool active)
+        => active ? "smart-option is-active" : "smart-option";
 
     private async Task HandleApplyKeyDownAsync(KeyboardEventArgs args)
     {
@@ -598,6 +711,7 @@
         finally
         {
             _loadingList = false;
+            UpdatePageHeader();
         }
     }
 
@@ -648,6 +762,7 @@
     private void BeginNew()
     {
         ClearFieldErrors();
+        SetFeedback(null);
         _showEditor = true;
         _showViewSettings = false;
         _isNewMode = true;
@@ -671,15 +786,18 @@
         _form.FotoNombreOriginal = string.Empty;
         _form.FotoMimeType = string.Empty;
         _form.QuitarFoto = false;
+        UpdatePageHeader();
     }
 
     private void CerrarEditor()
     {
         ClearFieldErrors();
+        SetFeedback(null);
         _showEditor = false;
         _showPassword = false;
         _pendingPhoto = null;
         _photoPickerVersion++;
+        UpdatePageHeader();
     }
 
     private void ResetForm()
@@ -710,6 +828,7 @@
         }
 
         _saving = true;
+        UpdatePageHeader();
 
         try
         {
@@ -722,7 +841,11 @@
                 var savedName = await UsuariosSvc.SaveAsync(_form);
                 SetFeedback(AppUiMessage.Success("Usuario guardado", $"El usuario {savedName} se guardó correctamente."));
                 await BuscarAsync();
-                await SeleccionarAsync(savedName);
+                _selectedNombre = savedName;
+                _showEditor = false;
+                _isNewMode = false;
+                _pendingPhoto = null;
+                _photoPickerVersion++;
             }
             catch (AppValidationException validationEx)
             {
@@ -743,6 +866,7 @@
         finally
         {
             _saving = false;
+            UpdatePageHeader();
         }
     }
 
@@ -761,6 +885,8 @@
             _selectedNames.Add(normalized);
         else
             _selectedNames.Remove(normalized);
+
+        UpdatePageHeader();
     }
 
     private void ToggleSelectAll(ChangeEventArgs args)
@@ -773,13 +899,25 @@
             else
                 _selectedNames.Remove(nombre);
         }
+
+        UpdatePageHeader();
+    }
+
+    private Task ClearUsuariosSelectionAsync()
+    {
+        _selectedNames.Clear();
+        _bulkAction = BulkActionDeactivate;
+        UpdatePageHeader();
+        return Task.CompletedTask;
     }
 
     private async Task AbrirEditorAsync(string nombre)
     {
         _showEditor = true;
         _showViewSettings = false;
+        SetFeedback(null);
         await SeleccionarAsync(nombre);
+        UpdatePageHeader();
     }
 
     private async Task DarDeBajaAsync()
@@ -808,7 +946,7 @@
         }
     }
 
-    private async Task EjecutarAccionSeleccionadaAsync()
+    private void EjecutarAccionSeleccionadaAsync()
     {
         if (_selectedNames.Count == 0 || _loadingList)
             return;
@@ -816,11 +954,35 @@
         if (!string.Equals(_bulkAction, BulkActionDeactivate, StringComparison.OrdinalIgnoreCase))
             return;
 
-        var nombres = _selectedNames.OrderBy(nombre => nombre, StringComparer.OrdinalIgnoreCase).ToArray();
-        var confirm = await Js.InvokeAsync<bool>("confirm", $"Se van a dar de baja {nombres.Length} usuario(s) o grupo(s) seleccionados. ¿Querés continuar?");
-        if (!confirm)
+        _bulkDeactivateConfirmCount = _selectedNames.Count;
+        _showBulkDeactivateConfirm = true;
+    }
+
+    private Task EjecutarAccionSeleccionadaHeaderAsync()
+    {
+        EjecutarAccionSeleccionadaAsync();
+        UpdatePageHeader();
+        return Task.CompletedTask;
+    }
+
+    private void CloseBulkDeactivateConfirm()
+    {
+        if (_saving)
             return;
 
+        _showBulkDeactivateConfirm = false;
+    }
+
+    private async Task ConfirmBulkDeactivateAsync()
+    {
+        var nombres = _selectedNames.OrderBy(nombre => nombre, StringComparer.OrdinalIgnoreCase).ToArray();
+        if (nombres.Length == 0 || _saving)
+        {
+            _showBulkDeactivateConfirm = false;
+            return;
+        }
+
+        _showBulkDeactivateConfirm = false;
         _saving = true;
         try
         {
@@ -880,11 +1042,14 @@
 
     private void TogglePasswordVisibility() => _showPassword = !_showPassword;
 
-    private void LimpiarFiltros()
+    private async Task LimpiarFiltros()
     {
         _filters.Texto = string.Empty;
         _activoFiltro = "1";
         _grupoFiltro = string.Empty;
+        _filters.PageNumber = 1;
+        _showUsuariosSearchPanel = false;
+        await BuscarAsync();
     }
 
     private void SyncFilters()

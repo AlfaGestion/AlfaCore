@@ -314,6 +314,15 @@ public sealed class InterfacesCrearAdjuntoRequest
     public string MimeType { get; set; } = string.Empty;
     public long TamanoBytes { get; set; }
     public Stream Contenido { get; set; } = Stream.Null;
+    public string ContentHash { get; set; } = string.Empty;
+}
+
+public sealed class InterfacesAdjuntoDuplicadoDto
+{
+    public long IdAdjunto { get; init; }
+    public long IdComprobanteRecibido { get; init; }
+    public string NombreOriginal { get; init; } = string.Empty;
+    public string ContentHash { get; init; } = string.Empty;
 }
 
 public sealed class InterfacesCrearComprobanteRequest

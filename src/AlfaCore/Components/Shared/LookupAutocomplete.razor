@@ -1,0 +1,302 @@
+@using AlfaCore.Models
+
+@implements IDisposable
+
+<div class="lookup-autocomplete" @onfocusout="HandleBlurAsync">
+    @if (!string.IsNullOrWhiteSpace(Label))
+    {
+        <label>@Label</label>
+    }
+
+    <div class="lookup-autocomplete__input-wrap">
+        <input type="text"
+               @ref="_inputRef"
+               class="lookup-autocomplete__input"
+               value="@Text"
+               @oninput="HandleInputAsync"
+               @onkeydown="HandleKeyDownAsync"
+               @onfocus="HandleFocusAsync"
+               disabled="@Disabled"
+               autocomplete="off"
+               placeholder="@Placeholder" />
+        @if (!Disabled && !string.IsNullOrWhiteSpace(Text))
+        {
+                        <button type="button"
+                    class="lookup-autocomplete__clear"
+                    title="Limpiar"
+                    aria-label="Limpiar búsqueda"
+                    @onmousedown:preventDefault="true"
+                    @onmousedown="ClearAsync">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        }
+    </div>
+
+    @if (_isOpen)
+    {
+        <div class="lookup-autocomplete__dropdown" role="listbox">
+            @if (_loading)
+            {
+                <div class="lookup-autocomplete__empty">Buscando...</div>
+            }
+            else if (!string.IsNullOrWhiteSpace(_errorMessage))
+            {
+                <div class="lookup-autocomplete__empty lookup-autocomplete__empty--error">@_errorMessage</div>
+            }
+            else if (_items.Count == 0)
+            {
+                <div class="lookup-autocomplete__empty">Sin resultados</div>
+                @if (OnCreateRequested.HasDelegate && !string.IsNullOrWhiteSpace(Text))
+                {
+                    <button type="button"
+                            class="lookup-autocomplete__item lookup-autocomplete__item--create"
+                            @onmousedown="() => RequestCreateAsync()">
+                        <span class="lookup-autocomplete__title">Crear "@Text"</span>
+                        <span class="lookup-autocomplete__subtitle">Alta rápida</span>
+                    </button>
+                }
+            }
+            else
+            {
+                @for (var i = 0; i < _items.Count; i++)
+                {
+                    var index = i;
+                    var option = _items[index];
+                    <div class="@GetItemClass(index)"
+                         role="option"
+                         aria-selected="@(index == _highlightIndex)"
+                         @onmousedown="() => SelectAsync(option)">
+                        <div class="lookup-autocomplete__item-main">
+                            <div class="lookup-autocomplete__title">@BuildDisplayText(option)</div>
+                            @if (!string.IsNullOrWhiteSpace(option.Subtitulo))
+                            {
+                                <div class="lookup-autocomplete__subtitle">@option.Subtitulo</div>
+                            }
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string Label { get; set; } = string.Empty;
+    [Parameter] public string Placeholder { get; set; } = string.Empty;
+    [Parameter] public string Text { get; set; } = string.Empty;
+    [Parameter] public EventCallback<string> TextChanged { get; set; }
+    [Parameter] public Func<string, CancellationToken, Task<IReadOnlyList<CargaViajeLookupOptionDto>>> SearchFunc { get; set; } = default!;
+    [Parameter] public EventCallback<CargaViajeLookupOptionDto> SelectedChanged { get; set; }
+    [Parameter] public EventCallback OnEnterCommitted { get; set; }
+    [Parameter] public EventCallback<string> OnCreateRequested { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public int MinimumCharacters { get; set; } = 1;
+    [Parameter] public int DebounceMilliseconds { get; set; } = 220;
+
+    private bool _isOpen;
+    private bool _loading;
+    private int _highlightIndex = -1;
+    private List<CargaViajeLookupOptionDto> _items = [];
+    private ElementReference _inputRef;
+    private CancellationTokenSource? _searchCts;
+    private long _searchSequence;
+    private string _errorMessage = string.Empty;
+
+    public async Task FocusAsync()
+    {
+        if (!Disabled)
+            await _inputRef.FocusAsync(preventScroll: true);
+    }
+
+    private async Task HandleInputAsync(ChangeEventArgs args)
+    {
+        Text = Convert.ToString(args.Value) ?? string.Empty;
+        await TextChanged.InvokeAsync(Text);
+        await SearchAsync(Text);
+    }
+
+    private async Task ClearAsync()
+    {
+        Text = string.Empty;
+        await TextChanged.InvokeAsync(Text);
+        CloseDropdown();
+        await InvokeAsync(StateHasChanged);
+        if (!Disabled)
+            await _inputRef.FocusAsync(preventScroll: true);
+    }
+
+    private async Task HandleFocusAsync(FocusEventArgs _)
+    {
+        if (Text.Length >= MinimumCharacters)
+            await SearchAsync(Text);
+    }
+
+    private async Task HandleKeyDownAsync(KeyboardEventArgs args)
+    {
+        var key = args.Key ?? string.Empty;
+        switch (key)
+        {
+            case "ArrowDown":
+                if (_items.Count == 0)
+                    return;
+                _highlightIndex = _highlightIndex < 0
+                    ? 0
+                    : Math.Min(_highlightIndex + 1, _items.Count - 1);
+                _isOpen = true;
+                break;
+            case "ArrowUp":
+                if (_items.Count == 0)
+                    return;
+                _highlightIndex = _highlightIndex < 0
+                    ? _items.Count - 1
+                    : Math.Max(_highlightIndex - 1, 0);
+                _isOpen = true;
+                break;
+            case "Enter":
+            case "NumpadEnter":
+                if (_items.Count > 0)
+                {
+                    var index = _highlightIndex >= 0 && _highlightIndex < _items.Count ? _highlightIndex : 0;
+                    await SelectAsync(_items[index]);
+                    await OnEnterCommitted.InvokeAsync();
+                    return;
+                }
+                CloseDropdown();
+                if (!string.IsNullOrWhiteSpace(Text) && OnCreateRequested.HasDelegate)
+                {
+                    await RequestCreateAsync();
+                    return;
+                }
+                await OnEnterCommitted.InvokeAsync();
+                break;
+            case "Escape":
+                CloseDropdown();
+                break;
+            default:
+                return;
+        }
+    }
+
+    private async Task SearchAsync(string text)
+    {
+        var searchFunc = SearchFunc;
+        if (searchFunc is null || Disabled)
+            return;
+
+        if ((text ?? string.Empty).Trim().Length < MinimumCharacters)
+        {
+            CancelPendingSearch();
+            _errorMessage = string.Empty;
+            _items.Clear();
+            CloseDropdown();
+            return;
+        }
+
+        CancelPendingSearch();
+        _errorMessage = string.Empty;
+        var sequence = Interlocked.Increment(ref _searchSequence);
+        var cts = new CancellationTokenSource();
+        _searchCts = cts;
+        var token = cts.Token;
+
+        _loading = true;
+        _isOpen = true;
+        _highlightIndex = -1;
+        await InvokeAsync(StateHasChanged);
+        try
+        {
+            if (DebounceMilliseconds > 0)
+                await Task.Delay(DebounceMilliseconds, token);
+
+            var results = await searchFunc(text ?? string.Empty, token);
+            if (token.IsCancellationRequested || sequence != _searchSequence)
+                return;
+
+            _items = results.ToList();
+        }
+        catch (OperationCanceledException)
+        {
+            if (sequence != _searchSequence)
+                return;
+        }
+        catch (Exception)
+        {
+            if (sequence != _searchSequence)
+                return;
+
+            _items.Clear();
+            _errorMessage = "No se pudo consultar.";
+            _isOpen = true;
+        }
+        finally
+        {
+            if (sequence == _searchSequence)
+                _loading = false;
+        }
+    }
+
+    private async Task SelectAsync(CargaViajeLookupOptionDto option)
+    {
+        Text = BuildDisplayText(option);
+        await TextChanged.InvokeAsync(Text);
+        await SelectedChanged.InvokeAsync(option);
+        CloseDropdown();
+    }
+
+    private async Task RequestCreateAsync()
+    {
+        if (!OnCreateRequested.HasDelegate || string.IsNullOrWhiteSpace(Text))
+            return;
+
+        await OnCreateRequested.InvokeAsync(Text);
+    }
+
+    private async Task HandleBlurAsync(FocusEventArgs _)
+    {
+        await Task.Delay(120);
+        CloseDropdown();
+    }
+
+    private void CloseDropdown()
+    {
+        CancelPendingSearch();
+        _isOpen = false;
+        _highlightIndex = -1;
+        _errorMessage = string.Empty;
+    }
+
+    private string GetItemClass(int index)
+        => index == _highlightIndex
+            ? "lookup-autocomplete__item lookup-autocomplete__item--active"
+            : "lookup-autocomplete__item";
+
+    private static string BuildDisplayText(CargaViajeLookupOptionDto option)
+    {
+        var code = (option?.Codigo ?? string.Empty).Trim();
+        var title = (option?.Titulo ?? string.Empty).Trim();
+        return string.IsNullOrWhiteSpace(title) ? code : title;
+    }
+
+    private void CancelPendingSearch()
+    {
+        try
+        {
+            _searchCts?.Cancel();
+        }
+        catch
+        {
+            // Best effort only.
+        }
+        finally
+        {
+            _searchCts?.Dispose();
+            _searchCts = null;
+        }
+    }
+
+    public void Dispose()
+    {
+        CancelPendingSearch();
+    }
+}
+

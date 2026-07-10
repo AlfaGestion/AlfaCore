@@ -1,0 +1,327 @@
+@page "/carga-viajes/viaje/{Id:int}"
+@page "/{idweb}/{idbase:int}/carga-viajes/viaje/{Id:int}"
+@using AlfaCore.Models
+@using AlfaCore.Services
+@inject ICargaViajesService CargaViajesSvc
+@inject IAppUiOperationService UiOps
+@inject IJSRuntime JS
+@inject IRouteContextService RouteContext
+@inject IViajePreviewStateService PreviewState
+
+<PageTitle>Viaje | Alfa Gestión</PageTitle>
+
+@if (_loading)
+{
+    <div class="viaje-preview-page">
+        <div class="viaje-preview-page__loading panel-card">
+            <i class="bi bi-hourglass-split"></i>
+            <span>Cargando viaje...</span>
+        </div>
+    </div>
+}
+else if (_preview is null)
+{
+    <div class="viaje-preview-page">
+        <section class="viaje-preview-page__toolbar no-print">
+            <a class="btn btn--ghost btn--sm" href="@GetBackUrl()">
+                <i class="bi bi-arrow-left"></i>
+                <span>Volver</span>
+            </a>
+        </section>
+
+        <section class="panel-card viaje-preview-page__error">
+            <h1>Viaje no disponible</h1>
+            <p>No se pudo cargar la vista previa solicitada.</p>
+            @if (_feedback is not null)
+            {
+                <div class="editor-msg @GetFeedbackClass(_feedback)">
+                    <strong>@_feedback.Title</strong>
+                    <span>@_feedback.Message</span>
+                </div>
+            }
+        </section>
+    </div>
+}
+else
+{
+    var adicionales = GetAdicionales();
+
+    <div class="viaje-preview-page">
+        <section class="viaje-preview-page__toolbar no-print">
+            <a class="btn btn--ghost btn--sm" href="@GetBackUrl()">
+                <i class="bi bi-arrow-left"></i>
+                <span>Volver</span>
+            </a>
+            <button type="button" class="btn btn--primary btn--sm" @onclick="ImprimirAsync">
+                <i class="bi bi-printer"></i>
+                <span>Imprimir</span>
+            </button>
+            <button type="button" class="btn btn--ghost btn--sm" disabled title="Próximamente">
+                <i class="bi bi-file-earmark-arrow-down"></i>
+                <span>Exportar PDF</span>
+            </button>
+            <button type="button" class="btn btn--ghost btn--sm" disabled title="Próximamente">
+                <i class="bi bi-share"></i>
+                <span>Compartir</span>
+            </button>
+        </section>
+
+        <article class="viaje-preview-card">
+            <header class="viaje-preview-card__hero">
+                <div>
+                    <p class="viaje-preview-card__eyebrow">ALFA GESTIÓN</p>
+                    <h1>VIAJE</h1>
+                    <p class="viaje-preview-card__subtitle">@_preview.Viaje.Fecha.ToString("dd/MM/yyyy")</p>
+                </div>
+                <div class="viaje-preview-card__badge">
+                    <span>Vista HTML</span>
+                    <strong>Preparada para impresión</strong>
+                </div>
+            </header>
+
+            <section class="viaje-preview-card__grid">
+                <div class="viaje-preview-field">
+                    <span class="viaje-preview-field__label">Fecha</span>
+                    <strong>@_preview.Viaje.Fecha.ToString("dd/MM/yyyy")</strong>
+                </div>
+                <div class="viaje-preview-field">
+                    <span class="viaje-preview-field__label">Cliente</span>
+                    <strong>@GetDisplayOrDefault(_preview.Viaje.ClienteNombre, "Sin cliente")</strong>
+                </div>
+                <div class="viaje-preview-field">
+                    <span class="viaje-preview-field__label">Destino</span>
+                    <strong>@GetDisplayOrDefault(_preview.Viaje.DestinoDescripcion, "Sin destino")</strong>
+                </div>
+                <div class="viaje-preview-field">
+                    <span class="viaje-preview-field__label">Chofer / Fletero</span>
+                    <strong>@GetDisplayOrDefault(_preview.Viaje.ChoferNombre, "Sin chofer")</strong>
+                </div>
+                <div class="viaje-preview-field">
+                    <span class="viaje-preview-field__label">Tipo de vehículo</span>
+                    <strong>@GetDisplayOrDefault(_preview.Viaje.TipoVehiculoDescripcion, "Sin vehículo")</strong>
+                </div>
+                <div class="viaje-preview-field">
+                    <span class="viaje-preview-field__label">Tarifa utilizada</span>
+                    <strong>@GetDisplayOrDefault(_preview.Viaje.ListaDisplay, _preview.Viaje.ListaDescripcion)</strong>
+                </div>
+            </section>
+
+            <section class="viaje-preview-card__money">
+                <article class="viaje-preview-money">
+                    <span>Importe cliente</span>
+                    <strong>@GetImporteBaseCliente().ToString("C2")</strong>
+                </article>
+                <article class="viaje-preview-money">
+                    <span>Importe fletero</span>
+                    <strong>@GetImporteBaseFletero().ToString("C2")</strong>
+                </article>
+                <article class="viaje-preview-money">
+                    <span>Peaje</span>
+                    <strong>@Math.Max(0m, _preview.Viaje.Peaje).ToString("C2")</strong>
+                </article>
+            </section>
+
+            <section class="viaje-preview-section">
+                <div class="viaje-preview-section__head">
+                    <h2>Adicionales</h2>
+                    <span>@GetAdicionalesResumen(adicionales.Count)</span>
+                </div>
+
+                @if (adicionales.Count == 0)
+                {
+                    <p class="viaje-preview-empty">Sin adicionales cargados.</p>
+                }
+                else
+                {
+                    <div class="viaje-preview-additional-list">
+                        @foreach (var item in adicionales)
+                        {
+                            <article class="viaje-preview-additional @(item.Activo ? "viaje-preview-additional--active" : string.Empty)">
+                                <div class="viaje-preview-additional__check" aria-hidden="true">
+                                    <i class="bi @(item.Activo ? "bi-check-lg" : "bi-dash-lg")"></i>
+                                </div>
+                                <div class="viaje-preview-additional__content">
+                                    <strong>@item.Titulo</strong>
+                                    <span>@item.Subtitulo</span>
+                                </div>
+                                <div class="viaje-preview-additional__amount">
+                                    @item.Importe.ToString("C2")
+                                </div>
+                            </article>
+                        }
+                    </div>
+                }
+            </section>
+
+            <section class="viaje-preview-card__totals">
+                <article class="viaje-preview-total">
+                    <span>Total cliente</span>
+                    <strong>@GetTotalCliente().ToString("C2")</strong>
+                </article>
+                <article class="viaje-preview-total">
+                    <span>Total fletero</span>
+                    <strong>@GetTotalFletero().ToString("C2")</strong>
+                </article>
+                <article class="viaje-preview-total viaje-preview-total--result">
+                    <span>Resultado</span>
+                    <strong>@GetResultado().ToString("C2")</strong>
+                </article>
+            </section>
+
+            <section class="viaje-preview-section viaje-preview-section--observaciones">
+                <div class="viaje-preview-section__head">
+                    <h2>Observaciones</h2>
+                </div>
+                @if (string.IsNullOrWhiteSpace(_preview.Viaje.Observaciones))
+                {
+                    <p class="viaje-preview-empty">Sin observaciones.</p>
+                }
+                else
+                {
+                    <p class="viaje-preview-observaciones">@_preview.Viaje.Observaciones</p>
+                }
+            </section>
+        </article>
+    </div>
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private CargaViajePreviewDto? _preview;
+    private AppUiMessage? _feedback;
+    private bool _loading = true;
+    private int _loadedId;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedId == Id && _preview is not null)
+            return;
+
+        _loading = true;
+        _feedback = null;
+
+        var cached = PreviewState.ConsumeFor(Id);
+        if (cached is not null)
+        {
+            _preview = cached;
+            _loadedId = Id;
+            _loading = false;
+            return;
+        }
+
+        var result = await UiOps.RunAsync(() => CargaViajesSvc.GetViajePreviewAsync(Id), "No se pudo cargar la vista previa del viaje.");
+        if (result.Success && result.Value is not null)
+        {
+            _preview = result.Value;
+            _loadedId = Id;
+        }
+        else
+        {
+            _preview = null;
+            _feedback = result.Feedback;
+        }
+
+        _loading = false;
+    }
+
+    private string GetBackUrl()
+        => RouteContext.BuildRoute("/carga-viajes");
+
+    private async Task ImprimirAsync()
+        => await JS.InvokeVoidAsync("dashboardExport.printCurrentPage", "Viaje");
+
+    private decimal GetImporteBaseCliente()
+        => _preview is null ? 0m : Math.Max(0m, _preview.Viaje.TotalCliente) * Math.Max(1, _preview.Viaje.CantidadViajes);
+
+    private decimal GetImporteBaseFletero()
+        => _preview is null ? 0m : Math.Max(0m, _preview.Viaje.TotalFletero) * Math.Max(1, _preview.Viaje.CantidadViajes);
+
+    private decimal GetTotalAdicionalesGenerales()
+        => GetAdicionales().Where(item => !item.EsFijo).Sum(item => item.Importe);
+
+    private decimal GetTotalAdicionalesFijos()
+        => GetAdicionales().Where(item => item.EsFijo).Sum(item => item.Importe);
+
+    private decimal GetTotalCliente()
+        => GetImporteBaseCliente()
+           + GetTotalAdicionalesGenerales()
+           + GetTotalAdicionalesFijos()
+           + (_preview is null ? 0m : Math.Max(0m, _preview.Viaje.Peaje));
+
+    private decimal GetTotalFletero()
+        => GetImporteBaseFletero();
+
+    private decimal GetResultado()
+        => GetTotalCliente() - GetTotalFletero();
+
+    private static string GetAdicionalesResumen(int count)
+        => count == 0 ? "Sin adicionales" : $"{count} adicional(es)";
+
+    private IReadOnlyList<ViajePreviewAdicionalItem> GetAdicionales()
+    {
+        if (_preview is null)
+            return [];
+
+        var items = new List<ViajePreviewAdicionalItem>();
+        var config = _preview.Configuracion;
+        var viaje = _preview.Viaje;
+
+        AddGeneralAdditional(items, 0, config, viaje.PorcentajeAdic, viaje.TotalAdic);
+        AddGeneralAdditional(items, 1, config, viaje.PorcentajeAdic1, viaje.TotalAdic1);
+        AddGeneralAdditional(items, 2, config, viaje.PorcentajeAdic2, viaje.TotalAdic2);
+        AddGeneralAdditional(items, 3, config, viaje.PorcentajeAdic3, viaje.TotalAdic3);
+        AddGeneralAdditional(items, 4, config, viaje.PorcentajeAdic4, viaje.TotalAdic4);
+
+        AddFixedAdditional(items, viaje.AdicionalFijo1Descripcion, viaje.AdicionalFijo1Importe, viaje.AdicionalFijo1Aplicado);
+        AddFixedAdditional(items, viaje.AdicionalFijo2Descripcion, viaje.AdicionalFijo2Importe, viaje.AdicionalFijo2Aplicado);
+        AddFixedAdditional(items, viaje.AdicionalFijo3Descripcion, viaje.AdicionalFijo3Importe, viaje.AdicionalFijo3Aplicado);
+
+        return items;
+    }
+
+    private static void AddGeneralAdditional(List<ViajePreviewAdicionalItem> items, int index, CargaViajesConfigDto config, decimal percent, decimal amount)
+    {
+        var limit = Math.Max(1, Math.Min(5, config.PorcentajesAdicionalesHabilitados));
+        if (index >= limit)
+            return;
+
+        if (percent <= 0m && amount <= 0m)
+            return;
+
+        var title = GetConfigName(config, index);
+        items.Add(new ViajePreviewAdicionalItem(title, $"{percent:0.##}% · adicional general", amount, false, percent > 0m || amount > 0m));
+    }
+
+    private static void AddFixedAdditional(List<ViajePreviewAdicionalItem> items, string descripcion, decimal importe, bool aplicado)
+    {
+        if (string.IsNullOrWhiteSpace(descripcion) && importe <= 0m)
+            return;
+
+        var title = string.IsNullOrWhiteSpace(descripcion) ? "Adicional fijo" : descripcion.Trim();
+        items.Add(new ViajePreviewAdicionalItem(title, "Importe fijo", Math.Max(0m, importe), true, aplicado));
+    }
+
+    private static string GetConfigName(CargaViajesConfigDto config, int index)
+    {
+        var fallback = $"Adicional {index + 1}";
+        if (index < 0 || index >= config.NombresAdicionales.Count)
+            return fallback;
+
+        var value = config.NombresAdicionales[index];
+        return string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
+    }
+
+    private static string GetDisplayOrDefault(string? value, string fallback)
+        => string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
+
+    private static string GetFeedbackClass(AppUiMessage message) => message.Severity switch
+    {
+        AppUiFeedbackSeverity.Success => "editor-msg--success",
+        AppUiFeedbackSeverity.Warning => "editor-msg--warning",
+        AppUiFeedbackSeverity.Info => "editor-msg--info",
+        _ => "editor-msg--error"
+    };
+
+    private sealed record ViajePreviewAdicionalItem(string Titulo, string Subtitulo, decimal Importe, bool EsFijo, bool Activo);
+}

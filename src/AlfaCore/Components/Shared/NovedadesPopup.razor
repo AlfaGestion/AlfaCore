@@ -1,0 +1,238 @@
+@inject AlfaCore.Services.INovedadesService NovedadesSvc
+@inject AlfaCore.Services.IAppUserSessionService AppUserSession
+@implements IDisposable
+
+<link rel="stylesheet" href="/css/novedades-popup.css?v=20260710-preview-match3" />
+
+@if (_visible && _novedad is not null)
+{
+    <div class="novedades-popup-backdrop" role="dialog" aria-modal="true">
+        <article class="@PopupClass">
+            <header>
+                <div>
+                    <span>@(string.IsNullOrWhiteSpace(_novedad.Version) ? "Novedad interna" : _novedad.Version)</span>
+                    <h2>@_novedad.Titulo</h2>
+                    <p>@_novedad.Bajada</p>
+                </div>
+                @if (!_novedad.LecturaObligatoria)
+                {
+                    <button type="button" title="Cerrar" disabled="@_markingRead" @onclick="CloseAsync">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
+                }
+            </header>
+
+            @if (_novedad.PortadaTipo == NovedadPortadas.Url && !string.IsNullOrWhiteSpace(_novedad.PortadaValor))
+            {
+                <img class="novedades-popup__cover" src="@_novedad.PortadaValor" alt="" />
+            }
+
+            <div class="novedades-popup__body">
+                @((MarkupString)_novedad.Contenido)
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(_novedad.Footer))
+            {
+                <footer>@_novedad.Footer</footer>
+            }
+
+            <div class="novedades-popup__actions">
+                @if (!string.IsNullOrWhiteSpace(_actionError))
+                {
+                    <p class="novedades-popup__error" role="alert">@_actionError</p>
+                }
+                <button type="button" class="btn btn--primary" disabled="@_markingRead" @onclick="MarkReadAsync">
+                    <i class="bi bi-check2-circle"></i>
+                    <span>@(_markingRead ? "Registrando..." : "Marcar leido")</span>
+                </button>
+            </div>
+        </article>
+    </div>
+}
+
+@code {
+    [Parameter] public bool Enabled { get; set; } = true;
+
+    private NovedadDetalleDto? _novedad;
+    private bool _visible;
+    private bool _registeredView;
+    private bool _markingRead;
+    private string _actionError = string.Empty;
+    private string _loadedUser = string.Empty;
+    private readonly HashSet<long> _dismissedIds = [];
+    private CancellationTokenSource? _loadCts;
+    private readonly CancellationTokenSource _pollCts = new();
+
+    private string CurrentUser => AppUserSession.CurrentUser?.UserName?.Trim() ?? string.Empty;
+
+    private string PopupClass => $"novedades-popup novedades-popup--{NormalizeAccent(_novedad?.Acento)}";
+
+    protected override async Task OnInitializedAsync()
+    {
+        AppUserSession.StateChanged += OnUserSessionChanged;
+        NovedadesSvc.AnnouncementsChanged += OnAnnouncementsChanged;
+        _ = PollAnnouncementsAsync(_pollCts.Token);
+        await RefreshForAuthenticatedUserAsync();
+    }
+
+    private void OnUserSessionChanged()
+        => _ = InvokeAsync(() =>
+        {
+            _dismissedIds.Clear();
+            return RefreshForAuthenticatedUserAsync(force: true);
+        });
+
+    private void OnAnnouncementsChanged()
+        => _ = InvokeAsync(() =>
+        {
+            _dismissedIds.Clear();
+            return RefreshForAuthenticatedUserAsync(force: true);
+        });
+
+    private async Task RefreshForAuthenticatedUserAsync(bool force = false)
+    {
+        _loadCts?.Cancel();
+        _loadCts?.Dispose();
+        _loadCts = null;
+
+        var user = CurrentUser;
+        if (!Enabled || !AppUserSession.IsAuthenticated || string.IsNullOrWhiteSpace(user))
+        {
+            ResetPopup();
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        if (!force && string.Equals(_loadedUser, user, StringComparison.OrdinalIgnoreCase) && _novedad is not null)
+            return;
+
+        var cts = new CancellationTokenSource();
+        _loadCts = cts;
+        _visible = false;
+        _novedad = null;
+        _registeredView = false;
+        _actionError = string.Empty;
+
+        try
+        {
+            var pending = await NovedadesSvc.GetPendingAnnouncementAsync(user, cts.Token);
+            if (cts.IsCancellationRequested
+                || !AppUserSession.IsAuthenticated
+                || !string.Equals(CurrentUser, user, StringComparison.OrdinalIgnoreCase))
+                return;
+
+            _loadedUser = user;
+            _novedad = pending is not null && _dismissedIds.Contains(pending.IdNovedad) ? null : pending;
+            _visible = pending is not null;
+            if (_novedad is null)
+                _visible = false;
+
+            if (_visible && _novedad is not null && !_registeredView)
+            {
+                _registeredView = true;
+                await NovedadesSvc.RegisterViewAsync(_novedad.IdNovedad, user, cts.Token);
+            }
+        }
+        catch (OperationCanceledException) when (cts.IsCancellationRequested)
+        {
+        }
+        catch
+        {
+            _visible = false;
+        }
+        finally
+        {
+            if (ReferenceEquals(_loadCts, cts))
+            {
+                _loadCts = null;
+                cts.Dispose();
+            }
+
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task PollAnnouncementsAsync(CancellationToken ct)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(30));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(ct))
+            {
+                if (!_visible && !_markingRead && AppUserSession.IsAuthenticated)
+                    await InvokeAsync(() => RefreshForAuthenticatedUserAsync());
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+        }
+    }
+
+    private async Task MarkReadAsync()
+    {
+        var user = CurrentUser;
+        if (_novedad is null || string.IsNullOrWhiteSpace(user) || _markingRead)
+            return;
+
+        _markingRead = true;
+        _actionError = string.Empty;
+        try
+        {
+            await NovedadesSvc.MarkReadAsync(_novedad.IdNovedad, user);
+            _visible = false;
+            _novedad = null;
+            _loadedUser = string.Empty;
+            await RefreshForAuthenticatedUserAsync(force: true);
+        }
+        catch
+        {
+            _actionError = "No se pudo registrar la lectura. Intenta nuevamente.";
+        }
+        finally
+        {
+            _markingRead = false;
+        }
+    }
+
+    private Task CloseAsync()
+    {
+        if (_novedad is not null)
+            _dismissedIds.Add(_novedad.IdNovedad);
+
+        _visible = false;
+        _novedad = null;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private void ResetPopup()
+    {
+        _loadedUser = string.Empty;
+        _novedad = null;
+        _visible = false;
+        _registeredView = false;
+        _markingRead = false;
+        _actionError = string.Empty;
+        _dismissedIds.Clear();
+    }
+
+    private static string NormalizeAccent(string? value)
+        => value?.Trim().ToLowerInvariant() switch
+        {
+            NovedadAcentos.Verde => NovedadAcentos.Verde,
+            NovedadAcentos.Cian => NovedadAcentos.Cian,
+            NovedadAcentos.Ambar => NovedadAcentos.Ambar,
+            NovedadAcentos.Rojo => NovedadAcentos.Rojo,
+            NovedadAcentos.Grafito => NovedadAcentos.Grafito,
+            _ => NovedadAcentos.Azul
+        };
+
+    public void Dispose()
+    {
+        AppUserSession.StateChanged -= OnUserSessionChanged;
+        NovedadesSvc.AnnouncementsChanged -= OnAnnouncementsChanged;
+        _pollCts.Cancel();
+        _pollCts.Dispose();
+        _loadCts?.Cancel();
+        _loadCts?.Dispose();
+    }
+}

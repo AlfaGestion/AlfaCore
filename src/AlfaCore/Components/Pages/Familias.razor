@@ -1,4 +1,5 @@
 @page "/compras/familias"
+@page "/{idweb}/{idbase:int}/compras/familias"
 @inject AlfaCore.Services.IComprasDashboardService DashboardService
 @inject AlfaCore.Services.FilterStateService FilterState
 
@@ -15,7 +16,7 @@
             <KpiCard Titulo="Familias activas" Valor="@_page.Kpis.CantidadFamiliasActivas.ToString("N0")" Icono="F" />
             <KpiCard Titulo="Familia principal" Valor="@_page.Kpis.FamiliaPrincipal" Icono="★" Destacado="true" />
             <KpiCard Titulo="Participación líder" Valor="@Porcentaje(_page.Kpis.ParticipacionFamiliaPrincipal)" Icono="%" />
-            <KpiCard Titulo="Variación total" Valor="@RenderVariacionTexto(_page.Kpis.VariacionTotalVsAnterior)" Icono="Δ" />
+            <KpiCard Titulo="Variación total" Valor="@RenderVariacionTexto(_page.Kpis.VariacionTotalVsAnterior)" Icono="Î”" />
             <KpiCard Titulo="Concentración top 5" Valor="@Porcentaje(_page.Kpis.ConcentracionTop5)" Icono="5" />
             <KpiCard Titulo="Mayor crecimiento" Valor="@RenderMayorVariacion(_page.Kpis.FamiliaMayorCrecimiento, _page.Kpis.FamiliaMayorCrecimientoVariacion)" Icono="▲" />
             <KpiCard Titulo="Mayor caída" Valor="@RenderMayorVariacion(_page.Kpis.FamiliaMayorCaida, _page.Kpis.FamiliaMayorCaidaVariacion)" Icono="▼" />

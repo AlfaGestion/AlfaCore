@@ -90,7 +90,7 @@
 
             <div class="contactos-form__grid">
                 <div class="field">
-                    <label>Cliente / cuenta</label>
+                    <label>@(c.SistemaOrigen == "COMPRAS" ? "Proveedor / cuenta" : "Cliente / cuenta")</label>
                     <input value="@FormatClienteCuenta(c)" readonly />
                 </div>
                 <div class="field">
@@ -380,14 +380,32 @@
            || !string.IsNullOrWhiteSpace(c.Comentarios);
 
     private string GetTitle()
-        => _dto?.Cabecera is null
-            ? "Visualizador de comprobantes"
-            : $"{_dto.Cabecera.Tc} {_dto.Cabecera.IdComprobante}";
+    {
+        if (_dto?.Cabecera is null) return "Visualizador de comprobantes";
+        var c = _dto.Cabecera;
+        var prefix = c.TipoFormato switch
+        {
+            "ReciboCobros" => "Recibo de Cobros",
+            "ReciboPagos"  => "Recibo de Pagos",
+            _ when c.SistemaOrigen == "COMPRAS" => "Comprobante de Compras",
+            _ => "Comprobante"
+        };
+        return $"{prefix} · {c.Tc} {c.IdComprobante}";
+    }
 
     private string GetIntro()
-        => _dto?.Cabecera is null
-            ? "Consultá cabecera, detalle, observaciones, aplicaciones, documentos e historial del comprobante."
-            : $"Visor genérico del comprobante {_dto.Cabecera.Tc} {_dto.Cabecera.IdComprobante} con navegación entre comprobantes relacionados.";
+    {
+        if (_dto?.Cabecera is null)
+            return "Consultá cabecera, detalle, observaciones, aplicaciones, documentos e historial del comprobante.";
+        var c = _dto.Cabecera;
+        return c.TipoFormato switch
+        {
+            "ReciboCobros" => $"Recibo de cobros {c.Tc} {c.IdComprobante} — pagos recibidos y comprobantes relacionados.",
+            "ReciboPagos"  => $"Recibo de pagos {c.Tc} {c.IdComprobante} — pagos realizados y comprobantes relacionados.",
+            _ when c.SistemaOrigen == "COMPRAS" => $"Comprobante de compras {c.Tc} {c.IdComprobante} — datos del proveedor, artículos e importes.",
+            _ => $"Visor genérico del comprobante {c.Tc} {c.IdComprobante} con navegación entre comprobantes relacionados."
+        };
+    }
 
     private bool IsReimpresion()
         => string.Equals(Reimpresion, "1", StringComparison.OrdinalIgnoreCase)

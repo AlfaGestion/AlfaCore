@@ -6,15 +6,30 @@
 @inject NavigationManager Nav
 @inject AlfaCore.Services.ISessionService SessionSvc
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
+@inject AlfaCore.Services.IAppModeService AppMode
+@inject AlfaCore.Services.ILegacyBaseUserSessionService LegacyBaseUserSession
+@inject AlfaCore.Services.IRouteContextService RouteContext
+@inject AlfaCore.Services.ICentralClientesService CentralClientesSvc
 @inject AlfaCore.Services.IMenuService MenuSvc
 @inject AlfaCore.Services.IRecentService RecentSvc
 @inject AlfaCore.Services.IConversacionesService ConversacionesSvc
 @inject AlfaCore.Services.ITareasService TareasSvc
 @inject AlfaCore.Services.IAppEventService AppEvents
 @inject AlfaCore.Services.IFloatingWindowService FloatingWindows
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject AlfaCore.Services.IPageHeaderNavigationService HeaderNavigation
+@inject AlfaCore.Services.ICentralBasesService CentralBasesSvc
+@inject ILogger<MainLayout> Logger
 @implements IDisposable
 
-@if (IsPosFullscreenRoute)
+@if (_isInitializing)
+{
+    <div class="shell__initial-loading">
+        <AppLoadingFrame Title="@(_initializationErrorMessage is null ? "Cargando sistema..." : "No se pudo cargar el sistema")"
+                         Subtitle="@(_initializationErrorMessage ?? "Resolviendo la sesión, la base activa y el contexto inicial.")" />
+    </div>
+}
+else if (IsPosFullscreenRoute)
 {
     <div class="pos-layout-host" @onclick="CloseFloatingWindowsAsync">
         @Body
@@ -32,40 +47,130 @@ else
     }
 
     <aside class="shell__sidebar" aria-label="Menú principal">
-        <div class="brand">
-            @if (CanShowLauncherAccess)
-            {
-                <a class="brand__logo-link" href="/" title="Volver al menú principal" aria-label="Volver al menú principal" @onclick="GoToLauncher">
-                    <img class="brand__logo" src="logo.png" alt="Alfa Gestión" />
-                </a>
-            }
-            else
-            {
-                <span class="brand__logo-link brand__logo-link--static" aria-hidden="true">
-                    <img class="brand__logo" src="logo.png" alt="Alfa Gestión" />
-                </span>
-            }
+        <div class="brand" @onmouseleave="ReleaseSidebarToggleHover">
+            <div class="brand__top">
+                @if (CanShowLauncherAccess)
+                {
+                    <a class="brand__logo-link" href="@GetLauncherUrl()" title="Ir a Inicio" aria-label="Ir a Inicio" @onclick:preventDefault="true" @onclick="GoToLauncher">
+                        <img class="brand__logo" src="/logos/Logo.png" alt="Alfa Gestión" />
+                    </a>
+                }
+                else
+                {
+                    <span class="brand__logo-link brand__logo-link--static" aria-hidden="true">
+                        <img class="brand__logo" src="/logos/Logo.png" alt="Alfa Gestión" />
+                    </span>
+                }
+                <button type="button"
+                        class="sidebar-toggle no-print"
+                        title="@SidebarToggleTitle"
+                        aria-label="@SidebarToggleTitle"
+                        aria-expanded="@(!IsSidebarCollapsed)"
+                        @onclick="ToggleSidebarCollapsed"
+                        @onclick:stopPropagation="true">
+                    <span class="sidebar-toggle__icon sidebar-toggle__icon--expanded">
+                        <i class="bi bi-layout-sidebar"></i>
+                    </span>
+                    <span class="sidebar-toggle__icon sidebar-toggle__icon--collapsed">
+                        <i class="bi bi-layout-sidebar-inset"></i>
+                    </span>
+                </button>
+            </div>
             <div class="brand__content">
                 <p class="brand__eyebrow">Business Intelligence</p>
                 @if (CanShowLauncherAccess)
                 {
-                    <a class="brand__title" href="/" @onclick="GoToLauncher">Alfa Gestión</a>
+                    <span class="brand__title">Alfa Gestión</span>
                 }
                 else
                 {
                     <span class="brand__title">Alfa Gestión</span>
                 }
             </div>
-            <button type="button"
-                    class="sidebar-toggle"
-                    @onclick="ToggleSidebar"
-                    title="@(_sidebarCollapsed ? "Mostrar menú" : "Ocultar menú")"
-                    aria-label="@(_sidebarCollapsed ? "Mostrar menú lateral" : "Ocultar menú lateral")">
-                <i class="bi @(_sidebarCollapsed ? "bi-layout-sidebar-inset" : "bi-layout-sidebar")"></i>
-            </button>
         </div>
 
+        @if (!IsDirectMode)
+        {
+            <div class="menu__search" @onclick:stopPropagation="true">
+                <label class="menu__search-label" for="main-menu-search">Buscar opción</label>
+                <div class="menu__search-box">
+                    <span class="menu__search-icon"><i class="bi bi-search"></i></span>
+                    <input id="main-menu-search"
+                           class="menu__search-input"
+                           @ref="_menuSearchInput"
+                           type="search"
+                           placeholder="Ventas, clientes, auditoría..."
+                           @bind="_menuSearchText"
+                           @bind:event="oninput"
+                           @onfocus="EnsureMenuSearchCatalogAsync" />
+                    @if (!string.IsNullOrWhiteSpace(_menuSearchText))
+                    {
+                        <button type="button"
+                                class="menu__search-clear"
+                                aria-label="Limpiar búsqueda"
+                                @onclick="ClearMenuSearch">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                    }
+                </div>
+
+                @if (_menuSearchLoading)
+                {
+                    <p class="menu__search-state">Preparando opciones del menú...</p>
+                }
+                else if (!string.IsNullOrWhiteSpace(_menuSearchError))
+                {
+                    <p class="menu__search-state menu__search-state--error">@_menuSearchError</p>
+                }
+                else if (!string.IsNullOrWhiteSpace(_menuSearchText))
+                {
+                    <div class="menu__search-results">
+                        @if (FilteredMenuSearchResults.Count == 0)
+                        {
+                            <p class="menu__search-state">No se encontraron opciones para "@_menuSearchText".</p>
+                        }
+                        else
+                        {
+                            @foreach (var item in FilteredMenuSearchResults)
+                            {
+                                <button type="button"
+                                        class="menu__search-result"
+                                        @onclick="() => OpenMenuSearchResultAsync(item)">
+                                    <span class="menu__search-result-icon">
+                                        <i class="bi @item.Icono"></i>
+                                    </span>
+                                    <span class="menu__search-result-body">
+                                        <span class="menu__search-result-title">@item.Nombre</span>
+                                        <span class="menu__search-result-meta">@item.Descripcion</span>
+                                    </span>
+                                    <span class="menu__search-result-kind">@(item.EsModulo ? "Módulo" : "Opción")</span>
+                                </button>
+                            }
+                        }
+                    </div>
+                }
+            </div>
+        }
+
         <div class="menu">
+            @if (!IsDirectMode)
+            {
+                <nav class="menu__nav menu__nav--fixed">
+                    <button type="button"
+                            class="menu__link menu__button menu__link--search-shortcut"
+                            title="Buscar opción"
+                            aria-label="Buscar opción"
+                            @onclick="FocusMenuSearchAsync">
+                        <span class="menu__icon"><i class="bi bi-search"></i></span>
+                        <span>Buscar</span>
+                    </button>
+                    <a class="menu__link menu__link--module menu__link--home" href="@GetLauncherUrl()" @onclick:preventDefault="true" @onclick="GoToLauncher">
+                        <span class="menu__icon"><i class="bi bi-house-door"></i></span>
+                        <span>Inicio</span>
+                    </a>
+                </nav>
+            }
+
             @if (_currentModule == "consultas")
             {
                 @ModuleBackLink
@@ -124,6 +229,17 @@ else
                         <span class="menu__icon"><i class="bi bi-person-check"></i></span>
                         <span>Auditoría de usuarios</span>
                     </NavLink>
+                    @if (!IsDirectMode)
+                    {
+                        <NavLink class="menu__link" href="@BuildModuleUrl("/usuarios")" Match="NavLinkMatch.All">
+                            <span class="menu__icon"><i class="bi bi-people-fill"></i></span>
+                            <span>Usuarios</span>
+                        </NavLink>
+                        <NavLink class="menu__link" href="@BuildModuleUrl("/seguridad/autorizacion-tareas")" Match="NavLinkMatch.All">
+                            <span class="menu__icon"><i class="bi bi-shield-lock-fill"></i></span>
+                            <span>Autorización</span>
+                        </NavLink>
+                    }
                 </nav>
             }
             else if (_currentModule == "conversaciones")
@@ -134,8 +250,19 @@ else
                 <nav class="menu__nav">
                     <NavLink class="menu__link" href="@BuildModuleUrl("/conversaciones")" Match="NavLinkMatch.All">
                         <span class="menu__icon"><i class="bi bi-chat-dots-fill"></i></span>
-                        <span>Inbox</span>
+                        <span>Conversaciones</span>
                     </NavLink>
+                    @if (!IsDirectMode)
+                    {
+                        <NavLink class="menu__link" href="@BuildModuleUrl("/contactos")" Match="NavLinkMatch.All">
+                            <span class="menu__icon"><i class="bi bi-person-lines-fill"></i></span>
+                            <span>Contactos</span>
+                        </NavLink>
+                        <NavLink class="menu__link" href="@BuildModuleUrl("/clientes")" Match="NavLinkMatch.All">
+                            <span class="menu__icon"><i class="bi bi-people-fill"></i></span>
+                            <span>Clientes</span>
+                        </NavLink>
+                    }
                     <NavLink class="menu__link" href="@BuildModuleUrl("/conversaciones/plantillas")" Match="NavLinkMatch.All">
                         <span class="menu__icon"><i class="bi bi-chat-square-text-fill"></i></span>
                         <span>Plantillas</span>
@@ -172,6 +299,70 @@ else
                         <span class="menu__icon"><i class="bi bi-calendar3"></i></span>
                         <span>Guardias</span>
                     </NavLink>
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/calendario/reuniones")" Match="NavLinkMatch.All">
+                        <span class="menu__icon"><i class="bi bi-camera-video"></i></span>
+                        <span>Reuniones</span>
+                    </NavLink>
+                </nav>
+            }
+            else if (_currentModule == "carga-viajes")
+            {
+                @ModuleBackLink
+
+                <p class="menu__section">Logística</p>
+                <nav class="menu__nav">
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/carga-viajes")" Match="NavLinkMatch.All">
+                        <span class="menu__icon"><i class="bi bi-truck"></i></span>
+                        <span>Viajes</span>
+                    </NavLink>
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/carga-viajes/nuevo")" Match="NavLinkMatch.Prefix">
+                        <span class="menu__icon"><i class="bi bi-plus-circle"></i></span>
+                        <span>Nuevo viaje</span>
+                    </NavLink>
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/carga-viajes/tarifas")" Match="NavLinkMatch.Prefix">
+                        <span class="menu__icon"><i class="bi bi-tags"></i></span>
+                        <span>Tarifas</span>
+                    </NavLink>
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/carga-viajes/choferes")" Match="NavLinkMatch.Prefix">
+                        <span class="menu__icon"><i class="bi bi-person-badge"></i></span>
+                        <span>Choferes</span>
+                    </NavLink>
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/carga-viajes/destinos")" Match="NavLinkMatch.Prefix">
+                        <span class="menu__icon"><i class="bi bi-geo-alt"></i></span>
+                        <span>Destinos</span>
+                    </NavLink>
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/carga-viajes/tipo-vehiculo")" Match="NavLinkMatch.Prefix">
+                        <span class="menu__icon"><i class="bi bi-truck"></i></span>
+                        <span>Tipo vehículo</span>
+                    </NavLink>
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/carga-viajes/reportes")" Match="NavLinkMatch.Prefix">
+                        <span class="menu__icon"><i class="bi bi-bar-chart-line"></i></span>
+                        <span>Reportes</span>
+                    </NavLink>
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/carga-viajes/liquidaciones")" Match="NavLinkMatch.Prefix">
+                        <span class="menu__icon"><i class="bi bi-cash-coin"></i></span>
+                        <span>Liquidaciones</span>
+                    </NavLink>
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/carga-viajes/configuracion")" Match="NavLinkMatch.Prefix">
+                        <span class="menu__icon"><i class="bi bi-sliders"></i></span>
+                        <span>Configurar carga de viaje</span>
+                    </NavLink>
+                </nav>
+            }
+            else if (_currentModule == "informes")
+            {
+                @ModuleBackLink
+
+                <p class="menu__section">Informes</p>
+                <nav class="menu__nav">
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/informes")" Match="NavLinkMatch.All">
+                        <span class="menu__icon"><i class="bi bi-journal-richtext"></i></span>
+                        <span>Articulos</span>
+                    </NavLink>
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/informes/novedades")" Match="NavLinkMatch.All">
+                        <span class="menu__icon"><i class="bi bi-megaphone"></i></span>
+                        <span>Novedades</span>
+                    </NavLink>
                 </nav>
             }
             else if (_currentModule == "interfaces")
@@ -206,11 +397,19 @@ else
             {
                 @ModuleBackLink
 
-                <p class="menu__section">Usuarios</p>
+                <p class="menu__section">Seguridad</p>
                 <nav class="menu__nav">
                     <NavLink class="menu__link" href="@BuildModuleUrl("/usuarios")" Match="NavLinkMatch.All">
                         <span class="menu__icon"><i class="bi bi-people-fill"></i></span>
-                        <span>Gestión de usuarios</span>
+                        <span>Usuarios</span>
+                    </NavLink>
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/seguridad/autorizacion-tareas")" Match="NavLinkMatch.All">
+                        <span class="menu__icon"><i class="bi bi-shield-lock-fill"></i></span>
+                        <span>Autorización</span>
+                    </NavLink>
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/auditoria")" Match="NavLinkMatch.Prefix">
+                        <span class="menu__icon"><i class="bi bi-clipboard2-check"></i></span>
+                        <span>Auditoría</span>
                     </NavLink>
                 </nav>
             }
@@ -238,11 +437,19 @@ else
             {
                 @ModuleBackLink
 
-                <p class="menu__section">Contactos</p>
+                <p class="menu__section">Conversaciones</p>
                 <nav class="menu__nav">
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/conversaciones")" Match="NavLinkMatch.All">
+                        <span class="menu__icon"><i class="bi bi-chat-dots-fill"></i></span>
+                        <span>Conversaciones</span>
+                    </NavLink>
                     <NavLink class="menu__link" href="@BuildModuleUrl("/contactos")" Match="NavLinkMatch.All">
                         <span class="menu__icon"><i class="bi bi-person-lines-fill"></i></span>
-                        <span>Agenda de contactos</span>
+                        <span>Contactos</span>
+                    </NavLink>
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/clientes")" Match="NavLinkMatch.All">
+                        <span class="menu__icon"><i class="bi bi-people-fill"></i></span>
+                        <span>Clientes</span>
                     </NavLink>
                 </nav>
             }
@@ -250,11 +457,19 @@ else
             {
                 @ModuleBackLink
 
-                <p class="menu__section">Clientes</p>
+                <p class="menu__section">Conversaciones</p>
                 <nav class="menu__nav">
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/conversaciones")" Match="NavLinkMatch.All">
+                        <span class="menu__icon"><i class="bi bi-chat-dots-fill"></i></span>
+                        <span>Conversaciones</span>
+                    </NavLink>
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/contactos")" Match="NavLinkMatch.All">
+                        <span class="menu__icon"><i class="bi bi-person-lines-fill"></i></span>
+                        <span>Contactos</span>
+                    </NavLink>
                     <NavLink class="menu__link" href="@BuildModuleUrl("/clientes")" Match="NavLinkMatch.All">
                         <span class="menu__icon"><i class="bi bi-people-fill"></i></span>
-                        <span>Maestro de clientes</span>
+                        <span>Clientes</span>
                     </NavLink>
                 </nav>
             }
@@ -398,19 +613,19 @@ else
                     </NavLink>
                 </nav>
             }
-            else if (!IsDirectMode)
+            else if (!IsDirectMode && !string.IsNullOrWhiteSpace(_currentModule))
             {
-                <p class="menu__section">Aplicaciones</p>
                 <nav class="menu__nav">
-                    @if (ShowShellContext)
-                    {
-                        <a class="menu__link menu__link--module" href="/#favoritos">
-                            <span class="menu__icon"><i class="bi bi-star-fill"></i></span>
-                            <span>Favoritos</span>
-                        </a>
-                    }
-
-                    @if (_menuSearchLoading || (!_menuSearchLoaded && ShowShellContext))
+                    <NavLink class="menu__link" href="@BuildModuleUrl("/" + _currentModule)" Match="NavLinkMatch.Prefix">
+                        <span class="menu__icon"><i class="bi @GetContextModuleIcon()"></i></span>
+                        <span>@GetContextModuleLabel()</span>
+                    </NavLink>
+                </nav>
+            }
+            else if (!IsDirectMode && string.IsNullOrWhiteSpace(_currentModule))
+            {
+                <nav class="menu__nav">
+                    @if (_menuSearchLoading)
                     {
                         <div class="menu__link menu__link--disabled">
                             <span class="menu__icon"><i class="bi bi-hourglass-split"></i></span>
@@ -429,8 +644,9 @@ else
                         @foreach (var module in _mainMenuModules)
                         {
                             <a class="@GetMainMenuModuleClass(module)"
-                               href="@module.RutaWeb"
+                               href="@BuildModuleUrl(module.RutaWeb)"
                                title="@module.Nombre"
+                               @onclick:preventDefault="true"
                                @onclick="(() => NavigateToModule(module.RutaWeb))">
                                 <span class="menu__icon"><i class="bi @(string.IsNullOrWhiteSpace(module.Icono) ? "bi-grid" : module.Icono)"></i></span>
                                 <span>@module.Nombre</span>
@@ -438,65 +654,6 @@ else
                         }
                     }
                 </nav>
-
-                <div class="menu__search" @onclick:stopPropagation="true">
-                    <label class="menu__search-label" for="main-menu-search">Buscar opción</label>
-                    <div class="menu__search-box">
-                        <span class="menu__search-icon"><i class="bi bi-search"></i></span>
-                        <input id="main-menu-search"
-                               class="menu__search-input"
-                               type="search"
-                               placeholder="Ventas, clientes, auditoría..."
-                               @bind="_menuSearchText"
-                               @bind:event="oninput"
-                               @onfocus="EnsureMenuSearchCatalogAsync" />
-                        @if (!string.IsNullOrWhiteSpace(_menuSearchText))
-                        {
-                            <button type="button"
-                                    class="menu__search-clear"
-                                    aria-label="Limpiar búsqueda"
-                                    @onclick="ClearMenuSearch">
-                                <i class="bi bi-x-lg"></i>
-                            </button>
-                        }
-                    </div>
-
-                    @if (_menuSearchLoading)
-                    {
-                        <p class="menu__search-state">Preparando opciones del menú...</p>
-                    }
-                    else if (!string.IsNullOrWhiteSpace(_menuSearchError))
-                    {
-                        <p class="menu__search-state menu__search-state--error">@_menuSearchError</p>
-                    }
-                    else if (!string.IsNullOrWhiteSpace(_menuSearchText))
-                    {
-                        <div class="menu__search-results">
-                            @if (FilteredMenuSearchResults.Count == 0)
-                            {
-                                <p class="menu__search-state">No se encontraron opciones para "@_menuSearchText".</p>
-                            }
-                            else
-                            {
-                                @foreach (var item in FilteredMenuSearchResults)
-                                {
-                                    <button type="button"
-                                            class="menu__search-result"
-                                            @onclick="() => OpenMenuSearchResultAsync(item)">
-                                        <span class="menu__search-result-icon">
-                                            <i class="bi @item.Icono"></i>
-                                        </span>
-                                        <span class="menu__search-result-body">
-                                            <span class="menu__search-result-title">@item.Nombre</span>
-                                            <span class="menu__search-result-meta">@item.Descripcion</span>
-                                        </span>
-                                        <span class="menu__search-result-kind">@(item.EsModulo ? "Módulo" : "Opción")</span>
-                                    </button>
-                                }
-                            }
-                        </div>
-                    }
-                </div>
             }
 
             @if (!IsDirectMode)
@@ -526,10 +683,13 @@ else
                         </button>
                     }
                 }
-                <button type="button" class="menu__link menu__button menu__link--help @(_tasksPanelOpen ? "is-active" : string.Empty)" @onclick="ToggleTasksPanelAsync">
-                    <span class="menu__icon"><i class="bi bi-check2-circle"></i></span>
-                    <span>Tareas</span>
-                </button>
+                @if (CanShowTasksPanel)
+                {
+                    <button type="button" class="menu__link menu__button menu__link--help @(_tasksPanelOpen ? "is-active" : string.Empty)" @onclick="ToggleTasksPanelAsync">
+                        <span class="menu__icon"><i class="bi bi-check2-circle"></i></span>
+                        <span>Tareas</span>
+                    </button>
+                }
                 <NavLink class="menu__link menu__link--help" href="@(_currentModule == "consultas" ? "/ayuda?topic=consultas" : "/ayuda")">
                     <span class="menu__icon"><i class="bi bi-question-circle-fill"></i></span>
                     <span>Ayuda</span>
@@ -539,8 +699,16 @@ else
         </div>
     </aside>
 
+    <button type="button"
+            class="shell__mobile-floating-toggle no-print"
+            @onclick="ToggleMobileSidebar"
+            aria-label="Abrir menú"
+            aria-expanded="@_mobileSidebarOpen">
+        <i class="bi bi-list"></i>
+    </button>
+
     <main class="shell__main">
-        <header class="shell__header">
+        <header class="@(ShowLauncherContext ? "shell__header" : "shell__header shell__header--hidden")">
             <button type="button"
                     class="shell__mobile-toggle no-print"
                     @onclick="ToggleMobileSidebar"
@@ -565,17 +733,17 @@ else
                             <span>Exportar PDF</span>
                         </button>
                     }
-                    <button class="session-chip no-print" @onclick="() => _drawerOpen = true" title="Gestionar sesiones de base de datos">
+                    <button type="button" class="session-chip no-print" @onclick="() => _drawerOpen = true" title="Gestionar sesiones de base de datos">
                         <span class="session-chip__dot"></span>
                         <span class="session-chip__text">@(_activeSession?.Servidor ?? "—") · @(_activeSession?.BaseDatos ?? "—")</span>
                         <i class="bi bi-chevron-down"></i>
                     </button>
                     @if (AppUserSession.IsAuthenticated && AppUserSession.CurrentUser is not null)
                     {
-                        <button type="button" class="session-chip no-print" @onclick="LogoutAppUser" title="Cerrar sesión del sistema">
+                        <button type="button" class="session-chip no-print" @onclick="OpenLoginOverlayAsync" title="Cambiar usuario o base">
                             <span class="session-chip__dot"></span>
                             <span class="session-chip__text">@AppUserSession.CurrentUser.UserName</span>
-                            <i class="bi bi-box-arrow-right"></i>
+                            <i class="bi bi-person-circle"></i>
                         </button>
                     }
                     <div class="shell__status">
@@ -589,6 +757,8 @@ else
                 </div>
             }
         </header>
+
+        <MainPageHeader />
 
         @if (ShouldShowConversationMobilePwaActions)
         {
@@ -619,13 +789,16 @@ else
         }
 
         <section class="shell__content">
-            <div class="print-banner print-only">
-                <div>
-                    <p class="print-banner__eyebrow">Dashboard de Compras</p>
-                    <h2 class="print-banner__title">@CurrentPageTitle</h2>
+            @if (IsWorkspaceRoute)
+            {
+                <div class="print-banner print-only">
+                    <div>
+                        <p class="print-banner__eyebrow">Inicio</p>
+                        <h2 class="print-banner__title">@CurrentPageTitle</h2>
+                    </div>
+                    <p class="print-banner__meta">Exportado el @DateTime.Now.ToString("dd/MM/yyyy HH:mm")</p>
                 </div>
-                <p class="print-banner__meta">Exportado el @DateTime.Now.ToString("dd/MM/yyyy HH:mm")</p>
-            </div>
+            }
             @Body
         </section>
     </main>
@@ -649,9 +822,13 @@ else
     </button>
 }
 
-<SessionDrawer Open="_drawerOpen" OnClose="() => _drawerOpen = false" />
+<SessionDrawer Open="_drawerOpen"
+               DarkTheme="_drawerDarkTheme"
+               RouteBaseId="_drawerRouteBaseId"
+               OnClose="() => _drawerOpen = false"
+               OnLogout="FullLogoutAsync" />
 
-@if (!IsPosFullscreenRoute && !IsDirectMode && _tasksPanelOpen)
+@if (CanShowTasksPanel && _tasksPanelOpen)
 {
     <button type="button"
             class="tareas-side-backdrop no-print"
@@ -659,7 +836,7 @@ else
             @onclick="CloseTasksPanel"></button>
 }
 
-@if (!IsPosFullscreenRoute && !IsDirectMode)
+@if (CanShowTasksPanel)
 {
 <aside class="tareas-side-panel no-print @(_tasksPanelOpen ? "is-open" : string.Empty)" aria-label="Tareas rápidas">
     <header class="tareas-side-panel__head">
@@ -679,14 +856,32 @@ else
 
     <section class="tareas-side-panel__add">
         <i class="bi bi-check2-circle"></i>
-        <input @bind="_tasksPanelQuickTitle"
-               @bind:event="oninput"
-               @onkeydown="HandleTasksPanelQuickKeyDown"
-               dir="ltr"
-               autocomplete="off"
-               spellcheck="true"
-               style="direction: ltr; unicode-bidi: plaintext; text-align: left;"
-               placeholder="Añadir rápida" />
+        <div class="tareas-side-compose">
+            <input @bind="_tasksPanelQuickTitle"
+                   @bind:event="oninput"
+                   @onkeydown="HandleTasksPanelQuickKeyDown"
+                   @onfocus="() => _tasksPanelShowComposerDetails = true"
+                   dir="ltr"
+                   autocomplete="off"
+                   spellcheck="true"
+                   style="direction: ltr; unicode-bidi: plaintext; text-align: left;"
+                   placeholder="Añadir una tarea" />
+            @if (_tasksPanelShowComposerDetails || !string.IsNullOrWhiteSpace(_tasksPanelQuickDetail))
+            {
+                <textarea @bind="_tasksPanelQuickDetail"
+                          @bind:event="oninput"
+                          rows="2"
+                          placeholder="Detalles"></textarea>
+                <div class="tareas-side-compose__actions">
+                    <button type="button" @onclick="AddTasksPanelNoteAsync" disabled="@_tasksPanelLoading">
+                        Añadir
+                    </button>
+                    <button type="button" @onclick="CancelTasksPanelCompose">
+                        Cancelar
+                    </button>
+                </div>
+            }
+        </div>
     </section>
 
     <section class="tareas-side-panel__body">
@@ -706,14 +901,87 @@ else
                 <div class="tareas-side-list">
                     @foreach (var nota in TasksPanelOpenNotes)
                     {
-                        <article class="tareas-side-row">
+                        <article class="tareas-side-row @(_tasksPanelDraggedNoteId == nota.IdNota ? "is-dragging" : string.Empty) @(_tasksPanelDragOverNoteId == nota.IdNota ? "is-drag-over" : string.Empty) @(_tasksPanelEditingNoteId == nota.IdNota ? "is-editing" : string.Empty)"
+                                 draggable="@nota.EsPropia"
+                                 @ondragstart="() => StartTasksPanelNoteDrag(nota)"
+                                 @ondragend="ClearTasksPanelNoteDrag"
+                                 @ondragenter="() => SetTasksPanelDragOver(nota)"
+                                 @ondragover:preventDefault="true"
+                                 @ondrop="() => DropTasksPanelNoteAsync(nota)">
+                            <span class="tareas-side-drag" title="Arrastrar para ordenar" aria-hidden="true">
+                                <i class="bi bi-grip-vertical"></i>
+                            </span>
                             <button type="button" class="tareas-side-check" title="Marcar como hecha" @onclick="() => CompleteTasksPanelNoteAsync(nota)">
                                 <i class="bi bi-circle"></i>
                             </button>
-                            <span class="tareas-side-row__body">
-                                <strong>@nota.Texto</strong>
-                                <span>Rápida</span>
-                            </span>
+                            @if (_tasksPanelEditingNoteId == nota.IdNota)
+                            {
+                                <div class="tareas-side-row__editor">
+                                    <input value="@_tasksPanelEditTitle"
+                                           @oninput="e => _tasksPanelEditTitle = Convert.ToString(e.Value) ?? string.Empty"
+                                           placeholder="Título" />
+                                    <textarea value="@_tasksPanelEditDetail"
+                                              @oninput="e => _tasksPanelEditDetail = Convert.ToString(e.Value) ?? string.Empty"
+                                              rows="2"
+                                              placeholder="Detalles"></textarea>
+                                    <div class="tareas-side-row__editor-actions">
+                                        <button type="button" @onclick="SaveTasksPanelEditedNoteAsync">Guardar</button>
+                                        <button type="button" @onclick="CancelTasksPanelEdit">Cancelar</button>
+                                    </div>
+                                </div>
+                            }
+                            else
+                            {
+                                <button type="button" class="tareas-side-row__body" @onclick="() => StartTasksPanelEdit(nota)">
+                                    <strong>@nota.Texto</strong>
+                                    @if (!string.IsNullOrWhiteSpace(nota.Detalle))
+                                    {
+                                        <span>@nota.Detalle</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="is-placeholder">Añadir detalles</span>
+                                    }
+                                </button>
+                            }
+                            <div class="tareas-side-row__actions">
+                                @if (nota.CompartidaConTodos || nota.UsuariosCompartidos.Count > 0)
+                                {
+                                    <i class="bi bi-share" title="@GetTasksPanelSharingSummary(nota)"></i>
+                                }
+                                @if (CanMoveTasksPanelNote(nota, -1))
+                                {
+                                    <button type="button" class="tareas-side-order-button" title="Subir tarea" @onclick="() => MoveTasksPanelNoteAsync(nota, -1)">
+                                        <i class="bi bi-arrow-up"></i>
+                                    </button>
+                                }
+                                @if (CanMoveTasksPanelNote(nota, 1))
+                                {
+                                    <button type="button" class="tareas-side-order-button" title="Bajar tarea" @onclick="() => MoveTasksPanelNoteAsync(nota, 1)">
+                                        <i class="bi bi-arrow-down"></i>
+                                    </button>
+                                }
+                                <button type="button" class="tareas-side-menu-button" title="Más opciones" @onclick="() => ToggleTasksPanelNoteMenu(nota.IdNota)">
+                                    <i class="bi bi-three-dots-vertical"></i>
+                                </button>
+                                @if (_tasksPanelMenuNoteId == nota.IdNota)
+                                {
+                                    <div class="tareas-side-note-menu" @onclick:stopPropagation>
+                                        <button type="button" @onclick="() => StartTasksPanelEdit(nota)">
+                                            <i class="bi bi-card-text"></i>
+                                            Editar detalle
+                                        </button>
+                                        <button type="button" @onclick="() => OpenTasksPanelNoteInModule(nota)">
+                                            <i class="bi bi-share"></i>
+                                            Compartir
+                                        </button>
+                                        <button type="button" class="is-danger" @onclick="() => DeleteTasksPanelNoteAsync(nota)" disabled="@(!nota.EsPropia)">
+                                            <i class="bi bi-trash"></i>
+                                            Eliminar
+                                        </button>
+                                    </div>
+                                }
+                            </div>
                         </article>
                     }
                 </div>
@@ -734,6 +1002,10 @@ else
                             </button>
                             <span class="tareas-side-row__body">
                                 <strong>@nota.Texto</strong>
+                                @if (!string.IsNullOrWhiteSpace(nota.Detalle))
+                                {
+                                    <span>@nota.Detalle</span>
+                                }
                                 <span>@FormatTasksPanelDateTime(nota.FechaHoraCompletada)</span>
                             </span>
                         </article>
@@ -893,34 +1165,50 @@ else
     </section>
 }
 
-<AppLoginOverlay Open="@(!AppUserSession.IsAuthenticated)"
+<AppLoginOverlay Open="@ShowLoginOverlay"
+                 DarkTheme="@_isDark"
                  SqlSessionLabel="@GetSqlSessionLabel()"
                  UserName="@_loginUserName"
                  Password="@_loginPassword"
                  ErrorMessage="@_loginError"
                  IsBusy="@_loginBusy"
-                 ShowPassword="@_loginShowPassword"
+                ShowPassword="@_loginShowPassword"
                  RememberCredentials="@_loginRememberCredentials"
+                 IsSwitchUserMode="@(_manualLoginOverlayOpen && AppUserSession.IsAuthenticated)"
                  UserNameChanged="@(value => _loginUserName = value)"
                  PasswordChanged="@(value => _loginPassword = value)"
                  ShowPasswordChanged="@(value => _loginShowPassword = value)"
                  RememberCredentialsChanged="OnRememberCredentialsChangedAsync"
                  OnSubmit="LoginAsync"
-                 OnOpenSqlSessions="OpenSqlSessionDrawerAsync" />
+                 OnOpenSqlSessions="OpenSqlSessionDrawerAsync"
+                 OnLogout="FullLogoutAsync"
+                 CanClose="@(_manualLoginOverlayOpen && AppUserSession.IsAuthenticated)"
+                 OnClose="CloseLoginOverlayAsync" />
+
+<AppMsgBoxHost />
+<NovedadesPopup Enabled="@(!IsDirectMode)" />
 
 @code {
-    private bool _sidebarCollapsed;
-    private bool _sidebarInitialized;
     private bool _mobileSidebarOpen;
+    private bool? _sidebarCollapsedOverride;
     private bool _isDark = false;
     private bool _drawerOpen;
+    private bool _drawerDarkTheme;
+    private int? _drawerRouteBaseId;
     private AlfaCore.Models.SessionDto? _activeSession;
+    private bool _isInitializing = true;
+    private string? _initializationErrorMessage;
     private string _loginUserName = string.Empty;
     private string _loginPassword = string.Empty;
     private string _loginError = string.Empty;
     private bool _loginBusy;
     private bool _loginShowPassword;
     private bool _loginRememberCredentials;
+    private IReadOnlyList<UsuarioSistemaDto> _loginUsers = [];
+    private int? _loginUsersBaseId;
+    private bool _loginUsersLoaded;
+    private bool _loginUsersLoading;
+    private bool _loginUseUserList = true;
     private DotNetObjectReference<MainLayout>? _pwaRef;
     private bool _pwaCanInstall;
     private bool _pwaInstalled;
@@ -941,20 +1229,46 @@ else
     private string _pushDiagnosticsLastProviderError = string.Empty;
     private List<NotificacionesPushEndpointResultDto> _pushLastTestResults = [];
     private string CurrentPageTitle => GetCurrentPageTitle();
-    private RenderFragment? ModuleBackLink => !IsDirectMode
-        ? @<a class="menu__back" href="/" @onclick="GoToLauncher">
-                <i class="bi bi-grid-3x3-gap-fill"></i>
-                <span>Aplicaciones</span>
-            </a>
-        : null;
+    private RenderFragment? ModuleBackLink => null;
     private string ShellClass
-        => $"shell {(_sidebarCollapsed ? "shell--collapsed" : string.Empty)} {(_mobileSidebarOpen ? "shell--mobile-open" : string.Empty)} {(IsDirectMode ? "shell--direct" : string.Empty)} {(IsPosFullscreenRoute ? "shell--pos-fullscreen" : string.Empty)}";
+        => $"shell {(IsSidebarCollapsed ? "shell--collapsed" : string.Empty)} {(_sidebarToggleHoverBlocked ? "shell--toggle-hover-blocked" : string.Empty)} {(_mobileSidebarOpen ? "shell--mobile-open" : string.Empty)} {(IsDirectMode ? "shell--direct" : string.Empty)} {(IsPosFullscreenRoute ? "shell--pos-fullscreen" : string.Empty)}";
     private bool ShowShellContext => string.IsNullOrWhiteSpace(_currentModule);
     private bool ShowLauncherContext => ShowShellContext && !IsDirectMode;
     private bool CanShowLauncherAccess => !IsDirectMode;
-    private bool IsLauncherRoute => string.IsNullOrWhiteSpace(Nav.ToBaseRelativePath(Nav.Uri).Split('?')[0].Split('#')[0].Trim('/'));
+    private bool DefaultSidebarCollapsed => !ShowLauncherContext;
+    private bool IsSidebarCollapsed => _sidebarCollapsedOverride ?? DefaultSidebarCollapsed;
+    private string SidebarToggleTitle => IsSidebarCollapsed ? "Desplegar menú principal" : "Plegar menú principal";
+    private bool CanShowTasksPanel => !IsPosFullscreenRoute && !IsDirectMode && AppUserSession.IsAuthenticated;
+    private bool IsLauncherRoute => IsLauncherContextRoute(GetEffectiveCurrentPath());
     private bool IsDirectMode => !string.IsNullOrWhiteSpace(_directModuleKey);
-    private bool IsPosFullscreenRoute => string.Equals(GetNormalizedCurrentPath(), "ventas/punto-venta", StringComparison.OrdinalIgnoreCase);
+    private bool IsPosFullscreenRoute => string.Equals(GetEffectiveCurrentPath(), "ventas/punto-venta", StringComparison.OrdinalIgnoreCase);
+    private bool IsLoginRoute => string.Equals(GetNormalizedCurrentPath(), "login", StringComparison.OrdinalIgnoreCase);
+    private bool IsInternalSqlLoginContext
+    {
+        get
+        {
+            if (!AppMode.IsSaaSMode || IsLoginRoute)
+                return false;
+
+            if (_manualLoginOverlayOpen && SessionSvc.GetActiveSession() is not null)
+                return true;
+
+            if (AppUserSession.IsAuthenticated && !AppUserSession.RequiresInternalLogin)
+                return false;
+
+            if (SessionSvc.GetActiveSession() is not null)
+                return true;
+
+            if (TryGetRouteBaseId(out _))
+                return true;
+
+            return !string.IsNullOrWhiteSpace(_routeSessionLabel);
+        }
+    }
+    private bool ShowLoginOverlay
+        => _manualLoginOverlayOpen
+           || (!AppMode.IsSaaSMode && (!AppUserSession.IsAuthenticated || AppUserSession.RequiresInternalLogin))
+           || (AppMode.IsSaaSMode && (!AppUserSession.IsAuthenticated || AppUserSession.RequiresInternalLogin));
     private bool ShouldShowConversationMobilePwaActions
         => string.Equals(_currentModule, "conversaciones", StringComparison.OrdinalIgnoreCase);
     private bool CanEnablePush
@@ -986,13 +1300,23 @@ else
     private List<ShellModuleDto> _mainMenuModules = [];
     private List<ShellMenuSearchItemDto> _menuSearchCatalog = [];
     private string _menuSearchText = string.Empty;
+    private ElementReference _menuSearchInput;
     private string _menuSearchError = string.Empty;
     private bool _menuSearchLoaded;
     private bool _menuSearchLoading;
+    private bool _sidebarToggleHoverBlocked;
     private bool _tasksPanelOpen;
     private bool _tasksPanelLoading;
     private string _tasksPanelQuickTitle = string.Empty;
+    private string _tasksPanelQuickDetail = string.Empty;
     private string _tasksPanelError = string.Empty;
+    private bool _tasksPanelShowComposerDetails;
+    private long? _tasksPanelEditingNoteId;
+    private string _tasksPanelEditTitle = string.Empty;
+    private string _tasksPanelEditDetail = string.Empty;
+    private long? _tasksPanelMenuNoteId;
+    private long? _tasksPanelDraggedNoteId;
+    private long? _tasksPanelDragOverNoteId;
     private TareasPageDto _tasksPanel = new();
     private readonly Dictionary<long, long> _globalConversationLastIncomingById = [];
     private CancellationTokenSource? _globalConversationPollingCts;
@@ -1002,10 +1326,13 @@ else
     private long? _globalConversationLatestId;
     private string _globalConversationLatestName = string.Empty;
     private string _globalConversationLatestSummary = string.Empty;
+    private string _routeSessionLabel = string.Empty;
+    private bool _manualLoginOverlayOpen;
 
     protected override void OnInitialized()
     {
         _activeSession = SessionSvc.GetActiveSession();
+        HeaderNavigation.Record(Nav.Uri);
         SessionSvc.SessionChanged += OnSessionChanged;
         AppUserSession.StateChanged += OnAppUserStateChanged;
         Nav.LocationChanged += OnLocationChanged;
@@ -1017,6 +1344,10 @@ else
         ResetMenuSearchCatalog();
         var wasAuthenticated = AppUserSession.IsAuthenticated;
         AppUserSession.HandleSqlSessionChanged();
+        if (IsInternalSqlLoginContext && AppUserSession.RequiresInternalLogin)
+            ResetLoginDraftForInternalContext();
+        if (AppMode.IsSaaSMode && AppUserSession.IsAuthenticated)
+            _ = InvokeAsync(EnsureActiveSessionFromRouteAsync);
         if (wasAuthenticated && !AppUserSession.IsAuthenticated)
         {
             _ = InvokeAsync(async () =>
@@ -1037,10 +1368,15 @@ else
     private void OnAppUserStateChanged()
     {
         ResetMenuSearchCatalog();
+        if (IsInternalSqlLoginContext && AppUserSession.RequiresInternalLogin)
+            ResetLoginDraftForInternalContext();
+        if (AppMode.IsSaaSMode && AppUserSession.IsAuthenticated)
+            _ = InvokeAsync(EnsureActiveSessionFromRouteAsync);
         if (!AppUserSession.IsAuthenticated)
         {
             _loginPassword = string.Empty;
             _loginShowPassword = false;
+            CloseTasksPanel();
         }
 
         if (ShowShellContext)
@@ -1064,7 +1400,11 @@ else
 
     private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs args)
     {
+        HeaderNavigation.Record(args.Location);
+        PageHeader.Clear();
         _mobileSidebarOpen = false;
+        if (IsLauncherRoute)
+            _sidebarCollapsedOverride = null;
         UpdateCurrentModule();
         if (EnforceDirectMode())
             return;
@@ -1080,44 +1420,84 @@ else
     {
         UpdateCurrentModule();
         EnforceDirectMode();
+        if (IsInternalSqlLoginContext && ShowLoginOverlay)
+            ResetLoginDraftForInternalContext();
+        if (ShowLoginOverlay && IsInternalSqlLoginContext)
+            _ = InvokeAsync(EnsureInternalLoginUsersAsync);
     }
 
     private void GoToLauncher()
-        => Nav.NavigateTo("/");
+        => Nav.NavigateTo(GetLauncherUrl());
+
+    private void ToggleSidebarCollapsed()
+    {
+        if (_mobileSidebarOpen)
+        {
+            _mobileSidebarOpen = false;
+            return;
+        }
+
+        _sidebarCollapsedOverride = !IsSidebarCollapsed;
+        _sidebarToggleHoverBlocked = true;
+    }
+
+    private void ReleaseSidebarToggleHover()
+        => _sidebarToggleHoverBlocked = false;
+
+    private async Task FocusMenuSearchAsync()
+    {
+        _sidebarCollapsedOverride = false;
+        _sidebarToggleHoverBlocked = false;
+        await EnsureMenuSearchCatalogAsync();
+        await InvokeAsync(StateHasChanged);
+        await Task.Yield();
+
+        try
+        {
+            await _menuSearchInput.FocusAsync();
+        }
+        catch
+        {
+        }
+    }
+
+    private async Task GoBackOrLauncherAsync()
+    {
+        try
+        {
+            if (await JS.InvokeAsync<bool>("alfaCoreNavigation.canGoBack"))
+            {
+                await JS.InvokeVoidAsync("alfaCoreNavigation.goBack");
+                return;
+            }
+        }
+        catch
+        {
+        }
+
+        GoToLauncher();
+    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender)
             return;
 
-        StartGlobalConversationPolling();
-
         try
         {
-            var sidebar = await JS.InvokeAsync<string?>("localStorage.getItem", "dashboard.sidebar.collapsed");
-            _sidebarCollapsed = string.Equals(sidebar, "true", StringComparison.OrdinalIgnoreCase);
-        }
-        catch
-        {
-            _sidebarCollapsed = false;
-        }
+            StartGlobalConversationPolling();
 
-        try
-        {
             await JS.InvokeVoidAsync("conversacionesUi.initNotifications", "AlfaCore - Alfa Gestión");
-        }
-        catch
-        {
-        }
 
-        try
-        {
             var theme = await JS.InvokeAsync<string>("dashboardTheme.get");
             _isDark = !string.Equals(theme, "light", StringComparison.OrdinalIgnoreCase);
+            await InvokeAsync(StateHasChanged);
         }
-        catch
+        catch (Exception ex)
         {
             _isDark = true;
+            _initializationErrorMessage ??= "No se pudo sincronizar el estado visual inicial.";
+            Logger.LogDebug(ex, "MainLayout: no se pudo leer el tema inicial.");
         }
 
         try
@@ -1130,48 +1510,258 @@ else
             _pwaPushSupported = pwaState.PushSupported;
             _pwaNotificationPermission = pwaState.NotificationPermission;
         }
-        catch
+        catch (Exception ex)
         {
+            Logger.LogDebug(ex, "MainLayout: no se pudo inicializar PWA.");
         }
 
-        if (!AppUserSession.IsAuthenticated)
+        try
         {
-            try
-            {
-                var token = await JS.InvokeAsync<string?>("localStorage.getItem", "alfacore_user_token");
-                if (!string.IsNullOrEmpty(token))
-                    AppUserSession.TryRestoreFromToken(token);
-            }
-            catch { }
+            await EnsureActiveSessionFromRouteAsync();
+            await EnsureInternalLoginUsersAsync();
 
-            try
-            {
-                _loginRememberCredentials = string.Equals(
-                    await JS.InvokeAsync<string?>("localStorage.getItem", "alfacore_login_remember"),
-                    "true",
-                    StringComparison.OrdinalIgnoreCase);
+            if (IsInternalSqlLoginContext && AppUserSession.RequiresInternalLogin)
+                ResetLoginDraftForInternalContext();
 
-                if (_loginRememberCredentials)
+            if (!AppUserSession.IsAuthenticated)
+            {
+                var normalizedPathForToken = GetNormalizedCurrentPath();
+                try
                 {
-                    _loginUserName = await JS.InvokeAsync<string?>("localStorage.getItem", "alfacore_login_user") ?? string.Empty;
-                    _loginPassword = await JS.InvokeAsync<string?>("localStorage.getItem", "alfacore_login_password") ?? string.Empty;
+                    if (!string.IsNullOrWhiteSpace(normalizedPathForToken))
+                    {
+                        var token = await JS.InvokeAsync<string?>("localStorage.getItem", "alfacore_user_token");
+                        if (!string.IsNullOrEmpty(token))
+                            AppUserSession.TryRestoreFromToken(token);
+                    }
+                }
+                catch { }
+
+                try
+                {
+                    var isInternalLoginPrompt = IsInternalSqlLoginContext || (AppMode.IsSaaSMode && AppUserSession.RequiresInternalLogin && !IsLoginRoute);
+                    if (!isInternalLoginPrompt)
+                    {
+                        _loginRememberCredentials = string.Equals(
+                            await JS.InvokeAsync<string?>("localStorage.getItem", "alfacore_login_remember"),
+                            "true",
+                            StringComparison.OrdinalIgnoreCase);
+
+                        if (_loginRememberCredentials)
+                        {
+                            _loginUserName = await JS.InvokeAsync<string?>("localStorage.getItem", "alfacore_login_user") ?? string.Empty;
+                            _loginPassword = await JS.InvokeAsync<string?>("localStorage.getItem", "alfacore_login_password") ?? string.Empty;
+                        }
+                    }
+                    else
+                    {
+                        _loginRememberCredentials = false;
+                        _loginUserName = string.Empty;
+                        _loginPassword = string.Empty;
+                    }
+                }
+                catch { }
+            }
+
+            if (AppMode.IsSaaSMode && !AppUserSession.IsAuthenticated)
+            {
+                var normalizedPath = GetNormalizedCurrentPath();
+                var allowSaasLanding = await CanShowSaaSClientLandingAsync(normalizedPath);
+                Logger.LogInformation(
+                    "MainLayout: auth guard. Path={Path}, AllowLanding={AllowLanding}, HasAuth={HasAuth}, ActiveSession={ActiveSession}, SaaS={SaaS}",
+                    normalizedPath,
+                    allowSaasLanding,
+                    AppUserSession.IsAuthenticated,
+                    SessionSvc.GetActiveSession()?.BaseId,
+                    AppMode.IsSaaSMode);
+
+                if (!allowSaasLanding && string.IsNullOrWhiteSpace(_currentModule))
+                {
+                    var returnUrl = "/" + Nav.ToBaseRelativePath(Nav.Uri).Split('?')[0].Split('#')[0].TrimStart('/');
+                    var loginTarget = string.Equals(returnUrl, "/", StringComparison.Ordinal)
+                        ? "/login"
+                        : $"/login?returnUrl={Uri.EscapeDataString(returnUrl)}";
+                    Logger.LogInformation(
+                        "MainLayout: redirecting to login. ReturnUrl={ReturnUrl}",
+                        string.Equals(loginTarget, "/login", StringComparison.Ordinal) ? "(sin returnUrl)" : returnUrl);
+                    Nav.NavigateTo(loginTarget, replace: true);
+                    return;
+                }
+
+                if (!allowSaasLanding)
+                {
+                    Logger.LogInformation(
+                        "MainLayout: SaaS module route without auth, keeping current URL. Path={Path}, Module={Module}",
+                        normalizedPath,
+                        _currentModule);
                 }
             }
-            catch { }
+
+            if (TryRedirectToCanonicalHome())
+                return;
+
+            if (ShowShellContext)
+                await EnsureMenuSearchCatalogAsync();
+        }
+        catch (Exception ex)
+        {
+            _initializationErrorMessage = "No se pudo completar la carga inicial del sistema.";
+            Logger.LogError(ex, "MainLayout: fallo durante la inicializacion inicial.");
+        }
+        finally
+        {
+            _isInitializing = false;
+            try
+            {
+                await InvokeAsync(StateHasChanged);
+            }
+            catch
+            {
+            }
+        }
+    }
+
+    private async Task EnsureActiveSessionFromRouteAsync()
+    {
+        if (!AppMode.IsSaaSMode || !TryGetRouteBaseId(out var routeBaseId))
+            return;
+
+        var availableSessions = SessionSvc.GetAllSessions();
+        var routeSession = availableSessions.FirstOrDefault(x => x.BaseId == routeBaseId);
+
+        if (routeSession is null)
+        {
+            var routeBase = await CentralBasesSvc.GetByIdAsync(routeBaseId);
+            _routeSessionLabel = routeBase is null
+                ? $"Base #{routeBaseId}"
+                : $"{routeBase.Nombre} · {routeBase.DbServer} · {routeBase.DbName}";
+            return;
         }
 
-        _sidebarInitialized = true;
-        if (ShowShellContext)
-            await EnsureMenuSearchCatalogAsync();
-        StateHasChanged();
+        if (SessionSvc.GetActiveSession() is null)
+        {
+            SessionSvc.SwitchSession(routeSession.Id);
+
+            try
+            {
+                await JS.InvokeVoidAsync("alfaCoreSqlSession.setActive", routeSession.Id.ToString());
+            }
+            catch
+            {
+                // La sesión en memoria ya quedó activa; el storage es solo persistencia auxiliar.
+            }
+
+            Logger.LogInformation(
+                "MainLayout: base activada desde la URL (sin sesión previa). Path={Path}, IdWeb={IdWeb}, IdBase={IdBase}, Nombre={Nombre}",
+                GetNormalizedCurrentPath(),
+                GetRouteIdWeb() ?? "(sin ruta)",
+                routeSession.BaseId,
+                routeSession.Nombre);
+            _routeSessionLabel = $"{routeSession.Nombre} · {routeSession.Servidor} · {routeSession.BaseDatos}";
+            return;
+        }
+
+        try
+        {
+            await JS.InvokeVoidAsync("alfaCoreSqlSession.setActive", routeSession.Id.ToString());
+        }
+        catch
+        {
+            // La sesión en memoria ya quedó activa; el storage es solo persistencia auxiliar.
+        }
+
+        Logger.LogInformation(
+            "MainLayout: base activada desde la URL. Path={Path}, IdWeb={IdWeb}, IdBase={IdBase}, Nombre={Nombre}",
+            GetNormalizedCurrentPath(),
+            GetRouteIdWeb() ?? "(sin ruta)",
+            routeSession.BaseId,
+            routeSession.Nombre);
+        _routeSessionLabel = $"{routeSession.Nombre} · {routeSession.Servidor} · {routeSession.BaseDatos}";
+    }
+
+    private async Task EnsureInternalLoginUsersAsync()
+    {
+        if (!ShowLoginOverlay || !IsInternalSqlLoginContext)
+            return;
+
+        var currentBaseId = SessionSvc.GetActiveSession()?.BaseId;
+        if (currentBaseId is null)
+            return;
+
+        if (_loginUsersLoading)
+            return;
+
+        if (_loginUsersLoaded && _loginUsersBaseId == currentBaseId)
+            return;
+
+        _loginUsersLoading = true;
+        try
+        {
+            _loginUsers = await LegacyBaseUserSession.GetLoginUsersAsync();
+            _loginUsersBaseId = currentBaseId;
+            _loginUsersLoaded = true;
+            _loginUseUserList = _loginUsers.Count > 0;
+            Logger.LogInformation(
+                "MainLayout: usuarios de login cargados. BaseId={BaseId}, Count={Count}",
+                currentBaseId,
+                _loginUsers.Count);
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            _loginUsers = [];
+            _loginUsersBaseId = currentBaseId;
+            _loginUsersLoaded = true;
+            _loginUseUserList = false;
+            Logger.LogWarning(ex, "MainLayout: no se pudo cargar el listado de usuarios de login.");
+            await InvokeAsync(StateHasChanged);
+        }
+        finally
+        {
+            _loginUsersLoading = false;
+        }
+    }
+
+    private bool TryGetRouteBaseId(out int baseId)
+    {
+        baseId = 0;
+        var path = GetNormalizedCurrentPath();
+        if (string.IsNullOrWhiteSpace(path))
+            return false;
+
+        var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (segments.Length < 2)
+            return false;
+
+        return int.TryParse(segments[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out baseId);
+    }
+
+    private string? GetRouteIdWeb()
+    {
+        var path = GetNormalizedCurrentPath();
+        if (string.IsNullOrWhiteSpace(path))
+            return null;
+
+        var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return segments.Length > 0 ? segments[0] : null;
     }
 
     private void UpdateCurrentModule()
     {
         var relativePath = Nav.ToBaseRelativePath(Nav.Uri);
         var path = relativePath.Split('?')[0].Split('#')[0].Trim('/');
+        var effectivePath = GetEffectiveCurrentPath();
         var query = QueryHelpers.ParseQuery(Nav.ToAbsoluteUri(Nav.Uri).Query);
-        var normalized = path.ToLowerInvariant();
+        var normalized = effectivePath.ToLowerInvariant();
+
+        if (IsLauncherContextRoute(path) || string.IsNullOrWhiteSpace(effectivePath))
+        {
+            _activeShellModuleKey = string.Empty;
+            _currentModule = string.Empty;
+            _directModuleKey = string.Empty;
+            return;
+        }
+
         if (normalized.StartsWith("shell/", StringComparison.OrdinalIgnoreCase))
         {
             _activeShellModuleKey = path.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Skip(1).FirstOrDefault() ?? string.Empty;
@@ -1186,7 +1776,7 @@ else
         {
             "clientes" => "clientes",
             "proveedores" => "proveedores",
-            _ => path.Split('/').FirstOrDefault()?.ToLowerInvariant() ?? string.Empty
+            _ => effectivePath.Split('/').FirstOrDefault()?.ToLowerInvariant() ?? string.Empty
         };
 
         if (query.TryGetValue("directo", out var directo)
@@ -1195,10 +1785,37 @@ else
         {
             _directModuleKey = _currentModule;
         }
-        else if (string.IsNullOrWhiteSpace(path) || string.IsNullOrWhiteSpace(_currentModule))
+        else if (string.IsNullOrWhiteSpace(effectivePath) || string.IsNullOrWhiteSpace(_currentModule))
         {
             _directModuleKey = string.Empty;
         }
+    }
+
+    private bool TryRedirectToCanonicalHome()
+    {
+        if (!AppMode.IsSaaSMode)
+            return false;
+
+        if (!CanShowLauncherAccess)
+            return false;
+
+        var activeSession = SessionSvc.GetActiveSession();
+        if (activeSession is null)
+            return false;
+
+        var currentPath = Nav.ToBaseRelativePath(Nav.Uri).Split('?')[0].Split('#')[0].Trim('/');
+
+        if (!IsLauncherContextRoute(currentPath))
+            return false;
+
+        var canonicalHome = BuildLauncherUrl(activeSession);
+        var currentCanonical = canonicalHome.Trim('/');
+
+        if (string.Equals(currentPath, currentCanonical, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        Nav.NavigateTo(canonicalHome, replace: true);
+        return true;
     }
 
     private bool EnforceDirectMode()
@@ -1223,14 +1840,11 @@ else
         if (string.IsNullOrWhiteSpace(route))
             return route;
 
+        var normalizedRoute = RouteContext.BuildRoute(route);
         if (!IsDirectMode)
-            return route;
+            return normalizedRoute;
 
-        var normalizedRoute = route.Trim();
-        if (!normalizedRoute.StartsWith('/'))
-            normalizedRoute = "/" + normalizedRoute;
-
-        var normalizedModule = "/" + _directModuleKey;
+        var normalizedModule = RouteContext.BuildRoute("/" + _directModuleKey);
         var belongsToDirectModule = string.Equals(normalizedRoute, normalizedModule, StringComparison.OrdinalIgnoreCase)
             || normalizedRoute.StartsWith(normalizedModule + "/", StringComparison.OrdinalIgnoreCase);
 
@@ -1262,7 +1876,7 @@ else
 
     private async Task EnsureMenuSearchCatalogAsync()
     {
-        if (!ShowShellContext || _menuSearchLoaded || _menuSearchLoading)
+        if (IsDirectMode || _menuSearchLoaded || _menuSearchLoading)
             return;
 
         _menuSearchLoading = true;
@@ -1272,13 +1886,20 @@ else
         {
             _mainMenuModules = (await MenuSvc.GetModulesAsync()).ToList();
             _menuSearchCatalog = (await MenuSvc.GetSearchItemsAsync()).ToList();
+            if (_mainMenuModules.Count == 0)
+            {
+                _mainMenuModules = GetFallbackMainMenuModules().ToList();
+                _menuSearchCatalog = BuildSearchCatalogFromModules(_mainMenuModules).ToList();
+                _menuSearchError = "Se usó un catálogo de respaldo porque no respondió el menú dinámico.";
+            }
             _menuSearchLoaded = true;
         }
         catch
         {
-            _mainMenuModules = [];
-            _menuSearchCatalog = [];
-            _menuSearchError = "No se pudo preparar la búsqueda del menú.";
+            _mainMenuModules = GetFallbackMainMenuModules().ToList();
+            _menuSearchCatalog = BuildSearchCatalogFromModules(_mainMenuModules).ToList();
+            _menuSearchError = "Se usó un catálogo de respaldo porque no respondió el menú dinámico.";
+            _menuSearchLoaded = true;
         }
         finally
         {
@@ -1337,6 +1958,34 @@ else
     private void ClearMenuSearch()
         => _menuSearchText = string.Empty;
 
+    private static List<ShellModuleDto> GetFallbackMainMenuModules()
+        => new()
+        {
+            new ShellModuleDto { Menu = "ALFA", Clave = "D01", Nombre = "Archivos", RutaWeb = "/shell/D01", Icono = "bi-folder2-open", OrdenWeb = 10 },
+            new ShellModuleDto { Menu = "ALFA", Clave = "D50", Nombre = "Compras", RutaWeb = "/shell/D50", Icono = "bi-cart-fill", OrdenWeb = 50 },
+            new ShellModuleDto { Menu = "ALFA", Clave = "D60", Nombre = "Ventas", RutaWeb = "/shell/D60", Icono = "bi-graph-up-arrow", OrdenWeb = 60 },
+            new ShellModuleDto { Menu = "ALFA", Clave = "D75", Nombre = "Caja y Bancos", RutaWeb = "/shell/D75", Icono = "bi-bank", OrdenWeb = 75 },
+            new ShellModuleDto { Menu = "ALFA", Clave = "D80", Nombre = "Stock", RutaWeb = "/shell/D80", Icono = "bi-box-seam", OrdenWeb = 80 },
+            new ShellModuleDto { Menu = "ALFA", Clave = "D95", Nombre = "Gestión Contable", RutaWeb = "/shell/D95", Icono = "bi-journal-bookmark-fill", OrdenWeb = 95 },
+            new ShellModuleDto { Menu = "ALFA", Clave = "D98", Nombre = "Utilidades", RutaWeb = "/shell/D98", Icono = "bi-tools", OrdenWeb = 98 }
+        };
+
+    private static IReadOnlyList<ShellMenuSearchItemDto> BuildSearchCatalogFromModules(IEnumerable<ShellModuleDto> modules)
+        => modules
+            .Select(module => new ShellMenuSearchItemDto
+            {
+                Menu = module.Menu,
+                Clave = module.Clave,
+                Nombre = module.Nombre,
+                RutaWeb = module.RutaWeb,
+                Icono = string.IsNullOrWhiteSpace(module.Icono) ? "bi-grid-3x3-gap-fill" : module.Icono,
+                ModuloNombre = module.Nombre,
+                SeccionNombre = "Módulo raíz",
+                Descripcion = $"Acceso al módulo raíz {module.Nombre}.",
+                EsModulo = true
+            })
+            .ToArray();
+
     private string GetMainMenuModuleClass(ShellModuleDto module)
     {
         var css = "menu__link menu__link--module";
@@ -1347,6 +1996,43 @@ else
         }
 
         return css;
+    }
+
+    private string GetContextModuleLabel()
+    {
+        var title = GetModuleTitle();
+        if (!string.IsNullOrWhiteSpace(title) && !string.Equals(title, "Inicio", StringComparison.OrdinalIgnoreCase))
+            return title;
+
+        title = GetCurrentPageTitle();
+        return string.Equals(title, "Inicio", StringComparison.OrdinalIgnoreCase)
+            ? ToTitleFromSlug(_currentModule)
+            : title;
+    }
+
+    private string GetContextModuleIcon() => _currentModule switch
+    {
+        "partes-horas" => "bi-clock-history",
+        "conversaciones" => "bi-chat-dots-fill",
+        "tickets" => "bi-life-preserver",
+        "informes" => "bi-journal-richtext",
+        "contactos" => "bi-person-lines-fill",
+        "clientes" => "bi-people-fill",
+        "calendario" => "bi-calendar3",
+        "carga-viajes" => "bi-truck",
+        "compras" => "bi-cart-fill",
+        "ventas" => "bi-graph-up-arrow",
+        "usuarios" => "bi-people-fill",
+        "seguridad" => "bi-shield-lock-fill",
+        _ => "bi-grid-3x3-gap-fill"
+    };
+
+    private static string ToTitleFromSlug(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return "Inicio";
+
+        return CultureInfo.CurrentCulture.TextInfo.ToTitleCase(value.Replace('-', ' '));
     }
 
     private async Task OpenMenuSearchResultAsync(ShellMenuSearchItemDto item)
@@ -1366,6 +2052,26 @@ else
         }
 
         Nav.NavigateTo(BuildModuleUrl(item.RutaWeb));
+    }
+
+    private string GetLauncherUrl()
+    {
+        var activeSession = SessionSvc.GetActiveSession();
+        return BuildLauncherUrl(activeSession);
+    }
+
+    private string BuildLauncherUrl(SessionDto? session)
+    {
+        return RouteContext.BuildRoute("/");
+    }
+
+    private static string? NormalizeRouteIdWeb(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        var trimmed = value.Trim();
+        return trimmed.Length == 0 ? null : trimmed;
     }
 
     private void NavigateToModule(string? route)
@@ -1398,7 +2104,7 @@ else
 
     private async Task RunGlobalConversationPollingAsync(CancellationToken cancellationToken)
     {
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(3));
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(15));
         await PollGlobalConversationNotificationsAsync(cancellationToken);
 
         try
@@ -1414,6 +2120,7 @@ else
     private async Task PollGlobalConversationNotificationsAsync(CancellationToken cancellationToken)
     {
         if (!AppUserSession.IsAuthenticated
+            || IsDirectMode
             || string.Equals(_currentModule, "conversaciones", StringComparison.OrdinalIgnoreCase))
             return;
 
@@ -1429,7 +2136,7 @@ else
             {
                 Canal = "WHATSAPP",
                 Modo = "pendientes",
-                Limit = 50
+                Limit = 10
             }, cancellationToken);
 
             var newCount = 0;
@@ -1491,7 +2198,7 @@ else
     {
         var idQuery = _globalConversationLatestId is long id ? $"?id={id}" : string.Empty;
         ResetGlobalConversationNotifications();
-        Nav.NavigateTo($"/conversaciones{idQuery}");
+        Nav.NavigateTo(RouteContext.BuildRoute($"/conversaciones{idQuery}"));
     }
 
     private void ResetGlobalConversationNotifications()
@@ -1510,23 +2217,6 @@ else
 
     private static string FirstNonEmpty(params string?[] values)
         => values.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x))?.Trim() ?? string.Empty;
-
-    private async Task ToggleSidebar()
-    {
-        _sidebarCollapsed = !_sidebarCollapsed;
-
-        if (!_sidebarInitialized)
-            return;
-
-        try
-        {
-            await JS.InvokeVoidAsync("localStorage.setItem", "dashboard.sidebar.collapsed", _sidebarCollapsed ? "true" : "false");
-        }
-        catch
-        {
-            // Si localStorage no está disponible, dejamos el estado solo en memoria.
-        }
-    }
 
     private void ToggleMobileSidebar()
         => _mobileSidebarOpen = !_mobileSidebarOpen;
@@ -1553,56 +2243,243 @@ else
     {
         _loginBusy = true;
         _loginError = string.Empty;
+        await InvokeAsync(StateHasChanged);
+        await Task.Yield();
+
+        using var loginCts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
 
         try
         {
-            var session = await AppUserSession.LoginAsync(_loginUserName, _loginPassword);
-            _loginUserName = session.UserName;
-            if (_loginRememberCredentials)
+            Logger.LogInformation(
+                "LoginAsync: start. SaaS={SaaS}, InternalContext={InternalContext}, Route={Route}, User={User}, HasRouteBase={HasRouteBase}, ActiveSession={ActiveSession}",
+                AppMode.IsSaaSMode,
+                IsInternalSqlLoginContext,
+                GetNormalizedCurrentPath(),
+                _loginUserName,
+                TryGetRouteBaseId(out var debugRouteBaseId),
+                SessionSvc.GetActiveSession()?.BaseId);
+
+            AppUserSessionInfo session;
+            if (IsInternalSqlLoginContext)
             {
-                try
+                var selectedSession = SessionSvc.GetActiveSession();
+                if (selectedSession is not null)
                 {
-                    await JS.InvokeVoidAsync("localStorage.setItem", "alfacore_login_remember", "true");
-                    await JS.InvokeVoidAsync("localStorage.setItem", "alfacore_login_user", _loginUserName);
-                    await JS.InvokeVoidAsync("localStorage.setItem", "alfacore_login_password", _loginPassword);
+                    var builder = new Microsoft.Data.SqlClient.SqlConnectionStringBuilder
+                    {
+                        DataSource = selectedSession.Servidor,
+                        InitialCatalog = selectedSession.BaseDatos,
+                        UserID = selectedSession.Usuario,
+                        Password = selectedSession.Password,
+                        TrustServerCertificate = selectedSession.TrustServerCertificate,
+                        ApplicationName = "AlfaCore"
+                    };
+
+                    Logger.LogInformation(
+                        "LoginAsync: validando acceso interno contra base activa seleccionada. BaseId={BaseId}, DbServer={DbServer}, DbName={DbName}, DbUser={DbUser}",
+                        selectedSession.BaseId,
+                        selectedSession.Servidor,
+                        selectedSession.BaseDatos,
+                        selectedSession.Usuario);
+
+                    var loginTask = LegacyBaseUserSession.LoginAsync(_loginUserName, _loginPassword, builder.ConnectionString, loginCts.Token);
+                    var completedTask = await Task.WhenAny(loginTask, Task.Delay(TimeSpan.FromSeconds(20), loginCts.Token));
+                    if (!ReferenceEquals(completedTask, loginTask))
+                    {
+                        Logger.LogWarning("LoginAsync: timeout esperando validación interna. BaseId={BaseId}", selectedSession.BaseId);
+                        throw new TaskCanceledException("El inicio de sesión interno superó el tiempo máximo de espera.");
+                    }
+
+                    session = await loginTask;
+                    Logger.LogInformation("LoginAsync: acceso interno validado. User={User}, SystemCode={SystemCode}", session.UserName, session.SystemCode);
+                    Logger.LogInformation("LoginAsync: adoptando usuario interno...");
+                    AppUserSession.AdoptInternalUser(session);
+                    Logger.LogInformation("LoginAsync: usuario interno adoptado. RequiresInternalLogin={RequiresInternalLogin}, Authenticated={Authenticated}", AppUserSession.RequiresInternalLogin, AppUserSession.IsAuthenticated);
                 }
-                catch { }
+                else
+                {
+                    if (!TryGetRouteBaseId(out var routeBaseId))
+                    {
+                        _loginError = "No hay una base activa lista para validar el acceso interno.";
+                        Logger.LogWarning("LoginAsync: no se pudo resolver idbase desde la URL. Route={Route}", GetNormalizedCurrentPath());
+                        return;
+                    }
+
+                    var routeBase = await CentralBasesSvc.GetByIdAsync(routeBaseId);
+                    if (routeBase is null)
+                    {
+                        _loginError = $"No se encontró la base #{routeBaseId} para validar el acceso interno.";
+                        Logger.LogWarning("LoginAsync: base central no encontrada. IdBase={IdBase}, Route={Route}", routeBaseId, GetNormalizedCurrentPath());
+                        return;
+                    }
+
+                    var builder = new Microsoft.Data.SqlClient.SqlConnectionStringBuilder
+                    {
+                        DataSource = routeBase.DbServer,
+                        InitialCatalog = routeBase.DbName,
+                        UserID = routeBase.DbUser,
+                        Password = routeBase.DbPassword,
+                        TrustServerCertificate = true,
+                        ApplicationName = "AlfaCore"
+                    };
+
+                    Logger.LogInformation(
+                        "LoginAsync: validando acceso interno contra base central. IdBase={IdBase}, DbServer={DbServer}, DbName={DbName}, DbUser={DbUser}",
+                        routeBaseId,
+                        routeBase.DbServer,
+                        routeBase.DbName,
+                        routeBase.DbUser);
+
+                    var loginTask = LegacyBaseUserSession.LoginAsync(_loginUserName, _loginPassword, builder.ConnectionString, loginCts.Token);
+                    var completedTask = await Task.WhenAny(loginTask, Task.Delay(TimeSpan.FromSeconds(20), loginCts.Token));
+                    if (!ReferenceEquals(completedTask, loginTask))
+                    {
+                        Logger.LogWarning("LoginAsync: timeout esperando validación interna. Route={Route}, IdBase={IdBase}", GetNormalizedCurrentPath(), routeBaseId);
+                        throw new TaskCanceledException("El inicio de sesión interno superó el tiempo máximo de espera.");
+                    }
+
+                    session = await loginTask;
+                    Logger.LogInformation("LoginAsync: acceso interno validado. User={User}, SystemCode={SystemCode}", session.UserName, session.SystemCode);
+                    Logger.LogInformation("LoginAsync: adoptando usuario interno...");
+                    AppUserSession.AdoptInternalUser(session);
+                    Logger.LogInformation("LoginAsync: usuario interno adoptado. RequiresInternalLogin={RequiresInternalLogin}, Authenticated={Authenticated}", AppUserSession.RequiresInternalLogin, AppUserSession.IsAuthenticated);
+                }
+            }
+            else if (AppMode.IsSaaSMode)
+            {
+                Logger.LogInformation("LoginAsync: validación SaaS central para usuario {User}", _loginUserName);
+                session = await AppUserSession.LoginAsync(_loginUserName, _loginPassword, loginCts.Token);
+                Logger.LogInformation("LoginAsync: login SaaS OK. User={User}, Client={Client}, Base={Base}", session.UserName, session.IdCliente, session.SqlSessionId);
             }
             else
             {
+                Logger.LogInformation("LoginAsync: validación legacy local para usuario {User}", _loginUserName);
+                session = await LegacyBaseUserSession.LoginAsync(_loginUserName, _loginPassword, loginCts.Token);
+                Logger.LogInformation("LoginAsync: login legacy OK. User={User}, SystemCode={SystemCode}", session.UserName, session.SystemCode);
+                AppUserSession.AdoptInternalUser(session);
+            }
+
+            if (IsInternalSqlLoginContext)
+            {
+                _loginUserName = string.Empty;
                 _loginPassword = string.Empty;
-                try
+                _loginRememberCredentials = false;
+                _ = InvokeAsync(async () =>
                 {
-                    await JS.InvokeVoidAsync("localStorage.removeItem", "alfacore_login_user");
-                    await JS.InvokeVoidAsync("localStorage.removeItem", "alfacore_login_password");
-                    await JS.InvokeVoidAsync("localStorage.setItem", "alfacore_login_remember", "false");
+                    try
+                    {
+                        await JS.InvokeVoidAsync("localStorage.removeItem", "alfacore_login_user");
+                        await JS.InvokeVoidAsync("localStorage.removeItem", "alfacore_login_password");
+                        await JS.InvokeVoidAsync("localStorage.setItem", "alfacore_login_remember", "false");
+                    }
+                    catch { }
+                });
+            }
+            else
+            {
+                _loginUserName = session.UserName;
+                if (_loginRememberCredentials)
+                {
+                    try
+                    {
+                        await JS.InvokeVoidAsync("localStorage.setItem", "alfacore_login_remember", "true");
+                        await JS.InvokeVoidAsync("localStorage.setItem", "alfacore_login_user", _loginUserName);
+                        await JS.InvokeVoidAsync("localStorage.setItem", "alfacore_login_password", _loginPassword);
+                    }
+                    catch { }
                 }
-                catch { }
+                else
+                {
+                    _loginPassword = string.Empty;
+                    try
+                    {
+                        await JS.InvokeVoidAsync("localStorage.removeItem", "alfacore_login_user");
+                        await JS.InvokeVoidAsync("localStorage.removeItem", "alfacore_login_password");
+                        await JS.InvokeVoidAsync("localStorage.setItem", "alfacore_login_remember", "false");
+                    }
+                    catch { }
+                }
             }
             _loginShowPassword = false;
+            _manualLoginOverlayOpen = false;
             if (AppUserSession.CurrentToken is not null)
             {
-                try { await JS.InvokeVoidAsync("localStorage.setItem", "alfacore_user_token", AppUserSession.CurrentToken); }
-                catch { }
+                var tokenToPersist = AppUserSession.CurrentToken;
+                Logger.LogInformation("LoginAsync: persistiendo token de usuario en background.");
+                _ = InvokeAsync(async () =>
+                {
+                    try { await JS.InvokeVoidAsync("localStorage.setItem", "alfacore_user_token", tokenToPersist); }
+                    catch { }
+                });
             }
+        }
+        catch (AlfaCore.Services.AppUserFacingException ex)
+        {
+            _loginError = ex.Message;
+            Logger.LogWarning(ex, "LoginAsync: AppUserFacingException. Route={Route}, User={User}", GetNormalizedCurrentPath(), _loginUserName);
         }
         catch (InvalidOperationException ex)
         {
             _loginError = ex.Message;
+            Logger.LogWarning(ex, "LoginAsync: InvalidOperationException. Route={Route}, User={User}", GetNormalizedCurrentPath(), _loginUserName);
+        }
+        catch (TaskCanceledException)
+        {
+            _loginError = "No se pudo iniciar sesión a tiempo. Revisá la base activa e intentá nuevamente.";
+            Logger.LogWarning("LoginAsync: timeout/cancelación. Route={Route}, User={User}", GetNormalizedCurrentPath(), _loginUserName);
+        }
+        catch (Exception ex)
+        {
+            _loginError = ex.Message;
+            Logger.LogError(ex, "LoginAsync: excepción inesperada. Route={Route}, User={User}", GetNormalizedCurrentPath(), _loginUserName);
         }
         finally
         {
             _loginBusy = false;
+            Logger.LogInformation("LoginAsync: end. Busy=false, HasError={HasError}", !string.IsNullOrWhiteSpace(_loginError));
             StateHasChanged();
         }
     }
 
-    private async Task LogoutAppUser()
+    private async Task OpenLoginOverlayAsync()
+    {
+        _loginError = string.Empty;
+        _manualLoginOverlayOpen = true;
+
+        if (IsInternalSqlLoginContext || AppUserSession.IsAuthenticated)
+            ResetLoginDraftForInternalContext();
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task GoToCentralLoginAsync()
+    {
+        _loginError = string.Empty;
+        await InvokeAsync(StateHasChanged);
+
+        var currentPath = "/" + Nav.ToBaseRelativePath(Nav.Uri).Split('?')[0].Split('#')[0].TrimStart('/');
+        var destination = string.Equals(currentPath, "/", StringComparison.Ordinal)
+            ? "/login"
+            : $"/login?returnUrl={Uri.EscapeDataString(currentPath)}";
+
+        Nav.NavigateTo(destination, replace: true);
+    }
+
+    private async Task FullLogoutAsync()
     {
         AppUserSession.Logout();
+        _manualLoginOverlayOpen = false;
+        _drawerOpen = false;
         _loginError = string.Empty;
-        try { await JS.InvokeVoidAsync("localStorage.removeItem", "alfacore_user_token"); }
-        catch { }
+        await InvokeAsync(StateHasChanged);
+        Nav.NavigateTo("/login", replace: true);
+    }
+
+    private async Task CloseLoginOverlayAsync()
+    {
+        _manualLoginOverlayOpen = false;
+        _loginError = string.Empty;
+        await InvokeAsync(StateHasChanged);
     }
 
     [JSInvokable]
@@ -1894,7 +2771,8 @@ else
 
     private List<TareaNotaRapidaDto> TasksPanelOpenNotes => _tasksPanel.NotasRapidas
         .Where(x => !x.Completada)
-        .OrderByDescending(x => x.FechaHoraAlta)
+        .OrderBy(x => x.Orden <= 0 ? int.MaxValue : x.Orden)
+        .ThenByDescending(x => x.FechaHoraAlta)
         .ToList();
 
     private List<TareaNotaRapidaDto> TasksPanelCompletedNotes => _tasksPanel.NotasRapidas
@@ -1905,6 +2783,12 @@ else
 
     private async Task ToggleTasksPanelAsync()
     {
+        if (!CanShowTasksPanel)
+        {
+            CloseTasksPanel();
+            return;
+        }
+
         if (_tasksPanelOpen)
         {
             CloseTasksPanel();
@@ -1919,6 +2803,12 @@ else
     {
         _tasksPanelOpen = false;
         _tasksPanelQuickTitle = string.Empty;
+        _tasksPanelQuickDetail = string.Empty;
+        _tasksPanelShowComposerDetails = false;
+        _tasksPanelEditingNoteId = null;
+        _tasksPanelMenuNoteId = null;
+        _tasksPanelDraggedNoteId = null;
+        _tasksPanelDragOverNoteId = null;
     }
 
     private async Task LoadTasksPanelAsync()
@@ -1952,15 +2842,27 @@ else
         if (!string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase))
             return;
 
+        await AddTasksPanelNoteAsync();
+    }
+
+    private async Task AddTasksPanelNoteAsync()
+    {
         var title = _tasksPanelQuickTitle.Trim();
         if (string.IsNullOrWhiteSpace(title))
             return;
 
         try
         {
-            await TareasSvc.AddQuickNoteAsync(title, TasksPanelUser);
+            await TareasSvc.SaveQuickNoteAsync(new TareaNotaRapidaSaveRequest
+            {
+                Texto = title,
+                Detalle = _tasksPanelQuickDetail,
+                UsuarioAccion = TasksPanelUser
+            });
 
             _tasksPanelQuickTitle = string.Empty;
+            _tasksPanelQuickDetail = string.Empty;
+            _tasksPanelShowComposerDetails = false;
             await LoadTasksPanelAsync();
         }
         catch (Exception ex)
@@ -1969,6 +2871,191 @@ else
             try
             {
                 await AppEvents.LogErrorAsync("TAREAS", "PANEL_CREAR", ex, "Falló la creación rápida de una tarea.");
+            }
+            catch
+            {
+            }
+        }
+    }
+
+    private void CancelTasksPanelCompose()
+    {
+        _tasksPanelQuickTitle = string.Empty;
+        _tasksPanelQuickDetail = string.Empty;
+        _tasksPanelShowComposerDetails = false;
+    }
+
+    private void StartTasksPanelEdit(TareaNotaRapidaDto nota)
+    {
+        if (!nota.EsPropia)
+            return;
+
+        _tasksPanelMenuNoteId = null;
+        _tasksPanelEditingNoteId = nota.IdNota;
+        _tasksPanelEditTitle = nota.Texto;
+        _tasksPanelEditDetail = nota.Detalle;
+    }
+
+    private void CancelTasksPanelEdit()
+    {
+        _tasksPanelEditingNoteId = null;
+        _tasksPanelEditTitle = string.Empty;
+        _tasksPanelEditDetail = string.Empty;
+    }
+
+    private async Task SaveTasksPanelEditedNoteAsync()
+    {
+        if (_tasksPanelEditingNoteId is not long idNota)
+            return;
+
+        try
+        {
+            await TareasSvc.SaveQuickNoteAsync(new TareaNotaRapidaSaveRequest
+            {
+                IdNota = idNota,
+                Texto = _tasksPanelEditTitle,
+                Detalle = _tasksPanelEditDetail,
+                UsuarioAccion = TasksPanelUser
+            });
+
+            CancelTasksPanelEdit();
+            await LoadTasksPanelAsync();
+        }
+        catch (Exception ex)
+        {
+            _tasksPanelError = "No se pudo guardar la tarea.";
+            try
+            {
+                await AppEvents.LogErrorAsync("TAREAS", "PANEL_EDITAR", ex, "Falló la edición desde el panel rápido de tareas.");
+            }
+            catch
+            {
+            }
+        }
+    }
+
+    private void ToggleTasksPanelNoteMenu(long idNota)
+        => _tasksPanelMenuNoteId = _tasksPanelMenuNoteId == idNota ? null : idNota;
+
+    private async Task DeleteTasksPanelNoteAsync(TareaNotaRapidaDto nota)
+    {
+        if (!nota.EsPropia)
+            return;
+
+        try
+        {
+            await TareasSvc.DeleteQuickNoteAsync(nota.IdNota, TasksPanelUser);
+            _tasksPanelMenuNoteId = null;
+            await LoadTasksPanelAsync();
+        }
+        catch (Exception ex)
+        {
+            _tasksPanelError = "No se pudo eliminar la tarea.";
+            try
+            {
+                await AppEvents.LogErrorAsync("TAREAS", "PANEL_ELIMINAR", ex, "Falló la eliminación desde el panel rápido de tareas.");
+            }
+            catch
+            {
+            }
+        }
+    }
+
+    private void OpenTasksPanelNoteInModule(TareaNotaRapidaDto nota)
+    {
+        _tasksPanelMenuNoteId = null;
+        CloseTasksPanel();
+        Nav.NavigateTo(RouteContext.BuildRoute("/tareas"));
+    }
+
+    private void StartTasksPanelNoteDrag(TareaNotaRapidaDto nota)
+    {
+        if (nota.EsPropia)
+        {
+            _tasksPanelDraggedNoteId = nota.IdNota;
+            _tasksPanelDragOverNoteId = null;
+            _tasksPanelMenuNoteId = null;
+            _tasksPanelEditingNoteId = null;
+        }
+    }
+
+    private void ClearTasksPanelNoteDrag()
+    {
+        _tasksPanelDraggedNoteId = null;
+        _tasksPanelDragOverNoteId = null;
+    }
+
+    private void SetTasksPanelDragOver(TareaNotaRapidaDto nota)
+    {
+        if (_tasksPanelDraggedNoteId.HasValue && _tasksPanelDraggedNoteId != nota.IdNota)
+            _tasksPanelDragOverNoteId = nota.IdNota;
+    }
+
+    private async Task DropTasksPanelNoteAsync(TareaNotaRapidaDto target)
+    {
+        if (_tasksPanelDraggedNoteId is not long draggedId || draggedId == target.IdNota)
+            return;
+
+        await ReorderTasksPanelNotesAsync(draggedId, target.IdNota);
+    }
+
+    private bool CanMoveTasksPanelNote(TareaNotaRapidaDto nota, int direction)
+    {
+        if (!nota.EsPropia || nota.Completada)
+            return false;
+
+        var open = TasksPanelOpenNotes;
+        var index = open.FindIndex(x => x.IdNota == nota.IdNota);
+        var targetIndex = index + direction;
+        return index >= 0 && targetIndex >= 0 && targetIndex < open.Count;
+    }
+
+    private async Task MoveTasksPanelNoteAsync(TareaNotaRapidaDto nota, int direction)
+    {
+        var open = TasksPanelOpenNotes;
+        var index = open.FindIndex(x => x.IdNota == nota.IdNota);
+        var targetIndex = index + direction;
+        if (index < 0 || targetIndex < 0 || targetIndex >= open.Count)
+            return;
+
+        open.RemoveAt(index);
+        open.Insert(targetIndex, nota);
+        await SaveTasksPanelNoteOrderAsync(open.Select(x => x.IdNota).ToArray());
+    }
+
+    private async Task ReorderTasksPanelNotesAsync(long draggedId, long targetId)
+    {
+        var open = TasksPanelOpenNotes;
+        var dragged = open.FirstOrDefault(x => x.IdNota == draggedId);
+        if (dragged is null || !dragged.EsPropia)
+            return;
+
+        var oldIndex = open.FindIndex(x => x.IdNota == draggedId);
+        var newIndex = open.FindIndex(x => x.IdNota == targetId);
+        if (oldIndex < 0 || newIndex < 0)
+            return;
+
+        open.RemoveAt(oldIndex);
+        open.Insert(newIndex, dragged);
+        await SaveTasksPanelNoteOrderAsync(open.Select(x => x.IdNota).ToArray());
+    }
+
+    private async Task SaveTasksPanelNoteOrderAsync(IReadOnlyList<long> orderedIds)
+    {
+        try
+        {
+            await TareasSvc.ReorderQuickNotesAsync(orderedIds, TasksPanelUser);
+            _tasksPanelMenuNoteId = null;
+            _tasksPanelDraggedNoteId = null;
+            _tasksPanelDragOverNoteId = null;
+            await LoadTasksPanelAsync();
+        }
+        catch (Exception ex)
+        {
+            _tasksPanelError = "No se pudo reordenar la lista.";
+            try
+            {
+                await AppEvents.LogErrorAsync("TAREAS", "PANEL_REORDENAR", ex, "Falló el reordenamiento desde el panel rápido de tareas.");
             }
             catch
             {
@@ -2004,6 +3091,16 @@ else
 
     private static string FormatTasksPanelDateTime(DateTime? value)
         => value?.ToString("dd/MM HH:mm", CultureInfo.CurrentCulture) ?? string.Empty;
+
+    private static string GetTasksPanelSharingSummary(TareaNotaRapidaDto nota)
+    {
+        if (nota.CompartidaConTodos)
+            return "Compartida con todos";
+
+        return nota.UsuariosCompartidos.Count == 0
+            ? "Sin compartir"
+            : $"Compartida con {string.Join(", ", nota.UsuariosCompartidos)}";
+    }
 
     private void TogglePushChannel(string channel, ChangeEventArgs args)
     {
@@ -2061,25 +3158,49 @@ else
             await JS.InvokeVoidAsync("localStorage.setItem", "alfacore_login_password", _loginPassword ?? string.Empty);
         }
         catch { }
-    }    private Task OpenSqlSessionDrawerAsync()
+    }
+
+    private Task OpenSqlSessionDrawerAsync()
     {
         _drawerOpen = true;
+        _drawerDarkTheme = _isDark && (ShowLoginOverlay || IsInternalSqlLoginContext);
+        _drawerRouteBaseId = SessionSvc.GetActiveSession()?.BaseId
+            ?? (TryGetRouteBaseId(out var routeBaseId) ? routeBaseId : null);
         return Task.CompletedTask;
+    }
+
+    private void ResetLoginDraftIfSaaSInternalPrompt()
+    {
+        if (!AppMode.IsSaaSMode || IsLoginRoute)
+            return;
+
+        if (IsInternalSqlLoginContext && ShowLoginOverlay)
+            ResetLoginDraftForInternalContext();
+    }
+
+    private void ResetLoginDraftForInternalContext()
+    {
+        _loginRememberCredentials = false;
+        _loginUserName = string.Empty;
+        _loginPassword = string.Empty;
+        _loginShowPassword = false;
+        _loginUseUserList = true;
     }
 
     private string GetSqlSessionLabel()
         => _activeSession is null
-            ? "Sin base activa"
+            ? (!string.IsNullOrWhiteSpace(_routeSessionLabel) ? _routeSessionLabel : "Sin base activa")
             : $"{_activeSession.Nombre} · {_activeSession.Servidor} · {_activeSession.BaseDatos}";
 
     private string GetCurrentPageTitle()
     {
-        var path = GetNormalizedCurrentPath();
+        var path = GetEffectiveCurrentPath();
 
         return path switch
         {
-        "" => "Aplicaciones",
-        _ when path.StartsWith("shell/") => "Aplicaciones",
+        "" => "Inicio",
+        _ when IsLauncherContextRoute(path) => "Inicio",
+        _ when path.StartsWith("shell/") => "Inicio",
         "clientes" => "Clientes",
         "tecnicos" => "Técnicos",
         "ventas" => "Ventas",
@@ -2106,8 +3227,21 @@ else
             "conversaciones/configuracion" => "Configuración de WhatsApp",
             "conversaciones/estadisticas" => "Estadisticas de conversaciones",
             "tickets" => "Tickets de asistencia",
+            "partes-horas" => "Partes de horas",
             "tareas" => "Tareas",
             "calendario" => "Calendario",
+            "carga-viajes" => "Carga de Viajes",
+            "carga-viajes/tarifas" => "Tarifas",
+            "carga-viajes/nuevo" => "Nuevo viaje",
+            "carga-viajes/choferes" => "Choferes",
+            "carga-viajes/destinos" => "Destinos",
+            "carga-viajes/tipo-vehiculo" => "Tipo vehículo",
+            "carga-viajes/reportes" => "Reportes",
+            "carga-viajes/liquidacion" => "Liquidación de Choferes / Fleteros",
+            "carga-viajes/liquidaciones" => "Liquidaciones",
+            "carga-viajes/configuracion" => "Configurar Carga de Viaje",
+            "informes" => "Informes",
+            "informes/novedades" => "Novedades",
             "interfaces" => "Recepción documental",
             "interfaces/configuracion" => "Configuración de Interfaces",
             "interfaces/nuevo" => "Nuevo documento",
@@ -2133,7 +3267,7 @@ else
             "consultas/nueva" => "Nueva consulta",
             _ when path.StartsWith("consultas/") && path.EndsWith("/editar") => "Editar consulta",
             _ when path.StartsWith("consultas/") => "Consulta",
-            _ => "Dashboard"
+            _ => "Inicio"
         };
     }
 
@@ -2152,14 +3286,23 @@ else
         "auditoria" => "Auditoría",
         "conversaciones" => "Conversaciones",
         "tickets" => "Tickets de asistencia",
+        "partes-horas" => "Partes de horas",
         "tareas" => "Tareas",
         "calendario" => "Calendario",
+        "carga-viajes" => "Carga de Viajes",
+        "carga-viajes/tipo-vehiculo" => "Tipo vehículo",
+        "carga-viajes/reportes" => "Reportes",
+        "carga-viajes/liquidacion" => "Liquidación de Choferes / Fleteros",
+        "carga-viajes/liquidaciones" => "Liquidaciones",
+        "carga-viajes/configuracion" => "Configurar Carga de Viaje",
+        "informes" => "Informes",
+        "informes/novedades" => "Novedades",
         "interfaces" => "Interfaces",
         "actualizaciones" => "Actualizaciones",
         "usuarios" => "Usuarios",
         "seguridad" => "Seguridad",
         "contactos" => "Contactos",
-        _ => "Dashboard de Compras"
+        _ => "Inicio"
     };
 
     private string GetNormalizedCurrentPath()
@@ -2168,6 +3311,66 @@ else
             .Split('#')[0]
             .Trim('/')
             .ToLowerInvariant();
+
+    private bool IsWorkspaceRoute => GetEffectiveCurrentPath().StartsWith("shell/", StringComparison.OrdinalIgnoreCase);
+
+    private string GetEffectiveCurrentPath()
+    {
+        var path = GetNormalizedCurrentPath();
+        if (!AppMode.IsSaaSMode || string.IsNullOrWhiteSpace(path))
+            return path;
+
+        var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (segments.Length >= 2
+            && int.TryParse(segments[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
+        {
+            return string.Join('/', segments.Skip(2));
+        }
+
+        return path;
+    }
+
+    private bool IsLauncherContextRoute(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return true;
+
+        var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (segments.Length == 1
+            && !string.IsNullOrWhiteSpace(AppUserSession.CurrentUser?.IdWeb)
+            && string.Equals(segments[0], AppUserSession.CurrentUser.IdWeb, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return segments.Length == 2
+            && int.TryParse(segments[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out _);
+    }
+
+    private async Task<bool> CanShowSaaSClientLandingAsync(string path)
+    {
+        if (!AppMode.IsSaaSMode || string.IsNullOrWhiteSpace(path))
+            return false;
+
+        var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (segments.Length != 1)
+            return false;
+
+        try
+        {
+            var client = await CentralClientesSvc.GetByIdWebAsync(segments[0]);
+            Logger.LogInformation(
+                "MainLayout: SaaS landing lookup. IdWeb={IdWeb}, Found={Found}",
+                segments[0],
+                client is not null);
+            return client is not null;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "MainLayout: no se pudo validar el cliente SaaS para {IdWeb}", segments[0]);
+            return false;
+        }
+    }
 
     private sealed class PwaClientState
     {
@@ -2212,6 +3415,7 @@ else
         public List<NotificacionesPushEndpointResultDto> Subscriptions { get; set; } = [];
     }
 }
+
 
 
 

@@ -1,4 +1,5 @@
 @page "/contactos"
+@page "/{idweb}/{idbase:int}/contactos"
 @using AlfaCore.Models
 @using AlfaCore.Services
 @using Microsoft.AspNetCore.WebUtilities
@@ -7,27 +8,14 @@
 @inject IConversacionesService ConversacionesSvc
 @inject IAppUiOperationService UiOps
 @inject IAppUserSessionService AppUserSession
+@inject IRouteContextService RouteContext
+@inject IPageHeaderService PageHeader
 @inject NavigationManager Nav
-@inject IJSRuntime Js
 @implements IDisposable
 
 <PageTitle>Contactos | Alfa Gestión</PageTitle>
 
 <div class="page-grid contactos-page" @onclick="HandlePageClickAsync">
-    <section class="page-intro">
-        <div>
-            <h2 class="page-intro__title">Contactos</h2>
-            <p class="page-intro__text">Administrá la agenda general del sistema con datos de contacto, observaciones y baja lógica.</p>
-        </div>
-        <div class="actions">
-            <button type="button" class="btn btn--primary" @onclick="BeginNew">
-                <i class="bi bi-plus-circle"></i> Nuevo contacto
-            </button>
-            <button type="button" class="btn btn--ghost" @onclick="RecargarAsync" disabled="@_loadingList">
-                <i class="bi bi-arrow-clockwise"></i> Recargar
-            </button>
-        </div>
-    </section>
 
     @if (_feedback is not null)
     {
@@ -48,105 +36,6 @@
             </div>
         </section>
     }
-
-    <section class="panel-card smart-search-card" @onclick:stopPropagation>
-        <div class="smart-search">
-            <div class="smart-search__bar">
-                <i class="bi bi-search"></i>
-                <input type="search"
-                       placeholder="Buscar por nombre, contacto, teléfono, email, cargo o localidad..."
-                       value="@_filters.Texto"
-                       @onfocus="OpenContactSearchPanel"
-                       @oninput="OnContactSearchInput"
-                       @onkeydown="HandleContactApplyKeyDownAsync" />
-                <button type="button" class="smart-search__toggle" @onclick="ToggleContactSearchPanel" aria-label="Mostrar filtros">
-                    <i class="bi @(_showSearchPanel ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
-                </button>
-            </div>
-
-            <div class="smart-search__chips" aria-live="polite">
-                @foreach (var chip in BuildContactFilterChips())
-                {
-                    <button type="button" class="smart-chip" @onclick="() => RemoveContactChipAsync(chip.Key)">
-                        @chip.Label <i class="bi bi-x"></i>
-                    </button>
-                }
-                @if (BuildContactFilterChips().Count == 0)
-                {
-                    <span class="smart-search__hint">Click en el buscador para filtros, agrupaciones y favoritos.</span>
-                }
-            </div>
-
-            @if (_showSearchPanel)
-            {
-                <div class="smart-search__panel" @onkeydown="HandleContactApplyKeyDownAsync">
-                    <div class="smart-search__column">
-                        <h4><i class="bi bi-funnel-fill"></i> Filtros</h4>
-                        <button type="button" class='@GetSmartOptionClass(_activoFiltro == "1")' @onclick='() => SetContactStatusFilterAsync("1")'>Personas activas</button>
-                        <button type="button" class='@GetSmartOptionClass(_activoFiltro == "0")' @onclick='() => SetContactStatusFilterAsync("0")'>Inactivos</button>
-                        <button type="button" class="@GetSmartOptionClass(_filters.TieneEmail == true)" @onclick='() => ToggleContactBoolFilterAsync("email")'>Con email</button>
-                        <button type="button" class="@GetSmartOptionClass(_filters.TieneEmail == false)" @onclick='() => ToggleContactBoolFilterAsync("sin-email")'>Sin email</button>
-                        <button type="button" class="@GetSmartOptionClass(_filters.TieneCelular == true)" @onclick='() => ToggleContactBoolFilterAsync("celular")'>Con celular</button>
-                        <button type="button" class="@GetSmartOptionClass(_filters.TieneWhatsApp == true)" @onclick='() => ToggleContactBoolFilterAsync("whatsapp")'>Con conversación WhatsApp</button>
-                    </div>
-                    <div class="smart-search__column">
-                        <h4><i class="bi bi-stack"></i> Agrupar por</h4>
-                        <button type="button" class="@GetSmartOptionClass(_viewSettings.AgruparPor == ContactosViewGroupKeys.None)" @onclick='() => SetContactGroupAsync(ContactosViewGroupKeys.None)'>Sin agrupar</button>
-                        <button type="button" class="@GetSmartOptionClass(_viewSettings.AgruparPor == ContactosViewGroupKeys.Activo)" @onclick='() => SetContactGroupAsync(ContactosViewGroupKeys.Activo)'>Estado</button>
-                        <div class="smart-search__inline">
-                            <label>Provincia</label>
-                            <select value="@_filters.ProvinciaCodigo" @onchange="OnContactProvinciaChangedAsync">
-                                <option value="">Todas</option>
-                                @foreach (var provincia in _provincias)
-                                {
-                                    <option value="@provincia.Codigo">@provincia.Descripcion</option>
-                                }
-                            </select>
-                        </div>
-                    </div>
-                    <div class="smart-search__column">
-                        <h4><i class="bi bi-star-fill"></i> Favoritos</h4>
-                        <button type="button" @onclick='() => ApplyContactFavoriteAsync("contactables")'>Contactables</button>
-                        <button type="button" @onclick='() => ApplyContactFavoriteAsync("para-soporte")'>Para soporte</button>
-                        <button type="button" @onclick="SaveContactFavorite">Guardar búsqueda actual</button>
-                        @foreach (var favorite in _contactFavorites)
-                        {
-                            <button type="button" @onclick="() => ApplySavedContactFavoriteAsync(favorite)">@favorite.Label</button>
-                        }
-                        <div class="actions">
-                            <button type="button" class="btn btn--primary btn--sm" @onclick="AplicarFiltrosAsync" disabled="@_loadingList">
-                                <i class="bi bi-search"></i> Aplicar
-                            </button>
-                            <button type="button" class="btn btn--ghost btn--sm" @onclick="LimpiarFiltros" disabled="@_loadingList">
-                                <i class="bi bi-eraser"></i> Limpiar
-                            </button>
-                        </div>
-                    </div>
-                    <div class="smart-search__custom">
-                        <h4><i class="bi bi-sliders"></i> Filtro personalizado</h4>
-                        <select @bind="_contactRuleDraft.Campo">
-                            <option value="nombre">Nombre</option>
-                            <option value="email">Email</option>
-                            <option value="telefono">Teléfono</option>
-                            <option value="celular">Celular</option>
-                            <option value="localidad">Localidad</option>
-                            <option value="provincia">Provincia</option>
-                            <option value="cargo">Cargo</option>
-                        </select>
-                        <select @bind="_contactRuleDraft.Operador">
-                            <option value="contains">contiene</option>
-                            <option value="equals">es igual a</option>
-                            <option value="starts">empieza con</option>
-                            <option value="empty">está vacío</option>
-                            <option value="not-empty">no está vacío</option>
-                        </select>
-                        <input type="text" placeholder="Valor" @bind="_contactRuleDraft.Valor" disabled="@IsValueOptionalOperator(_contactRuleDraft.Operador)" />
-                        <button type="button" class="btn btn--primary btn--sm" @onclick="AddContactRuleAsync">Agregar regla</button>
-                    </div>
-                </div>
-            }
-        </div>
-    </section>
 
     @if (_showViewSettings && !_showEditor)
     {
@@ -204,25 +93,8 @@
         <section class="panel-card">
             <div class="panel-card__header">
                 <div>
-                    <h3 class="panel-card__title">@(_isNewMode ? "Nuevo contacto" : $"Editar {_form.NombreApellido}")</h3>
+                    <h3 class="panel-card__title">Datos principales</h3>
                     <p class="panel-card__subtitle">@(_isNewMode ? "Completá los datos principales del contacto." : $"Código interno: {_selectedId} · Estado: {(_selectedActivo ? "Activo" : "Inactivo")}")</p>
-                </div>
-                <div class="actions">
-                    @if (!_isNewMode)
-                    {
-                        <button type="button" class="btn btn--ghost" @onclick="OpenMergeModalAsync" disabled="@(_saving || _mergingContact)">
-                            <i class="bi bi-intersect"></i>
-                            <span>Unificar contacto</span>
-                        </button>
-                        <button type="button" class="btn btn--primary" @onclick="OpenConversationForSelectedAsync" disabled="@(_saving || _openingConversation)">
-                            <i class="bi bi-whatsapp"></i>
-                            <span>@GetConversationActionLabel(_selectedConversationId)</span>
-                        </button>
-                    }
-                    <button type="button" class="btn btn--ghost" @onclick="CerrarEditor" disabled="@_saving">
-                        <i class="bi bi-arrow-left"></i>
-                        <span>Volver al listado</span>
-                    </button>
                 </div>
             </div>
 
@@ -433,23 +305,6 @@
                 </div>
             }
 
-            <div class="actions usuarios-editor__actions">
-                <button type="button" class="btn btn--primary" @onclick="GuardarAsync" disabled="@_saving">
-                    <i class="bi bi-floppy"></i>
-                    <span>@(_saving ? "Guardando..." : "Guardar contacto")</span>
-                </button>
-                <button type="button" class="btn btn--ghost" @onclick="ResetForm" disabled="@_saving">
-                    <i class="bi bi-eraser"></i>
-                    <span>@(_isNewMode ? "Limpiar" : "Revertir")</span>
-                </button>
-                @if (!_isNewMode && _selectedActivo)
-                {
-                    <button type="button" class="btn btn--ghost usuarios-btn-danger" @onclick="DarDeBajaAsync" disabled="@_saving">
-                        <i class="bi bi-person-dash"></i>
-                        <span>Dar de baja</span>
-                    </button>
-                }
-            </div>
         </section>
     }
     else
@@ -458,36 +313,7 @@
         var groups = BuildGridGroups();
 
         <section class="panel-card">
-            <div class="panel-card__header">
-                <div>
-                    <h3 class="panel-card__title">Contactos</h3>
-                    <p class="panel-card__subtitle">@_pagedTotal registro(s) · Página @_pageNumber de @_totalPages · podés abrir la ficha con el botón editar o con doble clic.</p>
-                </div>
-                <div class="actions">
-                    <button type="button" class="btn btn--ghost" @onclick="AbrirConfiguracionVista">
-                        <i class="bi bi-sliders"></i> Configurar vista
-                    </button>
-                    <span class="panel-card__subtitle">Agrupación: @GetGroupingLabel(_viewSettings.AgruparPor)</span>
-                </div>
-            </div>
-
-            <div class="interfaces-bulkbar">
-                <div class="field interfaces-bulkbar__field">
-                    <label>Acciones masivas</label>
-                    <select @bind="_bulkAction" disabled="@_loadingList">
-                        <option value="@BulkActionDeactivate">Dar de baja seleccionados</option>
-                        <option value="@BulkActionOpenWhatsApp">Crear / abrir conversaciones</option>
-                        <option value="@BulkActionSendTemplate">Enviar plantilla WhatsApp</option>
-                    </select>
-                </div>
-                <button type="button"
-                        class="btn btn--ghost interfaces-bulkbar__apply"
-                        @onclick="EjecutarAccionSeleccionadaAsync"
-                        disabled="@(_loadingList || _selectedIds.Count == 0)">
-                    <i class="bi bi-lightning-charge"></i> Aplicar
-                </button>
-                <span class="panel-card__subtitle">@GetBulkActionHint()</span>
-            </div>
+            <div class="panel-card__header panel-card__header--compact"><p class="panel-card__subtitle">@_pagedTotal registro(s) · Página @_pageNumber de @_totalPages · podés abrir la ficha con el botón editar o con doble clic.</p></div>
 
             @if (_loadingList)
             {
@@ -676,7 +502,7 @@
                     <div class="cuentas-link-results">
                         @foreach (var candidate in _mergeCandidates)
                         {
-                            <button type="button" class="cuentas-link-result" @onclick="() => MergeWithCandidateAsync(candidate)" disabled="@_mergingContact">
+                            <button type="button" class="cuentas-link-result" @onclick="() => OpenMergeConfirm(candidate)" disabled="@_mergingContact">
                                 <span class="cuentas-contacto-item__avatar cuentas-contacto-item__avatar--2">
                                     @GetInitial(candidate.NombreApellido)
                                 </span>
@@ -698,6 +524,39 @@
             <footer class="cuentas-modal__actions">
                 <button type="button" class="btn btn--ghost" @onclick="CloseMergeModal" disabled="@_mergingContact">
                     Cerrar
+                </button>
+            </footer>
+        </section>
+    </div>
+}
+
+@if (_showMergeConfirm && _mergeConfirmCandidate is not null)
+{
+    <div class="cuentas-modal-backdrop" @onclick="CloseMergeConfirm">
+        <section class="cuentas-modal cuentas-modal--compact" role="dialog" aria-modal="true" aria-labelledby="contactos-merge-confirm-title" @onclick:stopPropagation="true">
+            <header class="cuentas-modal__header">
+                <div>
+                    <span class="cuentas-modal__eyebrow">Confirmación</span>
+                    <h3 id="contactos-merge-confirm-title">Unificar contactos</h3>
+                </div>
+                <button type="button" class="cuentas-modal__close" @onclick="CloseMergeConfirm" disabled="@_mergingContact" aria-label="Cerrar">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </header>
+            <div class="cuentas-modal__body">
+                <div class="context-card">
+                    <span class="context-card__label">Contacto duplicado</span>
+                    <strong>@_mergeConfirmCandidate.NombreApellido</strong>
+                    <span class="context-card__muted">Se unificará dentro de @_form.NombreApellido. Se conservarán los datos y relaciones del contacto principal.</span>
+                </div>
+            </div>
+            <footer class="cuentas-modal__actions">
+                <button type="button" class="btn btn--primary" @onclick="ConfirmMergeAsync" disabled="@_mergingContact">
+                    <i class="bi bi-intersect"></i>
+                    @(_mergingContact ? "Unificando..." : "Confirmar unificación")
+                </button>
+                <button type="button" class="btn btn--ghost" @onclick="CloseMergeConfirm" disabled="@_mergingContact">
+                    Cancelar
                 </button>
             </footer>
         </section>
@@ -776,6 +635,72 @@
     </div>
 }
 
+@if (_showBulkDeactivateConfirm)
+{
+    <div class="cuentas-modal-backdrop" @onclick="CloseBulkDeactivateConfirm">
+        <section class="cuentas-modal cuentas-modal--compact" role="dialog" aria-modal="true" aria-labelledby="contactos-bulk-deactivate-title" @onclick:stopPropagation="true">
+            <header class="cuentas-modal__header">
+                <div>
+                    <span class="cuentas-modal__eyebrow">Confirmación</span>
+                    <h3 id="contactos-bulk-deactivate-title">Dar de baja contactos</h3>
+                </div>
+                <button type="button" class="cuentas-modal__close" @onclick="CloseBulkDeactivateConfirm" disabled="@_saving" aria-label="Cerrar">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </header>
+            <div class="cuentas-modal__body">
+                <div class="context-card">
+                    <span class="context-card__label">Acción masiva</span>
+                    <strong>@_bulkDeactivateConfirmCount contacto(s)</strong>
+                    <span class="context-card__muted">Se darán de baja los contactos seleccionados.</span>
+                </div>
+            </div>
+            <footer class="cuentas-modal__actions">
+                <button type="button" class="btn btn--danger" @onclick="ConfirmBulkDeactivateAsync" disabled="@_saving">
+                    <i class="bi bi-person-dash"></i>
+                    @(_saving ? "Procesando..." : "Confirmar baja")
+                </button>
+                <button type="button" class="btn btn--ghost" @onclick="CloseBulkDeactivateConfirm" disabled="@_saving">
+                    Cancelar
+                </button>
+            </footer>
+        </section>
+    </div>
+}
+
+@if (_showBulkTemplateConfirm)
+{
+    <div class="cuentas-modal-backdrop" @onclick="CloseBulkTemplateConfirm">
+        <section class="cuentas-modal cuentas-modal--compact" role="dialog" aria-modal="true" aria-labelledby="contactos-bulk-template-confirm-title" @onclick:stopPropagation="true">
+            <header class="cuentas-modal__header">
+                <div>
+                    <span class="cuentas-modal__eyebrow">Confirmación</span>
+                    <h3 id="contactos-bulk-template-confirm-title">Enviar plantilla</h3>
+                </div>
+                <button type="button" class="cuentas-modal__close" @onclick="CloseBulkTemplateConfirm" disabled="@_sendingBulkTemplate" aria-label="Cerrar">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </header>
+            <div class="cuentas-modal__body">
+                <div class="context-card">
+                    <span class="context-card__label">Plantilla</span>
+                    <strong>@_bulkTemplateConfirmName</strong>
+                    <span class="context-card__muted">Se enviará a @_bulkTemplateConfirmCount contacto(s). La entrega final puede confirmarse después por WhatsApp.</span>
+                </div>
+            </div>
+            <footer class="cuentas-modal__actions">
+                <button type="button" class="btn btn--primary" @onclick="ConfirmBulkTemplateSendAsync" disabled="@_sendingBulkTemplate">
+                    <i class="bi bi-send"></i>
+                    @(_sendingBulkTemplate ? "Enviando..." : "Confirmar envío")
+                </button>
+                <button type="button" class="btn btn--ghost" @onclick="CloseBulkTemplateConfirm" disabled="@_sendingBulkTemplate">
+                    Cancelar
+                </button>
+            </footer>
+        </section>
+    </div>
+}
+
 @code {
     private readonly ContactosFilters _filters = new();
     private readonly ContactoSaveRequest _form = new();
@@ -813,52 +738,367 @@
     private ContactoTab _activeTab = ContactoTab.Datos;
     private int? _startupEditId;
     private bool _startupOpenMerge;
+    private string? _returnUrl;
     private long? _selectedConversationId;
     private bool _showSearchPanel;
     private bool _showMergeModal;
+    private bool _showMergeConfirm;
     private bool _loadingMergeCandidates;
     private bool _mergeSearchExecuted;
     private bool _mergingContact;
+    private ContactoMergeCandidateDto? _mergeConfirmCandidate;
     private string _mergeSearchText = string.Empty;
     private string _mergeError = string.Empty;
+    private bool _showBulkDeactivateConfirm;
+    private int _bulkDeactivateConfirmCount;
     private bool _showBulkTemplateModal;
+    private bool _showBulkTemplateConfirm;
     private bool _loadingBulkTemplates;
     private bool _sendingBulkTemplate;
     private long _bulkTemplateId;
     private string _bulkTemplateValuesText = string.Empty;
     private string _bulkTemplateError = string.Empty;
+    private string _bulkTemplateConfirmName = string.Empty;
+    private int _bulkTemplateConfirmCount;
     private CancellationTokenSource? _searchDebounceCts;
+    private CancellationTokenSource? _listSearchCts;
     private SearchRuleDto _contactRuleDraft = new() { Campo = "nombre", Operador = "contains" };
     private readonly List<SavedContactSearch> _contactFavorites = [];
     private bool AreAllCurrentPageSelected => _items.Count > 0 && _items.All(item => _selectedIds.Contains(item.Id));
     private ConversacionPlantillaDto? SelectedBulkTemplate => _bulkTemplates.FirstOrDefault(item => item.IdPlantilla == _bulkTemplateId);
 
+    private RenderFragment RenderContactSmartSearch() => @<div class="smart-search" @onclick:stopPropagation>
+        <div class="smart-search__bar">
+            <i class="bi bi-search"></i>
+            <input type="search"
+                   placeholder="Buscar por nombre, contacto, teléfono, email, cargo o localidad..."
+                   value="@_filters.Texto"
+                   @onfocus="OpenContactSearchPanel"
+                   @oninput="OnContactSearchInput"
+                   @onkeydown="HandleContactApplyKeyDownAsync" />
+            <button type="button" class="smart-search__toggle" @onclick="ToggleContactSearchPanel" aria-label="Mostrar filtros">
+                <i class="bi @(_showSearchPanel ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
+            </button>
+        </div>
+
+        <div class="smart-search__chips" aria-live="polite">
+            @foreach (var chip in BuildContactFilterChips())
+            {
+                <button type="button" class="smart-chip" @onclick="() => RemoveContactChipAsync(chip.Key)">
+                    @chip.Label <i class="bi bi-x"></i>
+                </button>
+            }
+            @if (BuildContactFilterChips().Count == 0)
+            {
+                <span class="smart-search__hint">Click en el buscador para filtros, agrupaciones y favoritos.</span>
+            }
+        </div>
+
+        @if (_showSearchPanel)
+        {
+            <button type="button" class="module-actionbar__search-backdrop" aria-label="Cerrar filtros" @onclick="CloseSearchPanel"></button>
+            <div class="smart-search__panel" @onclick:stopPropagation @onkeydown="HandleContactApplyKeyDownAsync">
+                <div class="smart-search__column">
+                    <h4><i class="bi bi-funnel-fill"></i> Filtros</h4>
+                    <button type="button" class='@GetSmartOptionClass(_activoFiltro == "1")' @onclick='() => SetContactStatusFilterAsync("1")'>Personas activas</button>
+                    <button type="button" class='@GetSmartOptionClass(_activoFiltro == "0")' @onclick='() => SetContactStatusFilterAsync("0")'>Inactivos</button>
+                    <button type="button" class="@GetSmartOptionClass(_filters.TieneEmail == true)" @onclick='() => ToggleContactBoolFilterAsync("email")'>Con email</button>
+                    <button type="button" class="@GetSmartOptionClass(_filters.TieneEmail == false)" @onclick='() => ToggleContactBoolFilterAsync("sin-email")'>Sin email</button>
+                    <button type="button" class="@GetSmartOptionClass(_filters.TieneCelular == true)" @onclick='() => ToggleContactBoolFilterAsync("celular")'>Con celular</button>
+                    <button type="button" class="@GetSmartOptionClass(_filters.TieneWhatsApp == true)" @onclick='() => ToggleContactBoolFilterAsync("whatsapp")'>Con conversación WhatsApp</button>
+                </div>
+                <div class="smart-search__column">
+                    <h4><i class="bi bi-stack"></i> Agrupar por</h4>
+                    <button type="button" class="@GetSmartOptionClass(_viewSettings.AgruparPor == ContactosViewGroupKeys.None)" @onclick='() => SetContactGroupAsync(ContactosViewGroupKeys.None)'>Sin agrupar</button>
+                    <button type="button" class="@GetSmartOptionClass(_viewSettings.AgruparPor == ContactosViewGroupKeys.Activo)" @onclick='() => SetContactGroupAsync(ContactosViewGroupKeys.Activo)'>Estado</button>
+                    <div class="smart-search__inline">
+                        <label>Provincia</label>
+                        <select value="@_filters.ProvinciaCodigo" @onchange="OnContactProvinciaChangedAsync">
+                            <option value="">Todas</option>
+                            @foreach (var provincia in _provincias)
+                            {
+                                <option value="@provincia.Codigo">@provincia.Descripcion</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+                <div class="smart-search__column">
+                    <h4><i class="bi bi-star-fill"></i> Favoritos</h4>
+                    <button type="button" @onclick='() => ApplyContactFavoriteAsync("contactables")'>Contactables</button>
+                    <button type="button" @onclick='() => ApplyContactFavoriteAsync("para-soporte")'>Para soporte</button>
+                    <button type="button" @onclick="SaveContactFavorite">Guardar búsqueda actual</button>
+                    @foreach (var favorite in _contactFavorites)
+                    {
+                        <button type="button" @onclick="() => ApplySavedContactFavoriteAsync(favorite)">@favorite.Label</button>
+                    }
+                    <div class="actions">
+                        <button type="button" class="btn btn--primary btn--sm" @onclick="AplicarFiltrosAsync" disabled="@_loadingList">
+                            <i class="bi bi-search"></i> Aplicar
+                        </button>
+                        <button type="button" class="btn btn--ghost btn--sm" @onclick="LimpiarFiltros" disabled="@_loadingList">
+                            <i class="bi bi-eraser"></i> Limpiar
+                        </button>
+                    </div>
+                </div>
+                <div class="smart-search__custom">
+                    <h4><i class="bi bi-sliders"></i> Filtro personalizado</h4>
+                    <select @bind="_contactRuleDraft.Campo">
+                        <option value="nombre">Nombre</option>
+                        <option value="email">Email</option>
+                        <option value="telefono">Teléfono</option>
+                        <option value="celular">Celular</option>
+                        <option value="localidad">Localidad</option>
+                        <option value="provincia">Provincia</option>
+                        <option value="cargo">Cargo</option>
+                    </select>
+                    <select @bind="_contactRuleDraft.Operador">
+                        <option value="contains">contiene</option>
+                        <option value="equals">es igual a</option>
+                        <option value="starts">empieza con</option>
+                        <option value="empty">está vacío</option>
+                        <option value="not-empty">no está vacío</option>
+                    </select>
+                    <input type="text" placeholder="Valor" @bind="_contactRuleDraft.Valor" disabled="@IsValueOptionalOperator(_contactRuleDraft.Operador)" />
+                    <button type="button" class="btn btn--primary btn--sm" @onclick="AddContactRuleAsync">Agregar regla</button>
+                </div>
+            </div>
+        }
+    </div>;
+
+    private void UpdatePageHeader()
+    {
+        var actions = new List<PageHeaderAction>();
+
+        if (_showEditor)
+        {
+            actions.Add(new PageHeaderAction
+            {
+                Key = "guardar",
+                Label = _saving ? "Guardando..." : "Guardar",
+                Icon = "bi-floppy",
+                Style = PageHeaderActionStyle.Primary,
+                Priority = PageHeaderActionPriority.Essential,
+                Disabled = _saving,
+                Busy = _saving,
+                OnClick = GuardarAsync
+            });
+            actions.Add(new PageHeaderAction
+            {
+                Key = "cancelar",
+                Label = "Cancelar",
+                Icon = "bi-x-circle",
+                Style = PageHeaderActionStyle.Ghost,
+                Priority = PageHeaderActionPriority.Essential,
+                Disabled = _saving,
+                OnClick = () =>
+                {
+                    CerrarEditor();
+                    return Task.CompletedTask;
+                }
+            });
+            if (!_isNewMode && _selectedActivo)
+            {
+                actions.Add(new PageHeaderAction
+                {
+                    Key = "baja",
+                    Label = "Dar de baja",
+                    Icon = "bi-person-dash",
+                    Style = PageHeaderActionStyle.Danger,
+                    Priority = PageHeaderActionPriority.Overflow,
+                    Disabled = _saving,
+                    OnClick = DarDeBajaAsync
+                });
+            }
+            if (!_isNewMode)
+            {
+                actions.Add(new PageHeaderAction
+                {
+                    Key = "conversacion",
+                    Label = GetConversationActionLabel(_selectedConversationId),
+                    Icon = "bi-whatsapp",
+                    Style = PageHeaderActionStyle.Primary,
+                    Priority = PageHeaderActionPriority.Essential,
+                    Disabled = _saving || _openingConversation,
+                    OnClick = OpenConversationForSelectedAsync
+                });
+                actions.Add(new PageHeaderAction
+                {
+                    Key = "unificar",
+                    Label = "Unificar",
+                    Icon = "bi-intersect",
+                    Style = PageHeaderActionStyle.Ghost,
+                    Priority = PageHeaderActionPriority.Overflow,
+                    Disabled = _saving || _mergingContact,
+                    OnClick = OpenMergeModalAsync
+                });
+            }
+        }
+        else
+        {
+            if (_selectedIds.Count > 0)
+            {
+                actions.Add(new PageHeaderAction
+                {
+                    Key = "seleccion",
+                    Label = $"{_selectedIds.Count} seleccionados",
+                    Icon = "bi-check2-square",
+                    Style = PageHeaderActionStyle.Ghost,
+                    Disabled = true
+                });
+                actions.Add(new PageHeaderAction
+                {
+                    Key = "baja-masiva",
+                    Label = "Dar de baja",
+                    Icon = "bi-person-dash",
+                    Style = PageHeaderActionStyle.Danger,
+                    Priority = PageHeaderActionPriority.Essential,
+                    Disabled = _loadingList,
+                    OnClick = () => EjecutarAccionMasivaAsync(BulkActionDeactivate)
+                });
+                actions.Add(new PageHeaderAction
+                {
+                    Key = "whatsapp-masivo",
+                    Label = "Conversaciones",
+                    Icon = "bi-whatsapp",
+                    Style = PageHeaderActionStyle.Ghost,
+                    Priority = PageHeaderActionPriority.Overflow,
+                    Disabled = _loadingList,
+                    OnClick = () => EjecutarAccionMasivaAsync(BulkActionOpenWhatsApp)
+                });
+                actions.Add(new PageHeaderAction
+                {
+                    Key = "plantilla-masiva",
+                    Label = "Enviar plantilla",
+                    Icon = "bi-lightning-charge",
+                    Style = PageHeaderActionStyle.Ghost,
+                    Priority = PageHeaderActionPriority.Overflow,
+                    Disabled = _loadingList,
+                    OnClick = () => EjecutarAccionMasivaAsync(BulkActionSendTemplate)
+                });
+                actions.Add(new PageHeaderAction
+                {
+                    Key = "cancelar-seleccion",
+                    Label = "Cancelar selección",
+                    Icon = "bi-x-lg",
+                    Style = PageHeaderActionStyle.Ghost,
+                    Priority = PageHeaderActionPriority.Overflow,
+                    OnClick = ClearContactSelectionAsync
+                });
+            }
+            actions.Add(new PageHeaderAction
+            {
+                Key = "nuevo",
+                Label = "Nuevo contacto",
+                Icon = "bi-plus-circle",
+                Style = PageHeaderActionStyle.Primary,
+                Priority = PageHeaderActionPriority.Essential,
+                OnClick = () =>
+                {
+                    BeginNew();
+                    return Task.CompletedTask;
+                }
+            });
+            actions.Add(new PageHeaderAction
+            {
+                Key = "recargar",
+                Label = "Recargar",
+                Icon = "bi-arrow-clockwise",
+                Style = PageHeaderActionStyle.Ghost,
+                Disabled = _loadingList,
+                OnClick = RecargarAsync
+            });
+            actions.Add(new PageHeaderAction
+            {
+                Key = "vista",
+                Label = "Configurar vista",
+                Icon = "bi-sliders",
+                Style = PageHeaderActionStyle.Ghost,
+                Priority = PageHeaderActionPriority.Overflow,
+                OnClick = () =>
+                {
+                    AbrirConfiguracionVista();
+                    UpdatePageHeader();
+                    return Task.CompletedTask;
+                }
+            });
+            actions.Add(new PageHeaderAction
+            {
+                Key = "agrupar",
+                Label = GetGroupingLabel(_viewSettings.AgruparPor),
+                Icon = "bi-collection",
+                Style = PageHeaderActionStyle.Ghost,
+                Priority = PageHeaderActionPriority.Overflow,
+                OnClick = ToggleContactSearchPanelAsync
+            });
+        }
+
+        PageHeader.Set(new PageHeaderConfig
+        {
+            Title = _showEditor ? (_isNewMode ? "Nuevo contacto" : $"Editar {_form.NombreApellido}") : "Contactos",
+            Breadcrumb = ["Conversaciones", "Contactos"],
+            State = _saving ? PageHeaderState.Loading : _showEditor ? (_isNewMode ? PageHeaderState.Creating : PageHeaderState.Editing) : PageHeaderState.Idle,
+            OnBack = _showEditor && _isNewMode ? new Func<Task>(() => { CerrarEditor(); return Task.CompletedTask; }) : null,
+            Search = _showEditor
+                ? null
+                : new PageHeaderSearchConfig(),
+            SearchContent = _showEditor ? null : RenderContactSmartSearch(),
+            Actions = actions
+        });
+        _ = InvokeAsync(StateHasChanged);
+    }
+
     protected override async Task OnInitializedAsync()
     {
         AppUserSession.StateChanged += OnAppUserSessionChanged;
         Nav.LocationChanged += OnLocationChanged;
+        UpdatePageHeader();
         await EnsureViewSettingsLoadedAsync();
         await CargarProvinciasAsync();
         ApplyStartupQuery();
         await BuscarAsync();
         if (_startupEditId is int id)
         {
-            await AbrirEditorAsync(id);
+            await AbrirEditorAsync(id, updateUrl: false);
             if (_startupOpenMerge && _selectedId > 0)
                 await OpenMergeModalAsync();
         }
+        UpdatePageHeader();
     }
 
     public void Dispose()
     {
         AppUserSession.StateChanged -= OnAppUserSessionChanged;
         Nav.LocationChanged -= OnLocationChanged;
+        PageHeader.Clear();
         _searchDebounceCts?.Cancel();
         _searchDebounceCts?.Dispose();
+        _listSearchCts?.Cancel();
+        _listSearchCts?.Dispose();
     }
 
     private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
-        => _ = InvokeAsync(DismissFeedbackAsync);
+    {
+        _ = InvokeAsync(DismissFeedbackAsync);
+        _ = InvokeAsync(ApplyCurrentLocationAsync);
+    }
+
+    private async Task ApplyCurrentLocationAsync()
+    {
+        var query = QueryHelpers.ParseQuery(Nav.ToAbsoluteUri(Nav.Uri).Query);
+        _returnUrl = ReadSafeReturnUrl(query);
+
+        if (query.TryGetValue("editar", out var editRaw)
+            && int.TryParse(editRaw.ToString(), out var editId)
+            && editId > 0)
+        {
+            if (!_showEditor || _selectedId != editId)
+                await AbrirEditorAsync(editId, updateUrl: false);
+            return;
+        }
+
+        if (_showEditor && !_isNewMode)
+            CerrarEditor(useReturnUrl: false);
+    }
 
     private void OnAppUserSessionChanged()
     {
@@ -892,20 +1132,37 @@
 
     private async Task RecargarAsync()
     {
+        UpdatePageHeader();
         await CargarProvinciasAsync();
         await BuscarAsync();
         if (!_isNewMode && _selectedId > 0)
             await SeleccionarAsync(_selectedId);
+        UpdatePageHeader();
     }
 
     private void OpenContactSearchPanel()
-        => _showSearchPanel = true;
+    {
+        _showSearchPanel = true;
+        UpdatePageHeader();
+    }
 
     private void ToggleContactSearchPanel()
-        => _showSearchPanel = !_showSearchPanel;
+    {
+        _showSearchPanel = !_showSearchPanel;
+        UpdatePageHeader();
+    }
+
+    private Task ToggleContactSearchPanelAsync()
+    {
+        ToggleContactSearchPanel();
+        return Task.CompletedTask;
+    }
 
     private void CloseSearchPanel()
-        => _showSearchPanel = false;
+    {
+        _showSearchPanel = false;
+        UpdatePageHeader();
+    }
 
     private async Task HandlePageClickAsync()
     {
@@ -917,6 +1174,15 @@
     {
         _filters.Texto = e.Value?.ToString() ?? string.Empty;
         DebounceContactSearch();
+        UpdatePageHeader();
+    }
+
+    private Task OnHeaderSearchChangedAsync(string value)
+    {
+        _filters.Texto = value;
+        DebounceContactSearch();
+        UpdatePageHeader();
+        return Task.CompletedTask;
     }
 
     private void DebounceContactSearch()
@@ -1078,6 +1344,8 @@
     {
         _filters.PageNumber = 1;
         await BuscarAsync();
+        _showSearchPanel = false;
+        UpdatePageHeader();
     }
 
     private async Task HandleContactApplyKeyDownAsync(KeyboardEventArgs args)
@@ -1096,32 +1364,57 @@
 
     private async Task BuscarAsync()
     {
+        _listSearchCts?.Cancel();
+        _listSearchCts?.Dispose();
+        var searchCts = new CancellationTokenSource();
+        _listSearchCts = searchCts;
+        var token = searchCts.Token;
+
         _loadingList = true;
         SyncFilters();
+        var searchFilters = CloneContactFilters(_filters);
+        searchFilters.PageNumber = _filters.PageNumber;
 
         try
         {
-            var result = await UiOps.RunAsync(() => ContactosSvc.SearchAsync(_filters), "No se pudieron cargar los contactos.");
-            if (!result.Success || result.Value is null)
-            {
-                SetFeedback(result.Feedback);
+            var result = await ContactosSvc.SearchAsync(searchFilters, token);
+            if (token.IsCancellationRequested || !ReferenceEquals(_listSearchCts, searchCts))
                 return;
-            }
 
             _items.Clear();
-            _items.AddRange(result.Value.Items);
+            _items.AddRange(result.Items);
             _selectedIds.IntersectWith(_items.Select(item => item.Id));
             if (_selectedId > 0 && !_items.Any(item => item.Id == _selectedId))
                 _selectedId = 0;
-            _pagedTotal  = result.Value.Total;
-            _pageNumber  = result.Value.PageNumber;
-            _totalPages  = result.Value.TotalPages;
-            _hasPrev     = result.Value.HasPrev;
-            _hasNext     = result.Value.HasNext;
+            _pagedTotal  = result.Total;
+            _pageNumber  = result.PageNumber;
+            _totalPages  = result.TotalPages;
+            _hasPrev     = result.HasPrev;
+            _hasNext     = result.HasNext;
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex)
+        {
+            if (token.IsCancellationRequested || !ReferenceEquals(_listSearchCts, searchCts))
+                return;
+
+            SetFeedback(UiOps.BuildMessage(ex, "No se pudieron cargar los contactos."));
         }
         finally
         {
-            _loadingList = false;
+            if (ReferenceEquals(_listSearchCts, searchCts))
+            {
+                _loadingList = false;
+                _listSearchCts = null;
+                searchCts.Dispose();
+                UpdatePageHeader();
+            }
+            else
+            {
+                searchCts.Dispose();
+            }
         }
     }
 
@@ -1172,6 +1465,7 @@
     private void BeginNew()
     {
         ClearFieldErrors();
+        SetFeedback(null);
         _showEditor = true;
         _isNewMode = true;
         _activeTab = ContactoTab.Datos;
@@ -1197,11 +1491,13 @@
         _form.Website = string.Empty;
         _form.Cargo = string.Empty;
         _form.Observaciones = string.Empty;
+        UpdatePageHeader();
     }
 
     private void ApplyStartupQuery()
     {
         var query = QueryHelpers.ParseQuery(Nav.ToAbsoluteUri(Nav.Uri).Query);
+        _returnUrl = ReadSafeReturnUrl(query);
         if (query.TryGetValue("editar", out var editRaw)
             && int.TryParse(editRaw.ToString(), out var editId)
             && editId > 0)
@@ -1235,11 +1531,47 @@
     }
 
     private void CerrarEditor()
+        => CerrarEditor(useReturnUrl: true);
+
+    private void CerrarEditor(bool useReturnUrl)
     {
+        if (useReturnUrl && !string.IsNullOrWhiteSpace(_returnUrl))
+        {
+            Nav.NavigateTo(_returnUrl);
+            return;
+        }
+
         ClearFieldErrors();
         CloseMergeModal();
+        SetFeedback(null);
         _showEditor = false;
         _linkedAccounts.Clear();
+        UpdatePageHeader();
+    }
+
+    private string? ReadSafeReturnUrl(Dictionary<string, Microsoft.Extensions.Primitives.StringValues> query)
+    {
+        if (!query.TryGetValue("returnUrl", out var raw))
+            return null;
+
+        var value = raw.ToString();
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        if (Uri.TryCreate(value, UriKind.Absolute, out var absolute))
+        {
+            var baseUri = Nav.ToAbsoluteUri(Nav.BaseUri);
+            if (!string.Equals(absolute.Scheme, baseUri.Scheme, StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(absolute.Host, baseUri.Host, StringComparison.OrdinalIgnoreCase)
+                || absolute.Port != baseUri.Port)
+                return null;
+
+            return absolute.PathAndQuery + absolute.Fragment;
+        }
+
+        return value.StartsWith("/", StringComparison.Ordinal)
+            ? value
+            : null;
     }
 
     private void ResetForm()
@@ -1275,10 +1607,21 @@
             return;
 
         _showMergeModal = false;
+        _showMergeConfirm = false;
         _loadingMergeCandidates = false;
         _mergeSearchExecuted = false;
+        _mergeConfirmCandidate = null;
         _mergeCandidates.Clear();
         _mergeError = string.Empty;
+    }
+
+    private void CloseMergeConfirm()
+    {
+        if (_mergingContact)
+            return;
+
+        _showMergeConfirm = false;
+        _mergeConfirmCandidate = null;
     }
 
     private async Task OnMergeSearchKeyDownAsync(KeyboardEventArgs e)
@@ -1323,17 +1666,23 @@
         }
     }
 
-    private async Task MergeWithCandidateAsync(ContactoMergeCandidateDto candidate)
+    private void OpenMergeConfirm(ContactoMergeCandidateDto candidate)
     {
         if (_selectedId <= 0 || candidate.Id <= 0 || _mergingContact)
             return;
 
-        var confirm = await Js.InvokeAsync<bool>(
-            "confirm",
-            $"Se va a unificar \"{candidate.NombreApellido}\" dentro de \"{_form.NombreApellido}\". Se conservarán los datos y relaciones del contacto principal. ¿Querés continuar?");
-        if (!confirm)
+        _mergeError = string.Empty;
+        _mergeConfirmCandidate = candidate;
+        _showMergeConfirm = true;
+    }
+
+    private async Task ConfirmMergeAsync()
+    {
+        var candidate = _mergeConfirmCandidate;
+        if (_selectedId <= 0 || candidate is null || candidate.Id <= 0 || _mergingContact)
             return;
 
+        _showMergeConfirm = false;
         _mergeError = string.Empty;
         _mergingContact = true;
         try
@@ -1372,6 +1721,7 @@
     {
         ClearFieldErrors();
         _saving = true;
+        UpdatePageHeader();
         try
         {
             try
@@ -1379,7 +1729,9 @@
                 var savedId = await ContactosSvc.SaveAsync(_form);
                 SetFeedback(AppUiMessage.Success("Contacto guardado", $"El contacto #{savedId} se guardó correctamente."));
                 await BuscarAsync();
-                await SeleccionarAsync(savedId);
+                _selectedId = savedId;
+                _showEditor = false;
+                _isNewMode = false;
             }
             catch (AppValidationException validationEx)
             {
@@ -1400,13 +1752,29 @@
         finally
         {
             _saving = false;
+            UpdatePageHeader();
         }
     }
 
-    private async Task AbrirEditorAsync(int id)
+    private async Task AbrirEditorAsync(int id, bool updateUrl = true)
     {
+        if (updateUrl && NavigateToContactUrl(id))
+            return;
+
         _showEditor = true;
+        SetFeedback(null);
         await SeleccionarAsync(id);
+        UpdatePageHeader();
+    }
+
+    private bool NavigateToContactUrl(int id)
+    {
+        var target = QueryHelpers.AddQueryString(RouteContext.BuildRoute("/contactos"), "editar", id.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        if (string.Equals(Nav.ToBaseRelativePath(Nav.Uri), target.TrimStart('/'), StringComparison.Ordinal))
+            return false;
+
+        Nav.NavigateTo(target);
+        return true;
     }
 
     private void ToggleRowSelection(int id, ChangeEventArgs args)
@@ -1418,6 +1786,8 @@
             _selectedIds.Add(id);
         else
             _selectedIds.Remove(id);
+
+        UpdatePageHeader();
     }
 
     private void ToggleSelectAll(ChangeEventArgs args)
@@ -1430,6 +1800,16 @@
             else
                 _selectedIds.Remove(id);
         }
+
+        UpdatePageHeader();
+    }
+
+    private Task ClearContactSelectionAsync()
+    {
+        _selectedIds.Clear();
+        _bulkAction = BulkActionDeactivate;
+        UpdatePageHeader();
+        return Task.CompletedTask;
     }
 
     private async Task DarDeBajaAsync()
@@ -1478,11 +1858,43 @@
         if (!string.Equals(_bulkAction, BulkActionDeactivate, StringComparison.OrdinalIgnoreCase))
             return;
 
-        var ids = _selectedIds.OrderBy(id => id).ToArray();
-        var confirm = await Js.InvokeAsync<bool>("confirm", $"Se van a dar de baja {ids.Length} contacto(s) seleccionados. ¿Querés continuar?");
-        if (!confirm)
+        OpenBulkDeactivateConfirm();
+    }
+
+    private async Task EjecutarAccionMasivaAsync(string action)
+    {
+        _bulkAction = action;
+        await EjecutarAccionSeleccionadaAsync();
+        UpdatePageHeader();
+    }
+
+    private void OpenBulkDeactivateConfirm()
+    {
+        if (_selectedIds.Count == 0 || _saving)
             return;
 
+        _bulkDeactivateConfirmCount = _selectedIds.Count;
+        _showBulkDeactivateConfirm = true;
+    }
+
+    private void CloseBulkDeactivateConfirm()
+    {
+        if (_saving)
+            return;
+
+        _showBulkDeactivateConfirm = false;
+    }
+
+    private async Task ConfirmBulkDeactivateAsync()
+    {
+        var ids = _selectedIds.OrderBy(id => id).ToArray();
+        if (ids.Length == 0 || _saving)
+        {
+            _showBulkDeactivateConfirm = false;
+            return;
+        }
+
+        _showBulkDeactivateConfirm = false;
         _saving = true;
         try
         {
@@ -1515,8 +1927,8 @@
             SetFeedback(new AppUiMessage
             {
                 Severity = AppUiFeedbackSeverity.Warning,
-                Title = "TelÃ©fono requerido",
-                Message = "SeleccionÃ¡ contactos con celular o telÃ©fono para crear conversaciones."
+                Title = "Teléfono requerido",
+                Message = "Seleccioná contactos con celular o teléfono para crear conversaciones."
             });
             return;
         }
@@ -1531,7 +1943,7 @@
                 var phone = FirstNonEmpty(contact.Celular, contact.Telefono);
                 var result = await UiOps.RunAsync(
                     () => ConversacionesSvc.CreateOrGetWhatsAppConversationAsync(new ConversacionCrearWhatsAppRequest { TelefonoWhatsApp = phone }),
-                    $"No se pudo crear la conversaciÃ³n de {DisplayOrFallback(contact.NombreApellido, phone)}.");
+                    $"No se pudo crear la conversación de {DisplayOrFallback(contact.NombreApellido, phone)}.");
 
                 if (!result.Success || result.Value is null)
                 {
@@ -1544,7 +1956,7 @@
                     created++;
             }
 
-            SetFeedback(AppUiMessage.Success("Conversaciones listas", $"Se prepararon {contacts.Count} conversaciÃ³n(es). Nuevas: {created}."));
+            SetFeedback(AppUiMessage.Success("Conversaciones listas", $"Se prepararon {contacts.Count} conversación(es). Nuevas: {created}."));
             if (contacts.Count == 1 && firstConversation.HasValue)
                 Nav.NavigateTo($"/conversaciones?id={firstConversation.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
         }
@@ -1561,8 +1973,8 @@
             SetFeedback(new AppUiMessage
             {
                 Severity = AppUiFeedbackSeverity.Warning,
-                Title = "TelÃ©fono requerido",
-                Message = "SeleccionÃ¡ contactos con celular o telÃ©fono para enviar plantillas."
+                Title = "Teléfono requerido",
+                Message = "Seleccioná contactos con celular o teléfono para enviar plantillas."
             });
             return;
         }
@@ -1579,8 +1991,17 @@
         if (_sendingBulkTemplate)
             return;
 
+        _showBulkTemplateConfirm = false;
         _showBulkTemplateModal = false;
         _bulkTemplateError = string.Empty;
+    }
+
+    private void CloseBulkTemplateConfirm()
+    {
+        if (_sendingBulkTemplate)
+            return;
+
+        _showBulkTemplateConfirm = false;
     }
 
     private async Task LoadBulkTemplatesAsync()
@@ -1602,7 +2023,7 @@
             _bulkTemplates.Clear();
             _bulkTemplates.AddRange(result.Value.Where(template => template.Activa && string.Equals(template.EstadoMeta, "APPROVED", StringComparison.OrdinalIgnoreCase)));
             if (_bulkTemplates.Count == 0)
-                _bulkTemplateError = "No hay plantillas aprobadas disponibles para envÃ­o masivo.";
+                _bulkTemplateError = "No hay plantillas aprobadas disponibles para envío masivo.";
         }
         finally
         {
@@ -1610,12 +2031,12 @@
         }
     }
 
-    private async Task SendBulkTemplateAsync()
+    private void SendBulkTemplateAsync()
     {
         var template = SelectedBulkTemplate;
         if (template is null)
         {
-            _bulkTemplateError = "SeleccionÃ¡ una plantilla aprobada.";
+            _bulkTemplateError = "Seleccioná una plantilla aprobada.";
             return;
         }
 
@@ -1630,17 +2051,40 @@
         var contacts = GetSelectedContactsWithPhone().ToList();
         if (contacts.Count == 0)
         {
-            _bulkTemplateError = "No hay contactos seleccionados con telÃ©fono o celular.";
+            _bulkTemplateError = "No hay contactos seleccionados con teléfono o celular.";
             return;
         }
 
-        var confirm = await Js.InvokeAsync<bool>("confirm", $"Se enviarÃ¡ la plantilla \"{template.NombreVisible}\" a {contacts.Count} contacto(s). Â¿QuerÃ©s continuar?");
-        if (!confirm)
-            return;
+        _bulkTemplateError = string.Empty;
+        _bulkTemplateConfirmName = template.NombreVisible;
+        _bulkTemplateConfirmCount = contacts.Count;
+        _showBulkTemplateConfirm = true;
+    }
 
+    private async Task ConfirmBulkTemplateSendAsync()
+    {
+        var template = SelectedBulkTemplate;
+        if (template is null)
+        {
+            _showBulkTemplateConfirm = false;
+            _bulkTemplateError = "Seleccioná una plantilla aprobada.";
+            return;
+        }
+
+        var values = ParseTemplateValues(_bulkTemplateValuesText).ToList();
+        var contacts = GetSelectedContactsWithPhone().ToList();
+        if (contacts.Count == 0)
+        {
+            _showBulkTemplateConfirm = false;
+            _bulkTemplateError = "No hay contactos seleccionados con teléfono o celular.";
+            return;
+        }
+
+        _showBulkTemplateConfirm = false;
         _sendingBulkTemplate = true;
         _bulkTemplateError = string.Empty;
-        var sent = 0;
+        var acceptedByMeta = 0;
+        var pendingConfirmation = 0;
         var failed = 0;
         try
         {
@@ -1650,13 +2094,21 @@
                 try
                 {
                     var conversation = await ConversacionesSvc.CreateOrGetWhatsAppConversationAsync(new ConversacionCrearWhatsAppRequest { TelefonoWhatsApp = phone });
-                    await ConversacionesSvc.SendTemplateMessageAsync(new ConversacionPlantillaSendRequest
+                    var result = await ConversacionesSvc.SendTemplateMessageAsync(new ConversacionPlantillaSendRequest
                     {
                         IdConversacion = conversation.IdConversacion,
                         IdPlantilla = template.IdPlantilla,
                         ValoresVariables = values
                     });
-                    sent++;
+
+                    if (IsKnownFailedDeliveryState(result.EstadoEnvio))
+                        failed++;
+                    else
+                    {
+                        acceptedByMeta++;
+                        if (!IsKnownDeliveredDeliveryState(result.EstadoEnvio))
+                            pendingConfirmation++;
+                    }
                 }
                 catch
                 {
@@ -1666,7 +2118,7 @@
 
             _sendingBulkTemplate = false;
             CloseBulkTemplateModal();
-            SetFeedback(AppUiMessage.Success("EnvÃ­o masivo finalizado", $"Plantillas enviadas: {sent}. Fallidas: {failed}."));
+            SetFeedback(BuildBulkTemplateFeedback(acceptedByMeta, failed, pendingConfirmation));
         }
         finally
         {
@@ -2044,6 +2496,42 @@
             .Where(x => x.Length > 0)
             .ToList();
     }
+
+    private static AppUiMessage BuildBulkTemplateFeedback(int acceptedByMeta, int failed, int pendingConfirmation)
+    {
+        var hasUnconfirmed = pendingConfirmation > 0;
+        return new AppUiMessage
+        {
+            Severity = failed > 0 || hasUnconfirmed ? AppUiFeedbackSeverity.Warning : AppUiFeedbackSeverity.Success,
+            Title = "Envío masivo finalizado",
+            Message = BuildBulkTemplateResultMessage(acceptedByMeta, failed, pendingConfirmation),
+            Suggestion = hasUnconfirmed
+                ? "La entrega final puede actualizarse después cuando WhatsApp informe el estado."
+                : string.Empty
+        };
+    }
+
+    private static string BuildBulkTemplateResultMessage(int acceptedByMeta, int failed, int pendingConfirmation)
+    {
+        var parts = new List<string>
+        {
+            $"Solicitudes aceptadas por Meta: {acceptedByMeta}.",
+            $"Fallidas al intentar enviar: {failed}."
+        };
+
+        if (pendingConfirmation > 0)
+            parts.Add($"Pendientes de confirmación de entrega: {pendingConfirmation}.");
+
+        return string.Join(" ", parts);
+    }
+
+    private static bool IsKnownFailedDeliveryState(string? state)
+        => !string.IsNullOrWhiteSpace(state)
+           && state.Contains("ERROR", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsKnownDeliveredDeliveryState(string? state)
+        => string.Equals(state, "ENTREGADO", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(state, "LEIDO", StringComparison.OrdinalIgnoreCase);
 
     private static void AddTemplateValueBlock(List<string> result, List<string> lines)
     {

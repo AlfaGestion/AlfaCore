@@ -1,4 +1,6 @@
-@page "/inicio"
+﻿@page "/inicio"
+@page "/{idweb}/{idbase:int}/inicio"
+@inject AlfaCore.Services.IRouteContextService RouteContext
 @inject NavigationManager Navigation
 
 <PageTitle>Inicio | Dashboard de Compras</PageTitle>
@@ -11,6 +13,6 @@
 @code {
     protected override void OnInitialized()
     {
-        Navigation.NavigateTo("/compras");
+        Navigation.NavigateTo(RouteContext.BuildRoute("/compras"));
     }
 }

@@ -1,0 +1,589 @@
+@page "/compras/reportes"
+@page "/{idweb}/{idbase:int}/compras/reportes"
+@inject AlfaCore.Services.IReporteComprasService ReporteService
+@inject AlfaCore.Services.IAppUiOperationService UiOps
+@inject IJSRuntime Js
+
+<PageTitle>Reportes de Compras | Alfa Gestión</PageTitle>
+
+<section class="page-grid">
+
+    <div class="page-intro">
+        <div>
+            <h2 class="page-intro__title">Reportes de Compras</h2>
+            <p class="page-intro__text">Generador de informes y estadísticas del módulo de compras.</p>
+        </div>
+    </div>
+
+    @* ── Panel de parámetros ──────────────────────────────────────────── *@
+    <section class="panel-card filters-card smart-search-card">
+
+        <div class="panel-card__header" style="margin-bottom:0.5rem;">
+            <div>
+                <h3 class="panel-card__title">Parámetros</h3>
+                <p class="panel-card__subtitle">Período, filtros y tipo de reporte</p>
+            </div>
+        </div>
+
+        @* Tipo de reporte *@
+        <div class="quick-filter-bar" style="margin-bottom:0.75rem;">
+            <span style="font-size:0.78rem;color:var(--color-text-muted);align-self:center;margin-right:0.5rem;">Tipo:</span>
+            <button type="button" class="@TipoCss(TipoReporteCompras.ResumenDeCompras)"
+                    @onclick="() => _tipoReporte = TipoReporteCompras.ResumenDeCompras">
+                Resumen de Compras
+            </button>
+            <button type="button" class="@TipoCss(TipoReporteCompras.DetalleDeCompras)"
+                    @onclick="() => _tipoReporte = TipoReporteCompras.DetalleDeCompras">
+                Detalle de Compras
+            </button>
+            <button type="button" class="@TipoCss(TipoReporteCompras.CuentaCorriente)"
+                    @onclick="() => _tipoReporte = TipoReporteCompras.CuentaCorriente">
+                Cuenta Corriente
+            </button>
+        </div>
+
+        @* Smart search *@
+        <div class="smart-search">
+
+            @* Barra principal: proveedor + toggle *@
+            <div class="smart-search__bar">
+                <i class="bi bi-search"></i>
+                <InputText @bind-Value="_filtros.Proveedor"
+                           placeholder="Buscar por proveedor o cuenta…" />
+                <button type="button"
+                        class="smart-search__toggle"
+                        @onclick="TogglePanel"
+                        aria-label="Mostrar filtros">
+                    <i class="bi @(_panelAbierto ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
+                </button>
+            </div>
+
+            @* Chips de filtros activos *@
+            @if (BuildFilterChips() is var chips && chips.Count > 0)
+            {
+                <div class="smart-search__chips">
+                    @foreach (var chip in chips)
+                    {
+                        <button type="button" class="smart-chip" @onclick="() => RemoveChip(chip.Key)">
+                            @chip.Label <i class="bi bi-x"></i>
+                        </button>
+                    }
+                    <button type="button" class="smart-chip smart-chip--clear" @onclick="LimpiarAsync">
+                        Limpiar todo <i class="bi bi-x-circle"></i>
+                    </button>
+                </div>
+            }
+
+            @* Panel expandible *@
+            @if (_panelAbierto)
+            {
+                <div class="smart-search__panel">
+                    <div class="smart-search__column">
+                        <h4><i class="bi bi-calendar3"></i> Período</h4>
+                        <div class="field field--sm">
+                            <label>Desde</label>
+                            <InputDate @bind-Value="_filtros.FechaDesde" />
+                        </div>
+                        <div class="field field--sm">
+                            <label>Hasta</label>
+                            <InputDate @bind-Value="_filtros.FechaHasta" />
+                        </div>
+                        <div style="display:flex; gap:.4rem; flex-wrap:wrap; margin-top:.25rem;">
+                            <button class="btn btn--ghost btn--sm" @onclick='() => SetRango("hoy")'>Hoy</button>
+                            <button class="btn btn--ghost btn--sm" @onclick='() => SetRango("mes")'>Este mes</button>
+                            <button class="btn btn--ghost btn--sm" @onclick='() => SetRango("mes-anterior")'>Mes ant.</button>
+                            <button class="btn btn--ghost btn--sm" @onclick='() => SetRango("anio")'>Año actual</button>
+                        </div>
+                    </div>
+                    <div class="smart-search__column">
+                        <h4><i class="bi bi-receipt"></i> Comprobante</h4>
+                        <div class="field field--sm">
+                            <label>Tipo (TC)</label>
+                            <InputSelect @bind-Value="_filtros.TipoComprobante" class="field__select">
+                                <option value="">Todos</option>
+                                @foreach (var tc in _options.TiposComprobante)
+                                {
+                                    <option value="@tc">@tc</option>
+                                }
+                            </InputSelect>
+                        </div>
+                    </div>
+                </div>
+            }
+
+        </div>
+
+        @if (_tipoReporte == TipoReporteCompras.CuentaCorriente)
+        {
+            <div class="filters-summary" style="margin-top:0.5rem;">
+                <span class="filters-summary__label">Nota</span>
+                <span class="filters-summary__text">Para Cuenta Corriente es recomendable filtrar por proveedor. Sin filtro se devuelven todos los asientos contables del período.</span>
+            </div>
+        }
+
+        <div class="actions" style="margin-top:0.75rem;">
+            <button class="btn btn--primary" @onclick="GenerarAsync" disabled="@_isLoading">
+                @(_isLoading ? "Generando…" : "Generar reporte")
+            </button>
+            <button class="btn btn--ghost" @onclick="LimpiarAsync" disabled="@_isLoading">Limpiar</button>
+        </div>
+    </section>
+
+    @* ── Estado de carga / error ─────────────────────────────────────── *@
+    @if (_isLoading)
+    {
+        <div class="loading">Generando reporte…</div>
+    }
+    else if (_error is not null)
+    {
+        <section class="panel-card">
+            <div class="empty-state">
+                <span class="empty-state__eyebrow">Error</span>
+                <h3>@_error.Message</h3>
+                @if (_error.HasSuggestion)
+                {
+                    <p>@_error.Suggestion</p>
+                }
+                @if (_error.HasCode)
+                {
+                    <p style="font-size:0.78rem;color:var(--color-text-muted);">Código: @_error.Code</p>
+                }
+            </div>
+        </section>
+    }
+
+    @* ── Resultados: Resumen de Compras ─────────────────────────────── *@
+    @if (_mostrarResultados && _tipoReporte == TipoReporteCompras.ResumenDeCompras && _resumen is not null)
+    {
+        <div class="kpi-grid">
+            <KpiCard Titulo="Total comprado"  Valor="@Moneda(_resumen.TotalComprado)"               Icono="$" />
+            <KpiCard Titulo="Neto"            Valor="@Moneda(_resumen.NetoTotal)"                   Icono="N" />
+            <KpiCard Titulo="IVA"             Valor="@Moneda(_resumen.IvaTotal)"                    Icono="%" />
+            <KpiCard Titulo="Comprobantes"    Valor="@_resumen.CantidadComprobantes.ToString("N0")" Icono="C" />
+            <KpiCard Titulo="Proveedores"     Valor="@_resumen.CantidadProveedores.ToString("N0")"  Icono="P" />
+        </div>
+
+        <DataTable Titulo="Resumen por proveedor"
+                   Subtitulo="@($"{_resumen.Filas.Count} proveedores en el período")">
+            <Toolbar>
+                <a class="btn btn--ghost" href="@GetExcelUrl("resumen")" title="Exportar a Excel">
+                    <i class="bi bi-file-earmark-excel"></i>
+                    <span>Excel</span>
+                </a>
+                <button type="button" class="btn btn--ghost" @onclick="ImprimirPdfAsync" title="Imprimir / Guardar PDF">
+                    <i class="bi bi-printer"></i>
+                    <span>PDF</span>
+                </button>
+            </Toolbar>
+            <Header>
+                <tr>
+                    <th>Cuenta</th>
+                    <th>Proveedor</th>
+                    <th style="text-align:right;">Comprobantes</th>
+                    <th style="text-align:right;">Neto</th>
+                    <th style="text-align:right;">IVA</th>
+                    <th style="text-align:right;">Total</th>
+                    <th style="text-align:right;">% Part.</th>
+                </tr>
+            </Header>
+            <Rows>
+                @if (_resumen.Filas.Count == 0)
+                {
+                    <tr>
+                        <td colspan="7">
+                            <div class="empty-state">
+                                <span class="empty-state__eyebrow">Sin resultados</span>
+                                <h3>Sin comprobantes en el período</h3>
+                                <p>Ampliá el rango de fechas o revisá los filtros aplicados.</p>
+                            </div>
+                        </td>
+                    </tr>
+                }
+                else
+                {
+                    @foreach (var fila in _resumen.Filas)
+                    {
+                        <tr>
+                            <td>@fila.Cuenta</td>
+                            <td><strong>@fila.RazonSocial</strong></td>
+                            <td style="text-align:right;">@fila.CantidadComprobantes.ToString("N0")</td>
+                            <td style="text-align:right;">@Moneda(fila.Neto)</td>
+                            <td style="text-align:right;">@Moneda(fila.Iva)</td>
+                            <td style="text-align:right;"><strong>@Moneda(fila.Total)</strong></td>
+                            <td style="text-align:right;">@fila.Participacion.ToString("P1", Cultura)</td>
+                        </tr>
+                    }
+                    <tr class="data-table__totals">
+                        <td colspan="3" style="text-align:right; font-weight:600; font-size:0.8rem; color:var(--color-text-muted);">Total página</td>
+                        <td style="text-align:right; font-weight:700;">@Moneda(_resumen.NetoTotal)</td>
+                        <td style="text-align:right; font-weight:700;">@Moneda(_resumen.IvaTotal)</td>
+                        <td style="text-align:right; font-weight:700;">@Moneda(_resumen.TotalComprado)</td>
+                        <td></td>
+                    </tr>
+                }
+            </Rows>
+        </DataTable>
+    }
+
+    @* ── Resultados: Detalle de Compras ─────────────────────────────── *@
+    @if (_mostrarResultados && _tipoReporte == TipoReporteCompras.DetalleDeCompras && _detalleCompras is not null)
+    {
+        <DataTable Titulo="Detalle de comprobantes"
+                   Subtitulo="@GetSubtituloDetalle()">
+            <Toolbar>
+                @if (_detalleCompras.TotalPaginas > 1)
+                {
+                    <div class="pagination">
+                        <button class="btn btn--ghost" @onclick="PaginaAnteriorAsync"
+                                disabled="@(_filtros.Pagina <= 1)">Anterior</button>
+                        <span>Página @_filtros.Pagina de @_detalleCompras.TotalPaginas</span>
+                        <button class="btn btn--ghost" @onclick="PaginaSiguienteAsync"
+                                disabled="@(_filtros.Pagina >= _detalleCompras.TotalPaginas)">Siguiente</button>
+                    </div>
+                }
+                <a class="btn btn--ghost" href="@GetExcelUrl("detalle")" title="Exportar a Excel">
+                    <i class="bi bi-file-earmark-excel"></i>
+                    <span>Excel</span>
+                </a>
+                <button type="button" class="btn btn--ghost" @onclick="ImprimirPdfAsync" title="Imprimir / Guardar PDF">
+                    <i class="bi bi-printer"></i>
+                    <span>PDF</span>
+                </button>
+            </Toolbar>
+            <Header>
+                <tr>
+                    <th>Fecha</th>
+                    <th>TC</th>
+                    <th>Comprobante</th>
+                    <th>Cuenta</th>
+                    <th>Proveedor</th>
+                    <th>Motivo</th>
+                    <th style="text-align:right;">Neto</th>
+                    <th style="text-align:right;">IVA</th>
+                    <th style="text-align:right;">Total</th>
+                    <th>Usuario</th>
+                    <th></th>
+                </tr>
+            </Header>
+            <Rows>
+                @if (_detalleCompras.Items.Count == 0)
+                {
+                    <tr>
+                        <td colspan="11">
+                            <div class="empty-state">
+                                <span class="empty-state__eyebrow">Sin resultados</span>
+                                <h3>Sin comprobantes en el período</h3>
+                                <p>Ampliá el rango de fechas o revisá los filtros aplicados.</p>
+                            </div>
+                        </td>
+                    </tr>
+                }
+                else
+                {
+                    @foreach (var item in _detalleCompras.Items)
+                    {
+                        <tr>
+                            <td>@item.Fecha.ToString("dd/MM/yyyy")</td>
+                            <td>@item.Tc</td>
+                            <td>@item.IdComprobante</td>
+                            <td>@item.Cuenta</td>
+                            <td><strong>@item.RazonSocial</strong></td>
+                            <td>@item.DescMotivo</td>
+                            <td style="text-align:right;">@Moneda(item.Neto)</td>
+                            <td style="text-align:right;">@Moneda(item.Iva)</td>
+                            <td style="text-align:right;"><strong>@Moneda(item.Total)</strong></td>
+                            <td>@item.Usuario</td>
+                            <td>
+                                <a class="btn btn--ghost btn--sm"
+                                   href="@BuildViewerUrl(item.Tc, item.IdComprobante)"
+                                   title="Ver detalle del comprobante">
+                                    <i class="bi bi-eye"></i>
+                                </a>
+                            </td>
+                        </tr>
+                    }
+                    <tr class="data-table__totals">
+                        <td colspan="6" style="text-align:right; font-weight:600; font-size:0.8rem; color:var(--color-text-muted);">
+                            Total página (@_detalleCompras.Items.Count comprobantes)
+                        </td>
+                        <td style="text-align:right; font-weight:700;">@Moneda(TotalNetoDetalle)</td>
+                        <td style="text-align:right; font-weight:700;">@Moneda(TotalIvaDetalle)</td>
+                        <td style="text-align:right; font-weight:700;">@Moneda(TotalTotalDetalle)</td>
+                        <td colspan="2"></td>
+                    </tr>
+                }
+            </Rows>
+        </DataTable>
+    }
+
+    @* ── Resultados: Cuenta Corriente ──────────────────────────────── *@
+    @if (_mostrarResultados && _tipoReporte == TipoReporteCompras.CuentaCorriente && _cuentaCorriente is not null)
+    {
+        <div class="kpi-grid">
+            <KpiCard Titulo="Saldo total"
+                     Valor="@Moneda(_cuentaCorriente.SaldoTotal)"
+                     Descripcion="@(_cuentaCorriente.SaldoTotal >= 0 ? "A pagar al proveedor" : "A favor del cliente")"
+                     Icono="=" />
+            <KpiCard Titulo="Movimientos"
+                     Valor="@_cuentaCorriente.TotalRegistros.ToString("N0")"
+                     Icono="M" />
+        </div>
+
+        <DataTable Titulo="Cuenta corriente de proveedores"
+                   Subtitulo="@GetSubtituloCC()">
+            <Toolbar>
+                @if (_cuentaCorriente.TotalPaginas > 1)
+                {
+                    <div class="pagination">
+                        <button class="btn btn--ghost" @onclick="PaginaAnteriorAsync"
+                                disabled="@(_filtros.Pagina <= 1)">Anterior</button>
+                        <span>Página @_filtros.Pagina de @_cuentaCorriente.TotalPaginas</span>
+                        <button class="btn btn--ghost" @onclick="PaginaSiguienteAsync"
+                                disabled="@(_filtros.Pagina >= _cuentaCorriente.TotalPaginas)">Siguiente</button>
+                    </div>
+                }
+            </Toolbar>
+            <Header>
+                <tr>
+                    <th>Cuenta</th>
+                    <th>Proveedor</th>
+                    <th>Fecha</th>
+                    <th>TC</th>
+                    <th>Comprobante</th>
+                    <th style="text-align:center;">D/H</th>
+                    <th style="text-align:right;">Importe</th>
+                    <th style="text-align:right;">Signado</th>
+                </tr>
+            </Header>
+            <Rows>
+                @if (_cuentaCorriente.Items.Count == 0)
+                {
+                    <tr>
+                        <td colspan="8">
+                            <div class="empty-state">
+                                <span class="empty-state__eyebrow">Sin resultados</span>
+                                <h3>Sin movimientos en el período</h3>
+                                <p>Para Cuenta Corriente filtrá por proveedor para ver sus movimientos en MV_ASIENTOS.</p>
+                            </div>
+                        </td>
+                    </tr>
+                }
+                else
+                {
+                    @foreach (var item in _cuentaCorriente.Items)
+                    {
+                        <tr>
+                            <td>@item.Cuenta</td>
+                            <td><strong>@item.RazonSocial</strong></td>
+                            <td>@item.Fecha.ToString("dd/MM/yyyy")</td>
+                            <td>@item.Tc</td>
+                            <td>@item.IdComprobante</td>
+                            <td style="text-align:center;">
+                                <span class="badge-state @(item.DebeHaber == "H" ? "badge-state--danger" : "badge-state--ok")">
+                                    @item.DebeHaber
+                                </span>
+                            </td>
+                            <td style="text-align:right;">@Moneda(item.Importe)</td>
+                            <td style="text-align:right; color:@(item.ImporteSignado < 0 ? "var(--color-success,#2e7d32)" : "inherit")">
+                                <strong>@Moneda(item.ImporteSignado)</strong>
+                            </td>
+                        </tr>
+                    }
+                }
+            </Rows>
+        </DataTable>
+    }
+
+</section>
+
+@code {
+    private readonly FiltrosReporteCompras _filtros = new();
+    private ReporteComprasOptionsDto _options = new();
+    private TipoReporteCompras _tipoReporte = TipoReporteCompras.ResumenDeCompras;
+    private bool _panelAbierto;
+
+    private ResumenComprasDto?        _resumen;
+    private DetalleComprasResultDto?  _detalleCompras;
+    private CuentaCorrienteResultDto? _cuentaCorriente;
+
+    private AppUiMessage? _error;
+    private bool _isLoading;
+    private bool _mostrarResultados;
+
+    private static readonly System.Globalization.CultureInfo Cultura =
+        System.Globalization.CultureInfo.GetCultureInfo("es-AR");
+
+    // Totales de la página actual del detalle
+    private decimal TotalNetoDetalle  => _detalleCompras?.Items.Sum(x => x.Neto)  ?? 0;
+    private decimal TotalIvaDetalle   => _detalleCompras?.Items.Sum(x => x.Iva)   ?? 0;
+    private decimal TotalTotalDetalle => _detalleCompras?.Items.Sum(x => x.Total) ?? 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var result = await UiOps.RunAsync(
+            () => ReporteService.GetOptionsAsync(),
+            "No se pudieron cargar las opciones del reporte.");
+        if (result.Success && result.Value is not null)
+            _options = result.Value;
+    }
+
+    private async Task GenerarAsync()
+    {
+        _isLoading = true;
+        _error = null;
+        _mostrarResultados = false;
+        _filtros.Pagina = 1;
+
+        try
+        {
+            switch (_tipoReporte)
+            {
+                case TipoReporteCompras.ResumenDeCompras:
+                    _resumen = await ReporteService.GetResumenAsync(_filtros);
+                    break;
+                case TipoReporteCompras.DetalleDeCompras:
+                    _detalleCompras = await ReporteService.GetDetalleComprasAsync(_filtros);
+                    break;
+                case TipoReporteCompras.CuentaCorriente:
+                    _cuentaCorriente = await ReporteService.GetCuentaCorrienteAsync(_filtros);
+                    break;
+            }
+            _mostrarResultados = true;
+        }
+        catch (Exception ex)
+        {
+            _error = UiOps.BuildMessage(ex, "No se pudo generar el reporte.");
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task PaginaAnteriorAsync()
+    {
+        if (_filtros.Pagina <= 1) return;
+        _filtros.Pagina--;
+        await GenerarAsync();
+    }
+
+    private async Task PaginaSiguienteAsync()
+    {
+        var totalPaginas = _tipoReporte switch
+        {
+            TipoReporteCompras.DetalleDeCompras => _detalleCompras?.TotalPaginas  ?? 0,
+            TipoReporteCompras.CuentaCorriente  => _cuentaCorriente?.TotalPaginas ?? 0,
+            _                                   => 0
+        };
+        if (_filtros.Pagina >= totalPaginas) return;
+        _filtros.Pagina++;
+        await GenerarAsync();
+    }
+
+    private Task LimpiarAsync()
+    {
+        var today = DateTime.Today;
+        _filtros.FechaDesde      = new DateTime(today.Year, today.Month, 1);
+        _filtros.FechaHasta      = today;
+        _filtros.Proveedor       = null;
+        _filtros.TipoComprobante = null;
+        _filtros.Pagina          = 1;
+        _resumen         = null;
+        _detalleCompras  = null;
+        _cuentaCorriente = null;
+        _mostrarResultados = false;
+        _error = null;
+        return Task.CompletedTask;
+    }
+
+    private void SetRango(string key)
+    {
+        var today = DateTime.Today;
+        switch (key)
+        {
+            case "hoy":
+                _filtros.FechaDesde = _filtros.FechaHasta = today;
+                break;
+            case "mes":
+                _filtros.FechaDesde = new DateTime(today.Year, today.Month, 1);
+                _filtros.FechaHasta = today;
+                break;
+            case "mes-anterior":
+                var first = new DateTime(today.Year, today.Month, 1);
+                _filtros.FechaDesde = first.AddMonths(-1);
+                _filtros.FechaHasta = first.AddDays(-1);
+                break;
+            case "anio":
+                _filtros.FechaDesde = new DateTime(today.Year, 1, 1);
+                _filtros.FechaHasta = today;
+                break;
+        }
+    }
+
+    private void TogglePanel() => _panelAbierto = !_panelAbierto;
+
+    private bool TieneFiltrosAvanzados =>
+        _filtros.FechaDesde.HasValue || _filtros.FechaHasta.HasValue ||
+        !string.IsNullOrWhiteSpace(_filtros.TipoComprobante);
+
+    private List<(string Key, string Label)> BuildFilterChips()
+    {
+        var chips = new List<(string, string)>();
+        if (_filtros.FechaDesde.HasValue)
+            chips.Add(("fechaDesde", $"Desde: {_filtros.FechaDesde.Value:dd/MM/yyyy}"));
+        if (_filtros.FechaHasta.HasValue)
+            chips.Add(("fechaHasta", $"Hasta: {_filtros.FechaHasta.Value:dd/MM/yyyy}"));
+        if (!string.IsNullOrWhiteSpace(_filtros.TipoComprobante))
+            chips.Add(("tc", $"TC: {_filtros.TipoComprobante}"));
+        if (!string.IsNullOrWhiteSpace(_filtros.Proveedor))
+            chips.Add(("proveedor", $"Proveedor: {_filtros.Proveedor}"));
+        return chips;
+    }
+
+    private void RemoveChip(string key)
+    {
+        switch (key)
+        {
+            case "fechaDesde":      _filtros.FechaDesde      = null; break;
+            case "fechaHasta":      _filtros.FechaHasta      = null; break;
+            case "tc":              _filtros.TipoComprobante = null; break;
+            case "proveedor":       _filtros.Proveedor       = null; break;
+        }
+    }
+
+    private async Task ImprimirPdfAsync()
+    {
+        await Js.InvokeVoidAsync("dashboardExport.printCurrentPage", "Reporte de Compras");
+    }
+
+    private string GetExcelUrl(string tipo)
+    {
+        var parts = new System.Collections.Generic.List<string> { $"tipo={tipo}" };
+        if (_filtros.FechaDesde.HasValue)
+            parts.Add($"fechaDesde={_filtros.FechaDesde.Value:yyyy-MM-dd}");
+        if (_filtros.FechaHasta.HasValue)
+            parts.Add($"fechaHasta={_filtros.FechaHasta.Value:yyyy-MM-dd}");
+        if (!string.IsNullOrWhiteSpace(_filtros.Proveedor))
+            parts.Add($"proveedor={Uri.EscapeDataString(_filtros.Proveedor)}");
+        if (!string.IsNullOrWhiteSpace(_filtros.TipoComprobante))
+            parts.Add($"tc={Uri.EscapeDataString(_filtros.TipoComprobante)}");
+        return $"/compras/reportes/descargar-excel?{string.Join("&", parts)}";
+    }
+
+    private static string BuildViewerUrl(string tc, string idComprobante) =>
+        $"/comprobantes/viewer/{Uri.EscapeDataString(tc)}/{Uri.EscapeDataString(idComprobante)}?returnUrl={Uri.EscapeDataString("/compras/reportes")}";
+
+    private string TipoCss(TipoReporteCompras tipo) =>
+        _tipoReporte == tipo ? "btn btn--primary quick-filter-btn" : "btn btn--ghost quick-filter-btn";
+
+    private string GetSubtituloDetalle() =>
+        _detalleCompras is null ? string.Empty
+            : $"{_detalleCompras.TotalRegistros} comprobantes — página {_filtros.Pagina} de {_detalleCompras.TotalPaginas}";
+
+    private string GetSubtituloCC() =>
+        _cuentaCorriente is null ? string.Empty
+            : $"{_cuentaCorriente.TotalRegistros} movimientos — saldo: {Moneda(_cuentaCorriente.SaldoTotal)}";
+
+    private static string Moneda(decimal v) =>
+        v.ToString("$ #,##0.00", System.Globalization.CultureInfo.GetCultureInfo("es-AR"));
+}

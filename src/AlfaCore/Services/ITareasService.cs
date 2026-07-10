@@ -16,8 +16,11 @@ public interface ITareasService
     Task DuplicateTaskAsync(long idTarea, string usuarioAccion, CancellationToken ct = default);
     Task DeleteTaskAsync(long idTarea, string usuarioAccion, CancellationToken ct = default);
     Task<long> AddQuickNoteAsync(string texto, string usuario, CancellationToken ct = default);
+    Task<long> SaveQuickNoteAsync(TareaNotaRapidaSaveRequest request, CancellationToken ct = default);
     Task ToggleQuickNoteAsync(long idNota, bool completada, string usuario, CancellationToken ct = default);
     Task DeleteQuickNoteAsync(long idNota, string usuario, CancellationToken ct = default);
     Task ClearCompletedQuickNotesAsync(string usuario, CancellationToken ct = default);
+    Task ReorderQuickNotesAsync(IReadOnlyList<long> orderedIds, string usuario, CancellationToken ct = default);
     Task SaveSharingAsync(TareaCompartirRequest request, CancellationToken ct = default);
+    Task SaveGroupsAsync(TareaGruposSaveRequest request, CancellationToken ct = default);
 }

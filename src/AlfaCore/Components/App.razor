@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 
 <head>
@@ -6,13 +6,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <base href="/" />
     <title>AlfaCore - Alfa Gestión</title>
-    <link rel="stylesheet" href="bootstrap/bootstrap.min.css" />
-    <link rel="stylesheet" href="app.css" />
+    <link rel="stylesheet" href="/bootstrap/bootstrap.min.css?v=20260703-cssfix" />
+    <link rel="stylesheet" href="/app.css?v=20260708-lightbox-stableframe" />
+    <link rel="stylesheet" href="/css/informes.css?v=20260703-cssfix" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
-    <link rel="stylesheet" href="AlfaCore.styles.css" />
-    <link rel="icon" type="image/png" href="favicon.png" />
-    <link rel="manifest" href="manifest.webmanifest" />
-    <link rel="apple-touch-icon" href="icons/icon-192.png" />
+    <link rel="stylesheet" href="/AlfaCore.styles.css?v=20260707-loginfix21" />
+    <link rel="stylesheet" href="/css/auth.css?v=20260708-loginlocal2" />
+    <link rel="stylesheet" href="/theme-overrides.css?v=20260703-themefix3" />
+    <link rel="stylesheet" href="/css/carga-viajes.css?v=20260703-cssfix2" />
+    <link rel="icon" type="image/png" href="/logos/icono.png?v=20260703-cssfix" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
     <meta name="theme-color" content="#1f2937" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="AlfaCore" />
@@ -21,13 +25,56 @@
             var t = localStorage.getItem('dashboard.theme') || 'light';
             document.documentElement.setAttribute('data-theme', t);
         })();
+        (function () {
+            var isLocal = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+            if (!isLocal || !('serviceWorker' in navigator))
+                return;
+
+            navigator.serviceWorker.getRegistrations()
+                .then(function (registrations) {
+                    return Promise.all(registrations.map(function (registration) {
+                        return registration.unregister();
+                    }));
+                })
+                .catch(function () { });
+
+            if (window.caches && typeof window.caches.keys === 'function') {
+                window.caches.keys()
+                    .then(function (keys) {
+                        return Promise.all(keys.map(function (key) {
+                            return window.caches.delete(key);
+                        }));
+                    })
+                    .catch(function () { });
+            }
+        })();
         window.dashboardTheme = {
             set: function (theme) {
                 document.documentElement.setAttribute('data-theme', theme);
                 localStorage.setItem('dashboard.theme', theme);
+                document.dispatchEvent(new CustomEvent('dashboard-theme-changed', { detail: theme }));
             },
             get: function () {
                 return document.documentElement.getAttribute('data-theme') || 'light';
+            },
+            watch: function (dotnetRef) {
+                if (window.__alfaCoreDashboardThemeHandler) {
+                    document.removeEventListener('dashboard-theme-changed', window.__alfaCoreDashboardThemeHandler);
+                }
+
+                window.__alfaCoreDashboardThemeHandler = function () {
+                    if (!dotnetRef) return;
+                    var currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
+                    dotnetRef.invokeMethodAsync('OnDashboardThemeChanged', currentTheme);
+                };
+
+                document.addEventListener('dashboard-theme-changed', window.__alfaCoreDashboardThemeHandler);
+            },
+            unwatch: function () {
+                if (window.__alfaCoreDashboardThemeHandler) {
+                    document.removeEventListener('dashboard-theme-changed', window.__alfaCoreDashboardThemeHandler);
+                    window.__alfaCoreDashboardThemeHandler = null;
+                }
             }
         };
         window.alfaCoreSqlSession = {
@@ -44,6 +91,14 @@
         window.alfaCorePwaFunctionExists = function (name) {
             return !!(window.alfaCorePwa && typeof window.alfaCorePwa[name] === 'function');
         };
+        window.alfaCoreNavigation = {
+            canGoBack: function () {
+                return window.history.length > 1;
+            },
+            goBack: function () {
+                window.history.back();
+            }
+        };
     </script>
     <HeadOutlet />
 </head>
@@ -53,10 +108,11 @@
     <script src="_framework/blazor.web.js"></script>
     <script src="js/dashboard-export.js?v=20260417"></script>
     <script src="js/auth-tree.js?v=20260526a"></script>
-    <script src="js/conversaciones.js?v=20260520e"></script>
+    <script src="js/conversaciones.js?v=20260708j"></script>
     <script src="js/interfaces-upload.js?v=20260526b"></script>
     <script src="js/pwa.js?v=20260521e"></script>
     <script src="js/sticky-table-scroll.js?v=20260525a"></script>
+    <script src="js/sidebar-hover-state.js?v=20260611a"></script>
 </body>
 
 </html>

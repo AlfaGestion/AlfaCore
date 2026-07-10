@@ -1,4 +1,5 @@
 @page "/compras/rubros"
+@page "/{idweb}/{idbase:int}/compras/rubros"
 @inject AlfaCore.Services.IComprasDashboardService DashboardService
 @inject AlfaCore.Services.FilterStateService FilterState
 
@@ -20,7 +21,7 @@
             <KpiCard Titulo="Rubros activos" Valor="@_page.Kpis.CantidadRubrosActivos.ToString("N0")" Icono="R" />
             <KpiCard Titulo="Rubro principal" Valor="@_page.Kpis.RubroPrincipal" Icono="★" Destacado="true" />
             <KpiCard Titulo="Participación líder" Valor="@Porcentaje(_page.Kpis.ParticipacionRubroPrincipal)" Icono="%" />
-            <KpiCard Titulo="Variación total" Valor="@RenderVariacionTexto(_page.Kpis.VariacionTotalVsAnterior)" Icono="Δ" />
+            <KpiCard Titulo="Variación total" Valor="@RenderVariacionTexto(_page.Kpis.VariacionTotalVsAnterior)" Icono="Î”" />
             <KpiCard Titulo="Concentración top 3" Valor="@Porcentaje(_page.Kpis.ConcentracionTop3)" Icono="3" />
             <KpiCard Titulo="Mayor crecimiento" Valor="@RenderMayorVariacion(_page.Kpis.RubroMayorCrecimiento, _page.Kpis.RubroMayorCrecimientoVariacion)" Icono="▲" />
             <KpiCard Titulo="Mayor caída" Valor="@RenderMayorVariacion(_page.Kpis.RubroMayorCaida, _page.Kpis.RubroMayorCaidaVariacion)" Icono="▼" />

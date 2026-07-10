@@ -1,5 +1,7 @@
 @page "/interfaces/nuevo"
+@page "/{idweb}/{idbase:int}/interfaces/nuevo"
 @page "/interfaces/{IdComprobanteRecibido:long}"
+@page "/{idweb}/{idbase:int}/interfaces/{IdComprobanteRecibido:long}"
 @using AlfaCore.Models
 @using Microsoft.AspNetCore.Components.Forms
 @inject AlfaCore.Services.IInterfacesService InterfacesSvc
@@ -40,6 +42,12 @@
                         <small>Código: @_feedback.Code</small>
                     }
                 </div>
+                @if (_isNewMode && _lastSavedId.HasValue && _feedback?.Severity == AppUiFeedbackSeverity.Success)
+                {
+                    <a class="btn btn--ghost btn--sm" href="/interfaces/@_lastSavedId.Value">
+                        <i class="bi bi-eye"></i> Ver documento #@_lastSavedId.Value
+                    </a>
+                }
             </div>
         </section>
     }
@@ -148,6 +156,33 @@
                         </div>
                     }
                 </div>
+
+                @if (_duplicatesFound is { Count: > 0 } && !_duplicateConfirmed)
+                {
+                    <div class="interfaces-inline-note interfaces-inline-note--warning">
+                        <i class="bi bi-exclamation-triangle-fill"></i>
+                        <div>
+                            <strong>Posibles archivos duplicados</strong>
+                            <span>
+                                @foreach (var dup in _duplicatesFound.DistinctBy(static d => d.IdComprobanteRecibido))
+                                {
+                                    <span>
+                                        "<strong>@dup.NombreOriginal</strong>" ya fue subido en el documento
+                                        <a href="/interfaces/@dup.IdComprobanteRecibido" target="_blank">#@dup.IdComprobanteRecibido</a>.
+                                    </span>
+                                }
+                            </span>
+                        </div>
+                        <div class="actions" style="gap:8px; flex-shrink:0;">
+                            <button type="button" class="btn btn--ghost btn--sm" @onclick="() => _duplicateConfirmed = true" disabled="@_saving">
+                                <i class="bi bi-check2"></i> Continuar igual
+                            </button>
+                            <button type="button" class="btn btn--ghost btn--sm" @onclick="() => _duplicatesFound = null" disabled="@_saving">
+                                <i class="bi bi-x"></i> Cancelar
+                            </button>
+                        </div>
+                    </div>
+                }
 
                 <div class="actions usuarios-editor__actions">
                     <button type="button" class="btn btn--primary" @onclick="GuardarNuevoAsync" disabled="@_saving">
@@ -460,6 +495,9 @@
     private readonly List<InterfacesEstadoOptionDto> _states = [];
     private readonly List<InterfacesTipoDocumentoOptionDto> _documentTypes = [];
     private AppUiMessage? _feedback;
+    private long? _lastSavedId;
+    private List<InterfacesAdjuntoDuplicadoDto>? _duplicatesFound;
+    private bool _duplicateConfirmed;
     private InterfacesDetalleDto? _detail;
     private InterfacesUploadSettingsDto? _settings;
     private bool _loading = true;
@@ -536,6 +574,9 @@
 
     private async Task GuardarNuevoAsync()
     {
+        _lastSavedId = null;
+        _duplicatesFound = null;
+
         if (_settings is null)
         {
             SetFeedback(UiOps.BuildMessage(new InvalidOperationException("No se pudo cargar la configuración de carga."), "No se pudo guardar el documento."));
@@ -566,6 +607,28 @@
             return;
         }
 
+        if (!_duplicateConfirmed)
+        {
+            var hashes = _selectedFiles
+                .Where(static f => !string.IsNullOrWhiteSpace(f.ContentHash))
+                .Select(static f => f.ContentHash)
+                .ToList();
+
+            if (hashes.Count > 0)
+            {
+                var dupResult = await UiOps.RunAsync(
+                    () => InterfacesSvc.FindFilesByHashAsync(hashes),
+                    "No se pudo verificar duplicados.");
+
+                if (dupResult.Success && dupResult.Value is { Count: > 0 })
+                {
+                    _duplicatesFound = dupResult.Value.ToList();
+                    return;
+                }
+            }
+        }
+
+        _duplicateConfirmed = false;
         _saving = true;
         try
         {
@@ -582,6 +645,7 @@
                         NombreArchivo = file.NombreArchivo,
                         MimeType = file.MimeType,
                         TamanoBytes = file.TamanoBytes,
+                        ContentHash = file.ContentHash,
                         Contenido = stream
                     });
                 }
@@ -602,8 +666,11 @@
                     return;
                 }
 
-                SetFeedback(AppUiMessage.Success("Documento registrado", $"El comprobante #{result.Value} se registró correctamente."));
-                Navigation.NavigateTo($"/interfaces/{result.Value}");
+                _lastSavedId = result.Value;
+                LimpiarNuevo();
+                SetFeedback(AppUiMessage.Success(
+                    "Documento registrado",
+                    $"El comprobante #{result.Value} quedó registrado. El formulario está limpio para ingresar otro."));
             }
             finally
             {
@@ -839,8 +906,20 @@
         if (_settings is null)
             return;
 
-        await AgregarArchivosPendientesAsync(_selectedFiles, e.GetMultipleFiles(20), 20, _settings.TamanoMaximoBytes);
+        var skipped = await AgregarArchivosPendientesAsync(_selectedFiles, e.GetMultipleFiles(20), 20, _settings.TamanoMaximoBytes);
         _filePickerVersion++;
+
+        if (skipped.Count > 0)
+        {
+            var names = string.Join(", ", skipped.Take(3).Select(static n => $"\"{n}\""));
+            var extra = skipped.Count > 3 ? $" y {skipped.Count - 3} más" : string.Empty;
+            SetFeedback(new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Warning,
+                Title = skipped.Count == 1 ? "Archivo duplicado ignorado" : "Archivos duplicados ignorados",
+                Message = $"{names}{extra} ya {(skipped.Count == 1 ? "estaba" : "estaban")} en la lista y no {(skipped.Count == 1 ? "se agregó" : "se agregaron")} nuevamente."
+            });
+        }
     }
 
     private async Task HandleExtraFilesSelectedAsync(InputFileChangeEventArgs e)
@@ -881,8 +960,9 @@
         });
     }
 
-    private async Task AgregarArchivosPendientesAsync(List<PendingUploadFile> target, IReadOnlyList<IBrowserFile> files, int maxFiles, long maxBytes)
+    private async Task<List<string>> AgregarArchivosPendientesAsync(List<PendingUploadFile> target, IReadOnlyList<IBrowserFile> files, int maxFiles, long maxBytes)
     {
+        var skipped = new List<string>();
         var signatures = target.Select(static x => x.Signature).ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (var file in files)
         {
@@ -891,10 +971,14 @@
 
             var pending = await PendingUploadFile.CreateAsync(file, maxBytes);
             if (!signatures.Add(pending.Signature))
+            {
+                skipped.Add(file.Name);
                 continue;
+            }
 
             target.Add(pending);
         }
+        return skipped;
     }
 
     private void QuitarArchivoPendiente(Guid id)
@@ -964,6 +1048,8 @@
         _nuevo.PromptIaAdicional = string.Empty;
         _selectedFiles.Clear();
         _filePickerVersion++;
+        _duplicatesFound = null;
+        _duplicateConfirmed = false;
     }
 
     private void ResetEditarDetalle()
@@ -1089,13 +1175,14 @@
 
     private sealed class PendingUploadFile
     {
-        private PendingUploadFile(string nombreArchivo, string mimeType, long tamanoBytes, byte[] contenido, string signature)
+        private PendingUploadFile(string nombreArchivo, string mimeType, long tamanoBytes, byte[] contenido, string signature, string contentHash)
         {
             NombreArchivo = nombreArchivo;
             MimeType = mimeType;
             TamanoBytes = tamanoBytes;
             Contenido = contenido;
             Signature = signature;
+            ContentHash = contentHash;
         }
 
         public Guid Id { get; } = Guid.NewGuid();
@@ -1104,13 +1191,16 @@
         public long TamanoBytes { get; }
         public byte[] Contenido { get; }
         public string Signature { get; }
+        public string ContentHash { get; }
 
         public static async Task<PendingUploadFile> CreateAsync(IBrowserFile file, long maxBytes)
         {
             await using var source = file.OpenReadStream(maxBytes);
             await using var ms = new MemoryStream();
             await source.CopyToAsync(ms);
-            return new PendingUploadFile(file.Name, file.ContentType, file.Size, ms.ToArray(), $"{file.Name}|{file.Size}|{file.LastModified.UtcDateTime.Ticks}");
+            var bytes = ms.ToArray();
+            var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)).ToLowerInvariant();
+            return new PendingUploadFile(file.Name, file.ContentType, file.Size, bytes, $"{file.Name}|{file.Size}|{file.LastModified.UtcDateTime.Ticks}", hash);
         }
 
         public Stream OpenReadStream() => new MemoryStream(Contenido, writable: false);

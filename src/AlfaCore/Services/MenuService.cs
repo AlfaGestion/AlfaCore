@@ -12,12 +12,6 @@ public sealed class MenuService(
     IActualizacionesService actualizacionesService,
     IAppUserSessionService appUserSession) : IMenuService
 {
-    private const string CrmModuleKey = "D010185";
-    private const string CrmSectionKey = "D010185WEB";
-    private const string CrmSectionName = "CRM";
-    private const string CrmTicketsKey = "D010185-WEB-TICKETS";
-    private const string CrmConversacionesKey = "D010185-WEB-CONVERSACIONES";
-
     private string ConnectionString => sessionService.GetConnectionString().Length > 0
         ? sessionService.GetConnectionString()
         : configuration.GetConnectionString("AlfaGestion")
@@ -75,40 +69,28 @@ public sealed class MenuService(
 
     private async Task<MenuSnapshot> LoadVisibleMenuAsync(CancellationToken ct, bool allowAutoRepair)
     {
-        return await ExecuteLoggedAsync("Shell", "LoadVisibleMenu", async token =>
+        try
         {
             await using var cn = new SqlConnection(ConnectionString);
-            await cn.OpenAsync(token);
+            await cn.OpenAsync(ct);
 
-            if (!await TableExistsAsync(cn, "TA_MENU", token) || !await TableExistsAsync(cn, "ALFACORE_MENU_WEB", token))
+            if (!await TableExistsAsync(cn, "ALFACORE_MENU_WEB", ct))
             {
                 await cn.CloseAsync();
 
-                if (allowAutoRepair && await TryAutoRepairShellMenuAsync(token))
-                    return await LoadVisibleMenuAsync(token, allowAutoRepair: false);
+                if (allowAutoRepair && await TryAutoRepairShellMenuAsync(ct))
+                    return await LoadVisibleMenuAsync(ct, allowAutoRepair: false);
 
                 return EmptySnapshot();
             }
 
-            var hasNombreWeb = await ColumnExistsAsync(cn, "ALFACORE_MENU_WEB", "NombreWeb", token);
-            var hasDescripcion = await ColumnExistsAsync(cn, "TA_MENU", "Descripcion", token);
-            var nombreExpression = hasNombreWeb
-                ? "ISNULL(NULLIF(w.NombreWeb, ''), ISNULL(m.Nombre, ''))"
-                : "ISNULL(m.Nombre, '')";
-            var descripcionExpression = hasDescripcion
-                ? "ISNULL(CAST(m.Descripcion AS nvarchar(max)), '')"
-                : "''";
-
-            var sql = $"""
+            const string sql = """
                 SELECT
-                    m.Menu,
-                    ISNULL(m.Titulo, '') AS Titulo,
-                    m.Clave,
-                    {nombreExpression} AS Nombre,
-                    {descripcionExpression} AS Descripcion,
-                    ISNULL(m.Proceso, '') AS Proceso,
-                    ISNULL(m.Habilitado, 1) AS Habilitado,
-                    ISNULL(m.Orden, m.Clave) AS OrdenMenu,
+                    ISNULL(w.Menu, '') AS Menu,
+                    ISNULL(w.Clave, '') AS Clave,
+                    ISNULL(w.PadreClave, '') AS PadreClave,
+                    ISNULL(NULLIF(w.NombreWeb, ''), w.Clave) AS Nombre,
+                    ISNULL(w.DescripcionWeb, ISNULL(w.Observacion, '')) AS Descripcion,
                     ISNULL(w.RutaWeb, '') AS RutaWeb,
                     ISNULL(w.Componente, '') AS Componente,
                     ISNULL(w.Icono, '') AS Icono,
@@ -116,28 +98,35 @@ public sealed class MenuService(
                     ISNULL(w.OrdenWeb, 0) AS OrdenWeb,
                     ISNULL(w.EsFavoritoDefault, 0) AS EsFavoritoDefault,
                     ISNULL(w.Observacion, '') AS Observacion
-                FROM dbo.TA_MENU m
-                LEFT JOIN dbo.ALFACORE_MENU_WEB w
-                    ON w.Menu = m.Menu
-                   AND w.Clave = m.Clave
-                WHERE ISNULL(m.Habilitado, 1) = 1;
+                FROM dbo.ALFACORE_MENU_WEB w
+                WHERE ISNULL(w.Menu, '') <> '';
                 """;
 
-            var rows = (await cn.QueryAsync<MenuRow>(new CommandDefinition(sql, cancellationToken: token))).ToList();
-            var permissionSet = await permissionService.GetAllowedTaskKeysAsync(token);
+            var rows = (await cn.QueryAsync<MenuRow>(new CommandDefinition(sql, cancellationToken: ct))).ToList();
+            if (rows.Count == 0)
+                return EmptySnapshot();
 
+            var permissionSet = await permissionService.GetAllowedTaskKeysAsync(ct);
             var parentByKey = rows
                 .Where(x => !string.IsNullOrWhiteSpace(x.Clave))
                 .GroupBy(x => x.Clave.Trim(), StringComparer.OrdinalIgnoreCase)
-                .ToDictionary(g => g.Key, g => g.First().Titulo?.Trim() ?? string.Empty, StringComparer.OrdinalIgnoreCase);
+                .ToDictionary(
+                    g => g.Key,
+                    g => g.First().PadreClave?.Trim() ?? string.Empty,
+                    StringComparer.OrdinalIgnoreCase);
             var nameByKey = rows
                 .Where(x => !string.IsNullOrWhiteSpace(x.Clave))
                 .GroupBy(x => x.Clave.Trim(), StringComparer.OrdinalIgnoreCase)
-                .ToDictionary(g => g.Key, g => g.First().Nombre?.Trim() ?? g.Key, StringComparer.OrdinalIgnoreCase);
+                .ToDictionary(
+                    g => g.Key,
+                    g => !string.IsNullOrWhiteSpace(g.First().Nombre) ? g.First().Nombre.Trim() : g.Key,
+                    StringComparer.OrdinalIgnoreCase);
 
-            var mapped = rows.Where(x => x.HabilitadoWeb && !string.IsNullOrWhiteSpace(x.RutaWeb)).ToList();
+            var mapped = rows
+                .Where(x => x.HabilitadoWeb && !string.IsNullOrWhiteSpace(x.RutaWeb))
+                .ToList();
+
             var includeKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
             foreach (var row in mapped)
             {
                 var key = row.Clave.Trim();
@@ -159,76 +148,94 @@ public sealed class MenuService(
             }
 
             var visibleRows = rows
-                .Where(x => includeKeys.Contains(x.Clave.Trim()))
+                .Where(x => !string.IsNullOrWhiteSpace(x.Clave) && includeKeys.Contains(x.Clave.Trim()))
                 .ToList();
+
+            if (visibleRows.Count == 0 && mapped.Count > 0)
+            {
+                visibleRows = mapped
+                    .Where(x => !string.IsNullOrWhiteSpace(x.Clave))
+                    .ToList();
+
+                foreach (var row in visibleRows)
+                {
+                    includeKeys.Add(row.Clave.Trim());
+                    AddAncestors(includeKeys, parentByKey, row.Clave.Trim());
+                }
+            }
 
             var nodes = visibleRows
                 .Where(x => x.HabilitadoWeb && !string.IsNullOrWhiteSpace(x.RutaWeb))
                 .Select(x => new ShellMenuNodeDto
                 {
-                    Menu = x.Menu,
+                    Menu = x.Menu.Trim(),
                     Clave = x.Clave.Trim(),
-                    Titulo = x.Titulo?.Trim() ?? string.Empty,
-                    Nombre = x.Nombre?.Trim() ?? string.Empty,
-                    Descripcion = x.Descripcion?.Trim() ?? string.Empty,
-                    Proceso = x.Proceso?.Trim() ?? string.Empty,
-                    RutaWeb = x.RutaWeb?.Trim() ?? string.Empty,
-                    Componente = x.Componente?.Trim() ?? string.Empty,
-                    Icono = x.Icono?.Trim() ?? "bi-grid",
-                    OrdenWeb = x.OrdenWeb > 0 ? x.OrdenWeb : ParseOrder(x.OrdenMenu, x.Clave),
+                    Titulo = x.PadreClave?.Trim() ?? string.Empty,
+                    Nombre = x.Nombre.Trim(),
+                    Descripcion = x.Descripcion.Trim(),
+                    Proceso = string.Empty,
+                    RutaWeb = x.RutaWeb.Trim(),
+                    Componente = x.Componente.Trim(),
+                    Icono = string.IsNullOrWhiteSpace(x.Icono) ? "bi-grid" : x.Icono.Trim(),
+                    OrdenWeb = x.OrdenWeb > 0 ? x.OrdenWeb : ParseOrder(x.Clave),
                     EsFavoritoDefault = x.EsFavoritoDefault,
-                    Observacion = x.Observacion?.Trim() ?? string.Empty
+                    Observacion = x.Observacion.Trim()
                 })
                 .OrderBy(x => x.OrdenWeb)
                 .ThenBy(x => x.Nombre)
                 .ToList();
 
-            AddSyntheticCrmNodes(nodes, includeKeys, parentByKey, nameByKey);
-
             var rootModules = visibleRows
-                .Where(x => includeKeys.Contains(x.Clave.Trim()))
                 .Where(IsShellModuleRow)
                 .Select(x => new ShellModuleDto
                 {
-                    Menu = x.Menu,
+                    Menu = x.Menu.Trim(),
                     Clave = x.Clave.Trim(),
-                    Nombre = x.Nombre?.Trim() ?? x.Clave.Trim(),
-                    RutaWeb = rows.FirstOrDefault(r => string.Equals(r.Clave, x.Clave, StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(r.RutaWeb))?.RutaWeb?.Trim()
-                              ?? $"/shell/{Uri.EscapeDataString(x.Clave.Trim())}",
-                    Icono = rows.FirstOrDefault(r => string.Equals(r.Clave, x.Clave, StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(r.Icono))?.Icono?.Trim()
-                            ?? "bi-grid",
-                    OrdenWeb = ParseOrder(x.OrdenMenu, x.Clave)
+                    Nombre = !string.IsNullOrWhiteSpace(x.Nombre) ? x.Nombre.Trim() : x.Clave.Trim(),
+                    RutaWeb = !string.IsNullOrWhiteSpace(x.RutaWeb) ? x.RutaWeb.Trim() : $"/shell/{Uri.EscapeDataString(x.Clave.Trim())}",
+                    Icono = string.IsNullOrWhiteSpace(x.Icono) ? "bi-grid" : x.Icono.Trim(),
+                    OrdenWeb = x.OrdenWeb > 0 ? x.OrdenWeb : ParseOrder(x.Clave)
                 })
                 .OrderBy(x => x.OrdenWeb)
                 .ThenBy(x => x.Nombre)
                 .ToList();
 
-            var crmNode = nodes.FirstOrDefault(x => string.Equals(x.Clave, CrmModuleKey, StringComparison.OrdinalIgnoreCase));
-            if (crmNode is not null && rootModules.All(x => !string.Equals(x.Clave, CrmModuleKey, StringComparison.OrdinalIgnoreCase)))
+            if (appUserSession.CurrentUser?.SuperAdmin == true
+                && rootModules.All(x => !string.Equals(x.Clave, "ADMINISTRAR", StringComparison.OrdinalIgnoreCase)))
             {
                 rootModules.Add(new ShellModuleDto
                 {
-                    Menu = crmNode.Menu,
-                    Clave = crmNode.Clave,
-                    Nombre = crmNode.Nombre,
-                    RutaWeb = crmNode.RutaWeb,
-                    Icono = crmNode.Icono,
-                    OrdenWeb = crmNode.OrdenWeb > 0 ? crmNode.OrdenWeb : 18
+                    Menu = "ALFA",
+                    Clave = "ADMINISTRAR",
+                    Nombre = "Administrar",
+                    RutaWeb = "/admin",
+                    Icono = "bi-shield-lock-fill",
+                    OrdenWeb = 99990
                 });
+
+                rootModules = rootModules
+                    .OrderBy(x => x.OrdenWeb)
+                    .ThenBy(x => x.Nombre)
+                    .ToList();
             }
 
-            nodes = nodes
-                .OrderBy(x => x.OrdenWeb)
-                .ThenBy(x => x.Nombre)
-                .ToList();
+            return new MenuSnapshot(
+                nodes,
+                rootModules,
+                parentByKey,
+                nameByKey);
+        }
+        catch (Exception ex)
+        {
+            await TryLogWarningAsync(
+                "Shell",
+                "LoadVisibleMenu",
+                ex,
+                "No se pudo construir el menú web dinámico.",
+                ct);
 
-            rootModules = rootModules
-                .OrderBy(x => x.OrdenWeb)
-                .ThenBy(x => x.Nombre)
-                .ToList();
-
-            return new MenuSnapshot(nodes, rootModules, parentByKey, nameByKey);
-        }, "No se pudo construir el menú web dinámico.", ct);
+            return EmptySnapshot();
+        }
     }
 
     private async Task<bool> TryAutoRepairShellMenuAsync(CancellationToken ct)
@@ -277,14 +284,11 @@ public sealed class MenuService(
 
         var sections = items
             .GroupBy(x => ResolveSectionKey(x, moduleKey, parentByKey), StringComparer.OrdinalIgnoreCase)
-            .Select(g =>
+            .Select(g => new ShellWorkspaceSectionDto
             {
-                return new ShellWorkspaceSectionDto
-                {
-                    Clave = g.Key,
-                    Nombre = nameByKey.TryGetValue(g.Key, out var sectionName) ? sectionName : "Aplicaciones",
-                    Items = g.OrderBy(x => x.OrdenWeb).ThenBy(x => x.Nombre).ToArray()
-                };
+                Clave = g.Key,
+                Nombre = nameByKey.TryGetValue(g.Key, out var sectionName) ? sectionName : "Aplicaciones",
+                Items = g.OrderBy(x => x.OrdenWeb).ThenBy(x => x.Nombre).ToArray()
             })
             .OrderBy(x => items.First(i => string.Equals(ResolveSectionKey(i, moduleKey, parentByKey), x.Clave, StringComparison.OrdinalIgnoreCase)).OrdenWeb)
             .ToArray();
@@ -438,63 +442,9 @@ public sealed class MenuService(
     private static bool IsShellModuleRow(MenuRow row)
     {
         var route = NormalizeRoute(row.RutaWeb);
-        return string.Equals(row.Titulo?.Trim(), "D", StringComparison.OrdinalIgnoreCase)
-               || string.Equals(route, $"/shell/{CrmModuleKey}", StringComparison.OrdinalIgnoreCase)
+        return string.Equals(row.PadreClave?.Trim(), "D", StringComparison.OrdinalIgnoreCase)
                || (string.Equals(row.Componente?.Trim(), "ShellWorkspacePage", StringComparison.OrdinalIgnoreCase)
                    && route.StartsWith("/shell/", StringComparison.OrdinalIgnoreCase));
-    }
-
-    private static void AddSyntheticCrmNodes(
-        List<ShellMenuNodeDto> nodes,
-        HashSet<string> includeKeys,
-        Dictionary<string, string> parentByKey,
-        Dictionary<string, string> nameByKey)
-    {
-        if (!includeKeys.Contains(CrmModuleKey))
-            return;
-
-        parentByKey[CrmSectionKey] = CrmModuleKey;
-        nameByKey[CrmSectionKey] = CrmSectionName;
-        parentByKey[CrmConversacionesKey] = CrmSectionKey;
-        parentByKey[CrmTicketsKey] = CrmSectionKey;
-        nameByKey[CrmConversacionesKey] = "Conversaciones";
-        nameByKey[CrmTicketsKey] = "Tickets";
-
-        if (nodes.All(x => !string.Equals(x.Clave, CrmConversacionesKey, StringComparison.OrdinalIgnoreCase)))
-        {
-            var crmModule = nodes.FirstOrDefault(x => string.Equals(x.Clave, CrmModuleKey, StringComparison.OrdinalIgnoreCase));
-            nodes.Add(new ShellMenuNodeDto
-            {
-                Menu = crmModule?.Menu ?? "ALFA",
-                Clave = CrmConversacionesKey,
-                Titulo = CrmSectionKey,
-                Nombre = "Conversaciones",
-                Descripcion = "Inbox operativo de conversaciones, seguimiento y atención comercial.",
-                RutaWeb = "/conversaciones",
-                Componente = "Conversaciones",
-                Icono = "bi-chat-left-text-fill",
-                OrdenWeb = 18501,
-                Observacion = "Atención omnicanal, seguimiento comercial y derivación operativa."
-            });
-        }
-
-        if (nodes.All(x => !string.Equals(x.Clave, CrmTicketsKey, StringComparison.OrdinalIgnoreCase)))
-        {
-            var crmModule = nodes.FirstOrDefault(x => string.Equals(x.Clave, CrmModuleKey, StringComparison.OrdinalIgnoreCase));
-            nodes.Add(new ShellMenuNodeDto
-            {
-                Menu = crmModule?.Menu ?? "ALFA",
-                Clave = CrmTicketsKey,
-                Titulo = CrmSectionKey,
-                Nombre = "Tickets",
-                Descripcion = "Mesa de ayuda, soporte y seguimiento de incidencias.",
-                RutaWeb = "/tickets",
-                Componente = "Tickets",
-                Icono = "bi-life-preserver",
-                OrdenWeb = 18502,
-                Observacion = "Gestión de tickets de asistencia, prioridades y resolución."
-            });
-        }
     }
 
     private static void AddAncestors(HashSet<string> includeKeys, IReadOnlyDictionary<string, string> parentByKey, string key)
@@ -510,15 +460,8 @@ public sealed class MenuService(
         }
     }
 
-    private static int ParseOrder(string? order, string? fallback)
+    private static int ParseOrder(string? fallback)
     {
-        if (!string.IsNullOrWhiteSpace(order))
-        {
-            var digits = new string(order.Where(char.IsDigit).ToArray());
-            if (int.TryParse(digits, out var parsed))
-                return parsed;
-        }
-
         if (!string.IsNullOrWhiteSpace(fallback))
         {
             var digits = new string(fallback.Where(char.IsDigit).ToArray());
@@ -541,30 +484,6 @@ public sealed class MenuService(
         return value.TrimEnd('/').Length == 0 ? "/" : value.TrimEnd('/');
     }
 
-    private async Task<T> ExecuteLoggedAsync<T>(
-        string process,
-        string action,
-        Func<CancellationToken, Task<T>> operation,
-        string userMessage,
-        CancellationToken ct)
-    {
-        try
-        {
-            return await operation(ct);
-        }
-        catch (Exception ex)
-        {
-            var incidentId = await appEvents.LogErrorAsync(
-                process,
-                action,
-                ex,
-                userMessage,
-                ct: ct);
-
-            throw new InvalidOperationException($"{userMessage} Código: {incidentId}", ex);
-        }
-    }
-
     private static async Task<bool> TableExistsAsync(SqlConnection cn, string tableName, CancellationToken ct)
     {
         const string sql = """
@@ -577,33 +496,39 @@ public sealed class MenuService(
         return count > 0;
     }
 
-    private static async Task<bool> ColumnExistsAsync(SqlConnection cn, string tableName, string columnName, CancellationToken ct)
+    private async Task TryLogWarningAsync(
+        string process,
+        string action,
+        Exception exception,
+        string userMessage,
+        CancellationToken ct)
     {
-        const string sql = """
-            SELECT COUNT(1)
-            FROM sys.columns
-            WHERE object_id = OBJECT_ID(@FullName)
-              AND name = @ColumnName;
-            """;
-
-        var count = await cn.ExecuteScalarAsync<int>(new CommandDefinition(sql, new
+        try
         {
-            FullName = $"dbo.{tableName}",
-            ColumnName = columnName
-        }, cancellationToken: ct));
-        return count > 0;
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeoutCts.CancelAfter(TimeSpan.FromSeconds(2));
+
+            await appEvents.LogErrorAsync(
+                process,
+                action,
+                exception,
+                userMessage,
+                severity: AppEventSeverity.Warning,
+                ct: timeoutCts.Token);
+        }
+        catch
+        {
+            // El shell debe seguir renderizando aunque el logging falle.
+        }
     }
 
     private sealed class MenuRow
     {
         public string Menu { get; init; } = string.Empty;
-        public string Titulo { get; init; } = string.Empty;
         public string Clave { get; init; } = string.Empty;
+        public string? PadreClave { get; init; }
         public string Nombre { get; init; } = string.Empty;
         public string Descripcion { get; init; } = string.Empty;
-        public string Proceso { get; init; } = string.Empty;
-        public bool Habilitado { get; init; }
-        public string OrdenMenu { get; init; } = string.Empty;
         public string RutaWeb { get; init; } = string.Empty;
         public string Componente { get; init; } = string.Empty;
         public string Icono { get; init; } = string.Empty;

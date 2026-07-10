@@ -1,174 +1,377 @@
+@using AlfaCore.Models
+@inject AlfaCore.Services.IAppModeService AppMode
 @inject AlfaCore.Services.ISessionService SessionSvc
+@inject AlfaCore.Services.IAppUserSessionService AppUserSession
+@inject AlfaCore.Services.ICentralBasesService CentralBasesSvc
 @inject AlfaCore.Services.IActualizacionesService ActualizacionesSvc
 @inject IJSRuntime JS
 
 @if (Open)
 {
-    <div class="drawer-overlay" @onclick="Close"></div>
+    <div class="drawer-overlay @(DarkTheme ? "drawer-overlay--login" : string.Empty)" @onclick="Close"></div>
 
-    <div class="drawer" role="dialog" aria-label="Gestor de sesiones">
+    <div class="drawer @(DarkTheme ? "drawer--login" : string.Empty)" role="dialog" aria-label="Selector de bases">
         <div class="drawer__header">
             <h3 class="drawer__title">
-                <i class="bi bi-database"></i> Sesiones de base de datos
+                <i class="bi bi-database"></i> Bases disponibles
             </h3>
-            <button class="drawer__close" @onclick="Close" title="Cerrar">
-                <i class="bi bi-x-lg"></i>
-            </button>
+            <div class="drawer__header-actions">
+                @if (!AppMode.IsSaaSMode)
+                {
+                    <button type="button"
+                            class="btn btn--ghost btn--sm drawer__add"
+                            @onclick="ToggleAddSessionForm"
+                            title="@(_showAddSessionForm ? "Cerrar formulario" : "Agregar base")">
+                        <i class="bi bi-plus-lg"></i>
+                        <span>@(_showAddSessionForm ? "Cerrar" : "Agregar base")</span>
+                    </button>
+                }
+                <button class="drawer__close" @onclick="Close" title="Cerrar">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </div>
         </div>
 
         <div class="drawer__body">
-
-            <!-- Lista de sesiones -->
-            <div class="drawer-sessions">
-                @foreach (var s in _sesiones)
-                {
-                    <div class="drawer-session @(s.Activa ? "drawer-session--active" : "")">
-                        <div class="drawer-session__info">
-                            <span class="drawer-session__dot @(s.Activa ? "drawer-session__dot--ok" : "")"></span>
-                            <div>
-                                <p class="drawer-session__nombre">@s.Nombre</p>
-                                <p class="drawer-session__detalle">@s.Servidor · @s.BaseDatos</p>
-                                <p class="drawer-session__usuario">@s.Usuario</p>
-                            </div>
+            @if (_showAddSessionForm && !AppMode.IsSaaSMode)
+            {
+                <form class="drawer-add-session" @onsubmit="SaveNewSessionAsync" @onsubmit:preventDefault="true">
+                    <div class="drawer-add-session__head">
+                        <div>
+                            <p class="drawer-add-session__eyebrow">Archivo local</p>
+                            <h4>Agregar base</h4>
                         </div>
-                        <div class="drawer-session__actions">
-                            @if (s.Activa)
-                            {
-                                <span class="drawer-session__badge">Activa</span>
-                            }
-                            else
-                            {
-                                <button class="btn btn--primary btn--sm" @onclick="() => ConectarAsync(s.Id)">
-                                    Conectar
-                                </button>
-                                <button class="btn btn--ghost btn--sm btn--danger" @onclick="() => Eliminar(s.Id)">
-                                    <i class="bi bi-trash"></i>
-                                </button>
-                            }
+                        <span class="drawer-add-session__hint">Se guarda en `App_Data/sessions.json`</span>
+                    </div>
+
+                    @if (!string.IsNullOrWhiteSpace(_addSessionError))
+                    {
+                        <div class="drawer-add-session__error">@_addSessionError</div>
+                    }
+
+                    <div class="drawer-add-session__grid">
+                        <div class="drawer-add-session__field">
+                            <label>Nombre</label>
+                            <input class="drawer-search__input" @bind="_newSessionNombre" placeholder="Nombre visible" />
+                        </div>
+                        <div class="drawer-add-session__field">
+                            <label>Servidor</label>
+                            <input class="drawer-search__input" @bind="_newSessionServidor" placeholder="SERVER\\INSTANCIA" />
+                        </div>
+                        <div class="drawer-add-session__field">
+                            <label>Base de datos</label>
+                            <input class="drawer-search__input" @bind="_newSessionBaseDatos" placeholder="BASE" />
+                        </div>
+                        <div class="drawer-add-session__field">
+                            <label>Usuario SQL</label>
+                            <input class="drawer-search__input" @bind="_newSessionUsuario" placeholder="usuario" />
+                        </div>
+                        <div class="drawer-add-session__field drawer-add-session__field--full">
+                            <label>Contraseña SQL</label>
+                            <input class="drawer-search__input" type="password" @bind="_newSessionPassword" placeholder="••••••••" />
                         </div>
                     </div>
+
+                    <div class="drawer-add-session__actions">
+                        <button type="button" class="btn btn--ghost btn--sm" @onclick="CancelAddSessionForm">Cancelar</button>
+                        <button type="submit" class="btn btn--primary btn--sm" disabled="@_savingSession">
+                            @(_savingSession ? "Guardando..." : "Guardar base")
+                        </button>
+                    </div>
+                </form>
+            }
+
+            <div class="drawer-search">
+                <input class="drawer-search__input"
+                       value="@_searchText"
+                       @oninput="HandleSearchInputAsync"
+                       @onkeydown="HandleSearchKeyDownAsync"
+                       placeholder="Buscar base..."
+                       autocomplete="off" />
+            </div>
+
+            <div class="drawer-sessions">
+                @if (VisibleSesiones.Count == 0)
+                {
+                    <div class="drawer-empty">
+                        No hay bases disponibles para este cliente.
+                    </div>
+                }
+                else
+                {
+                    @for (var index = 0; index < VisibleSesiones.Count; index++)
+                    {
+                        var s = VisibleSesiones[index];
+                        <div class="drawer-session @(s.Activa ? "drawer-session--active" : string.Empty) @(index == _selectedIndex ? "drawer-session--selected" : string.Empty)">
+                            <div class="drawer-session__info">
+                                <span class="drawer-session__dot @(s.Activa ? "drawer-session__dot--ok" : string.Empty)"></span>
+                                <div>
+                                    <p class="drawer-session__nombre">@s.Nombre</p>
+                                    <p class="drawer-session__detalle">@s.Servidor · @s.BaseDatos</p>
+                                    <p class="drawer-session__usuario">@(s.BaseId > 0 ? $"Base #{s.BaseId}" : s.Nombre)</p>
+                                </div>
+                            </div>
+                            <div class="drawer-session__actions">
+                                @if (s.Activa)
+                                {
+                                    <span class="drawer-session__badge">Activa</span>
+                                }
+                                else
+                                {
+                                    <button class="btn btn--primary btn--sm" @onclick="() => ConectarAsync(s.Id)">
+                                        Seleccionar
+                                    </button>
+                                }
+                            </div>
+                        </div>
+                    }
                 }
             </div>
 
-            <!-- Formulario nueva sesión -->
-            <details class="drawer-new">
-                <summary class="drawer-new__summary">
-                    <i class="bi bi-plus-circle"></i> Agregar sesión
-                </summary>
-
-                <div class="drawer-new__form">
-                    @if (_mensajeError is not null)
-                    {
-                        <p class="drawer-new__error"><i class="bi bi-exclamation-circle"></i> @_mensajeError</p>
-                    }
-
-                    <div class="drawer-new__field">
-                        <label>Nombre</label>
-                        <input @bind="_newNombre" placeholder="Ej: Alfa Gestión Producción" />
-                    </div>
-                    <div class="drawer-new__field">
-                        <label>Servidor</label>
-                        <input @bind="_newServidor" placeholder="Ej: AGSERVER\ALFANET" />
-                    </div>
-                    <div class="drawer-new__field">
-                        <label>Base de datos</label>
-                        <input @bind="_newBaseDatos" placeholder="Ej: ALFANET" />
-                    </div>
-                    <div class="drawer-new__field">
-                        <label>Usuario</label>
-                        <input @bind="_newUsuario" placeholder="Ej: sa" />
-                    </div>
-                    <div class="drawer-new__field">
-                        <label>Contraseña</label>
-                        <div class="drawer-new__password">
-                            <input type="@(_mostrarPass ? "text" : "password")"
-                                   @bind="_newPassword"
-                                   placeholder="Contraseña" />
-                            <button type="button" class="drawer-new__eye" @onclick="() => _mostrarPass = !_mostrarPass"
-                                    title="@(_mostrarPass ? "Ocultar" : "Mostrar")">
-                                <i class="bi @(_mostrarPass ? "bi-eye-slash" : "bi-eye")"></i>
-                            </button>
-                        </div>
-                    </div>
-
-                    <button class="btn btn--primary" @onclick="AgregarAsync">
-                        <i class="bi bi-floppy"></i> Guardar sesión
-                    </button>
-                </div>
-            </details>
-
             <p class="drawer__note">
                 <i class="bi bi-info-circle"></i>
-                Las sesiones se guardan en <code>App_Data/sessions.json</code>.
+                Las bases disponibles salen de ALFA_CENTRAL y cambian segun el cliente autenticado.
             </p>
+
+            @if (OnLogout.HasDelegate)
+            {
+                <div class="drawer__footer">
+                    <button class="btn btn--ghost btn--danger-ghost drawer__logout" @onclick="LogoutAsync">
+                        <i class="bi bi-box-arrow-left"></i>
+                        Cerrar sesión
+                    </button>
+                </div>
+            }
         </div>
     </div>
 }
 
 @code {
     [Parameter] public bool Open { get; set; }
+    [Parameter] public bool DarkTheme { get; set; }
+    [Parameter] public int? RouteBaseId { get; set; }
     [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback OnLogout { get; set; }
 
-    private List<AlfaCore.Models.SessionDto> _sesiones = [];
-    private string _newNombre = string.Empty;
-    private string _newServidor = string.Empty;
-    private string _newBaseDatos = string.Empty;
-    private string _newUsuario = string.Empty;
-    private string _newPassword = string.Empty;
-    private bool _mostrarPass;
-    private string? _mensajeError;
+    private List<SessionDto> _sesiones = [];
+    private string _searchText = string.Empty;
+    private int _selectedIndex;
+    private bool _showAddSessionForm;
+    private bool _savingSession;
+    private string _addSessionError = string.Empty;
+    private string _newSessionNombre = string.Empty;
+    private string _newSessionServidor = string.Empty;
+    private string _newSessionBaseDatos = string.Empty;
+    private string _newSessionUsuario = string.Empty;
+    private string _newSessionPassword = string.Empty;
 
-    protected override void OnParametersSet()
+    protected override async Task OnParametersSetAsync()
     {
-        if (Open) Reload();
+        if (Open)
+            await ReloadAsync();
     }
 
-    private void Reload() =>
-        _sesiones = SessionSvc.GetAllSessions().ToList();
+    private async Task ReloadAsync()
+    {
+        _searchText = string.Empty;
+        _selectedIndex = 0;
+
+        var currentUser = AppUserSession.CurrentUser;
+        if (currentUser is not null)
+        {
+            _sesiones = SessionSvc.GetAllSessions()
+                .OrderByDescending(x => x.Activa)
+                .ThenBy(x => x.Nombre, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(x => x.BaseId)
+                .ToList();
+            return;
+        }
+
+        var contextBaseId = SessionSvc.GetActiveSession()?.BaseId
+            ?? RouteBaseId;
+
+        if (contextBaseId is not int routeBaseId || routeBaseId <= 0)
+        {
+            _sesiones = [];
+            return;
+        }
+
+        var routeBase = await CentralBasesSvc.GetByIdAsync(routeBaseId);
+        if (routeBase is null || string.IsNullOrWhiteSpace(routeBase.IdCliente))
+        {
+            _sesiones = [];
+            return;
+        }
+
+        var bases = await CentralBasesSvc.GetByClienteAsync(routeBase.IdCliente, false);
+        _sesiones = bases
+            .Select(MapBase)
+            .OrderByDescending(s => s.Activa)
+            .ThenBy(s => s.Nombre, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(s => s.BaseId)
+            .ToList();
+
+        var active = SessionSvc.GetActiveSession();
+        if (active is not null)
+        {
+            var activeById = _sesiones.FirstOrDefault(x => x.Id == active.Id);
+            if (activeById is not null)
+                activeById.Activa = true;
+        }
+    }
+
+    private void ToggleAddSessionForm()
+    {
+        _showAddSessionForm = !_showAddSessionForm;
+        _addSessionError = string.Empty;
+    }
+
+    private void CancelAddSessionForm()
+    {
+        _showAddSessionForm = false;
+        _addSessionError = string.Empty;
+        _newSessionNombre = string.Empty;
+        _newSessionServidor = string.Empty;
+        _newSessionBaseDatos = string.Empty;
+        _newSessionUsuario = string.Empty;
+        _newSessionPassword = string.Empty;
+    }
+
+    private async Task SaveNewSessionAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_newSessionServidor) ||
+            string.IsNullOrWhiteSpace(_newSessionBaseDatos) ||
+            string.IsNullOrWhiteSpace(_newSessionUsuario) ||
+            string.IsNullOrWhiteSpace(_newSessionPassword))
+        {
+            _addSessionError = "Completá servidor, base, usuario y contraseña.";
+            return;
+        }
+
+        _savingSession = true;
+        _addSessionError = string.Empty;
+
+        try
+        {
+            var id = SessionSvc.AddSession(
+                _newSessionNombre,
+                _newSessionServidor,
+                _newSessionBaseDatos,
+                _newSessionUsuario,
+                _newSessionPassword);
+
+            SessionSvc.SwitchSession(id);
+            await JS.InvokeVoidAsync("alfaCoreSqlSession.setActive", id.ToString());
+            await ReloadAsync();
+            CancelAddSessionForm();
+        }
+        catch (Exception ex)
+        {
+            _addSessionError = $"No se pudo guardar la base: {ex.Message}";
+        }
+        finally
+        {
+            _savingSession = false;
+        }
+    }
+
+    private IReadOnlyList<SessionDto> VisibleSesiones
+        => _sesiones
+            .Where(ShouldIncludeSession)
+            .OrderByDescending(x => x.Activa)
+            .ThenBy(x => x.Nombre, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(x => x.BaseId)
+            .ToArray();
+
+    private bool ShouldIncludeSession(SessionDto session)
+    {
+        if (string.IsNullOrWhiteSpace(_searchText))
+            return true;
+
+        return Contains(session.Nombre, _searchText)
+            || Contains(session.Servidor, _searchText)
+            || Contains(session.BaseDatos, _searchText)
+            || Contains(session.BaseId.ToString(), _searchText);
+    }
+
+    private static SessionDto MapBase(BaseCentralDto baseDto)
+        => new()
+        {
+            Id = BuildGuidFromBaseId(baseDto.IdBase),
+            BaseId = baseDto.IdBase,
+            Nombre = baseDto.Nombre,
+            Servidor = baseDto.DbServer,
+            BaseDatos = baseDto.DbName,
+            Usuario = baseDto.DbUser,
+            Password = baseDto.DbPassword,
+            TrustServerCertificate = true,
+            Activa = false
+        };
+
+    private static Guid BuildGuidFromBaseId(int baseId)
+    {
+        Span<byte> bytes = stackalloc byte[16];
+        BitConverter.GetBytes(baseId).CopyTo(bytes);
+        return new Guid(bytes);
+    }
 
     private async Task ConectarAsync(Guid id)
     {
-        _mensajeError = null;
         SessionSvc.SwitchSession(id);
-        await JS.InvokeVoidAsync("alfaCoreSqlSession.setActive", id.ToString());
+
         try
         {
-            await ActualizacionesSvc.ExecutePendingAsync(new AlfaCore.Models.ActualizacionesRunRequest
+            await ActualizacionesSvc.ExecutePendingAsync(new ActualizacionesRunRequest
             {
-                UsuarioAccion = "SYSTEM",
+                UsuarioAccion = AppUserSession.GetCurrentUserName("SYSTEM"),
                 PcAccion = Environment.MachineName,
                 EsEjecucionAutomatica = true
             });
         }
-        catch (Exception ex)
+        catch
         {
-            _mensajeError = ex.Message;
+            // El servicio ya registra el error internamente; no se bloquea el cambio de sesión.
         }
-        Reload();
+
+        await JS.InvokeVoidAsync("alfaCoreSqlSession.setActive", id.ToString());
+        await ReloadAsync();
     }
 
-    private void Eliminar(Guid id)
+    private async Task HandleSearchInputAsync(ChangeEventArgs args)
     {
-        SessionSvc.DeleteSession(id);
-        Reload();
+        _searchText = args.Value?.ToString() ?? string.Empty;
+        _selectedIndex = 0;
+        await InvokeAsync(StateHasChanged);
     }
 
-    private Task AgregarAsync()
+    private async Task HandleSearchKeyDownAsync(KeyboardEventArgs args)
     {
-        _mensajeError = null;
+        var visible = VisibleSesiones;
+        if (visible.Count == 0)
+            return;
 
-        if (string.IsNullOrWhiteSpace(_newNombre))    { _mensajeError = "El nombre es obligatorio."; return Task.CompletedTask; }
-        if (string.IsNullOrWhiteSpace(_newServidor))  { _mensajeError = "El servidor es obligatorio."; return Task.CompletedTask; }
-        if (string.IsNullOrWhiteSpace(_newBaseDatos)) { _mensajeError = "La base de datos es obligatoria."; return Task.CompletedTask; }
-        if (string.IsNullOrWhiteSpace(_newUsuario))   { _mensajeError = "El usuario es obligatorio."; return Task.CompletedTask; }
-
-        SessionSvc.AddSession(_newNombre, _newServidor, _newBaseDatos, _newUsuario, _newPassword);
-
-        _newNombre = _newServidor = _newBaseDatos = _newUsuario = _newPassword = string.Empty;
-        _mostrarPass = false;
-        Reload();
-        return Task.CompletedTask;
+        switch (args.Key)
+        {
+            case "ArrowDown":
+                _selectedIndex = Math.Min(_selectedIndex + 1, visible.Count - 1);
+                await InvokeAsync(StateHasChanged);
+                break;
+            case "ArrowUp":
+                _selectedIndex = Math.Max(_selectedIndex - 1, 0);
+                await InvokeAsync(StateHasChanged);
+                break;
+            case "Enter":
+                _selectedIndex = Math.Clamp(_selectedIndex, 0, visible.Count - 1);
+                await ConectarAsync(visible[_selectedIndex].Id);
+                break;
+        }
     }
 
     private Task Close() => OnClose.InvokeAsync();
+
+    private Task LogoutAsync() => OnLogout.InvokeAsync();
+
+    private static bool Contains(string? value, string search)
+        => !string.IsNullOrWhiteSpace(value)
+           && value.Contains(search, StringComparison.OrdinalIgnoreCase);
 }

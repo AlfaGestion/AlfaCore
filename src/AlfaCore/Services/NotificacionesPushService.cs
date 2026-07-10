@@ -461,20 +461,20 @@ public sealed class NotificacionesPushService(
         if (!await TableExistsAsync(cn, "TA_USUARIOS", ct))
             return false;
 
-        if (!await TableExistsAsync(cn, "TA_TAREAS", ct) || !await TableExistsAsync(cn, "TA_MENU", ct))
+        if (!await TableExistsAsync(cn, "ALFACORE_TAREAS_WEB", ct) || !await TableExistsAsync(cn, "ALFACORE_MENU_WEB", ct))
             return true;
 
         const string sql = """
             IF NOT EXISTS (
                 SELECT 1
-                FROM dbo.TA_MENU
-                WHERE ISNULL(Habilitado, 1) = 1
+                FROM dbo.ALFACORE_MENU_WEB
+                WHERE ISNULL(HabilitadoWeb, 1) = 1
                   AND (
-                      UPPER(ISNULL(Menu, '')) LIKE N'%CONVERS%'
-                      OR UPPER(ISNULL(Titulo, '')) LIKE N'%CONVERS%'
-                      OR UPPER(ISNULL(Clave, '')) LIKE N'%CONVERS%'
-                      OR UPPER(ISNULL(Nombre, '')) LIKE N'%CONVERS%'
-                      OR UPPER(ISNULL(Proceso, '')) LIKE N'%CONVERS%'
+                      UPPER(ISNULL(Clave, '')) LIKE N'%CONVERS%'
+                      OR UPPER(ISNULL(NombreWeb, '')) LIKE N'%CONVERS%'
+                      OR UPPER(ISNULL(DescripcionWeb, '')) LIKE N'%CONVERS%'
+                      OR UPPER(ISNULL(RutaWeb, '')) LIKE N'%CONVERS%'
+                      OR UPPER(ISNULL(Componente, '')) LIKE N'%CONVERS%'
                   )
             )
             BEGIN
@@ -484,17 +484,17 @@ public sealed class NotificacionesPushService(
 
             SELECT CAST(CASE WHEN EXISTS (
                 SELECT 1
-                FROM dbo.TA_TAREAS t
-                INNER JOIN dbo.TA_MENU m
-                    ON UPPER(LTRIM(RTRIM(m.Clave))) = UPPER(LTRIM(RTRIM(t.TAREA)))
+                FROM dbo.ALFACORE_TAREAS_WEB t
+                INNER JOIN dbo.ALFACORE_MENU_WEB m
+                    ON UPPER(LTRIM(RTRIM(m.Clave))) = UPPER(LTRIM(RTRIM(t.Clave)))
                 WHERE UPPER(LTRIM(RTRIM(t.USUARIO))) = @Usuario
-                  AND ISNULL(m.Habilitado, 1) = 1
+                  AND ISNULL(m.HabilitadoWeb, 1) = 1
                   AND (
-                      UPPER(ISNULL(m.Menu, '')) LIKE N'%CONVERS%'
-                      OR UPPER(ISNULL(m.Titulo, '')) LIKE N'%CONVERS%'
-                      OR UPPER(ISNULL(m.Clave, '')) LIKE N'%CONVERS%'
-                      OR UPPER(ISNULL(m.Nombre, '')) LIKE N'%CONVERS%'
-                      OR UPPER(ISNULL(m.Proceso, '')) LIKE N'%CONVERS%'
+                      UPPER(ISNULL(m.Clave, '')) LIKE N'%CONVERS%'
+                      OR UPPER(ISNULL(m.NombreWeb, '')) LIKE N'%CONVERS%'
+                      OR UPPER(ISNULL(m.DescripcionWeb, '')) LIKE N'%CONVERS%'
+                      OR UPPER(ISNULL(m.RutaWeb, '')) LIKE N'%CONVERS%'
+                      OR UPPER(ISNULL(m.Componente, '')) LIKE N'%CONVERS%'
                   )
             ) THEN 1 ELSE 0 END AS bit);
             """;

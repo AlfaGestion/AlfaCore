@@ -25,6 +25,7 @@ public sealed class TareasPageDto
     public List<TareaItemDto> Completadas { get; set; } = [];
     public List<TareaNotaRapidaDto> NotasRapidas { get; set; } = [];
     public List<TareaUsuarioDto> Usuarios { get; set; } = [];
+    public List<TareaGrupoDto> Grupos { get; set; } = [];
 }
 
 public sealed class TareaListaDto
@@ -52,6 +53,7 @@ public sealed class TareaItemDto
     public string Estado { get; set; } = TareaEstadoKeys.Pendiente;
     public string Prioridad { get; set; } = TareaPrioridadKeys.Media;
     public string UsuarioAlta { get; set; } = string.Empty;
+    public string UsuarioCreador { get; set; } = string.Empty;
     public bool EsPropia { get; set; }
     public bool CompartidaConTodos { get; set; }
     public List<string> UsuariosCompartidos { get; set; } = [];
@@ -85,20 +87,36 @@ public sealed class TareaNotaRapidaDto
 {
     public long IdNota { get; set; }
     public string Texto { get; set; } = string.Empty;
+    public string Detalle { get; set; } = string.Empty;
     public string Usuario { get; set; } = string.Empty;
     public bool EsPropia { get; set; }
     public bool CompartidaConTodos { get; set; }
     public List<string> UsuariosCompartidos { get; set; } = [];
     public DateTime Fecha { get; set; }
     public bool Completada { get; set; }
+    public int Orden { get; set; }
     public DateTime FechaHoraAlta { get; set; }
     public DateTime? FechaHoraCompletada { get; set; }
+}
+
+public sealed class TareaNotaRapidaSaveRequest
+{
+    public long? IdNota { get; set; }
+    public string Texto { get; set; } = string.Empty;
+    public string Detalle { get; set; } = string.Empty;
+    public string UsuarioAccion { get; set; } = string.Empty;
 }
 
 public sealed class TareaUsuarioDto
 {
     public string Nombre { get; set; } = string.Empty;
     public string Email { get; set; } = string.Empty;
+}
+
+public sealed class TareaGrupoDto
+{
+    public string Grupo { get; set; } = string.Empty;
+    public List<string> Usuarios { get; set; } = [];
 }
 
 public sealed class TareaSaveRequest
@@ -111,6 +129,7 @@ public sealed class TareaSaveRequest
     public string UsuarioAsignado { get; set; } = string.Empty;
     public string Estado { get; set; } = TareaEstadoKeys.Pendiente;
     public string Prioridad { get; set; } = TareaPrioridadKeys.Media;
+    public string UsuarioCreador { get; set; } = string.Empty;
     public bool CompartirConTodos { get; set; }
     public List<string> UsuariosCompartidos { get; set; } = [];
     public string UsuarioAccion { get; set; } = string.Empty;
@@ -129,6 +148,12 @@ public sealed class TareaCompartirRequest
     public long IdObjeto { get; set; }
     public bool CompartirConTodos { get; set; }
     public List<string> Usuarios { get; set; } = [];
+    public string UsuarioAccion { get; set; } = string.Empty;
+}
+
+public sealed class TareaGruposSaveRequest
+{
+    public List<TareaGrupoDto> Grupos { get; set; } = [];
     public string UsuarioAccion { get; set; } = string.Empty;
 }
 

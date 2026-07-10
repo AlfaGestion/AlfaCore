@@ -5,8 +5,7 @@ cd /d "%~dp0..\src\AlfaCore"
 if errorlevel 1 goto :fail
 
 set "CONFIG_FILE="
-if exist "appsettings.Production.json" set "CONFIG_FILE=appsettings.Production.json"
-if not defined CONFIG_FILE if exist "appsettings.json" set "CONFIG_FILE=appsettings.json"
+if exist "appsettings.json" set "CONFIG_FILE=appsettings.json"
 
 set "PUERTO=5055"
 if defined CONFIG_FILE (
@@ -22,7 +21,7 @@ echo Carpeta de trabajo: %CD%
 if defined CONFIG_FILE (
   echo Configuracion detectada: %CONFIG_FILE%
 ) else (
-  echo Configuracion detectada: no se encontro appsettings, se usaran valores por defecto.
+  echo Configuracion detectada: no se encontro appsettings.json, se usaran valores por defecto.
 )
 echo URL local esperada: %URL_LOCAL%
 echo Si la app escucha en LAN, otras PCs podran entrar por:
@@ -48,7 +47,6 @@ if errorlevel 1 goto :sdk_missing
 
 echo Iniciando servidor...
 echo.
-
 dotnet run --configuration Release --no-launch-profile
 set "EXITCODE=%ERRORLEVEL%"
 

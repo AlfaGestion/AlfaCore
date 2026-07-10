@@ -1,0 +1,1527 @@
+﻿@page "/informes"
+@page "/{idweb}/{idbase:int}/informes"
+@inject AlfaCore.Services.IInformesService InformesSvc
+@inject AlfaCore.Services.IAppUserSessionService AppUserSession
+@inject AlfaCore.Services.IAppUiOperationService UiOps
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@using System.Net
+@using System.Text
+@using System.Text.RegularExpressions
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.AspNetCore.WebUtilities
+@implements IAsyncDisposable
+
+<PageTitle>Informes | Alfa Gestion</PageTitle>
+<HeadContent>
+    <link rel="stylesheet" href="/css/informes.css?v=20260609-tree-collapse" />
+</HeadContent>
+
+<section class="@ShellClass">
+    <aside class="informes-sidebar">
+        <div class="informes-sidebar__top">
+            <button type="button"
+                    class="informes-sidebar-toggle"
+                    title="@(_sidebarCollapsed ? "Abrir panel de articulos" : "Minimizar panel de articulos")"
+                    @onclick="ToggleSidebar">
+                <i class="bi @(_sidebarCollapsed ? "bi-layout-sidebar-inset" : "bi-layout-sidebar-inset-reverse")"></i>
+            </button>
+            <button type="button" class="informes-new" @onclick="() => CreateArticleAsync(null, InformesCategorias.EspacioTrabajo)">
+                <i class="bi bi-plus-lg"></i>
+                <span>Nuevo articulo</span>
+            </button>
+            <button type="button" class="informes-icon-btn" title="Buscar" @onclick="FocusSearch">
+                <i class="bi bi-search"></i>
+            </button>
+        </div>
+
+        <label class="informes-search">
+            <i class="bi bi-search"></i>
+            <input @bind="_search" @bind:event="oninput" @onkeyup="SearchKeyUpAsync" placeholder="Buscar articulos" />
+        </label>
+
+        <div class="informes-tree">
+            <div class="informes-tree__section">
+                <span>Favoritos</span>
+                <small>@FavoriteRows.Count()</small>
+            </div>
+            @foreach (var row in FavoriteRows)
+            {
+                @ArticleButton(row)
+            }
+
+            <div class="informes-tree__section informes-tree__section--with-action">
+                <span>Espacio de trabajo</span>
+                <small>@WorkspaceRows.Count()</small>
+                <button type="button" title="Crear articulo" @onclick="() => CreateArticleAsync(null, InformesCategorias.EspacioTrabajo)">
+                    <i class="bi bi-plus-lg"></i>
+                </button>
+            </div>
+            @foreach (var row in WorkspaceRows)
+            {
+                @ArticleButton(row)
+            }
+
+            <div class="informes-tree__section informes-tree__section--with-action">
+                <span>Privado</span>
+                <small>@PrivateRows.Count()</small>
+                <button type="button" title="Crear articulo privado" @onclick="() => CreateArticleAsync(null, InformesCategorias.Privado)">
+                    <i class="bi bi-plus-lg"></i>
+                </button>
+            </div>
+            @foreach (var row in PrivateRows)
+            {
+                @ArticleButton(row)
+            }
+
+            @if (_showTrash)
+            {
+                <div class="informes-tree__section">
+                    <span>Papelera</span>
+                    <small>@TrashRows.Count()</small>
+                </div>
+                @foreach (var row in TrashRows)
+                {
+                    @ArticleButton(row)
+                }
+            }
+        </div>
+
+        <div class="informes-sidebar__bottom">
+            <button type="button" @onclick="OpenTemplatePicker">
+                <i class="bi bi-brush"></i>
+                <span>Explorar plantillas</span>
+            </button>
+            <button type="button" @onclick="ToggleTrashAsync">
+                <i class="bi bi-trash3"></i>
+                <span>@(_showTrash ? "Ocultar papelera" : "Abrir papelera")</span>
+            </button>
+        </div>
+    </aside>
+
+    <main class="informes-main">
+        @if (_loading)
+        {
+            <div class="informes-empty">
+                <i class="bi bi-hourglass-split"></i>
+                <h2>Cargando informes</h2>
+            </div>
+        }
+        else if (_selected is null)
+        {
+            <div class="informes-empty">
+                <i class="bi bi-journal-richtext"></i>
+                <h2>Titulo 1</h2>
+                <p>Seleccione una opcion para empezar.</p>
+                <button type="button" @onclick="OpenTemplatePicker"><i class="bi bi-brush"></i> Cargar una plantilla</button>
+                <button type="button" @onclick="() => CreateArticleAsync(null, InformesCategorias.EspacioTrabajo)"><i class="bi bi-file-earmark-plus"></i> Crear articulo en blanco</button>
+            </div>
+        }
+        else
+        {
+            <header class="informes-toolbar">
+                <div class="informes-breadcrumb">
+                    <i class="bi @IconClass(_selected.Emoji)"></i>
+                    <span>@_draft.Titulo</span>
+                    <small>@ArticleVisibilityLabel(_selected)</small>
+                    @if (_selected.EsCompartido)
+                    {
+                        <i class="bi bi-cloud-check-fill" title="Compartido"></i>
+                    }
+                </div>
+                <div class="informes-actions">
+                    <span class="@AutoSaveStatusClass" title="@AutoSaveStatusText">
+                        <i class="bi @AutoSaveStatusIcon"></i>
+                        <span>@AutoSaveStatusText</span>
+                    </span>
+                    <button type="button" @onclick="ToggleCollaborationPanel" title="Comentarios y versiones">
+                        <i class="bi bi-chat-square-text"></i>
+                        <span>Actividad</span>
+                    </button>
+                    <button type="button" @onclick="ToggleShareAsync" title="Compartir">
+                        <i class="bi bi-share"></i>
+                        <span>@(_selected.EsCompartido ? "Pasar a privado" : "Compartir")</span>
+                    </button>
+                    <button type="button" class="@(_selected.EsFavorito ? "is-active" : "")" @onclick="ToggleFavoriteAsync" title="Favorito">
+                        <i class="bi bi-star-fill"></i>
+                    </button>
+                    <button type="button" @onclick="DuplicateAsync" title="Duplicar">
+                        <i class="bi bi-copy"></i>
+                    </button>
+                    @if (_selected.Archivado)
+                    {
+                        <button type="button" @onclick="RestoreAsync" title="Restaurar">
+                            <i class="bi bi-arrow-counterclockwise"></i>
+                        </button>
+                    }
+                    else
+                    {
+                        <button type="button" @onclick="DeleteAsync" title="Enviar a papelera">
+                            <i class="bi bi-trash3"></i>
+                        </button>
+                    }
+                </div>
+            </header>
+
+            @if (!string.IsNullOrWhiteSpace(_feedback))
+            {
+                <div class="informes-feedback">@_feedback</div>
+            }
+
+            <div class="informes-workspace">
+                <div class="informes-editor-column">
+                    <section class="@CoverClass" style="@CoverStyle">
+                        @if (_draft.PortadaTipo == InformesPortadas.Url && !string.IsNullOrWhiteSpace(_draft.PortadaValor))
+                        {
+                            <img src="@_draft.PortadaValor" alt="" />
+                        }
+                        <div class="informes-cover__actions">
+                            <button type="button" class="informes-cover__menu-button" @onclick="ToggleCoverMenu" title="Opciones de portada">
+                                <i class="bi bi-three-dots"></i>
+                            </button>
+                            @if (_coverMenuOpen)
+                            {
+                                <div class="informes-cover__menu">
+                                    <button type="button" @onclick="OpenCoverPicker">
+                                        <i class="bi bi-image"></i>
+                                        <span>Agregar portada</span>
+                                    </button>
+                                    <button type="button" @onclick="RemoveCover">
+                                        <i class="bi bi-x-lg"></i>
+                                        <span>Quitar</span>
+                                    </button>
+                                </div>
+                            }
+                        </div>
+                    </section>
+
+                    <section class="informes-document">
+                        <div class="informes-title-row">
+                            <button type="button" class="informes-emoji" @onclick="CycleIcon" title="Cambiar icono">
+                                <i class="bi @IconClass(_draft.Emoji)"></i>
+                            </button>
+                            <input class="informes-title" @bind="_draft.Titulo" @bind:event="oninput" @bind:after="ScheduleAutosave" placeholder="Titulo 1" disabled="@_saving" />
+                        </div>
+
+                        <div class="informes-meta">
+                            <select @bind="_draft.Categoria" @bind:after="ScheduleAutosave" disabled="@_saving">
+                                <option value="@InformesCategorias.EspacioTrabajo">Espacio de trabajo</option>
+                                <option value="@InformesCategorias.Privado">Privado</option>
+                            </select>
+                            <select @bind="_draft.IdPadre" @bind:after="ScheduleAutosave" disabled="@_saving">
+                                <option value="">Sin articulo padre</option>
+                                @foreach (var article in ParentOptions)
+                                {
+                                    <option value="@article.IdArticulo">@article.Titulo</option>
+                                }
+                            </select>
+                            <label>
+                                <input type="checkbox" @bind="_draft.Bloqueado" @bind:after="ScheduleAutosave" disabled="@_saving" />
+                                Bloquear edicion
+                            </label>
+                        </div>
+
+                        <div class="informes-rich-editor" @ref="_editorRoot">
+                            <div class="informes-editor-surface"
+                                 @ref="_contentEditor"
+                                 contenteditable="@(!_saving && !_draft.Bloqueado)"
+                                 data-placeholder="Escribi / para comandos"
+                                 @oninput="OnContentChangedAsync"
+                                 @onkeyup="OnContentChangedAsync"
+                                 @onfocus="OnContentFocusAsync"></div>
+                            <div class="informes-blockbar">
+                                @foreach (var option in ToolbarCommands)
+                                {
+                                    <button type="button"
+                                            title="@option.Title"
+                                            disabled="@(_saving || _draft.Bloqueado)"
+                                            @onclick="() => RunEditorCommandAsync(option)">
+                                        <i class="bi @option.Icon"></i>
+                                    </button>
+                                }
+                                <button type="button"
+                                        title="Comandos"
+                                        disabled="@(_saving || _draft.Bloqueado)"
+                                        @onclick="ToggleCommandMenu">
+                                    <i class="bi bi-three-dots-vertical"></i>
+                                </button>
+                            </div>
+                            @if (_showCommandMenu)
+                            {
+                                <div class="informes-command-menu">
+                                    @foreach (var group in EditorCommands.GroupBy(x => x.Group))
+                                    {
+                                        <div class="informes-command-menu__group">
+                                            <span>@group.Key</span>
+                                            @foreach (var option in group)
+                                            {
+                                                <button type="button" @onclick="() => RunEditorCommandAsync(option)">
+                                                    <i class="bi @option.Icon"></i>
+                                                    <strong>@option.Title</strong>
+                                                    <small>@option.Description</small>
+                                                </button>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
+
+                        <footer class="informes-savebar">
+                            <button type="button" class="btn btn--primary" disabled="@_saving" @onclick="SaveAsync">
+                                <i class="bi bi-save"></i>
+                                <span>Guardar ahora</span>
+                            </button>
+                            <button type="button" class="btn btn--ghost" disabled="@_saving" @onclick="OpenTemplatePicker">
+                                <i class="bi bi-brush"></i>
+                                <span>Plantillas</span>
+                            </button>
+                            @if (_selected.EsCompartido && _selected.TokenPublico is not null)
+                            {
+                                <span class="informes-share-link">@BuildShareUrl(_selected.TokenPublico.Value)</span>
+                            }
+                        </footer>
+                    </section>
+                </div>
+
+                @if (_collaborationOpen)
+                {
+                    <button type="button" class="informes-panel-backdrop" aria-label="Cerrar actividad" @onclick="CloseCollaborationPanel"></button>
+                }
+
+                <aside class="@CollaborationPanelClass">
+                    <header class="informes-panel__header">
+                        <div>
+                            <span>Actividad</span>
+                            <strong>Comentarios y versiones</strong>
+                        </div>
+                        <button type="button" title="Cerrar" @onclick="CloseCollaborationPanel">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                    </header>
+                    <section>
+                        <h3>Comentarios</h3>
+                        <div class="informes-comment-form">
+                            <input @bind="_newComment" placeholder="Agregar comentario" />
+                            <button type="button" @onclick="AddCommentAsync"><i class="bi bi-send"></i></button>
+                        </div>
+                        @foreach (var comment in _comments)
+                        {
+                            <div class="@("informes-comment" + (comment.Resuelto ? " is-resolved" : ""))">
+                                <p>@comment.Texto</p>
+                                <small>@comment.UsuarioAlta - @comment.FechaHoraAlta.ToString("dd/MM HH:mm")</small>
+                                <button type="button" @onclick="() => ToggleCommentAsync(comment)">@((comment.Resuelto ? "Reabrir" : "Resolver"))</button>
+                            </div>
+                        }
+                    </section>
+
+                    <section>
+                        <h3>Versiones</h3>
+                        @foreach (var version in _versions)
+                        {
+                            <button type="button" class="informes-version" @onclick="() => RestoreVersionAsync(version.IdVersion)">
+                                <span>@version.Titulo</span>
+                                <small>@version.Usuario - @version.FechaHora.ToString("dd/MM HH:mm")</small>
+                            </button>
+                        }
+                    </section>
+                </aside>
+            </div>
+        }
+    </main>
+</section>
+
+@if (_showTemplatePicker)
+{
+    <div class="informes-modal" role="dialog" aria-modal="true">
+        <section class="informes-template-picker">
+            <header>
+                <h2>Seleccione una plantilla</h2>
+                <button type="button" @onclick="CloseTemplatePicker" title="Cerrar"><i class="bi bi-x-lg"></i></button>
+            </header>
+            <div class="informes-template-picker__body">
+                <nav>
+                    @foreach (var group in TemplateGroups)
+                    {
+                        <p>@group</p>
+                        @foreach (var template in _templates.Where(x => x.Grupo == group))
+                        {
+                            <button type="button" class="@(template.Key == _selectedTemplateKey ? "is-selected" : "")" @onclick="() => SelectTemplate(template.Key)">
+                                <i class="bi @template.Icono"></i>
+                                <span>@template.Nombre</span>
+                            </button>
+                        }
+                    }
+                </nav>
+                <article>
+                    @if (SelectedTemplate is not null)
+                    {
+                        <i class="bi @SelectedTemplate.Icono informes-template-icon"></i>
+                        <h1>@SelectedTemplate.Titulo</h1>
+                        <p>@SelectedTemplate.Descripcion</p>
+                        <div class="informes-template-preview">@((MarkupString)SelectedTemplate.Contenido)</div>
+                    }
+                </article>
+            </div>
+            <footer>
+                <button type="button" class="btn btn--primary" @onclick="CreateFromTemplateAsync">Cargar plantilla</button>
+                <button type="button" class="btn btn--ghost" @onclick="CloseTemplatePicker">Descartar</button>
+            </footer>
+        </section>
+    </div>
+}
+
+@if (_showCoverPicker)
+{
+    <div class="informes-modal" role="dialog" aria-modal="true">
+        <section class="informes-cover-picker">
+            <header>
+                <div>
+                    <span>Portada</span>
+                    <h2>Agregar portada</h2>
+                </div>
+                <button type="button" @onclick="CloseCoverPicker" title="Cerrar"><i class="bi bi-x-lg"></i></button>
+            </header>
+
+            <label class="informes-cover-search">
+                <i class="bi bi-search"></i>
+                <input @bind="_coverSearch" @bind:event="oninput" placeholder="Buscar en portadas: oficina, equipo, tecnologia..." />
+            </label>
+
+            <div class="informes-cover-picker__grid">
+                @foreach (var texture in FilteredAlfaTextures)
+                {
+                    <button type="button"
+                            class="@($"informes-cover-option informes-cover-option--texture informes-cover-option--{texture.Url}")"
+                            title="@texture.Nombre"
+                            aria-label="@texture.Nombre"
+                            @onclick="() => SelectCover(InformesPortadas.Gradiente, texture.Url)">
+                    </button>
+                }
+                @foreach (var cover in FilteredCoverOptions)
+                {
+                    <button type="button" class="informes-cover-option" title="@cover.Nombre" aria-label="@cover.Nombre" @onclick="() => SelectCover(InformesPortadas.Url, cover.Url)">
+                        <img src="@cover.Url" alt="" loading="lazy" />
+                    </button>
+                }
+            </div>
+
+            <footer>
+                @if (!string.IsNullOrWhiteSpace(_pendingCoverPreviewUrl))
+                {
+                    <div class="informes-cover-picker__pending">
+                        <img src="@_pendingCoverPreviewUrl" alt="" />
+                        <span>@_pendingCoverFileName</span>
+                        <button type="button" @onclick="ConfirmPendingCoverAsync" title="Guardar portada">
+                            <i class="bi bi-floppy"></i>
+                        </button>
+                        <button type="button" @onclick="ClearPendingCover" title="Quitar imagen">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                    </div>
+                }
+                <label class="btn btn--primary">
+                    <i class="bi bi-upload"></i>
+                    <span>Agregar desde PC</span>
+                    <InputFile class="informes-cover-picker__file" OnChange="HandleCoverFileSelectedAsync" accept="image/jpeg,image/png,image/webp,image/gif" />
+                </label>
+                <button type="button" class="btn btn--ghost" @onclick="CloseCoverPicker">Cancelar</button>
+                <small>Fotos predeterminadas provistas por Unsplash.</small>
+            </footer>
+        </section>
+    </div>
+}
+
+@code {
+    private const long MaxCoverImageBytes = 5 * 1024 * 1024;
+    private const int AutoSaveDelayMs = 900;
+    private InformesPageDto _page = new();
+    private InformesArticuloDetalleDto? _selected;
+    private InformesArticuloSaveRequest _draft = new();
+    private List<InformesPlantillaDto> _templates = [];
+    private List<InformesComentarioDto> _comments = [];
+    private List<InformesVersionDto> _versions = [];
+    private ElementReference _editorRoot;
+    private ElementReference _contentEditor;
+    private IJSObjectReference? _editorJs;
+    private IJSObjectReference? _informesEditorJs;
+    private bool _loading;
+    private bool _saving;
+    private bool _showTrash;
+    private bool _showTemplatePicker;
+    private bool _showCoverPicker;
+    private bool _showCommandMenu;
+    private bool _sidebarCollapsed;
+    private bool _collaborationOpen;
+    private bool _editorReady;
+    private bool _editorRootWired;
+    private string _search = string.Empty;
+    private string _feedback = string.Empty;
+    private string _newComment = string.Empty;
+    private string _selectedTemplateKey = "agenda";
+    private long? _openArticleMenuId;
+    private string _coverSearch = string.Empty;
+    private string _autoSaveState = AutoSaveStates.Saved;
+    private string _lastSavedSignature = string.Empty;
+    private CancellationTokenSource? _autoSaveCts;
+    private bool _autoSaveRunning;
+    private bool _autoSaveRequested;
+    private DateTime? _lastAutoSavedAt;
+    private bool _coverMenuOpen;
+    private HashSet<long> _collapsedArticleIds = [];
+    private byte[]? _pendingCoverBytes;
+    private string? _pendingCoverPreviewUrl;
+    private string? _pendingCoverFileName;
+    private string? _pendingCoverContentType;
+
+    private static readonly IReadOnlyList<EditorCommandOption> EditorCommands =
+    [
+        new("FORMATO", "Titulo 1", "Titulo principal del bloque", "bi-type-h1", "h1"),
+        new("FORMATO", "Titulo 2", "Titulo de seccion", "bi-type-h2", "h2"),
+        new("FORMATO", "Titulo 3", "Subtitulo", "bi-type-h3", "h3"),
+        new("FORMATO", "Texto", "Parrafo normal", "bi-paragraph", "paragraph"),
+        new("ESTRUCTURA", "Lista", "Lista con vinetas", "bi-list-ul", "bulletList"),
+        new("ESTRUCTURA", "Lista numerada", "Lista ordenada", "bi-list-ol", "numberedList"),
+        new("ESTRUCTURA", "Casillas", "Lista de comprobacion", "bi-check2-square", "checkList"),
+        new("ESTRUCTURA", "Separador", "Linea divisoria", "bi-dash-lg", "separator"),
+        new("BLOQUES", "Informacion", "Banner informativo", "bi-info-circle", "infoBanner"),
+        new("BLOQUES", "Advertencia", "Banner de advertencia", "bi-exclamation-triangle", "warningBanner"),
+        new("BLOQUES", "Codigo", "Bloque tecnico", "bi-code-slash", "codeBlock"),
+        new("BLOQUES", "Emoji", "Insertar emoji", "bi-emoji-smile", "emoji")
+    ];
+
+    private static readonly IReadOnlyList<EditorCommandOption> ToolbarCommands =
+    [
+        EditorCommands[0],
+        EditorCommands[1],
+        EditorCommands[4],
+        EditorCommands[5],
+        EditorCommands[6],
+        EditorCommands[7],
+        EditorCommands[10],
+        EditorCommands[8],
+        EditorCommands[9],
+        EditorCommands[11]
+    ];
+
+    private static readonly IReadOnlyList<CoverOption> AlfaTextureOptions =
+    [
+        new("Alfa", "alfa", "alfa azul teal geometria"),
+        new("Alfa ondas", "alfa-ondas", "alfa ondas curva azul teal"),
+        new("Alfa diagonal", "alfa-diagonal", "alfa diagonal bloques azul"),
+        new("Alfa malla", "alfa-malla", "alfa malla puntos red tecnica"),
+        new("Alfa circuito", "alfa-circuito", "alfa circuito tecnologia lineas"),
+        new("Alfa calma", "alfa-calma", "alfa calma degradado suave")
+    ];
+
+    private static readonly IReadOnlyList<CoverOption> DefaultCoverOptions =
+    [
+        new("Oficina", "https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=1400&q=80", "oficina workspace arquitectura vidrio sala reunion"),
+        new("Equipo", "https://images.unsplash.com/photo-1556761175-b413da4baf72?auto=format&fit=crop&w=1400&q=80", "equipo personas reunion trabajo colaboracion"),
+        new("Procesos", "https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?auto=format&fit=crop&w=1400&q=80", "procesos planificacion documentos lapiz gestion"),
+        new("Tecnologia", "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=1400&q=80", "tecnologia laptop software soporte"),
+        new("Analisis", "https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=1400&q=80", "analisis dashboard metricas datos graficos"),
+        new("Trabajo", "https://images.unsplash.com/photo-1519389950473-47ba0277781c?auto=format&fit=crop&w=1400&q=80", "trabajo escritorio laptops equipo"),
+        new("Ideas", "https://images.unsplash.com/photo-1499750310107-5fef28a66643?auto=format&fit=crop&w=1400&q=80", "ideas notas escritura cuaderno"),
+        new("Soporte", "https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?auto=format&fit=crop&w=1400&q=80", "soporte equipo tablero postit"),
+        new("Estrategia", "https://images.unsplash.com/photo-1552664730-d307ca884978?auto=format&fit=crop&w=1400&q=80", "estrategia reunion pizarra equipo"),
+        new("Datos", "https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=1400&q=80", "datos analitica laptop graficos"),
+        new("Documentos", "https://images.unsplash.com/photo-1554224155-6726b3ff858f?auto=format&fit=crop&w=1400&q=80", "documentos finanzas papeles oficina"),
+        new("Proyecto", "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1400&q=80", "proyecto arquitectura espacio moderno"),
+        new("Capacitacion", "https://images.unsplash.com/photo-1522202176988-66273c2fd55f?auto=format&fit=crop&w=1400&q=80", "capacitacion aprendizaje equipo mesa"),
+        new("Operaciones", "https://images.unsplash.com/photo-1504384308090-c894fdcc538d?auto=format&fit=crop&w=1400&q=80", "operaciones oficina nocturna tecnologia"),
+        new("Innovacion", "https://images.unsplash.com/photo-1497366811353-6870744d04b2?auto=format&fit=crop&w=1400&q=80", "innovacion oficina moderna cowork"),
+        new("Tablero", "https://images.unsplash.com/photo-1542744173-8e7e53415bb0?auto=format&fit=crop&w=1400&q=80", "tablero reunion presentacion equipo"),
+        new("Plan", "https://images.unsplash.com/photo-1484480974693-6ca0a78fb36b?auto=format&fit=crop&w=1400&q=80", "plan agenda tareas checklist"),
+        new("Codigo", "https://images.unsplash.com/photo-1498050108023-c5249f4df085?auto=format&fit=crop&w=1400&q=80", "codigo desarrollo programacion pantalla")
+    ];
+
+    private string CurrentUser => AppUserSession.GetCurrentUserName(Environment.UserName).Trim();
+    private string ShellClass => "informes-shell" + (_sidebarCollapsed ? " informes-shell--sidebar-collapsed" : string.Empty);
+    private string CollaborationPanelClass => "informes-panel" + (_collaborationOpen ? " is-open" : string.Empty);
+    private IEnumerable<ArticleTreeRow> WorkspaceRows => BuildRows(InformesCategorias.EspacioTrabajo, false);
+    private IEnumerable<ArticleTreeRow> PrivateRows => BuildRows(InformesCategorias.Privado, false);
+    private IEnumerable<ArticleTreeRow> TrashRows => BuildRows(null, true);
+    private IEnumerable<ArticleTreeRow> FavoriteRows => BuildFlatRows(_page.Articulos.Where(x => x.EsFavorito && !x.Archivado));
+    private IEnumerable<InformesArticuloResumenDto> ParentOptions => _page.Articulos.Where(x => _selected is null || x.IdArticulo != _selected.IdArticulo).Where(x => !x.Archivado);
+    private IEnumerable<string> TemplateGroups => _templates.Select(x => x.Grupo).Distinct();
+    private InformesPlantillaDto? SelectedTemplate => _templates.FirstOrDefault(x => x.Key == _selectedTemplateKey) ?? _templates.FirstOrDefault();
+    private string CoverClass => $"informes-cover informes-cover--{_draft.PortadaTipo.ToLowerInvariant()}";
+    private string CoverStyle => _draft.PortadaTipo == InformesPortadas.Gradiente ? AlfaCoverStyle(_draft.PortadaValor) : string.Empty;
+    private IEnumerable<CoverOption> FilteredAlfaTextures => FilterCoverOptions(AlfaTextureOptions);
+    private IEnumerable<CoverOption> FilteredCoverOptions => FilterCoverOptions(DefaultCoverOptions);
+    private string AutoSaveStatusClass => $"informes-autosave informes-autosave--{_autoSaveState}";
+    private string AutoSaveStatusIcon => _autoSaveState switch
+    {
+        AutoSaveStates.Pending => "bi-dot",
+        AutoSaveStates.Saving => "bi-arrow-repeat",
+        AutoSaveStates.Error => "bi-exclamation-triangle",
+        _ => "bi-cloud-check"
+    };
+    private string AutoSaveStatusText => _autoSaveState switch
+    {
+        AutoSaveStates.Pending => "Cambios pendientes",
+        AutoSaveStates.Saving => "Guardando",
+        AutoSaveStates.Error => "No se pudo guardar",
+        _ => _lastAutoSavedAt.HasValue ? $"Guardado {_lastAutoSavedAt:HH:mm}" : "Guardado"
+    };
+
+    protected override async Task OnInitializedAsync()
+        => await LoadAsync(GetInitialArticleId());
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _editorJs = await JS.InvokeAsync<IJSObjectReference>("import", "/js/tickets-rich-editor.js?v=20260519i");
+            _informesEditorJs = await JS.InvokeAsync<IJSObjectReference>("import", "/js/informes-editor.js?v=20260609-image-paste");
+        }
+
+        if (_selected is not null && !_editorReady && _editorJs is not null)
+        {
+            await _editorJs.InvokeVoidAsync("setHtml", _contentEditor, NormalizeEditorHtml(_draft.Contenido));
+            if (_informesEditorJs is not null)
+            {
+                if (!_editorRootWired)
+                {
+                    await _informesEditorJs.InvokeVoidAsync("wireInformesEditor", _editorRoot);
+                    _editorRootWired = true;
+                }
+                await _informesEditorJs.InvokeVoidAsync("normalizeInformesBlocks", _contentEditor);
+            }
+            _editorReady = true;
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        CancelPendingAutosave();
+        if (_informesEditorJs is not null)
+        {
+            if (_editorRootWired)
+                await _informesEditorJs.InvokeVoidAsync("disposeInformesEditor", _editorRoot);
+            await _informesEditorJs.DisposeAsync();
+        }
+
+        if (_editorJs is not null)
+            await _editorJs.DisposeAsync();
+    }
+
+    private async Task LoadAsync(long? selectedId = null)
+    {
+        _loading = true;
+        var result = await UiOps.RunAsync(() => InformesSvc.GetPageAsync(CurrentUser, selectedId ?? _selected?.IdArticulo, _search, _showTrash), "No se pudo cargar informes.");
+        if (result.Success)
+        {
+            _page = result.Value ?? new();
+            _templates = _page.Plantillas;
+            SetSelected(_page.Seleccionado);
+            _comments = _page.Comentarios;
+            _versions = _page.Versiones;
+        }
+        else
+        {
+            _feedback = FeedbackText(result.Feedback);
+        }
+
+        _loading = false;
+    }
+
+    private void SetSelected(InformesArticuloDetalleDto? article)
+    {
+        CancelPendingAutosave();
+        _selected = article;
+        if (article is null)
+        {
+            _draft = new();
+            _editorReady = false;
+            _lastSavedSignature = string.Empty;
+            _autoSaveState = AutoSaveStates.Saved;
+            return;
+        }
+
+        _draft = new InformesArticuloSaveRequest
+        {
+            IdArticulo = article.IdArticulo,
+            IdPadre = article.IdPadre,
+            Categoria = article.Categoria,
+            Titulo = article.Titulo,
+            Emoji = article.Emoji,
+            Contenido = article.Contenido,
+            PortadaTipo = article.PortadaTipo,
+            PortadaValor = article.PortadaValor,
+            Bloqueado = article.Bloqueado,
+            UsuarioAccion = CurrentUser
+        };
+        _lastSavedSignature = BuildSaveSignature();
+        _lastAutoSavedAt = article.FechaHoraModificacion == default ? null : article.FechaHoraModificacion;
+        _autoSaveState = AutoSaveStates.Saved;
+        _editorReady = false;
+    }
+
+    private async Task SelectArticleAsync(long id)
+    {
+        await FlushAutosaveAsync();
+        _feedback = string.Empty;
+        await LoadAsync(id);
+    }
+
+    private async Task CreateArticleAsync(long? parentId, string category)
+    {
+        var result = await UiOps.RunAsync(() => InformesSvc.CreateArticleAsync(new InformesArticuloCreateRequest
+        {
+            IdPadre = parentId,
+            Categoria = category,
+            UsuarioAccion = CurrentUser
+        }), "No se pudo crear el articulo.");
+
+        if (result.Success)
+        {
+            await LoadAsync(result.Value);
+            _feedback = "Articulo creado.";
+        }
+        else
+        {
+            _feedback = FeedbackText(result.Feedback);
+        }
+    }
+
+    private async Task CreateFromTemplateAsync()
+    {
+        var category = _draft.Categoria;
+        var result = await UiOps.RunAsync(() => InformesSvc.CreateArticleAsync(new InformesArticuloCreateRequest
+        {
+            IdPadre = _selected?.IdPadre,
+            Categoria = string.IsNullOrWhiteSpace(category) ? InformesCategorias.EspacioTrabajo : category,
+            PlantillaKey = _selectedTemplateKey,
+            UsuarioAccion = CurrentUser
+        }), "No se pudo crear desde plantilla.");
+
+        _showTemplatePicker = false;
+        if (result.Success)
+        {
+            await LoadAsync(result.Value);
+            _feedback = "Plantilla cargada.";
+        }
+        else
+        {
+            _feedback = FeedbackText(result.Feedback);
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        _saving = true;
+        await SaveArticleAsync(reloadAfterSave: true, showFeedback: true, closePopups: true);
+        _saving = false;
+    }
+
+    private async Task<bool> SaveArticleAsync(bool reloadAfterSave, bool showFeedback, bool closePopups)
+    {
+        if (closePopups)
+            await CloseEditorPopupsAsync();
+        await SyncContentFromEditorAsync();
+
+        var request = SnapshotDraft();
+        var currentSignature = BuildSaveSignature(request);
+        if (string.Equals(currentSignature, _lastSavedSignature, StringComparison.Ordinal))
+        {
+            _autoSaveState = AutoSaveStates.Saved;
+            return true;
+        }
+
+        request.UsuarioAccion = CurrentUser;
+        var result = await UiOps.RunAsync(() => InformesSvc.SaveArticleAsync(request), "No se pudo guardar el articulo.");
+        if (result.Success)
+        {
+            request.IdArticulo = result.Value;
+            if (_draft.IdArticulo == request.IdArticulo || _draft.IdArticulo <= 0)
+                _draft.IdArticulo = result.Value;
+
+            var liveSignature = BuildSaveSignature();
+            var savedSignature = BuildSaveSignature(request);
+            if (string.Equals(liveSignature, savedSignature, StringComparison.Ordinal))
+            {
+                _lastSavedSignature = savedSignature;
+                _autoSaveState = AutoSaveStates.Saved;
+            }
+            else
+            {
+                _autoSaveState = AutoSaveStates.Pending;
+                _autoSaveRequested = true;
+            }
+
+            _lastAutoSavedAt = DateTime.Now;
+            ApplySavedRequestToCurrentArticle(request);
+
+            if (reloadAfterSave)
+                await LoadAsync(result.Value);
+
+            if (showFeedback)
+                _feedback = "Cambios guardados.";
+            return true;
+        }
+
+        _autoSaveState = AutoSaveStates.Error;
+        _feedback = FeedbackText(result.Feedback);
+        return false;
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (_selected is null)
+            return;
+
+        await DeleteArticleAsync(_selected.IdArticulo);
+    }
+
+    private async Task DeleteArticleAsync(long idArticulo)
+    {
+        _openArticleMenuId = null;
+        var result = await UiOps.RunAsync(async () => { await InformesSvc.DeleteArticleAsync(idArticulo, CurrentUser); return true; }, "No se pudo enviar a papelera.");
+        _feedback = result.Success ? "Articulo enviado a la papelera." : FeedbackText(result.Feedback);
+        await LoadAsync();
+    }
+
+    private async Task RestoreAsync()
+    {
+        if (_selected is null)
+            return;
+
+        var id = _selected.IdArticulo;
+        var result = await UiOps.RunAsync(async () => { await InformesSvc.RestoreArticleAsync(id, CurrentUser); return true; }, "No se pudo restaurar.");
+        _feedback = result.Success ? "Articulo restaurado." : FeedbackText(result.Feedback);
+        await LoadAsync(id);
+    }
+
+    private async Task DuplicateAsync()
+    {
+        if (_selected is null)
+            return;
+
+        await DuplicateArticleAsync(_selected.IdArticulo);
+    }
+
+    private async Task DuplicateArticleAsync(long idArticulo)
+    {
+        _openArticleMenuId = null;
+        var result = await UiOps.RunAsync(() => InformesSvc.DuplicateArticleAsync(idArticulo, CurrentUser), "No se pudo duplicar.");
+        if (result.Success)
+        {
+            await LoadAsync(result.Value);
+            _feedback = "Articulo duplicado.";
+        }
+        else
+        {
+            _feedback = FeedbackText(result.Feedback);
+        }
+    }
+
+    private async Task ToggleFavoriteAsync()
+    {
+        if (_selected is null)
+            return;
+
+        var value = !_selected.EsFavorito;
+        var result = await UiOps.RunAsync(async () => { await InformesSvc.ToggleFavoriteAsync(_selected.IdArticulo, CurrentUser, value); return true; }, "No se pudo actualizar favorito.");
+        if (result.Success)
+            await LoadAsync(_selected.IdArticulo);
+        else
+            _feedback = FeedbackText(result.Feedback);
+    }
+
+    private async Task ToggleShareAsync()
+    {
+        if (_selected is null)
+            return;
+
+        await ToggleShareArticleAsync(_selected.IdArticulo, !_selected.EsCompartido);
+    }
+
+    private async Task ToggleShareArticleAsync(long idArticulo, bool? value = null)
+    {
+        _openArticleMenuId = null;
+        var article = _page.Articulos.FirstOrDefault(x => x.IdArticulo == idArticulo);
+        var share = value ?? !(article?.EsCompartido ?? false);
+        var result = await UiOps.RunAsync(async () => { await InformesSvc.ToggleShareAsync(idArticulo, CurrentUser, share); return true; }, "No se pudo compartir.");
+        if (result.Success)
+        {
+            await LoadAsync(idArticulo);
+            _feedback = share ? "Articulo compartido." : "Articulo privado nuevamente.";
+        }
+        else
+        {
+            _feedback = FeedbackText(result.Feedback);
+        }
+    }
+
+    private async Task AddCommentAsync()
+    {
+        if (_selected is null || string.IsNullOrWhiteSpace(_newComment))
+            return;
+
+        var result = await UiOps.RunAsync(async () =>
+        {
+            await InformesSvc.AddCommentAsync(new InformesComentarioRequest { IdArticulo = _selected.IdArticulo, Texto = _newComment, UsuarioAccion = CurrentUser });
+            return true;
+        }, "No se pudo comentar.");
+
+        if (result.Success)
+        {
+            _newComment = string.Empty;
+            await LoadAsync(_selected.IdArticulo);
+        }
+        else
+        {
+            _feedback = FeedbackText(result.Feedback);
+        }
+    }
+
+    private async Task ToggleCommentAsync(InformesComentarioDto comment)
+    {
+        var result = await UiOps.RunAsync(async () => { await InformesSvc.ToggleCommentResolvedAsync(comment.IdComentario, CurrentUser, !comment.Resuelto); return true; }, "No se pudo actualizar comentario.");
+        if (result.Success && _selected is not null)
+            await LoadAsync(_selected.IdArticulo);
+        else if (!result.Success)
+            _feedback = FeedbackText(result.Feedback);
+    }
+
+    private async Task RestoreVersionAsync(long idVersion)
+    {
+        if (_selected is null)
+            return;
+
+        var result = await UiOps.RunAsync(async () => { await InformesSvc.RestoreVersionAsync(idVersion, CurrentUser); return true; }, "No se pudo restaurar version.");
+        if (result.Success)
+        {
+            await LoadAsync(_selected.IdArticulo);
+            _feedback = "Version restaurada.";
+        }
+        else
+        {
+            _feedback = FeedbackText(result.Feedback);
+        }
+    }
+
+    private async Task ToggleTrashAsync()
+    {
+        _showTrash = !_showTrash;
+        await LoadAsync();
+    }
+
+    private async Task SearchKeyUpAsync(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter")
+            await LoadAsync();
+    }
+
+    private void FocusSearch()
+    {
+    }
+
+    private void OpenTemplatePicker()
+    {
+        _selectedTemplateKey = SelectedTemplate?.Key ?? "agenda";
+        _showTemplatePicker = true;
+    }
+
+    private void CloseTemplatePicker()
+        => _showTemplatePicker = false;
+
+    private void OpenCoverPicker()
+    {
+        _coverSearch = string.Empty;
+        _coverMenuOpen = false;
+        ClearPendingCover();
+        _showCoverPicker = true;
+    }
+
+    private void CloseCoverPicker()
+    {
+        ClearPendingCover();
+        _showCoverPicker = false;
+    }
+
+    private void SelectCover(string type, string value)
+    {
+        ClearPendingCover();
+        SetCover(type, value);
+        _showCoverPicker = false;
+    }
+
+    private void ToggleCoverMenu()
+        => _coverMenuOpen = !_coverMenuOpen;
+
+    private void RemoveCover()
+    {
+        _coverMenuOpen = false;
+        SetCover(InformesPortadas.Ninguna, string.Empty);
+    }
+
+    private async Task HandleCoverFileSelectedAsync(InputFileChangeEventArgs args)
+    {
+        var file = args.File;
+        if (file is null)
+            return;
+
+        var result = await UiOps.RunAsync(async () =>
+        {
+            await using var stream = file.OpenReadStream(MaxCoverImageBytes);
+            using var memory = new MemoryStream();
+            await stream.CopyToAsync(memory);
+            return memory.ToArray();
+        }, "No se pudo cargar la portada.");
+
+        if (result.Success && result.Value is { Length: > 0 } bytes)
+        {
+            _pendingCoverBytes = bytes;
+            _pendingCoverFileName = file.Name;
+            _pendingCoverContentType = string.IsNullOrWhiteSpace(file.ContentType) ? "image/jpeg" : file.ContentType;
+            _pendingCoverPreviewUrl = $"data:{_pendingCoverContentType};base64,{Convert.ToBase64String(bytes)}";
+            _feedback = string.Empty;
+        }
+        else
+        {
+            _feedback = FeedbackText(result.Feedback);
+        }
+    }
+
+    private async Task ConfirmPendingCoverAsync()
+    {
+        if (_pendingCoverBytes is null || _pendingCoverBytes.Length == 0)
+            return;
+
+        var result = await UiOps.RunAsync(async () =>
+        {
+            using var stream = new MemoryStream(_pendingCoverBytes);
+            return await InformesSvc.SaveCoverImageAsync(
+                stream,
+                _pendingCoverFileName ?? "portada.jpg",
+                _pendingCoverContentType ?? "image/jpeg",
+                CurrentUser);
+        }, "No se pudo guardar la portada.");
+
+        if (result.Success && !string.IsNullOrWhiteSpace(result.Value))
+        {
+            SetCover(InformesPortadas.Url, result.Value);
+            ClearPendingCover();
+            _showCoverPicker = false;
+            _feedback = "Portada cargada.";
+        }
+        else
+        {
+            _feedback = FeedbackText(result.Feedback);
+        }
+    }
+
+    private void ClearPendingCover()
+    {
+        _pendingCoverBytes = null;
+        _pendingCoverPreviewUrl = null;
+        _pendingCoverFileName = null;
+        _pendingCoverContentType = null;
+    }
+
+    private void SelectTemplate(string key)
+        => _selectedTemplateKey = key;
+
+    private async Task InsertBlockAsync(string command)
+        => await RunEditorCommandAsync(EditorCommands.First(x => x.Command == command));
+
+    private void ToggleCommandMenu()
+        => _showCommandMenu = !_showCommandMenu;
+
+    private void ToggleSidebar()
+        => _sidebarCollapsed = !_sidebarCollapsed;
+
+    private void ToggleCollaborationPanel()
+        => _collaborationOpen = !_collaborationOpen;
+
+    private void CloseCollaborationPanel()
+        => _collaborationOpen = false;
+
+    private void ToggleArticleMenu(long idArticulo)
+        => _openArticleMenuId = _openArticleMenuId == idArticulo ? null : idArticulo;
+
+    private async Task RunEditorCommandAsync(EditorCommandOption option)
+    {
+        if (_editorJs is null || _selected is null)
+            return;
+
+        if (_informesEditorJs is not null && option.Command is not "emoji" and not "link" and not "button")
+            await _informesEditorJs.InvokeVoidAsync("closeInformesPopups", _editorRoot);
+
+        await _editorJs.InvokeVoidAsync("runCommand", _contentEditor, option.Command);
+        if (_informesEditorJs is not null)
+        {
+            await _informesEditorJs.InvokeVoidAsync("normalizeInformesBlocks", _contentEditor);
+            if (option.Command is "infoBanner" or "warningBanner")
+                await _informesEditorJs.InvokeVoidAsync("placeCaretAfterInformesBanner", _contentEditor);
+        }
+        await SyncContentFromEditorAsync();
+        ScheduleAutosave();
+        _showCommandMenu = false;
+    }
+
+    private async Task SyncContentFromEditorAsync()
+    {
+        if (_editorJs is null || !_editorReady)
+            return;
+
+        _draft.Contenido = await _editorJs.InvokeAsync<string>("getHtml", _contentEditor);
+    }
+
+    private async Task OnContentChangedAsync()
+    {
+        if (_informesEditorJs is not null)
+            await _informesEditorJs.InvokeVoidAsync("normalizeInformesBlocks", _contentEditor);
+        await SyncContentFromEditorAsync();
+        if (_editorJs is not null)
+            _showCommandMenu = await _editorJs.InvokeAsync<bool>("shouldShowCommands", _contentEditor);
+        ScheduleAutosave();
+    }
+
+    private async Task CloseEditorPopupsAsync()
+    {
+        if (_informesEditorJs is not null)
+            await _informesEditorJs.InvokeVoidAsync("closeInformesPopups", _editorRoot);
+        _showCommandMenu = false;
+    }
+
+    private async Task OnContentFocusAsync()
+    {
+        if (_editorJs is not null)
+            _showCommandMenu = await _editorJs.InvokeAsync<bool>("shouldShowCommands", _contentEditor);
+    }
+
+    private void SetCover(string type, string value)
+    {
+        _draft.PortadaTipo = type;
+        _draft.PortadaValor = value;
+        ScheduleAutosave();
+    }
+
+    private void CycleIcon()
+    {
+        string[] icons = ["bi-file-earmark-text", "bi-chat-square-text", "bi-heart-fill", "bi-lightbulb", "bi-tools", "bi-rocket-takeoff", "bi-question-circle", "bi-graph-up-arrow"];
+        var current = Array.IndexOf(icons, _draft.Emoji);
+        _draft.Emoji = icons[(current + 1 + icons.Length) % icons.Length];
+        ScheduleAutosave();
+    }
+
+    private void ScheduleAutosave()
+    {
+        if (_selected is null || _draft.IdArticulo <= 0)
+            return;
+
+        _autoSaveCts?.Cancel();
+        _autoSaveCts?.Dispose();
+        _autoSaveCts = new CancellationTokenSource();
+
+        if (!string.Equals(BuildSaveSignature(), _lastSavedSignature, StringComparison.Ordinal))
+            _autoSaveState = AutoSaveStates.Pending;
+
+        var token = _autoSaveCts.Token;
+        _ = RunAutosaveDebouncedAsync(token);
+    }
+
+    private async Task RunAutosaveDebouncedAsync(CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(AutoSaveDelayMs, token);
+            await InvokeAsync(async () => await AutosaveAsync(token));
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task AutosaveAsync(CancellationToken token)
+    {
+        if (token.IsCancellationRequested || _selected is null)
+            return;
+
+        if (_autoSaveRunning)
+        {
+            _autoSaveRequested = true;
+            return;
+        }
+
+        var signature = BuildSaveSignature();
+        if (string.Equals(signature, _lastSavedSignature, StringComparison.Ordinal))
+        {
+            _autoSaveState = AutoSaveStates.Saved;
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        _autoSaveRunning = true;
+        _autoSaveState = AutoSaveStates.Saving;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            await SaveArticleAsync(reloadAfterSave: false, showFeedback: false, closePopups: false);
+        }
+        finally
+        {
+            _autoSaveRunning = false;
+        }
+
+        if (_autoSaveRequested)
+        {
+            _autoSaveRequested = false;
+            ScheduleAutosave();
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task FlushAutosaveAsync()
+    {
+        _autoSaveCts?.Cancel();
+        while (_autoSaveRunning)
+        {
+            _autoSaveRequested = true;
+            await Task.Delay(50);
+        }
+
+        if (_selected is not null && !string.Equals(BuildSaveSignature(), _lastSavedSignature, StringComparison.Ordinal))
+            await AutosaveAsync(CancellationToken.None);
+    }
+
+    private void CancelPendingAutosave()
+    {
+        _autoSaveCts?.Cancel();
+        _autoSaveCts?.Dispose();
+        _autoSaveCts = null;
+        _autoSaveRunning = false;
+        _autoSaveRequested = false;
+    }
+
+    private InformesArticuloSaveRequest SnapshotDraft()
+        => new()
+        {
+            IdArticulo = _draft.IdArticulo,
+            IdPadre = _draft.IdPadre,
+            Categoria = _draft.Categoria,
+            Titulo = _draft.Titulo,
+            Emoji = _draft.Emoji,
+            Contenido = _draft.Contenido,
+            PortadaTipo = _draft.PortadaTipo,
+            PortadaValor = _draft.PortadaValor,
+            Bloqueado = _draft.Bloqueado,
+            UsuarioAccion = CurrentUser
+        };
+
+    private void ApplySavedRequestToCurrentArticle(InformesArticuloSaveRequest request)
+    {
+        if (_selected is null || _selected.IdArticulo != request.IdArticulo)
+            return;
+
+        ApplyRequestToArticle(_selected, request);
+        var row = _page.Articulos.FirstOrDefault(x => x.IdArticulo == request.IdArticulo);
+        if (row is not null)
+            ApplyRequestToArticle(row, request);
+    }
+
+    private static void ApplyRequestToArticle(InformesArticuloResumenDto article, InformesArticuloSaveRequest request)
+    {
+        article.IdPadre = request.IdPadre;
+        article.Categoria = request.Categoria;
+        article.Titulo = string.IsNullOrWhiteSpace(request.Titulo) ? "Sin titulo" : request.Titulo;
+        article.Emoji = request.Emoji;
+        article.Bloqueado = request.Bloqueado;
+        article.FechaHoraModificacion = DateTime.Now;
+
+        if (article is InformesArticuloDetalleDto detail)
+        {
+            detail.Contenido = request.Contenido;
+            detail.PortadaTipo = request.PortadaTipo;
+            detail.PortadaValor = request.PortadaValor;
+        }
+    }
+
+    private string BuildSaveSignature()
+        => BuildSaveSignature(_draft);
+
+    private static string BuildSaveSignature(InformesArticuloSaveRequest request)
+        => string.Join('\u001f',
+            request.IdArticulo.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            request.IdPadre?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty,
+            request.Categoria ?? string.Empty,
+            request.Titulo ?? string.Empty,
+            request.Emoji ?? string.Empty,
+            request.Contenido ?? string.Empty,
+            request.PortadaTipo ?? string.Empty,
+            request.PortadaValor ?? string.Empty,
+            request.Bloqueado ? "1" : "0");
+
+    private static string FeedbackText(AppUiMessage? feedback)
+    {
+        if (feedback is null)
+            return "No se pudo completar la operacion.";
+
+        var parts = new[] { feedback.Message, feedback.Suggestion, feedback.HasCode ? $"Codigo: {feedback.Code}" : string.Empty }
+            .Where(x => !string.IsNullOrWhiteSpace(x));
+        return string.Join(" ", parts);
+    }
+
+    private IEnumerable<ArticleTreeRow> BuildRows(string? category, bool archived)
+    {
+        var source = _page.Articulos
+            .Where(x => x.Archivado == archived)
+            .Where(x => category is null || x.Categoria == category)
+            .ToList();
+
+        return Flatten(source, null, 0);
+    }
+
+    private static IEnumerable<ArticleTreeRow> BuildFlatRows(IEnumerable<InformesArticuloResumenDto> articles)
+        => articles.OrderBy(x => x.Titulo).Select(x => new ArticleTreeRow(x, 0, false));
+
+    private IEnumerable<ArticleTreeRow> Flatten(List<InformesArticuloResumenDto> source, long? parentId, int level)
+    {
+        foreach (var item in source.Where(x => x.IdPadre == parentId).OrderBy(x => x.Orden).ThenBy(x => x.Titulo))
+        {
+            yield return new ArticleTreeRow(item, level, true);
+            if (!_collapsedArticleIds.Contains(item.IdArticulo))
+            {
+                foreach (var child in Flatten(source, item.IdArticulo, level + 1))
+                    yield return child;
+            }
+        }
+
+        if (parentId is null)
+        {
+            foreach (var orphan in source.Where(x => x.IdPadre is not null && source.All(p => p.IdArticulo != x.IdPadre)).OrderBy(x => x.Titulo))
+                yield return new ArticleTreeRow(orphan, 0, false);
+        }
+    }
+
+    private RenderFragment ArticleButton(ArticleTreeRow row) => @<div class="informes-tree-row" style="@($"--level:{row.Level}")">
+        <button type="button" class="@(row.Item.IdArticulo == _selected?.IdArticulo ? "is-selected" : "")" @onclick="() => SelectArticleAsync(row.Item.IdArticulo)">
+            @if (row.CanCollapse && HasChildren(row.Item))
+            {
+                <span class="informes-tree-row__toggle" role="button" title="@(_collapsedArticleIds.Contains(row.Item.IdArticulo) ? "Mostrar subarticulos" : "Ocultar subarticulos")" @onclick:stopPropagation @onclick="() => ToggleArticleCollapse(row.Item.IdArticulo)">
+                    <i class="bi @(_collapsedArticleIds.Contains(row.Item.IdArticulo) ? "bi-chevron-right" : "bi-chevron-down")"></i>
+                </span>
+            }
+            else
+            {
+                <span class="informes-tree-row__toggle informes-tree-row__toggle--empty"></span>
+            }
+            <i class="bi @IconClass(row.Item.Emoji)"></i>
+            <span>@row.Item.Titulo</span>
+            @if (row.Item.Bloqueado)
+            {
+                <i class="bi bi-lock-fill"></i>
+            }
+        </button>
+        @if (!row.Item.Archivado)
+        {
+            <div class="informes-tree-row__tools">
+                <button type="button" class="informes-tree-row__add" title="Crear subarticulo" @onclick="() => CreateArticleAsync(row.Item.IdArticulo, row.Item.Categoria)">
+                    <i class="bi bi-plus-lg"></i>
+                </button>
+                <button type="button" class="informes-tree-row__menu-button" title="Acciones" @onclick="() => ToggleArticleMenu(row.Item.IdArticulo)">
+                    <i class="bi bi-three-dots"></i>
+                </button>
+                @if (_openArticleMenuId == row.Item.IdArticulo)
+                {
+                    <div class="informes-tree-row__menu">
+                        <button type="button" @onclick="() => ToggleShareArticleAsync(row.Item.IdArticulo)">
+                            <i class="bi bi-share"></i>
+                            <span>@(row.Item.EsCompartido ? "Pasar a privado" : "Compartir")</span>
+                        </button>
+                        <button type="button" @onclick="() => DuplicateArticleAsync(row.Item.IdArticulo)">
+                            <i class="bi bi-copy"></i>
+                            <span>Duplicar</span>
+                        </button>
+                        <button type="button" @onclick="() => DeleteArticleAsync(row.Item.IdArticulo)">
+                            <i class="bi bi-trash3"></i>
+                            <span>Eliminar</span>
+                        </button>
+                    </div>
+                }
+            </div>
+        }
+    </div>;
+
+    private void ToggleArticleCollapse(long idArticulo)
+    {
+        if (!_collapsedArticleIds.Add(idArticulo))
+            _collapsedArticleIds.Remove(idArticulo);
+    }
+
+    private bool HasChildren(InformesArticuloResumenDto article)
+        => _page.Articulos.Any(x => x.IdPadre == article.IdArticulo && x.Archivado == article.Archivado && x.Categoria == article.Categoria);
+
+    private static string IconClass(string? value)
+        => string.IsNullOrWhiteSpace(value) ? "bi-file-earmark-text" : value.Trim();
+
+    private static string ArticleVisibilityLabel(InformesArticuloResumenDto article)
+        => article.EsCompartido
+            ? "Compartido"
+            : CategoryLabel(article.Categoria);
+
+    private static string CategoryLabel(string? value)
+        => string.Equals(value, InformesCategorias.Privado, StringComparison.OrdinalIgnoreCase)
+            ? "Privado"
+            : "Espacio de trabajo";
+
+    private string BuildShareUrl(Guid token)
+        => Nav.ToAbsoluteUri($"/informes?articulo={_selected?.IdArticulo}&share={token}").ToString();
+
+    private long? GetInitialArticleId()
+    {
+        var query = QueryHelpers.ParseQuery(Nav.ToAbsoluteUri(Nav.Uri).Query);
+        if (query.TryGetValue("articulo", out var value)
+            && long.TryParse(value.ToString(), out var id)
+            && id > 0)
+        {
+            return id;
+        }
+
+        return null;
+    }
+
+    private static string NormalizeEditorHtml(string? content)
+    {
+        var value = content?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(value))
+            return "<p><br></p>";
+
+        return value.Contains('<', StringComparison.Ordinal) ? value : RenderArticleHtml(value);
+    }
+
+    private static string RenderArticleHtml(string? content)
+    {
+        var lines = (content ?? string.Empty).Replace("\r\n", "\n").Split('\n');
+        var html = new StringBuilder();
+        var inList = false;
+        var inQuote = false;
+
+        void CloseBlocks()
+        {
+            if (inList)
+            {
+                html.Append("</ul>");
+                inList = false;
+            }
+            if (inQuote)
+            {
+                html.Append("</blockquote>");
+                inQuote = false;
+            }
+        }
+
+        foreach (var rawLine in lines)
+        {
+            var line = rawLine.TrimEnd();
+            var trimmed = line.Trim();
+            if (string.IsNullOrWhiteSpace(trimmed))
+            {
+                CloseBlocks();
+                continue;
+            }
+
+            if (trimmed.StartsWith("## ", StringComparison.Ordinal))
+            {
+                CloseBlocks();
+                html.Append("<h2>").Append(WebUtility.HtmlEncode(trimmed[3..])).Append("</h2>");
+            }
+            else if (trimmed.StartsWith("# ", StringComparison.Ordinal))
+            {
+                CloseBlocks();
+                html.Append("<h1>").Append(WebUtility.HtmlEncode(trimmed[2..])).Append("</h1>");
+            }
+            else if (trimmed.StartsWith("> ", StringComparison.Ordinal))
+            {
+                if (!inQuote)
+                {
+                    CloseBlocks();
+                    html.Append("<blockquote>");
+                    inQuote = true;
+                }
+                html.Append("<p>").Append(WebUtility.HtmlEncode(trimmed[2..])).Append("</p>");
+            }
+            else if (trimmed.StartsWith("- [ ] ", StringComparison.Ordinal) || trimmed.StartsWith("- [x] ", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!inList)
+                {
+                    CloseBlocks();
+                    html.Append("<ul class=\"ticket-editor-todo\">");
+                    inList = true;
+                }
+                var checkedAttr = trimmed.StartsWith("- [x] ", StringComparison.OrdinalIgnoreCase) ? " checked" : string.Empty;
+                html.Append("<li><input type=\"checkbox\"").Append(checkedAttr).Append("> ")
+                    .Append(WebUtility.HtmlEncode(trimmed[6..])).Append("</li>");
+            }
+            else if (trimmed.StartsWith("- ", StringComparison.Ordinal))
+            {
+                if (!inList)
+                {
+                    CloseBlocks();
+                    html.Append("<ul>");
+                    inList = true;
+                }
+                html.Append("<li>").Append(WebUtility.HtmlEncode(trimmed[2..])).Append("</li>");
+            }
+            else if (trimmed.StartsWith("|", StringComparison.Ordinal) && trimmed.EndsWith("|", StringComparison.Ordinal))
+            {
+                CloseBlocks();
+                var cells = trimmed.Trim('|').Split('|').Select(x => WebUtility.HtmlEncode(x.Trim())).ToArray();
+                if (cells.All(x => Regex.IsMatch(WebUtility.HtmlDecode(x) ?? string.Empty, @"^-+$")))
+                    continue;
+
+                html.Append("<div class=\"table-row\">");
+                foreach (var cell in cells)
+                    html.Append("<span>").Append(cell).Append("</span>");
+                html.Append("</div>");
+            }
+            else
+            {
+                CloseBlocks();
+                html.Append("<p>").Append(WebUtility.HtmlEncode(trimmed)).Append("</p>");
+            }
+        }
+
+        CloseBlocks();
+        return html.ToString();
+    }
+
+    private IEnumerable<CoverOption> FilterCoverOptions(IEnumerable<CoverOption> options)
+    {
+        var search = _coverSearch.Trim();
+        if (string.IsNullOrWhiteSpace(search))
+            return options;
+
+        return options.Where(x => x.Nombre.Contains(search, StringComparison.OrdinalIgnoreCase)
+                                  || x.Tags.Contains(search, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string AlfaCoverStyle(string? value)
+        => (value ?? string.Empty).Trim().ToLowerInvariant() switch
+        {
+            "alfa-ondas" => "--cover-bg: radial-gradient(circle at 8% 25%, rgba(34, 211, 238, .32), transparent 22%), radial-gradient(circle at 68% 20%, rgba(20, 184, 166, .18), transparent 24%), linear-gradient(135deg, #06101d 0%, #0b2e4d 45%, #07111f 100%);",
+            "alfa-diagonal" => "--cover-bg: linear-gradient(120deg, #0e4f75 0 28%, #09213a 28% 52%, #12375a 52% 70%, #07111f 70% 100%);",
+            "alfa-malla" => "--cover-bg: radial-gradient(circle, rgba(125, 211, 252, .18) 1px, transparent 1px), linear-gradient(135deg, #07111f, #0b3556); --cover-bg-size: 22px 22px, auto;",
+            "alfa-circuito" => "--cover-bg: linear-gradient(90deg, rgba(34, 211, 238, .18) 1px, transparent 1px), linear-gradient(0deg, rgba(20, 184, 166, .14) 1px, transparent 1px), linear-gradient(135deg, #06101d, #0d2a45); --cover-bg-size: 44px 44px, 44px 44px, auto;",
+            "alfa-calma" => "--cover-bg: radial-gradient(circle at 20% 10%, rgba(14, 165, 233, .32), transparent 30%), radial-gradient(circle at 78% 54%, rgba(20, 184, 166, .22), transparent 32%), linear-gradient(135deg, #081426, #07111f);",
+            _ => "--cover-bg: linear-gradient(135deg, rgba(14, 165, 233, .22), transparent 35%), linear-gradient(115deg, #09213a 0%, #0e365e 32%, #12253f 32%, #07111f 100%);"
+        };
+
+    private sealed record ArticleTreeRow(InformesArticuloResumenDto Item, int Level, bool CanCollapse);
+    private sealed record EditorCommandOption(string Group, string Title, string Description, string Icon, string Command);
+    private sealed record CoverOption(string Nombre, string Url, string Tags = "");
+
+    private static class AutoSaveStates
+    {
+        public const string Saved = "saved";
+        public const string Pending = "pending";
+        public const string Saving = "saving";
+        public const string Error = "error";
+    }
+}

@@ -1,5 +1,8 @@
 @page "/consultas/nueva"
+@page "/{idweb}/{idbase:int}/consultas/nueva"
 @page "/consultas/{Id:int}/editar"
+@page "/{idweb}/{idbase:int}/consultas/{Id:int}/editar"
+@inject AlfaCore.Services.IRouteContextService RouteContext
 @using AlfaCore.Services
 @inject IConsultasService ConsultasSvc
 @inject IAppUiOperationService UiOps
@@ -450,7 +453,7 @@ else
     private async Task CargarConsultaAsync(int id)
     {
         var c = await ConsultasSvc.GetConsultaAsync(id);
-        if (c is null) { Nav.NavigateTo("/consultas"); return; }
+        if (c is null) { Nav.NavigateTo(RouteContext.BuildRoute("/consultas")); return; }
         _clave = c.Clave;
         _nombre = c.Grupo;
         _descripcion = c.Descripcion;
@@ -530,8 +533,8 @@ else
     {
         foreach (var nodo in nodos)
         {
-            var indent = new string(' ', nivel * 4);
-            lista.Add(new OpcionArbol(nodo.Clave, $"{indent}{nodo.Clave} · {nodo.Nombre}"));
+            var indent = new string(' ', nivel * 4);
+            lista.Add(new OpcionArbol(nodo.Clave, $"{indent}{nodo.Clave} - {nodo.Nombre}"));
             AplanarParaSelector(nodo.Hijos, lista, nivel + 1);
         }
     }
@@ -885,7 +888,7 @@ else
                 CamposOrdenar = _camposOrdenar.Trim(),
                 EtiquetasParametros = [.. _etiquetasParams]
             });
-            Nav.NavigateTo($"/consultas/{nuevoId}");
+            Nav.NavigateTo(RouteContext.BuildRoute($"/consultas/{nuevoId}"));
         }
         catch (Exception ex)
         {
@@ -903,7 +906,7 @@ else
         try
         {
             await ConsultasSvc.EliminarConsultaAsync(_id!.Value);
-            Nav.NavigateTo("/consultas");
+            Nav.NavigateTo(RouteContext.BuildRoute("/consultas"));
         }
         catch (Exception ex)
         {

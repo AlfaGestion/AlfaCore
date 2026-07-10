@@ -1,4 +1,4 @@
-﻿using AlfaCore.Components;
+using AlfaCore.Components;
 using AlfaCore.Configuration;
 using AlfaCore.Models;
 using AlfaCore.Repositories;
@@ -13,9 +13,60 @@ public class Program
 {
     public static void Main(string[] args)
     {
-        var builder = WebApplication.CreateBuilder(args);
+        var webRootCandidates = new[]
+        {
+            Path.Combine(AppContext.BaseDirectory, "wwwroot"),
+            Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../wwwroot")),
+            Path.Combine(Directory.GetCurrentDirectory(), "wwwroot")
+        };
+
+        var projectRootCandidates = new[]
+        {
+            Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..")),
+            Directory.GetCurrentDirectory(),
+            Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../.."))
+        };
+
+        var selectedWebRoot = webRootCandidates.FirstOrDefault(Directory.Exists);
+        var builder = selectedWebRoot is null
+            ? WebApplication.CreateBuilder(args)
+            : WebApplication.CreateBuilder(new WebApplicationOptions
+            {
+                Args = args,
+                WebRootPath = selectedWebRoot
+            });
+
         DotEnvLoader.LoadIfPresent(builder.Environment.ContentRootPath);
-        var startupConnectionString = StartupConnectionResolver.Resolve(args, builder.Configuration, builder.Environment.ContentRootPath);
+        var startupConnectionString = StartupConnectionResolver.Resolve(args, builder.Configuration);
+
+        string? ResolveStaticAsset(string relativePath)
+        {
+            foreach (var candidate in webRootCandidates)
+            {
+                var fullPath = Path.Combine(candidate, relativePath);
+                if (File.Exists(fullPath))
+                    return fullPath;
+            }
+
+            foreach (var candidate in projectRootCandidates)
+            {
+                var scopedCssCandidates = new[]
+                {
+                    Path.Combine(candidate, "obj", "Debug", "net8.0", "scopedcss", "bundle", relativePath),
+                    Path.Combine(candidate, "obj", "Release", "net8.0", "scopedcss", "bundle", relativePath),
+                    Path.Combine(candidate, "bin", "Debug", "net8.0", "scopedcss", "bundle", relativePath),
+                    Path.Combine(candidate, "bin", "Release", "net8.0", "scopedcss", "bundle", relativePath)
+                };
+
+                foreach (var scopedCssPath in scopedCssCandidates)
+                {
+                    if (File.Exists(scopedCssPath))
+                        return scopedCssPath;
+                }
+            }
+
+            return null;
+        }
 
         if (!string.IsNullOrWhiteSpace(startupConnectionString))
         {
@@ -48,15 +99,30 @@ public class Program
         builder.Services.AddRazorComponents()
             .AddInteractiveServerComponents();
         builder.Services.AddScoped<ISessionService, SessionService>();
+        builder.Services.AddSingleton<IAppModeService, AppModeService>();
+        builder.Services.AddScoped<IRouteContextService, RouteContextService>();
+        builder.Services.AddScoped<IPasswordVerifier, PlainTextPasswordVerifier>();
+        builder.Services.AddScoped<ICentralClientesService, CentralClientesService>();
+        builder.Services.AddScoped<ICentralBasesService, CentralBasesService>();
+        builder.Services.AddScoped<ICentralUsersService, CentralUsersService>();
+        builder.Services.AddScoped<ICentralAdminService, CentralAdminService>();
+        builder.Services.AddScoped<ICentralAuthService, CentralAuthService>();
+        builder.Services.AddScoped<IConexionClienteService, ConexionClienteService>();
+        builder.Services.AddScoped<ILegacyBaseUserSessionService, LegacyBaseUserSessionService>();
         builder.Services.AddScoped<IComprasDashboardService, ComprasDashboardService>();
+        builder.Services.AddScoped<IReporteComprasService, ReporteComprasService>();
         builder.Services.AddScoped<IInformesIaService, InformesIaService>();
+        builder.Services.AddScoped<IInformesService, InformesService>();
+        builder.Services.AddScoped<INovedadesService, NovedadesService>();
         builder.Services.AddScoped<IConsultasService, ConsultasService>();
         builder.Services.AddScoped<ICostosService, CostosService>();
         builder.Services.AddScoped<IConversacionesService, ConversacionesService>();
         builder.Services.AddScoped<IConversacionesConfigService, ConversacionesConfigService>();
         builder.Services.AddScoped<INotificacionesPushService, NotificacionesPushService>();
         builder.Services.AddScoped<ICalendarioService, CalendarioService>();
+        builder.Services.AddScoped<IReunionesPublicasService, ReunionesPublicasService>();
         builder.Services.AddScoped<ITicketsService, TicketsService>();
+        builder.Services.AddScoped<IPartesHorasService, PartesHorasService>();
         builder.Services.AddScoped<ITareasService, TareasService>();
         builder.Services.AddScoped<IInterfacesService, InterfacesService>();
         builder.Services.AddScoped<IInterfacesConfigService, InterfacesConfigService>();
@@ -77,19 +143,31 @@ public class Program
         builder.Services.AddScoped<IContactosValidator, ContactosValidator>();
         builder.Services.AddScoped<ICuentasComercialesService, CuentasComercialesService>();
         builder.Services.AddScoped<ICuentasComercialesValidator, CuentasComercialesValidator>();
+        builder.Services.AddScoped<ICargaViajesService, CargaViajesService>();
+        builder.Services.AddScoped<ICargaViajesValidator, CargaViajesValidator>();
+        builder.Services.AddScoped<IViajePreviewStateService, ViajePreviewStateService>();
         builder.Services.AddScoped<IComprobanteViewerService, ComprobanteViewerService>();
         builder.Services.AddSingleton<AppUserSessionStore>();
         builder.Services.AddScoped<IAppUserSessionService, AppUserSessionService>();
         builder.Services.AddSingleton<UsuariosPasswordCodec>();
+        builder.Services.AddSingleton<Vb6BridgeTicketStore>();
+        builder.Services.AddScoped<IVb6BridgeService, Vb6BridgeService>();
         builder.Services.AddScoped<IAuditoriaService, AuditoriaService>();
         builder.Services.AddScoped<IGestionDashboardService, GestionDashboardService>();
         builder.Services.AddScoped<IPuntoVentaService, PuntoVentaService>();
+        builder.Services.AddScoped<IPuntoVentaCartStateService, PuntoVentaCartStateService>();
         builder.Services.AddScoped<IAppUiOperationService, AppUiOperationService>();
+        builder.Services.AddScoped<IAppUiDialogService, AppUiDialogService>();
         builder.Services.AddScoped<IFloatingWindowService, FloatingWindowService>();
+        builder.Services.AddScoped<IPageHeaderService, PageHeaderService>();
+        builder.Services.AddScoped<IPageHeaderNavigationService, PageHeaderNavigationService>();
         builder.Services.AddScoped<IAuxErrRepository, AuxErrRepository>();
         builder.Services.AddScoped<IAppEventService, AppEventService>();
         builder.Services.AddSingleton<ConsultasExcelExporter>();
         builder.Services.AddSingleton<AuditoriaExcelExporter>();
+        builder.Services.AddSingleton<ReporteComprasExcelExporter>();
+        builder.Services.AddSingleton<CargaViajesLiquidacionExcelExporter>();
+        builder.Services.AddSingleton<CargaViajesTarifasExcelExporter>();
         builder.Services.AddSingleton<InformesIaHistoryStore>();
         builder.Services.AddSingleton<InformesIaResultStore>();
         builder.Services.AddScoped<FilterStateService>();
@@ -115,6 +193,21 @@ public class Program
         app.UseMiddleware<AppExceptionLoggingMiddleware>();
         app.UseStaticFiles();
         app.UseAntiforgery();
+
+        app.MapGet("/app.css", () =>
+            ResolveStaticAsset("app.css") is { } file
+                ? Results.File(file, "text/css; charset=utf-8")
+                : Results.NotFound());
+
+        app.MapGet("/theme-overrides.css", () =>
+            ResolveStaticAsset("theme-overrides.css") is { } file
+                ? Results.File(file, "text/css; charset=utf-8")
+                : Results.NotFound());
+
+        app.MapGet("/AlfaCore.styles.css", () =>
+            ResolveStaticAsset("AlfaCore.styles.css") is { } file
+                ? Results.File(file, "text/css; charset=utf-8")
+                : Results.NotFound());
 
         app.MapRazorComponents<App>()
             .AddInteractiveServerRenderMode();
@@ -223,6 +316,66 @@ public class Program
             var file = await comprobanteViewerSvc.GetDocumentoArchivoAsync(tc, idComprobante, idComplemento ?? 0, documento, ct);
             if (file is null) return Results.NotFound();
             return Results.File(file.RutaCompleta, file.MimeType, file.NombreArchivo);
+        });
+
+        app.MapPost("/api/vb6/auth-ticket", async (
+            HttpRequest request,
+            IVb6BridgeService vb6BridgeSvc,
+            CancellationToken ct) =>
+        {
+            if (!request.HasFormContentType)
+                return Results.BadRequest("Se esperaba application/x-www-form-urlencoded.");
+
+            var form = await request.ReadFormAsync(ct);
+            var vb6Request = new Vb6AuthTicketRequest
+            {
+                Servidor = form["servidor"].ToString(),
+                BaseDatos = form["baseDatos"].ToString(),
+                UsuarioSql = form["usuarioSql"].ToString(),
+                PasswordSql = form["passwordSql"].ToString(),
+                UsuarioSistema = form["usuarioSistema"].ToString(),
+                PasswordSistema = form["passwordSistema"].ToString(),
+                Modulo = form["modulo"].ToString(),
+                NombreSesion = string.IsNullOrWhiteSpace(form["nombreSesion"]) ? null : form["nombreSesion"].ToString()
+            };
+
+            try
+            {
+                var ticket = await vb6BridgeSvc.CreateTicketAsync(vb6Request, ct);
+                return Results.Text(ticket, "text/plain; charset=utf-8");
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.BadRequest(ex.Message);
+            }
+            catch (Exception ex)
+            {
+                return Results.Problem(ex.Message, statusCode: StatusCodes.Status500InternalServerError);
+            }
+        });
+
+        app.MapGet("/vb6/consume", async (
+            HttpRequest request,
+            IVb6BridgeService vb6BridgeSvc,
+            CancellationToken ct) =>
+        {
+            var ticket = request.Query["t"].ToString();
+            if (string.IsNullOrWhiteSpace(ticket))
+                return Results.BadRequest("Falta el ticket.");
+
+            try
+            {
+                var result = await vb6BridgeSvc.ConsumeTicketAsync(ticket, ct);
+                return Results.Content(BuildVb6ConsumeHtml(result), "text/html; charset=utf-8");
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Content(BuildVb6ErrorHtml(ex.Message), "text/html; charset=utf-8");
+            }
+            catch (Exception ex)
+            {
+                return Results.Content(BuildVb6ErrorHtml(ex.Message), "text/html; charset=utf-8");
+            }
         });
 
         app.MapGet("/consultas/{id:int}/descargar-excel", async (
@@ -372,6 +525,154 @@ public class Program
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 filename);
         });
+
+        app.MapGet("/compras/reportes/descargar-excel", async (
+            HttpRequest request,
+            IReporteComprasService reporteSvc,
+            ReporteComprasExcelExporter exporter,
+            CancellationToken ct) =>
+        {
+            static DateTime? ParseDate(string? v)
+                => DateTime.TryParse(v, out var d) ? d : null;
+
+            static string? NullIfEmpty(string? v)
+                => string.IsNullOrWhiteSpace(v) ? null : v.Trim();
+
+            var tipo = request.Query["tipo"].ToString(); // "resumen" | "detalle"
+
+            var filtros = new FiltrosReporteCompras
+            {
+                FechaDesde      = ParseDate(request.Query["fechaDesde"]),
+                FechaHasta      = ParseDate(request.Query["fechaHasta"]),
+                Proveedor       = NullIfEmpty(request.Query["proveedor"]),
+                TipoComprobante = NullIfEmpty(request.Query["tc"]),
+                TamanioPagina   = 500
+            };
+
+            if (string.Equals(tipo, "detalle", StringComparison.OrdinalIgnoreCase))
+            {
+                var allItems = new List<DetalleComprasFilaDto>();
+                int totalRegistros = 0;
+                int pagina = 1;
+
+                while (true)
+                {
+                    filtros.Pagina = pagina;
+                    var result = await reporteSvc.GetDetalleComprasAsync(filtros, ct);
+                    totalRegistros = result.TotalRegistros;
+                    if (result.Items.Count == 0) break;
+                    allItems.AddRange(result.Items);
+                    if (allItems.Count >= result.TotalRegistros || result.Items.Count < filtros.TamanioPagina) break;
+                    pagina++;
+                }
+
+                var bytes = exporter.ExportarDetalle(allItems, filtros, totalRegistros);
+                return Results.File(bytes,
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    ReporteComprasExcelExporter.NombreArchivoDetalle());
+            }
+            else
+            {
+                var resumen = await reporteSvc.GetResumenAsync(filtros, ct);
+                var bytes = exporter.ExportarResumen(resumen, filtros);
+                return Results.File(bytes,
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    ReporteComprasExcelExporter.NombreArchivoResumen());
+            }
+        });
+
+        app.MapGet("/carga-viajes/liquidacion/descargar-excel", async (
+            HttpRequest request,
+            ICargaViajesService cargaViajesSvc,
+            CargaViajesLiquidacionExcelExporter exporter,
+            CancellationToken ct) =>
+        {
+            static DateTime? ParseDate(string? value)
+                => DateTime.TryParse(value, out var parsed) ? parsed : null;
+
+            static string TrimOrEmpty(string? value)
+                => string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+
+            var filters = new CargaViajesReporteLiquidacionFilters
+            {
+                FechaDesde = ParseDate(request.Query["desde"]),
+                FechaHasta = ParseDate(request.Query["hasta"]),
+                ChoferCodigo = TrimOrEmpty(request.Query["chofer"]),
+                ClienteCodigo = TrimOrEmpty(request.Query["cliente"]),
+                DestinoCodigo = TrimOrEmpty(request.Query["destino"]),
+                TipoPersona = TrimOrEmpty(request.Query["tipoPersona"]),
+                Estado = TrimOrEmpty(request.Query["estado"])
+            };
+
+            var rows = await cargaViajesSvc.SearchLiquidacionChoferesAsync(filters, ct);
+            var chofer = string.IsNullOrWhiteSpace(filters.ChoferCodigo)
+                ? null
+                : await cargaViajesSvc.GetChoferByIdAsync(filters.ChoferCodigo, ct);
+            var nombreEntidad = string.IsNullOrWhiteSpace(chofer?.Nombre)
+                ? (string.IsNullOrWhiteSpace(filters.ChoferCodigo) ? "Chofer / Fletero" : filters.ChoferCodigo)
+                : chofer.Nombre;
+            var tituloEntidad = chofer is null
+                ? nombreEntidad
+                : chofer.EsFletero ? $"Fletero {nombreEntidad}" : $"Chofer {nombreEntidad}";
+
+            var bytes = exporter.Exportar(rows, filters, tituloEntidad, nombreEntidad);
+            return Results.File(
+                bytes,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                CargaViajesLiquidacionExcelExporter.NombreArchivo());
+        });
+
+        async Task<IResult> DescargarTarifasExcel(
+            HttpRequest request,
+            ICargaViajesService cargaViajesSvc,
+            CargaViajesTarifasExcelExporter exporter,
+            CancellationToken ct)
+        {
+            static bool ParseBool(string? value)
+                => bool.TryParse(value, out var parsed) && parsed;
+
+            static string TrimOrEmpty(string? value)
+                => string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+
+            var filters = new CargaViajesFilters
+            {
+                AgruparPor = TrimOrEmpty(request.Query["agruparPor"]),
+                Texto = TrimOrEmpty(request.Query["texto"]),
+                Cliente = TrimOrEmpty(request.Query["cliente"]),
+                Chofer = TrimOrEmpty(request.Query["chofer"]),
+                Destino = TrimOrEmpty(request.Query["destino"]),
+                TipoVehiculo = TrimOrEmpty(request.Query["tipoVehiculo"]),
+                TarifaFletero = TrimOrEmpty(request.Query["tarifaFletero"]),
+                Activo = TrimOrEmpty(request.Query["activo"]),
+                SortBy = TrimOrEmpty(request.Query["sortBy"]),
+                SortDescending = ParseBool(request.Query["sortDescending"]),
+                PageNumber = 1,
+                PageSize = 500
+            };
+
+            var allItems = new List<CargaViajeTarifaGridItemDto>();
+            while (true)
+            {
+                var page = await cargaViajesSvc.SearchTarifasAsync(filters, ct);
+                if (page.Items.Count == 0)
+                    break;
+
+                allItems.AddRange(page.Items);
+                if (allItems.Count >= page.Total || page.Items.Count < filters.PageSize)
+                    break;
+
+                filters.PageNumber++;
+            }
+
+            var bytes = exporter.Exportar(allItems, filters, filters.AgruparPor);
+            return Results.File(
+                bytes,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                CargaViajesTarifasExcelExporter.NombreArchivo());
+        }
+
+        app.MapGet("/carga-viajes/tarifas/descargar-excel", DescargarTarifasExcel);
+        app.MapGet("/{idweb}/{idbase:int}/carga-viajes/tarifas/descargar-excel", DescargarTarifasExcel);
 
         app.MapGet("/api/conversaciones", async (
             string? modo,
@@ -539,16 +840,42 @@ public class Program
             IConversacionesService svc,
             CancellationToken ct) =>
         {
-            var adjunto = await svc.GetAttachmentForServeAsync(idAdjunto, ct);
+            var idBaseRaw = request.Query["idBase"].ToString();
+            var idBase = int.TryParse(idBaseRaw, out var parsedIdBase) && parsedIdBase > 0
+                ? parsedIdBase
+                : (int?)null;
+            var download = string.Equals(request.Query["download"].ToString(), "1", StringComparison.OrdinalIgnoreCase);
+            var preview = string.Equals(request.Query["preview"].ToString(), "1", StringComparison.OrdinalIgnoreCase);
+            var adjunto = await svc.GetAttachmentForServeAsync(idAdjunto, idBase, includeDownloadName: download, ct);
             if (adjunto is null || !File.Exists(adjunto.RutaLocal))
                 return Results.NotFound();
 
             var mime = NormalizeAttachmentMime(adjunto.MimeType, adjunto.NombreArchivo);
-            var download = string.Equals(request.Query["download"].ToString(), "1", StringComparison.OrdinalIgnoreCase);
+            var fileInfo = new FileInfo(adjunto.RutaLocal);
+            var lastModified = new DateTimeOffset(fileInfo.LastWriteTimeUtc, TimeSpan.Zero);
+            var entityTag = new Microsoft.Net.Http.Headers.EntityTagHeaderValue($"\"{fileInfo.Length:x}-{fileInfo.LastWriteTimeUtc.Ticks:x}\"");
+
+            if (download)
+            {
+                request.HttpContext.Response.Headers.CacheControl = "no-store, no-cache, must-revalidate";
+                request.HttpContext.Response.Headers.Pragma = "no-cache";
+                request.HttpContext.Response.Headers.Expires = "0";
+            }
+            else
+            {
+                request.HttpContext.Response.Headers.CacheControl = preview
+                    ? "private, max-age=604800, immutable"
+                    : "private, max-age=86400";
+                request.HttpContext.Response.Headers.Pragma = string.Empty;
+                request.HttpContext.Response.Headers.Expires = DateTimeOffset.UtcNow.AddDays(preview ? 7 : 1).ToString("R", System.Globalization.CultureInfo.InvariantCulture);
+            }
+
             return Results.File(
                 adjunto.RutaLocal,
                 contentType: mime,
                 fileDownloadName: download ? (string.IsNullOrWhiteSpace(adjunto.NombreDescarga) ? adjunto.NombreArchivo : adjunto.NombreDescarga) : null,
+                lastModified: lastModified,
+                entityTag: entityTag,
                 enableRangeProcessing: true);
         });
 
@@ -878,6 +1205,68 @@ public class Program
             },
             statusCode: StatusCodes.Status500InternalServerError);
     }
+
+    private static string BuildVb6ConsumeHtml(Vb6ConsumeTicketResult result)
+    {
+        var sessionId = HtmlEncode(result.SqlSessionId);
+        var token = JsStringEncode(result.UserToken);
+        var redirectUrl = JsStringEncode(result.RedirectUrl);
+
+        return string.Concat(
+            "<!doctype html>",
+            "<html lang=\"es\">",
+            "<head>",
+            "<meta charset=\"utf-8\" />",
+            "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />",
+            "<title>AlfaCore</title>",
+            "</head>",
+            "<body>",
+            "<script>",
+            "(function () {",
+            "try {",
+            "if (window.alfaCoreSqlSession && typeof window.alfaCoreSqlSession.setActive === 'function') {",
+            "window.alfaCoreSqlSession.setActive('", sessionId, "');",
+            "} else {",
+            "localStorage.setItem('alfacore.baseId', '", sessionId, "');",
+            "}",
+            "localStorage.setItem('alfacore_user_token', '", token, "');",
+            "window.location.replace('", redirectUrl, "');",
+            "} catch (error) {",
+            "document.body.innerHTML = '<pre>No se pudo preparar la sesion: ' + (error && error.message ? error.message : error) + '</pre>';",
+            "}",
+            "})();",
+            "</script>",
+            "<noscript>Necesitas JavaScript habilitado para continuar.</noscript>",
+            "</body>",
+            "</html>");
+    }
+
+    private static string BuildVb6ErrorHtml(string message)
+    {
+        var safeMessage = HtmlEncode(message);
+        return string.Concat(
+            "<!doctype html>",
+            "<html lang=\"es\">",
+            "<head>",
+            "<meta charset=\"utf-8\" />",
+            "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />",
+            "<title>AlfaCore - Error</title>",
+            "</head>",
+            "<body>",
+            "<pre>", safeMessage, "</pre>",
+            "</body>",
+            "</html>");
+    }
+
+    private static string HtmlEncode(string value)
+        => System.Net.WebUtility.HtmlEncode(value ?? string.Empty);
+
+    private static string JsStringEncode(string value)
+        => (value ?? string.Empty)
+            .Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("'", "\\'", StringComparison.Ordinal)
+            .Replace("\r", string.Empty, StringComparison.Ordinal)
+            .Replace("\n", string.Empty, StringComparison.Ordinal);
 
     private static void WriteStartupError(string message, Exception exception)
     {

@@ -1,4 +1,5 @@
 @page "/costos/nueva"
+@page "/{idweb}/{idbase:int}/costos/nueva"
 @using Microsoft.AspNetCore.Components.Forms
 @inject AlfaCore.Services.ICostosService CostosSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
@@ -53,7 +54,7 @@
                     @if (FilteredProfiles.Count == 0)
                     {
                         <div class="costos-nueva__empty">
-                            No hay perfiles que coincidan con “@_filterText”.
+                            No hay perfiles que coincidan con "@_filterText".
                         </div>
                     }
                     else
@@ -97,7 +98,7 @@
         {
             <div style="margin-top:.75rem; padding:.75rem; border:1px solid var(--color-border); border-radius:6px; background:var(--color-surface);">
                 <label style="font-weight:600; display:block; margin-bottom:.4rem;">
-                    ¿Cuál columna usar como costo?
+                    Cual columna usar como costo?
                 </label>
                 <p class="panel-card__subtitle" style="margin-bottom:.5rem;">
                     El archivo tiene @_fileColumns.PriceCandidates.Count columnas con precios. Elegí la que corresponde al costo de importación.

@@ -1,4 +1,5 @@
 @page "/conversaciones"
+@page "/{idweb}/{idbase:int}/conversaciones"
 @using System.IO
 @using System.Net
 @using System.Text.Json
@@ -8,13 +9,146 @@
 @inject AlfaCore.Services.IContactosService ContactosSvc
 @inject AlfaCore.Services.ICuentasComercialesService CuentasSvc
 @inject AlfaCore.Services.ITicketsService TicketsSvc
+@inject AlfaCore.Services.IPartesHorasService PartesHorasSvc
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
+@inject AlfaCore.Services.ISessionService SessionSvc
 @inject AlfaCore.Services.IFloatingWindowService FloatingWindows
 @inject IJSRuntime JS
 @inject NavigationManager Nav
 @implements IAsyncDisposable
 
 <PageTitle>@ConversationPageTitle</PageTitle>
+
+<style>
+    .conversations-hours-lines {
+        display: grid;
+        gap: 8px;
+        grid-column: 1 / -1;
+    }
+
+    .conversations-hours-lines__header,
+    .conversations-hours-lines__row {
+        display: grid;
+        grid-template-columns: minmax(135px, .8fr) minmax(125px, .65fr) minmax(240px, 1.45fr) 84px 92px 38px;
+        gap: 8px;
+        align-items: center;
+    }
+
+    .conversations-hours-lines__header {
+        color: var(--color-muted);
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+    }
+
+    .conversations-hours-lines__row input,
+    .conversations-hours-lines__row select {
+        min-width: 0;
+        width: 100%;
+        border: 1px solid rgba(125, 161, 207, .28);
+        border-radius: 8px;
+        background: rgba(15, 23, 42, .62);
+        color: var(--color-text);
+        outline: none;
+    }
+
+    .conversations-hours-lines__row input:focus,
+    .conversations-hours-lines__row select:focus {
+        border-color: rgba(8, 197, 218, .85);
+        box-shadow: 0 0 0 1px rgba(8, 197, 218, .18);
+    }
+
+    .conversations-hours-lines__row select option {
+        background: #111827;
+        color: var(--color-text);
+    }
+
+    @@media (max-width: 720px) {
+        .conversations-hours-lines__header {
+            display: none;
+        }
+
+        .conversations-hours-lines__row {
+            grid-template-columns: 1fr 1fr;
+            padding: 10px;
+            border: 1px solid var(--color-border);
+            border-radius: 8px;
+        }
+
+        .conversations-hours-lines__row input[type="text"] {
+            grid-column: 1 / -1;
+        }
+    }
+
+    .conversations-hours-dialog {
+        width: min(980px, calc(100vw - 48px)) !important;
+        max-width: min(980px, calc(100vw - 48px)) !important;
+        padding: 0 !important;
+        overflow: hidden;
+    }
+
+    .conversations-hours-form {
+        grid-template-columns: minmax(150px, 190px) minmax(170px, 210px) minmax(0, 1fr) !important;
+        align-items: end;
+        padding: 0 24px 18px !important;
+        gap: 16px 14px !important;
+    }
+
+    .conversations-hours-ticket-field select {
+        min-height: 42px;
+    }
+
+    .conversations-hours-ticket-tools {
+        display: none !important;
+    }
+
+    .conversations-hours-dialog__head {
+        margin: 0 !important;
+        padding: 24px 24px 20px !important;
+        border-bottom: 1px solid rgba(125, 161, 207, .18);
+        background: linear-gradient(90deg, rgba(8, 47, 73, .72), rgba(15, 23, 42, .18));
+    }
+
+    .conversations-hours-summary {
+        padding: 18px 24px 10px !important;
+        gap: 12px !important;
+    }
+
+    .conversations-hours-summary > div {
+        min-height: 76px;
+    }
+
+    .conversations-hours-lines {
+        margin-top: 2px;
+        padding: 14px 14px 12px;
+        border: 1px solid rgba(125, 161, 207, .16);
+        border-radius: 10px;
+        background: rgba(4, 12, 24, .32);
+    }
+
+    .conversations-hours-lines__row {
+        padding: 8px;
+        border: 1px solid rgba(125, 161, 207, .12);
+        border-radius: 9px;
+        background: rgba(8, 18, 32, .78);
+    }
+
+    .conversations-hours-lines__row input,
+    .conversations-hours-lines__row select {
+        min-height: 38px;
+    }
+
+    .conversations-hours-lines .actions {
+        margin-top: 4px;
+    }
+
+    .conversations-hours-actions {
+        margin: 0 !important;
+        padding: 16px 24px 20px !important;
+        border-top: 1px solid rgba(125, 161, 207, .16);
+        background: rgba(15, 23, 42, .38) !important;
+    }
+</style>
 
 <section class="page-grid conversations-page conversations-page--odoo @(IsMobileChatView ? "conversations-page--chat-active" : string.Empty)" @onclick="DismissConversationNoticesAsync">
     @if (_loadError is not null)
@@ -118,7 +252,7 @@
                 <div class="field">
                     <label for="conv-mobile-search">Buscar</label>
                     <input id="conv-mobile-search"
-                           type="search"
+                           type="text"
                            placeholder="Buscar por teléfono, cliente, contacto, email, resumen o mensaje..."
                            value="@_filters.Search"
                            @oninput="HandleSearchInputAsync"
@@ -138,8 +272,13 @@
                 <button type="button" class="btn btn--primary" @onclick="LoadInboxAsync" disabled="@_loadingInbox">
                     <i class="bi bi-funnel"></i> Aplicar
                 </button>
-                <button type="button" class="btn btn--ghost" @onclick="ClearConversationFiltersAsync" disabled="@_loadingInbox">
-                    <i class="bi bi-eraser"></i> Limpiar
+                <button type="button"
+                        class="btn btn--ghost conversations-filter-clear"
+                        title="Limpiar filtros"
+                        aria-label="Limpiar filtros"
+                        @onclick="ClearConversationFiltersAsync"
+                        disabled="@_loadingInbox">
+                    <i class="bi bi-eraser"></i>
                 </button>
             </div>
         </section>
@@ -177,10 +316,6 @@
                     <i class="bi bi-life-preserver"></i>
                     <span>Crear ticket</span>
                 </button>
-                <button type="button" class="btn btn--ghost btn--sm conversations-ticket-button" @onclick="StartCloseAndCreateTicketAsync" disabled="@(_selectedConversation is null || _messages.Count == 0 || IsSelectedConversationClosed)" title="Cerrar la conversación y crear ticket con los últimos 20 mensajes">
-                    <i class="bi bi-check2-circle"></i>
-                    <span>Cerrar y crear ticket</span>
-                </button>
             </div>
 
             <div class="conversations-filters__modes conversations-filters__modes--compact" aria-label="Filtro de conversaciones">
@@ -199,7 +334,7 @@
                 <div class="field">
                     <label for="conv-search">Buscar</label>
                     <input id="conv-search"
-                           type="search"
+                           type="text"
                            placeholder="Buscar por teléfono, cliente, contacto, email, resumen o mensaje..."
                            value="@_filters.Search"
                            @oninput="HandleSearchInputAsync"
@@ -207,6 +342,10 @@
                            @onfocus="() => _showContactSuggestions = ShouldShowContactSuggestions" />
                     @if (_showContactSuggestions)
                     {
+                        <button type="button"
+                                class="conversations-contact-suggest-backdrop"
+                                aria-label="Cerrar sugerencias"
+                                @onclick="CloseContactSuggestions"></button>
                         <div class="conversations-contact-suggest">
                             @if (_loadingContactSuggestions)
                             {
@@ -221,9 +360,6 @@
                                 {
                                     <div class="conversations-contact-suggest__header">
                                         <span>Coincidencias encontradas</span>
-                                        <button type="button" class="btn btn--ghost btn--sm" @onclick="CloseContactSuggestions" title="Cerrar">
-                                            <i class="bi bi-x-lg"></i>
-                                        </button>
                                     </div>
                                     @foreach (var conversation in _conversationSuggestions)
                                     {
@@ -250,12 +386,6 @@
                                 {
                                     <div class="conversations-contact-suggest__header">
                                         <span>Contactos encontrados</span>
-                                        @if (_conversationSuggestions.Count == 0)
-                                        {
-                                            <button type="button" class="btn btn--ghost btn--sm" @onclick="CloseContactSuggestions" title="Cerrar">
-                                                <i class="bi bi-x-lg"></i>
-                                            </button>
-                                        }
                                     </div>
                                     @foreach (var contact in _contactSuggestions)
                                     {
@@ -350,8 +480,13 @@
                 <button type="button" class="btn btn--primary" @onclick="LoadInboxAsync" disabled="@_loadingInbox">
                     <i class="bi bi-funnel"></i> Aplicar
                 </button>
-                <button type="button" class="btn btn--ghost" @onclick="ClearConversationFiltersAsync" disabled="@_loadingInbox">
-                    <i class="bi bi-eraser"></i> Limpiar
+                <button type="button"
+                        class="btn btn--ghost conversations-filter-clear"
+                        title="Limpiar filtros"
+                        aria-label="Limpiar filtros"
+                        @onclick="ClearConversationFiltersAsync"
+                        disabled="@_loadingInbox">
+                    <i class="bi bi-eraser"></i>
                 </button>
             </div>
         </section>
@@ -445,8 +580,96 @@
                 }
                 <div class="conversations-list__header">
                     <div>
-                        <h3 class="panel-card__title">Inbox <span class="conversations-mobile-inbox-count mobile-only">@_inbox.Count</span></h3>
+                        <h3 class="panel-card__title">
+                            <span class="desktop-only">Inbox</span>
+                            <span class="mobile-only">Conversaciones</span>
+                            <span class="conversations-mobile-inbox-count mobile-only">@_inbox.Count</span>
+                        </h3>
                         <p class="panel-card__subtitle">@_inbox.Count conversación(es)</p>
+                    </div>
+                </div>
+
+                <div class="conversations-inbox-tools" @onclick:stopPropagation>
+                    <div class="conversations-inbox-search">
+                        <div class="conversations-inbox-searchbox">
+                            <i class="bi bi-search"></i>
+                            <input id="conv-inbox-search"
+                                   type="text"
+                                   placeholder="Buscar conversación o mensaje..."
+                                   value="@_filters.Search"
+                                   @oninput="HandleSearchInputAsync"
+                                   @onkeydown="HandleSearchEnter"
+                                   @onfocus="HandleSearchFocusAsync" />
+                        </div>
+
+                        @if (_showContactSuggestions)
+                        {
+                            <button type="button"
+                                    class="conversations-contact-suggest-backdrop"
+                                    aria-label="Cerrar sugerencias"
+                                    @onclick="CloseContactSuggestions"></button>
+                            <div class="conversations-contact-suggest">
+                                @if (_loadingContactSuggestions)
+                                {
+                                    <div class="conversations-contact-suggest__state">
+                                        <i class="bi bi-hourglass-split"></i>
+                                        <span>Buscando contactos...</span>
+                                    </div>
+                                }
+                                else if (_conversationSuggestions.Count > 0 || _contactSuggestions.Count > 0)
+                                {
+                                    @if (_conversationSuggestions.Count > 0)
+                                    {
+                                        <div class="conversations-contact-suggest__header">
+                                            <span>Coincidencias encontradas</span>
+                                        </div>
+                                        @foreach (var conversation in _conversationSuggestions)
+                                        {
+                                            <div class="conversations-contact-suggest__item">
+                                                <div class="conversations-contact-suggest__main">
+                                                    <strong>@GetDisplayName(conversation)</strong>
+                                                    <small>@DisplayOrFallback(conversation.TelefonoWhatsApp)</small>
+                                                </div>
+                                                <div class="conversations-contact-suggest__actions">
+                                                    <button type="button" class="btn btn--primary btn--sm" @onclick="() => SelectConversationFromSuggestionAsync(conversation.IdConversacion)">
+                                                        <i class="bi bi-chat-dots"></i> Conversar
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        }
+                                    }
+                                    @if (_contactSuggestions.Count > 0)
+                                    {
+                                        <div class="conversations-contact-suggest__header">
+                                            <span>Contactos encontrados</span>
+                                        </div>
+                                        @foreach (var contact in _contactSuggestions)
+                                        {
+                                            var phone = GetContactPhone(contact);
+                                            <div class="conversations-contact-suggest__item">
+                                                <div class="conversations-contact-suggest__main">
+                                                    <strong>@contact.NombreApellido</strong>
+                                                    <span>@DisplayOrFallback(contact.Cargo)</span>
+                                                    <small>@DisplayOrFallback(phone, contact.Email)</small>
+                                                </div>
+                                                <div class="conversations-contact-suggest__actions">
+                                                    <button type="button" class="btn btn--primary btn--sm" disabled="@string.IsNullOrWhiteSpace(phone)" @onclick="() => OpenWhatsAppForContactAsync(contact)">
+                                                        <i class="bi bi-chat-dots"></i> Conversar
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        }
+                                    }
+                                }
+                                else
+                                {
+                                    <div class="conversations-contact-suggest__state">
+                                        <i class="bi bi-search"></i>
+                                        <span>No encontramos coincidencias para esa búsqueda.</span>
+                                    </div>
+                                }
+                            </div>
+                        }
                     </div>
                 </div>
 
@@ -490,19 +713,8 @@
                                         }
                                     </span>
                                 </div>
-                                <div class="conversation-row__meta">
-                                    <span>@item.TelefonoWhatsApp</span>
-                                    @if (!string.IsNullOrWhiteSpace(item.TecnicoNombre))
-                                    {
-                                        <span>• @item.TecnicoNombre</span>
-                                    }
-                                </div>
                                 <div class="conversation-row__badges">
                                     <span class="conversation-badge conversation-badge--state">@item.EstadoDescripcion</span>
-                                    @if (!item.VentanaWhatsAppActiva)
-                                    {
-                                        <span class="conversation-badge">Ventana vencida</span>
-                                    }
                                     @if (!string.IsNullOrWhiteSpace(item.ClienteNombre))
                                     {
                                         <span class="conversation-badge">@item.ClienteNombre</span>
@@ -642,6 +854,61 @@
                             }
                             </div>
                         </div>
+                        <div class="conversations-mobile-chat-actions mobile-only" @onclick:stopPropagation>
+                            <button type="button"
+                                    class="conversations-mobile-chat-actions__toggle"
+                                    title="Acciones"
+                                    aria-label="Acciones de conversación"
+                                    aria-haspopup="menu"
+                                    aria-expanded="@_showMobileChatActions"
+                                    @onclick="ToggleMobileChatActions">
+                                <i class="bi bi-three-dots-vertical"></i>
+                            </button>
+                            @if (_showMobileChatActions)
+                            {
+                                <div class="conversations-mobile-chat-actions__menu" role="menu">
+                                    <button type="button" role="menuitem" @onclick="OpenMobileContextPanel" disabled="@(_selectedConversation is null)">
+                                        <i class="bi bi-layout-sidebar-inset-reverse"></i>
+                                        <span>Contexto</span>
+                                        @if (HasContextNotes)
+                                        {
+                                            <strong>Notas</strong>
+                                        }
+                                    </button>
+                                    <button type="button" role="menuitem" @onclick="StartMobileTicketSelection" disabled="@(_selectedConversation is null || _messages.Count == 0)">
+                                        <i class="bi bi-life-preserver"></i>
+                                        <span>Crear ticket</span>
+                                    </button>
+                                    <button type="button" role="menuitem" @onclick="ToggleStatusMenu" disabled="@_busyAction">
+                                        <i class="bi bi-circle-half"></i>
+                                        <span>Estado: @GetCurrentStatusDescription()</span>
+                                    </button>
+                                    @if (_showStatusMenu)
+                                    {
+                                        <div class="conversations-mobile-chat-actions__states" role="listbox">
+                                            @foreach (var state in HeaderStatusOptions)
+                                            {
+                                                var isCurrent = string.Equals(state.CodigoEstado, _statusCode, StringComparison.OrdinalIgnoreCase);
+                                                <button type="button"
+                                                        class="@(isCurrent ? "is-active" : string.Empty)"
+                                                        @onclick="() => SelectMobileStatusAsync(state.CodigoEstado)"
+                                                        role="option"
+                                                        aria-selected="@isCurrent">
+                                                    @state.Descripcion
+                                                </button>
+                                            }
+                                        </div>
+                                    }
+                                    @if (!IsSelectedConversationClosed)
+                                    {
+                                        <button type="button" role="menuitem" @onclick="CloseMobileConversationAsync" disabled="@_busyAction">
+                                            <i class="bi bi-lock-fill"></i>
+                                            <span>Cerrar conversación</span>
+                                        </button>
+                                    }
+                                </div>
+                            }
+                        </div>
                         <div class="conversation-header-state">
                             <div class="conversation-header-state__row @(_showStatusMenu ? "is-open" : string.Empty)" @onclick:stopPropagation="true">
                                 <span class="conversation-header-state__caption">Estado:</span>
@@ -692,7 +959,7 @@
                         <div class="conversations-error conversations-notice @GetConversationNoticeLeavingClass()">@_conversationError</div>
                     }
 
-                    @if (IsWhatsAppWindowExpired)
+                    @if (IsWhatsAppWindowExpired && !_showStatusMenu)
                     {
                         <div class="conversations-window-banner">
                             <span>Esta conversación superó la ventana de 24 horas de WhatsApp.</span>
@@ -881,30 +1148,39 @@
                                                 @if (IsImageAttachment(adj))
                                                 {
                                                     <div class="message-attachment message-attachment--image">
-                                                        <button type="button"
-                                                                class="attachment-preview-button"
-                                                                title="Ver imagen"
-                                                                @onclick="() => OpenAttachmentPreview(adj)">
-                                                            <img src="@GetAttachmentUrl(adj)" alt="@GetAttachmentLabel(adj)" loading="lazy" />
-                                                        </button>
-                                                        @if (IsStickerAttachment(adj))
+                                                        @if (IsAttachmentAvailable(adj))
                                                         {
                                                             <button type="button"
-                                                                    class="btn btn--ghost btn--sm"
-                                                                    title="Guardar sticker en favoritos"
-                                                                    @onclick="() => SaveStickerFavoriteAsync(adj.IdAdjunto)">
-                                                                <i class="bi bi-star"></i>
+                                                                    class="attachment-preview-button"
+                                                                    title="Ver imagen"
+                                                                    @onclick="() => OpenAttachmentPreview(adj)">
+                                                                <img src="@GetAttachmentPreviewUrl(adj)" alt="@GetAttachmentLabel(adj)" loading="lazy" decoding="async" />
                                                             </button>
+                                                            @if (IsStickerAttachment(adj))
+                                                            {
+                                                                <button type="button"
+                                                                        class="btn btn--ghost btn--sm"
+                                                                        title="Guardar sticker en favoritos"
+                                                                        @onclick="() => SaveStickerFavoriteAsync(adj.IdAdjunto)">
+                                                                    <i class="bi bi-star"></i>
+                                                                </button>
+                                                            }
+                                                            else
+                                                            {
+                                                                <a class="btn btn--ghost btn--sm"
+                                                                   href="@GetAttachmentDownloadUrl(adj)"
+                                                                   download="@GetAttachmentDownloadName(adj)"
+                                                                   title="Descargar imagen">
+                                                                    <i class="bi bi-download"></i>
+                                                                </a>
+                                                            }
                                                         }
                                                         else
                                                         {
-                                                            <span class="attachment-name">@adj.NombreArchivo</span>
-                                                            <a class="btn btn--ghost btn--sm"
-                                                               href="@GetAttachmentDownloadUrl(adj)"
-                                                               download="@GetAttachmentDownloadName(adj)"
-                                                               title="Descargar imagen">
-                                                                <i class="bi bi-download"></i>
-                                                            </a>
+                                                            <div class="attachment-unavailable" title="@GetAttachmentUnavailableTitle(adj)">
+                                                                <i class="bi bi-image-alt"></i>
+                                                                <span>Imagen no disponible</span>
+                                                            </div>
                                                         }
                                                     </div>
                                                 }
@@ -959,13 +1235,12 @@
                                                                 <i class="bi bi-arrows-fullscreen"></i>
                                                             </button>
                                                         </div>
-                                                        <div class="attachment-video-meta">
-                                                            <span>@adj.NombreArchivo</span>
-                                                            @if (adj.TamanoBytes > 0)
-                                                            {
+                                                        @if (adj.TamanoBytes > 0)
+                                                        {
+                                                            <div class="attachment-video-meta">
                                                                 <span>@FormatFileSize(adj.TamanoBytes)</span>
-                                                            }
-                                                        </div>
+                                                            </div>
+                                                        }
                                                     </div>
                                                 }
                                                 else
@@ -984,6 +1259,8 @@
                                             }
                                         </div>
                                     }
+                                    @if (ShouldShowMessageFooter(message))
+                                    {
                                     <div class="message-card__footer">
                                         <span>@GetMessageTypeLabel(message)</span>
                                         @if (!string.IsNullOrWhiteSpace(message.EstadoEnvio))
@@ -991,6 +1268,7 @@
                                             <span>• @message.EstadoEnvio</span>
                                         }
                                     </div>
+                                    }
                                     @if (IsOutgoingMessage(message))
                                     {
                                         <div class="message-card__delivery">
@@ -1628,7 +1906,7 @@
                        aria-label="Descargar">
                         <i class="bi bi-download"></i>
                     </a>
-                    @if (IsImageAttachment(_previewAttachment))
+                    @if (IsPreviewZoomableAttachment(_previewAttachment))
                     {
                         <button type="button" class="attachment-preview-action" @onclick="ZoomPreviewOut" title="Alejar" aria-label="Alejar">
                             <i class="bi bi-zoom-out"></i>
@@ -1639,12 +1917,15 @@
                         <button type="button" class="attachment-preview-action" @onclick="ZoomPreviewIn" title="Acercar" aria-label="Acercar">
                             <i class="bi bi-zoom-in"></i>
                         </button>
-                        <button type="button" class="attachment-preview-action" @onclick="RotatePreviewLeft" title="Rotar a la izquierda" aria-label="Rotar a la izquierda">
-                            <i class="bi bi-arrow-counterclockwise"></i>
-                        </button>
-                        <button type="button" class="attachment-preview-action" @onclick="RotatePreviewRight" title="Rotar a la derecha" aria-label="Rotar a la derecha">
-                            <i class="bi bi-arrow-clockwise"></i>
-                        </button>
+                        @if (IsImageAttachment(_previewAttachment))
+                        {
+                            <button type="button" class="attachment-preview-action" @onclick="RotatePreviewLeft" title="Rotar a la izquierda" aria-label="Rotar a la izquierda">
+                                <i class="bi bi-arrow-counterclockwise"></i>
+                            </button>
+                            <button type="button" class="attachment-preview-action" @onclick="RotatePreviewRight" title="Rotar a la derecha" aria-label="Rotar a la derecha">
+                                <i class="bi bi-arrow-clockwise"></i>
+                            </button>
+                        }
                     }
                     <button type="button" class="attachment-preview-action" @onclick="CloseAttachmentPreview" title="Cerrar" aria-label="Cerrar">
                         <i class="bi bi-x-lg"></i>
@@ -1655,20 +1936,30 @@
                 <button type="button" class="attachment-preview-nav attachment-preview-nav--prev" @onclick="ShowPreviousPreviewAttachment" disabled="@(!CanNavigatePreviewGallery)" title="Anterior">
                     <i class="bi bi-chevron-left"></i>
                 </button>
-                <div class="attachment-preview-canvas" @ref="_previewCanvas" @onwheel="HandlePreviewWheel" @onwheel:preventDefault>
-                    @if (IsVideoAttachment(_previewAttachment))
+                <div class="@PreviewCanvasClass"
+                     @ref="_previewCanvas"
+                     @onwheel="HandlePreviewWheel"
+                    @onwheel:preventDefault>
+                    <div class="attachment-preview-media-frame" style="@PreviewFrameStyle">
+                        @if (IsVideoAttachment(_previewAttachment))
+                        {
+                            <video @key="_previewAttachment.IdAdjunto" controls autoplay src="@GetAttachmentUrl(_previewAttachment)" style="@PreviewVideoStyle">
+                                Tu navegador no puede reproducir este video.
+                            </video>
+                        }
+                        else
+                        {
+                            <img @key="_previewAttachment.IdAdjunto"
+                                 src="@GetAttachmentUrl(_previewAttachment)"
+                                 alt="@GetAttachmentLabel(_previewAttachment)"
+                                 draggable="false"
+                                 style="@PreviewImageStyle" />
+                        }
+                    </div>
+                    @if (CanPanPreview)
                     {
-                        <video @key="_previewAttachment.IdAdjunto" controls autoplay src="@GetAttachmentUrl(_previewAttachment)" style="@PreviewVideoStyle">
-                            Tu navegador no puede reproducir este video.
-                        </video>
-                    }
-                    else
-                    {
-                        <img @key="_previewAttachment.IdAdjunto"
-                             src="@GetAttachmentUrl(_previewAttachment)"
-                             alt="@GetAttachmentLabel(_previewAttachment)"
-                             draggable="false"
-                             style="@PreviewImageStyle" />
+                        <div class="attachment-preview-drag-surface"
+                             title="Mover"></div>
                     }
                 </div>
                 <button type="button" class="attachment-preview-nav attachment-preview-nav--next" @onclick="ShowNextPreviewAttachment" disabled="@(!CanNavigatePreviewGallery)" title="Siguiente">
@@ -1692,7 +1983,7 @@
                             }
                             else
                             {
-                                <img src="@GetAttachmentUrl(item)" alt="@GetAttachmentLabel(item)" loading="lazy" />
+                                <img src="@GetAttachmentPreviewUrl(item)" alt="@GetAttachmentLabel(item)" loading="lazy" decoding="async" />
                             }
                         </button>
                     }
@@ -1732,11 +2023,7 @@
     <section class="panel-card conversations-modal conversations-ticket-dialog">
         <div class="panel-card__header">
             <div>
-                <h3 class="panel-card__title">@(_closeAndCreateTicketMode ? "Cerrar y crear ticket" : "Crear ticket")</h3>
-                @if (_closeAndCreateTicketMode)
-                {
-                    <p class="panel-card__subtitle">El ticket se registrará cerrado y la conversación se cerrará al guardar.</p>
-                }
+                <h3 class="panel-card__title">Crear ticket</h3>
                 <p class="panel-card__subtitle">@_selectedTicketMessageIds.Count mensaje(s) quedarán vinculados al ticket.</p>
             </div>
             <button type="button" class="btn btn--ghost btn--sm" @onclick="CloseTicketDialog" disabled="@_creatingTicket">
@@ -1747,14 +2034,14 @@
         {
             <div class="conversations-error conversations-notice @GetConversationNoticeLeavingClass()">@_ticketError</div>
         }
-        @if (!_closeAndCreateTicketMode && _checkingRelatedTickets)
+        @if (_checkingRelatedTickets)
         {
             <div class="conversations-ticket-duplicates conversations-ticket-duplicates--loading">
                 <i class="bi bi-search"></i>
                 <span>Revisando tickets abiertos relacionados...</span>
             </div>
         }
-        else if (!_closeAndCreateTicketMode && _relatedTicketMatches.Count > 0 && !_allowCreateDespiteRelated)
+        else if (_relatedTicketMatches.Count > 0 && !_allowCreateDespiteRelated)
         {
             <div class="conversations-ticket-duplicates">
                 <div class="conversations-ticket-duplicates__head">
@@ -1819,14 +2106,14 @@
             <div class="field">
                 <label>Asignado a</label>
                 <div class="ticket-creator-assignment">
-                    <span>@GetTicketAssignmentPreview()</span>
+                    <span>@CurrentMessageTechnicianName</span>
                     <small>Se asignará automáticamente al usuario que crea el ticket.</small>
                 </div>
             </div>
         </div>
         <div class="actions usuarios-editor__actions">
             <button type="button" class="btn btn--primary" @onclick="CreateTicketFromSelectionAsync" disabled="@(_creatingTicket || _checkingRelatedTickets)">
-                <i class="bi bi-floppy"></i> @(_creatingTicket ? "Creando..." : (_closeAndCreateTicketMode ? "Cerrar y crear ticket" : "Guardar ticket"))
+                <i class="bi bi-floppy"></i> @(_creatingTicket ? "Creando..." : "Guardar ticket")
             </button>
             <button type="button" class="btn btn--ghost" @onclick="CloseTicketDialog" disabled="@_creatingTicket">
                 Cancelar
@@ -1835,62 +2122,206 @@
     </section>
 }
 
-@if (_showCloseTicketWarning)
+@if (_showParteHorasDialog)
 {
-    <div class="conversations-modal-backdrop" @onclick="CloseCloseTicketWarning"></div>
-    <section class="panel-card conversations-modal conversations-close-ticket-warning">
-        <div class="conversations-close-ticket-warning__head">
-            <div class="conversations-close-ticket-warning__icon">
-                <i class="bi bi-exclamation-triangle-fill"></i>
+    <div class="conversations-modal-backdrop conversations-hours-backdrop" @onclick="CloseParteHorasDialog"></div>
+    <section class="panel-card conversations-modal conversations-hours-dialog"
+             aria-labelledby="conversations-hours-title"
+             tabindex="-1"
+             @ref="_parteHorasDialogElement"
+             @onkeydown="HandleParteHorasDialogKeyDownAsync">
+        <div class="conversations-hours-dialog__head">
+            <div class="conversations-hours-dialog__title">
+                <span class="conversations-hours-dialog__icon"><i class="bi bi-stopwatch"></i></span>
+                <div>
+                    <h3 id="conversations-hours-title" class="panel-card__title">Parte de horas</h3>
+                    <p class="panel-card__subtitle">Tiempo detectado hasta este cierre manual pendiente.</p>
+                </div>
+            </div>
+            <button type="button" class="btn btn--ghost btn--sm conversations-hours-dialog__close" @onclick="CloseParteHorasDialog" disabled="@_savingParteHora" aria-label="Cerrar parte de horas">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        </div>
+
+        <div class="conversations-hours-summary">
+            <div>
+                <span>Tiempo sugerido</span>
+                <strong>@FormatParteHorasDuration(_parteHoraSuggestedMinutes)</strong>
             </div>
             <div>
-                <h3 class="panel-card__title">@(_closeTicketWarningUnderstood ? "¿Seguro que querés continuar?" : "Antes de cerrar y crear el ticket")</h3>
-                <p class="panel-card__subtitle">@(_closeTicketWarningUnderstood ? "Última confirmación antes de preparar el ticket." : "Esta acción cierra la conversación automáticamente.")</p>
+                <span>Tramo</span>
+                <strong>@FormatParteHorasRange()</strong>
+            </div>
+            <div>
+                <span>Cliente</span>
+                <strong>@DisplayOrFallback(_parteHoraClienteNombre, _parteHoraClienteCodigo)</strong>
             </div>
         </div>
-        @if (_closeTicketWarningUnderstood)
+
+        @if (_parteHoraTickets.Count > 1)
         {
-            <div class="conversations-close-ticket-warning__summary">
-                <i class="bi bi-check2-circle"></i>
-                <span>Se abrirá el formulario para crear el ticket cerrado con los últimos 20 mensajes.</span>
-            </div>
-            <div class="conversations-close-ticket-warning__summary">
-                <i class="bi bi-lock-fill"></i>
-                <span>La conversación quedará lista para cerrarse automáticamente al guardar.</span>
+            <div class="conversations-hours-hint">
+                <i class="bi bi-info-circle"></i>
+                <span>Hay varios tickets del cliente. Elegí el correcto antes de guardar.</span>
             </div>
         }
-        else
+
+        @if (!string.IsNullOrWhiteSpace(_parteHoraError))
         {
-            <div class="conversations-close-ticket-warning__summary">
-                <i class="bi bi-chat-left-text"></i>
-                <span>Se creará un ticket cerrado con los últimos 20 mensajes de esta conversación.</span>
-            </div>
-            <div class="conversations-close-ticket-warning__summary">
-                <i class="bi bi-repeat"></i>
-                <span>Sirve para casos repetitivos o consultas que solo necesitan quedar registradas.</span>
-            </div>
-            <p class="conversations-close-ticket-warning__note">
-                Usalo únicamente cuando el caso ya esté resuelto y el cliente haya confirmado que quedó todo correcto.
-            </p>
+            <div class="conversations-error conversations-notice">@_parteHoraError</div>
         }
-        <div class="actions usuarios-editor__actions conversations-close-ticket-warning__actions">
-            @if (_closeTicketWarningUnderstood)
+
+        <div class="conversations-hours-form">
+            <label class="field conversations-hours-ticket-field">
+                <span>Ticket</span>
+                <select value="@(_parteHoraTicketId?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty)"
+                        @onchange="OnParteHoraTicketChangedAsync"
+                        disabled="@(_savingParteHora || _parteHoraTickets.Count == 0)">
+                    <option value="">Seleccionar ticket</option>
+                    @foreach (var ticket in _parteHoraTickets)
+                    {
+                        <option value="@ticket.IdTicket">@FormatParteHoraTicket(ticket)</option>
+                    }
+                </select>
+            </label>
+
+            <label class="conversations-hours-check">
+                <input type="checkbox" @bind="_parteHoraFacturable" disabled="@_savingParteHora" />
+                <span>Facturable</span>
+            </label>
+
+            <div class="conversations-hours-lines">
+                <div class="conversations-hours-lines__header">
+                    <span>Técnico</span>
+                    <span>Tipo</span>
+                    <span>Tarea</span>
+                    <span>Horas</span>
+                    <span>Minutos</span>
+                    <span></span>
+                </div>
+                @for (var i = 0; i < _parteHoraLineas.Count; i++)
+                {
+                    var index = i;
+                    var linea = _parteHoraLineas[index];
+                    <div class="conversations-hours-lines__row" @key="linea">
+                        <select @bind="linea.IdTecnico" disabled="@_savingParteHora">
+                            <option value="">Sin técnico</option>
+                            @foreach (var tecnico in _technicians)
+                            {
+                                <option value="@tecnico.IdTecnico">@tecnico.Nombre</option>
+                            }
+                        </select>
+                        <select @bind="linea.TipoTrabajo" disabled="@_savingParteHora">
+                            @foreach (var tipo in ParteHoraTiposConversacion)
+                            {
+                                <option value="@tipo">@FormatParteHoraTipo(tipo)</option>
+                            }
+                        </select>
+                        <input type="text"
+                               id="@GetParteHoraLineaDescripcionId(index)"
+                               value="@linea.Descripcion"
+                               maxlength="1000"
+                               placeholder="Descripción de la tarea"
+                               disabled="@_savingParteHora"
+                               @oninput="args => linea.Descripcion = Convert.ToString(args.Value) ?? string.Empty"
+                               @onkeydown="args => HandleParteHoraLineaKeyDownAsync(args, index)" />
+                        <input type="number" min="0" max="24" step="1" @bind="linea.Horas" disabled="@_savingParteHora" />
+                        <input type="number" min="0" max="59" step="1" @bind="linea.Minutos" disabled="@_savingParteHora" />
+                        <button type="button" class="btn btn--ghost btn--sm" @onclick="() => RemoveParteHoraLinea(index)" disabled="@(_savingParteHora || _parteHoraLineas.Count <= 1)">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </div>
+                }
+                <div class="actions">
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="AddParteHoraLinea" disabled="@_savingParteHora">
+                        <i class="bi bi-plus-circle"></i> Agregar línea
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="conversations-hours-ticket-tools">
+            <div class="conversations-hours-ticket-tools__actions">
+                <button type="button" class="btn btn--ghost btn--sm" @onclick="PreviewParteHoraTicketAsync" disabled="@(!_parteHoraTicketId.HasValue || _loadingParteHoraTicket || _savingParteHora)">
+                    <i class="bi bi-eye"></i> Previsualizar
+                </button>
+                <button type="button" class="btn btn--ghost btn--sm" @onclick="EditParteHoraTicketAsync" disabled="@(!_parteHoraTicketId.HasValue || _loadingParteHoraTicket || _savingParteHora)">
+                    <i class="bi bi-pencil-square"></i> Editar
+                </button>
+                <button type="button" class="btn btn--ghost btn--sm" @onclick="StartCreateParteHoraTicket" disabled="@_savingParteHora">
+                    <i class="bi bi-plus-lg"></i> Crear
+                </button>
+                <button type="button" class="btn btn--ghost btn--sm" @onclick="CloseParteHoraTicketAsync" disabled="@(!_parteHoraTicketId.HasValue || _loadingParteHoraTicket || _savingParteHora)">
+                    <i class="bi bi-trash3"></i> Eliminar
+                </button>
+            </div>
+
+            @if (_loadingParteHoraTicket)
             {
-                <button type="button" class="btn btn--primary" @onclick="ContinueCloseTicketWarningOnceAsync">
-                    <i class="bi bi-check2-circle"></i> Sí, continuar
-                </button>
-                <button type="button" class="btn btn--ghost" @onclick="ResetCloseTicketWarningStep">
-                    Volver a leer
-                </button>
+                <div class="conversations-hours-ticket-card">
+                    <span class="context-card__muted">Cargando ticket...</span>
+                </div>
             }
-            else
+            else if (_parteHoraTicketMode == ParteHoraTicketPanelMode.Preview && _parteHoraTicketDetail is not null)
             {
-                <button type="button" class="btn btn--primary" @onclick="AcceptCloseTicketWarningAsync">
-                    <i class="bi bi-check2-circle"></i> Entendido
-                </button>
+                <article class="conversations-hours-ticket-card">
+                    <div>
+                        <strong>@FormatParteHoraTicket(_parteHoraTicketDetail)</strong>
+                        <span>@_parteHoraTicketDetail.EstadoNombre · @RenderTicketPriority(_parteHoraTicketDetail.Prioridad) · @DisplayOrFallback(_parteHoraTicketDetail.TecnicoNombre, "Sin asignar")</span>
+                    </div>
+                    <p>@DisplayOrFallback(_parteHoraTicketDetail.Descripcion, "Sin descripción")</p>
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="() => OpenTicket(_parteHoraTicketDetail.IdTicket)">
+                        <i class="bi bi-box-arrow-up-right"></i> Abrir
+                    </button>
+                </article>
             }
-            <button type="button" class="btn btn--ghost" @onclick="CloseCloseTicketWarning">
-                Cancelar
+            else if (_parteHoraTicketMode is ParteHoraTicketPanelMode.Edit or ParteHoraTicketPanelMode.Create)
+            {
+                <div class="conversations-hours-ticket-editor">
+                    <label class="field">
+                        <span>Título</span>
+                        <input maxlength="180" @bind="_parteHoraTicketTitle" disabled="@_savingParteHoraTicket" />
+                    </label>
+                    <label class="field">
+                        <span>Estado</span>
+                        <select @bind="_parteHoraTicketState" disabled="@_savingParteHoraTicket">
+                            @foreach (var estado in ParteHoraTicketOpenStates)
+                            {
+                                <option value="@estado.CodigoEstado">@estado.Nombre</option>
+                            }
+                        </select>
+                    </label>
+                    <label class="field">
+                        <span>Prioridad</span>
+                        <select @bind="_parteHoraTicketPriority" disabled="@_savingParteHoraTicket">
+                            <option value="0">Sin prioridad</option>
+                            <option value="1">Baja</option>
+                            <option value="2">Media</option>
+                            <option value="3">Alta</option>
+                        </select>
+                    </label>
+                    <label class="field conversations-hours-ticket-editor__description">
+                        <span>Descripción</span>
+                        <textarea rows="3" maxlength="4000" @bind="_parteHoraTicketDescription" disabled="@_savingParteHoraTicket"></textarea>
+                    </label>
+                    <div class="actions conversations-hours-ticket-editor__actions">
+                        <button type="button" class="btn btn--primary btn--sm" @onclick="SaveParteHoraTicketAsync" disabled="@_savingParteHoraTicket">
+                            <i class="bi bi-floppy"></i> @(_savingParteHoraTicket ? "Guardando..." : "Guardar ticket")
+                        </button>
+                        <button type="button" class="btn btn--ghost btn--sm" @onclick="CancelParteHoraTicketPanel" disabled="@_savingParteHoraTicket">
+                            Cancelar
+                        </button>
+                    </div>
+                </div>
+            }
+        </div>
+
+        <div class="actions conversations-hours-actions">
+            <button type="button" class="btn btn--primary" @onclick="SaveParteHorasAsync" disabled="@_savingParteHora">
+                <i class="bi bi-stopwatch"></i> @(_savingParteHora ? "Guardando..." : "Guardar parte")
+            </button>
+            <button type="button" class="btn btn--ghost" @onclick="ConfirmCloseWithoutParteHorasAsync" disabled="@_savingParteHora">
+                No cargar parte
             </button>
         </div>
     </section>
@@ -1990,6 +2421,8 @@
     private bool _uploadingFile;
     private bool _uploadingAudio;
     private Dictionary<long, List<ConversacionAdjuntoDto>> _adjuntosPorMensaje = [];
+    private HashSet<long> _recoveredAttachmentConversations = [];
+    private readonly HashSet<long> _recoveringAttachmentConversations = [];
     private List<ConversacionPlantillaDto> _availableTemplates = [];
     private long _selectedTemplateId;
     private bool _loadingTemplates;
@@ -2032,6 +2465,7 @@
     private string _assignmentTechnicianId = string.Empty;
     private string _statusCode = "ABIERTA";
     private bool _showStatusMenu;
+    private bool _showMobileChatActions;
     private IDisposable? _floatingWindowRegistration;
     private ElementReference _threadElement;
     private ElementReference _composerDropZone;
@@ -2063,15 +2497,19 @@
     private bool _bindPreviewKeyboardAfterRender;
     private bool _scrollPreviewThumbAfterRender;
     private int _previewRotationDegrees;
+    private double _previewPanX;
+    private double _previewPanY;
     private SoundDiagnosticsVm _soundDiagnostics = new();
     private ElementReference _replyTextArea;
     private ElementReference _internalNoteMobileTextArea;
+    private ElementReference _parteHorasDialogElement;
     private long? _replyEnterHandlerConversationId;
     private bool _syncReplyTextAfterRender;
     private int _lastSyncedBrowserNewCount = -1;
     private readonly string _typingClientId = Guid.NewGuid().ToString("N");
     private DateTime _lastTypingSentUtc = DateTime.MinValue;
     private bool _focusReplyAfterRender;
+    private bool _focusParteHorasDialogAfterRender;
     private double _previewZoom = 1d;
     private List<PendingAttachment> _pendingAttachments = [];
     private List<PendingAttachment> _templatePendingAttachments = [];
@@ -2093,8 +2531,6 @@
     private long? _startupConversationId;
     private bool _ticketSelectionMode;
     private bool _showTicketDialog;
-    private bool _showCloseTicketWarning;
-    private bool _closeTicketWarningUnderstood;
     private readonly HashSet<long> _selectedTicketMessageIds = [];
     private string _ticketTitle = string.Empty;
     private string _ticketDescription = string.Empty;
@@ -2102,7 +2538,6 @@
     private string? _ticketError;
     private bool _creatingTicket;
     private bool _checkingRelatedTickets;
-    private bool _closeAndCreateTicketMode;
     private bool _allowCreateDespiteRelated;
     private List<TicketRelatedMatchDto> _relatedTicketMatches = [];
     private bool _loadingContextTickets;
@@ -2117,9 +2552,47 @@
     private string? _contextNotesSourceKey;
     private bool _contextNotesLoaded;
     private readonly Dictionary<string, ContextNotesVm> _contextNotesCache = [];
+    private int? _pendingParteHoraLineaDescripcionFocusIndex;
+    private bool _showParteHorasDialog;
+    private bool _savingParteHora;
+    private string? _parteHoraError;
+    private int _parteHoraSuggestedMinutes;
+    private string _parteHoraTipo = ParteHoraTipoTrabajoKeys.Soporte;
+    private bool _parteHoraFacturable;
+    private long? _parteHoraTicketId;
+    private string _parteHoraClienteCodigo = string.Empty;
+    private string _parteHoraClienteNombre = string.Empty;
+    private int? _parteHoraIdContacto;
+    private DateTime _parteHoraFecha = DateTime.Today;
+    private DateTime? _parteHoraInicio;
+    private DateTime? _parteHoraFin;
+    private long? _parteHoraConversationId;
+    private string _parteHoraPendingCloseStatusCode = string.Empty;
+    private string _parteHoraPreviousStatusCode = string.Empty;
+    private List<TicketGridItemDto> _parteHoraTickets = [];
+    private List<TicketEstadoDto> _parteHoraTicketEstados = [];
+    private TicketDetailDto? _parteHoraTicketDetail;
+    private ParteHoraTicketPanelMode _parteHoraTicketMode = ParteHoraTicketPanelMode.None;
+    private bool _loadingParteHoraTicket;
+    private bool _savingParteHoraTicket;
+    private string? _parteHoraTicketError;
+    private string _parteHoraTicketTitle = string.Empty;
+    private string _parteHoraTicketDescription = string.Empty;
+    private string _parteHoraTicketState = TicketEstadoKeys.Nuevo;
+    private int _parteHoraTicketPriority = 2;
+    private List<ParteHoraConversacionLinea> _parteHoraLineas = [];
 
     private static readonly TimeSpan PollingInterval = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan TypingPollingInterval = TimeSpan.FromMilliseconds(650);
+    private static readonly string[] ParteHoraTiposConversacion =
+    [
+        ParteHoraTipoTrabajoKeys.Soporte,
+        ParteHoraTipoTrabajoKeys.Desarrollo,
+        ParteHoraTipoTrabajoKeys.Implementacion,
+        ParteHoraTipoTrabajoKeys.Capacitacion,
+        ParteHoraTipoTrabajoKeys.Reunion,
+        ParteHoraTipoTrabajoKeys.Interno
+    ];
     private static readonly string[] QuickReactionEmojis = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
     private static readonly IReadOnlyList<EmojiGroup> EmojiGroups =
     [
@@ -2183,6 +2656,8 @@
            && _states.Any(x => x.EsCerrado && string.Equals(x.CodigoEstado, _statusCode, StringComparison.OrdinalIgnoreCase));
     private bool CanOpenTemplatePanel
         => !_loadingTemplates && IsWhatsAppConversation;
+    private IReadOnlyList<TicketEstadoDto> ParteHoraTicketOpenStates
+        => _parteHoraTicketEstados.Where(x => !x.EsCerrado).ToList();
     private IReadOnlyList<ConversacionMensajeDto> VisibleMessages
         => _messages.Where(x => !IsReactionMessage(x)).ToList();
     private IReadOnlyList<ConversacionEstadoOptionDto> HeaderStatusOptions
@@ -2220,17 +2695,39 @@
     protected override async Task OnInitializedAsync()
     {
         _floatingWindowRegistration = FloatingWindows.Register(AlfaCore.Services.FloatingWindowType.DropdownMenu, CloseFloatingWindowsAsync);
+        Nav.LocationChanged += OnLocationChanged;
         ApplyStartupQuery();
         await Task.WhenAll(LoadLookupsAsync(), LoadFavoriteStickersAsync());
         if (_loadError is null)
         {
             await LoadInboxAsync();
             if (_startupConversationId.HasValue)
-                await SelectConversationAsync(_startupConversationId.Value, showMobileChat: true);
+                await SelectConversationAsync(_startupConversationId.Value, showMobileChat: true, updateUrl: false);
         }
 
         StartPolling();
         StartTypingPolling();
+    }
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+        => _ = InvokeAsync(ApplyCurrentLocationAsync);
+
+    private async Task ApplyCurrentLocationAsync()
+    {
+        var query = QueryHelpers.ParseQuery(Nav.ToAbsoluteUri(Nav.Uri).Query);
+        if (query.TryGetValue("id", out var idRaw)
+            && long.TryParse(idRaw.ToString(), out var id)
+            && id > 0)
+        {
+            if (_selectedConversationId != id)
+                await SelectConversationAsync(id, showMobileChat: true, updateUrl: false);
+            return;
+        }
+
+        if (_selectedConversationId.HasValue && _inbox.Count > 0 && !ShouldKeepAuditResultsOpen)
+            await SelectConversationAsync(_inbox[0].IdConversacion, updateUrl: false);
+        else if (_selectedConversationId.HasValue)
+            ClearSelection();
     }
 
     private void ApplyStartupQuery()
@@ -2320,6 +2817,31 @@
         }
 
         await SyncBrowserUnreadCountAsync();
+
+        if (_pendingParteHoraLineaDescripcionFocusIndex.HasValue)
+        {
+            var focusIndex = _pendingParteHoraLineaDescripcionFocusIndex.Value;
+            _pendingParteHoraLineaDescripcionFocusIndex = null;
+            try
+            {
+                await JS.InvokeVoidAsync("eval", $"document.getElementById('{GetParteHoraLineaDescripcionId(focusIndex)}')?.focus()");
+            }
+            catch
+            {
+            }
+        }
+
+        if (_focusParteHorasDialogAfterRender)
+        {
+            _focusParteHorasDialogAfterRender = false;
+            try
+            {
+                await _parteHorasDialogElement.FocusAsync();
+            }
+            catch
+            {
+            }
+        }
 
         if (_selectedConversationId.HasValue && _scrollHandlerConversationId != _selectedConversationId)
         {
@@ -2453,7 +2975,7 @@
         _actionError = null;
         await LoadInboxAsync();
         if (_selectedConversationId.HasValue)
-            await SelectConversationAsync(_selectedConversationId.Value);
+            await SelectConversationAsync(_selectedConversationId.Value, updateUrl: false);
     }
 
     private async Task ChangeModeAsync(string mode)
@@ -2533,6 +3055,7 @@
     {
         _filters.Search = Convert.ToString(args.Value, System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
         _filters.ClienteCodigo = string.Empty;
+        ResetInboxSearchScope();
         _actionError = null;
         if (string.IsNullOrWhiteSpace(_filters.Search))
         {
@@ -2545,7 +3068,38 @@
             return;
         }
 
-        await DebounceContactSuggestionsAsync();
+        await Task.WhenAll(DebounceSearchAsync(), DebounceContactSuggestionsAsync());
+    }
+
+    private async Task HandleSearchFocusAsync()
+    {
+        if (!ShouldShowContactSuggestions)
+            return;
+
+        _showContactSuggestions = true;
+
+        if (_conversationSuggestions.Count == 0 && _contactSuggestions.Count == 0)
+            await DebounceContactSuggestionsAsync();
+    }
+
+    private async Task ClearInboxSearchAsync()
+    {
+        CancelSearchDebounce();
+        CancelContactSearch();
+        _filters.Search = string.Empty;
+        _filters.ClienteCodigo = string.Empty;
+        ResetInboxSearchScope();
+        _showContactSuggestions = false;
+        _contactSuggestions = [];
+        _conversationSuggestions = [];
+        await LoadInboxAsync();
+    }
+
+    private void ResetInboxSearchScope()
+    {
+        _filters.Modo = "todas";
+        _filters.IdTecnicoActual = string.Empty;
+        _filters.CodigoEstado = string.Empty;
     }
 
     private async Task HandleTechnicianFilterChangedAsync(ChangeEventArgs args)
@@ -2642,7 +3196,7 @@
             }
 
             if (allowSelectionChange && _inbox.Count > 0 && !ShouldKeepAuditResultsOpen)
-                await SelectConversationAsync(_inbox[0].IdConversacion);
+                await SelectConversationAsync(_inbox[0].IdConversacion, updateUrl: false);
             else if (allowSelectionChange)
                 ClearSelection();
         }
@@ -2784,16 +3338,36 @@
            && DateTime.Now - value <= LateIncomingNotificationWindow
            && value <= DateTime.Now.AddMinutes(2);
 
-    private async Task SelectConversationAsync(long idConversacion, bool showMobileChat = false)
+    private async Task SelectConversationAsync(long idConversacion, bool showMobileChat = false, bool updateUrl = true)
     {
+        if (updateUrl && NavigateToConversationUrl(idConversacion))
+            return;
+
         if (showMobileChat)
             _mobileChatActive = true;
 
         await ClearTypingAsync();
         _showTemplatePanel = false;
         _showStatusMenu = false;
+        _showMobileChatActions = false;
         CancelTicketSelection();
         await LoadConversationAsync(idConversacion, showLoading: true, clearActionState: true);
+    }
+
+    private bool NavigateToConversationUrl(long idConversacion)
+    {
+        var uri = Nav.ToAbsoluteUri(Nav.Uri);
+        var values = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in QueryHelpers.ParseQuery(uri.Query))
+            values[item.Key] = item.Value.ToString();
+
+        values["id"] = idConversacion.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var target = QueryHelpers.AddQueryString(uri.AbsolutePath, values);
+        if (string.Equals(Nav.ToBaseRelativePath(Nav.Uri), target.TrimStart('/'), StringComparison.Ordinal))
+            return false;
+
+        Nav.NavigateTo(target);
+        return true;
     }
 
     private async Task LoadConversationAsync(long idConversacion, bool showLoading, bool clearActionState)
@@ -2812,6 +3386,8 @@
         {
             ApplyConversationCache(idConversacion, cachedConversation, showLoading || clearActionState || conversationChanged);
             showLoading = false;
+            await InvokeAsync(StateHasChanged);
+            await Task.Yield();
         }
 
         if (showLoading)
@@ -2850,7 +3426,10 @@
             _adjuntosPorMensaje = adjuntos
                 .GroupBy(a => a.IdMensaje)
                 .ToDictionary(g => g.Key, g => g.ToList());
+
             StoreConversationCache(idConversacion);
+            if (ShouldRecoverConversationAttachments(_messages, adjuntos))
+                QueueConversationAttachmentRecovery(idConversacion);
             _assignmentTechnicianId = _selectedConversation?.IdTecnico ?? string.Empty;
             _statusCode = _selectedConversation?.CodigoEstado ?? (_states.FirstOrDefault()?.CodigoEstado ?? "ABIERTA");
 
@@ -2901,13 +3480,77 @@
         }
     }
 
+    private void QueueConversationAttachmentRecovery(long idConversacion)
+    {
+        if (!_recoveredAttachmentConversations.Add(idConversacion))
+            return;
+
+        if (!_recoveringAttachmentConversations.Add(idConversacion))
+            return;
+
+        _ = RecoverConversationAttachmentsInBackgroundAsync(idConversacion);
+    }
+
+    private static bool ShouldRecoverConversationAttachments(
+        IReadOnlyList<ConversacionMensajeDto> messages,
+        IReadOnlyList<ConversacionAdjuntoDto> attachments)
+    {
+        if (attachments.Any(x => !x.ArchivoDisponible || string.IsNullOrWhiteSpace(x.RutaLocal)))
+            return true;
+
+        return messages.Any(message =>
+            !message.TieneAdjuntos
+            && IsGeneratedMediaFileName(message.Texto.Trim(), message.MessageType));
+    }
+
+    private async Task RecoverConversationAttachmentsInBackgroundAsync(long idConversacion)
+    {
+        try
+        {
+            var recovery = await ConversacionesSvc.RecoverConversationAttachmentsAsync(idConversacion);
+            if (recovery.MensajesHidratados <= 0 && recovery.AdjuntosRecuperados <= 0)
+                return;
+
+            await InvokeAsync(async () =>
+            {
+                if (_selectedConversationId != idConversacion)
+                    return;
+
+                var messagesTask = ConversacionesSvc.GetMessagesAsync(idConversacion);
+                var attachmentsTask = ConversacionesSvc.GetConversationAttachmentsAsync(idConversacion);
+                await Task.WhenAll(messagesTask, attachmentsTask);
+
+                _messages = (await messagesTask).ToList();
+                var adjuntos = await attachmentsTask;
+                _adjuntosPorMensaje = adjuntos
+                    .GroupBy(a => a.IdMensaje)
+                    .ToDictionary(g => g.Key, g => g.ToList());
+
+                StoreConversationCache(idConversacion);
+                StateHasChanged();
+            });
+        }
+        catch
+        {
+        }
+        finally
+        {
+            try
+            {
+                await InvokeAsync(() => _recoveringAttachmentConversations.Remove(idConversacion));
+            }
+            catch
+            {
+            }
+        }
+    }
+
     private void StartTicketSelection()
     {
         if (_selectedConversation is null || _messages.Count == 0)
             return;
 
         _ticketSelectionMode = true;
-        _closeAndCreateTicketMode = false;
         _showTicketDialog = false;
         _ticketError = null;
         _selectedTicketMessageIds.Clear();
@@ -2916,43 +3559,6 @@
         _ticketPriority = 2;
         _allowCreateDespiteRelated = false;
         _relatedTicketMatches.Clear();
-    }
-
-    private async Task StartCloseAndCreateTicketAsync()
-    {
-        if (_selectedConversation is null || _messages.Count == 0)
-            return;
-
-        _ticketSelectionMode = false;
-        _closeAndCreateTicketMode = true;
-        _showTicketDialog = false;
-        _ticketError = null;
-        _selectedTicketMessageIds.Clear();
-
-        foreach (var idMensaje in _messages
-                     .OrderByDescending(x => x.FechaHora)
-                     .Take(20)
-                     .OrderBy(x => x.FechaHora)
-                     .Select(x => x.IdMensaje))
-        {
-            _selectedTicketMessageIds.Add(idMensaje);
-        }
-
-        _ticketTitle = BuildDefaultTicketTitle();
-        _ticketDescription = string.Empty;
-        _ticketPriority = 2;
-        _allowCreateDespiteRelated = false;
-        _relatedTicketMatches.Clear();
-
-        if (await ShouldShowCloseTicketWarningAsync())
-        {
-            _closeTicketWarningUnderstood = false;
-            _showCloseTicketWarning = true;
-        }
-        else
-        {
-            await OpenTicketDialog();
-        }
     }
 
     private void ToggleTicketMessageSelection(long idMensaje, ChangeEventArgs args)
@@ -2972,60 +3578,11 @@
         if (_selectedTicketMessageIds.Count == 0)
             return;
 
-        _showCloseTicketWarning = false;
         _ticketError = null;
         if (string.IsNullOrWhiteSpace(_ticketTitle))
             _ticketTitle = BuildDefaultTicketTitle();
         _showTicketDialog = true;
-        if (_closeAndCreateTicketMode)
-        {
-            _checkingRelatedTickets = false;
-            _allowCreateDespiteRelated = true;
-            _relatedTicketMatches.Clear();
-        }
-        else
-        {
-            await CheckRelatedTicketsForSelectionAsync();
-        }
-    }
-
-    private async Task<bool> ShouldShowCloseTicketWarningAsync()
-    {
-        try
-        {
-            return !await JS.InvokeAsync<bool>("conversacionesUi.getCloseTicketWarningAccepted");
-        }
-        catch (JSException)
-        {
-            return true;
-        }
-    }
-
-    private async Task AcceptCloseTicketWarningAsync()
-    {
-        try
-        {
-            await JS.InvokeVoidAsync("conversacionesUi.setCloseTicketWarningAccepted", true);
-        }
-        catch (JSException)
-        {
-        }
-
-        _closeTicketWarningUnderstood = true;
-    }
-
-    private async Task ContinueCloseTicketWarningOnceAsync()
-        => await OpenTicketDialog();
-
-    private void ResetCloseTicketWarningStep()
-        => _closeTicketWarningUnderstood = false;
-
-    private void CloseCloseTicketWarning()
-    {
-        _showCloseTicketWarning = false;
-        _closeTicketWarningUnderstood = false;
-        _closeAndCreateTicketMode = false;
-        _selectedTicketMessageIds.Clear();
+        await CheckRelatedTicketsForSelectionAsync();
     }
 
     private void CloseTicketDialog()
@@ -3035,7 +3592,6 @@
 
         _showTicketDialog = false;
         _ticketError = null;
-        _closeAndCreateTicketMode = false;
         _allowCreateDespiteRelated = false;
     }
 
@@ -3046,7 +3602,6 @@
 
         _ticketSelectionMode = false;
         _showTicketDialog = false;
-        _closeAndCreateTicketMode = false;
         _selectedTicketMessageIds.Clear();
         _ticketDescription = string.Empty;
         _ticketError = null;
@@ -3068,16 +3623,14 @@
             _ticketError = "Ingresá el nombre del ticket.";
             return;
         }
-        var creatorTechnicianId = _closeAndCreateTicketMode
-            ? FirstNonEmpty(_selectedConversation.IdTecnico, CurrentMessageTechnicianId)
-            : CurrentMessageTechnicianId;
+        var creatorTechnicianId = CurrentMessageTechnicianId;
         if (string.IsNullOrWhiteSpace(creatorTechnicianId))
         {
             _ticketError = "No se pudo crear el ticket porque tu usuario no tiene un técnico asociado.";
             return;
         }
 
-        if (!_closeAndCreateTicketMode && _relatedTicketMatches.Count > 0 && !_allowCreateDespiteRelated)
+        if (_relatedTicketMatches.Count > 0 && !_allowCreateDespiteRelated)
         {
             _ticketError = "Revisá los tickets relacionados o elegí Crear igual para continuar.";
             return;
@@ -3096,7 +3649,7 @@
             {
                 Titulo = _ticketTitle,
                 Descripcion = _ticketDescription,
-                CodigoEstado = _closeAndCreateTicketMode ? GetClosedTicketStateCode() : TicketEstadoKeys.Nuevo,
+                CodigoEstado = TicketEstadoKeys.Nuevo,
                 Prioridad = _ticketPriority,
                 IdTecnico = creatorTechnicianId,
                 ClienteCodigo = _selectedConversation.ClienteCodigo,
@@ -3106,43 +3659,23 @@
                 UsuarioAccion = CurrentUserNameForAudit
             });
 
-            if (_closeAndCreateTicketMode)
-            {
-                var closedState = _states.FirstOrDefault(x => x.EsCerrado)?.CodigoEstado ?? "CERRADA";
-                await ConversacionesSvc.ChangeStatusAsync(new ConversacionEstadoRequest
-                {
-                    IdConversacion = _selectedConversation.IdConversacion,
-                    CodigoEstado = closedState,
-                    IdTecnicoAutor = creatorTechnicianId,
-                    NombreTecnicoAccion = GetTicketAssignmentPreview(),
-                    UsuarioAccion = CurrentUserNameForAudit,
-                    SistemaAccion = CurrentUserSystemForAudit
-                });
-            }
-
-            var createdAndClosed = _closeAndCreateTicketMode;
             await ConversacionesSvc.AddInternalEventAsync(new ConversacionEventoInternoRequest
             {
                 IdConversacion = _selectedConversation.IdConversacion,
-                Texto = createdAndClosed
-                    ? $"{GetTicketAssignmentPreview()} cerr\u00f3 la conversaci\u00f3n y cre\u00f3 el ticket #{idTicket.ToString(System.Globalization.CultureInfo.InvariantCulture)}."
-                    : $"{CurrentMessageTechnicianName} cre\u00f3 el ticket #{idTicket.ToString(System.Globalization.CultureInfo.InvariantCulture)}.",
+                Texto = $"{CurrentMessageTechnicianName} cre\u00f3 el ticket #{idTicket.ToString(System.Globalization.CultureInfo.InvariantCulture)}.",
                 IdTecnicoAutor = creatorTechnicianId,
-                NombreTecnicoAccion = GetTicketAssignmentPreview(),
+                NombreTecnicoAccion = CurrentMessageTechnicianName,
                 UsuarioAccion = CurrentUserNameForAudit,
                 SistemaAccion = CurrentUserSystemForAudit
             });
 
             _ticketSelectionMode = false;
-            _closeAndCreateTicketMode = false;
             _showTicketDialog = false;
             _selectedTicketMessageIds.Clear();
             _ticketDescription = string.Empty;
             _relatedTicketMatches.Clear();
             _allowCreateDespiteRelated = false;
-            _actionMessage = createdAndClosed
-                ? $"Ticket #{idTicket.ToString(System.Globalization.CultureInfo.InvariantCulture)} creado y conversación cerrada."
-                : $"Ticket #{idTicket.ToString(System.Globalization.CultureInfo.InvariantCulture)} creado correctamente.";
+            _actionMessage = $"Ticket #{idTicket.ToString(System.Globalization.CultureInfo.InvariantCulture)} creado correctamente.";
             await LoadConversationAsync(_selectedConversation.IdConversacion, showLoading: false, clearActionState: false);
         }
         catch (Exception ex)
@@ -3268,6 +3801,581 @@
         _contextNotesLoaded = false;
     }
 
+    private async Task OpenParteHorasDialogAsync(ParteHorasPromptVm prompt)
+    {
+        _parteHoraError = null;
+        _parteHoraConversationId = prompt.IdConversacion;
+        _parteHoraClienteCodigo = prompt.ClienteCodigo;
+        _parteHoraClienteNombre = prompt.ClienteNombre;
+        _parteHoraIdContacto = prompt.IdContacto;
+        _parteHoraInicio = prompt.Inicio;
+        _parteHoraFin = prompt.Fin;
+        _parteHoraFecha = prompt.Fin.Date;
+        _parteHoraSuggestedMinutes = prompt.MinutosSugeridos;
+        _parteHoraTipo = string.IsNullOrWhiteSpace(prompt.ClienteCodigo)
+            ? ParteHoraTipoTrabajoKeys.Interno
+            : ParteHoraTipoTrabajoKeys.Soporte;
+        _parteHoraFacturable = false;
+        _parteHoraTicketId = null;
+        var suggestedHours = Math.Max(0, prompt.MinutosSugeridos / 60);
+        var suggestedRemainingMinutes = Math.Max(0, prompt.MinutosSugeridos % 60);
+        _parteHoraLineas =
+        [
+            new ParteHoraConversacionLinea
+            {
+                IdTecnico = CurrentMessageTechnicianId,
+                TipoTrabajo = _parteHoraTipo,
+                Horas = suggestedHours,
+                Minutos = suggestedRemainingMinutes,
+                Descripcion = BuildParteHoraDescription(prompt)
+            }
+        ];
+        _parteHoraTickets = [];
+        _parteHoraTicketDetail = null;
+        _parteHoraTicketMode = ParteHoraTicketPanelMode.None;
+        _parteHoraTicketError = null;
+
+        _showParteHorasDialog = true;
+        _focusParteHorasDialogAfterRender = true;
+
+        try
+        {
+            await EnsureParteHoraTicketLookupsAsync();
+            if (!string.IsNullOrWhiteSpace(prompt.ClienteCodigo))
+            {
+                _parteHoraTickets = await SearchOpenParteHoraTicketsAsync(prompt.ClienteCodigo);
+            }
+        }
+        catch (Exception ex)
+        {
+            _parteHoraError = $"No se pudieron cargar tickets relacionados: {ex.Message}";
+        }
+    }
+
+    private async Task PromptCloseConversationAsync(string closeStatusCode, string previousStatusCode)
+    {
+        var prompt = BuildParteHorasPrompt(DateTime.Now);
+        if (prompt is null)
+            return;
+
+        _parteHoraPendingCloseStatusCode = closeStatusCode;
+        _parteHoraPreviousStatusCode = previousStatusCode;
+        _statusCode = previousStatusCode;
+        await OpenParteHorasDialogAsync(prompt);
+    }
+
+    private void CloseParteHorasDialog()
+    {
+        if (_savingParteHora)
+            return;
+
+        _showParteHorasDialog = false;
+        _focusParteHorasDialogAfterRender = false;
+        _parteHoraError = null;
+        _parteHoraPendingCloseStatusCode = string.Empty;
+        _parteHoraPreviousStatusCode = string.Empty;
+    }
+
+    private Task HandleParteHorasDialogKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (string.Equals(args.Key, "Escape", StringComparison.OrdinalIgnoreCase))
+            CloseParteHorasDialog();
+
+        return Task.CompletedTask;
+    }
+
+    private async Task ConfirmCloseWithoutParteHorasAsync()
+    {
+        if (_parteHoraConversationId is null)
+            return;
+
+        _savingParteHora = true;
+        _parteHoraError = null;
+        try
+        {
+            if (await FinalizePendingConversationCloseAsync("Conversación cerrada sin parte de horas."))
+                _showParteHorasDialog = false;
+        }
+        finally
+        {
+            _savingParteHora = false;
+        }
+    }
+
+    private void AddParteHoraLinea()
+    {
+        var previous = _parteHoraLineas.LastOrDefault();
+        _parteHoraLineas.Add(new ParteHoraConversacionLinea
+        {
+            IdTecnico = previous?.IdTecnico ?? CurrentMessageTechnicianId,
+            TipoTrabajo = previous?.TipoTrabajo ?? _parteHoraTipo,
+            Horas = 0,
+            Minutos = 1
+        });
+    }
+
+    private void RemoveParteHoraLinea(int index)
+    {
+        if (_parteHoraLineas.Count <= 1 || index < 0 || index >= _parteHoraLineas.Count)
+            return;
+
+        _parteHoraLineas.RemoveAt(index);
+    }
+
+    private Task HandleParteHoraLineaKeyDownAsync(KeyboardEventArgs args, int index)
+    {
+        if (string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase))
+            return InsertParteHoraLineaAfterAsync(index);
+
+        return Task.CompletedTask;
+    }
+
+    private Task InsertParteHoraLineaAfterAsync(int index)
+    {
+        var previous = index >= 0 && index < _parteHoraLineas.Count ? _parteHoraLineas[index] : _parteHoraLineas.LastOrDefault();
+        var nueva = new ParteHoraConversacionLinea
+        {
+            IdTecnico = previous?.IdTecnico ?? CurrentMessageTechnicianId,
+            TipoTrabajo = previous?.TipoTrabajo ?? _parteHoraTipo,
+            Horas = 0,
+            Minutos = 1
+        };
+
+        if (index < 0 || index >= _parteHoraLineas.Count - 1)
+            _parteHoraLineas.Add(nueva);
+        else
+            _parteHoraLineas.Insert(index + 1, nueva);
+
+        _pendingParteHoraLineaDescripcionFocusIndex = Math.Min(index + 1, _parteHoraLineas.Count - 1);
+        return Task.CompletedTask;
+    }
+
+    private static string GetParteHoraLineaDescripcionId(int index)
+        => $"conv-parte-linea-desc-{index.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+
+    private async Task OnParteHoraTicketChangedAsync(ChangeEventArgs args)
+    {
+        var value = Convert.ToString(args.Value, System.Globalization.CultureInfo.InvariantCulture);
+        _parteHoraTicketId = long.TryParse(value, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var id) && id > 0
+            ? id
+            : null;
+        _parteHoraTicketDetail = null;
+        _parteHoraTicketMode = ParteHoraTicketPanelMode.None;
+        _parteHoraTicketError = null;
+
+        if (_parteHoraTicketId.HasValue)
+            await PreviewParteHoraTicketAsync();
+    }
+
+    private async Task PreviewParteHoraTicketAsync()
+    {
+        if (!_parteHoraTicketId.HasValue)
+            return;
+
+        _loadingParteHoraTicket = true;
+        _parteHoraTicketError = null;
+        try
+        {
+            _parteHoraTicketDetail = await TicketsSvc.GetByIdAsync(_parteHoraTicketId.Value);
+            _parteHoraTicketMode = _parteHoraTicketDetail is null
+                ? ParteHoraTicketPanelMode.None
+                : ParteHoraTicketPanelMode.Preview;
+        }
+        catch (Exception ex)
+        {
+            _parteHoraTicketError = ex.Message;
+            _parteHoraError = $"No se pudo previsualizar el ticket: {ex.Message}";
+        }
+        finally
+        {
+            _loadingParteHoraTicket = false;
+        }
+    }
+
+    private async Task EditParteHoraTicketAsync()
+    {
+        if (!_parteHoraTicketId.HasValue)
+            return;
+
+        if (_parteHoraTicketDetail is null || _parteHoraTicketDetail.IdTicket != _parteHoraTicketId.Value)
+            await PreviewParteHoraTicketAsync();
+
+        if (_parteHoraTicketDetail is null)
+            return;
+
+        _parteHoraTicketTitle = _parteHoraTicketDetail.Titulo;
+        _parteHoraTicketDescription = _parteHoraTicketDetail.Descripcion;
+        _parteHoraTicketState = _parteHoraTicketDetail.CodigoEstado;
+        _parteHoraTicketPriority = _parteHoraTicketDetail.Prioridad;
+        _parteHoraTicketMode = ParteHoraTicketPanelMode.Edit;
+    }
+
+    private void StartCreateParteHoraTicket()
+    {
+        _parteHoraTicketId = null;
+        _parteHoraTicketDetail = null;
+        _parteHoraTicketTitle = BuildDefaultTicketTitle();
+        _parteHoraTicketDescription = _parteHoraLineas.FirstOrDefault()?.Descripcion ?? string.Empty;
+        _parteHoraTicketState = ParteHoraTicketOpenStates.FirstOrDefault()?.CodigoEstado ?? TicketEstadoKeys.Nuevo;
+        _parteHoraTicketPriority = 2;
+        _parteHoraTicketMode = ParteHoraTicketPanelMode.Create;
+        _parteHoraTicketError = null;
+    }
+
+    private async Task SaveParteHoraTicketAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_parteHoraTicketTitle))
+        {
+            _parteHoraError = "Ingresá el título del ticket.";
+            return;
+        }
+
+        _savingParteHoraTicket = true;
+        _parteHoraTicketError = null;
+        _parteHoraError = null;
+        try
+        {
+            if (_parteHoraTicketMode == ParteHoraTicketPanelMode.Create)
+            {
+                var id = await TicketsSvc.CreateAsync(new TicketCreateRequest
+                {
+                    Titulo = _parteHoraTicketTitle,
+                    Descripcion = _parteHoraTicketDescription,
+                    CodigoEstado = _parteHoraTicketState,
+                    Prioridad = _parteHoraTicketPriority,
+                    IdTecnico = CurrentMessageTechnicianId,
+                    ClienteCodigo = _parteHoraClienteCodigo,
+                    IdContacto = _parteHoraIdContacto,
+                    IdConversacion = _parteHoraConversationId,
+                    UsuarioAccion = CurrentUserNameForAudit
+                });
+                _parteHoraTicketId = id;
+            }
+            else if (_parteHoraTicketMode == ParteHoraTicketPanelMode.Edit && _parteHoraTicketDetail is not null)
+            {
+                await TicketsSvc.UpdateAsync(new TicketUpdateRequest
+                {
+                    IdTicket = _parteHoraTicketDetail.IdTicket,
+                    Titulo = _parteHoraTicketTitle,
+                    Descripcion = _parteHoraTicketDescription,
+                    CodigoEstado = _parteHoraTicketState,
+                    Prioridad = _parteHoraTicketPriority,
+                    IdTecnico = FirstNonEmpty(_parteHoraTicketDetail.IdTecnico, CurrentMessageTechnicianId),
+                    ClienteCodigo = _parteHoraClienteCodigo,
+                    IdContacto = _parteHoraIdContacto,
+                    IdEtiquetas = _parteHoraTicketDetail.Etiquetas.Select(x => x.IdEtiqueta).ToList(),
+                    UsuarioAccion = CurrentUserNameForAudit
+                });
+                _parteHoraTicketId = _parteHoraTicketDetail.IdTicket;
+            }
+
+            await RefreshParteHoraTicketsAsync();
+            if (_parteHoraTicketId.HasValue)
+                await PreviewParteHoraTicketAsync();
+        }
+        catch (Exception ex)
+        {
+            _parteHoraError = ex is AlfaCore.Services.AppUserFacingException userFacing
+                ? userFacing.Message
+                : "No se pudo guardar el ticket.";
+            _parteHoraTicketError = ex.Message;
+        }
+        finally
+        {
+            _savingParteHoraTicket = false;
+        }
+    }
+
+    private async Task CloseParteHoraTicketAsync()
+    {
+        if (!_parteHoraTicketId.HasValue)
+            return;
+
+        _loadingParteHoraTicket = true;
+        _parteHoraError = null;
+        try
+        {
+            await TicketsSvc.QuickUpdateAsync(new TicketQuickUpdateRequest
+            {
+                IdTicket = _parteHoraTicketId.Value,
+                CodigoEstado = TicketEstadoKeys.Cerrado,
+                UsuarioAccion = CurrentUserNameForAudit
+            });
+
+            var closedId = _parteHoraTicketId.Value;
+            await RefreshParteHoraTicketsAsync();
+            if (_parteHoraTicketId == closedId)
+                _parteHoraTicketId = null;
+
+            _parteHoraTicketDetail = null;
+            _parteHoraTicketMode = ParteHoraTicketPanelMode.None;
+        }
+        catch (Exception ex)
+        {
+            _parteHoraError = $"No se pudo eliminar el ticket de la lista: {ex.Message}";
+        }
+        finally
+        {
+            _loadingParteHoraTicket = false;
+        }
+    }
+
+    private void CancelParteHoraTicketPanel()
+    {
+        _parteHoraTicketMode = _parteHoraTicketDetail is null
+            ? ParteHoraTicketPanelMode.None
+            : ParteHoraTicketPanelMode.Preview;
+        _parteHoraTicketError = null;
+    }
+
+    private async Task EnsureParteHoraTicketLookupsAsync()
+    {
+        if (_parteHoraTicketEstados.Count > 0)
+            return;
+
+        var lookups = await TicketsSvc.GetLookupsAsync();
+        _parteHoraTicketEstados = lookups.Estados.ToList();
+    }
+
+    private async Task<List<TicketGridItemDto>> SearchOpenParteHoraTicketsAsync(string clienteCodigo)
+    {
+        if (string.IsNullOrWhiteSpace(clienteCodigo))
+            return [];
+
+        var result = await TicketsSvc.SearchAsync(new TicketsFilters
+        {
+            ClienteCodigo = clienteCodigo,
+            IncluirCerrados = false,
+            PageNumber = 1,
+            PageSize = 25
+        });
+        return result.Items.ToList();
+    }
+
+    private async Task RefreshParteHoraTicketsAsync()
+    {
+        _parteHoraTickets = await SearchOpenParteHoraTicketsAsync(_parteHoraClienteCodigo);
+        if (_parteHoraTicketId.HasValue && _parteHoraTickets.All(x => x.IdTicket != _parteHoraTicketId.Value))
+            _parteHoraTicketId = null;
+    }
+
+    private async Task SaveParteHorasAsync()
+    {
+        if (_parteHoraConversationId is null)
+            return;
+
+        var lineas = _parteHoraLineas
+            .Where(linea => linea.TotalMinutos > 0 || !string.IsNullOrWhiteSpace(linea.Descripcion) || !string.IsNullOrWhiteSpace(linea.IdTecnico))
+            .ToList();
+
+        if (lineas.Count == 0)
+        {
+            _parteHoraError = "Agregá al menos una línea para el parte de horas.";
+            return;
+        }
+
+        if (lineas.Any(linea => linea.TotalMinutos <= 0))
+        {
+            _parteHoraError = "Todas las líneas deben tener una duración mayor a cero.";
+            return;
+        }
+
+        if (lineas.Any(linea => linea.Horas < 0 || linea.Minutos < 0 || linea.Minutos > 59))
+        {
+            _parteHoraError = "Revisá horas y minutos: los minutos deben estar entre 0 y 59.";
+            return;
+        }
+
+        if (lineas.Any(linea => linea.TotalMinutos > 24 * 60))
+        {
+            _parteHoraError = "Ninguna línea puede superar 24 horas.";
+            return;
+        }
+
+        _savingParteHora = true;
+        _parteHoraError = null;
+
+        try
+        {
+            var idsPartes = new List<long>();
+            foreach (var linea in lineas)
+            {
+                idsPartes.Add(await PartesHorasSvc.SaveAsync(new ParteHoraSaveRequest
+                {
+                    Fecha = _parteHoraFecha,
+                    ClienteCodigo = _parteHoraClienteCodigo,
+                    IdContacto = _parteHoraIdContacto,
+                    IdTicket = _parteHoraTicketId,
+                    IdTecnico = linea.IdTecnico,
+                    Usuario = CurrentUserNameForAudit,
+                    TipoTrabajo = linea.TipoTrabajo,
+                    Minutos = linea.TotalMinutos,
+                    Facturable = _parteHoraFacturable,
+                    Estado = ParteHoraEstadoKeys.Presentado,
+                    Descripcion = linea.Descripcion,
+                    UsuarioAccion = CurrentUserNameForAudit
+                }));
+            }
+
+            var totalMinutes = lineas.Sum(linea => linea.TotalMinutos);
+
+            await ConversacionesSvc.AddInternalEventAsync(new ConversacionEventoInternoRequest
+            {
+                IdConversacion = _parteHoraConversationId.Value,
+                Texto = idsPartes.Count == 1
+                    ? $"{CurrentMessageTechnicianName} guardó el parte de horas #{idsPartes[0].ToString(System.Globalization.CultureInfo.InvariantCulture)} por {FormatParteHorasDuration(totalMinutes)}."
+                    : $"{CurrentMessageTechnicianName} guardó {idsPartes.Count.ToString(System.Globalization.CultureInfo.InvariantCulture)} líneas de parte de horas por {FormatParteHorasDuration(totalMinutes)}.",
+                IdTecnicoAutor = CurrentMessageTechnicianId,
+                NombreTecnicoAccion = CurrentMessageTechnicianName,
+                UsuarioAccion = CurrentUserNameForAudit,
+                SistemaAccion = CurrentUserSystemForAudit
+            });
+
+            if (await FinalizePendingConversationCloseAsync(idsPartes.Count == 1
+                    ? $"Parte de horas #{idsPartes[0].ToString(System.Globalization.CultureInfo.InvariantCulture)} guardado y conversación cerrada."
+                    : $"{idsPartes.Count.ToString(System.Globalization.CultureInfo.InvariantCulture)} líneas de parte de horas guardadas y conversación cerrada."))
+                _showParteHorasDialog = false;
+        }
+        catch (Exception ex)
+        {
+            _parteHoraError = ex is AlfaCore.Services.AppUserFacingException userFacing
+                ? userFacing.Message
+                : "No se pudo guardar el parte de horas. Revisá los datos y volvé a intentar.";
+        }
+        finally
+        {
+            _savingParteHora = false;
+        }
+    }
+
+    private async Task<bool> FinalizePendingConversationCloseAsync(string successMessage)
+    {
+        if (_selectedConversation is null || string.IsNullOrWhiteSpace(_parteHoraPendingCloseStatusCode))
+        {
+            _parteHoraError = "No se encontró un cierre pendiente para confirmar.";
+            return false;
+        }
+
+        var previousValue = string.IsNullOrWhiteSpace(_parteHoraPreviousStatusCode)
+            ? _statusCode
+            : _parteHoraPreviousStatusCode;
+
+        _statusCode = _parteHoraPendingCloseStatusCode;
+        if (!await SaveStatusAsync())
+        {
+            _statusCode = previousValue;
+            _parteHoraError = _actionError ?? "No se pudo cerrar la conversación. El parte quedó cargado, pero la conversación sigue abierta.";
+            return false;
+        }
+
+        _parteHoraPendingCloseStatusCode = string.Empty;
+        _parteHoraPreviousStatusCode = string.Empty;
+        _actionMessage = successMessage;
+        return true;
+    }
+
+    private ParteHorasPromptVm? BuildParteHorasPrompt(DateTime closedAt)
+    {
+        if (_selectedConversation is null)
+            return null;
+
+        var relevantMessages = VisibleMessages
+            .Where(x => x.FechaHora != DateTime.MinValue && x.FechaHora <= closedAt.AddMinutes(2))
+            .OrderBy(x => x.FechaHora)
+            .ThenBy(x => x.IdMensaje)
+            .ToList();
+
+        var segment = GetParteHorasSegment(relevantMessages, _selectedConversation, closedAt);
+        var minutes = (int)Math.Ceiling(Math.Max(1d, (closedAt - segment).TotalMinutes));
+        minutes = Math.Clamp(minutes, 1, 24 * 60);
+
+        return new ParteHorasPromptVm
+        {
+            IdConversacion = _selectedConversation.IdConversacion,
+            ClienteCodigo = _selectedConversation.ClienteCodigo,
+            ClienteNombre = _selectedConversation.ClienteNombre,
+            IdContacto = _selectedConversation.IdContacto,
+            TecnicoNombre = CurrentMessageTechnicianName,
+            Inicio = segment,
+            Fin = closedAt,
+            MinutosSugeridos = minutes
+        };
+    }
+
+    private static DateTime GetParteHorasSegment(IReadOnlyList<ConversacionMensajeDto> messages, ConversacionDetalleDto conversation, DateTime closedAt)
+    {
+        if (messages.Count == 0)
+            return conversation.FechaHoraUltimoMensajeCliente ?? conversation.FechaHoraPrimerMensaje ?? closedAt.AddMinutes(-15);
+
+        var boundary = messages
+            .Where(IsConversationStateBoundaryMessage)
+            .Select(x => x.FechaHora)
+            .DefaultIfEmpty(DateTime.MinValue)
+            .Max();
+
+        var candidates = messages
+            .Where(x => x.FechaHora > boundary)
+            .OrderBy(x => x.FechaHora)
+            .ThenBy(x => x.IdMensaje)
+            .ToList();
+
+        if (candidates.Count == 0)
+            candidates = messages.ToList();
+
+        var anchorIndex = candidates.FindLastIndex(x => IsIncomingMessage(x));
+        if (anchorIndex < 0)
+            anchorIndex = candidates.Count - 1;
+
+        var startIndex = anchorIndex;
+        for (var i = anchorIndex; i > 0; i--)
+        {
+            var gap = candidates[i].FechaHora - candidates[i - 1].FechaHora;
+            if (gap > TimeSpan.FromHours(1))
+                break;
+
+            startIndex = i - 1;
+        }
+
+        var start = candidates[startIndex].FechaHora;
+        if (start > closedAt)
+            return closedAt.AddMinutes(-1);
+
+        return start;
+    }
+
+    private static bool IsConversationStateBoundaryMessage(ConversacionMensajeDto message)
+    {
+        if (!string.Equals(message.Direction, "NOTA_INTERNA", StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(message.MessageType, "SYSTEM", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        var text = NormalizeSimpleText(message.Texto);
+        return text.Contains("cerro la conversacion", StringComparison.Ordinal)
+               || text.Contains("cambio el estado", StringComparison.Ordinal)
+               || text.Contains("reabr", StringComparison.Ordinal);
+    }
+
+    private static string NormalizeSimpleText(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return string.Empty;
+
+        return value.Trim().ToLowerInvariant()
+            .Replace('á', 'a')
+            .Replace('é', 'e')
+            .Replace('í', 'i')
+            .Replace('ó', 'o')
+            .Replace('ú', 'u')
+            .Replace('ü', 'u')
+            .Replace('ñ', 'n');
+    }
+
+    private static string BuildParteHoraDescription(ParteHorasPromptVm prompt)
+    {
+        var tecnico = string.IsNullOrWhiteSpace(prompt.TecnicoNombre) ? "Sin técnico" : prompt.TecnicoNombre;
+        return $"Atención de conversación #{prompt.IdConversacion.ToString(System.Globalization.CultureInfo.InvariantCulture)}. Tiempo sugerido {FormatParteHorasDuration(prompt.MinutosSugeridos)}. Tramo {prompt.Inicio:dd/MM HH:mm} - {prompt.Fin:dd/MM HH:mm}. Técnico: {tecnico}.";
+    }
+
     private void QueueContextNotesLoad()
     {
         var conversation = _selectedConversation;
@@ -3283,7 +4391,9 @@
             return;
         }
 
-        if (!conversation.IdContacto.HasValue && string.IsNullOrWhiteSpace(conversation.ClienteCodigo))
+        if (!conversation.IdContacto.HasValue
+            && string.IsNullOrWhiteSpace(conversation.ClienteCodigo)
+            && !HasContactLookupData(conversation))
         {
             if (!sameSource)
                 ClearContextNotesState();
@@ -3325,18 +4435,26 @@
         {
             var sections = new List<ContextNoteSectionVm>();
 
-            if (conversation.IdContacto is int idContacto)
+            var hasContactObservation = AddContextNoteSection(sections, ContextNoteKind.Observacion, "Contacto - Observaciones", conversation.ContactoObservaciones);
+            if (!hasContactObservation)
             {
-                var contact = await ContactosSvc.GetByIdAsync(idContacto);
+                var contact = await ResolveContextContactAsync(conversation);
                 AddContextNoteSection(sections, ContextNoteKind.Observacion, "Contacto - Observaciones", contact?.Observaciones);
             }
+            AddContextNoteSection(sections, ContextNoteKind.OtraNota, "Contacto - Notas", conversation.ContactoNotas);
 
             if (!string.IsNullOrWhiteSpace(conversation.ClienteCodigo))
             {
+                var hasClientObservation = AddContextNoteSection(sections, ContextNoteKind.Observacion, "Cliente - Observaciones", conversation.ClienteObservaciones);
+                var hasClientExpandedNote = AddContextNoteSection(sections, ContextNoteKind.OtraNota, "Cliente - Nota ampliada", conversation.ClienteNotaCuenta);
+
                 var client = await CuentasSvc.GetByIdAsync(CuentaComercialTipo.Cliente, conversation.ClienteCodigo);
-                AddContextNoteSection(sections, ContextNoteKind.Observacion, "Cliente - Observaciones", client?.Observaciones);
+
+                if (!hasClientObservation)
+                    AddContextNoteSection(sections, ContextNoteKind.Observacion, "Cliente - Observaciones", client?.Observaciones);
                 AddContextNoteSection(sections, ContextNoteKind.OtraNota, "Cliente - Manual interno", client?.Manual);
-                AddContextNoteSection(sections, ContextNoteKind.OtraNota, "Cliente - Nota ampliada", client?.NotaCuenta);
+                if (!hasClientExpandedNote)
+                    AddContextNoteSection(sections, ContextNoteKind.OtraNota, "Cliente - Nota ampliada", client?.NotaCuenta);
             }
 
             if (_contextNotesConversationId == idConversacion && _selectedConversation?.IdConversacion == idConversacion)
@@ -3368,13 +4486,107 @@
     private static string BuildContextNotesSourceKey(ConversacionDetalleDto? conversation)
         => conversation is null
             ? string.Empty
-            : $"{conversation.Canal}|{conversation.IdContacto?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty}|{conversation.ClienteCodigo?.Trim() ?? string.Empty}";
+            : $"{conversation.Canal}|{conversation.IdContacto?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty}|{conversation.ClienteCodigo?.Trim() ?? string.Empty}|{NormalizePhoneForCompare(conversation.TelefonoWhatsApp)}|{NormalizePhoneForCompare(conversation.ContactoCelular)}|{NormalizePhoneForCompare(conversation.ContactoTelefono)}|{conversation.ContactoEmail?.Trim().ToUpperInvariant() ?? string.Empty}|{BuildContextNotesVersion(conversation.ContactoObservaciones)}|{BuildContextNotesVersion(conversation.ContactoNotas)}|{BuildContextNotesVersion(conversation.ClienteObservaciones)}|{BuildContextNotesVersion(conversation.ClienteNotaCuenta)}";
 
-    private static void AddContextNoteSection(List<ContextNoteSectionVm> sections, ContextNoteKind kind, string label, string? text)
+    private static string BuildContextNotesVersion(string? value)
+    {
+        var clean = NormalizeContextNoteText(value);
+        return clean.Length == 0
+            ? "0"
+            : $"{clean.Length}:{clean.GetHashCode(StringComparison.Ordinal)}";
+    }
+
+    private async Task<ContactoDetailDto?> ResolveContextContactAsync(ConversacionDetalleDto conversation)
+    {
+        if (conversation.IdContacto is int idContacto)
+            return await ContactosSvc.GetByIdAsync(idContacto);
+
+        var candidate = await FindContextContactCandidateAsync(conversation);
+        return candidate is null ? null : await ContactosSvc.GetByIdAsync(candidate.Id);
+    }
+
+    private async Task<ContactoGridItemDto?> FindContextContactCandidateAsync(ConversacionDetalleDto conversation)
+    {
+        foreach (var term in GetContextContactLookupTerms(conversation))
+        {
+            var result = await ContactosSvc.SearchAsync(new ContactosFilters
+            {
+                Texto = term,
+                Activo = true,
+                PageNumber = 1,
+                PageSize = 8
+            });
+
+            var match = result.Items.FirstOrDefault(item => IsSameContextContact(item, conversation));
+            if (match is not null)
+                return match;
+        }
+
+        return null;
+    }
+
+    private static bool HasContactLookupData(ConversacionDetalleDto conversation)
+        => GetContextContactLookupTerms(conversation).Any();
+
+    private static IEnumerable<string> GetContextContactLookupTerms(ConversacionDetalleDto conversation)
+    {
+        foreach (var value in new[]
+        {
+            conversation.TelefonoWhatsApp,
+            conversation.ContactoCelular,
+            conversation.ContactoTelefono,
+            conversation.ContactoEmail
+        })
+        {
+            var clean = (value ?? string.Empty).Trim();
+            if (clean.Length >= 4)
+                yield return clean;
+        }
+    }
+
+    private static bool IsSameContextContact(ContactoGridItemDto item, ConversacionDetalleDto conversation)
+    {
+        var targetPhones = new[]
+        {
+            conversation.TelefonoWhatsApp,
+            conversation.ContactoCelular,
+            conversation.ContactoTelefono
+        }
+            .Select(NormalizePhoneForCompare)
+            .Where(static value => value.Length >= 6)
+            .ToHashSet(StringComparer.Ordinal);
+
+        if (targetPhones.Count > 0)
+        {
+            var itemPhones = new[] { item.Celular, item.Telefono }
+                .Select(NormalizePhoneForCompare)
+                .Where(static value => value.Length >= 6);
+
+            if (itemPhones.Any(phone => targetPhones.Any(target => PhonesLookEquivalent(target, phone))))
+                return true;
+        }
+
+        return !string.IsNullOrWhiteSpace(conversation.ContactoEmail)
+               && !string.IsNullOrWhiteSpace(item.Email)
+               && string.Equals(conversation.ContactoEmail.Trim(), item.Email.Trim(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string NormalizePhoneForCompare(string? phone)
+        => Regex.Replace(phone ?? string.Empty, @"\D+", string.Empty);
+
+    private static bool PhonesLookEquivalent(string left, string right)
+        => left == right
+           || (left.Length >= 8 && right.EndsWith(left[^Math.Min(left.Length, 10)..], StringComparison.Ordinal))
+           || (right.Length >= 8 && left.EndsWith(right[^Math.Min(right.Length, 10)..], StringComparison.Ordinal));
+
+    private static bool AddContextNoteSection(List<ContextNoteSectionVm> sections, ContextNoteKind kind, string label, string? text)
     {
         var clean = NormalizeContextNoteText(text);
-        if (!string.IsNullOrWhiteSpace(clean))
-            sections.Add(new ContextNoteSectionVm(kind, label, clean));
+        if (string.IsNullOrWhiteSpace(clean))
+            return false;
+
+        sections.Add(new ContextNoteSectionVm(kind, label, clean));
+        return true;
     }
 
     private static string NormalizeContextNoteText(string? text)
@@ -3467,14 +4679,6 @@
         return source.Length <= 80 ? source : source[..80];
     }
 
-    private string GetClosedTicketStateCode()
-        => TicketEstadoKeys.Cerrado;
-
-    private string GetTicketAssignmentPreview()
-        => _closeAndCreateTicketMode
-            ? FirstNonEmpty(_selectedConversation?.TecnicoNombre, CurrentMessageTechnicianName, "Sin asignar")
-            : CurrentMessageTechnicianName;
-
     private async Task DebounceContactSuggestionsAsync()
     {
         CancelContactSearch();
@@ -3505,10 +4709,10 @@
             var conversationTask = ConversacionesSvc.GetInboxAsync(new ConversacionesInboxFilters
             {
                 Canal = _canalActivo,
-                Modo = _filters.Modo,
+                Modo = "todas",
                 Search = _filters.Search.Trim(),
-                IdTecnicoActual = _filters.IdTecnicoActual,
-                CodigoEstado = _filters.CodigoEstado,
+                IdTecnicoActual = string.Empty,
+                CodigoEstado = string.Empty,
                 UsuarioActual = CurrentUserNameForAudit,
                 SistemaActual = CurrentUserSystemForAudit,
                 Limit = 6
@@ -4181,7 +5385,7 @@
             await UploadPendingAttachmentsAsync(attachmentsToSend, RemovePendingAttachment);
 
             _actionMessage = "Mensaje registrado correctamente.";
-            await SelectConversationAsync(_selectedConversation.IdConversacion);
+            await SelectConversationAsync(_selectedConversation.IdConversacion, updateUrl: false);
             await RefreshInboxAsync(showLoading: false, allowSelectionChange: false);
         }
         catch (Exception ex)
@@ -4192,7 +5396,7 @@
                 RemoveOptimisticMessage(optimisticMessageId.Value);
 
             if (_selectedConversation is not null)
-                await SelectConversationAsync(_selectedConversation.IdConversacion);
+                await SelectConversationAsync(_selectedConversation.IdConversacion, updateUrl: false);
 
             foreach (var pending in _pendingAttachments)
                 pending.Error ??= "No se pudo enviar. Reintentá con el botón de enviar.";
@@ -4365,7 +5569,7 @@
             if (templateAttachmentsToSend.Count > 0)
                 await UploadPendingAttachmentsAsync(templateAttachmentsToSend, RemoveTemplatePendingAttachment, allowExpiredWhatsAppWindow: true);
 
-            await SelectConversationAsync(selectedConversationId);
+            await SelectConversationAsync(selectedConversationId, updateUrl: false);
             await RefreshInboxAsync(showLoading: false, allowSelectionChange: false);
             _actionMessage = templateAttachmentsToSend.Count == 0
                 ? $"Plantilla enviada correctamente: {previewText}"
@@ -4376,7 +5580,7 @@
             var error = ex.Message;
             if (_selectedConversation is not null)
             {
-                await SelectConversationAsync(_selectedConversation.IdConversacion);
+                await SelectConversationAsync(_selectedConversation.IdConversacion, updateUrl: false);
                 await RefreshInboxAsync(showLoading: false, allowSelectionChange: false);
             }
 
@@ -4413,7 +5617,7 @@
             _showComposerTools = false;
             _composerToolTab = ComposerToolTabs.Emojis;
             _actionMessage = "Nota interna guardada.";
-            await SelectConversationAsync(_selectedConversation.IdConversacion);
+            await SelectConversationAsync(_selectedConversation.IdConversacion, updateUrl: false);
             await RefreshInboxAsync(showLoading: false, allowSelectionChange: false);
         }
         catch (Exception ex)
@@ -4465,7 +5669,7 @@
             });
 
             _actionMessage = "Asignación actualizada.";
-            await SelectConversationAsync(_selectedConversation.IdConversacion);
+            await SelectConversationAsync(_selectedConversation.IdConversacion, updateUrl: false);
             await RefreshInboxAsync(showLoading: false, allowSelectionChange: false);
             return true;
         }
@@ -4490,6 +5694,12 @@
         if (string.IsNullOrWhiteSpace(nextValue) || string.Equals(previousValue, nextValue, StringComparison.Ordinal))
             return;
 
+        if (IsClosedStatusCode(nextValue) && !IsClosedStatusCode(previousValue))
+        {
+            await PromptCloseConversationAsync(nextValue, previousValue);
+            return;
+        }
+
         _statusCode = nextValue;
         if (!await SaveStatusAsync())
         {
@@ -4505,12 +5715,43 @@
         _showStatusMenu = !_showStatusMenu;
     }
 
+    private void ToggleMobileChatActions()
+    {
+        _showStatusMenu = false;
+        _showMobileChatActions = !_showMobileChatActions;
+    }
+
+    private void OpenMobileContextPanel()
+    {
+        _showMobileChatActions = false;
+        OpenContextPanel();
+    }
+
+    private void StartMobileTicketSelection()
+    {
+        _showMobileChatActions = false;
+        StartTicketSelection();
+    }
+
+    private async Task SelectMobileStatusAsync(string codigoEstado)
+    {
+        await SelectStatusAsync(codigoEstado);
+        _showMobileChatActions = false;
+    }
+
+    private async Task CloseMobileConversationAsync()
+    {
+        _showMobileChatActions = false;
+        await CloseConversationAsync();
+    }
+
     private Task CloseFloatingWindowsAsync()
     {
-        if (!_showStatusMenu)
+        if (!_showStatusMenu && !_showMobileChatActions)
             return Task.CompletedTask;
 
         _showStatusMenu = false;
+        _showMobileChatActions = false;
         return InvokeAsync(StateHasChanged);
     }
 
@@ -4525,6 +5766,12 @@
         var nextValue = codigoEstado.Trim();
         if (string.Equals(previousValue, nextValue, StringComparison.OrdinalIgnoreCase))
             return;
+
+        if (IsClosedStatusCode(nextValue) && !IsClosedStatusCode(previousValue))
+        {
+            await PromptCloseConversationAsync(nextValue, previousValue);
+            return;
+        }
 
         _statusCode = nextValue;
         if (!await SaveStatusAsync())
@@ -4556,7 +5803,7 @@
 
             MarkSelectedConversationAsRead();
             _actionMessage = "Estado actualizado.";
-            await SelectConversationAsync(_selectedConversation.IdConversacion);
+            await SelectConversationAsync(_selectedConversation.IdConversacion, updateUrl: false);
             await RefreshInboxAsync(showLoading: false, allowSelectionChange: false);
             return true;
         }
@@ -4573,9 +5820,14 @@
 
     private async Task CloseConversationAsync()
     {
+        if (_selectedConversation is null)
+            return;
+
         var closedState = _states.FirstOrDefault(x => x.EsCerrado)?.CodigoEstado ?? "CERRADA";
-        _statusCode = closedState;
-        await SaveStatusAsync();
+        if (IsClosedStatusCode(_statusCode))
+            return;
+
+        await PromptCloseConversationAsync(closedState, _statusCode);
     }
 
     private async Task ChangeCanalAsync(string canal)
@@ -4819,7 +6071,7 @@
             _clientSearchText = string.Empty;
             _clientSearchExecuted = false;
             await RefreshInboxAsync(showLoading: false, allowSelectionChange: false);
-            await SelectConversationAsync(_selectedConversation.IdConversacion);
+            await SelectConversationAsync(_selectedConversation.IdConversacion, updateUrl: false);
         }
         catch (Exception ex)
         {
@@ -5244,7 +6496,7 @@
             });
 
             _openReactionMessageId = null;
-            await SelectConversationAsync(_selectedConversation.IdConversacion);
+            await SelectConversationAsync(_selectedConversation.IdConversacion, updateUrl: false);
             await LoadInboxAsync();
             _actionMessage = $"Reacción enviada: {emoji}";
         }
@@ -5307,7 +6559,7 @@
                 CurrentMessageTechnicianId,
                 CurrentUserNameForAudit,
                 CurrentUserSystemForAudit);
-            await SelectConversationAsync(_selectedConversation.IdConversacion);
+            await SelectConversationAsync(_selectedConversation.IdConversacion, updateUrl: false);
             await LoadInboxAsync();
             _actionMessage = "Sticker enviado.";
             MinimizeComposerTools();
@@ -5389,6 +6641,7 @@
         _showTemplatePanel = false;
         _showContextNotesModal = false;
         _mobileChatActive = false;
+        _showMobileChatActions = false;
         ClearContextNotesState();
         ClearTemplateSelection();
         _scrollHandlerConversationId = null;
@@ -5811,6 +7064,49 @@
             _ => "Sin prioridad"
         };
 
+    private bool IsClosedStatusCode(string? codigoEstado)
+        => !string.IsNullOrWhiteSpace(codigoEstado)
+           && _states.Any(x => x.EsCerrado && string.Equals(x.CodigoEstado, codigoEstado.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    private static string FormatParteHorasDuration(int minutes)
+    {
+        minutes = Math.Clamp(minutes, 1, 24 * 60);
+        var hours = minutes / 60;
+        var remaining = minutes % 60;
+        return hours > 0
+            ? remaining > 0 ? $"{hours}h {remaining}m" : $"{hours}h"
+            : $"{remaining}m";
+    }
+
+    private string FormatParteHorasRange()
+    {
+        if (_parteHoraInicio is not DateTime start || _parteHoraFin is not DateTime end)
+            return "Sin tramo";
+
+        return $"{FormatShortDate(start)} - {FormatShortDate(end)}";
+    }
+
+    private static string FormatParteHoraTipo(string tipo)
+        => tipo switch
+        {
+            ParteHoraTipoTrabajoKeys.Soporte => "Soporte",
+            ParteHoraTipoTrabajoKeys.Desarrollo => "Desarrollo",
+            ParteHoraTipoTrabajoKeys.Implementacion => "Implementación",
+            ParteHoraTipoTrabajoKeys.Capacitacion => "Capacitación",
+            ParteHoraTipoTrabajoKeys.Reunion => "Reunión",
+            ParteHoraTipoTrabajoKeys.Viaje => "Viaje",
+            ParteHoraTipoTrabajoKeys.Interno => "Interno",
+            _ => tipo
+        };
+
+    private static string FormatParteHoraTicket(TicketGridItemDto ticket)
+    {
+        var code = string.IsNullOrWhiteSpace(ticket.CodigoVisible)
+            ? ticket.Numero.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            : ticket.CodigoVisible;
+        return $"{code} · {ticket.Titulo}";
+    }
+
     private static string FormatShortDate(DateTime value)
     {
         if (value == DateTime.MinValue)
@@ -5878,7 +7174,16 @@
            || adjunto.MimeType.StartsWith("video/", StringComparison.OrdinalIgnoreCase);
 
     private static bool IsPreviewableAttachment(ConversacionAdjuntoDto adjunto)
-        => IsImageAttachment(adjunto) || IsVideoAttachment(adjunto);
+        => IsAttachmentAvailable(adjunto) && (IsImageAttachment(adjunto) || IsVideoAttachment(adjunto));
+
+    private static bool IsPreviewZoomableAttachment(ConversacionAdjuntoDto adjunto)
+        => IsAttachmentAvailable(adjunto) && (IsImageAttachment(adjunto) || IsVideoAttachment(adjunto));
+
+    private static bool IsAttachmentAvailable(ConversacionAdjuntoDto adjunto)
+        => adjunto.ArchivoDisponible;
+
+    private static string GetAttachmentUnavailableTitle(ConversacionAdjuntoDto adjunto)
+        => $"No se pudo recuperar {GetAttachmentLabel(adjunto)}. El archivo ya no está disponible en Meta o faltan permisos para descargarlo.";
 
     private bool ShouldShowMessageText(ConversacionMensajeDto message)
     {
@@ -5888,14 +7193,21 @@
         if (IsContactMessage(message) && GetSharedContacts(message).Count > 0)
             return false;
 
-        if (message.MessageType is "IMAGE" or "AUDIO" or "VIDEO" or "DOCUMENT" or "STICKER")
+        if (IsAttachmentOnlyMessage(message))
         {
-            if (message.TieneAdjuntos)
-                return HasHumanAttachmentText(message);
+            return HasHumanAttachmentText(message);
         }
 
         return true;
     }
+
+    private bool ShouldShowMessageFooter(ConversacionMensajeDto message)
+        => !IsAttachmentOnlyMessage(message);
+
+    private bool IsAttachmentOnlyMessage(ConversacionMensajeDto message)
+        => (message.MessageType ?? string.Empty).Trim().ToUpperInvariant() is "IMAGE" or "AUDIO" or "VIDEO" or "DOCUMENT" or "STICKER"
+           && (message.TieneAdjuntos
+               || (_adjuntosPorMensaje.TryGetValue(message.IdMensaje, out var adjuntos) && adjuntos.Count > 0));
 
     private bool HasHumanAttachmentText(ConversacionMensajeDto message)
     {
@@ -5907,7 +7219,26 @@
             && adjuntos.Any(x => string.Equals(x.NombreArchivo, text, StringComparison.OrdinalIgnoreCase)))
             return false;
 
+        if (IsGeneratedMediaFileName(text, message.MessageType))
+            return false;
+
         return true;
+    }
+
+    private static bool IsGeneratedMediaFileName(string text, string messageType)
+    {
+        var normalizedType = (messageType ?? string.Empty).Trim().ToUpperInvariant();
+        var prefix = normalizedType switch
+        {
+            "IMAGE" or "STICKER" => "image_",
+            "VIDEO" => "video_",
+            "AUDIO" => "audio_",
+            _ => string.Empty
+        };
+
+        return !string.IsNullOrWhiteSpace(prefix)
+               && text.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+               && Path.HasExtension(text);
     }
 
     private static string GetMessageDisplayText(ConversacionMensajeDto message)
@@ -6324,10 +7655,42 @@
     }
 
     private string PreviewImageStyle
-        => $"--preview-zoom: {_previewZoom.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)}; --preview-rotation: {_previewRotationDegrees.ToString(System.Globalization.CultureInfo.InvariantCulture)}deg;";
+        => BuildPreviewMediaStyle(includeRotation: true);
 
     private string PreviewVideoStyle
-        => "width: 100%; max-width: min(100%, 960px); height: 100%; max-height: 100%; object-fit: contain;";
+        => BuildPreviewMediaStyle(includeRotation: false);
+
+    private string PreviewCanvasClass
+        => "attachment-preview-canvas";
+
+    private bool CanPanPreview
+        => _previewAttachment is not null && IsPreviewZoomableAttachment(_previewAttachment) && _previewZoom > 1d;
+
+    private string PreviewFrameStyle
+    {
+        get
+        {
+            var culture = System.Globalization.CultureInfo.InvariantCulture;
+            return string.Join("; ",
+            [
+                $"--preview-pan-x: {_previewPanX.ToString("0.###", culture)}px",
+                $"--preview-pan-y: {_previewPanY.ToString("0.###", culture)}px"
+            ]);
+        }
+    }
+
+    private string BuildPreviewMediaStyle(bool includeRotation)
+    {
+        var culture = System.Globalization.CultureInfo.InvariantCulture;
+        var rotation = includeRotation ? _previewRotationDegrees.ToString(culture) : "0";
+        return string.Join("; ",
+        [
+            $"--preview-zoom: {_previewZoom.ToString("0.###", culture)}",
+            $"--preview-rotation: {rotation}deg",
+            "--preview-pan-x: 0px",
+            "--preview-pan-y: 0px"
+        ]);
+    }
 
     private string PreviewZoomPercent
         => $"{Math.Round(_previewZoom * 100, 0).ToString(System.Globalization.CultureInfo.InvariantCulture)}%";
@@ -6345,6 +7708,9 @@
     {
         ResetPreviewZoom();
         _previewRotationDegrees = 0;
+        _previewPanX = 0;
+        _previewPanY = 0;
+        _bindPreviewPanAfterRender = _previewAttachment is not null;
     }
 
     private void RotatePreviewLeft()
@@ -6354,23 +7720,43 @@
         => SetPreviewRotation(_previewRotationDegrees + 90);
 
     private void SetPreviewRotation(int value)
-        => _previewRotationDegrees = ((value % 360) + 360) % 360;
+    {
+        _previewRotationDegrees = ((value % 360) + 360) % 360;
+        _bindPreviewPanAfterRender = _previewAttachment is not null;
+    }
 
     private void HandlePreviewWheel(WheelEventArgs args)
     {
-        if (_previewAttachment is null || !IsImageAttachment(_previewAttachment))
+        if (_previewAttachment is null || !IsPreviewZoomableAttachment(_previewAttachment))
             return;
 
         SetPreviewZoom(_previewZoom + (args.DeltaY < 0 ? .15d : -.15d));
     }
 
     private void SetPreviewZoom(double value)
-        => _previewZoom = Math.Clamp(value, .5d, 4d);
+    {
+        _previewZoom = Math.Clamp(value, .5d, 4d);
+        _previewPanX = 0;
+        _previewPanY = 0;
+        _bindPreviewPanAfterRender = _previewAttachment is not null;
+    }
+
+    [JSInvokable]
+    public Task PanAttachmentPreview(double deltaX, double deltaY)
+    {
+        if (_previewAttachment is null || !IsPreviewZoomableAttachment(_previewAttachment) || _previewZoom <= 1d)
+            return Task.CompletedTask;
+
+        _previewPanX += deltaX;
+        _previewPanY += deltaY;
+        return InvokeAsync(StateHasChanged);
+    }
 
     private async Task DismissConversationNoticesAsync()
     {
         CloseContactSuggestions();
         CloseMobileAdvancedFilters();
+        await CloseFloatingWindowsAsync();
 
         if (_showComposerTools)
         {
@@ -6424,14 +7810,26 @@
             _ticketError
         }.Where(x => !string.IsNullOrWhiteSpace(x)));
 
-    private static string GetAttachmentUrl(ConversacionAdjuntoDto adjunto)
-        => $"/api/conversaciones/adjuntos/{adjunto.IdAdjunto}";
+    private string GetAttachmentUrl(ConversacionAdjuntoDto adjunto)
+        => $"/api/conversaciones/adjuntos/{adjunto.IdAdjunto}?idBase={GetAttachmentBaseId()}&base={Uri.EscapeDataString(GetAttachmentScopeKey())}";
 
-    private static string GetAttachmentDownloadUrl(ConversacionAdjuntoDto adjunto)
-        => $"/api/conversaciones/adjuntos/{adjunto.IdAdjunto}?download=1";
+    private string GetAttachmentPreviewUrl(ConversacionAdjuntoDto adjunto)
+        => $"/api/conversaciones/adjuntos/{adjunto.IdAdjunto}?preview=1&idBase={GetAttachmentBaseId()}&base={Uri.EscapeDataString(GetAttachmentScopeKey())}";
+
+    private string GetAttachmentDownloadUrl(ConversacionAdjuntoDto adjunto)
+        => $"/api/conversaciones/adjuntos/{adjunto.IdAdjunto}?download=1&idBase={GetAttachmentBaseId()}&base={Uri.EscapeDataString(GetAttachmentScopeKey())}";
+
+    private int GetAttachmentBaseId()
+        => SessionSvc.GetActiveSession()?.BaseId ?? 0;
+
+    private string GetAttachmentScopeKey()
+        => ConversacionesSvc.GetAttachmentScopeKey();
 
     private string GetAttachmentDownloadName(ConversacionAdjuntoDto adjunto)
     {
+        if (!string.IsNullOrWhiteSpace(adjunto.NombreArchivo))
+            return SanitizeDownloadFileName(adjunto.NombreArchivo, "Attachment", GetAttachmentDownloadExtension(adjunto));
+
         var kind = GetAttachmentDownloadKind(adjunto);
         var extension = GetAttachmentDownloadExtension(adjunto);
         var index = _adjuntosPorMensaje.Values
@@ -6445,6 +7843,15 @@
             index = 1;
 
         return $"{kind} ({index}){extension}";
+    }
+
+    private static string SanitizeDownloadFileName(string fileName, string fallbackBase, string extension)
+    {
+        var normalized = string.IsNullOrWhiteSpace(fileName) ? $"{fallbackBase}{extension}" : Path.GetFileName(fileName.Trim());
+        foreach (var invalid in Path.GetInvalidFileNameChars())
+            normalized = normalized.Replace(invalid, '_');
+
+        return string.IsNullOrWhiteSpace(normalized) ? $"{fallbackBase}{extension}" : normalized;
     }
 
     private static string GetAttachmentDownloadKind(ConversacionAdjuntoDto adjunto)
@@ -6489,12 +7896,22 @@
             "video/mp4" => ".mp4",
             "video/webm" => ".webm",
             "application/pdf" => ".pdf",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" => ".xlsx",
+            "application/vnd.ms-excel" => ".xls",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => ".docx",
+            "application/msword" => ".doc",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation" => ".pptx",
+            "application/vnd.ms-powerpoint" => ".ppt",
+            "text/plain" => ".txt",
+            "text/csv" => ".csv",
+            "application/zip" => ".zip",
+            "application/x-rar-compressed" => ".rar",
             _ => string.Equals(adjunto.TipoArchivo, "AUDIO", StringComparison.OrdinalIgnoreCase) ? ".ogg" : ".bin"
         };
     }
 
-    private static string GetFavoriteStickerUrl(ConversacionStickerFavoritoDto sticker)
-        => $"/api/conversaciones/adjuntos/{sticker.IdAdjunto}";
+    private string GetFavoriteStickerUrl(ConversacionStickerFavoritoDto sticker)
+        => $"/api/conversaciones/adjuntos/{sticker.IdAdjunto}?idBase={GetAttachmentBaseId()}&base={Uri.EscapeDataString(GetAttachmentScopeKey())}";
 
     private static string GetAttachmentMime(ConversacionAdjuntoDto adjunto)
     {
@@ -6591,6 +8008,7 @@
 
     public async ValueTask DisposeAsync()
     {
+        Nav.LocationChanged -= OnLocationChanged;
         await ClearTypingAsync();
         CancelSearchDebounce();
         CancelContactSearch();
@@ -6709,6 +8127,36 @@
         List<ConversacionInboxItemDto> Inbox,
         long? SelectedConversationId);
 
+    private sealed class ParteHorasPromptVm
+    {
+        public long IdConversacion { get; init; }
+        public string ClienteCodigo { get; init; } = string.Empty;
+        public string ClienteNombre { get; init; } = string.Empty;
+        public int? IdContacto { get; init; }
+        public string TecnicoNombre { get; init; } = string.Empty;
+        public DateTime Inicio { get; init; }
+        public DateTime Fin { get; init; }
+        public int MinutosSugeridos { get; init; }
+    }
+
+    private sealed class ParteHoraConversacionLinea
+    {
+        public string IdTecnico { get; set; } = string.Empty;
+        public string TipoTrabajo { get; set; } = ParteHoraTipoTrabajoKeys.Soporte;
+        public string Descripcion { get; set; } = string.Empty;
+        public int Horas { get; set; }
+        public int Minutos { get; set; } = 1;
+        public int TotalMinutos => (Math.Max(0, Horas) * 60) + Math.Max(0, Minutos);
+    }
+
+    private enum ParteHoraTicketPanelMode
+    {
+        None,
+        Preview,
+        Edit,
+        Create
+    }
+
     private static class ContextNotesTabs
     {
         public const string Observaciones = "observaciones";
@@ -6770,3 +8218,4 @@
         public const string Notas = "notas";
     }
 }
+

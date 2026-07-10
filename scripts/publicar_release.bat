@@ -14,7 +14,16 @@ if exist ".\src\AlfaCore\obj" (
 if exist ".\src\AlfaCoreShell\obj" (
   powershell -NoProfile -ExecutionPolicy Bypass -Command "Remove-Item -Recurse -Force '.\src\AlfaCoreShell\obj' -ErrorAction SilentlyContinue"
 )
+if exist ".\src\AlfaCore\obj\Release\net8.0\apphost.exe" (
+  echo Advertencia: apphost.exe sigue presente despues de limpiar obj. Puede estar bloqueado por otro proceso.
+)
 echo Cerrando instancia anterior si existe...
+sc stop AlfaCore >nul 2>&1
+sc stop AlfaCoreShell >nul 2>&1
+timeout /t 2 /nobreak >nul
+taskkill /F /T /IM AlfaCore.exe >nul 2>&1
+taskkill /F /T /IM AlfaCoreShell.exe >nul 2>&1
+timeout /t 2 /nobreak >nul
 for /f "usebackq delims=" %%I in (`powershell -NoProfile -ExecutionPolicy Bypass -Command "$publishDir = (Resolve-Path '%PUBLISH_DIR_FULL%' -ErrorAction SilentlyContinue).Path; $releaseDir = (Resolve-Path '.\src\AlfaCore\bin\Release\net8.0' -ErrorAction SilentlyContinue).Path; $targets = @(); if ($publishDir) { $targets += (Join-Path $publishDir 'AlfaCore.exe') }; if ($releaseDir) { $targets += (Join-Path $releaseDir 'AlfaCore.exe') }; $p = Get-Process AlfaCore -ErrorAction SilentlyContinue | Where-Object { $_.Path -and ($targets -contains $_.Path) } | Select-Object -ExpandProperty Id; foreach ($id in $p) { Write-Output $id }" 2^>nul`) do (
   echo Deteniendo proceso backend PID %%I...
   powershell -NoProfile -ExecutionPolicy Bypass -Command "Stop-Process -Id %%I -Force"
@@ -24,6 +33,11 @@ for /f "usebackq delims=" %%I in (`powershell -NoProfile -ExecutionPolicy Bypass
   powershell -NoProfile -ExecutionPolicy Bypass -Command "Stop-Process -Id %%I -Force"
 )
 echo Publicando release en %PUBLISH_DIR% ...
+for %%I in (".\src\AlfaCore\bin\Release\net8.0\AlfaCore.exe" ".\publish\AlfaCoreLAN\AlfaCore.exe") do (
+  if exist %%~fI (
+    del /f /q "%%~fI" >nul 2>&1
+  )
+)
 dotnet publish .\src\AlfaCore\AlfaCore.csproj -c Release -o %PUBLISH_DIR%
 if errorlevel 1 goto :error
 dotnet publish .\src\AlfaCoreShell\AlfaCoreShell.csproj -c Release -o %PUBLISH_DIR%
@@ -31,7 +45,10 @@ if errorlevel 1 goto :error
 
 echo Copiando documentacion y scripts de servidor...
 copy /Y .\README_INSTALACION.md %PUBLISH_DIR%\README_INSTALACION.md >nul
-copy /Y .\src\AlfaCore\appsettings.Server.sample.json %PUBLISH_DIR%\appsettings.Server.sample.json >nul
+if exist "%PUBLISH_DIR%\appsettings.json" powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "$f = '%PUBLISH_DIR%\appsettings.json'; $j = Get-Content $f -Raw | ConvertFrom-Json; $j.ModoSaaS = $false; if ($j.ConnectionStrings) { $j.ConnectionStrings.PSObject.Properties.Remove('AlfaCentral') | Out-Null }; $j | ConvertTo-Json -Depth 10 | Set-Content $f -Encoding UTF8"
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "Get-ChildItem -LiteralPath '%PUBLISH_DIR%' -Filter 'appsettings*.json' -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -ne 'appsettings.json' } | Remove-Item -Force -ErrorAction SilentlyContinue"
 copy /Y .\scripts\Abrir-Firewall.ps1 %PUBLISH_DIR%\Abrir-Firewall.ps1 >nul
 copy /Y .\scripts\instalar_servicio.bat %PUBLISH_DIR%\instalar_servicio.bat >nul
 copy /Y .\scripts\desinstalar_servicio.bat %PUBLISH_DIR%\desinstalar_servicio.bat >nul
@@ -41,8 +58,7 @@ echo @echo off
 echo setlocal
 echo cd /d "%%~dp0"
 echo set "CONFIG_FILE="
-echo if exist "appsettings.Production.json" set "CONFIG_FILE=appsettings.Production.json"
-echo if not defined CONFIG_FILE if exist "appsettings.json" set "CONFIG_FILE=appsettings.json"
+echo if exist "appsettings.json" set "CONFIG_FILE=appsettings.json"
 echo set "PUERTO=5055"
 echo if defined CONFIG_FILE ^(
 echo   for /f "usebackq delims=" %%%%P in ^(`powershell -NoProfile -Command "$cfg = Get-Content '%%CD%%\%%CONFIG_FILE%%' -Raw ^| ConvertFrom-Json; if ($cfg.ServidorWeb.Puerto) { $cfg.ServidorWeb.Puerto } else { 5055 }"`^) do set "PUERTO=%%%%P"
@@ -54,7 +70,7 @@ echo echo Carpeta de trabajo: %%CD%%
 echo if defined CONFIG_FILE ^(
 echo   echo Configuracion detectada: %%CONFIG_FILE%%
 echo ^) else ^(
-echo   echo Configuracion detectada: no se encontro appsettings, se usaran valores por defecto.
+echo   echo Configuracion detectada: no se encontro appsettings.json, se usaran valores por defecto.
 echo ^)
 echo echo URL local esperada: %%URL_LOCAL%%
 echo echo Si la app escucha en LAN, otras PCs podran entrar por:
@@ -87,7 +103,7 @@ echo start "" "%%URL_LOCAL%%"
 echo pause
 echo :end
 echo endlocal
-) > %PUBLISH_DIR%\iniciar_dashboard.bat
+) > %PUBLISH_DIR%\iniciar_AlfaCore.bat
 
 (
 echo @echo off
@@ -110,5 +126,11 @@ goto :eof
 
 :error
 echo La publicacion fallo.
+if exist ".\src\AlfaCore\obj\Release\net8.0\apphost.exe" (
+  echo Posible causa: el archivo src\AlfaCore\obj\Release\net8.0\apphost.exe esta bloqueado.
+  echo Cierra Visual Studio, procesos dotnet o antivirus que lo esten usando y reintenta.
+)
+
 exit /b 1
 endlocal
+pause

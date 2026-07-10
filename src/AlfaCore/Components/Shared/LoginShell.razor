@@ -1,0 +1,17 @@
+<div class="@RootClass">
+    <aside class="@HeroClass">
+        @HeroContent
+    </aside>
+
+    <section class="@FormClass">
+        @FormContent
+    </section>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public RenderFragment HeroContent { get; set; } = default!;
+    [Parameter, EditorRequired] public RenderFragment FormContent { get; set; } = default!;
+    [Parameter] public string RootClass { get; set; } = "auth-shell";
+    [Parameter] public string HeroClass { get; set; } = "auth-hero";
+    [Parameter] public string FormClass { get; set; } = "auth-form-panel";
+}

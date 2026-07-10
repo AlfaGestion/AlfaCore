@@ -1,0 +1,76 @@
+@using Microsoft.AspNetCore.Components.Web
+
+<div class="@WrapperClass">
+    @if (!string.IsNullOrWhiteSpace(IconClass))
+    {
+        <span class="@IconWrapperClass" aria-hidden="true">
+            <i class="@IconClass"></i>
+        </span>
+    }
+
+    <input @ref="_inputRef"
+           id="@Id"
+           class="@InputClass"
+           type="@EffectiveInputType"
+           value="@Value"
+           @oninput="HandleInputAsync"
+           @onkeydown="HandleKeyDownAsync"
+           placeholder="@Placeholder"
+           disabled="@Disabled"
+           autocomplete="@Autocomplete"
+           inputmode="@InputMode"
+           @attributes="AdditionalAttributes" />
+
+    @if (ShowPasswordToggle)
+    {
+        <button type="button"
+                class="@PasswordToggleClass"
+                title="@PasswordToggleTitle"
+                aria-label="@PasswordToggleTitle"
+                @onclick="TogglePasswordAsync"
+                disabled="@Disabled">
+            <i class="@PasswordToggleIconClass"></i>
+        </button>
+    }
+</div>
+
+@code {
+    private ElementReference _inputRef;
+
+    [Parameter] public string Id { get; set; } = string.Empty;
+    [Parameter] public string Value { get; set; } = string.Empty;
+    [Parameter] public EventCallback<string> ValueChanged { get; set; }
+    [Parameter] public string Placeholder { get; set; } = string.Empty;
+    [Parameter] public string InputClass { get; set; } = "auth-input-shell__input";
+    [Parameter] public string WrapperClass { get; set; } = "auth-input-shell";
+    [Parameter] public string IconWrapperClass { get; set; } = "auth-input-shell__icon";
+    [Parameter] public string? IconClass { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public string Autocomplete { get; set; } = string.Empty;
+    [Parameter] public string InputMode { get; set; } = string.Empty;
+    [Parameter] public string InputType { get; set; } = "text";
+    [Parameter] public bool ShowPasswordToggle { get; set; }
+    [Parameter] public bool ShowPassword { get; set; }
+    [Parameter] public EventCallback<bool> ShowPasswordChanged { get; set; }
+    [Parameter] public string PasswordToggleClass { get; set; } = "auth-password__toggle";
+    [Parameter] public string PasswordToggleIconClass { get; set; } = "bi bi-eye";
+    [Parameter] public string PasswordToggleTitle { get; set; } = "Mostrar contraseÃ±a";
+    [Parameter] public EventCallback<KeyboardEventArgs> OnKeyDown { get; set; }
+    [Parameter(CaptureUnmatchedValues = true)] public IReadOnlyDictionary<string, object>? AdditionalAttributes { get; set; }
+
+    private string EffectiveInputType => ShowPasswordToggle ? (ShowPassword ? "text" : "password") : InputType;
+
+    public ValueTask FocusAsync(bool preventScroll = false) => _inputRef.FocusAsync(preventScroll);
+
+    private async Task HandleInputAsync(ChangeEventArgs args)
+        => await ValueChanged.InvokeAsync(args.Value?.ToString() ?? string.Empty);
+
+    private async Task HandleKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (OnKeyDown.HasDelegate)
+            await OnKeyDown.InvokeAsync(args);
+    }
+
+    private async Task TogglePasswordAsync()
+        => await ShowPasswordChanged.InvokeAsync(!ShowPassword);
+}

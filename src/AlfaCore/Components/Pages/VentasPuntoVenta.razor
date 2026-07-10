@@ -1,12 +1,18 @@
-@page "/ventas/punto-venta"
+﻿@page "/ventas/punto-venta"
+@page "/{idweb}/{idbase:int}/ventas/punto-venta"
 @inject AlfaCore.Services.IPuntoVentaService PuntoVentaSvc
+@inject AlfaCore.Services.IPuntoVentaCartStateService CartState
+@inject AlfaCore.Services.IRouteContextService RouteCtx
 @inject IJSRuntime Js
 
 <PageTitle>Punto de Venta | Ventas</PageTitle>
 
 <style>
     .pos-shell {
-        min-height: 100dvh;
+        height: 100dvh;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
         margin: 0;
         background: linear-gradient(180deg, #eef1f6 0%, #e4e8ef 100%);
         color: #1f2d3d;
@@ -132,7 +138,8 @@
     .pos-stage {
         display: grid;
         grid-template-columns: 38rem minmax(0, 1fr);
-        min-height: calc(100dvh - 5.4rem);
+        flex: 1 1 auto;
+        min-height: 0;
     }
 
     .pos-sidebar {
@@ -274,8 +281,7 @@
         border-radius: 999px;
         background: #ffffff;
         color: #5c94cf;
-        font-size: 2.6rem;
-        font-weight: 900;
+        font-size: 2.4rem;
     }
 
     .pos-charge__label {
@@ -317,8 +323,8 @@
     }
 
     .pos-catalog {
-        display: grid;
-        grid-template-rows: auto auto minmax(0, 1fr);
+        display: flex;
+        flex-direction: column;
         min-width: 0;
         min-height: 0;
     }
@@ -548,6 +554,15 @@
         font-size: 1.45rem;
     }
 
+    .pos-topbar__version {
+        font-size: 0.72rem;
+        font-weight: 400;
+        opacity: 0.55;
+        vertical-align: middle;
+        margin-left: 0.35rem;
+        letter-spacing: 0.02em;
+    }
+
     .pos-topbar__ghost,
     .pos-topbar__cart-link {
         min-height: 2.65rem;
@@ -566,8 +581,8 @@
 
     .pos-stage {
         grid-template-columns: 24.25rem minmax(0, 1fr);
-        min-height: calc(100dvh - 4.4rem);
-        height: calc(100dvh - 4.4rem);
+        flex: 1 1 auto;
+        min-height: 0;
         overflow: hidden;
     }
 
@@ -653,7 +668,6 @@
         padding: 0;
     }
 
-    .pos-sidebar__notes,
     .pos-context-pill {
         display: none;
     }
@@ -757,7 +771,8 @@
     }
 
     .pos-catalog {
-        height: 100%;
+        flex: 1 1 auto;
+        min-height: 0;
         overflow: hidden;
     }
 
@@ -799,7 +814,9 @@
         gap: 0.55rem;
         padding: 0.75rem;
         background: transparent;
-        height: 100%;
+        flex: 1 1 auto;
+        min-height: 0;
+        height: auto;
         overflow-y: auto;
         overflow-x: hidden;
     }
@@ -1170,6 +1187,203 @@
         border: 1px solid var(--color-border);
         background: var(--color-panel-strong);
         box-shadow: 0 28px 60px rgba(0, 0, 0, 0.38);
+    }
+
+    .pos-panel-modal--narrow {
+        width: min(480px, calc(100vw - 2rem));
+    }
+
+    .pos-panel-modal--wide {
+        width: min(860px, calc(100vw - 2rem));
+        max-height: calc(100dvh - 4rem);
+        overflow-y: auto;
+    }
+
+    /* ── Ingresos/Egresos ───────────────────────────── */
+    .pos-cashinout__body {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+    }
+
+    .pos-cashinout__type-row {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .pos-cashinout__type-btn {
+        padding: 0.5rem 1.2rem;
+        border-radius: 8px;
+        border: 1px solid var(--color-border);
+        background: transparent;
+        color: var(--color-text);
+        font-size: 0.9rem;
+        cursor: pointer;
+        transition: background 0.15s, color 0.15s;
+    }
+
+    .pos-cashinout__type-btn--active {
+        background: var(--color-primary);
+        color: #fff;
+        border-color: var(--color-primary);
+    }
+
+    .pos-cashinout__amount-wrap {
+        display: flex;
+        align-items: center;
+        flex: 1;
+        border: 1px solid var(--color-border);
+        border-radius: 8px;
+        overflow: hidden;
+        background: var(--color-panel);
+    }
+
+    .pos-cashinout__currency {
+        padding: 0 0.6rem;
+        color: var(--color-muted);
+        font-size: 0.9rem;
+        user-select: none;
+    }
+
+    .pos-cashinout__currency-end {
+        padding: 0 0.6rem;
+        color: var(--color-muted);
+        font-size: 0.9rem;
+        background: var(--color-panel);
+        border-left: 1px solid var(--color-border);
+        user-select: none;
+    }
+
+    .pos-cashinout__amount {
+        flex: 1;
+        border: none;
+        background: transparent;
+        color: var(--color-text);
+        font-size: 1rem;
+        padding: 0.45rem 0.25rem;
+        outline: none;
+        text-align: right;
+    }
+
+    .pos-cashinout__field {
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+    }
+
+    .pos-cashinout__label {
+        font-size: 0.8rem;
+        color: var(--color-muted);
+    }
+
+    .pos-cashinout__select {
+        width: 100%;
+        padding: 0.5rem 0.75rem;
+        border-radius: 8px;
+        border: 1px solid var(--color-border);
+        background: var(--color-panel);
+        color: var(--color-text);
+        font-size: 0.9rem;
+        outline: none;
+    }
+
+    .pos-cashinout__textarea {
+        width: 100%;
+        padding: 0.5rem 0.75rem;
+        border-radius: 8px;
+        border: 1px solid var(--color-border);
+        background: var(--color-panel);
+        color: var(--color-text);
+        font-size: 0.9rem;
+        resize: vertical;
+        outline: none;
+        font-family: inherit;
+        box-sizing: border-box;
+    }
+
+    .pos-cashinout__loading {
+        color: var(--color-muted);
+        font-size: 0.85rem;
+    }
+
+    .pos-cashinout__feedback {
+        padding: 0.55rem 0.9rem;
+        border-radius: 8px;
+        font-size: 0.88rem;
+    }
+
+    .pos-cashinout__feedback--ok {
+        color: #166534;
+        background: rgba(22, 101, 52, 0.07);
+        border: 1px solid rgba(22, 101, 52, 0.18);
+    }
+
+    .pos-cashinout__feedback--error {
+        color: #991b1b;
+        background: rgba(220, 38, 38, 0.06);
+        border: 1px solid rgba(220, 38, 38, 0.18);
+    }
+
+    /* ── Detalle de caja ────────────────────────────── */
+    .pos-cashdetail__tables {
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+        padding: 0 0.25rem;
+    }
+
+    .pos-cashdetail__section-title {
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: var(--color-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin: 0 0 0.5rem 0;
+    }
+
+    .pos-cashdetail__table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.83rem;
+    }
+
+    .pos-cashdetail__table th {
+        text-align: left;
+        padding: 0.4rem 0.6rem;
+        border-bottom: 1px solid var(--color-border);
+        color: var(--color-muted);
+        font-weight: 600;
+        font-size: 0.78rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+    }
+
+    .pos-cashdetail__table td {
+        padding: 0.4rem 0.6rem;
+        border-bottom: 1px solid rgba(var(--color-border-rgb, 100 116 139), 0.15);
+        color: var(--color-text);
+        vertical-align: top;
+    }
+
+    .pos-cashdetail__table tfoot td {
+        border-top: 1px solid var(--color-border);
+        border-bottom: none;
+        font-weight: 600;
+    }
+
+    .pos-cashdetail__num {
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .pos-cashdetail__total-label {
+        color: var(--color-muted);
+        font-size: 0.8rem;
+    }
+
+    .pos-cashdetail__total {
+        color: var(--color-text);
     }
 
     .pos-panel-modal__grid {
@@ -1548,20 +1762,20 @@
 
     .pos-product {
         gap: 0;
-        grid-template-rows: 112px 46px;
-        min-height: 158px;
+        grid-template-rows: 108px 58px;
+        min-height: 166px;
     }
 
     .pos-product__text {
-        min-height: 46px;
+        min-height: 58px;
         align-content: start;
-        padding: 0.45rem 0.72rem 0.5rem;
+        padding: 0.4rem 0.72rem 0.45rem;
     }
 
     .pos-product__text strong {
         display: -webkit-box;
         overflow: hidden;
-        -webkit-line-clamp: 2;
+        -webkit-line-clamp: 3;
         -webkit-box-orient: vertical;
         font-size: 0.8rem;
         line-height: 1.18;
@@ -1938,6 +2152,80 @@
             font-size: 1.5rem;
         }
     }
+
+    /* === Tema claro: overrides para valores hardcodeados en oscuro === */
+    html[data-theme="light"] .pos-topbar {
+        background: var(--color-panel-strong);
+        box-shadow: 0 1px 0 var(--color-border);
+    }
+
+    html[data-theme="light"] .pos-catalog__toolbar,
+    html[data-theme="light"] .pos-catalog__meta {
+        background: var(--color-panel);
+        border-bottom: 1px solid var(--color-border);
+    }
+
+    html[data-theme="light"] .pos-sidebar__checkout {
+        background: var(--color-panel);
+        border-top: 1px solid var(--color-border);
+    }
+
+    html[data-theme="light"] .pos-sidebar__empty {
+        background: rgba(100, 116, 139, 0.05);
+    }
+
+    html[data-theme="light"] .pos-charge__icon {
+        background: var(--color-primary);
+        color: #ffffff;
+    }
+
+    html[data-theme="light"] .pos-item-modal__danger {
+        color: #dc2626;
+        background: rgba(220, 38, 38, 0.06);
+        border-color: rgba(220, 38, 38, 0.18);
+    }
+
+    html[data-theme="light"] .pos-sidebar__danger,
+    html[data-theme="light"] .pos-sidebar__cash-actions .pos-sidebar__danger {
+        color: #dc2626;
+        border-color: rgba(220, 38, 38, 0.2);
+        background: rgba(220, 38, 38, 0.04);
+    }
+
+    html[data-theme="light"] .pos-settings-modal__section {
+        background: rgba(100, 116, 139, 0.05);
+    }
+
+    html[data-theme="light"] .pos-settings-modal__feedback {
+        color: #166534;
+    }
+
+    html[data-theme="light"] .pos-settings-modal__feedback--error,
+    html[data-theme="light"] .pos-charge-modal__feedback--error,
+    html[data-theme="light"] .pos-receipt-modal__mail-feedback--error {
+        color: #991b1b;
+    }
+
+    html[data-theme="light"] .pos-charge-modal__feedback {
+        color: #166534;
+    }
+
+    html[data-theme="light"] .pos-success-banner {
+        color: #166534;
+    }
+
+    html[data-theme="light"] .pos-success-banner button {
+        color: #166534;
+        border-color: rgba(22, 101, 52, 0.2);
+    }
+
+    html[data-theme="light"] .pos-receipt-modal {
+        background: var(--color-panel-strong);
+    }
+
+    html[data-theme="light"] .pos-receipt-modal__mail-feedback--ok {
+        color: #166534;
+    }
 </style>
 
 <script>
@@ -1947,6 +2235,23 @@
             frame.contentWindow.focus();
             frame.contentWindow.print();
         }
+    };
+
+    window.alfaPosPrintHtml = function (frameId, html) {
+        const frame = document.getElementById(frameId);
+        if (!frame || !frame.contentWindow) {
+            return;
+        }
+
+        const doc = frame.contentWindow.document;
+        doc.open();
+        doc.write(html || "");
+        doc.close();
+
+        window.setTimeout(() => {
+            frame.contentWindow.focus();
+            frame.contentWindow.print();
+        }, 180);
     };
 
     window.alfaPosCatalogNearBottom = function (element) {
@@ -1978,7 +2283,7 @@
                 <div class="pos-topbar__logo">PV</div>
                 <div>
                     <div class="pos-topbar__eyebrow">Alfa Gestion</div>
-                    <h1>Punto de Venta</h1>
+                    <h1>Punto de Venta <span class="pos-topbar__version">v2026.06.30.05</span></h1>
                 </div>
             </div>
 
@@ -1999,11 +2304,11 @@
                                     Configuración
                                 </button>
                             }
-                            <button type="button" class="pos-topbar__menu-item" @onclick="OpenCashDetailModal">
+                            <button type="button" class="pos-topbar__menu-item" @onclick="OpenCashDetailModalAsync">
                                 <i class="bi bi-journal-text"></i>
                                 Detalle de caja
                             </button>
-                            <button type="button" class="pos-topbar__menu-item" @onclick="OpenCashDetailModal">
+                            <button type="button" class="pos-topbar__menu-item" @onclick="OpenCashInOutModalAsync">
                                 <i class="bi bi-cash-stack"></i>
                                 Ingresos/Egresos de caja
                             </button>
@@ -2015,7 +2320,7 @@
                                 <i class="bi bi-printer"></i>
                                 Reimprimir comprobantes
                             </button>
-                            <a class="pos-topbar__menu-link" href="/">
+                            <a class="pos-topbar__menu-link" href="@RouteCtx.BuildRoute("/")">
                                 <i class="bi bi-box-arrow-left"></i>
                                 Salir
                             </a>
@@ -2023,11 +2328,6 @@
                     }
                 </div>
 
-                <button type="button" class="pos-topbar__cart-link">
-                    <span class="pos-topbar__cart-count">@_cartItems.Count</span>
-                    Ver carrito
-                    <strong>@FmtMoney(TotalCarrito)</strong>
-                </button>
             </div>
         </header>
 
@@ -2036,7 +2336,7 @@
             <section class="pos-loading" style="padding-top:0.75rem;">
                 <div class="pos-charge-modal__feedback pos-success-banner">
                     <span>@_chargeSuccess</span>
-                    <button type="button" @onclick="DismissChargeSuccess">X</button>
+                    <button type="button" @onclick="DismissChargeSuccess"><i class="bi bi-x-lg"></i></button>
                 </div>
             </section>
         }
@@ -2068,19 +2368,47 @@
 
                 <div class="pos-sidebar__checkout">
                     <div class="pos-sidebar__notes">
-                        <input class="pos-sidebar__scan" placeholder="Codigo rapido o scanner" />
+                        <div class="pos-sidebar__scan-wrap">
+                            <i class="bi bi-upc-scan pos-sidebar__scan-icon"></i>
+                            <input class="pos-sidebar__scan"
+                                   placeholder="Código o código de barras"
+                                   @ref="_scanInputRef"
+                                   @bind="_scanCode"
+                                   @bind:event="oninput"
+                                   @onkeydown="HandleScanKeyAsync"
+                                   disabled="@_scanLoading"
+                                   autocomplete="off" />
+                        </div>
+                        @if (!string.IsNullOrEmpty(_scanError))
+                        {
+                            <span class="pos-sidebar__scan-error">@_scanError</span>
+                        }
                     </div>
 
                     <div class="pos-sidebar__client">
-                        <button type="button" class="pos-sidebar__client-btn">
+                        <button type="button" class="pos-sidebar__client-btn" @onclick="() => _showClienteModal = true">
                             <i class="bi bi-person-circle"></i>
-                            Cliente
+                            @if (!string.IsNullOrEmpty(_cuentaClienteNombre))
+                            {
+                                <span class="pos-sidebar__client-name">@_cuentaClienteNombre</span>
+                            }
+                            else
+                            {
+                                <span>Consumidor final</span>
+                            }
                         </button>
+                        @if (!string.IsNullOrEmpty(_cuentaCliente))
+                        {
+                            <button type="button" class="pos-sidebar__client-clear" title="Quitar cliente"
+                                    @onclick="LimpiarCliente" @onclick:stopPropagation>
+                                <i class="bi bi-x"></i>
+                            </button>
+                        }
                     </div>
 
                     <div class="pos-sidebar__footer">
                         <button type="button" class="pos-charge" @onclick="OpenChargeModalAsync" disabled="@(!_cartItems.Any())">
-                            <span class="pos-charge__icon">$</span>
+                            <i class="bi bi-cash-stack pos-charge__icon"></i>
                             <span class="pos-charge__label">Cobrar</span>
                         </button>
 
@@ -2106,7 +2434,6 @@
                     </div>
 
                     <div class="pos-catalog__search">
-                        <input class="pos-sidebar__scan" placeholder="Codigo rapido o scanner" />
                         <InputText @bind-Value="_filters.Texto" class="pos-search-input" placeholder="Buscar articulos..." />
                         <button type="button" class="pos-search-btn" @onclick="BuscarArticulosAsync" disabled="@_catalogLoading">
                             @( _catalogLoading ? "Buscando..." : "Buscar" )
@@ -2239,7 +2566,7 @@
                 <h3>Cobranza</h3>
                 <p>Registrá los medios de pago y confirmá la venta actual sin salir del facturador.</p>
             </div>
-            <button type="button" class="pos-charge-modal__close" @onclick="CloseChargeModal">X</button>
+            <button type="button" class="pos-charge-modal__close" @onclick="CloseChargeModal"><i class="bi bi-x-lg"></i></button>
         </div>
 
         @if (!string.IsNullOrWhiteSpace(_chargeError))
@@ -2314,7 +2641,7 @@
                                     <span>@line.CodigoMedioPago</span>
                                 </div>
                                 <strong>@FmtMoney(line.Importe)</strong>
-                                <button type="button" @onclick="() => RemovePaymentLine(line)" @onclick:stopPropagation="true" @onclick:preventDefault="true">X</button>
+                                <button type="button" @onclick="() => RemovePaymentLine(line)" @onclick:stopPropagation="true" @onclick:preventDefault="true"><i class="bi bi-x-lg"></i></button>
                             </div>
                         }
                     </div>
@@ -2485,7 +2812,7 @@
                     </div>
                 </div>
             </div>
-            <iframe id="pos-receipt-frame" class="pos-receipt-modal__frame pos-receipt-modal__frame--hidden" src="@BuildReceiptPreviewUrl()"></iframe>
+            <iframe id="pos-receipt-frame" class="pos-receipt-modal__frame pos-receipt-modal__frame--hidden" title="Impresión ticket POS"></iframe>
         </section>
     </section>
 }
@@ -2651,36 +2978,242 @@
     </section>
 }
 
+@if (_showCashInOutModal)
+{
+    <button type="button" class="pos-item-modal-backdrop" aria-label="Cerrar ingreso/egreso" @onclick="CloseCashInOutModal"></button>
+    <section class="pos-panel-modal pos-panel-modal--narrow" aria-label="Ingresos/Egresos de caja">
+        <div class="pos-settings-modal__header">
+            <div>
+                <h3>Ingresos/Egresos</h3>
+            </div>
+            <button type="button" class="pos-settings-modal__close" @onclick="CloseCashInOutModal">X</button>
+        </div>
+
+        <div class="pos-cashinout__body">
+            <div class="pos-cashinout__type-row">
+                <button type="button"
+                        class="@(_cashInOutTipo == "I" ? "pos-cashinout__type-btn pos-cashinout__type-btn--active" : "pos-cashinout__type-btn")"
+                        @onclick='() => _cashInOutTipo = "I"'>
+                    Ingreso
+                </button>
+                <button type="button"
+                        class="@(_cashInOutTipo == "E" ? "pos-cashinout__type-btn pos-cashinout__type-btn--active" : "pos-cashinout__type-btn")"
+                        @onclick='() => _cashInOutTipo = "E"'>
+                    Egreso
+                </button>
+                <div class="pos-cashinout__amount-wrap">
+                    <span class="pos-cashinout__currency">$</span>
+                    <input type="number"
+                           class="pos-cashinout__amount"
+                           min="0.01"
+                           step="0.01"
+                           placeholder="00.00"
+                           @bind="_cashInOutImporte"
+                           @bind:event="oninput" />
+                    <span class="pos-cashinout__currency-end">$</span>
+                </div>
+            </div>
+
+            <div class="pos-cashinout__field">
+                <label class="pos-cashinout__label">Imputación</label>
+                @if (_cashInOutCuentasLoading)
+                {
+                    <div class="pos-cashinout__loading">Cargando cuentas...</div>
+                }
+                else
+                {
+                    <select class="pos-cashinout__select" @bind="_cashInOutCuenta">
+                        <option value="">— Seleccionar —</option>
+                        @foreach (var c in _cashInOutCuentas)
+                        {
+                            <option value="@c.Codigo">@c.Descripcion</option>
+                        }
+                    </select>
+                }
+            </div>
+
+            <div class="pos-cashinout__field">
+                <label class="pos-cashinout__label">Motivo</label>
+                <textarea class="pos-cashinout__textarea" rows="3" placeholder="Motivo (opcional)" @bind="_cashInOutDetalle"></textarea>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(_cashInOutFeedback))
+            {
+                <div class="pos-cashinout__feedback @(_cashInOutOk ? "pos-cashinout__feedback--ok" : "pos-cashinout__feedback--error")">
+                    @_cashInOutFeedback
+                </div>
+            }
+        </div>
+
+        <div class="pos-settings-modal__actions">
+            <button type="button"
+                    class="pos-charge-modal__confirm"
+                    disabled="@(_cashInOutSaving || _cashInOutCuentasLoading)"
+                    @onclick="ConfirmarMovimientoCajaAsync">
+                @if (_cashInOutSaving)
+                {
+                    <span>Guardando...</span>
+                }
+                else
+                {
+                    <span>Confirmar</span>
+                }
+            </button>
+            <button type="button" class="pos-settings-modal__ghost" @onclick="CloseCashInOutModal">Cerrar</button>
+        </div>
+    </section>
+}
+
 @if (_showCashDetailModal)
 {
     <button type="button" class="pos-item-modal-backdrop" aria-label="Cerrar detalle de caja" @onclick="CloseCashDetailModal"></button>
-    <section class="pos-panel-modal" aria-label="Detalle de caja">
+    <section class="pos-panel-modal pos-panel-modal--wide" aria-label="Detalle de caja">
         <div class="pos-settings-modal__header">
             <div>
                 <h3>Detalle de caja</h3>
-                <p>Vista operativa inicial del contexto de caja del POS.</p>
+                <p>Movimientos del día — @DateTime.Today.ToString("dd/MM/yyyy")</p>
             </div>
             <button type="button" class="pos-settings-modal__close" @onclick="CloseCashDetailModal">X</button>
         </div>
 
-        <div class="pos-panel-modal__grid">
-            <div class="pos-settings-modal__field">
-                <label>Base activa</label>
-                <div class="pos-settings-modal__readonly">@(_context?.SesionSqlActiva ?? "-")</div>
+        @if (_cashDetailLoading)
+        {
+            <div class="pos-cashinout__loading" style="padding: 2rem 1.5rem;">Cargando movimientos...</div>
+        }
+        else
+        {
+            @if (_cashDetailConsolidado.Count > 0)
+            {
+                <div class="pos-cashdetail__section">
+                    <h4 class="pos-cashdetail__section-title">Saldo consolidado por cuenta</h4>
+                    <table class="pos-cashdetail__table">
+                        <thead>
+                            <tr>
+                                <th>Caja</th>
+                                <th>Cuenta</th>
+                                <th>Descripción</th>
+                                <th class="pos-cashdetail__num">Ingresos +</th>
+                                <th class="pos-cashdetail__num">Egresos -</th>
+                                <th class="pos-cashdetail__num">Saldo</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var c in _cashDetailConsolidado)
+                            {
+                                <tr>
+                                    <td>@c.IdCajas.Trim()</td>
+                                    <td>@c.Cuenta</td>
+                                    <td>@c.Descripcion</td>
+                                    <td class="pos-cashdetail__num">@FmtMoney(c.Ingresos)</td>
+                                    <td class="pos-cashdetail__num">@FmtMoney(c.Egresos)</td>
+                                    <td class="pos-cashdetail__num pos-cashdetail__total">@FmtMoney(c.Saldo)</td>
+                                </tr>
+                            }
+                        </tbody>
+                        <tfoot>
+                            <tr>
+                                <td colspan="3" class="pos-cashdetail__total-label">Totales</td>
+                                <td class="pos-cashdetail__num pos-cashdetail__total">@FmtMoney(_cashDetailConsolidado.Sum(c => c.Ingresos))</td>
+                                <td class="pos-cashdetail__num pos-cashdetail__total">@FmtMoney(_cashDetailConsolidado.Sum(c => c.Egresos))</td>
+                                <td class="pos-cashdetail__num pos-cashdetail__total">@FmtMoney(_cashDetailConsolidado.Sum(c => c.Saldo))</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            }
+
+            @if (_cashDetailMovimientos.Count == 0 && _cashDetailConsolidado.Count == 0)
+            {
+                <div class="pos-cashinout__loading" style="padding: 1rem 0; color: var(--color-muted);">
+                    No hay movimientos de caja registrados hoy.
+                </div>
+            }
+
+            @if (_cashDetailMovimientos.Count > 0)
+            {
+            var ingresos = _cashDetailMovimientos.Where(m => m.TipoMovimiento == "I").ToList();
+            var egresos  = _cashDetailMovimientos.Where(m => m.TipoMovimiento == "E").ToList();
+
+            <div class="pos-cashdetail__tables">
+                @if (ingresos.Any())
+                {
+                    <div class="pos-cashdetail__section">
+                        <h4 class="pos-cashdetail__section-title">Ingresos</h4>
+                        <table class="pos-cashdetail__table">
+                            <thead>
+                                <tr>
+                                    <th>Cuenta</th>
+                                    <th>Descripción</th>
+                                    <th>Detalle</th>
+                                    <th>Hora</th>
+                                    <th class="pos-cashdetail__num">Importe</th>
+                                    <th>Usuario</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var m in ingresos)
+                                {
+                                    <tr>
+                                        <td>@m.Cuenta</td>
+                                        <td>@m.Descripcion</td>
+                                        <td>@m.Detalle</td>
+                                        <td>@m.Fecha.ToString("HH:mm")</td>
+                                        <td class="pos-cashdetail__num">@FmtMoney(m.Importe)</td>
+                                        <td>@m.Usuario</td>
+                                    </tr>
+                                }
+                            </tbody>
+                            <tfoot>
+                                <tr>
+                                    <td colspan="4" class="pos-cashdetail__total-label">Total ingresos</td>
+                                    <td class="pos-cashdetail__num pos-cashdetail__total">@FmtMoney(ingresos.Sum(m => m.Importe))</td>
+                                    <td></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                }
+                @if (egresos.Any())
+                {
+                    <div class="pos-cashdetail__section">
+                        <h4 class="pos-cashdetail__section-title">Egresos</h4>
+                        <table class="pos-cashdetail__table">
+                            <thead>
+                                <tr>
+                                    <th>Cuenta</th>
+                                    <th>Descripción</th>
+                                    <th>Detalle</th>
+                                    <th>Hora</th>
+                                    <th class="pos-cashdetail__num">Importe</th>
+                                    <th>Usuario</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var m in egresos)
+                                {
+                                    <tr>
+                                        <td>@m.Cuenta</td>
+                                        <td>@m.Descripcion</td>
+                                        <td>@m.Detalle</td>
+                                        <td>@m.Fecha.ToString("HH:mm")</td>
+                                        <td class="pos-cashdetail__num">@FmtMoney(m.Importe)</td>
+                                        <td>@m.Usuario</td>
+                                    </tr>
+                                }
+                            </tbody>
+                            <tfoot>
+                                <tr>
+                                    <td colspan="4" class="pos-cashdetail__total-label">Total egresos</td>
+                                    <td class="pos-cashdetail__num pos-cashdetail__total">@FmtMoney(egresos.Sum(m => m.Importe))</td>
+                                    <td></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                }
             </div>
-            <div class="pos-settings-modal__field">
-                <label>Usuario</label>
-                <div class="pos-settings-modal__readonly">@(_context?.UsuarioActual ?? "-")</div>
-            </div>
-            <div class="pos-settings-modal__field">
-                <label>Caja</label>
-                <div class="pos-settings-modal__readonly">@(_context?.CajaActual ?? "-")</div>
-            </div>
-            <div class="pos-settings-modal__field">
-                <label>Total carrito</label>
-                <div class="pos-settings-modal__readonly">@FmtMoney(TotalCarrito)</div>
-            </div>
-        </div>
+            }
+        }
 
         <div class="pos-settings-modal__actions">
             <button type="button" class="pos-settings-modal__ghost" @onclick="CloseCashDetailModal">Cerrar</button>
@@ -2723,16 +3256,23 @@
     </section>
 }
 
+<QuickClienteModal Open="_showClienteModal"
+                   OnClienteSelected="OnClienteSeleccionado"
+                   OnClose="() => _showClienteModal = false"
+                   CuentaEventualCodigo="@(_settings.CuentaConsumidorFinal)" />
+
 @code {
     private PuntoVentaContextDto? _context;
     private IReadOnlyList<PuntoVentaFamilyDto> _familias = [];
     private PuntoVentaCatalogDto _catalog = new();
     private PuntoVentaCatalogFiltersDto _filters = new();
     private IReadOnlyList<PuntoVentaReceiptListItemDto> _recentReceipts = [];
-    private readonly List<PuntoVentaCartItemDto> _cartItems = [];
-    private readonly List<PuntoVentaPaymentLineDto> _paymentLines = [];
+    private List<PuntoVentaCartItemDto> _cartItems => CartState.CartItems;
+    private List<PuntoVentaPaymentLineDto> _paymentLines => CartState.PaymentLines;
     private readonly HashSet<string> _imageFallbacks = new(StringComparer.OrdinalIgnoreCase);
     private ElementReference _catalogGridRef;
+    private ElementReference _scanInputRef;
+    private bool _needScanFocus = true;
     private IReadOnlyList<PuntoVentaPaymentMethodDto> _paymentMethods = [];
     private PuntoVentaSettingsDto _settings = new();
     private PuntoVentaSaleResultDto? _lastSaleResult;
@@ -2750,6 +3290,23 @@
     private bool _showPosMenu;
     private bool _showSettingsModal;
     private bool _showCashDetailModal;
+    private bool _showCashInOutModal;
+
+    // Ingreso/Egreso
+    private string _cashInOutTipo = "I";
+    private decimal _cashInOutImporte;
+    private string _cashInOutCuenta = string.Empty;
+    private string _cashInOutDetalle = string.Empty;
+    private bool _cashInOutSaving;
+    private bool _cashInOutCuentasLoading;
+    private string _cashInOutFeedback = string.Empty;
+    private bool _cashInOutOk;
+    private IReadOnlyList<PuntoVentaCuentaImputacionDto> _cashInOutCuentas = [];
+
+    // Detalle de caja
+    private bool _cashDetailLoading;
+    private IReadOnlyList<PuntoVentaMovimientoCajaDetalleDto> _cashDetailMovimientos = [];
+    private IReadOnlyList<PuntoVentaConsolidadoCajaDto> _cashDetailConsolidado = [];
     private bool _showChargeModal;
     private bool _showReceiptModal;
     private bool _showReprintModal;
@@ -2761,6 +3318,12 @@
     private bool _reprintLoading;
     private bool _receiptIsReprint;
     private string? _selectedCartItemId;
+    private string _scanCode = string.Empty;
+    private string _scanError = string.Empty;
+    private bool _scanLoading;
+    private string _cuentaCliente = string.Empty;
+    private string _cuentaClienteNombre = string.Empty;
+    private bool _showClienteModal;
     private string _chargeAmountInput = string.Empty;
     private string _selectedPaymentCode = string.Empty;
     private string _receiptEmail = string.Empty;
@@ -2792,6 +3355,20 @@
         {
             _loading = false;
         }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_needScanFocus && _context is not null && !_loading && !_scanLoading)
+        {
+            _needScanFocus = false;
+            await FocusScanAsync();
+        }
+    }
+
+    private async Task FocusScanAsync()
+    {
+        try { await _scanInputRef.FocusAsync(); } catch { }
     }
 
     private async Task BuscarArticulosAsync()
@@ -2873,13 +3450,13 @@
             Pagina = pagina
         };
 
-    private void AddToCart(PuntoVentaArticleDto article)
+    private void AddToCart(PuntoVentaArticleDto article, decimal cantidad = 1m)
     {
         _chargeSuccess = null;
         var existing = _cartItems.FirstOrDefault(x => x.IdArticulo == article.IdArticulo);
         if (existing is not null)
         {
-            existing.Cantidad += 1m;
+            existing.Cantidad += cantidad;
             return;
         }
 
@@ -2889,7 +3466,7 @@
             Descripcion = article.Descripcion,
             Presentacion = article.Presentacion,
             PrecioUnitario = article.PrecioUnitario,
-            Cantidad = 1m,
+            Cantidad = cantidad,
             TasaIva = article.TasaIva,
             Exento = article.Exento,
             Familia = article.Familia
@@ -2918,7 +3495,10 @@
         => _selectedCartItemId = idArticulo;
 
     private void CloseCartItemModal()
-        => _selectedCartItemId = null;
+    {
+        _selectedCartItemId = null;
+        _needScanFocus = true;
+    }
 
     private void ChangeQtyAndRefreshModal(string idArticulo, decimal delta)
     {
@@ -2938,6 +3518,78 @@
         _cartItems.Clear();
         _paymentLines.Clear();
         _chargeSuccess = null;
+    }
+
+    private async Task HandleScanKeyAsync(KeyboardEventArgs e)
+    {
+        if (e.Key != "Enter") return;
+        var raw = _scanCode.Trim();
+        if (raw.Length == 0) return;
+
+        // Soporte formato "cantidad*codigo", ej: 3*7791728001723 o -3*7791728001723 (devolucion)
+        decimal cantidad = 1m;
+        string codigo;
+        var starIdx = raw.IndexOf('*');
+        if (starIdx > 0 && starIdx < raw.Length - 1)
+        {
+            var cantPart = raw[..starIdx].Trim();
+            var codPart  = raw[(starIdx + 1)..].Trim().ToUpperInvariant();
+            if (decimal.TryParse(cantPart, System.Globalization.NumberStyles.Any,
+                                 System.Globalization.CultureInfo.InvariantCulture, out var parsedCant)
+                && parsedCant != 0m && codPart.Length > 0)
+            {
+                cantidad = parsedCant;
+                codigo   = codPart;
+            }
+            else
+            {
+                codigo = raw.ToUpperInvariant();
+            }
+        }
+        else
+        {
+            codigo = raw.ToUpperInvariant();
+        }
+
+        _scanError = string.Empty;
+        _scanLoading = true;
+        try
+        {
+            var art = await PuntoVentaSvc.GetArticuloPorCodigoAsync(codigo);
+            if (art is not null)
+            {
+                AddToCart(art, cantidad);
+                _scanCode = string.Empty;
+            }
+            else
+            {
+                _scanError = $"No se encontró el artículo con código \"{codigo}\".";
+            }
+        }
+        catch (Exception ex)
+        {
+            _scanError = ex.Message;
+        }
+        finally
+        {
+            _scanLoading = false;
+        }
+        _needScanFocus = true;
+    }
+
+    private void OnClienteSeleccionado(AlfaCore.Models.CuentaComercialGridItemDto cliente)
+    {
+        _cuentaCliente = cliente.Codigo ?? string.Empty;
+        _cuentaClienteNombre = cliente.RazonSocial ?? string.Empty;
+        _showClienteModal = false;
+        _needScanFocus = true;
+    }
+
+    private void LimpiarCliente()
+    {
+        _cuentaCliente = string.Empty;
+        _cuentaClienteNombre = string.Empty;
+        _needScanFocus = true;
     }
 
     private void OpenClearCartConfirm()
@@ -3011,14 +3663,115 @@
         _settingsError = null;
     }
 
-    private void OpenCashDetailModal()
+    private async Task OpenCashDetailModalAsync()
     {
         _showPosMenu = false;
+        _cashDetailMovimientos = [];
+        _cashDetailConsolidado = [];
+        _cashDetailLoading = true;
         _showCashDetailModal = true;
+        try
+        {
+            var t1 = PuntoVentaSvc.GetDetalleCajaHoyAsync();
+            var t2 = PuntoVentaSvc.GetConsolidadoCajaHoyAsync();
+            await Task.WhenAll(t1, t2);
+            _cashDetailMovimientos = t1.Result;
+            _cashDetailConsolidado = t2.Result;
+        }
+        catch
+        {
+            _cashDetailMovimientos = [];
+            _cashDetailConsolidado = [];
+        }
+        finally
+        {
+            _cashDetailLoading = false;
+        }
     }
 
     private void CloseCashDetailModal()
         => _showCashDetailModal = false;
+
+    private async Task OpenCashInOutModalAsync()
+    {
+        _showPosMenu = false;
+        _cashInOutTipo = "I";
+        _cashInOutImporte = 0;
+        _cashInOutCuenta = string.Empty;
+        _cashInOutDetalle = string.Empty;
+        _cashInOutFeedback = string.Empty;
+        _cashInOutOk = false;
+        _showCashInOutModal = true;
+
+        if (_cashInOutCuentas.Count == 0)
+        {
+            _cashInOutCuentasLoading = true;
+            try
+            {
+                _cashInOutCuentas = await PuntoVentaSvc.GetCuentasImputacionAsync();
+            }
+            catch
+            {
+                _cashInOutCuentas = [];
+            }
+            finally
+            {
+                _cashInOutCuentasLoading = false;
+            }
+        }
+    }
+
+    private void CloseCashInOutModal()
+        => _showCashInOutModal = false;
+
+    private async Task ConfirmarMovimientoCajaAsync()
+    {
+        _cashInOutFeedback = string.Empty;
+
+        if (_cashInOutImporte <= 0)
+        {
+            _cashInOutFeedback = "El importe debe ser mayor a cero.";
+            _cashInOutOk = false;
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_cashInOutCuenta))
+        {
+            _cashInOutFeedback = "Debe seleccionar una cuenta de imputación.";
+            _cashInOutOk = false;
+            return;
+        }
+
+        _cashInOutSaving = true;
+        try
+        {
+            var result = await PuntoVentaSvc.CrearMovimientoCajaAsync(new PuntoVentaMovimientoCajaRequestDto
+            {
+                Tipo    = _cashInOutTipo,
+                Importe = _cashInOutImporte,
+                Cuenta  = _cashInOutCuenta,
+                Detalle = _cashInOutDetalle
+            });
+
+            _cashInOutOk = result.Ok;
+            _cashInOutFeedback = result.Ok ? "Movimiento registrado correctamente." : (result.Mensaje.Length > 0 ? result.Mensaje : "No se pudo registrar el movimiento.");
+
+            if (result.Ok)
+            {
+                _cashInOutImporte = 0;
+                _cashInOutCuenta = string.Empty;
+                _cashInOutDetalle = string.Empty;
+            }
+        }
+        catch (Exception ex)
+        {
+            _cashInOutOk = false;
+            _cashInOutFeedback = ex.Message;
+        }
+        finally
+        {
+            _cashInOutSaving = false;
+        }
+    }
 
     private async Task OpenChargeModalAsync()
     {
@@ -3168,7 +3921,7 @@
 
             var result = await PuntoVentaSvc.CreateSaleAsync(new PuntoVentaSaleRequestDto
             {
-                CuentaCliente = _settings.CuentaConsumidorFinal,
+                CuentaCliente = !string.IsNullOrEmpty(_cuentaCliente) ? _cuentaCliente : _settings.CuentaConsumidorFinal,
                 Fecha = DateTime.Today,
                 TipoComprobante = _context?.TipoComprobanteDefault ?? "FC",
                 Sucursal = _context?.SucursalDefault ?? "0001",
@@ -3203,7 +3956,7 @@
         _receiptItems.AddRange(soldItems);
         _receiptPayments.Clear();
         _receiptPayments.AddRange(soldPayments);
-        _receiptContext = await PuntoVentaSvc.GetReceiptContextAsync(_settings.CuentaConsumidorFinal);
+        _receiptContext = await PuntoVentaSvc.GetReceiptContextAsync(!string.IsNullOrEmpty(_cuentaCliente) ? _cuentaCliente : _settings.CuentaConsumidorFinal);
         _receiptEmail = _receiptContext.EmailSugerido;
         _receiptEmailFeedback = null;
         _receiptEmailError = null;
@@ -3263,10 +4016,13 @@
 
     private async Task PrintReceiptAsync()
     {
+        var html = BuildReceiptPrintHtml(_receiptIsReprint);
+
         if (_lastSaleResult is not null)
             await PuntoVentaSvc.MarkReceiptPrintedAsync(_lastSaleResult.IdComprobante);
 
-        await Js.InvokeVoidAsync("alfaPosPrintFrame", "pos-receipt-frame");
+        await Js.InvokeVoidAsync("alfaPosPrintHtml", "pos-receipt-frame", html);
+        _receiptIsReprint = true;
     }
 
     private async Task SendReceiptEmailAsync()
@@ -3420,11 +4176,103 @@
                    out parsed);
     }
 
-    private static string GetProductImageUrl(PuntoVentaArticleDto article)
-        => $"/api/punto-venta/articulos/{Uri.EscapeDataString(article.IdArticulo)}/imagen";
+    private string GetProductImageUrl(PuntoVentaArticleDto article)
+        => GetProductImageUrl(article.IdArticulo);
 
-    private static string GetProductImageUrl(string idArticulo)
-        => $"/api/punto-venta/articulos/{Uri.EscapeDataString(idArticulo)}/imagen";
+    private string GetProductImageUrl(string idArticulo)
+    {
+        var cta = _settings.FtpCodigoCta.Trim();
+        if (string.IsNullOrWhiteSpace(cta) || string.IsNullOrWhiteSpace(idArticulo))
+            return string.Empty;
+        return $"https://alfanet.com.ar/ac/public/assets/images/{Uri.EscapeDataString(cta)}/{Uri.EscapeDataString(idArticulo.Trim())}.jpg";
+    }
+
+    private string BuildReceiptPrintHtml(bool showReprint)
+    {
+        if (_lastSaleResult is null)
+            return "<html><body></body></html>";
+
+        var empresa = HtmlEncode(DisplayValueOrDash(_receiptContext?.Empresa));
+        var telefono = HtmlEncode(_receiptContext?.Telefono ?? string.Empty);
+        var direccion = HtmlEncode(_receiptContext?.Direccion ?? string.Empty);
+        var comprobante = HtmlEncode($"{_lastSaleResult.TipoComprobante} {_lastSaleResult.IdComprobanteTexto}");
+        var fecha = HtmlEncode(DateTime.Now.ToString("dd/MM/yyyy HH:mm"));
+        var reimpresion = showReprint ? "<div class='reprint'>REIMPRESION</div>" : string.Empty;
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("<!DOCTYPE html>");
+        sb.AppendLine("<html lang='es'>");
+        sb.AppendLine("<head>");
+        sb.AppendLine("<meta charset='utf-8' />");
+        sb.AppendLine("<title>Ticket POS</title>");
+        sb.AppendLine("<style>");
+        sb.AppendLine("@@page { size: 80mm auto; margin: 0; }");
+        sb.AppendLine("html, body { margin: 0; padding: 0; background: #fff; }");
+        sb.AppendLine("body { width: 80mm; font-family: 'Segoe UI', Arial, sans-serif; color: #111827; font-size: 10.5px; line-height: 1.28; }");
+        sb.AppendLine(".ticket { width: 80mm; box-sizing: border-box; padding: 3.2mm 3.6mm 4.2mm; }");
+        sb.AppendLine(".brand { text-align: center; padding-bottom: 2.4mm; }");
+        sb.AppendLine(".brand strong { display: block; font-size: 14px; font-weight: 900; letter-spacing: 0.03em; }");
+        sb.AppendLine(".brand div { margin-top: 1.2mm; color: #374151; }");
+        sb.AppendLine(".separator { margin: 2.2mm 0; border-top: 1px dashed #6b7280; height: 0; }");
+        sb.AppendLine(".reprint { margin-top: 2mm; display: inline-block; padding: 0.8mm 2.2mm; border: 1px solid #111827; font-size: 9px; font-weight: 900; letter-spacing: 0.08em; }");
+        sb.AppendLine(".header { padding: 1mm 0 0.4mm; }");
+        sb.AppendLine(".row, .item-row, .pay-row, .total { display: flex; justify-content: space-between; gap: 3mm; align-items: flex-start; }");
+        sb.AppendLine(".row { margin: 0.8mm 0; }");
+        sb.AppendLine(".row span { color: #374151; }");
+        sb.AppendLine(".row strong { font-size: 11px; text-align: right; }");
+        sb.AppendLine(".item { padding: 2.2mm 0; }");
+        sb.AppendLine(".item-desc { font-weight: 800; font-size: 11.5px; }");
+        sb.AppendLine(".item-meta { margin-top: 0.8mm; color: #4b5563; }");
+        sb.AppendLine(".item-row, .pay-row { margin-top: 0.8mm; }");
+        sb.AppendLine(".item-row strong, .pay-row strong { text-align: right; }");
+        sb.AppendLine(".section-title { margin: 3mm 0 1.4mm; font-size: 11px; font-weight: 900; text-transform: uppercase; }");
+        sb.AppendLine(".total { margin-top: 3.2mm; padding-top: 2.6mm; font-size: 13px; font-weight: 900; }");
+        sb.AppendLine(".total span, .total strong { font-size: 13px; }");
+        sb.AppendLine(".footer-note { margin-top: 3.2mm; text-align: center; font-size: 9px; color: #4b5563; }");
+        sb.AppendLine("</style>");
+        sb.AppendLine("</head>");
+        sb.AppendLine("<body>");
+        sb.AppendLine("<div class='ticket'>");
+        sb.AppendLine("<div class='brand'>");
+        sb.AppendLine($"<strong>{empresa}</strong>");
+        if (!string.IsNullOrWhiteSpace(telefono))
+            sb.AppendLine($"<div>{telefono}</div>");
+        if (!string.IsNullOrWhiteSpace(direccion))
+            sb.AppendLine($"<div>{direccion}</div>");
+        if (reimpresion.Length > 0)
+            sb.AppendLine(reimpresion);
+        sb.AppendLine("</div>");
+        sb.AppendLine("<div class='separator'></div>");
+        sb.AppendLine("<div class='header'>");
+        sb.AppendLine($"<div class='row'><span>Comprobante</span><strong>{comprobante}</strong></div>");
+        sb.AppendLine($"<div class='row'><span>Fecha</span><strong>{fecha}</strong></div>");
+        sb.AppendLine("</div>");
+        sb.AppendLine("<div class='separator'></div>");
+
+        foreach (var item in _receiptItems)
+        {
+            sb.AppendLine("<div class='item'>");
+            sb.AppendLine($"<div class='item-desc'>{HtmlEncode(item.Descripcion)}</div>");
+            sb.AppendLine($"<div class='item-meta'>{HtmlEncode($"{FmtQty(item.Cantidad)} x {FmtMoney(item.PrecioUnitario)}")}</div>");
+            sb.AppendLine($"<div class='item-row'><span>{HtmlEncode(item.IdArticulo)}</span><strong>{HtmlEncode(FmtMoney(item.Subtotal))}</strong></div>");
+            sb.AppendLine("</div>");
+        }
+
+        sb.AppendLine("<div class='separator'></div>");
+        sb.AppendLine("<div class='section-title'>Medios de pago</div>");
+        foreach (var payment in _receiptPayments)
+            sb.AppendLine($"<div class='pay-row'><span>{HtmlEncode(payment.DescripcionMedioPago)}</span><strong>{HtmlEncode(FmtMoney(payment.Importe))}</strong></div>");
+
+        sb.AppendLine("<div class='separator'></div>");
+        sb.AppendLine($"<div class='total'><span>Total</span><strong>{HtmlEncode(FmtMoney(_lastSaleResult.Total))}</strong></div>");
+        sb.AppendLine("<div class='footer-note'>Gracias por su compra</div>");
+        sb.AppendLine("</div>");
+        sb.AppendLine("</body>");
+        sb.AppendLine("</html>");
+        return sb.ToString();
+    }
+
+    private static string HtmlEncode(string value)
+        => System.Net.WebUtility.HtmlEncode(value ?? string.Empty);
 
     private static string DisplayValueOrDash(string? value)
         => string.IsNullOrWhiteSpace(value) ? "-" : value.Trim();

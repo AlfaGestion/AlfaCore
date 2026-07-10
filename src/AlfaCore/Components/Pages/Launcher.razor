@@ -1,4 +1,5 @@
 @page "/"
+@page "/{idweb}/{idbase:int}"
 @layout AlfaCore.Components.Layout.MainLayout
 @using AlfaCore.Models
 @inject AlfaCore.Services.IWorkspaceService WorkspaceSvc
@@ -6,53 +7,55 @@
 @inject AlfaCore.Services.IFavoritesService FavoritesSvc
 @inject AlfaCore.Services.ISessionService SessionSvc
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
+@inject AlfaCore.Services.IAppModeService AppMode
+@inject AlfaCore.Services.IRouteContextService RouteContext
+@inject ILogger<Launcher> Logger
+@inject IJSRuntime JS
 @inject NavigationManager Nav
 @implements IDisposable
 
-<PageTitle>Aplicaciones | Alfa Gestión</PageTitle>
+<PageTitle>Inicio | Alfa Gestión</PageTitle>
 
 @if (_loading)
 {
-    <div class="consultas-loading">
-        <i class="bi bi-hourglass-split"></i> Cargando shell principal...
+    <AppLoadingFrame Title="Cargando sistema..."
+                     Subtitle="Preparando el shell principal y las aplicaciones disponibles." />
+}
+else if (!string.IsNullOrWhiteSpace(_error))
+{
+    <div class="panel-card empty-state">
+        <span class="empty-state__eyebrow">Inicio</span>
+        <h1>No se pudo cargar el shell principal</h1>
+        <p>@_error</p>
     </div>
 }
 else
 {
-    <div class="page-grid">
-        <section class="page-intro">
-            <div>
-                <h2 class="page-intro__title">Aplicaciones</h2>
-                <p class="page-intro__text">Seleccioná un módulo del ERP para entrar al nuevo shell web y abrir las aplicaciones disponibles para tu usuario.</p>
-            </div>
-        </section>
-
+    <div class="page-grid launcher-home">
         @if (_home.Favorites.Count > 0)
         {
-            <section id="favoritos" class="panel-card">
+            <section id="favoritos" class="panel-card launcher-section launcher-section--favorites">
                 <div class="panel-card__header">
                     <div>
                         <h3 class="panel-card__title">Favoritos</h3>
-                        <p class="panel-card__subtitle">Accesos frecuentes preparados para el usuario actual.</p>
                     </div>
                 </div>
-                <div class="launcher__grid">
+                <div class="launcher-favorites-grid">
                     @foreach (var item in _home.Favorites)
                     {
-                        <article class="app-card app-card--button" role="button" tabindex="0" @onclick="() => OpenNodeAsync(item)" @onkeydown="args => HandleNodeCardKeyDownAsync(args, item)">
+                        <article class="app-card app-card--button launcher-favorite-card" role="button" tabindex="0" @onclick="() => OpenNodeAsync(item)" @onkeydown="args => HandleNodeCardKeyDownAsync(args, item)">
                             <button type="button"
-                                    class="@GetFavoriteButtonClass(item.Clave)"
+                                    class="@GetFavoriteButtonClass(item.Clave, "launcher-favorite-card__star")"
                                     title="Quitar de favoritos"
                                     aria-label="Quitar @item.Nombre de favoritos"
                                     @onclick="() => ToggleFavoriteAsync(item.Menu, item.Clave)"
                                     @onclick:stopPropagation>
                                 <i class="bi bi-star-fill"></i>
                             </button>
-                            <div class="app-card__icon @ShellNavigationUiHelper.GetNodeIconClass(item)">
+                            <div class="app-card__icon launcher-module-badge launcher-module-badge--lg @ShellNavigationUiHelper.GetNodeIconClass(item)">
                                 <i class="bi @(string.IsNullOrWhiteSpace(item.Icono) ? "bi-star-fill" : item.Icono)"></i>
                             </div>
-                            <span class="app-card__name">@item.Nombre</span>
-                            <span class="app-card__desc">@ShellNavigationUiHelper.GetNodeDescription(item)</span>
+                            <span class="app-card__name launcher-favorite-card__name">@item.Nombre</span>
                         </article>
                     }
                 </div>
@@ -61,80 +64,54 @@ else
 
         @if (_home.Recents.Count > 0)
         {
-            <section id="recientes" class="panel-card">
+            <section id="recientes" class="panel-card launcher-section launcher-section--recents">
                 <div class="panel-card__header">
                     <div>
                         <h3 class="panel-card__title">Recientes</h3>
-                        <p class="panel-card__subtitle">Últimas aplicaciones abiertas dentro del shell.</p>
                     </div>
                 </div>
-                <div class="launcher__grid launcher__grid--compact">
+                <div class="launcher-recents-list">
                     @foreach (var item in _home.Recents)
                     {
-                        <article class="app-card app-card--button" role="button" tabindex="0" @onclick="() => OpenNodeAsync(item)" @onkeydown="args => HandleNodeCardKeyDownAsync(args, item)">
+                        <article class="launcher-recent-row" role="button" tabindex="0" @onclick="() => OpenNodeAsync(item)" @onkeydown="args => HandleNodeCardKeyDownAsync(args, item)">
+                            <div class="app-card__icon launcher-module-badge launcher-module-badge--sm @ShellNavigationUiHelper.GetNodeIconClass(item)">
+                                <i class="bi @(string.IsNullOrWhiteSpace(item.Icono) ? "bi-clock-history" : item.Icono)"></i>
+                            </div>
+                            <div class="launcher-recent-row__body">
+                                <span class="launcher-recent-row__name">@item.Nombre</span>
+                                <span class="launcher-recent-row__time launcher-recent-row__time--mobile">@FormatRelativeTime(item.UltimoAcceso)</span>
+                            </div>
+                            <span class="launcher-recent-row__time">@FormatRelativeTime(item.UltimoAcceso)</span>
                             <button type="button"
-                                    class="@GetFavoriteButtonClass(item.Clave)"
+                                    class="@GetFavoriteButtonClass(item.Clave, "launcher-recent-row__star")"
                                     title="@(IsFavorite(item.Clave) ? "Quitar de favoritos" : "Agregar a favoritos")"
                                     aria-label="@(IsFavorite(item.Clave) ? $"Quitar {item.Nombre} de favoritos" : $"Agregar {item.Nombre} a favoritos")"
                                     @onclick="() => ToggleFavoriteAsync(item.Menu, item.Clave)"
                                     @onclick:stopPropagation>
                                 <i class="bi @(IsFavorite(item.Clave) ? "bi-star-fill" : "bi-star")"></i>
                             </button>
-                            <div class="app-card__icon @ShellNavigationUiHelper.GetNodeIconClass(item)">
-                                <i class="bi @(string.IsNullOrWhiteSpace(item.Icono) ? "bi-clock-history" : item.Icono)"></i>
-                            </div>
-                            <span class="app-card__name">@item.Nombre</span>
-                            <span class="app-card__desc">@ShellNavigationUiHelper.GetNodeDescription(item)</span>
                         </article>
                     }
                 </div>
             </section>
         }
 
-        <section class="panel-card">
-            <div class="panel-card__header">
-                <div>
-                    <h3 class="panel-card__title">Módulos</h3>
-                    <p class="panel-card__subtitle">Árbol funcional histórico de Alfa Gestión filtrado por permisos y opciones web habilitadas.</p>
-                </div>
-            </div>
-            @if (_home.Modules.Count == 0)
-            {
+        @if (_home.Favorites.Count == 0 && _home.Recents.Count == 0)
+        {
+            <section class="panel-card">
                 <div class="shell-empty-state">
-                    <strong>No hay módulos web disponibles para esta base.</strong>
-                    <span>Revisá que `ALFACORE_MENU_WEB` exista, tenga datos para el `Menu` real de `TA_MENU` y que estén aplicados los updates de shell web.</span>
+                    <strong>Sin accesos rápidos todavía.</strong>
+                    <span>Usá el buscador del menú lateral para abrir una opción y marcarla como favorita.</span>
                 </div>
-            }
-            else
-            {
-                <div class="launcher__grid">
-                    @foreach (var module in _home.Modules)
-                    {
-                        <article class="app-card app-card--button" role="button" tabindex="0" @onclick="() => OpenModule(module)" @onkeydown="args => HandleModuleCardKeyDown(args, module)">
-                            <button type="button"
-                                    class="@GetFavoriteButtonClass(module.Clave)"
-                                    title="@(IsFavorite(module.Clave) ? "Quitar de favoritos" : "Agregar a favoritos")"
-                                    aria-label="@(IsFavorite(module.Clave) ? $"Quitar {module.Nombre} de favoritos" : $"Agregar {module.Nombre} a favoritos")"
-                                    @onclick="() => ToggleFavoriteAsync(module.Menu, module.Clave)"
-                                    @onclick:stopPropagation>
-                                <i class="bi @(IsFavorite(module.Clave) ? "bi-star-fill" : "bi-star")"></i>
-                            </button>
-                            <div class="app-card__icon @ShellNavigationUiHelper.GetModuleIconClass(module)">
-                                <i class="bi @(string.IsNullOrWhiteSpace(module.Icono) ? "bi-grid-3x3-gap-fill" : module.Icono)"></i>
-                            </div>
-                            <span class="app-card__name">@module.Nombre</span>
-                            <span class="app-card__desc">Abrí el workspace del módulo y accedé a las aplicaciones web disponibles.</span>
-                        </article>
-                    }
-                </div>
-            }
-        </section>
+            </section>
+        }
     </div>
 }
 
 @code {
     private bool _loading = true;
     private ShellHomeDto _home = new();
+    private string _error = string.Empty;
     private bool _disposed;
     private int _loadVersion;
 
@@ -142,6 +119,12 @@ else
     {
         SessionSvc.SessionChanged += OnContextChanged;
         AppUserSession.StateChanged += OnContextChanged;
+
+        if (WorkspaceSvc.TryGetCachedHome(out var cachedHome))
+        {
+            _home = cachedHome;
+            _loading = false;
+        }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -149,20 +132,182 @@ else
         if (!firstRender)
             return;
 
-        await Task.Yield();
-        await LoadHomeAsync();
-        await InvokeAsync(StateHasChanged);
+        try
+        {
+            var normalizedPath = Nav.ToBaseRelativePath(Nav.Uri).Split('?')[0].Split('#')[0].Trim('/');
+            Logger.LogInformation(
+                "Launcher: first render. Uri={Uri}, RouteIdWeb={IdWeb}, RouteIdBase={IdBase}, SaaS={SaaS}, Auth={Auth}, ActiveSession={ActiveSession}",
+                Nav.Uri,
+                idweb ?? "(sin ruta)",
+                idbase?.ToString() ?? "(sin base)",
+                AppMode.IsSaaSMode,
+                AppUserSession.IsAuthenticated,
+                SessionSvc.GetActiveSession()?.BaseId.ToString() ?? "(sin base)");
+
+            if (string.IsNullOrWhiteSpace(normalizedPath)
+                && (!AppUserSession.IsAuthenticated || AppUserSession.RequiresInternalLogin))
+            {
+                var returnUrl = "/";
+                Logger.LogInformation("Launcher: root without usable session, redirecting to login. ReturnUrl={ReturnUrl}", returnUrl);
+                var loginTarget = string.Equals(returnUrl, "/", StringComparison.Ordinal)
+                    ? "/login"
+                    : $"/login?returnUrl={Uri.EscapeDataString(returnUrl)}";
+                Nav.NavigateTo(loginTarget, replace: true);
+                return;
+            }
+
+            if (!AppMode.IsSaaSMode)
+            {
+                if (!AppUserSession.IsAuthenticated || AppUserSession.RequiresInternalLogin)
+                {
+                    _loading = false;
+                    await InvokeAsync(StateHasChanged);
+                    return;
+                }
+            }
+            else if (!AppUserSession.IsAuthenticated || AppUserSession.RequiresInternalLogin)
+            {
+                _loading = false;
+                Logger.LogInformation(
+                    "Launcher: SaaS sin sesion lista para cargar home. Se mantiene la ruta actual. Uri={Uri}, IdWeb={IdWeb}, IdBase={IdBase}, RequiresInternalLogin={RequiresInternalLogin}",
+                    Nav.Uri,
+                    idweb ?? "(sin ruta)",
+                    idbase?.ToString() ?? "(sin base)",
+                    AppUserSession.RequiresInternalLogin);
+                await InvokeAsync(StateHasChanged);
+                return;
+            }
+
+            var activeSession = SessionSvc.GetActiveSession();
+            var availableSessions = SessionSvc.GetAllSessions();
+
+            if (AppMode.IsSaaSMode && activeSession is null && idbase is int routeBaseId)
+            {
+                var routeSession = availableSessions.FirstOrDefault(x => x.BaseId == routeBaseId);
+                if (routeSession is not null)
+                {
+                    SessionSvc.SwitchSession(routeSession.Id);
+
+                    try
+                    {
+                        await JS.InvokeVoidAsync("alfaCoreSqlSession.setActive", routeSession.Id.ToString());
+                    }
+                    catch
+                    {
+                        // Si JS no responde, la sesion en memoria ya quedo seleccionada.
+                    }
+
+                    activeSession = routeSession;
+                }
+                else
+                {
+                    _loading = false;
+                    Logger.LogInformation(
+                        "Launcher: no se resolvió la base para la ruta. RouteIdWeb={IdWeb}, RouteBaseId={IdBase}, Available={Available}",
+                        idweb ?? "(sin ruta)",
+                        routeBaseId,
+                        availableSessions.Count);
+                    Nav.NavigateTo(!string.IsNullOrWhiteSpace(idweb) ? $"/{Uri.EscapeDataString(idweb)}" : "/seleccionar-base", replace: true);
+                    return;
+                }
+            }
+
+            if (activeSession is null && availableSessions.Count == 1)
+            {
+                SessionSvc.SwitchSession(availableSessions[0].Id);
+
+                try
+                {
+                    await JS.InvokeVoidAsync("alfaCoreSqlSession.setActive", availableSessions[0].Id.ToString());
+                }
+                catch
+                {
+                    // Si JS no responde, la sesión en memoria ya quedó seleccionada.
+                }
+
+                activeSession = availableSessions[0];
+            }
+
+            if (activeSession is null)
+            {
+                _loading = false;
+                if (AppMode.IsSaaSMode)
+                {
+                    Logger.LogInformation(
+                        "Launcher: active session null, redirecting. RouteIdWeb={IdWeb}, RouteIdBase={IdBase}, ReturnUrl={ReturnUrl}",
+                        idweb ?? "(sin ruta)",
+                        idbase?.ToString() ?? "(sin base)",
+                        Nav.Uri);
+                    Nav.NavigateTo(!string.IsNullOrWhiteSpace(idweb) ? $"/{Uri.EscapeDataString(idweb)}" : "/seleccionar-base", replace: true);
+                }
+                else
+                    await InvokeAsync(StateHasChanged);
+                return;
+            }
+
+            if (AppMode.IsSaaSMode)
+            {
+                var canonicalIdWeb = NormalizeRouteIdWeb(AppUserSession.CurrentUser?.IdWeb) ?? NormalizeRouteIdWeb(idweb);
+                if (!string.IsNullOrWhiteSpace(canonicalIdWeb)
+                    && (!string.Equals(idweb, canonicalIdWeb, StringComparison.OrdinalIgnoreCase)
+                        || !idbase.HasValue
+                        || idbase.Value != activeSession.BaseId))
+                {
+                    _loading = false;
+                    Logger.LogInformation(
+                        "Launcher: canonical home redirect. CurrentIdWeb={CurrentIdWeb}, CanonicalIdWeb={CanonicalIdWeb}, CurrentBase={CurrentBase}, ActiveBase={ActiveBase}",
+                        idweb ?? "(sin ruta)",
+                        canonicalIdWeb,
+                        idbase?.ToString() ?? "(sin base)",
+                        activeSession.BaseId);
+                    Nav.NavigateTo(RouteContext.BuildRoute("/"), replace: true);
+                    return;
+                }
+            }
+
+            var showInitialLoader = _loading;
+            var loadTask = LoadHomeAsync(showInitialLoader);
+            var completedTask = await Task.WhenAny(loadTask, Task.Delay(TimeSpan.FromSeconds(15)));
+            if (completedTask != loadTask)
+            {
+                if (!showInitialLoader)
+                    return;
+                _error = "No se pudo cargar el shell principal a tiempo. Revisá la base activa o intentá nuevamente.";
+                _loading = false;
+                return;
+            }
+
+            await loadTask;
+            if (AppMode.IsSaaSMode
+                && _error.Length == 0
+                && _home.Modules.Count == 0
+                && SessionSvc.GetActiveSession() is not null)
+            {
+                Logger.LogInformation(
+                    "Launcher: home inicial vacío, reintentando una vez. Uri={Uri}, IdWeb={IdWeb}, IdBase={IdBase}",
+                    Nav.Uri,
+                    idweb ?? "(sin ruta)",
+                    idbase?.ToString() ?? "(sin base)");
+                await Task.Delay(300);
+                await LoadHomeAsync(showLoader: false);
+            }
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (NavigationException)
+        {
+            return;
+        }
+        catch
+        {
+            _error = "No se pudo cargar el shell principal. Revisá la base activa o intentá nuevamente.";
+            _loading = false;
+        }
     }
 
     private async Task OpenNodeAsync(ShellMenuNodeDto item)
     {
         await RecentSvc.RegisterRecentAsync(item.Menu, item.Clave);
-        Nav.NavigateTo(item.RutaWeb);
-    }
-
-    private void OpenModule(ShellModuleDto module)
-    {
-        Nav.NavigateTo(module.RutaWeb);
+        Nav.NavigateTo(RouteContext.BuildRoute(item.RutaWeb));
     }
 
     private async Task HandleNodeCardKeyDownAsync(KeyboardEventArgs args, ShellMenuNodeDto item)
@@ -171,26 +316,22 @@ else
             await OpenNodeAsync(item);
     }
 
-    private void HandleModuleCardKeyDown(KeyboardEventArgs args, ShellModuleDto module)
-    {
-        if (IsActivationKey(args.Key))
-            OpenModule(module);
-    }
-
     private bool IsFavorite(string clave)
     {
         return _home.Favorites.Any(item => string.Equals(item.Clave, clave, StringComparison.OrdinalIgnoreCase));
     }
 
-    private string GetFavoriteButtonClass(string clave)
+    private string GetFavoriteButtonClass(string clave, string extraClass)
     {
-        return IsFavorite(clave) ? "app-card__favorite is-active" : "app-card__favorite";
+        var css = $"app-card__favorite {extraClass}";
+        return IsFavorite(clave) ? css + " is-active" : css;
     }
 
     private async Task ToggleFavoriteAsync(string menu, string clave)
     {
         await FavoritesSvc.ToggleFavoriteAsync(menu, clave);
-        _home = await WorkspaceSvc.GetHomeAsync();
+        WorkspaceSvc.InvalidateWorkspaceCache();
+        _home = await WorkspaceSvc.RefreshHomeAsync();
     }
 
     private static bool IsActivationKey(string? key)
@@ -201,6 +342,39 @@ else
             || string.Equals(key, "Spacebar", StringComparison.OrdinalIgnoreCase);
     }
 
+    private static string FormatRelativeTime(DateTime? value)
+    {
+        if (value is null)
+            return "reciente";
+
+        var elapsed = DateTime.Now - value.Value;
+        if (elapsed < TimeSpan.Zero)
+            elapsed = TimeSpan.Zero;
+
+        if (elapsed.TotalMinutes < 1)
+            return "recién";
+
+        if (elapsed.TotalHours < 1)
+        {
+            var minutes = Math.Max(1, (int)Math.Round(elapsed.TotalMinutes));
+            return $"hace {minutes} min";
+        }
+
+        if (elapsed.TotalDays < 1)
+        {
+            var hours = Math.Max(1, (int)Math.Round(elapsed.TotalHours));
+            return $"hace {hours} h";
+        }
+
+        if (elapsed.TotalDays < 30)
+        {
+            var days = Math.Max(1, (int)Math.Round(elapsed.TotalDays));
+            return days == 1 ? "ayer" : $"hace {days} días";
+        }
+
+        return value.Value.ToString("dd/MM/yyyy");
+    }
+
     private async void OnContextChanged()
     {
         if (_disposed)
@@ -208,29 +382,105 @@ else
 
         await InvokeAsync(async () =>
         {
-            await LoadHomeAsync();
+            if (!AppUserSession.IsAuthenticated
+                || AppUserSession.RequiresInternalLogin
+                || (!AppMode.IsSaaSMode && AppUserSession.RequiresInternalLogin)
+                || SessionSvc.GetActiveSession() is null)
+            {
+                _loading = false;
+                StateHasChanged();
+                return;
+            }
+
+            var hasCachedHome = WorkspaceSvc.TryGetCachedHome(out var cachedHome);
+            if (hasCachedHome)
+            {
+                _home = cachedHome;
+                _loading = false;
+                StateHasChanged();
+            }
+
+            await LoadHomeAsync(showLoader: !hasCachedHome);
             StateHasChanged();
         });
     }
 
-    private async Task LoadHomeAsync()
+    private async Task LoadHomeAsync(bool showLoader = true)
     {
         var version = Interlocked.Increment(ref _loadVersion);
-        _loading = true;
-        StateHasChanged();
+        var hadVisibleHome = HasVisibleHome();
+        if (showLoader || !hadVisibleHome)
+        {
+            _loading = true;
+            _error = string.Empty;
+            StateHasChanged();
+        }
+
         try
         {
-            var home = await WorkspaceSvc.GetHomeAsync();
+            var activeSession = SessionSvc.GetActiveSession();
+            Logger.LogInformation(
+                "Launcher: loading home. User={User}, BaseId={BaseId}, BaseName={BaseName}, ViewMode={ViewMode}",
+                AppUserSession.CurrentUser?.UserName ?? "(sin usuario)",
+                activeSession?.Id.ToString() ?? "(sin base)",
+                activeSession?.Nombre ?? "(sin base)",
+                AppMode.IsSaaSMode ? "saas" : "legacy");
+
+            var home = showLoader || !hadVisibleHome
+                ? await WorkspaceSvc.GetHomeAsync()
+                : await WorkspaceSvc.RefreshHomeAsync();
             if (version != _loadVersion)
                 return;
 
             _home = home;
+            _error = string.Empty;
+            Logger.LogInformation(
+                "Launcher: home loaded. ModuleGroups={ModuleGroups}, Favorites={Favorites}, Recents={Recents}",
+                _home.Modules.Count,
+                _home.Favorites.Count,
+                _home.Recents.Count);
+        }
+        catch (Exception ex)
+        {
+            if (version == _loadVersion)
+            {
+                if (!showLoader && hadVisibleHome)
+                {
+                    Logger.LogWarning(
+                        ex,
+                        "Launcher: background RefreshHomeAsync failed. User={User}, BaseId={BaseId}, BaseName={BaseName}",
+                        AppUserSession.CurrentUser?.UserName ?? "(sin usuario)",
+                        SessionSvc.GetActiveSession()?.Id.ToString() ?? "(sin base)",
+                        SessionSvc.GetActiveSession()?.Nombre ?? "(sin base)");
+                    return;
+                }
+                _error = "No se pudieron cargar los módulos del usuario. Revisá la base activa o intentá nuevamente.";
+                Logger.LogWarning(
+                    ex,
+                    "Launcher: GetHomeAsync failed. User={User}, BaseId={BaseId}, BaseName={BaseName}",
+                    AppUserSession.CurrentUser?.UserName ?? "(sin usuario)",
+                    SessionSvc.GetActiveSession()?.Id.ToString() ?? "(sin base)",
+                    SessionSvc.GetActiveSession()?.Nombre ?? "(sin base)");
+                _home = new ShellHomeDto();
+            }
         }
         finally
         {
             if (version == _loadVersion)
                 _loading = false;
         }
+    }
+
+    private bool HasVisibleHome()
+        => _home.Modules.Count > 0 || _home.Favorites.Count > 0 || _home.Recents.Count > 0;
+
+    private static string? NormalizeRouteIdWeb(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        var trimmed = value.Trim();
+        return trimmed.Length == 0 ? null : trimmed;
     }
 
     public void Dispose()

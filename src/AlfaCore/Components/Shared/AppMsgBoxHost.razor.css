@@ -1,0 +1,139 @@
+.app-msgbox-root {
+    position: fixed;
+    inset: 0;
+    z-index: 2147483647;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    isolation: isolate;
+}
+
+.app-msgbox-backdrop {
+    position: fixed;
+    inset: 0;
+    border: 0;
+    background: rgba(2, 6, 23, .72);
+    backdrop-filter: blur(8px);
+}
+
+.app-msgbox-panel {
+    position: relative;
+    z-index: 2147483647;
+    width: min(520px, calc(100vw - 32px));
+    background: #0f172a;
+    border: 1px solid rgba(148, 163, 184, .35);
+    border-radius: 18px;
+    box-shadow: 0 28px 90px rgba(0, 0, 0, .70);
+    padding: 22px;
+    color: #e5e7eb;
+    display: grid;
+    gap: 1rem;
+}
+
+.app-msgbox-header {
+    display: flex;
+    align-items: flex-start;
+    gap: .9rem;
+}
+
+.app-msgbox-header__text {
+    min-width: 0;
+}
+
+.app-msgbox-eyebrow {
+    margin: 0 0 .2rem 0;
+    font-size: .74rem;
+    font-weight: 700;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: rgba(148, 163, 184, .82);
+}
+
+.app-msgbox-title {
+    margin: 0;
+    font-size: 1.1rem;
+    line-height: 1.2;
+    color: #f8fafc;
+}
+
+.app-msgbox-body {
+    display: grid;
+    gap: .6rem;
+}
+
+.app-msgbox-message {
+    margin: 0;
+    color: rgba(226, 232, 240, .94);
+    line-height: 1.45;
+    white-space: pre-line;
+}
+
+.app-msgbox-detail {
+    padding: .72rem .82rem;
+    border-radius: .9rem;
+    border: 1px solid rgba(148, 163, 184, .18);
+    background: rgba(15, 23, 42, .62);
+    color: rgba(203, 213, 225, .92);
+    white-space: pre-line;
+}
+
+.app-msgbox-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: .55rem;
+    flex-wrap: wrap;
+}
+
+.app-msgbox-actions .btn {
+    min-height: 2.35rem;
+    padding-inline: 1rem;
+}
+
+.app-msgbox-icon {
+    width: 3rem;
+    height: 3rem;
+    display: grid;
+    place-items: center;
+    border-radius: 999px;
+    color: #e2e8f0;
+    background: rgba(148, 163, 184, .12);
+    box-shadow: inset 0 0 0 1px rgba(148, 163, 184, .14);
+    flex: 0 0 auto;
+}
+
+.app-msgbox-icon--success {
+    color: #86efac;
+    background: rgba(34, 197, 94, .12);
+}
+
+.app-msgbox-icon--warning,
+.app-msgbox-icon--confirm {
+    color: #fbbf24;
+    background: rgba(245, 158, 11, .14);
+}
+
+.app-msgbox-icon--error {
+    color: #fca5a5;
+    background: rgba(248, 113, 113, .14);
+}
+
+.app-msgbox-icon--loading {
+    color: #67e8f9;
+    background: rgba(56, 189, 248, .14);
+}
+
+.app-msgbox-spinner {
+    width: 1.35rem;
+    height: 1.35rem;
+    border-radius: 999px;
+    border: 2px solid rgba(103, 232, 249, .2);
+    border-top-color: currentColor;
+    animation: app-msgbox-spin .85s linear infinite;
+}
+
+@keyframes app-msgbox-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}

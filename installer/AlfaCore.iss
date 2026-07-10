@@ -1,7 +1,7 @@
 #define MyAppName "AlfaCore"
 #define MyAppPublisher "Alfa Gestion"
 #define MyAppExeName "AlfaCore.exe"
-#define MyAppLauncher "iniciar_dashboard.bat"
+#define MyAppLauncher "iniciar_AlfaCore.bat"
 #define MyAppShellLauncher "abrir_dashboard_shell.bat"
 #define MyReadmeName "README_INSTALACION.md"
 
@@ -26,8 +26,8 @@ DefaultDirName={autopf}\Alfa Gestion\AlfaCore
 DefaultGroupName=Alfa Gestion\AlfaCore
 DisableProgramGroupPage=yes
 PrivilegesRequired=admin
-ArchitecturesAllowed=x64compatible
-ArchitecturesInstallIn64BitMode=x64compatible
+ArchitecturesAllowed=x64
+ArchitecturesInstallIn64BitMode=x64
 OutputDir={#OutputDir}
 OutputBaseFilename=AlfaCoreSetup_{#AppVersion}
 Compression=lzma2
@@ -48,7 +48,7 @@ Name: "launchapp"; Description: "Iniciar AlfaCore al finalizar"; GroupDescriptio
 
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "appsettings.Development.json,appsettings.Production.json,*.pdb,*.log,prereqs\*,App_Data\*"
-Source: "{#SourceDir}\App_Data\updates\*"; DestDir: "{app}\App_Data\updates"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#SourceDir}\App_Data\updates\*"; DestDir: "{app}\App_Data\updates"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
 #ifdef IncludeHostingBundle
 Source: "{#SourceDir}\prereqs\dotnet-hosting-win.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall; Check: NeedsHostingBundle
 #endif

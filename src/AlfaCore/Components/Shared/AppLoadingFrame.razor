@@ -1,0 +1,18 @@
+<div class="app-loading-frame" role="status" aria-live="polite">
+    <div class="app-loading-frame__panel">
+        <span class="app-loading-frame__spinner spinner-border spinner-border-sm" aria-hidden="true"></span>
+        <div class="app-loading-frame__copy">
+            <p class="app-loading-frame__eyebrow">Alfa Gestión</p>
+            <h1 class="app-loading-frame__title">@Title</h1>
+            @if (!string.IsNullOrWhiteSpace(Subtitle))
+            {
+                <p class="app-loading-frame__subtitle">@Subtitle</p>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public string Title { get; set; } = "Cargando sistema...";
+    [Parameter] public string? Subtitle { get; set; } = "Preparando tu entorno de trabajo.";
+}

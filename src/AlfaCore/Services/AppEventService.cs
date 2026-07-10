@@ -11,7 +11,6 @@ namespace AlfaCore.Services;
 public sealed class AppEventService(
     IWebHostEnvironment env,
     IHttpContextAccessor httpContextAccessor,
-    ISessionService sessionService,
     IAuxErrRepository auxErrRepository,
     ILogger<AppEventService> logger) : IAppEventService
 {
@@ -101,7 +100,6 @@ public sealed class AppEventService(
         Guid eventId)
     {
         var http = httpContextAccessor.HttpContext;
-        var session = sessionService.GetActiveSession();
         var userName = http?.User?.Identity?.Name;
         if (string.IsNullOrWhiteSpace(userName))
             userName = Environment.UserName;
@@ -115,8 +113,8 @@ public sealed class AppEventService(
             Module = module,
             Action = action,
             UserName = userName ?? string.Empty,
-            SessionServer = session?.Servidor ?? string.Empty,
-            SessionDatabase = session?.BaseDatos ?? string.Empty,
+            SessionServer = string.Empty,
+            SessionDatabase = string.Empty,
             RequestPath = http?.Request.Path.Value ?? string.Empty,
             HttpMethod = http?.Request.Method ?? string.Empty,
             TraceId = Activity.Current?.TraceId.ToString() ?? http?.TraceIdentifier ?? string.Empty,

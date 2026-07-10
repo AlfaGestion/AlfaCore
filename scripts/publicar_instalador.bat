@@ -69,10 +69,11 @@ if exist "%SOURCE_DIR_FULL%\App_Data\updates" (
 
 echo [2.5/5] Limpiando datos de conexion del instalador...
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-  "$f = '%INPUT_DIR_FULL%\appsettings.json'; $j = Get-Content $f -Raw | ConvertFrom-Json; $j.ConnectionStrings.AlfaGestion = ''; $j | ConvertTo-Json -Depth 10 | Set-Content $f -Encoding UTF8"
-if exist "%INPUT_DIR_FULL%\appsettings.Server.sample.json" powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-  "$f = '%INPUT_DIR_FULL%\appsettings.Server.sample.json'; $j = Get-Content $f -Raw | ConvertFrom-Json; $j.ConnectionStrings.AlfaGestion = ''; $j | ConvertTo-Json -Depth 10 | Set-Content $f -Encoding UTF8"
-if exist "%INPUT_DIR_FULL%\appsettings.Production.json" del /Q "%INPUT_DIR_FULL%\appsettings.Production.json"
+  "$f = '%INPUT_DIR_FULL%\appsettings.json'; $j = Get-Content $f -Raw | ConvertFrom-Json; $j.ConnectionStrings.AlfaGestion = ''; if ($j.ConnectionStrings) { $j.ConnectionStrings.PSObject.Properties.Remove('AlfaCentral') | Out-Null }; $j | ConvertTo-Json -Depth 10 | Set-Content $f -Encoding UTF8"
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "$f = '%INPUT_DIR_FULL%\appsettings.json'; if (Test-Path $f) { $j = Get-Content $f -Raw | ConvertFrom-Json; $j.ModoSaaS = $false; if ($j.ConnectionStrings) { $j.ConnectionStrings.PSObject.Properties.Remove('AlfaCentral') | Out-Null }; $j | ConvertTo-Json -Depth 10 | Set-Content $f -Encoding UTF8 }"
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "Get-ChildItem -LiteralPath '%INPUT_DIR_FULL%' -Filter 'appsettings*.json' -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -ne 'appsettings.json' } | Remove-Item -Force -ErrorAction SilentlyContinue"
 
 echo [2.6/5] Copiando scripts de servicio...
 copy /Y ".\scripts\instalar_servicio.bat" "%INPUT_DIR_FULL%\instalar_servicio.bat" >nul
@@ -139,4 +140,5 @@ echo ===============================================
 echo No se pudo generar el instalador.
 echo Revisa los mensajes anteriores.
 echo ===============================================
+PAUSE
 exit /b 1

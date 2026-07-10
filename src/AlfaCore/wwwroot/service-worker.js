@@ -1,4 +1,4 @@
-﻿const CACHE_NAME = 'alfacore-static-v4';
+const CACHE_NAME = 'alfacore-static-v20';
 const STATIC_ASSETS = [
     '/app.css',
     '/bootstrap/bootstrap.min.css',
@@ -42,9 +42,11 @@ self.addEventListener('fetch', event => {
     event.respondWith(
         fetch(request)
             .then(response => {
-                if (response && response.ok && IsSafeStaticAsset(url.pathname)) {
+                if (response && response.ok && response.status === 200 && response.type === 'basic' && IsSafeStaticAsset(url.pathname) && !request.headers.has('range')) {
                     const copy = response.clone();
-                    caches.open(CACHE_NAME).then(cache => cache.put(request, copy));
+                    caches.open(CACHE_NAME)
+                        .then(cache => cache.put(request, copy))
+                        .catch(() => { });
                 }
                 return response;
             })
@@ -128,4 +130,3 @@ function IsSafeStaticAsset(pathname) {
         || pathname.endsWith('.webmanifest')
         || pathname.endsWith('.mp3');
 }
-

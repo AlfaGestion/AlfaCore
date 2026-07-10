@@ -4,13 +4,13 @@ namespace AlfaCore.Services;
 
 public interface ISessionService
 {
-    const string ActiveSessionCookieName = "AlfaCore.SqlSessionId";
-
     string GetConnectionString();
     SessionDto? GetActiveSession();
     IReadOnlyList<SessionDto> GetAllSessions();
     void SwitchSession(Guid id);
-    void AddSession(string nombre, string servidor, string baseDatos, string usuario, string password);
+    Guid AddSession(string nombre, string servidor, string baseDatos, string usuario, string password);
+    void UpdateSession(Guid id, string nombre, string servidor, string baseDatos, string usuario, string password);
     void DeleteSession(Guid id);
+    void ClearActiveSession();
     event Action? SessionChanged;
 }

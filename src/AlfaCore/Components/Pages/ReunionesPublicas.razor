@@ -1,0 +1,354 @@
+@page "/reuniones"
+@page "/{idweb}/{idbase:int}/reuniones"
+@page "/reuniones/{Slug}"
+@page "/{idweb}/{idbase:int}/reuniones/{Slug}"
+@layout AlfaCore.Components.Layout.PublicLayout
+@using System.Globalization
+@inject AlfaCore.Services.IReunionesPublicasService ReunionesSvc
+
+<PageTitle>Reservar capacitacion | AlfaNet</PageTitle>
+
+<section class="reuniones-publicas">
+    <header class="reuniones-header">
+        <a href="/" class="reuniones-brand" aria-label="AlfaNet">
+            <img src="/logos/Logo.png" alt="AlfaNet" />
+            <span>AlfaNet</span>
+        </a>
+        <div class="reuniones-steps">
+            <span class="@StepClass(1)">Fecha y hora</span>
+            <span class="@StepClass(2)">Datos</span>
+            <span class="@StepClass(3)">Reservado</span>
+        </div>
+    </header>
+
+    @if (_loading)
+    {
+        <div class="reuniones-loading">
+            <span class="spinner-border spinner-border-sm"></span>
+            <span>Cargando agenda...</span>
+        </div>
+    }
+    else if (_model.Tipo is null)
+    {
+        <section class="reuniones-card reuniones-empty">
+            <span>Agenda no disponible</span>
+            <h1>No encontramos esta capacitacion</h1>
+            <p>La agenda solicitada no esta activa o todavia no fue configurada.</p>
+        </section>
+    }
+    else if (_confirmed is not null)
+    {
+        <section class="reuniones-confirmacion">
+            <div class="reuniones-card">
+                <span class="reuniones-eyebrow">Reserva confirmada</span>
+                <h1>@_confirmed.Titulo</h1>
+                <p>Te esperamos el <strong>@_confirmed.FechaInicio.ToString("dddd dd 'de' MMMM", Culture)</strong> a las <strong>@_confirmed.FechaInicio.ToString("HH:mm", Culture)</strong>.</p>
+                <dl>
+                    <div>
+                        <dt>Duracion</dt>
+                        <dd>@((_confirmed.FechaFin - _confirmed.FechaInicio).TotalMinutes.ToString("0", Culture)) min</dd>
+                    </div>
+                    <div>
+                        <dt>Modalidad</dt>
+                        <dd>@_confirmed.Modalidad</dd>
+                    </div>
+                    <div>
+                        <dt>Operador</dt>
+                        <dd>@_confirmed.TecnicoNombre</dd>
+                    </div>
+                </dl>
+                <button type="button" class="reuniones-btn reuniones-btn--primary" @onclick="ResetReservation">Hacer otra reserva</button>
+            </div>
+        </section>
+    }
+    else
+    {
+        <div class="reuniones-grid">
+            <section class="reuniones-main">
+                <div>
+                    <a href="/reuniones" class="reuniones-back">Todas las citas</a>
+                    <h1>Elegí la fecha y la hora</h1>
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(_error))
+                {
+                    <div class="reuniones-alert">
+                        <strong>@_errorTitle</strong>
+                        <span>@_error</span>
+                    </div>
+                }
+
+                <div class="reuniones-picker">
+                    <section class="reuniones-calendar">
+                        <header>
+                            <button type="button" @onclick="PreviousMonth" title="Mes anterior">
+                                <i class="bi bi-chevron-left"></i>
+                            </button>
+                            <strong>@_model.MonthStart.ToString("MMMM yyyy", Culture)</strong>
+                            <button type="button" @onclick="NextMonth" title="Mes siguiente">
+                                <i class="bi bi-chevron-right"></i>
+                            </button>
+                        </header>
+
+                        <div class="reuniones-weekdays">
+                            @foreach (var day in DayNames)
+                            {
+                                <span>@day</span>
+                            }
+                        </div>
+
+                        <div class="reuniones-days">
+                            @foreach (var day in _model.Dias)
+                            {
+                                <button type="button"
+                                        class="@DayClass(day)"
+                                        disabled="@(!day.Disponible)"
+                                        @onclick="() => SelectDay(day.Fecha)">
+                                    <span>@day.Fecha.Day</span>
+                                </button>
+                            }
+                        </div>
+
+                        <label class="reuniones-timezone">
+                            <span>Zona horaria</span>
+                            <select disabled>
+                                <option>America/Buenos_Aires</option>
+                            </select>
+                        </label>
+                    </section>
+
+                    <section class="reuniones-slots">
+                        <span>Seleccioná una hora</span>
+                        @if (SelectedDay?.Horarios.Any(x => x.Disponible) == true)
+                        {
+                            <div>
+                                @foreach (var slot in SelectedDay.Horarios.Where(x => x.Disponible))
+                                {
+                                    <button type="button"
+                                            class="@(slot.Inicio == _selectedSlot?.Inicio ? "is-selected" : string.Empty)"
+                                            @onclick="() => SelectSlot(slot)">
+                                        @slot.Inicio.ToString("HH:mm", Culture)
+                                    </button>
+                                }
+                            </div>
+                        }
+                        else
+                        {
+                            <p>No hay horarios disponibles para este día.</p>
+                        }
+                    </section>
+                </div>
+
+                @if (_selectedSlot is not null)
+                {
+                    <section class="reuniones-card reuniones-form">
+                        <div>
+                            <span class="reuniones-eyebrow">Tus datos</span>
+                            <h2>@_selectedSlot.Inicio.ToString("dddd dd/MM HH:mm", Culture)</h2>
+                        </div>
+                        <div class="reuniones-form-grid">
+                            <label>
+                                <span>Nombre y apellido</span>
+                                <input @bind="_request.ClienteNombre" disabled="@_saving" />
+                            </label>
+                            <label>
+                                <span>Razón social</span>
+                                <input @bind="_request.RazonSocial" disabled="@_saving" />
+                            </label>
+                            <label>
+                                <span>Email</span>
+                                <input type="email" @bind="_request.Email" disabled="@_saving" />
+                            </label>
+                            <label>
+                                <span>Teléfono</span>
+                                <input @bind="_request.Telefono" disabled="@_saving" />
+                            </label>
+                            <label class="is-wide">
+                                <span>Tipo de capacitación</span>
+                                <select @bind="_request.TipoCapacitacion" disabled="@_saving">
+                                    <option value="">Seleccionar</option>
+                                    <option>Capacitación inicial / básica</option>
+                                    <option>Capacitación intermedia</option>
+                                    <option>Capacitación avanzada / especializada</option>
+                                </select>
+                            </label>
+                            <label class="is-wide">
+                                <span>Observaciones</span>
+                                <textarea @bind="_request.Observaciones" disabled="@_saving"></textarea>
+                            </label>
+                        </div>
+                        <button type="button" class="reuniones-btn reuniones-btn--primary" disabled="@_saving" @onclick="ConfirmAsync">
+                            <i class="bi bi-check2-circle"></i>
+                            <span>@(_saving ? "Confirmando..." : "Confirmar reserva")</span>
+                        </button>
+                    </section>
+                }
+            </section>
+
+            <aside class="reuniones-detail">
+                <img src="/logos/Logo.png" alt="AlfaNet" />
+                <h2>@_model.Tipo.Titulo</h2>
+                <p>@_model.Tipo.Descripcion</p>
+                <dl>
+                    <div>
+                        <dt><i class="bi bi-camera-video-fill"></i> Modalidad</dt>
+                        <dd>@_model.Tipo.Modalidad</dd>
+                    </div>
+                    <div>
+                        <dt><i class="bi bi-clock"></i> Duración</dt>
+                        <dd>@_model.Tipo.DuracionMinutos minutos</dd>
+                    </div>
+                    <div>
+                        <dt><i class="bi bi-person-circle"></i> Operador</dt>
+                        <dd>@_model.Tipo.TecnicoNombre</dd>
+                    </div>
+                    @if (!string.IsNullOrWhiteSpace(_model.Tipo.EmailOperador))
+                    {
+                        <div>
+                            <dt><i class="bi bi-envelope-fill"></i> Email</dt>
+                            <dd>@_model.Tipo.EmailOperador</dd>
+                        </div>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(_model.Tipo.TelefonoWhatsApp))
+                    {
+                        <div>
+                            <dt><i class="bi bi-telephone-fill"></i> WhatsApp</dt>
+                            <dd>@_model.Tipo.TelefonoWhatsApp</dd>
+                        </div>
+                    }
+                </dl>
+            </aside>
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter] public string? Slug { get; set; }
+
+    private static readonly CultureInfo Culture = CultureInfo.GetCultureInfo("es-AR");
+    private static readonly string[] DayNames = ["lun", "mar", "mie", "jue", "vie", "sab", "dom"];
+    private ReunionPublicaMesDto _model = new();
+    private ReunionPublicaReservaRequest _request = new();
+    private ReunionPublicaHorarioDto? _selectedSlot;
+    private ReunionPublicaReservaResult? _confirmed;
+    private bool _loading = true;
+    private bool _saving;
+    private string _error = string.Empty;
+    private string _errorTitle = "Revisá la reserva";
+
+    private ReunionPublicaDiaDto? SelectedDay
+        => _selectedSlot is null
+            ? _model.Dias.FirstOrDefault(x => x.Fecha.Date == DateTime.Today.Date && x.Disponible) ?? _model.Dias.FirstOrDefault(x => x.Disponible)
+            : _model.Dias.FirstOrDefault(x => x.Fecha.Date == _selectedSlot.Inicio.Date);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadAsync(DateTime.Today.Year, DateTime.Today.Month);
+    }
+
+    private async Task LoadAsync(int year, int month)
+    {
+        _loading = true;
+        _error = string.Empty;
+        try
+        {
+            _model = await ReunionesSvc.GetPublicMonthAsync(new ReunionPublicaMesRequest
+            {
+                Slug = string.IsNullOrWhiteSpace(Slug) ? "capacitacion-online" : Slug,
+                Year = year,
+                Month = month
+            });
+            _selectedSlot = null;
+            var firstDay = _model.Dias.FirstOrDefault(x => x.Disponible);
+            if (firstDay?.Horarios.FirstOrDefault(x => x.Disponible) is { } firstSlot)
+                SelectSlot(firstSlot);
+        }
+        catch (Exception ex)
+        {
+            _errorTitle = "No se pudo cargar la agenda";
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task PreviousMonth()
+    {
+        var prev = _model.MonthStart.AddMonths(-1);
+        await LoadAsync(prev.Year, prev.Month);
+    }
+
+    private async Task NextMonth()
+    {
+        var next = _model.MonthStart.AddMonths(1);
+        await LoadAsync(next.Year, next.Month);
+    }
+
+    private void SelectDay(DateTime day)
+    {
+        var slot = _model.Dias.FirstOrDefault(x => x.Fecha.Date == day.Date)?.Horarios.FirstOrDefault(x => x.Disponible);
+        if (slot is not null)
+            SelectSlot(slot);
+    }
+
+    private void SelectSlot(ReunionPublicaHorarioDto slot)
+    {
+        _selectedSlot = slot;
+        if (_model.Tipo is not null)
+            _request.IdTipoReunion = _model.Tipo.IdTipoReunion;
+        _request.FechaInicio = slot.Inicio;
+        _error = string.Empty;
+    }
+
+    private async Task ConfirmAsync()
+    {
+        if (_selectedSlot is null)
+            return;
+
+        _saving = true;
+        _error = string.Empty;
+        _request.FechaInicio = _selectedSlot.Inicio;
+        try
+        {
+            _confirmed = await ReunionesSvc.CreateReservationAsync(_request);
+        }
+        catch (Exception ex)
+        {
+            var title = "No se pudo confirmar";
+            var message = ex.Message;
+            await LoadAsync(_model.MonthStart.Year, _model.MonthStart.Month);
+            _errorTitle = title;
+            _error = message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private void ResetReservation()
+    {
+        _confirmed = null;
+        _request = new ReunionPublicaReservaRequest();
+        if (_selectedSlot is not null)
+            SelectSlot(_selectedSlot);
+    }
+
+    private string DayClass(ReunionPublicaDiaDto day)
+    {
+        var css = "reuniones-day";
+        if (day.Fecha.Month != _model.MonthStart.Month) css += " is-muted";
+        if (day.Fecha.Date == DateTime.Today.Date) css += " is-today";
+        if (_selectedSlot?.Inicio.Date == day.Fecha.Date) css += " is-selected";
+        if (day.Disponible) css += " is-available";
+        return css;
+    }
+
+    private string StepClass(int step)
+    {
+        var current = _confirmed is not null ? 3 : _selectedSlot is null ? 1 : 2;
+        return step == current ? "is-active" : string.Empty;
+    }
+}

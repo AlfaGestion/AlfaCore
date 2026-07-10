@@ -191,7 +191,11 @@ public sealed class CuentasComercialesService(
                     ISNULL(base.DOCUMENTO_TIPO, ''),
                     ISNULL(base.NUMERO_DOCUMENTO, ''),
                     ISNULL(base.IVA, ''),
-                    ISNULL(base.OBSERVACIONES, ''),
+                    COALESCE(
+                        NULLIF(LTRIM(RTRIM(CAST(adic.OBSERVACIONES AS nvarchar(max)))), ''),
+                        NULLIF(LTRIM(RTRIM(CAST(base.OBSERVACIONES AS nvarchar(max)))), ''),
+                        ''
+                    ),
                     base.Limite_Credito,
                     ISNULL(base.idCond_Cpra_Vta, ''),
                     ISNULL(base.IdLista, ''),
@@ -218,6 +222,8 @@ public sealed class CuentasComercialesService(
                 FROM dbo.{descriptor.ViewName} base
                 LEFT JOIN dbo.MA_CUENTAS acc
                     ON UPPER(LTRIM(RTRIM(acc.CODIGO))) = UPPER(LTRIM(RTRIM(ISNULL(base.CODIGO, ''))))
+                LEFT JOIN dbo.MA_CUENTASADIC adic
+                    ON UPPER(LTRIM(RTRIM(adic.CODIGO))) = UPPER(LTRIM(RTRIM(ISNULL(base.CODIGO, ''))))
                 WHERE UPPER(LTRIM(RTRIM(base.CODIGO))) = @Codigo;
                 """;
 
@@ -495,7 +501,7 @@ public sealed class CuentasComercialesService(
                         Dada_De_Baja = 0,
                         CodigoOpcional = @CodigoOpcional,
                         FechaHora_Modificacion = GETDATE()
-                    WHERE UPPER(LTRIM(RTRIM(CODIGO))) = @Codigo;
+                    WHERE UPPER(LTRIM(RTRIM(CODIGO))) = UPPER(LTRIM(RTRIM(@Codigo)));
                     """
                     : """
                     UPDATE dbo.MA_CUENTAS
@@ -507,7 +513,7 @@ public sealed class CuentasComercialesService(
                         Dada_De_Baja = 0,
                         CodigoOpcional = @CodigoOpcional,
                         FechaHora_Modificacion = GETDATE()
-                    WHERE UPPER(LTRIM(RTRIM(CODIGO))) = @Codigo;
+                    WHERE UPPER(LTRIM(RTRIM(CODIGO))) = UPPER(LTRIM(RTRIM(@Codigo)));
                     """;
 
                 await using var cmd = new SqlCommand(updateAccountSql, cn, (SqlTransaction)tx);
@@ -649,14 +655,17 @@ public sealed class CuentasComercialesService(
                         ProveedorCompartido = @ProveedorCompartido,
                         Clasificacion = @Clasificacion,
                         FechaHora_Modificacion = GETDATE()
-                    WHERE UPPER(LTRIM(RTRIM(CODIGO))) = @Codigo;
+                    WHERE UPPER(LTRIM(RTRIM(CODIGO))) = UPPER(LTRIM(RTRIM(@Codigo)));
                     """;
 
                 await using var cmd = new SqlCommand(updateAdicSql, cn, (SqlTransaction)tx);
                 FillCuentaAdicParameters(cmd, normalized, defaultDocumentoTipo, defaultIva, defaultPais, defaultProvincia, defaultCond, defaultClase, defaultMotivo, tipo);
-                await cmd.ExecuteNonQueryAsync(token);
+                var affected = await cmd.ExecuteNonQueryAsync(token);
+                if (affected == 0)
+                    throw new InvalidOperationException("No se pudo actualizar MA_CUENTASADIC para la cuenta indicada.");
             }
 
+            await EnsureCuentaAdicObservacionesSavedAsync(cn, (SqlTransaction)tx, normalized, token);
             await UpsertCuentaObsAsync(cn, (SqlTransaction)tx, normalized, token);
             if (tipo == CuentaComercialTipo.Proveedor)
                 await ReplaceDescuentosProveedorAsync(cn, (SqlTransaction)tx, normalized, token);
@@ -1093,7 +1102,7 @@ public sealed class CuentasComercialesService(
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
-            var detailColumn = await ResolveConfigDetailColumnAsync(cn, token);
+            var detailColumn = await ResolveConfigDetailColumnAsync(cn, null, token);
             var configKey = BuildViewConfigKey(tipo, userName);
             var sql = $"""
                 SELECT TOP (1)
@@ -1128,7 +1137,7 @@ public sealed class CuentasComercialesService(
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
-            var detailColumn = await ResolveConfigDetailColumnAsync(cn, token);
+            var detailColumn = await ResolveConfigDetailColumnAsync(cn, null, token);
             var stored = SplitStoredValue(serialized);
             var configKey = BuildViewConfigKey(tipo, userName);
             var sql = $"""
@@ -1278,7 +1287,7 @@ public sealed class CuentasComercialesService(
         string motivoDefault,
         CuentaComercialTipo tipo)
     {
-        cmd.Parameters.AddWithValue("@Codigo", request.Codigo);
+        cmd.Parameters.AddWithValue("@Codigo", request.Codigo.Trim().ToUpperInvariant());
         cmd.Parameters.AddWithValue("@Contacto", DbNullable(request.Contacto));
         cmd.Parameters.AddWithValue("@Calle", DbNullable(request.Calle));
         cmd.Parameters.AddWithValue("@Numero", DbNullable(request.Numero));
@@ -1457,6 +1466,23 @@ public sealed class CuentasComercialesService(
         cmd.Parameters.AddWithValue("@ConceptoIb", DbNullable(request.ConceptoIb));
         cmd.Parameters.AddWithValue("@NroConstanciaIb", DbNullable(request.NroConstanciaIb));
         await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    private static async Task EnsureCuentaAdicObservacionesSavedAsync(SqlConnection cn, SqlTransaction tx, CuentaComercialSaveRequest request, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT TOP (1) ISNULL(CAST(OBSERVACIONES AS nvarchar(max)), '')
+            FROM dbo.MA_CUENTASADIC
+            WHERE UPPER(LTRIM(RTRIM(CODIGO))) = @Codigo;
+            """;
+
+        await using var cmd = new SqlCommand(sql, cn, tx);
+        cmd.Parameters.AddWithValue("@Codigo", request.Codigo.Trim().ToUpperInvariant());
+        var stored = Convert.ToString(await cmd.ExecuteScalarAsync(ct))?.Trim() ?? string.Empty;
+        var expected = request.Observaciones?.Trim() ?? string.Empty;
+
+        if (!string.Equals(stored, expected, StringComparison.Ordinal))
+            throw new InvalidOperationException("La observacion del cliente no quedo guardada en MA_CUENTASADIC.");
     }
 
     private static async Task ReplaceDescuentosProveedorAsync(SqlConnection cn, SqlTransaction tx, CuentaComercialSaveRequest request, CancellationToken ct)
@@ -1687,7 +1713,7 @@ public sealed class CuentasComercialesService(
 
     private async Task<string> ReadConfigValueAsync(SqlConnection cn, SqlTransaction? tx, string key, CancellationToken ct)
     {
-        var detailColumn = await ResolveConfigDetailColumnAsync(cn, ct);
+        var detailColumn = await ResolveConfigDetailColumnAsync(cn, tx, ct);
         var sql = $"""
             SELECT TOP (1)
                 ISNULL(VALOR, ''),
@@ -1705,7 +1731,7 @@ public sealed class CuentasComercialesService(
         return ResolveStoredValue(GetString(rd, 0), GetString(rd, 1));
     }
 
-    private static async Task<string> ResolveConfigDetailColumnAsync(SqlConnection cn, CancellationToken ct)
+    private static async Task<string> ResolveConfigDetailColumnAsync(SqlConnection cn, SqlTransaction? tx, CancellationToken ct)
     {
         const string sql = """
             SELECT TOP (1) name
@@ -1715,7 +1741,7 @@ public sealed class CuentasComercialesService(
             ORDER BY CASE WHEN LOWER(name) IN (N'valoraux', N'valor_aux') THEN 0 ELSE 1 END, name;
             """;
 
-        await using var cmd = new SqlCommand(sql, cn);
+        await using var cmd = new SqlCommand(sql, cn, tx);
         var result = await cmd.ExecuteScalarAsync(ct);
         var column = Convert.ToString(result) ?? string.Empty;
         return string.IsNullOrWhiteSpace(column) ? "DESCRIPCION" : column;

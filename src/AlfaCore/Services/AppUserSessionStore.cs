@@ -14,6 +14,9 @@ public sealed class AppUserSessionStore
         return token;
     }
 
+    public void Upsert(string token, AppUserSessionInfo info)
+        => _store[token] = info;
+
     public bool TryGet(string token, out AppUserSessionInfo? info)
         => _store.TryGetValue(token, out info);
 

@@ -461,7 +461,7 @@ El módulo no tiene autenticación propia (igual que el resto del dashboard). El
 | `MainLayout.razor` | Agregar rama `consultas` al sidebar |
 | `Launcher.razor` | Activar card "Diseñador de Consultas" |
 | `docs/CHANGELOG.md` | Agregar entrada v1.2.0 al completar Etapa 1 |
-| `docs/AlfaCore.md` | Agregar rutas y módulo |
+| `docs/arquitectura/AlfaCore.md` | Agregar rutas y módulo |
 
 ### 10.3 Nuevo paquete NuGet
 

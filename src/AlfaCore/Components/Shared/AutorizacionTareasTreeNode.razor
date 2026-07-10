@@ -2,14 +2,15 @@
 @inject IJSRuntime JS
 
 <div class="auth-tree-node auth-tree-node--level-@Level">
-    <div class="auth-tree-node__row @(Item.Habilitado ? string.Empty : "is-disabled")">
+    <div class="auth-tree-node__row @(Item.Habilitado ? string.Empty : "is-disabled")"
+         title="@BuildTooltip()">
+
         @if (Item.Hijos.Count > 0)
         {
             <button type="button"
                     class="auth-tree-node__expand"
-                    @onclick="() => ToggleExpand.InvokeAsync(Item.Clave)"
-                    title="@(IsExpanded ? "Contraer" : "Expandir")">
-                <i class="bi @(IsExpanded ? "bi-caret-down-fill" : "bi-caret-right-fill")"></i>
+                    @onclick="() => ToggleExpand.InvokeAsync(Item.Clave)">
+                <i class="bi @(IsExpanded ? "bi-dash-square" : "bi-plus-square")"></i>
             </button>
         }
         else
@@ -23,53 +24,19 @@
                    checked="@Item.Autorizado"
                    disabled="@(!Item.Habilitado)"
                    @onchange="OnCheckedChanged" />
-            <span class="auth-tree-node__content">
-                <span class="auth-tree-node__name">@Item.Nombre</span>
-                <span class="auth-tree-node__meta">
-                    <span class="auth-tree-node__key">@Item.Clave</span>
-                    @if (!string.IsNullOrWhiteSpace(Item.Descripcion))
-                    {
-                        <span class="auth-tree-node__desc">@Item.Descripcion</span>
-                    }
-                </span>
-            </span>
+            <span class="auth-tree-node__name">@Item.Nombre</span>
         </label>
 
         <div class="auth-tree-node__badges">
-            @if (Item.EsCompartida)
-            {
-                <span class="auth-badge auth-badge--shared">Desktop + Web</span>
-            }
-            else if (Item.EsWeb)
-            {
-                <span class="auth-badge auth-badge--web">Web</span>
-            }
-            else if (Item.EsDesktop)
-            {
-                <span class="auth-badge auth-badge--desktop">Desktop</span>
-            }
-            else
-            {
-                <span class="auth-badge auth-badge--group">Agrupador</span>
-            }
-
             @if (Item.Parcial)
             {
-                <span class="auth-badge auth-badge--partial">Parcial</span>
+                <span class="auth-badge auth-badge--partial" title="Autorización parcial">Parcial</span>
             }
             @if (!Item.Habilitado)
             {
-                <span class="auth-badge auth-badge--disabled">Deshabilitada</span>
+                <span class="auth-badge auth-badge--disabled" title="Deshabilitada">Off</span>
             }
         </div>
-
-        @if (!string.IsNullOrWhiteSpace(Item.Proceso) || !string.IsNullOrWhiteSpace(Item.RutaWeb))
-        {
-            <span class="auth-tree-node__hint"
-                  title="@BuildHint()">
-                <i class="bi bi-info-circle"></i>
-            </span>
-        }
     </div>
 
     @if (IsExpanded && Item.Hijos.Count > 0)
@@ -109,13 +76,13 @@
             Checked = args.Value is bool b ? b : string.Equals(Convert.ToString(args.Value), "true", StringComparison.OrdinalIgnoreCase)
         });
 
-    private string BuildHint()
+    private string BuildTooltip()
     {
-        var parts = new List<string>();
-        if (!string.IsNullOrWhiteSpace(Item.Proceso))
-            parts.Add($"Desktop: {Item.Proceso}");
+        var parts = new List<string> { Item.Clave };
+        if (!string.IsNullOrWhiteSpace(Item.Descripcion))
+            parts.Add(Item.Descripcion);
         if (!string.IsNullOrWhiteSpace(Item.RutaWeb))
             parts.Add($"Web: {Item.RutaWeb}");
-        return string.Join(" | ", parts);
+        return string.Join("  |  ", parts);
     }
 }

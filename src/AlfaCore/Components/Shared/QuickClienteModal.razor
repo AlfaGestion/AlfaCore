@@ -1,0 +1,542 @@
+@using AlfaCore.Models
+@using AlfaCore.Services
+@using System.Text.RegularExpressions
+@inject ICuentasComercialesService ClientesSvc
+
+@if (Open)
+{
+    <div class="qcm-backdrop" @onclick="CloseAsync"></div>
+
+    <section class="qcm-modal" role="dialog" aria-label="Seleccionar cliente" @onclick:stopPropagation>
+        <div class="qcm-modal__head">
+            <div class="qcm-tabs">
+                <button class="qcm-tab @(_vista == "buscar" ? "qcm-tab--active" : "")"
+                        type="button"
+                        @onclick='() => CambiarVista("buscar")'>
+                    <i class="bi bi-search"></i>
+                    Buscar cliente
+                </button>
+                <button class="qcm-tab @(_vista == "nuevo" ? "qcm-tab--active" : "")"
+                        type="button"
+                        @onclick="AbrirNuevoAsync">
+                    <i class="bi bi-person-plus"></i>
+                    Nuevo cliente
+                </button>
+            </div>
+            <button class="qcm-modal__close" type="button" @onclick="CloseAsync" title="Cerrar">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        </div>
+
+        @if (_vista == "buscar")
+        {
+            <div class="qcm-search">
+                <div class="qcm-search__bar">
+                    <input class="qcm-search__input"
+                           @bind="_busqueda"
+                           @bind:event="oninput"
+                           @onkeydown="HandleBusquedaKeyAsync"
+                           placeholder="Código, CUIT o nombre..."
+                           autocomplete="off" />
+                    <button class="qcm-search__btn" type="button" @onclick="BuscarAsync" disabled="@_buscando">
+                        @(_buscando ? "Buscando..." : "Buscar")
+                    </button>
+                </div>
+
+                @if (!string.IsNullOrEmpty(_busquedaError))
+                {
+                    <p class="qcm-msg qcm-msg--error">@_busquedaError</p>
+                }
+
+                @if (_buscando)
+                {
+                    <p class="qcm-msg">Buscando...</p>
+                }
+                else if (_resultados is not null)
+                {
+                    @if (!_resultados.Any())
+                    {
+                        <p class="qcm-msg">No se encontraron clientes con ese criterio.</p>
+                    }
+                    else
+                    {
+                        <div class="qcm-results">
+                            @foreach (var r in _resultados)
+                            {
+                                <button class="qcm-result" type="button" @onclick="() => SeleccionarAsync(r)">
+                                    <span class="qcm-result__code">@r.Codigo</span>
+                                    <span class="qcm-result__name">@r.RazonSocial</span>
+                                    @if (!string.IsNullOrWhiteSpace(r.Telefono))
+                                    {
+                                        <span class="qcm-result__tel">@r.Telefono</span>
+                                    }
+                                </button>
+                            }
+                        </div>
+                    }
+                }
+                else
+                {
+                    <p class="qcm-msg qcm-msg--hint">Ingrese un código, CUIT o nombre y presione Buscar.</p>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="qcm-form">
+
+                @* ── Tipo de cliente ─────────────────────────────────────────── *@
+                @if (!string.IsNullOrEmpty(CuentaEventualCodigo))
+                {
+                    <div class="qcm-tipo-row">
+                        <button type="button"
+                                class="qcm-tipo-btn @(!_eventual ? "qcm-tipo-btn--active" : "")"
+                                @onclick="() => SetEventual(false)">
+                            <i class="bi bi-person-badge"></i>
+                            Habitual
+                        </button>
+                        <button type="button"
+                                class="qcm-tipo-btn @(_eventual ? "qcm-tipo-btn--active" : "")"
+                                @onclick="() => SetEventual(true)">
+                            <i class="bi bi-receipt"></i>
+                            Eventual
+                        </button>
+                    </div>
+
+                    @if (_eventual)
+                    {
+                        <div class="qcm-alert qcm-alert--info">
+                            <i class="bi bi-info-circle-fill"></i>
+                            <span>Se usará la cuenta <strong>@CuentaEventualCodigo</strong> (consumidor final). Los datos ingresados son para referencia en el comprobante.</span>
+                        </div>
+                    }
+                }
+
+                @* ── Error general ───────────────────────────────────────────── *@
+                @if (!string.IsNullOrEmpty(_guardadoError))
+                {
+                    <div class="qcm-alert qcm-alert--error">
+                        <i class="bi bi-exclamation-circle-fill"></i>
+                        <span>@_guardadoError</span>
+                    </div>
+                }
+
+                @* ── Duplicado CUIT ──────────────────────────────────────────── *@
+                @if (_cuitDuplicado is not null)
+                {
+                    <div class="qcm-alert qcm-alert--warn">
+                        <i class="bi bi-exclamation-triangle-fill"></i>
+                        <div>
+                            <strong>CUIT ya registrado:</strong> @_cuitDuplicado.RazonSocial (@_cuitDuplicado.Codigo)
+                            <div class="qcm-alert__actions">
+                                <button type="button" class="qcm-alert__link" @onclick="UsarClienteExistenteAsync">
+                                    Usar este cliente
+                                </button>
+                                <button type="button" class="qcm-alert__link qcm-alert__link--muted" @onclick="() => _cuitDuplicado = null">
+                                    Ignorar y crear nuevo
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                }
+
+                <div class="qcm-form-grid">
+                    <div class="field qcm-col-2">
+                        <label>CUIT / DNI @RequiredMark(!_eventual)</label>
+                        <input @bind="_nuevo.NumeroDocumento"
+                               @bind:event="oninput"
+                               @onblur="HandleCuitBlurAsync"
+                               placeholder="20-12345678-9"
+                               class="@(HasFieldError("numero-documento") ? "qcm-input--error" : "")" />
+                        @if (_cuitBuscando)
+                        {
+                            <span class="qcm-field-hint">Verificando CUIT...</span>
+                        }
+                        @FieldError("numero-documento")
+                    </div>
+                    <div class="field qcm-col-2">
+                        <label>Nombre / Razón social @RequiredMark(!_eventual)</label>
+                        <input @bind="_nuevo.RazonSocial"
+                               placeholder="@(_eventual ? "Opcional para eventual" : "Razón social o nombre")"
+                               class="@(HasFieldError("razon-social") ? "qcm-input--error" : "")" />
+                        @FieldError("razon-social")
+                    </div>
+                    <div class="field qcm-col-2">
+                        <label>Fantasía / Contacto</label>
+                        <input @bind="_nuevo.Contacto" placeholder="Nombre comercial o contacto" />
+                    </div>
+                    <div class="field">
+                        <label>Tipo Doc.</label>
+                        <select @bind="_nuevo.DocumentoTipoCodigo"
+                                class="@(HasFieldError("tipo-documento") ? "qcm-input--error" : "")">
+                            <option value="">-</option>
+                            @foreach (var opt in _lookupData?.TiposDocumento ?? [])
+                            {
+                                <option value="@opt.Codigo">@opt.Descripcion</option>
+                            }
+                        </select>
+                        @FieldError("tipo-documento")
+                    </div>
+                    <div class="field">
+                        <label>Cond. IVA</label>
+                        <select @bind="_nuevo.IvaCodigo"
+                                class="@(HasFieldError("iva") ? "qcm-input--error" : "")">
+                            <option value="">-</option>
+                            @foreach (var opt in _lookupData?.CondicionesIva ?? [])
+                            {
+                                <option value="@opt.Codigo">@opt.Descripcion</option>
+                            }
+                        </select>
+                        @FieldError("iva")
+                    </div>
+
+                    @if (!_eventual)
+                    {
+                        <div class="field qcm-col-2">
+                            <label>Domicilio (Calle) <span class="qcm-required">*</span></label>
+                            <input @bind="_nuevo.Calle"
+                                   placeholder="Calle y número"
+                                   class="@(HasFieldError("calle") ? "qcm-input--error" : "")" />
+                            @FieldError("calle")
+                        </div>
+                        <div class="field">
+                            <label>Provincia <span class="qcm-required">*</span></label>
+                            <select @bind="_nuevo.ProvinciaCodigo"
+                                    class="@(HasFieldError("provincia") ? "qcm-input--error" : "")">
+                                <option value="">-</option>
+                                @foreach (var opt in _lookupData?.Provincias ?? [])
+                                {
+                                    <option value="@opt.Codigo">@opt.Descripcion</option>
+                                }
+                            </select>
+                            @FieldError("provincia")
+                        </div>
+                        <div class="field">
+                            <label>País <span class="qcm-required">*</span></label>
+                            <select @bind="_nuevo.PaisCodigo"
+                                    class="@(HasFieldError("pais") ? "qcm-input--error" : "")">
+                                <option value="">-</option>
+                                @foreach (var opt in _lookupData?.Paises ?? [])
+                                {
+                                    <option value="@opt.Codigo">@opt.Descripcion</option>
+                                }
+                            </select>
+                            @FieldError("pais")
+                        </div>
+                        <div class="field">
+                            <label>Localidad <span class="qcm-required">*</span></label>
+                            <input @bind="_nuevo.Localidad"
+                                   placeholder="Ciudad / localidad"
+                                   class="@(HasFieldError("localidad") ? "qcm-input--error" : "")" />
+                            @FieldError("localidad")
+                        </div>
+                        <div class="field">
+                            <label>CP</label>
+                            <input @bind="_nuevo.CodigoPostal" placeholder="Cód. postal" />
+                        </div>
+                    }
+
+                    <div class="field">
+                        <label>Email</label>
+                        <input @bind="_nuevo.Mail"
+                               type="email"
+                               placeholder="email@ejemplo.com"
+                               class="@(HasFieldError("mail") ? "qcm-input--error" : "")" />
+                        @FieldError("mail")
+                    </div>
+                    <div class="field">
+                        <label>Teléfono</label>
+                        <input @bind="_nuevo.Telefono" placeholder="Ej: 11-4444-5555" />
+                    </div>
+                </div>
+
+                <div class="qcm-form__actions">
+                    <button class="btn btn--ghost" type="button" @onclick='() => CambiarVista("buscar")'>Cancelar</button>
+                    <button class="btn btn--primary" type="button" @onclick="GuardarAsync" disabled="@(_guardando || _cuitBuscando)">
+                        @if (_guardando)
+                        {
+                            <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+                        }
+                        <span>@(_guardando ? "Guardando..." : (_eventual ? "Usar consumidor final" : "Guardar cliente"))</span>
+                    </button>
+                </div>
+            </div>
+        }
+    </section>
+}
+
+@code {
+    [Parameter] public bool Open { get; set; }
+    [Parameter] public EventCallback<CuentaComercialGridItemDto> OnClienteSelected { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    /// <summary>Código de consumidor final (CUENTACONSUMIDORFINAL). Si se provee habilita el toggle Habitual/Eventual.</summary>
+    [Parameter] public string? CuentaEventualCodigo { get; set; }
+
+    private string _vista = "buscar";
+    private string _busqueda = string.Empty;
+    private string _busquedaError = string.Empty;
+    private bool _buscando;
+    private IReadOnlyList<CuentaComercialGridItemDto>? _resultados;
+    private CuentaComercialSaveRequest _nuevo = new();
+    private CuentaComercialLookupDataDto? _lookupData;
+    private bool _guardando;
+    private string _guardadoError = string.Empty;
+    private bool _cuitBuscando;
+    private CuentaComercialGridItemDto? _cuitDuplicado;
+    private Dictionary<string, string> _fieldErrors = [];
+    private bool _eventual;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Open && _lookupData is null)
+            await LoadLookupDataAsync();
+    }
+
+    private async Task LoadLookupDataAsync()
+    {
+        try
+        {
+            _lookupData = await ClientesSvc.GetLookupDataAsync(CuentaComercialTipo.Cliente);
+            ApplyDefaultPais();
+        }
+        catch { }
+    }
+
+    private void ApplyDefaultPais()
+    {
+        if (_lookupData is null || !string.IsNullOrEmpty(_nuevo.PaisCodigo)) return;
+        var arg = _lookupData.Paises.FirstOrDefault(p =>
+            p.Descripcion.Contains("ARGENTIN", StringComparison.OrdinalIgnoreCase));
+        if (arg is not null)
+            _nuevo.PaisCodigo = arg.Codigo;
+    }
+
+    private void SetEventual(bool value)
+    {
+        _eventual = value;
+        _guardadoError = string.Empty;
+        _fieldErrors = [];
+        _cuitDuplicado = null;
+    }
+
+    private void CambiarVista(string vista)
+    {
+        _vista = vista;
+        _guardadoError = string.Empty;
+        _fieldErrors = [];
+    }
+
+    private async Task AbrirNuevoAsync()
+    {
+        _vista = "nuevo";
+        _nuevo = new CuentaComercialSaveRequest();
+        _guardadoError = string.Empty;
+        _fieldErrors = [];
+        _cuitDuplicado = null;
+        _eventual = false;
+        if (_lookupData is null)
+            await LoadLookupDataAsync();
+        else
+            ApplyDefaultPais();
+    }
+
+    // ── CUIT blur ────────────────────────────────────────────────────────────
+
+    private async Task HandleCuitBlurAsync()
+    {
+        var raw = _nuevo.NumeroDocumento?.Trim() ?? string.Empty;
+        if (raw.Length == 0) return;
+
+        var numeric = StripNonNumeric(raw);
+        _nuevo.NumeroDocumento = numeric;
+
+        _cuitDuplicado = null;
+        _fieldErrors.Remove("numero-documento");
+        if (numeric.Length != 11 || _eventual) return;
+
+        _cuitBuscando = true;
+        try
+        {
+            var match = await FindByCuitAsync(numeric);
+            if (match is not null)
+                _cuitDuplicado = match;
+        }
+        catch { }
+        finally
+        {
+            _cuitBuscando = false;
+        }
+    }
+
+    private async Task<CuentaComercialGridItemDto?> FindByCuitAsync(string numericCuit)
+    {
+        var formatted = $"{numericCuit[..2]}-{numericCuit[2..10]}-{numericCuit[10]}";
+        foreach (var term in new[] { numericCuit, formatted })
+        {
+            var result = await ClientesSvc.SearchAsync(
+                CuentaComercialTipo.Cliente,
+                new CuentaComercialFilters { Texto = term, Activo = null, PageSize = 20 });
+
+            var match = result.Items.FirstOrDefault(x =>
+                StripNonNumeric(x.NumeroDocumento) == numericCuit);
+            if (match is not null) return match;
+        }
+        return null;
+    }
+
+    private async Task UsarClienteExistenteAsync()
+    {
+        if (_cuitDuplicado is null) return;
+        await SeleccionarAsync(_cuitDuplicado);
+    }
+
+    // ── Search tab ───────────────────────────────────────────────────────────
+
+    private async Task BuscarAsync()
+    {
+        _busquedaError = string.Empty;
+        var texto = _busqueda.Trim();
+        if (texto.Length == 0)
+        {
+            _busquedaError = "Ingrese un código, CUIT o nombre para buscar.";
+            return;
+        }
+        try
+        {
+            _buscando = true;
+            var result = await ClientesSvc.SearchAsync(
+                CuentaComercialTipo.Cliente,
+                new CuentaComercialFilters { Texto = texto, Activo = null, PageSize = 30, PageNumber = 1 });
+            _resultados = result.Items;
+        }
+        catch (Exception ex)
+        {
+            _busquedaError = ex.Message;
+        }
+        finally
+        {
+            _buscando = false;
+        }
+    }
+
+    private async Task HandleBusquedaKeyAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await BuscarAsync();
+    }
+
+    // ── Save ─────────────────────────────────────────────────────────────────
+
+    private async Task GuardarAsync()
+    {
+        _guardadoError = string.Empty;
+        _fieldErrors = [];
+
+        if (_eventual)
+        {
+            // Para eventual no creamos ni modificamos cuentas — solo retornamos el código configurado
+            if (string.IsNullOrEmpty(CuentaEventualCodigo))
+            {
+                _guardadoError = "No hay cuenta de consumidor final configurada en el sistema.";
+                return;
+            }
+            var nombre = string.IsNullOrWhiteSpace(_nuevo.RazonSocial)
+                ? "Consumidor Final"
+                : _nuevo.RazonSocial.Trim();
+            await SeleccionarAsync(new CuentaComercialGridItemDto
+            {
+                Codigo = CuentaEventualCodigo,
+                RazonSocial = nombre,
+                NumeroDocumento = _nuevo.NumeroDocumento,
+                Telefono = _nuevo.Telefono
+            });
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_nuevo.RazonSocial))
+        {
+            _fieldErrors["razon-social"] = "El nombre es obligatorio.";
+            return;
+        }
+        try
+        {
+            _guardando = true;
+            var codigo = await ClientesSvc.SaveAsync(CuentaComercialTipo.Cliente, _nuevo);
+            var dto = new CuentaComercialGridItemDto
+            {
+                Codigo = codigo,
+                RazonSocial = _nuevo.RazonSocial,
+                Telefono = _nuevo.Telefono,
+                NumeroDocumento = _nuevo.NumeroDocumento
+            };
+            await SeleccionarAsync(dto);
+        }
+        catch (AppValidationException vex)
+        {
+            _guardadoError = vex.UserMessage;
+            _fieldErrors = vex.Validation.Issues
+                .GroupBy(i => i.FieldKey)
+                .ToDictionary(g => g.Key, g => string.Join(" ", g.Select(i => i.Message)));
+        }
+        catch (Exception ex)
+        {
+            _guardadoError = ex.Message;
+        }
+        finally
+        {
+            _guardando = false;
+        }
+    }
+
+    // ── Common ───────────────────────────────────────────────────────────────
+
+    private async Task SeleccionarAsync(CuentaComercialGridItemDto cliente)
+    {
+        await OnClienteSelected.InvokeAsync(cliente);
+        ResetState();
+        await OnClose.InvokeAsync();
+    }
+
+    private async Task CloseAsync()
+    {
+        ResetState();
+        await OnClose.InvokeAsync();
+    }
+
+    private void ResetState()
+    {
+        _resultados = null;
+        _busqueda = string.Empty;
+        _busquedaError = string.Empty;
+        _guardadoError = string.Empty;
+        _fieldErrors = [];
+        _cuitDuplicado = null;
+        _eventual = false;
+        _vista = "buscar";
+    }
+
+    private bool HasFieldError(string key) => _fieldErrors.ContainsKey(key);
+
+    private RenderFragment FieldError(string key) => builder =>
+    {
+        if (_fieldErrors.TryGetValue(key, out var msg))
+        {
+            builder.OpenElement(0, "span");
+            builder.AddAttribute(1, "class", "qcm-field-error");
+            builder.AddContent(2, msg);
+            builder.CloseElement();
+        }
+    };
+
+    private static RenderFragment RequiredMark(bool required) => builder =>
+    {
+        if (!required) return;
+        builder.OpenElement(0, "span");
+        builder.AddAttribute(1, "class", "qcm-required");
+        builder.AddContent(2, "*");
+        builder.CloseElement();
+    };
+
+    private static string StripNonNumeric(string? value)
+        => Regex.Replace(value ?? string.Empty, "[^0-9]", string.Empty);
+}

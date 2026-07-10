@@ -26,7 +26,13 @@
             return;
 
         _lastSignature = signature;
-        _incidentId = await AppEvents.LogErrorAsync(Module, Action, Exception, _userMessage);
-        _userMessage = $"{_userMessage}";
+        try
+        {
+            _incidentId = await AppEvents.LogErrorAsync(Module, Action, Exception, _userMessage);
+        }
+        catch
+        {
+            _incidentId = string.Empty;
+        }
     }
 }

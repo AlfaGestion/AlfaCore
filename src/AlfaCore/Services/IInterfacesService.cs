@@ -24,4 +24,5 @@ public interface IInterfacesService
     Task<InterfacesAdjuntoServeDto?> GetAttachmentForServeAsync(long idAdjunto, CancellationToken ct = default);
     Task<InterfacesViewSettingsDto> GetViewSettingsAsync(string userName, CancellationToken ct = default);
     Task SaveViewSettingsAsync(string userName, InterfacesViewSettingsDto settings, CancellationToken ct = default);
+    Task<IReadOnlyList<InterfacesAdjuntoDuplicadoDto>> FindFilesByHashAsync(IReadOnlyList<string> contentHashes, CancellationToken ct = default);
 }

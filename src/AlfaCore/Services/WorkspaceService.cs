@@ -8,9 +8,39 @@ public sealed class WorkspaceService(
     IRecentService recentService,
     IAppEventService appEvents,
     IActualizacionesService actualizacionesService,
-    IAppUserSessionService appUserSession) : IWorkspaceService
+    IAppUserSessionService appUserSession,
+    ISessionService sessionService) : IWorkspaceService
 {
+    private static readonly TimeSpan HomeCacheLifetime = TimeSpan.FromMinutes(5);
+    private ShellHomeDto? _cachedHome;
+    private string _cachedHomeKey = string.Empty;
+    private DateTimeOffset _cachedHomeAt;
+    private readonly Dictionary<string, CachedModuleWorkspace> _cachedModuleWorkspaces = new(StringComparer.OrdinalIgnoreCase);
+
+    public bool TryGetCachedHome(out ShellHomeDto home)
+    {
+        var cacheKey = GetHomeCacheKey();
+        if (_cachedHome is not null
+            && string.Equals(_cachedHomeKey, cacheKey, StringComparison.Ordinal)
+            && DateTimeOffset.UtcNow - _cachedHomeAt <= HomeCacheLifetime)
+        {
+            home = _cachedHome;
+            return true;
+        }
+
+        home = new ShellHomeDto();
+        return false;
+    }
+
     public async Task<ShellHomeDto> GetHomeAsync(CancellationToken ct = default)
+    {
+        if (TryGetCachedHome(out var cachedHome))
+            return cachedHome;
+
+        return await RefreshHomeAsync(ct);
+    }
+
+    public async Task<ShellHomeDto> RefreshHomeAsync(CancellationToken ct = default)
     {
         var modules = await menuService.GetModulesAsync(ct);
         if (modules.Count == 0 && await TryAutoRepairShellAsync(ct))
@@ -21,15 +51,43 @@ public sealed class WorkspaceService(
         IReadOnlyList<ShellMenuSearchItemDto> searchItems = favoriteKeys.Count > 0 ? await menuService.GetSearchItemsAsync(ct) : [];
         var recents = await SafeGetRecentsAsync(ct);
 
-        return new ShellHomeDto
+        var home = new ShellHomeDto
         {
             Modules = modules,
             Favorites = MergeFavorites(favorites, favoriteKeys, searchItems),
             Recents = recents
         };
+
+        _cachedHome = home;
+        _cachedHomeKey = GetHomeCacheKey();
+        _cachedHomeAt = DateTimeOffset.UtcNow;
+
+        return home;
     }
 
     public async Task<ShellWorkspaceDto> GetModuleWorkspaceAsync(string moduleKey, CancellationToken ct = default)
+    {
+        if (TryGetCachedModuleWorkspace(moduleKey, out var cachedWorkspace))
+            return cachedWorkspace;
+
+        return await RefreshModuleWorkspaceAsync(moduleKey, ct);
+    }
+
+    public bool TryGetCachedModuleWorkspace(string moduleKey, out ShellWorkspaceDto workspace)
+    {
+        var cacheKey = GetModuleWorkspaceCacheKey(moduleKey);
+        if (_cachedModuleWorkspaces.TryGetValue(cacheKey, out var cached)
+            && DateTimeOffset.UtcNow - cached.CachedAt <= HomeCacheLifetime)
+        {
+            workspace = cached.Workspace;
+            return true;
+        }
+
+        workspace = new ShellWorkspaceDto();
+        return false;
+    }
+
+    public async Task<ShellWorkspaceDto> RefreshModuleWorkspaceAsync(string moduleKey, CancellationToken ct = default)
     {
         var module = await menuService.GetModuleByKeyAsync(moduleKey, ct);
         var sections = await menuService.GetModuleSectionsAsync(moduleKey, ct);
@@ -38,17 +96,62 @@ public sealed class WorkspaceService(
         IReadOnlyList<ShellMenuSearchItemDto> searchItems = favoriteKeys.Count > 0 ? await menuService.GetSearchItemsAsync(ct) : [];
         var recents = await SafeGetRecentsAsync(ct);
 
-        return new ShellWorkspaceDto
+        var workspace = new ShellWorkspaceDto
         {
             Module = module,
             Sections = sections,
             Favorites = MergeFavorites(favorites, favoriteKeys, searchItems),
             Recents = recents
         };
+
+        _cachedModuleWorkspaces[GetModuleWorkspaceCacheKey(moduleKey)] = new CachedModuleWorkspace(workspace, DateTimeOffset.UtcNow);
+
+        return workspace;
     }
 
     public Task<ShellRouteContextDto> GetRouteContextAsync(string route, CancellationToken ct = default)
         => menuService.GetRouteContextAsync(route, ct);
+
+    public void InvalidateHomeCache()
+    {
+        _cachedHome = null;
+        _cachedHomeKey = string.Empty;
+        _cachedHomeAt = default;
+    }
+
+    public void InvalidateModuleWorkspaceCache(string? moduleKey = null)
+    {
+        if (string.IsNullOrWhiteSpace(moduleKey))
+        {
+            _cachedModuleWorkspaces.Clear();
+            return;
+        }
+
+        _cachedModuleWorkspaces.Remove(GetModuleWorkspaceCacheKey(moduleKey));
+    }
+
+    public void InvalidateWorkspaceCache()
+    {
+        InvalidateHomeCache();
+        InvalidateModuleWorkspaceCache();
+    }
+
+    private string GetHomeCacheKey()
+    {
+        var activeSession = sessionService.GetActiveSession();
+        var user = appUserSession.CurrentUser;
+
+        return string.Join("|",
+            activeSession?.Id.ToString("N") ?? string.Empty,
+            activeSession?.BaseId.ToString() ?? string.Empty,
+            user?.UserName?.Trim().ToUpperInvariant() ?? string.Empty,
+            user?.SystemCode?.Trim().ToUpperInvariant() ?? string.Empty,
+            user?.SuperAdmin == true ? "1" : "0",
+            user?.RequiresInternalLogin == true ? "1" : "0");
+    }
+
+    private string GetModuleWorkspaceCacheKey(string? moduleKey)
+        => $"{GetHomeCacheKey()}|module:{(moduleKey ?? string.Empty).Trim().ToUpperInvariant()}";
 
     private async Task<bool> TryAutoRepairShellAsync(CancellationToken ct)
     {
@@ -150,4 +253,6 @@ public sealed class WorkspaceService(
 
         return merged;
     }
+
+    private sealed record CachedModuleWorkspace(ShellWorkspaceDto Workspace, DateTimeOffset CachedAt);
 }
