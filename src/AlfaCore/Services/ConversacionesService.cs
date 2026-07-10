@@ -27,9 +27,10 @@ public sealed class ConversacionesService(
     private const string ManualWhatsAppInitialState = "PENDIENTE";
     private const string InternalEventDirection = "NOTA_INTERNA";
     private const string InternalEventMessageType = "SYSTEM";
+    private const int DefaultAttachmentRecoveryMaxAttempts = 2;
     private static readonly TimeSpan TypingTtl = TimeSpan.FromSeconds(8);
     private static readonly ConcurrentDictionary<long, byte> MediaHydrationAttempts = new();
-    private static readonly ConcurrentDictionary<long, byte> AttachmentRecoveryFailures = new();
+    private static readonly ConcurrentDictionary<long, int> AttachmentRecoveryAttempts = new();
     private static readonly ConcurrentDictionary<string, TypingPresence> TypingPresences = new(StringComparer.OrdinalIgnoreCase);
     private static readonly ConcurrentDictionary<string, DateTime> MaintenanceLastRunUtc = new(StringComparer.OrdinalIgnoreCase);
     private static readonly TimeSpan InboxMaintenanceInterval = TimeSpan.FromMinutes(5);
@@ -3115,7 +3116,7 @@ public sealed class ConversacionesService(
 
             result.AdjuntosRecuperados = Math.Max(0, result.AdjuntosDisponibles - (attachmentIds.Count - pendingMedia.Count));
             return result;
-        }, "No se pudieron recuperar los adjuntos de la conversaciÃ³n.", ct);
+        }, "No se pudieron recuperar los adjuntos de la conversación.", ct);
 
     public Task<IReadOnlyList<ConversacionStickerFavoritoDto>> GetFavoriteStickersAsync(CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetFavoriteStickers", async token =>
@@ -3615,12 +3616,12 @@ public sealed class ConversacionesService(
 
     private async Task<string> TryRecoverAttachmentFileAsync(AttachmentServeRecord record, string connectionString, CancellationToken ct)
     {
-        if (AttachmentRecoveryFailures.ContainsKey(record.IdAdjunto))
-            return string.Empty;
-
         var mediaId = TryExtractMediaId(record.AdjuntoPayloadJson, record.TipoArchivo)
             ?? TryExtractMediaId(record.MensajePayloadJson, record.TipoArchivo);
         if (string.IsNullOrWhiteSpace(mediaId))
+            return string.Empty;
+
+        if (!CanAttemptAttachmentRecovery(record.IdAdjunto, mediaId))
             return string.Empty;
 
         try
@@ -3653,8 +3654,6 @@ public sealed class ConversacionesService(
         }
         catch (Exception ex)
         {
-            AttachmentRecoveryFailures.TryAdd(record.IdAdjunto, 0);
-
             await _appEvents.LogErrorAsync(
                 "Conversaciones",
                 "RecoverAttachmentFile",
@@ -3666,6 +3665,34 @@ public sealed class ConversacionesService(
             return string.Empty;
         }
     }
+
+    private bool CanAttemptAttachmentRecovery(long idAdjunto, string mediaId)
+    {
+        var maxAttempts = GetAttachmentRecoveryMaxAttempts();
+        if (maxAttempts <= 0)
+            return false;
+
+        var key = GetAttachmentRecoveryAttemptKey(idAdjunto, mediaId);
+        var attempts = AttachmentRecoveryAttempts.AddOrUpdate(key, 1, (_, current) => current + 1);
+        return attempts <= maxAttempts;
+    }
+
+    private int GetAttachmentRecoveryMaxAttempts()
+    {
+        var configured = configuration.GetValue<int?>("WhatsApp:AttachmentRecoveryMaxAttempts");
+        if (configured.HasValue)
+            return Math.Max(0, configured.Value);
+
+        var rawEnv = Environment.GetEnvironmentVariable("ALFACORE_WHATSAPP_ATTACHMENT_RECOVERY_MAX_ATTEMPTS");
+        return int.TryParse(rawEnv, NumberStyles.Integer, CultureInfo.InvariantCulture, out var envValue)
+            ? Math.Max(0, envValue)
+            : DefaultAttachmentRecoveryMaxAttempts;
+    }
+
+    private static long GetAttachmentRecoveryAttemptKey(long idAdjunto, string mediaId)
+        => idAdjunto > 0
+            ? idAdjunto
+            : mediaId.GetHashCode(StringComparison.OrdinalIgnoreCase);
 
     private async Task UpdateAttachmentLocalPathAsync(long idAdjunto, string rutaLocal, string? connectionString, CancellationToken ct)
     {
