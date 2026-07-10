@@ -2,7 +2,7 @@
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @implements IDisposable
 
-<link rel="stylesheet" href="/css/novedades-popup.css?v=20260710-preview-match" />
+<link rel="stylesheet" href="/css/novedades-popup.css?v=20260710-preview-match3" />
 
 @if (_visible && _novedad is not null)
 {
@@ -14,6 +14,12 @@
                     <h2>@_novedad.Titulo</h2>
                     <p>@_novedad.Bajada</p>
                 </div>
+                @if (!_novedad.LecturaObligatoria)
+                {
+                    <button type="button" title="Cerrar" disabled="@_markingRead" @onclick="CloseAsync">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
+                }
             </header>
 
             @if (_novedad.PortadaTipo == NovedadPortadas.Url && !string.IsNullOrWhiteSpace(_novedad.PortadaValor))
@@ -53,12 +59,13 @@
     private bool _markingRead;
     private string _actionError = string.Empty;
     private string _loadedUser = string.Empty;
+    private readonly HashSet<long> _dismissedIds = [];
     private CancellationTokenSource? _loadCts;
     private readonly CancellationTokenSource _pollCts = new();
 
     private string CurrentUser => AppUserSession.CurrentUser?.UserName?.Trim() ?? string.Empty;
 
-    private string PopupClass => $"novedades-popup novedades-popup--{_novedad?.Acento ?? NovedadAcentos.Azul}";
+    private string PopupClass => $"novedades-popup novedades-popup--{NormalizeAccent(_novedad?.Acento)}";
 
     protected override async Task OnInitializedAsync()
     {
@@ -69,10 +76,18 @@
     }
 
     private void OnUserSessionChanged()
-        => _ = InvokeAsync(() => RefreshForAuthenticatedUserAsync(force: true));
+        => _ = InvokeAsync(() =>
+        {
+            _dismissedIds.Clear();
+            return RefreshForAuthenticatedUserAsync(force: true);
+        });
 
     private void OnAnnouncementsChanged()
-        => _ = InvokeAsync(() => RefreshForAuthenticatedUserAsync(force: true));
+        => _ = InvokeAsync(() =>
+        {
+            _dismissedIds.Clear();
+            return RefreshForAuthenticatedUserAsync(force: true);
+        });
 
     private async Task RefreshForAuthenticatedUserAsync(bool force = false)
     {
@@ -107,8 +122,10 @@
                 return;
 
             _loadedUser = user;
-            _novedad = pending;
+            _novedad = pending is not null && _dismissedIds.Contains(pending.IdNovedad) ? null : pending;
             _visible = pending is not null;
+            if (_novedad is null)
+                _visible = false;
 
             if (_visible && _novedad is not null && !_registeredView)
             {
@@ -177,6 +194,16 @@
         }
     }
 
+    private Task CloseAsync()
+    {
+        if (_novedad is not null)
+            _dismissedIds.Add(_novedad.IdNovedad);
+
+        _visible = false;
+        _novedad = null;
+        return InvokeAsync(StateHasChanged);
+    }
+
     private void ResetPopup()
     {
         _loadedUser = string.Empty;
@@ -185,7 +212,19 @@
         _registeredView = false;
         _markingRead = false;
         _actionError = string.Empty;
+        _dismissedIds.Clear();
     }
+
+    private static string NormalizeAccent(string? value)
+        => value?.Trim().ToLowerInvariant() switch
+        {
+            NovedadAcentos.Verde => NovedadAcentos.Verde,
+            NovedadAcentos.Cian => NovedadAcentos.Cian,
+            NovedadAcentos.Ambar => NovedadAcentos.Ambar,
+            NovedadAcentos.Rojo => NovedadAcentos.Rojo,
+            NovedadAcentos.Grafito => NovedadAcentos.Grafito,
+            _ => NovedadAcentos.Azul
+        };
 
     public void Dispose()
     {
