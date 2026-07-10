@@ -2,16 +2,13 @@
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @implements IDisposable
 
-<link rel="stylesheet" href="/css/novedades-popup.css?v=20260623-03" />
+<link rel="stylesheet" href="/css/novedades-popup.css?v=20260710-preview-match" />
 
 @if (_visible && _novedad is not null)
 {
     <div class="novedades-popup-backdrop" role="dialog" aria-modal="true">
         <article class="@PopupClass">
             <header>
-                <div class="novedades-popup__icon">
-                    <i class="bi @_novedad.Icono"></i>
-                </div>
                 <div>
                     <span>@(string.IsNullOrWhiteSpace(_novedad.Version) ? "Novedad interna" : _novedad.Version)</span>
                     <h2>@_novedad.Titulo</h2>
