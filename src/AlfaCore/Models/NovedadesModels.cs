@@ -71,6 +71,7 @@ public sealed class NovedadSaveRequest
     public bool MostrarPopup { get; set; } = true;
     public bool LecturaObligatoria { get; set; }
     public bool RepetirHastaLeer { get; set; } = true;
+    public bool ReiniciarSeguimiento { get; set; }
     public string Segmento { get; set; } = NovedadSegmentos.Todos;
     public string UsuarioAccion { get; set; } = string.Empty;
 }
