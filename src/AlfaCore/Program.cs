@@ -104,6 +104,7 @@ public class Program
         builder.Services.AddScoped<IPasswordVerifier, PlainTextPasswordVerifier>();
         builder.Services.AddScoped<ICentralClientesService, CentralClientesService>();
         builder.Services.AddScoped<ICentralBasesService, CentralBasesService>();
+        builder.Services.AddScoped<ICentralBackupControlService, CentralBackupControlService>();
         builder.Services.AddScoped<ICentralUsersService, CentralUsersService>();
         builder.Services.AddScoped<ICentralAdminService, CentralAdminService>();
         builder.Services.AddScoped<ICentralAuthService, CentralAuthService>();
@@ -343,6 +344,64 @@ public class Program
             {
                 var ticket = await vb6BridgeSvc.CreateTicketAsync(vb6Request, ct);
                 return Results.Text(ticket, "text/plain; charset=utf-8");
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.BadRequest(ex.Message);
+            }
+            catch (Exception ex)
+            {
+                return Results.Problem(ex.Message, statusCode: StatusCodes.Status500InternalServerError);
+            }
+        });
+
+        app.MapPost("/api/vb6/backup-status", async (
+            HttpRequest request,
+            ICentralBackupControlService backupControlSvc,
+            IConfiguration config,
+            CancellationToken ct) =>
+        {
+            var apiKeyConfigurada = config["BackupStatus:ApiKey"] ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(apiKeyConfigurada))
+                return Results.Problem("El servidor no tiene configurada BackupStatus:ApiKey.", statusCode: StatusCodes.Status500InternalServerError);
+
+            var apiKeyRecibida = request.Headers["X-Api-Key"].ToString();
+            if (!string.Equals(apiKeyRecibida, apiKeyConfigurada, StringComparison.Ordinal))
+                return Results.Unauthorized();
+
+            if (!request.HasFormContentType)
+                return Results.BadRequest("Se esperaba application/x-www-form-urlencoded.");
+
+            var form = await request.ReadFormAsync(ct);
+
+            if (!DateTime.TryParse(form["fechaHoraBackup"].ToString(), out var fechaHoraBackup))
+                fechaHoraBackup = DateTime.Now;
+
+            var backupRequest = new BackupStatusRequest
+            {
+                IdCliente = form["idCliente"].ToString(),
+                DbServidor = form["dbServidor"].ToString(),
+                DbNombre = form["dbNombre"].ToString(),
+                TipoBackup = form["tipoBackup"].ToString(),
+                Resultado = form["resultado"].ToString(),
+                Mensaje = NullIfEmpty(form["mensaje"]),
+                HostCliente = NullIfEmpty(form["hostCliente"]),
+                UsuarioSql = NullIfEmpty(form["usuarioSql"]),
+                InstanciaSql = NullIfEmpty(form["instanciaSql"]),
+                VersionSql = NullIfEmpty(form["versionSql"]),
+                SistemaOperativo = NullIfEmpty(form["sistemaOperativo"]),
+                TamanioBaseMB = ParseDecimalOrNull(form["tamanioBaseMB"]),
+                EspacioLibreDiscoGB = ParseDecimalOrNull(form["espacioLibreDiscoGB"]),
+                EspacioTotalDiscoGB = ParseDecimalOrNull(form["espacioTotalDiscoGB"]),
+                EspacioLibreDiscoBckGB = ParseDecimalOrNull(form["espacioLibreDiscoBckGB"]),
+                EspacioTotalDiscoBckGB = ParseDecimalOrNull(form["espacioTotalDiscoBckGB"]),
+                FechaHoraBackup = fechaHoraBackup
+            };
+
+            try
+            {
+                var idControl = await backupControlSvc.RegistrarAsync(backupRequest, ct);
+                return Results.Text(idControl.ToString(), "text/plain; charset=utf-8");
             }
             catch (InvalidOperationException ex)
             {
@@ -1205,6 +1264,14 @@ public class Program
             },
             statusCode: StatusCodes.Status500InternalServerError);
     }
+
+    private static string? NullIfEmpty(string? value)
+        => string.IsNullOrWhiteSpace(value) ? null : value;
+
+    private static decimal? ParseDecimalOrNull(string? value)
+        => decimal.TryParse(value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var parsed)
+            ? parsed
+            : null;
 
     private static string BuildVb6ConsumeHtml(Vb6ConsumeTicketResult result)
     {
