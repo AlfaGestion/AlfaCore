@@ -15,6 +15,9 @@ public sealed class CentralClientesService(IConfiguration configuration, IAppEve
     public Task<ClienteCentralDto?> GetByIdWebAsync(string idWeb, CancellationToken ct = default)
         => QuerySingleAsync("WHERE UPPER(LTRIM(RTRIM(idweb))) = UPPER(LTRIM(RTRIM(@IdWeb)))", new { IdWeb = idWeb }, ct);
 
+    public Task<ClienteCentralDto?> GetByLicenciaPrincipalAsync(string licenciaPrincipal, CancellationToken ct = default)
+        => QuerySingleAsync("WHERE UPPER(LTRIM(RTRIM(LicenciaPrincipal))) = UPPER(LTRIM(RTRIM(@LicenciaPrincipal)))", new { LicenciaPrincipal = licenciaPrincipal }, ct);
+
     public async Task<IReadOnlyList<ClienteCentralDto>> GetAllAsync(CancellationToken ct = default)
     {
         const string sql = """
