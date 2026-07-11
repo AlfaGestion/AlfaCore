@@ -20,6 +20,7 @@ Se trabajó sobre el repo `AlfaCore` en mejoras de:
 - visor de comprobantes
 - manejo de sesiones SQL
 - documentación y manuales
+- control centralizado de backups de clientes (sesión actual, ver sección propia más abajo)
 
 No se rehizo la arquitectura general.  
 Se trabajó sobre la base actual del proyecto.
@@ -196,6 +197,71 @@ Importante:
 Archivo a revisar si se retoma ese tema:
 
 - `src/AlfaCore/Services/SessionService.cs`
+
+---
+
+## Control centralizado de backups de clientes
+
+### Por qué
+
+`EM_Backup.vbp` (proyecto VB6, repo `NMC_CONT_DEV`) generaba un `.SQL` que registraba
+un **linked server** (`sp_addlinkedserver` a `alfanet.ddns.net`) con usuario y clave en
+texto plano, para que el SQL Server de **cada cliente** escribiera directo en la base de
+control central. Riesgo: credencial compartida en texto plano en disco de cada cliente,
+y un linked server permanente de cada SQL Server de cliente hacia un host público.
+
+Además, la subida del `.BAK` por FTP (`alfaftp.ddns.net`) viene fallando.
+
+### Lo hecho hasta ahora
+
+1. **`AlfaArchivos`** (repo aparte, `C:\Dev\AlfaArchivos`): es la alternativa HTTP al FTP
+   que falla (mismo storage `E:\FTP`, mismo usuario/clave que el FTP). Se hizo hardening:
+   límite de tamaño de subida (para `.BAK` grandes), fix de un bug de path traversal en
+   `SafePath`, CSRF en los formularios, rate-limit en `/Login`. Compilado y probado
+   (login, subida, borrado, traversal bloqueado). Commiteado en ese repo.
+
+2. **`AlfaCore`** (este repo): se agregó el reemplazo del linked server.
+   - Tabla nueva `dbo.ALFACORE_BACKUPS_CONTROL` en `ALFA_CENTRAL`
+     (`docs/base-datos/sql-referencia/backups_control_modelo_inicial.sql`), vinculada
+     lógicamente a `dbo.bases` (sin FK dura, tipo de `bases.id` no confirmado).
+   - `ICentralBackupControlService` / `CentralBackupControlService.cs` (Dapper).
+   - Endpoint `POST /api/vb6/backup-status` en `Program.cs`, protegido con header
+     `X-Api-Key` contra `BackupStatus:ApiKey`.
+   - De paso: la connection string de `ConnectionStrings:AlfaCentral` estaba
+     hardcodeada en texto plano en `appsettings.json` (commiteada al repo). Se movió a
+     `.env` (gitignored), seguido el mismo mecanismo que ya usaba el proyecto para
+     `OPENAI_API_KEY` / `PushNotifications`. Se generó una `BackupStatus__ApiKey` nueva
+     (random, 256 bits) también en `.env`.
+   - Todo compiló limpio y pasó `python tools/catalogo/check_catalogo.py`.
+   - Commit local: `621a839` — no se hizo push.
+
+### Lo que falta (en orden)
+
+1. **Urgente, fuera de mi alcance**: rotar la password del login `ALFA_CENTRAL` en el
+   SQL Server real (`149.46.4.90`). Quedó expuesta en el historial de git (el repo tiene
+   remoto en GitHub), así que sacarla de `appsettings.json` no alcanza.
+2. Correr `backups_control_modelo_inicial.sql` contra `ALFA_CENTRAL`.
+3. Cargar el `BackupStatus__ApiKey` real en el `.env` del servidor donde corre `AlfaCore`
+   en producción (el valor generado hoy solo existe en el `.env` local de esta PC).
+4. Tocar `ModBackup.bas` (`NMC_CONT_DEV`) para:
+   - sacar el bloque `sp_addlinkedserver` / `sp_addlinkedsrvlogin` del `.SQL` generado
+   - reemplazar la subida por FTP (`cFTP`/`mFTP`) por HTTP contra `AlfaArchivos` (login +
+     `POST /upload` con token CSRF)
+   - agregar el `POST /api/vb6/backup-status` al final del proceso de backup, reusando
+     el patrón `WinHttp.WinHttpRequest.5.1` que ya existe en `ModAlfaCore.bas`
+5. (Fase 2, no arrancada) pantalla en AlfaCore para ver el estado de backups por cliente
+   y alertas de espacio en disco.
+
+### Archivos tocados en esta etapa (además de los ya listados abajo)
+
+- `docs/base-datos/sql-referencia/backups_control_modelo_inicial.sql` (nuevo)
+- `src/AlfaCore/Models/BackupsControlModels.cs` (nuevo)
+- `src/AlfaCore/Services/ICentralBackupControlService.cs` (nuevo)
+- `src/AlfaCore/Services/CentralBackupControlService.cs` (nuevo)
+- `src/AlfaCore/Program.cs`
+- `src/AlfaCore/appsettings.json`
+- `.env.example`
+- `.env` (no versionado)
 
 ---
 
