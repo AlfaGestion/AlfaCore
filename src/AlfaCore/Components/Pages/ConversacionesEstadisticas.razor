@@ -6,19 +6,32 @@
 <PageTitle>Estadisticas de conversaciones | Alfa Gestion</PageTitle>
 
 <style>
+    .conv-stats-page {
+        min-height: 100vh !important;
+        height: 100vh !important;
+        overflow-y: auto !important;
+        overflow-x: hidden !important;
+    }
+
     .conv-stats-page .conv-stats-board {
-        display: flex !important;
-        flex-direction: column !important;
-        gap: 1rem !important;
+        display: grid !important;
+        grid-template-columns: 1fr !important;
+        gap: 1.5rem !important;
         overflow: visible !important;
+    }
+
+    .conv-stats-page .conv-stats-summary-panel {
+        display: grid !important;
+        gap: .9rem !important;
     }
 
     .conv-stats-page .conv-stats-summary {
         display: grid !important;
         grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
-        grid-auto-rows: minmax(112px, auto) !important;
+        grid-auto-rows: minmax(148px, auto) !important;
         align-items: stretch !important;
-        gap: .75rem !important;
+        gap: 1rem !important;
+        margin-bottom: .15rem !important;
         width: 100% !important;
     }
 
@@ -28,7 +41,6 @@
         gap: .85rem !important;
         align-items: start !important;
         width: 100% !important;
-        clear: both !important;
     }
 
     .conv-stats-page .conv-stats-column {
@@ -42,17 +54,26 @@
         display: grid !important;
         align-content: start !important;
         gap: .35rem !important;
-        min-height: 112px !important;
+        min-height: 148px !important;
         height: 100% !important;
+        background: #091220 !important;
+        border-color: rgba(148, 163, 184, .18) !important;
+        box-shadow: 0 14px 32px rgba(2, 6, 23, .32) !important;
     }
 
     .conv-stats-page .conv-stat-card strong {
         margin: 0 !important;
+        line-height: 1.05 !important;
+        font-size: clamp(1.35rem, 2.4vw, 2rem) !important;
     }
 
     .conv-stats-page .conv-stats-client-panel {
         display: grid !important;
-        gap: .75rem !important;
+        gap: .9rem !important;
+        margin-top: .1rem !important;
+        background: #08101d !important;
+        border-color: rgba(45, 212, 191, .22) !important;
+        box-shadow: 0 16px 38px rgba(2, 6, 23, .28) !important;
     }
 
     .conv-stats-page .conv-stats-client-focus {
@@ -60,10 +81,10 @@
         grid-template-columns: minmax(0, 1fr) auto !important;
         align-items: center !important;
         gap: 1rem !important;
-        padding: .85rem .95rem !important;
+        padding: 1rem 1rem !important;
         border: 1px solid rgba(45, 212, 191, .22) !important;
         border-radius: 8px !important;
-        background: linear-gradient(135deg, rgba(20, 184, 166, .18), rgba(14, 165, 233, .08)) !important;
+        background: #0d2030 !important;
     }
 
     .conv-stats-page .conv-stats-client-focus span,
@@ -95,13 +116,13 @@
 
     .conv-stats-page .conv-stats-client-row {
         display: grid !important;
-        grid-template-columns: minmax(0, 1.05fr) minmax(360px, .95fr) !important;
+        grid-template-columns: minmax(0, 1.05fr) minmax(0, .95fr) !important;
         align-items: center !important;
         gap: .9rem !important;
         padding: .72rem .8rem !important;
         border: 1px solid rgba(148, 163, 184, .13) !important;
         border-radius: 8px !important;
-        background: rgba(15, 23, 42, .24) !important;
+        background: #0b1320 !important;
     }
 
     .conv-stats-page .conv-stats-client-row__main {
@@ -136,7 +157,7 @@
         padding: .45rem .5rem !important;
         border: 1px solid rgba(148, 163, 184, .12) !important;
         border-radius: 8px !important;
-        background: rgba(2, 6, 23, .22) !important;
+        background: #07101c !important;
         font-size: .75rem !important;
     }
 
@@ -244,51 +265,53 @@
     }
     else
     {
-        <section class="panel-card conv-stats-board">
-            <section class="conv-stats-summary">
-                <a class="conv-stat-card conv-stat-card--primary conv-stats-row-link" href="@GetAuditUrl("entrantes")">
-                    <span>Mensajes entrantes</span>
-                    <strong>@FormatNumber(_stats.MensajesEntrantes)</strong>
-                    <small>@_stats.ConversacionesConRespuesta con respuesta</small>
-                </a>
-                <a class="conv-stat-card conv-stats-row-link" href="@GetAuditUrl("activas")">
-                    <span>Conversaciones activas</span>
-                    <strong>@FormatNumber(_stats.ConversacionesActivasEnRango)</strong>
-                    <small>@FormatNumber(_stats.ClientesUnicos) clientes/contactos</small>
-                </a>
-                <a class="conv-stat-card conv-stats-row-link" href="@GetAuditUrl("salientes")">
-                    <span>Mensajes enviados</span>
-                    <strong>@FormatNumber(_stats.MensajesSalientes)</strong>
-                    <small>@ResponseRateText</small>
-                </a>
-                <a class="conv-stat-card conv-stats-row-link" href="@GetAuditUrl("cerradas_rango", "cerradas")">
-                    <span>Cerradas</span>
-                    <strong>@FormatNumber(_stats.ConversacionesCerradasEnRango)</strong>
-                    <small>@FormatDuration(_stats.PromedioCierre) promedio de cierre</small>
-                </a>
-                <a class="conv-stat-card conv-stats-row-link" href="@GetAuditUrl("tickets")">
-                    <span>Tickets creados</span>
-                    <strong>@FormatNumber(_stats.TicketsCreados)</strong>
-                    <small>@FormatNumber(_stats.Asignaciones) asignaciones</small>
-                </a>
-                <a class="conv-stat-card conv-stats-row-link" href="@GetAuditUrl("entrantes")">
-                    <span>Primera respuesta</span>
-                    <strong>@FormatDuration(_stats.PromedioPrimeraRespuesta)</strong>
-                    <small>@FormatNumber(_stats.ConversacionesSinRespuesta) sin respuesta</small>
-                </a>
-                <a class="conv-stat-card conv-stats-row-link" href="@GetAuditUrl("adjuntos")">
-                    <span>Adjuntos</span>
-                    <strong>@FormatNumber(_stats.MensajesConAdjuntos)</strong>
-                    <small>@TotalMessagesText</small>
-                </a>
-                <a class="conv-stat-card conv-stats-row-link" href="@GetAuditUrl("reabiertas")">
-                    <span>Reabiertas</span>
-                    <strong>@FormatNumber(_stats.ConversacionesReabiertas)</strong>
-                    <small>@FormatNumber(_stats.CambiosEstado) cambios de estado</small>
-                </a>
+        <div class="conv-stats-board">
+            <section class="panel-card conv-stats-summary-panel">
+                <section class="conv-stats-summary">
+                    <a class="conv-stat-card conv-stat-card--primary conv-stats-row-link" href="@GetAuditUrl("entrantes")">
+                        <span>Mensajes entrantes</span>
+                        <strong>@FormatNumber(_stats.MensajesEntrantes)</strong>
+                        <small>@_stats.ConversacionesConRespuesta con respuesta</small>
+                    </a>
+                    <a class="conv-stat-card conv-stats-row-link" href="@GetAuditUrl("activas")">
+                        <span>Conversaciones activas</span>
+                        <strong>@FormatNumber(_stats.ConversacionesActivasEnRango)</strong>
+                        <small>@FormatNumber(_stats.ClientesUnicos) clientes/contactos</small>
+                    </a>
+                    <a class="conv-stat-card conv-stats-row-link" href="@GetAuditUrl("salientes")">
+                        <span>Mensajes enviados</span>
+                        <strong>@FormatNumber(_stats.MensajesSalientes)</strong>
+                        <small>@ResponseRateText</small>
+                    </a>
+                    <a class="conv-stat-card conv-stats-row-link" href="@GetAuditUrl("cerradas_rango", "cerradas")">
+                        <span>Cerradas</span>
+                        <strong>@FormatNumber(_stats.ConversacionesCerradasEnRango)</strong>
+                        <small>@FormatDuration(_stats.PromedioCierre) promedio de cierre</small>
+                    </a>
+                    <a class="conv-stat-card conv-stats-row-link" href="@GetAuditUrl("tickets")">
+                        <span>Tickets creados</span>
+                        <strong>@FormatNumber(_stats.TicketsCreados)</strong>
+                        <small>@FormatNumber(_stats.Asignaciones) asignaciones</small>
+                    </a>
+                    <a class="conv-stat-card conv-stats-row-link" href="@GetAuditUrl("entrantes")">
+                        <span>Primera respuesta</span>
+                        <strong>@FormatDuration(_stats.PromedioPrimeraRespuesta)</strong>
+                        <small>@FormatNumber(_stats.ConversacionesSinRespuesta) sin respuesta</small>
+                    </a>
+                    <a class="conv-stat-card conv-stats-row-link" href="@GetAuditUrl("adjuntos")">
+                        <span>Adjuntos</span>
+                        <strong>@FormatNumber(_stats.MensajesConAdjuntos)</strong>
+                        <small>@TotalMessagesText</small>
+                    </a>
+                    <a class="conv-stat-card conv-stats-row-link" href="@GetAuditUrl("reabiertas")">
+                        <span>Reabiertas</span>
+                        <strong>@FormatNumber(_stats.ConversacionesReabiertas)</strong>
+                        <small>@FormatNumber(_stats.CambiosEstado) cambios de estado</small>
+                    </a>
+                </section>
             </section>
 
-            <article class="conv-stats-panel conv-stats-client-panel">
+            <article class="panel-card conv-stats-panel conv-stats-client-panel">
                 <div class="conv-stats-panel__head">
                     <div>
                         <h3 class="panel-card__title">Clientes que requieren mas atencion</h3>
@@ -339,7 +362,7 @@
 
             <section class="conv-stats-columns">
                 <div class="conv-stats-column">
-                    <article class="conv-stats-panel">
+                    <article class="panel-card conv-stats-panel">
                         <div class="conv-stats-panel__head">
                             <div>
                                 <h3 class="panel-card__title">Estado actual</h3>
@@ -363,7 +386,7 @@
                         </div>
                     </article>
 
-                    <article class="conv-stats-panel">
+                    <article class="panel-card conv-stats-panel">
                         <div class="conv-stats-panel__head">
                             <div>
                                 <h3 class="panel-card__title">Tipos de mensaje</h3>
@@ -385,7 +408,7 @@
                         </div>
                     </article>
 
-                    <article class="conv-stats-panel">
+                    <article class="panel-card conv-stats-panel">
                         <div class="conv-stats-panel__head">
                             <div>
                                 <h3 class="panel-card__title">Equipo</h3>
@@ -417,7 +440,7 @@
                         </div>
                     </article>
 
-                    <article class="conv-stats-panel">
+                    <article class="panel-card conv-stats-panel">
                         <div class="conv-stats-panel__head">
                             <div>
                                 <h3 class="panel-card__title">Palabras y problemas frecuentes</h3>
@@ -441,7 +464,7 @@
                 </div>
 
                 <div class="conv-stats-column">
-                    <article class="conv-stats-panel">
+                    <article class="panel-card conv-stats-panel">
                         <div class="conv-stats-panel__head">
                             <div>
                                 <h3 class="panel-card__title">Flujo del rango</h3>
@@ -477,7 +500,7 @@
                         </div>
                     </article>
 
-                    <article class="conv-stats-panel">
+                    <article class="panel-card conv-stats-panel">
                         <div class="conv-stats-panel__head">
                             <div>
                                 <h3 class="panel-card__title">Conversaciones con mas movimiento</h3>
@@ -515,7 +538,7 @@
                         </div>
                     </article>
 
-                    <article class="conv-stats-panel">
+                    <article class="panel-card conv-stats-panel">
                         <div class="conv-stats-panel__head">
                             <div>
                                 <h3 class="panel-card__title">Frases repetidas</h3>
@@ -537,7 +560,7 @@
                         </div>
                     </article>
 
-                    <article class="conv-stats-panel">
+                    <article class="panel-card conv-stats-panel">
                         <div class="conv-stats-panel__head">
                             <div>
                                 <h3 class="panel-card__title">Actividad diaria</h3>
@@ -572,7 +595,7 @@
                     </article>
                 </div>
             </section>
-        </section>
+        </div>
     }
 </section>
 
