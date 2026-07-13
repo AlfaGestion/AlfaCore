@@ -27,8 +27,14 @@ public sealed class ConversacionesService(
     private const string ManualWhatsAppInitialState = "PENDIENTE";
     private const string InternalEventDirection = "NOTA_INTERNA";
     private const string InternalEventMessageType = "SYSTEM";
-    private const int DefaultAttachmentRecoveryMaxAttempts = 2;
+    private const int DefaultAttachmentRecoveryMaxAttempts = 1;
+    private const int MaxAutomaticMediaHydrationsPerConversation = 3;
+    private const int MaxAutomaticMediaRecoveryRequestsPerWindow = 20;
+    private static readonly TimeSpan AutomaticMediaRecoveryMaxAge = TimeSpan.FromHours(1);
+    private static readonly TimeSpan AutomaticMediaRecoveryRateWindow = TimeSpan.FromHours(1);
     private static readonly TimeSpan TypingTtl = TimeSpan.FromSeconds(8);
+    private static readonly object AutomaticMediaRecoveryRateLock = new();
+    private static readonly Queue<DateTime> AutomaticMediaRecoveryRequestTimesUtc = new();
     private static readonly ConcurrentDictionary<long, byte> MediaHydrationAttempts = new();
     private static readonly ConcurrentDictionary<long, int> AttachmentRecoveryAttempts = new();
     private static readonly ConcurrentDictionary<string, TypingPresence> TypingPresences = new(StringComparer.OrdinalIgnoreCase);
@@ -3106,7 +3112,12 @@ public sealed class ConversacionesService(
 
             foreach (var idAdjunto in attachmentIds)
             {
-                var file = await GetAttachmentForServeAsync(idAdjunto, idBase: null, ct: token);
+                var file = await GetAttachmentForServeInternalAsync(
+                    idAdjunto,
+                    idBase: null,
+                    includeDownloadName: true,
+                    allowRemoteRecovery: false,
+                    ct: token);
                 if (file is null || string.IsNullOrWhiteSpace(file.RutaLocal))
                     continue;
 
@@ -3196,6 +3207,14 @@ public sealed class ConversacionesService(
         }, "No se pudo enviar el sticker favorito.", ct);
 
     public Task<ConversacionAdjuntoServeDto?> GetAttachmentForServeAsync(long idAdjunto, int? idBase = null, bool includeDownloadName = true, CancellationToken ct = default)
+        => GetAttachmentForServeInternalAsync(idAdjunto, idBase, includeDownloadName, allowRemoteRecovery: true, ct: ct);
+
+    private Task<ConversacionAdjuntoServeDto?> GetAttachmentForServeInternalAsync(
+        long idAdjunto,
+        int? idBase,
+        bool includeDownloadName,
+        bool allowRemoteRecovery,
+        CancellationToken ct)
         => ExecuteLoggedAsync("Conversaciones", "GetAttachmentForServe", async token =>
         {
             const string sql = """
@@ -3209,7 +3228,8 @@ public sealed class ConversacionesService(
                     ISNULL(a.UrlArchivo, ''),
                     ISNULL(a.RutaLocal, ''),
                     ISNULL(a.PayloadJson, ''),
-                    ISNULL(m.PayloadJson, '')
+                    ISNULL(m.PayloadJson, ''),
+                    m.FechaHora
                 FROM dbo.CONV_ADJUNTOS a
                 INNER JOIN dbo.CONV_MENSAJES m
                     ON m.IdMensaje = a.IdMensaje
@@ -3238,7 +3258,8 @@ public sealed class ConversacionesService(
                     UrlArchivo = GetString(rd, 6),
                     RutaLocal = GetString(rd, 7),
                     AdjuntoPayloadJson = GetString(rd, 8),
-                    MensajePayloadJson = GetString(rd, 9)
+                    MensajePayloadJson = GetString(rd, 9),
+                    FechaHora = rd.IsDBNull(10) ? DateTime.MinValue : NormalizeStoredConversationTime(rd.GetDateTime(10))
                 };
             }
 
@@ -3249,7 +3270,7 @@ public sealed class ConversacionesService(
                 record.RutaLocal = rutaLocal;
             }
 
-            if (string.IsNullOrWhiteSpace(rutaLocal))
+            if (allowRemoteRecovery && string.IsNullOrWhiteSpace(rutaLocal))
                 rutaLocal = await TryRecoverAttachmentFileAsync(record, connectionString, token);
 
             var nombreDescarga = includeDownloadName
@@ -3449,6 +3470,9 @@ public sealed class ConversacionesService(
                     continue;
 
                 whatsAppConfig ??= await conversacionesConfigService.GetWhatsAppConfigAsync(ct);
+                if (!TryAcquireAutomaticMediaRecoveryPermit())
+                    continue;
+
                 var stored = await StoreIncomingAttachmentsAsync(
                     item.Message.IdConversacion,
                     item.Message.IdMensaje,
@@ -3470,8 +3494,6 @@ public sealed class ConversacionesService(
             }
             catch (Exception ex)
             {
-                MediaHydrationAttempts.TryRemove(item.Message.IdMensaje, out _);
-
                 await _appEvents.LogErrorAsync(
                     "Conversaciones",
                     "HydrateMissingIncomingMedia",
@@ -3499,6 +3521,7 @@ public sealed class ConversacionesService(
                 m.FechaHora
             FROM dbo.CONV_MENSAJES m
             WHERE m.IdConversacion = @IdConversacion
+              AND m.FechaHora >= @RecoveryCutoff
               AND UPPER(ISNULL(m.Direction, '')) = N'ENTRANTE'
               AND UPPER(ISNULL(m.MessageType, '')) IN (N'IMAGE', N'AUDIO', N'STICKER', N'DOCUMENT', N'VIDEO')
               AND ISNULL(m.PayloadJson, '') <> ''
@@ -3515,6 +3538,7 @@ public sealed class ConversacionesService(
         await cn.OpenAsync(ct);
         await using var cmd = new SqlCommand(sql, cn);
         cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
+        cmd.Parameters.AddWithValue("@RecoveryCutoff", BusinessNow().Subtract(AutomaticMediaRecoveryMaxAge));
         await using var rd = await cmd.ExecuteReaderAsync(ct);
         while (await rd.ReadAsync(ct))
         {
@@ -3538,6 +3562,9 @@ public sealed class ConversacionesService(
                     Message = message,
                     PayloadJson = message.PayloadJson
                 });
+
+                if (items.Count >= MaxAutomaticMediaHydrationsPerConversation)
+                    break;
             }
         }
 
@@ -3616,12 +3643,18 @@ public sealed class ConversacionesService(
 
     private async Task<string> TryRecoverAttachmentFileAsync(AttachmentServeRecord record, string connectionString, CancellationToken ct)
     {
+        if (!CanRecoverMediaByAge(record.FechaHora))
+            return string.Empty;
+
         var mediaId = TryExtractMediaId(record.AdjuntoPayloadJson, record.TipoArchivo)
             ?? TryExtractMediaId(record.MensajePayloadJson, record.TipoArchivo);
         if (string.IsNullOrWhiteSpace(mediaId))
             return string.Empty;
 
         if (!CanAttemptAttachmentRecovery(record.IdAdjunto, mediaId))
+            return string.Empty;
+
+        if (!TryAcquireAutomaticMediaRecoveryPermit())
             return string.Empty;
 
         try
@@ -3677,15 +3710,45 @@ public sealed class ConversacionesService(
         return attempts <= maxAttempts;
     }
 
+    private static bool CanRecoverMediaByAge(DateTime messageDate)
+    {
+        if (messageDate == DateTime.MinValue)
+            return false;
+
+        var age = BusinessNow() - NormalizeStoredConversationTime(messageDate);
+        return age >= TimeSpan.Zero && age <= AutomaticMediaRecoveryMaxAge;
+    }
+
+    private static bool TryAcquireAutomaticMediaRecoveryPermit()
+    {
+        var nowUtc = DateTime.UtcNow;
+        var cutoffUtc = nowUtc - AutomaticMediaRecoveryRateWindow;
+
+        lock (AutomaticMediaRecoveryRateLock)
+        {
+            while (AutomaticMediaRecoveryRequestTimesUtc.Count > 0 &&
+                   AutomaticMediaRecoveryRequestTimesUtc.Peek() <= cutoffUtc)
+            {
+                AutomaticMediaRecoveryRequestTimesUtc.Dequeue();
+            }
+
+            if (AutomaticMediaRecoveryRequestTimesUtc.Count >= MaxAutomaticMediaRecoveryRequestsPerWindow)
+                return false;
+
+            AutomaticMediaRecoveryRequestTimesUtc.Enqueue(nowUtc);
+            return true;
+        }
+    }
+
     private int GetAttachmentRecoveryMaxAttempts()
     {
         var configured = configuration.GetValue<int?>("WhatsApp:AttachmentRecoveryMaxAttempts");
         if (configured.HasValue)
-            return Math.Max(0, configured.Value);
+            return Math.Clamp(configured.Value, 0, DefaultAttachmentRecoveryMaxAttempts);
 
         var rawEnv = Environment.GetEnvironmentVariable("ALFACORE_WHATSAPP_ATTACHMENT_RECOVERY_MAX_ATTEMPTS");
         return int.TryParse(rawEnv, NumberStyles.Integer, CultureInfo.InvariantCulture, out var envValue)
-            ? Math.Max(0, envValue)
+            ? Math.Clamp(envValue, 0, DefaultAttachmentRecoveryMaxAttempts)
             : DefaultAttachmentRecoveryMaxAttempts;
     }
 
@@ -7295,6 +7358,7 @@ public sealed class ConversacionesService(
         public string RutaLocal { get; set; } = string.Empty;
         public string AdjuntoPayloadJson { get; init; } = string.Empty;
         public string MensajePayloadJson { get; init; } = string.Empty;
+        public DateTime FechaHora { get; init; }
     }
 
     private sealed class IncomingWhatsAppAttachment
