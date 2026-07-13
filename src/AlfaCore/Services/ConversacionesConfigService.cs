@@ -61,10 +61,10 @@ public sealed class ConversacionesConfigService(
         => ExecuteLoggedAsync("Conversaciones", "GetWhatsAppConfigForConnection", async token =>
         {
             if (string.IsNullOrWhiteSpace(connectionString))
-                throw new InvalidOperationException("La cadena de conexiÃ³n es obligatoria para cargar la configuraciÃ³n de WhatsApp.");
+                throw new InvalidOperationException("La cadena de conexión es obligatoria para cargar la configuración de WhatsApp.");
 
             return await LoadWhatsAppConfigFromConnectionAsync(connectionString, token);
-        }, "No se pudo cargar la configuraciÃ³n de WhatsApp.", ct);
+        }, "No se pudo cargar la configuración de WhatsApp.", ct);
 
     private async Task<ConversacionWhatsAppConfigDto> LoadWhatsAppConfigFromConnectionAsync(string connectionString, CancellationToken token)
     {

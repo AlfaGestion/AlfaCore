@@ -1187,58 +1187,78 @@
                                                 else if (IsAudioAttachment(adj))
                                                 {
                                                     <div class="message-attachment message-attachment--audio">
-                                                        <audio class="wa-audio-player__media" preload="metadata">
-                                                            <source src="@GetAttachmentUrl(adj)" type="@GetAttachmentMime(adj)" />
-                                                            Tu navegador no puede reproducir este audio.
-                                                        </audio>
-                                                        <div class="wa-audio-player" data-audio-player>
-                                                            <button type="button" class="wa-audio-player__play" data-audio-play title="Reproducir audio" aria-label="Reproducir audio">
-                                                                <i class="bi bi-play-fill" data-audio-play-icon></i>
-                                                            </button>
-                                                            <div class="wa-audio-player__body">
-                                                                <input class="wa-audio-player__seek"
-                                                                       data-audio-seek
-                                                                       type="range"
-                                                                       min="0"
-                                                                       max="1000"
-                                                                       value="0"
-                                                                       step="1"
-                                                                       aria-label="Progreso del audio" />
-                                                                <div class="wa-audio-player__meta">
-                                                                    <span data-audio-current>0:00</span>
-                                                                    <span data-audio-duration>0:00</span>
+                                                        @if (IsAttachmentAvailable(adj))
+                                                        {
+                                                            <audio class="wa-audio-player__media" preload="metadata">
+                                                                <source src="@GetAttachmentUrl(adj)" type="@GetAttachmentMime(adj)" />
+                                                                Tu navegador no puede reproducir este audio.
+                                                            </audio>
+                                                            <div class="wa-audio-player" data-audio-player>
+                                                                <button type="button" class="wa-audio-player__play" data-audio-play title="Reproducir audio" aria-label="Reproducir audio">
+                                                                    <i class="bi bi-play-fill" data-audio-play-icon></i>
+                                                                </button>
+                                                                <div class="wa-audio-player__body">
+                                                                    <input class="wa-audio-player__seek"
+                                                                           data-audio-seek
+                                                                           type="range"
+                                                                           min="0"
+                                                                           max="1000"
+                                                                           value="0"
+                                                                           step="1"
+                                                                           aria-label="Progreso del audio" />
+                                                                    <div class="wa-audio-player__meta">
+                                                                        <span data-audio-current>0:00</span>
+                                                                        <span data-audio-duration>0:00</span>
+                                                                    </div>
                                                                 </div>
+                                                                <button type="button" class="wa-audio-player__speed" data-audio-speed title="Cambiar velocidad">1</button>
+                                                                <a class="btn btn--ghost btn--sm wa-audio-player__download"
+                                                                   href="@GetAttachmentDownloadUrl(adj)"
+                                                                   download="@GetAttachmentDownloadName(adj)"
+                                                                   title="Descargar audio">
+                                                                    <i class="bi bi-download"></i>
+                                                                </a>
                                                             </div>
-                                                            <button type="button" class="wa-audio-player__speed" data-audio-speed title="Cambiar velocidad">1</button>
-                                                            <a class="btn btn--ghost btn--sm wa-audio-player__download"
-                                                               href="@GetAttachmentDownloadUrl(adj)"
-                                                               download="@GetAttachmentDownloadName(adj)"
-                                                               title="Descargar audio">
-                                                                <i class="bi bi-download"></i>
-                                                            </a>
-                                                        </div>
+                                                        }
+                                                        else
+                                                        {
+                                                            <div class="attachment-unavailable" title="@GetAttachmentUnavailableTitle(adj)">
+                                                                <i class="bi bi-file-earmark-music"></i>
+                                                                <span>Audio no disponible</span>
+                                                            </div>
+                                                        }
                                                     </div>
                                                 }
                                                 else if (IsVideoAttachment(adj))
                                                 {
                                                     <div class="message-attachment message-attachment--video">
-                                                        <div class="message-video-preview">
-                                                            <video controls preload="metadata">
-                                                                <source src="@GetAttachmentUrl(adj)" type="@GetAttachmentMime(adj)" />
-                                                                Tu navegador no puede reproducir este video.
-                                                            </video>
-                                                            <button type="button"
-                                                                    class="message-video-preview__open"
-                                                                    title="Ver video en grande"
-                                                                    aria-label="Ver video en grande"
-                                                                    @onclick="() => OpenAttachmentPreview(adj)">
-                                                                <i class="bi bi-arrows-fullscreen"></i>
-                                                            </button>
-                                                        </div>
-                                                        @if (adj.TamanoBytes > 0)
+                                                        @if (IsAttachmentAvailable(adj))
                                                         {
-                                                            <div class="attachment-video-meta">
-                                                                <span>@FormatFileSize(adj.TamanoBytes)</span>
+                                                            <div class="message-video-preview">
+                                                                <video controls preload="metadata">
+                                                                    <source src="@GetAttachmentUrl(adj)" type="@GetAttachmentMime(adj)" />
+                                                                    Tu navegador no puede reproducir este video.
+                                                                </video>
+                                                                <button type="button"
+                                                                        class="message-video-preview__open"
+                                                                        title="Ver video en grande"
+                                                                        aria-label="Ver video en grande"
+                                                                        @onclick="() => OpenAttachmentPreview(adj)">
+                                                                    <i class="bi bi-arrows-fullscreen"></i>
+                                                                </button>
+                                                            </div>
+                                                            @if (adj.TamanoBytes > 0)
+                                                            {
+                                                                <div class="attachment-video-meta">
+                                                                    <span>@FormatFileSize(adj.TamanoBytes)</span>
+                                                                </div>
+                                                            }
+                                                        }
+                                                        else
+                                                        {
+                                                            <div class="attachment-unavailable" title="@GetAttachmentUnavailableTitle(adj)">
+                                                                <i class="bi bi-camera-video-off"></i>
+                                                                <span>Video no disponible</span>
                                                             </div>
                                                         }
                                                     </div>
@@ -1246,14 +1266,24 @@
                                                 else
                                                 {
                                                     <div class="message-attachment message-attachment--file">
-                                                        <a class="attachment-link" href="@GetAttachmentDownloadUrl(adj)" download="@GetAttachmentDownloadName(adj)">
-                                                            <i class="bi bi-file-earmark-arrow-down"></i>
-                                                            <span>@adj.NombreArchivo</span>
-                                                            @if (adj.TamanoBytes > 0)
-                                                            {
-                                                                <span class="attachment-link__size">@FormatFileSize(adj.TamanoBytes)</span>
-                                                            }
-                                                        </a>
+                                                        @if (IsAttachmentAvailable(adj))
+                                                        {
+                                                            <a class="attachment-link" href="@GetAttachmentDownloadUrl(adj)" download="@GetAttachmentDownloadName(adj)">
+                                                                <i class="bi bi-file-earmark-arrow-down"></i>
+                                                                <span>@adj.NombreArchivo</span>
+                                                                @if (adj.TamanoBytes > 0)
+                                                                {
+                                                                    <span class="attachment-link__size">@FormatFileSize(adj.TamanoBytes)</span>
+                                                                }
+                                                            </a>
+                                                        }
+                                                        else
+                                                        {
+                                                            <div class="attachment-unavailable" title="@GetAttachmentUnavailableTitle(adj)">
+                                                                <i class="bi bi-file-earmark-x"></i>
+                                                                <span>Archivo no disponible</span>
+                                                            </div>
+                                                        }
                                                     </div>
                                                 }
                                             }
