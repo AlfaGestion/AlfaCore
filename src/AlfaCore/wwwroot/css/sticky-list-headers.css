@@ -17,6 +17,20 @@
     margin: 0 !important;
 }
 
+html.sticky-list-headers-ready table[data-sticky-list-header="attached"] > thead {
+    opacity: 0;
+    pointer-events: none;
+}
+
+html.sticky-list-headers-ready .panel-card:has(table[data-sticky-list-header="attached"]) > .panel-card__header--compact {
+    display: none;
+}
+
+html.sticky-list-headers-ready .panel-card:has(table[data-sticky-list-header="attached"]) {
+    padding-top: 0;
+    overflow: visible;
+}
+
 @media print {
     .alfacore-sticky-list-header {
         display: none !important;
