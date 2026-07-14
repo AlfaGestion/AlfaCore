@@ -1,0 +1,24 @@
+.alfacore-sticky-list-header {
+    position: fixed;
+    display: none;
+    overflow: hidden;
+    z-index: 1700;
+    pointer-events: auto;
+}
+
+.alfacore-sticky-list-header.is-visible {
+    display: block;
+}
+
+.alfacore-sticky-list-header__table {
+    position: absolute;
+    top: 0;
+    left: 0;
+    margin: 0 !important;
+}
+
+@media print {
+    .alfacore-sticky-list-header {
+        display: none !important;
+    }
+}

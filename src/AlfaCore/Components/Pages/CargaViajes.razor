@@ -239,7 +239,7 @@
                 var visibleColumns = GetVisibleColumns();
                 var groups = BuildViajeGroups();
                 <div class="usuarios-table-wrap">
-                    <table class="data-table usuarios-table">
+                    <table class="data-table usuarios-table" data-sticky-list-header>
                         <thead>
                             <tr>
                                 @foreach (var column in visibleColumns)
@@ -439,7 +439,7 @@
                         </label>
                     </div>
 
-                    <table class="data-table carga-viajes-tarifas-table">
+                    <table class="data-table carga-viajes-tarifas-table" data-sticky-list-header>
                         <thead>
                             <tr>
                                 <th><button type="button" class="carga-viajes-sort-button" @onclick="() => SortTarifasAsync(SortKeyNombre)"><span>Nombre</span><i class="bi @GetSortIcon(_tarifasFilters, SortKeyNombre)"></i></button></th>
@@ -1642,7 +1642,7 @@
                                     {
                                         <div class="carga-viajes-reportes__group-detail">
                                             <div class="usuarios-table-wrap liquidacion-table-shell__table">
-                                                <table class="liquidacion-table">
+                                                <table class="liquidacion-table" data-sticky-list-header>
                                                     <thead>
                                                         <tr>
                                                             <th class="@GetSortThClass(_reporteSortBy, _reporteSortDescending, SortKeyFecha)">
@@ -1765,7 +1765,7 @@
 
                                 <div class="carga-viajes-reportes__group-detail">
                                     <div class="usuarios-table-wrap liquidacion-table-shell__table">
-                                        <table class="liquidacion-table">
+                                        <table class="liquidacion-table" data-sticky-list-header>
                                             <thead>
                                                 <tr>
                                                     <th class="@GetSortThClass(_reporteSortBy, _reporteSortDescending, SortKeyFecha)">
@@ -1860,7 +1860,7 @@
                 {
                     <section class="liquidacion-table-shell">
                         <div class="usuarios-table-wrap liquidacion-table-shell__table">
-                            <table class="liquidacion-table">
+                            <table class="liquidacion-table" data-sticky-list-header>
                                 <thead>
                                     <tr>
                                         <th class="@GetSortThClass(_reporteSortBy, _reporteSortDescending, SortKeyFecha)">
@@ -2188,7 +2188,7 @@
                         </div>
 
                         <div class="usuarios-table-wrap">
-                            <table class="data-table carga-viajes-liquidaciones__table">
+                            <table class="data-table carga-viajes-liquidaciones__table" data-sticky-list-header>
                                 <thead>
                                     <tr>
                                         <th>Fecha</th>
