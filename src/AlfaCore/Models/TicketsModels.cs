@@ -14,6 +14,8 @@ public sealed class TicketsFilters
     public int? IdEtiqueta { get; set; }
     public string FechaRapida { get; set; } = string.Empty;
     public List<SearchRuleDto> Reglas { get; set; } = [];
+    public string OrdenarPor { get; set; } = TicketViewColumnKeys.Fecha;
+    public bool OrdenDescendente { get; set; } = true;
     public int PageNumber { get; set; } = 1;
     public int PageSize { get; set; } = 50;
 }
@@ -164,6 +166,16 @@ public sealed class TicketQuickUpdateRequest
 {
     public long IdTicket { get; set; }
     public string? CodigoEstado { get; set; }
+    public string? IdTecnico { get; set; }
+    public int? Prioridad { get; set; }
+    public string? UsuarioAccion { get; set; }
+}
+
+public sealed class TicketBulkUpdateRequest
+{
+    public List<long> IdTickets { get; set; } = [];
+    public string? CodigoEstado { get; set; }
+    public bool ActualizarTecnico { get; set; }
     public string? IdTecnico { get; set; }
     public int? Prioridad { get; set; }
     public string? UsuarioAccion { get; set; }

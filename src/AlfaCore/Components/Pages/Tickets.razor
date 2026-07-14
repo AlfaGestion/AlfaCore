@@ -143,6 +143,62 @@
         </div>
     }
 
+    @if (_showBulkAction && _viewMode == "lista" && !_showEditor)
+    {
+        <div class="tickets-bulk-layer" @onclick="CloseBulkAction">
+            <section class="panel-card tickets-bulk-modal" @onclick:stopPropagation>
+                <div class="panel-card__header">
+                    <div>
+                        <h3 class="panel-card__title">@BulkActionTitle</h3>
+                        <p class="panel-card__subtitle">La acción se aplicará a @_selectedTicketIds.Count ticket(s).</p>
+                    </div>
+                    <button type="button" class="btn btn--ghost" @onclick="CloseBulkAction" disabled="@_bulkUpdating">
+                        <i class="bi bi-x-circle"></i> Cerrar
+                    </button>
+                </div>
+                <div class="field">
+                    @if (_bulkAction == BulkActionEstado)
+                    {
+                        <label>Nueva etapa</label>
+                        <select @bind="_bulkValue" disabled="@_bulkUpdating">
+                            @foreach (var state in _lookups.Estados.OrderBy(x => x.Orden))
+                            {
+                                <option value="@state.CodigoEstado">@state.Nombre</option>
+                            }
+                        </select>
+                    }
+                    else if (_bulkAction == BulkActionTecnico)
+                    {
+                        <label>Asignar a</label>
+                        <select @bind="_bulkValue" disabled="@_bulkUpdating">
+                            <option value="">Sin asignar</option>
+                            @foreach (var tech in _lookups.Tecnicos)
+                            {
+                                <option value="@tech.IdTecnico">@tech.Nombre</option>
+                            }
+                        </select>
+                    }
+                    else
+                    {
+                        <label>Prioridad</label>
+                        <select @bind="_bulkValue" disabled="@_bulkUpdating">
+                            <option value="3">Alta</option>
+                            <option value="2">Media</option>
+                            <option value="1">Baja</option>
+                            <option value="0">Sin prioridad</option>
+                        </select>
+                    }
+                </div>
+                <div class="actions">
+                    <button type="button" class="btn btn--primary" @onclick="ApplyBulkActionAsync" disabled="@_bulkUpdating">
+                        <i class="bi bi-check2-circle"></i> @(_bulkUpdating ? "Aplicando..." : "Aplicar")
+                    </button>
+                    <button type="button" class="btn btn--ghost" @onclick="CloseBulkAction" disabled="@_bulkUpdating">Cancelar</button>
+                </div>
+            </section>
+        </div>
+    }
+
     @if (_showEditor)
     {
         <section class="panel-card tickets-editor">
@@ -481,64 +537,93 @@
     {
         var visibleColumns = GetVisibleColumns();
         var groups = BuildListGroups();
-        <section class="panel-card">
+        <section class="panel-card tickets-list-panel" @ref="_listRoot">
             @if (IsTicketsUpdating())
             {
                 <div class="loading"><i class="bi bi-arrow-repeat"></i> Actualizando tickets...</div>
             }
-            <div class="panel-card__header">
-                <div>
-                    <h3 class="panel-card__title">Listado</h3>
-                    <p class="panel-card__subtitle">@_pagedTotal registro(s) · Página @_pageNumber de @_totalPages</p>
-                </div>
-                <div class="actions">
-                    <button type="button" class="btn btn--ghost" @onclick="AbrirConfiguracionVista">
-                        <i class="bi bi-sliders"></i> Configurar vista
-                    </button>
-                </div>
-            </div>
             @if (_listItems.Count == 0)
             {
                 <div class="usuarios-empty">No hay tickets para los filtros seleccionados.</div>
             }
             else
             {
-                <div class="usuarios-table-wrap tickets-table-wrap"
+                <div class="tickets-list-sticky-head"
+                     @onpointermove="ResizeTicketColumn"
+                     @onpointerup="FinishTicketColumnResizeAsync"
+                     @onpointercancel="FinishTicketColumnResizeAsync">
+                    <div class="tickets-list-sticky-head__viewport">
+                        <table class="data-table usuarios-table tickets-table tickets-list-head-table" style="@GetTicketsTableStyle(visibleColumns)" data-tickets-list-head>
+                            <colgroup>
+                                <col class="tickets-selection-col" />
+                                @foreach (var col in visibleColumns)
+                                {
+                                    <col style="width:@GetColumnWidth(col)px" />
+                                }
+                            </colgroup>
+                            <thead>
+                                <tr>
+                                    <th class="tickets-selection-cell">
+                                        <input type="checkbox"
+                                               data-tickets-select-all
+                                               data-partial="@HasPartialVisibleTicketSelection.ToString().ToLowerInvariant()"
+                                               checked="@AreAllVisibleTicketsSelected"
+                                               aria-label="Seleccionar todos los tickets de esta página"
+                                               title="Seleccionar todos los tickets de esta página"
+                                               @onchange="ToggleAllVisibleTickets" />
+                                    </th>
+                                    @foreach (var col in visibleColumns)
+                                    {
+                                        <th style="width:@GetColumnWidth(col)px">
+                                            <button type="button"
+                                                    class="@GetTicketSortButtonClass(col.Key)"
+                                                    title="@GetTicketSortTitle(col)"
+                                                    aria-label="@GetTicketSortTitle(col)"
+                                                    @onclick="() => SortTicketsByAsync(col.Key)">
+                                                <span>@col.Label</span>
+                                                <i class="bi @GetTicketSortIcon(col.Key)"></i>
+                                            </button>
+                                            <span class="tickets-column-resizer"
+                                                  title="Arrastrar para ajustar columna"
+                                                  @onpointerdown="args => StartTicketColumnResize(col.Key, args)"
+                                                  @onpointerdown:stopPropagation="true"
+                                                  @onclick:stopPropagation="true"></span>
+                                        </th>
+                                    }
+                                </tr>
+                            </thead>
+                        </table>
+                    </div>
+                </div>
+                <div class="usuarios-table-wrap tickets-table-wrap tickets-list-body"
+                     data-tickets-list-body
                      @onpointermove="ResizeTicketColumn"
                      @onpointerup="FinishTicketColumnResizeAsync"
                      @onpointercancel="FinishTicketColumnResizeAsync">
                     <table class="data-table usuarios-table tickets-table" style="@GetTicketsTableStyle(visibleColumns)">
                         <colgroup>
+                            <col class="tickets-selection-col" />
                             @foreach (var col in visibleColumns)
                             {
                                 <col style="width:@GetColumnWidth(col)px" />
                             }
                         </colgroup>
-                        <thead>
-                            <tr>
-                                @foreach (var col in visibleColumns)
-                                {
-                                    <th style="width:@GetColumnWidth(col)px">
-                                        <span>@col.Label</span>
-                                        <span class="tickets-column-resizer"
-                                              title="Arrastrar para ajustar columna"
-                                              @onpointerdown="args => StartTicketColumnResize(col.Key, args)"
-                                              @onpointerdown:stopPropagation="true"
-                                              @onclick:stopPropagation="true"></span>
-                                    </th>
-                                }
-                            </tr>
-                        </thead>
                         @foreach (var group in groups)
                         {
                             <tbody>
                                 @if (group.ShowHeader)
                                 {
-                                    <tr class="usuarios-group-row"><td colspan="@visibleColumns.Count">@group.Label</td></tr>
+                                    <tr class="usuarios-group-row"><td colspan="@(visibleColumns.Count + 1)">@group.Label</td></tr>
                                 }
                                 @foreach (var item in group.Items)
                                 {
                                     <tr class="@GetTicketRowClass(item)" @onclick="() => AbrirTicketAsync(item.IdTicket)">
+                                        <td class="tickets-selection-cell" @onclick:stopPropagation>
+                                            <input type="checkbox"
+                                                   checked="@IsTicketSelected(item.IdTicket)"
+                                                   aria-label="Seleccionar @item.CodigoVisible"
+                                                   @onchange="args => ToggleTicketSelection(item.IdTicket, args)" />
+                                        </td>
                                         @foreach (var col in visibleColumns)
                                         {
                                             <td>@RenderColumn(item, col.Key)</td>
@@ -581,6 +666,11 @@
     private bool _isNew;
     private bool _showViewSettings;
     private bool _showTagManager;
+    private bool _showBulkAction;
+    private bool _bulkUpdating;
+    private string _bulkAction = string.Empty;
+    private string _bulkValue = string.Empty;
+    private readonly HashSet<long> _selectedTicketIds = [];
     private List<TicketGridItemDto> _kanbanItems = [];
     private List<TicketGridItemDto> _listItems = [];
     private TicketDetailDto? _detail;
@@ -606,9 +696,11 @@
     private bool _ignoreNextKanbanClick;
     private bool _showDescriptionCommands;
     private ElementReference _kanbanRoot;
+    private ElementReference _listRoot;
     private ElementReference _descriptionEditor;
     private IJSObjectReference? _ticketsEditorJs;
     private IJSObjectReference? _ticketsKanbanJs;
+    private IJSObjectReference? _ticketsListJs;
     private DotNetObjectReference<Tickets>? _kanbanDotNetRef;
     private bool _descriptionEditorReady;
     private bool _showSearchPanel;
@@ -622,6 +714,26 @@
     private int _resizeStartWidth;
     private SearchRuleDto _ticketRuleDraft = new() { Campo = "titulo", Operador = "contains" };
     private readonly List<SavedTicketSearch> _ticketFavorites = [];
+    private const string BulkActionEstado = "estado";
+    private const string BulkActionTecnico = "tecnico";
+    private const string BulkActionPrioridad = "prioridad";
+
+    private bool HasTicketSelection
+        => _viewMode == "lista" && !_showEditor && _selectedTicketIds.Count > 0;
+
+    private bool AreAllVisibleTicketsSelected
+        => _listItems.Count > 0 && _listItems.All(item => _selectedTicketIds.Contains(item.IdTicket));
+
+    private bool HasPartialVisibleTicketSelection
+        => !AreAllVisibleTicketsSelected && _listItems.Any(item => _selectedTicketIds.Contains(item.IdTicket));
+
+    private string BulkActionTitle
+        => _bulkAction switch
+        {
+            BulkActionEstado => "Cambiar etapa",
+            BulkActionTecnico => "Asignar tickets",
+            _ => "Cambiar prioridad"
+        };
 
     private RenderFragment RenderTicketSmartSearch() => @<div class="smart-search tickets-smart-search" @onclick:stopPropagation>
                 <div class="smart-search__bar">
@@ -810,6 +922,49 @@
                 OnClick = () => { CerrarEditor(); return Task.CompletedTask; }
             });
         }
+        else if (HasTicketSelection)
+        {
+            actions.Add(new PageHeaderAction
+            {
+                Key = "cambiar-etapa",
+                Label = "Cambiar etapa",
+                Icon = "bi-arrow-left-right",
+                Style = PageHeaderActionStyle.Primary,
+                Priority = PageHeaderActionPriority.Essential,
+                Disabled = _bulkUpdating,
+                OnClick = () => { OpenBulkAction(BulkActionEstado); return Task.CompletedTask; }
+            });
+            actions.Add(new PageHeaderAction
+            {
+                Key = "asignar",
+                Label = "Asignar",
+                Icon = "bi-person-check",
+                Style = PageHeaderActionStyle.Ghost,
+                Priority = PageHeaderActionPriority.Essential,
+                Disabled = _bulkUpdating,
+                OnClick = () => { OpenBulkAction(BulkActionTecnico); return Task.CompletedTask; }
+            });
+            actions.Add(new PageHeaderAction
+            {
+                Key = "prioridad",
+                Label = "Prioridad",
+                Icon = "bi-flag",
+                Style = PageHeaderActionStyle.Ghost,
+                Priority = PageHeaderActionPriority.Normal,
+                Disabled = _bulkUpdating,
+                OnClick = () => { OpenBulkAction(BulkActionPrioridad); return Task.CompletedTask; }
+            });
+            actions.Add(new PageHeaderAction
+            {
+                Key = "limpiar-seleccion",
+                Label = "Quitar selección",
+                Icon = "bi-x-circle",
+                Style = PageHeaderActionStyle.Ghost,
+                Priority = PageHeaderActionPriority.Overflow,
+                Disabled = _bulkUpdating,
+                OnClick = () => { ClearTicketSelection(); return Task.CompletedTask; }
+            });
+        }
         else
         {
             actions.Add(new PageHeaderAction
@@ -856,7 +1011,9 @@
 
         var title = _showEditor
             ? _isNew ? "Nuevo ticket" : $"{_detail?.CodigoVisible} {_form.Titulo}".Trim()
-            : "Tickets";
+            : HasTicketSelection
+                ? $"{_selectedTicketIds.Count} ticket{(_selectedTicketIds.Count == 1 ? string.Empty : "s")} seleccionado{(_selectedTicketIds.Count == 1 ? string.Empty : "s")}"
+                : "Tickets";
 
         PageHeader.Set(new PageHeaderConfig
         {
@@ -866,11 +1023,13 @@
                 ? PageHeaderState.Loading
                 : _showEditor
                     ? (_isNew ? PageHeaderState.Creating : PageHeaderState.Editing)
-                    : _viewMode == "kanban" ? PageHeaderState.Kanban : PageHeaderState.List,
+                    : HasTicketSelection
+                        ? PageHeaderState.Selection
+                        : _viewMode == "kanban" ? PageHeaderState.Kanban : PageHeaderState.List,
             OnBack = _showEditor && _isNew ? new Func<Task>(() => { CerrarEditor(); return Task.CompletedTask; }) : null,
             Search = _showEditor ? null : new PageHeaderSearchConfig(),
             SearchContent = _showEditor ? null : RenderTicketSmartSearch(),
-            ViewButtons = _showEditor
+            ViewButtons = _showEditor || HasTicketSelection
                 ? []
                 :
                 [
@@ -983,6 +1142,7 @@
         {
             _ticketsEditorJs = await JS.InvokeAsync<IJSObjectReference>("import", "/js/tickets-rich-editor.js?v=20260519i");
             _ticketsKanbanJs = await JS.InvokeAsync<IJSObjectReference>("import", "/js/tickets-kanban.js?v=20260519a");
+            _ticketsListJs = await JS.InvokeAsync<IJSObjectReference>("import", "/js/tickets-list.js?v=20260714b");
             _kanbanDotNetRef = DotNetObjectReference.Create(this);
         }
 
@@ -994,6 +1154,9 @@
 
         if (!_showEditor && _viewMode == "kanban" && !_loading && !_refreshingTickets && _ticketsKanbanJs is not null && _kanbanDotNetRef is not null)
             await _ticketsKanbanJs.InvokeVoidAsync("wireKanban", _kanbanRoot, _kanbanDotNetRef);
+
+        if (!_showEditor && _viewMode == "lista" && _listItems.Count > 0 && _ticketsListJs is not null)
+            await _ticketsListJs.InvokeVoidAsync("wireListHeader", _listRoot);
 
         if (_showTagManager && _tagManagerFocusPending)
         {
@@ -1071,11 +1234,135 @@
 
     private async Task CambiarVistaAsync(string view)
     {
+        if (!string.Equals(view, "lista", StringComparison.OrdinalIgnoreCase))
+            ClearTicketSelection(updateHeader: false);
         _viewMode = view;
         _showEditor = false;
         UpdatePageHeader();
         await BuscarAsync(keepCurrent: true);
         UpdatePageHeader();
+    }
+
+    private bool IsTicketSelected(long idTicket)
+        => _selectedTicketIds.Contains(idTicket);
+
+    private void ToggleTicketSelection(long idTicket, ChangeEventArgs args)
+    {
+        if (args.Value is true)
+            _selectedTicketIds.Add(idTicket);
+        else
+            _selectedTicketIds.Remove(idTicket);
+
+        if (_selectedTicketIds.Count == 0)
+            CloseBulkAction();
+        UpdatePageHeader();
+    }
+
+    private void ToggleAllVisibleTickets(ChangeEventArgs args)
+    {
+        var selected = args.Value is true;
+        foreach (var item in _listItems)
+        {
+            if (selected)
+                _selectedTicketIds.Add(item.IdTicket);
+            else
+                _selectedTicketIds.Remove(item.IdTicket);
+        }
+
+        if (_selectedTicketIds.Count == 0)
+            CloseBulkAction();
+        UpdatePageHeader();
+    }
+
+    private void ClearTicketSelection(bool updateHeader = true)
+    {
+        _selectedTicketIds.Clear();
+        CloseBulkAction();
+        if (updateHeader)
+            UpdatePageHeader();
+    }
+
+    private void OpenBulkAction(string action)
+    {
+        if (!HasTicketSelection)
+            return;
+
+        _bulkAction = action;
+        _bulkValue = action switch
+        {
+            BulkActionEstado => _lookups.Estados.OrderBy(x => x.Orden).FirstOrDefault()?.CodigoEstado ?? string.Empty,
+            BulkActionPrioridad => "1",
+            _ => string.Empty
+        };
+        _showBulkAction = true;
+    }
+
+    private void CloseBulkAction()
+    {
+        if (_bulkUpdating)
+            return;
+
+        _showBulkAction = false;
+        _bulkAction = string.Empty;
+        _bulkValue = string.Empty;
+    }
+
+    private async Task ApplyBulkActionAsync()
+    {
+        if (!HasTicketSelection || _bulkUpdating)
+            return;
+
+        var request = new TicketBulkUpdateRequest
+        {
+            IdTickets = _selectedTicketIds.ToList(),
+            UsuarioAccion = CurrentUserName
+        };
+
+        switch (_bulkAction)
+        {
+            case BulkActionEstado:
+                request.CodigoEstado = _bulkValue;
+                break;
+            case BulkActionTecnico:
+                request.ActualizarTecnico = true;
+                request.IdTecnico = _bulkValue;
+                break;
+            case BulkActionPrioridad when int.TryParse(_bulkValue, out var prioridad):
+                request.Prioridad = prioridad;
+                break;
+            default:
+                return;
+        }
+
+        _bulkUpdating = true;
+        UpdatePageHeader();
+        try
+        {
+            var selectedCount = request.IdTickets.Count;
+            var result = await UiOps.RunAsync(async () =>
+            {
+                await TicketsSvc.BulkUpdateAsync(request);
+                return true;
+            }, "No se pudieron actualizar los tickets seleccionados.");
+
+            if (!result.Success)
+            {
+                SetFeedback(result.Feedback);
+                return;
+            }
+
+            _showBulkAction = false;
+            _bulkAction = string.Empty;
+            _bulkValue = string.Empty;
+            _selectedTicketIds.Clear();
+            SetFeedback(AppUiMessage.Success("Tickets actualizados", $"La acción se aplicó a {selectedCount} ticket(s)."));
+            await BuscarAsync(keepCurrent: true);
+        }
+        finally
+        {
+            _bulkUpdating = false;
+            UpdatePageHeader();
+        }
     }
 
     private void OpenTicketSearchPanel()
@@ -1369,6 +1656,12 @@
                 var result = await UiOps.RunAsync(() => TicketsSvc.SearchAsync(_filters), "No se pudo cargar el listado.");
                 if (!result.Success || result.Value is null) { SetFeedback(result.Feedback); return; }
                 _listItems = result.Value.Items.ToList();
+                if (keepCurrent)
+                    _selectedTicketIds.RemoveWhere(id => _listItems.All(item => item.IdTicket != id));
+                else
+                    ClearTicketSelection(updateHeader: false);
+                if (_selectedTicketIds.Count == 0)
+                    CloseBulkAction();
                 _pagedTotal = result.Value.Total;
                 _pageNumber = result.Value.PageNumber;
                 _totalPages = result.Value.TotalPages;
@@ -1381,6 +1674,8 @@
         {
             _loading = false;
             _refreshingTickets = false;
+            if (!_showEditor)
+                UpdatePageHeader();
         }
     }
 
@@ -1390,6 +1685,47 @@
             return;
         _filters.PageNumber = page;
         await BuscarAsync();
+    }
+
+    private async Task SortTicketsByAsync(string columnKey)
+    {
+        if (_loading || string.IsNullOrWhiteSpace(columnKey))
+            return;
+
+        if (string.Equals(_filters.OrdenarPor, columnKey, StringComparison.OrdinalIgnoreCase))
+            _filters.OrdenDescendente = !_filters.OrdenDescendente;
+        else
+        {
+            _filters.OrdenarPor = columnKey;
+            _filters.OrdenDescendente = false;
+        }
+
+        _filters.PageNumber = 1;
+        ClearTicketSelection(updateHeader: false);
+        await BuscarAsync();
+    }
+
+    private string GetTicketSortButtonClass(string columnKey)
+        => string.Equals(_filters.OrdenarPor, columnKey, StringComparison.OrdinalIgnoreCase)
+            ? "tickets-sort-button is-active"
+            : "tickets-sort-button";
+
+    private string GetTicketSortIcon(string columnKey)
+    {
+        if (!string.Equals(_filters.OrdenarPor, columnKey, StringComparison.OrdinalIgnoreCase))
+            return "bi-chevron-expand";
+
+        return _filters.OrdenDescendente ? "bi-arrow-down" : "bi-arrow-up";
+    }
+
+    private string GetTicketSortTitle(TicketViewColumnDto column)
+    {
+        if (!string.Equals(_filters.OrdenarPor, column.Key, StringComparison.OrdinalIgnoreCase))
+            return $"Ordenar {column.Label} de menor a mayor";
+
+        return _filters.OrdenDescendente
+            ? $"Ordenar {column.Label} de menor a mayor"
+            : $"Ordenar {column.Label} de mayor a menor";
     }
 
     private async Task OnPageSizeChangedAsync(ChangeEventArgs e)
@@ -1425,6 +1761,7 @@
 
     private void NuevoTicket()
     {
+        ClearTicketSelection(updateHeader: false);
         _showEditor = true;
         _isNew = true;
         _detail = null;
@@ -1479,6 +1816,8 @@
         _ticketContactSuggestions = [];
         _isNew = false;
         _showEditor = true;
+        _selectedTicketIds.Clear();
+        CloseBulkAction();
         _newNote = string.Empty;
         _descriptionEditorReady = false;
         UpdatePageHeader();
@@ -1541,8 +1880,15 @@
     private static string GetTicketCardClass(TicketGridItemDto item)
         => item.FechaHoraCierre.HasValue ? "tickets-card tickets-card--closed" : "tickets-card";
 
-    private static string GetTicketRowClass(TicketGridItemDto item)
-        => item.FechaHoraCierre.HasValue ? "usuarios-table__row tickets-table__row--closed" : "usuarios-table__row";
+    private string GetTicketRowClass(TicketGridItemDto item)
+    {
+        var classes = item.FechaHoraCierre.HasValue
+            ? "usuarios-table__row tickets-table__row--closed"
+            : "usuarios-table__row";
+        if (IsTicketSelected(item.IdTicket))
+            classes += " tickets-table__row--selected";
+        return classes;
+    }
 
     [JSInvokable]
     public async Task MoveTicketFromKanbanAsync(long idTicket, string codigoEstadoDestino)
@@ -1655,6 +2001,8 @@
             await _ticketsEditorJs.DisposeAsync();
         if (_ticketsKanbanJs is not null)
             await _ticketsKanbanJs.DisposeAsync();
+        if (_ticketsListJs is not null)
+            await _ticketsListJs.DisposeAsync();
     }
 
     private async Task OnTicketClientSearchInputAsync(ChangeEventArgs e)
@@ -2014,8 +2362,9 @@
 
     private static string GetTicketsTableStyle(IReadOnlyList<TicketViewColumnDto> columns)
     {
-        var width = columns.Sum(GetColumnWidth);
-        return $"min-width:{width.ToString(System.Globalization.CultureInfo.InvariantCulture)}px";
+        var width = 44 + columns.Sum(GetColumnWidth);
+        var invariantWidth = width.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        return $"width:max(100%, {invariantWidth}px);min-width:{invariantWidth}px";
     }
 
     private void StartTicketColumnResize(string key, PointerEventArgs args)
@@ -2202,6 +2551,8 @@
             IdContacto = source.IdContacto,
             IdEtiqueta = source.IdEtiqueta,
             FechaRapida = source.FechaRapida,
+            OrdenarPor = source.OrdenarPor,
+            OrdenDescendente = source.OrdenDescendente,
             PageNumber = 1,
             PageSize = source.PageSize,
             Reglas = source.Reglas.Select(r => new SearchRuleDto { Campo = r.Campo, Operador = r.Operador, Valor = r.Valor }).ToList()
