@@ -19994,7 +19994,7 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
 .tareas-side-backdrop {
     position: fixed;
     inset: 0;
-    z-index: 1160;
+    z-index: 4000;
     background: rgba(2, 8, 18, 0.34);
     border: 0;
     padding: 0;
@@ -20004,7 +20004,7 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
     position: fixed;
     top: 0;
     right: 0;
-    z-index: 1165;
+    z-index: 4001;
     width: min(380px, calc(100vw - 1rem));
     height: 100dvh;
     display: grid;

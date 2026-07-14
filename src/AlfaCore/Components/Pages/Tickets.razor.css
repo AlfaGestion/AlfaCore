@@ -126,12 +126,17 @@
 .tickets-bulk-layer {
     position: fixed;
     inset: 0;
-    z-index: 2400;
+    z-index: 4200 !important;
     display: grid;
     place-items: center;
     padding: 1rem;
     background: rgba(2, 6, 23, 0.72);
     backdrop-filter: blur(8px);
+}
+
+.tickets-view-settings-layer,
+.tickets-tags-modal-layer {
+    z-index: 4200 !important;
 }
 
 .tickets-bulk-modal {
