@@ -13,6 +13,12 @@ public class Program
 {
     public static void Main(string[] args)
     {
+        // Tiene que cargarse ANTES de CreateBuilder: el proveedor de variables de entorno
+        // de ASP.NET Core lee el entorno del proceso durante CreateBuilder. Si .env se carga
+        // despues, IConfiguration nunca ve esos valores (Environment.GetEnvironmentVariable
+        // directo si los ve, por eso a veces parecia que "andaba").
+        DotEnvLoader.LoadIfPresent(AppContext.BaseDirectory);
+
         var webRootCandidates = new[]
         {
             Path.Combine(AppContext.BaseDirectory, "wwwroot"),
@@ -36,7 +42,6 @@ public class Program
                 WebRootPath = selectedWebRoot
             });
 
-        DotEnvLoader.LoadIfPresent(builder.Environment.ContentRootPath);
         var startupConnectionString = StartupConnectionResolver.Resolve(args, builder.Configuration);
 
         string? ResolveStaticAsset(string relativePath)
@@ -411,6 +416,31 @@ public class Program
             {
                 return Results.Problem(ex.Message, statusCode: StatusCodes.Status500InternalServerError);
             }
+        });
+
+        app.MapGet("/api/vb6/cliente-por-licencia", async (
+            HttpRequest request,
+            ICentralClientesService clientesSvc,
+            IConfiguration config,
+            CancellationToken ct) =>
+        {
+            var apiKeyConfigurada = config["BackupStatus:ApiKey"] ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(apiKeyConfigurada))
+                return Results.Problem("El servidor no tiene configurada BackupStatus:ApiKey.", statusCode: StatusCodes.Status500InternalServerError);
+
+            var apiKeyRecibida = request.Headers["X-Api-Key"].ToString();
+            if (!string.Equals(apiKeyRecibida, apiKeyConfigurada, StringComparison.Ordinal))
+                return Results.Unauthorized();
+
+            var licencia = request.Query["licenciaPrincipal"].ToString();
+            if (string.IsNullOrWhiteSpace(licencia))
+                return Results.BadRequest("Falta licenciaPrincipal.");
+
+            var cliente = await clientesSvc.GetByLicenciaPrincipalAsync(licencia, ct);
+            if (cliente is null)
+                return Results.NotFound();
+
+            return Results.Text(cliente.IdCliente, "text/plain; charset=utf-8");
         });
 
         app.MapGet("/vb6/consume", async (
