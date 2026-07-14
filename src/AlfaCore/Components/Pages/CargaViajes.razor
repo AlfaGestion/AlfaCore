@@ -966,7 +966,7 @@
                 <div><h3 class="panel-card__title">Listado de choferes</h3><span class="panel-card__subtitle">@_choferesTotal registro(s)</span></div>
             </div>
             <div class="usuarios-table-wrap">
-                <table class="data-table">
+                <table class="data-table" data-sticky-list-header>
                     <thead>
                         <tr>
                             <th><button type="button" class="carga-viajes-sort-button" @onclick="() => SortChoferesAsync(SortKeyCodigo)"><span>Código</span><i class="bi @GetSortIcon(_choferesFilters, SortKeyCodigo)"></i></button></th>
@@ -1085,7 +1085,7 @@
                 <div><h3 class="panel-card__title">Listado de destinos</h3><span class="panel-card__subtitle">@_destinosTotal registro(s)</span></div>
             </div>
             <div class="usuarios-table-wrap">
-                <table class="data-table">
+                <table class="data-table" data-sticky-list-header>
                     <thead>
                         <tr>
                             <th><button type="button" class="carga-viajes-sort-button" @onclick="() => SortDestinosAsync(SortKeyCodigo)"><span>Código</span><i class="bi @GetSortIcon(_destinosFilters, SortKeyCodigo)"></i></button></th>
@@ -1228,7 +1228,7 @@
                 var visibleColumns = GetVisibleTipoVehiculoColumns();
                 var groups = BuildTipoVehiculoGroups();
                 <div class="usuarios-table-wrap">
-                    <table class="data-table">
+                    <table class="data-table" data-sticky-list-header>
                         <thead>
                             <tr>
                                 @foreach (var column in visibleColumns)

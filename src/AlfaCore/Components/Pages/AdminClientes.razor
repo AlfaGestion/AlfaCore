@@ -1,4 +1,4 @@
-﻿@page "/admin/clientes"
+@page "/admin/clientes"
 @page "/{idweb}/{idbase:int}/admin/clientes"
 @layout AlfaCore.Components.Layout.MainLayout
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
@@ -76,7 +76,7 @@
                     else
                     {
                         <div class="table-responsive">
-                            <table class="table align-middle">
+                            <table class="table align-middle" data-sticky-list-header>
                                 <thead>
                                     <tr>
                                         <th>C&oacute;digo</th>
@@ -163,7 +163,7 @@
                             else
                             {
                                 <div class="table-responsive">
-                                    <table class="table align-middle">
+                                    <table class="table align-middle" data-sticky-list-header>
                                         <thead>
                                             <tr>
                                                 <th>C&oacute;digo</th>

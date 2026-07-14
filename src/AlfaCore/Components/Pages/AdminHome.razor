@@ -1,4 +1,4 @@
-﻿@page "/admin"
+@page "/admin"
 @page "/{idweb}/{idbase:int}/admin"
 @layout AlfaCore.Components.Layout.MainLayout
 @using AlfaCore.Models
@@ -79,7 +79,7 @@
                             else
                             {
                                 <div class="table-responsive admin-table-wrap">
-                                    <table class="table table-sm align-middle admin-table">
+                                    <table class="table table-sm align-middle admin-table" data-sticky-list-header>
                                         <thead>
                                             <tr>
                                                 <th>Código</th>
@@ -201,7 +201,7 @@
                                 else
                                 {
                                     <div class="table-responsive admin-table-wrap">
-                                        <table class="table table-sm align-middle admin-table">
+                                        <table class="table table-sm align-middle admin-table" data-sticky-list-header>
                                             <thead>
                                                 <tr>
                                                     <th>Usuario</th>
@@ -260,7 +260,7 @@
                                 else
                                 {
                                     <div class="table-responsive admin-table-wrap">
-                                        <table class="table table-sm align-middle admin-table">
+                                        <table class="table table-sm align-middle admin-table" data-sticky-list-header>
                                             <thead>
                                                 <tr>
                                                     <th>ID base</th>
@@ -374,7 +374,7 @@
                     else
                     {
                         <div class="table-responsive admin-table-wrap">
-                            <table class="table table-sm align-middle admin-table">
+                            <table class="table table-sm align-middle admin-table" data-sticky-list-header>
                                 <thead>
                                     <tr>
                                         <th>Código</th>
