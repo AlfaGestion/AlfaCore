@@ -43,9 +43,19 @@ public sealed class ContactosService(
             var activoFilterSql = !hasActivo && filters.Activo == false
                 ? "AND 1 = 0"
                 : "AND (@Activo IS NULL OR " + activoExpr + " = @Activo)";
+            var contactOrderSql = BuildContactosOrderBy(
+                filters,
+                "c",
+                "COALESCE(NULLIF(e.DESCRIPCION, ''), ISNULL(c.Provincia, ''))",
+                "id");
             var orderBySql = hasActivo
-                ? $"{activoExpr} DESC, ISNULL(c.Nombre_y_Apellido, '') ASC"
-                : "ISNULL(c.Nombre_y_Apellido, '') ASC";
+                ? $"{activoExpr} DESC, {contactOrderSql}"
+                : contactOrderSql;
+            var projectedOrderSql = BuildContactosOrderBy(
+                filters,
+                "pageContacts",
+                "COALESCE(NULLIF(pageContacts.ProvinciaDescripcion, ''), pageContacts.ProvinciaCodigo)",
+                "Id");
 
             var filterConversationMatchSql = BuildConversationMatchSql("c");
             var pageConversationMatchSql = BuildConversationMatchSql("pageContacts");
@@ -105,7 +115,7 @@ public sealed class ContactosService(
                           )
                     ORDER BY cc.IdConversacion ASC
                 ) conv
-                ORDER BY pageContacts.Activo DESC, pageContacts.NombreApellido ASC;
+                ORDER BY pageContacts.Activo DESC, {projectedOrderSql};
 
                 SELECT COUNT(*)
                 FROM dbo.MA_CONTACTOS c
@@ -163,6 +173,27 @@ public sealed class ContactosService(
                 PageSize   = pageSize
             };
         }, "No se pudieron cargar los contactos.", ct);
+
+    private static string BuildContactosOrderBy(
+        ContactosFilters filters,
+        string alias,
+        string provinciaExpression,
+        string idColumn)
+    {
+        var projected = string.Equals(idColumn, "Id", StringComparison.Ordinal);
+        var expression = (filters.OrdenarPor ?? string.Empty).Trim().ToLowerInvariant() switch
+        {
+            ContactosViewColumnKeys.Localidad => $"ISNULL({alias}.Localidad, '')",
+            ContactosViewColumnKeys.Provincia => provinciaExpression,
+            ContactosViewColumnKeys.Telefono => $"ISNULL({alias}.Telefono, '')",
+            ContactosViewColumnKeys.Celular => $"ISNULL({alias}.Celular, '')",
+            ContactosViewColumnKeys.Email => $"ISNULL({alias}.Email, '')",
+            ContactosViewColumnKeys.Cargo => $"ISNULL({alias}.Cargo, '')",
+            _ => $"ISNULL({alias}.{(projected ? "NombreApellido" : "Nombre_y_Apellido")}, '')"
+        };
+        var direction = filters.OrdenDescendente ? "DESC" : "ASC";
+        return $"CASE WHEN NULLIF(LTRIM(RTRIM({expression})), '') IS NULL THEN 1 ELSE 0 END ASC, {expression} {direction}, {alias}.{idColumn} ASC";
+    }
 
     public Task<ContactoDetailDto?> GetByIdAsync(int id, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "GetById", async token =>
