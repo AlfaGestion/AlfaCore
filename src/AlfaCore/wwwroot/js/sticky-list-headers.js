@@ -211,7 +211,9 @@
 
     function getHeaderBottom() {
         const headers = Array.from(document.querySelectorAll('.main-page-header'))
-            .filter(element => element instanceof HTMLElement && element.offsetParent !== null);
+            .filter(element => element instanceof HTMLElement
+                && element.getClientRects().length > 0
+                && window.getComputedStyle(element).visibility !== 'hidden');
         return headers.length === 0
             ? 0
             : Math.max(...headers.map(element => element.getBoundingClientRect().bottom), 0);
