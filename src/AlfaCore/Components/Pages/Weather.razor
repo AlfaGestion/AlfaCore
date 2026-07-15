@@ -1,4 +1,4 @@
-﻿@page "/weather"
+@page "/weather"
 @page "/{idweb}/{idbase:int}/weather"
 @attribute [StreamRendering]
 
@@ -14,7 +14,7 @@
 }
 else
 {
-    <table class="table">
+    <table class="table" data-sticky-list-header>
         <thead>
             <tr>
                 <th>Date</th>

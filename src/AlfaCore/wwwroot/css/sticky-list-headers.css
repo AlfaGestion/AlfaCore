@@ -40,6 +40,12 @@ table[data-sticky-list-header] > thead > tr > th,
     white-space: nowrap !important;
 }
 
+table[data-sticky-list-header] > thead > tr > th {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 6 !important;
+}
+
 table[data-sticky-list-header] > thead > tr > th:first-child,
 .alfacore-sticky-list-header table > thead > tr > th:first-child {
     border-left: 1px solid rgba(56, 189, 248, 0.18) !important;
@@ -87,20 +93,6 @@ html[data-theme="light"] .alfacore-sticky-list-header table > thead > tr > th {
     border-color: rgba(15, 23, 42, 0.14) !important;
     background: #f1f5f9 !important;
     color: #334155 !important;
-}
-
-html.sticky-list-headers-ready table[data-sticky-list-header="attached"] > thead {
-    opacity: 0;
-    pointer-events: none;
-}
-
-html.sticky-list-headers-ready .panel-card:has(table[data-sticky-list-header="attached"]) > .panel-card__header--compact {
-    display: none;
-}
-
-html.sticky-list-headers-ready .panel-card:has(table[data-sticky-list-header="attached"]) {
-    padding-top: 0;
-    overflow: visible;
 }
 
 @media print {

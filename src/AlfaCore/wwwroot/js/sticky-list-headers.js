@@ -38,23 +38,15 @@
 
     function pickActiveTable(stickyTop) {
         let active = null;
-        let bestScore = Number.NEGATIVE_INFINITY;
+        let bestTop = Number.NEGATIVE_INFINITY;
 
         for (const table of getVisibleTables()) {
             const tableRect = table.getBoundingClientRect();
             const headRect = table.tHead.getBoundingClientRect();
-            const attached = table.dataset.stickyListHeader === 'attached';
-            const eligible = attached
-                ? tableRect.top < window.innerHeight && tableRect.bottom > stickyTop + headRect.height
-                : headRect.top <= stickyTop + 1 && tableRect.bottom > stickyTop + headRect.height;
-            if (!eligible) continue;
-
-            const score = attached
-                ? 100000 - Math.abs(tableRect.top - stickyTop)
-                : headRect.top;
-            if (score >= bestScore) {
+            if (headRect.top > stickyTop + 1 || tableRect.bottom <= stickyTop + headRect.height) continue;
+            if (headRect.top >= bestTop) {
                 active = table;
-                bestScore = score;
+                bestTop = headRect.top;
             }
         }
 
@@ -225,7 +217,6 @@
 
     function init() {
         ensureHost();
-        document.documentElement.classList.add('sticky-list-headers-ready');
         installObservers();
         currentPath = `${window.location.pathname}${window.location.search}`;
         scheduleRefresh();

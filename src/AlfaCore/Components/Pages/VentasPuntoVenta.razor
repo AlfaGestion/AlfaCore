@@ -1,4 +1,4 @@
-﻿@page "/ventas/punto-venta"
+@page "/ventas/punto-venta"
 @page "/{idweb}/{idbase:int}/ventas/punto-venta"
 @inject AlfaCore.Services.IPuntoVentaService PuntoVentaSvc
 @inject AlfaCore.Services.IPuntoVentaCartStateService CartState
@@ -3086,7 +3086,7 @@
             {
                 <div class="pos-cashdetail__section">
                     <h4 class="pos-cashdetail__section-title">Saldo consolidado por cuenta</h4>
-                    <table class="pos-cashdetail__table">
+                    <table class="pos-cashdetail__table" data-sticky-list-header>
                         <thead>
                             <tr>
                                 <th>Caja</th>
@@ -3139,7 +3139,7 @@
                 {
                     <div class="pos-cashdetail__section">
                         <h4 class="pos-cashdetail__section-title">Ingresos</h4>
-                        <table class="pos-cashdetail__table">
+                        <table class="pos-cashdetail__table" data-sticky-list-header>
                             <thead>
                                 <tr>
                                     <th>Cuenta</th>
@@ -3177,7 +3177,7 @@
                 {
                     <div class="pos-cashdetail__section">
                         <h4 class="pos-cashdetail__section-title">Egresos</h4>
-                        <table class="pos-cashdetail__table">
+                        <table class="pos-cashdetail__table" data-sticky-list-header>
                             <thead>
                                 <tr>
                                     <th>Cuenta</th>
