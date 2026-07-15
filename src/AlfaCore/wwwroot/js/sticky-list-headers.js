@@ -1,6 +1,9 @@
 (function () {
     const TABLE_SELECTOR = 'table[data-sticky-list-header]';
     const SCROLL_HOST_SELECTOR = '.usuarios-table-wrap, .table-wrap, .data-table-wrap, .consulta-result__table-wrap, .result-group-table-wrap, .table-responsive';
+    const NON_SORTABLE_LABELS = new Set([
+        '', 'accion', 'acciones', 'seleccion', 'conversacion'
+    ]);
     let host = null;
     let cloneTable = null;
     let sourceTable = null;
@@ -8,6 +11,192 @@
     let mutationObserver = null;
     let rafId = 0;
     let currentPath = '';
+
+    function normalizeLabel(value) {
+        return value
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .toLocaleLowerCase('es');
+    }
+
+    function isAlreadySortable(cell) {
+        return cell.matches('.sortable')
+            || cell.querySelector('button, a, input, select, textarea') !== null;
+    }
+
+    function createSortButton(table, cell) {
+        const label = cell.textContent.replace(/\s+/g, ' ').trim();
+        if (NON_SORTABLE_LABELS.has(normalizeLabel(label))
+            || cell.dataset.sortDisabled === 'true'
+            || isAlreadySortable(cell)) return;
+
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'table-sort table-sort--client';
+        button.dataset.clientTableSort = 'true';
+        button.title = `Ordenar por ${label}`;
+        button.setAttribute('aria-label', `Ordenar por ${label}`);
+
+        const labelElement = document.createElement('span');
+        labelElement.className = 'table-sort__label';
+        while (cell.firstChild) labelElement.appendChild(cell.firstChild);
+
+        const icon = document.createElement('i');
+        icon.className = 'bi bi-arrow-down-up table-sort__icon';
+        icon.setAttribute('aria-hidden', 'true');
+
+        button.append(labelElement, icon);
+        button.addEventListener('click', event => {
+            event.preventDefault();
+            event.stopPropagation();
+            sortTable(table, cell.cellIndex);
+        });
+        cell.appendChild(button);
+        cell.dataset.clientSortReady = 'true';
+    }
+
+    function enhanceSortableTable(table) {
+        if (!table.tHead) return;
+        const headerRows = Array.from(table.tHead.rows);
+        if (headerRows.length === 0) return;
+
+        for (const row of headerRows) {
+            for (const cell of row.cells) createSortButton(table, cell);
+        }
+    }
+
+    function readCellValue(row, columnIndex) {
+        const cell = row.cells[columnIndex];
+        if (!cell) return '';
+        if (cell.dataset.sortValue) return cell.dataset.sortValue.trim();
+
+        const control = cell.querySelector('input, select, textarea');
+        if (control instanceof HTMLInputElement && control.type === 'checkbox') {
+            return control.checked ? '1' : '0';
+        }
+        if (control instanceof HTMLInputElement
+            || control instanceof HTMLSelectElement
+            || control instanceof HTMLTextAreaElement) {
+            return control.value.trim();
+        }
+        return cell.textContent.replace(/\s+/g, ' ').trim();
+    }
+
+    function parseDate(value) {
+        const latinDate = value.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+        if (latinDate) {
+            const [, day, month, year, hour = '0', minute = '0', second = '0'] = latinDate;
+            return new Date(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second)).getTime();
+        }
+
+        const isoDate = value.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T\s](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+        if (!isoDate) return null;
+        const [, year, month, day, hour = '0', minute = '0', second = '0'] = isoDate;
+        return new Date(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second)).getTime();
+    }
+
+    function parseNumber(value) {
+        let normalized = value
+            .replace(/\u00a0/g, ' ')
+            .replace(/[$%]/g, '')
+            .replace(/\s+/g, '')
+            .trim();
+        if (!/^-?[\d.,]+$/.test(normalized) || !/\d/.test(normalized)) return null;
+
+        const comma = normalized.lastIndexOf(',');
+        const dot = normalized.lastIndexOf('.');
+        if (comma >= 0 && dot >= 0) {
+            normalized = comma > dot
+                ? normalized.replace(/\./g, '').replace(',', '.')
+                : normalized.replace(/,/g, '');
+        } else if (comma >= 0) {
+            normalized = normalized.replace(/\./g, '').replace(',', '.');
+        } else if ((normalized.match(/\./g) || []).length > 1) {
+            normalized = normalized.replace(/\./g, '');
+        }
+
+        const parsed = Number(normalized);
+        return Number.isFinite(parsed) ? parsed : null;
+    }
+
+    function comparableValue(value) {
+        const trimmed = value.trim();
+        if (trimmed === '' || trimmed === '-') return { empty: true, value: '' };
+        const date = parseDate(trimmed);
+        if (date !== null) return { empty: false, kind: 'number', value: date };
+        const number = parseNumber(trimmed);
+        if (number !== null) return { empty: false, kind: 'number', value: number };
+        return { empty: false, kind: 'text', value: trimmed };
+    }
+
+    function compareRows(left, right, columnIndex, descending) {
+        const a = comparableValue(readCellValue(left.row, columnIndex));
+        const b = comparableValue(readCellValue(right.row, columnIndex));
+        if (a.empty !== b.empty) return a.empty ? 1 : -1;
+
+        let result = 0;
+        if (a.kind === 'number' && b.kind === 'number') {
+            result = a.value - b.value;
+        } else {
+            result = String(a.value).localeCompare(String(b.value), 'es', {
+                numeric: true,
+                sensitivity: 'base'
+            });
+        }
+        if (result === 0) return left.index - right.index;
+        return descending ? -result : result;
+    }
+
+    function isGroupRow(row) {
+        return row.cells.length === 1 && row.cells[0].colSpan > 1;
+    }
+
+    function sortBody(body, columnIndex, descending) {
+        const rows = Array.from(body.rows);
+        let segment = [];
+
+        function flushSegment() {
+            if (segment.length === 0) return;
+            segment
+                .map((row, index) => ({ row, index }))
+                .sort((left, right) => compareRows(left, right, columnIndex, descending))
+                .forEach(item => body.appendChild(item.row));
+            segment = [];
+        }
+
+        for (const row of rows) {
+            if (isGroupRow(row)) {
+                flushSegment();
+                body.appendChild(row);
+            } else {
+                segment.push(row);
+            }
+        }
+        flushSegment();
+    }
+
+    function updateSortHeader(table, columnIndex, descending) {
+        for (const cell of table.tHead.querySelectorAll('th')) {
+            const active = cell.cellIndex === columnIndex && cell.dataset.clientSortReady === 'true';
+            cell.setAttribute('aria-sort', active ? (descending ? 'descending' : 'ascending') : 'none');
+            const button = cell.querySelector('button[data-client-table-sort]');
+            const icon = button?.querySelector('.table-sort__icon');
+            button?.classList.toggle('is-active', active);
+            if (icon) icon.className = `bi ${active ? (descending ? 'bi-arrow-down' : 'bi-arrow-up') : 'bi-arrow-down-up'} table-sort__icon`;
+        }
+    }
+
+    function sortTable(table, columnIndex) {
+        const sameColumn = Number(table.dataset.clientSortColumn) === columnIndex;
+        const descending = sameColumn ? table.dataset.clientSortDirection !== 'desc' : false;
+        table.dataset.clientSortColumn = String(columnIndex);
+        table.dataset.clientSortDirection = descending ? 'desc' : 'asc';
+        for (const body of table.tBodies) sortBody(body, columnIndex, descending);
+        updateSortHeader(table, columnIndex, descending);
+        scheduleRefresh();
+    }
 
     function ensureHost() {
         if (host) return;
@@ -33,7 +222,11 @@
             .filter(table => table instanceof HTMLTableElement
                 && table.offsetParent !== null
                 && table.tHead
-                && table.tHead.rows.length > 0);
+                && table.tHead.rows.length > 0)
+            .map(table => {
+                enhanceSortableTable(table);
+                return table;
+            });
     }
 
     function pickActiveTable(stickyTop) {

@@ -75,6 +75,21 @@ table[data-sticky-list-header] > thead button.table-sort,
     letter-spacing: inherit !important;
     text-align: left !important;
     text-transform: inherit !important;
+    cursor: pointer !important;
+}
+
+table[data-sticky-list-header] > thead .table-sort__label,
+.alfacore-sticky-list-header table > thead .table-sort__label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+table[data-sticky-list-header] > thead .table-sort__icon,
+.alfacore-sticky-list-header table > thead .table-sort__icon {
+    flex: 0 0 auto;
+    color: rgba(148, 163, 184, 0.72);
+    font-size: 0.72rem;
 }
 
 table[data-sticky-list-header] > thead button.table-sort:hover,
@@ -84,6 +99,15 @@ table[data-sticky-list-header] > thead button.table-sort.is-active,
 .alfacore-sticky-list-header table > thead button.table-sort:focus-visible,
 .alfacore-sticky-list-header table > thead button.table-sort.is-active {
     color: var(--accent, #35c2ff) !important;
+}
+
+table[data-sticky-list-header] > thead button.table-sort:hover .table-sort__icon,
+table[data-sticky-list-header] > thead button.table-sort:focus-visible .table-sort__icon,
+table[data-sticky-list-header] > thead button.table-sort.is-active .table-sort__icon,
+.alfacore-sticky-list-header table > thead button.table-sort:hover .table-sort__icon,
+.alfacore-sticky-list-header table > thead button.table-sort:focus-visible .table-sort__icon,
+.alfacore-sticky-list-header table > thead button.table-sort.is-active .table-sort__icon {
+    color: currentColor;
 }
 
 html[data-theme="light"] table[data-sticky-list-header] > thead,
