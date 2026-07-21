@@ -150,7 +150,7 @@
     }
 </style>
 
-<section class="page-grid conversations-page conversations-page--odoo @(IsMobileChatView ? "conversations-page--chat-active" : string.Empty)" @onclick="DismissConversationNoticesAsync">
+<section class="page-grid conversations-page conversations-page--odoo @GetChannelCssClass() @(IsMobileChatView ? "conversations-page--chat-active" : string.Empty)" @onclick="DismissConversationNoticesAsync">
     @if (_loadError is not null)
     {
         <div class="panel-card empty-state">
@@ -182,6 +182,18 @@
                         @onclick='() => ChangeCanalAsync("WHATSAPP")'>
                     <i class="bi bi-whatsapp"></i>
                     <span>WhatsApp</span>
+                </button>
+                <button type="button"
+                        class="conversations-mobile-action conversations-mobile-action--instagram @(_canalActivo == "INSTAGRAM" ? "is-active" : string.Empty)"
+                        @onclick='() => ChangeCanalAsync("INSTAGRAM")'>
+                    <i class="bi bi-instagram"></i>
+                    <span>Instagram</span>
+                </button>
+                <button type="button"
+                        class="conversations-mobile-action @(_canalActivo == "FACEBOOK" ? "is-active" : string.Empty)"
+                        @onclick='() => ChangeCanalAsync("FACEBOOK")'>
+                    <i class="bi bi-facebook"></i>
+                    <span>Facebook</span>
                 </button>
                 <button type="button"
                         class="conversations-mobile-action @(_canalActivo == "INTERNO" ? "is-active" : string.Empty)"
@@ -289,6 +301,16 @@
                         class="conversations-filter-pill @(_canalActivo == "WHATSAPP" ? "is-active" : string.Empty)"
                         @onclick='() => ChangeCanalAsync("WHATSAPP")'>
                     <i class="bi bi-whatsapp"></i> WhatsApp
+                </button>
+                <button type="button"
+                        class="conversations-filter-pill conversations-filter-pill--instagram @(_canalActivo == "INSTAGRAM" ? "is-active" : string.Empty)"
+                        @onclick='() => ChangeCanalAsync("INSTAGRAM")'>
+                    <i class="bi bi-instagram"></i> Instagram
+                </button>
+                <button type="button"
+                        class="conversations-filter-pill @(_canalActivo == "FACEBOOK" ? "is-active" : string.Empty)"
+                        @onclick='() => ChangeCanalAsync("FACEBOOK")'>
+                    <i class="bi bi-facebook"></i> Facebook
                 </button>
                 <button type="button"
                         class="conversations-filter-pill @(_canalActivo == "INTERNO" ? "is-active" : string.Empty)"
@@ -546,6 +568,16 @@
                                 class="conversations-mobile-chip @(_canalActivo == "WHATSAPP" ? "is-active" : string.Empty)"
                                 @onclick='() => ChangeCanalAsync("WHATSAPP")'>
                             WhatsApp
+                        </button>
+                        <button type="button"
+                                class="conversations-mobile-chip @(_canalActivo == "INSTAGRAM" ? "is-active" : string.Empty)"
+                                @onclick='() => ChangeCanalAsync("INSTAGRAM")'>
+                            Instagram
+                        </button>
+                        <button type="button"
+                                class="conversations-mobile-chip @(_canalActivo == "FACEBOOK" ? "is-active" : string.Empty)"
+                                @onclick='() => ChangeCanalAsync("FACEBOOK")'>
+                            Facebook
                         </button>
                         <button type="button"
                                 class="conversations-mobile-chip @(_canalActivo == "INTERNO" ? "is-active" : string.Empty)"
@@ -968,6 +1000,12 @@
                             </button>
                         </div>
                     }
+                    @if (IsProviderPendingConversation && !_showStatusMenu)
+                    {
+                        <div class="conversations-window-banner conversations-window-banner--provider">
+                            <span>@GetProviderPendingMessage()</span>
+                        </div>
+                    }
 
                     @if (_ticketSelectionMode)
                     {
@@ -985,7 +1023,7 @@
                     }
 
                     <div class="conversations-thread-shell">
-                    <div class="conversations-thread" @ref="_threadElement">
+                    <div class="conversations-thread @GetThreadCssClass()" @ref="_threadElement">
                         @if (_messages.Count == 0)
                         {
                             <div class="conversations-empty conversations-empty--center">
@@ -1177,9 +1215,9 @@
                                                         }
                                                         else
                                                         {
-                                                            <div class="attachment-unavailable" title="@GetAttachmentUnavailableTitle(adj)">
-                                                                <i class="bi bi-image-alt"></i>
-                                                                <span>Imagen no disponible</span>
+                                                            <div class="attachment-unavailable @GetAttachmentRecoveryClass(adj)" title="@GetAttachmentUnavailableTitle(adj)">
+                                                                <i class="bi @GetAttachmentUnavailableIcon(adj, "bi-image-alt")"></i>
+                                                                <span>@GetAttachmentUnavailableText(adj, "Imagen no disponible")</span>
                                                             </div>
                                                         }
                                                     </div>
@@ -1222,9 +1260,9 @@
                                                         }
                                                         else
                                                         {
-                                                            <div class="attachment-unavailable" title="@GetAttachmentUnavailableTitle(adj)">
-                                                                <i class="bi bi-file-earmark-music"></i>
-                                                                <span>Audio no disponible</span>
+                                                            <div class="attachment-unavailable @GetAttachmentRecoveryClass(adj)" title="@GetAttachmentUnavailableTitle(adj)">
+                                                                <i class="bi @GetAttachmentUnavailableIcon(adj, "bi-file-earmark-music")"></i>
+                                                                <span>@GetAttachmentUnavailableText(adj, "Audio no disponible")</span>
                                                             </div>
                                                         }
                                                     </div>
@@ -1256,9 +1294,9 @@
                                                         }
                                                         else
                                                         {
-                                                            <div class="attachment-unavailable" title="@GetAttachmentUnavailableTitle(adj)">
-                                                                <i class="bi bi-camera-video-off"></i>
-                                                                <span>Video no disponible</span>
+                                                            <div class="attachment-unavailable @GetAttachmentRecoveryClass(adj)" title="@GetAttachmentUnavailableTitle(adj)">
+                                                                <i class="bi @GetAttachmentUnavailableIcon(adj, "bi-camera-video-off")"></i>
+                                                                <span>@GetAttachmentUnavailableText(adj, "Video no disponible")</span>
                                                             </div>
                                                         }
                                                     </div>
@@ -1279,9 +1317,9 @@
                                                         }
                                                         else
                                                         {
-                                                            <div class="attachment-unavailable" title="@GetAttachmentUnavailableTitle(adj)">
-                                                                <i class="bi bi-file-earmark-x"></i>
-                                                                <span>Archivo no disponible</span>
+                                                            <div class="attachment-unavailable @GetAttachmentRecoveryClass(adj)" title="@GetAttachmentUnavailableTitle(adj)">
+                                                                <i class="bi @GetAttachmentUnavailableIcon(adj, "bi-file-earmark-x")"></i>
+                                                                <span>@GetAttachmentUnavailableText(adj, "Archivo no disponible")</span>
                                                             </div>
                                                         }
                                                     </div>
@@ -1370,7 +1408,7 @@
                             <InputFile id="conv-file-drop-input" OnChange="HandleFileSelectedAsync" class="conversations-drop-input" multiple accept="image/*,audio/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.zip,.rar" />
                             <div class="field conversations-composer__reply">
                                 <label for="conv-message">
-                                    @(_selectedConversation.Canal == "INTERNO" ? "Mensaje al equipo" : "Responder")
+                                    @GetReplyLabel()
                                 </label>
                                 @if (!string.IsNullOrWhiteSpace(TypingIndicatorText))
                                 {
@@ -1396,7 +1434,7 @@
                                           @ref="_replyTextArea"
                                           @key="_selectedConversationId"
                                           rows="2"
-                                          placeholder="@(_selectedConversation.Canal == "INTERNO" ? "Escribí un mensaje para el equipo…" : "Escribí una respuesta para WhatsApp…")"
+                                          placeholder="@GetReplyPlaceholder()"
                                           @onfocus="MarkSelectedConversationAsRead"
                                           @onfocusin="OnReplyFocusAsync"
                                           @oninput="HandleReplyInputAsync"></textarea>
@@ -1452,7 +1490,7 @@
                                 </div>
                             }
                             <div class="conversations-composer__actions conversations-composer__actions--reply">
-                                <button type="button" class="btn btn--primary" @onclick="SendReplyAsync" disabled="@(!_canSendReply)" title="@(HasPendingAttachmentError ? "Reintentar envio" : (_selectedConversation.Canal == "INTERNO" ? "Enviar" : "Enviar mensaje"))">
+                                <button type="button" class="btn btn--primary" @onclick="SendReplyAsync" disabled="@(!_canSendReply)" title="@GetReplyButtonTitle()">
                                     <i class="bi @(HasPendingAttachmentError ? "bi-arrow-clockwise" : "bi-send-fill")"></i>
                                 </button>
                                 <button type="button"
@@ -2514,6 +2552,8 @@
     private readonly Dictionary<long, int> _newMessagesByConversation = [];
     private bool _showReturnToLatest;
     private bool _scrollThreadToBottomAfterRender;
+    private int _scrollThreadToBottomStabilizePasses;
+    private bool _threadAnchoringToBottom;
     private long? _openAttachmentMenuId;
     private long? _openReactionMessageId;
     private ConversacionMensajeDto? _quotedMessage;
@@ -2614,6 +2654,7 @@
 
     private static readonly TimeSpan PollingInterval = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan TypingPollingInterval = TimeSpan.FromMilliseconds(650);
+    private static readonly TimeSpan ConversationCacheTtl = TimeSpan.FromSeconds(20);
     private static readonly string[] ParteHoraTiposConversacion =
     [
         ParteHoraTipoTrabajoKeys.Soporte,
@@ -2642,7 +2683,7 @@
                 .Where(x => x.Emojis.Count > 0)
                 .ToList();
 
-    private bool _canSendReply => !_busyAction && !_uploadingFile && !_uploadingAudio && _selectedConversation is not null && !IsWhatsAppWindowExpired && (HasReplyText || _pendingAttachments.Count > 0);
+    private bool _canSendReply => !_busyAction && !_uploadingFile && !_uploadingAudio && _selectedConversation is not null && IsSelectedChannelSendEnabled && !IsWhatsAppWindowExpired && (HasReplyText || _pendingAttachments.Count > 0);
     private bool HasReplyText => !string.IsNullOrWhiteSpace(_replyText);
     private string TypingIndicatorText
     {
@@ -2677,6 +2718,12 @@
     private bool IsWhatsAppConversation
         => _selectedConversation is not null
            && _selectedConversation.Canal == "WHATSAPP";
+    private bool IsProviderPendingConversation
+        => _selectedConversation is not null
+           && (_selectedConversation.Canal == "INSTAGRAM" || _selectedConversation.Canal == "FACEBOOK");
+    private bool IsSelectedChannelSendEnabled
+        => _selectedConversation is not null
+           && (_selectedConversation.Canal == "WHATSAPP" || _selectedConversation.Canal == "INTERNO");
     private bool IsWhatsAppWindowExpired
         => _selectedConversation is not null
            && _selectedConversation.Canal == "WHATSAPP"
@@ -2689,7 +2736,7 @@
     private IReadOnlyList<TicketEstadoDto> ParteHoraTicketOpenStates
         => _parteHoraTicketEstados.Where(x => !x.EsCerrado).ToList();
     private IReadOnlyList<ConversacionMensajeDto> VisibleMessages
-        => _messages.Where(x => !IsReactionMessage(x)).ToList();
+        => OrderConversationMessages(_messages.Where(x => !IsReactionMessage(x)));
     private IReadOnlyList<ConversacionEstadoOptionDto> HeaderStatusOptions
         => _states
             .Where(x => !x.EsCerrado || string.Equals(x.CodigoEstado, _statusCode, StringComparison.OrdinalIgnoreCase))
@@ -2925,7 +2972,15 @@
         if (_scrollThreadToBottomAfterRender)
         {
             _scrollThreadToBottomAfterRender = false;
-            await ScrollThreadToBottomAsync();
+            await ScrollThreadToBottomAsync(stabilize: true);
+        }
+
+        if (_scrollThreadToBottomStabilizePasses > 0)
+        {
+            _scrollThreadToBottomStabilizePasses--;
+            await ScrollThreadToBottomAsync(stabilize: false);
+            if (_scrollThreadToBottomStabilizePasses > 0)
+                _ = InvokeAsync(StateHasChanged);
         }
 
         if (_focusReplyAfterRender)
@@ -3418,6 +3473,13 @@
             showLoading = false;
             await InvokeAsync(StateHasChanged);
             await Task.Yield();
+
+            if (clearActionState && IsConversationCacheFresh(cachedConversation))
+            {
+                QueueContextTicketsLoad();
+                QueueContextNotesLoad();
+                return;
+            }
         }
 
         if (showLoading)
@@ -3450,7 +3512,7 @@
                 _savingConversationName = false;
                 _conversationNameDraft = _selectedConversation is null ? string.Empty : GetConversationHeader(_selectedConversation);
             }
-            _messages = (await messagesTask).ToList();
+            _messages = OrderConversationMessages(await messagesTask);
             _typingUsers = (await typingTask).ToList();
             var adjuntos = await attachmentsTask;
             _adjuntosPorMensaje = adjuntos
@@ -3468,6 +3530,7 @@
                 ClearNewMessageState();
                 _showReturnToLatest = false;
                 _scrollThreadToBottomAfterRender = true;
+                _threadAnchoringToBottom = true;
                 _focusReplyAfterRender = true;
                 _scrollHandlerConversationId = null;
                 RestoreSelectedNewMessageMarker(idConversacion);
@@ -3525,19 +3588,31 @@
         IReadOnlyList<ConversacionMensajeDto> messages,
         IReadOnlyList<ConversacionAdjuntoDto> attachments)
     {
-        if (attachments.Any(x => !x.ArchivoDisponible || string.IsNullOrWhiteSpace(x.RutaLocal)))
+        if (attachments.Any(x => !x.ArchivoDisponible && x.PuedeRecuperarse))
             return true;
 
         return messages.Any(message =>
             !message.TieneAdjuntos
+            && IsRecentRecoverableMediaMessage(message)
             && IsGeneratedMediaFileName(message.Texto.Trim(), message.MessageType));
+    }
+
+    private static bool IsRecentRecoverableMediaMessage(ConversacionMensajeDto message)
+    {
+        if (message.FechaHora == DateTime.MinValue)
+            return false;
+
+        var age = DateTime.Now - message.FechaHora;
+        return age >= TimeSpan.Zero && age <= TimeSpan.FromHours(1);
     }
 
     private async Task RecoverConversationAttachmentsInBackgroundAsync(long idConversacion)
     {
+        var hadRecoveryProgress = false;
         try
         {
             var recovery = await ConversacionesSvc.RecoverConversationAttachmentsAsync(idConversacion);
+            hadRecoveryProgress = recovery.MensajesHidratados > 0 || recovery.AdjuntosRecuperados > 0;
             if (recovery.MensajesHidratados <= 0 && recovery.AdjuntosRecuperados <= 0)
                 return;
 
@@ -3550,7 +3625,7 @@
                 var attachmentsTask = ConversacionesSvc.GetConversationAttachmentsAsync(idConversacion);
                 await Task.WhenAll(messagesTask, attachmentsTask);
 
-                _messages = (await messagesTask).ToList();
+                _messages = OrderConversationMessages(await messagesTask);
                 var adjuntos = await attachmentsTask;
                 _adjuntosPorMensaje = adjuntos
                     .GroupBy(a => a.IdMensaje)
@@ -3568,6 +3643,8 @@
             try
             {
                 await InvokeAsync(() => _recoveringAttachmentConversations.Remove(idConversacion));
+                if (!hadRecoveryProgress)
+                    _recoveredAttachmentConversations.Remove(idConversacion);
             }
             catch
             {
@@ -4788,8 +4865,9 @@
 
         _conversationCache[idConversacion] = new ConversationViewCache(
             _selectedConversation,
-            _messages.ToList(),
-            _adjuntosPorMensaje.ToDictionary(x => x.Key, x => x.Value.ToList()));
+            OrderConversationMessages(_messages),
+            _adjuntosPorMensaje.ToDictionary(x => x.Key, x => x.Value.ToList()),
+            DateTime.UtcNow);
 
         const int maxCachedConversations = 16;
         if (_conversationCache.Count <= maxCachedConversations)
@@ -4803,17 +4881,21 @@
     private void ApplyConversationCache(long idConversacion, ConversationViewCache cache, bool scrollToBottom)
     {
         _selectedConversation = cache.Conversation;
-        _messages = cache.Messages.ToList();
+        _messages = OrderConversationMessages(cache.Messages);
         _adjuntosPorMensaje = cache.AttachmentsByMessage.ToDictionary(x => x.Key, x => x.Value.ToList());
         _assignmentTechnicianId = _selectedConversation.IdTecnico;
         _statusCode = _selectedConversation.CodigoEstado;
         _conversationError = null;
         _scrollThreadToBottomAfterRender = scrollToBottom;
+        _threadAnchoringToBottom = scrollToBottom;
         _focusReplyAfterRender = scrollToBottom;
         _scrollHandlerConversationId = null;
         _fileDropHandlerConversationId = null;
         RestoreSelectedNewMessageMarker(idConversacion);
     }
+
+    private static bool IsConversationCacheFresh(ConversationViewCache cache)
+        => DateTime.UtcNow - cache.CachedAtUtc <= ConversationCacheTtl;
 
     private void StoreChannelCache(string canal)
     {
@@ -5056,13 +5138,21 @@
         }
     }
 
-    private async Task ScrollThreadToBottomAsync()
+    private async Task ScrollThreadToBottomAsync(bool stabilize = false)
     {
         try
         {
+            var wasAnchoring = _threadAnchoringToBottom;
             await Task.Yield();
-            await JS.InvokeVoidAsync("conversacionesUi.scrollToBottom", _threadElement);
+            if (stabilize)
+                await JS.InvokeVoidAsync("conversacionesUi.scrollToBottomStable", _threadElement);
+            else
+                await JS.InvokeVoidAsync("conversacionesUi.scrollToBottom", _threadElement);
+            _scrollThreadToBottomStabilizePasses = stabilize ? 4 : _scrollThreadToBottomStabilizePasses;
+            _threadAnchoringToBottom = false;
             _showReturnToLatest = false;
+            if (wasAnchoring)
+                await InvokeAsync(StateHasChanged);
         }
         catch
         {
@@ -6722,6 +6812,43 @@
     private static string GetConversationHeader(ConversacionDetalleDto item)
         => FirstNonEmpty(item.NombreVisible, item.ContactoNombre, item.ClienteNombre, item.TelefonoWhatsApp);
 
+    private string GetChannelCssClass()
+        => _canalActivo switch
+        {
+            "INSTAGRAM" => "conversations-page--instagram",
+            "FACEBOOK" => "conversations-page--facebook",
+            "INTERNO" => "conversations-page--internal",
+            _ => "conversations-page--whatsapp"
+        };
+
+    private string GetReplyPlaceholder()
+        => _selectedConversation?.Canal switch
+        {
+            "INTERNO" => "Escribí un mensaje para el equipo...",
+            "INSTAGRAM" => "Instagram está preparado; el envío se habilita al conectar Meta.",
+            "FACEBOOK" => "Facebook está preparado; el envío se habilita al conectar Meta.",
+            _ => "Escribí una respuesta para WhatsApp..."
+        };
+
+    private string GetReplyLabel()
+        => _selectedConversation?.Canal == "INTERNO" ? "Mensaje al equipo" : "Responder";
+
+    private string GetReplyButtonTitle()
+    {
+        if (HasPendingAttachmentError)
+            return "Reintentar envío";
+
+        return _selectedConversation?.Canal == "INTERNO" ? "Enviar" : "Enviar mensaje";
+    }
+
+    private string GetProviderPendingMessage()
+        => _selectedConversation?.Canal switch
+        {
+            "INSTAGRAM" => "Instagram ya está separado como canal. Falta conectar el provider de Meta para recibir y enviar mensajes reales.",
+            "FACEBOOK" => "Facebook ya está separado como canal. Falta conectar el provider de Meta para recibir y enviar mensajes reales.",
+            _ => string.Empty
+        };
+
     private static string GetWhatsAppWindowLabel(ConversacionDetalleDto item)
     {
         if (item.VentanaWhatsAppActiva && item.FechaHoraVencimientoVentanaWhatsApp is DateTime expiration)
@@ -7137,6 +7264,12 @@
         return $"{code} · {ticket.Titulo}";
     }
 
+    private static List<ConversacionMensajeDto> OrderConversationMessages(IEnumerable<ConversacionMensajeDto> messages)
+        => messages
+            .OrderBy(x => x.FechaHora == DateTime.MinValue ? DateTime.MaxValue : x.FechaHora)
+            .ThenBy(x => x.IdMensaje)
+            .ToList();
+
     private static string FormatShortDate(DateTime value)
     {
         if (value == DateTime.MinValue)
@@ -7211,6 +7344,34 @@
 
     private static bool IsAttachmentAvailable(ConversacionAdjuntoDto adjunto)
         => adjunto.ArchivoDisponible;
+
+    private bool IsRecoveringSelectedConversationAttachments()
+        => _selectedConversationId is { } idConversacion
+           && _recoveringAttachmentConversations.Contains(idConversacion);
+
+    private string GetAttachmentRecoveryClass(ConversacionAdjuntoDto adjunto)
+        => IsRecoveringAttachment(adjunto) ? "is-loading" : string.Empty;
+
+    private string GetAttachmentUnavailableIcon(ConversacionAdjuntoDto adjunto, string fallbackIcon)
+        => IsRecoveringAttachment(adjunto) ? "bi-arrow-clockwise" : fallbackIcon;
+
+    private bool IsRecoveringAttachment(ConversacionAdjuntoDto adjunto)
+        => adjunto.PuedeRecuperarse && IsRecoveringSelectedConversationAttachments();
+
+    private string GetAttachmentUnavailableText(ConversacionAdjuntoDto adjunto, string fallbackText)
+    {
+        if (!IsRecoveringAttachment(adjunto))
+            return fallbackText;
+
+        if (IsImageAttachment(adjunto))
+            return "Buscando imagen...";
+        if (IsAudioAttachment(adjunto))
+            return "Buscando audio...";
+        if (IsVideoAttachment(adjunto))
+            return "Buscando video...";
+
+        return "Buscando archivo...";
+    }
 
     private static string GetAttachmentUnavailableTitle(ConversacionAdjuntoDto adjunto)
         => $"No se pudo recuperar {GetAttachmentLabel(adjunto)}. El archivo ya no está disponible en Meta o faltan permisos para descargarlo.";
@@ -7830,6 +7991,9 @@
     private string GetConversationNoticeLeavingClass()
         => _noticeLeaving ? "is-leaving" : string.Empty;
 
+    private string GetThreadCssClass()
+        => _threadAnchoringToBottom ? "is-bottom-anchoring" : string.Empty;
+
     private string BuildNoticeSignature()
         => string.Join("|", new[]
         {
@@ -8150,7 +8314,8 @@
     private sealed record ConversationViewCache(
         ConversacionDetalleDto Conversation,
         List<ConversacionMensajeDto> Messages,
-        Dictionary<long, List<ConversacionAdjuntoDto>> AttachmentsByMessage);
+        Dictionary<long, List<ConversacionAdjuntoDto>> AttachmentsByMessage,
+        DateTime CachedAtUtc);
 
     private sealed record ConversationChannelCache(
         ConversacionesInboxFilters Filters,

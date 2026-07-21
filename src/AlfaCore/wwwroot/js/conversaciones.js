@@ -167,6 +167,35 @@ window.conversacionesUi = {
         element.scrollTop = element.scrollHeight;
     },
 
+    scrollToBottomStable: function (element) {
+        if (!element) return false;
+
+        const scroll = () => {
+            element.scrollTop = element.scrollHeight;
+        };
+
+        scroll();
+        window.requestAnimationFrame(scroll);
+        window.requestAnimationFrame(() => window.requestAnimationFrame(scroll));
+        window.setTimeout(scroll, 80);
+        window.setTimeout(scroll, 180);
+        window.setTimeout(scroll, 360);
+        window.setTimeout(scroll, 700);
+
+        element.querySelectorAll('img, video').forEach(media => {
+            const done = media.tagName === 'IMG'
+                ? media.complete
+                : media.readyState >= 1;
+            if (done) return;
+
+            media.addEventListener('load', scroll, { once: true });
+            media.addEventListener('loadedmetadata', scroll, { once: true });
+            media.addEventListener('error', scroll, { once: true });
+        });
+
+        return true;
+    },
+
     bindDateDividers: function (element) {
         if (!element) return false;
 

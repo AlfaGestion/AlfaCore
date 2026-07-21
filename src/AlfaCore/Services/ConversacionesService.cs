@@ -29,8 +29,9 @@ public sealed class ConversacionesService(
     private const string InternalEventMessageType = "SYSTEM";
     private const int DefaultAttachmentRecoveryMaxAttempts = 1;
     private const int MaxAutomaticMediaHydrationsPerConversation = 3;
+    private const int MaxAutomaticAttachmentRecoveriesPerConversation = 3;
     private const int MaxAutomaticMediaRecoveryRequestsPerWindow = 20;
-    private static readonly TimeSpan AutomaticMediaRecoveryMaxAge = TimeSpan.FromHours(1);
+    private static readonly TimeSpan DefaultAutomaticMediaRecoveryMaxAge = TimeSpan.FromDays(30);
     private static readonly TimeSpan AutomaticMediaRecoveryRateWindow = TimeSpan.FromHours(1);
     private static readonly TimeSpan TypingTtl = TimeSpan.FromSeconds(8);
     private static readonly object AutomaticMediaRecoveryRateLock = new();
@@ -1486,7 +1487,7 @@ public sealed class ConversacionesService(
                 LEFT JOIN dbo.V_TA_Tecnicos t
                     ON LTRIM(RTRIM(t.IdTecnico)) = LTRIM(RTRIM(m.IdTecnicoAutor))
                 WHERE m.IdConversacion = @IdConversacion
-                ORDER BY m.IdMensaje ASC
+                ORDER BY {ConversationMessageVisibleDateSql("m")} ASC, m.IdMensaje ASC
             """;
 
             var items = new List<ConversacionMensajeDto>();
@@ -1802,6 +1803,9 @@ public sealed class ConversacionesService(
 
             var conversation = await RequireConversationAsync(request.IdConversacion, token);
             var isInternal = string.Equals(conversation.Canal, "INTERNO", StringComparison.OrdinalIgnoreCase);
+            var isWhatsApp = string.Equals(conversation.Canal, "WHATSAPP", StringComparison.OrdinalIgnoreCase);
+            if (!isInternal && !isWhatsApp)
+                throw new InvalidOperationException($"El canal {conversation.Canal} todavía no tiene envío habilitado.");
             var now = BusinessNow();
 
             string initialState;
@@ -2941,6 +2945,9 @@ public sealed class ConversacionesService(
 
             var conversation = await RequireConversationAsync(request.IdConversacion, token);
             var isInternal = string.Equals(conversation.Canal, "INTERNO", StringComparison.OrdinalIgnoreCase);
+            var isWhatsApp = string.Equals(conversation.Canal, "WHATSAPP", StringComparison.OrdinalIgnoreCase);
+            if (!isInternal && !isWhatsApp)
+                throw new InvalidOperationException($"El canal {conversation.Canal} todavía no tiene envío de adjuntos habilitado.");
             var messageType = NormalizeMessageType(request.TipoArchivo);
             var mimeType = NormalizeOutgoingMime(request.MimeType, request.NombreArchivo, messageType);
             var nombreArchivo = request.NombreArchivo.Trim();
@@ -2986,6 +2993,7 @@ public sealed class ConversacionesService(
             }
 
             var tamanoBytes = new FileInfo(rutaLocal).Length;
+            var archivoContenido = await File.ReadAllBytesAsync(rutaLocal, token);
 
             string whatsAppMessageId = string.Empty;
             string finalState = initialState;
@@ -3031,6 +3039,7 @@ public sealed class ConversacionesService(
                 rutaLocal,
                 tamanoBytes,
                 payload,
+                archivoContenido,
                 token);
 
             await RefreshConversationAsync(request.IdConversacion, now, $"[{messageType}] {nombreArchivo}", token);
@@ -3051,44 +3060,101 @@ public sealed class ConversacionesService(
     public Task<IReadOnlyList<ConversacionAdjuntoDto>> GetConversationAttachmentsAsync(long idConversacion, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetConversationAttachments", async token =>
         {
-            const string sql = """
-                SELECT
-                    a.IdAdjunto,
-                    a.IdMensaje,
-                    ISNULL(a.TipoArchivo, ''),
-                    ISNULL(a.NombreArchivo, ''),
-                    ISNULL(a.MimeType, ''),
-                    ISNULL(a.UrlArchivo, ''),
-                    ISNULL(a.RutaLocal, ''),
-                    ISNULL(a.TamanoBytes, 0)
-                FROM dbo.CONV_ADJUNTOS a
-                INNER JOIN dbo.CONV_MENSAJES m ON m.IdMensaje = a.IdMensaje
-                WHERE m.IdConversacion = @IdConversacion
-                ORDER BY a.IdAdjunto
-                """;
-
             var items = new List<ConversacionAdjuntoDto>();
+            var pathUpdates = new List<(long IdAdjunto, string RutaLocal)>();
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
+            await EnsureConversationAttachmentsDurableColumnsAsync(cn, token);
+            var supportsDurableContent = await ColumnExistsAsync(cn, "CONV_ADJUNTOS", "ArchivoContenido", token);
+            var sql = supportsDurableContent
+                ? """
+                    SELECT
+                        a.IdAdjunto,
+                        a.IdMensaje,
+                        m.IdConversacion,
+                        ISNULL(a.TipoArchivo, ''),
+                        ISNULL(a.NombreArchivo, ''),
+                        ISNULL(a.MimeType, ''),
+                        ISNULL(a.UrlArchivo, ''),
+                        ISNULL(a.RutaLocal, ''),
+                        ISNULL(a.TamanoBytes, 0),
+                        ISNULL(a.PayloadJson, ''),
+                        ISNULL(m.PayloadJson, ''),
+                        m.FechaHora,
+                        CASE WHEN a.ArchivoContenido IS NULL THEN CAST(0 AS bit) ELSE CAST(1 AS bit) END,
+                        ISNULL(a.AlmacenamientoEstado, '')
+                    FROM dbo.CONV_ADJUNTOS a
+                    INNER JOIN dbo.CONV_MENSAJES m ON m.IdMensaje = a.IdMensaje
+                    WHERE m.IdConversacion = @IdConversacion
+                    ORDER BY a.IdAdjunto
+                    """
+                : """
+                    SELECT
+                        a.IdAdjunto,
+                        a.IdMensaje,
+                        m.IdConversacion,
+                        ISNULL(a.TipoArchivo, ''),
+                        ISNULL(a.NombreArchivo, ''),
+                        ISNULL(a.MimeType, ''),
+                        ISNULL(a.UrlArchivo, ''),
+                        ISNULL(a.RutaLocal, ''),
+                        ISNULL(a.TamanoBytes, 0),
+                        ISNULL(a.PayloadJson, ''),
+                        ISNULL(m.PayloadJson, ''),
+                        m.FechaHora,
+                        CAST(0 AS bit),
+                        CAST('' AS nvarchar(20))
+                    FROM dbo.CONV_ADJUNTOS a
+                    INNER JOIN dbo.CONV_MENSAJES m ON m.IdMensaje = a.IdMensaje
+                    WHERE m.IdConversacion = @IdConversacion
+                    ORDER BY a.IdAdjunto
+                    """;
             await using var cmd = new SqlCommand(sql, cn);
             cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
             await using var rd = await cmd.ExecuteReaderAsync(token);
             while (await rd.ReadAsync(token))
             {
-                var rutaLocal = GetString(rd, 6);
-                items.Add(new ConversacionAdjuntoDto
+                var record = new AttachmentServeRecord
                 {
                     IdAdjunto = rd.GetInt64(0),
                     IdMensaje = rd.GetInt64(1),
-                    TipoArchivo = GetString(rd, 2),
-                    NombreArchivo = GetString(rd, 3),
-                    MimeType = GetString(rd, 4),
-                    UrlArchivo = GetString(rd, 5),
+                    IdConversacion = rd.GetInt64(2),
+                    TipoArchivo = GetString(rd, 3),
+                    NombreArchivo = GetString(rd, 4),
+                    MimeType = GetString(rd, 5),
+                    UrlArchivo = GetString(rd, 6),
+                    RutaLocal = GetString(rd, 7),
+                    AdjuntoPayloadJson = GetString(rd, 9),
+                    MensajePayloadJson = GetString(rd, 10),
+                    FechaHora = rd.IsDBNull(11) ? DateTime.MinValue : NormalizeStoredConversationTime(rd.GetDateTime(11))
+                };
+
+                var rutaLocal = ResolveExistingAttachmentPath(record);
+                var hasSqlContent = !rd.IsDBNull(12) && rd.GetBoolean(12);
+                var estadoAlmacenamiento = GetString(rd, 13);
+                if (!string.IsNullOrWhiteSpace(rutaLocal) && !string.Equals(rutaLocal, record.RutaLocal, StringComparison.OrdinalIgnoreCase))
+                    pathUpdates.Add((record.IdAdjunto, rutaLocal));
+
+                items.Add(new ConversacionAdjuntoDto
+                {
+                    IdAdjunto = record.IdAdjunto,
+                    IdMensaje = record.IdMensaje,
+                    TipoArchivo = record.TipoArchivo,
+                    NombreArchivo = record.NombreArchivo,
+                    MimeType = record.MimeType,
+                    UrlArchivo = record.UrlArchivo,
                     RutaLocal = rutaLocal,
-                    TamanoBytes = rd.IsDBNull(7) ? 0 : rd.GetInt64(7),
-                    ArchivoDisponible = !string.IsNullOrWhiteSpace(rutaLocal) && File.Exists(rutaLocal)
+                    TamanoBytes = rd.IsDBNull(8) ? 0 : rd.GetInt64(8),
+                    ArchivoDisponible = (!string.IsNullOrWhiteSpace(rutaLocal) && File.Exists(rutaLocal)) || hasSqlContent,
+                    PuedeRecuperarse = IsAttachmentRecoveryCandidate(record, hasSqlContent, rutaLocal, estadoAlmacenamiento),
+                    EstadoAlmacenamiento = estadoAlmacenamiento
                 });
             }
+
+            await rd.DisposeAsync();
+
+            foreach (var update in pathUpdates)
+                await UpdateAttachmentLocalPathAsync(update.IdAdjunto, update.RutaLocal, ConnectionString, token);
 
             return (IReadOnlyList<ConversacionAdjuntoDto>)items;
         }, "No se pudieron cargar los adjuntos.", ct);
@@ -3107,7 +3173,7 @@ public sealed class ConversacionesService(
                 result.MensajesHidratados = pendingMedia.Count(x => x.Message.TieneAdjuntos);
             }
 
-            var attachmentIds = await GetConversationAttachmentIdsAsync(idConversacion, token);
+            var attachmentIds = await GetRecoverableAttachmentIdsAsync(idConversacion, token);
             result.AdjuntosRevisados = attachmentIds.Count;
 
             foreach (var idAdjunto in attachmentIds)
@@ -3115,13 +3181,14 @@ public sealed class ConversacionesService(
                 var file = await GetAttachmentForServeInternalAsync(
                     idAdjunto,
                     idBase: null,
-                    includeDownloadName: true,
-                    allowRemoteRecovery: false,
+                    includeDownloadName: false,
+                    allowRemoteRecovery: true,
                     ct: token);
-                if (file is null || string.IsNullOrWhiteSpace(file.RutaLocal))
+                if (file is null)
                     continue;
 
-                if (File.Exists(file.RutaLocal))
+                var hasLocalFile = !string.IsNullOrWhiteSpace(file.RutaLocal) && File.Exists(file.RutaLocal);
+                if (hasLocalFile || file.Contenido.Length > 0)
                     result.AdjuntosDisponibles++;
             }
 
@@ -3217,31 +3284,57 @@ public sealed class ConversacionesService(
         CancellationToken ct)
         => ExecuteLoggedAsync("Conversaciones", "GetAttachmentForServe", async token =>
         {
-            const string sql = """
-                SELECT
-                    a.IdAdjunto,
-                    a.IdMensaje,
-                    m.IdConversacion,
-                    ISNULL(a.TipoArchivo, ''),
-                    ISNULL(a.NombreArchivo, ''),
-                    ISNULL(a.MimeType, ''),
-                    ISNULL(a.UrlArchivo, ''),
-                    ISNULL(a.RutaLocal, ''),
-                    ISNULL(a.PayloadJson, ''),
-                    ISNULL(m.PayloadJson, ''),
-                    m.FechaHora
-                FROM dbo.CONV_ADJUNTOS a
-                INNER JOIN dbo.CONV_MENSAJES m
-                    ON m.IdMensaje = a.IdMensaje
-                WHERE a.IdAdjunto = @IdAdjunto
-                """;
-
             var connectionString = await ResolveConnectionStringAsync(idBase, token);
             await using var cn = new SqlConnection(connectionString);
             await cn.OpenAsync(token);
+            await EnsureConversationAttachmentsDurableColumnsAsync(cn, token);
+            var supportsDurableContent = await ColumnExistsAsync(cn, "CONV_ADJUNTOS", "ArchivoContenido", token);
+            var sql = supportsDurableContent
+                ? """
+                    SELECT
+                        a.IdAdjunto,
+                        a.IdMensaje,
+                        m.IdConversacion,
+                        ISNULL(a.TipoArchivo, ''),
+                        ISNULL(a.NombreArchivo, ''),
+                        ISNULL(a.MimeType, ''),
+                        ISNULL(a.UrlArchivo, ''),
+                        ISNULL(a.RutaLocal, ''),
+                        ISNULL(a.PayloadJson, ''),
+                        ISNULL(m.PayloadJson, ''),
+                        m.FechaHora,
+                        a.ArchivoContenido,
+                        a.FechaHora_Archivo
+                    FROM dbo.CONV_ADJUNTOS a
+                    INNER JOIN dbo.CONV_MENSAJES m
+                        ON m.IdMensaje = a.IdMensaje
+                    WHERE a.IdAdjunto = @IdAdjunto
+                    """
+                : """
+                    SELECT
+                        a.IdAdjunto,
+                        a.IdMensaje,
+                        m.IdConversacion,
+                        ISNULL(a.TipoArchivo, ''),
+                        ISNULL(a.NombreArchivo, ''),
+                        ISNULL(a.MimeType, ''),
+                        ISNULL(a.UrlArchivo, ''),
+                        ISNULL(a.RutaLocal, ''),
+                        ISNULL(a.PayloadJson, ''),
+                        ISNULL(m.PayloadJson, ''),
+                        m.FechaHora,
+                        CAST(NULL AS varbinary(max)),
+                        CAST(NULL AS datetime)
+                    FROM dbo.CONV_ADJUNTOS a
+                    INNER JOIN dbo.CONV_MENSAJES m
+                        ON m.IdMensaje = a.IdMensaje
+                    WHERE a.IdAdjunto = @IdAdjunto
+                    """;
             await using var cmd = new SqlCommand(sql, cn);
             cmd.Parameters.AddWithValue("@IdAdjunto", idAdjunto);
             AttachmentServeRecord record;
+            byte[] contenido = [];
+            DateTime? fechaHoraArchivo = null;
             await using (var rd = await cmd.ExecuteReaderAsync(token))
             {
                 if (!await rd.ReadAsync(token))
@@ -3261,6 +3354,11 @@ public sealed class ConversacionesService(
                     MensajePayloadJson = GetString(rd, 9),
                     FechaHora = rd.IsDBNull(10) ? DateTime.MinValue : NormalizeStoredConversationTime(rd.GetDateTime(10))
                 };
+
+                if (!rd.IsDBNull(11))
+                    contenido = (byte[])rd.GetValue(11);
+                if (!rd.IsDBNull(12))
+                    fechaHoraArchivo = rd.GetDateTime(12);
             }
 
             var rutaLocal = ResolveExistingAttachmentPath(record);
@@ -3273,6 +3371,17 @@ public sealed class ConversacionesService(
             if (allowRemoteRecovery && string.IsNullOrWhiteSpace(rutaLocal))
                 rutaLocal = await TryRecoverAttachmentFileAsync(record, connectionString, token);
 
+            if (supportsDurableContent
+                && contenido.Length == 0
+                && !string.IsNullOrWhiteSpace(rutaLocal)
+                && File.Exists(rutaLocal))
+            {
+                contenido = await File.ReadAllBytesAsync(rutaLocal, token);
+                var fileInfo = new FileInfo(rutaLocal);
+                await UpdateRecoveredAttachmentAsync(record.IdAdjunto, rutaLocal, record.MimeType, fileInfo.Length, contenido, connectionString, token);
+                fechaHoraArchivo = fileInfo.LastWriteTimeUtc;
+            }
+
             var nombreDescarga = includeDownloadName
                 ? await BuildAttachmentDownloadNameAsync(cn, record, token)
                 : record.NombreArchivo;
@@ -3281,7 +3390,9 @@ public sealed class ConversacionesService(
                 RutaLocal = rutaLocal,
                 MimeType = record.MimeType,
                 NombreArchivo = record.NombreArchivo,
-                NombreDescarga = nombreDescarga
+                NombreDescarga = nombreDescarga,
+                Contenido = contenido,
+                FechaHoraModificacion = fechaHoraArchivo
             };
         }, "No se pudo obtener el adjunto.", ct);
 
@@ -3411,6 +3522,7 @@ public sealed class ConversacionesService(
                         media.FileSize,
                         media.MimeType
                     }),
+                    bytes,
                     ct);
                 stored++;
             }
@@ -3594,10 +3706,52 @@ public sealed class ConversacionesService(
         return ids;
     }
 
+    private async Task<List<long>> GetRecoverableAttachmentIdsAsync(long idConversacion, CancellationToken ct)
+    {
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        await EnsureConversationAttachmentsDurableColumnsAsync(cn, ct);
+
+        const string sql = """
+            SELECT TOP (@MaxItems)
+                a.IdAdjunto
+            FROM dbo.CONV_ADJUNTOS a
+            INNER JOIN dbo.CONV_MENSAJES m
+                ON m.IdMensaje = a.IdMensaje
+            WHERE m.IdConversacion = @IdConversacion
+              AND m.FechaHora >= @RecoveryCutoff
+              AND UPPER(ISNULL(m.Direction, '')) = N'ENTRANTE'
+              AND UPPER(ISNULL(a.TipoArchivo, '')) IN (N'IMAGE', N'AUDIO', N'STICKER', N'DOCUMENT', N'VIDEO')
+              AND a.ArchivoContenido IS NULL
+              AND UPPER(ISNULL(a.AlmacenamientoEstado, N'')) NOT IN (N'SQL_Y_RUTA', N'SQL', N'NO_DISPONIBLE_META', N'RECUPERACION_FALLIDA')
+              AND (
+                    ISNULL(a.PayloadJson, N'') LIKE N'%MediaId%'
+                 OR ISNULL(a.PayloadJson, N'') LIKE N'%media_id%'
+                 OR ISNULL(m.PayloadJson, N'') LIKE N'%"id"%'
+              )
+            ORDER BY m.FechaHora DESC, a.IdAdjunto DESC;
+            """;
+
+        var ids = new List<long>();
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
+        cmd.Parameters.AddWithValue("@RecoveryCutoff", BusinessNow().Subtract(AutomaticMediaRecoveryMaxAge));
+        cmd.Parameters.AddWithValue("@MaxItems", MaxAutomaticAttachmentRecoveriesPerConversation);
+        await using var rd = await cmd.ExecuteReaderAsync(ct);
+        while (await rd.ReadAsync(ct))
+            ids.Add(rd.GetInt64(0));
+
+        return ids;
+    }
+
     private string ResolveExistingAttachmentPath(AttachmentServeRecord record)
     {
-        if (!string.IsNullOrWhiteSpace(record.RutaLocal) && File.Exists(record.RutaLocal))
-            return record.RutaLocal;
+        if (!string.IsNullOrWhiteSpace(record.RutaLocal))
+        {
+            var directPath = ToAbsoluteAttachmentPath(record.RutaLocal);
+            if (File.Exists(directPath))
+                return directPath;
+        }
 
         foreach (var candidate in BuildAttachmentPathCandidates(record))
         {
@@ -3641,15 +3795,68 @@ public sealed class ConversacionesService(
         }
     }
 
+    private string ToAbsoluteAttachmentPath(string rutaLocal)
+        => string.IsNullOrWhiteSpace(rutaLocal)
+            ? string.Empty
+            : Path.IsPathRooted(rutaLocal)
+                ? rutaLocal
+                : Path.Combine(environment.ContentRootPath, rutaLocal);
+
+    private string ToStoredAttachmentPath(string rutaLocal)
+    {
+        if (string.IsNullOrWhiteSpace(rutaLocal))
+            return string.Empty;
+
+        if (!Path.IsPathRooted(rutaLocal))
+            return rutaLocal;
+
+        var fullPath = Path.GetFullPath(rutaLocal);
+        var contentRoot = Path.GetFullPath(environment.ContentRootPath)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            + Path.DirectorySeparatorChar;
+
+        return fullPath.StartsWith(contentRoot, StringComparison.OrdinalIgnoreCase)
+            ? Path.GetRelativePath(contentRoot, fullPath)
+            : rutaLocal;
+    }
+
+    private static bool IsAttachmentRecoveryCandidate(
+        AttachmentServeRecord record,
+        bool hasSqlContent,
+        string resolvedLocalPath,
+        string storageState)
+    {
+        if (hasSqlContent)
+            return false;
+        if (!string.IsNullOrWhiteSpace(resolvedLocalPath) && File.Exists(resolvedLocalPath))
+            return false;
+        if (!CanRecoverMediaByAge(record.FechaHora))
+            return false;
+
+        var normalizedState = (storageState ?? string.Empty).Trim().ToUpperInvariant();
+        if (normalizedState is "NO_DISPONIBLE_META" or "RECUPERACION_FALLIDA")
+            return false;
+
+        var mediaId = TryExtractMediaId(record.AdjuntoPayloadJson, record.TipoArchivo)
+                      ?? TryExtractMediaId(record.MensajePayloadJson, record.TipoArchivo);
+        return !string.IsNullOrWhiteSpace(mediaId);
+    }
+
     private async Task<string> TryRecoverAttachmentFileAsync(AttachmentServeRecord record, string connectionString, CancellationToken ct)
     {
         if (!CanRecoverMediaByAge(record.FechaHora))
+        {
+            await MarkAttachmentStorageStateAsync(record.IdAdjunto, "NO_DISPONIBLE_META", connectionString, ct);
             return string.Empty;
+        }
 
         var mediaId = TryExtractMediaId(record.AdjuntoPayloadJson, record.TipoArchivo)
             ?? TryExtractMediaId(record.MensajePayloadJson, record.TipoArchivo);
         if (string.IsNullOrWhiteSpace(mediaId))
+        {
+            await MarkAttachmentStorageStateAsync(record.IdAdjunto, "NO_DISPONIBLE_META", connectionString, ct);
             return string.Empty;
+        }
 
         if (!CanAttemptAttachmentRecovery(record.IdAdjunto, mediaId))
             return string.Empty;
@@ -3666,7 +3873,10 @@ public sealed class ConversacionesService(
             var media = await GetWhatsAppMediaAsync(config, mediaId, ct);
             var bytes = await DownloadWhatsAppMediaAsync(config, media.Url, ct);
             if (bytes.Length == 0)
+            {
+                await MarkAttachmentStorageStateAsync(record.IdAdjunto, "RECUPERACION_FALLIDA", connectionString, ct);
                 return string.Empty;
+            }
 
             var mimeType = FirstNonEmpty(media.MimeType, record.MimeType, InferMimeFromType(record.TipoArchivo));
             var fileName = string.IsNullOrWhiteSpace(record.NombreArchivo)
@@ -3679,7 +3889,7 @@ public sealed class ConversacionesService(
                 : record.NombreArchivo;
             var rutaLocal = await SaveIncomingAttachmentAsync(record.IdConversacion, fileName, bytes, ct);
 
-            await UpdateRecoveredAttachmentAsync(record.IdAdjunto, rutaLocal, mimeType, bytes.LongLength, connectionString, ct);
+            await UpdateRecoveredAttachmentAsync(record.IdAdjunto, rutaLocal, mimeType, bytes.LongLength, bytes, connectionString, ct);
 
             record.RutaLocal = rutaLocal;
             record.MimeType = mimeType;
@@ -3687,6 +3897,7 @@ public sealed class ConversacionesService(
         }
         catch (Exception ex)
         {
+            await MarkAttachmentStorageStateAsync(record.IdAdjunto, "RECUPERACION_FALLIDA", connectionString, ct);
             await _appEvents.LogErrorAsync(
                 "Conversaciones",
                 "RecoverAttachmentFile",
@@ -3769,28 +3980,74 @@ public sealed class ConversacionesService(
         await cn.OpenAsync(ct);
         await using var cmd = new SqlCommand(sql, cn);
         cmd.Parameters.AddWithValue("@IdAdjunto", idAdjunto);
-        cmd.Parameters.AddWithValue("@RutaLocal", rutaLocal);
+        cmd.Parameters.AddWithValue("@RutaLocal", ToStoredAttachmentPath(rutaLocal));
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
-    private async Task UpdateRecoveredAttachmentAsync(long idAdjunto, string rutaLocal, string mimeType, long tamanoBytes, string? connectionString, CancellationToken ct)
+    private async Task UpdateRecoveredAttachmentAsync(long idAdjunto, string rutaLocal, string mimeType, long tamanoBytes, byte[]? archivoContenido, string? connectionString, CancellationToken ct)
     {
-        const string sql = """
-            UPDATE dbo.CONV_ADJUNTOS
-            SET
-                RutaLocal = @RutaLocal,
-                MimeType = CASE WHEN @MimeType IS NULL OR LTRIM(RTRIM(@MimeType)) = '' THEN MimeType ELSE @MimeType END,
-                TamanoBytes = @TamanoBytes
-            WHERE IdAdjunto = @IdAdjunto
-            """;
+        await using var cn = new SqlConnection(string.IsNullOrWhiteSpace(connectionString) ? ConnectionString : connectionString);
+        await cn.OpenAsync(ct);
+        await EnsureConversationAttachmentsDurableColumnsAsync(cn, ct);
+        var supportsDurableContent = await ColumnExistsAsync(cn, "CONV_ADJUNTOS", "ArchivoContenido", ct);
+        var sql = supportsDurableContent
+            ? """
+                UPDATE dbo.CONV_ADJUNTOS
+                SET
+                    RutaLocal = @RutaLocal,
+                    MimeType = CASE WHEN @MimeType IS NULL OR LTRIM(RTRIM(@MimeType)) = '' THEN MimeType ELSE @MimeType END,
+                    TamanoBytes = @TamanoBytes,
+                    ArchivoContenido = COALESCE(@ArchivoContenido, ArchivoContenido),
+                    ArchivoHashSha256 = COALESCE(@ArchivoHashSha256, ArchivoHashSha256),
+                    AlmacenamientoEstado = CASE WHEN @ArchivoContenido IS NULL THEN ISNULL(AlmacenamientoEstado, N'RUTA_LOCAL') ELSE N'SQL_Y_RUTA' END,
+                    FechaHora_Archivo = CASE WHEN @ArchivoContenido IS NULL THEN FechaHora_Archivo ELSE GETDATE() END
+                WHERE IdAdjunto = @IdAdjunto
+                """
+            : """
+                UPDATE dbo.CONV_ADJUNTOS
+                SET
+                    RutaLocal = @RutaLocal,
+                    MimeType = CASE WHEN @MimeType IS NULL OR LTRIM(RTRIM(@MimeType)) = '' THEN MimeType ELSE @MimeType END,
+                    TamanoBytes = @TamanoBytes
+                WHERE IdAdjunto = @IdAdjunto
+                """;
+
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@IdAdjunto", idAdjunto);
+        cmd.Parameters.AddWithValue("@RutaLocal", ToStoredAttachmentPath(rutaLocal));
+        cmd.Parameters.AddWithValue("@MimeType", DbNullable(mimeType));
+        cmd.Parameters.AddWithValue("@TamanoBytes", tamanoBytes);
+        if (supportsDurableContent)
+        {
+            var content = archivoContenido is { Length: > 0 } ? archivoContenido : null;
+            cmd.Parameters.AddWithValue("@ArchivoContenido", content is null ? DBNull.Value : content);
+            cmd.Parameters.AddWithValue("@ArchivoHashSha256", content is null ? DBNull.Value : Convert.ToHexString(SHA256.HashData(content)).ToLowerInvariant());
+        }
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    private async Task MarkAttachmentStorageStateAsync(long idAdjunto, string storageState, string? connectionString, CancellationToken ct)
+    {
+        if (idAdjunto <= 0 || string.IsNullOrWhiteSpace(storageState))
+            return;
 
         await using var cn = new SqlConnection(string.IsNullOrWhiteSpace(connectionString) ? ConnectionString : connectionString);
         await cn.OpenAsync(ct);
+        await EnsureConversationAttachmentsDurableColumnsAsync(cn, ct);
+
+        const string sql = """
+            UPDATE dbo.CONV_ADJUNTOS
+            SET
+                AlmacenamientoEstado = @AlmacenamientoEstado,
+                FechaHora_Archivo = COALESCE(FechaHora_Archivo, GETDATE())
+            WHERE IdAdjunto = @IdAdjunto
+              AND ArchivoContenido IS NULL
+              AND UPPER(ISNULL(AlmacenamientoEstado, N'')) NOT IN (N'SQL_Y_RUTA', N'SQL')
+            """;
+
         await using var cmd = new SqlCommand(sql, cn);
         cmd.Parameters.AddWithValue("@IdAdjunto", idAdjunto);
-        cmd.Parameters.AddWithValue("@RutaLocal", rutaLocal);
-        cmd.Parameters.AddWithValue("@MimeType", DbNullable(mimeType));
-        cmd.Parameters.AddWithValue("@TamanoBytes", tamanoBytes);
+        cmd.Parameters.AddWithValue("@AlmacenamientoEstado", storageState.Trim().ToUpperInvariant());
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
@@ -3811,6 +4068,71 @@ public sealed class ConversacionesService(
         cmd.Parameters.AddWithValue("@IdAdjunto", idAdjunto);
         cmd.Parameters.AddWithValue("@PayloadJson", payloadJson);
         await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    private static async Task EnsureConversationAttachmentsDurableColumnsAsync(SqlConnection cn, CancellationToken ct)
+    {
+        string[] commands =
+        [
+            """
+            IF OBJECT_ID(N'dbo.CONV_ADJUNTOS', N'U') IS NOT NULL
+               AND COL_LENGTH(N'dbo.CONV_ADJUNTOS', N'ArchivoContenido') IS NULL
+                ALTER TABLE dbo.CONV_ADJUNTOS ADD ArchivoContenido varbinary(max) NULL;
+            """,
+            """
+            IF OBJECT_ID(N'dbo.CONV_ADJUNTOS', N'U') IS NOT NULL
+               AND COL_LENGTH(N'dbo.CONV_ADJUNTOS', N'ArchivoHashSha256') IS NULL
+                ALTER TABLE dbo.CONV_ADJUNTOS ADD ArchivoHashSha256 nvarchar(64) NULL;
+            """,
+            """
+            IF OBJECT_ID(N'dbo.CONV_ADJUNTOS', N'U') IS NOT NULL
+               AND COL_LENGTH(N'dbo.CONV_ADJUNTOS', N'AlmacenamientoEstado') IS NULL
+                ALTER TABLE dbo.CONV_ADJUNTOS ADD AlmacenamientoEstado nvarchar(20) NULL;
+            """,
+            """
+            IF OBJECT_ID(N'dbo.CONV_ADJUNTOS', N'U') IS NOT NULL
+               AND COL_LENGTH(N'dbo.CONV_ADJUNTOS', N'FechaHora_Archivo') IS NULL
+                ALTER TABLE dbo.CONV_ADJUNTOS ADD FechaHora_Archivo datetime NULL;
+            """,
+            """
+            IF OBJECT_ID(N'dbo.CONV_ADJUNTOS', N'U') IS NOT NULL
+               AND COL_LENGTH(N'dbo.CONV_ADJUNTOS', N'AlmacenamientoEstado') IS NOT NULL
+            BEGIN
+                UPDATE dbo.CONV_ADJUNTOS
+                SET AlmacenamientoEstado = N'RUTA_LOCAL'
+                WHERE AlmacenamientoEstado IS NULL
+                  AND NULLIF(LTRIM(RTRIM(ISNULL(RutaLocal, N''))), N'') IS NOT NULL;
+            END
+            """
+        ];
+
+        foreach (var sql in commands)
+        {
+            await using var cmd = new SqlCommand(sql, cn);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+    }
+
+    private static async Task<bool> ColumnExistsAsync(SqlConnection cn, string tableName, string columnName, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT CASE
+                WHEN EXISTS
+                (
+                    SELECT 1
+                    FROM sys.columns
+                    WHERE object_id = OBJECT_ID(N'dbo.' + @TableName)
+                      AND name = @ColumnName
+                ) THEN CAST(1 AS bit)
+                ELSE CAST(0 AS bit)
+            END
+            """;
+
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@TableName", tableName);
+        cmd.Parameters.AddWithValue("@ColumnName", columnName);
+        var result = await cmd.ExecuteScalarAsync(ct);
+        return result is bool value && value;
     }
 
     private static string? TryExtractMediaId(string payloadJson, string tipoArchivo)
@@ -4308,45 +4630,90 @@ public sealed class ConversacionesService(
         string rutaLocal,
         long tamanoBytes,
         string payloadJson,
+        byte[]? archivoContenido,
         CancellationToken ct)
     {
-        const string sql = """
-            INSERT INTO dbo.CONV_ADJUNTOS
-            (
-                IdMensaje,
-                TipoArchivo,
-                NombreArchivo,
-                MimeType,
-                RutaLocal,
-                TamanoBytes,
-                PayloadJson,
-                FechaHora_Grabacion
-            )
-            VALUES
-            (
-                @IdMensaje,
-                @TipoArchivo,
-                @NombreArchivo,
-                @MimeType,
-                @RutaLocal,
-                @TamanoBytes,
-                @PayloadJson,
-                GETDATE()
-            );
-
-            SELECT CAST(SCOPE_IDENTITY() AS bigint);
-            """;
-
         await using var cn = new SqlConnection(ConnectionString);
         await cn.OpenAsync(ct);
+        await EnsureConversationAttachmentsDurableColumnsAsync(cn, ct);
+        var supportsDurableContent = await ColumnExistsAsync(cn, "CONV_ADJUNTOS", "ArchivoContenido", ct);
+        var sql = supportsDurableContent
+            ? """
+                INSERT INTO dbo.CONV_ADJUNTOS
+                (
+                    IdMensaje,
+                    TipoArchivo,
+                    NombreArchivo,
+                    MimeType,
+                    RutaLocal,
+                    TamanoBytes,
+                    PayloadJson,
+                    ArchivoContenido,
+                    ArchivoHashSha256,
+                    AlmacenamientoEstado,
+                    FechaHora_Archivo,
+                    FechaHora_Grabacion
+                )
+                VALUES
+                (
+                    @IdMensaje,
+                    @TipoArchivo,
+                    @NombreArchivo,
+                    @MimeType,
+                    @RutaLocal,
+                    @TamanoBytes,
+                    @PayloadJson,
+                    @ArchivoContenido,
+                    @ArchivoHashSha256,
+                    @AlmacenamientoEstado,
+                    GETDATE(),
+                    GETDATE()
+                );
+
+                SELECT CAST(SCOPE_IDENTITY() AS bigint);
+                """
+            : """
+                INSERT INTO dbo.CONV_ADJUNTOS
+                (
+                    IdMensaje,
+                    TipoArchivo,
+                    NombreArchivo,
+                    MimeType,
+                    RutaLocal,
+                    TamanoBytes,
+                    PayloadJson,
+                    FechaHora_Grabacion
+                )
+                VALUES
+                (
+                    @IdMensaje,
+                    @TipoArchivo,
+                    @NombreArchivo,
+                    @MimeType,
+                    @RutaLocal,
+                    @TamanoBytes,
+                    @PayloadJson,
+                    GETDATE()
+                );
+
+                SELECT CAST(SCOPE_IDENTITY() AS bigint);
+                """;
+
         await using var cmd = new SqlCommand(sql, cn);
         cmd.Parameters.AddWithValue("@IdMensaje", messageId);
         cmd.Parameters.AddWithValue("@TipoArchivo", NormalizeMessageType(tipoArchivo));
-        cmd.Parameters.AddWithValue("@NombreArchivo", nombreArchivo);
+        cmd.Parameters.AddWithValue("@NombreArchivo", DbNullable(nombreArchivo));
         cmd.Parameters.AddWithValue("@MimeType", DbNullable(mimeType));
-        cmd.Parameters.AddWithValue("@RutaLocal", rutaLocal);
+        cmd.Parameters.AddWithValue("@RutaLocal", DbNullable(ToStoredAttachmentPath(rutaLocal)));
         cmd.Parameters.AddWithValue("@TamanoBytes", tamanoBytes);
         cmd.Parameters.AddWithValue("@PayloadJson", DbNullable(payloadJson));
+        if (supportsDurableContent)
+        {
+            var content = archivoContenido is { Length: > 0 } ? archivoContenido : null;
+            cmd.Parameters.AddWithValue("@ArchivoContenido", content is null ? DBNull.Value : content);
+            cmd.Parameters.AddWithValue("@ArchivoHashSha256", content is null ? DBNull.Value : Convert.ToHexString(SHA256.HashData(content)).ToLowerInvariant());
+            cmd.Parameters.AddWithValue("@AlmacenamientoEstado", content is null ? "RUTA_LOCAL" : "SQL_Y_RUTA");
+        }
         var result = await cmd.ExecuteScalarAsync(ct);
         return Convert.ToInt64(result, CultureInfo.InvariantCulture);
     }
@@ -5494,6 +5861,7 @@ public sealed class ConversacionesService(
             NombreArchivo = GetString(rd, 2)
         };
 
+        item.RutaLocal = ToAbsoluteAttachmentPath(item.RutaLocal);
         if (string.IsNullOrWhiteSpace(item.RutaLocal) || !File.Exists(item.RutaLocal))
             throw new InvalidOperationException("El archivo local del sticker favorito no está disponible.");
 

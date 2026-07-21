@@ -2,6 +2,14 @@ using System.Text.Json;
 
 namespace AlfaCore.Models;
 
+public static class ConversacionCanales
+{
+    public const string WhatsApp = "WHATSAPP";
+    public const string Instagram = "INSTAGRAM";
+    public const string Facebook = "FACEBOOK";
+    public const string Interno = "INTERNO";
+}
+
 public sealed class ConversacionesInboxFilters
 {
     public const string EstadoSinFinalizar = "__SIN_FINALIZAR__";
@@ -287,6 +295,8 @@ public sealed class ConversacionAdjuntoDto
     public string RutaLocal { get; set; } = string.Empty;
     public long TamanoBytes { get; set; }
     public bool ArchivoDisponible { get; set; }
+    public bool PuedeRecuperarse { get; set; }
+    public string EstadoAlmacenamiento { get; set; } = string.Empty;
 }
 
 public sealed class ConversacionStickerFavoritoDto
@@ -393,6 +403,8 @@ public sealed class ConversacionAdjuntoServeDto
     public string MimeType { get; set; } = string.Empty;
     public string NombreArchivo { get; set; } = string.Empty;
     public string NombreDescarga { get; set; } = string.Empty;
+    public byte[] Contenido { get; set; } = [];
+    public DateTime? FechaHoraModificacion { get; set; }
 }
 
 public sealed class ConversacionAdjuntosRecoveryResultDto

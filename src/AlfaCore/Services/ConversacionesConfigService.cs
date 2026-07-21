@@ -13,6 +13,7 @@ public sealed class ConversacionesConfigService(
 {
     private const string ConfigGroup = "CONVERSACIONES";
     private const string DefaultWebhookPath = "/api/conversaciones/whatsapp/webhook";
+    private const string DefaultInstagramWebhookPath = "/api/conversaciones/instagram/webhook";
     private readonly WhatsAppOptions _fallbackOptions = whatsAppOptions.Value;
 
     private string ConnectionString => sessionService.GetConnectionString().Length > 0
@@ -165,6 +166,108 @@ public sealed class ConversacionesConfigService(
         }, "No se pudo guardar la configuración de WhatsApp.", ct);
     }
 
+    public Task<ConversacionInstagramConfigDto> GetInstagramConfigAsync(CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "GetInstagramConfig", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            var detailColumn = await ResolveDetailColumnAsync(cn, token);
+            var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+            await using var cmd = new SqlCommand(BuildInstagramSelectSql(detailColumn), cn);
+            await using var rd = await cmd.ExecuteReaderAsync(token);
+            while (await rd.ReadAsync(token))
+            {
+                var key = GetString(rd, 0);
+                var value = GetString(rd, 1);
+                var detailValue = GetString(rd, 2);
+                values[key] = ResolveStoredValue(value, detailValue);
+            }
+
+            var config = new ConversacionInstagramConfigDto
+            {
+                AppId = ReadValue(values, "CONV_INSTAGRAM_APP_ID", string.Empty),
+                AppSecret = ReadValue(values, "CONV_INSTAGRAM_APP_SECRET", string.Empty),
+                VerifyToken = ReadValue(values, "CONV_INSTAGRAM_VERIFY_TOKEN", string.Empty),
+                AccessToken = ReadValue(values, "CONV_INSTAGRAM_ACCESS_TOKEN", string.Empty),
+                InstagramAccountId = ReadValue(values, "CONV_INSTAGRAM_ACCOUNT_ID", string.Empty),
+                FacebookPageId = ReadValue(values, "CONV_INSTAGRAM_FACEBOOK_PAGE_ID", string.Empty),
+                ApiVersion = ReadValue(values, "CONV_INSTAGRAM_API_VERSION", string.Empty, "v22.0"),
+                PublicBaseUrl = ReadValue(values, "CONV_INSTAGRAM_PUBLIC_BASE_URL", string.Empty),
+                WebhookPath = ReadValue(values, "CONV_INSTAGRAM_WEBHOOK_PATH", string.Empty, DefaultInstagramWebhookPath),
+                ConfigSource = ResolveConfigSource(values, 9)
+            };
+
+            if (string.IsNullOrWhiteSpace(config.WebhookPath))
+                config.WebhookPath = DefaultInstagramWebhookPath;
+
+            return config;
+        }, "No se pudo cargar la configuración de Instagram.", ct);
+
+    public async Task SaveInstagramConfigAsync(ConversacionInstagramConfigDto config, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+
+        await ExecuteLoggedAsync("Conversaciones", "SaveInstagramConfig", async token =>
+        {
+            var normalized = Normalize(config);
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            var detailColumn = await ResolveDetailColumnAsync(cn, token);
+            await using var tx = await cn.BeginTransactionAsync(token);
+
+            foreach (var item in BuildItems(normalized))
+            {
+                var stored = SplitStoredValue(item.Value);
+                var sql = $"""
+                    UPDATE dbo.TA_CONFIGURACION
+                    SET
+                        VALOR = @Valor,
+                        {detailColumn} = @ValorAux,
+                        GRUPO = @Grupo
+                    WHERE UPPER(LTRIM(RTRIM(CLAVE))) = @ClaveNormalizada;
+
+                    IF @@ROWCOUNT = 0
+                    BEGIN
+                        INSERT INTO dbo.TA_CONFIGURACION (CLAVE, VALOR, {detailColumn}, GRUPO)
+                        VALUES (@Clave, @Valor, @ValorAux, @Grupo);
+                    END;
+                    """;
+
+                await using var cmd = new SqlCommand(sql, cn, (SqlTransaction)tx);
+
+                cmd.Parameters.AddWithValue("@ClaveNormalizada", item.Key.ToUpperInvariant());
+                cmd.Parameters.AddWithValue("@Clave", item.Key);
+                cmd.Parameters.AddWithValue("@Valor", DbNullable(stored.Value));
+                cmd.Parameters.AddWithValue("@ValorAux", DbNullable(stored.AuxValue));
+                cmd.Parameters.AddWithValue("@Grupo", ConfigGroup);
+                await cmd.ExecuteNonQueryAsync(token);
+            }
+
+            await tx.CommitAsync(token);
+
+            await appEvents.LogAuditAsync(
+                "Conversaciones",
+                "SaveInstagramConfig",
+                "TA_CONFIGURACION",
+                ConfigGroup,
+                "Configuración de Instagram actualizada.",
+                new
+                {
+                    normalized.AppId,
+                    normalized.InstagramAccountId,
+                    normalized.FacebookPageId,
+                    normalized.ApiVersion,
+                    normalized.PublicBaseUrl,
+                    normalized.WebhookPath
+                },
+                token);
+
+            return true;
+        }, "No se pudo guardar la configuración de Instagram.", ct);
+    }
+
     private static async Task<string> ResolveDetailColumnAsync(SqlConnection cn, CancellationToken ct)
     {
         // Acepta ValorAux / VALOR_AUX / valor_aux y cae en DESCRIPCION solo como último recurso.
@@ -205,6 +308,27 @@ public sealed class ConversacionesConfigService(
             )
             """;
 
+    private static string BuildInstagramSelectSql(string detailColumn)
+        => $"""
+            SELECT
+                UPPER(LTRIM(RTRIM(CLAVE))),
+                ISNULL(VALOR, ''),
+                ISNULL({detailColumn}, '')
+            FROM dbo.TA_CONFIGURACION
+            WHERE UPPER(LTRIM(RTRIM(CLAVE))) IN
+            (
+                'CONV_INSTAGRAM_APP_ID',
+                'CONV_INSTAGRAM_APP_SECRET',
+                'CONV_INSTAGRAM_VERIFY_TOKEN',
+                'CONV_INSTAGRAM_ACCESS_TOKEN',
+                'CONV_INSTAGRAM_ACCOUNT_ID',
+                'CONV_INSTAGRAM_FACEBOOK_PAGE_ID',
+                'CONV_INSTAGRAM_API_VERSION',
+                'CONV_INSTAGRAM_PUBLIC_BASE_URL',
+                'CONV_INSTAGRAM_WEBHOOK_PATH'
+            )
+            """;
+
     private static IEnumerable<(string Key, string Value)> BuildItems(ConversacionWhatsAppConfigDto config)
     {
         yield return ("CONV_WHATSAPP_VERIFY_TOKEN", config.VerifyToken);
@@ -215,6 +339,19 @@ public sealed class ConversacionesConfigService(
         yield return ("CONV_WHATSAPP_API_VERSION", config.ApiVersion);
         yield return ("CONV_WHATSAPP_PUBLIC_BASE_URL", config.PublicBaseUrl);
         yield return ("CONV_WHATSAPP_WEBHOOK_PATH", config.WebhookPath);
+    }
+
+    private static IEnumerable<(string Key, string Value)> BuildItems(ConversacionInstagramConfigDto config)
+    {
+        yield return ("CONV_INSTAGRAM_APP_ID", config.AppId);
+        yield return ("CONV_INSTAGRAM_APP_SECRET", config.AppSecret);
+        yield return ("CONV_INSTAGRAM_VERIFY_TOKEN", config.VerifyToken);
+        yield return ("CONV_INSTAGRAM_ACCESS_TOKEN", config.AccessToken);
+        yield return ("CONV_INSTAGRAM_ACCOUNT_ID", config.InstagramAccountId);
+        yield return ("CONV_INSTAGRAM_FACEBOOK_PAGE_ID", config.FacebookPageId);
+        yield return ("CONV_INSTAGRAM_API_VERSION", config.ApiVersion);
+        yield return ("CONV_INSTAGRAM_PUBLIC_BASE_URL", config.PublicBaseUrl);
+        yield return ("CONV_INSTAGRAM_WEBHOOK_PATH", config.WebhookPath);
     }
 
     private static ConversacionWhatsAppConfigDto Normalize(ConversacionWhatsAppConfigDto config)
@@ -237,15 +374,36 @@ public sealed class ConversacionesConfigService(
         };
     }
 
+    private static ConversacionInstagramConfigDto Normalize(ConversacionInstagramConfigDto config)
+    {
+        var path = string.IsNullOrWhiteSpace(config.WebhookPath) ? DefaultInstagramWebhookPath : config.WebhookPath.Trim();
+        if (!path.StartsWith('/'))
+            path = "/" + path;
+
+        return new ConversacionInstagramConfigDto
+        {
+            AppId = (config.AppId ?? string.Empty).Trim(),
+            AppSecret = (config.AppSecret ?? string.Empty).Trim(),
+            VerifyToken = (config.VerifyToken ?? string.Empty).Trim(),
+            AccessToken = (config.AccessToken ?? string.Empty).Trim(),
+            InstagramAccountId = (config.InstagramAccountId ?? string.Empty).Trim(),
+            FacebookPageId = (config.FacebookPageId ?? string.Empty).Trim(),
+            ApiVersion = string.IsNullOrWhiteSpace(config.ApiVersion) ? "v22.0" : config.ApiVersion.Trim(),
+            PublicBaseUrl = NormalizeBaseUrl(config.PublicBaseUrl),
+            WebhookPath = path,
+            ConfigSource = string.Empty
+        };
+    }
+
     private static string NormalizeBaseUrl(string? value)
         => string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim().TrimEnd('/');
 
-    private static string ResolveConfigSource(Dictionary<string, string> values)
+    private static string ResolveConfigSource(Dictionary<string, string> values, int expectedKeys = 8)
     {
         if (values.Count == 0)
             return "appsettings";
 
-        var hasFallback = values.Count < 8;
+        var hasFallback = values.Count < expectedKeys;
         return hasFallback ? "mixta" : "TA_CONFIGURACION";
     }
 

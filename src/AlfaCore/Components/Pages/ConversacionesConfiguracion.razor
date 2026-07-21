@@ -4,13 +4,13 @@
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject NavigationManager Nav
 
-<PageTitle>Configuración de WhatsApp | Alfa Gestión</PageTitle>
+<PageTitle>Configuración de canales | Alfa Gestión</PageTitle>
 
 <section class="page-grid">
     <div class="page-intro">
         <div>
-            <h2 class="page-intro__title">Configuración de WhatsApp</h2>
-            <p class="page-intro__text">Administrá desde AlfaCore los parámetros del canal oficial de WhatsApp. Esta configuración se guarda en <code>TA_CONFIGURACION</code> y <code>appsettings</code> queda solo como respaldo mínimo.</p>
+            <h2 class="page-intro__title">Configuración de canales</h2>
+            <p class="page-intro__text">Administrá desde AlfaCore los parámetros de mensajería por canal. Esta configuración se guarda en <code>TA_CONFIGURACION</code> y <code>appsettings</code> queda solo como respaldo mínimo.</p>
         </div>
         <div class="actions">
             <a class="btn btn--ghost" href="/conversaciones">
@@ -154,10 +154,119 @@
                 </div>
             </aside>
     </div>
+
+    <div class="conv-config-layout">
+            <section class="panel-card conv-config-form conv-config-form--instagram">
+                <div class="panel-card__header">
+                    <div>
+                        <h3 class="panel-card__title"><i class="bi bi-instagram"></i> Instagram</h3>
+                        <p class="panel-card__subtitle">Origen actual: @DisplaySource(_instagramConfig.ConfigSource)</p>
+                    </div>
+                    <span class="panel-card__tag">CONV_INSTAGRAM_*</span>
+                </div>
+
+                <div class="conv-config-status-grid">
+                    <article class="context-card">
+                        <span class="context-card__label">Envío Messaging API</span>
+                        <strong class="@GetStatusClass(_instagramConfig.IsConfiguredForSend)">@GetStatusLabel(_instagramConfig.IsConfiguredForSend)</strong>
+                        <span class="context-card__muted">Requiere <code>access token</code> e <code>instagram account id</code>.</span>
+                    </article>
+                    <article class="context-card">
+                        <span class="context-card__label">Webhook</span>
+                        <strong class="@GetStatusClass(_instagramConfig.IsConfiguredForVerify)">@GetStatusLabel(_instagramConfig.IsConfiguredForVerify)</strong>
+                        <span class="context-card__muted">Requiere <code>verify token</code> y URL pública HTTPS.</span>
+                    </article>
+                </div>
+
+                <div class="conv-config-fields">
+                    <div class="field">
+                        <label for="ig-public-url">Base pública HTTPS</label>
+                        <input id="ig-public-url" @bind="_instagramConfig.PublicBaseUrl" placeholder="@_suggestedBaseUrl" />
+                    </div>
+
+                    <div class="field">
+                        <label for="ig-api-version">Versión Graph API</label>
+                        <input id="ig-api-version" @bind="_instagramConfig.ApiVersion" placeholder="v22.0" />
+                    </div>
+
+                    <div class="field">
+                        <label for="ig-app-id">App ID</label>
+                        <input id="ig-app-id" @bind="_instagramConfig.AppId" placeholder="App ID de Meta" />
+                    </div>
+
+                    <div class="field">
+                        <label for="ig-page-id">Facebook Page ID</label>
+                        <input id="ig-page-id" @bind="_instagramConfig.FacebookPageId" placeholder="Página vinculada a Instagram" />
+                    </div>
+
+                    <div class="field">
+                        <label for="ig-account-id">Instagram Account ID</label>
+                        <input id="ig-account-id" @bind="_instagramConfig.InstagramAccountId" placeholder="Cuenta profesional de Instagram" />
+                    </div>
+
+                    <div class="field">
+                        <label for="ig-verify-token">Verify Token</label>
+                        <input id="ig-verify-token" @bind="_instagramConfig.VerifyToken" placeholder="Texto secreto que definís vos" />
+                    </div>
+
+                    <div class="field conv-config-fields__full">
+                        <label for="ig-access-token">Access Token</label>
+                        <textarea id="ig-access-token" rows="4" @bind="_instagramConfig.AccessToken" placeholder="Token de página u OAuth con permisos de Instagram Messaging"></textarea>
+                    </div>
+
+                    <div class="field conv-config-fields__full">
+                        <label for="ig-app-secret">App Secret</label>
+                        <input id="ig-app-secret" @bind="_instagramConfig.AppSecret" placeholder="App Secret de Meta" />
+                    </div>
+
+                    <div class="field conv-config-fields__full">
+                        <label for="ig-webhook-path">Webhook interno</label>
+                        <input id="ig-webhook-path" value="@_instagramConfig.WebhookPath" readonly />
+                    </div>
+                </div>
+
+                <div class="context-card">
+                    <span class="context-card__label">URL de callback a informar en Meta</span>
+                    <strong>@GetInstagramWebhookUrlPreview()</strong>
+                    <span class="context-card__muted">El endpoint queda preparado para la siguiente etapa de recepción y envío de mensajes.</span>
+                </div>
+
+                <div class="actions">
+                    <button type="button" class="btn btn--primary" @onclick="SaveInstagramAsync" disabled="@(Loading || Saving)">
+                        <i class="bi bi-floppy-fill"></i> Guardar Instagram
+                    </button>
+                </div>
+            </section>
+
+            <aside class="panel-card conv-config-help">
+                <div class="panel-card__header">
+                    <div>
+                        <h3 class="panel-card__title">Credenciales Meta</h3>
+                        <p class="panel-card__subtitle">Resumen de lo que tenés que conseguir.</p>
+                    </div>
+                    <span class="panel-card__tag">Instagram</span>
+                </div>
+
+                <ol class="conv-config-steps">
+                    <li>Usar una cuenta Instagram profesional vinculada a una página de Facebook.</li>
+                    <li>Crear una app en Meta for Developers y agregar Instagram/Messaging según el flujo elegido.</li>
+                    <li>Configurar el webhook con la URL pública de AlfaCore y el verify token.</li>
+                    <li>Solicitar permisos de mensajería para producción mediante App Review.</li>
+                    <li>Guardar en AlfaCore el token, la cuenta de Instagram y la página asociada.</li>
+                </ol>
+
+                <div class="context-card">
+                    <span class="context-card__label">Guía interna</span>
+                    <strong><code>docs/modulos/conversaciones_instagram_meta.md</code></strong>
+                    <span class="context-card__muted">Incluye el paso a paso para crear la app y pedir permisos.</span>
+                </div>
+            </aside>
+    </div>
 </section>
 
 @code {
     private ConversacionWhatsAppConfigDto _config = new();
+    private ConversacionInstagramConfigDto _instagramConfig = new();
     private bool Loading { get; set; }
     private bool Saving { get; set; }
     private AppUiMessage? _feedback;
@@ -187,6 +296,21 @@
         {
             EnsureDefaults();
             _feedback = result.Feedback;
+        }
+
+        var instagramResult = await UiOps.RunAsync(
+            () => ConfigSvc.GetInstagramConfigAsync(),
+            "No se pudo cargar la configuración de Instagram.");
+
+        if (instagramResult.Success && instagramResult.Value is not null)
+        {
+            _instagramConfig = instagramResult.Value;
+            EnsureInstagramDefaults();
+        }
+        else
+        {
+            EnsureInstagramDefaults();
+            _feedback ??= instagramResult.Feedback;
         }
 
         Loading = false;
@@ -219,6 +343,33 @@
         Saving = false;
     }
 
+    private async Task SaveInstagramAsync()
+    {
+        Saving = true;
+        _feedback = null;
+
+        if (string.IsNullOrWhiteSpace(_instagramConfig.PublicBaseUrl))
+            _instagramConfig.PublicBaseUrl = _suggestedBaseUrl;
+
+        var result = await UiOps.RunAsync(
+            () => ConfigSvc.SaveInstagramConfigAsync(_instagramConfig),
+            "No se pudo guardar la configuración de Instagram.");
+
+        if (result.Success)
+        {
+            _instagramConfig.ConfigSource = "TA_CONFIGURACION";
+            _feedback = AppUiMessage.Success(
+                "Configuración guardada",
+                "La configuración de Instagram se grabó correctamente. La recepción y el envío se habilitan en la siguiente etapa de integración.");
+        }
+        else
+        {
+            _feedback = result.Feedback;
+        }
+
+        Saving = false;
+    }
+
     private void EnsureDefaults()
     {
         if (string.IsNullOrWhiteSpace(_config.WebhookPath))
@@ -226,6 +377,15 @@
 
         if (string.IsNullOrWhiteSpace(_config.ApiVersion))
             _config.ApiVersion = "v22.0";
+    }
+
+    private void EnsureInstagramDefaults()
+    {
+        if (string.IsNullOrWhiteSpace(_instagramConfig.WebhookPath))
+            _instagramConfig.WebhookPath = "/api/conversaciones/instagram/webhook";
+
+        if (string.IsNullOrWhiteSpace(_instagramConfig.ApiVersion))
+            _instagramConfig.ApiVersion = "v22.0";
     }
 
     private string GetCurrentBaseUrl()
@@ -242,6 +402,14 @@
             return $"{_suggestedBaseUrl.TrimEnd('/')}{_config.WebhookPath}";
 
         return _config.GetWebhookUrl();
+    }
+
+    private string GetInstagramWebhookUrlPreview()
+    {
+        if (string.IsNullOrWhiteSpace(_instagramConfig.PublicBaseUrl))
+            return $"{_suggestedBaseUrl.TrimEnd('/')}{_instagramConfig.WebhookPath}";
+
+        return _instagramConfig.GetWebhookUrl();
     }
 
     private string GetStatusLabel(bool ready) => ready ? "Listo" : "Pendiente";

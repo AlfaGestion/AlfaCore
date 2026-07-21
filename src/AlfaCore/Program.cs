@@ -889,6 +889,83 @@ public class Program
             return Results.Ok(result);
         });
 
+        app.MapGet("/api/conversaciones/instagram/webhook", async (
+            HttpRequest request,
+            IConversacionesConfigService configService,
+            CancellationToken ct) =>
+        {
+            var options = await configService.GetInstagramConfigAsync(ct);
+            var mode = request.Query["hub.mode"].ToString();
+            var verifyToken = request.Query["hub.verify_token"].ToString();
+            var challenge = request.Query["hub.challenge"].ToString();
+
+            if (string.IsNullOrWhiteSpace(options.VerifyToken))
+                return Results.Problem("Instagram VerifyToken no está configurado.", statusCode: StatusCodes.Status500InternalServerError);
+
+            if (mode == "subscribe" && verifyToken == options.VerifyToken)
+                return Results.Text(challenge, "text/plain");
+
+            return Results.Unauthorized();
+        });
+
+        app.MapPost("/api/conversaciones/instagram/webhook", async (
+            HttpRequest request,
+            IAppEventService appEvents,
+            CancellationToken ct) =>
+        {
+            using var payload = await JsonDocument.ParseAsync(request.Body, cancellationToken: ct);
+            await appEvents.LogAuditAsync(
+                "Conversaciones",
+                "InstagramWebhookReceived",
+                "CONV_WEBHOOK_LOG",
+                string.Empty,
+                "Webhook de Instagram recibido. Procesamiento pendiente de implementación del provider.",
+                new
+                {
+                    Payload = payload.RootElement.GetRawText(),
+                    Headers = request.Headers.ToDictionary(pair => pair.Key, pair => pair.Value.ToString(), StringComparer.OrdinalIgnoreCase)
+                },
+                ct);
+
+            return Results.Ok(new { Recibido = true, Procesado = false });
+        });
+
+        app.MapGet("/api/conversaciones/instagram/oauth/callback", async (
+            HttpRequest request,
+            IAppEventService appEvents,
+            CancellationToken ct) =>
+        {
+            var code = request.Query["code"].ToString();
+            var error = request.Query["error"].ToString();
+            var errorReason = request.Query["error_reason"].ToString();
+            var errorDescription = request.Query["error_description"].ToString();
+
+            await appEvents.LogAuditAsync(
+                "Conversaciones",
+                "InstagramOAuthCallback",
+                "CONV_CUENTAS_CANAL",
+                string.Empty,
+                string.IsNullOrWhiteSpace(error)
+                    ? "Callback OAuth de Instagram recibido."
+                    : "Callback OAuth de Instagram recibido con error.",
+                new
+                {
+                    TieneCode = !string.IsNullOrWhiteSpace(code),
+                    Error = error,
+                    ErrorReason = errorReason,
+                    ErrorDescription = errorDescription
+                },
+                ct);
+
+            if (!string.IsNullOrWhiteSpace(error))
+                return Results.Text("No se pudo vincular Instagram. Volvé a AlfaCore y revisá la configuración del canal.", "text/plain; charset=utf-8");
+
+            if (string.IsNullOrWhiteSpace(code))
+                return Results.Text("Meta no devolvió un código de autorización para Instagram.", "text/plain; charset=utf-8");
+
+            return Results.Text("Instagram devolvió autorización correctamente. Ya podés volver a AlfaCore para completar la vinculación.", "text/plain; charset=utf-8");
+        });
+
         app.MapPost("/api/conversaciones/{id:long}/adjuntos", async (
             long id,
             HttpRequest request,
@@ -936,13 +1013,14 @@ public class Program
             var download = string.Equals(request.Query["download"].ToString(), "1", StringComparison.OrdinalIgnoreCase);
             var preview = string.Equals(request.Query["preview"].ToString(), "1", StringComparison.OrdinalIgnoreCase);
             var adjunto = await svc.GetAttachmentForServeAsync(idAdjunto, idBase, includeDownloadName: download, ct);
-            if (adjunto is null || !File.Exists(adjunto.RutaLocal))
+            if (adjunto is null)
                 return Results.NotFound();
 
             var mime = NormalizeAttachmentMime(adjunto.MimeType, adjunto.NombreArchivo);
-            var fileInfo = new FileInfo(adjunto.RutaLocal);
-            var lastModified = new DateTimeOffset(fileInfo.LastWriteTimeUtc, TimeSpan.Zero);
-            var entityTag = new Microsoft.Net.Http.Headers.EntityTagHeaderValue($"\"{fileInfo.Length:x}-{fileInfo.LastWriteTimeUtc.Ticks:x}\"");
+            var hasLocalFile = !string.IsNullOrWhiteSpace(adjunto.RutaLocal) && File.Exists(adjunto.RutaLocal);
+            var hasSqlContent = adjunto.Contenido.Length > 0;
+            if (!hasLocalFile && !hasSqlContent)
+                return Results.NotFound();
 
             if (download)
             {
@@ -959,10 +1037,31 @@ public class Program
                 request.HttpContext.Response.Headers.Expires = DateTimeOffset.UtcNow.AddDays(preview ? 7 : 1).ToString("R", System.Globalization.CultureInfo.InvariantCulture);
             }
 
+            var downloadName = download
+                ? string.IsNullOrWhiteSpace(adjunto.NombreDescarga) ? adjunto.NombreArchivo : adjunto.NombreDescarga
+                : null;
+
+            if (!hasLocalFile)
+            {
+                var fechaArchivo = adjunto.FechaHoraModificacion?.ToUniversalTime() ?? DateTime.UtcNow;
+                var lastModifiedSql = new DateTimeOffset(fechaArchivo, TimeSpan.Zero);
+                var entityTagSql = new Microsoft.Net.Http.Headers.EntityTagHeaderValue($"\"sql-{adjunto.Contenido.Length:x}-{lastModifiedSql.UtcTicks:x}\"");
+                return Results.File(
+                    adjunto.Contenido,
+                    contentType: mime,
+                    fileDownloadName: downloadName,
+                    lastModified: lastModifiedSql,
+                    entityTag: entityTagSql,
+                    enableRangeProcessing: false);
+            }
+
+            var fileInfo = new FileInfo(adjunto.RutaLocal);
+            var lastModified = new DateTimeOffset(fileInfo.LastWriteTimeUtc, TimeSpan.Zero);
+            var entityTag = new Microsoft.Net.Http.Headers.EntityTagHeaderValue($"\"{fileInfo.Length:x}-{fileInfo.LastWriteTimeUtc.Ticks:x}\"");
             return Results.File(
                 adjunto.RutaLocal,
                 contentType: mime,
-                fileDownloadName: download ? (string.IsNullOrWhiteSpace(adjunto.NombreDescarga) ? adjunto.NombreArchivo : adjunto.NombreDescarga) : null,
+                fileDownloadName: downloadName,
                 lastModified: lastModified,
                 entityTag: entityTag,
                 enableRangeProcessing: true);

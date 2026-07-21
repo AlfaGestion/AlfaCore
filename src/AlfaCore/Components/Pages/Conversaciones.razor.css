@@ -923,6 +923,10 @@
     overflow-x: hidden !important;
 }
 
+.conversations-page--odoo .conversations-thread.is-bottom-anchoring {
+    opacity: 0 !important;
+}
+
 .conversations-page--odoo .message-row {
     width: 100% !important;
     min-width: 0 !important;
@@ -1077,6 +1081,27 @@
 
 .conversations-page--odoo .attachment-unavailable i {
     color: rgba(125, 211, 252, .8) !important;
+}
+
+.conversations-page--odoo .attachment-unavailable.is-loading {
+    border-color: rgba(56, 189, 248, .62) !important;
+    color: #dff7ff !important;
+    background: rgba(14, 116, 144, .28) !important;
+}
+
+.conversations-page--odoo .attachment-unavailable.is-loading i {
+    color: #67e8f9 !important;
+    animation: attachment-recovery-spin .9s linear infinite;
+}
+
+@keyframes attachment-recovery-spin {
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 .conversations-page--odoo .message-attachment--audio,
@@ -1530,4 +1555,30 @@
         overflow-y: auto !important;
         z-index: 60 !important;
     }
+}
+
+.conversations-page--instagram .conversations-filter-pill.is-active,
+.conversations-page--instagram .conversations-mobile-action.is-active,
+.conversations-page--instagram .conversations-mobile-chip.is-active {
+    border-color: rgba(236, 72, 153, .58) !important;
+    background: linear-gradient(135deg, rgba(236, 72, 153, .22), rgba(245, 158, 11, .16), rgba(124, 58, 237, .2)) !important;
+    color: #fff7ed !important;
+}
+
+.conversations-page--instagram .message-card--outgoing {
+    background: linear-gradient(135deg, #be185d, #7c3aed) !important;
+}
+
+.conversations-page--facebook .conversations-filter-pill.is-active,
+.conversations-page--facebook .conversations-mobile-action.is-active,
+.conversations-page--facebook .conversations-mobile-chip.is-active {
+    border-color: rgba(59, 130, 246, .58) !important;
+    background: rgba(37, 99, 235, .24) !important;
+    color: #eff6ff !important;
+}
+
+.conversations-window-banner--provider {
+    border-color: rgba(236, 72, 153, .28) !important;
+    background: linear-gradient(90deg, rgba(236, 72, 153, .14), rgba(124, 58, 237, .12)) !important;
+    color: #fce7f3 !important;
 }
