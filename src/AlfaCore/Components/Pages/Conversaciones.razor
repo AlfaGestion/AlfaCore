@@ -3603,7 +3603,7 @@
             return false;
 
         var age = DateTime.Now - message.FechaHora;
-        return age >= TimeSpan.Zero && age <= TimeSpan.FromHours(1);
+        return age >= TimeSpan.Zero && age <= TimeSpan.FromDays(30);
     }
 
     private async Task RecoverConversationAttachmentsInBackgroundAsync(long idConversacion)
