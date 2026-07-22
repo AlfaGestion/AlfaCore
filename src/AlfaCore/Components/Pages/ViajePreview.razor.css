@@ -101,8 +101,9 @@
 .viaje-preview-card__badge span,
 .viaje-preview-section__head span,
 .viaje-preview-field__label,
-.viaje-preview-money span,
-.viaje-preview-total span {
+.viaje-preview-detail__head span,
+.viaje-preview-detail__line span,
+.viaje-preview-detail__total span {
     color: #9fb7d0;
 }
 
@@ -133,40 +134,96 @@
     line-height: 1.35;
 }
 
-.viaje-preview-card__money,
-.viaje-preview-card__totals {
+.viaje-preview-card__details {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: .9rem;
+    align-items: start;
 }
 
-.viaje-preview-money,
-.viaje-preview-total {
+.viaje-preview-detail {
     display: grid;
-    gap: .25rem;
+    gap: .7rem;
     padding: 1rem 1.1rem;
-    border-radius: 20px;
+    border-radius: 22px;
     border: 1px solid rgba(148, 163, 184, 0.12);
-    background: rgba(7, 13, 24, 0.74);
+    background: rgba(7, 13, 24, 0.76);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
-.viaje-preview-money span,
-.viaje-preview-total span {
+.viaje-preview-detail__head {
+    display: flex;
+    flex-direction: column;
+    gap: .15rem;
+}
+
+.viaje-preview-detail__head span,
+.viaje-preview-detail__line span,
+.viaje-preview-detail__total span {
     font-size: .8rem;
     letter-spacing: .08em;
     text-transform: uppercase;
+    color: #9fb7d0;
 }
 
-.viaje-preview-money strong,
-.viaje-preview-total strong {
+.viaje-preview-detail__head strong,
+.viaje-preview-detail__line strong,
+.viaje-preview-detail__total strong {
     color: #f5f8ff;
-    font-size: clamp(1.35rem, 1.8vw, 1.65rem);
+    font-variant-numeric: tabular-nums;
+}
+
+.viaje-preview-detail__head strong {
+    font-size: 1.02rem;
+    font-weight: 900;
+    letter-spacing: .04em;
+}
+
+.viaje-preview-detail__lines {
+    display: grid;
+    gap: .45rem;
+}
+
+.viaje-preview-detail__line,
+.viaje-preview-detail__total {
+    display: flex;
+    justify-content: space-between;
+    gap: .8rem;
+    align-items: baseline;
+}
+
+.viaje-preview-detail__line span {
+    min-width: 0;
+    line-height: 1.35;
+}
+
+.viaje-preview-detail__line strong {
+    white-space: nowrap;
+    font-size: .95rem;
+    font-weight: 800;
+}
+
+.viaje-preview-detail__total {
+    padding-top: .7rem;
+    border-top: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.viaje-preview-detail__total span {
+    font-weight: 800;
+}
+
+.viaje-preview-detail__total strong {
+    font-size: 1.15rem;
     font-weight: 900;
 }
 
-.viaje-preview-total--result {
-    border-color: rgba(34, 211, 238, 0.22);
-    background: linear-gradient(180deg, rgba(8, 86, 112, 0.32), rgba(7, 13, 24, 0.82));
+.viaje-preview-detail--fletero {
+    border-color: rgba(34, 211, 238, 0.2);
+    background: linear-gradient(180deg, rgba(8, 86, 112, 0.18), rgba(7, 13, 24, 0.8));
+}
+
+.viaje-preview-detail--fletero .viaje-preview-detail__total {
+    border-top-color: rgba(34, 211, 238, 0.16);
 }
 
 .viaje-preview-section {
@@ -280,8 +337,9 @@ html[data-theme="light"] .viaje-preview-page__loading,
 html[data-theme="light"] .viaje-preview-card h1,
 html[data-theme="light"] .viaje-preview-card__eyebrow,
 html[data-theme="light"] .viaje-preview-field strong,
-html[data-theme="light"] .viaje-preview-money strong,
-html[data-theme="light"] .viaje-preview-total strong,
+html[data-theme="light"] .viaje-preview-detail__head strong,
+html[data-theme="light"] .viaje-preview-detail__line strong,
+html[data-theme="light"] .viaje-preview-detail__total strong,
 html[data-theme="light"] .viaje-preview-additional__content strong,
 html[data-theme="light"] .viaje-preview-additional__amount,
 html[data-theme="light"] .viaje-preview-card__badge {
@@ -290,8 +348,9 @@ html[data-theme="light"] .viaje-preview-card__badge {
 
 html[data-theme="light"] .viaje-preview-card__subtitle,
 html[data-theme="light"] .viaje-preview-field__label,
-html[data-theme="light"] .viaje-preview-money span,
-html[data-theme="light"] .viaje-preview-total span,
+html[data-theme="light"] .viaje-preview-detail__head span,
+html[data-theme="light"] .viaje-preview-detail__line span,
+html[data-theme="light"] .viaje-preview-detail__total span,
 html[data-theme="light"] .viaje-preview-section__head span,
 html[data-theme="light"] .viaje-preview-additional__content span,
 html[data-theme="light"] .viaje-preview-empty {
@@ -299,8 +358,7 @@ html[data-theme="light"] .viaje-preview-empty {
 }
 
 html[data-theme="light"] .viaje-preview-field,
-html[data-theme="light"] .viaje-preview-money,
-html[data-theme="light"] .viaje-preview-total,
+html[data-theme="light"] .viaje-preview-detail,
 html[data-theme="light"] .viaje-preview-additional,
 html[data-theme="light"] .viaje-preview-card__badge,
 html[data-theme="light"] .viaje-preview-section--observaciones .viaje-preview-observaciones {
@@ -308,7 +366,7 @@ html[data-theme="light"] .viaje-preview-section--observaciones .viaje-preview-ob
     border-color: rgba(148, 163, 184, 0.22);
 }
 
-html[data-theme="light"] .viaje-preview-total--result {
+html[data-theme="light"] .viaje-preview-detail--fletero {
     background: linear-gradient(180deg, rgba(224, 242, 254, 0.9), rgba(255, 255, 255, 0.88));
     border-color: rgba(14, 165, 233, 0.2);
 }
@@ -336,6 +394,10 @@ html[data-theme="light"] .viaje-preview-total--result {
     .viaje-preview-additional__amount {
         grid-column: 2;
     }
+
+    .viaje-preview-card__details {
+        grid-template-columns: 1fr;
+    }
 }
 
 @media print {
@@ -359,8 +421,7 @@ html[data-theme="light"] .viaje-preview-total--result {
     .viaje-preview-page__loading,
     .viaje-preview-page__error,
     .viaje-preview-field,
-    .viaje-preview-money,
-    .viaje-preview-total,
+    .viaje-preview-detail,
     .viaje-preview-additional,
     .viaje-preview-section--observaciones .viaje-preview-observaciones,
     .viaje-preview-card__badge {
@@ -383,8 +444,9 @@ html[data-theme="light"] .viaje-preview-total--result {
     .viaje-preview-card__eyebrow,
     .viaje-preview-card__subtitle,
     .viaje-preview-field__label,
-    .viaje-preview-money span,
-    .viaje-preview-total span,
+    .viaje-preview-detail__head span,
+    .viaje-preview-detail__line span,
+    .viaje-preview-detail__total span,
     .viaje-preview-section__head span,
     .viaje-preview-additional__content span,
     .viaje-preview-empty,
@@ -394,15 +456,15 @@ html[data-theme="light"] .viaje-preview-total--result {
 
     .viaje-preview-card h1,
     .viaje-preview-field strong,
-    .viaje-preview-money strong,
-    .viaje-preview-total strong,
+    .viaje-preview-detail__head strong,
+    .viaje-preview-detail__line strong,
+    .viaje-preview-detail__total strong,
     .viaje-preview-additional__content strong,
     .viaje-preview-additional__amount {
         color: #000 !important;
     }
 
-    .viaje-preview-card__money,
-    .viaje-preview-card__totals,
+    .viaje-preview-card__details,
     .viaje-preview-card__grid {
         break-inside: avoid;
     }
@@ -410,8 +472,7 @@ html[data-theme="light"] .viaje-preview-total--result {
     .viaje-preview-section,
     .viaje-preview-additional,
     .viaje-preview-field,
-    .viaje-preview-money,
-    .viaje-preview-total {
+    .viaje-preview-detail {
         break-inside: avoid;
     }
 }

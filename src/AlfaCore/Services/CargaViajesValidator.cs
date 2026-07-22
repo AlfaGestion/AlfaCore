@@ -129,6 +129,46 @@ public sealed class CargaViajesValidator(
         return result;
     }
 
+    public async Task<ValidationResult> ValidateConfiguracionForSaveAsync(CargaViajesConfigDto request, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var result = new ValidationResult();
+        ValidateCommonTextField(request.Sucursal, "sucursal", "La sucursal es obligatoria.", result);
+        ValidateCommonTextField(request.Letra, "letra", "La letra es obligatoria.", result);
+
+        for (var i = 0; i < 5; i++)
+        {
+            var enabled = GetArrayValue(request.AdicionalesHabilitados, i);
+            var sumarFletero = GetArrayValue(request.AdicionalesSumarFletero, i);
+            var nombre = GetText(request.NombresAdicionales, i);
+            var porcentaje = GetDecimal(request.PorcentajesAdicionales, i);
+
+            if (enabled)
+            {
+                if (string.IsNullOrWhiteSpace(nombre))
+                    result.Add($"adicional-{i + 1}-nombre", $"El adicional {i + 1} habilitado debe tener nombre.");
+                if (porcentaje < 0m)
+                    result.Add($"adicional-{i + 1}-porcentaje", $"El porcentaje del adicional {i + 1} no puede ser negativo.");
+            }
+
+            if (!enabled && sumarFletero)
+                result.Add($"adicional-{i + 1}-sumar-fletero", $"El adicional {i + 1} no puede sumar a fleteros si está deshabilitado.");
+        }
+
+        var codigoTarifaGeneral = (request.CodigoTarifaGeneral ?? string.Empty).Trim();
+        if (!string.IsNullOrWhiteSpace(codigoTarifaGeneral))
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(ct);
+            var idListaColumn = await ResolveExistingColumnAsync(cn, ct, "TA_TARIFA", "IDLISTA", "ID_LISTA");
+            if (!await ExistsAsync(cn, "TA_TARIFA", idListaColumn, codigoTarifaGeneral, ct))
+                result.Add("codigo-tarifa-general", "El código de tarifa general seleccionado no existe.");
+        }
+
+        return result;
+    }
+
     public Task<ValidationResult> ValidateChoferForSaveAsync(CargaViajeChoferSaveRequest request, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -186,6 +226,21 @@ public sealed class CargaViajesValidator(
         if (importe > 0m && string.IsNullOrWhiteSpace(text))
             result.Add(fieldKey, "Debe indicar la descripción del adicional fijo.");
     }
+
+    private static void ValidateCommonTextField(string? value, string fieldKey, string message, ValidationResult result)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            result.Add(fieldKey, message);
+    }
+
+    private static string GetText(IReadOnlyList<string> values, int index)
+        => index >= 0 && index < values.Count ? (values[index] ?? string.Empty).Trim() : string.Empty;
+
+    private static decimal GetDecimal(IReadOnlyList<decimal> values, int index)
+        => index >= 0 && index < values.Count ? values[index] : 0m;
+
+    private static bool GetArrayValue(IReadOnlyList<bool> values, int index)
+        => index >= 0 && index < values.Count && values[index];
 
     private static async Task<bool> ExistsAsync(SqlConnection cn, string tableName, string columnName, string value, CancellationToken ct)
     {

@@ -186,6 +186,7 @@ public sealed class CargaViajeTarifaClienteResumenDto
     public int FleteroCoincidencias { get; set; }
     public bool Activo { get; set; } = true;
     public bool TarifaFletero { get; set; }
+    public bool EsTarifaGeneral { get; set; }
 }
 
 public sealed class CargaViajeTarifaSaveRequest
@@ -309,15 +310,33 @@ public sealed class CargaViajesConfigDto
     public string Sucursal { get; set; } = "0001";
     public string Letra { get; set; } = "X";
     public string ChoferGeneral { get; set; } = string.Empty;
+    public string? CodigoTarifaGeneral { get; set; }
     public int PorcentajesAdicionalesHabilitados { get; set; } = 3;
     public List<string> NombresAdicionales { get; set; } = ["Adicional 1", "Adicional 2", "Adicional 3", "Adicional 4", "Adicional 5"];
     public List<decimal> PorcentajesAdicionales { get; set; } = [0m, 0m, 0m, 0m, 0m];
+    public bool[] AdicionalesHabilitados { get; set; } = [false, false, false, false, false];
+    public bool[] AdicionalesSumarFletero { get; set; } = [false, false, false, false, false];
 }
 
 public sealed class CargaViajePreviewDto
 {
     public CargaViajesDetailDto Viaje { get; set; } = new();
     public CargaViajesConfigDto Configuracion { get; set; } = new();
+}
+
+public sealed class ViajeConceptoTotalDto
+{
+    public int? Indice { get; set; }
+    public string Descripcion { get; set; } = string.Empty;
+    public decimal Importe { get; set; }
+}
+
+public sealed class ViajeTotalesDto
+{
+    public List<ViajeConceptoTotalDto> ConceptosCliente { get; set; } = [];
+    public List<ViajeConceptoTotalDto> ConceptosFletero { get; set; } = [];
+    public decimal TotalCliente { get; set; }
+    public decimal TotalFletero { get; set; }
 }
 
 public sealed class CargaViajesViewColumnDto

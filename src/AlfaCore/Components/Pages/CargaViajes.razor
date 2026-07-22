@@ -2478,11 +2478,15 @@
                                                 <span>Fletero</span>
                                                 <span></span>
                                             </div>
-                                            @foreach (var tarifa in GetVisibleViajeTarifas())
+                                            @foreach (var tarifa in GetVisibleViajeTarifasOrdered())
                                             {
                                                 <article class="carga-viajes-viaje-tarifas__item" role="listitem">
                                                     <div class="carga-viajes-viaje-tarifas__destination">
                                                         <strong>@DisplayText(tarifa.DestinoNombre, tarifa.DestinoCodigo)</strong>
+                                                        @if (tarifa.EsTarifaGeneral)
+                                                        {
+                                                            <span class="carga-viajes-viaje-tarifas__badge carga-viajes-viaje-tarifas__badge--general">Tarifa general</span>
+                                                        }
                                                         @if (!tarifa.Activo)
                                                         {
                                                             <span class="carga-viajes-viaje-tarifas__badge carga-viajes-viaje-tarifas__badge--inactive">Inactiva</span>
@@ -2493,7 +2497,7 @@
                                                     </div>
                                                     <div class="carga-viajes-viaje-tarifas__price-cell carga-viajes-viaje-tarifas__price-cell--client">
                                                         <small>Cliente</small>
-                                                        <strong>@tarifa.ImporteCliente.ToString("C2")</strong>
+                                                        <strong>@FormatMoney(tarifa.ImporteCliente)</strong>
                                                     </div>
                                                     <div class="carga-viajes-viaje-tarifas__price-cell @(tarifa.ImporteFletero == 0 ? "carga-viajes-viaje-tarifas__price-cell--muted" : string.Empty)">
                                                         @if (tarifa.ImporteFletero == 0)
@@ -2504,7 +2508,7 @@
                                                         else
                                                         {
                                                             <small>Fletero</small>
-                                                            <strong>@tarifa.ImporteFletero.ToString("C2")</strong>
+                                                            <strong>@FormatMoney(tarifa.ImporteFletero)</strong>
                                                         }
                                                         @if (!string.IsNullOrWhiteSpace(tarifa.FleteroNombreSugerido))
                                                         {
@@ -2540,15 +2544,39 @@
                         <div class="carga-viajes-viaje-secondary__money ac-grid ac-grid-4 ac-form-grid">
                             <div class="field carga-viajes-viaje__importe">
                                 <label>Importe cliente</label>
-                                <input @ref="_viajeImporteClienteInput" type="number" step="0.01" @bind="_viajeForm.ImporteCliente" disabled="@_viajeReadOnly" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusViajeImporteFleteroAsync)" />
+                                <input @ref="_viajeImporteClienteInput"
+                                       type="text"
+                                       inputmode="decimal"
+                                       class="carga-viajes-viaje__money-input"
+                                       value="@_viajeImporteClienteTexto"
+                                       disabled="@_viajeReadOnly"
+                                       @oninput="OnViajeImporteClienteTextChangedAsync"
+                                       @onblur="OnViajeImporteClienteBlurAsync"
+                                       @onkeydown="args => HandleEnterAdvanceAsync(args, FocusViajeImporteFleteroAsync)" />
                             </div>
                             <div class="field carga-viajes-viaje__importe">
                                 <label>Importe fletero</label>
-                                <input @ref="_viajeImporteFleteroInput" type="number" step="0.01" @bind="_viajeForm.ImporteFletero" disabled="@_viajeReadOnly" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusViajePeajeAsync)" />
+                                <input @ref="_viajeImporteFleteroInput"
+                                       type="text"
+                                       inputmode="decimal"
+                                       class="carga-viajes-viaje__money-input"
+                                       value="@_viajeImporteFleteroTexto"
+                                       disabled="@_viajeReadOnly"
+                                       @oninput="OnViajeImporteFleteroTextChangedAsync"
+                                       @onblur="OnViajeImporteFleteroBlurAsync"
+                                       @onkeydown="args => HandleEnterAdvanceAsync(args, FocusViajePeajeAsync)" />
                             </div>
                             <div class="field">
                                 <label>Peaje</label>
-                                <input @ref="_viajePeajeInput" type="number" step="0.01" @bind="_viajeForm.Peaje" disabled="@_viajeReadOnly" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusViajeCantidadViajesAsync)" />
+                                <input @ref="_viajePeajeInput"
+                                       type="text"
+                                       inputmode="decimal"
+                                       class="carga-viajes-viaje__money-input"
+                                       value="@_viajePeajeTexto"
+                                       disabled="@_viajeReadOnly"
+                                       @oninput="OnViajePeajeTextChangedAsync"
+                                       @onblur="OnViajePeajeBlurAsync"
+                                       @onkeydown="args => HandleEnterAdvanceAsync(args, FocusViajeCantidadViajesAsync)" />
                             </div>
                             <div class="field">
                                 <label>Cantidad viajes</label>
@@ -2564,9 +2592,11 @@
                         <div class="field field--wide carga-viajes-adicionales">
                             <label>Adicionales generales</label>
                             <div class="carga-viajes-adicionales__simple-list">
-                                @for (var i = 0; i < GetAdicionalesHabilitadosCount(); i++)
+                                @for (var i = 0; i < 5; i++)
                                 {
                                     var index = i;
+                                    if (!GetConfigAdicionalHabilitado(index))
+                                        continue;
                                     <label class="carga-viajes-adicionales__simple-item @(GetViajeAdicionalChecked(index) ? "carga-viajes-adicionales__simple-item--active" : string.Empty)">
                                         <input type="checkbox"
                                                checked="@GetViajeAdicionalChecked(index)"
@@ -2576,7 +2606,13 @@
                                             <span class="carga-viajes-adicionales__simple-name">@GetAdicionalLabel(index)</span>
                                             <span class="carga-viajes-adicionales__simple-percent">@GetViajeAdicionalPercentText(index)</span>
                                         </span>
-                                        <span class="carga-viajes-adicionales__simple-amount">+@GetViajeAdicionalImporte(index).ToString("C2")</span>
+                                        @{
+                                            var adicionalImporte = GetViajeAdicionalImporte(index);
+                                        }
+                                        @if (adicionalImporte > 0m)
+                                        {
+                                            <span class="carga-viajes-adicionales__simple-amount">+@FormatMoney(adicionalImporte)</span>
+                                        }
                                     </label>
                                 }
                             </div>
@@ -2597,25 +2633,59 @@
                                             <span class="carga-viajes-adicionales__simple-name">@GetViajeAdicionalFijoDescripcion(index)</span>
                                             <span class="carga-viajes-adicionales__simple-percent">Importe fijo</span>
                                         </span>
-                                        <span class="carga-viajes-adicionales__simple-amount">+@GetViajeAdicionalFijoImporte(index).ToString("C2")</span>
+                                        @{
+                                            var adicionalFijoImporte = GetViajeAdicionalFijoImporte(index);
+                                        }
+                                        @if (adicionalFijoImporte > 0m)
+                                        {
+                                            <span class="carga-viajes-adicionales__simple-amount">+@FormatMoney(adicionalFijoImporte)</span>
+                                        }
                                     </label>
                                 }
                             </div>
                         </div>
 
-                        <div class="carga-viajes-viaje__totals ac-grid ac-grid-3 ac-form-grid">
-                            <div class="carga-viajes-viaje__total-card">
-                                <span>Total Cliente</span>
-                                <strong>@GetViajeTotalCliente().ToString("C2")</strong>
-                            </div>
-                            <div class="carga-viajes-viaje__total-card">
-                                <span>Total Fletero</span>
-                                <strong>@GetViajeTotalFletero().ToString("C2")</strong>
-                            </div>
-                            <div class="carga-viajes-viaje__total-card carga-viajes-viaje__total-card--result">
-                                <span>Resultado</span>
-                                <strong>@GetViajeResultado().ToString("C2")</strong>
-                            </div>
+                        @{ var viajeTotales = GetViajeTotales(); }
+                        <div class="carga-viajes-viaje__totals">
+                            <section class="carga-viajes-viaje-detail carga-viajes-viaje-detail--cliente">
+                                <div class="carga-viajes-viaje-detail__head">
+                                    <span>Detalle cliente</span>
+                                    <strong>CLIENTE</strong>
+                                </div>
+                                <div class="carga-viajes-viaje-detail__lines">
+                                    @foreach (var item in viajeTotales.ConceptosCliente)
+                                    {
+                                        <div class="carga-viajes-viaje-detail__line">
+                                            <span>@item.Descripcion</span>
+                                            <strong>@FormatMoney(item.Importe)</strong>
+                                        </div>
+                                    }
+                                </div>
+                                <div class="carga-viajes-viaje-detail__total">
+                                    <span>TOTAL CLIENTE</span>
+                                    <strong>@FormatMoney(viajeTotales.TotalCliente)</strong>
+                                </div>
+                            </section>
+
+                            <section class="carga-viajes-viaje-detail carga-viajes-viaje-detail--fletero">
+                                <div class="carga-viajes-viaje-detail__head">
+                                    <span>Detalle fletero</span>
+                                    <strong>FLETERO</strong>
+                                </div>
+                                <div class="carga-viajes-viaje-detail__lines">
+                                    @foreach (var item in viajeTotales.ConceptosFletero)
+                                    {
+                                        <div class="carga-viajes-viaje-detail__line">
+                                            <span>@item.Descripcion</span>
+                                            <strong>@FormatMoney(item.Importe)</strong>
+                                        </div>
+                                    }
+                                </div>
+                                <div class="carga-viajes-viaje-detail__total">
+                                    <span>TOTAL FLETERO</span>
+                                    <strong>@FormatMoney(viajeTotales.TotalFletero)</strong>
+                                </div>
+                            </section>
                         </div>
                     </div>
 
@@ -2651,26 +2721,81 @@
                 </header>
 
                 <div class="cuentas-modal__body">
-                    <div class="carga-viajes-config-grid ac-grid ac-grid-4 ac-form-grid">
-                        <div class="field"><label>Sucursal</label><input @ref="_configSucursalInput" type="text" maxlength="4" @bind="_config.Sucursal" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusConfigLetraAsync)" /></div>
-                        <div class="field"><label>Letra</label><input @ref="_configLetraInput" type="text" maxlength="1" @bind="_config.Letra" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusConfigChoferGeneralAsync)" /></div>
-                        <div class="field field--wide"><label>Chofer general</label><input @ref="_configChoferGeneralInput" type="text" @bind="_config.ChoferGeneral" placeholder="Código del chofer general" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusConfigGuardarAsync)" /></div>
-                        <div class="field">
-                            <label>Porcentajes adicionales habilitados</label>
-                            <input type="number" min="1" max="5" step="1" @bind="_config.PorcentajesAdicionalesHabilitados" />
+                    <div class="carga-viajes-config-section">
+                        <div class="carga-viajes-config-section__title">Datos generales</div>
+                        <div class="carga-viajes-config-grid ac-grid ac-grid-4 ac-form-grid">
+                            <div class="field">
+                                <label>Sucursal</label>
+                                <input @ref="_configSucursalInput" type="text" maxlength="4" @bind="_config.Sucursal" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusConfigLetraAsync)" />
+                            </div>
+                            <div class="field">
+                                <label>Letra</label>
+                                <input @ref="_configLetraInput" type="text" maxlength="1" @bind="_config.Letra" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusConfigChoferGeneralAsync)" />
+                            </div>
+                            <div class="field field--wide">
+                                <label>Chofer general</label>
+                                <input @ref="_configChoferGeneralInput" type="text" @bind="_config.ChoferGeneral" placeholder="Código del chofer general" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusConfigTarifaGeneralAsync)" />
+                            </div>
+                            <div class="field field--wide">
+                                <label>Código de tarifa general</label>
+                                <LookupAutocomplete @ref="_configTarifaGeneralLookup"
+                                                    Label=""
+                                                    Placeholder="Buscar tarifa general..."
+                                                    Text="@_configTarifaGeneralTexto"
+                                                    TextChanged="OnConfigTarifaGeneralTextoChangedAsync"
+                                                    SelectedChanged="OnConfigTarifaGeneralSeleccionadaAsync"
+                                                    OnEnterCommitted="FocusConfigGuardarAsync"
+                                                    SearchFunc="CargaViajesSvc.SearchTarifasLookupAsync"
+                                                    MinimumCharacters="0" />
+                            </div>
                         </div>
-                        @for (var i = 0; i < _config.NombresAdicionales.Count; i++)
-                        {
-                            var index = i;
-                            <div class="field">
-                                <label>Nombre adicional @(index + 1)</label>
-                                <input type="text" @bind="_config.NombresAdicionales[index]" />
-                            </div>
-                            <div class="field">
-                                <label>Porcentaje adicional @(index + 1)</label>
-                                <input type="number" step="0.01" @bind="_config.PorcentajesAdicionales[index]" />
-                            </div>
-                        }
+                    </div>
+
+                    <div class="carga-viajes-config-section">
+                        <div class="carga-viajes-config-section__title">Adicionales</div>
+                        <div class="carga-viajes-config-adicionales">
+                            @for (var i = 0; i < 5; i++)
+                            {
+                                var index = i;
+                                var habilitado = GetConfigAdicionalHabilitado(index);
+                                <article class="carga-viajes-config-adicionales__item @(habilitado ? "carga-viajes-config-adicionales__item--active" : string.Empty)" @key="index">
+                                    <div class="carga-viajes-config-adicionales__badge">Adicional @(index + 1)</div>
+                                    <div class="carga-viajes-config-adicionales__grid">
+                                        <div class="field carga-viajes-config-adicionales__field carga-viajes-config-adicionales__field--name">
+                                            <label>Nombre</label>
+                                            <input type="text"
+                                                   class="form-control form-control-sm"
+                                                   @bind="_config.NombresAdicionales[index]"
+                                                   disabled="@(!habilitado)" />
+                                        </div>
+                                        <div class="field carga-viajes-config-adicionales__field carga-viajes-config-adicionales__field--percent">
+                                            <label>Porcentaje</label>
+                                            <input type="number"
+                                                   step="0.01"
+                                                   min="0"
+                                                   class="form-control form-control-sm text-end"
+                                                   @bind="_config.PorcentajesAdicionales[index]"
+                                                   disabled="@(!habilitado)" />
+                                        </div>
+                                        <label class="carga-viajes-config-adicionales__toggle @(habilitado ? "carga-viajes-config-adicionales__toggle--on" : string.Empty)">
+                                            <input type="checkbox"
+                                                   class="form-check-input"
+                                                   checked="@habilitado"
+                                                   @onchange="args => OnConfigAdicionalHabilitadoChangedAsync(index, args)" />
+                                            <span>Habilitado</span>
+                                        </label>
+                                        <label class="carga-viajes-config-adicionales__toggle @(habilitado && GetConfigAdicionalSumarFletero(index) ? "carga-viajes-config-adicionales__toggle--on" : string.Empty)">
+                                            <input type="checkbox"
+                                                   class="form-check-input"
+                                                   checked="@GetConfigAdicionalSumarFletero(index)"
+                                                   disabled="@(!habilitado)"
+                                                   @onchange="args => OnConfigAdicionalSumarFleteroChangedAsync(index, args)" />
+                                            <span>Sumar a fleteros</span>
+                                        </label>
+                                    </div>
+                                </article>
+                            }
+                        </div>
                     </div>
                 </div>
 
@@ -2684,6 +2809,8 @@
 </div>
 
 @code {
+    private static readonly System.Globalization.CultureInfo MoneyCulture = System.Globalization.CultureInfo.GetCultureInfo("es-AR");
+
     [Parameter] public string? Vista { get; set; }
 
     private const string SectionViajes = "viajes";
@@ -2829,6 +2956,9 @@
     private ElementReference _viajePeajeInput;
     private ElementReference _viajeCantidadViajesInput;
     private ElementReference _viajeObservacionesInput;
+    private string _viajeImporteClienteTexto = string.Empty;
+    private string _viajeImporteFleteroTexto = string.Empty;
+    private string _viajePeajeTexto = string.Empty;
     private string _tarifaClienteTexto = string.Empty;
     private string _tarifaChoferTexto = string.Empty;
     private string _tarifaDestinoTexto = string.Empty;
@@ -2852,6 +2982,8 @@
     private ElementReference _configSucursalInput;
     private ElementReference _configLetraInput;
     private ElementReference _configChoferGeneralInput;
+    private string _configTarifaGeneralTexto = string.Empty;
+    private LookupAutocomplete? _configTarifaGeneralLookup;
     private ElementReference _configGuardarButton;
     private CargaViajesFilters _choferesFilters = new() { PageNumber = 1, PageSize = 50 };
     private CargaViajesFilters _destinosFilters = new() { PageNumber = 1, PageSize = 50 };
@@ -3389,6 +3521,7 @@
         else
             _feedback = result.Feedback;
 
+        await SyncConfigTarifaGeneralTextoAsync();
         _configLoaded = true;
     }
 
@@ -3644,7 +3777,9 @@
         _viajeForm.DestinoDisplay = string.Empty;
         _viajeForm.TipoVehiculoDisplay = string.Empty;
         _viajeForm.ListaDisplay = string.Empty;
-        SyncViajeAdicionalesFromForm();
+        SyncViajeMoneyTexts();
+        ApplyViajeDefaultPercents(_viajeForm);
+        ClearVisibleAdicionalesGeneralesSelection();
         _viajeEditorFeedback = null;
         ResetViajeTarifasClientePanelState();
         _viajeSnapshot = CaptureViajeSnapshot(_viajeForm);
@@ -3796,7 +3931,7 @@
 
     private string GetAdicionalLabel(int index)
     {
-        if (index >= GetAdicionalesHabilitadosCount())
+        if (index < 0 || index >= _config.NombresAdicionales.Count)
             return string.Empty;
 
         var name = _config.NombresAdicionales.ElementAtOrDefault(index);
@@ -3804,14 +3939,12 @@
     }
 
     private decimal GetConfiguredAdicionalPercent(int index)
-        => index < GetAdicionalesHabilitadosCount()
+        => GetConfigAdicionalHabilitado(index) && index < _config.PorcentajesAdicionales.Count
             ? _config.PorcentajesAdicionales.ElementAtOrDefault(index)
             : 0m;
 
     private int GetAdicionalesHabilitadosCount()
-        => _config.PorcentajesAdicionalesHabilitados > 0
-            ? Math.Min(5, _config.PorcentajesAdicionalesHabilitados)
-            : 3;
+        => _config.AdicionalesHabilitados.Count(value => value);
 
     private string GetAdicionalesHabilitadosSummaryText()
     {
@@ -3821,8 +3954,14 @@
 
     private void ResetVisibleAdicionalesGenerales()
     {
-        for (var i = 0; i < GetAdicionalesHabilitadosCount(); i++)
+        for (var i = 0; i < _viajeAdicionalesActivos.Length; i++)
+        {
+            if (!GetConfigAdicionalHabilitado(i))
+                continue;
+
             SetViajeAdicionalPercent(i, 0m);
+        }
+
         Array.Fill(_viajeAdicionalesActivos, false);
     }
 
@@ -3831,18 +3970,11 @@
         if (tarifa is null)
             return;
 
-        var count = GetAdicionalesHabilitadosCount();
-        if (count > 0)
-            _viajeForm.PorcentajeAdic = tarifa.PorcentajeAdic;
-        if (count > 1)
-            _viajeForm.PorcentajeAdic1 = tarifa.PorcentajeAdic1;
-        if (count > 2)
-            _viajeForm.PorcentajeAdic2 = tarifa.PorcentajeAdic2;
-        if (count > 3)
-            _viajeForm.PorcentajeAdic3 = tarifa.PorcentajeAdic3;
-        if (count > 4)
-            _viajeForm.PorcentajeAdic4 = tarifa.PorcentajeAdic4;
+        ApplyViajeDefaultPercents(_viajeForm);
     }
+
+    private void ClearVisibleAdicionalesGeneralesSelection()
+        => Array.Fill(_viajeAdicionalesActivos, false);
 
     private static string FormatLookupDisplay(string code, string description)
     {
@@ -3949,7 +4081,7 @@
     }
 
     private bool GetViajeAdicionalChecked(int index)
-        => index < GetAdicionalesHabilitadosCount()
+        => GetConfigAdicionalHabilitado(index)
            && index switch
            {
                0 => _viajeAdicionalesActivos[0],
@@ -3961,12 +4093,12 @@
            };
 
     private string GetViajeAdicionalPercentText(int index)
-        => index < GetAdicionalesHabilitadosCount()
+        => GetConfigAdicionalHabilitado(index)
             ? $"{GetViajeAdicionalPercent(index):0.##}%"
             : string.Empty;
 
     private decimal GetViajeAdicionalPercent(int index)
-        => index >= GetAdicionalesHabilitadosCount()
+        => !GetConfigAdicionalHabilitado(index)
             ? 0m
             : index switch
         {
@@ -3980,18 +4112,16 @@
 
     private decimal GetViajeAdicionalImporte(int index)
     {
-        if (index >= GetAdicionalesHabilitadosCount())
+        if (!GetConfigAdicionalHabilitado(index) || !_viajeAdicionalesActivos[index])
             return 0m;
 
-        if (!_viajeAdicionalesActivos[index])
-            return 0m;
-
-        var baseImporte = Math.Max(0m, _viajeForm.ImporteCliente) * Math.Max(1, _viajeForm.CantidadViajes);
-        return baseImporte * GetViajeAdicionalPercent(index) / 100m;
+        return GetViajeTotales().ConceptosCliente.FirstOrDefault(item => item.Indice == index)?.Importe ?? 0m;
     }
 
     private decimal GetViajeTotalAdicionales()
-        => Enumerable.Range(0, GetAdicionalesHabilitadosCount()).Sum(GetViajeAdicionalImporte);
+        => GetViajeTotales().ConceptosCliente
+            .Where(item => item.Indice.HasValue)
+            .Sum(item => item.Importe);
 
     private bool GetViajeAdicionalFijoVisible(int index)
         => index switch
@@ -4042,13 +4172,10 @@
         => GetViajeTotalAdicionales();
 
     private decimal GetViajeTotalCliente()
-        => Math.Max(0m, _viajeForm.ImporteCliente * Math.Max(1, _viajeForm.CantidadViajes))
-           + GetViajeTotalAdicionalesGenerales()
-           + GetViajeTotalAdicionalesFijos()
-           + Math.Max(0m, _viajeForm.Peaje);
+        => GetViajeTotales().TotalCliente;
 
     private decimal GetViajeTotalFletero()
-        => Math.Max(0m, _viajeForm.ImporteFletero * Math.Max(1, _viajeForm.CantidadViajes));
+        => GetViajeTotales().TotalFletero;
 
     private decimal GetViajeResultado()
         => GetViajeTotalCliente() - GetViajeTotalFletero();
@@ -4056,12 +4183,89 @@
     private decimal GetViajeTotalViaje()
         => GetViajeTotalCliente();
 
+    private ViajeTotalesDto GetViajeTotales()
+    {
+        var request = new CargaViajeSaveRequest
+        {
+            CantidadViajes = _viajeForm.CantidadViajes,
+            ImporteCliente = _viajeForm.ImporteCliente,
+            ImporteFletero = _viajeForm.ImporteFletero,
+            Peaje = _viajeForm.Peaje,
+            PorcentajeAdic = GetViajeAdicionalChecked(0) ? _viajeForm.PorcentajeAdic : 0m,
+            PorcentajeAdic1 = GetViajeAdicionalChecked(1) ? _viajeForm.PorcentajeAdic1 : 0m,
+            PorcentajeAdic2 = GetViajeAdicionalChecked(2) ? _viajeForm.PorcentajeAdic2 : 0m,
+            PorcentajeAdic3 = GetViajeAdicionalChecked(3) ? _viajeForm.PorcentajeAdic3 : 0m,
+            PorcentajeAdic4 = GetViajeAdicionalChecked(4) ? _viajeForm.PorcentajeAdic4 : 0m,
+            AdicionalFijo1Descripcion = _viajeForm.AdicionalFijo1Descripcion,
+            AdicionalFijo1Importe = _viajeForm.AdicionalFijo1Importe,
+            AdicionalFijo1Aplicado = _viajeForm.AdicionalFijo1Aplicado,
+            AdicionalFijo2Descripcion = _viajeForm.AdicionalFijo2Descripcion,
+            AdicionalFijo2Importe = _viajeForm.AdicionalFijo2Importe,
+            AdicionalFijo2Aplicado = _viajeForm.AdicionalFijo2Aplicado,
+            AdicionalFijo3Descripcion = _viajeForm.AdicionalFijo3Descripcion,
+            AdicionalFijo3Importe = _viajeForm.AdicionalFijo3Importe,
+            AdicionalFijo3Aplicado = _viajeForm.AdicionalFijo3Aplicado
+        };
+
+        return CargaViajesService.BuildViajeTotales(request, _config);
+    }
+
+    private async Task OnViajeImporteClienteTextChangedAsync(ChangeEventArgs args)
+    {
+        _viajeImporteClienteTexto = args.Value?.ToString() ?? string.Empty;
+        if (TryParseMoneyInput(_viajeImporteClienteTexto, out var value))
+            _viajeForm.ImporteCliente = Math.Max(0m, value);
+
+        MarkViajeDirty();
+        await Task.CompletedTask;
+    }
+
+    private async Task OnViajeImporteFleteroTextChangedAsync(ChangeEventArgs args)
+    {
+        _viajeImporteFleteroTexto = args.Value?.ToString() ?? string.Empty;
+        if (TryParseMoneyInput(_viajeImporteFleteroTexto, out var value))
+            _viajeForm.ImporteFletero = Math.Max(0m, value);
+
+        MarkViajeDirty();
+        await Task.CompletedTask;
+    }
+
+    private async Task OnViajePeajeTextChangedAsync(ChangeEventArgs args)
+    {
+        _viajePeajeTexto = args.Value?.ToString() ?? string.Empty;
+        if (TryParseMoneyInput(_viajePeajeTexto, out var value))
+            _viajeForm.Peaje = Math.Max(0m, value);
+
+        MarkViajeDirty();
+        await Task.CompletedTask;
+    }
+
+    private async Task OnViajeImporteClienteBlurAsync(FocusEventArgs _)
+    {
+        SyncViajeMoneyTexts();
+        await Task.CompletedTask;
+    }
+
+    private async Task OnViajeImporteFleteroBlurAsync(FocusEventArgs _)
+    {
+        SyncViajeMoneyTexts();
+        await Task.CompletedTask;
+    }
+
+    private async Task OnViajePeajeBlurAsync(FocusEventArgs _)
+    {
+        SyncViajeMoneyTexts();
+        await Task.CompletedTask;
+    }
+
     private async Task OnViajeAdicionalChangedAsync(int index, ChangeEventArgs args)
     {
-        if (index >= GetAdicionalesHabilitadosCount())
+        if (!GetConfigAdicionalHabilitado(index))
             return;
 
-        var enabled = args.Value is bool flag && flag;
+        var enabled = args.Value is bool flag
+            ? flag
+            : bool.TryParse(args.Value?.ToString(), out var parsed) && parsed;
         switch (index)
         {
             case 0: _viajeAdicionalesActivos[0] = enabled; break;
@@ -4072,6 +4276,7 @@
         }
 
         MarkViajeDirty();
+        await InvokeAsync(StateHasChanged);
         await Task.CompletedTask;
     }
 
@@ -4097,7 +4302,7 @@
 
     private async Task ToggleViajeAdicionalAsync(int index)
     {
-        if (index >= GetAdicionalesHabilitadosCount())
+        if (!GetConfigAdicionalHabilitado(index))
             return;
 
         _viajeAdicionalesActivos[index] = !_viajeAdicionalesActivos[index];
@@ -4107,7 +4312,7 @@
 
     private void SetViajeAdicionalPercent(int index, decimal value)
     {
-        if (index >= GetAdicionalesHabilitadosCount())
+        if (!GetConfigAdicionalHabilitado(index))
             return;
 
         switch (index)
@@ -4122,9 +4327,8 @@
 
     private void SyncViajeAdicionalesFromForm()
     {
-        var count = GetAdicionalesHabilitadosCount();
         for (var i = 0; i < _viajeAdicionalesActivos.Length; i++)
-            _viajeAdicionalesActivos[i] = i < count && GetViajeAdicionalRawPercent(i) > 0m;
+            _viajeAdicionalesActivos[i] = GetConfigAdicionalHabilitado(i) && GetViajeAdicionalRawPercent(i) > 0m;
     }
 
     private void SyncViajeAdicionalesFijosFromForm()
@@ -4148,17 +4352,30 @@
 
     private void ApplyViajeAdicionalesToFormForSave()
     {
-        var enabledCount = GetAdicionalesHabilitadosCount();
-        if (enabledCount > 0)
+        if (GetConfigAdicionalHabilitado(0))
             _viajeForm.PorcentajeAdic = _viajeAdicionalesActivos[0] ? GetViajeAdicionalPercent(0) : 0m;
-        if (enabledCount > 1)
+        else
+            _viajeForm.PorcentajeAdic = 0m;
+
+        if (GetConfigAdicionalHabilitado(1))
             _viajeForm.PorcentajeAdic1 = _viajeAdicionalesActivos[1] ? GetViajeAdicionalPercent(1) : 0m;
-        if (enabledCount > 2)
+        else
+            _viajeForm.PorcentajeAdic1 = 0m;
+
+        if (GetConfigAdicionalHabilitado(2))
             _viajeForm.PorcentajeAdic2 = _viajeAdicionalesActivos[2] ? GetViajeAdicionalPercent(2) : 0m;
-        if (enabledCount > 3)
+        else
+            _viajeForm.PorcentajeAdic2 = 0m;
+
+        if (GetConfigAdicionalHabilitado(3))
             _viajeForm.PorcentajeAdic3 = _viajeAdicionalesActivos[3] ? GetViajeAdicionalPercent(3) : 0m;
-        if (enabledCount > 4)
+        else
+            _viajeForm.PorcentajeAdic3 = 0m;
+
+        if (GetConfigAdicionalHabilitado(4))
             _viajeForm.PorcentajeAdic4 = _viajeAdicionalesActivos[4] ? GetViajeAdicionalPercent(4) : 0m;
+        else
+            _viajeForm.PorcentajeAdic4 = 0m;
     }
 
     private async Task HandleEnterAdvanceAsync(KeyboardEventArgs args, Func<Task> nextFocusAsync)
@@ -4192,6 +4409,80 @@
     {
         if (_viajeTipoVehiculoLookup is not null)
             await _viajeTipoVehiculoLookup.FocusAsync();
+    }
+
+    private bool GetConfigAdicionalHabilitado(int index)
+        => index >= 0
+           && index < _config.AdicionalesHabilitados.Length
+           && _config.AdicionalesHabilitados[index];
+
+    private bool GetConfigAdicionalSumarFletero(int index)
+        => index >= 0
+           && index < _config.AdicionalesSumarFletero.Length
+           && _config.AdicionalesSumarFletero[index];
+
+    private Task OnConfigAdicionalHabilitadoChangedAsync(int index, ChangeEventArgs args)
+    {
+        if (index < 0 || index >= _config.AdicionalesHabilitados.Length)
+            return Task.CompletedTask;
+
+        var enabled = args.Value is bool flag && flag;
+        _config.AdicionalesHabilitados[index] = enabled;
+        if (!enabled)
+            _config.AdicionalesSumarFletero[index] = false;
+
+        return Task.CompletedTask;
+    }
+
+    private Task OnConfigAdicionalSumarFleteroChangedAsync(int index, ChangeEventArgs args)
+    {
+        if (index < 0 || index >= _config.AdicionalesSumarFletero.Length)
+            return Task.CompletedTask;
+
+        if (!GetConfigAdicionalHabilitado(index))
+        {
+            _config.AdicionalesSumarFletero[index] = false;
+            return Task.CompletedTask;
+        }
+
+        _config.AdicionalesSumarFletero[index] = args.Value is bool flag && flag;
+        return Task.CompletedTask;
+    }
+
+    private Task OnConfigTarifaGeneralTextoChangedAsync(string text)
+    {
+        _configTarifaGeneralTexto = text;
+        _config.CodigoTarifaGeneral = ExtractCodeFromDisplay(text);
+        return Task.CompletedTask;
+    }
+
+    private Task OnConfigTarifaGeneralSeleccionadaAsync(CargaViajeLookupOptionDto item)
+    {
+        _config.CodigoTarifaGeneral = (item.Codigo ?? string.Empty).Trim().ToUpperInvariant();
+        _configTarifaGeneralTexto = FormatLookupDisplay(item.Codigo ?? string.Empty, item.Titulo);
+        return Task.CompletedTask;
+    }
+
+    private async Task SyncConfigTarifaGeneralTextoAsync()
+    {
+        var codigo = (_config.CodigoTarifaGeneral ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(codigo))
+        {
+            _configTarifaGeneralTexto = string.Empty;
+            return;
+        }
+
+        try
+        {
+            var tarifa = await CargaViajesSvc.GetTarifaByIdAsync(codigo);
+            _configTarifaGeneralTexto = tarifa is null
+                ? codigo
+                : FormatListaDisplay(tarifa.IdLista, tarifa.Nombre);
+        }
+        catch
+        {
+            _configTarifaGeneralTexto = codigo;
+        }
     }
 
     private async Task FocusViajeImporteClienteAsync()
@@ -4263,6 +4554,7 @@
 
     private async Task FocusConfigLetraAsync() => await _configLetraInput.FocusAsync(preventScroll: true);
     private async Task FocusConfigChoferGeneralAsync() => await _configChoferGeneralInput.FocusAsync(preventScroll: true);
+    private async Task FocusConfigTarifaGeneralAsync() => await _configTarifaGeneralLookup!.FocusAsync();
     private async Task FocusConfigGuardarAsync() => await _configGuardarButton.FocusAsync(preventScroll: true);
 
     private void MapViajeToForm(CargaViajesDetailDto detail)
@@ -4312,6 +4604,7 @@
         _viajeTipoVehiculoTexto = _viajeForm.TipoVehiculoDisplay;
         _viajeListaTexto = _viajeForm.ListaDisplay;
         _viajeListaManualOverride = false;
+        SyncViajeMoneyTexts();
         SyncViajeAdicionalesFromForm();
         SyncViajeAdicionalesFijosFromForm();
         _viajeSnapshot = CaptureViajeSnapshot(_viajeForm);
@@ -4375,9 +4668,13 @@
         {
             config.Sucursal,
             config.Letra,
+            config.ChoferGeneral,
+            config.CodigoTarifaGeneral,
             config.PorcentajesAdicionalesHabilitados,
             NombresAdicionales = config.NombresAdicionales,
-            PorcentajesAdicionales = config.PorcentajesAdicionales
+            PorcentajesAdicionales = config.PorcentajesAdicionales,
+            config.AdicionalesHabilitados,
+            config.AdicionalesSumarFletero
         });
 
     private static string CaptureViewSettingsSnapshot(CargaViajesViewSettingsDto settings)
@@ -5569,6 +5866,8 @@
         _viajeChoferTexto = text;
         _viajeForm.Chofer = string.Empty;
         _viajeForm.ChoferDisplay = text;
+        _viajeForm.ImporteFletero = 0m;
+        SyncViajeMoneyTexts();
         _viajeDirty = true;
         await Task.CompletedTask;
     }
@@ -5685,8 +5984,31 @@
             .ToList();
     }
 
+    private IReadOnlyList<CargaViajeTarifaClienteResumenDto> GetVisibleViajeTarifasOrdered()
+        => GetVisibleViajeTarifas()
+            .OrderBy(tarifa => tarifa.EsTarifaGeneral ? 1 : 0)
+            .ThenBy(tarifa => tarifa.DestinoNombre, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(tarifa => tarifa.TipoVehiculoNombre, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(tarifa => tarifa.ListaNombre, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
     private int GetViajeTarifasVisibleCount()
         => GetVisibleViajeTarifas().Count;
+
+    private async Task<bool> IsViajeChoferFleteroAsync(string choferCodigo)
+    {
+        var codigo = (choferCodigo ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(codigo))
+            return false;
+
+        var result = await UiOps.RunAsync(
+            () => CargaViajesSvc.SearchFleterosLookupAsync(codigo),
+            "No se pudo validar el chofer seleccionado.");
+        if (!result.Success || result.Value is null)
+            return false;
+
+        return result.Value.Any(item => string.Equals(item.Codigo, codigo, StringComparison.OrdinalIgnoreCase));
+    }
 
     private async Task SeleccionarTarifaClienteAsync(CargaViajeTarifaClienteResumenDto tarifa)
     {
@@ -5709,8 +6031,10 @@
         _viajeTipoVehiculoTexto = _viajeForm.TipoVehiculoDisplay;
 
         _viajeForm.ImporteCliente = tarifa.ImporteCliente;
-        _viajeForm.ImporteFletero = tarifa.ImporteFletero;
+        _viajeForm.ImporteFletero = 0m;
+        SyncViajeMoneyTexts();
 
+        var hadChoferSelected = !string.IsNullOrWhiteSpace(_viajeForm.Chofer);
         var currentChofer = (_viajeForm.Chofer ?? string.Empty).Trim();
         var suggestedChofer = (tarifa.FleteroCodigoSugerido ?? string.Empty).Trim();
 
@@ -5729,15 +6053,39 @@
             }
         }
 
-        if (!tarifa.TarifaFletero && !string.IsNullOrWhiteSpace(currentChofer))
+        if (!tarifa.TarifaFletero && hadChoferSelected && !string.IsNullOrWhiteSpace(currentChofer))
         {
-            var fleteroResult = await UiOps.RunAsync(
-                () => CargaViajesSvc.GetTarifaFleteroAsync(currentChofer, tarifa.DestinoCodigo, tarifa.TipoVehiculoCodigo),
-                "No se pudo calcular la tarifa fletero.");
-            if (fleteroResult.Success)
-                _viajeForm.ImporteFletero = fleteroResult.Value;
+            var esFletero = await IsViajeChoferFleteroAsync(currentChofer);
+            if (esFletero)
+            {
+                var fleteroResult = await UiOps.RunAsync(
+                    () => CargaViajesSvc.GetTarifaFleteroAsync(currentChofer, tarifa.DestinoCodigo, tarifa.TipoVehiculoCodigo),
+                    "No se pudo calcular la tarifa fletero.");
+                if (fleteroResult.Success)
+                {
+                    _viajeForm.ImporteFletero = fleteroResult.Value;
+                    SyncViajeMoneyTexts();
+                }
+                else
+                {
+                    _viajeTarifasFeedback = fleteroResult.Feedback;
+                }
+            }
             else
-                _viajeTarifasFeedback = fleteroResult.Feedback;
+            {
+                _viajeForm.ImporteFletero = 0m;
+                SyncViajeMoneyTexts();
+                _viajeTarifasSelectionHint = string.IsNullOrWhiteSpace(suggestedChofer)
+                    ? "El chofer seleccionado no es fletero."
+                    : $"El chofer seleccionado no es fletero: {DisplayText(tarifa.FleteroNombreSugerido, suggestedChofer)}";
+            }
+        }
+        else
+        {
+            _viajeForm.ImporteFletero = 0m;
+            SyncViajeMoneyTexts();
+            if (!hadChoferSelected)
+                _viajeTarifasSelectionHint = "Seleccione un chofer fletero para sumar la tarifa fletero.";
         }
 
         var detalleResult = await UiOps.RunAsync(
@@ -5746,6 +6094,7 @@
         if (detalleResult.Success && detalleResult.Value is not null)
         {
             ApplyVisibleAdicionalesGeneralesFromTarifa(detalleResult.Value);
+            ClearVisibleAdicionalesGeneralesSelection();
             _viajeForm.AdicionalFijo1Descripcion = detalleResult.Value.AdicionalFijo1Descripcion;
             _viajeForm.AdicionalFijo1Importe = detalleResult.Value.AdicionalFijo1Importe;
             _viajeForm.AdicionalFijo2Descripcion = detalleResult.Value.AdicionalFijo2Descripcion;
@@ -5755,7 +6104,6 @@
             _viajeForm.AdicionalFijo1Aplicado = false;
             _viajeForm.AdicionalFijo2Aplicado = false;
             _viajeForm.AdicionalFijo3Aplicado = false;
-            SyncViajeAdicionalesFromForm();
             SyncViajeAdicionalesFijosFromForm();
         }
         else if (!detalleResult.Success)
@@ -5765,6 +6113,7 @@
 
         _viajeDirty = true;
         _showViajeTarifasClientePanel = false;
+        SyncViajeMoneyTexts();
         await Task.CompletedTask;
     }
 
@@ -5774,7 +6123,7 @@
         _viajeForm.ChoferDisplay = FormatLookupDisplay(item.Codigo, item.Titulo);
         _viajeChoferTexto = _viajeForm.ChoferDisplay;
         _viajeDirty = true;
-        await ActualizarTarifaFleteroAsync();
+        await ActualizarTarifaFleteroAsync(allowManualOverride: true);
         await Task.CompletedTask;
     }
 
@@ -5819,13 +6168,19 @@
         _viajeListaTexto = _viajeForm.ListaDisplay;
         _viajeListaManualOverride = true;
 
-        if (tarifa.TarifaFletero)
+        var currentChofer = (_viajeForm.Chofer ?? string.Empty).Trim();
+        var applyFletero = tarifa.TarifaFletero
+            && !string.IsNullOrWhiteSpace(currentChofer)
+            && await IsViajeChoferFleteroAsync(currentChofer);
+
+        if (applyFletero)
             _viajeForm.ImporteFletero = tarifa.Importe;
         else
             _viajeForm.ImporteCliente = tarifa.Importe;
 
+        SyncViajeMoneyTexts();
         ApplyVisibleAdicionalesGeneralesFromTarifa(tarifa);
-        SyncViajeAdicionalesFromForm();
+        ClearVisibleAdicionalesGeneralesSelection();
         _viajeDirty = true;
         await FocusViajeImporteClienteAsync();
     }
@@ -6230,7 +6585,33 @@
         => row.FletePagado ? "carga-viajes-reportes__row--paid" : string.Empty;
 
     private static string FormatMoney(decimal value)
-        => value.ToString("C0", System.Globalization.CultureInfo.GetCultureInfo("es-AR"));
+        => value.ToString("C2", MoneyCulture);
+    private static string FormatMoneyInput(decimal value)
+        => value.ToString("N2", MoneyCulture);
+
+    private static bool TryParseMoneyInput(string? value, out decimal result)
+    {
+        var text = (value ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            result = 0m;
+            return true;
+        }
+
+        text = text.Replace("$", string.Empty, StringComparison.Ordinal).Replace(" ", string.Empty, StringComparison.Ordinal);
+        if (decimal.TryParse(text, System.Globalization.NumberStyles.Currency | System.Globalization.NumberStyles.Number, MoneyCulture, out result))
+            return true;
+
+        text = text.Replace(".", string.Empty, StringComparison.Ordinal).Replace(",", ".", StringComparison.Ordinal);
+        return decimal.TryParse(text, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out result);
+    }
+
+    private void SyncViajeMoneyTexts()
+    {
+        _viajeImporteClienteTexto = FormatMoney(Math.Max(0m, _viajeForm.ImporteCliente));
+        _viajeImporteFleteroTexto = FormatMoney(Math.Max(0m, _viajeForm.ImporteFletero));
+        _viajePeajeTexto = FormatMoney(Math.Max(0m, _viajeForm.Peaje));
+    }
 
     private static string FormatReporteDate(DateTime? value)
         => value?.ToString("dd/MM/yyyy") ?? "—";
@@ -6854,7 +7235,7 @@
         => $"{GetLiquidacionesEncontradosCount()} viaje(s) encontrados | {GetLiquidacionesPendientesCount()} pendientes | {_liquidacionesSeleccionadas.Count} seleccionados | Total seleccionado: {_liquidacionesTotalSeleccionado.ToString("N2")} | Total pendiente: {GetLiquidacionesTotalPendienteVisible().ToString("N2")}";
 
     private string GetLiquidacionesFloatingPayLabel()
-        => $"Pagar seleccionados ({_liquidacionesSeleccionadas.Count}) · {_liquidacionesTotalSeleccionado.ToString("C2")}";
+        => $"Pagar seleccionados ({_liquidacionesSeleccionadas.Count}) · {FormatMoney(_liquidacionesTotalSeleccionado)}";
 
     private static string GetLiquidacionesEstadoTexto(CargaViajeLiquidacionRowDto row)
         => row.FletePagado ? "Liquidado" : GetLiquidacionesEstadoTexto(row.Estado);
@@ -7272,6 +7653,7 @@
         if (string.IsNullOrWhiteSpace(_viajeForm.Cliente) || string.IsNullOrWhiteSpace(_viajeForm.Destino) || string.IsNullOrWhiteSpace(_viajeForm.TipoVehiculo))
         {
             _viajeForm.ImporteCliente = 0m;
+            SyncViajeMoneyTexts();
             ResetVisibleAdicionalesGenerales();
             _viajeForm.AdicionalFijo1Descripcion = string.Empty;
             _viajeForm.AdicionalFijo1Importe = 0m;
@@ -7297,6 +7679,7 @@
         if (tarifa is null)
         {
             _viajeForm.ImporteCliente = 0m;
+            SyncViajeMoneyTexts();
             ResetVisibleAdicionalesGenerales();
             _viajeForm.AdicionalFijo1Descripcion = string.Empty;
             _viajeForm.AdicionalFijo1Importe = 0m;
@@ -7315,6 +7698,7 @@
         _viajeForm.ListaDisplay = FormatListaDisplay(tarifa.IdLista, tarifa.Nombre);
         _viajeListaTexto = _viajeForm.ListaDisplay;
         _viajeForm.ImporteCliente = tarifa.Importe;
+        SyncViajeMoneyTexts();
         ApplyVisibleAdicionalesGeneralesFromTarifa(tarifa);
         _viajeForm.AdicionalFijo1Descripcion = tarifa.AdicionalFijo1Descripcion;
         _viajeForm.AdicionalFijo1Importe = tarifa.AdicionalFijo1Importe;
@@ -7325,18 +7709,26 @@
         _viajeForm.AdicionalFijo1Aplicado = false;
         _viajeForm.AdicionalFijo2Aplicado = false;
         _viajeForm.AdicionalFijo3Aplicado = false;
-        SyncViajeAdicionalesFromForm();
         SyncViajeAdicionalesFijosFromForm();
     }
 
-    private async Task ActualizarTarifaFleteroAsync()
+    private async Task ActualizarTarifaFleteroAsync(bool allowManualOverride = false)
     {
-        if (_viajeListaManualOverride)
+        if (_viajeListaManualOverride && !allowManualOverride)
             return;
 
         if (string.IsNullOrWhiteSpace(_viajeForm.Chofer) || string.IsNullOrWhiteSpace(_viajeForm.Destino) || string.IsNullOrWhiteSpace(_viajeForm.TipoVehiculo))
         {
             _viajeForm.ImporteFletero = 0m;
+            SyncViajeMoneyTexts();
+            return;
+        }
+
+        var esFletero = await IsViajeChoferFleteroAsync(_viajeForm.Chofer);
+        if (!esFletero)
+        {
+            _viajeForm.ImporteFletero = 0m;
+            SyncViajeMoneyTexts();
             return;
         }
 
@@ -7348,6 +7740,7 @@
         }
 
         _viajeForm.ImporteFletero = result.Value;
+        SyncViajeMoneyTexts();
     }
 
     private async Task AplicarFiltrosTarifasAsync() { _tarifasFilters.PageNumber = 1; await RecargarTarifasAsync(); }
@@ -8680,6 +9073,7 @@
     {
         await EnsureConfigLoadedAsync();
         _showConfigEditor = true;
+        await SyncConfigTarifaGeneralTextoAsync();
         _configSnapshot = CaptureConfigSnapshot(_config);
         await Task.CompletedTask;
     }
@@ -8701,7 +9095,10 @@
         _configSnapshot = string.Empty;
         var reload = await UiOps.RunAsync(() => CargaViajesSvc.GetConfiguracionAsync(), "No se pudo recargar la configuración.");
         if (reload.Success && reload.Value is not null)
+        {
             _config = reload.Value;
+            await SyncConfigTarifaGeneralTextoAsync();
+        }
     }
 
     private async Task CerrarConfiguracionModulo()
@@ -8754,12 +9151,20 @@
 
     private void ApplyViajeDefaultPercents(CargaViajeSaveRequest form)
     {
-        var count = GetAdicionalesHabilitadosCount();
-        if (count > 0) form.PorcentajeAdic = ResolvePercentOrDefault(form.PorcentajeAdic, 0);
-        if (count > 1) form.PorcentajeAdic1 = ResolvePercentOrDefault(form.PorcentajeAdic1, 1);
-        if (count > 2) form.PorcentajeAdic2 = ResolvePercentOrDefault(form.PorcentajeAdic2, 2);
-        if (count > 3) form.PorcentajeAdic3 = ResolvePercentOrDefault(form.PorcentajeAdic3, 3);
-        if (count > 4) form.PorcentajeAdic4 = ResolvePercentOrDefault(form.PorcentajeAdic4, 4);
+        if (GetConfigAdicionalHabilitado(0)) form.PorcentajeAdic = ResolvePercentOrDefault(form.PorcentajeAdic, 0);
+        else form.PorcentajeAdic = 0m;
+
+        if (GetConfigAdicionalHabilitado(1)) form.PorcentajeAdic1 = ResolvePercentOrDefault(form.PorcentajeAdic1, 1);
+        else form.PorcentajeAdic1 = 0m;
+
+        if (GetConfigAdicionalHabilitado(2)) form.PorcentajeAdic2 = ResolvePercentOrDefault(form.PorcentajeAdic2, 2);
+        else form.PorcentajeAdic2 = 0m;
+
+        if (GetConfigAdicionalHabilitado(3)) form.PorcentajeAdic3 = ResolvePercentOrDefault(form.PorcentajeAdic3, 3);
+        else form.PorcentajeAdic3 = 0m;
+
+        if (GetConfigAdicionalHabilitado(4)) form.PorcentajeAdic4 = ResolvePercentOrDefault(form.PorcentajeAdic4, 4);
+        else form.PorcentajeAdic4 = 0m;
     }
 
     private static CargaViajeTarifaSaveRequest BuildDefaultTarifaForm()
