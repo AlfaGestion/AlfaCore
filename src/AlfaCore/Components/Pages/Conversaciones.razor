@@ -725,7 +725,16 @@
                                  class="@ConversationRowClass(item)"
                                  @onclick="() => SelectConversationAsync(item.IdConversacion, showMobileChat: true)"
                                  @onkeydown="args => HandleConversationRowKeyDownAsync(args, item.IdConversacion)">
-                                <span class="conversation-row__avatar" aria-hidden="true">@GetConversationInitials(item)</span>
+                                <span class="conversation-row__avatar" aria-hidden="true">
+                                    @if (!string.IsNullOrWhiteSpace(item.FotoPerfilUrl))
+                                    {
+                                        <img src="@item.FotoPerfilUrl" alt="" loading="lazy" referrerpolicy="no-referrer" />
+                                    }
+                                    else
+                                    {
+                                        @GetConversationInitials(item)
+                                    }
+                                </span>
                                 <div class="conversation-row__content">
                                 <div class="conversation-row__top">
                                     <span class="conversation-row__name">@GetDisplayName(item)</span>
@@ -752,7 +761,16 @@
                                         <span class="conversation-badge">@item.ClienteNombre</span>
                                     }
                                 </div>
-                                <p class="conversation-row__summary">@item.ResumenUltimoMensaje</p>
+                                <p class="conversation-row__summary">
+                                    @if (IsLastInboxMessageOutgoing(item))
+                                    {
+                                        <span class="conversation-row__delivery @GetDeliveryClass(item.EstadoUltimoMensaje)"
+                                              title="Último mensaje enviado por nosotros: @GetDeliveryLabel(item.EstadoUltimoMensaje)">
+                                            <i class="bi @GetDeliveryIcon(item.EstadoUltimoMensaje)"></i>
+                                        </span>
+                                    }
+                                    @FormatInboxSummary(item.ResumenUltimoMensaje)
+                                </p>
                                 </div>
                             </div>
                         }
@@ -834,6 +852,19 @@
                                 <i class="bi bi-arrow-left"></i>
                                 <span>Volver</span>
                             </button>
+                            @if (_selectedConversation.Canal == "INSTAGRAM")
+                            {
+                                <div class="conversation-profile-avatar" aria-hidden="true">
+                                    @if (!string.IsNullOrWhiteSpace(_selectedConversation.FotoPerfilUrl))
+                                    {
+                                        <img src="@_selectedConversation.FotoPerfilUrl" alt="" referrerpolicy="no-referrer" />
+                                    }
+                                    else
+                                    {
+                                        <span>@GetConversationInitials(_selectedConversation)</span>
+                                    }
+                                </div>
+                            }
                             <div>
                                 <div class="conversation-title-editor">
                                     @if (_editingConversationName)
@@ -870,7 +901,27 @@
                                         </button>
                                     }
                                 </div>
-                                @if (_selectedConversation.Canal != "INTERNO" && !string.IsNullOrWhiteSpace(_selectedConversation.TelefonoWhatsApp))
+                                @if (_selectedConversation.Canal == "INSTAGRAM" && !string.IsNullOrWhiteSpace(_selectedConversation.UsuarioExterno))
+                                {
+                                    <div class="conversation-social-profile">
+                                        <a href="@GetInstagramProfileUrl(_selectedConversation.UsuarioExterno)"
+                                           target="_blank"
+                                           rel="noopener noreferrer"
+                                           title="Abrir perfil en Instagram">
+                                            @($"@{_selectedConversation.UsuarioExterno}")
+                                            <i class="bi bi-box-arrow-up-right"></i>
+                                        </a>
+                                        @if (_selectedConversation.PerfilExternoVerificado)
+                                        {
+                                            <span title="Perfil verificado"><i class="bi bi-patch-check-fill"></i></span>
+                                        }
+                                        @if (_selectedConversation.SeguidoresExterno.HasValue)
+                                        {
+                                            <span>@FormatCompactNumber(_selectedConversation.SeguidoresExterno.Value) seguidores</span>
+                                        }
+                                    </div>
+                                }
+                                else if (_selectedConversation.Canal != "INTERNO" && !string.IsNullOrWhiteSpace(_selectedConversation.TelefonoWhatsApp))
                                 {
                                     <p class="panel-card__subtitle">@_selectedConversation.TelefonoWhatsApp</p>
                                 }
@@ -1087,12 +1138,13 @@
                                             <div class="message-reaction-picker" @onclick:stopPropagation>
                                                 @foreach (var emoji in QuickReactionEmojis)
                                                 {
+                                                    var reactionMessageId = message.IdMensaje;
+                                                    var reactionEmoji = emoji;
                                                     <button type="button"
                                                             class="btn btn--ghost btn--sm message-reaction-picker__emoji"
                                                             title="Reaccionar @emoji"
-                                                            @onclick="() => SendReactionAsync(message, emoji)"
-                                                            @onclick:stopPropagation
-                                                            disabled="@_busyAction">
+                                                            @onclick="async () => await SendReactionAsync(reactionMessageId, reactionEmoji)"
+                                                            disabled="@(_reactionSendingMessageId.HasValue)">
                                                         @emoji
                                                     </button>
                                                 }
@@ -2525,6 +2577,7 @@
     private string? _conversationError;
     private string? _actionMessage;
     private string? _actionError;
+    private long? _reactionSendingMessageId;
     private bool _noticeLeaving;
     private DateTime _noticeSetAtUtc = DateTime.MinValue;
     private string _noticeSignature = string.Empty;
@@ -2720,10 +2773,12 @@
            && _selectedConversation.Canal == "WHATSAPP";
     private bool IsProviderPendingConversation
         => _selectedConversation is not null
-           && (_selectedConversation.Canal == "INSTAGRAM" || _selectedConversation.Canal == "FACEBOOK");
+           && _selectedConversation.Canal == "FACEBOOK";
     private bool IsSelectedChannelSendEnabled
         => _selectedConversation is not null
-           && (_selectedConversation.Canal == "WHATSAPP" || _selectedConversation.Canal == "INTERNO");
+           && (_selectedConversation.Canal == "WHATSAPP"
+               || _selectedConversation.Canal == "INSTAGRAM"
+               || _selectedConversation.Canal == "INTERNO");
     private bool IsWhatsAppWindowExpired
         => _selectedConversation is not null
            && _selectedConversation.Canal == "WHATSAPP"
@@ -5504,7 +5559,9 @@
 
             await UploadPendingAttachmentsAsync(attachmentsToSend, RemovePendingAttachment);
 
-            _actionMessage = "Mensaje registrado correctamente.";
+            _actionMessage = _selectedConversation.Canal == "INTERNO"
+                ? "Mensaje registrado correctamente."
+                : "Mensaje enviado correctamente.";
             await SelectConversationAsync(_selectedConversation.IdConversacion, updateUrl: false);
             await RefreshInboxAsync(showLoading: false, allowSelectionChange: false);
         }
@@ -6562,7 +6619,7 @@
         {
             var message = _messages.FirstOrDefault(x => x.IdMensaje == _reactionEmojiMessageId.Value);
             if (message is not null)
-                await SendReactionAsync(message, emoji);
+                await SendReactionAsync(message.IdMensaje, emoji);
 
             _reactionEmojiMessageId = null;
             MinimizeComposerTools();
@@ -6594,39 +6651,71 @@
         await AutoResizeReplyTextareaAsync();
     }
 
-    private async Task SendReactionAsync(ConversacionMensajeDto message, string emoji)
+    private async Task SendReactionAsync(long messageId, string emoji)
     {
-        if (_selectedConversation is null)
+        if (_selectedConversation is null || _reactionSendingMessageId.HasValue)
             return;
 
-        _busyAction = true;
+        var target = _messages.FirstOrDefault(x => x.IdMensaje == messageId);
+        if (target is null || string.IsNullOrWhiteSpace(target.WhatsAppMessageId))
+            return;
+
+        var conversationId = _selectedConversation.IdConversacion;
+        var optimisticId = -DateTime.UtcNow.Ticks;
+        _openReactionMessageId = null;
+        _reactionSendingMessageId = messageId;
         _actionMessage = null;
         _actionError = null;
+        _messages.Add(new ConversacionMensajeDto
+        {
+            IdMensaje = optimisticId,
+            IdConversacion = conversationId,
+            WhatsAppReplyToMessageId = target.WhatsAppMessageId,
+            MessageType = "REACTION",
+            Direction = "SALIENTE",
+            EstadoEnvio = "PENDIENTE",
+            Texto = emoji,
+            FechaHora = DateTime.Now,
+            UsuarioAutor = CurrentUserNameForAudit,
+            SistemaAutor = CurrentUserSystemForAudit,
+            IdTecnicoAutor = CurrentMessageTechnicianId
+        });
+        await InvokeAsync(StateHasChanged);
 
         try
         {
-            await ConversacionesSvc.SendReactionAsync(new ConversacionReaccionRequest
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(25));
+            var result = await ConversacionesSvc.SendReactionAsync(new ConversacionReaccionRequest
             {
-                IdConversacion = _selectedConversation.IdConversacion,
-                IdMensaje = message.IdMensaje,
+                IdConversacion = conversationId,
+                IdMensaje = messageId,
                 Emoji = emoji,
                 IdTecnicoAutor = CurrentMessageTechnicianId,
                 UsuarioAccion = CurrentUserNameForAudit,
                 SistemaAccion = CurrentUserSystemForAudit
-            });
+            }, timeout.Token);
 
-            _openReactionMessageId = null;
-            await SelectConversationAsync(_selectedConversation.IdConversacion, updateUrl: false);
-            await LoadInboxAsync();
-            _actionMessage = $"Reacción enviada: {emoji}";
+            var optimistic = _messages.FirstOrDefault(x => x.IdMensaje == optimisticId);
+            if (optimistic is not null)
+            {
+                optimistic.IdMensaje = result.IdMensaje;
+                optimistic.WhatsAppMessageId = result.WhatsAppMessageId;
+                optimistic.EstadoEnvio = result.EstadoEnvio;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            _messages.RemoveAll(x => x.IdMensaje == optimisticId);
+            _actionError = "No se pudo enviar la reacción a tiempo. Revisá la conexión y reintentá.";
         }
         catch (Exception ex)
         {
+            _messages.RemoveAll(x => x.IdMensaje == optimisticId);
             _actionError = ex.Message;
         }
         finally
         {
-            _busyAction = false;
+            _reactionSendingMessageId = null;
         }
     }
 
@@ -6789,6 +6878,32 @@
     private static string GetDisplayName(ConversacionInboxItemDto item)
         => FirstNonEmpty(item.NombreVisible, item.ContactoNombre, item.ClienteNombre, item.TelefonoWhatsApp);
 
+    private static string FormatInboxSummary(string? summary)
+    {
+        var value = summary?.Trim() ?? string.Empty;
+        if (!value.StartsWith("Reacci", StringComparison.OrdinalIgnoreCase))
+            return value;
+
+        var separator = value.LastIndexOf(':');
+        var detail = separator >= 0 && separator < value.Length - 1
+            ? value[(separator + 1)..].Trim()
+            : string.Empty;
+
+        if (detail.StartsWith("wamid.", StringComparison.OrdinalIgnoreCase))
+            return "Reacción eliminada.";
+
+        if (value.Contains("recibida", StringComparison.OrdinalIgnoreCase))
+            return string.IsNullOrWhiteSpace(detail) ? "Reacción recibida." : $"Reacción recibida: {detail}";
+
+        if (value.Contains("enviada", StringComparison.OrdinalIgnoreCase))
+            return string.IsNullOrWhiteSpace(detail) ? "Reacción enviada." : $"Reacción enviada: {detail}";
+
+        return value;
+    }
+
+    private static bool IsLastInboxMessageOutgoing(ConversacionInboxItemDto item)
+        => string.Equals(item.DireccionUltimoMensaje, "SALIENTE", StringComparison.OrdinalIgnoreCase);
+
     private string GetConversationInitials(ConversacionInboxItemDto item)
     {
         var displayName = GetDisplayName(item).Trim();
@@ -6812,6 +6927,29 @@
     private static string GetConversationHeader(ConversacionDetalleDto item)
         => FirstNonEmpty(item.NombreVisible, item.ContactoNombre, item.ClienteNombre, item.TelefonoWhatsApp);
 
+    private static string GetConversationInitials(ConversacionDetalleDto item)
+    {
+        var displayName = GetConversationHeader(item).Trim();
+        if (string.IsNullOrWhiteSpace(displayName))
+            return "?";
+
+        var words = displayName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return words.Length == 1
+            ? words[0][0].ToString().ToUpperInvariant()
+            : string.Concat(words[0][0], words[^1][0]).ToUpperInvariant();
+    }
+
+    private static string GetInstagramProfileUrl(string username)
+        => $"https://www.instagram.com/{Uri.EscapeDataString(username.Trim().TrimStart('@'))}/";
+
+    private static string FormatCompactNumber(int value)
+        => value switch
+        {
+            >= 1_000_000 => $"{value / 1_000_000d:0.#} M",
+            >= 1_000 => $"{value / 1_000d:0.#} mil",
+            _ => value.ToString(System.Globalization.CultureInfo.InvariantCulture)
+        };
+
     private string GetChannelCssClass()
         => _canalActivo switch
         {
@@ -6825,7 +6963,7 @@
         => _selectedConversation?.Canal switch
         {
             "INTERNO" => "Escribí un mensaje para el equipo...",
-            "INSTAGRAM" => "Instagram está preparado; el envío se habilita al conectar Meta.",
+            "INSTAGRAM" => "Escribí una respuesta para Instagram...",
             "FACEBOOK" => "Facebook está preparado; el envío se habilita al conectar Meta.",
             _ => "Escribí una respuesta para WhatsApp..."
         };
@@ -6844,7 +6982,7 @@
     private string GetProviderPendingMessage()
         => _selectedConversation?.Canal switch
         {
-            "INSTAGRAM" => "Instagram ya está separado como canal. Falta conectar el provider de Meta para recibir y enviar mensajes reales.",
+            "INSTAGRAM" => "Instagram está conectado para recibir mensajes. El envío desde AlfaCore se habilita en la próxima etapa.",
             "FACEBOOK" => "Facebook ya está separado como canal. Falta conectar el provider de Meta para recibir y enviar mensajes reales.",
             _ => string.Empty
         };
@@ -7104,7 +7242,8 @@
 
     private static bool IsReactionMessage(ConversacionMensajeDto message)
         => string.Equals(message.MessageType, "REACTION", StringComparison.OrdinalIgnoreCase)
-           || (message.Texto ?? string.Empty).StartsWith("Reacción ", StringComparison.OrdinalIgnoreCase);
+           || IsLegacyReactionText(message.Texto)
+           || TryExtractReactionEmojiFromPayload(message.PayloadJson, out _);
 
     private IReadOnlyList<string> GetInlineReactions(ConversacionMensajeDto message)
     {
@@ -7114,6 +7253,11 @@
         return _messages
             .Where(IsReactionMessage)
             .Where(x => string.Equals(x.WhatsAppReplyToMessageId, message.WhatsAppMessageId, StringComparison.OrdinalIgnoreCase))
+            .GroupBy(x => (x.Direction ?? string.Empty).Trim().ToUpperInvariant())
+            .Select(group => group
+                .OrderByDescending(x => x.FechaHora)
+                .ThenByDescending(x => x.IdMensaje)
+                .First())
             .Select(ExtractReactionEmoji)
             .Where(x => !string.IsNullOrWhiteSpace(x))
             .Distinct()
@@ -7122,14 +7266,52 @@
 
     private static string ExtractReactionEmoji(ConversacionMensajeDto message)
     {
-        var text = message.Texto ?? string.Empty;
-        foreach (var emoji in QuickReactionEmojis)
-        {
-            if (text.Contains(emoji, StringComparison.Ordinal))
-                return emoji;
-        }
+        if (TryExtractReactionEmojiFromPayload(message.PayloadJson, out var payloadEmoji))
+            return payloadEmoji;
 
-        return string.Empty;
+        var text = message.Texto ?? string.Empty;
+        if (string.Equals(message.MessageType, "REACTION", StringComparison.OrdinalIgnoreCase)
+            && !IsLegacyReactionText(text))
+            return text.Trim();
+
+        var separator = text.LastIndexOf(':');
+        return separator >= 0 && separator < text.Length - 1
+            ? text[(separator + 1)..].Trim()
+            : string.Empty;
+    }
+
+    private static bool IsLegacyReactionText(string? text)
+    {
+        var value = text?.Trim() ?? string.Empty;
+        return value.StartsWith("Reacci", StringComparison.OrdinalIgnoreCase)
+               && (value.Contains("recibida", StringComparison.OrdinalIgnoreCase)
+                   || value.Contains("enviada", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool TryExtractReactionEmojiFromPayload(string? payloadJson, out string emoji)
+    {
+        emoji = string.Empty;
+        if (string.IsNullOrWhiteSpace(payloadJson))
+            return false;
+
+        try
+        {
+            using var document = System.Text.Json.JsonDocument.Parse(payloadJson);
+            var root = document.RootElement;
+            if (!root.TryGetProperty("type", out var type)
+                || !string.Equals(type.GetString(), "reaction", StringComparison.OrdinalIgnoreCase)
+                || !root.TryGetProperty("reaction", out var reaction))
+                return false;
+
+            emoji = reaction.TryGetProperty("emoji", out var value)
+                ? value.GetString()?.Trim() ?? string.Empty
+                : string.Empty;
+            return true;
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return false;
+        }
     }
 
     private bool TryGetQuotedMessage(ConversacionMensajeDto message, out ConversacionMensajeDto quotedMessage)

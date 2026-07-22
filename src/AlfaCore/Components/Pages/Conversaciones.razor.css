@@ -851,6 +851,27 @@
     padding-bottom: .08rem !important;
 }
 
+.conversations-page--odoo .conversation-row__delivery {
+    display: inline-flex;
+    align-items: center;
+    margin-right: .28rem;
+    color: #94a3b8;
+    font-size: .9em;
+    vertical-align: -.05em;
+}
+
+.conversations-page--odoo .conversation-row__delivery.is-read {
+    color: #38bdf8;
+}
+
+.conversations-page--odoo .conversation-row__delivery.is-pending {
+    color: #fbbf24;
+}
+
+.conversations-page--odoo .conversation-row__delivery.is-error {
+    color: #fb7185;
+}
+
 .conversations-page--odoo .conversation-row:hover {
     background: #15293a !important;
 }
@@ -861,6 +882,59 @@
 
 .conversations-page--odoo .conversation-row__avatar {
     background: linear-gradient(135deg, #0ea5e9, #38bdf8) !important;
+    overflow: hidden !important;
+}
+
+.conversations-page--odoo .conversation-row__avatar img,
+.conversations-page--odoo .conversation-profile-avatar img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.conversations-page--odoo .conversation-profile-avatar {
+    width: 44px;
+    height: 44px;
+    flex: 0 0 44px;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    border: 1px solid rgba(236, 72, 153, .48);
+    border-radius: 999px;
+    background: linear-gradient(135deg, #2563eb, #ec4899, #f59e0b);
+    color: #fff;
+    font-size: .82rem;
+    font-weight: 900;
+}
+
+.conversations-page--odoo .conversation-social-profile {
+    display: flex;
+    align-items: center;
+    gap: .48rem;
+    min-width: 0;
+    color: #94a3b8;
+    font-size: .76rem;
+}
+
+.conversations-page--odoo .conversation-social-profile a {
+    display: inline-flex;
+    align-items: center;
+    gap: .28rem;
+    min-width: 0;
+    color: #f9a8d4;
+    font-weight: 800;
+    text-decoration: none;
+}
+
+.conversations-page--odoo .conversation-social-profile a:hover,
+.conversations-page--odoo .conversation-social-profile a:focus-visible {
+    color: #fbcfe8;
+    text-decoration: underline;
+}
+
+.conversations-page--odoo .conversation-social-profile .bi-patch-check-fill {
+    color: #38bdf8;
 }
 
 .conversations-page--odoo .conversation-badge {
@@ -891,6 +965,28 @@
 
 .conversations-page--odoo .conversations-chat__identity {
     min-width: 0 !important;
+}
+
+.conversations-page--instagram .conversations-chat__identity {
+    display: grid !important;
+    grid-template-columns: 44px minmax(0, 1fr) !important;
+    align-items: center !important;
+    column-gap: .65rem !important;
+    padding-left: 0 !important;
+}
+
+.conversations-page--instagram .conversations-chat__identity::before {
+    display: none !important;
+}
+
+.conversations-page--instagram .conversation-profile-avatar {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+}
+
+.conversations-page--instagram .conversation-profile-avatar + div,
+.conversations-page--instagram .conversations-chat__chips {
+    grid-column: 2;
 }
 
 .conversations-page--odoo .conversations-chat__header .panel-card__title,
