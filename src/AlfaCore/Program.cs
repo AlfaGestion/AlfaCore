@@ -5,6 +5,8 @@ using AlfaCore.Repositories;
 using AlfaCore.Services;
 using System.Net;
 using System.Diagnostics;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 
 namespace AlfaCore;
@@ -195,6 +197,23 @@ public class Program
         {
             app.UseExceptionHandler("/Error");
         }
+
+        app.Use(async (context, next) =>
+        {
+            var host = context.Request.Host.Host;
+            var isTemporaryInstagramTunnel = host.EndsWith(".trycloudflare.com", StringComparison.OrdinalIgnoreCase);
+            var isInstagramWebhook = context.Request.Path.StartsWithSegments(
+                "/api/conversaciones/instagram/webhook",
+                StringComparison.OrdinalIgnoreCase);
+
+            if (isTemporaryInstagramTunnel && !isInstagramWebhook)
+            {
+                context.Response.StatusCode = StatusCodes.Status404NotFound;
+                return;
+            }
+
+            await next();
+        });
 
         app.UseMiddleware<AppExceptionLoggingMiddleware>();
         app.UseStaticFiles();
@@ -910,24 +929,32 @@ public class Program
 
         app.MapPost("/api/conversaciones/instagram/webhook", async (
             HttpRequest request,
-            IAppEventService appEvents,
+            IConversacionesConfigService configService,
+            IConversacionesService svc,
             CancellationToken ct) =>
         {
-            using var payload = await JsonDocument.ParseAsync(request.Body, cancellationToken: ct);
-            await appEvents.LogAuditAsync(
-                "Conversaciones",
-                "InstagramWebhookReceived",
-                "CONV_WEBHOOK_LOG",
-                string.Empty,
-                "Webhook de Instagram recibido. Procesamiento pendiente de implementación del provider.",
-                new
-                {
-                    Payload = payload.RootElement.GetRawText(),
-                    Headers = request.Headers.ToDictionary(pair => pair.Key, pair => pair.Value.ToString(), StringComparer.OrdinalIgnoreCase)
-                },
-                ct);
+            var options = await configService.GetInstagramConfigAsync(ct);
+            if (string.IsNullOrWhiteSpace(options.AppSecret))
+                return Results.Problem("Instagram App Secret no está configurado.", statusCode: StatusCodes.Status500InternalServerError);
 
-            return Results.Ok(new { Recibido = true, Procesado = false });
+            using var reader = new StreamReader(request.Body, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
+            var rawPayload = await reader.ReadToEndAsync(ct);
+            var signature = request.Headers["X-Hub-Signature-256"].ToString();
+            if (!IsValidMetaSignature(rawPayload, options.AppSecret, signature))
+                return Results.Unauthorized();
+
+            using var payload = JsonDocument.Parse(rawPayload);
+            var result = await svc.RegisterIncomingInstagramWebhookAsync(new ConversacionWebhookRequest
+            {
+                Payload = payload,
+                RawPayload = rawPayload,
+                Headers = request.Headers.ToDictionary(
+                    pair => pair.Key,
+                    pair => pair.Value.ToString(),
+                    StringComparer.OrdinalIgnoreCase)
+            }, ct);
+
+            return Results.Ok(result);
         });
 
         app.MapGet("/api/conversaciones/instagram/oauth/callback", async (
@@ -1463,6 +1490,30 @@ public class Program
             .Replace("'", "\\'", StringComparison.Ordinal)
             .Replace("\r", string.Empty, StringComparison.Ordinal)
             .Replace("\n", string.Empty, StringComparison.Ordinal);
+
+    private static bool IsValidMetaSignature(string rawPayload, string appSecret, string signature)
+    {
+        const string prefix = "sha256=";
+        if (string.IsNullOrWhiteSpace(rawPayload)
+            || string.IsNullOrWhiteSpace(appSecret)
+            || string.IsNullOrWhiteSpace(signature)
+            || !signature.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        try
+        {
+            var expected = Convert.FromHexString(signature[prefix.Length..]);
+            var actual = HMACSHA256.HashData(
+                Encoding.UTF8.GetBytes(appSecret.Trim()),
+                Encoding.UTF8.GetBytes(rawPayload));
+            return expected.Length == actual.Length
+                && CryptographicOperations.FixedTimeEquals(expected, actual);
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+    }
 
     private static void WriteStartupError(string message, Exception exception)
     {

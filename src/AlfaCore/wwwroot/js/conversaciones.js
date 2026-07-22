@@ -168,32 +168,79 @@ window.conversacionesUi = {
     },
 
     scrollToBottomStable: function (element) {
-        if (!element) return false;
+        if (!element) return Promise.resolve(false);
 
-        const scroll = () => {
-            element.scrollTop = element.scrollHeight;
-        };
+        return new Promise(resolve => {
+            const startedAt = performance.now();
+            const maximumDurationMs = 2200;
+            const requiredStableFrames = 6;
+            let lastScrollHeight = -1;
+            let stableFrames = 0;
+            let finished = false;
+            let resolved = false;
+            let frameId = 0;
 
-        scroll();
-        window.requestAnimationFrame(scroll);
-        window.requestAnimationFrame(() => window.requestAnimationFrame(scroll));
-        window.setTimeout(scroll, 80);
-        window.setTimeout(scroll, 180);
-        window.setTimeout(scroll, 360);
-        window.setTimeout(scroll, 700);
+            const forceBottom = () => {
+                if (finished || !element.isConnected) return;
 
-        element.querySelectorAll('img, video').forEach(media => {
-            const done = media.tagName === 'IMG'
-                ? media.complete
-                : media.readyState >= 1;
-            if (done) return;
+                const maximumScrollTop = Math.max(0, element.scrollHeight - element.clientHeight);
+                element.scrollTop = maximumScrollTop;
+                const distanceFromBottom = Math.abs(maximumScrollTop - element.scrollTop);
+                const sameHeight = element.scrollHeight === lastScrollHeight;
+                stableFrames = sameHeight && distanceFromBottom <= 1 ? stableFrames + 1 : 0;
+                lastScrollHeight = element.scrollHeight;
+            };
 
-            media.addEventListener('load', scroll, { once: true });
-            media.addEventListener('loadedmetadata', scroll, { once: true });
-            media.addEventListener('error', scroll, { once: true });
+            const resizeObserver = typeof ResizeObserver === 'undefined'
+                ? null
+                : new ResizeObserver(() => {
+                    stableFrames = 0;
+                    forceBottom();
+                });
+            const mutationObserver = new MutationObserver(() => {
+                stableFrames = 0;
+                forceBottom();
+            });
+
+            const finish = () => {
+                if (finished) return;
+                forceBottom();
+                finished = true;
+                window.cancelAnimationFrame(frameId);
+                resizeObserver?.disconnect();
+                mutationObserver.disconnect();
+                if (!resolved) {
+                    resolved = true;
+                    resolve(true);
+                }
+            };
+
+            const tick = () => {
+                forceBottom();
+                const elapsed = performance.now() - startedAt;
+                if (!resolved && stableFrames >= requiredStableFrames) {
+                    resolved = true;
+                    resolve(true);
+                }
+                if (elapsed >= maximumDurationMs) {
+                    finish();
+                    return;
+                }
+
+                frameId = window.requestAnimationFrame(tick);
+            };
+
+            resizeObserver?.observe(element);
+            mutationObserver.observe(element, { childList: true, subtree: true, attributes: true });
+            element.querySelectorAll('img, video, audio').forEach(media => {
+                media.addEventListener('load', forceBottom, { once: true });
+                media.addEventListener('loadedmetadata', forceBottom, { once: true });
+                media.addEventListener('error', forceBottom, { once: true });
+            });
+
+            forceBottom();
+            frameId = window.requestAnimationFrame(tick);
         });
-
-        return true;
     },
 
     bindDateDividers: function (element) {

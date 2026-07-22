@@ -156,6 +156,9 @@ public sealed class ConversacionInboxItemDto
     public long IdConversacion { get; set; }
     public string TelefonoWhatsApp { get; set; } = string.Empty;
     public string NombreVisible { get; set; } = string.Empty;
+    public string UsuarioExterno { get; set; } = string.Empty;
+    public string FotoPerfilUrl { get; set; } = string.Empty;
+    public bool PerfilExternoVerificado { get; set; }
     public string ClienteCodigo { get; set; } = string.Empty;
     public string ClienteNombre { get; set; } = string.Empty;
     public int? IdContacto { get; set; }
@@ -165,6 +168,9 @@ public sealed class ConversacionInboxItemDto
     public string IdTecnico { get; set; } = string.Empty;
     public string TecnicoNombre { get; set; } = string.Empty;
     public string ResumenUltimoMensaje { get; set; } = string.Empty;
+    public string DireccionUltimoMensaje { get; set; } = string.Empty;
+    public string EstadoUltimoMensaje { get; set; } = string.Empty;
+    public string TipoUltimoMensaje { get; set; } = string.Empty;
     public DateTime FechaHoraUltimoMensaje { get; set; }
     public DateTime? FechaHoraUltimoMensajeCliente { get; set; }
     public long? IdUltimoMensajeCliente { get; set; }
@@ -184,6 +190,14 @@ public sealed class ConversacionDetalleDto
     public string Canal { get; set; } = string.Empty;
     public string TelefonoWhatsApp { get; set; } = string.Empty;
     public string NombreVisible { get; set; } = string.Empty;
+    public string IdentificadorExternoContacto { get; set; } = string.Empty;
+    public string UsuarioExterno { get; set; } = string.Empty;
+    public string FotoPerfilUrl { get; set; } = string.Empty;
+    public int? SeguidoresExterno { get; set; }
+    public bool PerfilExternoVerificado { get; set; }
+    public bool? UsuarioSigueCuenta { get; set; }
+    public bool? CuentaSigueUsuario { get; set; }
+    public DateTime? FechaHoraPerfilExterno { get; set; }
     public string ClienteCodigo { get; set; } = string.Empty;
     public string ClienteNombre { get; set; } = string.Empty;
     public int? IdContacto { get; set; }
@@ -374,6 +388,7 @@ public sealed class ConversacionMessageResultDto
     public long IdMensaje { get; set; }
     public string EstadoEnvio { get; set; } = string.Empty;
     public string WhatsAppMessageId { get; set; } = string.Empty;
+    public string MessageIdExterno { get; set; } = string.Empty;
 }
 
 public sealed class ConversacionWebhookResultDto
@@ -451,6 +466,7 @@ public sealed class ConversacionCrearWhatsAppResultDto
 public sealed class ConversacionWebhookRequest
 {
     public JsonDocument Payload { get; set; } = JsonDocument.Parse("{}");
+    public string RawPayload { get; set; } = string.Empty;
     public IDictionary<string, string> Headers { get; set; } = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 }
 
