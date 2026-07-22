@@ -103,8 +103,8 @@ if not exist "%DEST_DIR_FULL%" (
 )
 
 set "REMOTE_HOST="
-for /f "tokens=1,2,3 delims=\" %%A in ("%DEST_DIR_FULL%") do (
-  if "%%A"=="" if "%%B"=="" set "REMOTE_HOST=%%C"
+if "%DEST_DIR_FULL:~0,2%"=="\\" (
+  for /f "tokens=1 delims=\" %%C in ("%DEST_DIR_FULL:~2%") do set "REMOTE_HOST=%%C"
 )
 
 if defined REMOTE_HOST (
