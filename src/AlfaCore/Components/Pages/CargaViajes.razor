@@ -286,7 +286,16 @@
             }
 
             <div class="result-pagination">
-                <div class="result-pagination__info">Total: @_viajesTotal</div>
+                <div class="result-pagination__info">
+                    <span>Total: @_viajesTotal</span>
+                    @if (_viajes.Count > 0)
+                    {
+                        <span class="carga-viajes-viajes-totalizador">
+                            · Total cliente: <strong>@FormatMoney(_viajes.Sum(v => v.TotalCliente))</strong>
+                            · Total fletero: <strong>@FormatMoney(_viajes.Sum(v => v.TotalFletero))</strong>
+                        </span>
+                    }
+                </div>
                 <div class="result-pagination__controls">
                     <button class="result-pagination__btn" @onclick="() => CambiarPaginaViajesAsync(_viajesPage - 1)" disabled="@(_viajesPage <= 1)">Anterior</button>
                     <button class="result-pagination__btn" @onclick="() => CambiarPaginaViajesAsync(_viajesPage + 1)" disabled="@(_viajesPage >= _viajesTotalPages)">Siguiente</button>
@@ -2769,7 +2778,7 @@
                                                    disabled="@(!habilitado)" />
                                         </div>
                                         <div class="field carga-viajes-config-adicionales__field carga-viajes-config-adicionales__field--percent">
-                                            <label>Porcentaje</label>
+                                            <label>@(GetConfigAdicionalEsPorcentaje(index) ? "Porcentaje" : "Importe")</label>
                                             <input type="number"
                                                    step="0.01"
                                                    min="0"
@@ -2791,6 +2800,14 @@
                                                    disabled="@(!habilitado)"
                                                    @onchange="args => OnConfigAdicionalSumarFleteroChangedAsync(index, args)" />
                                             <span>Sumar a fleteros</span>
+                                        </label>
+                                        <label class="carga-viajes-config-adicionales__toggle @(habilitado && GetConfigAdicionalEsPorcentaje(index) ? "carga-viajes-config-adicionales__toggle--on" : string.Empty)">
+                                            <input type="checkbox"
+                                                   class="form-check-input"
+                                                   checked="@GetConfigAdicionalEsPorcentaje(index)"
+                                                   disabled="@(!habilitado)"
+                                                   @onchange="args => OnConfigAdicionalEsPorcentajeChangedAsync(index, args)" />
+                                            <span>Es Porcentaje</span>
                                         </label>
                                     </div>
                                 </article>
@@ -4093,9 +4110,11 @@
            };
 
     private string GetViajeAdicionalPercentText(int index)
-        => GetConfigAdicionalHabilitado(index)
-            ? $"{GetViajeAdicionalPercent(index):0.##}%"
-            : string.Empty;
+        => !GetConfigAdicionalHabilitado(index)
+            ? string.Empty
+            : GetConfigAdicionalEsPorcentaje(index)
+                ? $"{GetViajeAdicionalPercent(index):0.##}%"
+                : FormatMoney(GetViajeAdicionalPercent(index));
 
     private decimal GetViajeAdicionalPercent(int index)
         => !GetConfigAdicionalHabilitado(index)
@@ -4421,6 +4440,11 @@
            && index < _config.AdicionalesSumarFletero.Length
            && _config.AdicionalesSumarFletero[index];
 
+    private bool GetConfigAdicionalEsPorcentaje(int index)
+        => index < 0
+           || index >= _config.EsPorcentajeAdicionales.Length
+           || _config.EsPorcentajeAdicionales[index];
+
     private Task OnConfigAdicionalHabilitadoChangedAsync(int index, ChangeEventArgs args)
     {
         if (index < 0 || index >= _config.AdicionalesHabilitados.Length)
@@ -4446,6 +4470,15 @@
         }
 
         _config.AdicionalesSumarFletero[index] = args.Value is bool flag && flag;
+        return Task.CompletedTask;
+    }
+
+    private Task OnConfigAdicionalEsPorcentajeChangedAsync(int index, ChangeEventArgs args)
+    {
+        if (index < 0 || index >= _config.EsPorcentajeAdicionales.Length)
+            return Task.CompletedTask;
+
+        _config.EsPorcentajeAdicionales[index] = args.Value is bool flag && flag;
         return Task.CompletedTask;
     }
 
@@ -4575,8 +4608,8 @@
             DestinoDisplay = FormatLookupDisplay(detail.DestinoCodigo, detail.DestinoDescripcion),
             TipoVehiculoDisplay = FormatLookupDisplay(detail.TipoVehiculoCodigo, detail.TipoVehiculoDescripcion),
             ListaDisplay = FormatListaDisplay(detail.Lista, detail.ListaDescripcion),
-            ImporteCliente = detail.TotalCliente,
-            ImporteFletero = detail.TotalFletero,
+            ImporteCliente = detail.ImporteCliente > 0m ? detail.ImporteCliente : detail.TotalCliente,
+            ImporteFletero = detail.ImporteFletero > 0m ? detail.ImporteFletero : detail.TotalFletero,
             Peaje = detail.Peaje,
             CantidadViajes = detail.CantidadViajes,
             PorcentajeAdic = detail.PorcentajeAdic,

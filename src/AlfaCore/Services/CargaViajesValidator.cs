@@ -22,11 +22,33 @@ public sealed class CargaViajesValidator(
         ValidateMoney(request.ImporteCliente, "importe-cliente", result);
         ValidateMoney(request.ImporteFletero, "importe-fletero", result);
         ValidateMoney(request.Peaje, "peaje", result);
-        ValidatePercent(request.PorcentajeAdic, "porcentaje-adic", result);
-        ValidatePercent(request.PorcentajeAdic1, "porcentaje-adic1", result);
-        ValidatePercent(request.PorcentajeAdic2, "porcentaje-adic2", result);
-        ValidatePercent(request.PorcentajeAdic3, "porcentaje-adic3", result);
-        ValidatePercent(request.PorcentajeAdic4, "porcentaje-adic4", result);
+
+        await using (var configCn = new SqlConnection(ConnectionString))
+        {
+            await configCn.OpenAsync(ct);
+            var config = CargaViajesService.BuildConfiguracion(await CargaViajesService.LoadConfiguracionAsync(configCn, ct));
+            var valoresAdicionales = new[]
+            {
+                request.PorcentajeAdic,
+                request.PorcentajeAdic1,
+                request.PorcentajeAdic2,
+                request.PorcentajeAdic3,
+                request.PorcentajeAdic4
+            };
+            var fieldKeys = new[] { "porcentaje-adic", "porcentaje-adic1", "porcentaje-adic2", "porcentaje-adic3", "porcentaje-adic4" };
+            for (var i = 0; i < valoresAdicionales.Length; i++)
+            {
+                // Cada adicional general puede configurarse como Porcentaje (0-100) o
+                // como Importe fijo: validar siempre en rango 0-100 rompía el guardado
+                // cuando el adicional estaba configurado como Importe (ej. $35.000).
+                var esPorcentaje = i >= config.EsPorcentajeAdicionales.Length || config.EsPorcentajeAdicionales[i];
+                if (esPorcentaje)
+                    ValidatePercent(valoresAdicionales[i], fieldKeys[i], result);
+                else
+                    ValidateMoney(valoresAdicionales[i], fieldKeys[i], result);
+            }
+        }
+
         ValidateTarifaAdicionalFijo(request.AdicionalFijo1Descripcion, request.AdicionalFijo1Importe, "adicional-fijo-1", result);
         ValidateTarifaAdicionalFijo(request.AdicionalFijo2Descripcion, request.AdicionalFijo2Importe, "adicional-fijo-2", result);
         ValidateTarifaAdicionalFijo(request.AdicionalFijo3Descripcion, request.AdicionalFijo3Importe, "adicional-fijo-3", result);

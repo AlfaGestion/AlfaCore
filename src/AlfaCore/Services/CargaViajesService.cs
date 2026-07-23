@@ -285,6 +285,8 @@ public sealed class CargaViajesService(
             var adicionalFijo3ImporteColumn = FirstExistingColumnOrNull(columns, "ADICIONAL_FIJO3_IMPORTE", "ADICIONALFIJO3IMPORTE");
             var adicionalFijo3AplicadoColumn = FirstExistingColumnOrNull(columns, "ADICIONAL_FIJO3_APLICADO", "ADICIONALFIJO3APLICADO");
             var hasTotalAdicionalesFijos = columns.Contains("total_adicionales_fijos");
+            var importeClienteColumn = FirstExistingColumnOrNull(columns, "IMPORTE_CLIENTE");
+            var importeFleteroColumn = FirstExistingColumnOrNull(columns, "IMPORTE_FLETERO");
             var sql = $"""
                 SELECT TOP (1)
                     v.ID AS Id,
@@ -329,7 +331,9 @@ public sealed class CargaViajesService(
                     {(string.IsNullOrWhiteSpace(adicionalFijo3ImporteColumn) ? "CAST(0 AS money)" : $"ISNULL(v.{adicionalFijo3ImporteColumn}, 0)")} AS AdicionalFijo3Importe,
                     {(string.IsNullOrWhiteSpace(adicionalFijo3AplicadoColumn) ? "CAST(0 AS bit)" : $"ISNULL(v.{adicionalFijo3AplicadoColumn}, 0)")} AS AdicionalFijo3Aplicado,
                     {(hasTotalAdicionalesFijos ? "ISNULL(v.TOTAL_ADICIONALES_FIJOS, 0)" : "CAST(0 AS money)")} AS TotalAdicionalesFijos,
-                    ISNULL(v.{FirstExistingColumn(columns, "OBSERVACIONES")}, '') AS Observaciones
+                    ISNULL(v.{FirstExistingColumn(columns, "OBSERVACIONES")}, '') AS Observaciones,
+                    {(string.IsNullOrWhiteSpace(importeClienteColumn) ? "CAST(0 AS money)" : $"ISNULL(v.{importeClienteColumn}, 0)")} AS ImporteCliente,
+                    {(string.IsNullOrWhiteSpace(importeFleteroColumn) ? "CAST(0 AS money)" : $"ISNULL(v.{importeFleteroColumn}, 0)")} AS ImporteFletero
                 FROM dbo.{viajeTable} v
                 {clienteJoin}
                 OUTER APPLY (
@@ -3373,7 +3377,7 @@ public sealed class CargaViajesService(
             logger.LogInformation("EnsureViajesSchema creó columnas: {Columns}", string.Join(", ", createdColumns));
         }, "No se pudo verificar la estructura del módulo Viajes.", ct);
 
-    private static async Task<Dictionary<string, string>> LoadConfiguracionAsync(SqlConnection cn, CancellationToken ct)
+    internal static async Task<Dictionary<string, string>> LoadConfiguracionAsync(SqlConnection cn, CancellationToken ct)
     {
         var detailColumn = await ResolveConfigDetailColumnAsync(cn, ct);
         var keys = new[]
@@ -3429,6 +3433,12 @@ public sealed class CargaViajesService(
                 continue;
 
             result[key] = value;
+
+            // El tipo (Porcentaje/Importe) de cada adicional se guarda en el mismo
+            // registro TA_CONFIGURACION del porcentaje, aprovechando ValorAux (que
+            // para estos valores cortos siempre queda libre: ver ResolveStoredValue).
+            if (key.StartsWith("VIAJES-ADIC-PORC-", StringComparison.OrdinalIgnoreCase))
+                result[$"{key}__TIPO"] = (row.ValorAux ?? string.Empty).Trim();
         }
 
         return result;
@@ -3524,6 +3534,8 @@ public sealed class CargaViajesService(
                     ESTADO,
                     TOTAL_IMPORTE,
                     TOTAL_FLETE,
+                    IMPORTE_CLIENTE,
+                    IMPORTE_FLETERO,
                     TOTAL_PEAJE,
                     TOTAL_VIAJES,
                     PORCENTAJE_ADIC,
@@ -3567,6 +3579,8 @@ public sealed class CargaViajesService(
                     @Estado,
                     @TotalImporte,
                     @TotalFlete,
+                    @ImporteCliente,
+                    @ImporteFletero,
                     @TotalPeaje,
                     @TotalViajes,
                     @PorcentajeAdic,
@@ -3614,6 +3628,8 @@ public sealed class CargaViajesService(
                     ESTADO = @Estado,
                     TOTAL_IMPORTE = @TotalImporte,
                     TOTAL_FLETE = @TotalFlete,
+                    IMPORTE_CLIENTE = @ImporteCliente,
+                    IMPORTE_FLETERO = @ImporteFletero,
                     TOTAL_PEAJE = @TotalPeaje,
                     TOTAL_VIAJES = @TotalViajes,
                     PORCENTAJE_ADIC = @PorcentajeAdic,
@@ -3665,6 +3681,8 @@ public sealed class CargaViajesService(
                 Estado = estado,
                 TotalImporte = totals.TotalImporte,
                 TotalFlete = totals.TotalFlete,
+                ImporteCliente = Math.Max(0m, request.ImporteCliente),
+                ImporteFletero = Math.Max(0m, request.ImporteFletero),
                 TotalPeaje = request.Peaje,
                 TotalViajes = Math.Max(1, request.CantidadViajes),
                 PorcentajeAdic = request.PorcentajeAdic,
@@ -4128,8 +4146,8 @@ public sealed class CargaViajesService(
         var request = new CargaViajeSaveRequest
         {
             CantidadViajes = detail.CantidadViajes,
-            ImporteCliente = detail.TotalCliente,
-            ImporteFletero = detail.TotalFletero,
+            ImporteCliente = detail.ImporteCliente > 0m ? detail.ImporteCliente : detail.TotalCliente,
+            ImporteFletero = detail.ImporteFletero > 0m ? detail.ImporteFletero : detail.TotalFletero,
             Peaje = detail.Peaje,
             PorcentajeAdic = detail.PorcentajeAdic,
             PorcentajeAdic1 = detail.PorcentajeAdic1,
@@ -4173,18 +4191,23 @@ public sealed class CargaViajesService(
             if (!GetBoolValue(config.AdicionalesHabilitados, i))
                 continue;
 
-            var percent = i < porcentajesAdicionales.Count ? Math.Max(0m, porcentajesAdicionales[i]) : 0m;
-            if (percent <= 0m)
+            var value = i < porcentajesAdicionales.Count ? Math.Max(0m, porcentajesAdicionales[i]) : 0m;
+            if (value <= 0m)
                 continue;
 
-            var totalAdicionalCliente = totalImporteBase * percent / 100m;
+            // Cuando el adicional está configurado como Importe (no Porcentaje), el
+            // valor guardado es un monto fijo: se suma directo, sin aplicarlo sobre
+            // la tarifa base ni dividir por 100.
+            var esPorcentaje = GetBoolValue(config.EsPorcentajeAdicionales, i);
+            var totalAdicionalCliente = esPorcentaje ? totalImporteBase * value / 100m : value;
             var descripcion = BuildAdicionalDescripcion(config, i);
             result.ConceptosCliente.Add(BuildConcepto(descripcion, totalAdicionalCliente, null, i));
 
-            if (GetBoolValue(config.AdicionalesSumarFletero, i) && totalFleteBase > 0m)
+            if (GetBoolValue(config.AdicionalesSumarFletero, i))
             {
-                var totalAdicionalFletero = totalFleteBase * percent / 100m;
-                result.ConceptosFletero.Add(BuildConcepto(descripcion, totalAdicionalFletero, null, i));
+                var totalAdicionalFletero = esPorcentaje ? totalFleteBase * value / 100m : value;
+                if (totalAdicionalFletero > 0m)
+                    result.ConceptosFletero.Add(BuildConcepto(descripcion, totalAdicionalFletero, null, i));
             }
         }
 
@@ -4232,8 +4255,11 @@ public sealed class CargaViajesService(
     private static (decimal TotalImporte, decimal TotalFlete, decimal TotalAdic, decimal TotalAdic1, decimal TotalAdic2, decimal TotalAdic3, decimal TotalAdic4, decimal TotalAdicionales) CalculateTotals(CargaViajeSaveRequest request, CargaViajesConfigDto config)
     {
         var resumen = BuildViajeTotales(request, config);
-        var cantidad = Math.Max(1, request.CantidadViajes);
-        var totalImporte = request.ImporteCliente * cantidad;
+        // TotalCliente ya incluye tarifa base + adicionales (generales y fijos) + peaje,
+        // igual que TotalFletero. Antes acá se guardaba solo la tarifa base
+        // (request.ImporteCliente * cantidad), por lo que el TOTAL_IMPORTE persistido
+        // en la grilla quedaba desactualizado apenas el viaje tenía algún adicional.
+        var totalImporte = resumen.TotalCliente;
         var totalFlete = resumen.TotalFletero;
         var totalAdic = GetConceptoTotal(resumen.ConceptosCliente, 0);
         var totalAdic1 = GetConceptoTotal(resumen.ConceptosCliente, 1);
@@ -4306,10 +4332,11 @@ public sealed class CargaViajesService(
             NombresAdicionales = ["Adicional 1", "Adicional 2", "Adicional 3", "Adicional 4", "Adicional 5"],
             PorcentajesAdicionales = [0m, 0m, 0m, 0m, 0m],
             AdicionalesHabilitados = [true, true, true, false, false],
-            AdicionalesSumarFletero = [false, false, false, false, false]
+            AdicionalesSumarFletero = [false, false, false, false, false],
+            EsPorcentajeAdicionales = [true, true, true, true, true]
         };
 
-    private static CargaViajesConfigDto BuildConfiguracion(Dictionary<string, string> values)
+    internal static CargaViajesConfigDto BuildConfiguracion(Dictionary<string, string> values)
     {
         var dto = CreateDefaultConfiguracion();
         dto.Sucursal = ResolveSucursal(values);
@@ -4338,6 +4365,8 @@ public sealed class CargaViajesService(
                 dto.NombresAdicionales[i] = name.Trim();
             if (values.TryGetValue(percKey, out var perc) && decimal.TryParse(perc, out var parsed))
                 dto.PorcentajesAdicionales[i] = parsed;
+            if (values.TryGetValue($"{percKey}__TIPO", out var tipoRaw))
+                dto.EsPorcentajeAdicionales[i] = !string.Equals(tipoRaw.Trim(), "IMPORTE", StringComparison.OrdinalIgnoreCase);
 
             if (values.TryGetValue(AdicionalHabilitadoConfigKeys[i], out var habilitadoRaw))
                 dto.AdicionalesHabilitados[i] = ParseConfigBool(habilitadoRaw);
@@ -4381,6 +4410,15 @@ public sealed class CargaViajesService(
                 sumarFletero[i] = false;
         }
 
+        // A diferencia de Habilitado/SumarFletero, EsPorcentaje por default es true
+        // (Porcentaje) cuando falta el dato, para no cambiar el comportamiento
+        // histórico de configuraciones ya guardadas antes de este campo.
+        var esPorcentaje = Enumerable.Range(0, 5)
+            .Select(i => config.EsPorcentajeAdicionales is not null && i < config.EsPorcentajeAdicionales.Length
+                ? config.EsPorcentajeAdicionales[i]
+                : true)
+            .ToArray();
+
         return new CargaViajesConfigDto
         {
             Sucursal = ResolveSucursal(config.Sucursal),
@@ -4399,7 +4437,8 @@ public sealed class CargaViajesService(
                 .Select(i => Math.Max(0m, config.PorcentajesAdicionales.ElementAtOrDefault(i)))
                 .ToList(),
             AdicionalesHabilitados = habilitados,
-            AdicionalesSumarFletero = sumarFletero
+            AdicionalesSumarFletero = sumarFletero,
+            EsPorcentajeAdicionales = esPorcentaje
         };
     }
 
@@ -4416,6 +4455,12 @@ public sealed class CargaViajesService(
         {
             foreach (var item in BuildConfiguracionItems(normalized))
                 await UpsertConfigValueAsync(cn, (SqlTransaction)tx, detailColumn, item.Key, item.Value, ConfigGroup, ct);
+
+            for (var i = 0; i < 5; i++)
+            {
+                var tipo = GetBoolValue(normalized.EsPorcentajeAdicionales, i) ? "PORCENTAJE" : "IMPORTE";
+                await UpdateAdicionalTipoAsync(cn, (SqlTransaction)tx, detailColumn, $"VIAJES-ADIC-PORC-{i}", tipo, ct);
+            }
 
             await tx.CommitAsync(ct);
         }
@@ -4665,6 +4710,23 @@ public sealed class CargaViajesService(
         cmd.Parameters.AddWithValue("@Valor", DbNullable(stored.Value));
         cmd.Parameters.AddWithValue("@ValorAux", DbNullable(stored.AuxValue));
         cmd.Parameters.AddWithValue("@Grupo", group);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    private static async Task UpdateAdicionalTipoAsync(SqlConnection cn, SqlTransaction tx, string detailColumn, string key, string tipo, CancellationToken ct)
+    {
+        // La fila ya existe: UpsertConfigValueAsync la acaba de crear/actualizar
+        // en esta misma transacción, así que alcanza con un UPDATE directo sobre
+        // ValorAux para guardar el tipo (Porcentaje/Importe) junto al valor.
+        var sql = $"""
+            UPDATE dbo.TA_CONFIGURACION
+            SET {detailColumn} = @Tipo
+            WHERE UPPER(LTRIM(RTRIM(CLAVE))) = @ClaveNormalizada;
+            """;
+
+        await using var cmd = new SqlCommand(sql, cn, tx);
+        cmd.Parameters.AddWithValue("@ClaveNormalizada", key.ToUpperInvariant());
+        cmd.Parameters.AddWithValue("@Tipo", tipo);
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
