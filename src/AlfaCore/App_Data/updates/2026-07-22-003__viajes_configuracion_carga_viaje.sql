@@ -14,18 +14,26 @@ IF OBJECT_ID(N'dbo.TA_CONFIGURACION', N'U') IS NULL
 DECLARE @Grupo sysname = N'VIAJES';
 DECLARE @LegacyCount int = 3;
 DECLARE @LegacyRaw nvarchar(150);
+DECLARE @LegacyTrimmed nvarchar(150);
+DECLARE @LegacyValue int;
 
 SELECT TOP (1) @LegacyRaw = VALOR
 FROM dbo.TA_CONFIGURACION
 WHERE UPPER(LTRIM(RTRIM(CLAVE))) = N'VIAJES-PORCENTAJES-ADICIONALES-HABILITADOS';
 
-IF TRY_CONVERT(int, NULLIF(LTRIM(RTRIM(ISNULL(@LegacyRaw, N''))), N'')) > 0
+-- TRY_CONVERT no existe antes de SQL Server 2012 (compatibilidad SQL 2008 R2):
+-- se valida a mano que sea solo dígitos y de largo acotado antes de convertir,
+-- para no arriesgar un error de conversión ni un overflow de int.
+SET @LegacyTrimmed = LTRIM(RTRIM(ISNULL(@LegacyRaw, N'')));
+
+IF @LegacyTrimmed <> N''
+   AND LEN(@LegacyTrimmed) <= 9
+   AND @LegacyTrimmed NOT LIKE N'%[^0-9]%'
 BEGIN
-    SET @LegacyCount =
-        CASE
-            WHEN TRY_CONVERT(int, LTRIM(RTRIM(@LegacyRaw))) > 5 THEN 5
-            ELSE TRY_CONVERT(int, LTRIM(RTRIM(@LegacyRaw)))
-        END;
+    SET @LegacyValue = CONVERT(int, @LegacyTrimmed);
+
+    IF @LegacyValue > 0
+        SET @LegacyCount = CASE WHEN @LegacyValue > 5 THEN 5 ELSE @LegacyValue END;
 END;
 
 IF @LegacyCount IS NULL OR @LegacyCount <= 0
