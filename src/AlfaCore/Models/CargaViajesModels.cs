@@ -82,6 +82,8 @@ public sealed class CargaViajesDetailDto : CargaViajesGridItemDto
     public decimal TotalFlete { get; set; }
     public decimal TotalTarifadoCliente { get; set; }
     public decimal TotalTarifadoFlete { get; set; }
+    public decimal ImporteCliente { get; set; }
+    public decimal ImporteFletero { get; set; }
 }
 
 public sealed class CargaViajeSaveRequest
@@ -316,6 +318,7 @@ public sealed class CargaViajesConfigDto
     public List<decimal> PorcentajesAdicionales { get; set; } = [0m, 0m, 0m, 0m, 0m];
     public bool[] AdicionalesHabilitados { get; set; } = [false, false, false, false, false];
     public bool[] AdicionalesSumarFletero { get; set; } = [false, false, false, false, false];
+    public bool[] EsPorcentajeAdicionales { get; set; } = [true, true, true, true, true];
 }
 
 public sealed class CargaViajePreviewDto

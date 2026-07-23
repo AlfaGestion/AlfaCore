@@ -2,6 +2,14 @@
     gap: .65rem;
 }
 
+.carga-viajes-viajes-totalizador {
+    margin-left: .35rem;
+}
+
+.carga-viajes-viajes-totalizador strong {
+    color: var(--color-text);
+}
+
 .carga-viajes-brand {
     display: flex;
     flex-direction: column;
