@@ -11,4 +11,6 @@ public interface IConversacionesConfigService
     Task SaveInstagramConfigAsync(ConversacionInstagramConfigDto config, CancellationToken ct = default);
     Task<ConversacionFacebookConfigDto> GetFacebookConfigAsync(CancellationToken ct = default);
     Task SaveFacebookConfigAsync(ConversacionFacebookConfigDto config, CancellationToken ct = default);
+    Task<ConversacionMercadoLibreConfigDto> GetMercadoLibreConfigAsync(CancellationToken ct = default);
+    Task SaveMercadoLibreConfigAsync(ConversacionMercadoLibreConfigDto config, CancellationToken ct = default);
 }

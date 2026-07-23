@@ -7,6 +7,7 @@ public static class ConversacionCanales
     public const string WhatsApp = "WHATSAPP";
     public const string Instagram = "INSTAGRAM";
     public const string Facebook = "FACEBOOK";
+    public const string MercadoLibre = "MERCADOLIBRE";
     public const string Interno = "INTERNO";
 }
 

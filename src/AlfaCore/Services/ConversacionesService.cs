@@ -1849,7 +1849,8 @@ public sealed class ConversacionesService(
             var isWhatsApp = string.Equals(conversation.Canal, "WHATSAPP", StringComparison.OrdinalIgnoreCase);
             var isInstagram = string.Equals(conversation.Canal, "INSTAGRAM", StringComparison.OrdinalIgnoreCase);
             var isFacebook = string.Equals(conversation.Canal, "FACEBOOK", StringComparison.OrdinalIgnoreCase);
-            if (!isInternal && !isWhatsApp && !isInstagram && !isFacebook)
+            var isMercadoLibre = string.Equals(conversation.Canal, "MERCADOLIBRE", StringComparison.OrdinalIgnoreCase);
+            if (!isInternal && !isWhatsApp && !isInstagram && !isFacebook && !isMercadoLibre)
                 throw new InvalidOperationException($"El canal {conversation.Canal} todavía no tiene envío habilitado.");
             var now = BusinessNow();
 
@@ -1857,6 +1858,7 @@ public sealed class ConversacionesService(
             ConversacionWhatsAppConfigDto? whatsAppConfig = null;
             ConversacionInstagramConfigDto? instagramConfig = null;
             ConversacionFacebookConfigDto? facebookConfig = null;
+            ConversacionMercadoLibreConfigDto? mercadoLibreConfig = null;
             if (isInternal)
             {
                 initialState = "ENVIADO";
@@ -1883,7 +1885,7 @@ public sealed class ConversacionesService(
 
                 initialState = "PENDIENTE";
             }
-            else
+            else if (isFacebook)
             {
                 if (string.IsNullOrWhiteSpace(conversation.IdentificadorExternoContacto))
                     throw new InvalidOperationException("La conversación de Facebook no tiene identificado al destinatario.");
@@ -1893,6 +1895,17 @@ public sealed class ConversacionesService(
                     throw new InvalidOperationException("Falta configurar el token o el Page ID de Facebook Messenger.");
                 if (!await IsInstagramWindowActiveAsync(request.IdConversacion, token))
                     throw new InvalidOperationException("La ventana estándar de 24 horas de Messenger está vencida.");
+
+                initialState = "PENDIENTE";
+            }
+            else
+            {
+                if (string.IsNullOrWhiteSpace(conversation.IdentificadorExternoConversacion))
+                    throw new InvalidOperationException("La conversación de Mercado Libre no tiene identificada la pregunta a responder.");
+
+                mercadoLibreConfig = await conversacionesConfigService.GetMercadoLibreConfigAsync(token);
+                if (!mercadoLibreConfig.IsConfiguredForApi)
+                    throw new InvalidOperationException("Falta configurar Client ID, Client Secret y Access Token de Mercado Libre.");
 
                 initialState = "PENDIENTE";
             }
@@ -1979,7 +1992,29 @@ public sealed class ConversacionesService(
                 }
             }
 
-            if (isInstagram || isFacebook)
+
+            else if (isMercadoLibre && mercadoLibreConfig is not null)
+            {
+                try
+                {
+                    var sendResult = await SendToMercadoLibreQuestionAsync(
+                        mercadoLibreConfig,
+                        conversation.IdentificadorExternoConversacion,
+                        request.Texto.Trim(),
+                        token);
+                    externalMessageId = sendResult.WhatsAppMessageId;
+                    finalState = sendResult.EstadoEnvio;
+                    payload = sendResult.PayloadJson;
+                }
+                catch (Exception ex)
+                {
+                    await UpdateInstagramMessageDeliveryAsync(messageId, "ERROR_ENVIO", string.Empty, BuildDeliveryErrorPayload(ex), token);
+                    await RefreshConversationAsync(request.IdConversacion, now, request.Texto.Trim(), token);
+
+                    throw new InvalidOperationException("No se pudo responder la pregunta en Mercado Libre. Quedó marcada con error en la conversación.", ex);
+                }
+            }
+            if (isInstagram || isFacebook || isMercadoLibre)
                 await UpdateInstagramMessageDeliveryAsync(messageId, finalState, externalMessageId, payload, token);
             else
                 await UpdateMessageDeliveryAsync(messageId, finalState, whatsAppMessageId, payload, token);
@@ -3055,6 +3090,70 @@ public sealed class ConversacionesService(
                 throw;
             }
         }, "No se pudo procesar el webhook de Facebook.", ct);
+
+    public Task<ConversacionWebhookResultDto> RegisterIncomingMercadoLibreWebhookAsync(ConversacionWebhookRequest request, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "RegisterIncomingMercadoLibreWebhook", async token =>
+        {
+            ArgumentNullException.ThrowIfNull(request);
+            var payloadJson = string.IsNullOrWhiteSpace(request.RawPayload)
+                ? request.Payload.RootElement.GetRawText()
+                : request.RawPayload;
+            var headerJson = JsonSerializer.Serialize(request.Headers);
+            var webhookLogId = await InsertWebhookLogAsync("MERCADOLIBRE", "questions", payloadJson, headerJson, token);
+
+            try
+            {
+                var notifications = ParseMercadoLibreNotifications(request.Payload.RootElement);
+                var config = notifications.Count > 0
+                    ? await conversacionesConfigService.GetMercadoLibreConfigAsync(token)
+                    : null;
+                var processed = 0;
+
+                foreach (var notification in notifications)
+                {
+                    if (!string.Equals(notification.Topic, "questions", StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    var question = config is null
+                        ? MercadoLibreQuestion.FromNotification(notification)
+                        : await TryGetMercadoLibreQuestionAsync(config, notification, token);
+
+                    if (string.IsNullOrWhiteSpace(question.QuestionId))
+                        continue;
+
+                    var conversationId = await EnsureMercadoLibreConversationAsync(question, token);
+                    var incoming = question.ToIncomingMessage();
+                    var storedMessage = await InsertInstagramMessageIfMissingAsync(conversationId, incoming, token);
+
+                    await RefreshConversationAsync(conversationId, incoming.Timestamp, incoming.Text, token, reopenIfClosed: true);
+                    if (storedMessage.Created)
+                        await NotifyIncomingMessageAsync(conversationId, storedMessage.MessageId, token);
+                    processed++;
+                }
+
+                await UpdateWebhookLogAsync(webhookLogId, true, string.Empty, token);
+                await _appEvents.LogAuditAsync(
+                    "Conversaciones",
+                    "RegisterIncomingMercadoLibreWebhook",
+                    "CONV_WEBHOOK_LOG",
+                    webhookLogId.ToString(CultureInfo.InvariantCulture),
+                    "Webhook de Mercado Libre procesado.",
+                    new { Notificaciones = notifications.Count, Procesadas = processed },
+                    token);
+
+                return new ConversacionWebhookResultDto
+                {
+                    IdWebhookLog = webhookLogId,
+                    MensajesDetectados = notifications.Count,
+                    MensajesProcesados = processed
+                };
+            }
+            catch (Exception ex)
+            {
+                await UpdateWebhookLogAsync(webhookLogId, false, ex.Message, token);
+                throw;
+            }
+        }, "No se pudo procesar el webhook de Mercado Libre.", ct);
 
     public Task<long> CreateInternalThreadAsync(ConversacionCrearHiloInternoRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "CreateInternalThread", async token =>
@@ -4965,6 +5064,95 @@ public sealed class ConversacionesService(
         }
     }
 
+    private async Task<long> EnsureMercadoLibreConversationAsync(MercadoLibreQuestion question, CancellationToken ct)
+    {
+        const string selectSql = """
+            SELECT TOP (1) IdConversacion
+            FROM dbo.CONV_CONVERSACIONES WITH (UPDLOCK, HOLDLOCK)
+            WHERE Canal = N'MERCADOLIBRE'
+              AND IdentificadorExternoConversacion = @QuestionId
+            ORDER BY FechaHoraUltimoMensaje DESC, IdConversacion DESC;
+            """;
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct);
+        await using (var selectCmd = new SqlCommand(selectSql, cn, tx))
+        {
+            selectCmd.Parameters.AddWithValue("@QuestionId", question.QuestionId);
+            var existing = await selectCmd.ExecuteScalarAsync(ct);
+            if (existing is not null && existing is not DBNull)
+            {
+                var existingId = Convert.ToInt64(existing, CultureInfo.InvariantCulture);
+                const string updateSql = """
+                    UPDATE dbo.CONV_CONVERSACIONES
+                    SET NombreVisible = COALESCE(NULLIF(@NombreVisible, N''), NombreVisible),
+                        IdentificadorExternoContacto = COALESCE(NULLIF(@BuyerId, N''), IdentificadorExternoContacto),
+                        UsuarioExterno = COALESCE(NULLIF(@ItemId, N''), UsuarioExterno),
+                        ResumenUltimoMensaje = COALESCE(NULLIF(@ResumenUltimoMensaje, N''), ResumenUltimoMensaje),
+                        FechaHora_Modificacion = GETDATE()
+                    WHERE IdConversacion = @IdConversacion;
+                    """;
+
+                await using var updateCmd = new SqlCommand(updateSql, cn, tx);
+                updateCmd.Parameters.AddWithValue("@IdConversacion", existingId);
+                AddMercadoLibreConversationParameters(updateCmd, question);
+                await updateCmd.ExecuteNonQueryAsync(ct);
+
+                await tx.CommitAsync(ct);
+                return existingId;
+            }
+        }
+
+        const string insertSql = """
+            INSERT INTO dbo.CONV_CONVERSACIONES
+            (
+                Canal,
+                NombreVisible,
+                IdentificadorExternoContacto,
+                IdentificadorExternoConversacion,
+                UsuarioExterno,
+                CodigoEstado,
+                ResumenUltimoMensaje,
+                FechaHoraPrimerMensaje,
+                FechaHoraUltimoMensaje,
+                FechaHora_Grabacion
+            )
+            VALUES
+            (
+                N'MERCADOLIBRE',
+                @NombreVisible,
+                @BuyerId,
+                @QuestionId,
+                @ItemId,
+                N'ABIERTA',
+                @ResumenUltimoMensaje,
+                @FechaHora,
+                @FechaHora,
+                GETDATE()
+            );
+
+            SELECT CAST(SCOPE_IDENTITY() AS bigint);
+            """;
+
+        await using var insertCmd = new SqlCommand(insertSql, cn, tx);
+        AddMercadoLibreConversationParameters(insertCmd, question);
+        insertCmd.Parameters.AddWithValue("@QuestionId", question.QuestionId);
+        insertCmd.Parameters.AddWithValue("@FechaHora", question.Timestamp);
+        var result = await insertCmd.ExecuteScalarAsync(ct);
+        var conversationId = Convert.ToInt64(result, CultureInfo.InvariantCulture);
+        await tx.CommitAsync(ct);
+        return conversationId;
+    }
+
+    private static void AddMercadoLibreConversationParameters(SqlCommand command, MercadoLibreQuestion question)
+    {
+        command.Parameters.AddWithValue("@NombreVisible", DbNullable(question.DisplayName));
+        command.Parameters.AddWithValue("@BuyerId", DbNullable(question.BuyerId));
+        command.Parameters.AddWithValue("@ItemId", DbNullable(question.ItemId));
+        command.Parameters.AddWithValue("@ResumenUltimoMensaje", DbNullable(TrimForSummary(question.Text)));
+    }
+
     private static void AddFacebookProfileParameters(SqlCommand command, FacebookProfile profile)
     {
         command.Parameters.AddWithValue("@NombreVisible", DbNullable(profile.DisplayName));
@@ -5019,7 +5207,8 @@ public sealed class ConversacionesService(
                 IdConversacion,
                 ISNULL(TelefonoWhatsApp, ''),
                 ISNULL(Canal, 'WHATSAPP'),
-                ISNULL(IdentificadorExternoContacto, '')
+                ISNULL(IdentificadorExternoContacto, ''),
+                ISNULL(IdentificadorExternoConversacion, '')
             FROM dbo.CONV_CONVERSACIONES
             WHERE IdConversacion = @IdConversacion
             """;
@@ -5038,7 +5227,8 @@ public sealed class ConversacionesService(
             IdConversacion = rd.GetInt64(0),
             TelefonoWhatsApp = GetString(rd, 1),
             Canal = GetString(rd, 2),
-            IdentificadorExternoContacto = GetString(rd, 3)
+            IdentificadorExternoContacto = GetString(rd, 3),
+            IdentificadorExternoConversacion = GetString(rd, 4)
         };
     }
 
@@ -5916,6 +6106,58 @@ public sealed class ConversacionesService(
         return new WhatsAppSendResult
         {
             EstadoEnvio = "ENVIADO_META",
+            WhatsAppMessageId = messageId,
+            PayloadJson = responseBody
+        };
+    }
+
+    private async Task<WhatsAppSendResult> SendToMercadoLibreQuestionAsync(
+        ConversacionMercadoLibreConfigDto config,
+        string questionId,
+        string text,
+        CancellationToken ct)
+    {
+        if (!config.IsConfiguredForApi)
+            throw new InvalidOperationException("Falta configurar Mercado Libre para responder preguntas.");
+
+        var baseUrl = string.IsNullOrWhiteSpace(config.ApiBaseUrl)
+            ? "https://api.mercadolibre.com"
+            : config.ApiBaseUrl.Trim().TrimEnd('/');
+        var url = $"{baseUrl}/answers";
+        using var request = new HttpRequestMessage(HttpMethod.Post, url);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", config.AccessToken.Trim());
+
+        object questionIdValue = long.TryParse(questionId.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var id)
+            ? id
+            : questionId.Trim();
+        var payload = new
+        {
+            question_id = questionIdValue,
+            text
+        };
+
+        request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+        var client = httpClientFactory.CreateClient();
+        using var response = await client.SendAsync(request, ct);
+        var responseBody = await response.Content.ReadAsStringAsync(ct);
+
+        if (!response.IsSuccessStatusCode)
+            throw new InvalidOperationException($"Mercado Libre devolvió {(int)response.StatusCode}: {responseBody}");
+
+        var messageId = $"meli-answer-{questionId.Trim()}-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture)}";
+        try
+        {
+            using var doc = JsonDocument.Parse(responseBody);
+            if (doc.RootElement.TryGetProperty("id", out var idElement))
+                messageId = ConvertJsonElementToString(idElement);
+        }
+        catch (JsonException)
+        {
+        }
+
+        return new WhatsAppSendResult
+        {
+            EstadoEnvio = "ENVIADO_MELI",
             WhatsAppMessageId = messageId,
             PayloadJson = responseBody
         };
@@ -7028,6 +7270,129 @@ public sealed class ConversacionesService(
 
         return property.GetString() ?? string.Empty;
     }
+
+    private static List<MercadoLibreNotification> ParseMercadoLibreNotifications(JsonElement root)
+    {
+        var items = new List<MercadoLibreNotification>();
+        if (root.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in root.EnumerateArray())
+                AddMercadoLibreNotification(items, item);
+            return items;
+        }
+
+        AddMercadoLibreNotification(items, root);
+        return items;
+    }
+
+    private static void AddMercadoLibreNotification(List<MercadoLibreNotification> items, JsonElement root)
+    {
+        if (root.ValueKind != JsonValueKind.Object)
+            return;
+
+        var topic = ReadJsonString(root, "topic");
+        var resource = ReadJsonString(root, "resource");
+        var userId = FirstNonEmpty(ReadJsonString(root, "user_id"), ReadJsonString(root, "userId"), ReadJsonString(root, "seller_id"));
+        var notificationId = FirstNonEmpty(ReadJsonString(root, "_id"), ReadJsonString(root, "id"), resource);
+        var questionId = ExtractMercadoLibreQuestionId(resource);
+        var sent = ParseMercadoLibreDate(FirstNonEmpty(ReadJsonString(root, "sent"), ReadJsonString(root, "received")));
+
+        if (string.IsNullOrWhiteSpace(topic) && resource.Contains("question", StringComparison.OrdinalIgnoreCase))
+            topic = "questions";
+
+        items.Add(new MercadoLibreNotification
+        {
+            Id = notificationId,
+            Topic = topic,
+            Resource = resource,
+            UserId = userId,
+            QuestionId = questionId,
+            Timestamp = sent,
+            RawJson = root.GetRawText()
+        });
+    }
+
+    private async Task<MercadoLibreQuestion> TryGetMercadoLibreQuestionAsync(
+        ConversacionMercadoLibreConfigDto config,
+        MercadoLibreNotification notification,
+        CancellationToken ct)
+    {
+        if (!config.IsConfiguredForApi || string.IsNullOrWhiteSpace(notification.QuestionId))
+            return MercadoLibreQuestion.FromNotification(notification);
+
+        var baseUrl = string.IsNullOrWhiteSpace(config.ApiBaseUrl)
+            ? "https://api.mercadolibre.com"
+            : config.ApiBaseUrl.Trim().TrimEnd('/');
+        var url = $"{baseUrl}/questions/{Uri.EscapeDataString(notification.QuestionId)}";
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", config.AccessToken.Trim());
+
+        try
+        {
+            var client = httpClientFactory.CreateClient();
+            using var response = await client.SendAsync(request, ct);
+            var body = await response.Content.ReadAsStringAsync(ct);
+            if (!response.IsSuccessStatusCode)
+                return MercadoLibreQuestion.FromNotification(notification);
+
+            using var doc = JsonDocument.Parse(body);
+            var root = doc.RootElement;
+            var buyerId = string.Empty;
+            if (root.TryGetProperty("from", out var from) && from.ValueKind == JsonValueKind.Object)
+                buyerId = ReadJsonString(from, "id");
+
+            return new MercadoLibreQuestion
+            {
+                QuestionId = FirstNonEmpty(ReadJsonString(root, "id"), notification.QuestionId),
+                BuyerId = FirstNonEmpty(buyerId, notification.UserId),
+                SellerId = FirstNonEmpty(ReadJsonString(root, "seller_id"), config.SellerId),
+                ItemId = ReadJsonString(root, "item_id"),
+                Status = ReadJsonString(root, "status"),
+                Text = FirstNonEmpty(ReadJsonString(root, "text"), "Pregunta recibida en Mercado Libre."),
+                Timestamp = ParseMercadoLibreDate(FirstNonEmpty(ReadJsonString(root, "date_created"), ReadJsonString(root, "last_updated"), notification.Timestamp.ToString("O", CultureInfo.InvariantCulture))),
+                RawJson = body
+            };
+        }
+        catch (Exception) when (!ct.IsCancellationRequested)
+        {
+            return MercadoLibreQuestion.FromNotification(notification);
+        }
+    }
+
+    private static string ExtractMercadoLibreQuestionId(string resource)
+    {
+        if (string.IsNullOrWhiteSpace(resource))
+            return string.Empty;
+
+        var match = Regex.Match(resource, @"questions/([^/?#]+)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        return match.Success ? match.Groups[1].Value : string.Empty;
+    }
+
+    private static DateTime ParseMercadoLibreDate(string value)
+    {
+        if (DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var dto))
+            return dto.LocalDateTime;
+
+        return BusinessNow();
+    }
+
+    private static string ReadJsonString(JsonElement root, string propertyName)
+    {
+        if (!root.TryGetProperty(propertyName, out var value))
+            return string.Empty;
+
+        return ConvertJsonElementToString(value);
+    }
+
+    private static string ConvertJsonElementToString(JsonElement value)
+        => value.ValueKind switch
+        {
+            JsonValueKind.String => value.GetString() ?? string.Empty,
+            JsonValueKind.Number => value.GetRawText(),
+            JsonValueKind.True => "true",
+            JsonValueKind.False => "false",
+            _ => string.Empty
+        };
 
     private static DateTime ParseInstagramTimestamp(JsonElement item)
     {
@@ -8748,6 +9113,7 @@ public sealed class ConversacionesService(
         public string TelefonoWhatsApp { get; init; } = string.Empty;
         public string Canal { get; init; } = string.Empty;
         public string IdentificadorExternoContacto { get; init; } = string.Empty;
+        public string IdentificadorExternoConversacion { get; init; } = string.Empty;
     }
 
     private sealed class MessageReactionTarget
@@ -8805,6 +9171,53 @@ public sealed class ConversacionesService(
         public string Text { get; init; } = string.Empty;
         public bool IsEcho { get; init; }
         public string RawJson { get; init; } = string.Empty;
+    }
+
+    private sealed class MercadoLibreNotification
+    {
+        public string Id { get; init; } = string.Empty;
+        public string Topic { get; init; } = string.Empty;
+        public string Resource { get; init; } = string.Empty;
+        public string UserId { get; init; } = string.Empty;
+        public string QuestionId { get; init; } = string.Empty;
+        public DateTime Timestamp { get; init; }
+        public string RawJson { get; init; } = string.Empty;
+    }
+
+    private sealed class MercadoLibreQuestion
+    {
+        public string QuestionId { get; init; } = string.Empty;
+        public string BuyerId { get; init; } = string.Empty;
+        public string SellerId { get; init; } = string.Empty;
+        public string ItemId { get; init; } = string.Empty;
+        public string Status { get; init; } = string.Empty;
+        public string Text { get; init; } = string.Empty;
+        public DateTime Timestamp { get; init; }
+        public string RawJson { get; init; } = string.Empty;
+        public string DisplayName => string.IsNullOrWhiteSpace(BuyerId) ? "Mercado Libre" : $"Mercado Libre {BuyerId}";
+
+        public static MercadoLibreQuestion FromNotification(MercadoLibreNotification notification)
+            => new()
+            {
+                QuestionId = notification.QuestionId,
+                BuyerId = notification.UserId,
+                Text = "Nueva pregunta recibida en Mercado Libre.",
+                Timestamp = notification.Timestamp == default ? BusinessNow() : notification.Timestamp,
+                RawJson = notification.RawJson
+            };
+
+        public IncomingInstagramMessage ToIncomingMessage()
+            => new()
+            {
+                AccountId = SellerId,
+                SenderId = BuyerId,
+                RecipientId = SellerId,
+                MessageId = $"meli-question-{QuestionId}",
+                MessageType = "TEXT",
+                Timestamp = Timestamp == default ? BusinessNow() : Timestamp,
+                Text = Text,
+                RawJson = RawJson
+            };
     }
 
     private sealed class InstagramProfile

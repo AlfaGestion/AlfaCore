@@ -196,6 +196,12 @@
                     <span>Facebook</span>
                 </button>
                 <button type="button"
+                        class="conversations-mobile-action conversations-mobile-action--mercadolibre @(_canalActivo == "MERCADOLIBRE" ? "is-active" : string.Empty)"
+                        @onclick='() => ChangeCanalAsync("MERCADOLIBRE")'>
+                    <i class="bi bi-bag-fill"></i>
+                    <span>Mercado Libre</span>
+                </button>
+                <button type="button"
                         class="conversations-mobile-action @(_canalActivo == "INTERNO" ? "is-active" : string.Empty)"
                         @onclick='() => ChangeCanalAsync("INTERNO")'>
                     <i class="bi bi-people-fill"></i>
@@ -311,6 +317,11 @@
                         class="conversations-filter-pill @(_canalActivo == "FACEBOOK" ? "is-active" : string.Empty)"
                         @onclick='() => ChangeCanalAsync("FACEBOOK")'>
                     <i class="bi bi-facebook"></i> Facebook
+                </button>
+                <button type="button"
+                        class="conversations-filter-pill conversations-filter-pill--mercadolibre @(_canalActivo == "MERCADOLIBRE" ? "is-active" : string.Empty)"
+                        @onclick='() => ChangeCanalAsync("MERCADOLIBRE")'>
+                    <i class="bi bi-bag-fill"></i> Mercado Libre
                 </button>
                 <button type="button"
                         class="conversations-filter-pill @(_canalActivo == "INTERNO" ? "is-active" : string.Empty)"
@@ -578,6 +589,11 @@
                                 class="conversations-mobile-chip @(_canalActivo == "FACEBOOK" ? "is-active" : string.Empty)"
                                 @onclick='() => ChangeCanalAsync("FACEBOOK")'>
                             Facebook
+                        </button>
+                        <button type="button"
+                                class="conversations-mobile-chip conversations-mobile-chip--mercadolibre @(_canalActivo == "MERCADOLIBRE" ? "is-active" : string.Empty)"
+                                @onclick='() => ChangeCanalAsync("MERCADOLIBRE")'>
+                            Mercado Libre
                         </button>
                         <button type="button"
                                 class="conversations-mobile-chip @(_canalActivo == "INTERNO" ? "is-active" : string.Empty)"
@@ -852,7 +868,7 @@
                                 <i class="bi bi-arrow-left"></i>
                                 <span>Volver</span>
                             </button>
-                            @if (_selectedConversation.Canal == "INSTAGRAM" || _selectedConversation.Canal == "FACEBOOK")
+                            @if (_selectedConversation.Canal == "INSTAGRAM" || _selectedConversation.Canal == "FACEBOOK" || _selectedConversation.Canal == "MERCADOLIBRE")
                             {
                                 <div class="conversation-profile-avatar" aria-hidden="true">
                                     @if (!string.IsNullOrWhiteSpace(_selectedConversation.FotoPerfilUrl))
@@ -930,6 +946,19 @@
                                            title="Abrir referencia en Facebook">
                                             <i class="bi bi-facebook"></i>
                                             Ver en Facebook
+                                            <i class="bi bi-box-arrow-up-right"></i>
+                                        </a>
+                                    </div>
+                                }
+                                else if (_selectedConversation.Canal == "MERCADOLIBRE")
+                                {
+                                    <div class="conversation-social-profile conversation-social-profile--mercadolibre">
+                                        <a href="@GetMercadoLibreQuestionUrl(_selectedConversation)"
+                                           target="_blank"
+                                           rel="noopener noreferrer"
+                                           title="Abrir referencia en Mercado Libre">
+                                            <i class="bi bi-bag-fill"></i>
+                                            Ver publicación
                                             <i class="bi bi-box-arrow-up-right"></i>
                                         </a>
                                     </div>
@@ -2795,6 +2824,7 @@
            && (_selectedConversation.Canal == "WHATSAPP"
                || _selectedConversation.Canal == "INSTAGRAM"
                || _selectedConversation.Canal == "FACEBOOK"
+               || _selectedConversation.Canal == "MERCADOLIBRE"
                || _selectedConversation.Canal == "INTERNO");
     private bool IsWhatsAppWindowExpired
         => _selectedConversation is not null
@@ -7023,6 +7053,14 @@
             : $"https://www.facebook.com/profile.php?id={Uri.EscapeDataString(item.IdentificadorExternoContacto.Trim())}";
     }
 
+    private static string GetMercadoLibreQuestionUrl(ConversacionDetalleDto item)
+    {
+        if (!string.IsNullOrWhiteSpace(item.UsuarioExterno))
+            return $"https://www.mercadolibre.com.ar/publicaciones/{Uri.EscapeDataString(item.UsuarioExterno.Trim())}";
+
+        return "https://www.mercadolibre.com.ar/";
+    }
+
     private static string FormatCompactNumber(int value)
         => value switch
         {
@@ -7036,6 +7074,7 @@
         {
             "INSTAGRAM" => "conversations-page--instagram",
             "FACEBOOK" => "conversations-page--facebook",
+            "MERCADOLIBRE" => "conversations-page--mercadolibre",
             "INTERNO" => "conversations-page--internal",
             _ => "conversations-page--whatsapp"
         };
@@ -7046,6 +7085,7 @@
             "INTERNO" => "Escribí un mensaje para el equipo...",
             "INSTAGRAM" => "Escribí una respuesta para Instagram...",
             "FACEBOOK" => "Escribí una respuesta para Facebook Messenger...",
+            "MERCADOLIBRE" => "Respondé la pregunta de Mercado Libre...",
             _ => "Escribí una respuesta para WhatsApp..."
         };
 

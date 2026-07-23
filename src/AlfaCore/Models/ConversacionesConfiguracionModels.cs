@@ -106,3 +106,49 @@ public sealed class ConversacionFacebookConfigDto
         return string.IsNullOrWhiteSpace(baseUrl) ? path : $"{baseUrl}{path}";
     }
 }
+
+public sealed class ConversacionMercadoLibreConfigDto
+{
+    public string ClientId { get; set; } = string.Empty;
+    public string ClientSecret { get; set; } = string.Empty;
+    public string AccessToken { get; set; } = string.Empty;
+    public string RefreshToken { get; set; } = string.Empty;
+    public string SellerId { get; set; } = string.Empty;
+    public string SiteId { get; set; } = "MLA";
+    public string PublicBaseUrl { get; set; } = string.Empty;
+    public string WebhookPath { get; set; } = "/api/conversaciones/mercadolibre/webhook";
+    public string OAuthCallbackPath { get; set; } = "/api/conversaciones/mercadolibre/oauth/callback";
+    public string ApiBaseUrl { get; set; } = "https://api.mercadolibre.com";
+    public string ConfigSource { get; set; } = string.Empty;
+
+    public bool IsConfiguredForAuth =>
+        !string.IsNullOrWhiteSpace(ClientId) &&
+        !string.IsNullOrWhiteSpace(ClientSecret);
+
+    public bool IsConfiguredForApi =>
+        IsConfiguredForAuth &&
+        !string.IsNullOrWhiteSpace(AccessToken);
+
+    public bool IsReadyForWebhook =>
+        !string.IsNullOrWhiteSpace(PublicBaseUrl);
+
+    public string GetWebhookUrl()
+    {
+        var baseUrl = (PublicBaseUrl ?? string.Empty).Trim().TrimEnd('/');
+        var path = string.IsNullOrWhiteSpace(WebhookPath) ? "/api/conversaciones/mercadolibre/webhook" : WebhookPath.Trim();
+        if (!path.StartsWith('/'))
+            path = "/" + path;
+
+        return string.IsNullOrWhiteSpace(baseUrl) ? path : $"{baseUrl}{path}";
+    }
+
+    public string GetOAuthCallbackUrl()
+    {
+        var baseUrl = (PublicBaseUrl ?? string.Empty).Trim().TrimEnd('/');
+        var path = string.IsNullOrWhiteSpace(OAuthCallbackPath) ? "/api/conversaciones/mercadolibre/oauth/callback" : OAuthCallbackPath.Trim();
+        if (!path.StartsWith('/'))
+            path = "/" + path;
+
+        return string.IsNullOrWhiteSpace(baseUrl) ? path : $"{baseUrl}{path}";
+    }
+}

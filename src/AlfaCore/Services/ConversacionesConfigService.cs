@@ -15,6 +15,8 @@ public sealed class ConversacionesConfigService(
     private const string DefaultWebhookPath = "/api/conversaciones/whatsapp/webhook";
     private const string DefaultInstagramWebhookPath = "/api/conversaciones/instagram/webhook";
     private const string DefaultFacebookWebhookPath = "/api/conversaciones/facebook/webhook";
+    private const string DefaultMercadoLibreWebhookPath = "/api/conversaciones/mercadolibre/webhook";
+    private const string DefaultMercadoLibreOAuthCallbackPath = "/api/conversaciones/mercadolibre/oauth/callback";
     private readonly WhatsAppOptions _fallbackOptions = whatsAppOptions.Value;
 
     private string ConnectionString => sessionService.GetConnectionString().Length > 0
@@ -370,6 +372,110 @@ public sealed class ConversacionesConfigService(
         }, "No se pudo guardar la configuración de Facebook.", ct);
     }
 
+    public Task<ConversacionMercadoLibreConfigDto> GetMercadoLibreConfigAsync(CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "GetMercadoLibreConfig", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            var detailColumn = await ResolveDetailColumnAsync(cn, token);
+            var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+            await using var cmd = new SqlCommand(BuildMercadoLibreSelectSql(detailColumn), cn);
+            await using var rd = await cmd.ExecuteReaderAsync(token);
+            while (await rd.ReadAsync(token))
+            {
+                var key = GetString(rd, 0);
+                var value = GetString(rd, 1);
+                var detailValue = GetString(rd, 2);
+                values[key] = ResolveStoredValue(value, detailValue);
+            }
+
+            var config = new ConversacionMercadoLibreConfigDto
+            {
+                ClientId = ReadValue(values, "CONV_MELI_CLIENT_ID", string.Empty),
+                ClientSecret = ReadValue(values, "CONV_MELI_CLIENT_SECRET", string.Empty),
+                AccessToken = ReadValue(values, "CONV_MELI_ACCESS_TOKEN", string.Empty),
+                RefreshToken = ReadValue(values, "CONV_MELI_REFRESH_TOKEN", string.Empty),
+                SellerId = ReadValue(values, "CONV_MELI_SELLER_ID", string.Empty),
+                SiteId = ReadValue(values, "CONV_MELI_SITE_ID", string.Empty, "MLA"),
+                PublicBaseUrl = ReadValue(values, "CONV_MELI_PUBLIC_BASE_URL", string.Empty),
+                WebhookPath = ReadValue(values, "CONV_MELI_WEBHOOK_PATH", string.Empty, DefaultMercadoLibreWebhookPath),
+                OAuthCallbackPath = ReadValue(values, "CONV_MELI_OAUTH_CALLBACK_PATH", string.Empty, DefaultMercadoLibreOAuthCallbackPath),
+                ApiBaseUrl = ReadValue(values, "CONV_MELI_API_BASE_URL", string.Empty, "https://api.mercadolibre.com"),
+                ConfigSource = ResolveConfigSource(values, 10)
+            };
+
+            if (string.IsNullOrWhiteSpace(config.WebhookPath))
+                config.WebhookPath = DefaultMercadoLibreWebhookPath;
+            if (string.IsNullOrWhiteSpace(config.OAuthCallbackPath))
+                config.OAuthCallbackPath = DefaultMercadoLibreOAuthCallbackPath;
+
+            return config;
+        }, "No se pudo cargar la configuración de Mercado Libre.", ct);
+
+    public async Task SaveMercadoLibreConfigAsync(ConversacionMercadoLibreConfigDto config, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+
+        await ExecuteLoggedAsync("Conversaciones", "SaveMercadoLibreConfig", async token =>
+        {
+            var normalized = Normalize(config);
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            var detailColumn = await ResolveDetailColumnAsync(cn, token);
+            await using var tx = await cn.BeginTransactionAsync(token);
+
+            foreach (var item in BuildItems(normalized))
+            {
+                var stored = SplitStoredValue(item.Value);
+                var sql = $"""
+                    UPDATE dbo.TA_CONFIGURACION
+                    SET
+                        VALOR = @Valor,
+                        {detailColumn} = @ValorAux,
+                        GRUPO = @Grupo
+                    WHERE UPPER(LTRIM(RTRIM(CLAVE))) = @ClaveNormalizada;
+
+                    IF @@ROWCOUNT = 0
+                    BEGIN
+                        INSERT INTO dbo.TA_CONFIGURACION (CLAVE, VALOR, {detailColumn}, GRUPO)
+                        VALUES (@Clave, @Valor, @ValorAux, @Grupo);
+                    END;
+                    """;
+
+                await using var cmd = new SqlCommand(sql, cn, (SqlTransaction)tx);
+                cmd.Parameters.AddWithValue("@ClaveNormalizada", item.Key.ToUpperInvariant());
+                cmd.Parameters.AddWithValue("@Clave", item.Key);
+                cmd.Parameters.AddWithValue("@Valor", DbNullable(stored.Value));
+                cmd.Parameters.AddWithValue("@ValorAux", DbNullable(stored.AuxValue));
+                cmd.Parameters.AddWithValue("@Grupo", ConfigGroup);
+                await cmd.ExecuteNonQueryAsync(token);
+            }
+
+            await tx.CommitAsync(token);
+
+            await appEvents.LogAuditAsync(
+                "Conversaciones",
+                "SaveMercadoLibreConfig",
+                "TA_CONFIGURACION",
+                ConfigGroup,
+                "Configuración de Mercado Libre actualizada.",
+                new
+                {
+                    normalized.ClientId,
+                    normalized.SellerId,
+                    normalized.SiteId,
+                    normalized.PublicBaseUrl,
+                    normalized.WebhookPath,
+                    normalized.OAuthCallbackPath
+                },
+                token);
+
+            return true;
+        }, "No se pudo guardar la configuración de Mercado Libre.", ct);
+    }
+
     private static async Task<string> ResolveDetailColumnAsync(SqlConnection cn, CancellationToken ct)
     {
         // Acepta ValorAux / VALOR_AUX / valor_aux y cae en DESCRIPCION solo como último recurso.
@@ -452,6 +558,28 @@ public sealed class ConversacionesConfigService(
             )
             """;
 
+    private static string BuildMercadoLibreSelectSql(string detailColumn)
+        => $"""
+            SELECT
+                UPPER(LTRIM(RTRIM(CLAVE))),
+                ISNULL(VALOR, ''),
+                ISNULL({detailColumn}, '')
+            FROM dbo.TA_CONFIGURACION
+            WHERE UPPER(LTRIM(RTRIM(CLAVE))) IN
+            (
+                'CONV_MELI_CLIENT_ID',
+                'CONV_MELI_CLIENT_SECRET',
+                'CONV_MELI_ACCESS_TOKEN',
+                'CONV_MELI_REFRESH_TOKEN',
+                'CONV_MELI_SELLER_ID',
+                'CONV_MELI_SITE_ID',
+                'CONV_MELI_PUBLIC_BASE_URL',
+                'CONV_MELI_WEBHOOK_PATH',
+                'CONV_MELI_OAUTH_CALLBACK_PATH',
+                'CONV_MELI_API_BASE_URL'
+            )
+            """;
+
     private static IEnumerable<(string Key, string Value)> BuildItems(ConversacionWhatsAppConfigDto config)
     {
         yield return ("CONV_WHATSAPP_VERIFY_TOKEN", config.VerifyToken);
@@ -488,6 +616,20 @@ public sealed class ConversacionesConfigService(
         yield return ("CONV_FACEBOOK_API_VERSION", config.ApiVersion);
         yield return ("CONV_FACEBOOK_PUBLIC_BASE_URL", config.PublicBaseUrl);
         yield return ("CONV_FACEBOOK_WEBHOOK_PATH", config.WebhookPath);
+    }
+
+    private static IEnumerable<(string Key, string Value)> BuildItems(ConversacionMercadoLibreConfigDto config)
+    {
+        yield return ("CONV_MELI_CLIENT_ID", config.ClientId);
+        yield return ("CONV_MELI_CLIENT_SECRET", config.ClientSecret);
+        yield return ("CONV_MELI_ACCESS_TOKEN", config.AccessToken);
+        yield return ("CONV_MELI_REFRESH_TOKEN", config.RefreshToken);
+        yield return ("CONV_MELI_SELLER_ID", config.SellerId);
+        yield return ("CONV_MELI_SITE_ID", config.SiteId);
+        yield return ("CONV_MELI_PUBLIC_BASE_URL", config.PublicBaseUrl);
+        yield return ("CONV_MELI_WEBHOOK_PATH", config.WebhookPath);
+        yield return ("CONV_MELI_OAUTH_CALLBACK_PATH", config.OAuthCallbackPath);
+        yield return ("CONV_MELI_API_BASE_URL", config.ApiBaseUrl);
     }
 
     private static ConversacionWhatsAppConfigDto Normalize(ConversacionWhatsAppConfigDto config)
@@ -548,6 +690,36 @@ public sealed class ConversacionesConfigService(
             ApiVersion = string.IsNullOrWhiteSpace(config.ApiVersion) ? "v22.0" : config.ApiVersion.Trim(),
             PublicBaseUrl = NormalizeBaseUrl(config.PublicBaseUrl),
             WebhookPath = path,
+            ConfigSource = string.Empty
+        };
+    }
+
+    private static ConversacionMercadoLibreConfigDto Normalize(ConversacionMercadoLibreConfigDto config)
+    {
+        var webhookPath = string.IsNullOrWhiteSpace(config.WebhookPath) ? DefaultMercadoLibreWebhookPath : config.WebhookPath.Trim();
+        if (!webhookPath.StartsWith('/'))
+            webhookPath = "/" + webhookPath;
+
+        var callbackPath = string.IsNullOrWhiteSpace(config.OAuthCallbackPath) ? DefaultMercadoLibreOAuthCallbackPath : config.OAuthCallbackPath.Trim();
+        if (!callbackPath.StartsWith('/'))
+            callbackPath = "/" + callbackPath;
+
+        var apiBaseUrl = string.IsNullOrWhiteSpace(config.ApiBaseUrl)
+            ? "https://api.mercadolibre.com"
+            : NormalizeBaseUrl(config.ApiBaseUrl);
+
+        return new ConversacionMercadoLibreConfigDto
+        {
+            ClientId = (config.ClientId ?? string.Empty).Trim(),
+            ClientSecret = (config.ClientSecret ?? string.Empty).Trim(),
+            AccessToken = (config.AccessToken ?? string.Empty).Trim(),
+            RefreshToken = (config.RefreshToken ?? string.Empty).Trim(),
+            SellerId = (config.SellerId ?? string.Empty).Trim(),
+            SiteId = string.IsNullOrWhiteSpace(config.SiteId) ? "MLA" : config.SiteId.Trim().ToUpperInvariant(),
+            PublicBaseUrl = NormalizeBaseUrl(config.PublicBaseUrl),
+            WebhookPath = webhookPath,
+            OAuthCallbackPath = callbackPath,
+            ApiBaseUrl = apiBaseUrl,
             ConfigSource = string.Empty
         };
     }

@@ -1023,6 +1023,43 @@
     color: #dbeafe;
 }
 
+.conversations-page--mercadolibre .conversations-chat__identity {
+    display: grid !important;
+    grid-template-columns: 44px minmax(0, 1fr) !important;
+    align-items: center !important;
+    column-gap: .65rem !important;
+    padding-left: 0 !important;
+}
+
+.conversations-page--mercadolibre .conversations-chat__identity::before {
+    display: none !important;
+}
+
+.conversations-page--mercadolibre .conversation-profile-avatar {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+    border-color: rgba(250, 204, 21, .78);
+    background: linear-gradient(135deg, #facc15, #f59e0b);
+    color: #1f2937;
+    box-shadow: 0 0 0 3px rgba(250, 204, 21, .18);
+}
+
+.conversations-page--mercadolibre .conversation-profile-avatar + div,
+.conversations-page--mercadolibre .conversations-chat__chips {
+    grid-column: 2;
+}
+
+.conversations-page--mercadolibre .conversation-social-profile a {
+    border-color: rgba(250, 204, 21, .34);
+    background: rgba(250, 204, 21, .08);
+    color: #fde68a;
+}
+
+.conversations-page--mercadolibre .conversation-social-profile a:hover,
+.conversations-page--mercadolibre .conversation-social-profile a:focus-visible {
+    color: #fef3c7;
+}
+
 .conversations-page--odoo .conversations-chat__header .panel-card__title,
 .conversations-page--odoo .conversations-chat__header .panel-card__subtitle {
     max-width: 100% !important;
@@ -1729,6 +1766,22 @@
 
 .conversations-page--facebook .message-card--outgoing {
     background: linear-gradient(135deg, #1d4ed8, #0284c7) !important;
+}
+
+.conversations-page--mercadolibre .conversations-filter-pill.is-active,
+.conversations-page--mercadolibre .conversations-mobile-action.is-active,
+.conversations-page--mercadolibre .conversations-mobile-chip.is-active,
+.conversations-filter-pill--mercadolibre.is-active,
+.conversations-mobile-action--mercadolibre.is-active,
+.conversations-mobile-chip--mercadolibre.is-active {
+    border-color: rgba(250, 204, 21, .64) !important;
+    background: linear-gradient(135deg, rgba(250, 204, 21, .28), rgba(245, 158, 11, .2), rgba(14, 165, 233, .12)) !important;
+    color: #fffbeb !important;
+}
+
+.conversations-page--mercadolibre .message-card--outgoing {
+    background: linear-gradient(135deg, #f59e0b, #ca8a04) !important;
+    color: #111827 !important;
 }
 
 .conversations-window-banner--provider {

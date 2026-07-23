@@ -370,12 +370,152 @@
                 </div>
             </aside>
     </div>
+
+    <div class="conv-config-layout">
+            <section class="panel-card conv-config-form conv-config-form--mercadolibre">
+                <div class="panel-card__header">
+                    <div>
+                        <h3 class="panel-card__title"><i class="bi bi-bag-fill"></i> Mercado Libre</h3>
+                        <p class="panel-card__subtitle">Origen actual: @DisplaySource(_mercadoLibreConfig.ConfigSource)</p>
+                    </div>
+                    <span class="panel-card__tag">CONV_MELI_*</span>
+                </div>
+
+                <div class="conv-config-status-grid">
+                    <article class="context-card">
+                        <span class="context-card__label">OAuth vendedor</span>
+                        <strong class="@GetStatusClass(_mercadoLibreConfig.IsConfiguredForAuth)">@GetStatusLabel(_mercadoLibreConfig.IsConfiguredForAuth)</strong>
+                        <span class="context-card__muted">Requiere <code>client id</code> y <code>client secret</code>.</span>
+                    </article>
+                    <article class="context-card">
+                        <span class="context-card__label">API preguntas</span>
+                        <strong class="@GetStatusClass(_mercadoLibreConfig.IsConfiguredForApi)">@GetStatusLabel(_mercadoLibreConfig.IsConfiguredForApi)</strong>
+                        <span class="context-card__muted">Requiere <code>access token</code> de la cuenta vendedora.</span>
+                    </article>
+                    <article class="context-card">
+                        <span class="context-card__label">Notificaciones</span>
+                        <strong class="@GetStatusClass(_mercadoLibreConfig.IsReadyForWebhook)">@GetStatusLabel(_mercadoLibreConfig.IsReadyForWebhook)</strong>
+                        <span class="context-card__muted">Requiere una URL pública HTTPS.</span>
+                    </article>
+                </div>
+
+                <div class="conv-config-fields">
+                    <div class="field">
+                        <label for="meli-public-url">Base pública HTTPS</label>
+                        <input id="meli-public-url" @bind="_mercadoLibreConfig.PublicBaseUrl" placeholder="@_suggestedBaseUrl" />
+                    </div>
+
+                    <div class="field">
+                        <label for="meli-site-id">Sitio</label>
+                        <input id="meli-site-id" @bind="_mercadoLibreConfig.SiteId" placeholder="MLA" />
+                    </div>
+
+                    <div class="field">
+                        <label for="meli-client-id">Client ID</label>
+                        <input id="meli-client-id" @bind="_mercadoLibreConfig.ClientId" placeholder="App ID de Mercado Libre" />
+                    </div>
+
+                    <div class="field">
+                        <label for="meli-seller-id">Seller/User ID</label>
+                        <input id="meli-seller-id" @bind="_mercadoLibreConfig.SellerId" placeholder="ID de la cuenta vendedora" />
+                    </div>
+
+                    <div class="field conv-config-fields__full">
+                        <label for="meli-client-secret">Client Secret</label>
+                        <input id="meli-client-secret" @bind="_mercadoLibreConfig.ClientSecret" placeholder="Client Secret de la app" />
+                    </div>
+
+                    <div class="field conv-config-fields__full">
+                        <label for="meli-access-token">Access Token</label>
+                        <textarea id="meli-access-token" rows="4" @bind="_mercadoLibreConfig.AccessToken" placeholder="Token OAuth de la cuenta vendedora"></textarea>
+                    </div>
+
+                    <div class="field conv-config-fields__full">
+                        <label for="meli-refresh-token">Refresh Token</label>
+                        <textarea id="meli-refresh-token" rows="3" @bind="_mercadoLibreConfig.RefreshToken" placeholder="Refresh token para renovar el acceso"></textarea>
+                    </div>
+
+                    <div class="field conv-config-fields__full">
+                        <label for="meli-api-base">Base API</label>
+                        <input id="meli-api-base" @bind="_mercadoLibreConfig.ApiBaseUrl" placeholder="https://api.mercadolibre.com" />
+                    </div>
+
+                    <div class="field conv-config-fields__full">
+                        <label for="meli-webhook-path">Webhook interno</label>
+                        <input id="meli-webhook-path" value="@_mercadoLibreConfig.WebhookPath" readonly />
+                    </div>
+
+                    <div class="field conv-config-fields__full">
+                        <label for="meli-oauth-path">Callback OAuth interno</label>
+                        <input id="meli-oauth-path" value="@_mercadoLibreConfig.OAuthCallbackPath" readonly />
+                    </div>
+                </div>
+
+                <div class="context-card">
+                    <span class="context-card__label">URL de notificaciones a informar en Mercado Libre</span>
+                    <strong>@GetMercadoLibreWebhookUrlPreview()</strong>
+                    <span class="context-card__muted">Suscribir el topic <code>questions</code> para preguntas de publicaciones.</span>
+                </div>
+
+                <div class="context-card">
+                    <span class="context-card__label">Redirect URI OAuth</span>
+                    <strong>@GetMercadoLibreOAuthCallbackUrlPreview()</strong>
+                    <span class="context-card__muted">Usala en la app de Mercado Libre para autorizar la cuenta vendedora.</span>
+                </div>
+
+                <div class="context-card">
+                    <span class="context-card__label">URL para autorizar vendedor</span>
+                    @if (!string.IsNullOrWhiteSpace(GetMercadoLibreAuthorizationUrl()))
+                    {
+                        <a href="@GetMercadoLibreAuthorizationUrl()" target="_blank" rel="noopener noreferrer">
+                            Abrir autorización OAuth
+                        </a>
+                    }
+                    else
+                    {
+                        <strong>Completá Client ID para generarla</strong>
+                    }
+                    <span class="context-card__muted">Al volver del login, AlfaCore intenta guardar access token, refresh token y seller id.</span>
+                </div>
+
+                <div class="actions">
+                    <button type="button" class="btn btn--primary" @onclick="SaveMercadoLibreAsync" disabled="@(Loading || Saving)">
+                        <i class="bi bi-floppy-fill"></i> Guardar Mercado Libre
+                    </button>
+                </div>
+            </section>
+
+            <aside class="panel-card conv-config-help conv-config-help--mercadolibre">
+                <div class="panel-card__header">
+                    <div>
+                        <h3 class="panel-card__title">Chatter preventa</h3>
+                        <p class="panel-card__subtitle">Preguntas de publicaciones dentro de Conversaciones.</p>
+                    </div>
+                    <span class="panel-card__tag">Meli</span>
+                </div>
+
+                <ol class="conv-config-steps">
+                    <li>Crear una app en Mercado Libre Developers.</li>
+                    <li>Cargar la Redirect URI de OAuth mostrada por AlfaCore.</li>
+                    <li>Autorizar la cuenta vendedora para obtener access token y refresh token.</li>
+                    <li>Configurar la URL de notificaciones y suscribir el topic <code>questions</code>.</li>
+                    <li>Cuando entra una notificación, AlfaCore consulta la API y crea o actualiza la conversación.</li>
+                </ol>
+
+                <div class="context-card">
+                    <span class="context-card__label">Visual</span>
+                    <strong>Amarillo Mercado Libre</strong>
+                    <span class="context-card__muted">El canal queda separado de Facebook/Instagram con acentos amarillos para evitar confusiones.</span>
+                </div>
+            </aside>
+    </div>
 </section>
 
 @code {
     private ConversacionWhatsAppConfigDto _config = new();
     private ConversacionInstagramConfigDto _instagramConfig = new();
     private ConversacionFacebookConfigDto _facebookConfig = new();
+    private ConversacionMercadoLibreConfigDto _mercadoLibreConfig = new();
     private bool Loading { get; set; }
     private bool Saving { get; set; }
     private AppUiMessage? _feedback;
@@ -435,6 +575,21 @@
         {
             EnsureFacebookDefaults();
             _feedback ??= facebookResult.Feedback;
+        }
+
+        var mercadoLibreResult = await UiOps.RunAsync(
+            () => ConfigSvc.GetMercadoLibreConfigAsync(),
+            "No se pudo cargar la configuración de Mercado Libre.");
+
+        if (mercadoLibreResult.Success && mercadoLibreResult.Value is not null)
+        {
+            _mercadoLibreConfig = mercadoLibreResult.Value;
+            EnsureMercadoLibreDefaults();
+        }
+        else
+        {
+            EnsureMercadoLibreDefaults();
+            _feedback ??= mercadoLibreResult.Feedback;
         }
 
         Loading = false;
@@ -521,6 +676,33 @@
         Saving = false;
     }
 
+    private async Task SaveMercadoLibreAsync()
+    {
+        Saving = true;
+        _feedback = null;
+
+        if (string.IsNullOrWhiteSpace(_mercadoLibreConfig.PublicBaseUrl))
+            _mercadoLibreConfig.PublicBaseUrl = _suggestedBaseUrl;
+
+        var result = await UiOps.RunAsync(
+            () => ConfigSvc.SaveMercadoLibreConfigAsync(_mercadoLibreConfig),
+            "No se pudo guardar la configuración de Mercado Libre.");
+
+        if (result.Success)
+        {
+            _mercadoLibreConfig.ConfigSource = "TA_CONFIGURACION";
+            _feedback = AppUiMessage.Success(
+                "Configuración guardada",
+                "La configuración de Mercado Libre se grabó correctamente.");
+        }
+        else
+        {
+            _feedback = result.Feedback;
+        }
+
+        Saving = false;
+    }
+
     private void EnsureDefaults()
     {
         if (string.IsNullOrWhiteSpace(_config.WebhookPath))
@@ -546,6 +728,21 @@
 
         if (string.IsNullOrWhiteSpace(_facebookConfig.ApiVersion))
             _facebookConfig.ApiVersion = "v22.0";
+    }
+
+    private void EnsureMercadoLibreDefaults()
+    {
+        if (string.IsNullOrWhiteSpace(_mercadoLibreConfig.WebhookPath))
+            _mercadoLibreConfig.WebhookPath = "/api/conversaciones/mercadolibre/webhook";
+
+        if (string.IsNullOrWhiteSpace(_mercadoLibreConfig.OAuthCallbackPath))
+            _mercadoLibreConfig.OAuthCallbackPath = "/api/conversaciones/mercadolibre/oauth/callback";
+
+        if (string.IsNullOrWhiteSpace(_mercadoLibreConfig.ApiBaseUrl))
+            _mercadoLibreConfig.ApiBaseUrl = "https://api.mercadolibre.com";
+
+        if (string.IsNullOrWhiteSpace(_mercadoLibreConfig.SiteId))
+            _mercadoLibreConfig.SiteId = "MLA";
     }
 
     private string GetCurrentBaseUrl()
@@ -578,6 +775,31 @@
             return $"{_suggestedBaseUrl.TrimEnd('/')}{_facebookConfig.WebhookPath}";
 
         return _facebookConfig.GetWebhookUrl();
+    }
+
+    private string GetMercadoLibreWebhookUrlPreview()
+    {
+        if (string.IsNullOrWhiteSpace(_mercadoLibreConfig.PublicBaseUrl))
+            return $"{_suggestedBaseUrl.TrimEnd('/')}{_mercadoLibreConfig.WebhookPath}";
+
+        return _mercadoLibreConfig.GetWebhookUrl();
+    }
+
+    private string GetMercadoLibreOAuthCallbackUrlPreview()
+    {
+        if (string.IsNullOrWhiteSpace(_mercadoLibreConfig.PublicBaseUrl))
+            return $"{_suggestedBaseUrl.TrimEnd('/')}{_mercadoLibreConfig.OAuthCallbackPath}";
+
+        return _mercadoLibreConfig.GetOAuthCallbackUrl();
+    }
+
+    private string GetMercadoLibreAuthorizationUrl()
+    {
+        if (string.IsNullOrWhiteSpace(_mercadoLibreConfig.ClientId))
+            return string.Empty;
+
+        var redirectUri = GetMercadoLibreOAuthCallbackUrlPreview();
+        return $"https://auth.mercadolibre.com.ar/authorization?response_type=code&client_id={Uri.EscapeDataString(_mercadoLibreConfig.ClientId.Trim())}&redirect_uri={Uri.EscapeDataString(redirectUri)}";
     }
 
     private string GetStatusLabel(bool ready) => ready ? "Listo" : "Pendiente";

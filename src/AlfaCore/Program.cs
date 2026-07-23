@@ -1006,6 +1006,92 @@ public class Program
             return Results.Ok(result);
         });
 
+        app.MapPost("/api/conversaciones/mercadolibre/webhook", async (
+            HttpRequest request,
+            IConversacionesService svc,
+            CancellationToken ct) =>
+        {
+            using var reader = new StreamReader(request.Body, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
+            var rawPayload = await reader.ReadToEndAsync(ct);
+            using var payload = JsonDocument.Parse(string.IsNullOrWhiteSpace(rawPayload) ? "{}" : rawPayload);
+
+            var result = await svc.RegisterIncomingMercadoLibreWebhookAsync(new ConversacionWebhookRequest
+            {
+                Payload = payload,
+                RawPayload = rawPayload,
+                Headers = request.Headers.ToDictionary(
+                    pair => pair.Key,
+                    pair => pair.Value.ToString(),
+                    StringComparer.OrdinalIgnoreCase)
+            }, ct);
+
+            return Results.Ok(result);
+        });
+
+        app.MapGet("/api/conversaciones/mercadolibre/oauth/callback", async (
+            HttpRequest request,
+            IConversacionesConfigService configService,
+            IAppEventService appEvents,
+            IHttpClientFactory httpClientFactory,
+            CancellationToken ct) =>
+        {
+            var code = request.Query["code"].ToString();
+            var error = request.Query["error"].ToString();
+            var errorDescription = request.Query["error_description"].ToString();
+
+            await appEvents.LogAuditAsync(
+                "Conversaciones",
+                "MercadoLibreOAuthCallback",
+                "TA_CONFIGURACION",
+                "CONVERSACIONES",
+                string.IsNullOrWhiteSpace(error)
+                    ? "Callback OAuth de Mercado Libre recibido."
+                    : "Callback OAuth de Mercado Libre recibido con error.",
+                new
+                {
+                    TieneCode = !string.IsNullOrWhiteSpace(code),
+                    Error = error,
+                    ErrorDescription = errorDescription
+                },
+                ct);
+
+            if (!string.IsNullOrWhiteSpace(error))
+                return Results.Text("No se pudo vincular Mercado Libre. Volvé a AlfaCore y revisá la configuración del canal.", "text/plain; charset=utf-8");
+
+            if (string.IsNullOrWhiteSpace(code))
+                return Results.Text("Mercado Libre no devolvió un código de autorización.", "text/plain; charset=utf-8");
+
+            var config = await configService.GetMercadoLibreConfigAsync(ct);
+            if (!config.IsConfiguredForAuth)
+                return Results.Text("Mercado Libre autorizó la app, pero faltan Client ID o Client Secret en AlfaCore para obtener los tokens.", "text/plain; charset=utf-8");
+
+            var redirectUri = config.GetOAuthCallbackUrl();
+            using var tokenRequest = new HttpRequestMessage(HttpMethod.Post, $"{config.ApiBaseUrl.TrimEnd('/')}/oauth/token");
+            tokenRequest.Content = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["grant_type"] = "authorization_code",
+                ["client_id"] = config.ClientId,
+                ["client_secret"] = config.ClientSecret,
+                ["code"] = code,
+                ["redirect_uri"] = redirectUri
+            });
+
+            var client = httpClientFactory.CreateClient();
+            using var tokenResponse = await client.SendAsync(tokenRequest, ct);
+            var tokenBody = await tokenResponse.Content.ReadAsStringAsync(ct);
+            if (!tokenResponse.IsSuccessStatusCode)
+                return Results.Text($"Mercado Libre autorizó la app, pero no se pudieron obtener los tokens. Respuesta: {(int)tokenResponse.StatusCode}", "text/plain; charset=utf-8");
+
+            using var tokenJson = JsonDocument.Parse(tokenBody);
+            var root = tokenJson.RootElement;
+            config.AccessToken = root.TryGetProperty("access_token", out var accessToken) ? accessToken.GetString() ?? string.Empty : string.Empty;
+            config.RefreshToken = root.TryGetProperty("refresh_token", out var refreshToken) ? refreshToken.GetString() ?? string.Empty : string.Empty;
+            config.SellerId = root.TryGetProperty("user_id", out var userId) ? userId.GetRawText().Trim('"') : config.SellerId;
+            await configService.SaveMercadoLibreConfigAsync(config, ct);
+
+            return Results.Text("Mercado Libre quedó vinculado correctamente. Ya podés volver a AlfaCore.", "text/plain; charset=utf-8");
+        });
+
         app.MapGet("/api/conversaciones/instagram/oauth/callback", async (
             HttpRequest request,
             IAppEventService appEvents,
