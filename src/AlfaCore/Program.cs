@@ -957,6 +957,55 @@ public class Program
             return Results.Ok(result);
         });
 
+        app.MapGet("/api/conversaciones/facebook/webhook", async (
+            HttpRequest request,
+            IConversacionesConfigService configService,
+            CancellationToken ct) =>
+        {
+            var options = await configService.GetFacebookConfigAsync(ct);
+            var mode = request.Query["hub.mode"].ToString();
+            var verifyToken = request.Query["hub.verify_token"].ToString();
+            var challenge = request.Query["hub.challenge"].ToString();
+
+            if (string.IsNullOrWhiteSpace(options.VerifyToken))
+                return Results.Problem("Facebook VerifyToken no está configurado.", statusCode: StatusCodes.Status500InternalServerError);
+
+            if (mode == "subscribe" && verifyToken == options.VerifyToken)
+                return Results.Text(challenge, "text/plain");
+
+            return Results.Unauthorized();
+        });
+
+        app.MapPost("/api/conversaciones/facebook/webhook", async (
+            HttpRequest request,
+            IConversacionesConfigService configService,
+            IConversacionesService svc,
+            CancellationToken ct) =>
+        {
+            var options = await configService.GetFacebookConfigAsync(ct);
+            if (string.IsNullOrWhiteSpace(options.AppSecret))
+                return Results.Problem("Facebook App Secret no está configurado.", statusCode: StatusCodes.Status500InternalServerError);
+
+            using var reader = new StreamReader(request.Body, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
+            var rawPayload = await reader.ReadToEndAsync(ct);
+            var signature = request.Headers["X-Hub-Signature-256"].ToString();
+            if (!IsValidMetaSignature(rawPayload, options.AppSecret, signature))
+                return Results.Unauthorized();
+
+            using var payload = JsonDocument.Parse(rawPayload);
+            var result = await svc.RegisterIncomingFacebookWebhookAsync(new ConversacionWebhookRequest
+            {
+                Payload = payload,
+                RawPayload = rawPayload,
+                Headers = request.Headers.ToDictionary(
+                    pair => pair.Key,
+                    pair => pair.Value.ToString(),
+                    StringComparer.OrdinalIgnoreCase)
+            }, ct);
+
+            return Results.Ok(result);
+        });
+
         app.MapGet("/api/conversaciones/instagram/oauth/callback", async (
             HttpRequest request,
             IAppEventService appEvents,

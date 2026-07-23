@@ -989,6 +989,40 @@
     grid-column: 2;
 }
 
+.conversations-page--facebook .conversations-chat__identity {
+    display: grid !important;
+    grid-template-columns: 44px minmax(0, 1fr) !important;
+    align-items: center !important;
+    column-gap: .65rem !important;
+    padding-left: 0 !important;
+}
+
+.conversations-page--facebook .conversations-chat__identity::before {
+    display: none !important;
+}
+
+.conversations-page--facebook .conversation-profile-avatar {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+    border-color: rgba(59, 130, 246, .74);
+    background: linear-gradient(135deg, #1d4ed8, #2563eb, #60a5fa);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, .18);
+}
+
+.conversations-page--facebook .conversation-profile-avatar + div,
+.conversations-page--facebook .conversations-chat__chips {
+    grid-column: 2;
+}
+
+.conversations-page--facebook .conversation-social-profile a {
+    color: #93c5fd;
+}
+
+.conversations-page--facebook .conversation-social-profile a:hover,
+.conversations-page--facebook .conversation-social-profile a:focus-visible {
+    color: #dbeafe;
+}
+
 .conversations-page--odoo .conversations-chat__header .panel-card__title,
 .conversations-page--odoo .conversations-chat__header .panel-card__subtitle {
     max-width: 100% !important;
@@ -1040,6 +1074,11 @@
     justify-content: flex-end !important;
 }
 
+.conversations-page--odoo .message-row--internal {
+    justify-content: center !important;
+    align-items: center !important;
+}
+
 .conversations-page--odoo .message-bubble-shell,
 .conversations-page--odoo .message-row:has(.message-actions) .message-bubble-shell {
     width: fit-content !important;
@@ -1050,6 +1089,11 @@
 
 .conversations-page--odoo .message-row--outgoing .message-bubble-shell {
     align-items: flex-end !important;
+}
+
+.conversations-page--odoo .message-row--internal .message-bubble-shell {
+    align-items: center !important;
+    max-width: min(58ch, 68%) !important;
 }
 
 .conversations-page--odoo .message-card,
@@ -1100,8 +1144,18 @@
 }
 
 .conversations-page--odoo .message-card--internal {
-    background: #263b5c !important;
-    color: #dbeafe !important;
+    background: #facc15 !important;
+    color: #3f2f02 !important;
+    border: 1px solid rgba(250, 204, 21, .35) !important;
+    box-shadow: 0 10px 24px rgba(250, 204, 21, .16) !important;
+}
+
+.conversations-page--odoo .message-card--internal .message-card__meta {
+    color: #6b4e00 !important;
+}
+
+.conversations-page--odoo .message-card--internal .message-card__text {
+    color: #3f2f02 !important;
 }
 
 .conversations-page--odoo .message-card__delivery i {
@@ -1669,8 +1723,12 @@
 .conversations-page--facebook .conversations-mobile-action.is-active,
 .conversations-page--facebook .conversations-mobile-chip.is-active {
     border-color: rgba(59, 130, 246, .58) !important;
-    background: rgba(37, 99, 235, .24) !important;
+    background: linear-gradient(135deg, rgba(29, 78, 216, .34), rgba(37, 99, 235, .22), rgba(96, 165, 250, .16)) !important;
     color: #eff6ff !important;
+}
+
+.conversations-page--facebook .message-card--outgoing {
+    background: linear-gradient(135deg, #1d4ed8, #0284c7) !important;
 }
 
 .conversations-window-banner--provider {

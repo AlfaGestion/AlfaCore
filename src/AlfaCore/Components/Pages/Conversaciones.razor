@@ -852,7 +852,7 @@
                                 <i class="bi bi-arrow-left"></i>
                                 <span>Volver</span>
                             </button>
-                            @if (_selectedConversation.Canal == "INSTAGRAM")
+                            @if (_selectedConversation.Canal == "INSTAGRAM" || _selectedConversation.Canal == "FACEBOOK")
                             {
                                 <div class="conversation-profile-avatar" aria-hidden="true">
                                     @if (!string.IsNullOrWhiteSpace(_selectedConversation.FotoPerfilUrl))
@@ -919,6 +919,19 @@
                                         {
                                             <span>@FormatCompactNumber(_selectedConversation.SeguidoresExterno.Value) seguidores</span>
                                         }
+                                    </div>
+                                }
+                                else if (_selectedConversation.Canal == "FACEBOOK")
+                                {
+                                    <div class="conversation-social-profile conversation-social-profile--facebook">
+                                        <a href="@GetFacebookProfileUrl(_selectedConversation)"
+                                           target="_blank"
+                                           rel="noopener noreferrer"
+                                           title="Abrir referencia en Facebook">
+                                            <i class="bi bi-facebook"></i>
+                                            Ver en Facebook
+                                            <i class="bi bi-box-arrow-up-right"></i>
+                                        </a>
                                     </div>
                                 }
                                 else if (_selectedConversation.Canal != "INTERNO" && !string.IsNullOrWhiteSpace(_selectedConversation.TelefonoWhatsApp))
@@ -1121,7 +1134,7 @@
                                 }
 
                                 <div id="@GetMessageDomId(message.IdMensaje)"
-                                     class="message-row @(IsOutgoingMessage(message) ? "message-row--outgoing" : "message-row--incoming") @(IsQuotedSource(message) ? "message-row--quoted-source" : string.Empty)"
+                                     class="message-row @GetMessageRowClass(message) @(IsQuotedSource(message) ? "message-row--quoted-source" : string.Empty)"
                                      @ondblclick="() => QuoteMessageAsync(message)">
                                     @if (_ticketSelectionMode)
                                     {
@@ -1621,13 +1634,13 @@
                                             <label for="conv-note-mobile">Nota interna</label>
                                             <textarea id="conv-note-mobile"
                                                       @ref="_internalNoteMobileTextArea"
+                                                      @key="_selectedConversationId"
                                                       rows="1"
                                                       placeholder="Escribí una nota interna visible solo para el equipo…"
-                                                      value="@_internalNoteText"
-                                                      @oninput="HandleInternalNoteInputAsync"></textarea>
+                                                      ></textarea>
                                         </div>
                                         <div class="conversations-composer__actions conversations-composer__actions--note conversations-composer__actions--note-mobile">
-                                            <button type="button" class="btn btn--ghost" @onclick="AddInternalNoteAsync" disabled="@(!_canAddNote)" title="Guardar nota interna">
+                                            <button type="button" class="btn btn--ghost" @onclick="() => AddInternalNoteAsync()" disabled="@(_busyAction || _selectedConversation is null)" title="Guardar nota interna">
                                                 <i class="bi bi-journal-text"></i>
                                             </button>
                                         </div>
@@ -1639,12 +1652,14 @@
                         <div class="field conversations-composer__note">
                             <label for="conv-note">Nota interna</label>
                             <textarea id="conv-note"
+                                      @ref="_internalNoteTextArea"
+                                      @key="_selectedConversationId"
                                       rows="1"
                                       placeholder="Escribí una nota interna visible solo para el equipo…"
-                                      @bind="_internalNoteText"></textarea>
+                                      ></textarea>
                         </div>
                         <div class="conversations-composer__actions conversations-composer__actions--note">
-                            <button type="button" class="btn btn--ghost" @onclick="AddInternalNoteAsync" disabled="@(!_canAddNote)" title="Guardar nota interna">
+                            <button type="button" class="btn btn--ghost" @onclick="() => AddInternalNoteAsync()" disabled="@(_busyAction || _selectedConversation is null)" title="Guardar nota interna">
                                 <i class="bi bi-journal-text"></i>
                             </button>
                         </div>
@@ -2624,6 +2639,7 @@
     private double _previewPanY;
     private SoundDiagnosticsVm _soundDiagnostics = new();
     private ElementReference _replyTextArea;
+    private ElementReference _internalNoteTextArea;
     private ElementReference _internalNoteMobileTextArea;
     private ElementReference _parteHorasDialogElement;
     private long? _replyEnterHandlerConversationId;
@@ -2773,11 +2789,12 @@
            && _selectedConversation.Canal == "WHATSAPP";
     private bool IsProviderPendingConversation
         => _selectedConversation is not null
-           && _selectedConversation.Canal == "FACEBOOK";
+           && false;
     private bool IsSelectedChannelSendEnabled
         => _selectedConversation is not null
            && (_selectedConversation.Canal == "WHATSAPP"
                || _selectedConversation.Canal == "INSTAGRAM"
+               || _selectedConversation.Canal == "FACEBOOK"
                || _selectedConversation.Canal == "INTERNO");
     private bool IsWhatsAppWindowExpired
         => _selectedConversation is not null
@@ -3015,6 +3032,20 @@
                 {
                     _fileDropHandlerConversationId = null;
                 }
+            }
+        }
+
+        if (_selectedConversationId.HasValue && _selectedConversation is not null)
+        {
+            _dotNetRef ??= DotNetObjectReference.Create(this);
+
+            try
+            {
+                await JS.InvokeAsync<bool>("conversacionesUi.bindInternalNoteEnter", _internalNoteTextArea, _dotNetRef);
+                await JS.InvokeAsync<bool>("conversacionesUi.bindInternalNoteEnter", _internalNoteMobileTextArea, _dotNetRef);
+            }
+            catch
+            {
             }
         }
 
@@ -5452,7 +5483,36 @@
     {
         try
         {
+            await JS.InvokeVoidAsync("conversacionesUi.autoResizeTextarea", _internalNoteTextArea, 44, 120);
             await JS.InvokeVoidAsync("conversacionesUi.autoResizeTextarea", _internalNoteMobileTextArea, 44, 120);
+        }
+        catch
+        {
+        }
+    }
+
+    private async Task<string> GetInternalNoteTextareaValueAsync()
+    {
+        try
+        {
+            var desktopValue = await JS.InvokeAsync<string>("conversacionesUi.getElementValue", _internalNoteTextArea);
+            if (!string.IsNullOrWhiteSpace(desktopValue))
+                return desktopValue;
+
+            return await JS.InvokeAsync<string>("conversacionesUi.getElementValue", _internalNoteMobileTextArea);
+        }
+        catch
+        {
+            return _internalNoteText;
+        }
+    }
+
+    private async Task SetInternalNoteTextareasValueAsync(string value)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("conversacionesUi.setElementValue", _internalNoteTextArea, value, false);
+            await JS.InvokeVoidAsync("conversacionesUi.setElementValue", _internalNoteMobileTextArea, value, false);
         }
         catch
         {
@@ -5594,6 +5654,13 @@
     [JSInvokable]
     public Task SendComposerFromEnter()
         => InvokeAsync(SendReplyAsync);
+
+    [JSInvokable]
+    public Task SendInternalNoteFromEnter(string text)
+        => InvokeAsync(async () =>
+        {
+            await AddInternalNoteAsync(text);
+        });
 
     private long AddOptimisticOutgoingMessage(string text)
     {
@@ -5769,9 +5836,14 @@
         }
     }
 
-    private async Task AddInternalNoteAsync()
+    private async Task AddInternalNoteAsync(string? explicitText = null)
     {
         if (_selectedConversation is null)
+            return;
+
+        _internalNoteText = explicitText ?? await GetInternalNoteTextareaValueAsync();
+        var noteText = _internalNoteText.Trim();
+        if (string.IsNullOrWhiteSpace(noteText))
             return;
 
         _busyAction = true;
@@ -5783,14 +5855,14 @@
             await ConversacionesSvc.AddInternalNoteAsync(new ConversacionNotaInternaRequest
             {
                 IdConversacion = _selectedConversation.IdConversacion,
-                Texto = _internalNoteText.Trim(),
+                Texto = noteText,
                 IdTecnicoAutor = CurrentMessageTechnicianId,
                 UsuarioAccion = CurrentUserNameForAudit,
                 SistemaAccion = CurrentUserSystemForAudit
             });
 
             _internalNoteText = string.Empty;
-            await AutoResizeInternalNoteTextareaAsync();
+            await SetInternalNoteTextareasValueAsync(string.Empty);
             _showComposerTools = false;
             _composerToolTab = ComposerToolTabs.Emojis;
             _actionMessage = "Nota interna guardada.";
@@ -5978,9 +6050,11 @@
                 SistemaAccion = CurrentUserSystemForAudit
             });
 
+            var idConversacion = _selectedConversation.IdConversacion;
+            _conversationCache.Remove(idConversacion);
             MarkSelectedConversationAsRead();
             _actionMessage = "Estado actualizado.";
-            await SelectConversationAsync(_selectedConversation.IdConversacion, updateUrl: false);
+            await SelectConversationAsync(idConversacion, updateUrl: false);
             await RefreshInboxAsync(showLoading: false, allowSelectionChange: false);
             return true;
         }
@@ -6942,6 +7016,13 @@
     private static string GetInstagramProfileUrl(string username)
         => $"https://www.instagram.com/{Uri.EscapeDataString(username.Trim().TrimStart('@'))}/";
 
+    private static string GetFacebookProfileUrl(ConversacionDetalleDto item)
+    {
+        return string.IsNullOrWhiteSpace(item.IdentificadorExternoContacto)
+            ? "https://www.facebook.com/"
+            : $"https://www.facebook.com/profile.php?id={Uri.EscapeDataString(item.IdentificadorExternoContacto.Trim())}";
+    }
+
     private static string FormatCompactNumber(int value)
         => value switch
         {
@@ -6964,7 +7045,7 @@
         {
             "INTERNO" => "Escribí un mensaje para el equipo...",
             "INSTAGRAM" => "Escribí una respuesta para Instagram...",
-            "FACEBOOK" => "Facebook está preparado; el envío se habilita al conectar Meta.",
+            "FACEBOOK" => "Escribí una respuesta para Facebook Messenger...",
             _ => "Escribí una respuesta para WhatsApp..."
         };
 
@@ -6983,7 +7064,7 @@
         => _selectedConversation?.Canal switch
         {
             "INSTAGRAM" => "Instagram está conectado para recibir mensajes. El envío desde AlfaCore se habilita en la próxima etapa.",
-            "FACEBOOK" => "Facebook ya está separado como canal. Falta conectar el provider de Meta para recibir y enviar mensajes reales.",
+            "FACEBOOK" => "Facebook Messenger está conectado.",
             _ => string.Empty
         };
 
@@ -7208,6 +7289,14 @@
             "ENTRANTE" => "message-card--incoming",
             "NOTA_INTERNA" => "message-card--internal",
             _ => "message-card--outgoing"
+        };
+
+    private static string GetMessageRowClass(ConversacionMensajeDto message)
+        => message.Direction switch
+        {
+            "SALIENTE" => "message-row--outgoing",
+            "NOTA_INTERNA" => "message-row--internal",
+            _ => "message-row--incoming"
         };
 
     private static bool IsIncomingMessage(ConversacionMensajeDto message)
