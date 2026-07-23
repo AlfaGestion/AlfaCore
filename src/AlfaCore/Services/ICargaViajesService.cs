@@ -16,6 +16,7 @@ public interface ICargaViajesService
     Task<CargaViajeTarifaGridItemDto?> GetTarifaByIdAsync(int id, CancellationToken ct = default);
     Task ActualizarTarifaImporteAsync(int id, string idLista, decimal importe, CancellationToken ct = default);
     Task<string> SaveTarifaAsync(CargaViajeTarifaSaveRequest request, CancellationToken ct = default);
+    Task ActualizarAdicionalesTarifasClienteAsync(string clienteCodigo, IReadOnlyCollection<string> listasSeleccionadas, CargaViajeTarifaSaveRequest source, CancellationToken ct = default);
     Task BajaTarifaAsync(string idLista, CancellationToken ct = default);
     Task BajaTarifaAsync(int id, string idLista, CancellationToken ct = default);
 

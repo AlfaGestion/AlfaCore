@@ -69,12 +69,18 @@ public sealed class CargaViajesDetailDto : CargaViajesGridItemDto
     public string AdicionalFijo1Descripcion { get; set; } = string.Empty;
     public decimal AdicionalFijo1Importe { get; set; }
     public bool AdicionalFijo1Aplicado { get; set; }
+    public bool AdicionalFijo1PideCantidad { get; set; }
+    public decimal AdicionalFijo1Cantidad { get; set; } = 1m;
     public string AdicionalFijo2Descripcion { get; set; } = string.Empty;
     public decimal AdicionalFijo2Importe { get; set; }
     public bool AdicionalFijo2Aplicado { get; set; }
+    public bool AdicionalFijo2PideCantidad { get; set; }
+    public decimal AdicionalFijo2Cantidad { get; set; } = 1m;
     public string AdicionalFijo3Descripcion { get; set; } = string.Empty;
     public decimal AdicionalFijo3Importe { get; set; }
     public bool AdicionalFijo3Aplicado { get; set; }
+    public bool AdicionalFijo3PideCantidad { get; set; }
+    public decimal AdicionalFijo3Cantidad { get; set; } = 1m;
     public decimal TotalAdicionalesFijos { get; set; }
     public string Observaciones { get; set; } = string.Empty;
     public decimal IdListaRMTRF { get; set; }
@@ -114,12 +120,18 @@ public sealed class CargaViajeSaveRequest
     public string AdicionalFijo1Descripcion { get; set; } = string.Empty;
     public decimal AdicionalFijo1Importe { get; set; }
     public bool AdicionalFijo1Aplicado { get; set; }
+    public bool AdicionalFijo1PideCantidad { get; set; }
+    public decimal AdicionalFijo1Cantidad { get; set; } = 1m;
     public string AdicionalFijo2Descripcion { get; set; } = string.Empty;
     public decimal AdicionalFijo2Importe { get; set; }
     public bool AdicionalFijo2Aplicado { get; set; }
+    public bool AdicionalFijo2PideCantidad { get; set; }
+    public decimal AdicionalFijo2Cantidad { get; set; } = 1m;
     public string AdicionalFijo3Descripcion { get; set; } = string.Empty;
     public decimal AdicionalFijo3Importe { get; set; }
     public bool AdicionalFijo3Aplicado { get; set; }
+    public bool AdicionalFijo3PideCantidad { get; set; }
+    public decimal AdicionalFijo3Cantidad { get; set; } = 1m;
     public decimal TotalAdicionalesFijos { get; set; }
     public string Observaciones { get; set; } = string.Empty;
     public string Estado { get; set; } = CargaViajeEstadoKeys.Pendiente;
@@ -161,10 +173,13 @@ public sealed class CargaViajeTarifaGridItemDto
     public decimal PorcentajeAdic4 { get; set; }
     public string AdicionalFijo1Descripcion { get; set; } = string.Empty;
     public decimal AdicionalFijo1Importe { get; set; }
+    public bool AdicionalFijo1PideCantidad { get; set; }
     public string AdicionalFijo2Descripcion { get; set; } = string.Empty;
     public decimal AdicionalFijo2Importe { get; set; }
+    public bool AdicionalFijo2PideCantidad { get; set; }
     public string AdicionalFijo3Descripcion { get; set; } = string.Empty;
     public decimal AdicionalFijo3Importe { get; set; }
+    public bool AdicionalFijo3PideCantidad { get; set; }
     public bool Activo { get; set; } = true;
     public DateTime? FechaHoraModificacion { get; set; }
     public string UsuarioModificacion { get; set; } = string.Empty;
@@ -186,6 +201,9 @@ public sealed class CargaViajeTarifaClienteResumenDto
     public string FleteroCodigoSugerido { get; set; } = string.Empty;
     public string FleteroNombreSugerido { get; set; } = string.Empty;
     public int FleteroCoincidencias { get; set; }
+    public bool AdicionalFijo1PideCantidad { get; set; }
+    public bool AdicionalFijo2PideCantidad { get; set; }
+    public bool AdicionalFijo3PideCantidad { get; set; }
     public bool Activo { get; set; } = true;
     public bool TarifaFletero { get; set; }
     public bool EsTarifaGeneral { get; set; }
@@ -210,10 +228,13 @@ public sealed class CargaViajeTarifaSaveRequest
     public decimal PorcentajeAdic4 { get; set; }
     public string AdicionalFijo1Descripcion { get; set; } = string.Empty;
     public decimal AdicionalFijo1Importe { get; set; }
+    public bool AdicionalFijo1PideCantidad { get; set; }
     public string AdicionalFijo2Descripcion { get; set; } = string.Empty;
     public decimal AdicionalFijo2Importe { get; set; }
+    public bool AdicionalFijo2PideCantidad { get; set; }
     public string AdicionalFijo3Descripcion { get; set; } = string.Empty;
     public decimal AdicionalFijo3Importe { get; set; }
+    public bool AdicionalFijo3PideCantidad { get; set; }
     public bool Activo { get; set; } = true;
 }
 

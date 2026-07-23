@@ -1,4 +1,4 @@
-@page "/carga-viajes"
+﻿@page "/carga-viajes"
 @page "/{idweb}/{idbase:int}/carga-viajes"
 @page "/carga-viajes/{Vista}"
 @page "/{idweb}/{idbase:int}/carga-viajes/{Vista}"
@@ -877,6 +877,14 @@
                                 <div class="carga-viajes-tarifa-editor__fixed-hint">
                                     Si una descripción tiene importe 0, se mostrará como advertencia visual.
                                 </div>
+                                <div class="actions" style="justify-content:flex-start; margin-top: .75rem;">
+                                    <button type="button"
+                                            class="btn btn--secondary btn--sm"
+                                            disabled="@(_tarifaForm.TarifaFletero || string.IsNullOrWhiteSpace(_tarifaForm.Cliente))"
+                                            @onclick="AbrirDuplicarTarifaAdicionalesAsync">
+                                        Seleccionar lista a duplicar adicionales
+                                    </button>
+                                </div>
                             </div>
 
                             <div class="field">
@@ -896,6 +904,113 @@
                     <footer class="cuentas-modal__actions">
                         <button type="button" class="btn btn--primary" @ref="_tarifaGuardarButton" @onclick="GuardarTarifaAsync">Guardar tarifa</button>
                         <button type="button" class="btn btn--ghost" @onclick="CerrarTarifaEditorAsync">Cerrar</button>
+                    </footer>
+                </section>
+            </div>
+        }
+        @if (_showTarifaAdicionalesPropagateModal)
+        {
+            <div class="cuentas-modal-backdrop carga-viajes-modal-backdrop" @onclick="CloseTarifaAdicionalesPropagateModalAsync">
+                <section class="cuentas-modal carga-viajes-modal carga-viajes-modal--wide" role="dialog" aria-modal="true" aria-labelledby="carga-viajes-tarifa-adicionales-title" @onclick:stopPropagation="true" @onkeydown="HandleModalKeyDownAsync" tabindex="0">
+                    <header class="cuentas-modal__header">
+                        <div>
+                            <span class="cuentas-modal__eyebrow">Tarifas</span>
+                            <h3 id="carga-viajes-tarifa-adicionales-title">Seleccionar listas a duplicar adicionales</h3>
+                        </div>
+                        <button type="button" class="cuentas-modal__close" @onclick="CloseTarifaAdicionalesPropagateModalAsync" aria-label="Cerrar">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                    </header>
+
+                    <div class="cuentas-modal__body">
+                        <div class="editor-msg carga-viajes-feedback__box carga-viajes-feedback__box--info">
+                            <div class="carga-viajes-feedback__content">
+                                <strong class="carga-viajes-feedback__title">Duplicar solo los adicionales</strong>
+                                <div class="carga-viajes-feedback__line">
+                                    <span>Elegí las tarifas que van a recibir solamente los datos de los adicionales.</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="carga-viajes-form-grid">
+                            <div class="field">
+                                <label>Cliente</label>
+                                <input type="search"
+                                       class="carga-viajes-adicionales__search"
+                                       placeholder="Filtrar por cliente"
+                                       @bind="_tarifaAdicionalesPropagateFilters.Cliente"
+                                       @bind:event="oninput" />
+                            </div>
+                            <div class="field">
+                                <label>Nombre de tarifa</label>
+                                <input type="search"
+                                       class="carga-viajes-adicionales__search"
+                                       placeholder="Filtrar por nombre de tarifa"
+                                       @bind="_tarifaAdicionalesPropagateFilters.Texto"
+                                       @bind:event="oninput" />
+                            </div>
+                            <div class="field field--wide">
+                                <button type="button" class="btn btn--ghost" @onclick="RecargarTarifaAdicionalesPropagateAsync" disabled="@_tarifaAdicionalesPropagateLoading">Buscar</button>
+                            </div>
+                            <div class="field field--wide">
+                                <div class="carga-viajes-modal__list carga-viajes-modal__list--compact">
+                                    @if (_tarifaAdicionalesPropagateLoading)
+                                    {
+                                        <div class="cuentas-modal__empty">
+                                            <span>Preparando tarifas...</span>
+                                        </div>
+                                    }
+                                    else if (_tarifaAdicionalesPropagateRows.Count == 0)
+                                    {
+                                        <div class="cuentas-modal__empty">
+                                            <span>No hay coincidencias para la búsqueda.</span>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        @foreach (var row in _tarifaAdicionalesPropagateRows)
+                                        {
+                                            var selected = _tarifaAdicionalesPropagateSelected.Contains(row.IdLista);
+                                            <label class="carga-viajes-checkbox carga-viajes-checkbox--row @(selected ? "carga-viajes-checkbox--active" : string.Empty)">
+                                                <input type="checkbox"
+                                                       class="carga-viajes-checkbox__input"
+                                                       checked="@selected"
+                                                       @onchange="args => ToggleTarifaAdicionalesPropagateSelectionAsync(row, args)" />
+                                                <span class="carga-viajes-checkbox__box" aria-hidden="true"></span>
+                                                <span class="carga-viajes-checkbox__label">
+                                                    <span class="carga-viajes-checkbox__label-title">
+                                                        <strong>@row.IdLista - @row.Nombre</strong>
+                                                    </span>
+                                                    <span class="carga-viajes-checkbox__label-meta">@row.Cliente | @row.Destino | @row.TipoVehiculo</span>
+                                                    <span class="carga-viajes-checkbox__label-meta">
+                                                        @FormatMoney(row.Importe) @if (row.TarifaFletero) { <text>| Fletero</text> }
+                                                    </span>
+                                                    <span class="carga-viajes-checkbox__label-meta">
+                                                        @if (!string.IsNullOrWhiteSpace(row.AdicionalFijo1Descripcion))
+                                                        {
+                                                            <text>A1: @row.AdicionalFijo1Descripcion (@FormatMoney(row.AdicionalFijo1Importe)@((row.AdicionalFijo1PideCantidad) ? " · Pide cantidad" : string.Empty))</text>
+                                                        }
+                                                        @if (!string.IsNullOrWhiteSpace(row.AdicionalFijo2Descripcion))
+                                                        {
+                                                            <text>@(string.IsNullOrWhiteSpace(row.AdicionalFijo1Descripcion) ? string.Empty : " | ")A2: @row.AdicionalFijo2Descripcion (@FormatMoney(row.AdicionalFijo2Importe)@((row.AdicionalFijo2PideCantidad) ? " · Pide cantidad" : string.Empty))</text>
+                                                        }
+                                                        @if (!string.IsNullOrWhiteSpace(row.AdicionalFijo3Descripcion))
+                                                        {
+                                                            <text>@((!string.IsNullOrWhiteSpace(row.AdicionalFijo1Descripcion) || !string.IsNullOrWhiteSpace(row.AdicionalFijo2Descripcion)) ? " | " : string.Empty)A3: @row.AdicionalFijo3Descripcion (@FormatMoney(row.AdicionalFijo3Importe)@((row.AdicionalFijo3PideCantidad) ? " · Pide cantidad" : string.Empty))</text>
+                                                        }
+                                                    </span>
+                                                </span>
+                                            </label>
+                                        }
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <footer class="cuentas-modal__actions">
+                        <button type="button" class="btn btn--ghost" @onclick="CloseTarifaAdicionalesPropagateModalAsync">Cancelar</button>
+                        <button type="button" class="btn btn--primary" @onclick="AplicarTarifaAdicionalesPropagateAsync" disabled="@(_tarifaAdicionalesPropagateLoading || _tarifaAdicionalesPropagateRows.Count == 0)">Actualizar adicionales</button>
                     </footer>
                 </section>
             </div>
@@ -2642,6 +2757,19 @@
                                             <span class="carga-viajes-adicionales__simple-name">@GetViajeAdicionalFijoDescripcion(index)</span>
                                             <span class="carga-viajes-adicionales__simple-percent">Importe fijo</span>
                                         </span>
+                                        @if (GetViajeAdicionalFijoPideCantidad(index))
+                                        {
+                                            <div class="carga-viajes-adicionales__fixed-quantity">
+                                                <span class="carga-viajes-adicionales__fixed-quantity-label">Cantidad</span>
+                                                <input type="number"
+                                                       class="carga-viajes-adicionales__fixed-quantity-input"
+                                                       min="1"
+                                                       step="1"
+                                                       value="@GetViajeAdicionalFijoCantidad(index).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)"
+                                                       disabled="@_viajeReadOnly"
+                                                       @onchange="args => OnViajeAdicionalFijoCantidadChangedAsync(index, args)" />
+                                            </div>
+                                        }
                                         @{
                                             var adicionalFijoImporte = GetViajeAdicionalFijoImporte(index);
                                         }
@@ -3040,6 +3168,11 @@
     private CargaViajeTarifaSaveRequest _tarifaForm = new();
     private string _tarifaOriginalIdLista = string.Empty;
     private AppUiMessage? _tarifaEditorFeedback;
+    private bool _showTarifaAdicionalesPropagateModal;
+    private bool _tarifaAdicionalesPropagateLoading;
+    private CargaViajesFilters _tarifaAdicionalesPropagateFilters = new() { PageNumber = 1, PageSize = 200 };
+    private readonly List<CargaViajeTarifaGridItemDto> _tarifaAdicionalesPropagateRows = [];
+    private readonly HashSet<string> _tarifaAdicionalesPropagateSelected = new(StringComparer.OrdinalIgnoreCase);
 
     private readonly List<CargaViajeChoferGridItemDto> _choferes = [];
     private int _choferesTotal;
@@ -4178,8 +4311,28 @@
             _ => 0m
         };
 
+    private bool GetViajeAdicionalFijoPideCantidad(int index)
+        => index switch
+        {
+            0 => _viajeForm.AdicionalFijo1PideCantidad,
+            1 => _viajeForm.AdicionalFijo2PideCantidad,
+            2 => _viajeForm.AdicionalFijo3PideCantidad,
+            _ => false
+        };
+
+    private decimal GetViajeAdicionalFijoCantidad(int index)
+        => index switch
+        {
+            0 => Math.Max(1m, _viajeForm.AdicionalFijo1Cantidad),
+            1 => Math.Max(1m, _viajeForm.AdicionalFijo2Cantidad),
+            2 => Math.Max(1m, _viajeForm.AdicionalFijo3Cantidad),
+            _ => 1m
+        };
+
     private decimal GetViajeAdicionalFijoTotal(int index)
-        => GetViajeAdicionalFijoChecked(index) ? GetViajeAdicionalFijoImporte(index) : 0m;
+        => GetViajeAdicionalFijoChecked(index)
+            ? GetViajeAdicionalFijoImporte(index) * GetViajeAdicionalFijoCantidad(index)
+            : 0m;
 
     private decimal GetViajeTotalAdicionalesFijos()
         => Enumerable.Range(0, 3).Sum(GetViajeAdicionalFijoTotal);
@@ -4218,12 +4371,15 @@
             AdicionalFijo1Descripcion = _viajeForm.AdicionalFijo1Descripcion,
             AdicionalFijo1Importe = _viajeForm.AdicionalFijo1Importe,
             AdicionalFijo1Aplicado = _viajeForm.AdicionalFijo1Aplicado,
+            AdicionalFijo1Cantidad = _viajeForm.AdicionalFijo1Cantidad,
             AdicionalFijo2Descripcion = _viajeForm.AdicionalFijo2Descripcion,
             AdicionalFijo2Importe = _viajeForm.AdicionalFijo2Importe,
             AdicionalFijo2Aplicado = _viajeForm.AdicionalFijo2Aplicado,
+            AdicionalFijo2Cantidad = _viajeForm.AdicionalFijo2Cantidad,
             AdicionalFijo3Descripcion = _viajeForm.AdicionalFijo3Descripcion,
             AdicionalFijo3Importe = _viajeForm.AdicionalFijo3Importe,
-            AdicionalFijo3Aplicado = _viajeForm.AdicionalFijo3Aplicado
+            AdicionalFijo3Aplicado = _viajeForm.AdicionalFijo3Aplicado,
+            AdicionalFijo3Cantidad = _viajeForm.AdicionalFijo3Cantidad
         };
 
         return CargaViajesService.BuildViajeTotales(request, _config);
@@ -4317,6 +4473,39 @@
         _viajeForm.TotalAdicionalesFijos = GetViajeTotalAdicionalesFijos();
         MarkViajeDirty();
         await Task.CompletedTask;
+    }
+
+    private async Task OnViajeAdicionalFijoCantidadChangedAsync(int index, ChangeEventArgs args)
+    {
+        var text = args.Value?.ToString() ?? string.Empty;
+        if (!decimal.TryParse(text, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var value) &&
+            !decimal.TryParse(text, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.CurrentCulture, out value))
+        {
+            return;
+        }
+
+        SetViajeAdicionalFijoCantidad(index, value);
+        await Task.CompletedTask;
+    }
+
+    private void SetViajeAdicionalFijoCantidad(int index, decimal value)
+    {
+        var cantidad = Math.Max(1m, value);
+        switch (index)
+        {
+            case 0:
+                _viajeForm.AdicionalFijo1Cantidad = cantidad;
+                break;
+            case 1:
+                _viajeForm.AdicionalFijo2Cantidad = cantidad;
+                break;
+            case 2:
+                _viajeForm.AdicionalFijo3Cantidad = cantidad;
+                break;
+        }
+
+        _viajeForm.TotalAdicionalesFijos = GetViajeTotalAdicionalesFijos();
+        MarkViajeDirty();
     }
 
     private async Task ToggleViajeAdicionalAsync(int index)
@@ -4620,12 +4809,15 @@
             AdicionalFijo1Descripcion = detail.AdicionalFijo1Descripcion,
             AdicionalFijo1Importe = detail.AdicionalFijo1Importe,
             AdicionalFijo1Aplicado = detail.AdicionalFijo1Aplicado,
+            AdicionalFijo1Cantidad = detail.AdicionalFijo1Cantidad,
             AdicionalFijo2Descripcion = detail.AdicionalFijo2Descripcion,
             AdicionalFijo2Importe = detail.AdicionalFijo2Importe,
             AdicionalFijo2Aplicado = detail.AdicionalFijo2Aplicado,
+            AdicionalFijo2Cantidad = detail.AdicionalFijo2Cantidad,
             AdicionalFijo3Descripcion = detail.AdicionalFijo3Descripcion,
             AdicionalFijo3Importe = detail.AdicionalFijo3Importe,
             AdicionalFijo3Aplicado = detail.AdicionalFijo3Aplicado,
+            AdicionalFijo3Cantidad = detail.AdicionalFijo3Cantidad,
             TotalAdicionalesFijos = detail.TotalAdicionalesFijos,
             Observaciones = detail.Observaciones,
             Estado = detail.Estado
@@ -4673,12 +4865,18 @@
             form.AdicionalFijo1Descripcion,
             form.AdicionalFijo1Importe,
             form.AdicionalFijo1Aplicado,
+            form.AdicionalFijo1PideCantidad,
+            form.AdicionalFijo1Cantidad,
             form.AdicionalFijo2Descripcion,
             form.AdicionalFijo2Importe,
             form.AdicionalFijo2Aplicado,
+            form.AdicionalFijo2PideCantidad,
+            form.AdicionalFijo2Cantidad,
             form.AdicionalFijo3Descripcion,
             form.AdicionalFijo3Importe,
             form.AdicionalFijo3Aplicado,
+            form.AdicionalFijo3PideCantidad,
+            form.AdicionalFijo3Cantidad,
             form.TotalAdicionalesFijos,
             form.Observaciones,
             form.Estado
@@ -5881,12 +6079,15 @@
         _viajeForm.AdicionalFijo1Descripcion = string.Empty;
         _viajeForm.AdicionalFijo1Importe = 0m;
         _viajeForm.AdicionalFijo1Aplicado = false;
+        _viajeForm.AdicionalFijo1Cantidad = 1m;
         _viajeForm.AdicionalFijo2Descripcion = string.Empty;
         _viajeForm.AdicionalFijo2Importe = 0m;
         _viajeForm.AdicionalFijo2Aplicado = false;
+        _viajeForm.AdicionalFijo2Cantidad = 1m;
         _viajeForm.AdicionalFijo3Descripcion = string.Empty;
         _viajeForm.AdicionalFijo3Importe = 0m;
         _viajeForm.AdicionalFijo3Aplicado = false;
+        _viajeForm.AdicionalFijo3Cantidad = 1m;
         _viajeForm.TotalAdicionalesFijos = 0m;
         SyncViajeAdicionalesFromForm();
         SyncViajeAdicionalesFijosFromForm();
@@ -6130,10 +6331,16 @@
             ClearVisibleAdicionalesGeneralesSelection();
             _viajeForm.AdicionalFijo1Descripcion = detalleResult.Value.AdicionalFijo1Descripcion;
             _viajeForm.AdicionalFijo1Importe = detalleResult.Value.AdicionalFijo1Importe;
+            _viajeForm.AdicionalFijo1PideCantidad = detalleResult.Value.AdicionalFijo1PideCantidad;
+            _viajeForm.AdicionalFijo1Cantidad = 1m;
             _viajeForm.AdicionalFijo2Descripcion = detalleResult.Value.AdicionalFijo2Descripcion;
             _viajeForm.AdicionalFijo2Importe = detalleResult.Value.AdicionalFijo2Importe;
+            _viajeForm.AdicionalFijo2PideCantidad = detalleResult.Value.AdicionalFijo2PideCantidad;
+            _viajeForm.AdicionalFijo2Cantidad = 1m;
             _viajeForm.AdicionalFijo3Descripcion = detalleResult.Value.AdicionalFijo3Descripcion;
             _viajeForm.AdicionalFijo3Importe = detalleResult.Value.AdicionalFijo3Importe;
+            _viajeForm.AdicionalFijo3PideCantidad = detalleResult.Value.AdicionalFijo3PideCantidad;
+            _viajeForm.AdicionalFijo3Cantidad = 1m;
             _viajeForm.AdicionalFijo1Aplicado = false;
             _viajeForm.AdicionalFijo2Aplicado = false;
             _viajeForm.AdicionalFijo3Aplicado = false;
@@ -7691,12 +7898,15 @@
             _viajeForm.AdicionalFijo1Descripcion = string.Empty;
             _viajeForm.AdicionalFijo1Importe = 0m;
             _viajeForm.AdicionalFijo1Aplicado = false;
+            _viajeForm.AdicionalFijo1Cantidad = 1m;
             _viajeForm.AdicionalFijo2Descripcion = string.Empty;
             _viajeForm.AdicionalFijo2Importe = 0m;
             _viajeForm.AdicionalFijo2Aplicado = false;
+            _viajeForm.AdicionalFijo2Cantidad = 1m;
             _viajeForm.AdicionalFijo3Descripcion = string.Empty;
             _viajeForm.AdicionalFijo3Importe = 0m;
             _viajeForm.AdicionalFijo3Aplicado = false;
+            _viajeForm.AdicionalFijo3Cantidad = 1m;
             _viajeForm.TotalAdicionalesFijos = 0m;
             return;
         }
@@ -7717,12 +7927,15 @@
             _viajeForm.AdicionalFijo1Descripcion = string.Empty;
             _viajeForm.AdicionalFijo1Importe = 0m;
             _viajeForm.AdicionalFijo1Aplicado = false;
+            _viajeForm.AdicionalFijo1PideCantidad = false;
             _viajeForm.AdicionalFijo2Descripcion = string.Empty;
             _viajeForm.AdicionalFijo2Importe = 0m;
             _viajeForm.AdicionalFijo2Aplicado = false;
+            _viajeForm.AdicionalFijo2PideCantidad = false;
             _viajeForm.AdicionalFijo3Descripcion = string.Empty;
             _viajeForm.AdicionalFijo3Importe = 0m;
             _viajeForm.AdicionalFijo3Aplicado = false;
+            _viajeForm.AdicionalFijo3PideCantidad = false;
             _viajeForm.TotalAdicionalesFijos = 0m;
             return;
         }
@@ -7735,10 +7948,16 @@
         ApplyVisibleAdicionalesGeneralesFromTarifa(tarifa);
         _viajeForm.AdicionalFijo1Descripcion = tarifa.AdicionalFijo1Descripcion;
         _viajeForm.AdicionalFijo1Importe = tarifa.AdicionalFijo1Importe;
+        _viajeForm.AdicionalFijo1PideCantidad = tarifa.AdicionalFijo1PideCantidad;
+        _viajeForm.AdicionalFijo1Cantidad = 1m;
         _viajeForm.AdicionalFijo2Descripcion = tarifa.AdicionalFijo2Descripcion;
         _viajeForm.AdicionalFijo2Importe = tarifa.AdicionalFijo2Importe;
+        _viajeForm.AdicionalFijo2PideCantidad = tarifa.AdicionalFijo2PideCantidad;
+        _viajeForm.AdicionalFijo2Cantidad = 1m;
         _viajeForm.AdicionalFijo3Descripcion = tarifa.AdicionalFijo3Descripcion;
         _viajeForm.AdicionalFijo3Importe = tarifa.AdicionalFijo3Importe;
+        _viajeForm.AdicionalFijo3PideCantidad = tarifa.AdicionalFijo3PideCantidad;
+        _viajeForm.AdicionalFijo3Cantidad = 1m;
         _viajeForm.AdicionalFijo1Aplicado = false;
         _viajeForm.AdicionalFijo2Aplicado = false;
         _viajeForm.AdicionalFijo3Aplicado = false;
@@ -8304,6 +8523,169 @@
         _tarifaSnapshot = string.Empty;
         _tarifaEditorFeedback = null;
         return Task.CompletedTask;
+    }
+
+    private async Task AbrirDuplicarTarifaAdicionalesAsync()
+    {
+        if (_tarifaForm.TarifaFletero)
+            return;
+
+        var clienteCodigo = (_tarifaForm.Cliente ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(clienteCodigo))
+            return;
+
+        _showTarifaAdicionalesPropagateModal = true;
+        _tarifaAdicionalesPropagateLoading = true;
+        _tarifaAdicionalesPropagateFilters = new CargaViajesFilters
+        {
+            Cliente = clienteCodigo,
+            Texto = string.Empty,
+            PageNumber = 1,
+            PageSize = 200,
+            SortBy = "nombre",
+            SortDescending = false
+        };
+        _tarifaAdicionalesPropagateRows.Clear();
+        _tarifaAdicionalesPropagateSelected.Clear();
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            await RecargarTarifaAdicionalesPropagateAsync();
+        }
+        finally
+        {
+            _tarifaAdicionalesPropagateLoading = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private Task CloseTarifaAdicionalesPropagateModalAsync()
+    {
+        _showTarifaAdicionalesPropagateModal = false;
+        _tarifaAdicionalesPropagateLoading = false;
+        _tarifaAdicionalesPropagateFilters = new CargaViajesFilters { PageNumber = 1, PageSize = 200 };
+        _tarifaAdicionalesPropagateRows.Clear();
+        _tarifaAdicionalesPropagateSelected.Clear();
+        return Task.CompletedTask;
+    }
+
+    private async Task RecargarTarifaAdicionalesPropagateAsync()
+    {
+        if (!_showTarifaAdicionalesPropagateModal)
+            return;
+
+        var clienteCodigo = (_tarifaAdicionalesPropagateFilters.Cliente ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(clienteCodigo))
+            clienteCodigo = (_tarifaForm.Cliente ?? string.Empty).Trim();
+
+        _tarifaAdicionalesPropagateLoading = true;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            _tarifaAdicionalesPropagateRows.Clear();
+            _tarifaAdicionalesPropagateSelected.Clear();
+
+            var filters = new CargaViajesFilters
+            {
+                Cliente = clienteCodigo,
+                Texto = (_tarifaAdicionalesPropagateFilters.Texto ?? string.Empty).Trim(),
+                PageNumber = 1,
+                PageSize = 200,
+                SortBy = "nombre",
+                SortDescending = false
+            };
+
+            var result = await UiOps.RunAsync(() => CargaViajesSvc.SearchTarifasAsync(filters), "No se pudieron cargar las tarifas.");
+            if (!result.Success || result.Value is null)
+                return;
+
+            var currentTarifaId = _tarifaForm.Id;
+            var rows = result.Value.Items
+                .Where(row => !row.TarifaFletero)
+                .Where(row => currentTarifaId <= 0 || row.Id != currentTarifaId)
+                .ToList();
+
+            _tarifaAdicionalesPropagateRows.AddRange(rows);
+            foreach (var row in rows)
+                _tarifaAdicionalesPropagateSelected.Add((row.IdLista ?? string.Empty).Trim());
+        }
+        finally
+        {
+            _tarifaAdicionalesPropagateLoading = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private Task ToggleTarifaAdicionalesPropagateSelectionAsync(CargaViajeTarifaGridItemDto row, ChangeEventArgs args)
+    {
+        var idLista = (row.IdLista ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(idLista))
+            return Task.CompletedTask;
+
+        var selected = args.Value is bool value && value;
+        if (selected)
+            _tarifaAdicionalesPropagateSelected.Add(idLista);
+        else
+            _tarifaAdicionalesPropagateSelected.Remove(idLista);
+
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private async Task AplicarTarifaAdicionalesPropagateAsync()
+    {
+        if (_tarifaAdicionalesPropagateLoading)
+            return;
+
+        var targetRows = _tarifaAdicionalesPropagateRows
+            .Where(row => _tarifaAdicionalesPropagateSelected.Contains((row.IdLista ?? string.Empty).Trim()))
+            .ToList();
+
+        if (targetRows.Count == 0)
+        {
+            _feedback = new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Warning,
+                Title = "Sin listas seleccionadas",
+                Message = "Seleccioná al menos una lista para aplicar los adicionales."
+            };
+            return;
+        }
+
+        _tarifaAdicionalesPropagateLoading = true;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+        var clienteCodigo = (_tarifaAdicionalesPropagateFilters.Cliente ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(clienteCodigo))
+            clienteCodigo = (_tarifaForm.Cliente ?? string.Empty).Trim();
+        var listasSeleccionadas = targetRows
+            .Select(row => (row.IdLista ?? string.Empty).Trim())
+            .Where(lista => !string.IsNullOrWhiteSpace(lista))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+            var saveResult = await UiOps.RunAsync(
+                () => CargaViajesSvc.ActualizarAdicionalesTarifasClienteAsync(clienteCodigo, listasSeleccionadas, _tarifaForm),
+                "No se pudieron actualizar los adicionales en las tarifas seleccionadas.");
+
+            if (!saveResult.Success)
+            {
+                _feedback = saveResult.Feedback;
+                return;
+            }
+
+            SetSuccessFeedback("Adicionales actualizados", "Los adicionales se copiaron en las tarifas seleccionadas.");
+            await CloseTarifaAdicionalesPropagateModalAsync();
+            await RecargarTarifasAsync();
+        }
+        finally
+        {
+            _tarifaAdicionalesPropagateLoading = false;
+            await InvokeAsync(StateHasChanged);
+        }
     }
 
     private async Task AplicarFiltrosChoferesAsync()

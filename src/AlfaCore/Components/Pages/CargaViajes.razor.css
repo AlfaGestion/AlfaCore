@@ -757,6 +757,63 @@
     justify-content: flex-end;
 }
 
+.carga-viajes-adicionales__fixed-quantity {
+    display: flex;
+    flex-direction: column;
+    gap: .25rem;
+    min-width: 7.5rem;
+    margin-left: auto;
+    flex: 0 0 auto;
+}
+
+.carga-viajes-adicionales__fixed-quantity-label {
+    font-size: .72rem;
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: #94a3b8;
+}
+
+.carga-viajes-adicionales__fixed-quantity-input {
+    width: 100%;
+    min-height: 2.15rem;
+    padding: .38rem .6rem;
+    border: 1px solid rgba(148, 163, 184, .22);
+    border-radius: .75rem;
+    background: rgba(15, 23, 42, .74);
+    color: #e2e8f0;
+    box-sizing: border-box;
+}
+
+.carga-viajes-adicionales__fixed-quantity-input:focus {
+    outline: none;
+    border-color: rgba(34, 211, 238, .55);
+    box-shadow: 0 0 0 3px rgba(34, 211, 238, .12);
+}
+
+.carga-viajes-adicionales__fixed-quantity-input:disabled {
+    opacity: .72;
+    cursor: not-allowed;
+}
+
+.carga-viajes-adicionales__search {
+    width: 100%;
+    margin: .4rem 0 .75rem;
+    min-height: 2.4rem;
+    padding: .45rem .7rem;
+    border: 1px solid rgba(148, 163, 184, .22);
+    border-radius: .8rem;
+    background: rgba(15, 23, 42, .7);
+    color: #e2e8f0;
+    box-sizing: border-box;
+}
+
+.carga-viajes-adicionales__search:focus {
+    outline: none;
+    border-color: rgba(34, 211, 238, .55);
+    box-shadow: 0 0 0 3px rgba(34, 211, 238, .12);
+}
+
 .carga-viajes-liquidaciones-panel {
     position: relative;
 }
@@ -1350,6 +1407,28 @@
 .carga-viajes-page .data-table th,
 .carga-viajes-page .data-table td {
     padding: .35rem .5rem;
+}
+
+.carga-viajes-page .data-table tfoot td {
+    border-top: 1px solid rgba(148, 163, 184, .16);
+    background: rgba(9, 18, 30, .94);
+    font-weight: 700;
+}
+
+.carga-viajes-page .data-table tfoot td.carga-viajes-viajes-total-row__value {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.carga-viajes-page .data-table tfoot .carga-viajes-viajes-total-row__label {
+    display: inline-flex;
+    align-items: center;
+    min-height: 1.5rem;
+    color: var(--color-text-muted);
+    font-size: .72rem;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-transform: uppercase;
 }
 
 .carga-viajes-page .data-table th:last-child,
@@ -2294,6 +2373,34 @@ html[data-theme="light"] .carga-viajes-tarifas-aumento-v2__preview-header {
     font-weight: 700;
     letter-spacing: .01em;
     color: rgba(229, 231, 235, .96);
+}
+
+.carga-viajes-checkbox--row {
+    align-items: flex-start;
+    gap: .7rem;
+    padding-block: .65rem;
+}
+
+.carga-viajes-checkbox--row .carga-viajes-checkbox__label {
+    display: flex;
+    flex-direction: column;
+    gap: .18rem;
+    width: 100%;
+    white-space: normal;
+}
+
+.carga-viajes-checkbox__label-title {
+    display: block;
+    line-height: 1.25;
+}
+
+.carga-viajes-checkbox__label-meta {
+    display: block;
+    color: rgba(203, 213, 225, .88);
+    font-size: .82rem;
+    font-weight: 600;
+    line-height: 1.25;
+    word-break: break-word;
 }
 
 .carga-viajes-check--active {
