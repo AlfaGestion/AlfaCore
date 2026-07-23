@@ -14,6 +14,7 @@ public sealed class ConversacionesConfigService(
     private const string ConfigGroup = "CONVERSACIONES";
     private const string DefaultWebhookPath = "/api/conversaciones/whatsapp/webhook";
     private const string DefaultInstagramWebhookPath = "/api/conversaciones/instagram/webhook";
+    private const string DefaultFacebookWebhookPath = "/api/conversaciones/facebook/webhook";
     private readonly WhatsAppOptions _fallbackOptions = whatsAppOptions.Value;
 
     private string ConnectionString => sessionService.GetConnectionString().Length > 0
@@ -268,6 +269,107 @@ public sealed class ConversacionesConfigService(
         }, "No se pudo guardar la configuración de Instagram.", ct);
     }
 
+    public Task<ConversacionFacebookConfigDto> GetFacebookConfigAsync(CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "GetFacebookConfig", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            var detailColumn = await ResolveDetailColumnAsync(cn, token);
+            var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+            await using var cmd = new SqlCommand(BuildFacebookSelectSql(detailColumn), cn);
+            await using var rd = await cmd.ExecuteReaderAsync(token);
+            while (await rd.ReadAsync(token))
+            {
+                var key = GetString(rd, 0);
+                var value = GetString(rd, 1);
+                var detailValue = GetString(rd, 2);
+                values[key] = ResolveStoredValue(value, detailValue);
+            }
+
+            var config = new ConversacionFacebookConfigDto
+            {
+                AppId = ReadValue(values, "CONV_FACEBOOK_APP_ID", string.Empty),
+                AppSecret = ReadValue(values, "CONV_FACEBOOK_APP_SECRET", string.Empty),
+                VerifyToken = ReadValue(values, "CONV_FACEBOOK_VERIFY_TOKEN", string.Empty),
+                AccessToken = ReadValue(values, "CONV_FACEBOOK_ACCESS_TOKEN", string.Empty),
+                PageId = ReadValue(values, "CONV_FACEBOOK_PAGE_ID", string.Empty),
+                PageUsername = ReadValue(values, "CONV_FACEBOOK_PAGE_USERNAME", string.Empty),
+                ApiVersion = ReadValue(values, "CONV_FACEBOOK_API_VERSION", string.Empty, "v22.0"),
+                PublicBaseUrl = ReadValue(values, "CONV_FACEBOOK_PUBLIC_BASE_URL", string.Empty),
+                WebhookPath = ReadValue(values, "CONV_FACEBOOK_WEBHOOK_PATH", string.Empty, DefaultFacebookWebhookPath),
+                ConfigSource = ResolveConfigSource(values, 9)
+            };
+
+            if (string.IsNullOrWhiteSpace(config.WebhookPath))
+                config.WebhookPath = DefaultFacebookWebhookPath;
+
+            return config;
+        }, "No se pudo cargar la configuración de Facebook.", ct);
+
+    public async Task SaveFacebookConfigAsync(ConversacionFacebookConfigDto config, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+
+        await ExecuteLoggedAsync("Conversaciones", "SaveFacebookConfig", async token =>
+        {
+            var normalized = Normalize(config);
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            var detailColumn = await ResolveDetailColumnAsync(cn, token);
+            await using var tx = await cn.BeginTransactionAsync(token);
+
+            foreach (var item in BuildItems(normalized))
+            {
+                var stored = SplitStoredValue(item.Value);
+                var sql = $"""
+                    UPDATE dbo.TA_CONFIGURACION
+                    SET
+                        VALOR = @Valor,
+                        {detailColumn} = @ValorAux,
+                        GRUPO = @Grupo
+                    WHERE UPPER(LTRIM(RTRIM(CLAVE))) = @ClaveNormalizada;
+
+                    IF @@ROWCOUNT = 0
+                    BEGIN
+                        INSERT INTO dbo.TA_CONFIGURACION (CLAVE, VALOR, {detailColumn}, GRUPO)
+                        VALUES (@Clave, @Valor, @ValorAux, @Grupo);
+                    END;
+                    """;
+
+                await using var cmd = new SqlCommand(sql, cn, (SqlTransaction)tx);
+                cmd.Parameters.AddWithValue("@ClaveNormalizada", item.Key.ToUpperInvariant());
+                cmd.Parameters.AddWithValue("@Clave", item.Key);
+                cmd.Parameters.AddWithValue("@Valor", DbNullable(stored.Value));
+                cmd.Parameters.AddWithValue("@ValorAux", DbNullable(stored.AuxValue));
+                cmd.Parameters.AddWithValue("@Grupo", ConfigGroup);
+                await cmd.ExecuteNonQueryAsync(token);
+            }
+
+            await tx.CommitAsync(token);
+
+            await appEvents.LogAuditAsync(
+                "Conversaciones",
+                "SaveFacebookConfig",
+                "TA_CONFIGURACION",
+                ConfigGroup,
+                "Configuración de Facebook Messenger actualizada.",
+                new
+                {
+                    normalized.AppId,
+                    normalized.PageId,
+                    normalized.PageUsername,
+                    normalized.ApiVersion,
+                    normalized.PublicBaseUrl,
+                    normalized.WebhookPath
+                },
+                token);
+
+            return true;
+        }, "No se pudo guardar la configuración de Facebook.", ct);
+    }
+
     private static async Task<string> ResolveDetailColumnAsync(SqlConnection cn, CancellationToken ct)
     {
         // Acepta ValorAux / VALOR_AUX / valor_aux y cae en DESCRIPCION solo como último recurso.
@@ -329,6 +431,27 @@ public sealed class ConversacionesConfigService(
             )
             """;
 
+    private static string BuildFacebookSelectSql(string detailColumn)
+        => $"""
+            SELECT
+                UPPER(LTRIM(RTRIM(CLAVE))),
+                ISNULL(VALOR, ''),
+                ISNULL({detailColumn}, '')
+            FROM dbo.TA_CONFIGURACION
+            WHERE UPPER(LTRIM(RTRIM(CLAVE))) IN
+            (
+                'CONV_FACEBOOK_APP_ID',
+                'CONV_FACEBOOK_APP_SECRET',
+                'CONV_FACEBOOK_VERIFY_TOKEN',
+                'CONV_FACEBOOK_ACCESS_TOKEN',
+                'CONV_FACEBOOK_PAGE_ID',
+                'CONV_FACEBOOK_PAGE_USERNAME',
+                'CONV_FACEBOOK_API_VERSION',
+                'CONV_FACEBOOK_PUBLIC_BASE_URL',
+                'CONV_FACEBOOK_WEBHOOK_PATH'
+            )
+            """;
+
     private static IEnumerable<(string Key, string Value)> BuildItems(ConversacionWhatsAppConfigDto config)
     {
         yield return ("CONV_WHATSAPP_VERIFY_TOKEN", config.VerifyToken);
@@ -352,6 +475,19 @@ public sealed class ConversacionesConfigService(
         yield return ("CONV_INSTAGRAM_API_VERSION", config.ApiVersion);
         yield return ("CONV_INSTAGRAM_PUBLIC_BASE_URL", config.PublicBaseUrl);
         yield return ("CONV_INSTAGRAM_WEBHOOK_PATH", config.WebhookPath);
+    }
+
+    private static IEnumerable<(string Key, string Value)> BuildItems(ConversacionFacebookConfigDto config)
+    {
+        yield return ("CONV_FACEBOOK_APP_ID", config.AppId);
+        yield return ("CONV_FACEBOOK_APP_SECRET", config.AppSecret);
+        yield return ("CONV_FACEBOOK_VERIFY_TOKEN", config.VerifyToken);
+        yield return ("CONV_FACEBOOK_ACCESS_TOKEN", config.AccessToken);
+        yield return ("CONV_FACEBOOK_PAGE_ID", config.PageId);
+        yield return ("CONV_FACEBOOK_PAGE_USERNAME", config.PageUsername);
+        yield return ("CONV_FACEBOOK_API_VERSION", config.ApiVersion);
+        yield return ("CONV_FACEBOOK_PUBLIC_BASE_URL", config.PublicBaseUrl);
+        yield return ("CONV_FACEBOOK_WEBHOOK_PATH", config.WebhookPath);
     }
 
     private static ConversacionWhatsAppConfigDto Normalize(ConversacionWhatsAppConfigDto config)
@@ -388,6 +524,27 @@ public sealed class ConversacionesConfigService(
             AccessToken = (config.AccessToken ?? string.Empty).Trim(),
             InstagramAccountId = (config.InstagramAccountId ?? string.Empty).Trim(),
             FacebookPageId = (config.FacebookPageId ?? string.Empty).Trim(),
+            ApiVersion = string.IsNullOrWhiteSpace(config.ApiVersion) ? "v22.0" : config.ApiVersion.Trim(),
+            PublicBaseUrl = NormalizeBaseUrl(config.PublicBaseUrl),
+            WebhookPath = path,
+            ConfigSource = string.Empty
+        };
+    }
+
+    private static ConversacionFacebookConfigDto Normalize(ConversacionFacebookConfigDto config)
+    {
+        var path = string.IsNullOrWhiteSpace(config.WebhookPath) ? DefaultFacebookWebhookPath : config.WebhookPath.Trim();
+        if (!path.StartsWith('/'))
+            path = "/" + path;
+
+        return new ConversacionFacebookConfigDto
+        {
+            AppId = (config.AppId ?? string.Empty).Trim(),
+            AppSecret = (config.AppSecret ?? string.Empty).Trim(),
+            VerifyToken = (config.VerifyToken ?? string.Empty).Trim(),
+            AccessToken = (config.AccessToken ?? string.Empty).Trim(),
+            PageId = (config.PageId ?? string.Empty).Trim(),
+            PageUsername = (config.PageUsername ?? string.Empty).Trim().TrimStart('@'),
             ApiVersion = string.IsNullOrWhiteSpace(config.ApiVersion) ? "v22.0" : config.ApiVersion.Trim(),
             PublicBaseUrl = NormalizeBaseUrl(config.PublicBaseUrl),
             WebhookPath = path,

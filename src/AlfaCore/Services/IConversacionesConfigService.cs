@@ -9,4 +9,6 @@ public interface IConversacionesConfigService
     Task SaveWhatsAppConfigAsync(ConversacionWhatsAppConfigDto config, CancellationToken ct = default);
     Task<ConversacionInstagramConfigDto> GetInstagramConfigAsync(CancellationToken ct = default);
     Task SaveInstagramConfigAsync(ConversacionInstagramConfigDto config, CancellationToken ct = default);
+    Task<ConversacionFacebookConfigDto> GetFacebookConfigAsync(CancellationToken ct = default);
+    Task SaveFacebookConfigAsync(ConversacionFacebookConfigDto config, CancellationToken ct = default);
 }

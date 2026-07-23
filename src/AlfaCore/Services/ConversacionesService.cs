@@ -1848,13 +1848,15 @@ public sealed class ConversacionesService(
             var isInternal = string.Equals(conversation.Canal, "INTERNO", StringComparison.OrdinalIgnoreCase);
             var isWhatsApp = string.Equals(conversation.Canal, "WHATSAPP", StringComparison.OrdinalIgnoreCase);
             var isInstagram = string.Equals(conversation.Canal, "INSTAGRAM", StringComparison.OrdinalIgnoreCase);
-            if (!isInternal && !isWhatsApp && !isInstagram)
+            var isFacebook = string.Equals(conversation.Canal, "FACEBOOK", StringComparison.OrdinalIgnoreCase);
+            if (!isInternal && !isWhatsApp && !isInstagram && !isFacebook)
                 throw new InvalidOperationException($"El canal {conversation.Canal} todavía no tiene envío habilitado.");
             var now = BusinessNow();
 
             string initialState;
             ConversacionWhatsAppConfigDto? whatsAppConfig = null;
             ConversacionInstagramConfigDto? instagramConfig = null;
+            ConversacionFacebookConfigDto? facebookConfig = null;
             if (isInternal)
             {
                 initialState = "ENVIADO";
@@ -1868,7 +1870,7 @@ public sealed class ConversacionesService(
 
                 initialState = whatsAppConfig.IsConfiguredForSend ? "PENDIENTE" : "PENDIENTE_CONFIG";
             }
-            else
+            else if (isInstagram)
             {
                 if (string.IsNullOrWhiteSpace(conversation.IdentificadorExternoContacto))
                     throw new InvalidOperationException("La conversación de Instagram no tiene identificado al destinatario.");
@@ -1878,6 +1880,19 @@ public sealed class ConversacionesService(
                     throw new InvalidOperationException("Falta configurar el token o el ID de cuenta de Instagram.");
                 if (!await IsInstagramWindowActiveAsync(request.IdConversacion, token))
                     throw new InvalidOperationException("La ventana estándar de 24 horas de Instagram está vencida.");
+
+                initialState = "PENDIENTE";
+            }
+            else
+            {
+                if (string.IsNullOrWhiteSpace(conversation.IdentificadorExternoContacto))
+                    throw new InvalidOperationException("La conversación de Facebook no tiene identificado al destinatario.");
+
+                facebookConfig = await conversacionesConfigService.GetFacebookConfigAsync(token);
+                if (!facebookConfig.IsConfiguredForSend)
+                    throw new InvalidOperationException("Falta configurar el token o el Page ID de Facebook Messenger.");
+                if (!await IsInstagramWindowActiveAsync(request.IdConversacion, token))
+                    throw new InvalidOperationException("La ventana estándar de 24 horas de Messenger está vencida.");
 
                 initialState = "PENDIENTE";
             }
@@ -1942,7 +1957,29 @@ public sealed class ConversacionesService(
                 }
             }
 
-            if (isInstagram)
+            else if (isFacebook && facebookConfig is not null)
+            {
+                try
+                {
+                    var sendResult = await SendToFacebookMessengerAsync(
+                        facebookConfig,
+                        conversation.IdentificadorExternoContacto,
+                        request.Texto.Trim(),
+                        token);
+                    externalMessageId = sendResult.WhatsAppMessageId;
+                    finalState = sendResult.EstadoEnvio;
+                    payload = sendResult.PayloadJson;
+                }
+                catch (Exception ex)
+                {
+                    await UpdateInstagramMessageDeliveryAsync(messageId, "ERROR_ENVIO", string.Empty, BuildDeliveryErrorPayload(ex), token);
+                    await RefreshConversationAsync(request.IdConversacion, now, request.Texto.Trim(), token);
+
+                    throw new InvalidOperationException("No se pudo enviar el mensaje por Facebook Messenger. Quedó marcado con error en la conversación.", ex);
+                }
+            }
+
+            if (isInstagram || isFacebook)
                 await UpdateInstagramMessageDeliveryAsync(messageId, finalState, externalMessageId, payload, token);
             else
                 await UpdateMessageDeliveryAsync(messageId, finalState, whatsAppMessageId, payload, token);
@@ -2957,6 +2994,67 @@ public sealed class ConversacionesService(
                 throw;
             }
         }, "No se pudo procesar el webhook de Instagram.", ct);
+
+    public Task<ConversacionWebhookResultDto> RegisterIncomingFacebookWebhookAsync(ConversacionWebhookRequest request, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "RegisterIncomingFacebookWebhook", async token =>
+        {
+            ArgumentNullException.ThrowIfNull(request);
+            var payloadJson = string.IsNullOrWhiteSpace(request.RawPayload)
+                ? request.Payload.RootElement.GetRawText()
+                : request.RawPayload;
+            var headerJson = JsonSerializer.Serialize(request.Headers);
+            var webhookLogId = await InsertWebhookLogAsync("META_FACEBOOK", "messages", payloadJson, headerJson, token);
+
+            try
+            {
+                var messages = ParseIncomingFacebookMessages(request.Payload.RootElement);
+                var config = messages.Count > 0
+                    ? await conversacionesConfigService.GetFacebookConfigAsync(token)
+                    : null;
+                var processed = 0;
+
+                foreach (var incoming in messages)
+                {
+                    if (string.IsNullOrWhiteSpace(incoming.SenderId)
+                        || string.IsNullOrWhiteSpace(incoming.MessageId)
+                        || incoming.IsEcho)
+                        continue;
+
+                    var profile = config is null
+                        ? FacebookProfile.Empty
+                        : await TryGetFacebookProfileAsync(config, incoming.SenderId, token);
+                    var conversationId = await EnsureFacebookConversationAsync(incoming, profile, token);
+                    var storedMessage = await InsertInstagramMessageIfMissingAsync(conversationId, incoming, token);
+
+                    await RefreshConversationAsync(conversationId, incoming.Timestamp, incoming.Text, token, reopenIfClosed: true);
+                    if (storedMessage.Created)
+                        await NotifyIncomingMessageAsync(conversationId, storedMessage.MessageId, token);
+                    processed++;
+                }
+
+                await UpdateWebhookLogAsync(webhookLogId, true, string.Empty, token);
+                await _appEvents.LogAuditAsync(
+                    "Conversaciones",
+                    "RegisterIncomingFacebookWebhook",
+                    "CONV_WEBHOOK_LOG",
+                    webhookLogId.ToString(CultureInfo.InvariantCulture),
+                    "Webhook de Facebook Messenger procesado.",
+                    new { Mensajes = messages.Count, Procesados = processed },
+                    token);
+
+                return new ConversacionWebhookResultDto
+                {
+                    IdWebhookLog = webhookLogId,
+                    MensajesDetectados = messages.Count,
+                    MensajesProcesados = processed
+                };
+            }
+            catch (Exception ex)
+            {
+                await UpdateWebhookLogAsync(webhookLogId, false, ex.Message, token);
+                throw;
+            }
+        }, "No se pudo procesar el webhook de Facebook.", ct);
 
     public Task<long> CreateInternalThreadAsync(ConversacionCrearHiloInternoRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "CreateInternalThread", async token =>
@@ -4732,6 +4830,149 @@ public sealed class ConversacionesService(
         }
     }
 
+    private async Task<long> EnsureFacebookConversationAsync(
+        IncomingInstagramMessage incoming,
+        FacebookProfile profile,
+        CancellationToken ct)
+    {
+        const string selectSql = """
+            SELECT TOP (1) IdConversacion
+            FROM dbo.CONV_CONVERSACIONES WITH (UPDLOCK, HOLDLOCK)
+            WHERE Canal = N'FACEBOOK'
+              AND IdentificadorExternoContacto = @SenderId
+            ORDER BY FechaHoraUltimoMensaje DESC, IdConversacion DESC;
+            """;
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct);
+        await using (var selectCmd = new SqlCommand(selectSql, cn, tx))
+        {
+            selectCmd.Parameters.AddWithValue("@SenderId", incoming.SenderId);
+            var existing = await selectCmd.ExecuteScalarAsync(ct);
+            if (existing is not null && existing is not DBNull)
+            {
+                var existingId = Convert.ToInt64(existing, CultureInfo.InvariantCulture);
+                const string updateProfileSql = """
+                    UPDATE dbo.CONV_CONVERSACIONES
+                    SET NombreVisible = CASE
+                            WHEN @NombreVisible IS NOT NULL
+                             AND (NULLIF(LTRIM(RTRIM(ISNULL(NombreVisible, N''))), N'') IS NULL
+                                  OR NombreVisible LIKE N'Facebook %')
+                                THEN @NombreVisible
+                            ELSE NombreVisible
+                        END,
+                        UsuarioExterno = COALESCE(@UsuarioExterno, UsuarioExterno),
+                        FotoPerfilUrl = COALESCE(@FotoPerfilUrl, FotoPerfilUrl),
+                        FechaHoraPerfilExterno = CASE WHEN @TienePerfil = 1 THEN GETDATE() ELSE FechaHoraPerfilExterno END,
+                        FechaHora_Modificacion = GETDATE()
+                    WHERE IdConversacion = @IdConversacion;
+                    """;
+                await using var updateCmd = new SqlCommand(updateProfileSql, cn, tx);
+                AddFacebookProfileParameters(updateCmd, profile);
+                updateCmd.Parameters.AddWithValue("@IdConversacion", existingId);
+                await updateCmd.ExecuteNonQueryAsync(ct);
+
+                await tx.CommitAsync(ct);
+                return existingId;
+            }
+        }
+
+        var displayName = FirstNonEmpty(profile.DisplayName, BuildFacebookFallbackName(incoming.SenderId));
+        const string insertSql = """
+            INSERT INTO dbo.CONV_CONVERSACIONES
+            (
+                Canal,
+                NombreVisible,
+                IdentificadorExternoContacto,
+                IdentificadorExternoConversacion,
+                UsuarioExterno,
+                FotoPerfilUrl,
+                FechaHoraPerfilExterno,
+                CodigoEstado,
+                ResumenUltimoMensaje,
+                FechaHoraPrimerMensaje,
+                FechaHoraUltimoMensaje,
+                FechaHora_Grabacion
+            )
+            VALUES
+            (
+                N'FACEBOOK',
+                @NombreVisible,
+                @SenderId,
+                @SenderId,
+                @UsuarioExterno,
+                @FotoPerfilUrl,
+                CASE WHEN @TienePerfil = 1 THEN GETDATE() ELSE NULL END,
+                N'ABIERTA',
+                @ResumenUltimoMensaje,
+                @FechaHora,
+                @FechaHora,
+                GETDATE()
+            );
+
+            SELECT CAST(SCOPE_IDENTITY() AS bigint);
+            """;
+
+        await using var insertCmd = new SqlCommand(insertSql, cn, tx);
+        AddFacebookProfileParameters(insertCmd, profile);
+        insertCmd.Parameters["@NombreVisible"].Value = displayName;
+        insertCmd.Parameters.AddWithValue("@SenderId", incoming.SenderId);
+        insertCmd.Parameters.AddWithValue("@ResumenUltimoMensaje", DbNullable(TrimForSummary(incoming.Text)));
+        insertCmd.Parameters.AddWithValue("@FechaHora", incoming.Timestamp);
+        var result = await insertCmd.ExecuteScalarAsync(ct);
+        var conversationId = Convert.ToInt64(result, CultureInfo.InvariantCulture);
+        await tx.CommitAsync(ct);
+        return conversationId;
+    }
+
+    private async Task<FacebookProfile> TryGetFacebookProfileAsync(
+        ConversacionFacebookConfigDto config,
+        string senderId,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(config.AccessToken) || string.IsNullOrWhiteSpace(senderId))
+            return FacebookProfile.Empty;
+
+        var version = string.IsNullOrWhiteSpace(config.ApiVersion) ? "v25.0" : config.ApiVersion.Trim();
+        var fields = "first_name,last_name,profile_pic";
+        var url = $"https://graph.facebook.com/{version}/{Uri.EscapeDataString(senderId)}?fields={fields}";
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", config.AccessToken.Trim());
+
+        try
+        {
+            var client = httpClientFactory.CreateClient();
+            using var profileCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            profileCts.CancelAfter(TimeSpan.FromSeconds(3));
+            using var response = await client.SendAsync(request, profileCts.Token);
+            if (!response.IsSuccessStatusCode)
+                return FacebookProfile.Empty;
+
+            var body = await response.Content.ReadAsStringAsync(ct);
+            using var doc = JsonDocument.Parse(body);
+            var root = doc.RootElement;
+            return new FacebookProfile
+            {
+                FirstName = root.TryGetProperty("first_name", out var firstName) ? firstName.GetString() ?? string.Empty : string.Empty,
+                LastName = root.TryGetProperty("last_name", out var lastName) ? lastName.GetString() ?? string.Empty : string.Empty,
+                ProfilePictureUrl = root.TryGetProperty("profile_pic", out var profilePicture) ? profilePicture.GetString() ?? string.Empty : string.Empty
+            };
+        }
+        catch (Exception) when (!ct.IsCancellationRequested)
+        {
+            return FacebookProfile.Empty;
+        }
+    }
+
+    private static void AddFacebookProfileParameters(SqlCommand command, FacebookProfile profile)
+    {
+        command.Parameters.AddWithValue("@NombreVisible", DbNullable(profile.DisplayName));
+        command.Parameters.AddWithValue("@UsuarioExterno", DBNull.Value);
+        command.Parameters.AddWithValue("@FotoPerfilUrl", DbNullable(profile.ProfilePictureUrl));
+        command.Parameters.AddWithValue("@TienePerfil", profile.HasData);
+    }
+
     private static void AddInstagramProfileParameters(SqlCommand command, InstagramProfile profile)
     {
         command.Parameters.AddWithValue("@NombreVisible", DbNullable(profile.DisplayName));
@@ -4762,6 +5003,13 @@ public sealed class ConversacionesService(
         var normalized = senderId.Trim();
         var suffix = normalized.Length <= 6 ? normalized : normalized[^6..];
         return string.IsNullOrWhiteSpace(suffix) ? "Contacto de Instagram" : $"Instagram …{suffix}";
+    }
+
+    private static string BuildFacebookFallbackName(string senderId)
+    {
+        var normalized = senderId.Trim();
+        var suffix = normalized.Length <= 6 ? normalized : normalized[^6..];
+        return string.IsNullOrWhiteSpace(suffix) ? "Contacto de Facebook" : $"Facebook ...{suffix}";
     }
 
     private async Task<ConversationIdentity> RequireConversationAsync(long idConversacion, CancellationToken ct)
@@ -5257,8 +5505,10 @@ public sealed class ConversacionesService(
                 END,
                 CodigoEstado = CASE
                     WHEN @Reabrir = 1 AND (
-                        c.FechaHoraCierre IS NOT NULL
-                        OR UPPER(LTRIM(RTRIM(ISNULL(c.CodigoEstado, N'')))) IN (N'CERRADA', N'CERRADO')
+                        c.FechaHoraCierre IS NULL
+                        OR @FechaHora > c.FechaHoraCierre
+                    ) AND (
+                        UPPER(LTRIM(RTRIM(ISNULL(c.CodigoEstado, N'')))) IN (N'CERRADA', N'CERRADO')
                         OR EXISTS (
                             SELECT 1
                             FROM dbo.CONV_ESTADOS e
@@ -5270,8 +5520,10 @@ public sealed class ConversacionesService(
                 END,
                 FechaHoraCierre = CASE
                     WHEN @Reabrir = 1 AND (
-                        c.FechaHoraCierre IS NOT NULL
-                        OR UPPER(LTRIM(RTRIM(ISNULL(c.CodigoEstado, N'')))) IN (N'CERRADA', N'CERRADO')
+                        c.FechaHoraCierre IS NULL
+                        OR @FechaHora > c.FechaHoraCierre
+                    ) AND (
+                        UPPER(LTRIM(RTRIM(ISNULL(c.CodigoEstado, N'')))) IN (N'CERRADA', N'CERRADO')
                         OR EXISTS (
                             SELECT 1
                             FROM dbo.CONV_ESTADOS e
@@ -5321,7 +5573,6 @@ public sealed class ConversacionesService(
                     AND (
                         c.FechaHoraCierre IS NULL
                         OR m.FechaHora > c.FechaHoraCierre
-                        OR m.FechaHora_Grabacion > c.FechaHoraCierre
                     )
               );
             """;
@@ -5627,6 +5878,41 @@ public sealed class ConversacionesService(
             throw new InvalidOperationException($"Meta Instagram devolvió {(int)response.StatusCode}: {responseBody}");
 
         var messageId = RequireSentMessageId(responseBody, "enviar mensaje de Instagram");
+        return new WhatsAppSendResult
+        {
+            EstadoEnvio = "ENVIADO_META",
+            WhatsAppMessageId = messageId,
+            PayloadJson = responseBody
+        };
+    }
+
+    private async Task<WhatsAppSendResult> SendToFacebookMessengerAsync(
+        ConversacionFacebookConfigDto config,
+        string recipientId,
+        string text,
+        CancellationToken ct)
+    {
+        var version = string.IsNullOrWhiteSpace(config.ApiVersion) ? "v25.0" : config.ApiVersion.Trim();
+        var pageId = config.PageId.Trim();
+        var url = $"https://graph.facebook.com/{version}/{Uri.EscapeDataString(pageId)}/messages";
+        using var request = new HttpRequestMessage(HttpMethod.Post, url);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", config.AccessToken.Trim());
+
+        var payload = new
+        {
+            recipient = new { id = recipientId.Trim() },
+            message = new { text }
+        };
+
+        request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+        var client = httpClientFactory.CreateClient();
+        using var response = await client.SendAsync(request, ct);
+        var responseBody = await response.Content.ReadAsStringAsync(ct);
+
+        if (!response.IsSuccessStatusCode)
+            throw new InvalidOperationException($"Meta Messenger devolvió {(int)response.StatusCode}: {responseBody}");
+
+        var messageId = RequireSentMessageId(responseBody, "enviar mensaje de Messenger");
         return new WhatsAppSendResult
         {
             EstadoEnvio = "ENVIADO_META",
@@ -6651,6 +6937,88 @@ public sealed class ConversacionesService(
         return items;
     }
 
+    private static List<IncomingInstagramMessage> ParseIncomingFacebookMessages(JsonElement root)
+    {
+        var items = new List<IncomingInstagramMessage>();
+        if (!root.TryGetProperty("object", out var objectProperty)
+            || !string.Equals(objectProperty.GetString(), "page", StringComparison.OrdinalIgnoreCase)
+            || !root.TryGetProperty("entry", out var entries)
+            || entries.ValueKind != JsonValueKind.Array)
+            return items;
+
+        foreach (var entry in entries.EnumerateArray())
+        {
+            var pageId = entry.TryGetProperty("id", out var pageIdProperty)
+                ? pageIdProperty.GetString() ?? string.Empty
+                : string.Empty;
+            if (!entry.TryGetProperty("messaging", out var messaging) || messaging.ValueKind != JsonValueKind.Array)
+                continue;
+
+            foreach (var item in messaging.EnumerateArray())
+            {
+                var senderId = ReadNestedString(item, "sender", "id");
+                var recipientId = ReadNestedString(item, "recipient", "id");
+                var timestamp = ParseInstagramTimestamp(item);
+
+                if (item.TryGetProperty("message", out var message) && message.ValueKind == JsonValueKind.Object)
+                {
+                    var messageId = message.TryGetProperty("mid", out var mid) ? mid.GetString() ?? string.Empty : string.Empty;
+                    if (string.IsNullOrWhiteSpace(messageId))
+                        continue;
+
+                    var text = message.TryGetProperty("text", out var textProperty)
+                        ? textProperty.GetString() ?? string.Empty
+                        : string.Empty;
+                    var messageType = ResolveInstagramMessageType(message);
+                    if (string.IsNullOrWhiteSpace(text))
+                        text = BuildFacebookAttachmentSummary(messageType);
+
+                    items.Add(new IncomingInstagramMessage
+                    {
+                        AccountId = pageId,
+                        SenderId = senderId,
+                        RecipientId = recipientId,
+                        MessageId = messageId,
+                        ReplyToMessageId = ReadNestedString(message, "reply_to", "mid"),
+                        MessageType = messageType,
+                        Timestamp = timestamp,
+                        Text = text,
+                        IsEcho = message.TryGetProperty("is_echo", out var echo) && echo.ValueKind == JsonValueKind.True,
+                        RawJson = item.GetRawText()
+                    });
+                    continue;
+                }
+
+                if (item.TryGetProperty("postback", out var postback) && postback.ValueKind == JsonValueKind.Object)
+                {
+                    var title = postback.TryGetProperty("title", out var titleProperty)
+                        ? titleProperty.GetString() ?? string.Empty
+                        : string.Empty;
+                    var payload = postback.TryGetProperty("payload", out var payloadProperty)
+                        ? payloadProperty.GetString() ?? string.Empty
+                        : string.Empty;
+                    var messageId = FirstNonEmpty(
+                        postback.TryGetProperty("mid", out var mid) ? mid.GetString() ?? string.Empty : string.Empty,
+                        $"postback:{senderId}:{timestamp:yyyyMMddHHmmssfff}");
+
+                    items.Add(new IncomingInstagramMessage
+                    {
+                        AccountId = pageId,
+                        SenderId = senderId,
+                        RecipientId = recipientId,
+                        MessageId = messageId,
+                        MessageType = "TEXT",
+                        Timestamp = timestamp,
+                        Text = FirstNonEmpty(title, payload, "Interacción recibida desde Facebook Messenger."),
+                        RawJson = item.GetRawText()
+                    });
+                }
+            }
+        }
+
+        return items;
+    }
+
     private static string ReadNestedString(JsonElement parent, string objectName, string propertyName)
     {
         if (!parent.TryGetProperty(objectName, out var nested)
@@ -6714,6 +7082,16 @@ public sealed class ConversacionesService(
             "AUDIO" => "Audio recibido en Instagram.",
             "DOCUMENT" => "Archivo recibido en Instagram.",
             _ => "Mensaje recibido en Instagram."
+        };
+
+    private static string BuildFacebookAttachmentSummary(string messageType)
+        => NormalizeMessageType(messageType) switch
+        {
+            "IMAGE" => "Imagen recibida en Facebook Messenger.",
+            "VIDEO" => "Video recibido en Facebook Messenger.",
+            "AUDIO" => "Audio recibido en Facebook Messenger.",
+            "DOCUMENT" => "Archivo recibido en Facebook Messenger.",
+            _ => "Mensaje recibido en Facebook Messenger."
         };
 
     private static List<IncomingWhatsAppMessage> ParseIncomingMessages(JsonElement root)
@@ -8448,6 +8826,19 @@ public sealed class ConversacionesService(
                                || IsUserFollowingBusiness.HasValue
                                || IsBusinessFollowingUser.HasValue;
         public string DisplayName => FirstNonEmpty(Name, string.IsNullOrWhiteSpace(Username) ? string.Empty : $"@{Username}");
+    }
+
+    private sealed class FacebookProfile
+    {
+        public static FacebookProfile Empty { get; } = new();
+
+        public string FirstName { get; init; } = string.Empty;
+        public string LastName { get; init; } = string.Empty;
+        public string ProfilePictureUrl { get; init; } = string.Empty;
+        public bool HasData => !string.IsNullOrWhiteSpace(FirstName)
+                               || !string.IsNullOrWhiteSpace(LastName)
+                               || !string.IsNullOrWhiteSpace(ProfilePictureUrl);
+        public string DisplayName => FirstNonEmpty($"{FirstName} {LastName}".Trim(), FirstName, LastName);
     }
 
     private sealed class IncomingWhatsAppStatus

@@ -581,6 +581,34 @@ window.conversacionesUi = {
         return true;
     },
 
+    bindInternalNoteEnter: function (element, dotNetRef) {
+        if (!element || !dotNetRef) return false;
+
+        if (element._conversacionesInternalNoteEnterHandler) {
+            element.removeEventListener('keydown', element._conversacionesInternalNoteEnterHandler);
+        }
+        if (element._conversacionesInternalNoteResizeHandler) {
+            element.removeEventListener('input', element._conversacionesInternalNoteResizeHandler);
+        }
+
+        const handler = (event) => {
+            if (event.key !== 'Enter' || event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) {
+                return;
+            }
+
+            event.preventDefault();
+            dotNetRef.invokeMethodAsync('SendInternalNoteFromEnter', element.value || '').catch(() => {});
+        };
+
+        const resize = () => window.conversacionesUi.autoResizeTextarea(element, 44, 120);
+        element.addEventListener('keydown', handler);
+        element.addEventListener('input', resize);
+        element._conversacionesInternalNoteEnterHandler = handler;
+        element._conversacionesInternalNoteResizeHandler = resize;
+        resize();
+        return true;
+    },
+
     scrollToMessage: function (messageId) {
         if (!messageId) return false;
 
