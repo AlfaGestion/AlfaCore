@@ -661,7 +661,7 @@ else
             <div class="menu__footer">
                 @if (string.IsNullOrWhiteSpace(_currentModule))
                 {
-                    @if (_pwaCanInstall)
+                    @if (_pwaCanInstall || (AppMode.IsSaaSMode && !_pwaInstalled))
                     {
                         <button type="button" class="menu__link menu__button" @onclick="InstallPwaAsync">
                             <span class="menu__icon"><i class="bi bi-download"></i></span>
