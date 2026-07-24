@@ -1044,6 +1044,211 @@
     box-shadow: 0 0 0 3px rgba(250, 204, 21, .18);
 }
 
+.conversation-row__avatar--mercadolibre,
+.conversations-page--mercadolibre .conversation-profile-avatar--mercadolibre {
+    border-radius: 12px;
+    border-color: rgba(250, 204, 21, .78);
+    background: linear-gradient(135deg, #fde047, #f59e0b);
+    color: #111827;
+    box-shadow: 0 0 0 3px rgba(250, 204, 21, .14);
+}
+
+.conversation-row__avatar--mercadolibre img,
+.conversations-page--mercadolibre .conversation-profile-avatar--mercadolibre img {
+    border-radius: 10px;
+    object-fit: cover;
+}
+
+.conversation-badge--mercadolibre-buyer {
+    border-color: rgba(250, 204, 21, .42);
+    background: rgba(250, 204, 21, .1);
+    color: #fde68a;
+}
+
+.conversation-badge--mercadolibre-count {
+    border-color: rgba(14, 165, 233, .34);
+    background: rgba(14, 165, 233, .1);
+    color: #bae6fd;
+}
+
+.mercadolibre-group-chevron {
+    display: inline-grid;
+    width: 20px;
+    height: 20px;
+    place-items: center;
+    border: 1px solid rgba(250, 204, 21, .36);
+    border-radius: 999px;
+    color: #fde047;
+    font-size: .72rem;
+    background: rgba(250, 204, 21, .08);
+}
+
+.mercadolibre-inbox-children {
+    display: grid;
+    gap: .42rem;
+    position: relative;
+    margin: -.45rem .45rem .75rem 2.05rem;
+    padding: .35rem 0 .1rem 1rem;
+}
+
+.mercadolibre-inbox-children::before {
+    content: "";
+    position: absolute;
+    left: .18rem;
+    top: 0;
+    bottom: .4rem;
+    width: 2px;
+    border-radius: 999px;
+    background: linear-gradient(180deg, rgba(250, 204, 21, .86), rgba(14, 165, 233, .22));
+}
+
+.mercadolibre-inbox-child {
+    display: grid;
+    grid-template-columns: minmax(5rem, auto) minmax(0, 1fr) auto;
+    align-items: center;
+    gap: .45rem;
+    position: relative;
+    min-height: 38px;
+    border: 1px solid rgba(30, 64, 96, .78);
+    border-radius: 8px;
+    padding: .42rem .5rem .42rem .62rem;
+    background: linear-gradient(135deg, rgba(8, 20, 34, .82), rgba(15, 23, 42, .72));
+    color: #dbeafe;
+    text-align: left;
+    cursor: pointer;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .03);
+}
+
+.mercadolibre-inbox-child::before {
+    content: "";
+    position: absolute;
+    left: -1rem;
+    top: 50%;
+    width: .82rem;
+    height: 2px;
+    background: rgba(250, 204, 21, .68);
+}
+
+.mercadolibre-inbox-child:hover,
+.mercadolibre-inbox-child:focus-visible {
+    border-color: rgba(250, 204, 21, .58);
+    background: linear-gradient(135deg, rgba(250, 204, 21, .14), rgba(15, 23, 42, .78));
+    outline: none;
+}
+
+.mercadolibre-inbox-child.is-active {
+    border-color: rgba(250, 204, 21, .9);
+    background: linear-gradient(135deg, rgba(250, 204, 21, .2), rgba(14, 165, 233, .1));
+    box-shadow: 0 0 0 2px rgba(250, 204, 21, .1);
+}
+
+.mercadolibre-inbox-child__buyer {
+    overflow: hidden;
+    color: #fde68a;
+    font-size: .7rem;
+    font-weight: 900;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mercadolibre-inbox-child strong {
+    min-width: 0;
+    overflow: hidden;
+    font-size: .78rem;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mercadolibre-inbox-child__side {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: .32rem;
+    min-width: 0;
+}
+
+.mercadolibre-inbox-child small {
+    color: #93c5fd;
+    font-size: .68rem;
+    white-space: nowrap;
+}
+
+.mercadolibre-inbox-child__new {
+    display: inline-grid;
+    min-width: 18px;
+    height: 18px;
+    place-items: center;
+    border-radius: 999px;
+    padding: 0 .28rem;
+    background: #ef4444;
+    color: white;
+    font-size: .64rem;
+    font-weight: 900;
+    line-height: 1;
+    box-shadow: 0 0 0 2px rgba(239, 68, 68, .22);
+}
+
+.mercadolibre-thread-picker {
+    display: grid;
+    gap: .45rem;
+    padding: .65rem .75rem;
+    border-bottom: 1px solid rgba(250, 204, 21, .16);
+    background: linear-gradient(90deg, rgba(250, 204, 21, .08), rgba(15, 23, 42, .28));
+}
+
+.mercadolibre-thread-picker__item {
+    display: grid;
+    grid-template-columns: minmax(8rem, auto) minmax(0, 1fr) auto;
+    align-items: center;
+    gap: .55rem;
+    width: 100%;
+    min-height: 40px;
+    border: 1px solid rgba(148, 163, 184, .16);
+    border-radius: 8px;
+    padding: .45rem .6rem;
+    background: rgba(15, 23, 42, .62);
+    color: #dbeafe;
+    text-align: left;
+    cursor: pointer;
+}
+
+.mercadolibre-thread-picker__item:hover,
+.mercadolibre-thread-picker__item:focus-visible {
+    border-color: rgba(250, 204, 21, .46);
+    background: rgba(250, 204, 21, .1);
+}
+
+.mercadolibre-thread-picker__item.is-active {
+    border-color: rgba(250, 204, 21, .72);
+    background: rgba(250, 204, 21, .16);
+    color: #fffbeb;
+}
+
+.mercadolibre-thread-picker__buyer {
+    overflow: hidden;
+    color: #fde68a;
+    font-size: .76rem;
+    font-weight: 800;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mercadolibre-thread-picker__item strong {
+    min-width: 0;
+    overflow: hidden;
+    font-size: .82rem;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mercadolibre-thread-picker__item small {
+    color: #93c5fd;
+    font-size: .72rem;
+    white-space: nowrap;
+}
+
 .conversations-page--mercadolibre .conversation-profile-avatar + div,
 .conversations-page--mercadolibre .conversations-chat__chips {
     grid-column: 2;
