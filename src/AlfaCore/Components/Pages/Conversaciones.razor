@@ -334,6 +334,12 @@
                         <i class="bi bi-plus-circle-fill"></i> Nuevo hilo
                     </button>
                 }
+                @if (_canalActivo == "MERCADOLIBRE")
+                {
+                    <button type="button" class="btn btn--primary btn--sm conversations-sync-meli-button" @onclick="SyncMercadoLibreQuestionsAsync" disabled="@(_syncingMercadoLibre || _loadingInbox)">
+                        <i class="bi bi-arrow-repeat"></i> Sincronizar
+                    </button>
+                }
             </div>
 
             <div class="conversations-module-actions">
@@ -734,14 +740,14 @@
                 else
                 {
                     <div class="conversations-list__items">
-                        @foreach (var item in _inbox)
+                        @foreach (var item in InboxDisplayItems)
                         {
                             <div role="button"
                                  tabindex="0"
                                  class="@ConversationRowClass(item)"
-                                 @onclick="() => SelectConversationAsync(item.IdConversacion, showMobileChat: true)"
-                                 @onkeydown="args => HandleConversationRowKeyDownAsync(args, item.IdConversacion)">
-                                <span class="conversation-row__avatar" aria-hidden="true">
+                                 @onclick="() => SelectInboxItemAsync(item, showMobileChat: true)"
+                                 @onkeydown="args => HandleInboxRowKeyDownAsync(args, item)">
+                                <span class="conversation-row__avatar @(item.Canal == "MERCADOLIBRE" ? "conversation-row__avatar--mercadolibre" : string.Empty)" aria-hidden="true">
                                     @if (!string.IsNullOrWhiteSpace(item.FotoPerfilUrl))
                                     {
                                         <img src="@item.FotoPerfilUrl" alt="" loading="lazy" referrerpolicy="no-referrer" />
@@ -755,6 +761,12 @@
                                 <div class="conversation-row__top">
                                     <span class="conversation-row__name">@GetDisplayName(item)</span>
                                     <span class="conversation-row__side">
+                                        @if (item.Canal == "MERCADOLIBRE" && GetMercadoLibreGroupCount(item) > 1)
+                                        {
+                                            <span class="mercadolibre-group-chevron" aria-hidden="true">
+                                                <i class="bi @(IsMercadoLibreGroupExpanded(item) ? "bi-chevron-down" : "bi-chevron-right")"></i>
+                                            </span>
+                                        }
                                         <button type="button"
                                                 class="conversation-pin @(item.FijadaPorUsuario ? "is-pinned" : string.Empty)"
                                                 title="@(item.FijadaPorUsuario ? "Desfijar para mi usuario" : "Fijar para mi usuario")"
@@ -764,9 +776,9 @@
                                             <i class="bi @(item.FijadaPorUsuario ? "bi-pin-angle-fill" : "bi-pin-angle")"></i>
                                         </button>
                                         <span class="conversation-row__date">@FormatShortDate(item.FechaHoraUltimoMensaje)</span>
-                                        @if (GetConversationNewCount(item.IdConversacion) > 0)
+                                        @if (GetInboxDisplayNewCount(item) > 0)
                                         {
-                                            <span class="conversation-row__new-count">@GetConversationNewCount(item.IdConversacion)</span>
+                                            <span class="conversation-row__new-count">@GetInboxDisplayNewCount(item)</span>
                                         }
                                     </span>
                                 </div>
@@ -775,6 +787,18 @@
                                     @if (!string.IsNullOrWhiteSpace(item.ClienteNombre))
                                     {
                                         <span class="conversation-badge">@item.ClienteNombre</span>
+                                    }
+                                    @if (item.Canal == "MERCADOLIBRE")
+                                    {
+                                        var groupCount = GetMercadoLibreGroupCount(item);
+                                        if (groupCount > 1)
+                                        {
+                                            <span class="conversation-badge conversation-badge--mercadolibre-count">@groupCount preguntas</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="conversation-badge conversation-badge--mercadolibre-buyer">@GetMercadoLibreBuyerLabel(item)</span>
+                                        }
                                     }
                                 </div>
                                 <p class="conversation-row__summary">
@@ -789,6 +813,28 @@
                                 </p>
                                 </div>
                             </div>
+                            @if (ShouldShowMercadoLibreInboxChildren(item))
+                            {
+                                <div class="mercadolibre-inbox-children">
+                                    @foreach (var question in GetMercadoLibreGroupItems(item))
+                                    {
+                                        <button type="button"
+                                                class="mercadolibre-inbox-child @(question.IdConversacion == _selectedConversationId ? "is-active" : string.Empty)"
+                                                @onclick="() => SelectMercadoLibreGroupQuestionAsync(question.IdConversacion)"
+                                                disabled="@(_loadingConversation && question.IdConversacion == _selectedConversationId)">
+                                            <span class="mercadolibre-inbox-child__buyer">@GetMercadoLibreBuyerLabel(question)</span>
+                                            <strong>@FormatInboxSummary(question.ResumenUltimoMensaje)</strong>
+                                            <span class="mercadolibre-inbox-child__side">
+                                                <small>@FormatShortDate(question.FechaHoraUltimoMensaje)</small>
+                                                @if (GetConversationNewCount(question.IdConversacion) > 0)
+                                                {
+                                                    <span class="mercadolibre-inbox-child__new">@GetConversationNewCount(question.IdConversacion)</span>
+                                                }
+                                            </span>
+                                        </button>
+                                    }
+                                </div>
+                            }
                         }
                     </div>
                 }
@@ -870,7 +916,7 @@
                             </button>
                             @if (_selectedConversation.Canal == "INSTAGRAM" || _selectedConversation.Canal == "FACEBOOK" || _selectedConversation.Canal == "MERCADOLIBRE")
                             {
-                                <div class="conversation-profile-avatar" aria-hidden="true">
+                                <div class="conversation-profile-avatar @(_selectedConversation.Canal == "MERCADOLIBRE" ? "conversation-profile-avatar--mercadolibre" : string.Empty)" aria-hidden="true">
                                     @if (!string.IsNullOrWhiteSpace(_selectedConversation.FotoPerfilUrl))
                                     {
                                         <img src="@_selectedConversation.FotoPerfilUrl" alt="" referrerpolicy="no-referrer" />
@@ -961,6 +1007,7 @@
                                             Ver publicación
                                             <i class="bi bi-box-arrow-up-right"></i>
                                         </a>
+                                        <span>@GetMercadoLibreBuyerLabel(_selectedConversation)</span>
                                     </div>
                                 }
                                 else if (_selectedConversation.Canal != "INTERNO" && !string.IsNullOrWhiteSpace(_selectedConversation.TelefonoWhatsApp))
@@ -1112,6 +1159,23 @@
                                     <i class="bi bi-x-circle"></i> Cancelar
                                 </button>
                             </div>
+                        </div>
+                    }
+
+                    @if (ShouldShowMercadoLibreThreadPicker)
+                    {
+                        <div class="mercadolibre-thread-picker" aria-label="Preguntas de la publicación">
+                            @foreach (var question in _selectedMercadoLibreGroupItems)
+                            {
+                                <button type="button"
+                                        class="mercadolibre-thread-picker__item @(question.IdConversacion == _selectedConversationId ? "is-active" : string.Empty)"
+                                        @onclick="() => SelectMercadoLibreGroupQuestionAsync(question.IdConversacion)"
+                                        disabled="@(_loadingConversation || question.IdConversacion == _selectedConversationId)">
+                                    <span class="mercadolibre-thread-picker__buyer">@GetMercadoLibreBuyerLabel(question)</span>
+                                    <strong>@FormatInboxSummary(question.ResumenUltimoMensaje)</strong>
+                                    <small>@FormatShortDate(question.FechaHoraUltimoMensaje)</small>
+                                </button>
+                            }
                         </div>
                     }
 
@@ -2612,7 +2676,11 @@
     private bool _loadingInbox;
     private bool _loadingAuditMessages;
     private bool _loadingConversation;
+    private bool _syncingMercadoLibre;
     private bool _busyAction;
+    private string _selectedMercadoLibreGroupKey = string.Empty;
+    private List<ConversacionInboxItemDto> _selectedMercadoLibreGroupItems = [];
+    private readonly HashSet<string> _expandedMercadoLibreGroupKeys = new(StringComparer.OrdinalIgnoreCase);
     private bool _editingConversationName;
     private bool _savingConversationName;
     private bool _focusConversationNameAfterRender;
@@ -2839,6 +2907,12 @@
         => _parteHoraTicketEstados.Where(x => !x.EsCerrado).ToList();
     private IReadOnlyList<ConversacionMensajeDto> VisibleMessages
         => OrderConversationMessages(_messages.Where(x => !IsReactionMessage(x)));
+    private IReadOnlyList<ConversacionInboxItemDto> InboxDisplayItems
+        => _canalActivo == "MERCADOLIBRE"
+            ? BuildMercadoLibreInboxGroups()
+            : _inbox;
+    private bool ShouldShowMercadoLibreThreadPicker
+        => false;
     private IReadOnlyList<ConversacionEstadoOptionDto> HeaderStatusOptions
         => _states
             .Where(x => !x.EsCerrado || string.Equals(x.CodigoEstado, _statusCode, StringComparison.OrdinalIgnoreCase))
@@ -2903,8 +2977,8 @@
             return;
         }
 
-        if (_selectedConversationId.HasValue && _inbox.Count > 0 && !ShouldKeepAuditResultsOpen)
-            await SelectConversationAsync(_inbox[0].IdConversacion, updateUrl: false);
+        if (_selectedConversationId.HasValue && InboxDisplayItems.Count > 0 && !ShouldKeepAuditResultsOpen)
+            await SelectInboxItemAsync(InboxDisplayItems[0]);
         else if (_selectedConversationId.HasValue)
             ClearSelection();
     }
@@ -3364,6 +3438,34 @@
         await LoadAuditMessagesIfNeededAsync();
     }
 
+    private async Task SyncMercadoLibreQuestionsAsync()
+    {
+        if (_syncingMercadoLibre)
+            return;
+
+        _syncingMercadoLibre = true;
+        _actionError = null;
+        _actionMessage = null;
+
+        try
+        {
+            var result = await ConversacionesSvc.SyncMercadoLibreQuestionsAsync();
+            _actionMessage = result.MensajesProcesados == 0
+                ? "Mercado Libre no devolvió preguntas pendientes nuevas."
+                : $"Mercado Libre sincronizó {result.MensajesProcesados.ToString(System.Globalization.CultureInfo.InvariantCulture)} pregunta(s).";
+
+            await LoadInboxAsync();
+        }
+        catch (Exception ex)
+        {
+            _actionError = ex.Message;
+        }
+        finally
+        {
+            _syncingMercadoLibre = false;
+        }
+    }
+
     private async Task<int> RefreshInboxAsync(bool showLoading, bool allowSelectionChange, bool trackNewMessages = false)
     {
         if (showLoading)
@@ -3387,7 +3489,10 @@
             StoreChannelCache(_canalActivo);
 
             if (_selectedConversationId.HasValue && _inbox.Any(x => x.IdConversacion == _selectedConversationId.Value))
+            {
+                RefreshSelectedMercadoLibreGroup();
                 return newMessagesDetected;
+            }
 
             if (showLoading)
             {
@@ -3396,8 +3501,8 @@
                 await Task.Yield();
             }
 
-            if (allowSelectionChange && _inbox.Count > 0 && !ShouldKeepAuditResultsOpen)
-                await SelectConversationAsync(_inbox[0].IdConversacion, updateUrl: false);
+            if (allowSelectionChange && InboxDisplayItems.Count > 0 && !ShouldKeepAuditResultsOpen)
+                await SelectInboxItemAsync(InboxDisplayItems[0], updateUrl: false);
             else if (allowSelectionChange)
                 ClearSelection();
         }
@@ -3473,8 +3578,13 @@
     private string ConversationRowClass(ConversacionInboxItemDto item)
     {
         var classes = "conversation-row";
-        if (item.IdConversacion == _selectedConversationId)
+        if (item.IdConversacion == _selectedConversationId
+            || (item.Canal == "MERCADOLIBRE"
+                && _selectedConversationId.HasValue
+                && GetMercadoLibreGroupItems(item).Any(x => x.IdConversacion == _selectedConversationId.Value)))
+        {
             classes += " is-selected";
+        }
         if (item.FijadaPorUsuario)
             classes += " is-pinned";
         return classes;
@@ -3541,6 +3651,12 @@
 
     private async Task SelectConversationAsync(long idConversacion, bool showMobileChat = false, bool updateUrl = true)
     {
+        if (_canalActivo != "MERCADOLIBRE")
+        {
+            _selectedMercadoLibreGroupKey = string.Empty;
+            _selectedMercadoLibreGroupItems = [];
+        }
+
         if (updateUrl && NavigateToConversationUrl(idConversacion))
             return;
 
@@ -3553,6 +3669,47 @@
         _showMobileChatActions = false;
         CancelTicketSelection();
         await LoadConversationAsync(idConversacion, showLoading: true, clearActionState: true);
+    }
+
+    private async Task SelectInboxItemAsync(ConversacionInboxItemDto item, bool showMobileChat = false, bool updateUrl = true)
+    {
+        if (item.Canal != "MERCADOLIBRE")
+        {
+            await SelectConversationAsync(item.IdConversacion, showMobileChat: showMobileChat, updateUrl: updateUrl);
+            return;
+        }
+
+        _selectedMercadoLibreGroupKey = GetMercadoLibreGroupKey(item);
+        _selectedMercadoLibreGroupItems = GetMercadoLibreGroupItems(item).ToList();
+        var wasExpanded = _expandedMercadoLibreGroupKeys.Contains(_selectedMercadoLibreGroupKey);
+        if (wasExpanded)
+            _expandedMercadoLibreGroupKeys.Remove(_selectedMercadoLibreGroupKey);
+        else
+            _expandedMercadoLibreGroupKeys.Add(_selectedMercadoLibreGroupKey);
+
+        if (showMobileChat)
+            _mobileChatActive = true;
+
+        if (!wasExpanded || _selectedConversationId is null)
+            await SelectConversationAsync(item.IdConversacion, showMobileChat: showMobileChat, updateUrl: updateUrl);
+    }
+
+    private async Task SelectMercadoLibreGroupQuestionAsync(long idConversacion)
+    {
+        var question = _inbox.FirstOrDefault(x => x.IdConversacion == idConversacion);
+        if (question is not null)
+        {
+            _selectedMercadoLibreGroupKey = GetMercadoLibreGroupKey(question);
+            _expandedMercadoLibreGroupKeys.Add(_selectedMercadoLibreGroupKey);
+        }
+
+        await SelectConversationAsync(idConversacion, showMobileChat: true);
+    }
+
+    private async Task HandleInboxRowKeyDownAsync(KeyboardEventArgs args, ConversacionInboxItemDto item)
+    {
+        if (args.Key is "Enter" or " ")
+            await SelectInboxItemAsync(item, showMobileChat: true);
     }
 
     private bool NavigateToConversationUrl(long idConversacion)
@@ -3622,6 +3779,7 @@
             await Task.WhenAll(conversationTask, messagesTask, attachmentsTask, typingTask);
 
             _selectedConversation = await conversationTask;
+            RefreshSelectedMercadoLibreGroup();
             if (conversationChanged || clearActionState || !_editingConversationName)
             {
                 _editingConversationName = false;
@@ -5652,7 +5810,7 @@
             _actionMessage = _selectedConversation.Canal == "INTERNO"
                 ? "Mensaje registrado correctamente."
                 : "Mensaje enviado correctamente.";
-            await SelectConversationAsync(_selectedConversation.IdConversacion, updateUrl: false);
+            await LoadConversationAsync(_selectedConversation.IdConversacion, showLoading: false, clearActionState: false);
             await RefreshInboxAsync(showLoading: false, allowSelectionChange: false);
         }
         catch (Exception ex)
@@ -6120,6 +6278,7 @@
         _canalActivo = canal;
         _filters.Canal = canal;
         _showNuevoHilo = false;
+        ClearSelection();
 
         if (TryApplyChannelCache(canal))
         {
@@ -6127,7 +6286,6 @@
             return;
         }
 
-        ClearSelection();
         await LoadInboxAsync();
     }
 
@@ -6982,6 +7140,109 @@
     private static string GetDisplayName(ConversacionInboxItemDto item)
         => FirstNonEmpty(item.NombreVisible, item.ContactoNombre, item.ClienteNombre, item.TelefonoWhatsApp);
 
+    private IReadOnlyList<ConversacionInboxItemDto> BuildMercadoLibreInboxGroups()
+    {
+        return _inbox
+            .GroupBy(GetMercadoLibreGroupKey, StringComparer.OrdinalIgnoreCase)
+            .Select(group =>
+            {
+                var ordered = group
+                    .OrderByDescending(x => x.FechaHoraUltimoMensaje)
+                    .ThenByDescending(x => x.IdConversacion)
+                    .ToList();
+                var latest = ordered[0];
+                return new ConversacionInboxItemDto
+                {
+                    IdConversacion = latest.IdConversacion,
+                    Canal = latest.Canal,
+                    TelefonoWhatsApp = latest.TelefonoWhatsApp,
+                    NombreVisible = latest.NombreVisible,
+                    UsuarioExterno = latest.UsuarioExterno,
+                    FotoPerfilUrl = latest.FotoPerfilUrl,
+                    PerfilExternoVerificado = latest.PerfilExternoVerificado,
+                    ClienteCodigo = latest.ClienteCodigo,
+                    ClienteNombre = latest.ClienteNombre,
+                    IdContacto = latest.IdContacto,
+                    ContactoNombre = latest.ContactoNombre,
+                    CodigoEstado = latest.CodigoEstado,
+                    EstadoDescripcion = latest.EstadoDescripcion,
+                    IdTecnico = latest.IdTecnico,
+                    TecnicoNombre = latest.TecnicoNombre,
+                    ResumenUltimoMensaje = latest.ResumenUltimoMensaje,
+                    DireccionUltimoMensaje = latest.DireccionUltimoMensaje,
+                    EstadoUltimoMensaje = latest.EstadoUltimoMensaje,
+                    TipoUltimoMensaje = latest.TipoUltimoMensaje,
+                    FechaHoraUltimoMensaje = latest.FechaHoraUltimoMensaje,
+                    FechaHoraUltimoMensajeCliente = ordered
+                        .Where(x => x.FechaHoraUltimoMensajeCliente.HasValue)
+                        .Select(x => x.FechaHoraUltimoMensajeCliente)
+                        .OrderByDescending(x => x)
+                        .FirstOrDefault(),
+                    IdUltimoMensajeCliente = latest.IdUltimoMensajeCliente,
+                    CantidadMensajesCliente = ordered.Sum(x => x.CantidadMensajesCliente),
+                    MensajesNoLeidosUsuario = ordered.Sum(x => x.MensajesNoLeidosUsuario),
+                    VentanaWhatsAppActiva = latest.VentanaWhatsAppActiva,
+                    FechaHoraVencimientoVentanaWhatsApp = latest.FechaHoraVencimientoVentanaWhatsApp,
+                    Archivada = ordered.All(x => x.Archivada),
+                    Bloqueada = ordered.Any(x => x.Bloqueada),
+                    FijadaPorUsuario = ordered.Any(x => x.FijadaPorUsuario),
+                    FechaHoraFijada = ordered
+                        .Where(x => x.FechaHoraFijada.HasValue)
+                        .Select(x => x.FechaHoraFijada)
+                        .OrderByDescending(x => x)
+                        .FirstOrDefault()
+                };
+            })
+            .OrderByDescending(x => x.FijadaPorUsuario)
+            .ThenByDescending(x => x.FechaHoraFijada ?? DateTime.MinValue)
+            .ThenByDescending(x => x.FechaHoraUltimoMensaje)
+            .ToList();
+    }
+
+    private IReadOnlyList<ConversacionInboxItemDto> GetMercadoLibreGroupItems(ConversacionInboxItemDto item)
+    {
+        var key = GetMercadoLibreGroupKey(item);
+        return _inbox
+            .Where(x => string.Equals(GetMercadoLibreGroupKey(x), key, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(x => x.FechaHoraUltimoMensaje)
+            .ThenByDescending(x => x.IdConversacion)
+            .ToList();
+    }
+
+    private int GetMercadoLibreGroupCount(ConversacionInboxItemDto item)
+        => item.Canal == "MERCADOLIBRE" ? GetMercadoLibreGroupItems(item).Count : 1;
+
+    private bool IsMercadoLibreGroupExpanded(ConversacionInboxItemDto item)
+        => item.Canal == "MERCADOLIBRE"
+           && _expandedMercadoLibreGroupKeys.Contains(GetMercadoLibreGroupKey(item));
+
+    private int GetInboxDisplayNewCount(ConversacionInboxItemDto item)
+        => item.Canal == "MERCADOLIBRE"
+            ? GetMercadoLibreGroupItems(item).Sum(x => GetConversationNewCount(x.IdConversacion))
+            : GetConversationNewCount(item.IdConversacion);
+
+    private bool ShouldShowMercadoLibreInboxChildren(ConversacionInboxItemDto item)
+        => item.Canal == "MERCADOLIBRE"
+           && GetMercadoLibreGroupCount(item) > 1
+           && IsMercadoLibreGroupExpanded(item);
+
+    private void RefreshSelectedMercadoLibreGroup()
+    {
+        if (_selectedConversation?.Canal != "MERCADOLIBRE")
+            return;
+
+        var selectedInboxItem = _inbox.FirstOrDefault(x => x.IdConversacion == _selectedConversation.IdConversacion);
+        if (selectedInboxItem is null)
+            return;
+
+        _selectedMercadoLibreGroupKey = GetMercadoLibreGroupKey(selectedInboxItem);
+        _selectedMercadoLibreGroupItems = GetMercadoLibreGroupItems(selectedInboxItem).ToList();
+        _expandedMercadoLibreGroupKeys.Add(_selectedMercadoLibreGroupKey);
+    }
+
+    private static string GetMercadoLibreGroupKey(ConversacionInboxItemDto item)
+        => FirstNonEmpty(item.UsuarioExterno, item.NombreVisible, item.IdConversacion.ToString(System.Globalization.CultureInfo.InvariantCulture)).Trim().ToUpperInvariant();
+
     private static string FormatInboxSummary(string? summary)
     {
         var value = summary?.Trim() ?? string.Empty;
@@ -7055,11 +7316,24 @@
 
     private static string GetMercadoLibreQuestionUrl(ConversacionDetalleDto item)
     {
-        if (!string.IsNullOrWhiteSpace(item.UsuarioExterno))
-            return $"https://www.mercadolibre.com.ar/publicaciones/{Uri.EscapeDataString(item.UsuarioExterno.Trim())}";
+        var itemId = item.UsuarioExterno?.Trim() ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(itemId))
+        {
+            var match = System.Text.RegularExpressions.Regex.Match(itemId, @"^MLA(\d+)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (match.Success)
+                return $"https://articulo.mercadolibre.com.ar/MLA-{Uri.EscapeDataString(match.Groups[1].Value)}-_JM";
+
+            return $"https://www.mercadolibre.com.ar/publicaciones/{Uri.EscapeDataString(itemId)}";
+        }
 
         return "https://www.mercadolibre.com.ar/";
     }
+
+    private static string GetMercadoLibreBuyerLabel(ConversacionInboxItemDto item)
+        => FirstNonEmpty(item.TelefonoWhatsApp, "Comprador de Mercado Libre");
+
+    private static string GetMercadoLibreBuyerLabel(ConversacionDetalleDto item)
+        => FirstNonEmpty(item.TelefonoWhatsApp, item.IdentificadorExternoContacto, "Comprador de Mercado Libre");
 
     private static string FormatCompactNumber(int value)
         => value switch

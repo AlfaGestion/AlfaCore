@@ -837,6 +837,7 @@ public sealed class ConversacionesService(
                     CASE WHEN pin.IdConversacion IS NULL THEN CAST(0 AS bit) ELSE CAST(1 AS bit) END AS FijadaPorUsuario,
                     pin.FechaHora_Grabacion AS FechaHoraFijada,
                     ISNULL(noLeidos.CantidadNoLeida, 0) AS MensajesNoLeidosUsuario,
+                    ISNULL(c.Canal, N''),
                     ISNULL(c.UsuarioExterno, N''),
                     ISNULL(c.FotoPerfilUrl, N''),
                     ISNULL(c.PerfilExternoVerificado, 0),
@@ -1178,12 +1179,13 @@ public sealed class ConversacionesService(
                     FijadaPorUsuario = !rd.IsDBNull(18) && rd.GetBoolean(18),
                     FechaHoraFijada = rd.IsDBNull(19) ? null : rd.GetDateTime(19),
                     MensajesNoLeidosUsuario = rd.IsDBNull(20) ? 0 : rd.GetInt32(20),
-                    UsuarioExterno = GetString(rd, 21),
-                    FotoPerfilUrl = GetString(rd, 22),
-                    PerfilExternoVerificado = !rd.IsDBNull(23) && rd.GetBoolean(23),
-                    DireccionUltimoMensaje = GetString(rd, 24),
-                    EstadoUltimoMensaje = GetString(rd, 25),
-                    TipoUltimoMensaje = GetString(rd, 26)
+                    Canal = GetString(rd, 21),
+                    UsuarioExterno = GetString(rd, 22),
+                    FotoPerfilUrl = GetString(rd, 23),
+                    PerfilExternoVerificado = !rd.IsDBNull(24) && rd.GetBoolean(24),
+                    DireccionUltimoMensaje = GetString(rd, 25),
+                    EstadoUltimoMensaje = GetString(rd, 26),
+                    TipoUltimoMensaje = GetString(rd, 27)
                 });
             }
 
@@ -1527,9 +1529,21 @@ public sealed class ConversacionesService(
                         WHERE a.IdMensaje = m.IdMensaje
                     ) THEN 1 ELSE 0 END
                 FROM dbo.CONV_MENSAJES m
+                INNER JOIN dbo.CONV_CONVERSACIONES c
+                    ON c.IdConversacion = @IdConversacion
                 LEFT JOIN dbo.V_TA_Tecnicos t
                     ON LTRIM(RTRIM(t.IdTecnico)) = LTRIM(RTRIM(m.IdTecnicoAutor))
                 WHERE m.IdConversacion = @IdConversacion
+                  AND (
+                        c.Canal <> N'MERCADOLIBRE'
+                        OR NULLIF(c.IdentificadorExternoConversacion, N'') IS NULL
+                        OR m.Direction = N'NOTA_INTERNA'
+                        OR m.Direction = N'SALIENTE'
+                        OR m.MessageType = N'SYSTEM'
+                        OR NULLIF(m.MessageIdExterno, N'') IS NULL
+                        OR m.MessageIdExterno = CONCAT(N'meli-question-', c.IdentificadorExternoConversacion)
+                        OR m.MessageIdExterno LIKE CONCAT(N'meli-answer-', c.IdentificadorExternoConversacion, N'-%')
+                      )
                 ORDER BY {ConversationMessageVisibleDateSql("m")} ASC, m.IdMensaje ASC
             """;
 
@@ -3154,6 +3168,48 @@ public sealed class ConversacionesService(
                 throw;
             }
         }, "No se pudo procesar el webhook de Mercado Libre.", ct);
+
+    public Task<ConversacionWebhookResultDto> SyncMercadoLibreQuestionsAsync(CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "SyncMercadoLibreQuestions", async token =>
+        {
+            var config = await conversacionesConfigService.GetMercadoLibreConfigAsync(token);
+            if (!config.IsConfiguredForApi || string.IsNullOrWhiteSpace(config.SellerId))
+                throw new InvalidOperationException("Falta configurar Mercado Libre con Access Token y Seller/User ID.");
+
+            var questions = await GetMercadoLibreUnansweredQuestionsAsync(config, token);
+            var processed = 0;
+
+            foreach (var question in questions)
+            {
+                if (string.IsNullOrWhiteSpace(question.QuestionId))
+                    continue;
+
+                var conversationId = await EnsureMercadoLibreConversationAsync(question, token);
+                var incoming = question.ToIncomingMessage();
+                var storedMessage = await InsertInstagramMessageIfMissingAsync(conversationId, incoming, token);
+
+                await RefreshConversationAsync(conversationId, incoming.Timestamp, incoming.Text, token, reopenIfClosed: true);
+                if (storedMessage.Created)
+                    await NotifyIncomingMessageAsync(conversationId, storedMessage.MessageId, token);
+                processed++;
+            }
+
+            await _appEvents.LogAuditAsync(
+                "Conversaciones",
+                "SyncMercadoLibreQuestions",
+                "CONV_CONVERSACIONES",
+                config.SellerId,
+                "Preguntas de Mercado Libre sincronizadas.",
+                new { Detectadas = questions.Count, Procesadas = processed },
+                token);
+
+            return new ConversacionWebhookResultDto
+            {
+                IdWebhookLog = 0,
+                MensajesDetectados = questions.Count,
+                MensajesProcesados = processed
+            };
+        }, "No se pudieron sincronizar las preguntas de Mercado Libre.", ct);
 
     public Task<long> CreateInternalThreadAsync(ConversacionCrearHiloInternoRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "CreateInternalThread", async token =>
@@ -5087,8 +5143,14 @@ public sealed class ConversacionesService(
                 const string updateSql = """
                     UPDATE dbo.CONV_CONVERSACIONES
                     SET NombreVisible = COALESCE(NULLIF(@NombreVisible, N''), NombreVisible),
+                        TelefonoWhatsApp = COALESCE(NULLIF(@BuyerDisplayName, N''), TelefonoWhatsApp),
                         IdentificadorExternoContacto = COALESCE(NULLIF(@BuyerId, N''), IdentificadorExternoContacto),
+                        IdentificadorExternoConversacion = COALESCE(NULLIF(@QuestionId, N''), IdentificadorExternoConversacion),
                         UsuarioExterno = COALESCE(NULLIF(@ItemId, N''), UsuarioExterno),
+                        FotoPerfilUrl = COALESCE(NULLIF(@FotoPerfilUrl, N''), FotoPerfilUrl),
+                        FechaHoraPerfilExterno = CASE WHEN @TieneItem = 1 THEN GETDATE() ELSE FechaHoraPerfilExterno END,
+                        CodigoEstado = CASE WHEN ISNULL(Archivada, 0) = 1 THEN N'ABIERTA' ELSE CodigoEstado END,
+                        Archivada = 0,
                         ResumenUltimoMensaje = COALESCE(NULLIF(@ResumenUltimoMensaje, N''), ResumenUltimoMensaje),
                         FechaHora_Modificacion = GETDATE()
                     WHERE IdConversacion = @IdConversacion;
@@ -5097,7 +5159,9 @@ public sealed class ConversacionesService(
                 await using var updateCmd = new SqlCommand(updateSql, cn, tx);
                 updateCmd.Parameters.AddWithValue("@IdConversacion", existingId);
                 AddMercadoLibreConversationParameters(updateCmd, question);
+                updateCmd.Parameters.AddWithValue("@QuestionId", question.QuestionId);
                 await updateCmd.ExecuteNonQueryAsync(ct);
+                await MoveMercadoLibreQuestionMessagesAsync(cn, tx, existingId, question.QuestionId, ct);
 
                 await tx.CommitAsync(ct);
                 return existingId;
@@ -5109,9 +5173,12 @@ public sealed class ConversacionesService(
             (
                 Canal,
                 NombreVisible,
+                TelefonoWhatsApp,
                 IdentificadorExternoContacto,
                 IdentificadorExternoConversacion,
                 UsuarioExterno,
+                FotoPerfilUrl,
+                FechaHoraPerfilExterno,
                 CodigoEstado,
                 ResumenUltimoMensaje,
                 FechaHoraPrimerMensaje,
@@ -5122,9 +5189,12 @@ public sealed class ConversacionesService(
             (
                 N'MERCADOLIBRE',
                 @NombreVisible,
+                @BuyerDisplayName,
                 @BuyerId,
                 @QuestionId,
                 @ItemId,
+                @FotoPerfilUrl,
+                CASE WHEN @TieneItem = 1 THEN GETDATE() ELSE NULL END,
                 N'ABIERTA',
                 @ResumenUltimoMensaje,
                 @FechaHora,
@@ -5141,6 +5211,7 @@ public sealed class ConversacionesService(
         insertCmd.Parameters.AddWithValue("@FechaHora", question.Timestamp);
         var result = await insertCmd.ExecuteScalarAsync(ct);
         var conversationId = Convert.ToInt64(result, CultureInfo.InvariantCulture);
+        await MoveMercadoLibreQuestionMessagesAsync(cn, tx, conversationId, question.QuestionId, ct);
         await tx.CommitAsync(ct);
         return conversationId;
     }
@@ -5148,9 +5219,89 @@ public sealed class ConversacionesService(
     private static void AddMercadoLibreConversationParameters(SqlCommand command, MercadoLibreQuestion question)
     {
         command.Parameters.AddWithValue("@NombreVisible", DbNullable(question.DisplayName));
+        command.Parameters.AddWithValue("@BuyerDisplayName", DbNullable(question.BuyerDisplayName));
         command.Parameters.AddWithValue("@BuyerId", DbNullable(question.BuyerId));
         command.Parameters.AddWithValue("@ItemId", DbNullable(question.ItemId));
+        command.Parameters.AddWithValue("@FotoPerfilUrl", DbNullable(question.ItemPictureUrl));
+        command.Parameters.AddWithValue("@TieneItem", question.HasItemMetadata);
         command.Parameters.AddWithValue("@ResumenUltimoMensaje", DbNullable(TrimForSummary(question.Text)));
+    }
+
+    private static async Task MoveMercadoLibreQuestionMessagesAsync(
+        SqlConnection cn,
+        SqlTransaction tx,
+        long targetConversationId,
+        string questionId,
+        CancellationToken ct)
+    {
+        if (targetConversationId <= 0 || string.IsNullOrWhiteSpace(questionId))
+            return;
+
+        const string moveIncomingSql = """
+            UPDATE m
+            SET IdConversacion = @TargetConversationId
+            FROM dbo.CONV_MENSAJES m
+            WHERE m.MessageIdExterno = @QuestionMessageId
+              AND m.IdConversacion <> @TargetConversationId
+              AND NOT EXISTS
+              (
+                  SELECT 1
+                  FROM dbo.CONV_MENSAJES x
+                  WHERE x.IdConversacion = @TargetConversationId
+                    AND x.MessageIdExterno = m.MessageIdExterno
+              );
+            """;
+
+        const string deleteDuplicatedIncomingSql = """
+            DELETE m
+            FROM dbo.CONV_MENSAJES m
+            WHERE m.MessageIdExterno = @QuestionMessageId
+              AND m.IdConversacion <> @TargetConversationId
+              AND EXISTS
+              (
+                  SELECT 1
+                  FROM dbo.CONV_MENSAJES x
+                  WHERE x.IdConversacion = @TargetConversationId
+                    AND x.MessageIdExterno = m.MessageIdExterno
+              );
+            """;
+
+        const string moveAnswersSql = """
+            UPDATE m
+            SET IdConversacion = @TargetConversationId
+            FROM dbo.CONV_MENSAJES m
+            WHERE m.MessageIdExterno LIKE @AnswerMessagePrefix
+              AND m.IdConversacion <> @TargetConversationId
+              AND NOT EXISTS
+              (
+                  SELECT 1
+                  FROM dbo.CONV_MENSAJES x
+                  WHERE x.IdConversacion = @TargetConversationId
+                    AND x.MessageIdExterno = m.MessageIdExterno
+              );
+            """;
+
+        var questionMessageId = $"meli-question-{questionId.Trim()}";
+        var answerMessagePrefix = $"meli-answer-{questionId.Trim()}-%";
+
+        await using (var moveIncomingCmd = new SqlCommand(moveIncomingSql, cn, tx))
+        {
+            moveIncomingCmd.Parameters.AddWithValue("@TargetConversationId", targetConversationId);
+            moveIncomingCmd.Parameters.AddWithValue("@QuestionMessageId", questionMessageId);
+            await moveIncomingCmd.ExecuteNonQueryAsync(ct);
+        }
+
+        await using (var deleteIncomingCmd = new SqlCommand(deleteDuplicatedIncomingSql, cn, tx))
+        {
+            deleteIncomingCmd.Parameters.AddWithValue("@TargetConversationId", targetConversationId);
+            deleteIncomingCmd.Parameters.AddWithValue("@QuestionMessageId", questionMessageId);
+            await deleteIncomingCmd.ExecuteNonQueryAsync(ct);
+        }
+
+        await using var moveAnswersCmd = new SqlCommand(moveAnswersSql, cn, tx);
+        moveAnswersCmd.Parameters.AddWithValue("@TargetConversationId", targetConversationId);
+        moveAnswersCmd.Parameters.AddWithValue("@AnswerMessagePrefix", answerMessagePrefix);
+        await moveAnswersCmd.ExecuteNonQueryAsync(ct);
     }
 
     private static void AddFacebookProfileParameters(SqlCommand command, FacebookProfile profile)
@@ -6145,15 +6296,6 @@ public sealed class ConversacionesService(
             throw new InvalidOperationException($"Mercado Libre devolvió {(int)response.StatusCode}: {responseBody}");
 
         var messageId = $"meli-answer-{questionId.Trim()}-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture)}";
-        try
-        {
-            using var doc = JsonDocument.Parse(responseBody);
-            if (doc.RootElement.TryGetProperty("id", out var idElement))
-                messageId = ConvertJsonElementToString(idElement);
-        }
-        catch (JsonException)
-        {
-        }
 
         return new WhatsAppSendResult
         {
@@ -7341,7 +7483,7 @@ public sealed class ConversacionesService(
             if (root.TryGetProperty("from", out var from) && from.ValueKind == JsonValueKind.Object)
                 buyerId = ReadJsonString(from, "id");
 
-            return new MercadoLibreQuestion
+            var question = new MercadoLibreQuestion
             {
                 QuestionId = FirstNonEmpty(ReadJsonString(root, "id"), notification.QuestionId),
                 BuyerId = FirstNonEmpty(buyerId, notification.UserId),
@@ -7352,11 +7494,230 @@ public sealed class ConversacionesService(
                 Timestamp = ParseMercadoLibreDate(FirstNonEmpty(ReadJsonString(root, "date_created"), ReadJsonString(root, "last_updated"), notification.Timestamp.ToString("O", CultureInfo.InvariantCulture))),
                 RawJson = body
             };
+
+            await EnrichMercadoLibreQuestionAsync(config, question, ct);
+            return question;
         }
         catch (Exception) when (!ct.IsCancellationRequested)
         {
             return MercadoLibreQuestion.FromNotification(notification);
         }
+    }
+
+    private async Task<List<MercadoLibreQuestion>> GetMercadoLibreUnansweredQuestionsAsync(
+        ConversacionMercadoLibreConfigDto config,
+        CancellationToken ct)
+    {
+        var baseUrl = string.IsNullOrWhiteSpace(config.ApiBaseUrl)
+            ? "https://api.mercadolibre.com"
+            : config.ApiBaseUrl.Trim().TrimEnd('/');
+        var url = $"{baseUrl}/questions/search?seller_id={Uri.EscapeDataString(config.SellerId.Trim())}&sort_fields=date_created&sort_types=DESC&limit=50";
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", config.AccessToken.Trim());
+
+        var client = httpClientFactory.CreateClient();
+        using var response = await client.SendAsync(request, ct);
+        var body = await response.Content.ReadAsStringAsync(ct);
+        if (!response.IsSuccessStatusCode)
+            throw new InvalidOperationException($"Mercado Libre devolvió {(int)response.StatusCode} al sincronizar preguntas: {body}");
+
+        using var doc = JsonDocument.Parse(body);
+        var result = new List<MercadoLibreQuestion>();
+        if (!doc.RootElement.TryGetProperty("questions", out var questions) || questions.ValueKind != JsonValueKind.Array)
+            return result;
+
+        foreach (var item in questions.EnumerateArray())
+            result.Add(ParseMercadoLibreQuestion(item, body, config.SellerId));
+
+        await EnrichMercadoLibreQuestionsAsync(config, result, ct);
+        return result;
+    }
+
+    private async Task EnrichMercadoLibreQuestionsAsync(
+        ConversacionMercadoLibreConfigDto config,
+        List<MercadoLibreQuestion> questions,
+        CancellationToken ct)
+    {
+        var itemIds = questions
+            .Select(x => x.ItemId)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        foreach (var itemId in itemIds)
+        {
+            var item = await TryGetMercadoLibreItemAsync(config, itemId, ct);
+            if (item is null)
+                continue;
+
+            foreach (var question in questions.Where(x => string.Equals(x.ItemId, itemId, StringComparison.OrdinalIgnoreCase)))
+                ApplyMercadoLibreItem(question, item);
+        }
+
+        var buyerIds = questions
+            .Select(x => x.BuyerId)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        foreach (var buyerId in buyerIds)
+        {
+            var buyer = await TryGetMercadoLibreBuyerAsync(config, buyerId, ct);
+            if (buyer is null)
+                continue;
+
+            foreach (var question in questions.Where(x => string.Equals(x.BuyerId, buyerId, StringComparison.OrdinalIgnoreCase)))
+                ApplyMercadoLibreBuyer(question, buyer);
+        }
+    }
+
+    private async Task EnrichMercadoLibreQuestionAsync(
+        ConversacionMercadoLibreConfigDto config,
+        MercadoLibreQuestion question,
+        CancellationToken ct)
+    {
+        if (!string.IsNullOrWhiteSpace(question.ItemId))
+        {
+            var item = await TryGetMercadoLibreItemAsync(config, question.ItemId, ct);
+            if (item is not null)
+                ApplyMercadoLibreItem(question, item);
+        }
+
+        if (!string.IsNullOrWhiteSpace(question.BuyerId))
+        {
+            var buyer = await TryGetMercadoLibreBuyerAsync(config, question.BuyerId, ct);
+            if (buyer is not null)
+                ApplyMercadoLibreBuyer(question, buyer);
+        }
+    }
+
+    private static void ApplyMercadoLibreItem(MercadoLibreQuestion question, MercadoLibreItem item)
+    {
+        question.ItemTitle = item.Title;
+        question.ItemPermalink = item.Permalink;
+        question.ItemPictureUrl = item.PictureUrl;
+    }
+
+    private static void ApplyMercadoLibreBuyer(MercadoLibreQuestion question, MercadoLibreBuyer buyer)
+    {
+        question.BuyerNickname = buyer.Nickname;
+        question.BuyerFirstName = buyer.FirstName;
+        question.BuyerLastName = buyer.LastName;
+    }
+
+    private async Task<MercadoLibreItem?> TryGetMercadoLibreItemAsync(
+        ConversacionMercadoLibreConfigDto config,
+        string itemId,
+        CancellationToken ct)
+    {
+        if (!config.IsConfiguredForApi || string.IsNullOrWhiteSpace(itemId))
+            return null;
+
+        var baseUrl = string.IsNullOrWhiteSpace(config.ApiBaseUrl)
+            ? "https://api.mercadolibre.com"
+            : config.ApiBaseUrl.Trim().TrimEnd('/');
+        var url = $"{baseUrl}/items/{Uri.EscapeDataString(itemId.Trim())}";
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", config.AccessToken.Trim());
+
+        try
+        {
+            var client = httpClientFactory.CreateClient();
+            using var response = await client.SendAsync(request, ct);
+            if (!response.IsSuccessStatusCode)
+                return null;
+
+            var body = await response.Content.ReadAsStringAsync(ct);
+            using var doc = JsonDocument.Parse(body);
+            var root = doc.RootElement;
+            var pictureUrl = FirstNonEmpty(
+                ReadJsonString(root, "secure_thumbnail"),
+                ReadJsonString(root, "thumbnail"));
+
+            if (string.IsNullOrWhiteSpace(pictureUrl)
+                && root.TryGetProperty("pictures", out var pictures)
+                && pictures.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var picture in pictures.EnumerateArray())
+                {
+                    pictureUrl = FirstNonEmpty(
+                        ReadJsonString(picture, "secure_url"),
+                        ReadJsonString(picture, "url"));
+                    if (!string.IsNullOrWhiteSpace(pictureUrl))
+                        break;
+                }
+            }
+
+            return new MercadoLibreItem
+            {
+                Id = FirstNonEmpty(ReadJsonString(root, "id"), itemId),
+                Title = ReadJsonString(root, "title"),
+                Permalink = ReadJsonString(root, "permalink"),
+                PictureUrl = pictureUrl
+            };
+        }
+        catch (Exception) when (!ct.IsCancellationRequested)
+        {
+            return null;
+        }
+    }
+
+    private async Task<MercadoLibreBuyer?> TryGetMercadoLibreBuyerAsync(
+        ConversacionMercadoLibreConfigDto config,
+        string buyerId,
+        CancellationToken ct)
+    {
+        if (!config.IsConfiguredForApi || string.IsNullOrWhiteSpace(buyerId))
+            return null;
+
+        var baseUrl = string.IsNullOrWhiteSpace(config.ApiBaseUrl)
+            ? "https://api.mercadolibre.com"
+            : config.ApiBaseUrl.Trim().TrimEnd('/');
+        var url = $"{baseUrl}/users/{Uri.EscapeDataString(buyerId.Trim())}";
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", config.AccessToken.Trim());
+
+        try
+        {
+            var client = httpClientFactory.CreateClient();
+            using var response = await client.SendAsync(request, ct);
+            if (!response.IsSuccessStatusCode)
+                return null;
+
+            var body = await response.Content.ReadAsStringAsync(ct);
+            using var doc = JsonDocument.Parse(body);
+            var root = doc.RootElement;
+            return new MercadoLibreBuyer
+            {
+                Id = FirstNonEmpty(ReadJsonString(root, "id"), buyerId),
+                Nickname = ReadJsonString(root, "nickname"),
+                FirstName = ReadJsonString(root, "first_name"),
+                LastName = ReadJsonString(root, "last_name")
+            };
+        }
+        catch (Exception) when (!ct.IsCancellationRequested)
+        {
+            return null;
+        }
+    }
+
+    private static MercadoLibreQuestion ParseMercadoLibreQuestion(JsonElement root, string rawJson, string fallbackSellerId)
+    {
+        var buyerId = string.Empty;
+        if (root.TryGetProperty("from", out var from) && from.ValueKind == JsonValueKind.Object)
+            buyerId = ReadJsonString(from, "id");
+
+        return new MercadoLibreQuestion
+        {
+            QuestionId = ReadJsonString(root, "id"),
+            BuyerId = buyerId,
+            SellerId = FirstNonEmpty(ReadJsonString(root, "seller_id"), fallbackSellerId),
+            ItemId = ReadJsonString(root, "item_id"),
+            Status = ReadJsonString(root, "status"),
+            Text = FirstNonEmpty(ReadJsonString(root, "text"), "Pregunta recibida en Mercado Libre."),
+            Timestamp = ParseMercadoLibreDate(FirstNonEmpty(ReadJsonString(root, "date_created"), ReadJsonString(root, "last_updated"))),
+            RawJson = root.GetRawText()
+        };
     }
 
     private static string ExtractMercadoLibreQuestionId(string resource)
@@ -9186,21 +9547,37 @@ public sealed class ConversacionesService(
 
     private sealed class MercadoLibreQuestion
     {
-        public string QuestionId { get; init; } = string.Empty;
-        public string BuyerId { get; init; } = string.Empty;
-        public string SellerId { get; init; } = string.Empty;
-        public string ItemId { get; init; } = string.Empty;
-        public string Status { get; init; } = string.Empty;
-        public string Text { get; init; } = string.Empty;
-        public DateTime Timestamp { get; init; }
-        public string RawJson { get; init; } = string.Empty;
-        public string DisplayName => string.IsNullOrWhiteSpace(BuyerId) ? "Mercado Libre" : $"Mercado Libre {BuyerId}";
+        public string QuestionId { get; set; } = string.Empty;
+        public string BuyerId { get; set; } = string.Empty;
+        public string SellerId { get; set; } = string.Empty;
+        public string ItemId { get; set; } = string.Empty;
+        public string ItemTitle { get; set; } = string.Empty;
+        public string ItemPermalink { get; set; } = string.Empty;
+        public string ItemPictureUrl { get; set; } = string.Empty;
+        public string BuyerNickname { get; set; } = string.Empty;
+        public string BuyerFirstName { get; set; } = string.Empty;
+        public string BuyerLastName { get; set; } = string.Empty;
+        public string Status { get; set; } = string.Empty;
+        public string Text { get; set; } = string.Empty;
+        public DateTime Timestamp { get; set; }
+        public string RawJson { get; set; } = string.Empty;
+        public bool HasItemMetadata => !string.IsNullOrWhiteSpace(ItemTitle) || !string.IsNullOrWhiteSpace(ItemPictureUrl);
+        public string DisplayName => FirstNonEmpty(ItemTitle, string.IsNullOrWhiteSpace(BuyerId) ? string.Empty : $"Mercado Libre {BuyerId}", "Mercado Libre");
+        public string BuyerDisplayName
+        {
+            get
+            {
+                var fullName = $"{BuyerFirstName} {BuyerLastName}".Trim();
+                return FirstNonEmpty(BuyerNickname, fullName, string.IsNullOrWhiteSpace(BuyerId) ? string.Empty : $"Comprador {BuyerId}");
+            }
+        }
 
         public static MercadoLibreQuestion FromNotification(MercadoLibreNotification notification)
             => new()
             {
                 QuestionId = notification.QuestionId,
                 BuyerId = notification.UserId,
+                BuyerNickname = string.IsNullOrWhiteSpace(notification.UserId) ? string.Empty : $"Comprador {notification.UserId}",
                 Text = "Nueva pregunta recibida en Mercado Libre.",
                 Timestamp = notification.Timestamp == default ? BusinessNow() : notification.Timestamp,
                 RawJson = notification.RawJson
@@ -9218,6 +9595,22 @@ public sealed class ConversacionesService(
                 Text = Text,
                 RawJson = RawJson
             };
+    }
+
+    private sealed class MercadoLibreItem
+    {
+        public string Id { get; init; } = string.Empty;
+        public string Title { get; init; } = string.Empty;
+        public string Permalink { get; init; } = string.Empty;
+        public string PictureUrl { get; init; } = string.Empty;
+    }
+
+    private sealed class MercadoLibreBuyer
+    {
+        public string Id { get; init; } = string.Empty;
+        public string Nickname { get; init; } = string.Empty;
+        public string FirstName { get; init; } = string.Empty;
+        public string LastName { get; init; } = string.Empty;
     }
 
     private sealed class InstagramProfile
