@@ -25,13 +25,16 @@ public sealed class CargaViajesService(
     private const string ChoferGeneralConfigKey = "VIAJES-CHOFER-GENERAL";
     private const string CodigoTarifaGeneralConfigKey = "VIAJES-CODIGO-TARIFA-GENERAL";
     private const string PorcentajesAdicionalesHabilitadosConfigKey = "VIAJES-PORCENTAJES-ADICIONALES-HABILITADOS";
+    private const int AdicionalesGeneralesCount = 6;
+    private const int AdicionalComisionIndex = 5;
     private static readonly string[] AdicionalHabilitadoConfigKeys =
     [
         "VIAJES-HABILITAR-ADICIONAL-1",
         "VIAJES-HABILITAR-ADICIONAL-2",
         "VIAJES-HABILITAR-ADICIONAL-3",
         "VIAJES-HABILITAR-ADICIONAL-4",
-        "VIAJES-HABILITAR-ADICIONAL-5"
+        "VIAJES-HABILITAR-ADICIONAL-5",
+        "VIAJES-HABILITAR-ADICIONAL-6"
     ];
     private static readonly string[] AdicionalSumarFleteroConfigKeys =
     [
@@ -39,7 +42,8 @@ public sealed class CargaViajesService(
         "VIAJES-ADICIONAL-2-SUMAR-FLETERO",
         "VIAJES-ADICIONAL-3-SUMAR-FLETERO",
         "VIAJES-ADICIONAL-4-SUMAR-FLETERO",
-        "VIAJES-ADICIONAL-5-SUMAR-FLETERO"
+        "VIAJES-ADICIONAL-5-SUMAR-FLETERO",
+        "VIAJES-ADICIONAL-6-SUMAR-FLETERO"
     ];
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -50,7 +54,7 @@ public sealed class CargaViajesService(
     private string ConnectionString => sessionService.GetConnectionString().Length > 0
         ? sessionService.GetConnectionString()
         : configuration.GetConnectionString("AlfaGestion")
-          ?? throw new InvalidOperationException("No se configuró la cadena de conexión 'ConnectionStrings:AlfaGestion'.");
+          ?? throw new InvalidOperationException("No se configurÃ³ la cadena de conexiÃ³n 'ConnectionStrings:AlfaGestion'.");
 
     public Task<PagedResult<CargaViajesGridItemDto>> SearchViajesAsync(CargaViajesFilters filters, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "SearchViajes", async token =>
@@ -326,6 +330,7 @@ public sealed class CargaViajesService(
                     ISNULL(v.{FirstExistingColumn(columns, "TOTAL_ADIC2")}, 0) AS TotalAdic2,
                     ISNULL(v.{FirstExistingColumn(columns, "TOTAL_ADIC3")}, 0) AS TotalAdic3,
                     ISNULL(v.{FirstExistingColumn(columns, "TOTAL_ADIC4")}, 0) AS TotalAdic4,
+                    {(string.IsNullOrWhiteSpace(FirstExistingColumnOrNull(columns, "TOTAL_ADIC5")) ? "CAST(0 AS money)" : $"ISNULL(v.{FirstExistingColumnOrNull(columns, "TOTAL_ADIC5")}, 0)")} AS TotalAdic5,
                     ISNULL(v.{FirstExistingColumn(columns, "TOTAL_ADICIONALES")}, 0) AS TotalAdicionales,
                     {(string.IsNullOrWhiteSpace(adicionalFijo1DescripcionColumn) ? "CAST('' AS nvarchar(100))" : $"ISNULL(v.{adicionalFijo1DescripcionColumn}, '')")} AS AdicionalFijo1Descripcion,
                     {(string.IsNullOrWhiteSpace(adicionalFijo1ImporteColumn) ? "CAST(0 AS money)" : $"ISNULL(v.{adicionalFijo1ImporteColumn}, 0)")} AS AdicionalFijo1Importe,
@@ -345,7 +350,8 @@ public sealed class CargaViajesService(
                     {(hasTotalAdicionalesFijos ? "ISNULL(v.TOTAL_ADICIONALES_FIJOS, 0)" : "CAST(0 AS money)")} AS TotalAdicionalesFijos,
                     ISNULL(v.{FirstExistingColumn(columns, "OBSERVACIONES")}, '') AS Observaciones,
                     {(string.IsNullOrWhiteSpace(importeClienteColumn) ? "CAST(0 AS money)" : $"ISNULL(v.{importeClienteColumn}, 0)")} AS ImporteCliente,
-                    {(string.IsNullOrWhiteSpace(importeFleteroColumn) ? "CAST(0 AS money)" : $"ISNULL(v.{importeFleteroColumn}, 0)")} AS ImporteFletero
+                    {(string.IsNullOrWhiteSpace(importeFleteroColumn) ? "CAST(0 AS money)" : $"ISNULL(v.{importeFleteroColumn}, 0)")} AS ImporteFletero,
+                    {(string.IsNullOrWhiteSpace(FirstExistingColumnOrNull(columns, "PORCENTAJE_ADIC5")) ? "CAST(0 AS money)" : $"ISNULL(v.{FirstExistingColumnOrNull(columns, "PORCENTAJE_ADIC5")}, 0)")} AS PorcentajeAdic5
                 FROM dbo.{viajeTable} v
                 {clienteJoin}
                 OUTER APPLY (
@@ -395,7 +401,7 @@ public sealed class CargaViajesService(
             ArgumentNullException.ThrowIfNull(request);
             request.Tc = string.IsNullOrWhiteSpace(request.Tc) ? DefaultTc : request.Tc.Trim().ToUpperInvariant();
             if (!string.Equals(request.Tc, DefaultTc, StringComparison.OrdinalIgnoreCase))
-                throw new InvalidOperationException("El TC del módulo de carga de viajes es fijo y debe ser VJ.");
+                throw new InvalidOperationException("El TC del mÃ³dulo de carga de viajes es fijo y debe ser VJ.");
 
             var cliente = (request.Cliente ?? string.Empty).Trim();
             var chofer = (request.Chofer ?? string.Empty).Trim();
@@ -524,11 +530,13 @@ public sealed class CargaViajesService(
             parameters.Add("@PorcentajeAdic2", request.PorcentajeAdic2);
             parameters.Add("@PorcentajeAdic3", request.PorcentajeAdic3);
             parameters.Add("@PorcentajeAdic4", request.PorcentajeAdic4);
+            parameters.Add("@PorcentajeAdic5", request.PorcentajeAdic5);
             parameters.Add("@TotalAdic", totals.TotalAdic);
             parameters.Add("@TotalAdic1", totals.TotalAdic1);
             parameters.Add("@TotalAdic2", totals.TotalAdic2);
             parameters.Add("@TotalAdic3", totals.TotalAdic3);
             parameters.Add("@TotalAdic4", totals.TotalAdic4);
+            parameters.Add("@TotalAdic5", totals.TotalAdic5);
             parameters.Add("@TotalAdicionales", totals.TotalAdicionales);
             parameters.Add("@TotalImporte", totals.TotalImporte);
             parameters.Add("@TotalFlete", totals.TotalFlete);
@@ -626,7 +634,7 @@ public sealed class CargaViajesService(
                 logger.LogInformation("SaveViaje SQL UPDATE {Sql}", updateSql);
                 var affected = await cn.ExecuteAsync(new CommandDefinition(updateSql, parameters, transaction: (SqlTransaction)tx, cancellationToken: token));
                 if (affected <= 0)
-                    throw new InvalidOperationException("No se encontró el viaje para actualizar.");
+                    throw new InvalidOperationException("No se encontrÃ³ el viaje para actualizar.");
 
                 await tx.CommitAsync(token);
                 logger.LogInformation("SaveViaje update OK Id={Id} IdComprobante={IdComprobante} Rows={Rows}", request.Id, nextIdComp, affected);
@@ -640,7 +648,7 @@ public sealed class CargaViajesService(
                 }
                 catch (Exception rollbackEx)
                 {
-                    logger.LogWarning(rollbackEx, "SaveViaje rollback falló");
+                    logger.LogWarning(rollbackEx, "SaveViaje rollback fallÃ³");
                 }
 
                 throw;
@@ -653,7 +661,7 @@ public sealed class CargaViajesService(
         => ExecuteLoggedAsync(ModuleName, "AnularViaje", async token =>
         {
             if (id <= 0)
-                throw new InvalidOperationException("No se recibió el viaje a anular.");
+                throw new InvalidOperationException("No se recibiÃ³ el viaje a anular.");
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
@@ -1369,7 +1377,7 @@ public sealed class CargaViajesService(
 
             var cliente = (clienteCodigo ?? string.Empty).Trim();
             if (string.IsNullOrWhiteSpace(cliente))
-                throw new InvalidOperationException("No se recibió el cliente para actualizar los adicionales.");
+                throw new InvalidOperationException("No se recibiÃ³ el cliente para actualizar los adicionales.");
 
             var listas = (listasSeleccionadas ?? Array.Empty<string>())
                 .Select(lista => (lista ?? string.Empty).Trim())
@@ -1465,7 +1473,7 @@ public sealed class CargaViajesService(
         => ExecuteLoggedAsync(ModuleName, "BajaTarifa", async token =>
         {
             if (string.IsNullOrWhiteSpace(idLista))
-                throw new InvalidOperationException("No se recibió la tarifa a dar de baja.");
+                throw new InvalidOperationException("No se recibiÃ³ la tarifa a dar de baja.");
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
@@ -1715,7 +1723,7 @@ public sealed class CargaViajesService(
         => ExecuteLoggedAsync(ModuleName, "BajaChofer", async token =>
         {
             if (string.IsNullOrWhiteSpace(codigo))
-                throw new InvalidOperationException("No se recibió el chofer a dar de baja.");
+                throw new InvalidOperationException("No se recibiÃ³ el chofer a dar de baja.");
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
@@ -1869,14 +1877,14 @@ public sealed class CargaViajesService(
         => ExecuteLoggedAsync(ModuleName, "BajaDestino", async token =>
         {
             if (string.IsNullOrWhiteSpace(codigo))
-                throw new InvalidOperationException("No se recibió el destino a dar de baja.");
+                throw new InvalidOperationException("No se recibiÃ³ el destino a dar de baja.");
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
             const string table = "TA_DESTINOS";
             var codeColumn = "CODIGO";
             if (!await ColumnExistsAsync(cn, table, "Activo", token))
-                throw new InvalidOperationException($"La tabla {table} no tiene columna Activo para hacer baja lógica.");
+                throw new InvalidOperationException($"La tabla {table} no tiene columna Activo para hacer baja lÃ³gica.");
 
             var affected = await cn.ExecuteAsync(new CommandDefinition($"""
                 UPDATE dbo.{table}
@@ -1968,7 +1976,7 @@ public sealed class CargaViajesService(
                 PageNumber = pageNumber,
                 PageSize = pageSize
             };
-        }, "No se pudieron cargar los tipos de vehículo.", ct);
+        }, "No se pudieron cargar los tipos de vehÃ­culo.", ct);
 
     public Task<CargaViajeTipoVehiculoGridItemDto?> GetTipoVehiculoByIdAsync(string codigo, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "GetTipoVehiculoById", async token =>
@@ -1993,16 +2001,16 @@ public sealed class CargaViajesService(
                 """;
 
             return await cn.QuerySingleOrDefaultAsync<CargaViajeTipoVehiculoGridItemDto>(new CommandDefinition(sql, new { Codigo = codigo.Trim().ToUpperInvariant() }, cancellationToken: token));
-        }, "No se pudo cargar el tipo de vehículo seleccionado.", ct);
+        }, "No se pudo cargar el tipo de vehÃ­culo seleccionado.", ct);
 
     public Task<string> SaveTipoVehiculoAsync(CargaViajeTipoVehiculoSaveRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "SaveTipoVehiculo", async token =>
         {
             ArgumentNullException.ThrowIfNull(request);
             if (string.IsNullOrWhiteSpace(request.Codigo))
-                throw new InvalidOperationException("El código del tipo de vehículo es obligatorio.");
+                throw new InvalidOperationException("El cÃ³digo del tipo de vehÃ­culo es obligatorio.");
             if (string.IsNullOrWhiteSpace(request.Descripcion))
-                throw new InvalidOperationException("La descripción del tipo de vehículo es obligatoria.");
+                throw new InvalidOperationException("La descripciÃ³n del tipo de vehÃ­culo es obligatoria.");
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
@@ -2041,7 +2049,7 @@ public sealed class CargaViajesService(
             }, cancellationToken: token));
 
             return request.Codigo.Trim().ToUpperInvariant();
-        }, "No se pudo guardar el tipo de vehículo.", ct);
+        }, "No se pudo guardar el tipo de vehÃ­culo.", ct);
 
     public Task<string> GetNextCodigoTipoVehiculoAsync(CancellationToken ct = default)
         => GetNextCodigoFromTableAsync("TA_TIPOVEHICULO", "CODIGO", ct);
@@ -2050,7 +2058,7 @@ public sealed class CargaViajesService(
         => ExecuteLoggedAsync(ModuleName, "BajaTipoVehiculo", async token =>
         {
             if (string.IsNullOrWhiteSpace(codigo))
-                throw new InvalidOperationException("No se recibió el tipo de vehículo a dar de baja.");
+                throw new InvalidOperationException("No se recibiÃ³ el tipo de vehÃ­culo a dar de baja.");
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
@@ -2071,8 +2079,8 @@ public sealed class CargaViajesService(
 
             var affected = await cn.ExecuteAsync(new CommandDefinition(sql, new { Codigo = codigo.Trim().ToUpperInvariant() }, cancellationToken: token));
             if (affected == 0)
-                throw new InvalidOperationException("El tipo de vehículo seleccionado ya no existe en la base activa.");
-        }, "No se pudo dar de baja el tipo de vehículo.", ct);
+                throw new InvalidOperationException("El tipo de vehÃ­culo seleccionado ya no existe en la base activa.");
+        }, "No se pudo dar de baja el tipo de vehÃ­culo.", ct);
 
     public Task<bool> TipoVehiculoTieneActivoAsync(CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "TipoVehiculoTieneActivo", async token =>
@@ -2080,7 +2088,7 @@ public sealed class CargaViajesService(
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
             return await ColumnExistsAsync(cn, "TA_TIPOVEHICULO", "ACTIVO", token);
-        }, "No se pudo verificar la estructura del tipo de vehículo.", ct);
+        }, "No se pudo verificar la estructura del tipo de vehÃ­culo.", ct);
 
     public Task<IReadOnlyList<CargaViajeLookupOptionDto>> SearchClientesAsync(string texto, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "SearchClientes", async token =>
@@ -2243,7 +2251,7 @@ public sealed class CargaViajesService(
             await cn.OpenAsync(token);
             var rows = (await cn.QueryAsync<CargaViajeLookupOptionDto>(new CommandDefinition(sql, new { Search = searchLike }, cancellationToken: token))).ToList();
             return (IReadOnlyList<CargaViajeLookupOptionDto>)rows;
-        }, "No se pudieron buscar tipos de vehículo.", ct);
+        }, "No se pudieron buscar tipos de vehÃ­culo.", ct);
 
     public Task<IReadOnlyList<CargaViajeLookupOptionDto>> SearchTarifasLookupAsync(string texto, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "SearchTarifasLookup", async token =>
@@ -2504,7 +2512,7 @@ public sealed class CargaViajesService(
             var normalized = SearchTextHelper.Normalize(descripcion);
             var validation = new ValidationResult();
             if (string.IsNullOrWhiteSpace(normalized))
-                validation.Add("Descripcion", "Debe ingresar un tipo de vehículo.");
+                validation.Add("Descripcion", "Debe ingresar un tipo de vehÃ­culo.");
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
@@ -2514,7 +2522,7 @@ public sealed class CargaViajesService(
 
             var maxLength = await GetColumnCharacterLengthAsync(cn, table, "DESCRIPCION", token, 100);
             if (maxLength > 0 && normalized.Length > maxLength)
-                validation.Add("Descripcion", $"El tipo de vehículo no puede superar {maxLength} caracteres.");
+                validation.Add("Descripcion", $"El tipo de vehÃ­culo no puede superar {maxLength} caracteres.");
 
             if (!validation.IsValid)
                 throw new AppValidationException(BuildValidationMessage(validation), validation);
@@ -2533,11 +2541,11 @@ public sealed class CargaViajesService(
                 Activo = true
             }, cancellationToken: token));
             if (affected <= 0)
-                throw new InvalidOperationException("No se pudo crear el tipo de vehículo.");
+                throw new InvalidOperationException("No se pudo crear el tipo de vehÃ­culo.");
 
             logger.LogInformation("CreateTipoVehiculoRapido OK Codigo={Codigo} Descripcion={Descripcion}", codigo, normalized);
             return new CargaViajeLookupOptionDto { Codigo = codigo, Titulo = normalized };
-        }, "No se pudo crear el tipo de vehículo.", ct);
+        }, "No se pudo crear el tipo de vehÃ­culo.", ct);
 
     public Task<CargaViajeLookupOptionDto> CreateChoferRapidoAsync(string nombre, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "CreateChoferRapido", async token =>
@@ -2644,7 +2652,7 @@ public sealed class CargaViajesService(
             var destinoCodigo = (viaje.Destino ?? string.Empty).Trim();
             var tipoVehiculoCodigo = (viaje.TipoVehiculo ?? string.Empty).Trim();
             if (string.IsNullOrWhiteSpace(clienteCodigo) || string.IsNullOrWhiteSpace(choferCodigo) || string.IsNullOrWhiteSpace(destinoCodigo) || string.IsNullOrWhiteSpace(tipoVehiculoCodigo))
-                throw new InvalidOperationException("Debe completar cliente, chofer, destino y tipo vehículo antes de duplicar la tarifa.");
+                throw new InvalidOperationException("Debe completar cliente, chofer, destino y tipo vehÃ­culo antes de duplicar la tarifa.");
 
             var clienteNombre = ExtractDescripcionFromDisplay(viaje.ClienteDisplay);
             if (string.IsNullOrWhiteSpace(clienteNombre))
@@ -2665,7 +2673,7 @@ public sealed class CargaViajesService(
 
             var source = await GetTarifaByIdAsync(baseIdLista, token);
             if (source is null)
-                throw new InvalidOperationException("No se encontró la tarifa base seleccionada.");
+                throw new InvalidOperationException("No se encontrÃ³ la tarifa base seleccionada.");
 
             var derivedIdLista = BuildListaDesdeCliente(clienteCodigo);
             if (string.IsNullOrWhiteSpace(derivedIdLista))
@@ -2804,7 +2812,7 @@ public sealed class CargaViajesService(
                 }
                 catch (Exception rollbackEx)
                 {
-                    logger.LogWarning(rollbackEx, "ClonarTarifaParaViaje rollback falló");
+                    logger.LogWarning(rollbackEx, "ClonarTarifaParaViaje rollback fallÃ³");
                 }
 
                 throw;
@@ -2943,7 +2951,7 @@ public sealed class CargaViajesService(
                 incluirFleteros);
 
             return (IReadOnlyList<CargaViajeReporteLiquidacionRowDto>)rows;
-        }, "No se pudo generar la liquidación de choferes y fleteros.", ct);
+        }, "No se pudo generar la liquidaciÃ³n de choferes y fleteros.", ct);
 
     public Task<IReadOnlyList<CargaViajeLiquidacionRowDto>> SearchLiquidacionesFletesAsync(CargaViajesLiquidacionFilters filters, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "SearchLiquidacionesFletes", async token =>
@@ -3115,9 +3123,9 @@ public sealed class CargaViajesService(
             result.Clientes = await LoadOptionalLookupAsync("clientes", t => SearchClientesAsync(string.Empty, t), token);
             result.Choferes = await LoadOptionalLookupAsync("choferes", t => SearchChoferLookupAsync(string.Empty, t), token);
             result.Destinos = await LoadOptionalLookupAsync("destinos", t => SearchDestinosLookupAsync(string.Empty, t), token);
-            result.TipoVehiculos = await LoadOptionalLookupAsync("tipos de vehículo", t => SearchTipoVehiculosLookupAsync(string.Empty, t), token);
+            result.TipoVehiculos = await LoadOptionalLookupAsync("tipos de vehÃ­culo", t => SearchTipoVehiculosLookupAsync(string.Empty, t), token);
             return result;
-        }, "No se pudieron cargar los datos auxiliares del módulo.", ct);
+        }, "No se pudieron cargar los datos auxiliares del mÃ³dulo.", ct);
     }
 
     private async Task<List<CargaViajeLookupOptionDto>> LoadOptionalLookupAsync(
@@ -3135,7 +3143,7 @@ public sealed class CargaViajesService(
         }
         catch (AppUserFacingException ex)
         {
-            logger.LogWarning(ex, "No se pudo cargar la lista auxiliar {LookupName} de carga de viajes. Se continúa con la lista vacía.", lookupName);
+            logger.LogWarning(ex, "No se pudo cargar la lista auxiliar {LookupName} de carga de viajes. Se continÃºa con la lista vacÃ­a.", lookupName);
             return [];
         }
     }
@@ -3164,7 +3172,7 @@ public sealed class CargaViajesService(
                 return CreateDefaultViewSettings();
 
             return NormalizeViewSettings(JsonSerializer.Deserialize<CargaViajesViewSettingsDto>(raw, JsonOptions));
-        }, "No se pudo cargar la configuración de vista.", ct);
+        }, "No se pudo cargar la configuraciÃ³n de vista.", ct);
 
     public Task SaveViewSettingsAsync(string userName, CargaViajesViewSettingsDto settings, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "SaveViewSettings", async token =>
@@ -3221,8 +3229,8 @@ public sealed class CargaViajesService(
                 Grupo = ConfigGroup
             }, cancellationToken: token));
 
-            await appEvents.LogAuditAsync(ModuleName, "SaveViewSettings", "TA_CONFIGURACION", configKey, "Configuración de vista de viajes actualizada.", new { UserName = userName.Trim(), normalized.AgruparPor }, token);
-        }, "No se pudo guardar la configuración de vista.", ct);
+            await appEvents.LogAuditAsync(ModuleName, "SaveViewSettings", "TA_CONFIGURACION", configKey, "ConfiguraciÃ³n de vista de viajes actualizada.", new { UserName = userName.Trim(), normalized.AgruparPor }, token);
+        }, "No se pudo guardar la configuraciÃ³n de vista.", ct);
 
     public Task<CargaViajeTipoVehiculoViewSettingsDto> GetTipoVehiculoViewSettingsAsync(string userName, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "GetTipoVehiculoViewSettings", async token =>
@@ -3248,7 +3256,7 @@ public sealed class CargaViajesService(
                 return CreateDefaultTipoVehiculoViewSettings();
 
             return NormalizeTipoVehiculoViewSettings(JsonSerializer.Deserialize<CargaViajeTipoVehiculoViewSettingsDto>(raw, JsonOptions));
-        }, "No se pudo cargar la configuración de vista del tipo de vehículo.", ct);
+        }, "No se pudo cargar la configuraciÃ³n de vista del tipo de vehÃ­culo.", ct);
 
     public Task SaveTipoVehiculoViewSettingsAsync(string userName, CargaViajeTipoVehiculoViewSettingsDto settings, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "SaveTipoVehiculoViewSettings", async token =>
@@ -3305,8 +3313,8 @@ public sealed class CargaViajesService(
                 Grupo = "TIPOVEHICULO"
             }, cancellationToken: token));
 
-            await appEvents.LogAuditAsync(ModuleName, "SaveTipoVehiculoViewSettings", "TA_CONFIGURACION", configKey, "Configuración de vista de tipo de vehículo actualizada.", new { UserName = userName.Trim(), normalized.AgruparPor }, token);
-        }, "No se pudo guardar la configuración de vista del tipo de vehículo.", ct);
+            await appEvents.LogAuditAsync(ModuleName, "SaveTipoVehiculoViewSettings", "TA_CONFIGURACION", configKey, "ConfiguraciÃ³n de vista de tipo de vehÃ­culo actualizada.", new { UserName = userName.Trim(), normalized.AgruparPor }, token);
+        }, "No se pudo guardar la configuraciÃ³n de vista del tipo de vehÃ­culo.", ct);
 
     public Task<CargaViajesConfigDto> GetConfiguracionAsync(CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "GetConfiguracion", async token =>
@@ -3322,7 +3330,7 @@ public sealed class CargaViajesService(
                 await PersistConfiguracionAsync(cn, config, token, migrateOnly: true);
 
             return config;
-        }, "No se pudo cargar la configuración del módulo de viajes.", ct);
+        }, "No se pudo cargar la configuraciÃ³n del mÃ³dulo de viajes.", ct);
 
     public Task SaveConfiguracionAsync(CargaViajesConfigDto config, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "SaveConfiguracion", async token =>
@@ -3340,8 +3348,8 @@ public sealed class CargaViajesService(
 
             var normalized = NormalizeConfiguracion(config);
             await PersistConfiguracionAsync(cn, normalized, token, migrateOnly: false);
-            await appEvents.LogAuditAsync(ModuleName, "SaveConfiguracion", "TA_CONFIGURACION", ConfigGroup, "Configuración del módulo de viajes actualizada.", normalized, token);
-        }, "No se pudo guardar la configuración del módulo de viajes.", ct);
+            await appEvents.LogAuditAsync(ModuleName, "SaveConfiguracion", "TA_CONFIGURACION", ConfigGroup, "ConfiguraciÃ³n del mÃ³dulo de viajes actualizada.", normalized, token);
+        }, "No se pudo guardar la configuraciÃ³n del mÃ³dulo de viajes.", ct);
 
     public Task<string> GetNextIdComprobanteAsync(CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "GetNextIdComprobante", async token =>
@@ -3356,7 +3364,7 @@ public sealed class CargaViajesService(
             sucursal = sucursal.Trim();
             letra = letra.Trim();
             if (sucursal.Length != 4 || letra.Length != 1)
-                throw new InvalidOperationException("VIAJES-SUCURSAL debe tener 4 caracteres y VIAJES-LETRA debe tener 1 carácter.");
+                throw new InvalidOperationException("VIAJES-SUCURSAL debe tener 4 caracteres y VIAJES-LETRA debe tener 1 carÃ¡cter.");
 
             const string viajeTable = "MV_VIAJES_CARGA";
             var sql = $"""
@@ -3372,7 +3380,7 @@ public sealed class CargaViajesService(
                 next = 1;
             logger.LogInformation("GetNextIdComprobante OK Tabla={Tabla} Sucursal={Sucursal} Letra={Letra} Next={Next}", viajeTable, sucursal, letra, next);
             return $"{sucursal}{next.ToString().PadLeft(8, '0')}{letra}";
-        }, "No se pudo obtener la numeración del viaje.", ct);
+        }, "No se pudo obtener la numeraciÃ³n del viaje.", ct);
 
     private static async Task<CargaViajeLookupOptionDto?> FindLookupByDescriptionAsync(
         SqlConnection cn,
@@ -3402,7 +3410,7 @@ public sealed class CargaViajesService(
         {
             attempts++;
             if (attempts > 10000)
-                throw new InvalidOperationException($"No se pudo calcular un código libre para {table}.");
+                throw new InvalidOperationException($"No se pudo calcular un cÃ³digo libre para {table}.");
 
             var parsed = int.Parse(next, System.Globalization.CultureInfo.InvariantCulture);
             next = (parsed + 1).ToString().PadLeft(4, '0');
@@ -3497,7 +3505,7 @@ public sealed class CargaViajesService(
             var next = int.Parse(formatted, System.Globalization.CultureInfo.InvariantCulture);
             logger.LogInformation("GetNextCodigo OK Tabla={Tabla} Columna={Columna} Next={Next} Formatted={Formatted}", table, column, next, formatted);
             return formatted;
-        }, $"No se pudo obtener la próxima numeración de {table}.", ct);
+        }, $"No se pudo obtener la prÃ³xima numeraciÃ³n de {table}.", ct);
 
     public Task<string> GetSucursalConfiguradaAsync(CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "GetSucursalConfigurada", async token =>
@@ -3516,11 +3524,11 @@ public sealed class CargaViajesService(
 
             var hasViajesTable = await TableExistsAsync(cn, "MV_VIAJES_CARGA", token);
             if (!hasViajesTable)
-                logger.LogWarning("EnsureViajesSchema: no existe MV_VIAJES_CARGA en la base activa. Se omite la validación/actualización de esa vista.");
+                logger.LogWarning("EnsureViajesSchema: no existe MV_VIAJES_CARGA en la base activa. Se omite la validaciÃ³n/actualizaciÃ³n de esa vista.");
 
             if (!await TableExistsAsync(cn, "TA_TARIFA", token))
             {
-                logger.LogWarning("EnsureViajesSchema: no existe TA_TARIFA en la base activa. Se omite la actualización de esa tabla.");
+                logger.LogWarning("EnsureViajesSchema: no existe TA_TARIFA en la base activa. Se omite la actualizaciÃ³n de esa tabla.");
                 return;
             }
 
@@ -3551,6 +3559,8 @@ public sealed class CargaViajesService(
                     await EnsureSchemaColumnAsync(cn, (SqlTransaction)tx, "MV_VIAJES_CARGA", "ADICIONAL_FIJO3_PIDE_CANTIDAD", "bit NOT NULL CONSTRAINT DF_MV_VIAJES_CARGA_ADICIONAL_FIJO3_PIDE_CANTIDAD DEFAULT (0) WITH VALUES", createdColumns, token);
                     await EnsureSchemaColumnAsync(cn, (SqlTransaction)tx, "MV_VIAJES_CARGA", "ADICIONAL_FIJO3_CANTIDAD", "decimal(18,2) NOT NULL CONSTRAINT DF_MV_VIAJES_CARGA_ADICIONAL_FIJO3_CANTIDAD DEFAULT (1) WITH VALUES", createdColumns, token);
                     await EnsureSchemaColumnAsync(cn, (SqlTransaction)tx, "MV_VIAJES_CARGA", "TOTAL_ADICIONALES_FIJOS", "money NOT NULL CONSTRAINT DF_MV_VIAJES_CARGA_TOTAL_ADICIONALES_FIJOS DEFAULT (0) WITH VALUES", createdColumns, token);
+                    await EnsureSchemaColumnAsync(cn, (SqlTransaction)tx, "MV_VIAJES_CARGA", "PORCENTAJE_ADIC5", "money NOT NULL CONSTRAINT DF_MV_VIAJES_CARGA_PORCENTAJE_ADIC5 DEFAULT (0) WITH VALUES", createdColumns, token);
+                    await EnsureSchemaColumnAsync(cn, (SqlTransaction)tx, "MV_VIAJES_CARGA", "TOTAL_ADIC5", "money NOT NULL CONSTRAINT DF_MV_VIAJES_CARGA_TOTAL_ADIC5 DEFAULT (0) WITH VALUES", createdColumns, token);
                 }
 
                 await EnsureSchemaColumnAsync(cn, (SqlTransaction)tx, "TA_TARIFA", "USUARIOMODIFICACION", "nvarchar(50) NULL", createdColumns, token);
@@ -3574,7 +3584,7 @@ public sealed class CargaViajesService(
                 }
                 catch (Exception rollbackEx)
                 {
-                    logger.LogWarning(rollbackEx, "EnsureViajesSchema rollback falló");
+                    logger.LogWarning(rollbackEx, "EnsureViajesSchema rollback fallÃ³");
                 }
 
                 throw;
@@ -3582,12 +3592,12 @@ public sealed class CargaViajesService(
 
             if (createdColumns.Count == 0)
             {
-                logger.LogInformation("EnsureViajesSchema sin cambios. Las tablas del módulo Viajes ya estaban actualizadas.");
+                logger.LogInformation("EnsureViajesSchema sin cambios. Las tablas del mÃ³dulo Viajes ya estaban actualizadas.");
                 return;
             }
 
-            logger.LogInformation("EnsureViajesSchema creó columnas: {Columns}", string.Join(", ", createdColumns));
-        }, "No se pudo verificar la estructura del módulo Viajes.", ct);
+            logger.LogInformation("EnsureViajesSchema creÃ³ columnas: {Columns}", string.Join(", ", createdColumns));
+        }, "No se pudo verificar la estructura del mÃ³dulo Viajes.", ct);
 
     internal static async Task<Dictionary<string, string>> LoadConfiguracionAsync(SqlConnection cn, CancellationToken ct)
     {
@@ -3605,21 +3615,25 @@ public sealed class CargaViajesService(
             "VIAJES-ADIC-NOMBRE-2",
             "VIAJES-ADIC-NOMBRE-3",
             "VIAJES-ADIC-NOMBRE-4",
+            "VIAJES-ADIC-NOMBRE-5",
             "VIAJES-ADIC-PORC-0",
             "VIAJES-ADIC-PORC-1",
             "VIAJES-ADIC-PORC-2",
             "VIAJES-ADIC-PORC-3",
             "VIAJES-ADIC-PORC-4",
+            "VIAJES-ADIC-PORC-5",
             AdicionalHabilitadoConfigKeys[0],
             AdicionalHabilitadoConfigKeys[1],
             AdicionalHabilitadoConfigKeys[2],
             AdicionalHabilitadoConfigKeys[3],
             AdicionalHabilitadoConfigKeys[4],
+            AdicionalHabilitadoConfigKeys[5],
             AdicionalSumarFleteroConfigKeys[0],
             AdicionalSumarFleteroConfigKeys[1],
             AdicionalSumarFleteroConfigKeys[2],
             AdicionalSumarFleteroConfigKeys[3],
-            AdicionalSumarFleteroConfigKeys[4]
+            AdicionalSumarFleteroConfigKeys[4],
+            AdicionalSumarFleteroConfigKeys[5]
         };
 
         var sql = $"""
@@ -3755,11 +3769,13 @@ public sealed class CargaViajesService(
                     PORCENTAJE_ADIC2,
                     PORCENTAJE_ADIC3,
                     PORCENTAJE_ADIC4,
+                    PORCENTAJE_ADIC5,
                     TOTAL_ADIC,
                     TOTAL_ADIC1,
                     TOTAL_ADIC2,
                     TOTAL_ADIC3,
                     TOTAL_ADIC4,
+                    TOTAL_ADIC5,
                     TOTAL_ADICIONALES,
                     ADICIONAL_FIJO1_DESCRIPCION,
                     ADICIONAL_FIJO1_IMPORTE,
@@ -3806,11 +3822,13 @@ public sealed class CargaViajesService(
                     @PorcentajeAdic2,
                     @PorcentajeAdic3,
                     @PorcentajeAdic4,
+                    @PorcentajeAdic5,
                     @TotalAdic,
                     @TotalAdic1,
                     @TotalAdic2,
                     @TotalAdic3,
                     @TotalAdic4,
+                    @TotalAdic5,
                     @TotalAdicionales,
                     @AdicionalFijo1Descripcion,
                     @AdicionalFijo1Importe,
@@ -3861,11 +3879,13 @@ public sealed class CargaViajesService(
                     PORCENTAJE_ADIC2 = @PorcentajeAdic2,
                     PORCENTAJE_ADIC3 = @PorcentajeAdic3,
                     PORCENTAJE_ADIC4 = @PorcentajeAdic4,
+                    PORCENTAJE_ADIC5 = @PorcentajeAdic5,
                     TOTAL_ADIC = @TotalAdic,
                     TOTAL_ADIC1 = @TotalAdic1,
                     TOTAL_ADIC2 = @TotalAdic2,
                     TOTAL_ADIC3 = @TotalAdic3,
                     TOTAL_ADIC4 = @TotalAdic4,
+                    TOTAL_ADIC5 = @TotalAdic5,
                     TOTAL_ADICIONALES = @TotalAdicionales,
                     ADICIONAL_FIJO1_DESCRIPCION = @AdicionalFijo1Descripcion,
                     ADICIONAL_FIJO1_IMPORTE = @AdicionalFijo1Importe,
@@ -3920,11 +3940,13 @@ public sealed class CargaViajesService(
                 PorcentajeAdic2 = request.PorcentajeAdic2,
                 PorcentajeAdic3 = request.PorcentajeAdic3,
                 PorcentajeAdic4 = request.PorcentajeAdic4,
+                PorcentajeAdic5 = request.PorcentajeAdic5,
                 TotalAdic = totals.TotalAdic,
                 TotalAdic1 = totals.TotalAdic1,
                 TotalAdic2 = totals.TotalAdic2,
                 TotalAdic3 = totals.TotalAdic3,
                 TotalAdic4 = totals.TotalAdic4,
+                TotalAdic5 = totals.TotalAdic5,
                 TotalAdicionales = totals.TotalAdicionales,
                 AdicionalFijo1Descripcion = (request.AdicionalFijo1Descripcion ?? string.Empty).Trim(),
                 AdicionalFijo1Importe = request.AdicionalFijo1Importe,
@@ -3959,7 +3981,7 @@ public sealed class CargaViajesService(
             }
             catch (Exception rollbackEx)
             {
-                logger.LogWarning(rollbackEx, "SaveViaje rollback falló");
+                logger.LogWarning(rollbackEx, "SaveViaje rollback fallÃ³");
             }
 
             throw;
@@ -4026,7 +4048,7 @@ public sealed class CargaViajesService(
             .ToList();
 
         return issues.Count == 0
-            ? "Revisá los campos marcados antes de guardar."
+            ? "RevisÃ¡ los campos marcados antes de guardar."
             : string.Join(Environment.NewLine, issues);
     }
 
@@ -4361,7 +4383,8 @@ public sealed class CargaViajesService(
                 Math.Max(0m, request.PorcentajeAdic1),
                 Math.Max(0m, request.PorcentajeAdic2),
                 Math.Max(0m, request.PorcentajeAdic3),
-                Math.Max(0m, request.PorcentajeAdic4)
+                Math.Max(0m, request.PorcentajeAdic4),
+                Math.Max(0m, request.PorcentajeAdic5)
             ],
             [
                 request.AdicionalFijo1Descripcion,
@@ -4401,6 +4424,7 @@ public sealed class CargaViajesService(
             PorcentajeAdic2 = detail.PorcentajeAdic2,
             PorcentajeAdic3 = detail.PorcentajeAdic3,
             PorcentajeAdic4 = detail.PorcentajeAdic4,
+            PorcentajeAdic5 = detail.PorcentajeAdic5,
             AdicionalFijo1Descripcion = detail.AdicionalFijo1Descripcion,
             AdicionalFijo1Importe = detail.AdicionalFijo1Importe,
             AdicionalFijo1Aplicado = detail.AdicionalFijo1Aplicado,
@@ -4433,12 +4457,36 @@ public sealed class CargaViajesService(
         var result = new ViajeTotalesDto();
         var totalImporteBase = importeCliente * cantidad;
         var totalFleteBase = importeFletero * cantidad;
+        var subtotalCliente = totalImporteBase;
 
         result.ConceptosCliente.Add(BuildConcepto("Tarifa cliente", totalImporteBase, cantidad, null));
         result.ConceptosFletero.Add(BuildConcepto("Tarifa fletero", totalFleteBase, cantidad, null));
 
-        for (var i = 0; i < 5; i++)
+        if (GetBoolValue(config.AdicionalesHabilitados, AdicionalComisionIndex))
         {
+            var commissionValue = AdicionalComisionIndex < porcentajesAdicionales.Count
+                ? Math.Max(0m, porcentajesAdicionales[AdicionalComisionIndex])
+                : 0m;
+
+            if (commissionValue > 0m)
+            {
+                var commissionTotal = GetBoolValue(config.EsPorcentajeAdicionales, AdicionalComisionIndex)
+                    ? totalImporteBase * commissionValue / 100m
+                    : commissionValue;
+
+                if (commissionTotal > 0m)
+                {
+                    result.ConceptosCliente.Add(BuildConcepto(BuildAdicionalDescripcion(config, AdicionalComisionIndex), commissionTotal, null, AdicionalComisionIndex));
+                    subtotalCliente += commissionTotal;
+                }
+            }
+        }
+
+        for (var i = 0; i < AdicionalesGeneralesCount; i++)
+        {
+            if (i == AdicionalComisionIndex)
+                continue;
+
             if (!GetBoolValue(config.AdicionalesHabilitados, i))
                 continue;
 
@@ -4446,11 +4494,11 @@ public sealed class CargaViajesService(
             if (value <= 0m)
                 continue;
 
-            // Cuando el adicional está configurado como Importe (no Porcentaje), el
+            // Cuando el adicional estÃ¡ configurado como Importe (no Porcentaje), el
             // valor guardado es un monto fijo: se suma directo, sin aplicarlo sobre
             // la tarifa base ni dividir por 100.
             var esPorcentaje = GetBoolValue(config.EsPorcentajeAdicionales, i);
-            var totalAdicionalCliente = esPorcentaje ? totalImporteBase * value / 100m : value;
+            var totalAdicionalCliente = esPorcentaje ? subtotalCliente * value / 100m : value;
             var descripcion = BuildAdicionalDescripcion(config, i);
             result.ConceptosCliente.Add(BuildConcepto(descripcion, totalAdicionalCliente, null, i));
 
@@ -4463,7 +4511,7 @@ public sealed class CargaViajesService(
         }
 
         if (peaje > 0m)
-            result.ConceptosCliente.Add(BuildConcepto("Peaje", peaje, null, null));
+            result.ConceptosCliente.Add(BuildConcepto("Peaje", peaje, null, null, aportaAlTotal: false));
 
         for (var i = 0; i < 3; i++)
         {
@@ -4480,19 +4528,22 @@ public sealed class CargaViajesService(
             result.ConceptosCliente.Add(BuildConcepto(string.IsNullOrWhiteSpace(descripcion) ? "Adicional fijo" : descripcion, totalAdicionalFijo, cantidadFijo, null));
         }
 
-        result.TotalCliente = result.ConceptosCliente.Sum(item => Math.Max(0m, item.Importe));
+        result.TotalCliente = result.ConceptosCliente
+            .Where(item => item.AportaAlTotal)
+            .Sum(item => Math.Max(0m, item.Importe));
         result.TotalFletero = result.ConceptosFletero.Sum(item => Math.Max(0m, item.Importe));
         return result;
     }
 
-    private static ViajeConceptoTotalDto BuildConcepto(string descripcion, decimal importe, decimal? cantidad, int? indice)
+    private static ViajeConceptoTotalDto BuildConcepto(string descripcion, decimal importe, decimal? cantidad, int? indice, bool aportaAlTotal = true)
         => new()
         {
             Descripcion = cantidad.HasValue && cantidad.Value > 1m
                 ? $"{descripcion} x{cantidad.Value:0.##}"
                 : descripcion,
             Importe = Math.Max(0m, importe),
-            Indice = indice
+            Indice = indice,
+            AportaAlTotal = aportaAlTotal
         };
 
     private static string BuildAdicionalDescripcion(CargaViajesConfigDto config, int index)
@@ -4505,13 +4556,11 @@ public sealed class CargaViajesService(
         return string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
     }
 
-    private static (decimal TotalImporte, decimal TotalFlete, decimal TotalAdic, decimal TotalAdic1, decimal TotalAdic2, decimal TotalAdic3, decimal TotalAdic4, decimal TotalAdicionales) CalculateTotals(CargaViajeSaveRequest request, CargaViajesConfigDto config)
+    private static (decimal TotalImporte, decimal TotalFlete, decimal TotalAdic, decimal TotalAdic1, decimal TotalAdic2, decimal TotalAdic3, decimal TotalAdic4, decimal TotalAdic5, decimal TotalAdicionales) CalculateTotals(CargaViajeSaveRequest request, CargaViajesConfigDto config)
     {
         var resumen = BuildViajeTotales(request, config);
-        // TotalCliente ya incluye tarifa base + adicionales (generales y fijos) + peaje,
-        // igual que TotalFletero. Antes acá se guardaba solo la tarifa base
-        // (request.ImporteCliente * cantidad), por lo que el TOTAL_IMPORTE persistido
-        // en la grilla quedaba desactualizado apenas el viaje tenía algún adicional.
+        // TotalCliente incluye tarifa base + adicionales (generales y fijos).
+        // El peaje se informa por separado, pero no debe sumarse al cliente.
         var totalImporte = resumen.TotalCliente;
         var totalFlete = resumen.TotalFletero;
         var totalAdic = GetConceptoTotal(resumen.ConceptosCliente, 0);
@@ -4519,9 +4568,10 @@ public sealed class CargaViajesService(
         var totalAdic2 = GetConceptoTotal(resumen.ConceptosCliente, 2);
         var totalAdic3 = GetConceptoTotal(resumen.ConceptosCliente, 3);
         var totalAdic4 = GetConceptoTotal(resumen.ConceptosCliente, 4);
-        var totalAdicionales = totalAdic + totalAdic1 + totalAdic2 + totalAdic3 + totalAdic4;
+        var totalAdic5 = GetConceptoTotal(resumen.ConceptosCliente, 5);
+        var totalAdicionales = totalAdic + totalAdic1 + totalAdic2 + totalAdic3 + totalAdic4 + totalAdic5;
 
-        return (totalImporte, totalFlete, totalAdic, totalAdic1, totalAdic2, totalAdic3, totalAdic4, totalAdicionales);
+        return (totalImporte, totalFlete, totalAdic, totalAdic1, totalAdic2, totalAdic3, totalAdic4, totalAdic5, totalAdicionales);
     }
 
     private static decimal GetConceptoTotal(IReadOnlyList<ViajeConceptoTotalDto> conceptos, int indice)
@@ -4582,11 +4632,11 @@ public sealed class CargaViajesService(
             ChoferGeneral = string.Empty,
             CodigoTarifaGeneral = string.Empty,
             PorcentajesAdicionalesHabilitados = 3,
-            NombresAdicionales = ["Adicional 1", "Adicional 2", "Adicional 3", "Adicional 4", "Adicional 5"],
-            PorcentajesAdicionales = [0m, 0m, 0m, 0m, 0m],
-            AdicionalesHabilitados = [true, true, true, false, false],
-            AdicionalesSumarFletero = [false, false, false, false, false],
-            EsPorcentajeAdicionales = [true, true, true, true, true]
+            NombresAdicionales = ["Adicional 1", "Adicional 2", "Adicional 3", "Adicional 4", "Adicional 5", "Comisión"],
+            PorcentajesAdicionales = [0m, 0m, 0m, 0m, 0m, 0m],
+            AdicionalesHabilitados = [true, true, true, false, false, true],
+            AdicionalesSumarFletero = [false, false, false, false, false, false],
+            EsPorcentajeAdicionales = [true, true, true, true, true, true]
         };
 
     internal static CargaViajesConfigDto BuildConfiguracion(Dictionary<string, string> values)
@@ -4599,18 +4649,18 @@ public sealed class CargaViajesService(
 
         var hasModernEnabledKeys = AdicionalHabilitadoConfigKeys.Any(values.ContainsKey);
         if (hasModernEnabledKeys)
-            dto.AdicionalesHabilitados = new bool[5];
+            dto.AdicionalesHabilitados = [true, true, true, false, false, true];
 
         if (!hasModernEnabledKeys && values.ContainsKey(PorcentajesAdicionalesHabilitadosConfigKey))
         {
             var legacyCount = ResolveAdicionalesHabilitados(values);
-            dto.AdicionalesHabilitados = new bool[5];
-            for (var i = 0; i < Math.Min(5, legacyCount); i++)
+            dto.AdicionalesHabilitados = new bool[AdicionalesGeneralesCount];
+            for (var i = 0; i < Math.Min(AdicionalesGeneralesCount, legacyCount); i++)
                 dto.AdicionalesHabilitados[i] = true;
             dto.PorcentajesAdicionalesHabilitados = legacyCount;
         }
 
-        for (var i = 0; i < 5; i++)
+        for (var i = 0; i < AdicionalesGeneralesCount; i++)
         {
             var nameKey = $"VIAJES-ADIC-NOMBRE-{i}";
             var percKey = $"VIAJES-ADIC-PORC-{i}";
@@ -4638,7 +4688,7 @@ public sealed class CargaViajesService(
         yield return (CodigoTarifaGeneralConfigKey, ResolveCodigoTarifaGeneral(config.CodigoTarifaGeneral));
         yield return (PorcentajesAdicionalesHabilitadosConfigKey, ResolveAdicionalesHabilitados(config.PorcentajesAdicionalesHabilitados).ToString(System.Globalization.CultureInfo.InvariantCulture));
 
-        for (var i = 0; i < 5; i++)
+        for (var i = 0; i < AdicionalesGeneralesCount; i++)
         {
             yield return ($"VIAJES-ADIC-NOMBRE-{i}", config.NombresAdicionales.ElementAtOrDefault(i) ?? string.Empty);
             yield return ($"VIAJES-ADIC-PORC-{i}", config.PorcentajesAdicionales.ElementAtOrDefault(i).ToString(System.Globalization.CultureInfo.InvariantCulture));
@@ -4650,10 +4700,10 @@ public sealed class CargaViajesService(
     private static CargaViajesConfigDto NormalizeConfiguracion(CargaViajesConfigDto config)
     {
         var defaults = CreateDefaultConfiguracion();
-        var habilitados = Enumerable.Range(0, 5)
+        var habilitados = Enumerable.Range(0, AdicionalesGeneralesCount)
             .Select(i => GetBoolValue(config.AdicionalesHabilitados, i))
             .ToArray();
-        var sumarFletero = Enumerable.Range(0, 5)
+        var sumarFletero = Enumerable.Range(0, AdicionalesGeneralesCount)
             .Select(i => GetBoolValue(config.AdicionalesSumarFletero, i))
             .ToArray();
 
@@ -4665,12 +4715,15 @@ public sealed class CargaViajesService(
 
         // A diferencia de Habilitado/SumarFletero, EsPorcentaje por default es true
         // (Porcentaje) cuando falta el dato, para no cambiar el comportamiento
-        // histórico de configuraciones ya guardadas antes de este campo.
-        var esPorcentaje = Enumerable.Range(0, 5)
+        // histÃ³rico de configuraciones ya guardadas antes de este campo.
+        var esPorcentaje = Enumerable.Range(0, AdicionalesGeneralesCount)
             .Select(i => config.EsPorcentajeAdicionales is not null && i < config.EsPorcentajeAdicionales.Length
                 ? config.EsPorcentajeAdicionales[i]
                 : true)
             .ToArray();
+
+        if (sumarFletero.Length > AdicionalComisionIndex)
+            sumarFletero[AdicionalComisionIndex] = false;
 
         return new CargaViajesConfigDto
         {
@@ -4679,14 +4732,14 @@ public sealed class CargaViajesService(
             ChoferGeneral = ResolveChoferGeneral(config.ChoferGeneral),
             CodigoTarifaGeneral = ResolveCodigoTarifaGeneral(config.CodigoTarifaGeneral),
             PorcentajesAdicionalesHabilitados = habilitados.Count(value => value),
-            NombresAdicionales = Enumerable.Range(0, 5)
+            NombresAdicionales = Enumerable.Range(0, AdicionalesGeneralesCount)
                 .Select(i =>
                 {
                     var value = config.NombresAdicionales.ElementAtOrDefault(i);
                     return string.IsNullOrWhiteSpace(value) ? defaults.NombresAdicionales[i] : value.Trim();
                 })
                 .ToList(),
-            PorcentajesAdicionales = Enumerable.Range(0, 5)
+            PorcentajesAdicionales = Enumerable.Range(0, AdicionalesGeneralesCount)
                 .Select(i => Math.Max(0m, config.PorcentajesAdicionales.ElementAtOrDefault(i)))
                 .ToList(),
             AdicionalesHabilitados = habilitados,
@@ -4709,7 +4762,7 @@ public sealed class CargaViajesService(
             foreach (var item in BuildConfiguracionItems(normalized))
                 await UpsertConfigValueAsync(cn, (SqlTransaction)tx, detailColumn, item.Key, item.Value, ConfigGroup, ct);
 
-            for (var i = 0; i < 5; i++)
+            for (var i = 0; i < AdicionalesGeneralesCount; i++)
             {
                 var tipo = GetBoolValue(normalized.EsPorcentajeAdicionales, i) ? "PORCENTAJE" : "IMPORTE";
                 await UpdateAdicionalTipoAsync(cn, (SqlTransaction)tx, detailColumn, $"VIAJES-ADIC-PORC-{i}", tipo, ct);
@@ -4725,14 +4778,14 @@ public sealed class CargaViajesService(
             }
             catch (Exception rollbackEx)
             {
-                logger.LogWarning(rollbackEx, "PersistConfiguracion rollback falló");
+                logger.LogWarning(rollbackEx, "PersistConfiguracion rollback fallÃ³");
             }
 
             throw;
         }
 
         if (migrateOnly)
-            logger.LogInformation("PersistConfiguracion migró claves nuevas del módulo de viajes.");
+            logger.LogInformation("PersistConfiguracion migrÃ³ claves nuevas del mÃ³dulo de viajes.");
     }
 
     private static bool GetBoolValue(IReadOnlyList<bool> values, int index)
@@ -4768,7 +4821,7 @@ public sealed class CargaViajesService(
     }
 
     private static int ResolveAdicionalesHabilitados(int value)
-        => value > 0 ? Math.Min(5, value) : 3;
+        => value > 0 ? Math.Min(AdicionalesGeneralesCount, value) : 3;
 
     private static int ResolveAdicionalesHabilitados(string? value)
     {
@@ -4840,7 +4893,7 @@ public sealed class CargaViajesService(
                 new() { Key = CargaViajesViewColumnKeys.Cliente, Label = "Cliente", Visible = true, Order = 2 },
                 new() { Key = CargaViajesViewColumnKeys.Destino, Label = "Destino", Visible = true, Order = 3 },
                 new() { Key = CargaViajesViewColumnKeys.Chofer, Label = "Chofer", Visible = true, Order = 4 },
-                new() { Key = CargaViajesViewColumnKeys.TipoVehiculo, Label = "Tipo vehículo", Visible = true, Order = 5 },
+                new() { Key = CargaViajesViewColumnKeys.TipoVehiculo, Label = "Tipo vehÃ­culo", Visible = true, Order = 5 },
                 new() { Key = CargaViajesViewColumnKeys.TotalCliente, Label = "Total cliente", Visible = true, Order = 6 },
                 new() { Key = CargaViajesViewColumnKeys.TotalFletero, Label = "Total fletero", Visible = true, Order = 7 },
                 new() { Key = CargaViajesViewColumnKeys.Estado, Label = "Estado", Visible = true, Order = 8 },
@@ -4892,8 +4945,8 @@ public sealed class CargaViajesService(
             AgruparPor = CargaViajeTipoVehiculoViewGroupKeys.None,
             Columnas =
             [
-                new() { Key = CargaViajeTipoVehiculoViewColumnKeys.Codigo, Label = "Código", Visible = true, Order = 0 },
-                new() { Key = CargaViajeTipoVehiculoViewColumnKeys.Descripcion, Label = "Descripción", Visible = true, Order = 1 },
+                new() { Key = CargaViajeTipoVehiculoViewColumnKeys.Codigo, Label = "CÃ³digo", Visible = true, Order = 0 },
+                new() { Key = CargaViajeTipoVehiculoViewColumnKeys.Descripcion, Label = "DescripciÃ³n", Visible = true, Order = 1 },
                 new() { Key = CargaViajeTipoVehiculoViewColumnKeys.Activo, Label = "Activo", Visible = true, Order = 2 }
             ]
         };
@@ -4969,7 +5022,7 @@ public sealed class CargaViajesService(
     private static async Task UpdateAdicionalTipoAsync(SqlConnection cn, SqlTransaction tx, string detailColumn, string key, string tipo, CancellationToken ct)
     {
         // La fila ya existe: UpsertConfigValueAsync la acaba de crear/actualizar
-        // en esta misma transacción, así que alcanza con un UPDATE directo sobre
+        // en esta misma transacciÃ³n, asÃ­ que alcanza con un UPDATE directo sobre
         // ValorAux para guardar el tipo (Porcentaje/Importe) junto al valor.
         var sql = $"""
             UPDATE dbo.TA_CONFIGURACION
@@ -5140,7 +5193,7 @@ public sealed class CargaViajesService(
                 return candidate;
         }
 
-        throw new InvalidOperationException($"No se encontró ninguna de las tablas esperadas: {string.Join(", ", candidates)}.");
+        throw new InvalidOperationException($"No se encontrÃ³ ninguna de las tablas esperadas: {string.Join(", ", candidates)}.");
     }
 
     private static string FirstExistingColumn(HashSet<string> columns, params string[] candidates)
@@ -5151,7 +5204,7 @@ public sealed class CargaViajesService(
                 return candidate;
         }
 
-        throw new InvalidOperationException($"No se encontró ninguna de las columnas esperadas: {string.Join(", ", candidates)}.");
+        throw new InvalidOperationException($"No se encontrÃ³ ninguna de las columnas esperadas: {string.Join(", ", candidates)}.");
     }
 
     private static string? FirstExistingColumnOrNull(HashSet<string> columns, params string[] candidates)
@@ -5310,6 +5363,7 @@ public sealed class CargaViajesService(
         public string ListaTexto { get; set; } = string.Empty;
     }
 }
+
 
 
 
