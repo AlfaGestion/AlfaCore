@@ -852,6 +852,11 @@
                                             <label>Importe</label>
                                             <input type="number" step="0.01" @bind="_tarifaForm.AdicionalFijo1Importe" />
                                         </div>
+                                        <label class="carga-viajes-checkbox @( _tarifaForm.AdicionalFijo1PideCantidad ? "carga-viajes-checkbox--active" : string.Empty)">
+                                            <input class="carga-viajes-checkbox__input" type="checkbox" @bind="_tarifaForm.AdicionalFijo1PideCantidad" />
+                                            <span class="carga-viajes-checkbox__box" aria-hidden="true"></span>
+                                            <span class="carga-viajes-checkbox__label">Pide cantidad</span>
+                                        </label>
                                     </div>
                                     <div class="carga-viajes-tarifa-editor__fixed-item">
                                         <div class="field">
@@ -862,6 +867,11 @@
                                             <label>Importe</label>
                                             <input type="number" step="0.01" @bind="_tarifaForm.AdicionalFijo2Importe" />
                                         </div>
+                                        <label class="carga-viajes-checkbox @( _tarifaForm.AdicionalFijo2PideCantidad ? "carga-viajes-checkbox--active" : string.Empty)">
+                                            <input class="carga-viajes-checkbox__input" type="checkbox" @bind="_tarifaForm.AdicionalFijo2PideCantidad" />
+                                            <span class="carga-viajes-checkbox__box" aria-hidden="true"></span>
+                                            <span class="carga-viajes-checkbox__label">Pide cantidad</span>
+                                        </label>
                                     </div>
                                     <div class="carga-viajes-tarifa-editor__fixed-item">
                                         <div class="field">
@@ -872,6 +882,11 @@
                                             <label>Importe</label>
                                             <input type="number" step="0.01" @bind="_tarifaForm.AdicionalFijo3Importe" />
                                         </div>
+                                        <label class="carga-viajes-checkbox @( _tarifaForm.AdicionalFijo3PideCantidad ? "carga-viajes-checkbox--active" : string.Empty)">
+                                            <input class="carga-viajes-checkbox__input" type="checkbox" @bind="_tarifaForm.AdicionalFijo3PideCantidad" />
+                                            <span class="carga-viajes-checkbox__box" aria-hidden="true"></span>
+                                            <span class="carga-viajes-checkbox__label">Pide cantidad</span>
+                                        </label>
                                     </div>
                                 </div>
                                 <div class="carga-viajes-tarifa-editor__fixed-hint">
@@ -8256,10 +8271,13 @@
                 PorcentajeAdic4 = item.PorcentajeAdic4,
                 AdicionalFijo1Descripcion = item.AdicionalFijo1Descripcion,
                 AdicionalFijo1Importe = item.AdicionalFijo1Importe,
+                AdicionalFijo1PideCantidad = item.AdicionalFijo1PideCantidad,
                 AdicionalFijo2Descripcion = item.AdicionalFijo2Descripcion,
                 AdicionalFijo2Importe = item.AdicionalFijo2Importe,
+                AdicionalFijo2PideCantidad = item.AdicionalFijo2PideCantidad,
                 AdicionalFijo3Descripcion = item.AdicionalFijo3Descripcion,
                 AdicionalFijo3Importe = item.AdicionalFijo3Importe,
+                AdicionalFijo3PideCantidad = item.AdicionalFijo3PideCantidad,
                 Activo = item.Activo
             };
             _tarifaClienteTexto = item.TarifaFletero ? string.Empty : item.Cliente;
@@ -8293,10 +8311,13 @@
             PorcentajeAdic4 = row.PorcentajeAdic4,
             AdicionalFijo1Descripcion = row.AdicionalFijo1Descripcion,
             AdicionalFijo1Importe = row.AdicionalFijo1Importe,
+            AdicionalFijo1PideCantidad = row.AdicionalFijo1PideCantidad,
             AdicionalFijo2Descripcion = row.AdicionalFijo2Descripcion,
             AdicionalFijo2Importe = row.AdicionalFijo2Importe,
+            AdicionalFijo2PideCantidad = row.AdicionalFijo2PideCantidad,
             AdicionalFijo3Descripcion = row.AdicionalFijo3Descripcion,
             AdicionalFijo3Importe = row.AdicionalFijo3Importe,
+            AdicionalFijo3PideCantidad = row.AdicionalFijo3PideCantidad,
             Activo = row.Activo
         };
         _tarifaClienteTexto = row.TarifaFletero ? string.Empty : ExtractVisibleText(row.Cliente);
