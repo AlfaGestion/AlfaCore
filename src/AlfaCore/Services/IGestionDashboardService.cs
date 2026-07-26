@@ -14,6 +14,8 @@ public interface IGestionDashboardService
     Task<VentasComprobantesPageDto> GetVentasComprobantesAsync(VentasDashboardFilters filters, CancellationToken ct = default);
     Task<IReadOnlyList<VentasComprobanteItemDto>> GetVentasComprobanteItemsAsync(string tc, string idComprobante, CancellationToken ct = default);
     Task<VentasResumenTcPageDto> GetVentasResumenPorTcAsync(VentasDashboardFilters filters, CancellationToken ct = default);
+    Task<VentasComparativoPeriodoDto> GetVentasComparativoPeriodoAsync(VentasDashboardFilters filters, CancellationToken ct = default);
+    Task<IReadOnlyList<VentasUnidadNegocioResumenDto>> GetVentasPorUnidadNegocioAsync(VentasDashboardFilters filters, CancellationToken ct = default);
     Task<StockFilterOptionsDto> GetStockFilterOptionsAsync(CancellationToken ct = default);
     Task<StockDashboardDto> GetStockAsync(StockDashboardFilters filters, CancellationToken ct = default);
     Task<CajaBancosFilterOptionsDto> GetCajaBancosFilterOptionsAsync(CancellationToken ct = default);

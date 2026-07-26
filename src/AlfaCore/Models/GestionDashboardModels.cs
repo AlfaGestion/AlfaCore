@@ -12,6 +12,38 @@ public sealed class VentasDashboardDto
     public IReadOnlyList<GestionMovimientoDto> UltimosComprobantes { get; init; } = [];
 }
 
+public sealed class VentasPeriodoKpiDto
+{
+    public DateTime? FechaDesde { get; init; }
+    public DateTime? FechaHasta { get; init; }
+    public decimal TotalFacturado { get; init; }
+    public int Comprobantes { get; init; }
+    public decimal TicketPromedio { get; init; }
+}
+
+public sealed class VentasComparativoPeriodoDto
+{
+    public VentasPeriodoKpiDto Actual { get; init; } = new();
+    public VentasPeriodoKpiDto PeriodoAnterior { get; init; } = new();
+    public VentasPeriodoKpiDto AnioAnterior { get; init; } = new();
+
+    public decimal? VariacionPeriodoAnterior => CalcularVariacion(Actual.TotalFacturado, PeriodoAnterior.TotalFacturado);
+    public decimal? VariacionAnioAnterior => CalcularVariacion(Actual.TotalFacturado, AnioAnterior.TotalFacturado);
+
+    private static decimal? CalcularVariacion(decimal actual, decimal anterior)
+        => anterior == 0 ? null : Math.Round((actual - anterior) / anterior * 100m, 1);
+}
+
+public sealed class VentasUnidadNegocioResumenDto
+{
+    public string Codigo { get; init; } = string.Empty;
+    public string Descripcion { get; init; } = string.Empty;
+    public decimal TotalFacturado { get; init; }
+    public int Comprobantes { get; init; }
+    public decimal TicketPromedio { get; init; }
+    public int ClientesActivos { get; init; }
+}
+
 public sealed class StockDashboardDto
 {
     public decimal StockValorizado { get; init; }

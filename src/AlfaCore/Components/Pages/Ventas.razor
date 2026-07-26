@@ -14,98 +14,7 @@
         </div>
     </section>
 
-    <section class="panel-card filters-card" @onkeydown="HandleApplyKeyDownAsync">
-        <div class="panel-card__header">
-            <div>
-                <h3 class="panel-card__title">Filtros de ventas</h3>
-                <p class="panel-card__subtitle">Clientes, fechas y circuitos comerciales para acotar el análisis.</p>
-            </div>
-            <div class="quick-range">
-                <button class="btn btn--ghost" @onclick="HoyAsync">Hoy</button>
-                <button class="btn btn--ghost" @onclick="SemanaAsync">Esta semana</button>
-                <button class="btn btn--ghost" @onclick="MesAsync">Este mes</button>
-                <button class="btn btn--ghost" @onclick="MesAnteriorAsync">Mes anterior</button>
-                <button class="btn btn--ghost" @onclick="UltimosTresAsync">Últimos 3 meses</button>
-                <button class="btn btn--ghost" @onclick="AnioAsync">Año actual</button>
-            </div>
-        </div>
-
-        <div class="filters-grid filters-grid--dates">
-            <div class="field">
-                <label>Fecha desde</label>
-                <InputDate @bind-Value="_filters.FechaDesde" />
-            </div>
-            <div class="field">
-                <label>Fecha hasta</label>
-                <InputDate @bind-Value="_filters.FechaHasta" />
-            </div>
-            <div class="filters-toggle-wrap">
-                <button type="button" class="btn btn--ghost filters-toggle" @onclick="ToggleAdvanced">
-                    @(_showAdvanced ? "Ocultar filtros" : "Mostrar filtros")
-                </button>
-            </div>
-        </div>
-
-        <div class="filters-summary" aria-live="polite">
-            <span class="filters-summary__label">Filtros activos</span>
-            <span class="filters-summary__text">@BuildSummary()</span>
-        </div>
-
-        @if (_showAdvanced)
-        {
-            <div class="filters-grid filters-grid--wide">
-                <div class="field">
-                    <label>Cliente</label>
-                    <InputText @bind-Value="_filters.Cliente" />
-                </div>
-                <div class="field">
-                    <label>Usuario</label>
-                    <InputSelect @bind-Value="_filters.Usuario">
-                        <option value="">Todos</option>
-                        @foreach (var item in _options.Usuarios)
-                        {
-                            <option value="@item">@item</option>
-                        }
-                    </InputSelect>
-                </div>
-                <div class="field">
-                    <label>Sucursal</label>
-                    <InputSelect @bind-Value="_filters.Sucursal">
-                        <option value="">Todas</option>
-                        @foreach (var item in _options.Sucursales)
-                        {
-                            <option value="@item">@item</option>
-                        }
-                    </InputSelect>
-                </div>
-                <div class="field">
-                    <label>Depósito</label>
-                    <InputSelect @bind-Value="_filters.Deposito">
-                        <option value="">Todos</option>
-                        @foreach (var item in _options.Depositos)
-                        {
-                            <option value="@item">@item</option>
-                        }
-                    </InputSelect>
-                </div>
-                <div class="field">
-                    <label>TC</label>
-                    <InputSelect @bind-Value="_filters.TipoComprobante">
-                        <option value="">Todos</option>
-                        @foreach (var item in _options.TiposComprobante)
-                        {
-                            <option value="@item">@item</option>
-                        }
-                    </InputSelect>
-                </div>
-            </div>
-        }
-
-        <div class="actions">
-            <button class="btn btn--primary" @onclick="LoadAsync">Aplicar filtros</button>
-            <button class="btn btn--ghost" @onclick="ClearAsync">Limpiar</button>
-        </div>
-    </section>
+    <VentasFiltersBar Model="_filters" Options="_options" OnApply="LoadAsync" Titulo="Filtros de ventas" Subtitulo="Clientes, fechas y circuitos comerciales para acotar el análisis." />
 
     @if (_loading)
     {
@@ -118,11 +27,65 @@
     else
     {
         <section class="kpi-grid">
-            <article class="kpi-card"><div class="kpi-card__label">Facturado período</div><div class="kpi-card__value">@FmtMoney(_data.TotalFacturadoMes)</div></article>
+            <article class="kpi-card">
+                <div class="kpi-card__label">Facturado período</div>
+                <div class="kpi-card__value">@FmtMoney(_data.TotalFacturadoMes)</div>
+                @if (_comparativo is not null)
+                {
+                    <div class="kpi-card__compare">
+                        @VariacionTexto("vs. período anterior", _comparativo.VariacionPeriodoAnterior)
+                        @VariacionTexto("vs. año anterior", _comparativo.VariacionAnioAnterior)
+                    </div>
+                }
+            </article>
             <article class="kpi-card"><div class="kpi-card__label">Ticket promedio</div><div class="kpi-card__value">@FmtMoney(_data.TicketPromedioMes)</div></article>
             <article class="kpi-card"><div class="kpi-card__label">Comprobantes</div><div class="kpi-card__value">@_data.ComprobantesMes</div></article>
             <article class="kpi-card"><div class="kpi-card__label">Clientes activos</div><div class="kpi-card__value">@_data.ClientesActivos</div></article>
         </section>
+
+        <div class="table-toolbar">
+            <div>
+                <h3 class="panel-card__title">Facturación por unidad de negocio</h3>
+                <p class="panel-card__subtitle">Comparar todas las unidades juntas o desglosadas.</p>
+            </div>
+            <div class="quick-range">
+                <button type="button" class="btn btn--sm @(_filters.Agrupacion == VentasAgrupacionKeys.Junto ? "btn--primary" : "btn--ghost")" @onclick="() => SetAgrupacionAsync(VentasAgrupacionKeys.Junto)">Todo junto</button>
+                <button type="button" class="btn btn--sm @(_filters.Agrupacion == VentasAgrupacionKeys.Separado ? "btn--primary" : "btn--ghost")" @onclick="() => SetAgrupacionAsync(VentasAgrupacionKeys.Separado)">Separado por unidad</button>
+            </div>
+        </div>
+        @if (_filters.Agrupacion == VentasAgrupacionKeys.Separado)
+        {
+            @if (_porUnidad.Count == 0)
+            {
+                <div class="panel-card empty-state"><p>No hay datos por unidad de negocio para el período filtrado.</p></div>
+            }
+            else
+            {
+                <DataTable Titulo="Unidades de negocio" Subtitulo="Facturación del período por unidad de negocio">
+                    <Header>
+                        <tr>
+                            <th>Unidad de negocio</th>
+                            <th style="text-align:right;">Facturado</th>
+                            <th style="text-align:right;">Comprobantes</th>
+                            <th style="text-align:right;">Ticket promedio</th>
+                            <th style="text-align:right;">Clientes activos</th>
+                        </tr>
+                    </Header>
+                    <Rows>
+                        @foreach (var item in _porUnidad)
+                        {
+                            <tr>
+                                <td><strong>@item.Descripcion</strong></td>
+                                <td style="text-align:right;">@FmtMoney(item.TotalFacturado)</td>
+                                <td style="text-align:right;">@item.Comprobantes</td>
+                                <td style="text-align:right;">@FmtMoney(item.TicketPromedio)</td>
+                                <td style="text-align:right;">@item.ClientesActivos</td>
+                            </tr>
+                        }
+                    </Rows>
+                </DataTable>
+            }
+        }
 
         <article class="panel-card">
             <div class="panel-card__header">
@@ -164,10 +127,11 @@
 
     private bool _loading = true;
     private string _error = string.Empty;
-    private bool _showAdvanced;
     private string _chartType = "area";
 
     private VentasDashboardDto _data = new();
+    private VentasComparativoPeriodoDto? _comparativo;
+    private IReadOnlyList<VentasUnidadNegocioResumenDto> _porUnidad = [];
     private VentasDashboardFilters _filters = null!;
     private VentasFilterOptionsDto _options = new();
 
@@ -208,6 +172,13 @@
         catch { }
     }
 
+    private async Task SetAgrupacionAsync(string agrupacion)
+    {
+        _filters.Agrupacion = agrupacion;
+        if (agrupacion == VentasAgrupacionKeys.Separado && _porUnidad.Count == 0)
+            _porUnidad = await GestionSvc.GetVentasPorUnidadNegocioAsync(_filters);
+    }
+
     private async Task LoadAsync()
     {
         _loading = true;
@@ -215,99 +186,34 @@
         try
         {
             _data = await GestionSvc.GetVentasAsync(_filters);
+            _comparativo = await GestionSvc.GetVentasComparativoPeriodoAsync(_filters);
+            _porUnidad = _filters.Agrupacion == VentasAgrupacionKeys.Separado
+                ? await GestionSvc.GetVentasPorUnidadNegocioAsync(_filters)
+                : [];
         }
         catch (Exception ex) { _error = ex.Message; }
         finally { _loading = false; }
     }
 
-    private Task HoyAsync() => ApplyQuickRangeAsync("hoy");
-    private Task SemanaAsync() => ApplyQuickRangeAsync("semana");
-    private Task MesAsync() => ApplyQuickRangeAsync("mes");
-    private Task MesAnteriorAsync() => ApplyQuickRangeAsync("mes-anterior");
-    private Task UltimosTresAsync() => ApplyQuickRangeAsync("ultimos-3");
-    private Task AnioAsync() => ApplyQuickRangeAsync("anio");
-    private void ToggleAdvanced() => _showAdvanced = !_showAdvanced;
-
-    private async Task HandleApplyKeyDownAsync(KeyboardEventArgs args)
-    {
-        if (!string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase) || _loading)
-            return;
-
-        await LoadAsync();
-    }
-
-    private async Task ClearAsync()
-    {
-        var today = DateTime.Today;
-        _filters.FechaDesde = new DateTime(today.Year, today.Month, 1);
-        _filters.FechaHasta = today;
-        _filters.Cliente = null;
-        _filters.Usuario = null;
-        _filters.Sucursal = null;
-        _filters.Deposito = null;
-        _filters.TipoComprobante = null;
-        await LoadAsync();
-    }
-
-    private async Task ApplyQuickRangeAsync(string key)
-    {
-        var today = DateTime.Today;
-        switch (key)
-        {
-            case "hoy":
-                _filters.FechaDesde = today;
-                _filters.FechaHasta = today;
-                break;
-            case "semana":
-                var diff = ((int)today.DayOfWeek + 6) % 7;
-                _filters.FechaDesde = today.AddDays(-diff);
-                _filters.FechaHasta = today;
-                break;
-            case "mes":
-                _filters.FechaDesde = new DateTime(today.Year, today.Month, 1);
-                _filters.FechaHasta = today;
-                break;
-            case "mes-anterior":
-                var firstThisMonth = new DateTime(today.Year, today.Month, 1);
-                _filters.FechaDesde = firstThisMonth.AddMonths(-1);
-                _filters.FechaHasta = firstThisMonth.AddDays(-1);
-                break;
-            case "ultimos-3":
-                _filters.FechaDesde = today.AddMonths(-3);
-                _filters.FechaHasta = today;
-                break;
-            case "anio":
-                _filters.FechaDesde = new DateTime(today.Year, 1, 1);
-                _filters.FechaHasta = today;
-                break;
-        }
-
-        await LoadAsync();
-    }
-
-    private string BuildSummary()
-    {
-        var parts = new List<string>();
-        if (_filters.FechaDesde.HasValue || _filters.FechaHasta.HasValue)
-        {
-            parts.Add($"Fecha: {_filters.FechaDesde:dd/MM/yyyy} a {_filters.FechaHasta:dd/MM/yyyy}");
-        }
-
-        AddIfPresent(parts, "Cliente", _filters.Cliente);
-        AddIfPresent(parts, "Usuario", _filters.Usuario);
-        AddIfPresent(parts, "Sucursal", _filters.Sucursal);
-        AddIfPresent(parts, "Depósito", _filters.Deposito);
-        AddIfPresent(parts, "TC", _filters.TipoComprobante);
-
-        return parts.Count == 0 ? "Sin filtros seleccionados." : string.Join(" | ", parts);
-    }
-
-    private static void AddIfPresent(List<string> parts, string label, string? value)
-    {
-        if (!string.IsNullOrWhiteSpace(value))
-            parts.Add($"{label}: {value}");
-    }
-
     private static string FmtMoney(decimal value)
         => value.ToString("$ #,##0", System.Globalization.CultureInfo.GetCultureInfo("es-AR"));
+
+    private static RenderFragment VariacionTexto(string label, decimal? variacion) => builder =>
+    {
+        if (!variacion.HasValue)
+        {
+            builder.OpenElement(0, "span");
+            builder.AddAttribute(1, "class", "kpi-card__compare-item kpi-card__compare-item--neutral");
+            builder.AddContent(2, $"{label}: s/d");
+            builder.CloseElement();
+            return;
+        }
+
+        var signo = variacion.Value > 0 ? "+" : string.Empty;
+        var clase = variacion.Value > 0 ? "kpi-card__compare-item--up" : variacion.Value < 0 ? "kpi-card__compare-item--down" : "kpi-card__compare-item--neutral";
+        builder.OpenElement(0, "span");
+        builder.AddAttribute(1, "class", $"kpi-card__compare-item {clase}");
+        builder.AddContent(2, $"{label}: {signo}{variacion.Value.ToString("0.0", System.Globalization.CultureInfo.GetCultureInfo("es-AR"))}%");
+        builder.CloseElement();
+    };
 }
