@@ -1,0 +1,535 @@
+@page "/ventas/delivery"
+@page "/{idweb}/{idbase:int}/ventas/delivery"
+@using AlfaCore.Models
+@using AlfaCore.Services
+@inject IPuntoVentaConfigService PosConfigSvc
+@inject IPuntoVentaPedidoService PedidoSvc
+@inject ICuentasComercialesService ClientesSvc
+@inject IAppUiOperationService UiOps
+@inject IAppUserSessionService AppUserSession
+@inject IRouteContextService RouteCtx
+@inject NavigationManager Nav
+
+<PageTitle>Delivery / Take Away | Ventas</PageTitle>
+
+<section class="page-grid">
+    <div class="page-intro">
+        <div>
+            <h2 class="page-intro__title">Delivery / Take Away</h2>
+            <p class="page-intro__text">Pedidos para entrega a domicilio o retiro en local. El comprobante se genera al cerrar el pedido.</p>
+        </div>
+    </div>
+
+    @if (_feedback is not null)
+    {
+        <div class="editor-msg @GetFeedbackClass(_feedback)">
+            <strong>@_feedback.Title</strong>
+            <span>@_feedback.Message</span>
+        </div>
+    }
+
+    @if (_loading)
+    {
+        <div class="loading">Cargando...</div>
+    }
+    else if (_puntosVenta.Count == 0)
+    {
+        <div class="panel-card empty-state">
+            <p>No hay ningún punto de venta configurado en modo Delivery/Take Away.</p>
+            <a class="btn btn--primary btn--sm" href="/ventas/puntos-venta">Crear punto de venta</a>
+        </div>
+    }
+    else
+    {
+        <div class="table-toolbar">
+            <div class="field">
+                <label>Punto de venta</label>
+                <select @bind="_idPuntoVentaSeleccionado" @bind:after="RecargarPedidosAsync">
+                    @foreach (var pv in _puntosVenta)
+                    {
+                        <option value="@pv.Id">@pv.Nombre</option>
+                    }
+                </select>
+            </div>
+            <button type="button" class="btn btn--primary" @onclick="NuevoPedidoAsync">+ Nuevo pedido</button>
+        </div>
+
+        <div class="kpi-grid">
+            <KpiCard Titulo="Pendientes" Valor="@CountEstado(PuntoVentaPedidoEstadoKeys.Pendiente).ToString()" Icono="⏳" />
+            <KpiCard Titulo="En preparación" Valor="@CountEstado(PuntoVentaPedidoEstadoKeys.EnPreparacion).ToString()" Icono="👨‍🍳" />
+            <KpiCard Titulo="Listos" Valor="@CountEstado(PuntoVentaPedidoEstadoKeys.Listo).ToString()" Icono="✅" />
+            <KpiCard Titulo="En camino" Valor="@CountEstado(PuntoVentaPedidoEstadoKeys.EnCamino).ToString()" Icono="🛵" />
+            <KpiCard Titulo="Entregados" Valor="@CountEstado(PuntoVentaPedidoEstadoKeys.Entregado).ToString()" Icono="📦" />
+            <KpiCard Titulo="Anulados" Valor="@CountEstado(PuntoVentaPedidoEstadoKeys.Anulado).ToString()" Icono="✖" />
+        </div>
+
+        <div class="table-toolbar">
+            @foreach (var filtro in _filtrosEstado)
+            {
+                <button type="button"
+                        class="btn btn--sm @(filtro == _estadoFiltro ? "btn--primary" : "btn--ghost")"
+                        @onclick="() => AplicarFiltroEstado(filtro)">
+                    @GetEstadoTexto(filtro)
+                </button>
+            }
+        </div>
+
+        <DataTable Titulo="Pedidos" Subtitulo="Listado del punto de venta seleccionado">
+            <Header>
+                <tr>
+                    <th>Modalidad</th>
+                    <th>Cliente</th>
+                    <th>Teléfono</th>
+                    <th>Dirección</th>
+                    <th>Horario</th>
+                    <th>Estado</th>
+                    <th style="text-align:right;">Total</th>
+                    <th></th>
+                </tr>
+            </Header>
+            <Rows>
+                @if (_pedidos.Count == 0)
+                {
+                    <tr><td colspan="8">No hay pedidos para este filtro.</td></tr>
+                }
+                @foreach (var pedido in _pedidos)
+                {
+                    <tr>
+                        <td>@GetModalidadTexto(pedido.Modalidad)</td>
+                        <td>@pedido.NombreCliente</td>
+                        <td>@pedido.Telefono</td>
+                        <td>@pedido.Direccion</td>
+                        <td>@(pedido.HorarioProgramado?.ToString("dd/MM HH:mm") ?? "Inmediato")</td>
+                        <td><span class="pedido-estado pedido-estado--@GetEstadoCssModifier(pedido.Estado)">@GetEstadoTexto(pedido.Estado)</span></td>
+                        <td style="text-align:right;">@FormatMoney(pedido.Total)</td>
+                        <td class="actions">
+                            @if (PuntoVentaPedidoEstadoKeys.Abiertos.Contains(pedido.Estado))
+                            {
+                                <select @bind="pedido.Estado" @bind:after="() => CambiarEstadoAsync(pedido)">
+                                    @foreach (var estado in PuntoVentaPedidoEstadoKeys.Abiertos)
+                                    {
+                                        @if (estado != PuntoVentaPedidoEstadoKeys.EnCamino || pedido.Modalidad == PuntoVentaPedidoModalidadKeys.Delivery)
+                                        {
+                                            <option value="@estado">@GetEstadoTexto(estado)</option>
+                                        }
+                                    }
+                                </select>
+                                <button type="button" class="btn btn--ghost btn--sm" @onclick="() => CargarArticulos(pedido)">Cargar artículos</button>
+                                <button type="button" class="btn btn--primary btn--sm" @onclick="() => Cerrar(pedido)">Cerrar</button>
+                                <button type="button" class="btn btn--ghost btn--sm" @onclick="() => AnularAsync(pedido)">Cancelar</button>
+                            }
+                            else
+                            {
+                                <span>@(string.IsNullOrWhiteSpace(pedido.IdComprobante) ? "-" : $"{pedido.Tc} {pedido.IdComprobante}")</span>
+                            }
+                        </td>
+                    </tr>
+                }
+            </Rows>
+        </DataTable>
+    }
+</section>
+
+@if (_showPedidoForm)
+{
+    <div class="cuentas-modal-backdrop" @onclick="CerrarFormPedido">
+    <section class="cuentas-modal" role="dialog" aria-label="Nuevo pedido" @onclick:stopPropagation>
+        <header class="cuentas-modal__header">
+            <h3>Nuevo pedido</h3>
+            <button type="button" class="btn btn--ghost btn--sm" @onclick="CerrarFormPedido">Cerrar</button>
+        </header>
+        <div class="cuentas-modal__body">
+            @if (_feedback is not null)
+            {
+                <div class="editor-msg @GetFeedbackClass(_feedback)">
+                    <strong>@_feedback.Title</strong>
+                    <span>@_feedback.Message</span>
+                </div>
+            }
+            <div class="field">
+                <label>Modalidad</label>
+                <div class="qcm-tipo-row">
+                    <button type="button"
+                            class="qcm-tipo-btn @(EsDelivery ? "qcm-tipo-btn--active" : string.Empty)"
+                            @onclick="() => SetModalidad(PuntoVentaPedidoModalidadKeys.Delivery)">
+                        Delivery
+                    </button>
+                    <button type="button"
+                            class="qcm-tipo-btn @(!EsDelivery ? "qcm-tipo-btn--active" : string.Empty)"
+                            @onclick="() => SetModalidad(PuntoVentaPedidoModalidadKeys.TakeAway)">
+                        Take Away (retira en local)
+                    </button>
+                </div>
+            </div>
+            <div class="field pedido-autocomplete">
+                <label>Cliente</label>
+                <div class="actions">
+                    <input @bind="_pedidoForm.NombreCliente"
+                           @bind:event="oninput"
+                           @bind:after="OnNombreCambiadoAsync"
+                           @onfocusout="OcultarSugerenciasConDelayAsync"
+                           placeholder="Nombre del cliente"
+                           autocomplete="off" />
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="() => _showClienteModal = true">Buscar por código, CUIT, nombre o teléfono</button>
+                </div>
+                @if (_mostrarSugerencias && _sugerenciaOrigen == "nombre")
+                {
+                    <div class="pedido-autocomplete__panel qcm-results">
+                        @foreach (var s in _sugerencias)
+                        {
+                            <button type="button" class="qcm-result" @onclick="() => SeleccionarSugerencia(s)">
+                                <span class="qcm-result__code">@s.Codigo</span>
+                                <span class="qcm-result__name">@s.RazonSocial</span>
+                                @if (!string.IsNullOrWhiteSpace(s.Telefono))
+                                {
+                                    <span class="qcm-result__tel">@s.Telefono</span>
+                                }
+                            </button>
+                        }
+                    </div>
+                }
+            </div>
+            <div class="field pedido-autocomplete">
+                <label>@(EsDelivery ? "Teléfono (obligatorio)" : "Teléfono (opcional)")</label>
+                <input @bind="_pedidoForm.Telefono"
+                       @bind:event="oninput"
+                       @bind:after="OnTelefonoCambiadoAsync"
+                       @onfocusout="OcultarSugerenciasConDelayAsync"
+                       placeholder="Ej: 11-4444-5555"
+                       autocomplete="off" />
+                @if (_mostrarSugerencias && _sugerenciaOrigen == "telefono")
+                {
+                    <div class="pedido-autocomplete__panel qcm-results">
+                        @foreach (var s in _sugerencias)
+                        {
+                            <button type="button" class="qcm-result" @onclick="() => SeleccionarSugerencia(s)">
+                                <span class="qcm-result__code">@s.Codigo</span>
+                                <span class="qcm-result__name">@s.RazonSocial</span>
+                                @if (!string.IsNullOrWhiteSpace(s.Telefono))
+                                {
+                                    <span class="qcm-result__tel">@s.Telefono</span>
+                                }
+                            </button>
+                        }
+                    </div>
+                }
+            </div>
+            @if (EsDelivery)
+            {
+                <div class="field">
+                    <label>Dirección (obligatoria)</label>
+                    <input @bind="_pedidoForm.Direccion" placeholder="Calle, número, piso, referencia" />
+                </div>
+            }
+            <div class="field">
+                <label>@(EsDelivery ? "Fecha y hora de entrega (obligatoria)" : "Fecha y hora de retiro (opcional — vacío = lo retira ahora)")</label>
+                <div class="actions pedido-horario-row">
+                    <input type="date" @bind="_horarioFecha" />
+                    <input type="time" @bind="_horarioHora" />
+                </div>
+            </div>
+            <div class="field">
+                <label>Observaciones</label>
+                <input @bind="_pedidoForm.Observaciones" placeholder="Opcional" />
+            </div>
+        </div>
+        <footer class="cuentas-modal__actions">
+            <button type="button" class="btn btn--primary" @onclick="GuardarPedidoAsync">Aceptar y cargar artículos</button>
+            <button type="button" class="btn btn--ghost" @onclick="CerrarFormPedido">Cancelar</button>
+        </footer>
+    </section>
+    </div>
+}
+
+<QuickClienteModal Open="_showClienteModal" OnClienteSelected="OnClienteSeleccionadoAsync" OnClose="() => _showClienteModal = false" />
+
+@code {
+    private bool _loading = true;
+    private List<PuntoVentaEntidadDto> _puntosVenta = [];
+    private int _idPuntoVentaSeleccionado;
+    private List<PuntoVentaPedidoDto> _todosPedidos = [];
+    private List<PuntoVentaPedidoDto> _pedidos = [];
+    private string _estadoFiltro = "ABIERTOS";
+    private readonly string[] _filtrosEstado = ["TODOS", "ABIERTOS", .. PuntoVentaPedidoEstadoKeys.All];
+    private AppUiMessage? _feedback;
+
+    private bool _showPedidoForm;
+    private PuntoVentaPedidoSaveRequest _pedidoForm = new();
+    private DateOnly? _horarioFecha;
+    private TimeOnly? _horarioHora;
+    private bool _showClienteModal;
+
+    private List<CuentaComercialGridItemDto> _sugerencias = [];
+    private bool _mostrarSugerencias;
+    private string _sugerenciaOrigen = string.Empty;
+    private CancellationTokenSource? _sugerenciaCts;
+
+    private bool EsDelivery => _pedidoForm.Modalidad == PuntoVentaPedidoModalidadKeys.Delivery;
+
+    [SupplyParameterFromQuery(Name = "idPuntoVenta")]
+    public int? IdPuntoVentaQuery { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _loading = true;
+        var result = await UiOps.RunAsync(() => PosConfigSvc.GetPuntosVentaAsync(soloActivos: true), "No se pudieron cargar los puntos de venta.");
+        if (result.Success && result.Value is not null)
+        {
+            _puntosVenta = result.Value
+                .Where(pv => string.Equals(pv.Modo, PuntoVentaModoKeys.Delivery, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            if (_puntosVenta.Count > 0)
+            {
+                _idPuntoVentaSeleccionado = IdPuntoVentaQuery.HasValue && _puntosVenta.Any(pv => pv.Id == IdPuntoVentaQuery.Value)
+                    ? IdPuntoVentaQuery.Value
+                    : _puntosVenta[0].Id;
+                await CargarPedidosAsync();
+            }
+        }
+        else
+        {
+            _feedback = result.Feedback;
+        }
+
+        _loading = false;
+    }
+
+    private async Task RecargarPedidosAsync() => await CargarPedidosAsync();
+
+    private void AplicarFiltroEstado(string filtro)
+    {
+        _estadoFiltro = filtro;
+        AplicarFiltroLocal();
+    }
+
+    private async Task CargarPedidosAsync()
+    {
+        var result = await UiOps.RunAsync(() => PedidoSvc.GetPedidosAsync(_idPuntoVentaSeleccionado, null), "No se pudieron cargar los pedidos.");
+        if (result.Success && result.Value is not null)
+        {
+            _todosPedidos = result.Value.ToList();
+            AplicarFiltroLocal();
+        }
+        else
+        {
+            _feedback = result.Feedback;
+        }
+    }
+
+    private void AplicarFiltroLocal()
+    {
+        _pedidos = _estadoFiltro switch
+        {
+            "TODOS" => _todosPedidos,
+            "ABIERTOS" => _todosPedidos.Where(p => PuntoVentaPedidoEstadoKeys.Abiertos.Contains(p.Estado)).ToList(),
+            _ => _todosPedidos.Where(p => p.Estado == _estadoFiltro).ToList()
+        };
+    }
+
+    private int CountEstado(string estado) => _todosPedidos.Count(p => p.Estado == estado);
+
+    private Task NuevoPedidoAsync()
+    {
+        _pedidoForm = new PuntoVentaPedidoSaveRequest
+        {
+            IdPuntoVenta = _idPuntoVentaSeleccionado,
+            Modalidad = PuntoVentaPedidoModalidadKeys.Delivery,
+            Fecha = DateTime.Today
+        };
+        var ahora = DateTime.Now;
+        _horarioFecha = DateOnly.FromDateTime(ahora);
+        _horarioHora = TimeOnly.FromDateTime(ahora);
+        _feedback = null;
+        _sugerencias = [];
+        _mostrarSugerencias = false;
+        _showPedidoForm = true;
+        return Task.CompletedTask;
+    }
+
+    private void CerrarFormPedido() => _showPedidoForm = false;
+
+    private void SetModalidad(string modalidad) => _pedidoForm.Modalidad = modalidad;
+
+    private Task OnNombreCambiadoAsync() => BuscarSugerenciasAsync(_pedidoForm.NombreCliente, "nombre");
+
+    private Task OnTelefonoCambiadoAsync() => BuscarSugerenciasAsync(_pedidoForm.Telefono, "telefono");
+
+    private async Task BuscarSugerenciasAsync(string? texto, string origen)
+    {
+        _sugerenciaCts?.Cancel();
+        var cts = new CancellationTokenSource();
+        _sugerenciaCts = cts;
+
+        texto = texto?.Trim() ?? string.Empty;
+        if (texto.Length < 3)
+        {
+            _sugerencias = [];
+            _mostrarSugerencias = false;
+            return;
+        }
+
+        try
+        {
+            await Task.Delay(300, cts.Token);
+        }
+        catch (TaskCanceledException)
+        {
+            return;
+        }
+
+        if (cts.IsCancellationRequested) return;
+
+        try
+        {
+            var result = await ClientesSvc.SearchAsync(
+                CuentaComercialTipo.Cliente,
+                new CuentaComercialFilters { Texto = texto, Activo = true, PageSize = 8, PageNumber = 1 });
+            if (cts.IsCancellationRequested) return;
+            _sugerencias = result.Items.ToList();
+            _mostrarSugerencias = _sugerencias.Count > 0;
+            _sugerenciaOrigen = origen;
+        }
+        catch
+        {
+            _sugerencias = [];
+            _mostrarSugerencias = false;
+        }
+    }
+
+    private void SeleccionarSugerencia(CuentaComercialGridItemDto cliente)
+    {
+        _pedidoForm.IdCliente = cliente.Codigo;
+        _pedidoForm.NombreCliente = cliente.RazonSocial;
+        if (!string.IsNullOrWhiteSpace(cliente.Telefono))
+            _pedidoForm.Telefono = cliente.Telefono;
+        var direccion = BuildDireccion(cliente);
+        if (!string.IsNullOrWhiteSpace(direccion))
+            _pedidoForm.Direccion = direccion;
+        _sugerencias = [];
+        _mostrarSugerencias = false;
+    }
+
+    private static string BuildDireccion(CuentaComercialGridItemDto cliente)
+    {
+        var partes = new[] { cliente.Calle, cliente.Numero, cliente.Piso, cliente.Departamento }
+            .Where(p => !string.IsNullOrWhiteSpace(p));
+        var calle = string.Join(" ", partes);
+        return string.IsNullOrWhiteSpace(cliente.Localidad)
+            ? calle
+            : string.Join(", ", new[] { calle, cliente.Localidad }.Where(p => !string.IsNullOrWhiteSpace(p)));
+    }
+
+    private async Task OcultarSugerenciasConDelayAsync()
+    {
+        await Task.Delay(150);
+        _mostrarSugerencias = false;
+    }
+
+    private Task OnClienteSeleccionadoAsync(CuentaComercialGridItemDto cliente)
+    {
+        _pedidoForm.IdCliente = cliente.Codigo;
+        _pedidoForm.NombreCliente = cliente.RazonSocial;
+        if (!string.IsNullOrWhiteSpace(cliente.Telefono))
+            _pedidoForm.Telefono = cliente.Telefono;
+        var direccion = BuildDireccion(cliente);
+        if (!string.IsNullOrWhiteSpace(direccion))
+            _pedidoForm.Direccion = direccion;
+        _showClienteModal = false;
+        return Task.CompletedTask;
+    }
+
+    private void CargarArticulos(PuntoVentaPedidoDto pedido)
+        => Nav.NavigateTo(RouteCtx.BuildRoute($"/ventas/punto-venta/mostrador?idPedido={pedido.Id}"));
+
+    private async Task GuardarPedidoAsync()
+    {
+        _feedback = null;
+        _pedidoForm.HorarioProgramado = _horarioFecha?.ToDateTime(_horarioHora ?? TimeOnly.MinValue);
+        _pedidoForm.UsuarioAccion = AppUserSession.GetCurrentUserName(string.Empty);
+
+        var result = await UiOps.RunAsync(() => PedidoSvc.SavePedidoAsync(_pedidoForm), "No se pudo guardar el pedido.");
+        if (!result.Success)
+        {
+            _feedback = result.Feedback;
+            return;
+        }
+
+        _showPedidoForm = false;
+        Nav.NavigateTo(RouteCtx.BuildRoute($"/ventas/punto-venta/mostrador?idPedido={result.Value}"));
+    }
+
+    private async Task CambiarEstadoAsync(PuntoVentaPedidoDto pedido)
+    {
+        var result = await UiOps.RunAsync(
+            () => PedidoSvc.CambiarEstadoAsync(pedido.Id, pedido.Estado, AppUserSession.GetCurrentUserName(string.Empty)),
+            "No se pudo actualizar el estado del pedido.");
+        if (!result.Success)
+            _feedback = result.Feedback;
+        await CargarPedidosAsync();
+    }
+
+    private async Task AnularAsync(PuntoVentaPedidoDto pedido)
+    {
+        var result = await UiOps.RunAsync(
+            () => PedidoSvc.AnularPedidoAsync(pedido.Id, AppUserSession.GetCurrentUserName(string.Empty)),
+            "No se pudo cancelar el pedido.");
+        if (!result.Success)
+            _feedback = result.Feedback;
+        else
+            _feedback = AppUiMessage.Success("Cancelado", "El pedido fue cancelado.");
+        await CargarPedidosAsync();
+    }
+
+    private void Cerrar(PuntoVentaPedidoDto pedido)
+    {
+        if (pedido.Total <= 0)
+        {
+            _feedback = AppUiMessage.Success("Falta cargar artículos", "Este pedido todavía no tiene artículos cargados — usá \"Cargar artículos\" primero.");
+            return;
+        }
+
+        // Reutiliza la misma pantalla y rutina de cobro que Mostrador (medios de
+        // pago, comprobante, ticket) en vez de un modal de cobro propio.
+        Nav.NavigateTo(RouteCtx.BuildRoute($"/ventas/punto-venta/mostrador?idPedido={pedido.Id}&accionPedido=cerrar"));
+    }
+
+    private static string GetModalidadTexto(string modalidad) => modalidad switch
+    {
+        PuntoVentaPedidoModalidadKeys.TakeAway => "Take Away",
+        _ => "Delivery"
+    };
+
+    private static string GetEstadoTexto(string estado) => estado switch
+    {
+        "TODOS" => "Todos",
+        "ABIERTOS" => "Abiertos",
+        PuntoVentaPedidoEstadoKeys.Pendiente => "Pendiente",
+        PuntoVentaPedidoEstadoKeys.EnPreparacion => "En preparación",
+        PuntoVentaPedidoEstadoKeys.Listo => "Listo",
+        PuntoVentaPedidoEstadoKeys.EnCamino => "En camino",
+        PuntoVentaPedidoEstadoKeys.Entregado => "Entregado",
+        PuntoVentaPedidoEstadoKeys.Anulado => "Anulado",
+        _ => estado
+    };
+
+    private static string GetEstadoCssModifier(string estado) => estado switch
+    {
+        PuntoVentaPedidoEstadoKeys.Pendiente => "pendiente",
+        PuntoVentaPedidoEstadoKeys.EnPreparacion => "preparacion",
+        PuntoVentaPedidoEstadoKeys.Listo => "listo",
+        PuntoVentaPedidoEstadoKeys.EnCamino => "camino",
+        PuntoVentaPedidoEstadoKeys.Entregado => "entregado",
+        PuntoVentaPedidoEstadoKeys.Anulado => "anulado",
+        _ => "default"
+    };
+
+    private static string FormatMoney(decimal valor) => valor.ToString("C2", System.Globalization.CultureInfo.GetCultureInfo("es-AR"));
+
+    private static string GetFeedbackClass(AppUiMessage message) => message.Severity switch
+    {
+        AppUiFeedbackSeverity.Success => "editor-msg--success",
+        AppUiFeedbackSeverity.Warning => "editor-msg--warning",
+        AppUiFeedbackSeverity.Info => "editor-msg--info",
+        _ => "editor-msg--error"
+    };
+}

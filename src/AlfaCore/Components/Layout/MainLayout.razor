@@ -1241,7 +1241,7 @@ else
     private bool CanShowTasksPanel => !IsPosFullscreenRoute && !IsDirectMode && AppUserSession.IsAuthenticated;
     private bool IsLauncherRoute => IsLauncherContextRoute(GetEffectiveCurrentPath());
     private bool IsDirectMode => !string.IsNullOrWhiteSpace(_directModuleKey);
-    private bool IsPosFullscreenRoute => string.Equals(GetEffectiveCurrentPath(), "ventas/punto-venta", StringComparison.OrdinalIgnoreCase);
+    private bool IsPosFullscreenRoute => string.Equals(GetEffectiveCurrentPath(), "ventas/punto-venta/mostrador", StringComparison.OrdinalIgnoreCase);
     private bool IsLoginRoute => string.Equals(GetNormalizedCurrentPath(), "login", StringComparison.OrdinalIgnoreCase);
     private bool IsInternalSqlLoginContext
     {
@@ -3211,6 +3211,8 @@ else
             "ventas/comprobantes" => "Comprobantes",
             "ventas/comparativo" => "Comparativo",
             "ventas/punto-venta" => "Punto de Venta",
+            "ventas/punto-venta/mostrador" => "Punto de Venta - Mostrador",
+            "ventas/delivery" => "Delivery / Take Away",
             "stock" => "Stock",
             "caja-bancos" => "Caja y Bancos",
             "contabilidad" => "Contabilidad",

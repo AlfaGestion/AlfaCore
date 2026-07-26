@@ -56,7 +56,11 @@ public sealed class CuentasComercialesService(
                     ISNULL(vd.Nombre, ''),
                     ISNULL(base.IdLista, ''),
                     ISNULL(base.BLOQUEO, 0),
-                    CASE WHEN ISNULL(base.Dada_De_Baja, 0) = 0 THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END
+                    CASE WHEN ISNULL(base.Dada_De_Baja, 0) = 0 THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END,
+                    ISNULL(base.CALLE, ''),
+                    ISNULL(base.NUMERO, ''),
+                    ISNULL(base.PISO, ''),
+                    ISNULL(base.DEPARTAMENTO, '')
                 FROM dbo.{descriptor.ViewName} base
                 LEFT JOIN dbo.TA_ESTADOS prov
                     ON UPPER(LTRIM(RTRIM(prov.CODIGO))) = UPPER(LTRIM(RTRIM(ISNULL(base.PROVINCIA, ''))))
@@ -136,7 +140,11 @@ public sealed class CuentasComercialesService(
                     NombreVendedor = GetString(rd, 14),
                     IdLista = GetString(rd, 15),
                     Bloqueado = GetBool(rd, 16),
-                    Activo = GetBool(rd, 17)
+                    Activo = GetBool(rd, 17),
+                    Calle = GetString(rd, 18),
+                    Numero = GetString(rd, 19),
+                    Piso = GetString(rd, 20),
+                    Departamento = GetString(rd, 21)
                 });
             }
 

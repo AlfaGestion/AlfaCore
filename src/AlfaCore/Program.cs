@@ -164,6 +164,12 @@ public class Program
         builder.Services.AddScoped<IGestionDashboardService, GestionDashboardService>();
         builder.Services.AddScoped<IPuntoVentaService, PuntoVentaService>();
         builder.Services.AddScoped<IPuntoVentaCartStateService, PuntoVentaCartStateService>();
+        builder.Services.AddScoped<IPuntoVentaConfigService, PuntoVentaConfigService>();
+        builder.Services.AddScoped<IPuntoVentaConfigValidator, PuntoVentaConfigValidator>();
+        builder.Services.AddScoped<IPuntoVentaPedidoService, PuntoVentaPedidoService>();
+        builder.Services.AddScoped<IPuntoVentaPedidoValidator, PuntoVentaPedidoValidator>();
+        builder.Services.AddScoped<IPuntoVentaTurnoService, PuntoVentaTurnoService>();
+        builder.Services.AddScoped<IPuntoVentaTurnoValidator, PuntoVentaTurnoValidator>();
         builder.Services.AddScoped<IAppUiOperationService, AppUiOperationService>();
         builder.Services.AddScoped<IAppUiDialogService, AppUiDialogService>();
         builder.Services.AddScoped<IFloatingWindowService, FloatingWindowService>();

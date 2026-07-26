@@ -37,6 +37,10 @@ public sealed class CuentaComercialGridItemDto
     public string IdLista { get; set; } = string.Empty;
     public bool Bloqueado { get; set; }
     public bool Activo { get; set; } = true;
+    public string Calle { get; set; } = string.Empty;
+    public string Numero { get; set; } = string.Empty;
+    public string Piso { get; set; } = string.Empty;
+    public string Departamento { get; set; } = string.Empty;
 }
 
 public class CuentaComercialSaveRequest

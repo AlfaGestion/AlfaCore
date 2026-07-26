@@ -72,7 +72,7 @@
     private SessionDto? _activeSession;
     private bool _sidebarCollapsed;
     private bool _sidebarInitialized;
-    private bool IsPosPage => Nav.Uri.Contains("/ventas/punto-venta", StringComparison.OrdinalIgnoreCase);
+    private bool IsPosPage => Nav.Uri.Contains("/ventas/punto-venta/mostrador", StringComparison.OrdinalIgnoreCase);
     private string ShellClass => IsPosPage
         ? "main-shell main-shell--pos"
         : (_sidebarCollapsed ? "main-shell main-shell--collapsed" : "main-shell");

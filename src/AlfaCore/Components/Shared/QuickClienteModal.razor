@@ -36,7 +36,7 @@
                            @bind="_busqueda"
                            @bind:event="oninput"
                            @onkeydown="HandleBusquedaKeyAsync"
-                           placeholder="Código, CUIT o nombre..."
+                           placeholder="Código, CUIT, nombre o teléfono..."
                            autocomplete="off" />
                     <button class="qcm-search__btn" type="button" @onclick="BuscarAsync" disabled="@_buscando">
                         @(_buscando ? "Buscando..." : "Buscar")
@@ -77,7 +77,7 @@
                 }
                 else
                 {
-                    <p class="qcm-msg qcm-msg--hint">Ingrese un código, CUIT o nombre y presione Buscar.</p>
+                    <p class="qcm-msg qcm-msg--hint">Ingrese un código, CUIT, nombre o teléfono y presione Buscar.</p>
                 }
             </div>
         }
@@ -398,7 +398,7 @@
         var texto = _busqueda.Trim();
         if (texto.Length == 0)
         {
-            _busquedaError = "Ingrese un código, CUIT o nombre para buscar.";
+            _busquedaError = "Ingrese un código, CUIT, nombre o teléfono para buscar.";
             return;
         }
         try
