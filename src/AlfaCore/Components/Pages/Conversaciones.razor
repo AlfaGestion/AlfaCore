@@ -2908,9 +2908,12 @@
     private IReadOnlyList<ConversacionMensajeDto> VisibleMessages
         => OrderConversationMessages(_messages.Where(x => !IsReactionMessage(x)));
     private IReadOnlyList<ConversacionInboxItemDto> InboxDisplayItems
-        => _canalActivo == "MERCADOLIBRE"
+        => _canalActivo == "MERCADOLIBRE" && ShouldGroupMercadoLibreInbox
             ? BuildMercadoLibreInboxGroups()
             : _inbox;
+    private bool ShouldGroupMercadoLibreInbox
+        => !string.Equals(_filters.Modo, "cerradas", StringComparison.OrdinalIgnoreCase)
+           && !IsClosedStatusCode(_filters.CodigoEstado);
     private bool ShouldShowMercadoLibreThreadPicker
         => false;
     private IReadOnlyList<ConversacionEstadoOptionDto> HeaderStatusOptions
@@ -3450,9 +3453,10 @@
         try
         {
             var result = await ConversacionesSvc.SyncMercadoLibreQuestionsAsync();
+            var detalle = string.IsNullOrWhiteSpace(result.Detalle) ? string.Empty : $" ({result.Detalle})";
             _actionMessage = result.MensajesProcesados == 0
-                ? "Mercado Libre no devolvió preguntas pendientes nuevas."
-                : $"Mercado Libre sincronizó {result.MensajesProcesados.ToString(System.Globalization.CultureInfo.InvariantCulture)} pregunta(s).";
+                ? $"Mercado Libre no devolvió preguntas pendientes nuevas{detalle}."
+                : $"Mercado Libre sincronizó {result.MensajesProcesados.ToString(System.Globalization.CultureInfo.InvariantCulture)} pregunta(s){detalle}.";
 
             await LoadInboxAsync();
         }

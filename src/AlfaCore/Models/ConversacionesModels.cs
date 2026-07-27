@@ -184,6 +184,8 @@ public sealed class ConversacionInboxItemDto
     public bool Bloqueada { get; set; }
     public bool FijadaPorUsuario { get; set; }
     public DateTime? FechaHoraFijada { get; set; }
+    public string MercadoLibreQuestionStatus { get; set; } = string.Empty;
+    public string MercadoLibreItemStatus { get; set; } = string.Empty;
 }
 
 public sealed class ConversacionDetalleDto
@@ -200,6 +202,9 @@ public sealed class ConversacionDetalleDto
     public bool? UsuarioSigueCuenta { get; set; }
     public bool? CuentaSigueUsuario { get; set; }
     public DateTime? FechaHoraPerfilExterno { get; set; }
+    public string MercadoLibreQuestionStatus { get; set; } = string.Empty;
+    public string MercadoLibreItemStatus { get; set; } = string.Empty;
+    public string MercadoLibreItemPermalink { get; set; } = string.Empty;
     public string ClienteCodigo { get; set; } = string.Empty;
     public string ClienteNombre { get; set; } = string.Empty;
     public int? IdContacto { get; set; }
@@ -398,6 +403,7 @@ public sealed class ConversacionWebhookResultDto
     public long IdWebhookLog { get; set; }
     public int MensajesDetectados { get; set; }
     public int MensajesProcesados { get; set; }
+    public string Detalle { get; set; } = string.Empty;
 }
 
 public sealed class ConversacionUploadAdjuntoRequest
