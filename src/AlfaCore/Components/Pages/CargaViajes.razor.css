@@ -3212,6 +3212,8 @@ html[data-theme="light"] .carga-viajes-page .carga-viajes-smart-search--tarifas 
     margin-top: .4rem;
     width: fit-content;
     max-width: 100%;
+    position: relative;
+    z-index: 2;
 }
 
 .carga-viajes-viaje__tarifas-trigger {
@@ -3230,8 +3232,11 @@ html[data-theme="light"] .carga-viajes-page .carga-viajes-smart-search--tarifas 
 }
 
 .carga-viajes-viaje__tarifas-panel {
-    grid-column: 1 / -1;
-    width: 100%;
+    position: absolute;
+    top: calc(100% + .45rem);
+    left: 0;
+    z-index: 40;
+    width: min(760px, calc(100vw - 4rem));
     min-width: 0;
 }
 
@@ -3443,6 +3448,10 @@ html[data-theme="light"] .carga-viajes-page .carga-viajes-smart-search--tarifas 
     .carga-viajes-viaje-tarifas {
         max-width: none;
         width: 100%;
+    }
+
+    .carga-viajes-viaje__tarifas-panel {
+        width: min(760px, calc(100vw - 3rem));
     }
 
     .carga-viajes-config-summary {

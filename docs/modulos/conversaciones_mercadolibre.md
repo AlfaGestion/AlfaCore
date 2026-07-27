@@ -66,4 +66,4 @@ Las conversaciones se identifican por:
 - `IdentificadorExternoContacto = id comprador`;
 - `UsuarioExterno = item_id`.
 
-El script `src/AlfaCore/App_Data/updates/2026-07-23-001__crm_conversaciones_mercadolibre_canal.sql` agrega el canal al catálogo y actualiza el constraint de `CONV_CONVERSACIONES`.
+El script `src/AlfaCore/App_Data/updates/2026-07-23-003__crm_conversaciones_mercadolibre_canal.sql` agrega el canal al catálogo y actualiza el constraint de `CONV_CONVERSACIONES`.

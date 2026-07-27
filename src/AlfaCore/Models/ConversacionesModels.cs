@@ -155,6 +155,7 @@ public sealed class ConversacionesEstadisticaConversacionDto
 public sealed class ConversacionInboxItemDto
 {
     public long IdConversacion { get; set; }
+    public string Canal { get; set; } = string.Empty;
     public string TelefonoWhatsApp { get; set; } = string.Empty;
     public string NombreVisible { get; set; } = string.Empty;
     public string UsuarioExterno { get; set; } = string.Empty;
