@@ -21,6 +21,7 @@
     <meta name="theme-color" content="#1f2937" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="AlfaCore" />
+    <script src="https://www.google.com/recaptcha/api.js?render=explicit" async defer></script>
     <script>
         (function () {
             var t = localStorage.getItem('dashboard.theme') || 'light';
@@ -98,6 +99,57 @@
             },
             goBack: function () {
                 window.history.back();
+            }
+        };
+        window.alfaCorePublicRegistration = {
+            renderRecaptcha: function (elementId, siteKey) {
+                return new Promise(function (resolve, reject) {
+                    var attempts = 0;
+
+                    function render() {
+                        var element = document.getElementById(elementId);
+                        if (!element) {
+                            reject(new Error('No se encontro el contenedor de reCAPTCHA.'));
+                            return;
+                        }
+
+                        if (element.dataset.widgetId) {
+                            resolve(parseInt(element.dataset.widgetId, 10));
+                            return;
+                        }
+
+                        if (window.grecaptcha && typeof window.grecaptcha.render === 'function') {
+                            var widgetId = window.grecaptcha.render(elementId, { sitekey: siteKey });
+                            element.dataset.widgetId = String(widgetId);
+                            resolve(widgetId);
+                            return;
+                        }
+
+                        attempts += 1;
+                        if (attempts > 100) {
+                            reject(new Error('reCAPTCHA no termino de cargar.'));
+                            return;
+                        }
+
+                        window.setTimeout(render, 150);
+                    }
+
+                    render();
+                });
+            },
+            getRecaptchaResponse: function (elementId) {
+                var element = document.getElementById(elementId);
+                if (!element || !element.dataset.widgetId || !window.grecaptcha)
+                    return '';
+
+                return window.grecaptcha.getResponse(parseInt(element.dataset.widgetId, 10)) || '';
+            },
+            resetRecaptcha: function (elementId) {
+                var element = document.getElementById(elementId);
+                if (!element || !element.dataset.widgetId || !window.grecaptcha)
+                    return;
+
+                window.grecaptcha.reset(parseInt(element.dataset.widgetId, 10));
             }
         };
     </script>

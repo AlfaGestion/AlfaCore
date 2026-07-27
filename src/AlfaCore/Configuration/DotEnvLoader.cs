@@ -36,33 +36,43 @@ public static class DotEnvLoader
 
     private static string? FindDotEnvFile(string contentRootPath)
     {
-        foreach (var basePath in EnumerateSearchRoots(contentRootPath))
-        {
-            var current = new DirectoryInfo(basePath);
-            while (current is not null)
-            {
-                var candidate = Path.Combine(current.FullName, ".env");
-                if (File.Exists(candidate))
-                {
-                    return candidate;
-                }
+        var candidates = EnumerateDotEnvCandidates(contentRootPath)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(path => path.Count(ch => ch == Path.DirectorySeparatorChar || ch == Path.AltDirectorySeparatorChar))
+            .ToList();
 
-                current = current.Parent;
-            }
+        foreach (var candidate in candidates)
+        {
+            if (File.Exists(candidate))
+                return candidate;
         }
 
         return null;
     }
 
+    private static IEnumerable<string> EnumerateDotEnvCandidates(string contentRootPath)
+    {
+        foreach (var basePath in EnumerateSearchRoots(contentRootPath))
+        {
+            var current = new DirectoryInfo(basePath);
+            while (current is not null)
+            {
+                yield return Path.Combine(current.FullName, ".env");
+                current = current.Parent;
+            }
+        }
+    }
+
     private static IEnumerable<string> EnumerateSearchRoots(string contentRootPath)
     {
-        yield return contentRootPath;
-        yield return AppContext.BaseDirectory;
+        if (!string.IsNullOrWhiteSpace(contentRootPath))
+            yield return contentRootPath;
+
+        if (!string.IsNullOrWhiteSpace(AppContext.BaseDirectory))
+            yield return AppContext.BaseDirectory;
 
         var currentDirectory = Environment.CurrentDirectory;
         if (!string.IsNullOrWhiteSpace(currentDirectory))
-        {
             yield return currentDirectory;
-        }
     }
 }

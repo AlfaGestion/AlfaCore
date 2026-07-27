@@ -115,6 +115,9 @@ public class Program
         builder.Services.AddScoped<ICentralUsersService, CentralUsersService>();
         builder.Services.AddScoped<ICentralAdminService, CentralAdminService>();
         builder.Services.AddScoped<ICentralAuthService, CentralAuthService>();
+        builder.Services.AddScoped<IRecaptchaValidationService, RecaptchaValidationService>();
+        builder.Services.AddScoped<ICentralProvisioningService, CentralProvisioningService>();
+        builder.Services.AddScoped<ICentralRegistrationService, CentralRegistrationService>();
         builder.Services.AddScoped<IConexionClienteService, ConexionClienteService>();
         builder.Services.AddScoped<ILegacyBaseUserSessionService, LegacyBaseUserSessionService>();
         builder.Services.AddScoped<IComprasDashboardService, ComprasDashboardService>();
