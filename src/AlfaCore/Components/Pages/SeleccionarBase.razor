@@ -329,8 +329,11 @@
                 }
             }
 
-            Logger.LogInformation("SeleccionarBase: email no coincide o no hay usuario interno; enviando a login. ReturnUrl={Destino}", destination);
-            Nav.NavigateTo($"/login?returnUrl={Uri.EscapeDataString(destination)}", replace: true);
+            // No hace falta volver a pasar por /login: la cuenta central ya está autenticada.
+            // AppUserSession.RequiresInternalLogin sigue en true, así que MainLayout va a pedir
+            // el usuario del sistema (TA_USUARIOS) una sola vez, ya en el destino.
+            Logger.LogInformation("SeleccionarBase: email no coincide o no hay usuario interno; MainLayout pedirá el usuario del sistema en destino. Destino={Destino}", destination);
+            Nav.NavigateTo(destination, replace: true);
         }
         catch (Exception ex)
         {

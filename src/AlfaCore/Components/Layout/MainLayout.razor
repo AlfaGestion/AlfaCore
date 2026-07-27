@@ -1208,6 +1208,7 @@ else
     private int? _loginUsersBaseId;
     private bool _loginUsersLoaded;
     private bool _loginUsersLoading;
+    private bool _internalLoginDraftPrimed;
     private bool _loginUseUserList = true;
     private DotNetObjectReference<MainLayout>? _pwaRef;
     private bool _pwaCanInstall;
@@ -1344,8 +1345,7 @@ else
         ResetMenuSearchCatalog();
         var wasAuthenticated = AppUserSession.IsAuthenticated;
         AppUserSession.HandleSqlSessionChanged();
-        if (IsInternalSqlLoginContext && AppUserSession.RequiresInternalLogin)
-            ResetLoginDraftForInternalContext();
+        EnsureLoginDraftPrimedForInternalContext();
         if (AppMode.IsSaaSMode && AppUserSession.IsAuthenticated)
             _ = InvokeAsync(EnsureActiveSessionFromRouteAsync);
         if (wasAuthenticated && !AppUserSession.IsAuthenticated)
@@ -1368,8 +1368,7 @@ else
     private void OnAppUserStateChanged()
     {
         ResetMenuSearchCatalog();
-        if (IsInternalSqlLoginContext && AppUserSession.RequiresInternalLogin)
-            ResetLoginDraftForInternalContext();
+        EnsureLoginDraftPrimedForInternalContext();
         if (AppMode.IsSaaSMode && AppUserSession.IsAuthenticated)
             _ = InvokeAsync(EnsureActiveSessionFromRouteAsync);
         if (!AppUserSession.IsAuthenticated)
@@ -1420,8 +1419,7 @@ else
     {
         UpdateCurrentModule();
         EnforceDirectMode();
-        if (IsInternalSqlLoginContext && ShowLoginOverlay)
-            ResetLoginDraftForInternalContext();
+        EnsureLoginDraftPrimedForInternalContext();
         if (ShowLoginOverlay && IsInternalSqlLoginContext)
             _ = InvokeAsync(EnsureInternalLoginUsersAsync);
     }
@@ -1520,8 +1518,7 @@ else
             await EnsureActiveSessionFromRouteAsync();
             await EnsureInternalLoginUsersAsync();
 
-            if (IsInternalSqlLoginContext && AppUserSession.RequiresInternalLogin)
-                ResetLoginDraftForInternalContext();
+            EnsureLoginDraftPrimedForInternalContext();
 
             if (!AppUserSession.IsAuthenticated)
             {
@@ -2447,7 +2444,10 @@ else
         _manualLoginOverlayOpen = true;
 
         if (IsInternalSqlLoginContext || AppUserSession.IsAuthenticated)
+        {
             ResetLoginDraftForInternalContext();
+            _internalLoginDraftPrimed = true;
+        }
 
         await InvokeAsync(StateHasChanged);
     }
@@ -3176,6 +3176,29 @@ else
 
         if (IsInternalSqlLoginContext && ShowLoginOverlay)
             ResetLoginDraftForInternalContext();
+    }
+
+    /// <summary>
+    /// Igual que ResetLoginDraftForInternalContext, pero solo limpia el borrador una vez por
+    /// "episodio" de login interno. Antes se llamaba desde 4 lugares distintos (OnSessionChanged,
+    /// OnAppUserStateChanged, OnParametersSet, OnAfterRenderAsync) sin ninguna protección, así que
+    /// cualquiera de esos eventos podía vaciar lo que el usuario ya había tipeado a mitad de carga,
+    /// dando la sensación de que el login se pedía varias veces.
+    /// </summary>
+    private void EnsureLoginDraftPrimedForInternalContext()
+    {
+        if (IsInternalSqlLoginContext && AppUserSession.RequiresInternalLogin)
+        {
+            if (_internalLoginDraftPrimed)
+                return;
+
+            ResetLoginDraftForInternalContext();
+            _internalLoginDraftPrimed = true;
+        }
+        else
+        {
+            _internalLoginDraftPrimed = false;
+        }
     }
 
     private void ResetLoginDraftForInternalContext()
