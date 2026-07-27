@@ -21,6 +21,7 @@ IF COL_LENGTH(N'dbo.CONV_ADJUNTOS', N'AlmacenamientoEstado') IS NULL
 
 IF COL_LENGTH(N'dbo.CONV_ADJUNTOS', N'FechaHora_Archivo') IS NULL
     ALTER TABLE dbo.CONV_ADJUNTOS ADD FechaHora_Archivo datetime NULL;
+GO
 
 UPDATE dbo.CONV_ADJUNTOS
 SET AlmacenamientoEstado = N'RUTA_LOCAL'
