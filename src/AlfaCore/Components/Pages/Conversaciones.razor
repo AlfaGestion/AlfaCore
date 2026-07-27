@@ -2908,12 +2908,9 @@
     private IReadOnlyList<ConversacionMensajeDto> VisibleMessages
         => OrderConversationMessages(_messages.Where(x => !IsReactionMessage(x)));
     private IReadOnlyList<ConversacionInboxItemDto> InboxDisplayItems
-        => _canalActivo == "MERCADOLIBRE" && ShouldGroupMercadoLibreInbox
+        => _canalActivo == "MERCADOLIBRE"
             ? BuildMercadoLibreInboxGroups()
             : _inbox;
-    private bool ShouldGroupMercadoLibreInbox
-        => !string.Equals(_filters.Modo, "cerradas", StringComparison.OrdinalIgnoreCase)
-           && !IsClosedStatusCode(_filters.CodigoEstado);
     private bool ShouldShowMercadoLibreThreadPicker
         => false;
     private IReadOnlyList<ConversacionEstadoOptionDto> HeaderStatusOptions
