@@ -1055,6 +1055,7 @@ public sealed class ConversacionesService(
                     AND NOT (
                         c.Canal = N'MERCADOLIBRE'
                         AND UPPER(ISNULL(mlMeta.QuestionStatus, N'')) = N'ANSWERED'
+                        AND ISNULL(e.EsCerrado, 0) = 0
                         AND (
                             @CodigoEstado = @EstadoSinFinalizar
                             OR @Modo = 'pendientes'

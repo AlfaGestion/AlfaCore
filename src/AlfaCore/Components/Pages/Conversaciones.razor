@@ -3259,6 +3259,7 @@
     private async Task ChangeModeAsync(string mode)
     {
         _filters.Modo = mode;
+        NormalizeConversationModeFilters();
         EnsureCurrentTechnicianFilterForCurrentMode();
         await LoadInboxAsync();
     }
@@ -3266,7 +3267,19 @@
     private void SetMobileMode(string mode)
     {
         _filters.Modo = mode;
+        NormalizeConversationModeFilters();
         EnsureCurrentTechnicianFilterForCurrentMode();
+    }
+
+    private void NormalizeConversationModeFilters()
+    {
+        if (!string.Equals(_filters.Modo, "asignadas_a_mi", StringComparison.OrdinalIgnoreCase))
+            _filters.IdTecnicoActual = string.Empty;
+
+        if (string.Equals(_filters.Modo, "todas", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(_filters.Modo, "pendientes", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(_filters.Modo, "cerradas", StringComparison.OrdinalIgnoreCase))
+            _filters.CodigoEstado = string.Empty;
     }
 
     private void OpenMobileAdvancedFilters()
