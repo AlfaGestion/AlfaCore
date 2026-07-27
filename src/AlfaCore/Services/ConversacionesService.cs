@@ -1004,6 +1004,14 @@ public sealed class ConversacionesService(
                         OR (@CodigoEstado <> @EstadoSinFinalizar AND c.CodigoEstado = @CodigoEstado)
                     )
                     AND (
+                        c.Canal <> N'MERCADOLIBRE'
+                        OR EXISTS (
+                            SELECT 1
+                            FROM dbo.CONV_MENSAJES mlVisible
+                            WHERE mlVisible.IdConversacion = c.IdConversacion
+                        )
+                    )
+                    AND (
                         @ClienteCodigo IS NULL
                         OR UPPER(LTRIM(RTRIM(ISNULL(c.ClienteCodigo, N'')))) = @ClienteCodigo
                         OR contactoCuenta.Cuenta = @ClienteCodigo
@@ -3231,11 +3239,12 @@ public sealed class ConversacionesService(
         => ExecuteLoggedAsync("Conversaciones", "SyncMercadoLibreQuestions", async token =>
         {
             var config = await conversacionesConfigService.GetMercadoLibreConfigAsync(token);
+            var diagnostics = new List<string>();
+            config = await RefreshMercadoLibreAccessTokenAsync(config, diagnostics, token);
             if (!config.IsConfiguredForApi || string.IsNullOrWhiteSpace(config.SellerId))
                 throw new InvalidOperationException("Falta configurar Mercado Libre con Access Token y Seller/User ID.");
 
             await MarkLocalMercadoLibreAnsweredQuestionsAsync(token);
-            var diagnostics = new List<string>();
             var questions = await GetMercadoLibreUnansweredQuestionsAsync(config, diagnostics, token);
             var processed = 0;
 
@@ -3322,6 +3331,46 @@ public sealed class ConversacionesService(
 
             return id;
         }, "No se pudo crear el hilo interno.", ct);
+
+    private async Task<ConversacionMercadoLibreConfigDto> RefreshMercadoLibreAccessTokenAsync(
+        ConversacionMercadoLibreConfigDto config,
+        List<string> diagnostics,
+        CancellationToken ct)
+    {
+        if (!config.IsConfiguredForAuth || string.IsNullOrWhiteSpace(config.RefreshToken))
+            return config;
+
+        var baseUrl = string.IsNullOrWhiteSpace(config.ApiBaseUrl)
+            ? "https://api.mercadolibre.com"
+            : config.ApiBaseUrl.Trim().TrimEnd('/');
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl}/oauth/token");
+        request.Content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["grant_type"] = "refresh_token",
+            ["client_id"] = config.ClientId.Trim(),
+            ["client_secret"] = config.ClientSecret.Trim(),
+            ["refresh_token"] = config.RefreshToken.Trim()
+        });
+
+        var client = httpClientFactory.CreateClient();
+        using var response = await client.SendAsync(request, ct);
+        var body = await response.Content.ReadAsStringAsync(ct);
+        if (!response.IsSuccessStatusCode)
+            throw new InvalidOperationException($"Mercado Libre devolvió {(int)response.StatusCode} al renovar el token: {body}");
+
+        using var doc = JsonDocument.Parse(body);
+        var root = doc.RootElement;
+        if (root.TryGetProperty("access_token", out var accessToken))
+            config.AccessToken = accessToken.GetString() ?? string.Empty;
+        if (root.TryGetProperty("refresh_token", out var refreshToken))
+            config.RefreshToken = refreshToken.GetString() ?? config.RefreshToken;
+        if (root.TryGetProperty("user_id", out var userId))
+            config.SellerId = ConvertJsonElementToString(userId);
+
+        await conversacionesConfigService.SaveMercadoLibreConfigAsync(config, ct);
+        diagnostics.Add("Token ML renovado");
+        return config;
+    }
 
     public Task<ConversacionCrearWhatsAppResultDto> CreateOrGetWhatsAppConversationAsync(ConversacionCrearWhatsAppRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "CreateOrGetWhatsAppConversation", async token =>
@@ -5183,6 +5232,9 @@ public sealed class ConversacionesService(
 
     private async Task<long> EnsureMercadoLibreConversationAsync(MercadoLibreQuestion question, CancellationToken ct)
     {
+        if (string.IsNullOrWhiteSpace(question.QuestionId))
+            throw new InvalidOperationException("Mercado Libre no informó el ID de la pregunta.");
+
         var targetState = question.IsAnswered
             ? await GetFirstClosedConversationStateAsync(ct)
             : "ABIERTA";
