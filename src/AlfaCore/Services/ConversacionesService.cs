@@ -7511,7 +7511,7 @@ public sealed class ConversacionesService(
         var baseUrl = string.IsNullOrWhiteSpace(config.ApiBaseUrl)
             ? "https://api.mercadolibre.com"
             : config.ApiBaseUrl.Trim().TrimEnd('/');
-        var url = $"{baseUrl}/questions/search?seller_id={Uri.EscapeDataString(config.SellerId.Trim())}&sort_fields=date_created&sort_types=DESC&limit=50";
+        var url = $"{baseUrl}/questions/search?seller_id={Uri.EscapeDataString(config.SellerId.Trim())}&status=UNANSWERED&sort_fields=date_created&sort_types=DESC&limit=50";
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", config.AccessToken.Trim());
 
