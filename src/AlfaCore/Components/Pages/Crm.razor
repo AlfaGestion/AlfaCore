@@ -5,6 +5,7 @@
 @inject AlfaCore.Services.ICrmService CrmSvc
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject NavigationManager Nav
 @implements IDisposable
 
 <PageTitle>CRM | Alfa Gestión</PageTitle>
@@ -12,7 +13,7 @@
 <section class="page-grid crm-page">
     @if (_feedback is not null)
     {
-        <section class="panel-card">
+        <section class="crm-feedback">
             <div class="editor-msg @GetFeedbackClass()">
                 <strong>@_feedback.Title</strong>
                 <p>@_feedback.Message</p>
@@ -30,7 +31,7 @@
     }
     @if (!_showEditor && _loading)
     {
-        <section class="panel-card">
+        <section class="crm-loading">
             <p class="muted">Cargando CRM...</p>
         </section>
     }
@@ -43,55 +44,87 @@
                 <article class="@GetStageClass(stage.IdEtapa)"
                          @ondragover:preventDefault
                          @ondrop="() => DropOnStageAsync(stage.IdEtapa)">
-                    <header title="Arrastrá para reordenar la etapa"
+                    <header @ondragenter="() => MarkStageDropTarget(stage.IdEtapa)"
+                            @ondragover:preventDefault
+                            @ondrop="() => DropOnStageAsync(stage.IdEtapa)">
+                        <button type="button"
+                            class="crm-stage__drag"
+                            title="Arrastrar etapa"
                             draggable="true"
                             @ondragstart="() => BeginStageDrag(stage.IdEtapa)"
                             @ondragend="ClearDragState">
+                            <i class="bi bi-grip-vertical"></i>
+                        </button>
                         <span class="crm-stage__dot" style="background:@stage.Color"></span>
                         <div>
                             <h3>@stage.Nombre</h3>
                             <small>@items.Count oportunidad(es) · @FormatMoney(items.Sum(x => x.ImporteEstimado))</small>
                         </div>
-                    </header>
-                    <div class="crm-stage__body"
-                         @ondragover:preventDefault
-                         @ondrop="() => DropOnStageAsync(stage.IdEtapa)">
-                        @if (items.Count == 0)
-                        {
-                            <div class="crm-empty-column">Sin oportunidades</div>
-                        }
-                        @foreach (var item in items)
-                        {
-                            <button type="button"
-                                    class="@GetOpportunityDragClass(item.IdOportunidad)"
-                                    draggable="true"
-                                    @ondragstart="() => BeginOpportunityDrag(item.IdOportunidad)"
-                                    @ondragstart:stopPropagation
-                                    @ondragend="ClearDragState"
-                                    @onclick="() => OpenDetailAsync(item.IdOportunidad)">
-                                <span class="crm-card__code">@($"#{item.CodigoVisible}")</span>
-                                <strong>@item.Titulo</strong>
-                                <span>@Display(item.ClienteNombre, item.ClienteCodigo, "Sin cliente")</span>
-                                <div class="crm-card__meta">
-                                    <span>@FormatMoney(item.ImporteEstimado)</span>
-                                    <span>@item.Probabilidad%</span>
-                                </div>
-                                <div class="crm-tags">
-                                    @foreach (var tag in item.Etiquetas.Take(3))
-                                    {
-                                        <span class="crm-tag" style="border-color:@tag.Color;color:@tag.Color">@tag.Nombre</span>
-                                    }
-                                </div>
+                        <div class="crm-stage__actions">
+                            <button type="button" title="Nueva oportunidad en esta etapa" @onclick="() => NewOpportunity(stage.IdEtapa)">
+                                <i class="bi bi-plus-lg"></i>
                             </button>
-                        }
-                    </div>
+                            <button type="button" title="Ajustes de etapa" @onclick="() => ToggleStageMenu(stage.IdEtapa)">
+                                <i class="bi bi-gear"></i>
+                            </button>
+                            @if (_stageMenuId == stage.IdEtapa)
+                            {
+                                <div class="crm-stage-menu" @onclick:stopPropagation>
+                                    <button type="button" @onclick="() => ToggleStageCollapse(stage.IdEtapa)"><i class="bi bi-arrows-collapse"></i> @(_collapsedStageIds.Contains(stage.IdEtapa) ? "Desplegar" : "Plegar")</button>
+                                    <button type="button" @onclick="() => EditStageFromKanban(stage)"><i class="bi bi-pencil"></i> Editar</button>
+                                    <button type="button" @onclick="ShowAutomationPlaceholder"><i class="bi bi-magic"></i> Automatizaciones</button>
+                                    <button type="button" class="is-danger" @onclick="() => DeleteStageFromKanbanAsync(stage.IdEtapa)"><i class="bi bi-trash"></i> Eliminar</button>
+                                </div>
+                            }
+                        </div>
+                    </header>
+                    @if (!_collapsedStageIds.Contains(stage.IdEtapa))
+                    {
+                        <div class="crm-stage__body"
+                             @ondragenter="() => MarkStageDropTarget(stage.IdEtapa)"
+                             @ondragover:preventDefault
+                             @ondrop="() => DropOnStageAsync(stage.IdEtapa)">
+                            @if (items.Count == 0)
+                            {
+                                <div class="crm-empty-column">Sin oportunidades</div>
+                            }
+                            @foreach (var item in items)
+                            {
+                                <button type="button"
+                                        class="@GetOpportunityDragClass(item.IdOportunidad)"
+                                        draggable="true"
+                                        @ondragstart="() => BeginOpportunityDrag(item.IdOportunidad)"
+                                        @ondragstart:stopPropagation
+                                        @ondragend="ClearDragState"
+                                        @onclick="() => OpenDetailAsync(item.IdOportunidad)">
+                                    <span class="crm-card__code">@($"#{item.CodigoVisible}")</span>
+                                    <strong>@item.Titulo</strong>
+                                    <span>@Display(item.ClienteNombre, item.ClienteCodigo, "Sin cliente")</span>
+                                    <div class="crm-card__meta">
+                                        <span>@FormatMoney(item.ImporteEstimado)</span>
+                                        <span>@item.Probabilidad%</span>
+                                    </div>
+                                    <div class="crm-tags">
+                                        @foreach (var tag in item.Etiquetas.Take(3))
+                                        {
+                                            <span class="crm-tag" style="border-color:@tag.Color;color:@tag.Color">@tag.Nombre</span>
+                                        }
+                                    </div>
+                                </button>
+                            }
+                        </div>
+                    }
                 </article>
             }
+            <button type="button" class="crm-stage-add" @onclick="OpenStages">
+                <i class="bi bi-plus-lg"></i>
+                <span>Agregar etapa</span>
+            </button>
         </section>
     }
     else if (!_showEditor)
     {
-        <section class="panel-card crm-list">
+        <section class="crm-list">
             <table class="crm-list-table" data-sticky-list-header>
                 <thead>
                     <tr>
@@ -238,7 +271,10 @@
     private bool _searchPanelOpen;
     private bool _defaultFlowApplied;
     private int? _dragStageId;
+    private int? _dropStageId;
+    private int? _stageMenuId;
     private long? _dragOpportunityId;
+    private HashSet<int> _collapsedStageIds = [];
     private CrmOpportunitySaveRequest _form = new();
     private CrmOpportunityDetailDto? _detail;
     private HashSet<int> _selectedTags = [];
@@ -290,9 +326,6 @@
                     <button type="button" class="@GetSmartOptionClass(_filters.SoloSinAsignar)" @onclick="ApplyUnassignedAsync">Sin asignar</button>
                     <button type="button" class="@GetSmartOptionClass(!_filters.IncluirCerradas)" @onclick="ApplyOpenOnlyAsync">Oportunidades abiertas</button>
                     <button type="button" class="@GetSmartOptionClass(_filters.IncluirCerradas)" @onclick="ApplyAllStatusesAsync">Incluir ganadas/perdidas</button>
-                </div>
-                <div class="smart-search__column">
-                    <h4><i class="bi bi-columns-gap"></i> Pipeline</h4>
                     <label>Etapa</label>
                     <select value="@(_filters.IdEtapa?.ToString() ?? string.Empty)" @onchange="OnStageFilterChangedAsync">
                         <option value="">Todas</option>
@@ -311,6 +344,23 @@
                     </select>
                 </div>
                 <div class="smart-search__column">
+                    <h4><i class="bi bi-collection"></i> Agrupar por</h4>
+                    <button type="button" class="@GetSmartOptionClass(_viewSettings.AgruparPor == CrmViewGroupKeys.Tecnico)" @onclick='() => SetGroupAsync(CrmViewGroupKeys.Tecnico)'>Vendedor</button>
+                    <button type="button" class="@GetSmartOptionClass(_viewSettings.AgruparPor == CrmViewGroupKeys.Etapa)" @onclick='() => SetGroupAsync(CrmViewGroupKeys.Etapa)'>Etapa</button>
+                    <button type="button" class="@GetSmartOptionClass(_viewSettings.AgruparPor == CrmViewGroupKeys.Probabilidad)" @onclick='() => SetGroupAsync(CrmViewGroupKeys.Probabilidad)'>Probabilidad</button>
+                    <button type="button" class="@GetSmartOptionClass(false)" @onclick="ShowFutureFilterPlaceholder">Ciudad</button>
+                    <button type="button" class="@GetSmartOptionClass(false)" @onclick="ShowFutureFilterPlaceholder">Origen</button>
+                </div>
+                <div class="smart-search__column">
+                    <h4><i class="bi bi-star-fill"></i> Favoritos</h4>
+                    <button type="button" class="@GetSmartOptionClass(IsMyFlowActive)" @onclick="ApplyMyFlowAsync">Mi flujo</button>
+                    <button type="button" class="@GetSmartOptionClass(!_filters.IncluirCerradas)" @onclick="ApplyOpenOnlyAsync">Abiertas</button>
+                    <button type="button" class="@GetSmartOptionClass(false)" @onclick="SaveFavoritePlaceholder">Guardar búsqueda actual</button>
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="ClearFiltersAsync">
+                        <i class="bi bi-eraser"></i> Limpiar filtros
+                    </button>
+                </div>
+                <div class="smart-search__column">
                     <h4><i class="bi bi-person-check"></i> Asignado</h4>
                     <select value="@(_filters.IdTecnico ?? string.Empty)" @onchange="OnTechFilterChangedAsync">
                         <option value="">Todos</option>
@@ -319,9 +369,6 @@
                             <option value="@tech.IdTecnico">@tech.Nombre</option>
                         }
                     </select>
-                    <button type="button" class="btn btn--ghost btn--sm" @onclick="ClearFiltersAsync">
-                        <i class="bi bi-eraser"></i> Limpiar filtros
-                    </button>
                 </div>
             </div>
         }
@@ -329,7 +376,15 @@
 
     private RenderFragment RenderOpportunityPage() => @<section class="crm-opportunity-page">
         <div class="crm-opportunity-main">
-            <section class="panel-card crm-opportunity-form">
+            <div class="crm-detail-actions">
+                <button type="button" class="btn btn--primary btn--sm" @onclick="ShowQuotePlaceholder"><i class="bi bi-file-earmark-plus"></i> Nueva cotización</button>
+                <button type="button" class="btn btn--ghost btn--sm" @onclick="ShowMeetingPlaceholder"><i class="bi bi-calendar2-event"></i> Sin reuniones</button>
+                <button type="button" class="btn btn--ghost btn--sm" @onclick="OpenConversationFromDetail"><i class="bi bi-chat-dots"></i> Ver chat</button>
+                <button type="button" class="btn btn--ghost btn--sm" @onclick="ShowQuotePlaceholder"><i class="bi bi-pencil-square"></i> Cotizaciones 0</button>
+                <button type="button" class="btn btn--ghost btn--sm" @onclick="CreateSimilarLead"><i class="bi bi-star"></i> Lead similar</button>
+            </div>
+
+            <section class="crm-opportunity-form">
                 <div class="crm-opportunity-title">
                     <span>@(_form.IdOportunidad > 0 ? $"#{_detail?.CodigoVisible}" : "Nueva")</span>
                     <input maxlength="180" @bind="_form.Titulo" disabled="@_saving" placeholder="Nombre de la oportunidad" />
@@ -415,11 +470,18 @@
                 </div>
             </section>
 
-            <section class="panel-card crm-activity-panel">
-                <div class="panel-card__header">
+            <section class="crm-activity-panel">
+                <div class="crm-section-head">
                     <div>
-                        <h3 class="panel-card__title">Actividad</h3>
-                        <p class="panel-card__subtitle">Notas comerciales, cambios de etapa y próximos pasos.</p>
+                        <h3>Actividad</h3>
+                        <p>Notas comerciales, cambios de etapa y próximos pasos.</p>
+                    </div>
+                    <div class="actions">
+                        <button type="button" class="btn btn--primary btn--sm" @onclick="AddNoteAsync" disabled="@_saving || _detail is null || string.IsNullOrWhiteSpace(_noteText)">
+                            <i class="bi bi-journal-plus"></i> Registrar nota
+                        </button>
+                        <button type="button" class="btn btn--ghost btn--sm" @onclick="OpenConversationFromDetail"><i class="bi bi-whatsapp"></i> WhatsApp</button>
+                        <button type="button" class="btn btn--ghost btn--sm" @onclick="ShowActivityPlaceholder"><i class="bi bi-clock-history"></i> Actividad</button>
                     </div>
                 </div>
                 @if (_detail is null)
@@ -430,9 +492,6 @@
                 {
                     <div class="crm-note">
                         <textarea rows="3" maxlength="4000" @bind="_noteText" placeholder="Agregar nota comercial..."></textarea>
-                        <button type="button" class="btn btn--ghost btn--sm" @onclick="AddNoteAsync" disabled="@_saving || string.IsNullOrWhiteSpace(_noteText)">
-                            <i class="bi bi-plus-circle"></i> Nota
-                        </button>
                     </div>
                     <div class="crm-timeline">
                         @foreach (var activity in _detail.Actividad)
@@ -452,7 +511,7 @@
         </div>
 
         <aside class="crm-opportunity-side">
-            <section class="panel-card crm-side-panel">
+            <section class="crm-side-panel">
                 <h3>Resumen</h3>
                 <dl class="crm-summary">
                     <div><dt>Valor</dt><dd>@FormatMoney(_form.ImporteEstimado)</dd></div>
@@ -462,7 +521,7 @@
                 </dl>
             </section>
 
-            <section class="panel-card crm-side-panel">
+            <section class="crm-side-panel">
                 <h3>Origen</h3>
                 @if (_detail?.IdConversacion is long idConv)
                 {
@@ -761,16 +820,38 @@
         await SearchAsync();
     }
 
+    private async Task SetGroupAsync(string groupKey)
+    {
+        _viewSettings.AgruparPor = groupKey;
+        await CrmSvc.SaveViewSettingsAsync(CurrentUserName, _viewSettings);
+        ShowOk("Agrupación actualizada", "La preferencia de agrupación quedó guardada.");
+        UpdatePageHeader();
+    }
+
+    private void ShowFutureFilterPlaceholder()
+        => ShowOk("Filtro reservado", "Esta opción queda preparada para cuando sumemos esos datos al CRM.");
+
+    private void SaveFavoritePlaceholder()
+        => ShowOk("Favoritos", "Quedó reservado para guardar búsquedas favoritas por usuario.");
+
     private void BeginStageDrag(int idEtapa)
     {
         _dragOpportunityId = null;
         _dragStageId = idEtapa;
+        _dropStageId = null;
     }
 
     private void BeginOpportunityDrag(long idOportunidad)
     {
         _dragStageId = null;
         _dragOpportunityId = idOportunidad;
+        _dropStageId = null;
+    }
+
+    private void MarkStageDropTarget(int idEtapa)
+    {
+        if (_dragStageId is not null || _dragOpportunityId is not null)
+            _dropStageId = idEtapa;
     }
 
     private async Task DropOnStageAsync(int targetStageId)
@@ -854,7 +935,79 @@
     private void ClearDragState()
     {
         _dragStageId = null;
+        _dropStageId = null;
         _dragOpportunityId = null;
+    }
+
+    private void ToggleStageMenu(int idEtapa)
+        => _stageMenuId = _stageMenuId == idEtapa ? null : idEtapa;
+
+    private void ToggleStageCollapse(int idEtapa)
+    {
+        if (!_collapsedStageIds.Add(idEtapa))
+            _collapsedStageIds.Remove(idEtapa);
+        _stageMenuId = null;
+    }
+
+    private void EditStageFromKanban(CrmEtapaDto stage)
+    {
+        EditStage(stage);
+        _stageMenuId = null;
+        _showStages = true;
+    }
+
+    private async Task DeleteStageFromKanbanAsync(int idEtapa)
+    {
+        _stageMenuId = null;
+        await DeleteStageAsync(idEtapa);
+    }
+
+    private void ShowAutomationPlaceholder()
+    {
+        _stageMenuId = null;
+        ShowOk("Automatizaciones", "Quedó reservado el acceso para reglas automáticas por etapa.");
+    }
+
+    private void ShowQuotePlaceholder()
+        => ShowOk("Cotizaciones", "Quedó reservado el acceso para vincular cotizaciones a la oportunidad.");
+
+    private void ShowMeetingPlaceholder()
+        => ShowOk("Reuniones", "Quedó reservado el acceso para planificar reuniones y actividades.");
+
+    private void ShowActivityPlaceholder()
+        => ShowOk("Actividad", "La actividad comercial se registra debajo de la oportunidad.");
+
+    private void OpenConversationFromDetail()
+    {
+        if (_detail?.IdConversacion is long idConv)
+            Nav.NavigateTo($"/conversaciones?id={idConv}");
+        else
+            ShowOk("Origen", "Esta oportunidad todavía no tiene una conversación vinculada.");
+    }
+
+    private void CreateSimilarLead()
+    {
+        var source = _form;
+        _detail = null;
+        _selectedTags = [.. _selectedTags];
+        _noteText = string.Empty;
+        _form = new CrmOpportunitySaveRequest
+        {
+            Titulo = string.IsNullOrWhiteSpace(source.Titulo) ? string.Empty : $"{source.Titulo} - copia",
+            Descripcion = source.Descripcion,
+            IdEtapa = source.IdEtapa,
+            Prioridad = source.Prioridad,
+            Probabilidad = source.Probabilidad,
+            ImporteEstimado = source.ImporteEstimado,
+            FechaCierreEstimada = source.FechaCierreEstimada,
+            IdTecnico = source.IdTecnico,
+            ClienteCodigo = source.ClienteCodigo,
+            IdContacto = source.IdContacto,
+            CanalOrigen = source.CanalOrigen,
+            IdConversacion = source.IdConversacion
+        };
+        ShowOk("Lead similar", "Preparé una nueva oportunidad con los datos principales copiados.");
+        UpdatePageHeader();
     }
 
     private async Task ReloadCurrentViewAsync(bool resetPage)
@@ -905,14 +1058,14 @@
         UpdatePageHeader();
     }
 
-    private void NewOpportunity()
+    private void NewOpportunity(int? idEtapa = null)
     {
         _detail = null;
         _selectedTags = [];
         _noteText = string.Empty;
         _form = new CrmOpportunitySaveRequest
         {
-            IdEtapa = _lookups.Etapas.FirstOrDefault()?.IdEtapa,
+            IdEtapa = idEtapa ?? _lookups.Etapas.FirstOrDefault()?.IdEtapa,
             Probabilidad = 10,
             Prioridad = 1
         };
@@ -1114,8 +1267,12 @@
         var parts = new List<string> { "crm-stage" };
         if (_dragStageId == idEtapa)
             parts.Add("is-dragging");
+        if (_dropStageId == idEtapa)
+            parts.Add("is-drop-active");
         if (_dragOpportunityId is not null || (_dragStageId is not null && _dragStageId != idEtapa))
             parts.Add("is-drop-target");
+        if (_collapsedStageIds.Contains(idEtapa))
+            parts.Add("is-collapsed");
         return string.Join(" ", parts);
     }
 
