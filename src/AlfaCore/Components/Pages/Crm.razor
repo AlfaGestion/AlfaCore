@@ -28,11 +28,6 @@
     {
         @RenderOpportunityPage()
     }
-    else if (_searchPanelOpen)
-    {
-        @RenderSearchPanel()
-    }
-
     @if (!_showEditor && _loading)
     {
         <section class="panel-card">
@@ -45,22 +40,35 @@
             @foreach (var stage in _lookups.Etapas)
             {
                 var items = _kanban.Where(x => x.IdEtapa == stage.IdEtapa).ToList();
-                <article class="crm-stage">
-                    <header>
+                <article class="@GetStageClass(stage.IdEtapa)"
+                         @ondragover:preventDefault
+                         @ondrop="() => DropOnStageAsync(stage.IdEtapa)">
+                    <header title="Arrastrá para reordenar la etapa"
+                            draggable="true"
+                            @ondragstart="() => BeginStageDrag(stage.IdEtapa)"
+                            @ondragend="ClearDragState">
                         <span class="crm-stage__dot" style="background:@stage.Color"></span>
                         <div>
                             <h3>@stage.Nombre</h3>
                             <small>@items.Count oportunidad(es) · @FormatMoney(items.Sum(x => x.ImporteEstimado))</small>
                         </div>
                     </header>
-                    <div class="crm-stage__body">
+                    <div class="crm-stage__body"
+                         @ondragover:preventDefault
+                         @ondrop="() => DropOnStageAsync(stage.IdEtapa)">
                         @if (items.Count == 0)
                         {
                             <div class="crm-empty-column">Sin oportunidades</div>
                         }
                         @foreach (var item in items)
                         {
-                            <button type="button" class="crm-card" @onclick="() => OpenDetailAsync(item.IdOportunidad)">
+                            <button type="button"
+                                    class="@GetOpportunityDragClass(item.IdOportunidad)"
+                                    draggable="true"
+                                    @ondragstart="() => BeginOpportunityDrag(item.IdOportunidad)"
+                                    @ondragstart:stopPropagation
+                                    @ondragend="ClearDragState"
+                                    @onclick="() => OpenDetailAsync(item.IdOportunidad)">
                                 <span class="crm-card__code">@($"#{item.CodigoVisible}")</span>
                                 <strong>@item.Titulo</strong>
                                 <span>@Display(item.ClienteNombre, item.ClienteCodigo, "Sin cliente")</span>
@@ -84,7 +92,7 @@
     else if (!_showEditor)
     {
         <section class="panel-card crm-list">
-            <table>
+            <table class="crm-list-table" data-sticky-list-header>
                 <thead>
                     <tr>
                         @foreach (var col in VisibleColumns)
@@ -228,6 +236,9 @@
     private bool _showTags;
     private bool _showViewSettings;
     private bool _searchPanelOpen;
+    private bool _defaultFlowApplied;
+    private int? _dragStageId;
+    private long? _dragOpportunityId;
     private CrmOpportunitySaveRequest _form = new();
     private CrmOpportunityDetailDto? _detail;
     private HashSet<int> _selectedTags = [];
@@ -237,6 +248,12 @@
     private Feedback? _feedback;
 
     private IEnumerable<CrmViewColumnDto> VisibleColumns => _viewSettings.Columnas.Where(x => x.Visible).OrderBy(x => x.Order);
+    private string CurrentUserName => AppUserSession.CurrentUser?.UserName ?? Environment.UserName;
+    private string? CurrentUserTechId => _lookups.Tecnicos.FirstOrDefault(x =>
+        string.Equals(x.UsuarioAsociado, CurrentUserName, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(x.IdTecnico, CurrentUserName, StringComparison.OrdinalIgnoreCase))?.IdTecnico;
+    private bool IsMyFlowActive => !string.IsNullOrWhiteSpace(CurrentUserTechId)
+        && string.Equals(_filters.IdTecnico, CurrentUserTechId, StringComparison.OrdinalIgnoreCase);
 
     private RenderFragment RenderCrmSmartSearch() => @<div class="smart-search crm-smart-search" @onclick:stopPropagation>
         <div class="smart-search__bar">
@@ -264,52 +281,51 @@
                 <span class="smart-search__hint">Filtrá por etapa, asignado, etiqueta o estado de cierre.</span>
             }
         </div>
+        @if (_searchPanelOpen)
+        {
+            <div class="smart-search__panel crm-smart-panel" @onclick:stopPropagation>
+                <div class="smart-search__column">
+                    <h4><i class="bi bi-funnel"></i> Filtros</h4>
+                    <button type="button" class="@GetSmartOptionClass(IsMyFlowActive)" @onclick="ApplyMyFlowAsync">Mi flujo</button>
+                    <button type="button" class="@GetSmartOptionClass(_filters.SoloSinAsignar)" @onclick="ApplyUnassignedAsync">Sin asignar</button>
+                    <button type="button" class="@GetSmartOptionClass(!_filters.IncluirCerradas)" @onclick="ApplyOpenOnlyAsync">Oportunidades abiertas</button>
+                    <button type="button" class="@GetSmartOptionClass(_filters.IncluirCerradas)" @onclick="ApplyAllStatusesAsync">Incluir ganadas/perdidas</button>
+                </div>
+                <div class="smart-search__column">
+                    <h4><i class="bi bi-columns-gap"></i> Pipeline</h4>
+                    <label>Etapa</label>
+                    <select value="@(_filters.IdEtapa?.ToString() ?? string.Empty)" @onchange="OnStageFilterChangedAsync">
+                        <option value="">Todas</option>
+                        @foreach (var stage in _lookups.Etapas)
+                        {
+                            <option value="@stage.IdEtapa">@stage.Nombre</option>
+                        }
+                    </select>
+                    <label>Etiqueta</label>
+                    <select value="@(_filters.IdEtiqueta?.ToString() ?? string.Empty)" @onchange="OnTagFilterChangedAsync">
+                        <option value="">Todas</option>
+                        @foreach (var tag in _lookups.Etiquetas)
+                        {
+                            <option value="@tag.IdEtiqueta">@tag.Nombre</option>
+                        }
+                    </select>
+                </div>
+                <div class="smart-search__column">
+                    <h4><i class="bi bi-person-check"></i> Asignado</h4>
+                    <select value="@(_filters.IdTecnico ?? string.Empty)" @onchange="OnTechFilterChangedAsync">
+                        <option value="">Todos</option>
+                        @foreach (var tech in _lookups.Tecnicos)
+                        {
+                            <option value="@tech.IdTecnico">@tech.Nombre</option>
+                        }
+                    </select>
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="ClearFiltersAsync">
+                        <i class="bi bi-eraser"></i> Limpiar filtros
+                    </button>
+                </div>
+            </div>
+        }
     </div>;
-
-    private RenderFragment RenderSearchPanel() => @<section class="panel-card crm-search-panel">
-        <div class="field">
-            <label>Etapa</label>
-            <select @bind="_filters.IdEtapa">
-                <option value="">Todas</option>
-                @foreach (var stage in _lookups.Etapas)
-                {
-                    <option value="@stage.IdEtapa">@stage.Nombre</option>
-                }
-            </select>
-        </div>
-        <div class="field">
-            <label>Asignado</label>
-            <select @bind="_filters.IdTecnico">
-                <option value="">Todos</option>
-                @foreach (var tech in _lookups.Tecnicos)
-                {
-                    <option value="@tech.IdTecnico">@tech.Nombre</option>
-                }
-            </select>
-        </div>
-        <div class="field">
-            <label>Etiqueta</label>
-            <select @bind="_filters.IdEtiqueta">
-                <option value="">Todas</option>
-                @foreach (var tag in _lookups.Etiquetas)
-                {
-                    <option value="@tag.IdEtiqueta">@tag.Nombre</option>
-                }
-            </select>
-        </div>
-        <label class="checkbox crm-check">
-            <input type="checkbox" @bind="_filters.IncluirCerradas" />
-            <span>Incluir ganadas/perdidas</span>
-        </label>
-        <div class="actions">
-            <button type="button" class="btn btn--primary" @onclick="SearchAsync" disabled="@_loading">
-                <i class="bi bi-search"></i> Buscar
-            </button>
-            <button type="button" class="btn btn--ghost" @onclick="ClearFiltersAsync" disabled="@_loading">
-                <i class="bi bi-eraser"></i> Limpiar
-            </button>
-        </div>
-    </section>;
 
     private RenderFragment RenderOpportunityPage() => @<section class="crm-opportunity-page">
         <div class="crm-opportunity-main">
@@ -485,11 +501,28 @@
         {
             _loading = true;
             _lookups = await CrmSvc.GetLookupsAsync();
+            ApplyDefaultMyFlow();
             _viewSettings = await CrmSvc.GetViewSettingsAsync(AppUserSession.CurrentUser?.UserName ?? Environment.UserName);
             await ReloadCurrentViewAsync(resetPage: true);
             UpdatePageHeader();
         });
         _loading = false;
+    }
+
+    private void ApplyDefaultMyFlow()
+    {
+        if (_defaultFlowApplied)
+            return;
+
+        _defaultFlowApplied = true;
+        if (string.IsNullOrWhiteSpace(_filters.Texto)
+            && _filters.IdEtapa is null
+            && string.IsNullOrWhiteSpace(_filters.IdTecnico)
+            && _filters.IdEtiqueta is null
+            && !string.IsNullOrWhiteSpace(CurrentUserTechId))
+        {
+            _filters.IdTecnico = CurrentUserTechId;
+        }
     }
 
     private void UpdatePageHeader()
@@ -507,7 +540,7 @@
                 Priority = PageHeaderActionPriority.Essential,
                 Disabled = _saving,
                 Busy = _saving,
-                OnClick = SaveOpportunityAsync
+                OnClick = () => RunHeaderActionAsync(SaveOpportunityAsync)
             });
             actions.Add(new PageHeaderAction
             {
@@ -517,7 +550,7 @@
                 Style = PageHeaderActionStyle.Ghost,
                 Priority = PageHeaderActionPriority.Essential,
                 Disabled = _saving,
-                OnClick = () => { CloseEditor(); return Task.CompletedTask; }
+                OnClick = () => RunHeaderActionAsync(() => { CloseEditor(); return Task.CompletedTask; })
             });
         }
         else
@@ -529,17 +562,7 @@
                 Icon = "bi-plus-circle",
                 Style = PageHeaderActionStyle.Primary,
                 Priority = PageHeaderActionPriority.Essential,
-                OnClick = () => { NewOpportunity(); return Task.CompletedTask; }
-            });
-            actions.Add(new PageHeaderAction
-            {
-                Key = "buscar",
-                Label = "Buscar",
-                Icon = "bi-search",
-                Style = PageHeaderActionStyle.Ghost,
-                Priority = PageHeaderActionPriority.Normal,
-                Disabled = _loading,
-                OnClick = SearchAsync
+                OnClick = () => RunHeaderActionAsync(() => { NewOpportunity(); return Task.CompletedTask; })
             });
             actions.Add(new PageHeaderAction
             {
@@ -549,7 +572,7 @@
                 Style = PageHeaderActionStyle.Ghost,
                 Priority = PageHeaderActionPriority.Overflow,
                 Disabled = _loading,
-                OnClick = ClearFiltersAsync
+                OnClick = () => RunHeaderActionAsync(ClearFiltersAsync)
             });
             if (_viewMode == "lista")
             {
@@ -560,7 +583,7 @@
                     Icon = "bi-sliders",
                     Style = PageHeaderActionStyle.Ghost,
                     Priority = PageHeaderActionPriority.Overflow,
-                    OnClick = () => { OpenViewSettings(); return Task.CompletedTask; }
+                    OnClick = () => RunHeaderActionAsync(() => { OpenViewSettings(); return Task.CompletedTask; })
                 });
             }
             actions.Add(new PageHeaderAction
@@ -570,7 +593,7 @@
                 Icon = "bi-columns-gap",
                 Style = PageHeaderActionStyle.Ghost,
                 Priority = PageHeaderActionPriority.Overflow,
-                OnClick = () => { OpenStages(); return Task.CompletedTask; }
+                OnClick = () => RunHeaderActionAsync(() => { OpenStages(); return Task.CompletedTask; })
             });
             actions.Add(new PageHeaderAction
             {
@@ -579,7 +602,7 @@
                 Icon = "bi-tags",
                 Style = PageHeaderActionStyle.Ghost,
                 Priority = PageHeaderActionPriority.Overflow,
-                OnClick = () => { OpenTags(); return Task.CompletedTask; }
+                OnClick = () => RunHeaderActionAsync(() => { OpenTags(); return Task.CompletedTask; })
             });
         }
 
@@ -605,7 +628,7 @@
                         Icon = "bi-kanban",
                         Active = _viewMode == "kanban",
                         Disabled = _loading,
-                        OnClick = () => SetModeAsync("kanban")
+                        OnClick = () => RunHeaderActionAsync(() => SetModeAsync("kanban"))
                     },
                     new PageHeaderViewButton
                     {
@@ -614,7 +637,7 @@
                         Icon = "bi-table",
                         Active = _viewMode == "lista",
                         Disabled = _loading,
-                        OnClick = () => SetModeAsync("lista")
+                        OnClick = () => RunHeaderActionAsync(() => SetModeAsync("lista"))
                     }
                 ]
         });
@@ -647,8 +670,10 @@
             chips.Add(new("texto", $"Buscar: {_filters.Texto}"));
         if (_filters.IdEtapa is int idEtapa)
             chips.Add(new("etapa", $"Etapa: {_lookups.Etapas.FirstOrDefault(x => x.IdEtapa == idEtapa)?.Nombre ?? idEtapa.ToString()}"));
+        if (_filters.SoloSinAsignar)
+            chips.Add(new("sin-asignar", "Sin asignar"));
         if (!string.IsNullOrWhiteSpace(_filters.IdTecnico))
-            chips.Add(new("asignado", $"Asignado: {_lookups.Tecnicos.FirstOrDefault(x => x.IdTecnico == _filters.IdTecnico)?.Nombre ?? _filters.IdTecnico}"));
+            chips.Add(new("asignado", IsMyFlowActive ? "Mi flujo" : $"Asignado: {_lookups.Tecnicos.FirstOrDefault(x => x.IdTecnico == _filters.IdTecnico)?.Nombre ?? _filters.IdTecnico}"));
         if (_filters.IdEtiqueta is int idEtiqueta)
             chips.Add(new("etiqueta", $"Etiqueta: {_lookups.Etiquetas.FirstOrDefault(x => x.IdEtiqueta == idEtiqueta)?.Nombre ?? idEtiqueta.ToString()}"));
         if (_filters.IncluirCerradas)
@@ -669,6 +694,9 @@
             case "asignado":
                 _filters.IdTecnico = null;
                 break;
+            case "sin-asignar":
+                _filters.SoloSinAsignar = false;
+                break;
             case "etiqueta":
                 _filters.IdEtiqueta = null;
                 break;
@@ -678,6 +706,155 @@
         }
         UpdatePageHeader();
         await SearchAsync();
+    }
+
+    private async Task RunHeaderActionAsync(Func<Task> action)
+    {
+        await action();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task OnStageFilterChangedAsync(ChangeEventArgs args)
+    {
+        _filters.IdEtapa = int.TryParse(args.Value?.ToString(), out var value) ? value : null;
+        await SearchAsync();
+    }
+
+    private async Task OnTagFilterChangedAsync(ChangeEventArgs args)
+    {
+        _filters.IdEtiqueta = int.TryParse(args.Value?.ToString(), out var value) ? value : null;
+        await SearchAsync();
+    }
+
+    private async Task OnTechFilterChangedAsync(ChangeEventArgs args)
+    {
+        _filters.IdTecnico = string.IsNullOrWhiteSpace(args.Value?.ToString()) ? null : args.Value.ToString();
+        _filters.SoloSinAsignar = false;
+        await SearchAsync();
+    }
+
+    private async Task ApplyMyFlowAsync()
+    {
+        if (string.IsNullOrWhiteSpace(CurrentUserTechId))
+            return;
+        _filters.IdTecnico = CurrentUserTechId;
+        _filters.SoloSinAsignar = false;
+        await SearchAsync();
+    }
+
+    private async Task ApplyUnassignedAsync()
+    {
+        _filters.IdTecnico = null;
+        _filters.SoloSinAsignar = true;
+        await SearchAsync();
+    }
+
+    private async Task ApplyOpenOnlyAsync()
+    {
+        _filters.IncluirCerradas = false;
+        await SearchAsync();
+    }
+
+    private async Task ApplyAllStatusesAsync()
+    {
+        _filters.IncluirCerradas = true;
+        await SearchAsync();
+    }
+
+    private void BeginStageDrag(int idEtapa)
+    {
+        _dragOpportunityId = null;
+        _dragStageId = idEtapa;
+    }
+
+    private void BeginOpportunityDrag(long idOportunidad)
+    {
+        _dragStageId = null;
+        _dragOpportunityId = idOportunidad;
+    }
+
+    private async Task DropOnStageAsync(int targetStageId)
+    {
+        if (_dragOpportunityId is long opportunityId)
+        {
+            await MoveOpportunityToStageAsync(opportunityId, targetStageId);
+            return;
+        }
+
+        if (_dragStageId is int sourceStageId && sourceStageId != targetStageId)
+        {
+            await MoveStageAsync(sourceStageId, targetStageId);
+        }
+    }
+
+    private async Task MoveOpportunityToStageAsync(long opportunityId, int targetStageId)
+    {
+        var item = _kanban.FirstOrDefault(x => x.IdOportunidad == opportunityId);
+        if (item is null || item.IdEtapa == targetStageId)
+        {
+            ClearDragState();
+            return;
+        }
+
+        await RunAsync(async () =>
+        {
+            await CrmSvc.QuickUpdateAsync(new CrmQuickUpdateRequest
+            {
+                IdOportunidad = opportunityId,
+                IdEtapa = targetStageId,
+                UsuarioAccion = CurrentUserName
+            });
+            await ReloadCurrentViewAsync(resetPage: false);
+            ShowOk("Oportunidad movida", "La oportunidad cambió de etapa.");
+        });
+        ClearDragState();
+        UpdatePageHeader();
+    }
+
+    private async Task MoveStageAsync(int sourceStageId, int targetStageId)
+    {
+        var stages = _lookups.Etapas.OrderBy(x => x.Orden).ThenBy(x => x.IdEtapa).ToList();
+        var source = stages.FirstOrDefault(x => x.IdEtapa == sourceStageId);
+        var target = stages.FirstOrDefault(x => x.IdEtapa == targetStageId);
+        if (source is null || target is null)
+        {
+            ClearDragState();
+            return;
+        }
+
+        stages.Remove(source);
+        var targetIndex = Math.Max(0, stages.FindIndex(x => x.IdEtapa == target.IdEtapa));
+        stages.Insert(targetIndex, source);
+
+        await RunAsync(async () =>
+        {
+            for (var i = 0; i < stages.Count; i++)
+            {
+                var stage = stages[i];
+                stage.Orden = (i + 1) * 10;
+                await CrmSvc.SaveEtapaAsync(new CrmEtapaSaveRequest
+                {
+                    IdEtapa = stage.IdEtapa,
+                    Nombre = stage.Nombre,
+                    Color = stage.Color,
+                    EsGanada = stage.EsGanada,
+                    EsPerdida = stage.EsPerdida,
+                    Orden = stage.Orden,
+                    UsuarioAccion = CurrentUserName
+                });
+            }
+            _lookups = await CrmSvc.GetLookupsAsync();
+            await ReloadCurrentViewAsync(resetPage: false);
+            ShowOk("Etapas reordenadas", "El orden del pipeline quedó actualizado.");
+        });
+        ClearDragState();
+        UpdatePageHeader();
+    }
+
+    private void ClearDragState()
+    {
+        _dragStageId = null;
+        _dragOpportunityId = null;
     }
 
     private async Task ReloadCurrentViewAsync(bool resetPage)
@@ -931,6 +1108,20 @@
     private static string Display(string primary, string fallback, string empty) => !string.IsNullOrWhiteSpace(primary) ? primary : (!string.IsNullOrWhiteSpace(fallback) ? fallback : empty);
     private static string FormatMoney(decimal value) => value.ToString("C0", System.Globalization.CultureInfo.GetCultureInfo("es-AR"));
     private static string FormatDate(DateTime value) => value == DateTime.MinValue ? "-" : value.ToString("dd/MM/yyyy HH:mm");
+    private string GetSmartOptionClass(bool active) => active ? "smart-option is-active" : "smart-option";
+    private string GetStageClass(int idEtapa)
+    {
+        var parts = new List<string> { "crm-stage" };
+        if (_dragStageId == idEtapa)
+            parts.Add("is-dragging");
+        if (_dragOpportunityId is not null || (_dragStageId is not null && _dragStageId != idEtapa))
+            parts.Add("is-drop-target");
+        return string.Join(" ", parts);
+    }
+
+    private string GetOpportunityDragClass(long idOportunidad)
+        => _dragOpportunityId == idOportunidad ? "crm-card is-dragging" : "crm-card";
+
     private static string GetPriorityLabel(int value) => value switch
     {
         1 => "Baja",

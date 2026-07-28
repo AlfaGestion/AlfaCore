@@ -2,7 +2,6 @@
     gap: 1rem;
 }
 
-.crm-search-panel,
 .crm-modebar,
 .crm-pager,
 .crm-stage-form,
@@ -20,21 +19,27 @@
 }
 
 .crm-smart-search {
-    min-width: min(560px, 100%);
+    min-width: min(640px, 100%);
 }
 
-.crm-search-panel {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(160px, 1fr)) auto auto;
-    align-items: end;
-    position: sticky;
-    top: calc(var(--main-page-header-height, 74px) + .5rem);
-    z-index: 12;
+.crm-smart-panel {
+    grid-template-columns: repeat(3, minmax(170px, 1fr));
+    gap: 1rem;
+    min-width: min(760px, calc(100vw - 2rem));
 }
 
-.crm-check {
-    align-self: end;
-    min-height: 2.4rem;
+.crm-smart-panel h4 {
+    align-items: center;
+    display: flex;
+    gap: .45rem;
+}
+
+.crm-smart-panel select {
+    width: 100%;
+}
+
+.crm-smart-panel .btn {
+    justify-content: flex-start;
 }
 
 .crm-modebar {
@@ -71,6 +76,7 @@
     border: 1px solid var(--border, #dbe3ef);
     border-radius: 8px;
     min-height: 18rem;
+    transition: border-color .15s ease, opacity .15s ease, transform .15s ease;
 }
 
 .crm-stage header {
@@ -79,6 +85,20 @@
     align-items: center;
     padding: .85rem;
     border-bottom: 1px solid var(--border, #e2e8f0);
+    cursor: grab;
+    user-select: none;
+}
+
+.crm-stage header:active {
+    cursor: grabbing;
+}
+
+.crm-stage.is-dragging {
+    opacity: .55;
+}
+
+.crm-stage.is-drop-target {
+    border-color: #06b6d4;
 }
 
 .crm-stage h3 {
@@ -121,11 +141,17 @@
     display: grid;
     gap: .35rem;
     cursor: pointer;
+    transition: border-color .15s ease, box-shadow .15s ease, opacity .15s ease, transform .15s ease;
 }
 
 .crm-card:hover {
     border-color: #0891b2;
     box-shadow: 0 8px 20px rgba(15, 23, 42, .08);
+}
+
+.crm-card.is-dragging {
+    opacity: .55;
+    transform: scale(.98);
 }
 
 .crm-card__code {
@@ -158,11 +184,21 @@
 
 .crm-list {
     overflow-x: auto;
+    max-height: calc(100vh - 14rem);
+    padding: 0;
 }
 
 .crm-list table {
     width: 100%;
     border-collapse: collapse;
+}
+
+.crm-list-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--surface-1, #fff);
+    box-shadow: 0 1px 0 var(--border, #e2e8f0);
 }
 
 .crm-list th,
@@ -349,7 +385,7 @@
 }
 
 @media (max-width: 900px) {
-    .crm-search-panel,
+    .crm-smart-panel,
     .crm-editor-grid,
     .crm-detail-panels,
     .crm-opportunity-page {

@@ -5,6 +5,7 @@ public sealed class CrmFilters
     public string Texto { get; set; } = string.Empty;
     public int? IdEtapa { get; set; }
     public string? IdTecnico { get; set; }
+    public bool SoloSinAsignar { get; set; }
     public string? ClienteCodigo { get; set; }
     public int? IdEtiqueta { get; set; }
     public bool IncluirCerradas { get; set; }

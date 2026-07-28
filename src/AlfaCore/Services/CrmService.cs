@@ -520,6 +520,7 @@ public sealed class CrmService(
         WHERE ISNULL(o.Baja, 0) = 0
           AND (@IncluirCerradas = 1 OR (ISNULL(e.EsGanada, 0) = 0 AND ISNULL(e.EsPerdida, 0) = 0))
           AND (@IdEtapa IS NULL OR o.IdEtapa = @IdEtapa)
+          AND (@SoloSinAsignar = 0 OR LTRIM(RTRIM(ISNULL(o.IdTecnico, ''))) = '')
           AND (@IdTecnico IS NULL OR LTRIM(RTRIM(ISNULL(o.IdTecnico, ''))) = LTRIM(RTRIM(@IdTecnico)))
           AND (@ClienteCodigo IS NULL OR LTRIM(RTRIM(ISNULL(o.ClienteCodigo, ''))) = LTRIM(RTRIM(@ClienteCodigo)))
           AND (@IdEtiqueta IS NULL OR EXISTS (
@@ -543,6 +544,7 @@ public sealed class CrmService(
         p.Add("TextoLike", text is null ? null : $"%{text}%");
         p.Add("IdEtapa", filters.IdEtapa);
         p.Add("IdTecnico", string.IsNullOrWhiteSpace(filters.IdTecnico) ? null : filters.IdTecnico.Trim());
+        p.Add("SoloSinAsignar", filters.SoloSinAsignar);
         p.Add("ClienteCodigo", string.IsNullOrWhiteSpace(filters.ClienteCodigo) ? null : filters.ClienteCodigo.Trim());
         p.Add("IdEtiqueta", filters.IdEtiqueta);
         p.Add("IncluirCerradas", filters.IncluirCerradas);
