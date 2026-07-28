@@ -54,12 +54,43 @@ public sealed class CentralRegistrationService(
             await using var central = new SqlConnection(CentralConnectionString);
             await central.OpenAsync(ct);
 
-            if (await EmailAlreadyExistsAsync(central, normalized.Email, ct))
+            var existing = await LoadRegistrationByEmailAsync(central, normalized.Email, ct);
+            if (existing is not null)
             {
+                if (await BaseAlreadyProvisionedAsync(central, existing.IdCliente, ct))
+                {
+                    return new PublicRegistrationResult
+                    {
+                        Success = false,
+                        Message = "El email ya se encuentra registrado."
+                    };
+                }
+
+                var retryVerificationCode = Guid.NewGuid().ToString("N");
+                await RefreshPendingRegistrationAsync(central, existing, normalized, retryVerificationCode, ct);
+
+                var verificationUrl = BuildVerificationUrl(normalized.PublicBaseUrl, retryVerificationCode);
+                await SendVerificationEmailAsync(normalized, verificationUrl, ct);
+
+                await appEvents.LogAuditAsync(
+                    ModuleName,
+                    "RegisterRetry",
+                    "ALFA_CENTRAL.clientes",
+                    existing.IdCliente,
+                    "Registro público rearmado para completar el alta pendiente.",
+                    new
+                    {
+                        existing.IdCliente,
+                        normalized.Nombre,
+                        normalized.Email
+                    },
+                    ct);
+
                 return new PublicRegistrationResult
                 {
-                    Success = false,
-                    Message = "El email ya se encuentra registrado."
+                    Success = true,
+                    Message = "La cuenta ya existía pero no tenía la base lista. Te reenviamos el correo para completar el alta.",
+                    VerificationEmailSent = true
                 };
             }
 
@@ -153,7 +184,7 @@ public sealed class CentralRegistrationService(
             await using var central = new SqlConnection(CentralConnectionString);
             await central.OpenAsync(ct);
 
-            var pending = await LoadPendingRegistrationAsync(central, code.Trim(), ct);
+            var pending = await LoadRegistrationByCodeAsync(central, code.Trim(), ct);
             if (pending is null)
             {
                 return new PublicVerificationResult
@@ -163,7 +194,17 @@ public sealed class CentralRegistrationService(
                 };
             }
 
-            await MarkVerifiedAsync(central, pending.IdCliente, code.Trim(), ct);
+            if (await BaseAlreadyProvisionedAsync(central, pending.IdCliente, ct))
+            {
+                return new PublicVerificationResult
+                {
+                    Success = true,
+                    AccountVerified = true,
+                    ProvisioningCompleted = true,
+                    Message = "La cuenta ya había sido confirmada y la base ya está preparada."
+                };
+            }
+
             var official = await LoadOfficialCustomerAsync(pending.IdCliente, ct);
 
             var provisioning = await provisioningService.ProvisionAsync(new PublicProvisioningRequest
@@ -178,10 +219,13 @@ public sealed class CentralRegistrationService(
                 Password = pending.Password
             }, ct);
 
+            if (provisioning.Success)
+                await MarkVerifiedAsync(central, pending.IdCliente, code.Trim(), ct);
+
             return new PublicVerificationResult
             {
                 Success = provisioning.Success,
-                AccountVerified = true,
+                AccountVerified = provisioning.Success || pending.Verified,
                 ProvisioningCompleted = provisioning.Success,
                 Message = provisioning.Success
                     ? "La cuenta fue confirmada y la base quedó preparada correctamente."
@@ -253,15 +297,15 @@ public sealed class CentralRegistrationService(
             throw new InvalidOperationException("Las contraseñas no coinciden.");
     }
 
-    private async Task<bool> EmailAlreadyExistsAsync(SqlConnection central, string email, CancellationToken ct)
+    private async Task<bool> BaseAlreadyProvisionedAsync(SqlConnection central, string idCliente, CancellationToken ct)
     {
         const string sql = """
             SELECT COUNT(1)
-            FROM dbo.users
-            WHERE UPPER(LTRIM(RTRIM([user]))) = UPPER(LTRIM(RTRIM(@Email)));
+            FROM dbo.bases
+            WHERE UPPER(LTRIM(RTRIM(idcliente))) = UPPER(LTRIM(RTRIM(@IdCliente)));
             """;
 
-        var count = await central.ExecuteScalarAsync<int>(new CommandDefinition(sql, new { Email = email }, cancellationToken: ct));
+        var count = await central.ExecuteScalarAsync<int>(new CommandDefinition(sql, new { IdCliente = idCliente }, cancellationToken: ct));
         return count > 0;
     }
 
@@ -498,7 +542,7 @@ public sealed class CentralRegistrationService(
         return $"{baseUrl}/verify/{Uri.EscapeDataString(code)}";
     }
 
-    private async Task<PendingRegistrationRow?> LoadPendingRegistrationAsync(SqlConnection central, string code, CancellationToken ct)
+    private async Task<RegistrationRow?> LoadRegistrationByCodeAsync(SqlConnection central, string code, CancellationToken ct)
     {
         var columns = await GetColumnNamesAsync(central, null, "Clientes", ct);
         if (!columns.Contains("verified_code"))
@@ -508,14 +552,15 @@ public sealed class CentralRegistrationService(
             SELECT TOP (1)
                 c.idcliente AS IdCliente,
                 ISNULL(u.[user], '') AS Email,
-                ISNULL(u.password, '') AS Password
+                ISNULL(u.password, '') AS Password,
+                {(columns.Contains("verified") ? "ISNULL(c.verified, 0)" : "CAST(0 AS bit)")} AS Verified
             FROM dbo.Clientes c
             LEFT JOIN dbo.users u ON u.idcliente = c.idcliente
             WHERE UPPER(LTRIM(RTRIM(c.verified_code))) = UPPER(LTRIM(RTRIM(@Code)))
-              {(columns.Contains("verified") ? "AND ISNULL(c.verified, 0) = 0" : string.Empty)};
+            ;
             """;
 
-        return await central.QuerySingleOrDefaultAsync<PendingRegistrationRow>(new CommandDefinition(sql, new { Code = code }, cancellationToken: ct));
+        return await central.QuerySingleOrDefaultAsync<RegistrationRow>(new CommandDefinition(sql, new { Code = code }, cancellationToken: ct));
     }
 
     private static async Task MarkVerifiedAsync(SqlConnection central, string idCliente, string code, CancellationToken ct)
@@ -528,6 +573,108 @@ public sealed class CentralRegistrationService(
             """;
 
         await central.ExecuteAsync(new CommandDefinition(sql, new { IdCliente = idCliente, Code = code }, cancellationToken: ct));
+    }
+
+    private async Task<RegistrationRow?> LoadRegistrationByEmailAsync(SqlConnection central, string email, CancellationToken ct)
+    {
+        var columns = await GetColumnNamesAsync(central, null, "Clientes", ct);
+        var sql = $"""
+            SELECT TOP (1)
+                c.idcliente AS IdCliente,
+                ISNULL(u.[user], '') AS Email,
+                ISNULL(u.password, '') AS Password,
+                {(columns.Contains("verified") ? "ISNULL(c.verified, 0)" : "CAST(0 AS bit)")} AS Verified,
+                {(columns.Contains("verified_code") ? "ISNULL(c.verified_code, '')" : "CAST('' AS nvarchar(100))")} AS VerifiedCode
+            FROM dbo.users u
+            INNER JOIN dbo.Clientes c ON c.idcliente = u.idcliente
+            WHERE UPPER(LTRIM(RTRIM(u.[user]))) = UPPER(LTRIM(RTRIM(@Email)))
+            ORDER BY c.idcliente DESC;
+            """;
+
+        return await central.QuerySingleOrDefaultAsync<RegistrationRow>(new CommandDefinition(sql, new { Email = email }, cancellationToken: ct));
+    }
+
+    private async Task RefreshPendingRegistrationAsync(
+        SqlConnection central,
+        RegistrationRow existing,
+        PublicRegistrationRequest request,
+        string verificationCode,
+        CancellationToken ct)
+    {
+        await using var tx = (SqlTransaction)await central.BeginTransactionAsync(ct);
+        try
+        {
+            var clientColumns = await GetColumnNamesAsync(central, tx, "Clientes", ct);
+            var userColumns = await GetColumnNamesAsync(central, tx, "users", ct);
+
+            var updates = new List<string>();
+            if (clientColumns.Contains("nombre"))
+                updates.Add("nombre = @Nombre");
+            if (clientColumns.Contains("password"))
+                updates.Add("password = @Password");
+            if (clientColumns.Contains("verified"))
+                updates.Add("verified = 0");
+            if (clientColumns.Contains("verified_code"))
+                updates.Add("verified_code = @VerifiedCode");
+            if (clientColumns.Contains("created"))
+                updates.Add("created = GETDATE()");
+
+            if (updates.Count > 0)
+            {
+                var sqlCliente = $"""
+                    UPDATE dbo.Clientes
+                    SET {string.Join(", ", updates)}
+                    WHERE UPPER(LTRIM(RTRIM(idcliente))) = UPPER(LTRIM(RTRIM(@IdCliente)));
+                    """;
+
+                await central.ExecuteAsync(new CommandDefinition(
+                    sqlCliente,
+                    new
+                    {
+                        existing.IdCliente,
+                        Nombre = request.Nombre,
+                        Password = request.Password,
+                        VerifiedCode = verificationCode
+                    },
+                    tx,
+                    cancellationToken: ct));
+            }
+
+            var userUpdates = new List<string>();
+            if (userColumns.Contains("password"))
+                userUpdates.Add("password = @Password");
+            if (userColumns.Contains("name"))
+                userUpdates.Add("name = @Name");
+
+            if (userUpdates.Count > 0)
+            {
+                var sqlUser = $"""
+                    UPDATE dbo.users
+                    SET {string.Join(", ", userUpdates)}
+                    WHERE UPPER(LTRIM(RTRIM(idcliente))) = UPPER(LTRIM(RTRIM(@IdCliente)))
+                      AND UPPER(LTRIM(RTRIM([user]))) = UPPER(LTRIM(RTRIM(@Email)));
+                    """;
+
+                await central.ExecuteAsync(new CommandDefinition(
+                    sqlUser,
+                    new
+                    {
+                        existing.IdCliente,
+                        Email = request.Email,
+                        Password = request.Password,
+                        Name = request.Nombre
+                    },
+                    tx,
+                    cancellationToken: ct));
+            }
+
+            await tx.CommitAsync(ct);
+        }
+        catch
+        {
+            await tx.RollbackAsync(ct);
+            throw;
+        }
     }
 
     private async Task<OfficialCustomerRow> LoadOfficialCustomerAsync(string idCliente, CancellationToken ct)
@@ -568,11 +715,13 @@ public sealed class CentralRegistrationService(
     private static object DbNullable(string value)
         => string.IsNullOrWhiteSpace(value) ? DBNull.Value : value;
 
-    private sealed class PendingRegistrationRow
+    private sealed class RegistrationRow
     {
         public string IdCliente { get; set; } = string.Empty;
         public string Email { get; set; } = string.Empty;
         public string Password { get; set; } = string.Empty;
+        public bool Verified { get; set; }
+        public string VerifiedCode { get; set; } = string.Empty;
     }
 
     private sealed class OfficialCustomerRow
