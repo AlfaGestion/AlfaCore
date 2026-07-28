@@ -42,26 +42,34 @@
             {
                 var items = _kanban.Where(x => x.IdEtapa == stage.IdEtapa).ToList();
                 var isCollapsed = _collapsedStageIds.Contains(stage.IdEtapa);
+                var stats = GetStageTimingStats(items);
                 <article class="@GetStageClass(stage.IdEtapa)"
+                         @ondragenter="() => MarkStageDropTarget(stage.IdEtapa)"
                          @ondragover:preventDefault
                          @ondrop="() => DropOnStageAsync(stage.IdEtapa)">
                     <header class="crm-stage__header"
+                            draggable="true"
+                            @ondragstart="() => BeginStageDrag(stage.IdEtapa)"
+                            @ondragend="ClearDragState"
                             @ondragenter="() => MarkStageDropTarget(stage.IdEtapa)"
                             @ondragover:preventDefault
                             @ondrop="() => DropOnStageAsync(stage.IdEtapa)">
                         <span role="button"
                             tabindex="0"
                             class="crm-stage__drag"
-                            title="Arrastrar etapa"
-                            draggable="true"
-                            @ondragstart="() => BeginStageDrag(stage.IdEtapa)"
-                            @ondragend="ClearDragState">
+                            title="Arrastrar etapa">
                             <i class="bi bi-grip-vertical"></i>
                         </span>
                         <span class="crm-stage__dot" style="background:@stage.Color"></span>
                         <div class="crm-stage__title">
                             <h3>@stage.Nombre</h3>
                             <small>@items.Count oportunidad(es) · @FormatMoney(items.Sum(x => x.ImporteEstimado))</small>
+                            <div class="crm-stage__health" title="Estado por cierre estimado">
+                                <span class="is-ok" style="width:@stats.Ok%"></span>
+                                <span class="is-warning" style="width:@stats.Warning%"></span>
+                                <span class="is-late" style="width:@stats.Late%"></span>
+                                <span class="is-empty" style="width:@stats.Empty%"></span>
+                            </div>
                         </div>
                         <div class="crm-stage__actions">
                             <button type="button" title="Carga rápida" @onclick="() => ToggleQuickAdd(stage.IdEtapa)">
@@ -1070,7 +1078,6 @@
             CancelInlineStage();
             _lookups = await CrmSvc.GetLookupsAsync();
             await ReloadCurrentViewAsync(resetPage: false);
-            ShowOk("Etapa agregada", "La etapa quedó disponible en el pipeline.");
         });
         UpdatePageHeader();
     }
@@ -1416,6 +1423,45 @@
     private string GetOpportunityDragClass(long idOportunidad)
         => _dragOpportunityId == idOportunidad ? "crm-card is-dragging" : "crm-card";
 
+    private static StageTimingStats GetStageTimingStats(IReadOnlyList<CrmOpportunityDto> items)
+    {
+        if (items.Count == 0)
+            return new StageTimingStats(0, 0, 0, 100);
+
+        var today = DateTime.Today;
+        var ok = 0;
+        var warning = 0;
+        var late = 0;
+        var empty = 0;
+
+        foreach (var item in items)
+        {
+            if (item.FechaCierreEstimada is null)
+            {
+                empty++;
+                continue;
+            }
+
+            var days = (item.FechaCierreEstimada.Value.Date - today).TotalDays;
+            if (days < 0)
+                late++;
+            else if (days <= 2)
+                warning++;
+            else
+                ok++;
+        }
+
+        decimal total = items.Count;
+        return new StageTimingStats(
+            Percent(ok, total),
+            Percent(warning, total),
+            Percent(late, total),
+            Percent(empty, total));
+    }
+
+    private static decimal Percent(int value, decimal total)
+        => total <= 0 ? 0 : Math.Round(value * 100m / total, 2);
+
     private static string GetPriorityLabel(int value) => value switch
     {
         1 => "Baja",
@@ -1446,4 +1492,5 @@
 
     private sealed record Feedback(string Title, string Message, string? Code, bool Success = false);
     private sealed record FilterChip(string Key, string Label);
+    private sealed record StageTimingStats(decimal Ok, decimal Warning, decimal Late, decimal Empty);
 }
