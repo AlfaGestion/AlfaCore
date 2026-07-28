@@ -86,6 +86,7 @@ public sealed class RecentService(
                 FROM latest l
                 INNER JOIN dbo.ALFACORE_MENU_WEB w
                     ON w.Clave = l.Clave
+                   AND UPPER(LTRIM(RTRIM(ISNULL(w.Menu, '')))) = N'ALFA'
                 {legacyJoin}
                 WHERE ISNULL(w.HabilitadoWeb, 1) = 1
                   AND ISNULL(w.RutaWeb, '') <> ''

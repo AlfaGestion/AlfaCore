@@ -29,7 +29,7 @@ echo   - toma el publish de .\publish\AlfaCoreLAN
 echo   - actualiza una instalacion existente sin reinstalar
 echo   - preserva appsettings.json (actual), appsettings.Production.json (legacy) y .env
 echo   - preserva App_Data local y wwwroot\uploads
-echo   - copia App_Data\updates para habilitar actualizaciones SQL pendientes
+echo   - sincroniza App_Data\updates como espejo exacto del origen (borra scripts viejos/renumerados que ya no esten)
 echo.
 echo Recomendaciones:
 echo   - ejecutar scripts\publicar_release.bat antes de usarlo
@@ -156,7 +156,7 @@ if %ROOT_COPY_EXIT% GEQ 8 (
 )
 
 if exist "%SOURCE_DIR_FULL%\App_Data\updates" (
-  robocopy "%SOURCE_DIR_FULL%\App_Data\updates" "%DEST_DIR_FULL%\App_Data\updates" /E /COPY:DAT /DCOPY:DAT /R:2 /W:1 /NFL /NDL /NJH /NJS /NP
+  robocopy "%SOURCE_DIR_FULL%\App_Data\updates" "%DEST_DIR_FULL%\App_Data\updates" /E /PURGE /COPY:DAT /DCOPY:DAT /R:2 /W:1 /NFL /NDL /NJH /NJS /NP
   set "UPDATES_COPY_EXIT=%ERRORLEVEL%"
 )
 

@@ -99,7 +99,7 @@ public sealed class MenuService(
                     ISNULL(w.EsFavoritoDefault, 0) AS EsFavoritoDefault,
                     ISNULL(w.Observacion, '') AS Observacion
                 FROM dbo.ALFACORE_MENU_WEB w
-                WHERE ISNULL(w.Menu, '') <> '';
+                WHERE UPPER(LTRIM(RTRIM(ISNULL(w.Menu, '')))) = N'ALFA';
                 """;
 
             var rows = (await cn.QueryAsync<MenuRow>(new CommandDefinition(sql, cancellationToken: ct))).ToList();

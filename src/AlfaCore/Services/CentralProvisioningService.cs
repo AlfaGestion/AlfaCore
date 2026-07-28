@@ -26,6 +26,8 @@ public sealed class CentralProvisioningService(
     private const string DefaultUnidadNegocio = "   1";
     private const string ConfigGroup = "SISTEMA";
     private const string FechaUpdateKey = "FECHAUPDATE_CORE";
+    private const string DefaultLoginLanguage = "Español";
+    private const string StatsDatabaseName = "NW_ESTADISTICAS";
 
     private string CentralConnectionString => configuration.GetConnectionString("AlfaCentral")
         ?? throw new InvalidOperationException("No se configuró la cadena de conexión 'ConnectionStrings:AlfaCentral'.");
@@ -74,11 +76,13 @@ public sealed class CentralProvisioningService(
                 await RestoreDatabaseAsync(master, dbName, templatePath, fileList, defaultPaths, ct);
             }
 
-            await EnsureSqlLoginAsync(master, credentials, ct);
+            await EnsureSqlLoginAsync(master, credentials, dbName, ct);
 
             master.ChangeDatabase(dbName);
             await EnsureDatabaseUserAsync(master, credentials.User, ct);
             master.ChangeDatabase("master");
+
+            await EnsureStatsDatabaseAccessAsync(master, targetServer, credentials.User, ct);
 
             var targetConnectionString = BuildDatabaseConnectionString(targetServer, dbName, credentials.User, credentials.Password);
             await using var target = new SqlConnection(targetConnectionString);
@@ -262,20 +266,56 @@ public sealed class CentralProvisioningService(
         await master.ExecuteAsync(new CommandDefinition(sql, cancellationToken: ct, commandTimeout: 3600));
     }
 
-    private static async Task EnsureSqlLoginAsync(SqlConnection master, (string User, string Password) credentials, CancellationToken ct)
+    private static async Task EnsureSqlLoginAsync(SqlConnection master, (string User, string Password) credentials, string dbName, CancellationToken ct)
     {
         var sql = $"""
             IF EXISTS (SELECT 1 FROM sys.sql_logins WHERE name = N'{EscapeSqlLiteral(credentials.User)}')
             BEGIN
-                ALTER LOGIN [{credentials.User}] WITH PASSWORD = N'{EscapeSqlLiteral(credentials.Password)}', CHECK_POLICY = OFF, CHECK_EXPIRATION = OFF;
+                ALTER LOGIN [{credentials.User}] WITH PASSWORD = N'{EscapeSqlLiteral(credentials.Password)}', CHECK_POLICY = OFF, CHECK_EXPIRATION = OFF, DEFAULT_DATABASE = [{dbName}], DEFAULT_LANGUAGE = [{DefaultLoginLanguage}];
             END
             ELSE
             BEGIN
-                CREATE LOGIN [{credentials.User}] WITH PASSWORD = N'{EscapeSqlLiteral(credentials.Password)}', CHECK_POLICY = OFF, CHECK_EXPIRATION = OFF;
+                CREATE LOGIN [{credentials.User}] WITH PASSWORD = N'{EscapeSqlLiteral(credentials.Password)}', CHECK_POLICY = OFF, CHECK_EXPIRATION = OFF, DEFAULT_DATABASE = [{dbName}], DEFAULT_LANGUAGE = [{DefaultLoginLanguage}];
             END
             """;
 
         await master.ExecuteAsync(new CommandDefinition(sql, cancellationToken: ct));
+    }
+
+    private async Task EnsureStatsDatabaseAccessAsync(SqlConnection master, string targetServer, string loginName, CancellationToken ct)
+    {
+        if (!await DatabaseExistsAsync(master, StatsDatabaseName, ct))
+            return;
+
+        var statsConnectionString = new SqlConnectionStringBuilder(AlfaGestionConnectionString)
+        {
+            DataSource = targetServer,
+            InitialCatalog = StatsDatabaseName,
+            ApplicationName = "AlfaCore-RegistroPublico"
+        }.ConnectionString;
+
+        await using var stats = new SqlConnection(statsConnectionString);
+        await stats.OpenAsync(ct);
+
+        var sql = $"""
+            IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = N'{EscapeSqlLiteral(loginName)}')
+            BEGIN
+                CREATE USER [{loginName}] FOR LOGIN [{loginName}];
+            END
+
+            IF NOT EXISTS (
+                SELECT 1
+                FROM sys.database_role_members rm
+                INNER JOIN sys.database_principals r ON r.principal_id = rm.role_principal_id
+                INNER JOIN sys.database_principals u ON u.principal_id = rm.member_principal_id
+                WHERE r.name = N'db_datareader'
+                  AND u.name = N'{EscapeSqlLiteral(loginName)}')
+            BEGIN
+                ALTER ROLE [db_datareader] ADD MEMBER [{loginName}];
+            END
+            """;
+
+        await stats.ExecuteAsync(new CommandDefinition(sql, cancellationToken: ct));
     }
 
     private static async Task EnsureDatabaseUserAsync(SqlConnection target, string loginName, CancellationToken ct)
