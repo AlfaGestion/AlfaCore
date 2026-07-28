@@ -64,25 +64,29 @@ public sealed class CentralProvisioningService(
             await using var master = new SqlConnection(masterConnectionString);
             await master.OpenAsync(ct);
 
-            if (await DatabaseExistsAsync(master, dbName, ct))
-                throw new InvalidOperationException($"La base {dbName} ya existe en el servidor SQL, pero no está registrada en ALFA_CENTRAL.");
+            if (!await DatabaseExistsAsync(master, dbName, ct))
+            {
+                var fileList = await LoadBackupFileListAsync(master, templatePath, ct);
+                if (fileList.Count == 0)
+                    throw new InvalidOperationException("No se pudieron leer los archivos lógicos del backup plantilla.");
 
-            var fileList = await LoadBackupFileListAsync(master, templatePath, ct);
-            if (fileList.Count == 0)
-                throw new InvalidOperationException("No se pudieron leer los archivos lógicos del backup plantilla.");
+                var defaultPaths = await LoadDefaultDatabasePathsAsync(master, ct);
+                await RestoreDatabaseAsync(master, dbName, templatePath, fileList, defaultPaths, ct);
+            }
 
-            var defaultPaths = await LoadDefaultDatabasePathsAsync(master, ct);
-            await RestoreDatabaseAsync(master, dbName, templatePath, fileList, defaultPaths, ct);
             await EnsureSqlLoginAsync(master, credentials, ct);
+
+            master.ChangeDatabase(dbName);
+            await EnsureDatabaseUserAsync(master, credentials.User, ct);
+            master.ChangeDatabase("master");
 
             var targetConnectionString = BuildDatabaseConnectionString(targetServer, dbName, credentials.User, credentials.Password);
             await using var target = new SqlConnection(targetConnectionString);
             await target.OpenAsync(ct);
 
-            await EnsureDatabaseUserAsync(target, credentials.User, ct);
+            await ApplyPendingUpdatesAsync(target, ct);
             await UpdateCoreConfigurationAsync(target, request, ct);
             await EnsureLegacyUserAsync(target, request, ct);
-            await ApplyPendingUpdatesAsync(target, ct);
 
             await RegisterBaseAsync(request, targetServer, dbName, credentials, ct);
 
