@@ -41,27 +41,30 @@
             @foreach (var stage in _lookups.Etapas)
             {
                 var items = _kanban.Where(x => x.IdEtapa == stage.IdEtapa).ToList();
+                var isCollapsed = _collapsedStageIds.Contains(stage.IdEtapa);
                 <article class="@GetStageClass(stage.IdEtapa)"
                          @ondragover:preventDefault
                          @ondrop="() => DropOnStageAsync(stage.IdEtapa)">
-                    <header @ondragenter="() => MarkStageDropTarget(stage.IdEtapa)"
+                    <header class="crm-stage__header"
+                            @ondragenter="() => MarkStageDropTarget(stage.IdEtapa)"
                             @ondragover:preventDefault
                             @ondrop="() => DropOnStageAsync(stage.IdEtapa)">
-                        <button type="button"
+                        <span role="button"
+                            tabindex="0"
                             class="crm-stage__drag"
                             title="Arrastrar etapa"
                             draggable="true"
                             @ondragstart="() => BeginStageDrag(stage.IdEtapa)"
                             @ondragend="ClearDragState">
                             <i class="bi bi-grip-vertical"></i>
-                        </button>
+                        </span>
                         <span class="crm-stage__dot" style="background:@stage.Color"></span>
-                        <div>
+                        <div class="crm-stage__title">
                             <h3>@stage.Nombre</h3>
                             <small>@items.Count oportunidad(es) · @FormatMoney(items.Sum(x => x.ImporteEstimado))</small>
                         </div>
                         <div class="crm-stage__actions">
-                            <button type="button" title="Nueva oportunidad en esta etapa" @onclick="() => NewOpportunity(stage.IdEtapa)">
+                            <button type="button" title="Carga rápida" @onclick="() => ToggleQuickAdd(stage.IdEtapa)">
                                 <i class="bi bi-plus-lg"></i>
                             </button>
                             <button type="button" title="Ajustes de etapa" @onclick="() => ToggleStageMenu(stage.IdEtapa)">
@@ -78,25 +81,50 @@
                             }
                         </div>
                     </header>
-                    @if (!_collapsedStageIds.Contains(stage.IdEtapa))
+                    @if (!isCollapsed)
                     {
                         <div class="crm-stage__body"
                              @ondragenter="() => MarkStageDropTarget(stage.IdEtapa)"
                              @ondragover:preventDefault
                              @ondrop="() => DropOnStageAsync(stage.IdEtapa)">
+                            @if (_quickAddStageId == stage.IdEtapa)
+                            {
+                                <div class="crm-quick-card">
+                                    <input maxlength="180" placeholder="Nombre de la oportunidad" @bind="_quickForm.Titulo" />
+                                    <input maxlength="20" placeholder="Empresa / código cliente" @bind="_quickForm.ClienteCodigo" />
+                                    <input type="number" placeholder="Contacto" @bind="_quickForm.IdContacto" />
+                                    <input maxlength="120" placeholder="Correo electrónico del contacto" @bind="_quickEmail" />
+                                    <input maxlength="80" placeholder="Teléfono del contacto" @bind="_quickPhone" />
+                                    <input type="number" step="0.01" min="0" placeholder="$ 0,00" @bind="_quickForm.ImporteEstimado" />
+                                    <div class="crm-quick-card__stars" aria-label="Prioridad">
+                                        @for (var i = 1; i <= 3; i++)
+                                        {
+                                            var value = i;
+                                            <button type="button" class="@(value <= _quickForm.Prioridad ? "is-active" : string.Empty)" @onclick="() => _quickForm.Prioridad = value">
+                                                <i class="bi bi-star-fill"></i>
+                                            </button>
+                                        }
+                                    </div>
+                                    <div class="crm-quick-card__actions">
+                                        <button type="button" class="btn btn--primary btn--sm" @onclick="() => SaveQuickOpportunityAsync(stage.IdEtapa)">Agregar</button>
+                                        <button type="button" class="btn btn--ghost btn--sm" @onclick="CancelQuickAdd">Cancelar</button>
+                                    </div>
+                                </div>
+                            }
                             @if (items.Count == 0)
                             {
                                 <div class="crm-empty-column">Sin oportunidades</div>
                             }
                             @foreach (var item in items)
                             {
-                                <button type="button"
-                                        class="@GetOpportunityDragClass(item.IdOportunidad)"
-                                        draggable="true"
-                                        @ondragstart="() => BeginOpportunityDrag(item.IdOportunidad)"
-                                        @ondragstart:stopPropagation
-                                        @ondragend="ClearDragState"
-                                        @onclick="() => OpenDetailAsync(item.IdOportunidad)">
+                                <article role="button"
+                                         tabindex="0"
+                                         class="@GetOpportunityDragClass(item.IdOportunidad)"
+                                         draggable="true"
+                                         @ondragstart="() => BeginOpportunityDrag(item.IdOportunidad)"
+                                         @ondragstart:stopPropagation
+                                         @ondragend="ClearDragState"
+                                         @onclick="() => OpenDetailAsync(item.IdOportunidad)">
                                     <span class="crm-card__code">@($"#{item.CodigoVisible}")</span>
                                     <strong>@item.Titulo</strong>
                                     <span>@Display(item.ClienteNombre, item.ClienteCodigo, "Sin cliente")</span>
@@ -110,16 +138,32 @@
                                             <span class="crm-tag" style="border-color:@tag.Color;color:@tag.Color">@tag.Nombre</span>
                                         }
                                     </div>
-                                </button>
+                                </article>
                             }
                         </div>
                     }
                 </article>
             }
-            <button type="button" class="crm-stage-add" @onclick="OpenStages">
-                <i class="bi bi-plus-lg"></i>
-                <span>Agregar etapa</span>
-            </button>
+            <div class="crm-stage-add">
+                @if (_addingStageInline)
+                {
+                    <div class="crm-stage-add__form">
+                        <input maxlength="80" placeholder="Etapa..." @bind="_inlineStageName" />
+                        <button type="button" class="is-ok" title="Guardar etapa" @onclick="SaveInlineStageAsync"><i class="bi bi-check-lg"></i></button>
+                        <button type="button" class="is-cancel" title="Cancelar" @onclick="CancelInlineStage"><i class="bi bi-x-lg"></i></button>
+                    </div>
+                    <div class="crm-stage-add__ghost"></div>
+                    <div class="crm-stage-add__ghost"></div>
+                    <div class="crm-stage-add__ghost"></div>
+                }
+                else
+                {
+                    <button type="button" @onclick="StartInlineStage">
+                        <i class="bi bi-plus-lg"></i>
+                        <span>Agregar etapa</span>
+                    </button>
+                }
+            </div>
         </section>
     }
     else if (!_showEditor)
@@ -273,9 +317,15 @@
     private int? _dragStageId;
     private int? _dropStageId;
     private int? _stageMenuId;
+    private int? _quickAddStageId;
     private long? _dragOpportunityId;
     private HashSet<int> _collapsedStageIds = [];
+    private bool _addingStageInline;
+    private string _inlineStageName = string.Empty;
+    private string _quickEmail = string.Empty;
+    private string _quickPhone = string.Empty;
     private CrmOpportunitySaveRequest _form = new();
+    private CrmOpportunitySaveRequest _quickForm = new() { Probabilidad = 10, Prioridad = 1 };
     private CrmOpportunityDetailDto? _detail;
     private HashSet<int> _selectedTags = [];
     private CrmEtapaSaveRequest _stageDraft = new() { Color = "#2563EB", Orden = 10 };
@@ -949,6 +999,82 @@
         _stageMenuId = null;
     }
 
+    private void ToggleQuickAdd(int idEtapa)
+    {
+        _stageMenuId = null;
+        _quickAddStageId = _quickAddStageId == idEtapa ? null : idEtapa;
+        _quickForm = new CrmOpportunitySaveRequest
+        {
+            IdEtapa = idEtapa,
+            Probabilidad = 10,
+            Prioridad = 1,
+            IdTecnico = CurrentUserTechId
+        };
+        _quickEmail = string.Empty;
+        _quickPhone = string.Empty;
+    }
+
+    private void CancelQuickAdd()
+    {
+        _quickAddStageId = null;
+        _quickForm = new CrmOpportunitySaveRequest { Probabilidad = 10, Prioridad = 1 };
+        _quickEmail = string.Empty;
+        _quickPhone = string.Empty;
+    }
+
+    private async Task SaveQuickOpportunityAsync(int idEtapa)
+    {
+        if (string.IsNullOrWhiteSpace(_quickForm.Titulo))
+            return;
+
+        await RunAsync(async () =>
+        {
+            _quickForm.IdEtapa = idEtapa;
+            _quickForm.UsuarioAccion = CurrentUserName;
+            _quickForm.Descripcion = BuildQuickDescription(_quickEmail, _quickPhone);
+            await CrmSvc.SaveOpportunityAsync(_quickForm);
+            CancelQuickAdd();
+            await ReloadCurrentViewAsync(resetPage: false);
+            ShowOk("Oportunidad agregada", "La carga rápida quedó en el pipeline.");
+        });
+        UpdatePageHeader();
+    }
+
+    private void StartInlineStage()
+    {
+        _addingStageInline = true;
+        _inlineStageName = string.Empty;
+    }
+
+    private void CancelInlineStage()
+    {
+        _addingStageInline = false;
+        _inlineStageName = string.Empty;
+    }
+
+    private async Task SaveInlineStageAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_inlineStageName))
+            return;
+
+        await RunAsync(async () =>
+        {
+            var nextOrder = (_lookups.Etapas.Count == 0 ? 0 : _lookups.Etapas.Max(x => x.Orden)) + 10;
+            await CrmSvc.SaveEtapaAsync(new CrmEtapaSaveRequest
+            {
+                Nombre = _inlineStageName.Trim(),
+                Color = "#64748B",
+                Orden = nextOrder,
+                UsuarioAccion = CurrentUserName
+            });
+            CancelInlineStage();
+            _lookups = await CrmSvc.GetLookupsAsync();
+            await ReloadCurrentViewAsync(resetPage: false);
+            ShowOk("Etapa agregada", "La etapa quedó disponible en el pipeline.");
+        });
+        UpdatePageHeader();
+    }
+
     private void EditStageFromKanban(CrmEtapaDto stage)
     {
         EditStage(stage);
@@ -1036,6 +1162,8 @@
     private async Task SetModeAsync(string mode)
     {
         _viewMode = mode;
+        _stageMenuId = null;
+        _quickAddStageId = null;
         await ReloadCurrentViewAsync(resetPage: true);
         UpdatePageHeader();
     }
@@ -1261,6 +1389,15 @@
     private static string Display(string primary, string fallback, string empty) => !string.IsNullOrWhiteSpace(primary) ? primary : (!string.IsNullOrWhiteSpace(fallback) ? fallback : empty);
     private static string FormatMoney(decimal value) => value.ToString("C0", System.Globalization.CultureInfo.GetCultureInfo("es-AR"));
     private static string FormatDate(DateTime value) => value == DateTime.MinValue ? "-" : value.ToString("dd/MM/yyyy HH:mm");
+    private static string BuildQuickDescription(string email, string phone)
+    {
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(email))
+            parts.Add($"Correo electrónico del contacto: {email.Trim()}");
+        if (!string.IsNullOrWhiteSpace(phone))
+            parts.Add($"Teléfono del contacto: {phone.Trim()}");
+        return string.Join(Environment.NewLine, parts);
+    }
     private string GetSmartOptionClass(bool active) => active ? "smart-option is-active" : "smart-option";
     private string GetStageClass(int idEtapa)
     {

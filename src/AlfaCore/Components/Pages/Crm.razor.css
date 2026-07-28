@@ -71,23 +71,28 @@
 }
 
 .crm-kanban {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    display: flex;
     gap: .85rem;
-    align-items: start;
+    align-items: stretch;
     min-height: calc(100vh - 7.5rem);
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: .15rem .25rem 1rem;
+    scroll-snap-type: x proximity;
 }
 
 .crm-stage {
     background: transparent;
     border: 1px solid var(--border, #dbe3ef);
     border-radius: 6px;
+    flex: 0 0 282px;
     min-height: 18rem;
     position: relative;
+    scroll-snap-align: start;
     transition: border-color .15s ease, opacity .15s ease, transform .15s ease;
 }
 
-.crm-stage header {
+.crm-stage__header {
     display: flex;
     gap: .55rem;
     align-items: center;
@@ -126,7 +131,39 @@
 }
 
 .crm-stage.is-collapsed {
-    min-height: 0;
+    align-self: stretch;
+    flex-basis: 48px;
+    min-height: 18rem;
+}
+
+.crm-stage.is-collapsed .crm-stage__header {
+    align-items: center;
+    border-bottom: 0;
+    display: grid;
+    grid-template-rows: auto auto 1fr auto;
+    height: 100%;
+    justify-items: center;
+    padding: .5rem .25rem;
+}
+
+.crm-stage.is-collapsed .crm-stage__title {
+    align-items: center;
+    display: flex;
+    min-height: 8rem;
+    writing-mode: vertical-rl;
+}
+
+.crm-stage.is-collapsed .crm-stage__title h3 {
+    transform: rotate(180deg);
+}
+
+.crm-stage.is-collapsed .crm-stage__title small {
+    display: none;
+}
+
+.crm-stage.is-collapsed .crm-stage__actions {
+    display: grid;
+    margin-left: 0;
 }
 
 .crm-stage h3 {
@@ -134,7 +171,7 @@
     font-size: 1rem;
 }
 
-.crm-stage header > div:not(.crm-stage__actions) {
+.crm-stage__header > div:not(.crm-stage__actions) {
     min-width: 0;
 }
 
@@ -218,6 +255,8 @@
     display: grid;
     gap: .65rem;
     padding: .75rem;
+    align-content: start;
+    min-height: 14rem;
 }
 
 .crm-stage-add {
@@ -225,15 +264,63 @@
     border-color: var(--border, #dbe3ef);
     border-radius: 6px;
     color: var(--muted, #64748b);
-    flex-direction: column;
-    gap: .5rem;
+    flex: 0 0 282px;
     min-height: 18rem;
     padding: 1rem;
+}
+
+.crm-stage-add > button {
+    align-items: center;
+    background: transparent;
+    border: 0;
+    color: inherit;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    gap: .5rem;
+    height: 100%;
+    justify-content: center;
+    width: 100%;
 }
 
 .crm-stage-add:hover {
     border-color: #06b6d4;
     color: #06b6d4;
+}
+
+.crm-stage-add__form {
+    display: grid;
+    gap: .35rem;
+    grid-template-columns: 1fr auto auto;
+}
+
+.crm-stage-add__form input {
+    min-width: 0;
+}
+
+.crm-stage-add__form button {
+    align-items: center;
+    border: 0;
+    color: #fff;
+    cursor: pointer;
+    display: inline-flex;
+    height: 2.25rem;
+    justify-content: center;
+    width: 2.25rem;
+}
+
+.crm-stage-add__form .is-ok {
+    background: #7c3aed;
+}
+
+.crm-stage-add__form .is-cancel {
+    background: #dc2626;
+}
+
+.crm-stage-add__ghost {
+    background: rgba(148, 163, 184, .14);
+    height: 4.5rem;
+    margin-top: .65rem;
 }
 
 .crm-empty-column {
@@ -253,6 +340,47 @@
     gap: .35rem;
     cursor: pointer;
     transition: border-color .15s ease, box-shadow .15s ease, opacity .15s ease, transform .15s ease;
+}
+
+.crm-quick-card {
+    background: color-mix(in srgb, var(--surface-1, #fff) 84%, transparent);
+    border: 1px solid var(--border, #dbe3ef);
+    display: grid;
+    gap: .35rem;
+    padding: .65rem;
+}
+
+.crm-quick-card input {
+    background: transparent;
+    border: 0;
+    border-bottom: 1px solid var(--border, #dbe3ef);
+    border-radius: 0;
+    min-width: 0;
+    padding: .35rem .15rem;
+}
+
+.crm-quick-card input:focus {
+    border-color: #06b6d4;
+    outline: 0;
+}
+
+.crm-quick-card__stars,
+.crm-quick-card__actions {
+    align-items: center;
+    display: flex;
+    gap: .35rem;
+}
+
+.crm-quick-card__stars button {
+    background: transparent;
+    border: 0;
+    color: var(--muted, #64748b);
+    cursor: pointer;
+    padding: 0;
+}
+
+.crm-quick-card__stars button.is-active {
+    color: #facc15;
 }
 
 .crm-card:hover {
