@@ -1,6 +1,7 @@
 @page "/crm"
 @page "/{idweb}/{idbase:int}/crm"
 @using AlfaCore.Models
+@using Microsoft.AspNetCore.Components.Web
 @inject AlfaCore.Services.ICrmService CrmSvc
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject AlfaCore.Services.IPageHeaderService PageHeader
@@ -23,97 +24,22 @@
         </section>
     }
 
-    <section class="panel-card crm-toolbar">
-        <div>
-            <h2>CRM oportunidades</h2>
-            <p>Pipeline comercial para leads y oportunidades con etapas configurables.</p>
-        </div>
-        <div class="actions">
-            <button type="button" class="btn btn--primary" @onclick="NewOpportunity">
-                <i class="bi bi-plus-circle"></i> Nueva oportunidad
-            </button>
-            <button type="button" class="btn btn--ghost" @onclick="OpenStages">
-                <i class="bi bi-columns-gap"></i> Etapas
-            </button>
-            <button type="button" class="btn btn--ghost" @onclick="OpenTags">
-                <i class="bi bi-tags"></i> Etiquetas
-            </button>
-        </div>
-    </section>
+    @if (_showEditor)
+    {
+        @RenderOpportunityPage()
+    }
+    else if (_searchPanelOpen)
+    {
+        @RenderSearchPanel()
+    }
 
-    <section class="panel-card crm-filters">
-        <div class="field">
-            <label>Buscar</label>
-            <input @bind="_filters.Texto" @bind:event="oninput" placeholder="Oportunidad, cliente, contacto..." />
-        </div>
-        <div class="field">
-            <label>Etapa</label>
-            <select @bind="_filters.IdEtapa">
-                <option value="">Todas</option>
-                @foreach (var stage in _lookups.Etapas)
-                {
-                    <option value="@stage.IdEtapa">@stage.Nombre</option>
-                }
-            </select>
-        </div>
-        <div class="field">
-            <label>Asignado</label>
-            <select @bind="_filters.IdTecnico">
-                <option value="">Todos</option>
-                @foreach (var tech in _lookups.Tecnicos)
-                {
-                    <option value="@tech.IdTecnico">@tech.Nombre</option>
-                }
-            </select>
-        </div>
-        <div class="field">
-            <label>Etiqueta</label>
-            <select @bind="_filters.IdEtiqueta">
-                <option value="">Todas</option>
-                @foreach (var tag in _lookups.Etiquetas)
-                {
-                    <option value="@tag.IdEtiqueta">@tag.Nombre</option>
-                }
-            </select>
-        </div>
-        <label class="checkbox crm-check">
-            <input type="checkbox" @bind="_filters.IncluirCerradas" />
-            <span>Incluir ganadas/perdidas</span>
-        </label>
-        <div class="actions">
-            <button type="button" class="btn btn--primary" @onclick="SearchAsync" disabled="@_loading">
-                <i class="bi bi-search"></i> Buscar
-            </button>
-            <button type="button" class="btn btn--ghost" @onclick="ClearFiltersAsync" disabled="@_loading">
-                <i class="bi bi-eraser"></i> Limpiar
-            </button>
-        </div>
-    </section>
-
-    <section class="crm-modebar">
-        <div class="segmented">
-            <button type="button" class="@GetModeClass("kanban")" @onclick='() => SetModeAsync("kanban")'>
-                <i class="bi bi-kanban"></i> Tablero
-            </button>
-            <button type="button" class="@GetModeClass("lista")" @onclick='() => SetModeAsync("lista")'>
-                <i class="bi bi-table"></i> Lista
-            </button>
-        </div>
-        @if (_viewMode == "lista")
-        {
-            <button type="button" class="btn btn--ghost" @onclick="OpenViewSettings">
-                <i class="bi bi-sliders"></i> Configurar vista
-            </button>
-        }
-    </section>
-
-    @if (_loading)
+    @if (!_showEditor && _loading)
     {
         <section class="panel-card">
             <p class="muted">Cargando CRM...</p>
         </section>
     }
-    else if (_viewMode == "kanban")
+    else if (!_showEditor && _viewMode == "kanban")
     {
         <section class="crm-kanban">
             @foreach (var stage in _lookups.Etapas)
@@ -155,7 +81,7 @@
             }
         </section>
     }
-    else
+    else if (!_showEditor)
     {
         <section class="panel-card crm-list">
             <table>
@@ -195,156 +121,6 @@
         </section>
     }
 </section>
-
-@if (_showEditor)
-{
-    <div class="crm-modal-layer" @onclick="CloseEditor">
-        <section class="panel-card crm-modal" @onclick:stopPropagation>
-            <div class="panel-card__header">
-                <div>
-                    <h3 class="panel-card__title">@(_form.IdOportunidad > 0 ? $"#{_detail?.CodigoVisible} {_form.Titulo}" : "Nueva oportunidad")</h3>
-                    <p class="panel-card__subtitle">Lead u oportunidad comercial del pipeline CRM.</p>
-                </div>
-                <button type="button" class="btn btn--ghost" @onclick="CloseEditor" disabled="@_saving">
-                    <i class="bi bi-x-circle"></i> Cerrar
-                </button>
-            </div>
-            <div class="crm-editor-grid">
-                <div class="field field--wide">
-                    <label>Nombre</label>
-                    <input maxlength="180" @bind="_form.Titulo" disabled="@_saving" />
-                </div>
-                <div class="field">
-                    <label>Etapa</label>
-                    <select @bind="_form.IdEtapa" disabled="@_saving">
-                        @foreach (var stage in _lookups.Etapas)
-                        {
-                            <option value="@stage.IdEtapa">@stage.Nombre</option>
-                        }
-                    </select>
-                </div>
-                <div class="field">
-                    <label>Asignado</label>
-                    <select @bind="_form.IdTecnico" disabled="@_saving">
-                        <option value="">Sin asignar</option>
-                        @foreach (var tech in _lookups.Tecnicos)
-                        {
-                            <option value="@tech.IdTecnico">@tech.Nombre</option>
-                        }
-                    </select>
-                </div>
-                <div class="field">
-                    <label>Importe estimado</label>
-                    <input type="number" step="0.01" min="0" @bind="_form.ImporteEstimado" disabled="@_saving" />
-                </div>
-                <div class="field">
-                    <label>Probabilidad</label>
-                    <input type="number" min="0" max="100" @bind="_form.Probabilidad" disabled="@_saving" />
-                </div>
-                <div class="field">
-                    <label>Prioridad</label>
-                    <select @bind="_form.Prioridad" disabled="@_saving">
-                        <option value="0">Sin prioridad</option>
-                        <option value="1">Baja</option>
-                        <option value="2">Media</option>
-                        <option value="3">Alta</option>
-                    </select>
-                </div>
-                <div class="field">
-                    <label>Cierre estimado</label>
-                    <input type="date" @bind="_form.FechaCierreEstimada" disabled="@_saving" />
-                </div>
-                <div class="field">
-                    <label>Código cliente</label>
-                    <input maxlength="20" @bind="_form.ClienteCodigo" disabled="@_saving" />
-                </div>
-                <div class="field">
-                    <label>ID contacto</label>
-                    <input type="number" @bind="_form.IdContacto" disabled="@_saving" />
-                </div>
-                <div class="field">
-                    <label>Canal origen</label>
-                    <select @bind="_form.CanalOrigen" disabled="@_saving">
-                        <option value="">Manual</option>
-                        <option value="WHATSAPP">WhatsApp</option>
-                        <option value="INSTAGRAM">Instagram</option>
-                        <option value="FACEBOOK">Facebook</option>
-                        <option value="MERCADOLIBRE">Mercado Libre</option>
-                    </select>
-                </div>
-                <div class="field">
-                    <label>Conversación origen</label>
-                    <input type="number" @bind="_form.IdConversacion" disabled="@_saving" />
-                </div>
-                <div class="field field--wide">
-                    <label>Descripción</label>
-                    <textarea rows="4" maxlength="4000" @bind="_form.Descripcion" disabled="@_saving"></textarea>
-                </div>
-            </div>
-
-            <div class="crm-tags-select">
-                @foreach (var tag in _lookups.Etiquetas)
-                {
-                    <label class="checkbox">
-                        <input type="checkbox" checked="@_selectedTags.Contains(tag.IdEtiqueta)" @onchange="args => ToggleTag(tag.IdEtiqueta, args)" disabled="@_saving" />
-                        <span class="crm-tag" style="border-color:@tag.Color;color:@tag.Color">@tag.Nombre</span>
-                    </label>
-                }
-            </div>
-
-            <div class="actions">
-                <button type="button" class="btn btn--primary" @onclick="SaveOpportunityAsync" disabled="@_saving">
-                    <i class="bi bi-floppy"></i> @(_saving ? "Guardando..." : "Guardar")
-                </button>
-                <button type="button" class="btn btn--ghost" @onclick="CloseEditor" disabled="@_saving">Cancelar</button>
-            </div>
-
-            @if (_detail is not null)
-            {
-                <div class="crm-detail-panels">
-                    <section>
-                        <h4>Actividad</h4>
-                        <div class="crm-note">
-                            <textarea rows="2" maxlength="4000" @bind="_noteText" placeholder="Agregar nota comercial..."></textarea>
-                            <button type="button" class="btn btn--ghost btn--sm" @onclick="AddNoteAsync" disabled="@_saving || string.IsNullOrWhiteSpace(_noteText)">
-                                <i class="bi bi-plus-circle"></i> Nota
-                            </button>
-                        </div>
-                        @foreach (var activity in _detail.Actividad)
-                        {
-                            <article class="crm-activity">
-                                <strong>@activity.TipoActividad</strong>
-                                <span>@activity.Descripcion</span>
-                                <small>@activity.Usuario · @FormatDate(activity.FechaHora)</small>
-                            </article>
-                        }
-                    </section>
-                    <section>
-                        <h4>Origen</h4>
-                        @if (_detail.IdConversacion is long idConv)
-                        {
-                            <a class="btn btn--ghost btn--sm" href="@($"/conversaciones?id={idConv}")">
-                                <i class="bi bi-chat-dots"></i> Ver conversación
-                            </a>
-                        }
-                        @if (_detail.MensajesOrigenDetalle.Count == 0)
-                        {
-                            <p class="muted">Sin mensajes vinculados todavía.</p>
-                        }
-                        @foreach (var msg in _detail.MensajesOrigenDetalle)
-                        {
-                            <article class="crm-origin-message">
-                                <strong>@msg.Autor</strong>
-                                <span>@msg.Texto</span>
-                                <small>@FormatDate(msg.FechaHora)</small>
-                            </article>
-                        }
-                    </section>
-                </div>
-            }
-        </section>
-    </div>
-}
 
 @if (_showStages)
 {
@@ -451,6 +227,7 @@
     private bool _showStages;
     private bool _showTags;
     private bool _showViewSettings;
+    private bool _searchPanelOpen;
     private CrmOpportunitySaveRequest _form = new();
     private CrmOpportunityDetailDto? _detail;
     private HashSet<int> _selectedTags = [];
@@ -461,14 +238,244 @@
 
     private IEnumerable<CrmViewColumnDto> VisibleColumns => _viewSettings.Columnas.Where(x => x.Visible).OrderBy(x => x.Order);
 
+    private RenderFragment RenderCrmSmartSearch() => @<div class="smart-search crm-smart-search" @onclick:stopPropagation>
+        <div class="smart-search__bar">
+            <i class="bi bi-search"></i>
+            <input type="search"
+                   value="@_filters.Texto"
+                   placeholder="Buscar oportunidad, cliente, contacto..."
+                   disabled="@_loading"
+                   @oninput="OnHeaderSearchInputAsync"
+                   @onkeydown="HandleSearchKeyDownAsync" />
+            <button type="button" class="smart-search__toggle @(_searchPanelOpen ? "is-active" : string.Empty)" @onclick="ToggleSearchPanelAsync" aria-label="Mostrar filtros">
+                <i class="bi bi-funnel"></i>
+            </button>
+        </div>
+        <div class="smart-search__chips" aria-live="polite">
+            @foreach (var chip in GetFilterChips())
+            {
+                <button type="button" class="smart-chip" @onclick="() => RemoveFilterChipAsync(chip.Key)">
+                    <span>@chip.Label</span>
+                    <i class="bi bi-x"></i>
+                </button>
+            }
+            @if (!GetFilterChips().Any())
+            {
+                <span class="smart-search__hint">Filtrá por etapa, asignado, etiqueta o estado de cierre.</span>
+            }
+        </div>
+    </div>;
+
+    private RenderFragment RenderSearchPanel() => @<section class="panel-card crm-search-panel">
+        <div class="field">
+            <label>Etapa</label>
+            <select @bind="_filters.IdEtapa">
+                <option value="">Todas</option>
+                @foreach (var stage in _lookups.Etapas)
+                {
+                    <option value="@stage.IdEtapa">@stage.Nombre</option>
+                }
+            </select>
+        </div>
+        <div class="field">
+            <label>Asignado</label>
+            <select @bind="_filters.IdTecnico">
+                <option value="">Todos</option>
+                @foreach (var tech in _lookups.Tecnicos)
+                {
+                    <option value="@tech.IdTecnico">@tech.Nombre</option>
+                }
+            </select>
+        </div>
+        <div class="field">
+            <label>Etiqueta</label>
+            <select @bind="_filters.IdEtiqueta">
+                <option value="">Todas</option>
+                @foreach (var tag in _lookups.Etiquetas)
+                {
+                    <option value="@tag.IdEtiqueta">@tag.Nombre</option>
+                }
+            </select>
+        </div>
+        <label class="checkbox crm-check">
+            <input type="checkbox" @bind="_filters.IncluirCerradas" />
+            <span>Incluir ganadas/perdidas</span>
+        </label>
+        <div class="actions">
+            <button type="button" class="btn btn--primary" @onclick="SearchAsync" disabled="@_loading">
+                <i class="bi bi-search"></i> Buscar
+            </button>
+            <button type="button" class="btn btn--ghost" @onclick="ClearFiltersAsync" disabled="@_loading">
+                <i class="bi bi-eraser"></i> Limpiar
+            </button>
+        </div>
+    </section>;
+
+    private RenderFragment RenderOpportunityPage() => @<section class="crm-opportunity-page">
+        <div class="crm-opportunity-main">
+            <section class="panel-card crm-opportunity-form">
+                <div class="crm-opportunity-title">
+                    <span>@(_form.IdOportunidad > 0 ? $"#{_detail?.CodigoVisible}" : "Nueva")</span>
+                    <input maxlength="180" @bind="_form.Titulo" disabled="@_saving" placeholder="Nombre de la oportunidad" />
+                </div>
+
+                <div class="crm-editor-grid">
+                    <div class="field">
+                        <label>Etapa</label>
+                        <select @bind="_form.IdEtapa" disabled="@_saving">
+                            @foreach (var stage in _lookups.Etapas)
+                            {
+                                <option value="@stage.IdEtapa">@stage.Nombre</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label>Asignado</label>
+                        <select @bind="_form.IdTecnico" disabled="@_saving">
+                            <option value="">Sin asignar</option>
+                            @foreach (var tech in _lookups.Tecnicos)
+                            {
+                                <option value="@tech.IdTecnico">@tech.Nombre</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label>Importe estimado</label>
+                        <input type="number" step="0.01" min="0" @bind="_form.ImporteEstimado" disabled="@_saving" />
+                    </div>
+                    <div class="field">
+                        <label>Probabilidad</label>
+                        <input type="number" min="0" max="100" @bind="_form.Probabilidad" disabled="@_saving" />
+                    </div>
+                    <div class="field">
+                        <label>Prioridad</label>
+                        <select @bind="_form.Prioridad" disabled="@_saving">
+                            <option value="0">Sin prioridad</option>
+                            <option value="1">Baja</option>
+                            <option value="2">Media</option>
+                            <option value="3">Alta</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label>Cierre estimado</label>
+                        <input type="date" @bind="_form.FechaCierreEstimada" disabled="@_saving" />
+                    </div>
+                    <div class="field">
+                        <label>Código cliente</label>
+                        <input maxlength="20" @bind="_form.ClienteCodigo" disabled="@_saving" />
+                    </div>
+                    <div class="field">
+                        <label>ID contacto</label>
+                        <input type="number" @bind="_form.IdContacto" disabled="@_saving" />
+                    </div>
+                    <div class="field">
+                        <label>Canal origen</label>
+                        <select @bind="_form.CanalOrigen" disabled="@_saving">
+                            <option value="">Manual</option>
+                            <option value="WHATSAPP">WhatsApp</option>
+                            <option value="INSTAGRAM">Instagram</option>
+                            <option value="FACEBOOK">Facebook</option>
+                            <option value="MERCADOLIBRE">Mercado Libre</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label>Conversación origen</label>
+                        <input type="number" @bind="_form.IdConversacion" disabled="@_saving" />
+                    </div>
+                    <div class="field field--wide">
+                        <label>Descripción</label>
+                        <textarea rows="6" maxlength="4000" @bind="_form.Descripcion" disabled="@_saving"></textarea>
+                    </div>
+                </div>
+
+                <div class="crm-tags-select">
+                    @foreach (var tag in _lookups.Etiquetas)
+                    {
+                        <label class="checkbox">
+                            <input type="checkbox" checked="@_selectedTags.Contains(tag.IdEtiqueta)" @onchange="args => ToggleTag(tag.IdEtiqueta, args)" disabled="@_saving" />
+                            <span class="crm-tag" style="border-color:@tag.Color;color:@tag.Color">@tag.Nombre</span>
+                        </label>
+                    }
+                </div>
+            </section>
+
+            <section class="panel-card crm-activity-panel">
+                <div class="panel-card__header">
+                    <div>
+                        <h3 class="panel-card__title">Actividad</h3>
+                        <p class="panel-card__subtitle">Notas comerciales, cambios de etapa y próximos pasos.</p>
+                    </div>
+                </div>
+                @if (_detail is null)
+                {
+                    <p class="muted">Guardá la oportunidad para empezar a registrar actividad.</p>
+                }
+                else
+                {
+                    <div class="crm-note">
+                        <textarea rows="3" maxlength="4000" @bind="_noteText" placeholder="Agregar nota comercial..."></textarea>
+                        <button type="button" class="btn btn--ghost btn--sm" @onclick="AddNoteAsync" disabled="@_saving || string.IsNullOrWhiteSpace(_noteText)">
+                            <i class="bi bi-plus-circle"></i> Nota
+                        </button>
+                    </div>
+                    <div class="crm-timeline">
+                        @foreach (var activity in _detail.Actividad)
+                        {
+                            <article class="crm-activity">
+                                <span class="crm-activity__dot"></span>
+                                <div>
+                                    <strong>@activity.TipoActividad</strong>
+                                    <p>@activity.Descripcion</p>
+                                    <small>@activity.Usuario · @FormatDate(activity.FechaHora)</small>
+                                </div>
+                            </article>
+                        }
+                    </div>
+                }
+            </section>
+        </div>
+
+        <aside class="crm-opportunity-side">
+            <section class="panel-card crm-side-panel">
+                <h3>Resumen</h3>
+                <dl class="crm-summary">
+                    <div><dt>Valor</dt><dd>@FormatMoney(_form.ImporteEstimado)</dd></div>
+                    <div><dt>Probabilidad</dt><dd>@_form.Probabilidad%</dd></div>
+                    <div><dt>Prioridad</dt><dd>@GetPriorityLabel(_form.Prioridad)</dd></div>
+                    <div><dt>Cierre</dt><dd>@(_form.FechaCierreEstimada?.ToString("dd/MM/yyyy") ?? "-")</dd></div>
+                </dl>
+            </section>
+
+            <section class="panel-card crm-side-panel">
+                <h3>Origen</h3>
+                @if (_detail?.IdConversacion is long idConv)
+                {
+                    <a class="btn btn--ghost btn--sm" href="@($"/conversaciones?id={idConv}")">
+                        <i class="bi bi-chat-dots"></i> Ver conversación
+                    </a>
+                }
+                @if (_detail is null || _detail.MensajesOrigenDetalle.Count == 0)
+                {
+                    <p class="muted">Sin mensajes vinculados todavía.</p>
+                }
+                else
+                {
+                    @foreach (var msg in _detail.MensajesOrigenDetalle)
+                    {
+                        <article class="crm-origin-message">
+                            <strong>@msg.Autor</strong>
+                            <span>@msg.Texto</span>
+                            <small>@FormatDate(msg.FechaHora)</small>
+                        </article>
+                    }
+                }
+            </section>
+        </aside>
+    </section>;
+
     protected override async Task OnInitializedAsync()
     {
-        PageHeader.Set(new PageHeaderConfig
-        {
-            Title = "CRM oportunidades",
-            Breadcrumb = ["CRM", "Oportunidades"],
-            State = PageHeaderState.Kanban
-        });
+        UpdatePageHeader();
         await LoadAsync();
     }
 
@@ -480,8 +487,197 @@
             _lookups = await CrmSvc.GetLookupsAsync();
             _viewSettings = await CrmSvc.GetViewSettingsAsync(AppUserSession.CurrentUser?.UserName ?? Environment.UserName);
             await ReloadCurrentViewAsync(resetPage: true);
+            UpdatePageHeader();
         });
         _loading = false;
+    }
+
+    private void UpdatePageHeader()
+    {
+        var actions = new List<PageHeaderAction>();
+
+        if (_showEditor)
+        {
+            actions.Add(new PageHeaderAction
+            {
+                Key = "guardar",
+                Label = _saving ? "Guardando..." : "Guardar",
+                Icon = "bi-floppy",
+                Style = PageHeaderActionStyle.Primary,
+                Priority = PageHeaderActionPriority.Essential,
+                Disabled = _saving,
+                Busy = _saving,
+                OnClick = SaveOpportunityAsync
+            });
+            actions.Add(new PageHeaderAction
+            {
+                Key = "cancelar",
+                Label = "Volver",
+                Icon = "bi-arrow-left",
+                Style = PageHeaderActionStyle.Ghost,
+                Priority = PageHeaderActionPriority.Essential,
+                Disabled = _saving,
+                OnClick = () => { CloseEditor(); return Task.CompletedTask; }
+            });
+        }
+        else
+        {
+            actions.Add(new PageHeaderAction
+            {
+                Key = "nueva",
+                Label = "Nueva oportunidad",
+                Icon = "bi-plus-circle",
+                Style = PageHeaderActionStyle.Primary,
+                Priority = PageHeaderActionPriority.Essential,
+                OnClick = () => { NewOpportunity(); return Task.CompletedTask; }
+            });
+            actions.Add(new PageHeaderAction
+            {
+                Key = "buscar",
+                Label = "Buscar",
+                Icon = "bi-search",
+                Style = PageHeaderActionStyle.Ghost,
+                Priority = PageHeaderActionPriority.Normal,
+                Disabled = _loading,
+                OnClick = SearchAsync
+            });
+            actions.Add(new PageHeaderAction
+            {
+                Key = "limpiar",
+                Label = "Limpiar filtros",
+                Icon = "bi-eraser",
+                Style = PageHeaderActionStyle.Ghost,
+                Priority = PageHeaderActionPriority.Overflow,
+                Disabled = _loading,
+                OnClick = ClearFiltersAsync
+            });
+            if (_viewMode == "lista")
+            {
+                actions.Add(new PageHeaderAction
+                {
+                    Key = "vista",
+                    Label = "Configurar vista",
+                    Icon = "bi-sliders",
+                    Style = PageHeaderActionStyle.Ghost,
+                    Priority = PageHeaderActionPriority.Overflow,
+                    OnClick = () => { OpenViewSettings(); return Task.CompletedTask; }
+                });
+            }
+            actions.Add(new PageHeaderAction
+            {
+                Key = "etapas",
+                Label = "Etapas",
+                Icon = "bi-columns-gap",
+                Style = PageHeaderActionStyle.Ghost,
+                Priority = PageHeaderActionPriority.Overflow,
+                OnClick = () => { OpenStages(); return Task.CompletedTask; }
+            });
+            actions.Add(new PageHeaderAction
+            {
+                Key = "etiquetas",
+                Label = "Etiquetas",
+                Icon = "bi-tags",
+                Style = PageHeaderActionStyle.Ghost,
+                Priority = PageHeaderActionPriority.Overflow,
+                OnClick = () => { OpenTags(); return Task.CompletedTask; }
+            });
+        }
+
+        PageHeader.Set(new PageHeaderConfig
+        {
+            Title = _showEditor ? (_form.IdOportunidad > 0 ? $"#{_detail?.CodigoVisible} {_form.Titulo}" : "Nueva oportunidad") : "CRM oportunidades",
+            Breadcrumb = _showEditor ? ["CRM", "Oportunidades", "Detalle"] : ["CRM", "Oportunidades"],
+            State = _loading
+                ? PageHeaderState.Loading
+                : _showEditor
+                    ? (_form.IdOportunidad > 0 ? PageHeaderState.Editing : PageHeaderState.Creating)
+                    : _viewMode == "kanban" ? PageHeaderState.Kanban : PageHeaderState.List,
+            SearchContent = _showEditor ? null : RenderCrmSmartSearch(),
+            Actions = actions,
+            ViewButtons = _showEditor
+                ? []
+                :
+                [
+                    new PageHeaderViewButton
+                    {
+                        Key = "kanban",
+                        Label = "Tablero",
+                        Icon = "bi-kanban",
+                        Active = _viewMode == "kanban",
+                        Disabled = _loading,
+                        OnClick = () => SetModeAsync("kanban")
+                    },
+                    new PageHeaderViewButton
+                    {
+                        Key = "lista",
+                        Label = "Lista",
+                        Icon = "bi-table",
+                        Active = _viewMode == "lista",
+                        Disabled = _loading,
+                        OnClick = () => SetModeAsync("lista")
+                    }
+                ]
+        });
+    }
+
+    private async Task OnHeaderSearchInputAsync(ChangeEventArgs args)
+    {
+        _filters.Texto = args.Value?.ToString() ?? string.Empty;
+        UpdatePageHeader();
+        await Task.CompletedTask;
+    }
+
+    private async Task HandleSearchKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter")
+            await SearchAsync();
+    }
+
+    private Task ToggleSearchPanelAsync()
+    {
+        _searchPanelOpen = !_searchPanelOpen;
+        UpdatePageHeader();
+        return Task.CompletedTask;
+    }
+
+    private IReadOnlyList<FilterChip> GetFilterChips()
+    {
+        var chips = new List<FilterChip>();
+        if (!string.IsNullOrWhiteSpace(_filters.Texto))
+            chips.Add(new("texto", $"Buscar: {_filters.Texto}"));
+        if (_filters.IdEtapa is int idEtapa)
+            chips.Add(new("etapa", $"Etapa: {_lookups.Etapas.FirstOrDefault(x => x.IdEtapa == idEtapa)?.Nombre ?? idEtapa.ToString()}"));
+        if (!string.IsNullOrWhiteSpace(_filters.IdTecnico))
+            chips.Add(new("asignado", $"Asignado: {_lookups.Tecnicos.FirstOrDefault(x => x.IdTecnico == _filters.IdTecnico)?.Nombre ?? _filters.IdTecnico}"));
+        if (_filters.IdEtiqueta is int idEtiqueta)
+            chips.Add(new("etiqueta", $"Etiqueta: {_lookups.Etiquetas.FirstOrDefault(x => x.IdEtiqueta == idEtiqueta)?.Nombre ?? idEtiqueta.ToString()}"));
+        if (_filters.IncluirCerradas)
+            chips.Add(new("cerradas", "Incluye ganadas/perdidas"));
+        return chips;
+    }
+
+    private async Task RemoveFilterChipAsync(string key)
+    {
+        switch (key)
+        {
+            case "texto":
+                _filters.Texto = string.Empty;
+                break;
+            case "etapa":
+                _filters.IdEtapa = null;
+                break;
+            case "asignado":
+                _filters.IdTecnico = null;
+                break;
+            case "etiqueta":
+                _filters.IdEtiqueta = null;
+                break;
+            case "cerradas":
+                _filters.IncluirCerradas = false;
+                break;
+        }
+        UpdatePageHeader();
+        await SearchAsync();
     }
 
     private async Task ReloadCurrentViewAsync(bool resetPage)
@@ -494,18 +690,24 @@
             _page = await CrmSvc.SearchAsync(_filters);
     }
 
-    private async Task SearchAsync() => await RunAsync(() => ReloadCurrentViewAsync(resetPage: true));
+    private async Task SearchAsync()
+    {
+        await RunAsync(() => ReloadCurrentViewAsync(resetPage: true));
+        UpdatePageHeader();
+    }
 
     private async Task ClearFiltersAsync()
     {
         _filters = new CrmFilters();
         await ReloadCurrentViewAsync(resetPage: true);
+        UpdatePageHeader();
     }
 
     private async Task SetModeAsync(string mode)
     {
         _viewMode = mode;
         await ReloadCurrentViewAsync(resetPage: true);
+        UpdatePageHeader();
     }
 
     private async Task PrevPageAsync()
@@ -514,6 +716,7 @@
             return;
         _filters.PageNumber--;
         await ReloadCurrentViewAsync(resetPage: false);
+        UpdatePageHeader();
     }
 
     private async Task NextPageAsync()
@@ -522,6 +725,7 @@
             return;
         _filters.PageNumber++;
         await ReloadCurrentViewAsync(resetPage: false);
+        UpdatePageHeader();
     }
 
     private void NewOpportunity()
@@ -536,6 +740,8 @@
             Prioridad = 1
         };
         _showEditor = true;
+        _searchPanelOpen = false;
+        UpdatePageHeader();
     }
 
     private async Task OpenDetailAsync(long id)
@@ -564,6 +770,8 @@
             _selectedTags = _detail.Etiquetas.Select(x => x.IdEtiqueta).ToHashSet();
             _noteText = string.Empty;
             _showEditor = true;
+            _searchPanelOpen = false;
+            UpdatePageHeader();
         });
     }
 
@@ -577,8 +785,11 @@
             var id = await CrmSvc.SaveOpportunityAsync(_form);
             _detail = await CrmSvc.GetByIdAsync(id);
             await ReloadCurrentViewAsync(resetPage: false);
-            _showEditor = false;
+            _form.IdOportunidad = id;
+            if (_detail is not null)
+                _selectedTags = _detail.Etiquetas.Select(x => x.IdEtiqueta).ToHashSet();
             ShowOk("Oportunidad guardada", "La oportunidad quedó actualizada en el pipeline.");
+            UpdatePageHeader();
         });
         _saving = false;
     }
@@ -597,6 +808,7 @@
             });
             _noteText = string.Empty;
             _detail = await CrmSvc.GetByIdAsync(_detail.IdOportunidad);
+            UpdatePageHeader();
         });
     }
 
@@ -608,7 +820,11 @@
             _selectedTags.Remove(id);
     }
 
-    private void CloseEditor() => _showEditor = false;
+    private void CloseEditor()
+    {
+        _showEditor = false;
+        UpdatePageHeader();
+    }
     private void OpenStages() { NewStage(); _showStages = true; }
     private void CloseStages() => _showStages = false;
     private void OpenTags() { NewTag(); _showTags = true; }
@@ -715,6 +931,13 @@
     private static string Display(string primary, string fallback, string empty) => !string.IsNullOrWhiteSpace(primary) ? primary : (!string.IsNullOrWhiteSpace(fallback) ? fallback : empty);
     private static string FormatMoney(decimal value) => value.ToString("C0", System.Globalization.CultureInfo.GetCultureInfo("es-AR"));
     private static string FormatDate(DateTime value) => value == DateTime.MinValue ? "-" : value.ToString("dd/MM/yyyy HH:mm");
+    private static string GetPriorityLabel(int value) => value switch
+    {
+        1 => "Baja",
+        2 => "Media",
+        3 => "Alta",
+        _ => "Sin prioridad"
+    };
 
     private MarkupString RenderCell(CrmOpportunityDto item, string key)
     {
@@ -737,4 +960,5 @@
     public void Dispose() => PageHeader.Clear();
 
     private sealed record Feedback(string Title, string Message, string? Code, bool Success = false);
+    private sealed record FilterChip(string Key, string Label);
 }
