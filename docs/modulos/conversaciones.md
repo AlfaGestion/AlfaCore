@@ -16,6 +16,7 @@ Funcionalidades disponibles hoy:
 - adjuntos: imágenes, documentos y mensajes de voz grabados en el navegador
 - hilos internos entre técnicos (sin número de teléfono requerido)
 - configuración del canal WhatsApp desde pantalla interna
+- copiloto de IA ("Sugerencia IA"): sugiere una respuesta al técnico usando la base de conocimiento de AlfaKnowledge, sin enviarla automáticamente
 
 Integra estructuras existentes del sistema:
 
@@ -170,6 +171,18 @@ Caso ya contemplado:
 - si la sesión SQL activa no puede conectarse, la UI informa que no se pudo conectar a la base activa y sugiere revisar sesión, red, instancia y credenciales
 
 Este patrón debe extenderse al resto de módulos para mantener una experiencia consistente.
+
+## Copiloto de IA (Sugerencia IA)
+
+Botón "Sugerencia IA" en la barra de acciones del chat (junto a "Contexto" y "Crear ticket"). Abre un panel lateral que le sugiere al técnico una respuesta redactada por IA para el último mensaje entrante del cliente, con las fuentes de la base de conocimiento que la respaldan. El técnico decide: usarla tal cual, editarla o escribir la suya — es asistencia durante un período de entrenamiento, **no** envío automático.
+
+Detalle técnico completo (configuración, endpoint consumido, autenticación) en `docs/modulos/integraciones/alfaknowledge_copiloto_ia.md`.
+
+### Comportamiento del panel
+
+- **Persistente**: a diferencia del panel de Contexto (que colapsa a overlay flotante en pantallas angostas), el panel de Sugerencia IA siempre se acopla como columna propia del layout — nunca tapa la conversación — y queda abierto hasta que el técnico lo cierra explícitamente (botón de cerrar, "Usar esta respuesta" o "Descartar").
+- **Atento a la conversación activa**: mientras está abierto, se regenera solo al cambiar de conversación seleccionada y cada vez que llega un mensaje nuevo del cliente durante el polling automático (`AutoRefreshAsync`), sin que el técnico tenga que tocar "Regenerar" a mano.
+- Acciones disponibles: **Usar esta respuesta** (vuelca el texto al compositor y registra `isHelpful=true`), **Regenerar** (vuelve a pedir la sugerencia) y **Descartar** (registra `isHelpful=false` y cierra el panel).
 
 ## Issues pendientes
 
