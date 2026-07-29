@@ -356,9 +356,8 @@
                     <i class="bi bi-life-preserver"></i>
                     <span>Crear ticket</span>
                 </button>
-                <button type="button" class="btn btn--ghost btn--sm conversations-ai-suggestion-button" @onclick="ToggleAiSuggestionPanel" disabled="@(_selectedConversation is null)" title="Sugerencia IA">
+                <button type="button" class="btn btn--ghost btn--sm conversations-ai-suggestion-button @(_showAiSuggestionPanel ? "is-active" : string.Empty)" @onclick="ToggleAiSuggestionPanel" disabled="@(_selectedConversation is null)" title="Sugerencia IA">
                     <i class="bi bi-stars"></i>
-                    <span>Sugerencia IA</span>
                 </button>
             </div>
 
