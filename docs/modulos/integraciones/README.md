@@ -16,6 +16,7 @@ El objetivo es que cada documento sirva para:
 - [Facebook Messenger Platform](./facebook_messenger_meta.md)
 - [Mercado Libre](./mercado_libre.md)
 - [OpenAI para InformesIA](./openai_informes_ia.md)
+- [AlfaKnowledge para el copiloto de IA de Conversaciones](./alfaknowledge_copiloto_ia.md)
 - [Google reCAPTCHA](./google_recaptcha.md)
 - [SMTP y correo transaccional](./smtp_correo_transaccional.md)
 - [Web Push y PWA](./web_push_pwa.md)

@@ -6348,12 +6348,6 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
 }
 
 .conversations-module-actions .conversations-ai-suggestion-button {
-    width: auto;
-    min-width: 128px;
-    padding: 0 .65rem;
-    gap: .42rem;
-    white-space: nowrap;
-    font-weight: 800;
     border-color: rgba(168, 85, 247, .36);
     background: rgba(168, 85, 247, .12);
     color: var(--color-text);
@@ -6362,6 +6356,12 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
 .conversations-module-actions .conversations-ai-suggestion-button:hover {
     background: rgba(168, 85, 247, .18);
     border-color: rgba(168, 85, 247, .52);
+}
+
+.conversations-module-actions .conversations-ai-suggestion-button.is-active {
+    background: rgba(168, 85, 247, .32);
+    border-color: rgba(168, 85, 247, .7);
+    color: #fff;
 }
 
 .conversations-ai-suggestion-actions {
@@ -24391,8 +24391,8 @@ html[data-theme="light"] .tickets-table-wrap {
     min-height: 34px !important;
     padding: .45rem .7rem .4rem !important;
     border: 0 !important;
-    display: grid !important;
-    grid-template-columns: auto minmax(0, 1fr) auto auto !important;
+    display: flex !important;
+    flex-wrap: wrap !important;
     align-items: center !important;
     gap: .35rem !important;
 }
@@ -24402,32 +24402,27 @@ html[data-theme="light"] .tickets-table-wrap {
 }
 
 .conversations-page--odoo > .conversations-filters.desktop-only > .conversations-canal {
-    justify-self: start !important;
     display: flex !important;
     align-items: center !important;
     gap: .35rem !important;
-    min-width: 0 !important;
-    flex-wrap: nowrap !important;
+    flex-wrap: wrap !important;
 }
 
 .conversations-page--odoo > .conversations-filters.desktop-only > .conversations-module-actions {
-    justify-self: end !important;
-    grid-column: 3 !important;
     display: flex !important;
     align-items: center !important;
     gap: .4rem !important;
-    min-width: 0 !important;
-    flex-wrap: nowrap !important;
+    margin-left: auto !important;
+    flex-wrap: wrap !important;
+    justify-content: flex-end !important;
 }
 
 .conversations-page--odoo > .conversations-filters.desktop-only .conversations-filters__modes {
-    grid-column: 4 !important;
-    justify-self: end !important;
     display: flex !important;
     align-items: center !important;
     gap: .35rem !important;
-    min-width: 0 !important;
-    flex-wrap: nowrap !important;
+    flex-wrap: wrap !important;
+    justify-content: flex-end !important;
 }
 
 .conversations-page--odoo > .conversations-filters.desktop-only .conversations-filter-pill,
