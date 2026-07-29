@@ -4,16 +4,24 @@ namespace AlfaCore.Services;
 
 public interface IAlfaKnowledgeSuggestionService
 {
+    bool IsConfigured { get; }
+
+    string FullChatUrl { get; }
+
+    string GetCitationUrl(AlfaKnowledgeSuggestionCitation citation);
+
     /// <summary>
-    /// Pide a AlfaKnowledge una sugerencia de respuesta para el último mensaje del cliente en
-    /// una conversación. Devuelve <c>null</c> (nunca lanza) si AlfaKnowledge no está configurado
-    /// o la llamada falla — el llamador debe tratar eso como "sugerencia no disponible ahora",
-    /// nunca como un error que interrumpa la atención al cliente.
+    /// Pide a AlfaKnowledge una sugerencia de respuesta o una asistencia guiada por la instrucción
+    /// del técnico. Devuelve <c>null</c> (nunca lanza) si AlfaKnowledge no está configurado o la
+    /// llamada falla; el llamador debe tratarlo como asistencia no disponible, nunca como un error
+    /// que interrumpa la atención al cliente.
     /// </summary>
     Task<AlfaKnowledgeSuggestionResult?> SuggestReplyAsync(
         string customerMessage,
         IReadOnlyList<ConversacionMensajeDto> recentMessages,
         long conversationId,
+        string? instruction = null,
+        IReadOnlyList<AlfaKnowledgeAssistantMessage>? assistantHistory = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

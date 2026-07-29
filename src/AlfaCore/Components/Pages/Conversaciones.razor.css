@@ -1552,6 +1552,68 @@
     }
 }
 
+/*
+ * AlfaKnowledge no usa el drawer flotante genérico de Contexto. En escritorio es la segunda
+ * columna del módulo y debe ocupar todo el ancho que la grilla le asigna.
+ */
+@media (min-width: 901px) {
+    .conversations-page--odoo > .conversations-ai-suggestion-drawer {
+        position: relative !important;
+        inset: auto !important;
+        grid-column: 2 !important;
+        grid-row: 1 !important;
+        justify-self: stretch !important;
+        align-self: stretch !important;
+        width: 100% !important;
+        min-width: 0 !important;
+        max-width: none !important;
+        height: 100% !important;
+        max-height: 100% !important;
+        padding: 0 !important;
+        transform: none !important;
+        display: none !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+        visibility: hidden !important;
+    }
+
+    .conversations-page--odoo > .conversations-ai-suggestion-drawer.is-open {
+        display: flex !important;
+        opacity: 1 !important;
+        pointer-events: auto !important;
+        visibility: visible !important;
+    }
+
+    .conversations-page--odoo > .conversations-ai-suggestion-drawer.is-open *,
+    .conversations-page--odoo > .conversations-ai-suggestion-drawer.is-open input,
+    .conversations-page--odoo > .conversations-ai-suggestion-drawer.is-open select,
+    .conversations-page--odoo > .conversations-ai-suggestion-drawer.is-open textarea,
+    .conversations-page--odoo > .conversations-ai-suggestion-drawer.is-open button,
+    .conversations-page--odoo > .conversations-ai-suggestion-drawer.is-open a {
+        pointer-events: auto !important;
+    }
+
+    .conversations-page--odoo > .conversations-ai-suggestion-drawer textarea,
+    .conversations-page--odoo > .conversations-ai-suggestion-drawer input {
+        user-select: text !important;
+        cursor: text !important;
+    }
+}
+
+@media (max-width: 900px) {
+    .conversations-page--odoo > .conversations-ai-suggestion-drawer {
+        display: none !important;
+        pointer-events: none !important;
+        visibility: hidden !important;
+    }
+
+    .conversations-page--odoo > .conversations-ai-suggestion-drawer.is-open {
+        display: flex !important;
+        pointer-events: auto !important;
+        visibility: visible !important;
+    }
+}
+
 @media (min-width: 901px) {
     .conversations-page--odoo .conversations-layout:has(.conversations-context-drawer.is-open) {
         grid-template-columns: minmax(390px, 430px) minmax(0, 1fr) !important;

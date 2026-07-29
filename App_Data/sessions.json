@@ -1,0 +1,15 @@
+{
+  "Sessions": [
+    {
+      "Id": "616b3118-7fa1-43fa-9b3e-eda700209b7a",
+      "BaseId": 0,
+      "Nombre": "ALFANET 2007",
+      "Servidor": "10.8.0.31",
+      "BaseDatos": "ALFANET2007",
+      "Usuario": "ALFANET2007",
+      "Password": "ALFANET2007",
+      "TrustServerCertificate": true,
+      "Activa": true
+    }
+  ]
+}

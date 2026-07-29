@@ -75,6 +75,23 @@ public class Program
             return null;
         }
 
+        static string ResolveConfigurationValue(
+            IConfiguration configuration,
+            string configurationKey,
+            string environmentKey,
+            string fallback)
+        {
+            var candidates = new[]
+            {
+                configuration[configurationKey],
+                configuration[environmentKey],
+                Environment.GetEnvironmentVariable(environmentKey)
+            };
+
+            return candidates.FirstOrDefault(static value => !string.IsNullOrWhiteSpace(value))
+                ?? fallback;
+        }
+
         if (!string.IsNullOrWhiteSpace(startupConnectionString))
         {
             builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
@@ -196,7 +213,31 @@ public class Program
         builder.Services.Configure<DatosSqlOptions>(builder.Configuration.GetSection(DatosSqlOptions.SectionName));
         builder.Services.Configure<WhatsAppOptions>(builder.Configuration.GetSection(WhatsAppOptions.SectionName));
         builder.Services.Configure<PushNotificationsOptions>(builder.Configuration.GetSection(PushNotificationsOptions.SectionName));
-        builder.Services.Configure<AlfaKnowledgeOptions>(builder.Configuration.GetSection(AlfaKnowledgeOptions.SectionName));
+        builder.Services.Configure<AlfaKnowledgeOptions>(settings =>
+        {
+            builder.Configuration.GetSection(AlfaKnowledgeOptions.SectionName).Bind(settings);
+
+            settings.BaseUrl = ResolveConfigurationValue(
+                builder.Configuration,
+                "AlfaKnowledge:BaseUrl",
+                "AlfaKnowledge__BaseUrl",
+                settings.BaseUrl);
+            settings.ApiKey = ResolveConfigurationValue(
+                builder.Configuration,
+                "AlfaKnowledge:ApiKey",
+                "AlfaKnowledge__ApiKey",
+                settings.ApiKey);
+
+            var timeoutValue = ResolveConfigurationValue(
+                builder.Configuration,
+                "AlfaKnowledge:TimeoutSeconds",
+                "AlfaKnowledge__TimeoutSeconds",
+                settings.TimeoutSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            if (int.TryParse(timeoutValue, out var timeoutSeconds) && timeoutSeconds > 0)
+            {
+                settings.TimeoutSeconds = timeoutSeconds;
+            }
+        });
         builder.Services.AddScoped<IAlfaKnowledgeSuggestionService, AlfaKnowledgeSuggestionService>();
         builder.Services.AddHostedService<ServerStartupHostedService>();
         builder.Services.AddHostedService<DatabaseUpdatesHostedService>();

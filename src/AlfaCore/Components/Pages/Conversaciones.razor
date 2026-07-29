@@ -151,7 +151,7 @@
     }
 </style>
 
-<section class="page-grid conversations-page conversations-page--odoo @GetChannelCssClass() @(IsMobileChatView ? "conversations-page--chat-active" : string.Empty)" @onclick="DismissConversationNoticesAsync">
+<section class="page-grid conversations-page conversations-page--odoo @GetChannelCssClass() @(IsMobileChatView ? "conversations-page--chat-active" : string.Empty) @(_showAiSuggestionPanel ? "conversations-page--ai-open" : string.Empty)" @onclick="DismissConversationNoticesAsync">
     @if (_loadError is not null)
     {
         <div class="panel-card empty-state">
@@ -166,6 +166,7 @@
     }
     else
     {
+        <div class="conversations-core-workspace">
         <section class="panel-card conversations-filters conversations-mobile-filters mobile-only" @onclick:stopPropagation>
             <div class="conversations-mobile-header">
                 <div>
@@ -845,6 +846,7 @@
                 }
             </aside>
 
+            <div class="conversations-chat-workspace">
             <section class="panel-card conversations-chat">
                 @if (_loadingConversation || _loadingAuditMessages)
                 {
@@ -1286,7 +1288,7 @@
                                                 }
                                             </div>
                                         }
-                                        <article class="message-card @GetMessageClass(message) @(_selectedTicketMessageIds.Contains(message.IdMensaje) ? "message-card--ticket-selected" : string.Empty)">
+                                        <article class="message-card @GetMessageClass(message) @(_selectedTicketMessageIds.Contains(message.IdMensaje) ? "message-card--ticket-selected" : string.Empty) @(_aiFocusedMessageId == message.IdMensaje ? "message-card--ai-selected" : string.Empty)">
                                     <div class="message-card__meta">
                                         <span>@GetMessageAuthor(message)</span>
                                         <span>@FormatShortDate(message.FechaHora)</span>
@@ -1520,9 +1522,18 @@
                                             </div>
                                         }
                                     </div>
-                                    @if (CanReactToMessage(message) || CanQuoteMessage(message))
+                                    @if (CanReactToMessage(message) || CanQuoteMessage(message) || CanUseMessageAsAiFocus(message))
                                     {
                                         <div class="message-actions">
+                                            @if (CanUseMessageAsAiFocus(message))
+                                            {
+                                                <button type="button"
+                                                        class="btn btn--ghost btn--sm message-action-button @(_aiFocusedMessageId == message.IdMensaje ? "is-active" : string.Empty)"
+                                                        title="Consultar este mensaje con la IA"
+                                                        @onclick="() => SelectAiFocusMessageAsync(message)">
+                                                    <i class="bi bi-stars"></i>
+                                                </button>
+                                            }
                                             @if (CanReactToMessage(message))
                                             {
                                                 <button type="button"
@@ -1903,75 +1914,154 @@
                     }
                 }
             </aside>
+            </div>
+        </div>
+        </div>
 
-            <aside class="panel-card conversations-context conversations-context-drawer conversations-ai-suggestion-drawer @(_showAiSuggestionPanel ? "is-open" : string.Empty)">
-                <button type="button" class="conversations-drawer-close" title="Cerrar sugerencia IA" @onclick="ToggleAiSuggestionPanel">
-                    <i class="bi bi-x-lg"></i>
-                </button>
-                <div class="conversations-context__section">
-                    <h3 class="panel-card__title"><i class="bi bi-stars"></i> Sugerencia IA</h3>
-                    <p class="panel-card__subtitle">Asiste, no reemplaza — revisá antes de usarla</p>
+        <aside class="panel-card conversations-context conversations-context-drawer conversations-ai-suggestion-drawer @(_showAiSuggestionPanel ? "is-open" : string.Empty)">
+                <div class="conversations-context__section conversations-ai-header">
+                    <div class="conversations-ai-header__identity">
+                        <span class="conversations-ai-header__avatar"><i class="bi bi-stars"></i></span>
+                        <div>
+                            <h3 class="panel-card__title">AlfaKnowledge</h3>
+                            <p class="panel-card__subtitle"><span></span> Asistente para esta conversación</p>
+                        </div>
+                    </div>
+                    @if (AlfaKnowledgeSvc.IsConfigured)
+                    {
+                        <a class="btn btn--ghost btn--sm conversations-ai-full-link"
+                           href="@AlfaKnowledgeSvc.FullChatUrl"
+                           target="_blank"
+                           rel="noopener noreferrer">
+                            <i class="bi bi-box-arrow-up-right"></i> Abrir AlfaKnowledge completo
+                        </a>
+                    }
+                    <button type="button" class="conversations-drawer-close" title="Cerrar sugerencia IA" aria-label="Cerrar asistente" @onclick="ToggleAiSuggestionPanel">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
                 </div>
 
+                <div class="conversations-ai-body">
                 @if (_selectedConversation is null)
                 {
-                    <div class="conversations-empty">Seleccioná una conversación para pedir una sugerencia.</div>
-                }
-                else if (_loadingAiSuggestion)
-                {
-                    <div class="conversations-empty">Analizando el último mensaje del cliente...</div>
-                }
-                else if (_aiSuggestion is null)
-                {
-                    <div class="conversations-empty">
-                        No se pudo generar una sugerencia (AlfaKnowledge no respondió o no está configurado).
-                    </div>
-                    <button type="button" class="btn btn--ghost btn--sm" @onclick="RequestAiSuggestionAsync">
-                        <i class="bi bi-arrow-repeat"></i> Reintentar
-                    </button>
+                    <div class="conversations-empty">Seleccioná una conversación para usar el asistente.</div>
                 }
                 else
                 {
-                    @if (_aiSuggestion.NeedsClarification)
+                    <div class="conversations-ai-context">
+                        <label for="ai-context-scope">Contexto que leerá la IA</label>
+                        <select id="ai-context-scope" value="@_aiContextScope" @onchange="OnAiContextScopeChangedAsync" disabled="@_loadingAiSuggestion">
+                            <option value="@AiContextScopes.CurrentCycle">Tramo actual</option>
+                            <option value="@AiContextScopes.EntireConversation">Toda la conversación</option>
+                            <option value="@AiContextScopes.FocusedMessage" disabled="@(!_aiFocusedMessageId.HasValue)">Mensaje marcado</option>
+                        </select>
+                        <small>@GetAiContextDescription()</small>
+                    </div>
+
+                    @if (_aiFocusedMessageId.HasValue && GetAiFocusedMessage() is { } focusedMessage)
                     {
-                        <div class="context-card" style="border-color:rgba(250,204,21,.6);background:#1a1506;">
-                            <span class="context-card__label">La IA pide una aclaración</span>
-                            <strong>@_aiSuggestion.ClarificationQuestion</strong>
-                        </div>
-                    }
-                    else
-                    {
-                        <div class="context-card">
-                            <span class="context-card__label">Respuesta sugerida</span>
-                            <strong style="white-space:pre-wrap;">@_aiSuggestion.SuggestedReply</strong>
+                        <div class="conversations-ai-focus">
+                            <span>Mensaje marcado</span>
+                            <strong>@GetAiMessagePreview(focusedMessage)</strong>
+                            <button type="button" class="btn btn--ghost btn--sm" title="Quitar selección" @onclick="ClearAiFocusMessage">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
                         </div>
                     }
 
-                    @if (_aiSuggestion.Citations.Count > 0)
+                    @if (_aiChatHistory.Count > 0)
                     {
-                        <div class="conversations-context__section">
-                            <h4 class="panel-card__title">Fuentes</h4>
-                            @foreach (var citation in _aiSuggestion.Citations)
+                        <div class="conversations-ai-chat" aria-live="polite">
+                            @foreach (var turn in _aiChatHistory)
                             {
-                                <div class="context-card__muted">@citation.SourceLabel — @citation.Title</div>
+                                <div class="conversations-ai-chat__message conversations-ai-chat__message--@turn.Role">
+                                    <span>@(turn.Role == "assistant" ? "IA" : "Vos")</span>
+                                    <p>@turn.Content</p>
+                                </div>
                             }
                         </div>
                     }
 
-                    <div class="conversations-ai-suggestion-actions" style="margin-top:.75rem;">
-                        <button type="button" class="btn btn--primary btn--sm" @onclick="UseAiSuggestionAsync" disabled="@_aiSuggestion.NeedsClarification">
-                            <i class="bi bi-check2"></i> Usar esta respuesta
-                        </button>
-                        <button type="button" class="btn btn--ghost btn--sm" @onclick="RequestAiSuggestionAsync">
-                            <i class="bi bi-arrow-repeat"></i> Regenerar
-                        </button>
-                        <button type="button" class="btn btn--ghost btn--sm" @onclick="DiscardAiSuggestionAsync">
-                            <i class="bi bi-x-lg"></i> Descartar
+                    @if (_loadingAiSuggestion)
+                    {
+                        <div class="conversations-empty"><i class="bi bi-stars"></i> Analizando el contexto seleccionado...</div>
+                    }
+                    else if (_aiSuggestion is null)
+                    {
+                        @if (!string.IsNullOrWhiteSpace(_aiSuggestionError))
+                        {
+                            <div class="conversations-empty">@_aiSuggestionError</div>
+                        }
+                    }
+                    else
+                    {
+                        @if (_aiChatHistory.Count == 0)
+                        {
+                            @if (_aiSuggestion.NeedsClarification)
+                            {
+                                <div class="context-card" style="border-color:rgba(250,204,21,.6);background:#1a1506;">
+                                    <span class="context-card__label">La IA pide una aclaración</span>
+                                    <strong>@_aiSuggestion.ClarificationQuestion</strong>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="context-card">
+                                    <span class="context-card__label">Respuesta sugerida</span>
+                                    <strong style="white-space:pre-wrap;">@_aiSuggestion.SuggestedReply</strong>
+                                </div>
+                            }
+                        }
+
+                        @if (_aiSuggestion.Citations.Count > 0)
+                        {
+                            <div class="conversations-context__section">
+                                <h4 class="panel-card__title">Fuentes</h4>
+                                @foreach (var citation in _aiSuggestion.Citations)
+                                {
+                                    <a class="conversations-ai-source-link"
+                                       href="@AlfaKnowledgeSvc.GetCitationUrl(citation)"
+                                       target="_blank"
+                                       rel="noopener noreferrer"
+                                       title="Abrir fuente en una pestaña nueva">
+                                        <i class="bi bi-box-arrow-up-right"></i>
+                                        <span>@citation.SourceLabel — @citation.Title</span>
+                                    </a>
+                                }
+                            </div>
+                        }
+
+                        <div class="conversations-ai-suggestion-actions">
+                            <button type="button" class="btn btn--primary btn--sm" @onclick="UseAiSuggestionAsync" disabled="@_aiSuggestion.NeedsClarification">
+                                <i class="bi bi-check2"></i> Llevar a respuesta
+                            </button>
+                            <button type="button" class="btn btn--ghost btn--sm" @onclick="RegenerateAiSuggestionAsync">
+                                <i class="bi bi-arrow-repeat"></i> Regenerar
+                            </button>
+                            <button type="button" class="btn btn--ghost btn--sm" @onclick="DiscardAiSuggestionAsync">
+                                <i class="bi bi-x-lg"></i> Descartar
+                            </button>
+                        </div>
+                    }
+
+                    <div class="conversations-ai-composer">
+                        <label for="ai-technician-message">Hablá con la IA sobre este caso</label>
+                        <textarea id="ai-technician-message"
+                                  rows="3"
+                                  placeholder="Ej.: resumime el problema, ¿qué debería preguntarle?, redactá una respuesta más breve..."
+                                  value="@_aiInstruction"
+                                  @oninput="OnAiInstructionInput"
+                                  disabled="@_loadingAiSuggestion"></textarea>
+                        <button type="button"
+                                class="btn btn--primary btn--sm"
+                                @onclick="SendAiInstructionAsync"
+                                disabled="@(_loadingAiSuggestion || string.IsNullOrWhiteSpace(_aiInstruction))">
+                            <i class="bi bi-send-fill"></i> Enviar a IA
                         </button>
                     </div>
                 }
+                </div>
             </aside>
-        </div>
     }
 </section>
 
@@ -2700,6 +2790,13 @@
 }
 
 @code {
+    private static class AiContextScopes
+    {
+        public const string CurrentCycle = "current-cycle";
+        public const string EntireConversation = "entire-conversation";
+        public const string FocusedMessage = "focused-message";
+    }
+
     private readonly (string Value, string Label)[] _modeOptions =
     [
         ("todas", "Todas"),
@@ -2717,8 +2814,14 @@
     private bool _showTemplatePanel;
     private bool _showAiSuggestionPanel;
     private bool _loadingAiSuggestion;
+    private CancellationTokenSource? _aiSuggestionRequestCts;
     private AlfaKnowledgeSuggestionResult? _aiSuggestion;
     private long? _aiSuggestionConversationId;
+    private string? _aiSuggestionError;
+    private string _aiContextScope = AiContextScopes.CurrentCycle;
+    private long? _aiFocusedMessageId;
+    private string _aiInstruction = string.Empty;
+    private List<AlfaKnowledgeAssistantMessage> _aiChatHistory = [];
     private string _nuevoHiloNombre = string.Empty;
     private string _nuevoHiloTecnico = string.Empty;
     private string? _nuevoHiloError;
@@ -3832,6 +3935,7 @@
         {
             _replyText = string.Empty;
             _syncReplyTextAfterRender = true;
+            ResetAiConversation(clearFocus: true);
         }
 
         var hasWarmCache = _conversationCache.TryGetValue(idConversacion, out var cachedConversation);
@@ -5446,6 +5550,7 @@
 
                 if (_showAiSuggestionPanel && !_loadingAiSuggestion)
                 {
+                    ResetAiConversation(clearFocus: true);
                     await RequestAiSuggestionAsync();
                 }
             }
@@ -6398,7 +6503,6 @@
         _showContextPanel = false;
         _showMobileAdvancedFilters = false;
         _showContextNotesModal = false;
-        _showAiSuggestionPanel = false;
     }
 
     private async Task ToggleAiSuggestionPanel()
@@ -6407,6 +6511,7 @@
 
         if (!_showAiSuggestionPanel)
         {
+            CancelAiSuggestionRequest();
             return;
         }
 
@@ -6419,26 +6524,57 @@
         }
     }
 
-    private async Task RequestAiSuggestionAsync()
+    private async Task RequestAiSuggestionAsync(
+        string? instruction = null,
+        IReadOnlyList<AlfaKnowledgeAssistantMessage>? assistantHistory = null)
     {
-        if (_selectedConversation is null || _selectedConversationId is not { } conversationId)
+        if (!_showAiSuggestionPanel
+            || _selectedConversation is null
+            || _selectedConversationId is not { } conversationId)
         {
             return;
         }
 
-        var lastCustomerMessage = _messages
-            .Where(IsIncomingMessage)
-            .Where(message => !string.IsNullOrWhiteSpace(message.Texto))
-            .OrderByDescending(message => message.FechaHora)
-            .FirstOrDefault();
+        _aiSuggestionError = null;
 
-        if (lastCustomerMessage is null)
+        if (!AlfaKnowledgeSvc.IsConfigured)
         {
             _aiSuggestion = null;
             _aiSuggestionConversationId = conversationId;
+            _aiSuggestionError = "AlfaKnowledge no está configurado en este servidor.";
             return;
         }
 
+        var contextMessages = GetAiContextMessages();
+        var focusMessage = string.Equals(_aiContextScope, AiContextScopes.FocusedMessage, StringComparison.Ordinal)
+            ? GetAiFocusedMessage()
+            : contextMessages
+                .Where(IsIncomingMessage)
+                .Where(message => !string.IsNullOrWhiteSpace(message.Texto))
+                .OrderByDescending(message => message.FechaHora)
+                .FirstOrDefault();
+
+        if (focusMessage is null && !string.IsNullOrWhiteSpace(instruction))
+        {
+            focusMessage = contextMessages
+                .Where(CanUseMessageAsAiFocus)
+                .OrderByDescending(message => message.FechaHora)
+                .FirstOrDefault();
+        }
+
+        if (focusMessage is null)
+        {
+            _aiSuggestion = null;
+            _aiSuggestionConversationId = conversationId;
+            _aiSuggestionError = string.Equals(_aiContextScope, AiContextScopes.FocusedMessage, StringComparison.Ordinal)
+                ? "Marcá un mensaje de texto para usarlo como foco."
+                : "El contexto elegido no tiene un mensaje de texto para analizar.";
+            return;
+        }
+
+        CancelAiSuggestionRequest();
+        var requestCts = new CancellationTokenSource();
+        _aiSuggestionRequestCts = requestCts;
         _loadingAiSuggestion = true;
         _aiSuggestion = null;
         _aiSuggestionConversationId = conversationId;
@@ -6446,16 +6582,228 @@
 
         try
         {
-            _aiSuggestion = await AlfaKnowledgeSvc.SuggestReplyAsync(
-                lastCustomerMessage.Texto,
-                _messages,
-                conversationId);
+            var result = await AlfaKnowledgeSvc.SuggestReplyAsync(
+                focusMessage.Texto,
+                contextMessages,
+                conversationId,
+                instruction,
+                assistantHistory,
+                requestCts.Token);
+
+            if (requestCts.IsCancellationRequested
+                || !_showAiSuggestionPanel
+                || !ReferenceEquals(_aiSuggestionRequestCts, requestCts))
+            {
+                return;
+            }
+
+            _aiSuggestion = result;
+            if (_aiSuggestion is null)
+            {
+                _aiSuggestionError = "AlfaKnowledge no respondió o no pudo analizar este contexto.";
+            }
+            else if (!string.IsNullOrWhiteSpace(instruction))
+            {
+                _aiChatHistory.Add(new AlfaKnowledgeAssistantMessage
+                {
+                    Role = "assistant",
+                    Content = !string.IsNullOrWhiteSpace(_aiSuggestion.SuggestedReply)
+                        ? _aiSuggestion.SuggestedReply
+                        : _aiSuggestion.ClarificationQuestion ?? "No pude responder con el contexto disponible."
+                });
+            }
         }
         finally
         {
-            _loadingAiSuggestion = false;
-            StateHasChanged();
+            if (ReferenceEquals(_aiSuggestionRequestCts, requestCts))
+            {
+                _aiSuggestionRequestCts = null;
+                _loadingAiSuggestion = false;
+                StateHasChanged();
+            }
+
+            requestCts.Dispose();
         }
+    }
+
+    private void CancelAiSuggestionRequest()
+    {
+        if (_aiSuggestionRequestCts is null)
+        {
+            return;
+        }
+
+        _aiSuggestionRequestCts.Cancel();
+        _aiSuggestionRequestCts = null;
+        _loadingAiSuggestion = false;
+    }
+
+    private async Task SendAiInstructionAsync()
+    {
+        var instruction = _aiInstruction.Trim();
+        if (string.IsNullOrWhiteSpace(instruction) || _loadingAiSuggestion)
+        {
+            return;
+        }
+
+        var previousHistory = _aiChatHistory.ToList();
+        _aiChatHistory.Add(new AlfaKnowledgeAssistantMessage
+        {
+            Role = "user",
+            Content = instruction
+        });
+        _aiInstruction = string.Empty;
+        await RequestAiSuggestionAsync(instruction, previousHistory);
+    }
+
+    private async Task RegenerateAiSuggestionAsync()
+    {
+        var lastUserIndex = _aiChatHistory.FindLastIndex(
+            static message => string.Equals(message.Role, "user", StringComparison.OrdinalIgnoreCase));
+        if (lastUserIndex < 0)
+        {
+            await RequestAiSuggestionAsync();
+            return;
+        }
+
+        var instruction = _aiChatHistory[lastUserIndex].Content;
+        var previousHistory = _aiChatHistory.Take(lastUserIndex).ToList();
+        _aiChatHistory = _aiChatHistory.Take(lastUserIndex + 1).ToList();
+        await RequestAiSuggestionAsync(instruction, previousHistory);
+    }
+
+    private async Task SelectAiFocusMessageAsync(ConversacionMensajeDto message)
+    {
+        _aiFocusedMessageId = message.IdMensaje;
+        _aiContextScope = AiContextScopes.FocusedMessage;
+        _showAiSuggestionPanel = true;
+        _showContextPanel = false;
+        ResetAiConversation(clearFocus: false);
+        await RequestAiSuggestionAsync();
+    }
+
+    private async Task OnAiContextScopeChangedAsync(ChangeEventArgs args)
+    {
+        var requestedScope = args.Value?.ToString();
+        _aiContextScope = requestedScope switch
+        {
+            AiContextScopes.EntireConversation => AiContextScopes.EntireConversation,
+            AiContextScopes.FocusedMessage when _aiFocusedMessageId.HasValue => AiContextScopes.FocusedMessage,
+            _ => AiContextScopes.CurrentCycle
+        };
+
+        ResetAiConversation(clearFocus: false);
+        await RequestAiSuggestionAsync();
+    }
+
+    private void OnAiInstructionInput(ChangeEventArgs args)
+        => _aiInstruction = args.Value?.ToString() ?? string.Empty;
+
+    private void ClearAiFocusMessage()
+    {
+        _aiFocusedMessageId = null;
+        if (string.Equals(_aiContextScope, AiContextScopes.FocusedMessage, StringComparison.Ordinal))
+        {
+            _aiContextScope = AiContextScopes.CurrentCycle;
+        }
+
+        ResetAiConversation(clearFocus: false);
+    }
+
+    private void ResetAiConversation(bool clearFocus)
+    {
+        _aiSuggestion = null;
+        _aiSuggestionError = null;
+        _aiChatHistory = [];
+        _aiInstruction = string.Empty;
+        if (clearFocus)
+        {
+            _aiFocusedMessageId = null;
+            _aiContextScope = AiContextScopes.CurrentCycle;
+        }
+    }
+
+    private IReadOnlyList<ConversacionMensajeDto> GetAiContextMessages()
+    {
+        var ordered = _messages
+            .OrderBy(message => message.FechaHora)
+            .ThenBy(message => message.IdMensaje)
+            .ToList();
+
+        if (string.Equals(_aiContextScope, AiContextScopes.FocusedMessage, StringComparison.Ordinal))
+        {
+            var focused = GetAiFocusedMessage();
+            return focused is null ? [] : [focused];
+        }
+
+        if (string.Equals(_aiContextScope, AiContextScopes.EntireConversation, StringComparison.Ordinal))
+        {
+            return ordered;
+        }
+
+        var closureIndexes = ordered
+            .Select((message, index) => new { message, index })
+            .Where(item => IsConversationClosureEvent(item.message))
+            .Select(item => item.index)
+            .ToList();
+
+        var startIndex = 0;
+        var endIndex = ordered.Count;
+        if (IsSelectedConversationClosed && closureIndexes.Count > 0)
+        {
+            endIndex = closureIndexes[^1];
+            startIndex = closureIndexes.Count > 1 ? closureIndexes[^2] + 1 : 0;
+        }
+        else if (closureIndexes.Count > 0)
+        {
+            startIndex = closureIndexes[^1] + 1;
+        }
+
+        var currentCycle = ordered
+            .Skip(startIndex)
+            .Take(Math.Max(0, endIndex - startIndex))
+            .ToList();
+
+        return currentCycle.Any(CanUseMessageAsAiFocus) ? currentCycle : ordered;
+    }
+
+    private ConversacionMensajeDto? GetAiFocusedMessage()
+        => _aiFocusedMessageId is { } messageId
+            ? _messages.FirstOrDefault(message => message.IdMensaje == messageId)
+            : null;
+
+    private static bool CanUseMessageAsAiFocus(ConversacionMensajeDto message)
+        => (IsIncomingMessage(message) || IsOutgoingMessage(message))
+           && !string.IsNullOrWhiteSpace(message.Texto);
+
+    private static bool IsConversationClosureEvent(ConversacionMensajeDto message)
+    {
+        if (!IsInternalEventMessage(message) || string.IsNullOrWhiteSpace(message.Texto))
+        {
+            return false;
+        }
+
+        var text = message.Texto.Trim();
+        return text.Contains("cerró la conversación", StringComparison.OrdinalIgnoreCase)
+               || text.Contains("conversación cerrada", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private string GetAiContextDescription()
+    {
+        var count = GetAiContextMessages().Count(CanUseMessageAsAiFocus);
+        var sentCount = count > 60 ? $"los últimos 60 de {count}" : count.ToString();
+        return _aiContextScope switch
+        {
+            AiContextScopes.FocusedMessage => "La IA leerá únicamente el mensaje marcado.",
+            AiContextScopes.EntireConversation => $"La IA recibirá {sentCount} mensajes de texto cargados en este hilo.",
+            _ => $"La IA recibirá {sentCount} mensajes del tramo abierto desde el último cierre detectado."
+        };
+    }
+
+    private static string GetAiMessagePreview(ConversacionMensajeDto message)
+    {
+        var text = message.Texto.Trim();
+        return text.Length <= 180 ? text : $"{text[..177]}...";
     }
 
     private async Task UseAiSuggestionAsync()
@@ -6467,14 +6815,12 @@
 
         await SetReplyTextareaValueAsync(_aiSuggestion.SuggestedReply, focus: true);
         await SendAiSuggestionFeedbackAsync(isHelpful: true);
-        _showAiSuggestionPanel = false;
     }
 
     private async Task DiscardAiSuggestionAsync()
     {
         await SendAiSuggestionFeedbackAsync(isHelpful: false);
-        _showAiSuggestionPanel = false;
-        _aiSuggestion = null;
+        ResetAiConversation(clearFocus: false);
     }
 
     private async Task SendAiSuggestionFeedbackAsync(bool isHelpful)
@@ -7293,6 +7639,7 @@
 
     private void ClearSelection()
     {
+        CancelAiSuggestionRequest();
         _selectedConversationId = null;
         _selectedConversation = null;
         _messages = [];
@@ -7310,6 +7657,7 @@
         _showMobileChatActions = false;
         ClearContextNotesState();
         ClearTemplateSelection();
+        ResetAiConversation(clearFocus: true);
         _scrollHandlerConversationId = null;
         _replyEnterHandlerConversationId = null;
         _fileDropHandlerConversationId = null;
@@ -8983,6 +9331,7 @@
     public async ValueTask DisposeAsync()
     {
         Nav.LocationChanged -= OnLocationChanged;
+        CancelAiSuggestionRequest();
         await ClearTypingAsync();
         CancelSearchDebounce();
         CancelContactSearch();
