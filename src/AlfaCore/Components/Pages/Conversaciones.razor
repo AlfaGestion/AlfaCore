@@ -13,6 +13,7 @@
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject AlfaCore.Services.ISessionService SessionSvc
 @inject AlfaCore.Services.IFloatingWindowService FloatingWindows
+@inject AlfaCore.Services.IAlfaKnowledgeSuggestionService AlfaKnowledgeSvc
 @inject IJSRuntime JS
 @inject NavigationManager Nav
 @implements IAsyncDisposable
@@ -354,6 +355,10 @@
                 <button type="button" class="btn btn--primary btn--sm conversations-ticket-button" @onclick="StartTicketSelection" disabled="@(_selectedConversation is null || _messages.Count == 0)" title="Crear ticket desde mensajes">
                     <i class="bi bi-life-preserver"></i>
                     <span>Crear ticket</span>
+                </button>
+                <button type="button" class="btn btn--ghost btn--sm conversations-ai-suggestion-button" @onclick="ToggleAiSuggestionPanel" disabled="@(_selectedConversation is null)" title="Sugerencia IA">
+                    <i class="bi bi-stars"></i>
+                    <span>Sugerencia IA</span>
                 </button>
             </div>
 
@@ -1898,6 +1903,74 @@
                     }
                 }
             </aside>
+
+            <aside class="panel-card conversations-context conversations-context-drawer conversations-ai-suggestion-drawer @(_showAiSuggestionPanel ? "is-open" : string.Empty)">
+                <button type="button" class="conversations-drawer-close" title="Cerrar sugerencia IA" @onclick="ToggleAiSuggestionPanel">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+                <div class="conversations-context__section">
+                    <h3 class="panel-card__title"><i class="bi bi-stars"></i> Sugerencia IA</h3>
+                    <p class="panel-card__subtitle">Asiste, no reemplaza — revisá antes de usarla</p>
+                </div>
+
+                @if (_selectedConversation is null)
+                {
+                    <div class="conversations-empty">Seleccioná una conversación para pedir una sugerencia.</div>
+                }
+                else if (_loadingAiSuggestion)
+                {
+                    <div class="conversations-empty">Analizando el último mensaje del cliente...</div>
+                }
+                else if (_aiSuggestion is null)
+                {
+                    <div class="conversations-empty">
+                        No se pudo generar una sugerencia (AlfaKnowledge no respondió o no está configurado).
+                    </div>
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="RequestAiSuggestionAsync">
+                        <i class="bi bi-arrow-repeat"></i> Reintentar
+                    </button>
+                }
+                else
+                {
+                    @if (_aiSuggestion.NeedsClarification)
+                    {
+                        <div class="context-card" style="border-color:rgba(250,204,21,.6);background:#1a1506;">
+                            <span class="context-card__label">La IA pide una aclaración</span>
+                            <strong>@_aiSuggestion.ClarificationQuestion</strong>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="context-card">
+                            <span class="context-card__label">Respuesta sugerida</span>
+                            <strong style="white-space:pre-wrap;">@_aiSuggestion.SuggestedReply</strong>
+                        </div>
+                    }
+
+                    @if (_aiSuggestion.Citations.Count > 0)
+                    {
+                        <div class="conversations-context__section">
+                            <h4 class="panel-card__title">Fuentes</h4>
+                            @foreach (var citation in _aiSuggestion.Citations)
+                            {
+                                <div class="context-card__muted">@citation.SourceLabel — @citation.Title</div>
+                            }
+                        </div>
+                    }
+
+                    <div class="conversations-ai-suggestion-actions" style="margin-top:.75rem;">
+                        <button type="button" class="btn btn--primary btn--sm" @onclick="UseAiSuggestionAsync" disabled="@_aiSuggestion.NeedsClarification">
+                            <i class="bi bi-check2"></i> Usar esta respuesta
+                        </button>
+                        <button type="button" class="btn btn--ghost btn--sm" @onclick="RequestAiSuggestionAsync">
+                            <i class="bi bi-arrow-repeat"></i> Regenerar
+                        </button>
+                        <button type="button" class="btn btn--ghost btn--sm" @onclick="DiscardAiSuggestionAsync">
+                            <i class="bi bi-x-lg"></i> Descartar
+                        </button>
+                    </div>
+                }
+            </aside>
         </div>
     }
 </section>
@@ -2642,6 +2715,10 @@
     private bool _showContextPanel;
     private bool _showMobileAdvancedFilters;
     private bool _showTemplatePanel;
+    private bool _showAiSuggestionPanel;
+    private bool _loadingAiSuggestion;
+    private AlfaKnowledgeSuggestionResult? _aiSuggestion;
+    private long? _aiSuggestionConversationId;
     private string _nuevoHiloNombre = string.Empty;
     private string _nuevoHiloTecnico = string.Empty;
     private string? _nuevoHiloError;
@@ -3683,6 +3760,11 @@
         _showMobileChatActions = false;
         CancelTicketSelection();
         await LoadConversationAsync(idConversacion, showLoading: true, clearActionState: true);
+
+        if (_showAiSuggestionPanel)
+        {
+            await RequestAiSuggestionAsync();
+        }
     }
 
     private async Task SelectInboxItemAsync(ConversacionInboxItemDto item, bool showMobileChat = false, bool updateUrl = true, bool toggleMercadoLibreGroup = true)
@@ -5361,6 +5443,11 @@
                     _newMessagesCount += newMessages.Count;
                     _showReturnToLatest = true;
                 }
+
+                if (_showAiSuggestionPanel && !_loadingAiSuggestion)
+                {
+                    await RequestAiSuggestionAsync();
+                }
             }
         }
 
@@ -6311,6 +6398,100 @@
         _showContextPanel = false;
         _showMobileAdvancedFilters = false;
         _showContextNotesModal = false;
+        _showAiSuggestionPanel = false;
+    }
+
+    private async Task ToggleAiSuggestionPanel()
+    {
+        _showAiSuggestionPanel = !_showAiSuggestionPanel;
+
+        if (!_showAiSuggestionPanel)
+        {
+            return;
+        }
+
+        _showContextPanel = false;
+
+        if (_selectedConversationId is { } conversationId
+            && (_aiSuggestion is null || _aiSuggestionConversationId != conversationId))
+        {
+            await RequestAiSuggestionAsync();
+        }
+    }
+
+    private async Task RequestAiSuggestionAsync()
+    {
+        if (_selectedConversation is null || _selectedConversationId is not { } conversationId)
+        {
+            return;
+        }
+
+        var lastCustomerMessage = _messages
+            .Where(IsIncomingMessage)
+            .Where(message => !string.IsNullOrWhiteSpace(message.Texto))
+            .OrderByDescending(message => message.FechaHora)
+            .FirstOrDefault();
+
+        if (lastCustomerMessage is null)
+        {
+            _aiSuggestion = null;
+            _aiSuggestionConversationId = conversationId;
+            return;
+        }
+
+        _loadingAiSuggestion = true;
+        _aiSuggestion = null;
+        _aiSuggestionConversationId = conversationId;
+        StateHasChanged();
+
+        try
+        {
+            _aiSuggestion = await AlfaKnowledgeSvc.SuggestReplyAsync(
+                lastCustomerMessage.Texto,
+                _messages,
+                conversationId);
+        }
+        finally
+        {
+            _loadingAiSuggestion = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task UseAiSuggestionAsync()
+    {
+        if (_aiSuggestion is null || string.IsNullOrWhiteSpace(_aiSuggestion.SuggestedReply))
+        {
+            return;
+        }
+
+        await SetReplyTextareaValueAsync(_aiSuggestion.SuggestedReply, focus: true);
+        await SendAiSuggestionFeedbackAsync(isHelpful: true);
+        _showAiSuggestionPanel = false;
+    }
+
+    private async Task DiscardAiSuggestionAsync()
+    {
+        await SendAiSuggestionFeedbackAsync(isHelpful: false);
+        _showAiSuggestionPanel = false;
+        _aiSuggestion = null;
+    }
+
+    private async Task SendAiSuggestionFeedbackAsync(bool isHelpful)
+    {
+        if (_aiSuggestion is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await AlfaKnowledgeSvc.SendFeedbackAsync(_aiSuggestion.InteractionId, isHelpful);
+        }
+        catch
+        {
+            // Silencioso a propósito: el feedback es informativo, no debe interrumpir al técnico.
+        }
     }
 
     private async Task OpenTemplatePanel()

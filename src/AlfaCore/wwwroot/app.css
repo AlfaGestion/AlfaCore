@@ -6347,6 +6347,38 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
     font-weight: 800;
 }
 
+.conversations-module-actions .conversations-ai-suggestion-button {
+    width: auto;
+    min-width: 128px;
+    padding: 0 .65rem;
+    gap: .42rem;
+    white-space: nowrap;
+    font-weight: 800;
+    border-color: rgba(168, 85, 247, .36);
+    background: rgba(168, 85, 247, .12);
+    color: var(--color-text);
+}
+
+.conversations-module-actions .conversations-ai-suggestion-button:hover {
+    background: rgba(168, 85, 247, .18);
+    border-color: rgba(168, 85, 247, .52);
+}
+
+.conversations-ai-suggestion-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .45rem;
+}
+
+.conversations-ai-suggestion-actions .btn {
+    width: auto;
+    height: auto;
+    min-height: var(--conv-control-h);
+    padding: .4rem .7rem;
+    white-space: nowrap;
+}
+
 .conversations-page--odoo .conversations-layout {
     grid-template-columns: minmax(235px, 300px) minmax(0, 1fr);
     gap: 0;
@@ -26053,4 +26085,40 @@ body:has(.cuentas-modal .usuarios-view-settings) {
     .main-page-header .main-page-header__view-label {
         display: none !important;
     }
+}
+
+/*
+ * La sugerencia IA no debe tapar la conversación como un overlay flotante (a diferencia del
+ * panel de Contexto, que sí colapsa a overlay en pantallas angostas): siempre se acopla como
+ * una columna propia del grid mientras está abierta, en cualquier ancho de pantalla.
+ * El triple selector de clase eleva la especificidad por encima de las reglas de
+ * .conversations-context-drawer (incluidas las que viven dentro de @media), sin tocar ese
+ * comportamiento existente para el panel de Contexto.
+ */
+.conversations-page--odoo .conversations-ai-suggestion-drawer.conversations-ai-suggestion-drawer {
+    position: relative;
+    top: auto;
+    right: auto;
+    bottom: auto;
+    left: auto;
+    grid-column: 3;
+    width: 100%;
+    min-width: 0;
+    height: 100%;
+    max-height: none;
+    transform: none;
+    opacity: 1;
+    display: none;
+    border-radius: 0;
+    border-width: 0 0 0 1px;
+    box-shadow: none;
+}
+
+.conversations-page--odoo .conversations-ai-suggestion-drawer.conversations-ai-suggestion-drawer.is-open {
+    display: flex;
+    flex-direction: column;
+}
+
+.conversations-page--odoo .conversations-layout:has(.conversations-ai-suggestion-drawer.is-open) {
+    grid-template-columns: minmax(235px, 300px) minmax(0, 1fr) minmax(300px, 350px);
 }
