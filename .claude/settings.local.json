@@ -6,7 +6,11 @@
       "Bash(xargs grep -l \"Conversacion\")",
       "PowerShell(Get-ChildItem -Path \"c:\\\\dev\\\\AlfaCore\\\\src\\\\AlfaCore\" -Recurse -Directory | Select-Object -ExpandProperty FullName | Where-Object { $_ -match \"\\(Service|Repository|Model|Component|Dto\\)\" })",
       "Bash(git add *)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "Bash(mkdir -p \"/c/Users/albert/AppData/Local/Temp/claude/c--dev-AlfaCore/03136413-ace2-40ae-a12b-139e0543fe29/scratchpad\")"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\albert\\AppData\\Local\\Temp\\claude\\c--dev-AlfaCore\\03136413-ace2-40ae-a12b-139e0543fe29\\scratchpad"
     ]
   }
 }
