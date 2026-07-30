@@ -1281,6 +1281,68 @@
     overflow-x: hidden !important;
 }
 
+/* Ese clamp(.9rem, 5vw, 4.5rem) llega a 4.5rem de aire a la derecha en pantallas
+   anchas. Pensado para el hilo a pantalla completa: con el panel de AlfaKnowledge
+   abierto, sumado al ancho propio del panel, deja una franja vacía enorme entre
+   los mensajes y el panel de IA. Esta es la regla que realmente gana (viene del
+   CSS aislado de este componente, con más especificidad que app.css). */
+.conversations-page--odoo.conversations-page--ai-open .conversations-thread {
+    padding-right: 1.3rem !important;
+}
+
+/* MainLayout.razor.css define ::deep .page-grid { gap: 0.85rem } para el layout
+   general de la app. Esta página no lo quiere: el chat y el panel de AlfaKnowledge
+   deben quedar pegados. Se fuerza acá porque este archivo gana la cascada. */
+.conversations-page--odoo {
+    gap: 0 !important;
+    column-gap: 0 !important;
+    row-gap: 0 !important;
+}
+
+.conversations-page--odoo .conversations-chat,
+.conversations-page--odoo .conversations-core-workspace,
+.conversations-page--odoo > .conversations-ai-suggestion-drawer {
+    box-shadow: none !important;
+    margin: 0 !important;
+}
+
+/* Panel de AlfaKnowledge más ancho: pedido explícito de correr su contenido
+   más a la izquierda y que quede pegado al chat, en vez de angosto contra el
+   borde derecho. */
+@media (min-width: 1181px) {
+    .conversations-page--odoo.conversations-page--ai-open {
+        grid-template-columns: minmax(0, 1fr) minmax(500px, 560px) !important;
+    }
+}
+
+@media (min-width: 1401px) {
+    .conversations-page--odoo.conversations-page--ai-open {
+        grid-template-columns: minmax(0, 1fr) minmax(560px, 650px) !important;
+    }
+}
+
+/* La causa real del ancho angosto: el <aside> de AlfaKnowledge tiene a la vez
+   las clases .conversations-context-drawer y .conversations-ai-suggestion-drawer.
+   La regla genérica del drawer "Contexto" flotante (.conversations-context-drawer.is-open,
+   position:fixed, width:min(340px, calc(100vw - 1rem))) también lo agarra a él,
+   y por tener más clases en el selector le ganaba a todas las reglas de grid de
+   más arriba. Se apunta acá exactamente a esa combinación de clases para ganar
+   por especificidad real, no por !important a ciegas. */
+@media (min-width: 901px) {
+    .conversations-page--odoo .conversations-context-drawer.conversations-ai-suggestion-drawer.is-open {
+        position: relative !important;
+        inset: auto !important;
+        transform: none !important;
+        z-index: auto !important;
+        width: 100% !important;
+        min-width: 0 !important;
+        max-width: none !important;
+        height: 100% !important;
+        max-height: 100% !important;
+        box-shadow: none !important;
+    }
+}
+
 .conversations-page--odoo .conversations-thread.is-bottom-anchoring {
     opacity: 0 !important;
 }

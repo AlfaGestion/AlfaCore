@@ -1983,7 +1983,10 @@
 
                     @if (_loadingAiSuggestion)
                     {
-                        <div class="conversations-empty"><i class="bi bi-stars"></i> Analizando el contexto seleccionado...</div>
+                        <div class="conversations-empty conversations-ai-typing">
+                            <i class="bi bi-stars"></i> Analizando el contexto seleccionado
+                            <span class="conversations-ai-typing__dots"><span></span><span></span><span></span></span>
+                        </div>
                     }
                     else if (_aiSuggestion is null)
                     {
@@ -2015,7 +2018,7 @@
                         @if (_aiSuggestion.Citations.Count > 0)
                         {
                             <div class="conversations-context__section">
-                                <h4 class="panel-card__title">Fuentes</h4>
+                                <h4 class="panel-card__title">Fuentes <span class="conversations-ai-source-count">· @_aiSuggestion.Citations.Count</span></h4>
                                 @foreach (var citation in _aiSuggestion.Citations)
                                 {
                                     <a class="conversations-ai-source-link"
@@ -2024,7 +2027,7 @@
                                        rel="noopener noreferrer"
                                        title="Abrir fuente en una pestaña nueva">
                                         <i class="bi bi-box-arrow-up-right"></i>
-                                        <span>@citation.SourceLabel — @citation.Title</span>
+                                        <span title="@citation.SourceLabel — @citation.Title">@citation.SourceLabel — @citation.Title</span>
                                     </a>
                                 }
                             </div>
