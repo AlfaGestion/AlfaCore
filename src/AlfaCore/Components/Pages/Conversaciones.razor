@@ -752,6 +752,7 @@
                             <div role="button"
                                  tabindex="0"
                                  class="@ConversationRowClass(item)"
+                                 style="@GetInboxTechnicianStyle(item)"
                                  @onclick="() => SelectInboxItemAsync(item, showMobileChat: true)"
                                  @onkeydown="args => HandleInboxRowKeyDownAsync(args, item)">
                                 <span class="conversation-row__avatar @(item.Canal == "MERCADOLIBRE" ? "conversation-row__avatar--mercadolibre" : string.Empty)" aria-hidden="true">
@@ -791,6 +792,13 @@
                                 </div>
                                 <div class="conversation-row__badges">
                                     <span class="conversation-badge conversation-badge--state">@item.EstadoDescripcion</span>
+                                    @if (!string.IsNullOrWhiteSpace(item.IdTecnico))
+                                    {
+                                        <span class="conversation-badge conversation-badge--technician">
+                                            <i class="bi bi-person-fill"></i>
+                                            @FirstNonEmpty(item.TecnicoNombre, item.IdTecnico)
+                                        </span>
+                                    }
                                     @if (!string.IsNullOrWhiteSpace(item.ClienteNombre))
                                     {
                                         <span class="conversation-badge">@item.ClienteNombre</span>
@@ -1066,6 +1074,13 @@
                                         <i class="bi bi-life-preserver"></i>
                                         <span>Crear ticket</span>
                                     </button>
+                                    @if (CanAssignSelectedConversationToMe)
+                                    {
+                                        <button type="button" role="menuitem" @onclick="AssignSelectedConversationToMeAsync" disabled="@_busyAction">
+                                            <i class="bi bi-person-check-fill"></i>
+                                            <span>Asignarme la conversación</span>
+                                        </button>
+                                    }
                                     <button type="button" role="menuitem" @onclick="ToggleStatusMenu" disabled="@_busyAction">
                                         <i class="bi bi-circle-half"></i>
                                         <span>Estado: @GetCurrentStatusDescription()</span>
@@ -1096,7 +1111,18 @@
                                 </div>
                             }
                         </div>
-                        <div class="conversation-header-state">
+                        <div class="conversation-header-state @(CanAssignSelectedConversationToMe ? "has-assign-to-me" : string.Empty)">
+                            @if (CanAssignSelectedConversationToMe)
+                            {
+                                <button type="button"
+                                        class="btn btn--primary btn--sm conversation-assign-to-me"
+                                        @onclick="AssignSelectedConversationToMeAsync"
+                                        disabled="@_busyAction"
+                                        title="Tomar esta conversación">
+                                    <i class="bi bi-person-check-fill"></i>
+                                    Asignarme
+                                </button>
+                            }
                             <div class="conversation-header-state__row @(_showStatusMenu ? "is-open" : string.Empty)" @onclick:stopPropagation="true">
                                 <span class="conversation-header-state__caption">Estado:</span>
                                 <button type="button"
@@ -1679,6 +1705,14 @@
                                 </div>
                             }
                             <div class="conversations-composer__actions conversations-composer__actions--reply">
+                                <button type="button"
+                                        class="btn btn--ghost conversations-improve-ai"
+                                        title="Mejorar con IA"
+                                        aria-label="Mejorar con IA"
+                                        @onclick="ImproveReplyWithAiAsync"
+                                        disabled="@(_improvingReplyWithAi || !HasReplyText || !AlfaKnowledgeSvc.IsConfigured)">
+                                    <i class="bi @(_improvingReplyWithAi ? "bi-hourglass-split" : "bi-stars")"></i>
+                                </button>
                                 <button type="button" class="btn btn--primary" @onclick="SendReplyAsync" disabled="@(!_canSendReply)" title="@GetReplyButtonTitle()">
                                     <i class="bi @(HasPendingAttachmentError ? "bi-arrow-clockwise" : "bi-send-fill")"></i>
                                 </button>
@@ -2040,28 +2074,45 @@
 
                         @if (_aiSuggestion.Citations.Count > 0)
                         {
-                            <div class="conversations-context__section">
-                                <h4 class="panel-card__title">Fuentes <span class="conversations-ai-source-count">· @_aiSuggestion.Citations.Count</span></h4>
-                                @foreach (var citation in _aiSuggestion.Citations)
+                            <div class="conversations-context__section conversations-ai-sources @(_aiSourcesExpanded ? "is-expanded" : "is-collapsed")">
+                                <button type="button"
+                                        class="conversations-ai-sources__toggle"
+                                        aria-expanded="@_aiSourcesExpanded"
+                                        @onclick="ToggleAiSources">
+                                    <span>Fuentes <span class="conversations-ai-source-count">· @_aiSuggestion.Citations.Count</span></span>
+                                    <i class="bi @(_aiSourcesExpanded ? "bi-chevron-up" : "bi-chevron-down")"></i>
+                                </button>
+                                @if (_aiSourcesExpanded)
                                 {
-                                    <a class="conversations-ai-source-link"
-                                       href="@AlfaKnowledgeSvc.GetCitationUrl(citation)"
-                                       target="_blank"
-                                       rel="noopener noreferrer"
-                                       title="Abrir fuente en una pestaña nueva">
-                                        <i class="bi bi-box-arrow-up-right"></i>
-                                        <span title="@citation.SourceLabel — @citation.Title">@citation.SourceLabel — @citation.Title</span>
-                                    </a>
+                                    <div class="conversations-ai-sources__list">
+                                        @foreach (var citation in _aiSuggestion.Citations)
+                                        {
+                                            <a class="conversations-ai-source-link"
+                                               href="@AlfaKnowledgeSvc.GetCitationUrl(citation)"
+                                               target="_blank"
+                                               rel="noopener noreferrer"
+                                               title="Abrir fuente en una pestaña nueva">
+                                                <i class="bi bi-box-arrow-up-right"></i>
+                                                <span title="@citation.SourceLabel — @citation.Title">@citation.SourceLabel — @citation.Title</span>
+                                            </a>
+                                        }
+                                    </div>
                                 }
                             </div>
                         }
 
                         <div class="conversations-ai-suggestion-actions">
-                            <button type="button" class="btn btn--primary btn--sm" @onclick="UseAiSuggestionAsync" disabled="@_aiSuggestion.NeedsClarification">
+                            <button type="button"
+                                    class="btn btn--primary btn--sm"
+                                    @onclick="UseAiSuggestionAsync"
+                                    disabled="@string.IsNullOrWhiteSpace(GetAiTransferText())">
                                 <i class="bi bi-check2"></i> Llevar a respuesta
                             </button>
                             <button type="button" class="btn btn--ghost btn--sm" @onclick="RegenerateAiSuggestionAsync">
                                 <i class="bi bi-arrow-repeat"></i> Regenerar
+                            </button>
+                            <button type="button" class="btn btn--ghost btn--sm" @onclick="OpenAiCorrectionModal">
+                                <i class="bi bi-pencil-square"></i> Corregir respuesta
                             </button>
                             <button type="button" class="btn btn--ghost btn--sm" @onclick="DiscardAiSuggestionAsync">
                                 <i class="bi bi-x-lg"></i> Descartar
@@ -2072,6 +2123,7 @@
                     <div class="conversations-ai-composer">
                         <label for="ai-technician-message">Hablá con la IA sobre este caso</label>
                         <textarea id="ai-technician-message"
+                                  @ref="_aiInstructionTextArea"
                                   rows="3"
                                   placeholder="Ej.: resumime el problema, ¿qué debería preguntarle?, redactá una respuesta más breve..."
                                   value="@_aiInstruction"
@@ -2089,6 +2141,63 @@
             </aside>
     }
 </section>
+
+@if (_showAiCorrectionModal)
+{
+    <div class="modal-overlay conversations-ai-correction-overlay" @onclick="CloseAiCorrectionModal">
+        <div class="modal-card conversations-ai-correction-modal" role="dialog" aria-modal="true" aria-labelledby="ai-correction-title" @onclick:stopPropagation>
+            <div class="conversations-ai-correction-modal__header">
+                <div>
+                    <h3 id="ai-correction-title" class="modal-card__title">Corregir respuesta</h3>
+                    @if (_aiSuggestion?.InteractionId != Guid.Empty)
+                    {
+                        <small>Basado en la interacción @_aiSuggestion?.InteractionId</small>
+                    }
+                </div>
+                <button type="button" class="conversations-drawer-close" title="Cerrar" aria-label="Cerrar corrección" @onclick="CloseAiCorrectionModal">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </div>
+
+            <label class="field">
+                <span>Título</span>
+                <input type="text" @bind="_aiCorrectionTitle" disabled="@_savingAiCorrection" />
+            </label>
+            <label class="field">
+                <span>Pregunta original</span>
+                <textarea rows="3" @bind="_aiCorrectionQuestion" disabled="@_savingAiCorrection"></textarea>
+            </label>
+            <label class="field">
+                <span>Respuesta curada</span>
+                <textarea class="conversations-ai-correction-modal__answer" rows="7" @bind="_aiCorrectionAnswer" disabled="@_savingAiCorrection"></textarea>
+            </label>
+            <label class="field">
+                <span>Notas de corrección</span>
+                <textarea rows="3" placeholder="Qué estaba mal o qué faltaba" @bind="_aiCorrectionNotes" disabled="@_savingAiCorrection"></textarea>
+            </label>
+
+            @if (!string.IsNullOrWhiteSpace(_aiCorrectionError))
+            {
+                <div class="conversations-ai-correction-modal__error" role="alert">@_aiCorrectionError</div>
+            }
+
+            <p class="conversations-ai-correction-modal__hint">Reemplazá la respuesta por la versión correcta y guardala en AlfaKnowledge.</p>
+            <div class="modal-card__actions">
+                <button type="button" class="btn btn--ghost" @onclick="CloseAiCorrectionModal" disabled="@_savingAiCorrection">Cancelar</button>
+                <button type="button"
+                        class="btn btn--primary"
+                        @onclick="SaveAiCorrectionAsync"
+                        disabled="@(_savingAiCorrection || !CanSaveAiCorrection)">
+                    @if (_savingAiCorrection)
+                    {
+                        <span class="spinner" aria-hidden="true"></span>
+                    }
+                    Guardar respuesta curada
+                </button>
+            </div>
+        </div>
+    </div>
+}
 
 @if (_showContextNotesModal && HasContextNotes)
 {
@@ -2839,6 +2948,7 @@
     private bool _showTemplatePanel;
     private bool _showAiSuggestionPanel;
     private bool _loadingAiSuggestion;
+    private bool _improvingReplyWithAi;
     private CancellationTokenSource? _aiSuggestionRequestCts;
     private AlfaKnowledgeSuggestionResult? _aiSuggestion;
     private long? _aiSuggestionConversationId;
@@ -2847,6 +2957,15 @@
     private long? _aiFocusedMessageId;
     private string _aiInstruction = string.Empty;
     private List<AlfaKnowledgeAssistantMessage> _aiChatHistory = [];
+    private bool _aiSourcesExpanded = true;
+    private bool _showAiCorrectionModal;
+    private bool _savingAiCorrection;
+    private string _aiSuggestionOriginalQuestion = string.Empty;
+    private string _aiCorrectionTitle = string.Empty;
+    private string _aiCorrectionQuestion = string.Empty;
+    private string _aiCorrectionAnswer = string.Empty;
+    private string _aiCorrectionNotes = string.Empty;
+    private string? _aiCorrectionError;
     private string _nuevoHiloNombre = string.Empty;
     private string _nuevoHiloTecnico = string.Empty;
     private string? _nuevoHiloError;
@@ -2941,6 +3060,7 @@
     private double _previewPanY;
     private SoundDiagnosticsVm _soundDiagnostics = new();
     private ElementReference _replyTextArea;
+    private ElementReference _aiInstructionTextArea;
     private ElementReference _internalNoteTextArea;
     private ElementReference _internalNoteMobileTextArea;
     private ElementReference _parteHorasDialogElement;
@@ -3265,6 +3385,21 @@
         }
         catch
         {
+        }
+
+        if (_showAiSuggestionPanel && _selectedConversation is not null)
+        {
+            _dotNetRef ??= DotNetObjectReference.Create(this);
+            try
+            {
+                await JS.InvokeAsync<bool>(
+                    "conversacionesUi.bindAiInstructionEnter",
+                    _aiInstructionTextArea,
+                    _dotNetRef);
+            }
+            catch
+            {
+            }
         }
 
         try
@@ -3807,8 +3942,15 @@
         }
         if (item.FijadaPorUsuario)
             classes += " is-pinned";
+        if (!string.IsNullOrWhiteSpace(item.IdTecnico))
+            classes += " has-technician";
         return classes;
     }
+
+    private static string GetInboxTechnicianStyle(ConversacionInboxItemDto item)
+        => string.IsNullOrWhiteSpace(item.IdTecnico)
+            ? string.Empty
+            : $"--technician-color:{TechnicianColorPalette.Resolve(item.IdTecnico, item.TecnicoNombre)};";
 
     private void ApplyCurrentUserToFilters(ConversacionesInboxFilters filters)
     {
@@ -6604,6 +6746,7 @@
         _loadingAiSuggestion = true;
         _aiSuggestion = null;
         _aiSuggestionConversationId = conversationId;
+        _aiSuggestionOriginalQuestion = focusMessage.Texto.Trim();
         StateHasChanged();
 
         try
@@ -6682,6 +6825,165 @@
         await RequestAiSuggestionAsync(instruction, previousHistory);
     }
 
+    [JSInvokable]
+    public async Task SendAiInstructionFromEnter(string value)
+    {
+        _aiInstruction = value ?? string.Empty;
+        await SendAiInstructionAsync();
+    }
+
+    private void ToggleAiSources()
+        => _aiSourcesExpanded = !_aiSourcesExpanded;
+
+    private void OpenAiCorrectionModal()
+    {
+        if (_aiSuggestion is null)
+        {
+            return;
+        }
+
+        _aiCorrectionQuestion = _aiSuggestionOriginalQuestion.Trim();
+        _aiCorrectionAnswer = _aiSuggestion.SuggestedReply.Trim();
+        _aiCorrectionTitle = BuildAiCorrectionTitle(_aiCorrectionQuestion);
+        _aiCorrectionNotes = string.Empty;
+        _aiCorrectionError = null;
+        _showAiCorrectionModal = true;
+    }
+
+    private void CloseAiCorrectionModal()
+    {
+        if (_savingAiCorrection)
+        {
+            return;
+        }
+
+        _showAiCorrectionModal = false;
+        _aiCorrectionError = null;
+    }
+
+    private bool CanSaveAiCorrection
+        => !string.IsNullOrWhiteSpace(_aiCorrectionTitle)
+           && !string.IsNullOrWhiteSpace(_aiCorrectionQuestion)
+           && !string.IsNullOrWhiteSpace(_aiCorrectionAnswer);
+
+    private async Task SaveAiCorrectionAsync()
+    {
+        if (_aiSuggestion is null || !CanSaveAiCorrection || _savingAiCorrection)
+        {
+            return;
+        }
+
+        _savingAiCorrection = true;
+        _aiCorrectionError = null;
+
+        try
+        {
+            var saved = await AlfaKnowledgeSvc.SaveCorrectionAsync(
+                new AlfaKnowledgeCorrectionRequest
+                {
+                    InteractionId = _aiSuggestion.InteractionId == Guid.Empty
+                        ? null
+                        : _aiSuggestion.InteractionId,
+                    Title = _aiCorrectionTitle.Trim(),
+                    OriginalQuestion = _aiCorrectionQuestion.Trim(),
+                    OriginalAnswer = _aiSuggestion.SuggestedReply,
+                    CorrectedAnswer = _aiCorrectionAnswer.Trim(),
+                    SourceReference = _aiSuggestion.Citations
+                        .Select(static citation => citation.SourceReference)
+                        .FirstOrDefault(static source => !string.IsNullOrWhiteSpace(source)),
+                    CorrectionNotes = string.IsNullOrWhiteSpace(_aiCorrectionNotes)
+                        ? null
+                        : _aiCorrectionNotes.Trim(),
+                    CreatedBy = FirstNonEmpty(CurrentUserNameForAudit, "AlfaCore")
+                });
+
+            if (!saved)
+            {
+                _aiCorrectionError = "No se pudo guardar la corrección. Revisá la conexión con AlfaKnowledge e intentá nuevamente.";
+                return;
+            }
+
+            _aiSuggestion.SuggestedReply = _aiCorrectionAnswer.Trim();
+            _showAiCorrectionModal = false;
+            _actionMessage = "La respuesta corregida se guardó en AlfaKnowledge.";
+        }
+        finally
+        {
+            _savingAiCorrection = false;
+        }
+    }
+
+    private static string BuildAiCorrectionTitle(string question)
+    {
+        var normalized = string.IsNullOrWhiteSpace(question)
+            ? "respuesta sugerida"
+            : question.Trim();
+        const int maxQuestionLength = 90;
+        if (normalized.Length > maxQuestionLength)
+        {
+            normalized = $"{normalized[..maxQuestionLength].TrimEnd()}…";
+        }
+
+        return $"Corrección: {normalized}";
+    }
+
+    private async Task ImproveReplyWithAiAsync()
+    {
+        if (_improvingReplyWithAi
+            || _selectedConversationId is not { } conversationId
+            || !AlfaKnowledgeSvc.IsConfigured)
+        {
+            return;
+        }
+
+        var draft = (await GetReplyTextareaValueAsync()).Trim();
+        if (string.IsNullOrWhiteSpace(draft))
+            return;
+
+        var focusMessage = _messages
+            .Where(IsIncomingMessage)
+            .Where(static message => !string.IsNullOrWhiteSpace(message.Texto))
+            .OrderByDescending(static message => message.FechaHora)
+            .FirstOrDefault();
+        if (focusMessage is null)
+            return;
+
+        _improvingReplyWithAi = true;
+        StateHasChanged();
+
+        try
+        {
+            var instruction =
+                "Mejorá únicamente la redacción del siguiente borrador, manteniendo exactamente su intención, " +
+                "los datos y el tono profesional cercano. No agregues información, explicaciones, saludos ni " +
+                $"contenido nuevo. Devolvé solamente el texto final mejorado. Borrador: {draft}";
+            var result = await AlfaKnowledgeSvc.SuggestReplyAsync(
+                focusMessage.Texto,
+                _messages,
+                conversationId,
+                instruction);
+
+            if (result is null || string.IsNullOrWhiteSpace(result.SuggestedReply))
+                return;
+
+            var currentDraft = (await GetReplyTextareaValueAsync()).Trim();
+            if (!string.Equals(currentDraft, draft, StringComparison.Ordinal))
+                return;
+
+            _replyText = result.SuggestedReply.Trim();
+            await SetReplyTextareaValueAsync(_replyText, focus: true);
+        }
+        catch
+        {
+        }
+
+        finally
+        {
+            _improvingReplyWithAi = false;
+            StateHasChanged();
+        }
+    }
+
     private async Task RegenerateAiSuggestionAsync()
     {
         var lastUserIndex = _aiChatHistory.FindLastIndex(
@@ -6742,6 +7044,9 @@
         _aiSuggestionError = null;
         _aiChatHistory = [];
         _aiInstruction = string.Empty;
+        _aiSuggestionOriginalQuestion = string.Empty;
+        _showAiCorrectionModal = false;
+        _aiCorrectionError = null;
         if (clearFocus)
         {
             _aiFocusedMessageId = null;
@@ -6834,13 +7139,26 @@
 
     private async Task UseAiSuggestionAsync()
     {
-        if (_aiSuggestion is null || string.IsNullOrWhiteSpace(_aiSuggestion.SuggestedReply))
+        var transferText = GetAiTransferText();
+        if (string.IsNullOrWhiteSpace(transferText))
         {
             return;
         }
 
-        await SetReplyTextareaValueAsync(_aiSuggestion.SuggestedReply, focus: true);
+        await SetReplyTextareaValueAsync(transferText, focus: true);
         await SendAiSuggestionFeedbackAsync(isHelpful: true);
+    }
+
+    private string GetAiTransferText()
+    {
+        if (_aiSuggestion is null)
+        {
+            return string.Empty;
+        }
+
+        return _aiSuggestion.NeedsClarification
+            ? FirstNonEmpty(_aiSuggestion.ClarificationQuestion, _aiSuggestion.SuggestedReply)
+            : FirstNonEmpty(_aiSuggestion.SuggestedReply, _aiSuggestion.ClarificationQuestion);
     }
 
     private async Task DiscardAiSuggestionAsync()
@@ -8121,6 +8439,27 @@
 
     private string CurrentMessageTechnicianName
         => FirstNonEmpty(CurrentUserTechnician?.Nombre, CurrentUserNameForAudit);
+
+    private bool CanAssignSelectedConversationToMe
+        => _selectedConversation is not null
+           && !IsSelectedConversationClosed
+           && CurrentUserTechnician is not null
+           && !string.Equals(
+               _selectedConversation.IdTecnico?.Trim(),
+               CurrentUserTechnician.IdTecnico.Trim(),
+               StringComparison.OrdinalIgnoreCase);
+
+    private async Task AssignSelectedConversationToMeAsync()
+    {
+        if (!CanAssignSelectedConversationToMe || CurrentUserTechnician is null)
+            return;
+
+        var previousValue = _assignmentTechnicianId;
+        _assignmentTechnicianId = CurrentUserTechnician.IdTecnico;
+        _showMobileChatActions = false;
+        if (!await AssignAsync())
+            _assignmentTechnicianId = previousValue;
+    }
 
     private void EnsureCurrentTechnicianFilter()
     {

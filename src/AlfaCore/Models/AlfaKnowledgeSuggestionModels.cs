@@ -25,3 +25,15 @@ public sealed class AlfaKnowledgeSuggestionResult
     public bool HasSufficientContext { get; set; }
     public List<AlfaKnowledgeSuggestionCitation> Citations { get; set; } = [];
 }
+
+public sealed class AlfaKnowledgeCorrectionRequest
+{
+    public Guid? InteractionId { get; set; }
+    public string Title { get; set; } = string.Empty;
+    public string OriginalQuestion { get; set; } = string.Empty;
+    public string? OriginalAnswer { get; set; }
+    public string CorrectedAnswer { get; set; } = string.Empty;
+    public string? SourceReference { get; set; }
+    public string? CorrectionNotes { get; set; }
+    public string CreatedBy { get; set; } = string.Empty;
+}

@@ -222,6 +222,85 @@ public sealed class AlfaKnowledgeSuggestionService(
         }
     }
 
+    public async Task<bool> SaveCorrectionAsync(
+        AlfaKnowledgeCorrectionRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var settings = options.Value;
+        if (!settings.IsConfigured)
+        {
+            return false;
+        }
+
+        try
+        {
+            var client = httpClientFactory.CreateClient();
+            client.Timeout = TimeSpan.FromSeconds(Math.Max(settings.TimeoutSeconds, 1));
+            client.DefaultRequestHeaders.Add("X-Api-Key", settings.ApiKey);
+
+            var payload = new
+            {
+                interactionId = request.InteractionId,
+                title = request.Title,
+                originalQuestion = request.OriginalQuestion,
+                originalAnswer = request.OriginalAnswer,
+                correctedAnswer = request.CorrectedAnswer,
+                sourceReference = request.SourceReference,
+                correctionNotes = request.CorrectionNotes,
+                createdBy = request.CreatedBy,
+                isPublished = true
+            };
+
+            var baseUrl = settings.BaseUrl.TrimEnd('/');
+            using var response = await client.PostAsJsonAsync(
+                $"{baseUrl}/api/curated-knowledge/correction",
+                payload,
+                JsonOptions,
+                cancellationToken);
+
+            if (response.IsSuccessStatusCode)
+            {
+                return true;
+            }
+
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            logger.LogWarning(
+                "AlfaKnowledge devolvió {StatusCode} al guardar una corrección: {Body}",
+                (int)response.StatusCode,
+                body);
+            await LogFailureAsync(
+                "SaveCorrection",
+                new HttpRequestException(
+                    $"AlfaKnowledge devolvió HTTP {(int)response.StatusCode} al guardar una corrección.",
+                    inner: null,
+                    response.StatusCode),
+                "No se pudo guardar la respuesta corregida en AlfaKnowledge.",
+                new
+                {
+                    StatusCode = (int)response.StatusCode,
+                    request.InteractionId,
+                    ResponseBody = body
+                });
+            return false;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
+        {
+            logger.LogWarning(ex, "No se pudo guardar la corrección en AlfaKnowledge.");
+            if (!cancellationToken.IsCancellationRequested)
+            {
+                await LogFailureAsync(
+                    "SaveCorrection",
+                    ex,
+                    "No se pudo guardar la respuesta corregida en AlfaKnowledge.",
+                    new { request.InteractionId });
+            }
+
+            return false;
+        }
+    }
+
     private async Task LogFailureAsync(string action, Exception exception, string userMessage, object? data)
     {
         try

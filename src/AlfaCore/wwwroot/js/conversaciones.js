@@ -699,6 +699,37 @@ window.conversacionesUi = {
         return true;
     },
 
+    bindAiInstructionEnter: function (element, dotNetRef) {
+        if (!element || !dotNetRef) return false;
+
+        if (element._conversacionesAiInstructionEnterHandler) {
+            element.removeEventListener('keydown', element._conversacionesAiInstructionEnterHandler);
+        }
+
+        const handler = (event) => {
+            if (event.isComposing
+                || event.key !== 'Enter'
+                || event.shiftKey
+                || event.ctrlKey
+                || event.altKey
+                || event.metaKey) {
+                return;
+            }
+
+            event.preventDefault();
+            const value = element.value || '';
+            if (!value.trim()) return;
+
+            element.value = '';
+            dotNetRef.invokeMethodAsync('SendAiInstructionFromEnter', value)
+                .catch(() => {});
+        };
+
+        element.addEventListener('keydown', handler);
+        element._conversacionesAiInstructionEnterHandler = handler;
+        return true;
+    },
+
     bindInternalNoteEnter: function (element, dotNetRef) {
         if (!element || !dotNetRef) return false;
 

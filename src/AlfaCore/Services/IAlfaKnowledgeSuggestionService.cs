@@ -30,4 +30,12 @@ public interface IAlfaKnowledgeSuggestionService
     /// la respuesta. Nunca lanza: un fallo acá no debe afectar la atención al cliente.
     /// </summary>
     Task SendFeedbackAsync(Guid interactionId, bool isHelpful, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Guarda en AlfaKnowledge una versión corregida de una respuesta sugerida para incorporarla
+    /// al conocimiento curado. Devuelve <c>false</c> si el servicio no está disponible.
+    /// </summary>
+    Task<bool> SaveCorrectionAsync(
+        AlfaKnowledgeCorrectionRequest request,
+        CancellationToken cancellationToken = default);
 }

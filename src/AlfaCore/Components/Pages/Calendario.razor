@@ -989,34 +989,10 @@
     }
 
     private string TechnicianColor(string? idTecnico, string? tecnicoNombre = null)
-    {
-        var fixedColor = FixedTechnicianColor(idTecnico, tecnicoNombre);
-        if (!string.IsNullOrWhiteSpace(fixedColor))
-            return fixedColor;
-
-        var value = FirstNonEmpty(idTecnico, tecnicoNombre);
-        if (string.IsNullOrWhiteSpace(value))
-            return "#14b8a6";
-        var hash = value.Aggregate(0, (current, ch) => (current * 31) + ch);
-        var colors = new[] { "#14b8a6", "#38bdf8", "#f472b6", "#f59e0b", "#a78bfa", "#22c55e" };
-        return colors[Math.Abs(hash) % colors.Length];
-    }
+        => TechnicianColorPalette.Resolve(idTecnico, tecnicoNombre);
 
     private static string FixedTechnicianColor(string? idTecnico, string? tecnicoNombre = null)
-    {
-        var value = NormalizeTechnicianKey($"{tecnicoNombre} {idTecnico}");
-        return value switch
-        {
-            var x when x.Contains("FAVIO", StringComparison.Ordinal) => "#ef4444",
-            var x when x.Contains("FRANCO", StringComparison.Ordinal) => "#3b82f6",
-            var x when x.Contains("MARCOS", StringComparison.Ordinal) => "#facc15",
-            var x when x.Contains("DANIEL", StringComparison.Ordinal) => "#22c55e",
-            _ => string.Empty
-        };
-    }
-
-    private static string NormalizeTechnicianKey(string? value)
-        => (value ?? string.Empty).Trim().ToUpperInvariant();
+        => TechnicianColorPalette.ResolveFixed(idTecnico, tecnicoNombre);
 
     private string ColorForTypeOrTechnician(string? tipo, string? idTecnico)
         => tipo switch
