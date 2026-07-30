@@ -129,6 +129,7 @@ window.conversacionesAudio = (function () {
 window.conversacionesUi = {
     _threadWatchers: new WeakMap(),
     _fileDropWatchers: new WeakMap(),
+    _columnResizerWatchers: new Map(),
     _previewPanWatchers: new WeakMap(),
     _previewKeyboardWatcher: null,
     _dateDividerWatchers: new WeakMap(),
@@ -142,6 +143,123 @@ window.conversacionesUi = {
     _lastSoundAttemptAt: '',
     _lastSoundError: '',
     _soundInitialized: false,
+
+    bindColumnResizers: function (rootId) {
+        const root = document.getElementById(rootId);
+        if (!root || this._columnResizerWatchers.has(rootId)) return false;
+
+        const storageKeys = {
+            inbox: 'alfacore.conversaciones.inboxWidth',
+            ai: 'alfacore.conversaciones.aiWidth'
+        };
+        const cssProperties = {
+            inbox: '--conversations-inbox-width',
+            ai: '--conversations-ai-width'
+        };
+        const clampWidth = (kind, value) => {
+            const container = kind === 'inbox'
+                ? root.querySelector('.conversations-layout')
+                : root;
+            const available = container?.getBoundingClientRect().width || root.clientWidth;
+            const minimum = kind === 'inbox' ? 280 : 320;
+            const maximum = kind === 'inbox'
+                ? Math.min(520, available * .46)
+                : Math.min(650, available * .48);
+            return Math.round(Math.max(minimum, Math.min(maximum, Number(value) || minimum)));
+        };
+        const setWidth = (kind, value, persist) => {
+            const width = clampWidth(kind, value);
+            root.style.setProperty(cssProperties[kind], `${width}px`);
+            if (persist) {
+                try {
+                    localStorage.setItem(storageKeys[kind], String(width));
+                } catch {
+                }
+            }
+            return width;
+        };
+
+        Object.keys(storageKeys).forEach(kind => {
+            try {
+                const stored = Number(localStorage.getItem(storageKeys[kind]));
+                if (stored > 0) setWidth(kind, stored, false);
+            } catch {
+            }
+        });
+
+        const cleanups = [];
+        root.querySelectorAll('[data-conversations-resizer]').forEach(handle => {
+            const kind = handle.dataset.conversationsResizer;
+            if (!cssProperties[kind]) return;
+
+            const startDrag = event => {
+                if (event.button !== 0 || window.innerWidth <= 900) return;
+                event.preventDefault();
+                root.classList.add('conversations-is-resizing');
+                handle.classList.add('is-dragging');
+
+                const move = moveEvent => {
+                    const bounds = (kind === 'inbox'
+                        ? root.querySelector('.conversations-layout')
+                        : root).getBoundingClientRect();
+                    const width = kind === 'inbox'
+                        ? moveEvent.clientX - bounds.left
+                        : bounds.right - moveEvent.clientX;
+                    setWidth(kind, width, false);
+                };
+                const stop = stopEvent => {
+                    move(stopEvent);
+                    const current = parseFloat(getComputedStyle(root).getPropertyValue(cssProperties[kind]));
+                    setWidth(kind, current, true);
+                    root.classList.remove('conversations-is-resizing');
+                    handle.classList.remove('is-dragging');
+                    window.removeEventListener('pointermove', move);
+                    window.removeEventListener('pointerup', stop);
+                    window.removeEventListener('pointercancel', stop);
+                };
+
+                window.addEventListener('pointermove', move, { passive: true });
+                window.addEventListener('pointerup', stop, { once: true });
+                window.addEventListener('pointercancel', stop, { once: true });
+            };
+            const resizeWithKeyboard = event => {
+                if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+                event.preventDefault();
+                const current = parseFloat(getComputedStyle(root).getPropertyValue(cssProperties[kind]))
+                    || (kind === 'inbox' ? 410 : 390);
+                const direction = event.key === 'ArrowRight' ? 1 : -1;
+                const delta = kind === 'ai' ? -direction * 16 : direction * 16;
+                setWidth(kind, current + delta, true);
+            };
+
+            handle.addEventListener('pointerdown', startDrag);
+            handle.addEventListener('keydown', resizeWithKeyboard);
+            cleanups.push(() => {
+                handle.removeEventListener('pointerdown', startDrag);
+                handle.removeEventListener('keydown', resizeWithKeyboard);
+            });
+        });
+
+        const keepWidthsInRange = () => {
+            Object.keys(cssProperties).forEach(kind => {
+                const current = parseFloat(getComputedStyle(root).getPropertyValue(cssProperties[kind]));
+                if (current > 0) setWidth(kind, current, false);
+            });
+        };
+        window.addEventListener('resize', keepWidthsInRange, { passive: true });
+        cleanups.push(() => window.removeEventListener('resize', keepWidthsInRange));
+        this._columnResizerWatchers.set(rootId, cleanups);
+        return true;
+    },
+
+    unbindColumnResizers: function (rootId) {
+        const cleanups = this._columnResizerWatchers.get(rootId);
+        if (!cleanups) return false;
+        cleanups.forEach(cleanup => cleanup());
+        this._columnResizerWatchers.delete(rootId);
+        document.getElementById(rootId)?.classList.remove('conversations-is-resizing');
+        return true;
+    },
 
     isNearBottom: function (element) {
         if (!element) return false;

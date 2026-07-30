@@ -1676,6 +1676,73 @@
     }
 }
 
+/*
+ * AlfaKnowledge es una segunda conversación, no una continuación del chat del cliente.
+ * El contorno y el pequeño margen suavizan la separación sin convertirlo en un modal.
+ */
+@media (min-width: 901px) {
+    .conversations-page--odoo > .conversations-ai-suggestion-drawer.conversations-ai-suggestion-drawer.is-open {
+        align-self: stretch !important;
+        width: calc(100% - .75rem) !important;
+        height: calc(100% - .75rem) !important;
+        margin: .375rem !important;
+        border: 1px solid rgba(148, 163, 184, .24) !important;
+        border-radius: 14px !important;
+        box-shadow:
+            0 14px 36px rgba(2, 8, 23, .28),
+            inset 0 1px 0 rgba(255, 255, 255, .035) !important;
+        overflow: hidden !important;
+    }
+}
+
+/* Encabezado en dos filas: identidad y cierre arriba; acceso completo debajo. */
+.conversations-page--odoo > .conversations-ai-suggestion-drawer .conversations-ai-header {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    grid-template-rows: auto auto !important;
+    align-items: center !important;
+    gap: .45rem .65rem !important;
+    min-height: 0 !important;
+    padding: .72rem .78rem !important;
+}
+
+.conversations-page--odoo > .conversations-ai-suggestion-drawer .conversations-ai-header__identity {
+    grid-column: 1 !important;
+    grid-row: 1 !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+}
+
+.conversations-page--odoo > .conversations-ai-suggestion-drawer .conversations-ai-full-link {
+    grid-column: 1 / -1 !important;
+    grid-row: 2 !important;
+    justify-self: start !important;
+    margin: 0 0 0 2.8rem !important;
+}
+
+.conversations-page--odoo > .conversations-ai-suggestion-drawer .conversations-ai-header > .conversations-drawer-close {
+    position: static !important;
+    grid-column: 2 !important;
+    grid-row: 1 !important;
+    align-self: start !important;
+    margin: 0 !important;
+}
+
+/* El contexto, las respuestas y el editor aprovechan el ancho real de la columna. */
+.conversations-page--odoo .conversations-ai-body > :not(.conversations-ai-composer),
+.conversations-page--odoo .conversations-ai-body > .context-card,
+.conversations-page--odoo > .conversations-ai-suggestion-drawer .conversations-ai-composer label,
+.conversations-page--odoo > .conversations-ai-suggestion-drawer .conversations-ai-composer textarea {
+    width: 100% !important;
+    max-width: none !important;
+    margin-inline: 0 !important;
+}
+
+.conversations-page--odoo > .conversations-ai-suggestion-drawer .conversations-ai-composer textarea {
+    justify-self: stretch !important;
+}
+
 @media (min-width: 901px) {
     .conversations-page--odoo .conversations-layout:has(.conversations-context-drawer.is-open) {
         grid-template-columns: minmax(390px, 430px) minmax(0, 1fr) !important;
@@ -2133,4 +2200,160 @@
     border-color: rgba(236, 72, 153, .28) !important;
     background: linear-gradient(90deg, rgba(236, 72, 153, .14), rgba(124, 58, 237, .12)) !important;
     color: #fce7f3 !important;
+}
+
+/* Separadores ajustables del inbox y de AlfaKnowledge. */
+@media (min-width: 901px) {
+    .conversations-page--odoo {
+        --conversations-inbox-width: 410px;
+        --conversations-ai-width: 390px;
+        position: relative !important;
+    }
+
+    .conversations-page--odoo.conversations-page--ai-open {
+        grid-template-columns: minmax(0, 1fr) var(--conversations-ai-width) !important;
+    }
+
+    .conversations-page--odoo .conversations-layout {
+        position: relative !important;
+        grid-template-columns: var(--conversations-inbox-width) minmax(0, 1fr) !important;
+    }
+
+    .conversations-column-resizer {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        z-index: 30;
+        width: 11px;
+        padding: 0;
+        border: 0;
+        cursor: col-resize;
+        touch-action: none;
+        user-select: none;
+        outline: none;
+    }
+
+    .conversations-column-resizer::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 5px;
+        width: 1px;
+        background: rgba(148, 163, 184, .16);
+        transition: width .15s ease, left .15s ease, background-color .15s ease, box-shadow .15s ease;
+    }
+
+    .conversations-column-resizer:hover::before,
+    .conversations-column-resizer:focus-visible::before,
+    .conversations-column-resizer.is-dragging::before {
+        left: 4px;
+        width: 3px;
+        background: rgba(34, 211, 238, .88);
+        box-shadow: 0 0 12px rgba(34, 211, 238, .5);
+    }
+
+    .conversations-column-resizer--inbox {
+        left: calc(var(--conversations-inbox-width) - 5px);
+    }
+
+    .conversations-column-resizer--ai {
+        right: calc(var(--conversations-ai-width) - 5px);
+        display: none;
+    }
+
+    .conversations-column-resizer--ai.is-visible {
+        display: block;
+    }
+
+    .conversations-page--odoo.conversations-is-resizing,
+    .conversations-page--odoo.conversations-is-resizing * {
+        cursor: col-resize !important;
+        user-select: none !important;
+    }
+}
+
+@media (max-width: 900px) {
+    .conversations-column-resizer {
+        display: none !important;
+    }
+}
+
+/* Las acciones secundarias no agregan una columna vertical entre mensajes. */
+@media (min-width: 769px) {
+    .conversations-page--odoo .message-actions {
+        position: relative !important;
+        display: block !important;
+        width: 1.75rem !important;
+        height: 1.75rem !important;
+        overflow: visible !important;
+    }
+
+    .conversations-page--odoo .message-actions > summary {
+        list-style: none !important;
+    }
+
+    .conversations-page--odoo .message-actions > summary::-webkit-details-marker {
+        display: none !important;
+    }
+
+    .conversations-page--odoo .message-actions__trigger {
+        display: inline-grid !important;
+        place-items: center !important;
+        width: 1.75rem !important;
+        height: 1.75rem !important;
+        padding: 0 !important;
+        border: 1px solid rgba(148, 163, 184, .2) !important;
+        border-radius: 999px !important;
+        color: #b8c7d3 !important;
+        background: rgba(15, 23, 42, .82) !important;
+        cursor: pointer !important;
+    }
+
+    .conversations-page--odoo .message-actions__trigger:hover,
+    .conversations-page--odoo .message-actions__trigger:focus-visible,
+    .conversations-page--odoo .message-actions[open] .message-actions__trigger {
+        border-color: rgba(34, 211, 238, .48) !important;
+        color: #e6fbff !important;
+        background: rgba(14, 116, 144, .3) !important;
+        outline: none !important;
+    }
+
+    .conversations-page--odoo .message-actions__menu {
+        position: absolute !important;
+        top: 50% !important;
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: center !important;
+        gap: .28rem !important;
+        padding: .24rem !important;
+        border: 1px solid rgba(148, 163, 184, .2) !important;
+        border-radius: 999px !important;
+        background: rgba(8, 20, 34, .96) !important;
+        box-shadow: 0 10px 24px rgba(2, 8, 23, .38) !important;
+        opacity: 0 !important;
+        visibility: hidden !important;
+        pointer-events: none !important;
+        transform: translateY(-50%) scale(.94) !important;
+        transition: opacity .14s ease, transform .14s ease, visibility .14s ease !important;
+        white-space: nowrap !important;
+    }
+
+    .conversations-page--odoo .message-row--incoming .message-actions__menu,
+    .conversations-page--odoo .message-row--internal .message-actions__menu {
+        left: calc(100% + .3rem) !important;
+        transform-origin: left center !important;
+    }
+
+    .conversations-page--odoo .message-row--outgoing .message-actions__menu {
+        right: calc(100% + .3rem) !important;
+        transform-origin: right center !important;
+    }
+
+    .conversations-page--odoo .message-actions[open] .message-actions__menu {
+        opacity: 1 !important;
+        visibility: visible !important;
+        pointer-events: auto !important;
+        transform: translateY(-50%) scale(1) !important;
+    }
 }

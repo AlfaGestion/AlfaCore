@@ -151,7 +151,9 @@
     }
 </style>
 
-<section class="page-grid conversations-page conversations-page--odoo @GetChannelCssClass() @(IsMobileChatView ? "conversations-page--chat-active" : string.Empty) @(_showAiSuggestionPanel ? "conversations-page--ai-open" : string.Empty)" @onclick="DismissConversationNoticesAsync">
+<section id="conversations-page"
+         class="page-grid conversations-page conversations-page--odoo @GetChannelCssClass() @(IsMobileChatView ? "conversations-page--chat-active" : string.Empty) @(_showAiSuggestionPanel ? "conversations-page--ai-open" : string.Empty)"
+         @onclick="DismissConversationNoticesAsync">
     @if (_loadError is not null)
     {
         <div class="panel-card empty-state">
@@ -845,6 +847,13 @@
                 }
             </aside>
 
+            <div class="conversations-column-resizer conversations-column-resizer--inbox"
+                 data-conversations-resizer="inbox"
+                 role="separator"
+                 aria-label="Cambiar ancho del inbox"
+                 aria-orientation="vertical"
+                 tabindex="0"></div>
+
             <div class="conversations-chat-workspace">
             <section class="panel-card conversations-chat">
                 @if (_loadingConversation || _loadingAuditMessages)
@@ -1523,35 +1532,42 @@
                                     </div>
                                     @if (CanReactToMessage(message) || CanQuoteMessage(message) || CanUseMessageAsAiFocus(message))
                                     {
-                                        <div class="message-actions">
-                                            @if (CanUseMessageAsAiFocus(message))
-                                            {
-                                                <button type="button"
-                                                        class="btn btn--ghost btn--sm message-action-button @(_aiFocusedMessageId == message.IdMensaje ? "is-active" : string.Empty)"
-                                                        title="Consultar este mensaje con la IA"
-                                                        @onclick="() => SelectAiFocusMessageAsync(message)">
-                                                    <i class="bi bi-stars"></i>
-                                                </button>
-                                            }
-                                            @if (CanReactToMessage(message))
-                                            {
-                                                <button type="button"
-                                                        class="btn btn--ghost btn--sm message-action-button"
-                                                        title="Reaccionar"
-                                                        @onclick="() => ToggleReactionPicker(message.IdMensaje)">
-                                                    <i class="bi bi-emoji-smile"></i>
-                                                </button>
-                                            }
-                                            @if (CanQuoteMessage(message))
-                                            {
-                                                <button type="button"
-                                                        class="btn btn--ghost btn--sm message-action-button"
-                                                        title="Responder citando"
-                                                        @onclick="() => QuoteMessageAsync(message)">
-                                                    <i class="bi bi-reply-fill"></i>
-                                                </button>
-                                            }
-                                        </div>
+                                        <details class="message-actions">
+                                            <summary class="message-actions__trigger"
+                                                     title="Más acciones"
+                                                     aria-label="Más acciones">
+                                                <i class="bi bi-three-dots"></i>
+                                            </summary>
+                                            <div class="message-actions__menu">
+                                                @if (CanUseMessageAsAiFocus(message))
+                                                {
+                                                    <button type="button"
+                                                            class="btn btn--ghost btn--sm message-action-button @(_aiFocusedMessageId == message.IdMensaje ? "is-active" : string.Empty)"
+                                                            title="Consultar este mensaje con la IA"
+                                                            @onclick="() => SelectAiFocusMessageAsync(message)">
+                                                        <i class="bi bi-stars"></i>
+                                                    </button>
+                                                }
+                                                @if (CanReactToMessage(message))
+                                                {
+                                                    <button type="button"
+                                                            class="btn btn--ghost btn--sm message-action-button"
+                                                            title="Reaccionar"
+                                                            @onclick="() => ToggleReactionPicker(message.IdMensaje)">
+                                                        <i class="bi bi-emoji-smile"></i>
+                                                    </button>
+                                                }
+                                                @if (CanQuoteMessage(message))
+                                                {
+                                                    <button type="button"
+                                                            class="btn btn--ghost btn--sm message-action-button"
+                                                            title="Responder citando"
+                                                            @onclick="() => QuoteMessageAsync(message)">
+                                                        <i class="bi bi-reply-fill"></i>
+                                                    </button>
+                                                }
+                                            </div>
+                                        </details>
                                     }
                                 </div>
                             }
@@ -1916,6 +1932,13 @@
             </div>
         </div>
         </div>
+
+        <div class="conversations-column-resizer conversations-column-resizer--ai @(_showAiSuggestionPanel ? "is-visible" : string.Empty)"
+             data-conversations-resizer="ai"
+             role="separator"
+             aria-label="Cambiar ancho de AlfaKnowledge"
+             aria-orientation="vertical"
+             tabindex="@(_showAiSuggestionPanel ? "0" : "-1")"></div>
 
         <aside class="panel-card conversations-context conversations-context-drawer conversations-ai-suggestion-drawer @(_showAiSuggestionPanel ? "is-open" : string.Empty)">
                 <div class="conversations-context__section conversations-ai-header">
@@ -3227,6 +3250,7 @@
         {
             try
             {
+                await JS.InvokeVoidAsync("conversacionesUi.bindColumnResizers", "conversations-page");
                 await JS.InvokeVoidAsync("conversacionesUi.initNotifications", "AlfaCore - Alfa Gestión");
                 await UpdateSoundDiagnosticsAsync();
             }
@@ -9382,6 +9406,14 @@
         try
         {
             await JS.InvokeVoidAsync("conversacionesUi.unbindAttachmentPreviewKeyboard");
+        }
+        catch
+        {
+        }
+
+        try
+        {
+            await JS.InvokeVoidAsync("conversacionesUi.unbindColumnResizers", "conversations-page");
         }
         catch
         {
