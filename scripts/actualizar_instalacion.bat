@@ -83,6 +83,9 @@ set "DEST_DIR_FULL=%DEST_DIR_FULL:"=%"
 :got_destination
 set "DEST_DIR_FULL=%DEST_DIR_FULL:"=%"
 
+rem quita la barra final (si la hay) para evitar que "%DEST_DIR_FULL%" escape la comilla de cierre en robocopy
+if "%DEST_DIR_FULL:~-1%"=="\" if not "%DEST_DIR_FULL:~-2,1%"==":" set "DEST_DIR_FULL=%DEST_DIR_FULL:~0,-1%"
+
 if not defined DEST_DIR_FULL (
   echo.
   echo No se ingreso un destino.
