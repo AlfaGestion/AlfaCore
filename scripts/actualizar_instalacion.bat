@@ -27,7 +27,7 @@ echo.
 echo Este script:
 echo   - toma el publish de .\publish\AlfaCoreLAN
 echo   - actualiza una instalacion existente sin reinstalar
-echo   - preserva appsettings.json (actual), appsettings.Production.json (legacy) y .env
+echo   - preserva appsettings.json (actual), appsettings.Production.json (legacy), .env y web.config
 echo   - preserva App_Data local y wwwroot\uploads
 echo   - sincroniza App_Data\updates como espejo exacto del origen (borra scripts viejos/renumerados que ya no esten)
 echo.
@@ -66,6 +66,7 @@ echo Preserva en el servidor:
 echo   - appsettings.json
 echo   - appsettings.Production.json ^(legacy^)
 echo   - .env
+echo   - web.config ^(bindings/puerto propios de esta instalacion^)
 echo   - App_Data local ^(uploads, sesiones, historicos, diagnosticos, etc.^)
 echo   - wwwroot\uploads
 echo.
@@ -137,7 +138,7 @@ if /i not "%CONFIRM%"=="S" if /i not "%CONFIRM%"=="SI" (
 
 echo.
 echo Copiando archivos necesarios...
-echo - Se preservan appsettings.json ^(actual^), appsettings.Production.json ^(legacy^) y .env
+echo - Se preservan appsettings.json ^(actual^), appsettings.Production.json ^(legacy^), .env y web.config
 echo - Se preservan App_Data y wwwroot\uploads del servidor
 echo - Se actualizan los binarios y JSON del runtime
 echo - Se actualiza App_Data\updates
@@ -145,7 +146,7 @@ echo.
 echo Destino detectado: %DEST_DIR_FULL%
 echo.
 
-robocopy "%SOURCE_DIR_FULL%" "%DEST_DIR_FULL%" /E /COPY:DAT /DCOPY:DAT /R:2 /W:1 /NFL /NDL /NJH /NJS /NP /XD "App_Data" "wwwroot\uploads" /XF "appsettings.json" "appsettings.Production.json" ".env" "*.log"
+robocopy "%SOURCE_DIR_FULL%" "%DEST_DIR_FULL%" /E /COPY:DAT /DCOPY:DAT /R:2 /W:1 /NFL /NDL /NJH /NJS /NP /XD "App_Data" "wwwroot\uploads" /XF "appsettings.json" "appsettings.Production.json" ".env" "web.config" "*.log"
 set "ROOT_COPY_EXIT=%ERRORLEVEL%"
 
 if %ROOT_COPY_EXIT% GEQ 8 (
@@ -181,7 +182,7 @@ echo Actualizacion completada.
 echo.
 echo Resumen:
 echo   - Binarios actualizados desde publish\AlfaCoreLAN
-echo   - Configuracion local preservada ^(appsettings.json actual / appsettings.Production.json legacy / .env^)
+echo   - Configuracion local preservada ^(appsettings.json actual / appsettings.Production.json legacy / .env / web.config^)
 echo   - Datos locales preservados ^(App_Data y wwwroot\uploads^)
 echo   - Scripts SQL publicados en App_Data\updates
 echo   - Launcher actualizado a iniciar_AlfaCore.bat
