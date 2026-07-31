@@ -344,6 +344,7 @@ Ejemplos:
 
 - Auditoría de usuarios
 - Consultas
+- [AlfaKnowledge en Conversaciones](manual_alfaknowledge_conversaciones.md)
 - otros módulos específicos
 
 ### Cuándo usar cada uno
