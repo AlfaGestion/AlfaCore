@@ -16,6 +16,12 @@ public sealed class AlfaKnowledgeAssistantMessage
     public string Content { get; set; } = string.Empty;
 }
 
+public sealed class AlfaKnowledgeImageInput
+{
+    public string DataUrl { get; set; } = string.Empty;
+    public string? FileName { get; set; }
+}
+
 public sealed class AlfaKnowledgeSuggestionResult
 {
     public Guid InteractionId { get; set; }
@@ -23,6 +29,8 @@ public sealed class AlfaKnowledgeSuggestionResult
     public bool NeedsClarification { get; set; }
     public string? ClarificationQuestion { get; set; }
     public bool HasSufficientContext { get; set; }
+    public bool ImageAnalyzed { get; set; }
+    public string? ImageContext { get; set; }
     public List<AlfaKnowledgeSuggestionCitation> Citations { get; set; } = [];
 }
 

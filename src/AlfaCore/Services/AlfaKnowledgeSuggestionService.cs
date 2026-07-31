@@ -46,6 +46,7 @@ public sealed class AlfaKnowledgeSuggestionService(
         long conversationId,
         string? instruction = null,
         IReadOnlyList<AlfaKnowledgeAssistantMessage>? assistantHistory = null,
+        AlfaKnowledgeImageInput? image = null,
         CancellationToken cancellationToken = default)
     {
         var settings = options.Value;
@@ -91,6 +92,8 @@ public sealed class AlfaKnowledgeSuggestionService(
                         content = message.Content
                     })
                     .ToArray(),
+                imageDataUrl = image?.DataUrl,
+                imageFileName = image?.FileName,
                 externalSystem = "AlfaCore",
                 externalConversationId = conversationId.ToString(CultureInfo.InvariantCulture),
                 limit = 4
@@ -146,6 +149,8 @@ public sealed class AlfaKnowledgeSuggestionService(
                 NeedsClarification = apiResult.NeedsClarification,
                 ClarificationQuestion = apiResult.ClarificationQuestion,
                 HasSufficientContext = apiResult.HasSufficientContext,
+                ImageAnalyzed = apiResult.ImageAnalyzed,
+                ImageContext = apiResult.ImageContext,
                 Citations = (apiResult.Citations ?? [])
                     .Select(static citation => new AlfaKnowledgeSuggestionCitation
                     {
@@ -330,6 +335,8 @@ public sealed class AlfaKnowledgeSuggestionService(
         public bool NeedsClarification { get; set; }
         public string? ClarificationQuestion { get; set; }
         public bool HasSufficientContext { get; set; }
+        public bool ImageAnalyzed { get; set; }
+        public string? ImageContext { get; set; }
         public List<SuggestReplyApiCitation>? Citations { get; set; }
     }
 
