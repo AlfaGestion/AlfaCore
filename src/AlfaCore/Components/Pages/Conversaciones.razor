@@ -2012,6 +2012,12 @@
                             <option value="@AiContextScopes.FocusedMessage" disabled="@(!_aiFocusedMessageId.HasValue)">Mensaje marcado</option>
                         </select>
                         <small>@GetAiContextDescription()</small>
+                        @if (HasAiContextImage())
+                        {
+                            <small class="conversations-ai-image-context">
+                                <i class="bi bi-image"></i> También analizará la última imagen enviada por el cliente.
+                            </small>
+                        }
                     </div>
 
                     @if (_aiFocusedMessageId.HasValue && GetAiFocusedMessage() is { } focusedMessage)
@@ -6714,6 +6720,7 @@
         }
 
         var contextMessages = GetAiContextMessages();
+        var imageCandidate = GetAiImageCandidate(contextMessages);
         var focusMessage = string.Equals(_aiContextScope, AiContextScopes.FocusedMessage, StringComparison.Ordinal)
             ? GetAiFocusedMessage()
             : contextMessages
@@ -6721,6 +6728,8 @@
                 .Where(message => !string.IsNullOrWhiteSpace(message.Texto))
                 .OrderByDescending(message => message.FechaHora)
                 .FirstOrDefault();
+
+        focusMessage ??= imageCandidate?.Message;
 
         if (focusMessage is null && !string.IsNullOrWhiteSpace(instruction))
         {
@@ -6735,8 +6744,8 @@
             _aiSuggestion = null;
             _aiSuggestionConversationId = conversationId;
             _aiSuggestionError = string.Equals(_aiContextScope, AiContextScopes.FocusedMessage, StringComparison.Ordinal)
-                ? "Marcá un mensaje de texto para usarlo como foco."
-                : "El contexto elegido no tiene un mensaje de texto para analizar.";
+                ? "Marcá un mensaje de texto o una imagen para usarlo como foco."
+                : "El contexto elegido no tiene texto ni imágenes para analizar.";
             return;
         }
 
@@ -6746,17 +6755,24 @@
         _loadingAiSuggestion = true;
         _aiSuggestion = null;
         _aiSuggestionConversationId = conversationId;
-        _aiSuggestionOriginalQuestion = focusMessage.Texto.Trim();
+        var customerMessage = string.IsNullOrWhiteSpace(focusMessage.Texto)
+            ? "El cliente envió una imagen con un error o una pantalla para analizar."
+            : focusMessage.Texto.Trim();
+        _aiSuggestionOriginalQuestion = customerMessage;
         StateHasChanged();
 
         try
         {
+            var image = imageCandidate is null
+                ? null
+                : await BuildAiImageInputAsync(imageCandidate.Value.Attachment, requestCts.Token);
             var result = await AlfaKnowledgeSvc.SuggestReplyAsync(
-                focusMessage.Texto,
+                customerMessage,
                 contextMessages,
                 conversationId,
                 instruction,
                 assistantHistory,
+                image,
                 requestCts.Token);
 
             if (requestCts.IsCancellationRequested
@@ -6767,9 +6783,28 @@
             }
 
             _aiSuggestion = result;
+            if (_aiSuggestion is not null
+                && image is not null
+                && (IsGenericImageQuestion(_aiSuggestionOriginalQuestion)
+                    || !string.IsNullOrWhiteSpace(_aiSuggestion.ImageContext)))
+            {
+                var visualQuestion = !string.IsNullOrWhiteSpace(_aiSuggestion.ImageContext)
+                    ? _aiSuggestion.ImageContext
+                    : ExtractVisibleErrorFromSuggestion(_aiSuggestion.SuggestedReply);
+                if (!string.IsNullOrWhiteSpace(visualQuestion))
+                {
+                    _aiSuggestionOriginalQuestion = visualQuestion.Trim();
+                }
+            }
+
             if (_aiSuggestion is null)
             {
                 _aiSuggestionError = "AlfaKnowledge no respondió o no pudo analizar este contexto.";
+            }
+            else if (image is not null && !_aiSuggestion.ImageAnalyzed)
+            {
+                _aiSuggestionError = "La imagen no llegó a AlfaKnowledge. Reintentá luego de actualizar el servicio.";
+                _aiSuggestion = null;
             }
             else if (!string.IsNullOrWhiteSpace(instruction))
             {
@@ -6823,6 +6858,43 @@
         });
         _aiInstruction = string.Empty;
         await RequestAiSuggestionAsync(instruction, previousHistory);
+    }
+
+    private static bool IsGenericImageQuestion(string? value)
+    {
+        var normalized = value?.Trim();
+        return string.Equals(normalized, "[image]", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(normalized, "[imagen]", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(normalized, "image", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(normalized, "imagen", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string? ExtractVisibleErrorFromSuggestion(string? suggestion)
+    {
+        if (string.IsNullOrWhiteSpace(suggestion))
+        {
+            return null;
+        }
+
+        var text = suggestion.Trim();
+        var errorIndex = text.IndexOf("error", StringComparison.OrdinalIgnoreCase);
+        if (errorIndex < 0)
+        {
+            return null;
+        }
+
+        var openingQuote = text.IndexOfAny(['“', '"'], errorIndex);
+        if (openingQuote >= 0)
+        {
+            var closingQuote = text.IndexOf(text[openingQuote] == '“' ? '”' : '"', openingQuote + 1);
+            if (closingQuote > openingQuote + 1)
+            {
+                return text[(openingQuote + 1)..closingQuote].Trim();
+            }
+        }
+
+        var end = text.IndexOfAny(['.', '?', '¿', '\n', '\r'], errorIndex);
+        return (end > errorIndex ? text[errorIndex..end] : text[errorIndex..]).Trim(' ', ':');
     }
 
     [JSInvokable]
@@ -7026,6 +7098,76 @@
 
     private void OnAiInstructionInput(ChangeEventArgs args)
         => _aiInstruction = args.Value?.ToString() ?? string.Empty;
+
+    private bool HasAiContextImage()
+        => GetAiImageCandidate(GetAiContextMessages()) is not null;
+
+    private (ConversacionMensajeDto Message, ConversacionAdjuntoDto Attachment)? GetAiImageCandidate(
+        IReadOnlyCollection<ConversacionMensajeDto> contextMessages)
+    {
+        var candidates = string.Equals(_aiContextScope, AiContextScopes.FocusedMessage, StringComparison.Ordinal)
+            && _aiFocusedMessageId.HasValue
+                ? contextMessages.Where(message => message.IdMensaje == _aiFocusedMessageId.Value)
+                : contextMessages;
+
+        foreach (var message in candidates
+                     .Where(IsIncomingMessage)
+                     .OrderByDescending(static message => message.FechaHora)
+                     .ThenByDescending(static message => message.IdMensaje))
+        {
+            if (!_adjuntosPorMensaje.TryGetValue(message.IdMensaje, out var attachments))
+            {
+                continue;
+            }
+
+            var image = attachments
+                .Where(static attachment => attachment.ArchivoDisponible)
+                .Where(IsImageAttachment)
+                .Where(static attachment => !IsStickerAttachment(attachment))
+                .OrderByDescending(static attachment => attachment.IdAdjunto)
+                .FirstOrDefault();
+            if (image is not null)
+            {
+                return (message, image);
+            }
+        }
+
+        return null;
+    }
+
+    private async Task<AlfaKnowledgeImageInput?> BuildAiImageInputAsync(
+        ConversacionAdjuntoDto attachment,
+        CancellationToken cancellationToken)
+    {
+        const long maxImageBytes = 10 * 1024 * 1024;
+        if (attachment.TamanoBytes > maxImageBytes)
+        {
+            return null;
+        }
+
+        var file = await ConversacionesSvc.GetAttachmentForServeAsync(
+            attachment.IdAdjunto,
+            includeDownloadName: false,
+            ct: cancellationToken);
+        if (file is null || file.Contenido.Length == 0 || file.Contenido.LongLength > maxImageBytes)
+        {
+            return null;
+        }
+
+        var mimeType = file.MimeType.StartsWith("image/", StringComparison.OrdinalIgnoreCase)
+            ? file.MimeType
+            : GetAttachmentMime(attachment);
+        if (!mimeType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return new AlfaKnowledgeImageInput
+        {
+            DataUrl = $"data:{mimeType};base64,{Convert.ToBase64String(file.Contenido)}",
+            FileName = FirstNonEmpty(file.NombreArchivo, attachment.NombreArchivo)
+        };
+    }
 
     private void ClearAiFocusMessage()
     {

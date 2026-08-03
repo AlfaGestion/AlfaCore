@@ -22,6 +22,7 @@ public interface IAlfaKnowledgeSuggestionService
         long conversationId,
         string? instruction = null,
         IReadOnlyList<AlfaKnowledgeAssistantMessage>? assistantHistory = null,
+        AlfaKnowledgeImageInput? image = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

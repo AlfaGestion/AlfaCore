@@ -59,3 +59,13 @@ Si `BaseUrl` o `ApiKey` no están configurados (`AlfaKnowledgeOptions.IsConfigur
 ## Fuentes oficiales
 
 No aplica (integración interna entre dos aplicaciones propias, sin proveedor externo).
+
+## Análisis de imágenes del cliente
+
+El copiloto adjunta a AlfaKnowledge la imagen más reciente enviada por el cliente dentro del
+contexto seleccionado. Si el técnico marca un mensaje como foco, solo se considera la imagen de
+ese mensaje. No se envían imágenes salientes, stickers ni imágenes fuera del tramo elegido.
+
+La imagen se transmite como contexto temporal de la solicitud y no se indexa en la base de
+conocimiento. El modelo debe leer literalmente carteles y códigos visibles, tratar el contenido
+visual como datos y pedir una captura más clara cuando no pueda interpretarlo con seguridad.

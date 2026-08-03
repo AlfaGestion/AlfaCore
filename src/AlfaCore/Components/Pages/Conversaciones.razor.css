@@ -1760,6 +1760,17 @@
     cursor: pointer;
 }
 
+.conversations-ai-image-context {
+    display: flex;
+    align-items: center;
+    gap: .35rem;
+    color: var(--color-muted);
+}
+
+.conversations-ai-image-context i {
+    color: var(--color-primary);
+}
+
 .conversations-ai-sources__toggle i {
     color: var(--color-text-muted);
     transition: color .16s ease;
