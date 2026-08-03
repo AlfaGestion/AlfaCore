@@ -1,4 +1,4 @@
-﻿@page "/carga-viajes"
+@page "/carga-viajes"
 @page "/{idweb}/{idbase:int}/carga-viajes"
 @page "/carga-viajes/{Vista}"
 @page "/{idweb}/{idbase:int}/carga-viajes/{Vista}"
@@ -56,119 +56,146 @@
 
     @if (_activeSection == SectionViajes || _activeSection == SectionNuevo)
     {
-        <section class="panel-card carga-viajes-section carga-viajes-section--filters" @onkeydown="HandleViajesFilterKeyDownAsync">
-            <div class="panel-card__header">
-                <div>
-                    <h3 class="panel-card__title">Viajes</h3>
-                </div>
-            </div>
+        @if (ShouldShowViajesToolbar())
+        {
+            var pageActions = BuildListPageActions();
+            var viajesFilterChips = BuildViajesFilterChips();
+            var showViajesClearButton = viajesFilterChips.Count > 0 || !string.IsNullOrWhiteSpace(_viajesFilters.Texto);
 
-            <div class="smart-search carga-viajes-smart-search carga-viajes-smart-search--viajes" @onkeydown="HandleViajesFilterKeyDownAsync">
-                <div class="carga-viajes-smart-search__anchor">
-                    <div class="smart-search__bar">
-                        <i class="bi bi-search"></i>
-                        <input type="search"
-                               placeholder="Buscar viaje, cliente, chofer, destino, comprobante o usuario..."
-                               @bind="_viajesFilters.Texto"
-                               @bind:event="oninput"
-                               @onfocus="AbrirViajesAdvancedFilters" />
-                        <button type="button" class="smart-search__toggle" @onclick="ToggleViajesAdvancedFilters" aria-expanded="@_showViajesAdvancedFilters" aria-controls="carga-viajes-viajes-filtros-avanzados" aria-label="Mostrar filtros avanzados">
-                            <i class="bi @(_showViajesAdvancedFilters ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
-                        </button>
-                    </div>
-
-                    @if (_showViajesAdvancedFilters)
-                    {
-                        <button type="button" class="module-actionbar__search-backdrop" aria-label="Cerrar filtros" @onmousedown="() => _showViajesAdvancedFilters = false"></button>
-                        <div id="carga-viajes-viajes-filtros-avanzados" class="smart-search__panel carga-viajes-smart-search__panel--viajes">
-                            <div class="smart-search__column">
-                                <h4><i class="bi bi-calendar-range"></i> Fecha</h4>
-                                <div class="smart-search__inline">
-                                    <label>Rango rápido</label>
-                                    <select value="@_viajesFechaRango" @onchange="OnViajesFechaRangoChangedAsync">
-                                        <option value="todo">Todo</option>
-                                        <option value="hoy">Hoy</option>
-                                        <option value="semana">Hace una semana</option>
-                                        <option value="mes-actual">Mes actual</option>
-                                        <option value="mes-pasado">Mes pasado</option>
-                                        <option value="anio-actual">Este año</option>
-                                        <option value="anio-pasado">Año pasado</option>
-                                        <option value="personalizado">Personalizado</option>
-                                    </select>
+            <ModuleListToolbar AriaLabel="Herramientas de viajes"
+                               PagerAriaLabel="Paginación de viajes"
+                               ActionsAriaLabel="Acciones de viajes"
+                               ShowPager="true"
+                               CurrentPage="@_viajesPage"
+                               TotalPages="@_viajesTotalPages"
+                               IsLoading="@_viajesLoading"
+                               OnPageChanged="CambiarPaginaViajesAsync"
+                               Actions="@pageActions">
+                <SearchContent>
+                    <div class="smart-search carga-viajes-smart-search carga-viajes-smart-search--viajes" @onkeydown="HandleViajesFilterKeyDownAsync">
+                        <div class="carga-viajes-smart-search__anchor">
+                            <div class="smart-search__bar carga-viajes-smart-search__bar--with-chips">
+                                <i class="bi bi-search carga-viajes-smart-search__search-icon"></i>
+                                <div class="carga-viajes-smart-search__entry">
+                                    @if (viajesFilterChips.Count > 0)
+                                    {
+                                        <div class="carga-viajes-smart-search__inline-chips" aria-live="polite">
+                                            @foreach (var chip in viajesFilterChips)
+                                            {
+                                                <button type="button"
+                                                        class="smart-chip carga-viajes-filter-chip"
+                                                        @key="chip.Key"
+                                                        title="@chip.Label"
+                                                        aria-label="@($"Quitar filtro {chip.Label}")"
+                                                        @onclick="() => RemoveViajesFilterChipAsync(chip.Key)"
+                                                        @onclick:stopPropagation="true">
+                                                    <span>@chip.Label</span>
+                                                    <i class="bi bi-x" aria-hidden="true"></i>
+                                                </button>
+                                            }
+                                        </div>
+                                    }
+                                    <input type="search"
+                                           class="carga-viajes-smart-search__text-input"
+                                           placeholder=""
+                                           aria-label="Buscar viaje, cliente, chofer, destino, comprobante o usuario"
+                                           @bind="_viajesFilters.Texto"
+                                           @bind:event="oninput"
+                                           @onfocus="AbrirViajesAdvancedFilters" />
                                 </div>
-                                <div class="smart-search__inline">
-                                    <label>Fecha desde</label>
-                                    <InputDate @bind-Value="_viajesFilters.FechaDesde" @bind-Value:after="OnViajesFechaManualChangedAsync" />
-                                </div>
-                                <div class="smart-search__inline">
-                                    <label>Fecha hasta</label>
-                                    <InputDate @bind-Value="_viajesFilters.FechaHasta" @bind-Value:after="OnViajesFechaManualChangedAsync" />
-                                </div>
-                                <button type="button" class="btn btn--ghost btn--sm" @onclick="LimpiarFiltroFechaViajesAsync">Limpiar fecha</button>
+                                @if (showViajesClearButton)
+                                {
+                                    <button type="button"
+                                            class="carga-viajes-clear-filters-btn"
+                                            title="Limpiar filtros"
+                                            aria-label="Limpiar filtros"
+                                            @onclick="LimpiarFiltrosViajesAsync"
+                                            @onclick:stopPropagation="true">
+                                        <i class="bi bi-x-lg" aria-hidden="true"></i>
+                                    </button>
+                                }
+                                <button type="button" class="smart-search__toggle" @onclick="ToggleViajesAdvancedFilters" aria-expanded="@_showViajesAdvancedFilters" aria-controls="carga-viajes-viajes-filtros-avanzados" aria-label="Mostrar filtros avanzados">
+                                    <i class="bi @(_showViajesAdvancedFilters ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
+                                </button>
                             </div>
 
-                            <div class="smart-search__column">
-                                <h4><i class="bi bi-person-vcard"></i> Partes</h4>
-                                <div class="smart-search__inline">
-                                    <label>Cliente</label>
-                                    <LookupAutocomplete Label="" Placeholder="Buscar cliente..." Text="@_clienteFiltroTexto" TextChanged="OnClienteFiltroTextoChangedAsync" SelectedChanged="OnClienteSeleccionadoAsync" OnEnterCommitted="AplicarFiltrosViajesAsync" SearchFunc="CargaViajesSvc.SearchClientesAsync" MinimumCharacters="0" />
-                                </div>
-                                <div class="smart-search__inline">
-                                    <label>Chofer / Fletero</label>
-                                    <LookupAutocomplete Label="" Placeholder="Buscar chofer..." Text="@_choferFiltroTexto" TextChanged="OnChoferFiltroTextoChangedAsync" SelectedChanged="OnChoferSeleccionadoAsync" OnEnterCommitted="AplicarFiltrosViajesAsync" SearchFunc="CargaViajesSvc.SearchChoferLookupAsync" MinimumCharacters="0" />
-                                </div>
-                                <div class="smart-search__inline">
-                                    <label>Destino</label>
-                                    <LookupAutocomplete Label="" Placeholder="Buscar destino..." Text="@_destinoFiltroTexto" TextChanged="OnDestinoFiltroTextoChangedAsync" SelectedChanged="OnDestinoSeleccionadoAsync" OnEnterCommitted="AplicarFiltrosViajesAsync" SearchFunc="CargaViajesSvc.SearchDestinosLookupAsync" MinimumCharacters="0" />
-                                </div>
-                            </div>
+                            @if (_showViajesAdvancedFilters)
+                            {
+                                <button type="button" class="module-actionbar__search-backdrop" aria-label="Cerrar filtros" @onmousedown="() => _showViajesAdvancedFilters = false"></button>
+                                <div id="carga-viajes-viajes-filtros-avanzados" class="smart-search__panel carga-viajes-smart-search__panel--viajes">
+                                    <div class="smart-search__column">
+                                        <h4><i class="bi bi-calendar-range"></i> Fecha</h4>
+                                        <div class="smart-search__inline">
+                                            <label>Rango rápido</label>
+                                            <select value="@_viajesFechaRango" @onchange="OnViajesFechaRangoChangedAsync">
+                                                <option value="todo">Todo</option>
+                                                <option value="hoy">Hoy</option>
+                                                <option value="semana">Hace una semana</option>
+                                                <option value="mes-actual">Mes actual</option>
+                                                <option value="mes-pasado">Mes pasado</option>
+                                                <option value="anio-actual">Este año</option>
+                                                <option value="anio-pasado">Año pasado</option>
+                                                <option value="personalizado">Personalizado</option>
+                                            </select>
+                                        </div>
+                                        <div class="smart-search__inline">
+                                            <label>Fecha desde</label>
+                                            <InputDate @bind-Value="_viajesFilters.FechaDesde" @bind-Value:after="OnViajesFechaManualChangedAsync" />
+                                        </div>
+                                        <div class="smart-search__inline">
+                                            <label>Fecha hasta</label>
+                                            <InputDate @bind-Value="_viajesFilters.FechaHasta" @bind-Value:after="OnViajesFechaManualChangedAsync" />
+                                        </div>
+                                        <button type="button" class="btn btn--ghost btn--sm" @onclick="LimpiarFiltroFechaViajesAsync">Limpiar fecha</button>
+                                    </div>
 
-                            <div class="smart-search__column">
-                                <h4><i class="bi bi-sliders"></i> Estado y referencia</h4>
-                                <div class="smart-search__inline">
-                                    <label>Estado</label>
-                                    <select @bind="_viajesFilters.Estado">
-                                        <option value="">Todos</option>
-                                        @foreach (var estado in _lookups.Estados)
-                                        {
-                                            <option value="@estado">@estado</option>
-                                        }
-                                    </select>
+                                    <div class="smart-search__column">
+                                        <h4><i class="bi bi-person-vcard"></i> Partes</h4>
+                                        <div class="smart-search__inline">
+                                            <label>Cliente</label>
+                                            <LookupAutocomplete Label="" Placeholder="Buscar cliente..." Text="@_clienteFiltroTexto" TextChanged="OnClienteFiltroTextoChangedAsync" SelectedChanged="OnClienteSeleccionadoAsync" OnEnterCommitted="AplicarFiltrosViajesAsync" SearchFunc="CargaViajesSvc.SearchClientesAsync" MinimumCharacters="0" />
+                                        </div>
+                                        <div class="smart-search__inline">
+                                            <label>Chofer / Fletero</label>
+                                            <LookupAutocomplete Label="" Placeholder="Buscar chofer..." Text="@_choferFiltroTexto" TextChanged="OnChoferFiltroTextoChangedAsync" SelectedChanged="OnChoferSeleccionadoAsync" OnEnterCommitted="AplicarFiltrosViajesAsync" SearchFunc="CargaViajesSvc.SearchChoferLookupAsync" MinimumCharacters="0" />
+                                        </div>
+                                        <div class="smart-search__inline">
+                                            <label>Destino</label>
+                                            <LookupAutocomplete Label="" Placeholder="Buscar destino..." Text="@_destinoFiltroTexto" TextChanged="OnDestinoFiltroTextoChangedAsync" SelectedChanged="OnDestinoSeleccionadoAsync" OnEnterCommitted="AplicarFiltrosViajesAsync" SearchFunc="CargaViajesSvc.SearchDestinosLookupAsync" MinimumCharacters="0" />
+                                        </div>
+                                    </div>
+
+                                    <div class="smart-search__column">
+                                        <h4><i class="bi bi-sliders"></i> Estado y referencia</h4>
+                                        <div class="smart-search__inline">
+                                            <label>Estado</label>
+                                            <select @bind="_viajesFilters.Estado">
+                                                <option value="">Todos</option>
+                                                @foreach (var estado in _lookups.Estados)
+                                                {
+                                                    <option value="@estado">@estado</option>
+                                                }
+                                            </select>
+                                        </div>
+                                        <div class="smart-search__inline">
+                                            <label>Usuario</label>
+                                            <input type="text" @bind="_viajesFilters.Usuario" @bind:event="oninput" />
+                                        </div>
+                                        <div class="smart-search__inline">
+                                            <label>Id comprobante</label>
+                                            <input type="text" @bind="_viajesFilters.IdComprobante" @bind:event="oninput" />
+                                        </div>
+                                    </div>
+                                    <div class="carga-viajes-smart-search__apply-row">
+                                        <button type="button" class="btn btn--primary carga-viajes-smart-search__apply-btn" @onclick="AplicarFiltrosViajesYCerrarAsync">Aplicar filtros</button>
+                                    </div>
                                 </div>
-                                <div class="smart-search__inline">
-                                    <label>Usuario</label>
-                                    <input type="text" @bind="_viajesFilters.Usuario" @bind:event="oninput" />
-                                </div>
-                                <div class="smart-search__inline">
-                                    <label>Id comprobante</label>
-                                    <input type="text" @bind="_viajesFilters.IdComprobante" @bind:event="oninput" />
-                                </div>
-                            </div>
-                            <div class="carga-viajes-smart-search__apply-row">
-                                <button type="button" class="btn btn--primary carga-viajes-smart-search__apply-btn" @onclick="AplicarFiltrosViajesYCerrarAsync">Aplicar filtros</button>
-                            </div>
+                            }
                         </div>
-                    }
-                </div>
-
-                <div class="smart-search__chips" aria-live="polite">
-                    @foreach (var chip in BuildViajesFilterChips())
-                    {
-                        <button type="button" class="smart-chip" @key="chip.Key" @onclick="() => RemoveViajesFilterChipAsync(chip.Key)">
-                            @chip.Label <i class="bi bi-x"></i>
-                        </button>
-                    }
-                    @if (BuildViajesFilterChips().Count == 0)
-                    {
-                        <span class="smart-search__hint">Buscador rápido para viajes con filtros por fecha, cliente, chofer, destino, usuario y estado.</span>
-                    }
-                </div>
-
-                <div class="carga-viajes-smart-search__actions actions">
-                    <button type="button" class="btn btn--ghost btn--sm" @onclick="LimpiarFiltrosViajesAsync" disabled="@_viajesLoading">Limpiar filtros</button>
-                </div>
-            </div>
-        </section>
+                    </div>
+                </SearchContent>
+            </ModuleListToolbar>
+        }
 
         @if (_showViewSettings)
         {
@@ -226,7 +253,6 @@
             <div class="panel-card__header">
                 <div>
                     <h3 class="panel-card__title">Viajes</h3>
-                    <span class="panel-card__subtitle">@_viajesTotal registro(s) · Página @_viajesPage de @_viajesTotalPages</span>
                 </div>
             </div>
 
@@ -315,64 +341,85 @@
                         }
                     </table>
                 </div>
-            }
 
-            <div class="result-pagination">
-                <div class="result-pagination__info">
-                    <span>Total: @_viajesTotal</span>
-                </div>
-                <div class="result-pagination__controls">
-                    <button class="result-pagination__btn" @onclick="() => CambiarPaginaViajesAsync(_viajesPage - 1)" disabled="@(_viajesPage <= 1)">Anterior</button>
-                    <button class="result-pagination__btn" @onclick="() => CambiarPaginaViajesAsync(_viajesPage + 1)" disabled="@(_viajesPage >= _viajesTotalPages)">Siguiente</button>
-                </div>
-            </div>
+                <div class="carga-viajes-list-footer">@GetViajesFoundText()</div>
+            }
         </section>
     }
     else if (_activeSection == SectionTarifas)
     {
+        var pageActions = BuildListPageActions();
+        var tarifasFilterChips = BuildTarifasFilterChips();
+        var showTarifasClearButton = tarifasFilterChips.Count > 0 || !string.IsNullOrWhiteSpace(_tarifasFilters.Texto);
+
         <section class="panel-card carga-viajes-section carga-viajes-section--filters">
             <div class="panel-card__header">
                 <div>
                     <h3 class="panel-card__title">Tarifas</h3>
                 </div>
-                <div class="actions">
-                    <button type="button" class="btn btn--primary btn--sm" @onclick="NuevaTarifaAsync">Nueva tarifa</button>
-                    <button type="button" class="btn btn--ghost btn--sm" @onclick="AbrirTarifasBulkEditAsync">Aumento de tarifa</button>
-                    <button type="button" class="btn btn--ghost btn--sm" @onclick="ExportarTarifasExcelAsync" disabled="@_tarifasLoading">Exportar Excel</button>
-                </div>
             </div>
 
-            <div class="smart-search carga-viajes-smart-search carga-viajes-smart-search--tarifas" @onkeydown="HandleTarifasSearchKeyDownAsync">
-                <div class="carga-viajes-smart-search__anchor">
-                    <div class="smart-search__bar">
-                        <i class="bi bi-search"></i>
-                        <input type="search"
-                               placeholder="Buscar tarifa, cliente, chofer, destino o tipo vehículo..."
-                               @bind="_tarifasFilters.Texto"
-                               @bind:event="oninput"
-                               @onfocus="AbrirTarifasAdvancedFilters" />
-                        <button type="button" class="smart-search__toggle" @onclick="ToggleTarifasAdvancedFilters" aria-expanded="@_showTarifasAdvancedFilters" aria-controls="carga-viajes-tarifas-filtros-avanzados" aria-label="Mostrar filtros avanzados">
-                            <i class="bi @(_showTarifasAdvancedFilters ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
-                        </button>
-                    </div>
+            <ModuleListToolbar AriaLabel="Herramientas de tarifas"
+                               PagerAriaLabel="Paginación de tarifas"
+                               ActionsAriaLabel="Acciones de tarifas"
+                               ShowPager="true"
+                               CurrentPage="@_tarifasPage"
+                               TotalPages="@_tarifasTotalPages"
+                               IsLoading="@_tarifasLoading"
+                               OnPageChanged="CambiarPaginaTarifasAsync"
+                               Actions="@pageActions">
+                <SearchContent>
+                    <div class="smart-search carga-viajes-smart-search carga-viajes-smart-search--tarifas" @onkeydown="HandleTarifasSearchKeyDownAsync">
+                        <div class="carga-viajes-smart-search__anchor">
+                            <div class="smart-search__bar carga-viajes-smart-search__bar--with-chips">
+                                <i class="bi bi-search carga-viajes-smart-search__search-icon"></i>
+                                <div class="carga-viajes-smart-search__entry">
+                                    @if (tarifasFilterChips.Count > 0)
+                                    {
+                                        <div class="carga-viajes-smart-search__inline-chips" aria-live="polite">
+                                            @foreach (var chip in tarifasFilterChips)
+                                            {
+                                                <button type="button"
+                                                        class="smart-chip carga-viajes-filter-chip"
+                                                        @key="chip.Key"
+                                                        title="@chip.Label"
+                                                        aria-label="@($"Quitar filtro {chip.Label}")"
+                                                        @onclick="() => RemoveTarifasFilterChipAsync(chip.Key)"
+                                                        @onclick:stopPropagation="true">
+                                                    <span>@chip.Label</span>
+                                                    <i class="bi bi-x" aria-hidden="true"></i>
+                                                </button>
+                                            }
+                                        </div>
+                                    }
+                                    <input type="search"
+                                           class="carga-viajes-smart-search__text-input"
+                                           placeholder=""
+                                           aria-label="Buscar tarifa, cliente, chofer, destino o tipo vehículo"
+                                           @bind="_tarifasFilters.Texto"
+                                           @bind:event="oninput"
+                                           @onfocus="AbrirTarifasAdvancedFilters" />
+                                </div>
+                                @if (showTarifasClearButton)
+                                {
+                                    <button type="button"
+                                            class="carga-viajes-clear-filters-btn"
+                                            title="Limpiar filtros"
+                                            aria-label="Limpiar filtros"
+                                            @onclick="LimpiarFiltrosTarifasAsync"
+                                            @onclick:stopPropagation="true">
+                                        <i class="bi bi-x-lg" aria-hidden="true"></i>
+                                    </button>
+                                }
+                                <button type="button" class="smart-search__toggle" @onclick="ToggleTarifasAdvancedFilters" aria-expanded="@_showTarifasAdvancedFilters" aria-controls="carga-viajes-tarifas-filtros-avanzados" aria-label="Mostrar filtros avanzados">
+                                    <i class="bi @(_showTarifasAdvancedFilters ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
+                                </button>
+                            </div>
 
-                    <div class="smart-search__chips" aria-live="polite">
-                        @foreach (var chip in BuildTarifasFilterChips())
-                        {
-                            <button type="button" class="smart-chip" @key="chip.Key" @onclick="() => RemoveTarifasFilterChipAsync(chip.Key)">
-                                @chip.Label <i class="bi bi-x"></i>
-                            </button>
-                        }
-                        @if (BuildTarifasFilterChips().Count == 0)
-                        {
-                            <span class="smart-search__hint">Usá los filtros por tipo, cliente, chofer, destino y activo.</span>
-                        }
-                    </div>
-
-                    @if (_showTarifasAdvancedFilters)
-                    {
-                        <button type="button" class="module-actionbar__search-backdrop" aria-label="Cerrar filtros" @onmousedown="() => _showTarifasAdvancedFilters = false"></button>
-                        <div id="carga-viajes-tarifas-filtros-avanzados" class="smart-search__panel carga-viajes-smart-search__panel--tarifas" @onclick:stopPropagation="true" @onmousedown:stopPropagation="true">
+                            @if (_showTarifasAdvancedFilters)
+                            {
+                                <button type="button" class="module-actionbar__search-backdrop" aria-label="Cerrar filtros" @onmousedown="() => _showTarifasAdvancedFilters = false"></button>
+                                <div id="carga-viajes-tarifas-filtros-avanzados" class="smart-search__panel carga-viajes-smart-search__panel--tarifas" @onclick:stopPropagation="true" @onmousedown:stopPropagation="true">
                         <div class="smart-search__column">
                             <h4><i class="bi bi-tags"></i> Tipo y estado</h4>
                             <div class="carga-viajes-tarifas__type-filter" role="group" aria-label="Tipo tarifa">
@@ -437,23 +484,18 @@
                         <div class="carga-viajes-smart-search__apply-row">
                             <button type="button" class="btn btn--primary carga-viajes-smart-search__apply-btn" @onclick="AplicarFiltrosTarifasYCerrarAsync">Aplicar filtros</button>
                         </div>
+                                </div>
+                            }
                         </div>
-                    }
-                </div>
-
-                <div class="carga-viajes-smart-search__actions actions">
-                    <button type="button" class="btn btn--ghost btn--sm" @onclick="LimpiarFiltrosTarifasAsync">Limpiar filtros</button>
-                    <button type="button" class="btn btn--ghost btn--sm" @onclick="RecargarTarifasAsync">Recargar</button>
-                    <button type="button" class="btn btn--ghost btn--sm" @onclick="ExportarTarifasExcelAsync" disabled="@_tarifasLoading">Excel</button>
-                </div>
-            </div>
+                    </div>
+                </SearchContent>
+            </ModuleListToolbar>
         </section>
 
         <section class="panel-card">
             <div class="panel-card__header">
                 <div>
-                    <h3 class="panel-card__title">Listado de tarifas</h3>
-                    <span class="panel-card__subtitle">@_tarifasTotal registro(s)</span>
+                    <h3 class="panel-card__title">Tarifas</h3>
                 </div>
             </div>
             @if (_tarifasLoading)
@@ -545,14 +587,9 @@
                         </tbody>
                     </table>
                 </div>
+
+                <div class="carga-viajes-list-footer">@GetTarifasFoundText()</div>
             }
-            <div class="result-pagination">
-                <div class="result-pagination__info">Total: @_tarifasTotal · Página @_tarifasPage de @_tarifasTotalPages</div>
-                <div class="result-pagination__controls">
-                    <button class="result-pagination__btn" @onclick="() => CambiarPaginaTarifasAsync(_tarifasPage - 1)" disabled="@(_tarifasPage <= 1)">Anterior</button>
-                    <button class="result-pagination__btn" @onclick="() => CambiarPaginaTarifasAsync(_tarifasPage + 1)" disabled="@(_tarifasPage >= _tarifasTotalPages)">Siguiente</button>
-                </div>
-            </div>
         </section>
 
         @if (_showTarifasBulkEditModal)
@@ -1070,38 +1107,73 @@
     }
     else if (_activeSection == SectionChoferes)
     {
+        var pageActions = BuildListPageActions();
+        var choferesFilterChips = BuildChoferesFilterChips();
+        var showChoferesClearButton = choferesFilterChips.Count > 0 || !string.IsNullOrWhiteSpace(_choferesFilters.Texto);
+
         <section class="panel-card carga-viajes-section carga-viajes-section--filters">
             <div class="panel-card__header">
                 <div>
                     <h3 class="panel-card__title">Choferes</h3>
                 </div>
-                <div class="actions">
-                    <button type="button" class="btn btn--primary btn--sm" @onclick="NuevoChoferAsync">Nuevo chofer</button>
-                </div>
             </div>
 
-            <div class="smart-search carga-viajes-smart-search carga-viajes-smart-search--choferes">
-                <div class="carga-viajes-smart-search__anchor">
-                    <div class="smart-search__bar">
-                        <i class="bi bi-search"></i>
-                        <input type="search" placeholder="Buscar chofer, fletero o código..." @bind="_choferesFilters.Texto" @bind:event="oninput" @onfocus="AbrirChoferesAdvancedFilters" />
+            <ModuleListToolbar AriaLabel="Herramientas de choferes"
+                               PagerAriaLabel="Paginación de choferes"
+                               ActionsAriaLabel="Acciones de choferes"
+                               ShowPager="true"
+                               CurrentPage="@_choferesPage"
+                               TotalPages="@_choferesTotalPages"
+                               IsLoading="@_choferesLoading"
+                               OnPageChanged="CambiarPaginaChoferesAsync"
+                               Actions="@pageActions">
+                <SearchContent>
+                    <div class="smart-search carga-viajes-smart-search carga-viajes-smart-search--choferes" @onkeydown="HandleChoferesSearchKeyDownAsync">
+                        <div class="carga-viajes-smart-search__anchor">
+                            <div class="smart-search__bar carga-viajes-smart-search__bar--with-chips">
+                        <i class="bi bi-search carga-viajes-smart-search__search-icon"></i>
+                        <div class="carga-viajes-smart-search__entry">
+                            @if (choferesFilterChips.Count > 0)
+                            {
+                                <div class="carga-viajes-smart-search__inline-chips" aria-live="polite">
+                                    @foreach (var chip in choferesFilterChips)
+                                    {
+                                        <button type="button"
+                                                class="smart-chip carga-viajes-filter-chip"
+                                                @key="chip.Key"
+                                                title="@chip.Label"
+                                                aria-label="@($"Quitar filtro {chip.Label}")"
+                                                @onclick="() => RemoveChoferesFilterChipAsync(chip.Key)"
+                                                @onclick:stopPropagation="true">
+                                            <span>@chip.Label</span>
+                                            <i class="bi bi-x" aria-hidden="true"></i>
+                                        </button>
+                                    }
+                                </div>
+                            }
+                            <input type="search"
+                                   class="carga-viajes-smart-search__text-input"
+                                   placeholder=""
+                                   aria-label="Buscar chofer, fletero o código"
+                                   @bind="_choferesFilters.Texto"
+                                   @bind:event="oninput"
+                                   @onfocus="AbrirChoferesAdvancedFilters" />
+                        </div>
+                        @if (showChoferesClearButton)
+                        {
+                            <button type="button"
+                                    class="carga-viajes-clear-filters-btn"
+                                    title="Limpiar filtros"
+                                    aria-label="Limpiar filtros"
+                                    @onclick="LimpiarFiltrosChoferesAsync"
+                                    @onclick:stopPropagation="true">
+                                <i class="bi bi-x-lg" aria-hidden="true"></i>
+                            </button>
+                        }
                         <button type="button" class="smart-search__toggle" @onclick="ToggleChoferesAdvancedFilters" aria-expanded="@_showChoferesAdvancedFilters" aria-controls="carga-viajes-choferes-filtros-avanzados" aria-label="Mostrar filtros avanzados">
                             <i class="bi @(_showChoferesAdvancedFilters ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
                         </button>
-                    </div>
-
-                    <div class="smart-search__chips" aria-live="polite">
-                        @foreach (var chip in BuildChoferesFilterChips())
-                        {
-                            <button type="button" class="smart-chip" @key="chip.Key" @onclick="() => RemoveChoferesFilterChipAsync(chip.Key)">
-                                @chip.Label <i class="bi bi-x"></i>
-                            </button>
-                        }
-                        @if (BuildChoferesFilterChips().Count == 0)
-                        {
-                            <span class="smart-search__hint">Filtros de choferes, disponibilidad y tipo de vehículo.</span>
-                        }
-                    </div>
+                            </div>
 
                     @if (_showChoferesAdvancedFilters)
                     {
@@ -1134,18 +1206,15 @@
                             </div>
                         </div>
                     }
-                </div>
-
-                <div class="carga-viajes-smart-search__actions actions">
-                    <button type="button" class="btn btn--ghost btn--sm" @onclick="LimpiarFiltrosChoferesAsync">Limpiar</button>
-                    <button type="button" class="btn btn--ghost btn--sm" @onclick="RecargarChoferesAsync">Recargar</button>
-                </div>
-            </div>
+                        </div>
+                    </div>
+                </SearchContent>
+            </ModuleListToolbar>
         </section>
 
         <section class="panel-card">
             <div class="panel-card__header">
-                <div><h3 class="panel-card__title">Listado de choferes</h3><span class="panel-card__subtitle">@_choferesTotal registro(s)</span></div>
+                <div><h3 class="panel-card__title">Choferes</h3></div>
             </div>
             <div class="usuarios-table-wrap">
                 <table class="data-table" data-sticky-list-header>
@@ -1170,6 +1239,8 @@
                     </tbody>
                 </table>
             </div>
+
+            <div class="carga-viajes-list-footer">@GetChoferesFoundText()</div>
         </section>
 
         @if (_showChoferEditor)
@@ -1213,38 +1284,73 @@
     }
     else if (_activeSection == SectionDestinos)
     {
+        var pageActions = BuildListPageActions();
+        var destinosFilterChips = BuildDestinosFilterChips();
+        var showDestinosClearButton = destinosFilterChips.Count > 0 || !string.IsNullOrWhiteSpace(_destinosFilters.Texto);
+
         <section class="panel-card carga-viajes-section carga-viajes-section--filters">
             <div class="panel-card__header">
                 <div>
                     <h3 class="panel-card__title">Destinos</h3>
                 </div>
-                <div class="actions">
-                    <button type="button" class="btn btn--primary btn--sm" @onclick="NuevoDestinoAsync">Nuevo destino</button>
-                </div>
             </div>
 
-            <div class="smart-search carga-viajes-smart-search carga-viajes-smart-search--destinos">
-                <div class="carga-viajes-smart-search__anchor">
-                    <div class="smart-search__bar">
-                        <i class="bi bi-search"></i>
-                        <input type="search" placeholder="Buscar destino o código..." @bind="_destinosFilters.Texto" @bind:event="oninput" @onfocus="AbrirDestinosAdvancedFilters" />
+            <ModuleListToolbar AriaLabel="Herramientas de destinos"
+                               PagerAriaLabel="Paginación de destinos"
+                               ActionsAriaLabel="Acciones de destinos"
+                               ShowPager="true"
+                               CurrentPage="@_destinosPage"
+                               TotalPages="@_destinosTotalPages"
+                               IsLoading="@_destinosLoading"
+                               OnPageChanged="CambiarPaginaDestinosAsync"
+                               Actions="@pageActions">
+                <SearchContent>
+                    <div class="smart-search carga-viajes-smart-search carga-viajes-smart-search--destinos" @onkeydown="HandleDestinosSearchKeyDownAsync">
+                        <div class="carga-viajes-smart-search__anchor">
+                            <div class="smart-search__bar carga-viajes-smart-search__bar--with-chips">
+                        <i class="bi bi-search carga-viajes-smart-search__search-icon"></i>
+                        <div class="carga-viajes-smart-search__entry">
+                            @if (destinosFilterChips.Count > 0)
+                            {
+                                <div class="carga-viajes-smart-search__inline-chips" aria-live="polite">
+                                    @foreach (var chip in destinosFilterChips)
+                                    {
+                                        <button type="button"
+                                                class="smart-chip carga-viajes-filter-chip"
+                                                @key="chip.Key"
+                                                title="@chip.Label"
+                                                aria-label="@($"Quitar filtro {chip.Label}")"
+                                                @onclick="() => RemoveDestinosFilterChipAsync(chip.Key)"
+                                                @onclick:stopPropagation="true">
+                                            <span>@chip.Label</span>
+                                            <i class="bi bi-x" aria-hidden="true"></i>
+                                        </button>
+                                    }
+                                </div>
+                            }
+                            <input type="search"
+                                   class="carga-viajes-smart-search__text-input"
+                                   placeholder=""
+                                   aria-label="Buscar destino o código"
+                                   @bind="_destinosFilters.Texto"
+                                   @bind:event="oninput"
+                                   @onfocus="AbrirDestinosAdvancedFilters" />
+                        </div>
+                        @if (showDestinosClearButton)
+                        {
+                            <button type="button"
+                                    class="carga-viajes-clear-filters-btn"
+                                    title="Limpiar filtros"
+                                    aria-label="Limpiar filtros"
+                                    @onclick="LimpiarFiltrosDestinosAsync"
+                                    @onclick:stopPropagation="true">
+                                <i class="bi bi-x-lg" aria-hidden="true"></i>
+                            </button>
+                        }
                         <button type="button" class="smart-search__toggle" @onclick="ToggleDestinosAdvancedFilters" aria-expanded="@_showDestinosAdvancedFilters" aria-controls="carga-viajes-destinos-filtros-avanzados" aria-label="Mostrar filtros avanzados">
                             <i class="bi @(_showDestinosAdvancedFilters ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
                         </button>
-                    </div>
-
-                    <div class="smart-search__chips" aria-live="polite">
-                        @foreach (var chip in BuildDestinosFilterChips())
-                        {
-                            <button type="button" class="smart-chip" @key="chip.Key" @onclick="() => RemoveDestinosFilterChipAsync(chip.Key)">
-                                @chip.Label <i class="bi bi-x"></i>
-                            </button>
-                        }
-                        @if (BuildDestinosFilterChips().Count == 0)
-                        {
-                            <span class="smart-search__hint">Filtro compacto para destinos activos o inactivos.</span>
-                        }
-                    </div>
+                            </div>
 
                     @if (_showDestinosAdvancedFilters)
                     {
@@ -1259,18 +1365,15 @@
                             </div>
                         </div>
                     }
-                </div>
-
-                <div class="carga-viajes-smart-search__actions actions">
-                    <button type="button" class="btn btn--ghost btn--sm" @onclick="LimpiarFiltrosDestinosAsync">Limpiar</button>
-                    <button type="button" class="btn btn--ghost btn--sm" @onclick="RecargarDestinosAsync">Recargar</button>
-                </div>
-            </div>
+                        </div>
+                    </div>
+                </SearchContent>
+            </ModuleListToolbar>
         </section>
 
         <section class="panel-card">
             <div class="panel-card__header">
-                <div><h3 class="panel-card__title">Listado de destinos</h3><span class="panel-card__subtitle">@_destinosTotal registro(s)</span></div>
+                <div><h3 class="panel-card__title">Destinos</h3></div>
             </div>
             <div class="usuarios-table-wrap">
                 <table class="data-table" data-sticky-list-header>
@@ -1293,6 +1396,8 @@
                     </tbody>
                 </table>
             </div>
+
+            <div class="carga-viajes-list-footer">@GetDestinosFoundText()</div>
         </section>
 
         @if (_showDestinoEditor)
@@ -1336,38 +1441,73 @@
     }
     else if (_activeSection == SectionTipoVehiculo)
     {
+        var pageActions = BuildListPageActions();
+        var tipoVehiculosFilterChips = BuildTipoVehiculosFilterChips();
+        var showTipoVehiculosClearButton = tipoVehiculosFilterChips.Count > 0 || !string.IsNullOrWhiteSpace(_tipoVehiculosFilters.Texto);
+
         <section class="panel-card carga-viajes-section carga-viajes-section--filters">
             <div class="panel-card__header">
                 <div>
-                    <h3 class="panel-card__title">Tipos de vehículo</h3>
-                </div>
-                <div class="actions">
-                    <button type="button" class="btn btn--primary btn--sm" @onclick="NuevoTipoVehiculoAsync">Nuevo tipo de vehículo</button>
+                    <h3 class="panel-card__title">Tipo de vehículo</h3>
                 </div>
             </div>
 
-            <div class="smart-search carga-viajes-smart-search carga-viajes-smart-search--tipo-vehiculos">
-                <div class="carga-viajes-smart-search__anchor">
-                    <div class="smart-search__bar">
-                        <i class="bi bi-search"></i>
-                        <input type="search" placeholder="Buscar tipo de vehículo o código..." @bind="_tipoVehiculosFilters.Texto" @bind:event="oninput" @onfocus="AbrirTipoVehiculosAdvancedFilters" />
+            <ModuleListToolbar AriaLabel="Herramientas de tipos de vehículo"
+                               PagerAriaLabel="Paginación de tipos de vehículo"
+                               ActionsAriaLabel="Acciones de tipos de vehículo"
+                               ShowPager="true"
+                               CurrentPage="@_tipoVehiculosPage"
+                               TotalPages="@_tipoVehiculosTotalPages"
+                               IsLoading="@_tipoVehiculosLoading"
+                               OnPageChanged="CambiarPaginaTipoVehiculosAsync"
+                               Actions="@pageActions">
+                <SearchContent>
+                    <div class="smart-search carga-viajes-smart-search carga-viajes-smart-search--tipo-vehiculos" @onkeydown="HandleTipoVehiculosSearchKeyDownAsync">
+                        <div class="carga-viajes-smart-search__anchor">
+                            <div class="smart-search__bar carga-viajes-smart-search__bar--with-chips">
+                        <i class="bi bi-search carga-viajes-smart-search__search-icon"></i>
+                        <div class="carga-viajes-smart-search__entry">
+                            @if (tipoVehiculosFilterChips.Count > 0)
+                            {
+                                <div class="carga-viajes-smart-search__inline-chips" aria-live="polite">
+                                    @foreach (var chip in tipoVehiculosFilterChips)
+                                    {
+                                        <button type="button"
+                                                class="smart-chip carga-viajes-filter-chip"
+                                                @key="chip.Key"
+                                                title="@chip.Label"
+                                                aria-label="@($"Quitar filtro {chip.Label}")"
+                                                @onclick="() => RemoveTipoVehiculosFilterChipAsync(chip.Key)"
+                                                @onclick:stopPropagation="true">
+                                            <span>@chip.Label</span>
+                                            <i class="bi bi-x" aria-hidden="true"></i>
+                                        </button>
+                                    }
+                                </div>
+                            }
+                            <input type="search"
+                                   class="carga-viajes-smart-search__text-input"
+                                   placeholder=""
+                                   aria-label="Buscar tipo de vehículo o código"
+                                   @bind="_tipoVehiculosFilters.Texto"
+                                   @bind:event="oninput"
+                                   @onfocus="AbrirTipoVehiculosAdvancedFilters" />
+                        </div>
+                        @if (showTipoVehiculosClearButton)
+                        {
+                            <button type="button"
+                                    class="carga-viajes-clear-filters-btn"
+                                    title="Limpiar filtros"
+                                    aria-label="Limpiar filtros"
+                                    @onclick="LimpiarFiltrosTipoVehiculosAsync"
+                                    @onclick:stopPropagation="true">
+                                <i class="bi bi-x-lg" aria-hidden="true"></i>
+                            </button>
+                        }
                         <button type="button" class="smart-search__toggle" @onclick="ToggleTipoVehiculosAdvancedFilters" aria-expanded="@_showTipoVehiculosAdvancedFilters" aria-controls="carga-viajes-tipo-vehiculos-filtros-avanzados" aria-label="Mostrar filtros avanzados">
                             <i class="bi @(_showTipoVehiculosAdvancedFilters ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
                         </button>
-                    </div>
-
-                    <div class="smart-search__chips" aria-live="polite">
-                        @foreach (var chip in BuildTipoVehiculosFilterChips())
-                        {
-                            <button type="button" class="smart-chip" @key="chip.Key" @onclick="() => RemoveTipoVehiculosFilterChipAsync(chip.Key)">
-                                @chip.Label <i class="bi bi-x"></i>
-                            </button>
-                        }
-                        @if (BuildTipoVehiculosFilterChips().Count == 0)
-                        {
-                            <span class="smart-search__hint">Filtro compacto para tipos de vehículo y estado.</span>
-                        }
-                    </div>
+                            </div>
 
                     @if (_showTipoVehiculosAdvancedFilters)
                     {
@@ -1391,21 +1531,16 @@
                             </div>
                         </div>
                     }
-                </div>
-
-                <div class="carga-viajes-smart-search__actions actions">
-                    <button type="button" class="btn btn--ghost btn--sm" @onclick="LimpiarFiltrosTipoVehiculosAsync">Limpiar</button>
-                    <button type="button" class="btn btn--ghost btn--sm" @onclick="RecargarTipoVehiculosAsync">Recargar</button>
-                    <button type="button" class="btn btn--ghost btn--sm" @onclick="AbrirConfiguracionTipoVehiculoVista">Configurar vista</button>
-                </div>
-            </div>
+                        </div>
+                    </div>
+                </SearchContent>
+            </ModuleListToolbar>
         </section>
 
         <section class="panel-card">
             <div class="panel-card__header">
                 <div>
-                    <h3 class="panel-card__title">Listado de tipos de vehículo</h3>
-                    <span class="panel-card__subtitle">@_tipoVehiculosTotal registro(s)</span>
+                    <h3 class="panel-card__title">Tipo de vehículo</h3>
                 </div>
             </div>
 
@@ -1465,6 +1600,8 @@
                         }
                     </table>
                 </div>
+
+                <div class="carga-viajes-list-footer">@GetTipoVehiculosFoundText()</div>
             }
         </section>
 
@@ -1565,43 +1702,65 @@
     }
     else if (_activeSection == SectionReportes)
     {
+        var pageActions = BuildListPageActions();
+        var reporteFilterChips = BuildReporteFilterChips();
+        var showReporteClearButton = reporteFilterChips.Count > 0;
+
         <section class="panel-card carga-viajes-section carga-viajes-section--filters">
             <div class="panel-card__header">
                 <div>
-                    <h3 class="panel-card__title">Reportes</h3>
+                    <h3 class="panel-card__title">@GetReportesHeadline()</h3>
                     <span class="panel-card__subtitle">Consulta y análisis de viajes.</span>
-                </div>
-                <div class="actions">
-                    <button type="button" class="btn btn--primary btn--sm" @onclick="BuscarReporteLiquidacionAsync" disabled="@_reportesLoading">Aplicar filtros</button>
-                    <button type="button" class="btn btn--ghost btn--sm" @onclick="LimpiarFiltrosReporteAsync" disabled="@_reportesLoading">Limpiar filtros</button>
-                    <button type="button" class="btn btn--ghost btn--sm" @onclick="ImprimirLiquidacionAsync" disabled="@_reportesLoading">Imprimir</button>
-                    <button type="button" class="btn btn--ghost btn--sm" @onclick="ExportarReporteExcelAsync" disabled="@_reportesLoading">Exportar Excel</button>
-                    <button type="button" class="btn btn--ghost btn--sm" @onclick="ImprimirLiquidacionAsync" disabled="@_reportesLoading">Exportar PDF</button>
                 </div>
             </div>
 
-            <div class="smart-search carga-viajes-smart-search carga-viajes-smart-search--reportes">
-                <div class="carga-viajes-smart-search__anchor">
-                    <div class="smart-search__bar" @onclick="AbrirReportesAdvancedFilters">
-                        <i class="bi bi-sliders"></i>
-                        <span class="carga-viajes-reportes__trigger-label">Rango, tipo de persona, estado y modo de consulta</span>
+            <ModuleListToolbar AriaLabel="Herramientas de reportes"
+                               ActionsAriaLabel="Acciones de reportes"
+                               Actions="@pageActions">
+                <SearchContent>
+                    <div class="smart-search carga-viajes-smart-search carga-viajes-smart-search--reportes">
+                        <div class="carga-viajes-smart-search__anchor">
+                            <div class="smart-search__bar carga-viajes-smart-search__bar--with-chips" @onclick="AbrirReportesAdvancedFilters">
+                        <i class="bi bi-sliders carga-viajes-smart-search__search-icon"></i>
+                        <div class="carga-viajes-smart-search__entry">
+                            @if (reporteFilterChips.Count > 0)
+                            {
+                                <div class="carga-viajes-smart-search__inline-chips" aria-live="polite">
+                                    @foreach (var chip in reporteFilterChips)
+                                    {
+                                        <button type="button"
+                                                class="smart-chip carga-viajes-filter-chip"
+                                                @key="chip.Key"
+                                                title="@chip.Label"
+                                                aria-label="@($"Quitar filtro {chip.Label}")"
+                                                @onclick="() => RemoveReporteFilterChipAsync(chip.Key)"
+                                                @onclick:stopPropagation="true">
+                                            <span>@chip.Label</span>
+                                            <i class="bi bi-x" aria-hidden="true"></i>
+                                        </button>
+                                    }
+                                </div>
+                            }
+                            else
+                            {
+                                <span class="carga-viajes-smart-search__trigger-text"></span>
+                            }
+                        </div>
+                        @if (showReporteClearButton)
+                        {
+                            <button type="button"
+                                    class="carga-viajes-clear-filters-btn"
+                                    title="Limpiar filtros"
+                                    aria-label="Limpiar filtros"
+                                    @onclick="LimpiarFiltrosReporteAsync"
+                                    @onclick:stopPropagation="true">
+                                <i class="bi bi-x-lg" aria-hidden="true"></i>
+                            </button>
+                        }
                         <button type="button" class="smart-search__toggle" @onclick:stopPropagation="true" @onmousedown:stopPropagation="true" @onclick="ToggleReportesAdvancedFilters" aria-expanded="@_showReportesAdvancedFilters" aria-controls="carga-viajes-reportes-advanced" aria-label="Mostrar filtros avanzados">
                             <i class="bi @(_showReportesAdvancedFilters ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
                         </button>
-                    </div>
-
-                    <div class="smart-search__chips" aria-live="polite">
-                        @foreach (var chip in BuildReporteFilterChips())
-                        {
-                            <button type="button" class="smart-chip" @key="chip.Key" @onclick="() => RemoveReporteFilterChipAsync(chip.Key)">
-                                @chip.Label <i class="bi bi-x"></i>
-                            </button>
-                        }
-                        @if (BuildReporteFilterChips().Count == 0)
-                        {
-                            <span class="smart-search__hint">Elegí rango, tipo de persona, estado y el modo de consulta.</span>
-                        }
-                    </div>
+                            </div>
 
                     @if (_showReportesAdvancedFilters)
                     {
@@ -1708,18 +1867,13 @@
                             </div>
                         </div>
                     }
-                </div>
-            </div>
+                        </div>
+                    </div>
+                </SearchContent>
+            </ModuleListToolbar>
         </section>
 
         <section class="panel-card carga-viajes-liquidaciones-panel">
-            <div class="panel-card__header">
-                <div>
-                    <h3 class="panel-card__title">@GetReportesHeadline()</h3>
-                    <span class="panel-card__subtitle">@GetReportesSubheadline()</span>
-                </div>
-            </div>
-
             @if (_reportesLoading)
             {
                 <div class="liquidacion-loading">
@@ -2236,162 +2390,193 @@
     }
     else if (_activeSection == SectionLiquidaciones)
     {
+        var pageActions = BuildListPageActions();
+        var liquidacionesFilterChips = BuildLiquidacionesFilterChips();
+        var showLiquidacionesClearButton = liquidacionesFilterChips.Count > 0;
+
         <section class="panel-card carga-viajes-section carga-viajes-section--filters">
             <div class="panel-card__header">
                 <div>
                     <h3 class="panel-card__title">Liquidaciones</h3>
-                    <span class="panel-card__subtitle">Buscar y seleccionar viajes para pagar</span>
-                </div>
-                <div class="actions">
-                    <button type="button" class="btn btn--primary btn--sm" @onclick="BuscarLiquidacionesAsync" disabled="@_liquidacionesLoading">Buscar</button>
-                    <button type="button" class="btn btn--ghost btn--sm" @onclick="LimpiarFiltrosLiquidacionesAsync" disabled="@_liquidacionesLoading">Limpiar filtros</button>
                 </div>
             </div>
 
-            <div class="viajes-filter-panel-v2 viajes-liquidaciones-filter-panel-v2">
-                <div class="viajes-filter-row-v2 carga-viajes-liquidaciones__date-row">
-                    <div class="viajes-filter-field-v2 sm">
-                        <label>Rango rápido</label>
-                        <select value="@_liquidacionesFilters.RangoRapido" @onchange="OnLiquidacionesRangoRapidoChangedAsync">
-                            <option value="@CargaViajesReporteRangoRapidoKeys.Hoy">Hoy</option>
-                            <option value="@CargaViajesReporteRangoRapidoKeys.SemanaActual">Semana actual</option>
-                            <option value="@CargaViajesReporteRangoRapidoKeys.MesActual">Mes actual</option>
-                            <option value="@CargaViajesReporteRangoRapidoKeys.MesAnterior">Mes anterior</option>
-                            <option value="@CargaViajesReporteRangoRapidoKeys.AnioActual">Año actual</option>
-                            <option value="@CargaViajesReporteRangoRapidoKeys.AnioAnterior">Año anterior</option>
-                            <option value="@CargaViajesReporteRangoRapidoKeys.Personalizado">Personalizado</option>
-                            <option value="@CargaViajesReporteRangoRapidoKeys.Todo">Todo</option>
-                        </select>
-                    </div>
-                    <div class="viajes-filter-field-v2 sm">
-                        <label>Fecha desde</label>
-                        <InputDate TValue="DateTime?" Value="_liquidacionesFilters.FechaDesde" ValueChanged="OnLiquidacionesFechaDesdeChangedAsync" ValueExpression="() => _liquidacionesFilters.FechaDesde" />
-                    </div>
-                    <div class="viajes-filter-field-v2 sm">
-                        <label>Fecha hasta</label>
-                        <InputDate TValue="DateTime?" Value="_liquidacionesFilters.FechaHasta" ValueChanged="OnLiquidacionesFechaHastaChangedAsync" ValueExpression="() => _liquidacionesFilters.FechaHasta" />
-                    </div>
-                    <div class="viajes-filter-field-v2 sm carga-viajes-liquidaciones__toggle-field">
-                        <label>&nbsp;</label>
+            <ModuleListToolbar AriaLabel="Herramientas de liquidaciones"
+                               ActionsAriaLabel="Acciones de liquidaciones"
+                               Actions="@pageActions">
+                <SearchContent>
+                    <div class="smart-search carga-viajes-smart-search carga-viajes-smart-search--liquidaciones">
+                        <div class="carga-viajes-smart-search__anchor">
+                            <div class="smart-search__bar carga-viajes-smart-search__bar--with-chips" @onclick="AbrirLiquidacionesAdvancedFilters">
+                        <i class="bi bi-sliders carga-viajes-smart-search__search-icon"></i>
+                        <div class="carga-viajes-smart-search__entry">
+                            @if (liquidacionesFilterChips.Count > 0)
+                            {
+                                <div class="carga-viajes-smart-search__inline-chips" aria-live="polite">
+                                    @foreach (var chip in liquidacionesFilterChips)
+                                    {
+                                        <button type="button"
+                                                class="smart-chip carga-viajes-filter-chip"
+                                                @key="chip.Key"
+                                                title="@chip.Label"
+                                                aria-label="@($"Quitar filtro {chip.Label}")"
+                                                @onclick="() => RemoveLiquidacionesFilterChipAsync(chip.Key)"
+                                                @onclick:stopPropagation="true">
+                                            <span>@chip.Label</span>
+                                            <i class="bi bi-x" aria-hidden="true"></i>
+                                        </button>
+                                    }
+                                </div>
+                            }
+                            else
+                            {
+                                <span class="carga-viajes-smart-search__trigger-text"></span>
+                            }
+                        </div>
+                        @if (showLiquidacionesClearButton)
+                        {
+                            <button type="button"
+                                    class="carga-viajes-clear-filters-btn"
+                                    title="Limpiar filtros"
+                                    aria-label="Limpiar filtros"
+                                    @onclick="LimpiarFiltrosLiquidacionesAsync"
+                                    @onclick:stopPropagation="true">
+                                <i class="bi bi-x-lg" aria-hidden="true"></i>
+                            </button>
+                        }
                         <button type="button"
-                                class="btn btn--ghost btn--sm carga-viajes-filter-pill carga-viajes-liquidaciones__detail-toggle @(_showLiquidacionesAdvancedFilters ? "carga-viajes-filter-pill--active" : string.Empty)"
+                                class="smart-search__toggle"
+                                @onclick:stopPropagation="true"
+                                @onmousedown:stopPropagation="true"
                                 @onclick="ToggleLiquidacionesAdvancedFilters"
                                 aria-expanded="@_showLiquidacionesAdvancedFilters"
-                                aria-controls="carga-viajes-liquidaciones-advanced">
-                            <i class="bi @(_showLiquidacionesAdvancedFilters ? "bi-caret-up-fill" : "bi-sliders")"></i>
-                            <span>@(_showLiquidacionesAdvancedFilters ? "Ocultar filtros" : "Mostrar filtros")</span>
+                                aria-controls="carga-viajes-liquidaciones-advanced"
+                                aria-label="Mostrar filtros avanzados">
+                            <i class="bi @(_showLiquidacionesAdvancedFilters ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
                         </button>
-                    </div>
-                </div>
+                            </div>
 
                 @if (_showLiquidacionesAdvancedFilters)
                 {
-                    <div id="carga-viajes-liquidaciones-advanced" class="carga-viajes-liquidaciones__advanced">
-                        <div class="viajes-filter-row-v2">
-                            <div class="viajes-filter-field-v2 sm">
-                                <label>Estado</label>
-                                <select value="@_liquidacionesFilters.Estado" @onchange="OnLiquidacionesEstadoChangedAsync">
-                                    <option value="@CargaViajeEstadoKeys.Pendiente">Pendiente</option>
-                                    <option value="@CargaViajeEstadoKeys.Finalizado">Finalizado</option>
-                                    <option value="@CargaViajeEstadoKeys.Anulado">Anulado</option>
-                                    <option value="">Todos</option>
-                                </select>
-                            </div>
-                            <div class="viajes-filter-field-v2 lg">
-                                <label>&nbsp;</label>
-                                <label class="viajes-liquidaciones-toggle-v2">
-                                    <input type="checkbox" checked="@_liquidacionesFilters.MostrarLiquidados" @onchange="OnLiquidacionesMostrarLiquidadosChangedAsync" />
-                                    <span>Mostrar viajes liquidados</span>
-                                </label>
-                            </div>
-                            <div class="viajes-filter-field-v2 type">
-                                <label>Tipo</label>
-                                <div class="viajes-type-toggle-v2" role="group" aria-label="Tipo de persona en liquidaciones">
-                                    <button type="button"
-                                            class="viajes-type-toggle-v2__button @(_liquidacionesFilters.IncluirChoferes ? "viajes-type-toggle-v2__button--active" : string.Empty)"
-                                            aria-pressed="@_liquidacionesFilters.IncluirChoferes"
-                                            @onclick="ToggleLiquidacionesChoferesAsync">
-                                        <span class="viajes-type-toggle-v2__check" aria-hidden="true"><i class="bi bi-check-lg"></i></span>
-                                        <span>Choferes</span>
-                                    </button>
-                                    <button type="button"
-                                            class="viajes-type-toggle-v2__button @(_liquidacionesFilters.IncluirFleteros ? "viajes-type-toggle-v2__button--active" : string.Empty)"
-                                            aria-pressed="@_liquidacionesFilters.IncluirFleteros"
-                                            @onclick="ToggleLiquidacionesFleterosAsync">
-                                        <span class="viajes-type-toggle-v2__check" aria-hidden="true"><i class="bi bi-check-lg"></i></span>
-                                        <span>Fleteros</span>
-                                    </button>
+                    <button type="button" class="module-actionbar__search-backdrop" aria-label="Cerrar filtros" @onmousedown="() => _showLiquidacionesAdvancedFilters = false"></button>
+                    <div id="carga-viajes-liquidaciones-advanced" class="smart-search__panel carga-viajes-smart-search__panel--liquidaciones" @onclick:stopPropagation="true" @onmousedown:stopPropagation="true">
+                        <div class="viajes-filter-panel-v2 viajes-liquidaciones-filter-panel-v2">
+                            <div class="viajes-filter-row-v2 carga-viajes-liquidaciones__date-row">
+                                <div class="viajes-filter-field-v2 sm">
+                                    <label>Rango rápido</label>
+                                    <select value="@_liquidacionesFilters.RangoRapido" @onchange="OnLiquidacionesRangoRapidoChangedAsync">
+                                        <option value="@CargaViajesReporteRangoRapidoKeys.Hoy">Hoy</option>
+                                        <option value="@CargaViajesReporteRangoRapidoKeys.SemanaActual">Semana actual</option>
+                                        <option value="@CargaViajesReporteRangoRapidoKeys.MesActual">Mes actual</option>
+                                        <option value="@CargaViajesReporteRangoRapidoKeys.MesAnterior">Mes anterior</option>
+                                        <option value="@CargaViajesReporteRangoRapidoKeys.AnioActual">Año actual</option>
+                                        <option value="@CargaViajesReporteRangoRapidoKeys.AnioAnterior">Año anterior</option>
+                                        <option value="@CargaViajesReporteRangoRapidoKeys.Personalizado">Personalizado</option>
+                                        <option value="@CargaViajesReporteRangoRapidoKeys.Todo">Todo</option>
+                                    </select>
+                                </div>
+                                <div class="viajes-filter-field-v2 sm">
+                                    <label>Fecha desde</label>
+                                    <InputDate TValue="DateTime?" Value="_liquidacionesFilters.FechaDesde" ValueChanged="OnLiquidacionesFechaDesdeChangedAsync" ValueExpression="() => _liquidacionesFilters.FechaDesde" />
+                                </div>
+                                <div class="viajes-filter-field-v2 sm">
+                                    <label>Fecha hasta</label>
+                                    <InputDate TValue="DateTime?" Value="_liquidacionesFilters.FechaHasta" ValueChanged="OnLiquidacionesFechaHastaChangedAsync" ValueExpression="() => _liquidacionesFilters.FechaHasta" />
                                 </div>
                             </div>
-                            <div class="viajes-filter-field-v2 lg">
-                                <label>Chofer/Fletero</label>
-                                <LookupAutocomplete Label=""
-                                                     Placeholder="Buscar chofer o fletero..."
-                                                     Text="@_liquidacionesChoferFleteroTexto"
-                                                     TextChanged="OnLiquidacionesChoferFleteroTextoChangedAsync"
-                                                     SelectedChanged="OnLiquidacionesChoferFleteroSeleccionadoAsync"
-                                                     SearchFunc="SearchLiquidacionesChoferFleteroLookupAsync" />
-                            </div>
-                        </div>
 
-                        <div class="viajes-filter-row-v2">
-                            <div class="viajes-filter-field-v2 lg">
-                                <label>Cliente</label>
-                                <LookupAutocomplete Label=""
-                                                     Placeholder="Buscar cliente..."
-                                                     Text="@_liquidacionesClienteTexto"
-                                                     TextChanged="OnLiquidacionesClienteTextoChangedAsync"
-                                                     SelectedChanged="OnLiquidacionesClienteSeleccionadoAsync"
-                                                     SearchFunc="CargaViajesSvc.SearchClientesAsync"
-                                                     MinimumCharacters="0" />
+                            <div class="viajes-filter-row-v2">
+                                <div class="viajes-filter-field-v2 sm">
+                                    <label>Estado</label>
+                                    <select value="@_liquidacionesFilters.Estado" @onchange="OnLiquidacionesEstadoChangedAsync">
+                                        <option value="@CargaViajeEstadoKeys.Pendiente">Pendiente</option>
+                                        <option value="@CargaViajeEstadoKeys.Finalizado">Finalizado</option>
+                                        <option value="@CargaViajeEstadoKeys.Anulado">Anulado</option>
+                                        <option value="">Todos</option>
+                                    </select>
+                                </div>
+                                <div class="viajes-filter-field-v2 type">
+                                    <label>Tipo</label>
+                                    <div class="viajes-type-toggle-v2" role="group" aria-label="Tipo de persona en liquidaciones">
+                                        <button type="button"
+                                                class="viajes-type-toggle-v2__button @(_liquidacionesFilters.IncluirChoferes ? "viajes-type-toggle-v2__button--active" : string.Empty)"
+                                                aria-pressed="@_liquidacionesFilters.IncluirChoferes"
+                                                @onclick="ToggleLiquidacionesChoferesAsync">
+                                            <span class="viajes-type-toggle-v2__check" aria-hidden="true"><i class="bi bi-check-lg"></i></span>
+                                            <span>Choferes</span>
+                                        </button>
+                                        <button type="button"
+                                                class="viajes-type-toggle-v2__button @(_liquidacionesFilters.IncluirFleteros ? "viajes-type-toggle-v2__button--active" : string.Empty)"
+                                                aria-pressed="@_liquidacionesFilters.IncluirFleteros"
+                                                @onclick="ToggleLiquidacionesFleterosAsync">
+                                            <span class="viajes-type-toggle-v2__check" aria-hidden="true"><i class="bi bi-check-lg"></i></span>
+                                            <span>Fleteros</span>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="viajes-filter-field-v2 lg">
+                                    <label>Chofer/Fletero</label>
+                                    <LookupAutocomplete Label=""
+                                                         Placeholder="Buscar chofer o fletero..."
+                                                         Text="@_liquidacionesChoferFleteroTexto"
+                                                         TextChanged="OnLiquidacionesChoferFleteroTextoChangedAsync"
+                                                         SelectedChanged="OnLiquidacionesChoferFleteroSeleccionadoAsync"
+                                                         SearchFunc="SearchLiquidacionesChoferFleteroLookupAsync" />
+                                </div>
                             </div>
-                            <div class="viajes-filter-field-v2 lg">
-                                <label>Destino</label>
-                                <LookupAutocomplete Label=""
-                                                     Placeholder="Buscar destino..."
-                                                     Text="@_liquidacionesDestinoTexto"
-                                                     TextChanged="OnLiquidacionesDestinoTextoChangedAsync"
-                                                     SelectedChanged="OnLiquidacionesDestinoSeleccionadoAsync"
-                                                     SearchFunc="SearchLiquidacionesDestinoLookupAsync"
-                                                     MinimumCharacters="0" />
+
+                            <div class="viajes-filter-row-v2">
+                                <div class="viajes-filter-field-v2 lg">
+                                    <label>Cliente</label>
+                                    <LookupAutocomplete Label=""
+                                                         Placeholder="Buscar cliente..."
+                                                         Text="@_liquidacionesClienteTexto"
+                                                         TextChanged="OnLiquidacionesClienteTextoChangedAsync"
+                                                         SelectedChanged="OnLiquidacionesClienteSeleccionadoAsync"
+                                                         SearchFunc="CargaViajesSvc.SearchClientesAsync"
+                                                         MinimumCharacters="0" />
+                                </div>
+                                <div class="viajes-filter-field-v2 lg">
+                                    <label>Destino</label>
+                                    <LookupAutocomplete Label=""
+                                                         Placeholder="Buscar destino..."
+                                                         Text="@_liquidacionesDestinoTexto"
+                                                         TextChanged="OnLiquidacionesDestinoTextoChangedAsync"
+                                                         SelectedChanged="OnLiquidacionesDestinoSeleccionadoAsync"
+                                                         SearchFunc="SearchLiquidacionesDestinoLookupAsync"
+                                                         MinimumCharacters="0" />
+                                </div>
+                                <div class="viajes-filter-field-v2 md">
+                                    <label>Tipo vehículo</label>
+                                    <LookupAutocomplete Label=""
+                                                         Placeholder="Buscar tipo..."
+                                                         Text="@_liquidacionesTipoVehiculoTexto"
+                                                         TextChanged="OnLiquidacionesTipoVehiculoTextoChangedAsync"
+                                                         SelectedChanged="OnLiquidacionesTipoVehiculoSeleccionadoAsync"
+                                                         SearchFunc="SearchLiquidacionesTipoVehiculoLookupAsync"
+                                                         MinimumCharacters="0" />
+                                </div>
                             </div>
-                            <div class="viajes-filter-field-v2 md">
-                                <label>Tipo vehículo</label>
-                                <LookupAutocomplete Label=""
-                                                     Placeholder="Buscar tipo..."
-                                                     Text="@_liquidacionesTipoVehiculoTexto"
-                                                     TextChanged="OnLiquidacionesTipoVehiculoTextoChangedAsync"
-                                                     SelectedChanged="OnLiquidacionesTipoVehiculoSeleccionadoAsync"
-                                                     SearchFunc="SearchLiquidacionesTipoVehiculoLookupAsync"
-                                                     MinimumCharacters="0" />
+
+                            <div class="viajes-filter-row-v2 carga-viajes-liquidaciones__toggle-row">
+                                <div class="viajes-filter-field-v2 carga-viajes-liquidaciones__toggle-field">
+                                    <label>Mostrar viajes liquidados</label>
+                                    <label class="carga-viajes-liquidaciones__toggle">
+                                        <input type="checkbox" checked="@_liquidacionesFilters.MostrarLiquidados" @onchange="OnLiquidacionesMostrarLiquidadosChangedAsync" />
+                                        <span>Mostrar viajes liquidados</span>
+                                    </label>
+                                </div>
                             </div>
                         </div>
                     </div>
                 }
-            </div>
-
-            <div class="smart-search__chips" aria-live="polite">
-                @foreach (var chip in BuildLiquidacionesFilterChips())
-                {
-                    <button type="button" class="smart-chip" @key="chip.Key" @onclick="() => RemoveLiquidacionesFilterChipAsync(chip.Key)">
-                        @chip.Label <i class="bi bi-x"></i>
-                    </button>
-                }
-                @if (BuildLiquidacionesFilterChips().Count == 0)
-                {
-                    <span class="smart-search__hint">Usá los filtros visibles para buscar viajes y seleccionar los que corresponda pagar.</span>
-                }
-            </div>
+                        </div>
+                    </div>
+                </SearchContent>
+            </ModuleListToolbar>
         </section>
 
         <section class="panel-card">
-            <div class="panel-card__header">
-                <div>
-                    <h3 class="panel-card__title">Resultado</h3>
-                    <span class="panel-card__subtitle">Viajes agrupados por chofer o fletero</span>
-                </div>
-            </div>
-
             <div class="carga-viajes-liquidaciones__sortbar">
                 <span class="carga-viajes-liquidaciones__sortbar-label">Ordenar grupos por:</span>
                 <button type="button" class="carga-viajes-sort-pill @GetSortPillClass(_liquidacionesSortBy, _liquidacionesSortDescending, SortKeyFecha)" @onclick="() => SortLiquidacionesAsync(SortKeyFecha)">
@@ -2449,7 +2634,7 @@
             }
             else if (_liquidacionesRows.Count == 0)
             {
-                <div class="usuarios-empty">No se encontraron viajes para liquidar con los filtros seleccionados.</div>
+                <div class="usuarios-empty">No se encontraron liquidaciones con los filtros seleccionados.</div>
             }
             else
             {
@@ -2607,15 +2792,19 @@
     }
     @if (_activeSection == SectionConfiguracion)
     {
+        var pageActions = BuildListPageActions();
+
         <section class="panel-card">
             <div class="panel-card__header">
                 <div>
                     <h3 class="panel-card__title">Configuración</h3>
                 </div>
-                <div class="actions">
-                    <button type="button" class="btn btn--primary" @onclick="AbrirConfiguracionModuloAsync">Editar configuración</button>
-                </div>
             </div>
+
+            <ModuleListToolbar AriaLabel="Herramientas de configuración"
+                               ActionsAriaLabel="Acciones de configuración"
+                               Class="module-list-toolbar--actions-only"
+                               Actions="@pageActions" />
 
             <div class="carga-viajes-config-summary">
                 <article class="panel-card carga-viajes-config-summary__item">
@@ -3310,6 +3499,8 @@
     private CargaViajesFilters _tipoVehiculosFilters = new() { PageNumber = 1, PageSize = 50 };
     private readonly List<CargaViajeTipoVehiculoGridItemDto> _tipoVehiculos = [];
     private int _tipoVehiculosTotal;
+    private int _tipoVehiculosPage = 1;
+    private int _tipoVehiculosTotalPages = 1;
     private bool _tipoVehiculosLoading = true;
     private CargaViajeTipoVehiculoSaveRequest _tipoVehiculoForm = new();
 
@@ -3351,12 +3542,18 @@
 
     private readonly List<CargaViajeChoferGridItemDto> _choferes = [];
     private int _choferesTotal;
+    private int _choferesPage = 1;
+    private int _choferesTotalPages = 1;
+    private bool _choferesLoading = true;
     private bool _showChoferEditor;
     private bool _isNewChofer = true;
     private CargaViajeChoferSaveRequest _choferForm = new();
 
     private readonly List<CargaViajeDestinoGridItemDto> _destinos = [];
     private int _destinosTotal;
+    private int _destinosPage = 1;
+    private int _destinosTotalPages = 1;
+    private bool _destinosLoading = true;
     private bool _showDestinoEditor;
     private bool _isNewDestino = true;
     private CargaViajeDestinoSaveRequest _destinoForm = new();
@@ -3393,25 +3590,24 @@
         var actions = new List<PageHeaderAction>();
         RenderFragment? searchContent = null;
 
-        if (IsAnyEditingOverlayOpen())
-        {
+        var isEditingOverlayOpen = IsAnyEditingOverlayOpen();
+        if (isEditingOverlayOpen)
             AddEditorHeaderActions(actions);
-        }
-        else
-        {
-            AddListHeaderActions(actions);
-        }
 
         PageHeader.Set(new PageHeaderConfig
         {
             Title = GetHeaderTitle(),
-            Breadcrumb = ["Logística", "Carga de viajes"],
+            Breadcrumb = [],
             State = GetHeaderState(),
             SearchContent = searchContent,
             Actions = actions,
             ViewButtons = BuildHeaderViewButtons(),
             InlineViewButtons = true,
+            ActionsBelowViewButtons = isEditingOverlayOpen,
             AlwaysVisible = true,
+            ShowHomeNavigation = !IsDirectRoute(),
+            HomeUrl = RouteContext.BuildRoute("/"),
+            HomeTitle = "Volver a Inicio",
             OnBack = IsAnyOverlayOpen() ? HandleHeaderBackAsync : null
         });
 
@@ -3438,6 +3634,8 @@
             _savingViaje,
             _viajesLoading,
             _tarifasLoading,
+            _choferesLoading,
+            _destinosLoading,
             _tipoVehiculosLoading,
             _reportesLoading,
             _liquidacionesLoading,
@@ -3452,11 +3650,39 @@
 
     private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
     {
-        var currentPath = Nav.ToBaseRelativePath(e.Location).Split('?')[0].Split('#')[0].Trim('/');
-        if (!currentPath.StartsWith("carga-viajes", StringComparison.OrdinalIgnoreCase))
+        if (!TryResolveCargaViajesSection(e.Location, out var targetSection))
             return;
 
-        _ = InvokeAsync(UpdatePageHeader);
+        _ = InvokeAsync(async () =>
+        {
+            await Task.Yield();
+            _activeSection = targetSection;
+            UpdatePageHeader();
+        });
+    }
+
+    private bool TryResolveCargaViajesSection(string location, out string section)
+    {
+        section = SectionViajes;
+
+        var path = Nav.ToBaseRelativePath(location)
+            .Split('?')[0]
+            .Split('#')[0]
+            .Trim('/');
+
+        var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var moduleIndex = Array.FindIndex(
+            segments,
+            value => string.Equals(value, "carga-viajes", StringComparison.OrdinalIgnoreCase));
+
+        if (moduleIndex < 0)
+            return false;
+
+        section = moduleIndex + 1 < segments.Length
+            ? NormalizeSection(segments[moduleIndex + 1])
+            : SectionViajes;
+
+        return true;
     }
 
     private bool IsAnyEditingOverlayOpen()
@@ -3552,26 +3778,24 @@
                 break;
             case SectionChoferes:
                 actions.Add(new PageHeaderAction { Key = "nuevo-chofer", Label = "Nuevo chofer", Icon = "bi-plus-circle", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, OnClick = () => RunHeaderActionAsync(NuevoChoferAsync) });
-                actions.Add(new PageHeaderAction { Key = "recargar-choferes", Label = "Recargar", Icon = "bi-arrow-clockwise", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, OnClick = () => RunHeaderActionAsync(RecargarChoferesAsync) });
+                actions.Add(new PageHeaderAction { Key = "recargar-choferes", Label = "Recargar", Icon = "bi-arrow-clockwise", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, Disabled = _choferesLoading, OnClick = () => RunHeaderActionAsync(RecargarChoferesAsync) });
                 break;
             case SectionDestinos:
                 actions.Add(new PageHeaderAction { Key = "nuevo-destino", Label = "Nuevo destino", Icon = "bi-plus-circle", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, OnClick = () => RunHeaderActionAsync(NuevoDestinoAsync) });
-                actions.Add(new PageHeaderAction { Key = "recargar-destinos", Label = "Recargar", Icon = "bi-arrow-clockwise", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, OnClick = () => RunHeaderActionAsync(RecargarDestinosAsync) });
+                actions.Add(new PageHeaderAction { Key = "recargar-destinos", Label = "Recargar", Icon = "bi-arrow-clockwise", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, Disabled = _destinosLoading, OnClick = () => RunHeaderActionAsync(RecargarDestinosAsync) });
                 break;
             case SectionTipoVehiculo:
-                actions.Add(new PageHeaderAction { Key = "nuevo-tipo", Label = "Nuevo tipo", Icon = "bi-plus-circle", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, OnClick = () => RunHeaderActionAsync(NuevoTipoVehiculoAsync) });
+                actions.Add(new PageHeaderAction { Key = "nuevo-tipo", Label = "Nuevo tipo de vehículo", Icon = "bi-plus-circle", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, OnClick = () => RunHeaderActionAsync(NuevoTipoVehiculoAsync) });
                 actions.Add(new PageHeaderAction { Key = "recargar-tipos", Label = "Recargar", Icon = "bi-arrow-clockwise", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, Disabled = _tipoVehiculosLoading, OnClick = () => RunHeaderActionAsync(RecargarTipoVehiculosAsync) });
                 actions.Add(new PageHeaderAction { Key = "vista-tipos", Label = "Configurar vista", Icon = "bi-sliders", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, OnClick = () => RunHeaderActionAsync(() => { AbrirConfiguracionTipoVehiculoVista(); return Task.CompletedTask; }) });
                 break;
             case SectionReportes:
                 actions.Add(new PageHeaderAction { Key = "buscar-reporte", Label = "Buscar", Icon = "bi-search", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, Disabled = _reportesLoading, OnClick = () => RunHeaderActionAsync(BuscarReporteLiquidacionAsync) });
-                actions.Add(new PageHeaderAction { Key = "limpiar-reporte", Label = "Limpiar filtros", Icon = "bi-eraser", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Normal, Disabled = _reportesLoading, OnClick = () => RunHeaderActionAsync(LimpiarFiltrosReporteAsync) });
                 actions.Add(new PageHeaderAction { Key = "imprimir-reporte", Label = "Imprimir", Icon = "bi-printer", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, Disabled = _reportesLoading, OnClick = () => RunHeaderActionAsync(ImprimirLiquidacionAsync) });
                 actions.Add(new PageHeaderAction { Key = "exportar-reporte", Label = "Exportar Excel", Icon = "bi-file-earmark-excel", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, Disabled = _reportesLoading, OnClick = () => RunHeaderActionAsync(ExportarReporteExcelAsync) });
                 break;
             case SectionLiquidaciones:
                 actions.Add(new PageHeaderAction { Key = "buscar-liquidaciones", Label = "Buscar", Icon = "bi-search", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, Disabled = _liquidacionesLoading, OnClick = () => RunHeaderActionAsync(BuscarLiquidacionesAsync) });
-                actions.Add(new PageHeaderAction { Key = "limpiar-liquidaciones", Label = "Limpiar filtros", Icon = "bi-eraser", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Normal, Disabled = _liquidacionesLoading, OnClick = () => RunHeaderActionAsync(LimpiarFiltrosLiquidacionesAsync) });
                 actions.Add(new PageHeaderAction { Key = "exportar-liquidaciones", Label = "Exportar Excel", Icon = "bi-file-earmark-excel", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, Disabled = _liquidacionesLoading, OnClick = () => RunHeaderActionAsync(ExportarLiquidacionesExcelAsync) });
                 if (_liquidacionesSeleccionadas.Count > 0)
                     actions.Add(new PageHeaderAction { Key = "marcar-pagados", Label = "Marcar pagados", Icon = "bi-cash-coin", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, OnClick = () => RunHeaderActionAsync(MarcarSeleccionadosComoPagadosAsync) });
@@ -3586,6 +3810,39 @@
                 actions.Add(new PageHeaderAction { Key = "vista-viajes", Label = "Configurar vista", Icon = "bi-sliders", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, OnClick = () => RunHeaderActionAsync(() => { AbrirConfiguracionVista(); return Task.CompletedTask; }) });
                 break;
         }
+    }
+
+    private bool ShouldShowViajesToolbar()
+        => !IsAnyOverlayOpen() && IsViajesListSection();
+
+    private bool IsViajesListSection()
+        => string.Equals(_activeSection, SectionViajes, StringComparison.OrdinalIgnoreCase)
+           || string.Equals(_activeSection, SectionNuevo, StringComparison.OrdinalIgnoreCase);
+
+    private int ViajesDisplayTotalPages => Math.Max(1, _viajesTotalPages);
+
+    private int ViajesDisplayPage => Math.Min(Math.Max(1, _viajesPage), ViajesDisplayTotalPages);
+
+    private string GetViajesFoundText()
+        => _viajesTotal == 1 ? "1 viaje encontrado" : $"{_viajesTotal} viajes encontrados";
+
+    private string GetTarifasFoundText()
+        => _tarifasTotal == 1 ? "1 tarifa encontrada" : $"{_tarifasTotal} tarifas encontradas";
+
+    private string GetChoferesFoundText()
+        => _choferesTotal == 1 ? "1 chofer encontrado" : $"{_choferesTotal} choferes encontrados";
+
+    private string GetDestinosFoundText()
+        => _destinosTotal == 1 ? "1 destino encontrado" : $"{_destinosTotal} destinos encontrados";
+
+    private string GetTipoVehiculosFoundText()
+        => _tipoVehiculosTotal == 1 ? "1 tipo de vehículo encontrado" : $"{_tipoVehiculosTotal} tipos de vehículo encontrados";
+
+    private List<PageHeaderAction> BuildListPageActions()
+    {
+        var actions = new List<PageHeaderAction>();
+        AddListHeaderActions(actions);
+        return actions;
     }
 
     private IReadOnlyList<PageHeaderViewButton> BuildHeaderViewButtons()
@@ -3616,7 +3873,7 @@
 
     private PageHeaderState GetHeaderState()
     {
-        if (_viajesLoading || _tarifasLoading || _tipoVehiculosLoading || _reportesLoading || _liquidacionesLoading)
+        if (_viajesLoading || _tarifasLoading || _choferesLoading || _destinosLoading || _tipoVehiculosLoading || _reportesLoading || _liquidacionesLoading)
             return PageHeaderState.Loading;
         if (_showViajeEditor || _showTarifaEditor || _showChoferEditor || _showDestinoEditor || _showTipoVehiculoEditor || _showConfigEditor)
             return IsCurrentEditorNew() ? PageHeaderState.Creating : PageHeaderState.Editing;
@@ -3656,7 +3913,7 @@
             SectionTarifas => "Tarifas",
             SectionChoferes => "Choferes",
             SectionDestinos => "Destinos",
-            SectionTipoVehiculo => "Tipos de vehículo",
+            SectionTipoVehiculo => "Tipo de vehículo",
             SectionReportes => "Reportes",
             SectionLiquidaciones => "Liquidaciones",
             SectionConfiguracion => "Configuración",
@@ -3858,10 +4115,20 @@
         var result = await UiOps.RunAsync(() => CargaViajesSvc.SearchViajesAsync(_viajesFilters), "No se pudieron cargar los viajes.");
         if (result.Success && result.Value is not null)
         {
+            var totalPages = Math.Max(1, result.Value.TotalPages);
+            if (result.Value.Total > 0 && _viajesFilters.PageNumber > totalPages)
+            {
+                _viajesLoading = false;
+                _viajesFilters.PageNumber = totalPages;
+                await RecargarViajesAsync();
+                return;
+            }
+
             _viajes = result.Value.Items.ToList();
             _viajesTotal = result.Value.Total;
-            _viajesPage = result.Value.PageNumber;
-            _viajesTotalPages = result.Value.TotalPages;
+            _viajesTotalPages = totalPages;
+            _viajesPage = Math.Min(Math.Max(1, result.Value.PageNumber), _viajesTotalPages);
+            _viajesFilters.PageNumber = _viajesPage;
         }
         else
         {
@@ -4002,6 +4269,7 @@
         AddChipIfPresent(chips, "viajes-cliente", "Cliente", _clienteFiltroTexto);
         AddChipIfPresent(chips, "viajes-chofer", "Chofer", _choferFiltroTexto);
         AddChipIfPresent(chips, "viajes-destino", "Destino", _destinoFiltroTexto);
+        AddChipIfPresent(chips, "viajes-tipo-vehiculo", "Tipo vehículo", _viajesFilters.TipoVehiculo);
         AddChipIfPresent(chips, "viajes-usuario", "Usuario", _viajesFilters.Usuario);
         AddChipIfPresent(chips, "viajes-id-comprobante", "Comprobante", _viajesFilters.IdComprobante);
         AddChipIfPresent(chips, "viajes-estado", "Estado", _viajesFilters.Estado);
@@ -4010,16 +4278,24 @@
     }
 
     private string GetViajesFechaRangoLabel()
-        => (_viajesFechaRango ?? string.Empty).Trim().ToLowerInvariant() switch
+    {
+        if (_viajesFilters.FechaDesde.HasValue && _viajesFilters.FechaHasta.HasValue)
         {
-            "hoy" => "Hoy",
-            "semana" => "Hace una semana",
-            "mes-actual" => "Mes actual",
-            "mes-pasado" => "Mes pasado",
-            "anio-actual" => "Este año",
-            "anio-pasado" => "Año pasado",
-            _ => "Personalizado"
-        };
+            var desde = FormatViajesFilterDate(_viajesFilters.FechaDesde.Value);
+            var hasta = FormatViajesFilterDate(_viajesFilters.FechaHasta.Value);
+            return string.Equals(desde, hasta, StringComparison.Ordinal) ? desde : $"{desde} - {hasta}";
+        }
+
+        if (_viajesFilters.FechaDesde.HasValue)
+            return $"Desde {FormatViajesFilterDate(_viajesFilters.FechaDesde.Value)}";
+
+        if (_viajesFilters.FechaHasta.HasValue)
+            return $"Hasta {FormatViajesFilterDate(_viajesFilters.FechaHasta.Value)}";
+
+        return "Personalizado";
+    }
+
+    private static string FormatViajesFilterDate(DateTime value) => value.ToString("dd/MM/yyyy");
 
     private async Task RemoveViajesFilterChipAsync(string key)
     {
@@ -4039,6 +4315,9 @@
             case "viajes-destino":
                 _destinoFiltroTexto = string.Empty;
                 _viajesFilters.Destino = string.Empty;
+                break;
+            case "viajes-tipo-vehiculo":
+                _viajesFilters.TipoVehiculo = string.Empty;
                 break;
             case "viajes-usuario":
                 _viajesFilters.Usuario = string.Empty;
@@ -4062,14 +4341,42 @@
             chips.Add(new FilterChipItem(key, $"{label}: {value.Trim()}"));
     }
 
+    private static string? GetActivoFilterLabel(string? value)
+        => (value ?? string.Empty).Trim() switch
+        {
+            "1" => "Activo",
+            "0" => "Desactivado",
+            _ => null
+        };
+
+    private static string? GetDisponibleFilterLabel(string? value)
+        => (value ?? string.Empty).Trim() switch
+        {
+            "1" => "Disponible",
+            "0" => "No disponible",
+            _ => null
+        };
+
+    private static string? GetFleteroFilterLabel(string? value)
+        => (value ?? string.Empty).Trim() switch
+        {
+            "1" => "Fletero",
+            "0" => "No fletero",
+            _ => null
+        };
+
     private sealed record FilterChipItem(string Key, string Label);
 
     private async Task CambiarPaginaViajesAsync(int page)
     {
-        if (page < 1)
+        if (_viajesLoading)
             return;
 
-        _viajesFilters.PageNumber = page;
+        var targetPage = Math.Min(Math.Max(1, page), ViajesDisplayTotalPages);
+        if (targetPage == ViajesDisplayPage)
+            return;
+
+        _viajesFilters.PageNumber = targetPage;
         await RecargarViajesAsync();
     }
 
@@ -5951,6 +6258,7 @@
         _liquidacionesClienteTexto = string.Empty;
         _liquidacionesDestinoTexto = string.Empty;
         _liquidacionesTipoVehiculoTexto = string.Empty;
+        _showLiquidacionesAdvancedFilters = false;
         _showLiquidacionesPagoModal = false;
         _liquidacionesPagoFecha = DateTime.Today;
         _liquidacionesPagoObservacion = string.Empty;
@@ -5966,9 +6274,11 @@
     {
         var chips = new List<FilterChipItem>();
 
-        AddChipIfPresent(chips, "liquidaciones-rango", "Rango", GetLiquidacionesRangoRapidoLabel(_liquidacionesFilters.RangoRapido));
         if (_liquidacionesFilters.FechaDesde.HasValue || _liquidacionesFilters.FechaHasta.HasValue)
-            chips.Add(new FilterChipItem("liquidaciones-fecha", $"Fechas: {FormatReporteDate(_liquidacionesFilters.FechaDesde)} - {FormatReporteDate(_liquidacionesFilters.FechaHasta)}"));
+            chips.Add(new FilterChipItem("liquidaciones-fecha", $"Fecha: {FormatFilterDateRange(_liquidacionesFilters.FechaDesde, _liquidacionesFilters.FechaHasta)}"));
+        else if (NormalizeLiquidacionesRangoRapido(_liquidacionesFilters.RangoRapido) != CargaViajesReporteRangoRapidoKeys.Todo)
+            AddChipIfPresent(chips, "liquidaciones-rango", "Rango", GetLiquidacionesRangoRapidoLabel(_liquidacionesFilters.RangoRapido));
+
         var tipoPersona = NormalizeLiquidacionesTipoPersona(_liquidacionesFilters.TipoPersona);
         if (tipoPersona != CargaViajesReporteTipoPersonaKeys.ChoferesYFleteros)
             chips.Add(new FilterChipItem("liquidaciones-tipo", $"Tipo: {GetLiquidacionesTipoPersonaLabel()}"));
@@ -6007,14 +6317,17 @@
             case "liquidaciones-cliente":
                 _liquidacionesFilters.ClienteCodigo = string.Empty;
                 _liquidacionesFilters.ClienteTexto = string.Empty;
+                _liquidacionesClienteTexto = string.Empty;
                 break;
             case "liquidaciones-destino":
                 _liquidacionesFilters.DestinoCodigo = string.Empty;
                 _liquidacionesFilters.DestinoTexto = string.Empty;
+                _liquidacionesDestinoTexto = string.Empty;
                 break;
             case "liquidaciones-tipo-vehiculo":
                 _liquidacionesFilters.TipoVehiculoCodigo = string.Empty;
                 _liquidacionesFilters.TipoVehiculoTexto = string.Empty;
+                _liquidacionesTipoVehiculoTexto = string.Empty;
                 break;
             case "liquidaciones-estado":
                 _liquidacionesFilters.Estado = string.Empty;
@@ -6027,7 +6340,21 @@
                 return;
         }
 
-        await Task.CompletedTask;
+        await RefreshLiquidacionesAfterFilterChipChangedAsync();
+    }
+
+    private async Task RefreshLiquidacionesAfterFilterChipChangedAsync()
+    {
+        _liquidacionesSeleccionadas.Clear();
+        _liquidacionesTotalSeleccionado = 0m;
+
+        if (_liquidacionesConsultada)
+        {
+            await BuscarLiquidacionesAsync();
+            return;
+        }
+
+        await InvokeAsync(StateHasChanged);
     }
 
     private async Task OnLiquidacionesChoferFleteroTextoChangedAsync(string text)
@@ -6918,20 +7245,33 @@
     private void ToggleReportesAdvancedFilters() => _showReportesAdvancedFilters = !_showReportesAdvancedFilters;
     private void AbrirReportesAdvancedFilters() => _showReportesAdvancedFilters = true;
     private void ToggleLiquidacionesAdvancedFilters() => _showLiquidacionesAdvancedFilters = !_showLiquidacionesAdvancedFilters;
+    private void AbrirLiquidacionesAdvancedFilters() => _showLiquidacionesAdvancedFilters = true;
 
     private IReadOnlyList<FilterChipItem> BuildReporteFilterChips()
     {
         var chips = new List<FilterChipItem>();
 
-        AddChipIfPresent(chips, "reportes-rango", "Rango", GetReporteRangoRapidoLabel(_reporteLiquidacionFilters.RangoRapido));
         if (_reporteLiquidacionFilters.FechaDesde.HasValue || _reporteLiquidacionFilters.FechaHasta.HasValue)
-            chips.Add(new FilterChipItem("reportes-fecha", $"Fecha: {FormatReporteDate(_reporteLiquidacionFilters.FechaDesde)} - {FormatReporteDate(_reporteLiquidacionFilters.FechaHasta)}"));
-        AddChipIfPresent(chips, "reportes-tipo", "Tipo", GetReporteTipoPersonaLabel());
-        AddChipIfPresent(chips, "reportes-estado", "Estado", GetReporteEstadoLabel(_reporteLiquidacionFilters.Estado));
+            chips.Add(new FilterChipItem("reportes-fecha", $"Fecha: {FormatFilterDateRange(_reporteLiquidacionFilters.FechaDesde, _reporteLiquidacionFilters.FechaHasta)}"));
+        else if (NormalizeReporteRangoRapido(_reporteLiquidacionFilters.RangoRapido) != CargaViajesReporteRangoRapidoKeys.Todo)
+            AddChipIfPresent(chips, "reportes-rango", "Rango", GetReporteRangoRapidoLabel(_reporteLiquidacionFilters.RangoRapido));
+
+        if (_reporteLiquidacionFilters.IncluirClientes
+            || _reporteLiquidacionFilters.IncluirTodoJunto
+            || NormalizeReporteTipoPersona(_reporteLiquidacionFilters.TipoPersona) != CargaViajesReporteTipoPersonaKeys.ChoferesYFleteros)
+            AddChipIfPresent(chips, "reportes-tipo", "Tipo", GetReporteTipoPersonaLabel());
+
+        if (NormalizeReporteEstado(_reporteLiquidacionFilters.Estado) != CargaViajesReporteEstadoKeys.Todos)
+            AddChipIfPresent(chips, "reportes-estado", "Estado", GetReporteEstadoLabel(_reporteLiquidacionFilters.Estado));
+
         if (NormalizeReporteEstadoPago(_reporteLiquidacionFilters.EstadoPago) != CargaViajesLiquidacionEstadoPagoKeys.Todos)
             AddChipIfPresent(chips, "reportes-estado-pago", "Estado pago", GetReporteEstadoPagoLabel(_reporteLiquidacionFilters.EstadoPago));
-        AddChipIfPresent(chips, "reportes-modo", "Modo", GetReporteModoLabel(_reporteLiquidacionFilters.Modo));
-        AddChipIfPresent(chips, "reportes-agrupar", "Agrupar por", GetReporteAgruparPorLabel(_reporteLiquidacionFilters.AgruparPor));
+
+        if (NormalizeReporteModo(_reporteLiquidacionFilters.Modo) != CargaViajesReporteModoKeys.Detallado)
+            AddChipIfPresent(chips, "reportes-modo", "Modo", GetReporteModoLabel(_reporteLiquidacionFilters.Modo));
+
+        if (NormalizeReporteGroupBy(_reporteLiquidacionFilters.AgruparPor) != CargaViajesViewGroupKeys.None)
+            AddChipIfPresent(chips, "reportes-agrupar", "Agrupar por", GetReporteAgruparPorLabel(_reporteLiquidacionFilters.AgruparPor));
 
         AddChipIfPresent(chips, "reportes-chofer", "Chofer / Fletero", _reporteChoferFleteroTexto);
         AddChipIfPresent(chips, "reportes-cliente", "Cliente", _reporteClienteTexto);
@@ -6945,13 +7285,16 @@
         switch ((key ?? string.Empty).Trim().ToLowerInvariant())
         {
             case "reportes-rango":
-                _reporteLiquidacionFilters.RangoRapido = CargaViajesReporteRangoRapidoKeys.Personalizado;
+                ApplyReporteRangoRapido(CargaViajesReporteRangoRapidoKeys.Todo);
                 break;
             case "reportes-fecha":
                 _reporteLiquidacionFilters.FechaDesde = null;
                 _reporteLiquidacionFilters.FechaHasta = null;
+                _reporteLiquidacionFilters.RangoRapido = CargaViajesReporteRangoRapidoKeys.Todo;
                 break;
             case "reportes-tipo":
+                _reporteLiquidacionFilters.IncluirClientes = false;
+                _reporteLiquidacionFilters.IncluirTodoJunto = false;
                 ApplyReporteTipoPersona(CargaViajesReporteTipoPersonaKeys.ChoferesYFleteros);
                 break;
             case "reportes-estado":
@@ -6986,7 +7329,18 @@
                 return;
         }
 
-        await Task.CompletedTask;
+        await RefreshReporteAfterFilterChipChangedAsync();
+    }
+
+    private async Task RefreshReporteAfterFilterChipChangedAsync()
+    {
+        if (_reporteLiquidacionConsultada)
+        {
+            await BuscarReporteLiquidacionAsync();
+            return;
+        }
+
+        await InvokeAsync(StateHasChanged);
     }
 
     private async Task ExportarReporteExcelAsync()
@@ -7085,7 +7439,11 @@
         => "Liquidación operativa simple, igual a la planilla que ya usan.";
 
     private string GetReporteTipoPersonaLabel()
-        => NormalizeReporteTipoPersona(_reporteLiquidacionFilters.TipoPersona) switch
+        => _reporteLiquidacionFilters.IncluirClientes
+            ? "Clientes"
+            : _reporteLiquidacionFilters.IncluirTodoJunto
+                ? "Todo junto"
+                : NormalizeReporteTipoPersona(_reporteLiquidacionFilters.TipoPersona) switch
         {
             CargaViajesReporteTipoPersonaKeys.Choferes => "Choferes",
             CargaViajesReporteTipoPersonaKeys.Fleteros => "Fleteros",
@@ -7276,6 +7634,24 @@
 
     private static string FormatReporteDate(DateTime? value)
         => value?.ToString("dd/MM/yyyy") ?? "—";
+
+    private static string FormatFilterDateRange(DateTime? desde, DateTime? hasta)
+    {
+        if (desde.HasValue && hasta.HasValue)
+        {
+            var desdeText = FormatReporteDate(desde);
+            var hastaText = FormatReporteDate(hasta);
+            return string.Equals(desdeText, hastaText, StringComparison.Ordinal) ? desdeText : $"{desdeText} - {hastaText}";
+        }
+
+        if (desde.HasValue)
+            return $"Desde {FormatReporteDate(desde)}";
+
+        if (hasta.HasValue)
+            return $"Hasta {FormatReporteDate(hasta)}";
+
+        return "Todo";
+    }
 
     private static string GetDisplayText(string? texto, string? fallback)
         => !string.IsNullOrWhiteSpace(texto)
@@ -8458,10 +8834,16 @@
 
     private async Task CambiarPaginaTarifasAsync(int page)
     {
-        if (page < 1)
+        if (_tarifasLoading)
             return;
 
-        _tarifasFilters.PageNumber = page;
+        var totalPages = Math.Max(1, _tarifasTotalPages);
+        var currentPage = Math.Min(Math.Max(1, _tarifasPage), totalPages);
+        var targetPage = Math.Min(Math.Max(1, page), totalPages);
+        if (targetPage == currentPage)
+            return;
+
+        _tarifasFilters.PageNumber = targetPage;
         await RecargarTarifasAsync();
     }
 
@@ -8642,11 +9024,21 @@
         var result = await UiOps.RunAsync(() => CargaViajesSvc.SearchTarifasAsync(_tarifasFilters), "No se pudieron cargar las tarifas.");
         if (result.Success && result.Value is not null)
         {
+            var totalPages = Math.Max(1, result.Value.TotalPages);
+            if (result.Value.Total > 0 && _tarifasFilters.PageNumber > totalPages)
+            {
+                _tarifasLoading = false;
+                _tarifasFilters.PageNumber = totalPages;
+                await RecargarTarifasAsync();
+                return;
+            }
+
             _tarifas.Clear();
             _tarifas.AddRange(result.Value.Items);
             _tarifasTotal = result.Value.Total;
-            _tarifasPage = result.Value.PageNumber;
-            _tarifasTotalPages = Math.Max(1, result.Value.TotalPages);
+            _tarifasTotalPages = totalPages;
+            _tarifasPage = Math.Min(Math.Max(1, result.Value.PageNumber), _tarifasTotalPages);
+            _tarifasFilters.PageNumber = _tarifasPage;
         }
         else _feedback = result.Feedback;
         _tarifasLoading = false;
@@ -9169,11 +9561,10 @@
     private IReadOnlyList<FilterChipItem> BuildChoferesFilterChips()
     {
         var chips = new List<FilterChipItem>();
-        AddChipIfPresent(chips, "choferes-texto", "Búsqueda", _choferesFilters.Texto);
         AddChipIfPresent(chips, "choferes-tipo", "Tipo vehículo", _choferesTipoVehiculoTexto);
-        AddChipIfPresent(chips, "choferes-activo", "Activo", _choferesFilters.Activo);
-        AddChipIfPresent(chips, "choferes-disponible", "Disponible", _choferesFilters.Disponible);
-        AddChipIfPresent(chips, "choferes-es-fletero", "Fletero", _choferesFilters.EsFletero);
+        AddChipIfPresent(chips, "choferes-activo", "Activo", GetActivoFilterLabel(_choferesFilters.Activo));
+        AddChipIfPresent(chips, "choferes-disponible", "Disponible", GetDisponibleFilterLabel(_choferesFilters.Disponible));
+        AddChipIfPresent(chips, "choferes-es-fletero", "Tipo", GetFleteroFilterLabel(_choferesFilters.EsFletero));
         return chips;
     }
 
@@ -9204,17 +9595,46 @@
         await AplicarFiltrosChoferesAsync();
     }
 
+    private async Task CambiarPaginaChoferesAsync(int page)
+    {
+        if (_choferesLoading)
+            return;
+
+        var totalPages = Math.Max(1, _choferesTotalPages);
+        var currentPage = Math.Min(Math.Max(1, _choferesPage), totalPages);
+        var targetPage = Math.Min(Math.Max(1, page), totalPages);
+        if (targetPage == currentPage)
+            return;
+
+        _choferesFilters.PageNumber = targetPage;
+        await RecargarChoferesAsync();
+    }
+
     private async Task RecargarChoferesAsync()
     {
+        _choferesLoading = true;
         _choferesFilters.PageSize = 50;
         var result = await UiOps.RunAsync(() => CargaViajesSvc.SearchChoferesAsync(_choferesFilters), "No se pudieron cargar los choferes.");
         if (result.Success && result.Value is not null)
         {
+            var totalPages = Math.Max(1, result.Value.TotalPages);
+            if (result.Value.Total > 0 && _choferesFilters.PageNumber > totalPages)
+            {
+                _choferesLoading = false;
+                _choferesFilters.PageNumber = totalPages;
+                await RecargarChoferesAsync();
+                return;
+            }
+
             _choferes.Clear();
             _choferes.AddRange(result.Value.Items);
             _choferesTotal = result.Value.Total;
+            _choferesTotalPages = totalPages;
+            _choferesPage = Math.Min(Math.Max(1, result.Value.PageNumber), _choferesTotalPages);
+            _choferesFilters.PageNumber = _choferesPage;
         }
         else _feedback = result.Feedback;
+        _choferesLoading = false;
     }
 
     private async Task NuevoChoferAsync()
@@ -9313,8 +9733,7 @@
     private IReadOnlyList<FilterChipItem> BuildDestinosFilterChips()
     {
         var chips = new List<FilterChipItem>();
-        AddChipIfPresent(chips, "destinos-texto", "Búsqueda", _destinosFilters.Texto);
-        AddChipIfPresent(chips, "destinos-activo", "Activo", _destinosFilters.Activo);
+        AddChipIfPresent(chips, "destinos-activo", "Activo", GetActivoFilterLabel(_destinosFilters.Activo));
         return chips;
     }
 
@@ -9334,17 +9753,47 @@
 
         await AplicarFiltrosDestinosAsync();
     }
+
+    private async Task CambiarPaginaDestinosAsync(int page)
+    {
+        if (_destinosLoading)
+            return;
+
+        var totalPages = Math.Max(1, _destinosTotalPages);
+        var currentPage = Math.Min(Math.Max(1, _destinosPage), totalPages);
+        var targetPage = Math.Min(Math.Max(1, page), totalPages);
+        if (targetPage == currentPage)
+            return;
+
+        _destinosFilters.PageNumber = targetPage;
+        await RecargarDestinosAsync();
+    }
+
     private async Task RecargarDestinosAsync()
     {
+        _destinosLoading = true;
         _destinosFilters.PageSize = 50;
         var result = await UiOps.RunAsync(() => CargaViajesSvc.SearchDestinosAsync(_destinosFilters), "No se pudieron cargar los destinos.");
         if (result.Success && result.Value is not null)
         {
+            var totalPages = Math.Max(1, result.Value.TotalPages);
+            if (result.Value.Total > 0 && _destinosFilters.PageNumber > totalPages)
+            {
+                _destinosLoading = false;
+                _destinosFilters.PageNumber = totalPages;
+                await RecargarDestinosAsync();
+                return;
+            }
+
             _destinos.Clear();
             _destinos.AddRange(result.Value.Items);
             _destinosTotal = result.Value.Total;
+            _destinosTotalPages = totalPages;
+            _destinosPage = Math.Min(Math.Max(1, result.Value.PageNumber), _destinosTotalPages);
+            _destinosFilters.PageNumber = _destinosPage;
         }
         else _feedback = result.Feedback;
+        _destinosLoading = false;
     }
     private async Task NuevoDestinoAsync()
     {
@@ -9444,8 +9893,7 @@
     private IReadOnlyList<FilterChipItem> BuildTipoVehiculosFilterChips()
     {
         var chips = new List<FilterChipItem>();
-        AddChipIfPresent(chips, "tipo-vehiculos-texto", "Búsqueda", _tipoVehiculosFilters.Texto);
-        AddChipIfPresent(chips, "tipo-vehiculos-activo", "Activo", _tipoVehiculosFilters.Activo);
+        AddChipIfPresent(chips, "tipo-vehiculos-activo", "Activo", GetActivoFilterLabel(_tipoVehiculosFilters.Activo));
         return chips;
     }
 
@@ -9466,6 +9914,21 @@
         await AplicarFiltrosTipoVehiculosAsync();
     }
 
+    private async Task CambiarPaginaTipoVehiculosAsync(int page)
+    {
+        if (_tipoVehiculosLoading)
+            return;
+
+        var totalPages = Math.Max(1, _tipoVehiculosTotalPages);
+        var currentPage = Math.Min(Math.Max(1, _tipoVehiculosPage), totalPages);
+        var targetPage = Math.Min(Math.Max(1, page), totalPages);
+        if (targetPage == currentPage)
+            return;
+
+        _tipoVehiculosFilters.PageNumber = targetPage;
+        await RecargarTipoVehiculosAsync();
+    }
+
     private async Task RecargarTipoVehiculosAsync()
     {
         _tipoVehiculosLoading = true;
@@ -9473,9 +9936,21 @@
         var result = await UiOps.RunAsync(() => CargaViajesSvc.SearchTipoVehiculosAsync(_tipoVehiculosFilters), "No se pudieron cargar los tipos de vehículo.");
         if (result.Success && result.Value is not null)
         {
+            var totalPages = Math.Max(1, result.Value.TotalPages);
+            if (result.Value.Total > 0 && _tipoVehiculosFilters.PageNumber > totalPages)
+            {
+                _tipoVehiculosLoading = false;
+                _tipoVehiculosFilters.PageNumber = totalPages;
+                await RecargarTipoVehiculosAsync();
+                return;
+            }
+
             _tipoVehiculos.Clear();
             _tipoVehiculos.AddRange(result.Value.Items);
             _tipoVehiculosTotal = result.Value.Total;
+            _tipoVehiculosTotalPages = totalPages;
+            _tipoVehiculosPage = Math.Min(Math.Max(1, result.Value.PageNumber), _tipoVehiculosTotalPages);
+            _tipoVehiculosFilters.PageNumber = _tipoVehiculosPage;
         }
         else _feedback = result.Feedback;
         _tipoVehiculosLoading = false;
@@ -9753,7 +10228,25 @@
     private async Task HandleTarifasSearchKeyDownAsync(KeyboardEventArgs args)
     {
         if (string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase))
-            await RecargarTarifasAsync();
+            await AplicarFiltrosTarifasAsync();
+    }
+
+    private async Task HandleChoferesSearchKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase))
+            await AplicarFiltrosChoferesAsync();
+    }
+
+    private async Task HandleDestinosSearchKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase))
+            await AplicarFiltrosDestinosAsync();
+    }
+
+    private async Task HandleTipoVehiculosSearchKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase))
+            await AplicarFiltrosTipoVehiculosAsync();
     }
 
     private async Task HandleModalKeyDownAsync(KeyboardEventArgs args)
@@ -9807,12 +10300,36 @@
     {
         ClearMessages();
         await ForceCloseAllEditorsAsync();
-        Nav.NavigateTo(normalized == SectionViajes ? "/carga-viajes" : $"/carga-viajes/{normalized}");
+        Nav.NavigateTo(BuildSectionRoute(normalized));
         _ = InvokeAsync(async () =>
         {
             await Task.Yield();
             UpdatePageHeader();
         });
+    }
+
+    private string BuildSectionRoute(string normalized)
+    {
+        var route = normalized == SectionViajes ? "/carga-viajes" : $"/carga-viajes/{normalized}";
+        var target = RouteContext.BuildRoute(route);
+        return IsDirectRoute() ? AppendDirectFlag(target) : target;
+    }
+
+    private bool IsDirectRoute()
+    {
+        var query = QueryHelpers.ParseQuery(Nav.ToAbsoluteUri(Nav.Uri).Query);
+        return query.TryGetValue("directo", out var directo)
+               && string.Equals(directo.ToString(), "1", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string AppendDirectFlag(string route)
+    {
+        if (string.IsNullOrWhiteSpace(route) || route.Contains("directo=1", StringComparison.OrdinalIgnoreCase))
+            return route;
+
+        return route.Contains('?', StringComparison.Ordinal)
+            ? route + "&directo=1"
+            : route + "?directo=1";
     }
 
     private Task ForceCloseAllEditorsAsync()

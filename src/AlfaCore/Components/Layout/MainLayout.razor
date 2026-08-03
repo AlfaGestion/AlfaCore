@@ -38,7 +38,7 @@ else if (IsPosFullscreenRoute)
 else
 {
 <div class="@ShellClass" @onclick="CloseFloatingWindowsAsync">
-    @if (_mobileSidebarOpen)
+    @if (_mobileSidebarOpen && ShowSidebar)
     {
         <button type="button"
                 class="shell__overlay no-print"
@@ -46,6 +46,8 @@ else
                 @onclick="CloseMobileSidebar"></button>
     }
 
+    @if (ShowSidebar)
+    {
     <aside class="shell__sidebar" aria-label="Menú principal">
         <div class="brand" @onmouseleave="ReleaseSidebarToggleHover">
             <div class="brand__top">
@@ -698,14 +700,18 @@ else
             }
         </div>
     </aside>
+    }
 
-    <button type="button"
-            class="shell__mobile-floating-toggle no-print"
-            @onclick="ToggleMobileSidebar"
-            aria-label="Abrir menú"
-            aria-expanded="@_mobileSidebarOpen">
-        <i class="bi bi-list"></i>
-    </button>
+    @if (ShowSidebar)
+    {
+        <button type="button"
+                class="shell__mobile-floating-toggle no-print"
+                @onclick="ToggleMobileSidebar"
+                aria-label="Abrir menú"
+                aria-expanded="@_mobileSidebarOpen">
+            <i class="bi bi-list"></i>
+        </button>
+    }
 
     <main class="shell__main">
         <header class="@(ShowLauncherContext ? "shell__header" : "shell__header shell__header--hidden")">
@@ -1232,10 +1238,12 @@ else
     private string CurrentPageTitle => GetCurrentPageTitle();
     private RenderFragment? ModuleBackLink => null;
     private string ShellClass
-        => $"shell {(IsSidebarCollapsed ? "shell--collapsed" : string.Empty)} {(_sidebarToggleHoverBlocked ? "shell--toggle-hover-blocked" : string.Empty)} {(_mobileSidebarOpen ? "shell--mobile-open" : string.Empty)} {(IsDirectMode ? "shell--direct" : string.Empty)} {(IsPosFullscreenRoute ? "shell--pos-fullscreen" : string.Empty)}";
+        => $"shell {(IsSidebarCollapsed ? "shell--collapsed" : string.Empty)} {(_sidebarToggleHoverBlocked ? "shell--toggle-hover-blocked" : string.Empty)} {(_mobileSidebarOpen ? "shell--mobile-open" : string.Empty)} {(IsDirectMode ? "shell--direct" : string.Empty)} {(IsPosFullscreenRoute ? "shell--pos-fullscreen" : string.Empty)} {(UseTopOnlyNavigation ? "shell--top-only" : string.Empty)}";
     private bool ShowShellContext => string.IsNullOrWhiteSpace(_currentModule);
     private bool ShowLauncherContext => ShowShellContext && !IsDirectMode;
     private bool CanShowLauncherAccess => !IsDirectMode;
+    private bool UseTopOnlyNavigation => string.Equals(_currentModule, "carga-viajes", StringComparison.OrdinalIgnoreCase);
+    private bool ShowSidebar => !UseTopOnlyNavigation;
     private bool DefaultSidebarCollapsed => !ShowLauncherContext;
     private bool IsSidebarCollapsed => _sidebarCollapsedOverride ?? DefaultSidebarCollapsed;
     private string SidebarToggleTitle => IsSidebarCollapsed ? "Desplegar menú principal" : "Plegar menú principal";

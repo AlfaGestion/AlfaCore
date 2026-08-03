@@ -9,6 +9,21 @@
 {
     <section class="@HeaderClass" aria-label="Acciones de la página">
         <div class="main-page-header__nav">
+            @if (Config.ShowHomeNavigation && !string.IsNullOrWhiteSpace(Config.HomeUrl))
+            {
+                <a class="main-page-header__home-link" href="@Config.HomeUrl" title="@Config.HomeTitle" aria-label="@Config.HomeTitle">
+                    @if (!string.IsNullOrWhiteSpace(Config.HomeLogoSrc))
+                    {
+                        <img src="@Config.HomeLogoSrc" alt="Alfa Gestión" />
+                    }
+                    @if (!string.IsNullOrWhiteSpace(Config.HomeIcon))
+                    {
+                        <span class="main-page-header__home-icon" aria-hidden="true">
+                            <i class="bi @Config.HomeIcon"></i>
+                        </span>
+                    }
+                </a>
+            }
             @if (Config.ShowHistoryNavigation)
             {
                 <button type="button" class="main-page-header__icon-btn" title="Acción anterior" aria-label="Acción anterior" disabled="@(!CanGoBack)" @onclick="GoBackAsync">
@@ -124,9 +139,9 @@
 
 @code {
     private PageHeaderConfig Config => PageHeader.Current;
-    private string HeaderClass => $"main-page-header no-print {(HasSearch ? string.Empty : "main-page-header--no-search")} {(Config.InlineViewButtons ? "main-page-header--inline-views" : string.Empty)}";
+    private string HeaderClass => $"main-page-header no-print {(HasSearch ? string.Empty : "main-page-header--no-search")} {(Config.InlineViewButtons ? "main-page-header--inline-views" : string.Empty)} {(Config.ActionsBelowViewButtons ? "main-page-header--actions-below" : string.Empty)}";
     private bool HasSearch => Config.Search is not null || Config.SearchContent is not null;
-    private bool HasHeader => Config.AlwaysVisible || !string.IsNullOrWhiteSpace(Config.Title) || Config.Search is not null || Config.SearchContent is not null || Config.Actions.Count > 0;
+    private bool HasHeader => Config.AlwaysVisible || Config.ShowHomeNavigation || !string.IsNullOrWhiteSpace(Config.Title) || Config.Search is not null || Config.SearchContent is not null || Config.Actions.Count > 0;
     private bool CanGoBack => Config.OnBack is not null || HeaderNavigation.CanGoBack;
     private bool CanGoForward => Config.OnForward is not null || HeaderNavigation.CanGoForward;
     private IReadOnlyList<PageHeaderAction> VisibleActions => Config.Actions.Where(a => a.Priority != PageHeaderActionPriority.Overflow).ToList();

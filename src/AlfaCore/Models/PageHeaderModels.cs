@@ -41,8 +41,14 @@ public sealed class PageHeaderConfig
     public IReadOnlyList<PageHeaderAction> Actions { get; init; } = [];
     public IReadOnlyList<PageHeaderViewButton> ViewButtons { get; init; } = [];
     public bool InlineViewButtons { get; init; }
+    public bool ActionsBelowViewButtons { get; init; }
     public bool AlwaysVisible { get; init; }
     public bool ShowHistoryNavigation { get; init; } = true;
+    public bool ShowHomeNavigation { get; init; }
+    public string HomeUrl { get; init; } = "/";
+    public string HomeTitle { get; init; } = "Ir a Inicio";
+    public string HomeLogoSrc { get; init; } = "/logos/Logo.png";
+    public string HomeIcon { get; init; } = "bi-house-door-fill";
     public Func<Task>? OnBack { get; init; }
     public Func<Task>? OnForward { get; init; }
 
