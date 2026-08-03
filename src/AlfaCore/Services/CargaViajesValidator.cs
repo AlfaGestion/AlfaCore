@@ -159,23 +159,24 @@ public sealed class CargaViajesValidator(
         ValidateCommonTextField(request.Sucursal, "sucursal", "La sucursal es obligatoria.", result);
         ValidateCommonTextField(request.Letra, "letra", "La letra es obligatoria.", result);
 
-        for (var i = 0; i < 5; i++)
+        for (var i = 0; i < 6; i++)
         {
             var enabled = GetArrayValue(request.AdicionalesHabilitados, i);
             var sumarFletero = GetArrayValue(request.AdicionalesSumarFletero, i);
             var nombre = GetText(request.NombresAdicionales, i);
             var porcentaje = GetDecimal(request.PorcentajesAdicionales, i);
+            var etiqueta = i == 5 ? "La comisión" : $"El adicional {i + 1}";
 
             if (enabled)
             {
                 if (string.IsNullOrWhiteSpace(nombre))
-                    result.Add($"adicional-{i + 1}-nombre", $"El adicional {i + 1} habilitado debe tener nombre.");
+                    result.Add($"adicional-{i + 1}-nombre", $"{etiqueta} habilitado debe tener nombre.");
                 if (porcentaje < 0m)
-                    result.Add($"adicional-{i + 1}-porcentaje", $"El porcentaje del adicional {i + 1} no puede ser negativo.");
+                    result.Add($"adicional-{i + 1}-porcentaje", $"El porcentaje de {(i == 5 ? "la comisión" : $"el adicional {i + 1}")} no puede ser negativo.");
             }
 
-            if (!enabled && sumarFletero)
-                result.Add($"adicional-{i + 1}-sumar-fletero", $"El adicional {i + 1} no puede sumar a fleteros si está deshabilitado.");
+            if (i != 5 && !enabled && sumarFletero)
+                result.Add($"adicional-{i + 1}-sumar-fletero", $"{etiqueta} no puede sumar a fleteros si está deshabilitado.");
         }
 
         var codigoTarifaGeneral = (request.CodigoTarifaGeneral ?? string.Empty).Trim();

@@ -2,6 +2,17 @@
     gap: .65rem;
 }
 
+.carga-viajes-viajes-table-wrap {
+    max-height: calc(100vh - 380px);
+    overflow-y: auto;
+}
+
+@media (max-width: 900px) {
+    .carga-viajes-viajes-table-wrap {
+        max-height: calc(100vh - 460px);
+    }
+}
+
 .carga-viajes-viajes-totalizador {
     margin-left: .35rem;
 }
@@ -145,15 +156,16 @@
 }
 
 .carga-viajes-smart-search--reportes .smart-search__panel {
-    position: static !important;
-    inset: auto !important;
-    transform: none !important;
-    width: 100% !important;
+    position: absolute !important;
+    top: calc(100% + .55rem) !important;
+    left: 0 !important;
+    right: 0 !important;
+    width: auto !important;
     max-width: none !important;
-    top: auto !important;
-    left: auto !important;
+    z-index: 4000 !important;
+    margin-top: 0 !important;
     display: grid !important;
-    grid-template-columns: repeat(7, minmax(0, 1fr)) !important;
+    grid-template-columns: minmax(0, 1fr) !important;
     gap: .6rem .7rem !important;
     align-items: end !important;
     padding: .9rem !important;
@@ -161,8 +173,29 @@
     border-radius: 14px !important;
     background: linear-gradient(180deg, rgba(15, 23, 42, .98), rgba(13, 20, 36, .98)) !important;
     box-shadow: 0 18px 45px rgba(0, 0, 0, .35) !important;
-    overflow: visible !important;
-    animation: none !important;
+    max-height: calc(100vh - 220px) !important;
+    overflow-y: auto !important;
+    overflow-x: visible !important;
+}
+
+.carga-viajes-reportes__panel-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: .5rem;
+}
+
+.carga-viajes-smart-search--reportes .smart-search__bar {
+    cursor: pointer;
+}
+
+.carga-viajes-reportes__trigger-label {
+    padding: .65rem .75rem;
+    color: var(--color-text-muted);
+    font-size: .92rem;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .carga-viajes-reportes__advanced,
@@ -1371,7 +1404,21 @@
 }
 
 .viajes-filter-field-v2.type {
-    flex-basis: 240px;
+    flex-basis: 320px;
+    flex-grow: 1;
+}
+
+#carga-viajes-reportes-advanced .viajes-filter-field-v2.lg {
+    flex-basis: 200px;
+}
+
+#carga-viajes-reportes-advanced .viajes-filter-field-v2.md {
+    flex-basis: 160px;
+}
+
+#carga-viajes-reportes-advanced .viajes-filter-row-v2 {
+    flex-wrap: wrap;
+    row-gap: 1rem;
 }
 
 .viajes-type-toggle-v2,
@@ -1380,7 +1427,7 @@
     flex-direction: row;
     align-items: center;
     gap: 8px;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
     min-width: 0;
 }
 
@@ -1700,6 +1747,45 @@
 .carga-viajes-viaje-detail__total strong {
     font-size: 1.14rem;
     font-weight: 900;
+}
+
+.carga-viajes-reportes-cliente__list {
+    display: grid;
+    gap: .75rem;
+}
+
+.carga-viajes-reportes-cliente__card {
+    gap: .85rem;
+}
+
+.carga-viajes-reportes-cliente__header {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: .5rem .9rem;
+    padding-bottom: .65rem;
+    border-bottom: 1px solid rgba(148, 163, 184, .14);
+}
+
+.carga-viajes-reportes-cliente__header strong {
+    color: #f8fafc;
+    font-size: 1rem;
+    font-weight: 900;
+}
+
+.carga-viajes-reportes-cliente__header > div:first-child span {
+    margin-left: .5rem;
+    color: #94a3b8;
+    font-size: .82rem;
+}
+
+.carga-viajes-reportes-cliente__meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem .9rem;
+    color: #94a3b8;
+    font-size: .82rem;
 }
 
 .carga-viajes-viaje-detail--fletero {
@@ -2445,8 +2531,14 @@ html[data-theme="light"] .carga-viajes-tarifas-aumento-v2__preview-header {
     margin-top: -.05rem;
 }
 
-.carga-viajes-page--overlay-open .carga-viajes-feedback {
-    display: none;
+.carga-viajes-feedback--floating {
+    position: fixed;
+    top: 1.1rem;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 2600;
+    width: min(680px, 92vw);
+    margin-top: 0;
 }
 
 .carga-viajes-modal-feedback {
@@ -3170,7 +3262,11 @@ html[data-theme="light"] .carga-viajes-page .carga-viajes-smart-search--tarifas 
     overflow: visible;
 }
 
-.carga-viajes-smart-search--viajes .smart-search__panel {
+.carga-viajes-smart-search--viajes .smart-search__panel,
+.carga-viajes-smart-search--tarifas .smart-search__panel,
+.carga-viajes-smart-search--choferes .smart-search__panel,
+.carga-viajes-smart-search--destinos .smart-search__panel,
+.carga-viajes-smart-search--tipo-vehiculos .smart-search__panel {
     position: absolute;
     top: calc(100% + .55rem);
     left: 0;
@@ -3199,6 +3295,23 @@ html[data-theme="light"] .carga-viajes-page .carga-viajes-smart-search--tarifas 
 
 .carga-viajes-smart-search__panel--tarifas {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr) minmax(0, 1.1fr);
+}
+
+.carga-viajes-smart-search__apply-row {
+    grid-column: 1 / -1;
+    display: flex;
+    justify-content: center;
+    padding-top: .6rem;
+    margin-top: .3rem;
+    border-top: 1px solid rgba(148, 163, 184, .18);
+}
+
+.carga-viajes-smart-search__apply-btn {
+    width: 100%;
+    max-width: 360px;
+    min-height: 2.6rem;
+    font-size: .92rem;
+    font-weight: 700;
 }
 
 .carga-viajes-smart-search__panel--reportes,

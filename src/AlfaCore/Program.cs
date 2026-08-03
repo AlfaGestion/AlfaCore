@@ -203,6 +203,8 @@ public class Program
         builder.Services.AddSingleton<ReporteComprasExcelExporter>();
         builder.Services.AddSingleton<CargaViajesLiquidacionExcelExporter>();
         builder.Services.AddSingleton<CargaViajesTarifasExcelExporter>();
+        builder.Services.AddSingleton<CargaViajesViajesExcelExporter>();
+        builder.Services.AddSingleton<CargaViajesReporteExcelExporter>();
         builder.Services.AddSingleton<InformesIaHistoryStore>();
         builder.Services.AddSingleton<InformesIaResultStore>();
         builder.Services.AddScoped<FilterStateService>();
@@ -742,12 +744,22 @@ public class Program
             }
         });
 
-        app.MapGet("/carga-viajes/liquidacion/descargar-excel", async (
+        static void RestoreUserSessionFromToken(HttpRequest request, IAppUserSessionService appUserSession)
+        {
+            var token = request.Query["token"].ToString();
+            if (!string.IsNullOrWhiteSpace(token))
+                appUserSession.TryRestoreFromToken(token);
+        }
+
+        async Task<IResult> DescargarLiquidacionExcel(
             HttpRequest request,
             ICargaViajesService cargaViajesSvc,
+            IAppUserSessionService appUserSession,
             CargaViajesLiquidacionExcelExporter exporter,
-            CancellationToken ct) =>
+            CancellationToken ct)
         {
+            RestoreUserSessionFromToken(request, appUserSession);
+
             static DateTime? ParseDate(string? value)
                 => DateTime.TryParse(value, out var parsed) ? parsed : null;
 
@@ -781,14 +793,81 @@ public class Program
                 bytes,
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 CargaViajesLiquidacionExcelExporter.NombreArchivo());
-        });
+        }
+
+        app.MapGet("/carga-viajes/liquidacion/descargar-excel", DescargarLiquidacionExcel);
+        app.MapGet("/{idweb}/{idbase:int}/carga-viajes/liquidacion/descargar-excel", DescargarLiquidacionExcel);
+
+        async Task<IResult> DescargarReporteExcel(
+            HttpRequest request,
+            ICargaViajesService cargaViajesSvc,
+            IAppUserSessionService appUserSession,
+            CargaViajesReporteExcelExporter exporter,
+            CancellationToken ct)
+        {
+            RestoreUserSessionFromToken(request, appUserSession);
+
+            static DateTime? ParseDate(string? value)
+                => DateTime.TryParse(value, out var parsed) ? parsed : null;
+
+            static string TrimOrEmpty(string? value)
+                => string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+
+            static bool ParseBool(string? value)
+                => bool.TryParse(value, out var parsed) && parsed;
+
+            var incluirClientes = ParseBool(request.Query["incluirClientes"]);
+            var incluirTodoJunto = ParseBool(request.Query["incluirTodoJunto"]);
+
+            var filters = new CargaViajesReporteLiquidacionFilters
+            {
+                FechaDesde = ParseDate(request.Query["desde"]),
+                FechaHasta = ParseDate(request.Query["hasta"]),
+                ChoferCodigo = TrimOrEmpty(request.Query["chofer"]),
+                ClienteCodigo = TrimOrEmpty(request.Query["cliente"]),
+                DestinoCodigo = TrimOrEmpty(request.Query["destino"]),
+                TipoPersona = TrimOrEmpty(request.Query["tipoPersona"]),
+                Estado = TrimOrEmpty(request.Query["estado"]),
+                EstadoPago = TrimOrEmpty(request.Query["estadoPago"]),
+                IncluirClientes = incluirClientes,
+                IncluirTodoJunto = incluirTodoJunto
+            };
+
+            byte[] bytes;
+            if (incluirTodoJunto)
+            {
+                var rows = await cargaViajesSvc.SearchReporteClientesAsync(filters, ct);
+                bytes = exporter.ExportarTodoJunto(rows, filters);
+            }
+            else if (incluirClientes)
+            {
+                var rows = await cargaViajesSvc.SearchReporteClientesAsync(filters, ct);
+                bytes = exporter.ExportarClientes(rows, filters);
+            }
+            else
+            {
+                var rows = await cargaViajesSvc.SearchLiquidacionChoferesAsync(filters, ct);
+                bytes = exporter.ExportarChoferesFleteros(rows, filters);
+            }
+
+            return Results.File(
+                bytes,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                CargaViajesReporteExcelExporter.NombreArchivo());
+        }
+
+        app.MapGet("/carga-viajes/reportes/descargar-excel", DescargarReporteExcel);
+        app.MapGet("/{idweb}/{idbase:int}/carga-viajes/reportes/descargar-excel", DescargarReporteExcel);
 
         async Task<IResult> DescargarTarifasExcel(
             HttpRequest request,
             ICargaViajesService cargaViajesSvc,
+            IAppUserSessionService appUserSession,
             CargaViajesTarifasExcelExporter exporter,
             CancellationToken ct)
         {
+            RestoreUserSessionFromToken(request, appUserSession);
+
             static bool ParseBool(string? value)
                 => bool.TryParse(value, out var parsed) && parsed;
 
@@ -834,6 +913,66 @@ public class Program
 
         app.MapGet("/carga-viajes/tarifas/descargar-excel", DescargarTarifasExcel);
         app.MapGet("/{idweb}/{idbase:int}/carga-viajes/tarifas/descargar-excel", DescargarTarifasExcel);
+
+        async Task<IResult> DescargarViajesExcel(
+            HttpRequest request,
+            ICargaViajesService cargaViajesSvc,
+            IAppUserSessionService appUserSession,
+            CargaViajesViajesExcelExporter exporter,
+            CancellationToken ct)
+        {
+            RestoreUserSessionFromToken(request, appUserSession);
+
+            static DateTime? ParseDate(string? value)
+                => DateTime.TryParse(value, out var parsed) ? parsed : null;
+
+            static string TrimOrEmpty(string? value)
+                => string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+
+            static bool ParseBool(string? value)
+                => bool.TryParse(value, out var parsed) && parsed;
+
+            var filters = new CargaViajesFilters
+            {
+                FechaDesde = ParseDate(request.Query["fechaDesde"]),
+                FechaHasta = ParseDate(request.Query["fechaHasta"]),
+                Texto = TrimOrEmpty(request.Query["texto"]),
+                Cliente = TrimOrEmpty(request.Query["cliente"]),
+                Chofer = TrimOrEmpty(request.Query["chofer"]),
+                Destino = TrimOrEmpty(request.Query["destino"]),
+                TipoVehiculo = TrimOrEmpty(request.Query["tipoVehiculo"]),
+                Estado = TrimOrEmpty(request.Query["estado"]),
+                Usuario = TrimOrEmpty(request.Query["usuario"]),
+                IdComprobante = TrimOrEmpty(request.Query["idComprobante"]),
+                SortBy = TrimOrEmpty(request.Query["sortBy"]),
+                SortDescending = ParseBool(request.Query["sortDescending"]),
+                PageNumber = 1,
+                PageSize = 500
+            };
+
+            var allItems = new List<CargaViajesGridItemDto>();
+            while (true)
+            {
+                var page = await cargaViajesSvc.SearchViajesAsync(filters, ct);
+                if (page.Items.Count == 0)
+                    break;
+
+                allItems.AddRange(page.Items);
+                if (allItems.Count >= page.Total || page.Items.Count < filters.PageSize)
+                    break;
+
+                filters.PageNumber++;
+            }
+
+            var bytes = exporter.Exportar(allItems, filters);
+            return Results.File(
+                bytes,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                CargaViajesViajesExcelExporter.NombreArchivo());
+        }
+
+        app.MapGet("/carga-viajes/descargar-excel", DescargarViajesExcel);
+        app.MapGet("/{idweb}/{idbase:int}/carga-viajes/descargar-excel", DescargarViajesExcel);
 
         app.MapGet("/api/conversaciones", async (
             string? modo,

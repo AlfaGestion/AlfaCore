@@ -35,7 +35,7 @@
 
     @if (_feedback is not null)
     {
-        <section class="carga-viajes-feedback" hidden="@IsAnyOverlayOpen()">
+        <section class="carga-viajes-feedback @(IsAnyOverlayOpen() ? "carga-viajes-feedback--floating" : string.Empty)">
             <div class="editor-msg carga-viajes-feedback__box @GetFeedbackClass(_feedback)">
                 <div class="carga-viajes-feedback__content">
                     @if (ShouldShowFeedbackTitle(_feedback))
@@ -70,7 +70,8 @@
                         <input type="search"
                                placeholder="Buscar viaje, cliente, chofer, destino, comprobante o usuario..."
                                @bind="_viajesFilters.Texto"
-                               @bind:event="oninput" />
+                               @bind:event="oninput"
+                               @onfocus="AbrirViajesAdvancedFilters" />
                         <button type="button" class="smart-search__toggle" @onclick="ToggleViajesAdvancedFilters" aria-expanded="@_showViajesAdvancedFilters" aria-controls="carga-viajes-viajes-filtros-avanzados" aria-label="Mostrar filtros avanzados">
                             <i class="bi @(_showViajesAdvancedFilters ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
                         </button>
@@ -78,6 +79,7 @@
 
                     @if (_showViajesAdvancedFilters)
                     {
+                        <button type="button" class="module-actionbar__search-backdrop" aria-label="Cerrar filtros" @onmousedown="() => _showViajesAdvancedFilters = false"></button>
                         <div id="carga-viajes-viajes-filtros-avanzados" class="smart-search__panel carga-viajes-smart-search__panel--viajes">
                             <div class="smart-search__column">
                                 <h4><i class="bi bi-calendar-range"></i> Fecha</h4>
@@ -141,7 +143,9 @@
                                     <label>Id comprobante</label>
                                     <input type="text" @bind="_viajesFilters.IdComprobante" @bind:event="oninput" />
                                 </div>
-                                <button type="button" class="btn btn--primary btn--sm" @onclick="AplicarFiltrosViajesAsync">Aplicar filtros</button>
+                            </div>
+                            <div class="carga-viajes-smart-search__apply-row">
+                                <button type="button" class="btn btn--primary carga-viajes-smart-search__apply-btn" @onclick="AplicarFiltrosViajesYCerrarAsync">Aplicar filtros</button>
                             </div>
                         </div>
                     }
@@ -168,8 +172,8 @@
 
         @if (_showViewSettings)
         {
-            <div class="cuentas-modal-backdrop carga-viajes-modal-backdrop">
-                <section class="cuentas-modal carga-viajes-modal carga-viajes-modal--wide" role="dialog" aria-modal="true" aria-labelledby="carga-viajes-view-settings-title" @onclick:stopPropagation="true" @onkeydown="HandleModalKeyDownAsync" tabindex="0">
+            <div class="cuentas-modal-backdrop carga-viajes-modal-backdrop" @onmousedown="CancelarConfiguracionVista">
+                <section class="cuentas-modal carga-viajes-modal carga-viajes-modal--wide" role="dialog" aria-modal="true" aria-labelledby="carga-viajes-view-settings-title" @onclick:stopPropagation="true" @onmousedown:stopPropagation="true" @onkeydown="HandleModalKeyDownAsync" tabindex="0">
                     <header class="cuentas-modal__header">
                         <div>
                             <span class="cuentas-modal__eyebrow">Viajes</span>
@@ -238,7 +242,7 @@
             {
                 var visibleColumns = GetVisibleColumns();
                 var groups = BuildViajeGroups();
-                <div class="usuarios-table-wrap">
+                <div class="usuarios-table-wrap carga-viajes-viajes-table-wrap">
                     <table class="data-table usuarios-table" data-sticky-list-header>
                         <thead>
                             <tr>
@@ -339,39 +343,36 @@
             </div>
 
             <div class="smart-search carga-viajes-smart-search carga-viajes-smart-search--tarifas" @onkeydown="HandleTarifasSearchKeyDownAsync">
-                <div class="smart-search__bar">
-                    <i class="bi bi-search"></i>
-                    <input type="search"
-                           placeholder="Buscar tarifa, cliente, chofer, destino o tipo vehículo..."
-                           @bind="_tarifasFilters.Texto"
-                           @bind:event="oninput" />
-                    <button type="button" class="smart-search__toggle" @onclick="ToggleTarifasAdvancedFilters" aria-expanded="@_showTarifasAdvancedFilters" aria-controls="carga-viajes-tarifas-filtros-avanzados" aria-label="Mostrar filtros avanzados">
-                        <i class="bi @(_showTarifasAdvancedFilters ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
-                    </button>
-                </div>
-
-                <div class="smart-search__chips" aria-live="polite">
-                    @foreach (var chip in BuildTarifasFilterChips())
-                    {
-                        <button type="button" class="smart-chip" @key="chip.Key" @onclick="() => RemoveTarifasFilterChipAsync(chip.Key)">
-                            @chip.Label <i class="bi bi-x"></i>
+                <div class="carga-viajes-smart-search__anchor">
+                    <div class="smart-search__bar">
+                        <i class="bi bi-search"></i>
+                        <input type="search"
+                               placeholder="Buscar tarifa, cliente, chofer, destino o tipo vehículo..."
+                               @bind="_tarifasFilters.Texto"
+                               @bind:event="oninput"
+                               @onfocus="AbrirTarifasAdvancedFilters" />
+                        <button type="button" class="smart-search__toggle" @onclick="ToggleTarifasAdvancedFilters" aria-expanded="@_showTarifasAdvancedFilters" aria-controls="carga-viajes-tarifas-filtros-avanzados" aria-label="Mostrar filtros avanzados">
+                            <i class="bi @(_showTarifasAdvancedFilters ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
                         </button>
-                    }
-                    @if (BuildTarifasFilterChips().Count == 0)
+                    </div>
+
+                    <div class="smart-search__chips" aria-live="polite">
+                        @foreach (var chip in BuildTarifasFilterChips())
+                        {
+                            <button type="button" class="smart-chip" @key="chip.Key" @onclick="() => RemoveTarifasFilterChipAsync(chip.Key)">
+                                @chip.Label <i class="bi bi-x"></i>
+                            </button>
+                        }
+                        @if (BuildTarifasFilterChips().Count == 0)
+                        {
+                            <span class="smart-search__hint">Usá los filtros por tipo, cliente, chofer, destino y activo.</span>
+                        }
+                    </div>
+
+                    @if (_showTarifasAdvancedFilters)
                     {
-                        <span class="smart-search__hint">Usá los filtros por tipo, cliente, chofer, destino y activo.</span>
-                    }
-                </div>
-
-                <div class="carga-viajes-smart-search__actions actions">
-                    <button type="button" class="btn btn--ghost btn--sm" @onclick="LimpiarFiltrosTarifasAsync">Limpiar filtros</button>
-                    <button type="button" class="btn btn--ghost btn--sm" @onclick="RecargarTarifasAsync">Recargar</button>
-                    <button type="button" class="btn btn--ghost btn--sm" @onclick="ExportarTarifasExcelAsync" disabled="@_tarifasLoading">Excel</button>
-                </div>
-
-                @if (_showTarifasAdvancedFilters)
-                {
-                    <div id="carga-viajes-tarifas-filtros-avanzados" class="smart-search__panel carga-viajes-smart-search__panel--tarifas">
+                        <button type="button" class="module-actionbar__search-backdrop" aria-label="Cerrar filtros" @onmousedown="() => _showTarifasAdvancedFilters = false"></button>
+                        <div id="carga-viajes-tarifas-filtros-avanzados" class="smart-search__panel carga-viajes-smart-search__panel--tarifas" @onclick:stopPropagation="true" @onmousedown:stopPropagation="true">
                         <div class="smart-search__column">
                             <h4><i class="bi bi-tags"></i> Tipo y estado</h4>
                             <div class="carga-viajes-tarifas__type-filter" role="group" aria-label="Tipo tarifa">
@@ -432,10 +433,19 @@
                                 <label>Tipo vehículo</label>
                                 <LookupAutocomplete Label="" Placeholder="Buscar tipo..." Text="@_tarifasFilters.TipoVehiculo" TextChanged="OnTarifaTipoVehiculoFiltroChangedAsync" SelectedChanged="OnTarifaTipoVehiculoFiltroSelectedAsync" OnEnterCommitted="AplicarFiltrosTarifasAsync" SearchFunc="CargaViajesSvc.SearchTipoVehiculosLookupAsync" MinimumCharacters="0" />
                             </div>
-                            <button type="button" class="btn btn--primary btn--sm" @onclick="AplicarFiltrosTarifasYCerrarAsync">Aplicar filtros</button>
                         </div>
-                    </div>
-                }
+                        <div class="carga-viajes-smart-search__apply-row">
+                            <button type="button" class="btn btn--primary carga-viajes-smart-search__apply-btn" @onclick="AplicarFiltrosTarifasYCerrarAsync">Aplicar filtros</button>
+                        </div>
+                        </div>
+                    }
+                </div>
+
+                <div class="carga-viajes-smart-search__actions actions">
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="LimpiarFiltrosTarifasAsync">Limpiar filtros</button>
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="RecargarTarifasAsync">Recargar</button>
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="ExportarTarifasExcelAsync" disabled="@_tarifasLoading">Excel</button>
+                </div>
             </div>
         </section>
 
@@ -548,7 +558,7 @@
         @if (_showTarifasBulkEditModal)
         {
             <div class="tarifa-aumento-backdrop-v2" @onclick="CerrarTarifasBulkEditAsync">
-                <section class="tarifa-aumento-modal-v2" role="dialog" aria-modal="true" aria-labelledby="carga-viajes-tarifas-bulk-title" @onclick:stopPropagation="true" @onkeydown="HandleModalKeyDownAsync" tabindex="0">
+                <section class="tarifa-aumento-modal-v2" role="dialog" aria-modal="true" aria-labelledby="carga-viajes-tarifas-bulk-title" @onclick:stopPropagation="true" @onmousedown:stopPropagation="true" @onkeydown="HandleModalKeyDownAsync" tabindex="0">
                     <header class="tarifa-aumento-header-v2">
                         <div class="tarifa-aumento-header-v2__text">
                             <span class="tarifa-aumento-header-v2__eyebrow">Tarifas</span>
@@ -749,8 +759,8 @@
 
         @if (_showTarifaEditor)
         {
-            <div class="cuentas-modal-backdrop carga-viajes-modal-backdrop">
-                <section class="cuentas-modal carga-viajes-modal carga-viajes-modal--wide" role="dialog" aria-modal="true" aria-labelledby="carga-viajes-tarifa-title" @onclick:stopPropagation="true" @onkeydown="HandleModalKeyDownAsync" tabindex="0">
+            <div class="cuentas-modal-backdrop carga-viajes-modal-backdrop" @onmousedown="CerrarTarifaEditorAsync">
+                <section class="cuentas-modal carga-viajes-modal carga-viajes-modal--wide" role="dialog" aria-modal="true" aria-labelledby="carga-viajes-tarifa-title" @onclick:stopPropagation="true" @onmousedown:stopPropagation="true" @onkeydown="HandleModalKeyDownAsync" tabindex="0">
                     <header class="cuentas-modal__header">
                         <div>
                             <span class="cuentas-modal__eyebrow">Tarifas</span>
@@ -782,6 +792,8 @@
                                     <button type="button"
                                             class="carga-viajes-filter-pill @(!_tarifaForm.TarifaFletero ? "carga-viajes-filter-pill--active" : string.Empty)"
                                             aria-pressed="@(!_tarifaForm.TarifaFletero)"
+                                            disabled="@(!_isNewTarifa)"
+                                            title="@(_isNewTarifa ? string.Empty : "No se puede cambiar el tipo de una tarifa existente")"
                                             @onclick="SetTarifaClienteTypeAsync">
                                         <span class="carga-viajes-filter-pill__check" aria-hidden="true"><i class="bi bi-check-lg"></i></span>
                                         <span>Cliente</span>
@@ -789,6 +801,8 @@
                                     <button type="button"
                                             class="carga-viajes-filter-pill @(_tarifaForm.TarifaFletero ? "carga-viajes-filter-pill--active" : string.Empty)"
                                             aria-pressed="@_tarifaForm.TarifaFletero"
+                                            disabled="@(!_isNewTarifa)"
+                                            title="@(_isNewTarifa ? string.Empty : "No se puede cambiar el tipo de una tarifa existente")"
                                             @onclick="SetTarifaFleteroTypeAsync">
                                         <span class="carga-viajes-filter-pill__check" aria-hidden="true"><i class="bi bi-check-lg"></i></span>
                                         <span>Fletero</span>
@@ -808,6 +822,7 @@
                                                         SelectedChanged="OnTarifaChoferSeleccionadoAsync"
                                                         OnEnterCommitted="FocusTarifaNombreAsync"
                                                         SearchFunc="CargaViajesSvc.SearchChoferLookupAsync"
+                                                        Disabled="@(!_isNewTarifa)"
                                                         MinimumCharacters="0" />
                                 }
                                 else
@@ -821,6 +836,7 @@
                                                         SelectedChanged="OnTarifaClienteSeleccionadoAsync"
                                                         OnEnterCommitted="FocusTarifaNombreAsync"
                                                         SearchFunc="CargaViajesSvc.SearchClientesAsync"
+                                                        Disabled="@(!_isNewTarifa)"
                                                         MinimumCharacters="0" />
                                 }
                             </div>
@@ -946,8 +962,8 @@
         }
         @if (_showTarifaAdicionalesPropagateModal)
         {
-            <div class="cuentas-modal-backdrop carga-viajes-modal-backdrop">
-                <section class="cuentas-modal carga-viajes-modal carga-viajes-modal--wide" role="dialog" aria-modal="true" aria-labelledby="carga-viajes-tarifa-adicionales-title" @onclick:stopPropagation="true" @onkeydown="HandleModalKeyDownAsync" tabindex="0">
+            <div class="cuentas-modal-backdrop carga-viajes-modal-backdrop" @onmousedown="CloseTarifaAdicionalesPropagateModalAsync">
+                <section class="cuentas-modal carga-viajes-modal carga-viajes-modal--wide" role="dialog" aria-modal="true" aria-labelledby="carga-viajes-tarifa-adicionales-title" @onclick:stopPropagation="true" @onmousedown:stopPropagation="true" @onkeydown="HandleModalKeyDownAsync" tabindex="0">
                     <header class="cuentas-modal__header">
                         <div>
                             <span class="cuentas-modal__eyebrow">Tarifas</span>
@@ -1065,24 +1081,58 @@
             </div>
 
             <div class="smart-search carga-viajes-smart-search carga-viajes-smart-search--choferes">
-                <div class="smart-search__bar">
-                    <i class="bi bi-search"></i>
-                    <input type="search" placeholder="Buscar chofer, fletero o código..." @bind="_choferesFilters.Texto" @bind:event="oninput" />
-                    <button type="button" class="smart-search__toggle" @onclick="ToggleChoferesAdvancedFilters" aria-expanded="@_showChoferesAdvancedFilters" aria-controls="carga-viajes-choferes-filtros-avanzados" aria-label="Mostrar filtros avanzados">
-                        <i class="bi @(_showChoferesAdvancedFilters ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
-                    </button>
-                </div>
-
-                <div class="smart-search__chips" aria-live="polite">
-                    @foreach (var chip in BuildChoferesFilterChips())
-                    {
-                        <button type="button" class="smart-chip" @key="chip.Key" @onclick="() => RemoveChoferesFilterChipAsync(chip.Key)">
-                            @chip.Label <i class="bi bi-x"></i>
+                <div class="carga-viajes-smart-search__anchor">
+                    <div class="smart-search__bar">
+                        <i class="bi bi-search"></i>
+                        <input type="search" placeholder="Buscar chofer, fletero o código..." @bind="_choferesFilters.Texto" @bind:event="oninput" @onfocus="AbrirChoferesAdvancedFilters" />
+                        <button type="button" class="smart-search__toggle" @onclick="ToggleChoferesAdvancedFilters" aria-expanded="@_showChoferesAdvancedFilters" aria-controls="carga-viajes-choferes-filtros-avanzados" aria-label="Mostrar filtros avanzados">
+                            <i class="bi @(_showChoferesAdvancedFilters ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
                         </button>
-                    }
-                    @if (BuildChoferesFilterChips().Count == 0)
+                    </div>
+
+                    <div class="smart-search__chips" aria-live="polite">
+                        @foreach (var chip in BuildChoferesFilterChips())
+                        {
+                            <button type="button" class="smart-chip" @key="chip.Key" @onclick="() => RemoveChoferesFilterChipAsync(chip.Key)">
+                                @chip.Label <i class="bi bi-x"></i>
+                            </button>
+                        }
+                        @if (BuildChoferesFilterChips().Count == 0)
+                        {
+                            <span class="smart-search__hint">Filtros de choferes, disponibilidad y tipo de vehículo.</span>
+                        }
+                    </div>
+
+                    @if (_showChoferesAdvancedFilters)
                     {
-                        <span class="smart-search__hint">Filtros de choferes, disponibilidad y tipo de vehículo.</span>
+                        <button type="button" class="module-actionbar__search-backdrop" aria-label="Cerrar filtros" @onmousedown="() => _showChoferesAdvancedFilters = false"></button>
+                        <div id="carga-viajes-choferes-filtros-avanzados" class="smart-search__panel carga-viajes-smart-search__panel--choferes" @onclick:stopPropagation="true" @onmousedown:stopPropagation="true">
+                            <div class="smart-search__column">
+                                <h4><i class="bi bi-sliders"></i> Estado</h4>
+                                <div class="smart-search__inline">
+                                    <label>Activo</label>
+                                    <select @bind="_choferesFilters.Activo"><option value="">Todos</option><option value="1">Activo</option><option value="0">Desactivado</option></select>
+                                </div>
+                                <div class="smart-search__inline">
+                                    <label>Disponible</label>
+                                    <select @bind="_choferesFilters.Disponible"><option value="">Todos</option><option value="1">Disponible</option><option value="0">No disponible</option></select>
+                                </div>
+                            </div>
+                            <div class="smart-search__column">
+                                <h4><i class="bi bi-person-badge"></i> Clasificación</h4>
+                                <div class="smart-search__inline">
+                                    <label>Es fletero</label>
+                                    <select @bind="_choferesFilters.EsFletero"><option value="">Todos</option><option value="1">Fletero</option><option value="0">No fletero</option></select>
+                                </div>
+                                <div class="smart-search__inline">
+                                    <label>Tipo vehículo</label>
+                                    <LookupAutocomplete Label="" Placeholder="Buscar tipo..." Text="@_choferesTipoVehiculoTexto" TextChanged="OnChoferTipoVehiculoChangedAsync" SelectedChanged="OnChoferTipoVehiculoSelectedAsync" OnEnterCommitted="AplicarFiltrosChoferesAsync" SearchFunc="CargaViajesSvc.SearchTipoVehiculosLookupAsync" MinimumCharacters="0" />
+                                </div>
+                            </div>
+                            <div class="carga-viajes-smart-search__apply-row">
+                                <button type="button" class="btn btn--primary carga-viajes-smart-search__apply-btn" @onclick="AplicarFiltrosChoferesYCerrarAsync">Aplicar filtros</button>
+                            </div>
+                        </div>
                     }
                 </div>
 
@@ -1090,34 +1140,6 @@
                     <button type="button" class="btn btn--ghost btn--sm" @onclick="LimpiarFiltrosChoferesAsync">Limpiar</button>
                     <button type="button" class="btn btn--ghost btn--sm" @onclick="RecargarChoferesAsync">Recargar</button>
                 </div>
-
-                @if (_showChoferesAdvancedFilters)
-                {
-                    <div id="carga-viajes-choferes-filtros-avanzados" class="smart-search__panel carga-viajes-smart-search__panel--choferes">
-                        <div class="smart-search__column">
-                            <h4><i class="bi bi-sliders"></i> Estado</h4>
-                            <div class="smart-search__inline">
-                                <label>Activo</label>
-                                <select @bind="_choferesFilters.Activo"><option value="">Todos</option><option value="1">Activo</option><option value="0">Desactivado</option></select>
-                            </div>
-                            <div class="smart-search__inline">
-                                <label>Disponible</label>
-                                <select @bind="_choferesFilters.Disponible"><option value="">Todos</option><option value="1">Disponible</option><option value="0">No disponible</option></select>
-                            </div>
-                        </div>
-                        <div class="smart-search__column">
-                            <h4><i class="bi bi-person-badge"></i> Clasificación</h4>
-                            <div class="smart-search__inline">
-                                <label>Es fletero</label>
-                                <select @bind="_choferesFilters.EsFletero"><option value="">Todos</option><option value="1">Fletero</option><option value="0">No fletero</option></select>
-                            </div>
-                            <div class="smart-search__inline">
-                                <label>Tipo vehículo</label>
-                                <LookupAutocomplete Label="" Placeholder="Buscar tipo..." Text="@_choferesTipoVehiculoTexto" TextChanged="OnChoferTipoVehiculoChangedAsync" SelectedChanged="OnChoferTipoVehiculoSelectedAsync" OnEnterCommitted="AplicarFiltrosChoferesAsync" SearchFunc="CargaViajesSvc.SearchTipoVehiculosLookupAsync" MinimumCharacters="0" />
-                            </div>
-                        </div>
-                    </div>
-                }
             </div>
         </section>
 
@@ -1152,8 +1174,8 @@
 
         @if (_showChoferEditor)
         {
-            <div class="cuentas-modal-backdrop carga-viajes-modal-backdrop">
-                <section class="cuentas-modal carga-viajes-modal carga-viajes-modal--compact" role="dialog" aria-modal="true" aria-labelledby="carga-viajes-chofer-title" @onclick:stopPropagation="true" @onkeydown="HandleModalKeyDownAsync" tabindex="0">
+            <div class="cuentas-modal-backdrop carga-viajes-modal-backdrop" @onmousedown="CerrarChoferEditorAsync">
+                <section class="cuentas-modal carga-viajes-modal carga-viajes-modal--compact" role="dialog" aria-modal="true" aria-labelledby="carga-viajes-chofer-title" @onclick:stopPropagation="true" @onmousedown:stopPropagation="true" @onkeydown="HandleModalKeyDownAsync" tabindex="0">
                     <header class="cuentas-modal__header">
                         <div>
                             <span class="cuentas-modal__eyebrow">Choferes</span>
@@ -1202,24 +1224,40 @@
             </div>
 
             <div class="smart-search carga-viajes-smart-search carga-viajes-smart-search--destinos">
-                <div class="smart-search__bar">
-                    <i class="bi bi-search"></i>
-                    <input type="search" placeholder="Buscar destino o código..." @bind="_destinosFilters.Texto" @bind:event="oninput" />
-                    <button type="button" class="smart-search__toggle" @onclick="ToggleDestinosAdvancedFilters" aria-expanded="@_showDestinosAdvancedFilters" aria-controls="carga-viajes-destinos-filtros-avanzados" aria-label="Mostrar filtros avanzados">
-                        <i class="bi @(_showDestinosAdvancedFilters ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
-                    </button>
-                </div>
-
-                <div class="smart-search__chips" aria-live="polite">
-                    @foreach (var chip in BuildDestinosFilterChips())
-                    {
-                        <button type="button" class="smart-chip" @key="chip.Key" @onclick="() => RemoveDestinosFilterChipAsync(chip.Key)">
-                            @chip.Label <i class="bi bi-x"></i>
+                <div class="carga-viajes-smart-search__anchor">
+                    <div class="smart-search__bar">
+                        <i class="bi bi-search"></i>
+                        <input type="search" placeholder="Buscar destino o código..." @bind="_destinosFilters.Texto" @bind:event="oninput" @onfocus="AbrirDestinosAdvancedFilters" />
+                        <button type="button" class="smart-search__toggle" @onclick="ToggleDestinosAdvancedFilters" aria-expanded="@_showDestinosAdvancedFilters" aria-controls="carga-viajes-destinos-filtros-avanzados" aria-label="Mostrar filtros avanzados">
+                            <i class="bi @(_showDestinosAdvancedFilters ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
                         </button>
-                    }
-                    @if (BuildDestinosFilterChips().Count == 0)
+                    </div>
+
+                    <div class="smart-search__chips" aria-live="polite">
+                        @foreach (var chip in BuildDestinosFilterChips())
+                        {
+                            <button type="button" class="smart-chip" @key="chip.Key" @onclick="() => RemoveDestinosFilterChipAsync(chip.Key)">
+                                @chip.Label <i class="bi bi-x"></i>
+                            </button>
+                        }
+                        @if (BuildDestinosFilterChips().Count == 0)
+                        {
+                            <span class="smart-search__hint">Filtro compacto para destinos activos o inactivos.</span>
+                        }
+                    </div>
+
+                    @if (_showDestinosAdvancedFilters)
                     {
-                        <span class="smart-search__hint">Filtro compacto para destinos activos o inactivos.</span>
+                        <button type="button" class="module-actionbar__search-backdrop" aria-label="Cerrar filtros" @onmousedown="() => _showDestinosAdvancedFilters = false"></button>
+                        <div id="carga-viajes-destinos-filtros-avanzados" class="smart-search__panel carga-viajes-smart-search__panel--destinos" @onclick:stopPropagation="true" @onmousedown:stopPropagation="true">
+                            <div class="smart-search__column">
+                                <h4><i class="bi bi-sliders"></i> Estado</h4>
+                                <div class="smart-search__inline"><label>Activo</label><select @bind="_destinosFilters.Activo"><option value="">Todos</option><option value="1">Activo</option><option value="0">Desactivado</option></select></div>
+                            </div>
+                            <div class="carga-viajes-smart-search__apply-row">
+                                <button type="button" class="btn btn--primary carga-viajes-smart-search__apply-btn" @onclick="AplicarFiltrosDestinosYCerrarAsync">Aplicar filtros</button>
+                            </div>
+                        </div>
                     }
                 </div>
 
@@ -1227,16 +1265,6 @@
                     <button type="button" class="btn btn--ghost btn--sm" @onclick="LimpiarFiltrosDestinosAsync">Limpiar</button>
                     <button type="button" class="btn btn--ghost btn--sm" @onclick="RecargarDestinosAsync">Recargar</button>
                 </div>
-
-                @if (_showDestinosAdvancedFilters)
-                {
-                    <div id="carga-viajes-destinos-filtros-avanzados" class="smart-search__panel carga-viajes-smart-search__panel--destinos">
-                        <div class="smart-search__column">
-                            <h4><i class="bi bi-sliders"></i> Estado</h4>
-                            <div class="smart-search__inline"><label>Activo</label><select @bind="_destinosFilters.Activo"><option value="">Todos</option><option value="1">Activo</option><option value="0">Desactivado</option></select></div>
-                        </div>
-                    </div>
-                }
             </div>
         </section>
 
@@ -1269,8 +1297,8 @@
 
         @if (_showDestinoEditor)
         {
-            <div class="cuentas-modal-backdrop carga-viajes-modal-backdrop">
-                <section class="cuentas-modal carga-viajes-modal carga-viajes-modal--compact" role="dialog" aria-modal="true" aria-labelledby="carga-viajes-destino-title" @onclick:stopPropagation="true" @onkeydown="HandleModalKeyDownAsync" tabindex="0">
+            <div class="cuentas-modal-backdrop carga-viajes-modal-backdrop" @onmousedown="CerrarDestinoEditorAsync">
+                <section class="cuentas-modal carga-viajes-modal carga-viajes-modal--compact" role="dialog" aria-modal="true" aria-labelledby="carga-viajes-destino-title" @onclick:stopPropagation="true" @onmousedown:stopPropagation="true" @onkeydown="HandleModalKeyDownAsync" tabindex="0">
                     <header class="cuentas-modal__header">
                         <div>
                             <span class="cuentas-modal__eyebrow">Destinos</span>
@@ -1319,24 +1347,49 @@
             </div>
 
             <div class="smart-search carga-viajes-smart-search carga-viajes-smart-search--tipo-vehiculos">
-                <div class="smart-search__bar">
-                    <i class="bi bi-search"></i>
-                    <input type="search" placeholder="Buscar tipo de vehículo o código..." @bind="_tipoVehiculosFilters.Texto" @bind:event="oninput" />
-                    <button type="button" class="smart-search__toggle" @onclick="ToggleTipoVehiculosAdvancedFilters" aria-expanded="@_showTipoVehiculosAdvancedFilters" aria-controls="carga-viajes-tipo-vehiculos-filtros-avanzados" aria-label="Mostrar filtros avanzados">
-                        <i class="bi @(_showTipoVehiculosAdvancedFilters ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
-                    </button>
-                </div>
-
-                <div class="smart-search__chips" aria-live="polite">
-                    @foreach (var chip in BuildTipoVehiculosFilterChips())
-                    {
-                        <button type="button" class="smart-chip" @key="chip.Key" @onclick="() => RemoveTipoVehiculosFilterChipAsync(chip.Key)">
-                            @chip.Label <i class="bi bi-x"></i>
+                <div class="carga-viajes-smart-search__anchor">
+                    <div class="smart-search__bar">
+                        <i class="bi bi-search"></i>
+                        <input type="search" placeholder="Buscar tipo de vehículo o código..." @bind="_tipoVehiculosFilters.Texto" @bind:event="oninput" @onfocus="AbrirTipoVehiculosAdvancedFilters" />
+                        <button type="button" class="smart-search__toggle" @onclick="ToggleTipoVehiculosAdvancedFilters" aria-expanded="@_showTipoVehiculosAdvancedFilters" aria-controls="carga-viajes-tipo-vehiculos-filtros-avanzados" aria-label="Mostrar filtros avanzados">
+                            <i class="bi @(_showTipoVehiculosAdvancedFilters ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
                         </button>
-                    }
-                    @if (BuildTipoVehiculosFilterChips().Count == 0)
+                    </div>
+
+                    <div class="smart-search__chips" aria-live="polite">
+                        @foreach (var chip in BuildTipoVehiculosFilterChips())
+                        {
+                            <button type="button" class="smart-chip" @key="chip.Key" @onclick="() => RemoveTipoVehiculosFilterChipAsync(chip.Key)">
+                                @chip.Label <i class="bi bi-x"></i>
+                            </button>
+                        }
+                        @if (BuildTipoVehiculosFilterChips().Count == 0)
+                        {
+                            <span class="smart-search__hint">Filtro compacto para tipos de vehículo y estado.</span>
+                        }
+                    </div>
+
+                    @if (_showTipoVehiculosAdvancedFilters)
                     {
-                        <span class="smart-search__hint">Filtro compacto para tipos de vehículo y estado.</span>
+                        <button type="button" class="module-actionbar__search-backdrop" aria-label="Cerrar filtros" @onmousedown="() => _showTipoVehiculosAdvancedFilters = false"></button>
+                        <div id="carga-viajes-tipo-vehiculos-filtros-avanzados" class="smart-search__panel carga-viajes-smart-search__panel--tipo-vehiculos" @onclick:stopPropagation="true" @onmousedown:stopPropagation="true">
+                            @if (_tipoVehiculosHasActivo)
+                            {
+                                <div class="smart-search__column">
+                                    <h4><i class="bi bi-sliders"></i> Estado</h4>
+                                    <div class="smart-search__inline">
+                                        <label>Activo</label>
+                                        <button type="button" class="carga-viajes-switch @(_tipoVehiculosFilters.Activo == "1" ? "carga-viajes-check--active" : string.Empty)" aria-pressed="@(_tipoVehiculosFilters.Activo == "1")" @onclick="ToggleTipoVehiculosActivoAsync">
+                                            <span class="carga-viajes-check__text">@(_tipoVehiculosFilters.Activo == "1" ? "Solo activos" : "Mostrar todos")</span>
+                                            <span class="carga-viajes-switch__pill" aria-hidden="true"><span class="carga-viajes-switch__thumb"></span></span>
+                                        </button>
+                                    </div>
+                                </div>
+                            }
+                            <div class="carga-viajes-smart-search__apply-row">
+                                <button type="button" class="btn btn--primary carga-viajes-smart-search__apply-btn" @onclick="AplicarFiltrosTipoVehiculosYCerrarAsync">Aplicar filtros</button>
+                            </div>
+                        </div>
                     }
                 </div>
 
@@ -1345,25 +1398,6 @@
                     <button type="button" class="btn btn--ghost btn--sm" @onclick="RecargarTipoVehiculosAsync">Recargar</button>
                     <button type="button" class="btn btn--ghost btn--sm" @onclick="AbrirConfiguracionTipoVehiculoVista">Configurar vista</button>
                 </div>
-
-                @if (_showTipoVehiculosAdvancedFilters)
-                {
-                    <div id="carga-viajes-tipo-vehiculos-filtros-avanzados" class="smart-search__panel carga-viajes-smart-search__panel--tipo-vehiculos">
-                        @if (_tipoVehiculosHasActivo)
-                        {
-                            <div class="smart-search__column">
-                                <h4><i class="bi bi-sliders"></i> Estado</h4>
-                                <div class="smart-search__inline">
-                                    <label>Activo</label>
-                                    <button type="button" class="carga-viajes-switch @(_tipoVehiculosFilters.Activo == "1" ? "carga-viajes-check--active" : string.Empty)" aria-pressed="@(_tipoVehiculosFilters.Activo == "1")" @onclick="ToggleTipoVehiculosActivoAsync">
-                                        <span class="carga-viajes-check__text">@(_tipoVehiculosFilters.Activo == "1" ? "Solo activos" : "Mostrar todos")</span>
-                                        <span class="carga-viajes-switch__pill" aria-hidden="true"><span class="carga-viajes-switch__thumb"></span></span>
-                                    </button>
-                                </div>
-                            </div>
-                        }
-                    </div>
-                }
             </div>
         </section>
 
@@ -1436,8 +1470,8 @@
 
         @if (_showTipoVehiculoViewSettings)
         {
-            <div class="cuentas-modal-backdrop carga-viajes-modal-backdrop">
-                <section class="cuentas-modal carga-viajes-modal carga-viajes-modal--wide" role="dialog" aria-modal="true" aria-labelledby="carga-viajes-tipo-vehiculo-view-settings-title" @onclick:stopPropagation="true" @onkeydown="HandleModalKeyDownAsync" tabindex="0">
+            <div class="cuentas-modal-backdrop carga-viajes-modal-backdrop" @onmousedown="CancelarConfiguracionTipoVehiculoVista">
+                <section class="cuentas-modal carga-viajes-modal carga-viajes-modal--wide" role="dialog" aria-modal="true" aria-labelledby="carga-viajes-tipo-vehiculo-view-settings-title" @onclick:stopPropagation="true" @onmousedown:stopPropagation="true" @onkeydown="HandleModalKeyDownAsync" tabindex="0">
                     <header class="cuentas-modal__header">
                         <div>
                             <span class="cuentas-modal__eyebrow">Tipo vehículo</span>
@@ -1489,8 +1523,8 @@
 
         @if (_showTipoVehiculoEditor)
         {
-            <div class="cuentas-modal-backdrop carga-viajes-modal-backdrop">
-                <section class="cuentas-modal carga-viajes-modal carga-viajes-modal--compact" role="dialog" aria-modal="true" aria-labelledby="carga-viajes-tipo-vehiculo-title" @onclick:stopPropagation="true" @onkeydown="HandleModalKeyDownAsync" tabindex="0">
+            <div class="cuentas-modal-backdrop carga-viajes-modal-backdrop" @onmousedown="CerrarTipoVehiculoEditorAsync">
+                <section class="cuentas-modal carga-viajes-modal carga-viajes-modal--compact" role="dialog" aria-modal="true" aria-labelledby="carga-viajes-tipo-vehiculo-title" @onclick:stopPropagation="true" @onmousedown:stopPropagation="true" @onkeydown="HandleModalKeyDownAsync" tabindex="0">
                     <header class="cuentas-modal__header">
                         <div>
                             <span class="cuentas-modal__eyebrow">Tipo vehículo</span>
@@ -1538,67 +1572,64 @@
                     <span class="panel-card__subtitle">Consulta y análisis de viajes.</span>
                 </div>
                 <div class="actions">
-                    <button type="button" class="btn btn--primary btn--sm" @onclick="BuscarReporteLiquidacionAsync" disabled="@_reportesLoading">Buscar</button>
+                    <button type="button" class="btn btn--primary btn--sm" @onclick="BuscarReporteLiquidacionAsync" disabled="@_reportesLoading">Aplicar filtros</button>
                     <button type="button" class="btn btn--ghost btn--sm" @onclick="LimpiarFiltrosReporteAsync" disabled="@_reportesLoading">Limpiar filtros</button>
                     <button type="button" class="btn btn--ghost btn--sm" @onclick="ImprimirLiquidacionAsync" disabled="@_reportesLoading">Imprimir</button>
                     <button type="button" class="btn btn--ghost btn--sm" @onclick="ExportarReporteExcelAsync" disabled="@_reportesLoading">Exportar Excel</button>
-                    <button type="button" class="btn btn--ghost btn--sm" disabled title="Próximamente">Exportar PDF</button>
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="ImprimirLiquidacionAsync" disabled="@_reportesLoading">Exportar PDF</button>
                 </div>
             </div>
 
             <div class="smart-search carga-viajes-smart-search carga-viajes-smart-search--reportes">
-                <div class="smart-search__chips" aria-live="polite">
-                    @foreach (var chip in BuildReporteFilterChips())
-                    {
-                        <button type="button" class="smart-chip" @key="chip.Key" @onclick="() => RemoveReporteFilterChipAsync(chip.Key)">
-                            @chip.Label <i class="bi bi-x"></i>
+                <div class="carga-viajes-smart-search__anchor">
+                    <div class="smart-search__bar" @onclick="AbrirReportesAdvancedFilters">
+                        <i class="bi bi-sliders"></i>
+                        <span class="carga-viajes-reportes__trigger-label">Rango, tipo de persona, estado y modo de consulta</span>
+                        <button type="button" class="smart-search__toggle" @onclick:stopPropagation="true" @onmousedown:stopPropagation="true" @onclick="ToggleReportesAdvancedFilters" aria-expanded="@_showReportesAdvancedFilters" aria-controls="carga-viajes-reportes-advanced" aria-label="Mostrar filtros avanzados">
+                            <i class="bi @(_showReportesAdvancedFilters ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
                         </button>
-                    }
-                    @if (BuildReporteFilterChips().Count == 0)
-                    {
-                        <span class="smart-search__hint">Elegí rango, tipo de persona, estado y el modo de consulta.</span>
-                    }
-                </div>
+                    </div>
 
-                <div class="viajes-filter-panel-v2 viajes-report-filter-panel-v2">
-                    <div class="viajes-filter-row-v2 carga-viajes-reportes__date-row">
-                        <div class="viajes-filter-field-v2 sm">
-                            <label>Rango rápido</label>
-                            <select value="@_reporteLiquidacionFilters.RangoRapido" @onchange="OnReporteRangoRapidoChangedAsync">
-                                <option value="@CargaViajesReporteRangoRapidoKeys.Hoy">Hoy</option>
-                                <option value="@CargaViajesReporteRangoRapidoKeys.SemanaActual">Semana actual</option>
-                                <option value="@CargaViajesReporteRangoRapidoKeys.MesActual">Mes actual</option>
-                                <option value="@CargaViajesReporteRangoRapidoKeys.MesAnterior">Mes anterior</option>
-                                <option value="@CargaViajesReporteRangoRapidoKeys.AnioActual">Año actual</option>
-                                <option value="@CargaViajesReporteRangoRapidoKeys.AnioAnterior">Año anterior</option>
-                                <option value="@CargaViajesReporteRangoRapidoKeys.Personalizado">Personalizado</option>
-                                <option value="@CargaViajesReporteRangoRapidoKeys.Todo">Todo</option>
-                            </select>
-                        </div>
-                        <div class="viajes-filter-field-v2 sm">
-                            <label>Fecha desde</label>
-                            <InputDate TValue="DateTime?" Value="_reporteLiquidacionFilters.FechaDesde" ValueChanged="OnReporteFechaDesdeChangedAsync" ValueExpression="() => _reporteLiquidacionFilters.FechaDesde" />
-                        </div>
-                        <div class="viajes-filter-field-v2 sm">
-                            <label>Fecha hasta</label>
-                            <InputDate TValue="DateTime?" Value="_reporteLiquidacionFilters.FechaHasta" ValueChanged="OnReporteFechaHastaChangedAsync" ValueExpression="() => _reporteLiquidacionFilters.FechaHasta" />
-                        </div>
-                        <div class="viajes-filter-field-v2 sm carga-viajes-reportes__toggle-field">
-                            <label>&nbsp;</label>
-                            <button type="button"
-                                    class="btn btn--ghost btn--sm carga-viajes-filter-pill carga-viajes-reportes__detail-toggle @(_showReportesAdvancedFilters ? "carga-viajes-filter-pill--active" : string.Empty)"
-                                    @onclick="ToggleReportesAdvancedFilters"
-                                    aria-expanded="@_showReportesAdvancedFilters"
-                                    aria-controls="carga-viajes-reportes-advanced">
-                                <i class="bi @(_showReportesAdvancedFilters ? "bi-caret-up-fill" : "bi-sliders")"></i>
-                                <span>@(_showReportesAdvancedFilters ? "Ocultar filtros" : "Mostrar filtros")</span>
+                    <div class="smart-search__chips" aria-live="polite">
+                        @foreach (var chip in BuildReporteFilterChips())
+                        {
+                            <button type="button" class="smart-chip" @key="chip.Key" @onclick="() => RemoveReporteFilterChipAsync(chip.Key)">
+                                @chip.Label <i class="bi bi-x"></i>
                             </button>
-                        </div>
+                        }
+                        @if (BuildReporteFilterChips().Count == 0)
+                        {
+                            <span class="smart-search__hint">Elegí rango, tipo de persona, estado y el modo de consulta.</span>
+                        }
                     </div>
 
                     @if (_showReportesAdvancedFilters)
                     {
-                        <div id="carga-viajes-reportes-advanced" class="carga-viajes-reportes__advanced">
+                        <button type="button" class="module-actionbar__search-backdrop" aria-label="Cerrar filtros" @onmousedown="() => _showReportesAdvancedFilters = false"></button>
+                        <div id="carga-viajes-reportes-advanced" class="smart-search__panel carga-viajes-smart-search__panel--reportes" @onclick:stopPropagation="true" @onmousedown:stopPropagation="true">
+                            <div class="viajes-filter-row-v2 carga-viajes-reportes__date-row">
+                                <div class="viajes-filter-field-v2 sm">
+                                    <label>Rango rápido</label>
+                                    <select value="@_reporteLiquidacionFilters.RangoRapido" @onchange="OnReporteRangoRapidoChangedAsync">
+                                        <option value="@CargaViajesReporteRangoRapidoKeys.Hoy">Hoy</option>
+                                        <option value="@CargaViajesReporteRangoRapidoKeys.SemanaActual">Semana actual</option>
+                                        <option value="@CargaViajesReporteRangoRapidoKeys.MesActual">Mes actual</option>
+                                        <option value="@CargaViajesReporteRangoRapidoKeys.MesAnterior">Mes anterior</option>
+                                        <option value="@CargaViajesReporteRangoRapidoKeys.AnioActual">Año actual</option>
+                                        <option value="@CargaViajesReporteRangoRapidoKeys.AnioAnterior">Año anterior</option>
+                                        <option value="@CargaViajesReporteRangoRapidoKeys.Personalizado">Personalizado</option>
+                                        <option value="@CargaViajesReporteRangoRapidoKeys.Todo">Todo</option>
+                                    </select>
+                                </div>
+                                <div class="viajes-filter-field-v2 sm">
+                                    <label>Fecha desde</label>
+                                    <InputDate TValue="DateTime?" Value="_reporteLiquidacionFilters.FechaDesde" ValueChanged="OnReporteFechaDesdeChangedAsync" ValueExpression="() => _reporteLiquidacionFilters.FechaDesde" />
+                                </div>
+                                <div class="viajes-filter-field-v2 sm">
+                                    <label>Fecha hasta</label>
+                                    <InputDate TValue="DateTime?" Value="_reporteLiquidacionFilters.FechaHasta" ValueChanged="OnReporteFechaHastaChangedAsync" ValueExpression="() => _reporteLiquidacionFilters.FechaHasta" />
+                                </div>
+                            </div>
                             <div class="viajes-filter-row-v2">
                                 <div class="viajes-filter-field-v2 lg">
                                     <label>Chofer/Fletero</label>
@@ -1641,11 +1672,19 @@
                                             <span class="viajes-type-toggle-v2__check" aria-hidden="true"><i class="bi bi-check-lg"></i></span>
                                             <span>Fleteros</span>
                                         </button>
+                                        <button type="button" class="viajes-type-toggle-v2__button @(_reporteLiquidacionFilters.IncluirClientes ? "viajes-type-toggle-v2__button--active" : string.Empty)" aria-pressed="@_reporteLiquidacionFilters.IncluirClientes" @onclick="ToggleReporteClientesAsync">
+                                            <span class="viajes-type-toggle-v2__check" aria-hidden="true"><i class="bi bi-check-lg"></i></span>
+                                            <span>Clientes</span>
+                                        </button>
+                                        <button type="button" class="viajes-type-toggle-v2__button @(_reporteLiquidacionFilters.IncluirTodoJunto ? "viajes-type-toggle-v2__button--active" : string.Empty)" aria-pressed="@_reporteLiquidacionFilters.IncluirTodoJunto" @onclick="ToggleReporteTodoJuntoAsync">
+                                            <span class="viajes-type-toggle-v2__check" aria-hidden="true"><i class="bi bi-check-lg"></i></span>
+                                            <span>Todo junto</span>
+                                        </button>
                                     </div>
                                 </div>
                                 <div class="viajes-filter-field-v2 md">
                                     <label>Agrupar por</label>
-                                    <select value="@_reporteLiquidacionFilters.AgruparPor" @onchange="async args => await SetReporteAgruparPorAsync(args.Value?.ToString() ?? string.Empty)">
+                                    <select value="@_reporteLiquidacionFilters.AgruparPor" @onchange="async args => await SetReporteAgruparPorAsync(args.Value?.ToString() ?? string.Empty)" disabled="@_reporteLiquidacionFilters.IncluirClientes" title="@(_reporteLiquidacionFilters.IncluirClientes ? "No disponible en el modo Clientes" : string.Empty)">
                                         <option value="@CargaViajesViewGroupKeys.None">Sin agrupar</option>
                                         <option value="@CargaViajesViewGroupKeys.Chofer">Chofer/Fletero</option>
                                         <option value="@CargaViajesViewGroupKeys.Cliente">Cliente</option>
@@ -1663,6 +1702,9 @@
                                     <label>Destino</label>
                                     <LookupAutocomplete Label="" Placeholder="Buscar destino..." Text="@_reporteDestinoTexto" TextChanged="OnReporteDestinoTextoChangedAsync" SelectedChanged="OnReporteDestinoSeleccionadoAsync" SearchFunc="SearchReporteDestinoLookupAsync" MinimumCharacters="0" />
                                 </div>
+                            </div>
+                            <div class="carga-viajes-smart-search__apply-row">
+                                <button type="button" class="btn btn--primary carga-viajes-smart-search__apply-btn" @onclick="BuscarReporteLiquidacionAsync" disabled="@_reportesLoading">Aplicar filtros</button>
                             </div>
                         </div>
                     }
@@ -1691,6 +1733,126 @@
             else if (!_reporteLiquidacionConsultada)
             {
                 <div class="usuarios-empty">Elegí los filtros y presioná Buscar para ver el resultado.</div>
+            }
+            else if (_reporteLiquidacionFilters.IncluirClientes || _reporteLiquidacionFilters.IncluirTodoJunto)
+            {
+                @if (_reporteClienteRows.Count == 0)
+                {
+                    <div class="usuarios-empty">No se encontraron viajes para los filtros seleccionados.</div>
+                }
+                else if (_reporteLiquidacionFilters.IncluirTodoJunto)
+                {
+                    <div class="carga-viajes-reportes__totales">
+                        <article class="carga-viajes-reportes__total-card">
+                            <span>Cantidad total de viajes</span>
+                            <strong>@_reporteClienteRows.Count.ToString("N0")</strong>
+                        </article>
+                        <article class="carga-viajes-reportes__total-card">
+                            <span>Total cliente</span>
+                            <strong>@FormatMoney(_reporteClienteRows.Sum(row => row.Viaje.TotalCliente))</strong>
+                        </article>
+                        <article class="carga-viajes-reportes__total-card">
+                            <span>Total chofer/fletero</span>
+                            <strong>@FormatMoney(_reporteClienteRows.Sum(row => row.Viaje.TotalFletero))</strong>
+                        </article>
+                        <article class="carga-viajes-reportes__total-card carga-viajes-reportes__total-card--grand">
+                            <span>Saldo</span>
+                            <strong>@FormatMoney(_reporteClienteRows.Sum(row => row.Viaje.TotalCliente) - _reporteClienteRows.Sum(row => row.Viaje.TotalFletero))</strong>
+                        </article>
+                    </div>
+                }
+                else
+                {
+                    <div class="carga-viajes-reportes__totales">
+                        <article class="carga-viajes-reportes__total-card">
+                            <span>Cantidad total de viajes</span>
+                            <strong>@_reporteClienteRows.Count.ToString("N0")</strong>
+                        </article>
+                        <article class="carga-viajes-reportes__total-card">
+                            <span>Total cliente</span>
+                            <strong>@FormatMoney(_reporteClienteRows.Sum(row => row.Viaje.TotalCliente))</strong>
+                        </article>
+                        <article class="carga-viajes-reportes__total-card carga-viajes-reportes__total-card--grand">
+                            <span>Total peajes</span>
+                            <strong>@FormatMoney(_reporteClienteRows.Sum(row => row.Viaje.Peaje))</strong>
+                        </article>
+                    </div>
+
+                    @if (IsReporteResumen())
+                    {
+                        <div class="usuarios-table-wrap">
+                            <table class="data-table" data-sticky-list-header>
+                                <thead>
+                                    <tr>
+                                        <th>Fecha</th>
+                                        <th>Cliente</th>
+                                        <th>Destino</th>
+                                        <th>Chofer/Fletero</th>
+                                        <th>Tipo vehículo</th>
+                                        <th class="liquidacion-table__num">Total</th>
+                                        <th class="liquidacion-table__num">Peaje</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var row in _reporteClienteRows)
+                                    {
+                                        <tr>
+                                            <td>@row.Viaje.Fecha.ToString("dd/MM/yyyy")</td>
+                                            <td>@DisplayVisibleText(row.Viaje.ClienteNombre)</td>
+                                            <td>@DisplayVisibleText(row.Viaje.DestinoDescripcion)</td>
+                                            <td>@DisplayVisibleText(row.Viaje.ChoferNombre)</td>
+                                            <td>@DisplayVisibleText(row.Viaje.TipoVehiculoDescripcion)</td>
+                                            <td class="liquidacion-table__num">@FormatMoney(row.Viaje.TotalCliente)</td>
+                                            <td class="liquidacion-table__num">@(row.Viaje.Peaje > 0m ? FormatMoney(row.Viaje.Peaje) : "-")</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="usuarios-table-wrap">
+                            <table class="data-table" data-sticky-list-header>
+                                <thead>
+                                    <tr>
+                                        <th>Fecha</th>
+                                        <th>Comprobante</th>
+                                        <th>Cliente</th>
+                                        <th>Destino</th>
+                                        <th>Chofer/Fletero</th>
+                                        <th>Tipo vehículo</th>
+                                        @foreach (var columna in GetReporteClienteConceptColumns(_reporteClienteRows))
+                                        {
+                                            <th class="liquidacion-table__num">@columna</th>
+                                        }
+                                        <th class="liquidacion-table__num">Total cliente</th>
+                                        <th class="liquidacion-table__num">Peaje</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var row in _reporteClienteRows)
+                                    {
+                                        <tr>
+                                            <td>@row.Viaje.Fecha.ToString("dd/MM/yyyy")</td>
+                                            <td>@row.Viaje.IdComprobante</td>
+                                            <td>@DisplayVisibleText(row.Viaje.ClienteNombre)</td>
+                                            <td>@DisplayVisibleText(row.Viaje.DestinoDescripcion)</td>
+                                            <td>@DisplayVisibleText(row.Viaje.ChoferNombre)</td>
+                                            <td>@DisplayVisibleText(row.Viaje.TipoVehiculoDescripcion)</td>
+                                            @foreach (var columna in GetReporteClienteConceptColumns(_reporteClienteRows))
+                                            {
+                                                <td class="liquidacion-table__num">@FormatConceptoImporte(row.Conceptos, columna)</td>
+                                            }
+                                            <td class="liquidacion-table__num">@FormatMoney(row.Viaje.TotalCliente)</td>
+                                            <td class="liquidacion-table__num">@(row.Viaje.Peaje > 0m ? FormatMoney(row.Viaje.Peaje) : "-")</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                }
             }
             else if (GetReporteRowsAplicandoTipoPersona().Count == 0)
             {
@@ -1835,30 +1997,16 @@
                                                                     <i class="bi @GetSortIcon(_reporteSortBy, _reporteSortDescending, SortKeyTipoVehiculo)"></i>
                                                                 </button>
                                                             </th>
-                                                            <th class="liquidacion-table__num @GetSortThClass(_reporteSortBy, _reporteSortDescending, SortKeyTotalCliente)">
-                                                                <button type="button" class="carga-viajes-sort-button" @onclick="() => SortReportesAsync(SortKeyTotalCliente)">
-                                                                    <span>Importe cliente</span>
-                                                                    <i class="bi @GetSortIcon(_reporteSortBy, _reporteSortDescending, SortKeyTotalCliente)"></i>
-                                                                </button>
-                                                            </th>
                                                             <th class="liquidacion-table__num @GetSortThClass(_reporteSortBy, _reporteSortDescending, SortKeyTotalFletero)">
                                                                 <button type="button" class="carga-viajes-sort-button" @onclick="() => SortReportesAsync(SortKeyTotalFletero)">
                                                                     <span>Importe chofer/fletero</span>
                                                                     <i class="bi @GetSortIcon(_reporteSortBy, _reporteSortDescending, SortKeyTotalFletero)"></i>
                                                                 </button>
                                                             </th>
-                                                            <th class="liquidacion-table__num @GetSortThClass(_reporteSortBy, _reporteSortDescending, SortKeyPeaje)">
-                                                                <button type="button" class="carga-viajes-sort-button" @onclick="() => SortReportesAsync(SortKeyPeaje)">
-                                                                    <span>Peajes</span>
-                                                                    <i class="bi @GetSortIcon(_reporteSortBy, _reporteSortDescending, SortKeyPeaje)"></i>
-                                                                </button>
-                                                            </th>
-                                                            <th class="liquidacion-table__num @GetSortThClass(_reporteSortBy, _reporteSortDescending, SortKeyTotal)">
-                                                                <button type="button" class="carga-viajes-sort-button" @onclick="() => SortReportesAsync(SortKeyTotal)">
-                                                                    <span>Total</span>
-                                                                    <i class="bi @GetSortIcon(_reporteSortBy, _reporteSortDescending, SortKeyTotal)"></i>
-                                                                </button>
-                                                            </th>
+                                                            @foreach (var columna in GetReporteFleteroConceptColumns(GetReporteRowsAplicandoTipoPersona()))
+                                                            {
+                                                                <th class="liquidacion-table__num">@columna</th>
+                                                            }
                                                             <th class="@GetSortThClass(_reporteSortBy, _reporteSortDescending, SortKeyEstado)">
                                                                 <button type="button" class="carga-viajes-sort-button" @onclick="() => SortReportesAsync(SortKeyEstado)">
                                                                     <span>Estado</span>
@@ -1877,10 +2025,11 @@
                                                                 <td>@DisplayVisibleText(row.ChoferNombre)</td>
                                                                 <td>@DisplayVisibleText(row.DestinoDescripcion)</td>
                                                                 <td>@DisplayVisibleText(row.TipoVehiculoDescripcion)</td>
-                                                                <td class="liquidacion-table__num">@FormatMoney(row.TotalConPeaje)</td>
                                                                 <td class="liquidacion-table__num">@FormatMoney(row.TotalFlete)</td>
-                                                                <td class="liquidacion-table__num">@(row.Peaje > 0m ? FormatMoney(row.Peaje) : "-")</td>
-                                                                <td class="liquidacion-table__num">@FormatMoney(row.TotalConPeaje)</td>
+                                                                @foreach (var columna in GetReporteFleteroConceptColumns(GetReporteRowsAplicandoTipoPersona()))
+                                                                {
+                                                                    <td class="liquidacion-table__num">@FormatConceptoImporte(row.ConceptosFletero, columna)</td>
+                                                                }
                                                                 <td>@GetReporteEstadoTexto(row.Estado)</td>
                                                                 <td>@RenderReporteEstadoPagoChip(row)</td>
                                                             </tr>
@@ -1958,30 +2107,16 @@
                                                             <i class="bi @GetSortIcon(_reporteSortBy, _reporteSortDescending, SortKeyTipoVehiculo)"></i>
                                                         </button>
                                                     </th>
-                                                    <th class="liquidacion-table__num @GetSortThClass(_reporteSortBy, _reporteSortDescending, SortKeyTotalCliente)">
-                                                        <button type="button" class="carga-viajes-sort-button" @onclick="() => SortReportesAsync(SortKeyTotalCliente)">
-                                                            <span>Importe cliente</span>
-                                                            <i class="bi @GetSortIcon(_reporteSortBy, _reporteSortDescending, SortKeyTotalCliente)"></i>
-                                                        </button>
-                                                    </th>
                                                     <th class="liquidacion-table__num @GetSortThClass(_reporteSortBy, _reporteSortDescending, SortKeyTotalFletero)">
                                                         <button type="button" class="carga-viajes-sort-button" @onclick="() => SortReportesAsync(SortKeyTotalFletero)">
                                                             <span>Importe chofer/fletero</span>
                                                             <i class="bi @GetSortIcon(_reporteSortBy, _reporteSortDescending, SortKeyTotalFletero)"></i>
                                                         </button>
                                                     </th>
-                                                    <th class="liquidacion-table__num @GetSortThClass(_reporteSortBy, _reporteSortDescending, SortKeyPeaje)">
-                                                        <button type="button" class="carga-viajes-sort-button" @onclick="() => SortReportesAsync(SortKeyPeaje)">
-                                                            <span>Peajes</span>
-                                                            <i class="bi @GetSortIcon(_reporteSortBy, _reporteSortDescending, SortKeyPeaje)"></i>
-                                                        </button>
-                                                    </th>
-                                                    <th class="liquidacion-table__num @GetSortThClass(_reporteSortBy, _reporteSortDescending, SortKeyTotal)">
-                                                        <button type="button" class="carga-viajes-sort-button" @onclick="() => SortReportesAsync(SortKeyTotal)">
-                                                            <span>Total</span>
-                                                            <i class="bi @GetSortIcon(_reporteSortBy, _reporteSortDescending, SortKeyTotal)"></i>
-                                                        </button>
-                                                    </th>
+                                                    @foreach (var columna in GetReporteFleteroConceptColumns(GetReporteRowsAplicandoTipoPersona()))
+                                                    {
+                                                        <th class="liquidacion-table__num">@columna</th>
+                                                    }
                                                     <th class="@GetSortThClass(_reporteSortBy, _reporteSortDescending, SortKeyEstado)">
                                                         <button type="button" class="carga-viajes-sort-button" @onclick="() => SortReportesAsync(SortKeyEstado)">
                                                             <span>Estado</span>
@@ -2000,10 +2135,11 @@
                                                         <td>@DisplayVisibleText(row.ChoferNombre)</td>
                                                         <td>@DisplayVisibleText(row.DestinoDescripcion)</td>
                                                         <td>@DisplayVisibleText(row.TipoVehiculoDescripcion)</td>
-                                                        <td class="liquidacion-table__num">@FormatMoney(row.TotalConPeaje)</td>
                                                         <td class="liquidacion-table__num">@FormatMoney(row.TotalFlete)</td>
-                                                        <td class="liquidacion-table__num">@(row.Peaje > 0m ? FormatMoney(row.Peaje) : "-")</td>
-                                                        <td class="liquidacion-table__num">@FormatMoney(row.TotalConPeaje)</td>
+                                                        @foreach (var columna in GetReporteFleteroConceptColumns(GetReporteRowsAplicandoTipoPersona()))
+                                                        {
+                                                            <td class="liquidacion-table__num">@FormatConceptoImporte(row.ConceptosFletero, columna)</td>
+                                                        }
                                                         <td>@GetReporteEstadoTexto(row.Estado)</td>
                                                         <td>@RenderReporteEstadoPagoChip(row)</td>
                                                     </tr>
@@ -2053,30 +2189,16 @@
                                                 <i class="bi @GetSortIcon(_reporteSortBy, _reporteSortDescending, SortKeyTipoVehiculo)"></i>
                                             </button>
                                         </th>
-                                        <th class="liquidacion-table__num @GetSortThClass(_reporteSortBy, _reporteSortDescending, SortKeyTotalCliente)">
-                                            <button type="button" class="carga-viajes-sort-button" @onclick="() => SortReportesAsync(SortKeyTotalCliente)">
-                                                <span>Importe cliente</span>
-                                                <i class="bi @GetSortIcon(_reporteSortBy, _reporteSortDescending, SortKeyTotalCliente)"></i>
-                                            </button>
-                                        </th>
                                         <th class="liquidacion-table__num @GetSortThClass(_reporteSortBy, _reporteSortDescending, SortKeyTotalFletero)">
                                             <button type="button" class="carga-viajes-sort-button" @onclick="() => SortReportesAsync(SortKeyTotalFletero)">
                                                 <span>Importe chofer/fletero</span>
                                                 <i class="bi @GetSortIcon(_reporteSortBy, _reporteSortDescending, SortKeyTotalFletero)"></i>
                                             </button>
                                         </th>
-                                        <th class="liquidacion-table__num @GetSortThClass(_reporteSortBy, _reporteSortDescending, SortKeyPeaje)">
-                                            <button type="button" class="carga-viajes-sort-button" @onclick="() => SortReportesAsync(SortKeyPeaje)">
-                                                <span>Peajes</span>
-                                                <i class="bi @GetSortIcon(_reporteSortBy, _reporteSortDescending, SortKeyPeaje)"></i>
-                                            </button>
-                                        </th>
-                                        <th class="liquidacion-table__num @GetSortThClass(_reporteSortBy, _reporteSortDescending, SortKeyTotal)">
-                                            <button type="button" class="carga-viajes-sort-button" @onclick="() => SortReportesAsync(SortKeyTotal)">
-                                                <span>Total</span>
-                                                <i class="bi @GetSortIcon(_reporteSortBy, _reporteSortDescending, SortKeyTotal)"></i>
-                                            </button>
-                                        </th>
+                                        @foreach (var columna in GetReporteFleteroConceptColumns(GetReporteRowsAplicandoTipoPersona()))
+                                        {
+                                            <th class="liquidacion-table__num">@columna</th>
+                                        }
                                         <th class="@GetSortThClass(_reporteSortBy, _reporteSortDescending, SortKeyEstado)">
                                             <button type="button" class="carga-viajes-sort-button" @onclick="() => SortReportesAsync(SortKeyEstado)">
                                                 <span>Estado</span>
@@ -2095,10 +2217,11 @@
                                             <td>@DisplayVisibleText(row.ChoferNombre)</td>
                                             <td>@DisplayVisibleText(row.DestinoDescripcion)</td>
                                             <td>@DisplayVisibleText(row.TipoVehiculoDescripcion)</td>
-                                            <td class="liquidacion-table__num">@FormatMoney(row.TotalConPeaje)</td>
                                             <td class="liquidacion-table__num">@FormatMoney(row.TotalFlete)</td>
-                                            <td class="liquidacion-table__num">@(row.Peaje > 0m ? FormatMoney(row.Peaje) : "-")</td>
-                                            <td class="liquidacion-table__num">@FormatMoney(row.TotalConPeaje)</td>
+                                            @foreach (var columna in GetReporteFleteroConceptColumns(GetReporteRowsAplicandoTipoPersona()))
+                                            {
+                                                <td class="liquidacion-table__num">@FormatConceptoImporte(row.ConceptosFletero, columna)</td>
+                                            }
                                             <td>@GetReporteEstadoTexto(row.Estado)</td>
                                             <td>@RenderReporteEstadoPagoChip(row)</td>
                                         </tr>
@@ -2412,8 +2535,8 @@
     }
     @if (_showLiquidacionesPagoModal)
     {
-        <div class="cuentas-modal-backdrop carga-viajes-modal-backdrop">
-            <section class="cuentas-modal carga-viajes-modal carga-viajes-modal--wide carga-viajes-liquidaciones__modal" role="dialog" aria-modal="true" aria-labelledby="carga-viajes-liquidaciones-pago-title" @onclick:stopPropagation="true" @onkeydown="HandleModalKeyDownAsync" tabindex="0">
+        <div class="cuentas-modal-backdrop carga-viajes-modal-backdrop" @onmousedown="CerrarLiquidacionesPagoModalAsync">
+            <section class="cuentas-modal carga-viajes-modal carga-viajes-modal--wide carga-viajes-liquidaciones__modal" role="dialog" aria-modal="true" aria-labelledby="carga-viajes-liquidaciones-pago-title" @onclick:stopPropagation="true" @onmousedown:stopPropagation="true" @onkeydown="HandleModalKeyDownAsync" tabindex="0">
                 <header class="cuentas-modal__header">
                     <div>
                         <span class="cuentas-modal__eyebrow">Liquidaciones</span>
@@ -2517,8 +2640,8 @@
 
     @if (_showViajeEditor)
     {
-        <div class="cuentas-modal-backdrop carga-viajes-modal-backdrop">
-            <section class="cuentas-modal carga-viajes-modal carga-viajes-modal--wide" role="dialog" aria-modal="true" aria-labelledby="carga-viajes-viaje-title" @onclick:stopPropagation="true" @onkeydown="HandleModalKeyDownAsync" tabindex="0">
+        <div class="cuentas-modal-backdrop carga-viajes-modal-backdrop" @onmousedown="CerrarViajeEditorAsync">
+            <section class="cuentas-modal carga-viajes-modal carga-viajes-modal--wide" role="dialog" aria-modal="true" aria-labelledby="carga-viajes-viaje-title" @onclick:stopPropagation="true" @onmousedown:stopPropagation="true" @onkeydown="HandleModalKeyDownAsync" tabindex="0">
                 <header class="cuentas-modal__header">
                     <div>
                         <span class="cuentas-modal__eyebrow">Viajes</span>
@@ -2565,132 +2688,133 @@
                                 <button type="button"
                                         class="btn btn--ghost btn--sm carga-viajes-viaje__tarifas-trigger"
                                         disabled="@(!_canOpenTarifasClienteSelector)"
+                                        title="@(_canOpenTarifasClienteSelector ? "Ver tarifas del cliente" : "Seleccioná un cliente de la lista antes de ver sus tarifas")"
                                         @onclick="AbrirTarifasClienteAsync">
                                     <i class="bi bi-receipt"></i>
                                     <span>Tarifas</span>
                                 </button>
+                                @if (_showViajeTarifasClientePanel)
+                                {
+                                    <div class="carga-viajes-viaje__tarifas-panel">
+                                        <section class="carga-viajes-viaje-tarifas">
+                                            <div class="carga-viajes-viaje-tarifas__header">
+                                                <div>
+                                                    <span class="carga-viajes-viaje-tarifas__eyebrow">Tarifas del cliente</span>
+                                                    <h4>@GetViajeTarifasPanelTitle()</h4>
+                                                </div>
+                                                <div class="actions">
+                                                    <button type="button" class="btn btn--ghost btn--sm" @onclick="CerrarTarifasClienteAsync">Cerrar</button>
+                                                </div>
+                                            </div>
+
+                                            @if (_viajeTarifasFeedback is not null)
+                                            {
+                                                <div class="editor-msg @GetFeedbackClass(_viajeTarifasFeedback)">
+                                                    <div>
+                                                        <strong>@_viajeTarifasFeedback.Title</strong>
+                                                        <p>@_viajeTarifasFeedback.Message</p>
+                                                    </div>
+                                                </div>
+                                            }
+
+                                            <div class="smart-search carga-viajes-viaje-tarifas__search">
+                                                <div class="smart-search__bar">
+                                                    <i class="bi bi-search"></i>
+                                                    <input type="search"
+                                                           placeholder="Buscar destino o vehículo..."
+                                                           @bind="_viajeTarifasSearch"
+                                                           @bind:event="oninput" />
+                                                    <button type="button" class="smart-search__toggle" @onclick="() => _viajeTarifasSearch = string.Empty" aria-label="Limpiar búsqueda">
+                                                        <i class="bi bi-x-lg"></i>
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            @if (_viajeTarifasLoading)
+                                            {
+                                                <div class="usuarios-empty carga-viajes-viaje-tarifas__loading">Cargando tarifas del cliente...</div>
+                                            }
+                                            else if (GetVisibleViajeTarifas().Count == 0)
+                                            {
+                                                <div class="usuarios-empty carga-viajes-viaje-tarifas__loading">No hay tarifas para mostrar con ese filtro.</div>
+                                            }
+                                            else
+                                            {
+                                                <div class="carga-viajes-viaje-tarifas__meta">
+                                                    <span>@GetViajeTarifasVisibleCount() tarifa(s)</span>
+                                                    @if (!string.IsNullOrWhiteSpace(_viajeTarifasSelectionHint))
+                                                    {
+                                                        <span class="carga-viajes-viaje-tarifas__hint">@_viajeTarifasSelectionHint</span>
+                                                    }
+                                                </div>
+
+                                                <div class="carga-viajes-viaje-tarifas__list" role="list">
+                                                    <div class="carga-viajes-viaje-tarifas__head" role="presentation">
+                                                        <span>Destino</span>
+                                                        <span>Tipo vehículo</span>
+                                                        <span>Cliente</span>
+                                                        <span>Fletero</span>
+                                                        <span></span>
+                                                    </div>
+                                                    @foreach (var tarifa in GetVisibleViajeTarifasOrdered())
+                                                    {
+                                                        <article class="carga-viajes-viaje-tarifas__item" role="listitem">
+                                                            <div class="carga-viajes-viaje-tarifas__destination">
+                                                                <strong>@DisplayText(tarifa.DestinoNombre, tarifa.DestinoCodigo)</strong>
+                                                                @if (tarifa.EsTarifaGeneral)
+                                                                {
+                                                                    <span class="carga-viajes-viaje-tarifas__badge carga-viajes-viaje-tarifas__badge--general">Tarifa general</span>
+                                                                }
+                                                                @if (!tarifa.Activo)
+                                                                {
+                                                                    <span class="carga-viajes-viaje-tarifas__badge carga-viajes-viaje-tarifas__badge--inactive">Inactiva</span>
+                                                                }
+                                                            </div>
+                                                            <div class="carga-viajes-viaje-tarifas__vehicle">
+                                                                @DisplayText(tarifa.TipoVehiculoNombre, tarifa.TipoVehiculoCodigo)
+                                                            </div>
+                                                            <div class="carga-viajes-viaje-tarifas__price-cell carga-viajes-viaje-tarifas__price-cell--client">
+                                                                <small>Cliente</small>
+                                                                <strong>@FormatMoney(tarifa.ImporteCliente)</strong>
+                                                            </div>
+                                                            <div class="carga-viajes-viaje-tarifas__price-cell @(tarifa.ImporteFletero == 0 ? "carga-viajes-viaje-tarifas__price-cell--muted" : string.Empty)">
+                                                                @if (tarifa.ImporteFletero == 0)
+                                                                {
+                                                                    <small>Fletero</small>
+                                                                    <strong>Sin tarifa</strong>
+                                                                }
+                                                                else
+                                                                {
+                                                                    <small>Fletero</small>
+                                                                    <strong>@FormatMoney(tarifa.ImporteFletero)</strong>
+                                                                }
+                                                                @if (!string.IsNullOrWhiteSpace(tarifa.FleteroNombreSugerido))
+                                                                {
+                                                                    <small class="carga-viajes-viaje-tarifas__price-note">
+                                                                        Chofer: @DisplayText(tarifa.FleteroNombreSugerido, tarifa.FleteroCodigoSugerido)
+                                                                    </small>
+                                                                }
+                                                                @if (tarifa.FleteroCoincidencias > 1)
+                                                                {
+                                                                    <small class="carga-viajes-viaje-tarifas__price-note">@(tarifa.FleteroCoincidencias) tarifas asociadas</small>
+                                                                }
+                                                            </div>
+                                                            <div class="carga-viajes-viaje-tarifas__actions">
+                                                                <button type="button" class="btn btn--primary btn--sm" @onclick="() => SeleccionarTarifaClienteAsync(tarifa)">Seleccionar</button>
+                                                            </div>
+                                                        </article>
+                                                    }
+                                                </div>
+                                            }
+                                        </section>
+                                    </div>
+                                }
                             </div>
                         </div>
                         <div class="field">
                             <label>Chofer</label>
                             <LookupAutocomplete @ref="_viajeChoferLookup" Label="" Placeholder="Buscar chofer..." Text="@_viajeChoferTexto" TextChanged="OnViajeChoferTextoChangedAsync" SelectedChanged="OnViajeChoferSelectedAsync" OnEnterCommitted="FocusViajeDestinoAsync" OnCreateRequested="OnViajeChoferCreateRequestedAsync" SearchFunc="CargaViajesSvc.SearchChoferLookupAsync" Disabled="@_viajeReadOnly" MinimumCharacters="0" />
                         </div>
-                        @if (_showViajeTarifasClientePanel)
-                        {
-                            <div class="carga-viajes-viaje__tarifas-panel">
-                                <section class="carga-viajes-viaje-tarifas">
-                                    <div class="carga-viajes-viaje-tarifas__header">
-                                        <div>
-                                            <span class="carga-viajes-viaje-tarifas__eyebrow">Tarifas del cliente</span>
-                                            <h4>@GetViajeTarifasPanelTitle()</h4>
-                                        </div>
-                                        <div class="actions">
-                                            <button type="button" class="btn btn--ghost btn--sm" @onclick="CerrarTarifasClienteAsync">Cerrar</button>
-                                        </div>
-                                    </div>
-
-                                    @if (_viajeTarifasFeedback is not null)
-                                    {
-                                        <div class="editor-msg @GetFeedbackClass(_viajeTarifasFeedback)">
-                                            <div>
-                                                <strong>@_viajeTarifasFeedback.Title</strong>
-                                                <p>@_viajeTarifasFeedback.Message</p>
-                                            </div>
-                                        </div>
-                                    }
-
-                                    <div class="smart-search carga-viajes-viaje-tarifas__search">
-                                        <div class="smart-search__bar">
-                                            <i class="bi bi-search"></i>
-                                            <input type="search"
-                                                   placeholder="Buscar destino o vehículo..."
-                                                   @bind="_viajeTarifasSearch"
-                                                   @bind:event="oninput" />
-                                            <button type="button" class="smart-search__toggle" @onclick="() => _viajeTarifasSearch = string.Empty" aria-label="Limpiar búsqueda">
-                                                <i class="bi bi-x-lg"></i>
-                                            </button>
-                                        </div>
-                                    </div>
-
-                                    @if (_viajeTarifasLoading)
-                                    {
-                                        <div class="usuarios-empty carga-viajes-viaje-tarifas__loading">Cargando tarifas del cliente...</div>
-                                    }
-                                    else if (GetVisibleViajeTarifas().Count == 0)
-                                    {
-                                        <div class="usuarios-empty carga-viajes-viaje-tarifas__loading">No hay tarifas para mostrar con ese filtro.</div>
-                                    }
-                                    else
-                                    {
-                                        <div class="carga-viajes-viaje-tarifas__meta">
-                                            <span>@GetViajeTarifasVisibleCount() tarifa(s)</span>
-                                            @if (!string.IsNullOrWhiteSpace(_viajeTarifasSelectionHint))
-                                            {
-                                                <span class="carga-viajes-viaje-tarifas__hint">@_viajeTarifasSelectionHint</span>
-                                            }
-                                        </div>
-
-                                        <div class="carga-viajes-viaje-tarifas__list" role="list">
-                                            <div class="carga-viajes-viaje-tarifas__head" role="presentation">
-                                                <span>Destino</span>
-                                                <span>Tipo vehículo</span>
-                                                <span>Cliente</span>
-                                                <span>Fletero</span>
-                                                <span></span>
-                                            </div>
-                                            @foreach (var tarifa in GetVisibleViajeTarifasOrdered())
-                                            {
-                                                <article class="carga-viajes-viaje-tarifas__item" role="listitem">
-                                                    <div class="carga-viajes-viaje-tarifas__destination">
-                                                        <strong>@DisplayText(tarifa.DestinoNombre, tarifa.DestinoCodigo)</strong>
-                                                        @if (tarifa.EsTarifaGeneral)
-                                                        {
-                                                            <span class="carga-viajes-viaje-tarifas__badge carga-viajes-viaje-tarifas__badge--general">Tarifa general</span>
-                                                        }
-                                                        @if (!tarifa.Activo)
-                                                        {
-                                                            <span class="carga-viajes-viaje-tarifas__badge carga-viajes-viaje-tarifas__badge--inactive">Inactiva</span>
-                                                        }
-                                                    </div>
-                                                    <div class="carga-viajes-viaje-tarifas__vehicle">
-                                                        @DisplayText(tarifa.TipoVehiculoNombre, tarifa.TipoVehiculoCodigo)
-                                                    </div>
-                                                    <div class="carga-viajes-viaje-tarifas__price-cell carga-viajes-viaje-tarifas__price-cell--client">
-                                                        <small>Cliente</small>
-                                                        <strong>@FormatMoney(tarifa.ImporteCliente)</strong>
-                                                    </div>
-                                                    <div class="carga-viajes-viaje-tarifas__price-cell @(tarifa.ImporteFletero == 0 ? "carga-viajes-viaje-tarifas__price-cell--muted" : string.Empty)">
-                                                        @if (tarifa.ImporteFletero == 0)
-                                                        {
-                                                            <small>Fletero</small>
-                                                            <strong>Sin tarifa</strong>
-                                                        }
-                                                        else
-                                                        {
-                                                            <small>Fletero</small>
-                                                            <strong>@FormatMoney(tarifa.ImporteFletero)</strong>
-                                                        }
-                                                        @if (!string.IsNullOrWhiteSpace(tarifa.FleteroNombreSugerido))
-                                                        {
-                                                            <small class="carga-viajes-viaje-tarifas__price-note">
-                                                                Chofer: @DisplayText(tarifa.FleteroNombreSugerido, tarifa.FleteroCodigoSugerido)
-                                                            </small>
-                                                        }
-                                                        @if (tarifa.FleteroCoincidencias > 1)
-                                                        {
-                                                            <small class="carga-viajes-viaje-tarifas__price-note">@(tarifa.FleteroCoincidencias) tarifas asociadas</small>
-                                                        }
-                                                    </div>
-                                                    <div class="carga-viajes-viaje-tarifas__actions">
-                                                        <button type="button" class="btn btn--primary btn--sm" @onclick="() => SeleccionarTarifaClienteAsync(tarifa)">Seleccionar</button>
-                                                    </div>
-                                                </article>
-                                            }
-                                        </div>
-                                    }
-                                </section>
-                            </div>
-                        }
                         <div class="field">
                             <label>Destino</label>
                             <LookupAutocomplete @ref="_viajeDestinoLookup" Label="" Placeholder="Buscar destino..." Text="@_viajeDestinoTexto" TextChanged="OnViajeDestinoTextoChangedAsync" SelectedChanged="OnViajeDestinoSelectedAsync" OnEnterCommitted="FocusViajeTipoVehiculoAsync" OnCreateRequested="OnViajeDestinoCreateRequestedAsync" SearchFunc="CargaViajesSvc.SearchDestinosLookupAsync" Disabled="@_viajeReadOnly" MinimumCharacters="0" />
@@ -2886,8 +3010,8 @@
     }
     @if (_showConfigEditor)
     {
-        <div class="cuentas-modal-backdrop carga-viajes-modal-backdrop">
-            <section class="cuentas-modal carga-viajes-modal carga-viajes-modal--config" role="dialog" aria-modal="true" aria-labelledby="carga-viajes-config-title" @onclick:stopPropagation="true" @onkeydown="HandleModalKeyDownAsync" tabindex="0">
+        <div class="cuentas-modal-backdrop carga-viajes-modal-backdrop" @onmousedown="CerrarConfiguracionModulo">
+            <section class="cuentas-modal carga-viajes-modal carga-viajes-modal--config" role="dialog" aria-modal="true" aria-labelledby="carga-viajes-config-title" @onclick:stopPropagation="true" @onmousedown:stopPropagation="true" @onkeydown="HandleModalKeyDownAsync" tabindex="0">
                 <header class="cuentas-modal__header">
                     <div>
                         <span class="cuentas-modal__eyebrow">Configuración</span>
@@ -3101,6 +3225,7 @@
     private string _tipoVehiculoViewSettingsUserName = string.Empty;
     private CargaViajesReporteLiquidacionFilters _reporteLiquidacionFilters = CreateDefaultReporteLiquidacionFilters();
     private readonly List<CargaViajeReporteLiquidacionRowDto> _reporteLiquidacionRows = [];
+    private readonly List<CargaViajeReporteClienteRowDto> _reporteClienteRows = [];
     private decimal _reporteTotalViajes;
     private decimal _reporteTotalPeaje;
     private decimal _reporteTotalConPeaje;
@@ -3447,6 +3572,7 @@
             case SectionLiquidaciones:
                 actions.Add(new PageHeaderAction { Key = "buscar-liquidaciones", Label = "Buscar", Icon = "bi-search", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, Disabled = _liquidacionesLoading, OnClick = () => RunHeaderActionAsync(BuscarLiquidacionesAsync) });
                 actions.Add(new PageHeaderAction { Key = "limpiar-liquidaciones", Label = "Limpiar filtros", Icon = "bi-eraser", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Normal, Disabled = _liquidacionesLoading, OnClick = () => RunHeaderActionAsync(LimpiarFiltrosLiquidacionesAsync) });
+                actions.Add(new PageHeaderAction { Key = "exportar-liquidaciones", Label = "Exportar Excel", Icon = "bi-file-earmark-excel", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, Disabled = _liquidacionesLoading, OnClick = () => RunHeaderActionAsync(ExportarLiquidacionesExcelAsync) });
                 if (_liquidacionesSeleccionadas.Count > 0)
                     actions.Add(new PageHeaderAction { Key = "marcar-pagados", Label = "Marcar pagados", Icon = "bi-cash-coin", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, OnClick = () => RunHeaderActionAsync(MarcarSeleccionadosComoPagadosAsync) });
                 break;
@@ -3456,6 +3582,7 @@
             default:
                 actions.Add(new PageHeaderAction { Key = "nuevo-viaje", Label = "Nuevo viaje", Icon = "bi-plus-circle", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, OnClick = () => RunHeaderActionAsync(AbrirNuevoViajeAsync) });
                 actions.Add(new PageHeaderAction { Key = "recargar-viajes", Label = "Recargar", Icon = "bi-arrow-clockwise", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, Disabled = _viajesLoading, OnClick = () => RunHeaderActionAsync(RecargarViajesAsync) });
+                actions.Add(new PageHeaderAction { Key = "exportar-viajes", Label = "Exportar Excel", Icon = "bi-file-earmark-excel", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, Disabled = _viajesLoading, OnClick = () => RunHeaderActionAsync(ExportarViajesExcelAsync) });
                 actions.Add(new PageHeaderAction { Key = "vista-viajes", Label = "Configurar vista", Icon = "bi-sliders", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, OnClick = () => RunHeaderActionAsync(() => { AbrirConfiguracionVista(); return Task.CompletedTask; }) });
                 break;
         }
@@ -3744,10 +3871,43 @@
         _viajesLoading = false;
     }
 
+    private async Task ExportarViajesExcelAsync()
+    {
+        await Js.InvokeVoidAsync("dashboardExport.downloadFile", await GetViajesExcelUrlAsync());
+    }
+
+    private async Task<string> GetViajesExcelUrlAsync()
+    {
+        var query = new Dictionary<string, string?>
+        {
+            ["fechaDesde"] = _viajesFilters.FechaDesde?.ToString("yyyy-MM-dd"),
+            ["fechaHasta"] = _viajesFilters.FechaHasta?.ToString("yyyy-MM-dd"),
+            ["texto"] = _viajesFilters.Texto,
+            ["cliente"] = _viajesFilters.Cliente,
+            ["chofer"] = _viajesFilters.Chofer,
+            ["destino"] = _viajesFilters.Destino,
+            ["tipoVehiculo"] = _viajesFilters.TipoVehiculo,
+            ["estado"] = _viajesFilters.Estado,
+            ["usuario"] = _viajesFilters.Usuario,
+            ["idComprobante"] = _viajesFilters.IdComprobante,
+            ["sortBy"] = _viajesFilters.SortBy,
+            ["sortDescending"] = _viajesFilters.SortDescending ? "true" : "false",
+            ["token"] = await GetUserTokenAsync()
+        };
+
+        return QueryHelpers.AddQueryString(RouteContext.BuildRoute("/carga-viajes/descargar-excel"), query!);
+    }
+
     private async Task AplicarFiltrosViajesAsync()
     {
         _viajesFilters.PageNumber = 1;
         await RecargarViajesAsync();
+    }
+
+    private async Task AplicarFiltrosViajesYCerrarAsync()
+    {
+        await AplicarFiltrosViajesAsync();
+        _showViajesAdvancedFilters = false;
     }
 
     private async Task OnViajesFechaRangoChangedAsync(ChangeEventArgs args)
@@ -3821,6 +3981,8 @@
     }
 
     private void ToggleViajesAdvancedFilters() => _showViajesAdvancedFilters = !_showViajesAdvancedFilters;
+
+    private void AbrirViajesAdvancedFilters() => _showViajesAdvancedFilters = true;
 
     private async Task LimpiarFiltroFechaViajesAsync()
     {
@@ -4439,7 +4601,10 @@
             AdicionalFijo3Descripcion = _viajeForm.AdicionalFijo3Descripcion,
             AdicionalFijo3Importe = _viajeForm.AdicionalFijo3Importe,
             AdicionalFijo3Aplicado = _viajeForm.AdicionalFijo3Aplicado,
-            AdicionalFijo3Cantidad = _viajeForm.AdicionalFijo3Cantidad
+            AdicionalFijo3Cantidad = _viajeForm.AdicionalFijo3Cantidad,
+            AdicionalFijo1ImporteFletero = _viajeForm.AdicionalFijo1ImporteFletero,
+            AdicionalFijo2ImporteFletero = _viajeForm.AdicionalFijo2ImporteFletero,
+            AdicionalFijo3ImporteFletero = _viajeForm.AdicionalFijo3ImporteFletero
         };
 
         return CargaViajesService.BuildViajeTotales(request, _config);
@@ -5557,7 +5722,7 @@
 
     private Task ToggleReporteChoferesAsync()
     {
-        if (_reporteLiquidacionFilters.IncluirChoferes && !_reporteLiquidacionFilters.IncluirFleteros)
+        if (_reporteLiquidacionFilters.IncluirChoferes && !_reporteLiquidacionFilters.IncluirFleteros && !_reporteLiquidacionFilters.IncluirClientes && !_reporteLiquidacionFilters.IncluirTodoJunto)
         {
             SetFeedback(new AppUiMessage
             {
@@ -5568,6 +5733,8 @@
             return Task.CompletedTask;
         }
 
+        _reporteLiquidacionFilters.IncluirClientes = false;
+        _reporteLiquidacionFilters.IncluirTodoJunto = false;
         _reporteLiquidacionFilters.IncluirChoferes = !_reporteLiquidacionFilters.IncluirChoferes;
         SyncReporteTipoPersonaSelection();
         return Task.CompletedTask;
@@ -5575,7 +5742,7 @@
 
     private Task ToggleReporteFleterosAsync()
     {
-        if (_reporteLiquidacionFilters.IncluirFleteros && !_reporteLiquidacionFilters.IncluirChoferes)
+        if (_reporteLiquidacionFilters.IncluirFleteros && !_reporteLiquidacionFilters.IncluirChoferes && !_reporteLiquidacionFilters.IncluirClientes && !_reporteLiquidacionFilters.IncluirTodoJunto)
         {
             SetFeedback(new AppUiMessage
             {
@@ -5586,8 +5753,48 @@
             return Task.CompletedTask;
         }
 
+        _reporteLiquidacionFilters.IncluirClientes = false;
+        _reporteLiquidacionFilters.IncluirTodoJunto = false;
         _reporteLiquidacionFilters.IncluirFleteros = !_reporteLiquidacionFilters.IncluirFleteros;
         SyncReporteTipoPersonaSelection();
+        return Task.CompletedTask;
+    }
+
+    private Task ToggleReporteClientesAsync()
+    {
+        _reporteLiquidacionFilters.IncluirClientes = !_reporteLiquidacionFilters.IncluirClientes;
+        if (_reporteLiquidacionFilters.IncluirClientes)
+        {
+            _reporteLiquidacionFilters.IncluirTodoJunto = false;
+            _reporteLiquidacionFilters.IncluirChoferes = false;
+            _reporteLiquidacionFilters.IncluirFleteros = false;
+        }
+        else
+        {
+            _reporteLiquidacionFilters.IncluirChoferes = true;
+            _reporteLiquidacionFilters.IncluirFleteros = true;
+            SyncReporteTipoPersonaSelection();
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private Task ToggleReporteTodoJuntoAsync()
+    {
+        _reporteLiquidacionFilters.IncluirTodoJunto = !_reporteLiquidacionFilters.IncluirTodoJunto;
+        if (_reporteLiquidacionFilters.IncluirTodoJunto)
+        {
+            _reporteLiquidacionFilters.IncluirClientes = false;
+            _reporteLiquidacionFilters.IncluirChoferes = false;
+            _reporteLiquidacionFilters.IncluirFleteros = false;
+        }
+        else
+        {
+            _reporteLiquidacionFilters.IncluirChoferes = true;
+            _reporteLiquidacionFilters.IncluirFleteros = true;
+            SyncReporteTipoPersonaSelection();
+        }
+
         return Task.CompletedTask;
     }
 
@@ -5712,6 +5919,29 @@
             return;
 
         await RecargarLiquidacionesAsync();
+    }
+
+    private async Task ExportarLiquidacionesExcelAsync()
+    {
+        await Js.InvokeVoidAsync("dashboardExport.downloadFile", await GetLiquidacionesExcelUrlAsync());
+    }
+
+    private async Task<string> GetLiquidacionesExcelUrlAsync()
+    {
+        var query = new Dictionary<string, string?>
+        {
+            ["desde"] = _liquidacionesFilters.FechaDesde?.ToString("yyyy-MM-dd"),
+            ["hasta"] = _liquidacionesFilters.FechaHasta?.ToString("yyyy-MM-dd"),
+            ["chofer"] = _liquidacionesFilters.ChoferCodigo,
+            ["cliente"] = _liquidacionesFilters.ClienteCodigo,
+            ["destino"] = _liquidacionesFilters.DestinoCodigo,
+            ["tipoPersona"] = _liquidacionesFilters.TipoPersona,
+            ["estado"] = _liquidacionesFilters.Estado,
+            ["estadoPago"] = _liquidacionesFilters.EstadoPago,
+            ["token"] = await GetUserTokenAsync()
+        };
+
+        return QueryHelpers.AddQueryString(RouteContext.BuildRoute("/carga-viajes/liquidacion/descargar-excel"), query!);
     }
 
     private async Task LimpiarFiltrosLiquidacionesAsync()
@@ -6365,17 +6595,14 @@
             var esFletero = await IsViajeChoferFleteroAsync(currentChofer);
             if (esFletero)
             {
-                var fleteroResult = await UiOps.RunAsync(
-                    () => CargaViajesSvc.GetTarifaFleteroAsync(currentChofer, tarifa.DestinoCodigo, tarifa.TipoVehiculoCodigo),
-                    "No se pudo calcular la tarifa fletero.");
-                if (fleteroResult.Success)
+                // Mismo importe que muestra el listado de tarifas del cliente (SelectBestFleteroCandidate
+                // en el servidor), en vez de recalcularlo atado exactamente al chofer asignado: la tarifa
+                // general de destino/tipo vehículo puede estar cargada bajo otro chofer (ej. "General").
+                _viajeForm.ImporteFletero = tarifa.ImporteFletero;
+                SyncViajeMoneyTexts();
+                if (!string.IsNullOrWhiteSpace(suggestedChofer) && !string.Equals(currentChofer, suggestedChofer, StringComparison.OrdinalIgnoreCase))
                 {
-                    _viajeForm.ImporteFletero = fleteroResult.Value;
-                    SyncViajeMoneyTexts();
-                }
-                else
-                {
-                    _viajeTarifasFeedback = fleteroResult.Feedback;
+                    _viajeTarifasSelectionHint = $"Importe fletero de la tarifa general (sugerida para {DisplayText(tarifa.FleteroNombreSugerido, suggestedChofer)}).";
                 }
             }
             else
@@ -6423,6 +6650,12 @@
         {
             _viajeTarifasFeedback = detalleResult.Feedback;
         }
+
+        // Mismos importes que muestra el listado de tarifas del cliente (misma lógica de
+        // selección que ImporteFletero), no una tarifa fletero recalculada aparte.
+        _viajeForm.AdicionalFijo1ImporteFletero = tarifa.AdicionalFijo1ImporteFletero;
+        _viajeForm.AdicionalFijo2ImporteFletero = tarifa.AdicionalFijo2ImporteFletero;
+        _viajeForm.AdicionalFijo3ImporteFletero = tarifa.AdicionalFijo3ImporteFletero;
 
         _viajeDirty = true;
         _showViajeTarifasClientePanel = false;
@@ -6503,6 +6736,7 @@
         if (!ValidateReporteLiquidacion())
             return;
 
+        _showReportesAdvancedFilters = false;
         await RecargarReporteLiquidacionAsync();
     }
 
@@ -6513,17 +6747,25 @@
         _reporteClienteTexto = string.Empty;
         _reporteDestinoTexto = string.Empty;
         _reporteLiquidacionRows.Clear();
+        _reporteClienteRows.Clear();
         _reporteTotalViajes = 0m;
         _reporteTotalPeaje = 0m;
         _reporteTotalConPeaje = 0m;
         _reporteLiquidacionConsultada = false;
         _reporteGruposAbiertos.Clear();
         _reportesLoading = false;
+        _showReportesAdvancedFilters = false;
         await Task.CompletedTask;
     }
 
     private async Task RecargarReporteLiquidacionAsync()
     {
+        if (_reporteLiquidacionFilters.IncluirClientes || _reporteLiquidacionFilters.IncluirTodoJunto)
+        {
+            await RecargarReporteClientesAsync();
+            return;
+        }
+
         _reportesLoading = true;
         _reportesBusyTitle = "Buscando liquidación";
         _reportesBusyMessage = "Estamos consultando los viajes de la liquidación operativa.";
@@ -6613,6 +6855,60 @@
         }
     }
 
+    private async Task RecargarReporteClientesAsync()
+    {
+        _reportesLoading = true;
+        _reportesBusyTitle = "Buscando reporte de clientes";
+        _reportesBusyMessage = "Estamos consultando los viajes para facturación.";
+        _reporteLiquidacionConsultada = true;
+        _reporteGruposAbiertos.Clear();
+        _reportesCancellationCts?.Dispose();
+        using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        _reportesCancellationCts = CancellationTokenSource.CreateLinkedTokenSource(timeoutCts.Token);
+        var reportesToken = _reportesCancellationCts.Token;
+        await InvokeAsync(StateHasChanged);
+        try
+        {
+            var result = await UiOps.RunAsync(() => CargaViajesSvc.SearchReporteClientesAsync(_reporteLiquidacionFilters, reportesToken), "No se pudo generar el reporte de clientes.");
+            if (result.Success && result.Value is not null)
+            {
+                _reporteClienteRows.Clear();
+                _reporteClienteRows.AddRange(result.Value);
+            }
+            else
+            {
+                _reporteClienteRows.Clear();
+                _feedback = result.Feedback;
+            }
+        }
+        catch (OperationCanceledException) when (reportesToken.IsCancellationRequested)
+        {
+            Logger.LogInformation("Reporte de clientes cancelado por el usuario.");
+            _reportesBusyTitle = "Consulta cancelada";
+            _reportesBusyMessage = "La búsqueda se canceló antes de completar el reporte.";
+            _feedback = new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Info,
+                Title = "Consulta cancelada",
+                Message = "La generación del reporte fue cancelada."
+            };
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Reporte de clientes falló.");
+            _reportesBusyTitle = "No se pudo generar el reporte";
+            _reportesBusyMessage = "Se produjo un error al consultar el reporte. Revisá el mensaje de soporte.";
+            _reporteClienteRows.Clear();
+            _feedback = UiOps.BuildMessage(ex, "No se pudo generar el reporte de clientes.");
+        }
+        finally
+        {
+            _reportesLoading = false;
+            _reportesCancellationCts?.Dispose();
+            _reportesCancellationCts = null;
+        }
+    }
+
     private Task CancelarReporteLiquidacionAsync()
     {
         _reportesCancellationCts?.Cancel();
@@ -6620,6 +6916,7 @@
     }
 
     private void ToggleReportesAdvancedFilters() => _showReportesAdvancedFilters = !_showReportesAdvancedFilters;
+    private void AbrirReportesAdvancedFilters() => _showReportesAdvancedFilters = true;
     private void ToggleLiquidacionesAdvancedFilters() => _showLiquidacionesAdvancedFilters = !_showLiquidacionesAdvancedFilters;
 
     private IReadOnlyList<FilterChipItem> BuildReporteFilterChips()
@@ -6697,7 +6994,19 @@
         if (!ValidateReporteLiquidacion())
             return;
 
-        await Js.InvokeVoidAsync("dashboardExport.downloadFile", GetLiquidacionExcelUrl());
+        await Js.InvokeVoidAsync("dashboardExport.downloadFile", await GetLiquidacionExcelUrlAsync());
+    }
+
+    private async Task<string?> GetUserTokenAsync()
+    {
+        try
+        {
+            return await Js.InvokeAsync<string?>("localStorage.getItem", "alfacore_user_token");
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private async Task ImprimirLiquidacionAsync()
@@ -6741,7 +7050,7 @@
         return QueryHelpers.AddQueryString(RouteContext.BuildRoute("/carga-viajes/liquidacion/vista"), query!);
     }
 
-    private string GetLiquidacionExcelUrl()
+    private async Task<string> GetLiquidacionExcelUrlAsync()
     {
         var query = new Dictionary<string, string?>
         {
@@ -6752,10 +7061,13 @@
             ["destino"] = _reporteLiquidacionFilters.DestinoCodigo,
             ["tipoPersona"] = _reporteLiquidacionFilters.TipoPersona,
             ["estado"] = _reporteLiquidacionFilters.Estado,
-            ["estadoPago"] = _reporteLiquidacionFilters.EstadoPago
+            ["estadoPago"] = _reporteLiquidacionFilters.EstadoPago,
+            ["incluirClientes"] = _reporteLiquidacionFilters.IncluirClientes ? "true" : "false",
+            ["incluirTodoJunto"] = _reporteLiquidacionFilters.IncluirTodoJunto ? "true" : "false",
+            ["token"] = await GetUserTokenAsync()
         };
 
-        return QueryHelpers.AddQueryString(RouteContext.BuildRoute("/carga-viajes/liquidacion/descargar-excel"), query!);
+        return QueryHelpers.AddQueryString(RouteContext.BuildRoute("/carga-viajes/reportes/descargar-excel"), query!);
     }
 
     private string GetReportesHeadline()
@@ -6875,6 +7187,42 @@
 
     private decimal GetReporteResultadoTotal()
         => GetReporteTotalCliente() - GetReporteTotalChoferFletero() - GetReporteTotalPeajes();
+
+    private static IReadOnlyList<string> GetReporteClienteConceptColumns(IEnumerable<CargaViajeReporteClienteRowDto> rows)
+    {
+        var columns = new List<string>();
+        foreach (var row in rows)
+        {
+            foreach (var concepto in row.Conceptos)
+            {
+                if (!columns.Contains(concepto.Descripcion))
+                    columns.Add(concepto.Descripcion);
+            }
+        }
+
+        return columns;
+    }
+
+    private static IReadOnlyList<string> GetReporteFleteroConceptColumns(IEnumerable<CargaViajeReporteLiquidacionRowDto> rows)
+    {
+        var columns = new List<string>();
+        foreach (var row in rows)
+        {
+            foreach (var concepto in row.ConceptosFletero)
+            {
+                if (!columns.Contains(concepto.Descripcion))
+                    columns.Add(concepto.Descripcion);
+            }
+        }
+
+        return columns;
+    }
+
+    private static string FormatConceptoImporte(IReadOnlyList<CargaViajeReporteClienteConceptoDto> conceptos, string descripcion)
+    {
+        var match = conceptos.FirstOrDefault(concepto => concepto.Descripcion == descripcion);
+        return match is null ? "-" : FormatMoney(match.Importe);
+    }
 
     private static string GetReporteEstadoTexto(string? estado)
         => NormalizeReporteEstado(estado) switch
@@ -8061,6 +8409,9 @@
         if (string.IsNullOrWhiteSpace(_viajeForm.Chofer) || string.IsNullOrWhiteSpace(_viajeForm.Destino) || string.IsNullOrWhiteSpace(_viajeForm.TipoVehiculo))
         {
             _viajeForm.ImporteFletero = 0m;
+            _viajeForm.AdicionalFijo1ImporteFletero = 0m;
+            _viajeForm.AdicionalFijo2ImporteFletero = 0m;
+            _viajeForm.AdicionalFijo3ImporteFletero = 0m;
             SyncViajeMoneyTexts();
             return;
         }
@@ -8069,18 +8420,24 @@
         if (!esFletero)
         {
             _viajeForm.ImporteFletero = 0m;
+            _viajeForm.AdicionalFijo1ImporteFletero = 0m;
+            _viajeForm.AdicionalFijo2ImporteFletero = 0m;
+            _viajeForm.AdicionalFijo3ImporteFletero = 0m;
             SyncViajeMoneyTexts();
             return;
         }
 
-        var result = await UiOps.RunAsync(() => CargaViajesSvc.GetTarifaFleteroAsync(_viajeForm.Chofer, _viajeForm.Destino, _viajeForm.TipoVehiculo), "No se pudo calcular la tarifa fletero.");
+        var result = await UiOps.RunAsync(() => CargaViajesSvc.GetTarifaFleteroDetalleAsync(_viajeForm.Chofer, _viajeForm.Destino, _viajeForm.TipoVehiculo), "No se pudo calcular la tarifa fletero.");
         if (!result.Success)
         {
             _feedback = result.Feedback;
             return;
         }
 
-        _viajeForm.ImporteFletero = result.Value;
+        _viajeForm.ImporteFletero = result.Value?.Importe ?? 0m;
+        _viajeForm.AdicionalFijo1ImporteFletero = result.Value?.AdicionalFijo1Importe ?? 0m;
+        _viajeForm.AdicionalFijo2ImporteFletero = result.Value?.AdicionalFijo2Importe ?? 0m;
+        _viajeForm.AdicionalFijo3ImporteFletero = result.Value?.AdicionalFijo3Importe ?? 0m;
         SyncViajeMoneyTexts();
     }
 
@@ -8109,6 +8466,7 @@
     }
 
     private void ToggleTarifasAdvancedFilters() => _showTarifasAdvancedFilters = !_showTarifasAdvancedFilters;
+    private void AbrirTarifasAdvancedFilters() => _showTarifasAdvancedFilters = true;
 
     private IReadOnlyList<FilterChipItem> BuildTarifasFilterChips()
     {
@@ -8191,10 +8549,10 @@
 
     private async Task ExportarTarifasExcelAsync()
     {
-        await Js.InvokeVoidAsync("dashboardExport.downloadFile", GetTarifasExcelUrl());
+        await Js.InvokeVoidAsync("dashboardExport.downloadFile", await GetTarifasExcelUrlAsync());
     }
 
-    private string GetTarifasExcelUrl()
+    private async Task<string> GetTarifasExcelUrlAsync()
     {
         var query = new Dictionary<string, string?>
         {
@@ -8207,7 +8565,8 @@
             ["tarifaFletero"] = _tarifasFilters.TarifaFletero,
             ["activo"] = _tarifasFilters.Activo,
             ["sortBy"] = _tarifasFilters.SortBy,
-            ["sortDescending"] = _tarifasFilters.SortDescending ? "true" : "false"
+            ["sortDescending"] = _tarifasFilters.SortDescending ? "true" : "false",
+            ["token"] = await GetUserTokenAsync()
         };
 
         return QueryHelpers.AddQueryString(RouteContext.BuildRoute("/carga-viajes/tarifas/descargar-excel"), query!);
@@ -8799,6 +9158,13 @@
     }
 
     private void ToggleChoferesAdvancedFilters() => _showChoferesAdvancedFilters = !_showChoferesAdvancedFilters;
+    private void AbrirChoferesAdvancedFilters() => _showChoferesAdvancedFilters = true;
+
+    private async Task AplicarFiltrosChoferesYCerrarAsync()
+    {
+        await AplicarFiltrosChoferesAsync();
+        _showChoferesAdvancedFilters = false;
+    }
 
     private IReadOnlyList<FilterChipItem> BuildChoferesFilterChips()
     {
@@ -8936,6 +9302,13 @@
     }
 
     private void ToggleDestinosAdvancedFilters() => _showDestinosAdvancedFilters = !_showDestinosAdvancedFilters;
+    private void AbrirDestinosAdvancedFilters() => _showDestinosAdvancedFilters = true;
+
+    private async Task AplicarFiltrosDestinosYCerrarAsync()
+    {
+        await AplicarFiltrosDestinosAsync();
+        _showDestinosAdvancedFilters = false;
+    }
 
     private IReadOnlyList<FilterChipItem> BuildDestinosFilterChips()
     {
@@ -9060,6 +9433,13 @@
     }
 
     private void ToggleTipoVehiculosAdvancedFilters() => _showTipoVehiculosAdvancedFilters = !_showTipoVehiculosAdvancedFilters;
+    private void AbrirTipoVehiculosAdvancedFilters() => _showTipoVehiculosAdvancedFilters = true;
+
+    private async Task AplicarFiltrosTipoVehiculosYCerrarAsync()
+    {
+        await AplicarFiltrosTipoVehiculosAsync();
+        _showTipoVehiculosAdvancedFilters = false;
+    }
 
     private IReadOnlyList<FilterChipItem> BuildTipoVehiculosFilterChips()
     {
