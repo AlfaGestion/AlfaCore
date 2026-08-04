@@ -6,7 +6,7 @@ namespace AlfaCore.Services;
 
 public sealed class CentralBackupControlService(IConfiguration configuration, IAppEventService appEvents) : ICentralBackupControlService
 {
-    private static readonly string[] ResultadosValidos = ["OK", "ERROR"];
+    private static readonly string[] ResultadosValidos = ["OK", "ERROR", "ADVERTENCIA"];
     private static readonly string[] TiposValidos = ["COMPLETO", "DIFERENCIAL"];
 
     private string ConnectionString => configuration.GetConnectionString("AlfaCentral")
@@ -29,7 +29,7 @@ public sealed class CentralBackupControlService(IConfiguration configuration, IA
         if (!TiposValidos.Contains(tipoBackup))
             throw new InvalidOperationException("TipoBackup debe ser COMPLETO o DIFERENCIAL.");
         if (!ResultadosValidos.Contains(resultado))
-            throw new InvalidOperationException("Resultado debe ser OK o ERROR.");
+            throw new InvalidOperationException("Resultado debe ser OK, ERROR o ADVERTENCIA.");
 
         try
         {

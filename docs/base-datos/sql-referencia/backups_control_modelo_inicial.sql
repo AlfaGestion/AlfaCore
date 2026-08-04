@@ -30,7 +30,7 @@ BEGIN TRY
             DbServidor nvarchar(150) NOT NULL,
             DbNombre nvarchar(150) NOT NULL,
             TipoBackup nvarchar(20) NOT NULL,
-            Resultado nvarchar(10) NOT NULL,
+            Resultado nvarchar(20) NOT NULL,
             Mensaje nvarchar(500) NULL,
             HostCliente nvarchar(150) NULL,
             UsuarioSql nvarchar(150) NULL,
@@ -45,7 +45,7 @@ BEGIN TRY
             FechaHoraBackup datetime NOT NULL,
             FechaHoraRecepcion datetime NOT NULL CONSTRAINT DF_ALFACORE_BACKUPS_CONTROL_Recepcion DEFAULT (GETDATE()),
             CONSTRAINT PK_ALFACORE_BACKUPS_CONTROL PRIMARY KEY CLUSTERED (IdControl ASC),
-            CONSTRAINT CK_ALFACORE_BACKUPS_CONTROL_Resultado CHECK (Resultado IN (N'OK', N'ERROR')),
+            CONSTRAINT CK_ALFACORE_BACKUPS_CONTROL_Resultado CHECK (Resultado IN (N'OK', N'ERROR', N'ADVERTENCIA')),
             CONSTRAINT CK_ALFACORE_BACKUPS_CONTROL_Tipo CHECK (TipoBackup IN (N'COMPLETO', N'DIFERENCIAL'))
         );
     END;
