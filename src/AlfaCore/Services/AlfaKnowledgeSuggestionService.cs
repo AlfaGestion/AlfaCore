@@ -51,9 +51,11 @@ public sealed class AlfaKnowledgeSuggestionService(
         string customerMessage,
         IReadOnlyList<ConversacionMensajeDto> recentMessages,
         long conversationId,
+        string mode = AlfaKnowledgeSuggestionModes.ReplySuggestion,
         string? instruction = null,
         IReadOnlyList<AlfaKnowledgeAssistantMessage>? assistantHistory = null,
         AlfaKnowledgeImageInput? image = null,
+        AlfaKnowledgeTextImprovementInput? textImprovement = null,
         CancellationToken cancellationToken = default)
     {
         var settings = await GetEffectiveSettingsAsync(cancellationToken);
@@ -86,6 +88,7 @@ public sealed class AlfaKnowledgeSuggestionService(
             var payload = new
             {
                 customerMessage,
+                mode,
                 history,
                 instruction,
                 assistantHistory = (assistantHistory ?? [])
@@ -101,6 +104,7 @@ public sealed class AlfaKnowledgeSuggestionService(
                     .ToArray(),
                 imageDataUrl = image?.DataUrl,
                 imageFileName = image?.FileName,
+                textToImprove = textImprovement?.TextToImprove,
                 externalSystem = "AlfaCore",
                 externalConversationId = conversationId.ToString(CultureInfo.InvariantCulture),
                 limit = 4

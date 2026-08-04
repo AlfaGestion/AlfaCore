@@ -50,7 +50,7 @@ Hay dos accesos al asistente, pensados para que no tengas que cortar lo que est�
 | Ubicación | Ícono | Qué hace |
 |---|---|---|
 | Barra superior de la conversación, junto a **Crear ticket** y **Pendientes** | ✨ (destello) | Abre o cierra el panel completo de AlfaKnowledge a la derecha de la pantalla |
-| Barra donde escribís la respuesta, junto al botón de enviar | ✨ (destello) | Acceso rápido al asistente sin tener que ir arriba de todo |
+| Barra donde escribís la respuesta, junto al botón de enviar | ✨ (destello) | Mejora o corrige el borrador que ya escribiste, sin generar una respuesta nueva desde cero |
 
 En pantallas de escritorio, el panel de AlfaKnowledge se abre como una **tercera columna** al lado
 del hilo de mensajes: la conversación se acomoda para dejarle lugar, no queda ningún mensaje tapado

@@ -794,7 +794,8 @@
                                     <span class="conversation-badge conversation-badge--state">@item.EstadoDescripcion</span>
                                     @if (!string.IsNullOrWhiteSpace(item.IdTecnico))
                                     {
-                                        <span class="conversation-badge conversation-badge--technician">
+                                        <span class="conversation-badge conversation-badge--technician"
+                                              style="@GetInboxTechnicianStyle(item)">
                                             <i class="bi bi-person-fill"></i>
                                             @FirstNonEmpty(item.TecnicoNombre, item.IdTecnico)
                                         </span>
@@ -1045,7 +1046,11 @@
                             }
                             @if (!string.IsNullOrWhiteSpace(_selectedConversation.TecnicoNombre))
                             {
-                                <span class="conversation-badge">@_selectedConversation.TecnicoNombre</span>
+                                <span class="conversation-badge conversation-badge--technician conversation-badge--technician-prominent"
+                                      style="@GetSelectedConversationTechnicianStyle(_selectedConversation)">
+                                    <i class="bi bi-person-fill"></i>
+                                    @_selectedConversation.TecnicoNombre
+                                </span>
                             }
                             </div>
                         </div>
@@ -1230,6 +1235,31 @@
                         }
                         else
                         {
+                            @if (_hasMoreOlderMessages)
+                            {
+                                <div class="conversation-history-loader">
+                                    <button type="button"
+                                            class="conversation-history-loader__button"
+                                            @onclick="LoadOlderMessagesAsync"
+                                            disabled="@_loadingOlderMessages">
+                                        @if (_loadingOlderMessages)
+                                        {
+                                            <span>Cargando...</span>
+                                        }
+                                        else
+                                        {
+                                            <span>Leer más</span>
+                                        }
+                                    </button>
+                                    @if (_conversationTotalMessageCount > _messages.Count)
+                                    {
+                                        <span class="conversation-history-loader__hint">
+                                            Mostrando @_messages.Count de @_conversationTotalMessageCount mensajes
+                                        </span>
+                                    }
+                                </div>
+                            }
+
                             DateTime? lastMessageDate = null;
                             @foreach (var message in VisibleMessages)
                             {
@@ -1979,7 +2009,7 @@
                     <div class="conversations-ai-header__identity">
                         <span class="conversations-ai-header__avatar"><i class="bi bi-stars"></i></span>
                         <div>
-                            <h3 class="panel-card__title">AlfaKnowledge</h3>
+                            <h3 class="panel-card__title">Base de conocimiento</h3>
                             <p class="panel-card__subtitle"><span></span> Asistente para esta conversación</p>
                         </div>
                     </div>
@@ -1989,7 +2019,7 @@
                            href="@AlfaKnowledgeSvc.FullChatUrl"
                            target="_blank"
                            rel="noopener noreferrer">
-                            <i class="bi bi-box-arrow-up-right"></i> Abrir AlfaKnowledge completo
+                            <i class="bi bi-box-arrow-up-right"></i> Abrir base completa
                         </a>
                     }
                     <button type="button" class="conversations-drawer-close" title="Cerrar sugerencia IA" aria-label="Cerrar asistente" @onclick="ToggleAiSuggestionPanel">
@@ -3049,6 +3079,10 @@
     private bool _scrollThreadToBottomAfterRender;
     private int _scrollThreadToBottomStabilizePasses;
     private bool _threadAnchoringToBottom;
+    private bool _loadingOlderMessages;
+    private bool _hasMoreOlderMessages;
+    private int _conversationTotalMessageCount;
+    private ThreadScrollState? _pendingThreadScrollRestoreAfterPrepend;
     private long? _openAttachmentMenuId;
     private long? _openReactionMessageId;
     private ConversacionMensajeDto? _quotedMessage;
@@ -3152,6 +3186,7 @@
     private static readonly TimeSpan PollingInterval = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan TypingPollingInterval = TimeSpan.FromMilliseconds(650);
     private static readonly TimeSpan ConversationCacheTtl = TimeSpan.FromSeconds(20);
+    private const int ConversationMessagePageSize = 60;
     private static readonly string[] ParteHoraTiposConversacion =
     [
         ParteHoraTipoTrabajoKeys.Soporte,
@@ -3510,6 +3545,23 @@
         {
             _scrollThreadToBottomAfterRender = false;
             await ScrollThreadToBottomAsync(stabilize: true);
+        }
+
+        if (_pendingThreadScrollRestoreAfterPrepend is not null)
+        {
+            var scrollRestore = _pendingThreadScrollRestoreAfterPrepend;
+            _pendingThreadScrollRestoreAfterPrepend = null;
+            try
+            {
+                await JS.InvokeVoidAsync(
+                    "conversacionesUi.restoreScrollAfterPrepend",
+                    _threadElement,
+                    scrollRestore.ScrollTop,
+                    scrollRestore.ScrollHeight);
+            }
+            catch
+            {
+            }
         }
 
         if (_scrollThreadToBottomStabilizePasses > 0)
@@ -3958,6 +4010,11 @@
             ? string.Empty
             : $"--technician-color:{TechnicianColorPalette.Resolve(item.IdTecnico, item.TecnicoNombre)};";
 
+    private static string GetSelectedConversationTechnicianStyle(ConversacionDetalleDto item)
+        => string.IsNullOrWhiteSpace(item.IdTecnico)
+            ? string.Empty
+            : $"--technician-color:{TechnicianColorPalette.Resolve(item.IdTecnico, item.TecnicoNombre)};";
+
     private void ApplyCurrentUserToFilters(ConversacionesInboxFilters filters)
     {
         filters.UsuarioActual = CurrentUserNameForAudit;
@@ -4146,11 +4203,13 @@
         try
         {
             var conversationTask = ConversacionesSvc.GetConversationAsync(idConversacion);
-            var messagesTask = ConversacionesSvc.GetMessagesAsync(idConversacion);
-            var attachmentsTask = ConversacionesSvc.GetConversationAttachmentsAsync(idConversacion);
             var typingTask = ConversacionesSvc.GetTypingAsync(idConversacion, _typingClientId);
+            var pageSize = conversationChanged || clearActionState
+                ? ConversationMessagePageSize
+                : Math.Max(ConversationMessagePageSize, _messages.Count);
+            var messagesTask = ConversacionesSvc.GetMessagesPageAsync(idConversacion, pageSize);
 
-            await Task.WhenAll(conversationTask, messagesTask, attachmentsTask, typingTask);
+            await Task.WhenAll(conversationTask, messagesTask, typingTask);
 
             _selectedConversation = await conversationTask;
             RefreshSelectedMercadoLibreGroup();
@@ -4160,12 +4219,16 @@
                 _savingConversationName = false;
                 _conversationNameDraft = _selectedConversation is null ? string.Empty : GetConversationHeader(_selectedConversation);
             }
-            _messages = OrderConversationMessages(await messagesTask);
+            var messagesPage = await messagesTask;
+            var messageIds = messagesPage.Messages
+                .Select(x => x.IdMensaje)
+                .Distinct()
+                .ToArray();
+            var adjuntos = messageIds.Length == 0
+                ? []
+                : await ConversacionesSvc.GetMessageAttachmentsAsync(idConversacion, messageIds);
+            ApplyConversationMessagesPage(messagesPage, adjuntos);
             _typingUsers = (await typingTask).ToList();
-            var adjuntos = await attachmentsTask;
-            _adjuntosPorMensaje = adjuntos
-                .GroupBy(a => a.IdMensaje)
-                .ToDictionary(g => g.Key, g => g.ToList());
 
             StoreConversationCache(idConversacion);
             if (ShouldRecoverConversationAttachments(_messages, adjuntos))
@@ -4212,6 +4275,9 @@
             _selectedConversation = null;
             _messages = [];
             _typingUsers = [];
+            _adjuntosPorMensaje = [];
+            _hasMoreOlderMessages = false;
+            _conversationTotalMessageCount = 0;
             ClearContextNotesState();
         }
         finally
@@ -4269,15 +4335,16 @@
                 if (_selectedConversationId != idConversacion)
                     return;
 
-                var messagesTask = ConversacionesSvc.GetMessagesAsync(idConversacion);
-                var attachmentsTask = ConversacionesSvc.GetConversationAttachmentsAsync(idConversacion);
-                await Task.WhenAll(messagesTask, attachmentsTask);
-
-                _messages = OrderConversationMessages(await messagesTask);
-                var adjuntos = await attachmentsTask;
-                _adjuntosPorMensaje = adjuntos
-                    .GroupBy(a => a.IdMensaje)
-                    .ToDictionary(g => g.Key, g => g.ToList());
+                var pageSize = Math.Max(ConversationMessagePageSize, _messages.Count);
+                var page = await ConversacionesSvc.GetMessagesPageAsync(idConversacion, pageSize);
+                var messageIds = page.Messages
+                    .Select(x => x.IdMensaje)
+                    .Distinct()
+                    .ToArray();
+                var adjuntos = messageIds.Length == 0
+                    ? []
+                    : await ConversacionesSvc.GetMessageAttachmentsAsync(idConversacion, messageIds);
+                ApplyConversationMessagesPage(page, adjuntos);
 
                 StoreConversationCache(idConversacion);
                 StateHasChanged();
@@ -5515,6 +5582,8 @@
             _selectedConversation,
             OrderConversationMessages(_messages),
             _adjuntosPorMensaje.ToDictionary(x => x.Key, x => x.Value.ToList()),
+            _conversationTotalMessageCount,
+            _hasMoreOlderMessages,
             DateTime.UtcNow);
 
         const int maxCachedConversations = 16;
@@ -5531,6 +5600,8 @@
         _selectedConversation = cache.Conversation;
         _messages = OrderConversationMessages(cache.Messages);
         _adjuntosPorMensaje = cache.AttachmentsByMessage.ToDictionary(x => x.Key, x => x.Value.ToList());
+        _conversationTotalMessageCount = cache.TotalMessages;
+        _hasMoreOlderMessages = cache.HasMoreOlderMessages;
         _assignmentTechnicianId = _selectedConversation.IdTecnico;
         _statusCode = _selectedConversation.CodigoEstado;
         _conversationError = null;
@@ -5830,9 +5901,53 @@
 
     private async Task ScrollToLatestAsync()
     {
-        await ScrollThreadToBottomAsync();
+        await ScrollThreadToBottomAsync(stabilize: true);
         MarkSelectedConversationAsRead();
         StateHasChanged();
+    }
+
+    private async Task LoadOlderMessagesAsync()
+    {
+        if (_selectedConversationId is not { } idConversacion
+            || _loadingOlderMessages
+            || !_hasMoreOlderMessages
+            || _messages.Count == 0)
+            return;
+
+        var oldestLoadedMessage = GetOldestLoadedMessage();
+        if (oldestLoadedMessage is null)
+            return;
+
+        _loadingOlderMessages = true;
+        try
+        {
+            var scrollBeforePrepend = await GetThreadScrollStateAsync();
+            var page = await ConversacionesSvc.GetMessagesPageAsync(
+                idConversacion,
+                ConversationMessagePageSize,
+                oldestLoadedMessage.FechaHora,
+                oldestLoadedMessage.IdMensaje);
+
+            var messageIds = page.Messages
+                .Select(x => x.IdMensaje)
+                .Distinct()
+                .ToArray();
+            var adjuntos = messageIds.Length == 0
+                ? []
+                : await ConversacionesSvc.GetMessageAttachmentsAsync(idConversacion, messageIds);
+
+            PrependConversationMessagesPage(page, adjuntos);
+            _pendingThreadScrollRestoreAfterPrepend = scrollBeforePrepend;
+            StoreConversationCache(idConversacion);
+        }
+        catch (Exception ex)
+        {
+            _actionError = ex.Message;
+        }
+        finally
+        {
+            _loadingOlderMessages = false;
+        }
     }
 
     private async Task PlayNewMessageSoundAsync()
@@ -5902,6 +6017,14 @@
 
     private long? GetLastMessageId()
         => _messages.Count == 0 ? null : _messages.Max(x => x.IdMensaje);
+
+    private ConversacionMensajeDto? GetOldestLoadedMessage()
+        => _messages.Count == 0
+            ? null
+            : _messages
+                .OrderBy(x => x.FechaHora == DateTime.MinValue ? DateTime.MaxValue : x.FechaHora)
+                .ThenBy(x => x.IdMensaje)
+                .FirstOrDefault();
 
     private void ClearNewMessageState()
     {
@@ -6770,9 +6893,11 @@
                 customerMessage,
                 contextMessages,
                 conversationId,
+                AlfaKnowledgeSuggestionModes.ReplySuggestion,
                 instruction,
                 assistantHistory,
                 image,
+                null,
                 requestCts.Token);
 
             if (requestCts.IsCancellationRequested
@@ -6816,6 +6941,17 @@
                         : _aiSuggestion.ClarificationQuestion ?? "No pude responder con el contexto disponible."
                 });
             }
+        }
+        catch (OperationCanceledException) when (requestCts.IsCancellationRequested)
+        {
+            return;
+        }
+        catch (Exception ex)
+        {
+            _aiSuggestion = null;
+            _aiSuggestionError = ex is AlfaCore.Services.AppUserFacingException
+                ? ex.Message
+                : "No se pudo consultar AlfaKnowledge para este contexto.";
         }
         finally
         {
@@ -7033,7 +7169,14 @@
                 focusMessage.Texto,
                 _messages,
                 conversationId,
-                instruction);
+                AlfaKnowledgeSuggestionModes.TextImprovement,
+                instruction,
+                null,
+                null,
+                new AlfaKnowledgeTextImprovementInput
+                {
+                    TextToImprove = draft
+                });
 
             if (result is null || string.IsNullOrWhiteSpace(result.SuggestedReply))
                 return;
@@ -8131,6 +8274,10 @@
         _messages = [];
         _typingUsers = [];
         _adjuntosPorMensaje = [];
+        _hasMoreOlderMessages = false;
+        _conversationTotalMessageCount = 0;
+        _loadingOlderMessages = false;
+        _pendingThreadScrollRestoreAfterPrepend = null;
         _replyText = string.Empty;
         _internalNoteText = string.Empty;
         _pendingAttachments = [];
@@ -8904,6 +9051,45 @@
             .OrderBy(x => x.FechaHora == DateTime.MinValue ? DateTime.MaxValue : x.FechaHora)
             .ThenBy(x => x.IdMensaje)
             .ToList();
+
+    private void ApplyConversationMessagesPage(
+        ConversacionMensajesPaginaDto page,
+        IReadOnlyList<ConversacionAdjuntoDto> attachments)
+    {
+        _messages = OrderConversationMessages(page.Messages);
+        _adjuntosPorMensaje = GroupAttachmentsByMessage(attachments);
+        _conversationTotalMessageCount = Math.Max(page.TotalMessages, _messages.Count);
+        _hasMoreOlderMessages = page.HasMoreBefore;
+    }
+
+    private void PrependConversationMessagesPage(
+        ConversacionMensajesPaginaDto page,
+        IReadOnlyList<ConversacionAdjuntoDto> attachments)
+    {
+        if (page.Messages.Count > 0)
+        {
+            _messages = OrderConversationMessages(_messages.Concat(page.Messages));
+            foreach (var attachment in attachments)
+            {
+                if (!_adjuntosPorMensaje.TryGetValue(attachment.IdMensaje, out var list))
+                {
+                    list = [];
+                    _adjuntosPorMensaje[attachment.IdMensaje] = list;
+                }
+
+                if (list.All(existing => existing.IdAdjunto != attachment.IdAdjunto))
+                    list.Add(attachment);
+            }
+        }
+
+        _conversationTotalMessageCount = Math.Max(page.TotalMessages, _messages.Count);
+        _hasMoreOlderMessages = page.HasMoreBefore;
+    }
+
+    private static Dictionary<long, List<ConversacionAdjuntoDto>> GroupAttachmentsByMessage(IEnumerable<ConversacionAdjuntoDto> attachments)
+        => attachments
+            .GroupBy(a => a.IdMensaje)
+            .ToDictionary(g => g.Key, g => g.ToList());
 
     private static string FormatShortDate(DateTime value)
     {
@@ -9959,6 +10145,8 @@
         ConversacionDetalleDto Conversation,
         List<ConversacionMensajeDto> Messages,
         Dictionary<long, List<ConversacionAdjuntoDto>> AttachmentsByMessage,
+        int TotalMessages,
+        bool HasMoreOlderMessages,
         DateTime CachedAtUtc);
 
     private sealed record ConversationChannelCache(

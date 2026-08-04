@@ -20,9 +20,11 @@ public interface IAlfaKnowledgeSuggestionService
         string customerMessage,
         IReadOnlyList<ConversacionMensajeDto> recentMessages,
         long conversationId,
+        string mode = AlfaKnowledgeSuggestionModes.ReplySuggestion,
         string? instruction = null,
         IReadOnlyList<AlfaKnowledgeAssistantMessage>? assistantHistory = null,
         AlfaKnowledgeImageInput? image = null,
+        AlfaKnowledgeTextImprovementInput? textImprovement = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
